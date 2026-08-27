@@ -114,13 +114,13 @@ export async function runAssistantChecks(): Promise<Check[]> {
 
   reset();
   {
-    const created = executeTool("create_invoice", {
+    const created = await executeTool("create_invoice", {
       customerId: "cust-anna",
       title: "Testfaktura",
       amountInclVat: 12500,
     });
     const invoiceId = created.forModel.invoiceId as string;
-    const send = executeTool("send_invoice", { invoiceId });
+    const send = await executeTool("send_invoice", { invoiceId });
     const after = db().invoices.find((i) => i.id === invoiceId);
     const pending = db().pendingActions.find((a) => a.type === "skicka_faktura");
     const ok =
@@ -191,6 +191,20 @@ export async function runAssistantChecks(): Promise<Check[]> {
       /belopp|hittar inte på pris/i.test(reply.text) &&
       db().invoices.length === invoicesBefore;
     checks.push(assert("Extrajobb hos Anna läser anteckning och hittar inte på pris", ok, reply.text.slice(0, 160)));
+  }
+
+  reset();
+  {
+    const handled = dispatchRules("Skapa offert för Karins bokhylla, 28000 kr");
+    const req = db().requests.find((r) => r.id === "req-karin");
+    const quote = db().quotes.find((q) => q.requestId === "req-karin" && q.status === "utkast");
+    checks.push(
+      assert(
+        "Offert för Karins bokhylla kopplar förfrågan",
+        Boolean(handled && quote && req?.status === "offert_skapad" && req.quoteId === quote?.id),
+        `handled=${handled} status=${req?.status} quote=${quote?.id}`
+      )
+    );
   }
 
   return checks;

@@ -1,4 +1,11 @@
-import type { CompanySettings, Website, WebsiteSection, WebsiteSectionItem, WebsiteTheme } from "@/lib/types";
+import {
+  DEFAULT_PRIMARY_CTA_LABEL,
+  type CompanySettings,
+  type Website,
+  type WebsiteSection,
+  type WebsiteSectionItem,
+  type WebsiteTheme,
+} from "@/lib/types";
 import { SiteContactForm } from "./site-widgets";
 import { SmoothSectionLink } from "./smooth-section-link";
 import { CompanyLogo } from "./company-logo";
@@ -24,6 +31,11 @@ const SECTION_SCROLL = "scroll-mt-[4.5rem]";
 
 function isVisible(section: WebsiteSection): boolean {
   return section.visible !== false;
+}
+
+function primaryCtaLabel(website: Website): string {
+  const label = website.primaryCta?.label?.trim();
+  return label || DEFAULT_PRIMARY_CTA_LABEL;
 }
 
 export function SiteRenderer({
@@ -55,7 +67,7 @@ export function SiteRenderer({
               className="rounded-full px-4 py-2 text-[13px] font-semibold transition-opacity hover:opacity-90"
               style={{ background: t.accent, color: t.accentInk }}
             >
-              Begär offert
+              {primaryCtaLabel(website)}
             </SmoothSectionLink>
           ) : null}
         </div>
@@ -127,6 +139,7 @@ function HeroSection({
   servicesOn: boolean;
 }) {
   const city = website.city ?? company.city;
+  const ctaLabel = primaryCtaLabel(website);
   const ctas =
     contactOn || servicesOn ? (
       <>
@@ -136,7 +149,7 @@ function HeroSection({
             className="rounded-full px-6 py-3 text-[14px] font-semibold shadow-sm transition-opacity hover:opacity-90"
             style={{ background: t.accent, color: t.accentInk }}
           >
-            Begär offert
+            {ctaLabel}
           </SmoothSectionLink>
         ) : null}
         {servicesOn ? (
@@ -155,6 +168,7 @@ function HeroSection({
     return (
       <section
         id="start"
+        data-hero-layout="text"
         className={`mx-auto max-w-4xl px-6 pb-16 pt-16 text-center sm:pt-24 ${SECTION_SCROLL}`}
         style={lined ? { borderTop: `1px solid ${t.line}` } : undefined}
       >
@@ -175,11 +189,12 @@ function HeroSection({
   return (
     <section
       id="start"
+      data-hero-layout="split"
       className={`mx-auto max-w-4xl px-6 pb-16 pt-12 sm:pt-16 ${SECTION_SCROLL}`}
       style={lined ? { borderTop: `1px solid ${t.line}` } : undefined}
     >
-      <div className="grid items-center gap-8 md:grid-cols-2 md:gap-10">
-        <div>
+      <div className="flex flex-col gap-8 md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] md:items-stretch md:gap-10">
+        <div className="flex min-w-0 flex-col justify-center">
           <p className="text-[12px] font-semibold uppercase tracking-[0.18em]" style={{ color: t.accent }}>
             {city}
           </p>
@@ -192,12 +207,12 @@ function HeroSection({
           {ctas ? <div className="mt-7 flex flex-wrap items-center gap-3">{ctas}</div> : null}
         </div>
         <div
-          className="aspect-[4/3] max-h-[26rem] overflow-hidden rounded-3xl"
+          className="relative aspect-[4/3] w-full overflow-hidden rounded-3xl md:aspect-auto md:min-h-[20rem]"
           style={{ border: `1px solid ${t.line}` }}
         >
           {/* Data-URL:er (inga filer i en mediabank) – next/image passar inte här. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={section.image} alt="" className="size-full object-cover" />
+          <img src={section.image} alt="" className="absolute inset-0 size-full object-cover object-center" />
         </div>
       </div>
     </section>

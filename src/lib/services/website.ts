@@ -1,8 +1,19 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
-import type { Website, WebsiteSection, WebsiteSectionItem, WebsiteTheme } from "../types";
+import {
+  PRIMARY_CTA_LABEL_MAX,
+  type Customer,
+  type CustomerRequest,
+  type Website,
+  type WebsiteSection,
+  type WebsiteSectionItem,
+  type WebsiteTheme,
+} from "../types";
 import { logActivity } from "./activity";
 import { createRequest, findOrCreateCustomerByEmail } from "./customers";
+import { getBusinessProfile, getInquiryNotificationEmail, isEmailFormat } from "./settings";
+import { absoluteAppUrl, mailFromAddress, sendMail, type MailMessage } from "../mail";
+import { newQuoteHref } from "../nav";
 
 /**
  * AI-hemsidesgeneratorn är regelbaserad i demon (branschdetektering + mallar).
@@ -173,7 +184,7 @@ export function rewriteSectionHeading(sectionId: string): void {
 
 export function updateSection(
   sectionId: string,
-  fields: { heading?: string; body?: string; image?: string | null },
+  fields: { heading?: string; body?: string; image?: string | null; primaryCtaLabel?: string },
 ): void {
   const site = db().website;
   if (!site) return;
@@ -187,8 +198,21 @@ export function updateSection(
     assertItemImage(fields.image);
     section.image = fields.image;
   }
+  if (fields.primaryCtaLabel !== undefined) {
+    if (section.type !== "hero") {
+      throw new Error("Knapptext kan bara ändras i startsektionen.");
+    }
+    site.primaryCta = { label: normalizePrimaryCtaLabel(fields.primaryCtaLabel) };
+  }
   site.status = site.status === "publicerad" ? "publicerad" : "utkast";
   save();
+}
+
+function normalizePrimaryCtaLabel(raw: string): string {
+  const label = raw.trim();
+  if (!label) throw new Error("Fyll i det här fältet.");
+  if (label.length > PRIMARY_CTA_LABEL_MAX) throw new Error("Knapptexten är för lång.");
+  return label;
 }
 
 const MAX_ITEM_IMAGE_CHARS = 900_000;
@@ -339,24 +363,209 @@ export function publishWebsite(): Website {
   return site;
 }
 
-/** Kontaktformuläret på den publika sajten → kund + förfrågan → syns på Hem. */
-export function submitContactForm(input: {
+const INQUIRY_RATE_LIMIT = { max: 5, windowMs: 60 * 60 * 1000 };
+const INQUIRY_DEDUP_MS = 10 * 60 * 1000;
+
+export interface ContactFormInput {
   name: string;
   email: string;
   phone?: string;
   message: string;
-}): void {
-  const site = db().website;
-  const { customer } = findOrCreateCustomerByEmail(input);
-  const title = input.message.length > 60 ? input.message.slice(0, 57).trimEnd() + "…" : input.message;
-  createRequest({
-    customerId: customer.id,
-    title: title || "Förfrågan via hemsidan",
-    message: input.message,
-    source: "hemsida",
-  });
-  if (site) {
-    site.submissions += 1;
-    save();
+  /** Honeypot – ska vara tomt. */
+  website?: string;
+  idempotencyKey?: string;
+}
+
+export interface ContactFormResult {
+  requestId: string;
+  customerId: string;
+  created: boolean;
+  mailed: boolean;
+}
+
+function inquiryTitleFromMessage(message: string): string {
+  const compact = message.replace(/\s+/g, " ").trim();
+  if (!compact) return "Förfrågan via hemsidan";
+  return compact.length > 60 ? compact.slice(0, 57).trimEnd() + "…" : compact;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function inquiryQuoteCtaHref(customerId: string, requestId: string): string {
+  return newQuoteHref({ kund: customerId, forfragan: requestId });
+}
+
+export function buildInquiryNotificationMail(input: {
+  request: CustomerRequest;
+  customer: Customer;
+  to: string;
+  from: string;
+}): MailMessage {
+  const { request, customer, to, from } = input;
+  const cta = absoluteAppUrl(inquiryQuoteCtaHref(customer.id, request.id));
+  const phone = customer.phone.trim() || "–";
+  const title = request.ai?.workType || request.title;
+  const text = [
+    `Ny förfrågan från ${customer.name}`,
+    "",
+    title,
+    "",
+    request.message,
+    "",
+    `Namn: ${customer.name}`,
+    `E-post: ${customer.email}`,
+    `Telefon: ${phone}`,
+    "",
+    "Skapa offert:",
+    cta,
+  ].join("\n");
+  const html = `<!DOCTYPE html>
+<html><body style="margin:0;padding:16px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a;background:#f6f5f1;">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:24px;">
+    <p style="margin:0 0 8px;font-size:18px;font-weight:600;">Ny förfrågan från ${escapeHtml(customer.name)}</p>
+    <p style="margin:0 0 16px;color:#5a574e;">${escapeHtml(title)}</p>
+    <p style="margin:0 0 20px;white-space:pre-wrap;">${escapeHtml(request.message)}</p>
+    <p style="margin:0 0 4px;">Namn: ${escapeHtml(customer.name)}</p>
+    <p style="margin:0 0 4px;">E-post: ${escapeHtml(customer.email)}</p>
+    <p style="margin:0 0 24px;">Telefon: ${escapeHtml(phone)}</p>
+    <a href="${escapeHtml(cta)}" style="display:inline-block;background:#1e3a5f;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:600;">Skapa offert</a>
+  </div>
+</body></html>`;
+  return {
+    to,
+    from,
+    replyTo: customer.email || undefined,
+    subject: `Ny förfrågan från ${customer.name}`,
+    text,
+    html,
+  };
+}
+
+function findExistingInquiry(input: { email: string; message: string; idempotencyKey?: string }): CustomerRequest | undefined {
+  const data = db();
+  const key = input.idempotencyKey?.trim();
+  if (key) {
+    const byKey = data.requests.find((r) => r.idempotencyKey === key);
+    if (byKey) return byKey;
   }
+  const email = input.email.trim().toLowerCase();
+  const message = input.message.trim();
+  const cutoff = Date.now() - INQUIRY_DEDUP_MS;
+  const customerIds = new Set(data.customers.filter((c) => c.email.toLowerCase() === email).map((c) => c.id));
+  return data.requests.find(
+    (r) =>
+      r.source === "hemsida" &&
+      customerIds.has(r.customerId) &&
+      r.message.trim() === message &&
+      Date.parse(r.createdAt) >= cutoff
+  );
+}
+
+function assertContactInput(input: ContactFormInput): { name: string; email: string; phone: string; message: string } {
+  const name = input.name.trim();
+  const email = input.email.trim();
+  const phone = (input.phone ?? "").trim();
+  const message = input.message.trim();
+  if (!name) throw new Error("Ange ditt namn.");
+  if (name.length > 80) throw new Error("Namnet är för långt.");
+  if (!email || !isEmailFormat(email)) throw new Error("Ange en giltig e-postadress.");
+  if (email.length > 120) throw new Error("E-postadressen är för lång.");
+  if (phone.length > 40) throw new Error("Telefonnumret är för långt.");
+  if (!message) throw new Error("Skriv ett meddelande.");
+  if (message.length > 4000) throw new Error("Meddelandet är för långt.");
+  return { name, email, phone, message };
+}
+
+function assertRateLimit(email: string, exceptId?: string): void {
+  const cutoff = Date.now() - INQUIRY_RATE_LIMIT.windowMs;
+  const emailNorm = email.toLowerCase();
+  const customerIds = new Set(db().customers.filter((c) => c.email.toLowerCase() === emailNorm).map((c) => c.id));
+  let n = 0;
+  for (const r of db().requests) {
+    if (r.id === exceptId) continue;
+    if (r.source !== "hemsida") continue;
+    if (!customerIds.has(r.customerId)) continue;
+    if (Date.parse(r.createdAt) < cutoff) continue;
+    n += 1;
+    if (n >= INQUIRY_RATE_LIMIT.max) {
+      throw new Error("För många förfrågningar. Försök igen om en stund.");
+    }
+  }
+}
+
+function notificationFrom(settings = getBusinessProfile()): string {
+  return mailFromAddress() || settings.email || settings.name;
+}
+
+export async function deliverInquiryNotification(requestId: string): Promise<boolean> {
+  const request = db().requests.find((r) => r.id === requestId);
+  if (!request) return false;
+  if (request.notification?.status === "sent") return true;
+  const customer = db().customers.find((c) => c.id === request.customerId);
+  if (!customer) return false;
+  const to = getInquiryNotificationEmail();
+  if (!to) {
+    markNotification(request, { ok: false, error: "Ingen e-postadress att skicka till." });
+    return false;
+  }
+  const message = buildInquiryNotificationMail({
+    request,
+    customer,
+    to,
+    from: notificationFrom(),
+  });
+  const result = await sendMail(message);
+  markNotification(request, result.ok ? { ok: true } : { ok: false, error: result.error });
+  return result.ok;
+}
+
+function markNotification(request: CustomerRequest, result: { ok: true } | { ok: false; error: string }): void {
+  request.notification = {
+    status: result.ok ? "sent" : "failed",
+    sentAt: result.ok ? new Date().toISOString() : request.notification?.sentAt,
+    lastError: result.ok ? undefined : result.error,
+    attempts: (request.notification?.attempts ?? 0) + 1,
+  };
+  save();
+}
+
+/**
+ * Kontaktformuläret på den publika sajten.
+ * Sparar kund + förfrågan först, mejlar sedan. Mejlfel tappar inte förfrågan.
+ */
+export async function submitContactForm(input: ContactFormInput): Promise<ContactFormResult | { skipped: true }> {
+  if (input.website?.trim()) {
+    return { skipped: true };
+  }
+  const parsed = assertContactInput(input);
+  const existing = findExistingInquiry({
+    email: parsed.email,
+    message: parsed.message,
+    idempotencyKey: input.idempotencyKey,
+  });
+  if (existing) {
+    const mailed = await deliverInquiryNotification(existing.id);
+    return { requestId: existing.id, customerId: existing.customerId, created: false, mailed };
+  }
+  assertRateLimit(parsed.email);
+  const { customer } = findOrCreateCustomerByEmail(parsed);
+  const request = createRequest({
+    customerId: customer.id,
+    title: inquiryTitleFromMessage(parsed.message),
+    message: parsed.message,
+    source: "hemsida",
+    idempotencyKey: input.idempotencyKey?.trim() || undefined,
+  });
+  request.notification = { status: "pending", attempts: 0 };
+  const site = db().website;
+  if (site) site.submissions += 1;
+  save();
+  const mailed = await deliverInquiryNotification(request.id);
+  return { requestId: request.id, customerId: customer.id, created: true, mailed };
 }

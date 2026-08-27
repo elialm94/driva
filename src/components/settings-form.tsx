@@ -18,6 +18,7 @@ import { formatOrgnr, formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "
 import { withReturnTo } from "@/lib/nav";
 import type { IssueBlocker } from "@/lib/invoices/validate";
 import { swedishFormProps } from "@/lib/swedish-validity";
+import { DomainSettingsCard } from "./domain-widgets";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -36,6 +37,7 @@ type FormState = {
   orgNumber: string;
   vatNumber: string;
   email: string;
+  inquiryNotificationEmail: string;
   phone: string;
   websiteUrl: string;
   address: string;
@@ -62,6 +64,7 @@ function fromInitial(initial: CompanySettings, defaults: InvoiceDefaults): FormS
     orgNumber: formatOrgnr(initial.orgNumber),
     vatNumber: initial.vatNumber,
     email: initial.email,
+    inquiryNotificationEmail: initial.inquiryNotificationEmail || initial.email,
     phone: initial.phone,
     websiteUrl: initial.websiteUrl ?? "",
     address: initial.address,
@@ -91,6 +94,7 @@ export function SettingsForm({
   bank,
   returnTo,
   returnLabel,
+  domainSummary = null,
 }: {
   initial: CompanySettings;
   defaults: InvoiceDefaults;
@@ -99,6 +103,7 @@ export function SettingsForm({
   bank: { label: string; href: string } | null;
   returnTo?: string | null;
   returnLabel?: string | null;
+  domainSummary?: { hostname: string; live: boolean } | null;
 }) {
   const router = useRouter();
   const [form, setForm] = useState(() => fromInitial(initial, defaults));
@@ -108,6 +113,7 @@ export function SettingsForm({
   const [extraPay, setExtraPay] = useState(() =>
     Boolean(initial.plusgiro || initial.bankAccount || initial.iban || initial.bic)
   );
+  const [notifyTouched, setNotifyTouched] = useState(() => Boolean(initial.inquiryNotificationEmail));
   const [isPending, startTransition] = useTransition();
   const [resetting, startReset] = useTransition();
   const baseline = useRef(JSON.stringify(fromInitial(initial, defaults)));
@@ -120,6 +126,9 @@ export function SettingsForm({
       const next = { ...prev, [key]: value };
       if (key === "orgNumber" && isOrgnrFormat(String(value)) && !prev.vatNumber.trim()) {
         next.vatNumber = formatVatNumber(String(value));
+      }
+      if (key === "email" && !notifyTouched) {
+        next.inquiryNotificationEmail = String(value);
       }
       return next;
     });
@@ -140,6 +149,7 @@ export function SettingsForm({
         orgNumber: form.orgNumber,
         vatNumber: form.vatNumber,
         email: form.email,
+        inquiryNotificationEmail: form.inquiryNotificationEmail,
         phone: form.phone,
         websiteUrl: form.websiteUrl,
         address: form.address,
@@ -235,6 +245,7 @@ export function SettingsForm({
       >
       {flik === "foretag" ? (
         <div className="space-y-5">
+          <DomainSettingsCard summary={domainSummary} />
           <Card className="space-y-4 p-6">
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Identitet</p>
             <div>
@@ -369,6 +380,30 @@ export function SettingsForm({
               />
             </div>
           </Card>
+
+          <div id="forfragningar" className="scroll-mt-24">
+          <Card className="space-y-4 p-6">
+            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Förfrågningar från hemsidan</p>
+            <div>
+              <label className={labelCls} htmlFor="inquiry-notify-email">
+                Skicka nya förfrågningar till
+              </label>
+              <input
+                id="inquiry-notify-email"
+                type="email"
+                value={form.inquiryNotificationEmail}
+                onChange={(e) => {
+                  setNotifyTouched(true);
+                  patch("inquiryNotificationEmail", e.target.value);
+                }}
+                className={inputCls}
+              />
+              <p className={hintCls}>
+                Standard är företagets e-post. En annan adress här ändrar inte den publika kontaktadressen på hemsidan.
+              </p>
+            </div>
+          </Card>
+          </div>
         </div>
       ) : null}
 

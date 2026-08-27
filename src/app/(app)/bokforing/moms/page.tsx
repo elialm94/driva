@@ -3,6 +3,7 @@ import { kr, datumLang } from "@/lib/format";
 import { Badge, Card, PageHeader, cx } from "@/components/ui";
 import { BackLink } from "@/components/back-link";
 import { GenerateVatReportButton, MarkVatDeclaredButton, PrintButton } from "@/components/bokforing-widgets";
+import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { vatPeriods, vatChecklist } from "@/lib/accounting/vat";
 
 export const metadata = { title: "Moms" };
@@ -18,6 +19,7 @@ export default function MomsPage() {
         subtitle="Momsen räknas direkt ur bokföringen – samma siffror som huvudboken. Kvartalsmoms, deklareras den 12:e andra månaden efter periodens slut."
         actions={<PrintButton />}
       />
+      <BokforingAdvancedTabs />
 
       <div className="space-y-4">
         {periods.map((p) => {

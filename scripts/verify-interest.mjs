@@ -43,7 +43,7 @@ try {
   await sleep(1500);
 
   // 1. Offertformuläret har fältet med standardvärde 10
-  await goto("/pengar/offerter/ny");
+  await goto("/ekonomi/offerter/ny");
   console.log((await has("Dröjsmålsränta (% per år)")) ? "OK  Fält i offertformuläret" : "FEL Fält saknas i offertformuläret");
   await page.evaluate(() => {
     [...document.querySelectorAll("label")]
@@ -53,7 +53,7 @@ try {
   await shot("36-offert-drojsmalsranta");
 
   // 2. Fakturaformuläret har fältet
-  await goto("/pengar/fakturor/ny");
+  await goto("/ekonomi/fakturor/ny");
   console.log((await has("Dröjsmålsränta (%)")) ? "OK  Fält i fakturaformuläret" : "FEL Fält saknas i fakturaformuläret");
 
   // 3. Kundens offert visar villkorstexten

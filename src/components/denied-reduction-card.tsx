@@ -32,7 +32,7 @@ export function DeniedReductionCard({
         setError(result.error);
         return;
       }
-      router.push(`/pengar/fakturor/${result.invoiceId}`);
+      router.push(`/ekonomi/fakturor/${result.invoiceId}`);
     });
   }
 
@@ -65,20 +65,6 @@ export function DeniedReductionCard({
           <AlertTriangle className="size-3.5" /> {error}
         </p>
       ) : null}
-    </Card>
-  );
-}
-
-export function MissingTaxReductionAcceptanceCard() {
-  return (
-    <Card className="mb-6 border-warn/30 bg-warn-soft/40 px-5 py-4">
-      <p className="text-[15px] font-semibold text-ink">Kunden har inte godkänt något ROT/RUT-villkor i Driva.</p>
-      <p className="mt-1.5 text-[14px] leading-relaxed text-soft">
-        Vi rekommenderar att villkoren godkänns innan fakturan skickas.
-      </p>
-      <p className="mt-2 text-[13px] text-muted">
-        Dokumenterat godkännande saknas i Driva. Villkoren är inte avtalade via BankID på en offert.
-      </p>
     </Card>
   );
 }

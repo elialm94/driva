@@ -6,7 +6,7 @@ import { ArrowUpRight, ChevronDown } from "lucide-react";
 import type { AssistantMessage } from "@/lib/types";
 import { AssistantComposer, AssistantMessageList, useAssistantSend } from "./assistant-ui";
 
-const CHIPS = ["Skapa uppdrag", "Vem har inte betalat?", "Skapa offert", "Vad behöver jag göra idag?"];
+const CHIPS = ["Skapa offert", "Vem har inte betalat?", "Vad behöver jag göra idag?"];
 const EXPANDED_KEY = "driva-home-ai-expanded";
 
 function persistExpanded(value: boolean) {

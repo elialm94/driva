@@ -1,0 +1,307 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import {
+  Pencil,
+  ExternalLink,
+  BadgeCheck,
+  FileLock2,
+  Hammer,
+  ShieldCheck,
+} from "lucide-react";
+import { db } from "@/lib/store";
+import {
+  getQuote,
+  currentVersion,
+  quoteSignature,
+  quoteTotals,
+  requireCustomer,
+  quoteVersions,
+} from "@/lib/services/data";
+import { kr, datumTid, datumLang, relativ } from "@/lib/format";
+import { Badge, ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
+import { QuoteStatusBadge, InvoiceStatusBadge } from "@/components/status";
+import { QuoteDocument } from "@/components/quote-document";
+import { ActionMenu, PageActions, actionMenuItemClassName } from "@/components/action-menu";
+import { CopyLinkButton } from "@/components/copy-button";
+import { CreatePartInvoiceButton, FollowUpButton } from "@/components/money-widgets";
+import { QuoteDraftSend } from "@/components/quote-draft-send";
+import { sendQuoteAction } from "@/app/actions";
+import { docTotals } from "@/lib/calc";
+import { BackLink } from "@/components/back-link";
+import { hrefWithNav, invoiceHref, sanitizeReturnLabel, sanitizeReturnTo, withReturnTo } from "@/lib/nav";
+
+export const metadata = { title: "Offert" };
+
+export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]">) {
+  const { id } = await props.params;
+  const searchParams = await props.searchParams;
+  const quote = getQuote(id);
+  if (!quote) notFound();
+  const data = db();
+  const version = currentVersion(quote);
+  const customer = requireCustomer(quote.customerId);
+  const signature = quoteSignature(quote.id);
+  const totals = quoteTotals(quote);
+  const versions = quoteVersions(quote.id);
+  const relatedInvoices = data.invoices.filter((i) => i.quoteId === quote.id);
+  const job = quote.jobId ? data.jobs.find((j) => j.id === quote.jobId) : undefined;
+  const publicPath = `/offert/${quote.token}`;
+  const returnTo = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : undefined;
+  const returnLabel =
+    typeof searchParams.tillbakaNamn === "string" ? sanitizeReturnLabel(searchParams.tillbakaNamn) ?? undefined : undefined;
+  const nav = { returnTo, returnLabel };
+  const fromHere = { href: hrefWithNav(`/ekonomi/offerter/${quote.id}`, nav), label: `Offert #${quote.number}` };
+  const editHref = hrefWithNav(`/ekonomi/offerter/${quote.id}/redigera`, nav);
+  const isDraft = quote.status === "utkast";
+  const justSent = typeof searchParams.skickad === "string" && searchParams.skickad === "1" && !isDraft;
+  const addEmailHref = withReturnTo(`/kunder/${customer.id}`, fromHere.href, fromHere.label);
+
+  const invoicedTotal = relatedInvoices
+    .filter((i) => i.status !== "krediterad")
+    .reduce((s, i) => s + docTotals(i.lines, i.rot).total, 0);
+
+  const doc = (
+    <QuoteDocument company={data.settings} customer={customer} quote={quote} version={version} signature={signature} />
+  );
+
+  return (
+    <div className="animate-fade-up">
+      <div className="mb-2.5">
+        <BackLink fallbackHref="/ekonomi?flik=offerter" fallbackLabel="Offerter" />
+      </div>
+      <Breadcrumbs
+        items={[
+          { href: "/ekonomi", label: "Ekonomi" },
+          { href: "/ekonomi?flik=offerter", label: "Offerter" },
+          { label: `#${quote.number}` },
+        ]}
+      />
+
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-[26px] font-semibold tracking-tight">Offert #{quote.number}</h1>
+            <QuoteStatusBadge quote={quote} />
+            {version.lockedAt ? (
+              <Badge tone="bankid">
+                <FileLock2 className="size-3" /> Version {version.version} låst
+              </Badge>
+            ) : null}
+          </div>
+          <p className="mt-1 text-[15px] text-soft">
+            {version.title} · <Link href={`/kunder/${customer.id}` as never} className="font-medium text-ink hover:underline">{customer.name}</Link> · {kr(totals.toPay)}
+          </p>
+        </div>
+
+        <div className="min-w-0">
+          {isDraft ? (
+            <PageActions>
+              <ButtonLink href={editHref} variant="secondary">
+                <Pencil className="size-4" /> Redigera
+              </ButtonLink>
+              <QuoteDraftSend
+                customerName={customer.name}
+                amount={totals.toPay}
+                validUntilLabel={datumLang(version.validUntil)}
+                sendAction={sendQuoteAction.bind(null, quote.id)}
+                detailHref={fromHere.href}
+                recipientEmail={customer.email}
+                addEmailHref={addEmailHref}
+              />
+            </PageActions>
+          ) : null}
+          {quote.status === "skickad" ? (
+            <PageActions>
+              <FollowUpButton quoteId={quote.id} />
+              <a href={publicPath} target="_blank" rel="noreferrer" className={buttonClasses("secondary")}>
+                <ExternalLink className="size-4" /> Öppna kundvyn
+              </a>
+              <ActionMenu>
+                <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
+              </ActionMenu>
+            </PageActions>
+          ) : null}
+          {quote.status === "godkand" || quote.status === "avbojd" ? (
+            <PageActions>
+              <ButtonLink href={editHref} variant="secondary">
+                <Pencil className="size-4" /> Ny version
+              </ButtonLink>
+              <ActionMenu>
+                <a
+                  href={publicPath}
+                  target="_blank"
+                  rel="noreferrer"
+                  role="menuitem"
+                  className={actionMenuItemClassName()}
+                >
+                  <ExternalLink className="size-3.5" /> Öppna kundvyn
+                </a>
+                <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
+              </ActionMenu>
+            </PageActions>
+          ) : null}
+        </div>
+      </div>
+
+      {justSent ? (
+        <Card className="mb-6 border-ok/20 bg-ok-soft/50 px-5 py-4 text-[14px] text-soft">
+          <span className="font-medium text-ok">
+            Offert #{quote.number} skickades till {customer.name}.
+          </span>
+        </Card>
+      ) : null}
+
+      {quote.status === "skickad" ? (
+        <Card className="mb-6 flex items-start gap-3 border-warn/20 bg-warn-soft/40 px-5 py-4">
+          <ShieldCheck className="mt-0.5 size-5 shrink-0 text-warn" />
+          <div className="text-[14px] leading-relaxed text-soft">
+            <span className="font-medium text-ink">Väntar på BankID-godkännande.</span> Skickad {quote.sentAt ? relativ(quote.sentAt) : ""}
+            {quote.viewedAt ? `, öppnad av kunden ${relativ(quote.viewedAt)}` : ", inte öppnad ännu"}.
+            {quote.followUps.length > 0 ? ` ${quote.followUps.length} påminnelse${quote.followUps.length > 1 ? "r" : ""} skickad.` : ""}{" "}
+            I demoläget kan du öppna kundvyn själv och genomföra BankID-flödet.
+          </div>
+        </Card>
+      ) : null}
+
+      {signature ? (
+        <Card className="mb-6 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
+              <div>
+                <p className="text-[15px] font-semibold text-ok">Godkänd med BankID</p>
+                <p className="text-[14px] text-soft">
+                  {signature.signerName} · {datumTid(signature.signedAt)}
+                </p>
+                <p className="mt-1 text-[12px] text-muted">
+                  Version {version.version} är låst och kan verifieras mot signeringsunderlaget. Ändringar kräver en ny version och ny signering.
+                </p>
+              </div>
+            </div>
+            <a
+              href={`${publicPath}/underlag`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line-strong px-3.5 text-[13px] font-medium text-ink hover:bg-canvas"
+            >
+              <FileLock2 className="size-3.5" /> Visa signeringsunderlag
+            </a>
+          </div>
+        </Card>
+      ) : null}
+
+      <div className="grid gap-8 lg:grid-cols-[1fr_300px]">
+        <div className="overflow-hidden rounded-2xl border border-line shadow-card">{doc}</div>
+
+        <div className="space-y-8">
+          {quote.status === "godkand" ? (
+            <div>
+              <SectionTitle>Nästa steg</SectionTitle>
+              <Card className="space-y-3 px-5 py-4">
+                {job ? (
+                  <Link href={hrefWithNav(`/uppdrag/${job.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label }) as never} className="flex items-center gap-3 rounded-xl border border-line px-4 py-3 transition-colors hover:bg-canvas">
+                    <Hammer className="size-4 text-accent" />
+                    <div className="flex-1">
+                      <p className="text-[14px] font-medium">{job.title}</p>
+                      <p className="text-[12px] text-muted">Uppdrag</p>
+                    </div>
+                  </Link>
+                ) : null}
+                {version.paymentPlan.map((part, i) => {
+                  const alreadyInvoiced = i < relatedInvoices.filter((inv) => inv.status !== "krediterad").length;
+                  const partAmount = Math.round((totals.total * part.percent) / 100);
+                  if (invoicedTotal >= totals.total) return null;
+                  return alreadyInvoiced ? null : (
+                    <div key={i} className="flex items-center justify-between gap-2">
+                      <p className="text-[13px] text-soft">
+                        {part.label} · {kr(partAmount)}
+                      </p>
+                      <CreatePartInvoiceButton
+                        quoteId={quote.id}
+                        partIndex={i}
+                        label="Fakturera"
+                        returnTo={fromHere.href}
+                        returnLabel={fromHere.label}
+                      />
+                    </div>
+                  );
+                })}
+                {invoicedTotal >= totals.total ? (
+                  <p className="text-[13px] text-muted">Hela offerten är fakturerad.</p>
+                ) : null}
+              </Card>
+            </div>
+          ) : null}
+
+          {relatedInvoices.length > 0 ? (
+            <div>
+              <SectionTitle>Fakturor</SectionTitle>
+              <Card className="divide-y divide-line/70">
+                {relatedInvoices.map((inv) => (
+                  <Link
+                    key={inv.id}
+                    href={invoiceHref(inv.id, fromHere) as never}
+                    className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-canvas/60 first:rounded-t-[calc(1.25rem-1px)] last:rounded-b-[calc(1.25rem-1px)]"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[14px] font-medium">#{inv.number}</p>
+                      <p className="text-[12px] text-muted">{kr(docTotals(inv.lines, inv.rot).toPay)}</p>
+                    </div>
+                    <InvoiceStatusBadge invoice={inv} />
+                  </Link>
+                ))}
+              </Card>
+            </div>
+          ) : null}
+
+          <div>
+            <SectionTitle>Tidslinje</SectionTitle>
+            <Card className="px-5 py-4">
+              <ol className="space-y-3">
+                {[
+                  { label: "Skapad", at: quote.createdAt, done: true },
+                  { label: "Skickad", at: quote.sentAt, done: !!quote.sentAt },
+                  { label: "Öppnad av kunden", at: quote.viewedAt, done: !!quote.viewedAt },
+                  ...quote.followUps.map((f, i) => ({ label: `Påminnelse ${i + 1}`, at: f as string | undefined, done: true })),
+                  quote.status === "avbojd"
+                    ? { label: "Avböjd", at: quote.decidedAt, done: true }
+                    : { label: "Godkänd med BankID", at: signature?.signedAt, done: !!signature },
+                ].map((step, i) => (
+                  <li key={i} className="flex items-start gap-3">
+                    <span
+                      className={cx(
+                        "mt-1 size-2 shrink-0 rounded-full",
+                        step.done ? "bg-accent" : "border border-line-strong bg-card"
+                      )}
+                    />
+                    <div>
+                      <p className={cx("text-[13px] font-medium", step.done ? "text-ink" : "text-muted")}>{step.label}</p>
+                      {step.at && step.done ? <p className="text-[12px] text-muted">{datumTid(step.at)}</p> : null}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </Card>
+          </div>
+
+          {versions.length > 1 ? (
+            <div>
+              <SectionTitle>Versioner</SectionTitle>
+              <Card className="divide-y divide-line/70">
+                {versions.map((v) => (
+                  <div key={v.id} className="flex items-center justify-between px-4 py-3 text-[13px]">
+                    <span className={v.id === version.id ? "font-medium text-ink" : "text-soft"}>
+                      Version {v.version}
+                      {v.id === version.id ? " (aktuell)" : ""}
+                    </span>
+                    {v.lockedAt ? <Badge tone="bankid">Låst</Badge> : <Badge tone="neutral">Utkast</Badge>}
+                  </div>
+                ))}
+              </Card>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

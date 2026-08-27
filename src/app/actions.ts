@@ -20,6 +20,12 @@ import {
 } from "@/lib/services/invoices";
 import { InvoiceNotReadyError } from "@/lib/invoices/validate";
 import { getInvoice } from "@/lib/services/data";
+import {
+  createTaxReductionUnderlag,
+  patchTaxReductionFields,
+  setTaxReductionDecision,
+} from "@/lib/services/tax-reduction";
+import type { DwellingType, TaxReductionDetails } from "@/lib/types";
 import { updateCompanySettings, type CompanySettingsInput } from "@/lib/services/settings";
 import { createCustomer, createRequest, updateCustomer, updateCustomerNotes } from "@/lib/services/customers";
 import {
@@ -128,7 +134,7 @@ export async function createRequestAction(input: {
 export async function createQuoteAction(input: QuoteInput, nav?: ReturnNav): Promise<never> {
   const quote = createQuote(input);
   refresh();
-  redirect(hrefWithNav(`/pengar/offerter/${quote.id}`, nav));
+  redirect(hrefWithNav(`/ekonomi/offerter/${quote.id}`, nav));
 }
 
 export async function updateQuoteAction(quoteId: string, input: QuoteVersionInput) {
@@ -136,9 +142,19 @@ export async function updateQuoteAction(quoteId: string, input: QuoteVersionInpu
   refresh();
 }
 
-export async function sendQuoteAction(quoteId: string) {
-  sendQuote(quoteId);
-  refresh();
+export async function sendQuoteAction(
+  quoteId: string
+): Promise<{ ok: true } | { ok: false; errors: string[] }> {
+  try {
+    sendQuote(quoteId);
+    refresh();
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      errors: [e instanceof Error ? e.message : "Kunde inte skicka offerten."],
+    };
+  }
 }
 
 export async function followUpQuoteAction(quoteId: string) {
@@ -215,7 +231,7 @@ export async function createPartInvoiceAction(quoteId: string, partIndex: number
 export async function createInvoiceAction(input: InvoiceInput, nav?: ReturnNav): Promise<never> {
   const inv = createInvoice(input);
   refresh();
-  redirect(hrefWithNav(`/pengar/fakturor/${inv.id}`, nav));
+  redirect(hrefWithNav(`/ekonomi/fakturor/${inv.id}`, nav));
 }
 
 export async function updateInvoiceAction(
@@ -225,7 +241,7 @@ export async function updateInvoiceAction(
 ): Promise<never> {
   const inv = updateInvoice(invoiceId, input);
   refresh();
-  redirect(hrefWithNav(`/pengar/fakturor/${inv.id}`, nav));
+  redirect(hrefWithNav(`/ekonomi/fakturor/${inv.id}`, nav));
 }
 
 export async function sendInvoiceAction(
@@ -264,7 +280,7 @@ export async function deliverInvoiceAction(
 export async function discardInvoiceAction(invoiceId: string): Promise<never> {
   discardInvoice(invoiceId);
   refresh();
-  redirect("/pengar?flik=fakturor");
+  redirect("/ekonomi?flik=fakturor");
 }
 
 export async function sendReminderAction(invoiceId: string) {
@@ -295,6 +311,56 @@ export async function createDeniedReductionInvoiceAction(
     return { ok: true, invoiceId: inv.id };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Kunde inte skapa fakturautkast." };
+  }
+}
+
+export async function createTaxReductionUnderlagAction(input: {
+  jobId?: string;
+  invoiceId?: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    createTaxReductionUnderlag(input);
+    refresh();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Kunde inte skapa underlag." };
+  }
+}
+
+export async function setTaxReductionDecisionAction(input: {
+  jobId?: string;
+  invoiceId?: string;
+  outcome: "godkant" | "delvis_godkant" | "nekat";
+  deniedAmount?: number;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    setTaxReductionDecision(input);
+    refresh();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara beslut." };
+  }
+}
+
+export async function patchTaxReductionFieldsAction(input: {
+  jobId?: string;
+  invoiceId?: string;
+  personalIdentityNumber?: string;
+  details?: Partial<TaxReductionDetails>;
+  dwellingType?: DwellingType;
+  propertyDesignation?: string;
+  brfOrgNumber?: string;
+  apartmentNumber?: string;
+  workAddress?: string;
+  workPeriodStart?: string;
+  workPeriodEnd?: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    patchTaxReductionFields(input);
+    refresh();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara uppgiften." };
   }
 }
 
@@ -334,7 +400,7 @@ export async function generateWebsiteAction(description: string) {
 
 export async function updateSectionAction(
   sectionId: string,
-  fields: { heading?: string; body?: string; image?: string | null },
+  fields: { heading?: string; body?: string; image?: string | null; primaryCtaLabel?: string },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     updateSection(sectionId, fields);
@@ -417,9 +483,16 @@ export async function submitContactFormAction(input: {
   email: string;
   phone?: string;
   message: string;
-}) {
-  submitContactForm(input);
-  refresh();
+  website?: string;
+  idempotencyKey?: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await submitContactForm(input);
+    refresh();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Kunde inte skicka förfrågan." };
+  }
 }
 
 /* --------------------------------- Assistent -------------------------------- */
@@ -430,7 +503,7 @@ export async function sendAssistantMessageAction(text: string) {
 }
 
 export async function confirmAssistantActionAction(actionId: string) {
-  confirmPendingAction(actionId);
+  await confirmPendingAction(actionId);
   refresh();
 }
 

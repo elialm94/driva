@@ -177,7 +177,7 @@ function lineDiffs(invoice: Invoice, version: QuoteVersion): { addedLines: Quote
 
 function tillaggHrefFor(invoice: Invoice): string {
   const params = new URLSearchParams({ kund: invoice.customerId, tillaggFran: invoice.id });
-  return `/pengar/offerter/ny?${params.toString()}`;
+  return `/ekonomi/offerter/ny?${params.toString()}`;
 }
 
 export function invoiceQuoteDeviation(invoice: Invoice): QuoteDeviation | null {

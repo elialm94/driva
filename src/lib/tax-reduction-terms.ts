@@ -3,7 +3,7 @@ import { kr } from "./format";
 
 /**
  * Central ROT/RUT-villkorstext.
- * Alla vyer (offert, förhandsgranskning, BankID, faktura, PDF) läser härifrån.
+ * Alla vyer (offert, offertdetalj, BankID, faktura, PDF) läser härifrån.
  * Ändra v1-texten här – eller lägg till en ny version – i stället för att duplicera copy.
  */
 export const TAX_REDUCTION_TERMS_VERSION = "v1";

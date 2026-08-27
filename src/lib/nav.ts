@@ -10,7 +10,7 @@ export type NavSection =
   | "hem"
   | "kunder"
   | "uppdrag"
-  | "pengar"
+  | "ekonomi"
   | "bokforing"
   | "hemsida"
   | "assistent";
@@ -19,23 +19,69 @@ export const NAV_ITEMS: { href: string; section: NavSection; label: string }[] =
   { href: "/", section: "hem", label: "Hem" },
   { href: "/kunder", section: "kunder", label: "Kunder" },
   { href: "/uppdrag", section: "uppdrag", label: "Uppdrag" },
-  { href: "/pengar", section: "pengar", label: "Pengar" },
+  { href: "/ekonomi", section: "ekonomi", label: "Ekonomi" },
   { href: "/bokforing", section: "bokforing", label: "Bokföring" },
   { href: "/hemsida", section: "hemsida", label: "Hemsida" },
   { href: "/assistent", section: "assistent", label: "Assistent" },
 ];
 
-export const PENGAR_TABS = [
-  { key: "offerter", href: "/pengar?flik=offerter", label: "Offerter" },
-  { key: "fakturor", href: "/pengar?flik=fakturor", label: "Fakturor" },
-  { key: "utgifter", href: "/pengar?flik=utgifter", label: "Utgifter & kvitton" },
-  { key: "bank", href: "/pengar?flik=bank", label: "Bank" },
+export const KUNDER_TABS = [
+  { key: "kunder", href: "/kunder", label: "Kunder" },
+  { key: "forfragningar", href: "/kunder?flik=forfragningar", label: "Förfrågningar" },
 ] as const;
 
-export type PengarTab = (typeof PENGAR_TABS)[number]["key"];
+export type KunderTab = (typeof KUNDER_TABS)[number]["key"];
+
+export const EKONOMI_TABS = [
+  { key: "offerter", href: "/ekonomi?flik=offerter", label: "Offerter" },
+  { key: "fakturor", href: "/ekonomi?flik=fakturor", label: "Fakturor" },
+  { key: "utgifter", href: "/ekonomi?flik=utgifter", label: "Utgifter & kvitton" },
+  { key: "bank", href: "/ekonomi?flik=bank", label: "Bank" },
+] as const;
+
+export type EkonomiTab = (typeof EKONOMI_TABS)[number]["key"];
+
+/** Avancerad bokföring – en ingång, flikar till befintliga underlag. */
+export const BOKFORING_DETAIL_TABS = [
+  { key: "verifikationer", href: "/bokforing/verifikationer", label: "Verifikationer" },
+  { key: "huvudbok", href: "/bokforing/huvudbok", label: "Huvudbok" },
+  { key: "rapporter", href: "/bokforing/resultat", label: "Rapporter" },
+  { key: "moms", href: "/bokforing/moms", label: "Moms" },
+  { key: "bokslut", href: "/bokforing/bokslut", label: "Bokslut" },
+] as const;
+
+export const BOKFORING_REPORT_TABS = [
+  { key: "saldobalans", href: "/bokforing/saldobalans", label: "Saldobalans" },
+  { key: "resultat", href: "/bokforing/resultat", label: "Resultat" },
+  { key: "balans", href: "/bokforing/balans", label: "Balans" },
+] as const;
+
+export const BOKFORING_FLIK_HREF: Record<string, string> = {
+  verifikationer: "/bokforing/verifikationer",
+  huvudbok: "/bokforing/huvudbok",
+  rapporter: "/bokforing/resultat",
+  moms: "/bokforing/moms",
+  bokslut: "/bokforing/bokslut",
+  saldobalans: "/bokforing/saldobalans",
+  resultat: "/bokforing/resultat",
+  balans: "/bokforing/balans",
+};
+
+const BOKFORING_REPORT_PATHS = BOKFORING_REPORT_TABS.map((t) => t.href);
+
+export function bokforingDetailTabForPath(pathname: string): (typeof BOKFORING_DETAIL_TABS)[number]["key"] | null {
+  const path = pathname.split("?")[0] ?? pathname;
+  if (path === "/bokforing/verifikationer") return "verifikationer";
+  if (path === "/bokforing/huvudbok") return "huvudbok";
+  if ((BOKFORING_REPORT_PATHS as readonly string[]).includes(path)) return "rapporter";
+  if (path === "/bokforing/moms") return "moms";
+  if (path === "/bokforing/bokslut") return "bokslut";
+  if (path === "/bokforing/detaljer") return "verifikationer";
+  return null;
+}
 
 export interface RouteMeta {
-  /** Path pattern, e.g. /pengar/fakturor/:id */
+  /** Path pattern, e.g. /ekonomi/fakturor/:id */
   pattern: string;
   section: NavSection | null;
   /** Fallback parent href. `:param` tokens are filled from the current path. */
@@ -53,13 +99,14 @@ export interface RouteMeta {
  * so the app sidebar is not considered active there.
  */
 export const ROUTES: RouteMeta[] = [
-  { pattern: "/pengar/fakturor/:id/redigera", section: "pengar", parent: "/pengar/fakturor/:id", label: "Redigera faktura", backLabel: "Faktura", showBack: true },
-  { pattern: "/pengar/fakturor/ny", section: "pengar", parent: "/pengar?flik=fakturor", label: "Ny faktura", backLabel: "Fakturor", showBack: true },
-  { pattern: "/pengar/fakturor/:id", section: "pengar", parent: "/pengar?flik=fakturor", label: "Faktura", backLabel: "Fakturor", showBack: true },
-  { pattern: "/pengar/offerter/:id/redigera", section: "pengar", parent: "/pengar/offerter/:id", label: "Redigera offert", backLabel: "Offert", showBack: true },
-  { pattern: "/pengar/offerter/ny", section: "pengar", parent: "/pengar?flik=offerter", label: "Ny offert", backLabel: "Offerter", showBack: true },
-  { pattern: "/pengar/offerter/:id", section: "pengar", parent: "/pengar?flik=offerter", label: "Offert", backLabel: "Offerter", showBack: true },
-  { pattern: "/pengar", section: "pengar", label: "Pengar" },
+  { pattern: "/ekonomi/fakturor/:id/redigera", section: "ekonomi", parent: "/ekonomi/fakturor/:id", label: "Redigera faktura", backLabel: "Faktura", showBack: true },
+  { pattern: "/ekonomi/fakturor/ny", section: "ekonomi", parent: "/ekonomi?flik=fakturor", label: "Ny faktura", backLabel: "Fakturor", showBack: true },
+  { pattern: "/ekonomi/fakturor/:id", section: "ekonomi", parent: "/ekonomi?flik=fakturor", label: "Faktura", backLabel: "Fakturor", showBack: true },
+  { pattern: "/ekonomi/offerter/:id/redigera", section: "ekonomi", parent: "/ekonomi/offerter/:id", label: "Redigera offert", backLabel: "Offert", showBack: true },
+  { pattern: "/ekonomi/offerter/ny", section: "ekonomi", parent: "/ekonomi?flik=offerter", label: "Ny offert", backLabel: "Offerter", showBack: true },
+  { pattern: "/ekonomi/offerter/:id", section: "ekonomi", parent: "/ekonomi?flik=offerter", label: "Offert", backLabel: "Offerter", showBack: true },
+  { pattern: "/ekonomi", section: "ekonomi", label: "Ekonomi" },
+  { pattern: "/kunder/forfragningar/:id", section: "kunder", parent: "/kunder?flik=forfragningar", label: "Förfrågan", backLabel: "Förfrågningar", showBack: true },
   { pattern: "/kunder/:id", section: "kunder", parent: "/kunder", label: "Kund", backLabel: "Kunder", showBack: true },
   { pattern: "/kunder", section: "kunder", label: "Kunder" },
   { pattern: "/uppdrag/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
@@ -73,9 +120,11 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/bokforing/balans", section: "bokforing", parent: "/bokforing", label: "Balansrapport", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/moms", section: "bokforing", parent: "/bokforing", label: "Moms", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/bokslut", section: "bokforing", parent: "/bokforing", label: "Bokslut", backLabel: "Bokföring", showBack: true },
+  { pattern: "/bokforing/detaljer", section: "bokforing", parent: "/bokforing", label: "Bokföringsdetaljer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing", section: "bokforing", label: "Bokföring" },
   { pattern: "/installningar", section: null, label: "Inställningar" },
   { pattern: "/foretag", section: null, parent: "/installningar", label: "Företagsuppgifter" },
+  { pattern: "/hemsida/doman", section: "hemsida", parent: "/hemsida", label: "Domän", backLabel: "Hemsida", showBack: true },
   { pattern: "/hemsida", section: "hemsida", label: "Hemsida" },
   { pattern: "/assistent", section: "assistent", label: "Assistent" },
   { pattern: "/", section: "hem", label: "Hem" },
@@ -89,6 +138,7 @@ const APP_PATH_PREFIXES = [
   "/kunder",
   "/uppdrag",
   "/jobb",
+  "/ekonomi",
   "/pengar",
   "/bokforing",
   "/hemsida",
@@ -109,7 +159,7 @@ export interface MatchedRoute {
 }
 
 export function matchRoute(pathname: string): MatchedRoute | null {
-  const path = normalizePathname(pathname);
+  const path = rewritePengarPath(normalizePathname(pathname));
   for (const meta of ROUTES) {
     const params = matchPattern(meta.pattern, path);
     if (params) return { meta, params, pathname: path };
@@ -129,19 +179,21 @@ export function isSectionActive(pathname: string, href: string): boolean {
 }
 
 export function labelForHref(href: string): string {
-  const { pathname, searchParams } = splitHref(href);
-  if (pathname === "/pengar") {
+  const { pathname: rawPath, searchParams } = splitHref(href);
+  const pathname = rewritePengarPath(rawPath);
+  if (pathname === "/ekonomi") {
     const flik = searchParams.get("flik");
-    const tab = PENGAR_TABS.find((t) => t.key === flik);
+    const tab = EKONOMI_TABS.find((t) => t.key === flik);
     if (tab) return tab.label;
-    return "Pengar";
+    return "Ekonomi";
   }
   const matched = matchRoute(pathname);
   if (!matched) return "Tillbaka";
   if (matched.meta.pattern === "/uppdrag/:id" || matched.meta.pattern === "/jobb/:id") return "Uppdrag";
   if (matched.meta.pattern === "/kunder/:id") return "Kunder";
-  if (matched.meta.pattern === "/pengar/fakturor/:id") return "Faktura";
-  if (matched.meta.pattern === "/pengar/offerter/:id") return "Offert";
+  if (matched.meta.pattern === "/kunder/forfragningar/:id") return "Förfrågningar";
+  if (matched.meta.pattern === "/ekonomi/fakturor/:id") return "Faktura";
+  if (matched.meta.pattern === "/ekonomi/offerter/:id") return "Offert";
   return matched.meta.label;
 }
 
@@ -171,12 +223,12 @@ export function resolveBack(
 ): { href: string; label: string } | null {
   const fromParam = sanitizeReturnTo(search.get(RETURN_TO_PARAM));
   const labelParam = sanitizeReturnLabel(search.get(RETURN_LABEL_PARAM));
-  const current = normalizePathname(pathname);
-  if (fromParam && splitHref(fromParam).pathname !== current) {
+  const current = rewritePengarPath(normalizePathname(pathname));
+  if (fromParam && rewritePengarPath(splitHref(fromParam).pathname) !== current) {
     return { href: fromParam, label: labelParam ?? labelForHref(fromParam) };
   }
 
-  if (current === "/pengar/offerter/ny" || current === "/pengar/fakturor/ny") {
+  if (current === "/ekonomi/offerter/ny" || current === "/ekonomi/fakturor/ny") {
     const jobId = sanitizeId(search.get("job") ?? search.get("uppdrag"));
     if (jobId) {
       const href = `/uppdrag/${jobId}`;
@@ -187,7 +239,7 @@ export function resolveBack(
     }
     const invoiceId = sanitizeId(search.get("tillaggFran"));
     if (invoiceId) {
-      return { href: `/pengar/fakturor/${invoiceId}`, label: labelParam ?? "Faktura" };
+      return { href: `/ekonomi/fakturor/${invoiceId}`, label: labelParam ?? "Faktura" };
     }
   }
 
@@ -219,13 +271,22 @@ export function preserveReturnTo(href: string, search: { get(name: string): stri
 }
 
 export function quoteHref(id: string, from?: { href: string; label?: string }): string {
-  const path = `/pengar/offerter/${id}`;
+  const path = `/ekonomi/offerter/${id}`;
   return from ? withReturnTo(path, from.href, from.label) : path;
 }
 
 export function invoiceHref(id: string, from?: { href: string; label?: string }): string {
-  const path = `/pengar/fakturor/${id}`;
+  const path = `/ekonomi/fakturor/${id}`;
   return from ? withReturnTo(path, from.href, from.label) : path;
+}
+
+export function inquiryHref(id: string, from?: { href: string; label?: string }): string {
+  const path = `/kunder/forfragningar/${id}`;
+  return from ? withReturnTo(path, from.href, from.label) : path;
+}
+
+export function kunderInboxHref(): string {
+  return "/kunder?flik=forfragningar";
 }
 
 export function newQuoteHref(params: {
@@ -241,12 +302,12 @@ export function newQuoteHref(params: {
   if (params.forfragan) search.set("forfragan", params.forfragan);
   if (params.tillaggFran) search.set("tillaggFran", params.tillaggFran);
   const qs = search.toString();
-  const path = qs ? `/pengar/offerter/ny?${qs}` : "/pengar/offerter/ny";
+  const path = qs ? `/ekonomi/offerter/ny?${qs}` : "/ekonomi/offerter/ny";
   return params.from ? withReturnTo(path, params.from.href, params.from.label) : path;
 }
 
 export function newInvoiceHref(params?: { kund?: string; from?: { href: string; label?: string } }): string {
-  const path = params?.kund ? `/pengar/fakturor/ny?kund=${encodeURIComponent(params.kund)}` : "/pengar/fakturor/ny";
+  const path = params?.kund ? `/ekonomi/fakturor/ny?kund=${encodeURIComponent(params.kund)}` : "/ekonomi/fakturor/ny";
   return params?.from ? withReturnTo(path, params.from.href, params.from.label) : path;
 }
 
@@ -273,7 +334,7 @@ export function sanitizeReturnTo(raw: string | null | undefined, depth = 0): str
   if (hashIndex >= 0) value = value.slice(0, hashIndex);
 
   const { pathname, searchParams } = splitHref(value);
-  const path = rewriteJobPath(normalizePathname(pathname));
+  const path = rewritePengarPath(rewriteJobPath(normalizePathname(pathname)));
   if (!isInternalAppPath(path)) return null;
 
   const allowed = new URLSearchParams();
@@ -311,6 +372,12 @@ function isInternalAppPath(pathname: string): boolean {
 function rewriteJobPath(pathname: string): string {
   if (pathname === "/jobb") return "/uppdrag";
   if (pathname.startsWith("/jobb/")) return `/uppdrag/${pathname.slice("/jobb/".length)}`;
+  return pathname;
+}
+
+function rewritePengarPath(pathname: string): string {
+  if (pathname === "/pengar") return "/ekonomi";
+  if (pathname.startsWith("/pengar/")) return `/ekonomi/${pathname.slice("/pengar/".length)}`;
   return pathname;
 }
 

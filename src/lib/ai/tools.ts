@@ -17,6 +17,7 @@ import {
   createInvoiceDraft,
   createJobDraft,
   createQuoteDraft,
+  listOpenInquiriesResult,
   missingReceiptsResult,
   momsResult,
   offerCreateCustomer,
@@ -32,6 +33,9 @@ import {
   spendingRoomResult,
   todayAttentionResult,
   unpaidInvoicesResult,
+  checkDomainAvailabilityResult,
+  getDomainStatusResult,
+  requestPurchaseDomain,
   type DomainResult,
 } from "./domain";
 import { currentVersion, getCustomer, getInvoice, getJob, getQuote, isOverdue } from "../services/data";
@@ -59,7 +63,7 @@ export type ToolResult = {
   requiresConfirmation?: boolean;
 };
 
-type ToolHandler = (args: Record<string, unknown>) => ToolResult;
+type ToolHandler = (args: Record<string, unknown>) => ToolResult | Promise<ToolResult>;
 
 type ToolSpec = {
   def: AiToolDef;
@@ -153,6 +157,19 @@ const specs: ToolSpec[] = [
       const jobs = db().jobs.filter((j) => j.customerId === c.id).map(compactJob);
       return { ok: true, forModel: { customer: compactCustomer(c), jobs } };
     },
+  },
+  {
+    requiresConfirmation: false,
+    def: {
+      type: "function",
+      function: {
+        name: "list_open_inquiries",
+        description:
+          "Lista öppna förfrågningar (list open inquiries). Samma inbox som Kunder → Förfrågningar. Använd före create_quote när användaren nämner en förfrågan, t.ex. Karins bokhylla.",
+        parameters: obj({ q: { type: "string", description: "Valfritt sökord: kund, företag, text" } }),
+      },
+    },
+    handler: (args) => fromDomain(listOpenInquiriesResult(str(args, "q"))),
   },
   {
     requiresConfirmation: false,
@@ -518,7 +535,7 @@ const specs: ToolSpec[] = [
       type: "function",
       function: {
         name: "update_assignment_status",
-        description: "Uppdatera uppdragsstatus (update job status): kommande, pagar, klart.",
+        description: "Markera uppdrag som klart (mark job done). Pågår räknas från startdatum – använd inte pagar för att starta arbete.",
         parameters: obj(
           {
             jobId: { type: "string" },
@@ -547,7 +564,7 @@ const specs: ToolSpec[] = [
       function: {
         name: "create_quote",
         description:
-          "Skapa offertutkast (create quote draft). Skickas inte. amountInclVat i kronor inkl. moms. ROT/RUT-villkor läggs till av offerttjänsten – skriv inte egna villkor.",
+          "Skapa offertutkast (create quote draft). Skickas inte. amountInclVat i kronor inkl. moms. ROT/RUT-villkor läggs till av offerttjänsten – skriv inte egna villkor. Om kunden har en öppen förfrågan (t.ex. Karins bokhylla) kopplas den automatiskt och markeras som hanterad – samma objekt som i inboxen.",
         parameters: obj(
           {
             customerName: { type: "string" },
@@ -556,6 +573,7 @@ const specs: ToolSpec[] = [
             amountInclVat: { type: "number" },
             percentAtStart: { type: "number", description: "Andel i procent som betalas vid start" },
             taxReduction: { type: "string", enum: ["rot", "rut"], description: "Sätt rot eller rut. Villkorstexten läggs till automatiskt." },
+            requestId: { type: "string", description: "Förfrågan att koppla. Lämna tomt för att hitta öppen förfrågan automatiskt." },
           },
           ["title"]
         ),
@@ -574,7 +592,7 @@ const specs: ToolSpec[] = [
         customerId = resolved.customer.id;
       }
       if (!customerId) return { ok: false, forModel: {}, error: "customerName eller customerId krävs" };
-      return fromDomain(createQuoteDraft({ customerId, title, amountInclVat: amount, percentAtStart: num(args, "percentAtStart"), rot }));
+      return fromDomain(createQuoteDraft({ customerId, title, amountInclVat: amount, percentAtStart: num(args, "percentAtStart"), rot, requestId: str(args, "requestId") }));
     },
   },
   {
@@ -583,13 +601,15 @@ const specs: ToolSpec[] = [
       type: "function",
       function: {
         name: "create_invoice",
-        description: "Skapa fakturautkast (create invoice draft). Skickas inte.",
+        description:
+          "Skapa fakturautkast (create invoice draft). Skickas inte. För ROT/RUT: sätt taxReduction, hitta uppdraget och återanvänd sparade uppgifter. Hitta ALDRIG på personnummer eller fastighetsbeteckning. Fråga bara om den uppgift som saknas – inte en lista. Skicka inte personnummer.",
         parameters: obj({
           customerName: { type: "string" },
           customerId: { type: "string" },
           title: { type: "string" },
           amountInclVat: { type: "number" },
           jobId: { type: "string" },
+          taxReduction: { type: "string", enum: ["rot", "rut"], description: "Sätt rot eller rut. Villkorstexten läggs till automatiskt. Skicka inte personnummer." },
         }),
       },
     },
@@ -599,13 +619,15 @@ const specs: ToolSpec[] = [
       const title = str(args, "title");
       const amount = num(args, "amountInclVat");
       const jobId = str(args, "jobId");
+      const taxReductionRaw = str(args, "taxReduction");
+      const taxReduction = taxReductionRaw === "rot" || taxReductionRaw === "rut" ? taxReductionRaw : null;
       if (!customerId && name) {
-        const resolved = resolveOrAsk(name, { kind: "create_invoice", title, amountInclVat: amount, jobId });
+        const resolved = resolveOrAsk(name, { kind: "create_invoice", title, amountInclVat: amount, jobId, taxReduction });
         if (!("customer" in resolved)) return resolved;
         customerId = resolved.customer.id;
       }
       if (!customerId) return { ok: false, forModel: {}, error: "customerName eller customerId krävs" };
-      return fromDomain(createInvoiceDraft({ customerId, title, amountInclVat: amount, jobId }));
+      return fromDomain(createInvoiceDraft({ customerId, title, amountInclVat: amount, jobId, taxReduction }));
     },
   },
   {
@@ -947,6 +969,51 @@ const specs: ToolSpec[] = [
     },
     handler: (args) => fromDomain(requestMarkVatDeclared(str(args, "periodKey")), true),
   },
+  {
+    requiresConfirmation: false,
+    def: {
+      type: "function",
+      function: {
+        name: "check_domain_availability",
+        description: "Kolla om en .se-adress är ledig (check domain availability). Köper INTE.",
+        parameters: obj({ query: { type: "string", description: "t.ex. sodermalmssnickeri eller sodermalmssnickeri.se" } }, ["query"]),
+      },
+    },
+    handler: async (args) => {
+      const query = str(args, "query");
+      if (!query) return { ok: false, forModel: {}, error: "query krävs" };
+      return fromDomain(await checkDomainAvailabilityResult(query));
+    },
+  },
+  {
+    requiresConfirmation: false,
+    def: {
+      type: "function",
+      function: {
+        name: "get_domain_status",
+        description: "Läs status för företagets .se-adress (get domain status). Ändrar ingenting.",
+        parameters: obj({}),
+      },
+    },
+    handler: () => fromDomain(getDomainStatusResult()),
+  },
+  {
+    requiresConfirmation: true,
+    def: {
+      type: "function",
+      function: {
+        name: "purchase_domain",
+        description:
+          "Be om bekräftelse att köpa och koppla en .se-adress. Köper INTE själv – visar bekräftelsekort. Använd samma tjänst som Hemsida → Domän.",
+        parameters: obj({ hostname: { type: "string" } }, ["hostname"]),
+      },
+    },
+    handler: (args) => {
+      const hostname = str(args, "hostname");
+      if (!hostname) return { ok: false, forModel: {}, error: "hostname krävs" };
+      return fromDomain(requestPurchaseDomain(hostname), true);
+    },
+  },
 ];
 
 export function assistantToolDefs(): AiToolDef[] {
@@ -957,13 +1024,13 @@ export function toolRequiresConfirmation(name: string): boolean {
   return specs.find((s) => s.def.function.name === name)?.requiresConfirmation ?? false;
 }
 
-export function executeTool(name: string, rawArgs: unknown): ToolResult {
+export async function executeTool(name: string, rawArgs: unknown): Promise<ToolResult> {
   const spec = specs.find((s) => s.def.function.name === name);
   if (!spec) return { ok: false, forModel: {}, error: `Okänt verktyg: ${name}` };
   const args = (rawArgs && typeof rawArgs === "object" ? rawArgs : {}) as Record<string, unknown>;
   const started = Date.now();
   try {
-    const result = spec.handler(args);
+    const result = await spec.handler(args);
     logAudit(name, args, result.ok, Date.now() - started, result.error);
     if (!result.ok && !result.error) {
       return { ...result, error: "Verktyget misslyckades. Inget sparades." };

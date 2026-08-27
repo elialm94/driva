@@ -66,6 +66,7 @@ export function sellerAsCompany(seller: InvoiceSellerSnapshot, fallback?: Compan
     bic: seller.bic,
     logoInitials: seller.logoInitials,
     logoDataUrl: seller.logoDataUrl,
+    inquiryNotificationEmail: fallback?.inquiryNotificationEmail,
     fSkattPerMonth: fallback?.fSkattPerMonth ?? 0,
     payrollReservePerMonth: fallback?.payrollReservePerMonth ?? 0,
     paymentTermsDays: fallback?.paymentTermsDays ?? 30,
@@ -98,6 +99,7 @@ export function buyerAsCustomer(buyer: InvoiceBuyerSnapshot, fallback?: Customer
     notes: fallback?.notes ?? "",
     createdAt: fallback?.createdAt ?? "",
     contactPerson: fallback?.contactPerson,
+    personalIdentityNumber: fallback?.personalIdentityNumber,
   };
 }
 
@@ -127,6 +129,7 @@ export function buildIssuedSnapshot(input: {
     lines,
     rot: invoice.rot ? { ...invoice.rot } : null,
     taxReductionTerms: invoice.taxReductionTerms ? { ...invoice.taxReductionTerms } : null,
+    taxReductionDetails: invoice.taxReductionDetails ? { ...invoice.taxReductionDetails, housing: invoice.taxReductionDetails.housing ? { ...invoice.taxReductionDetails.housing } : undefined } : null,
     totals: { ...docTotals(lines, invoice.rot) },
     vatBreakdown: vatBreakdown(lines),
     creditsInvoiceId: invoice.creditsInvoiceId,
@@ -156,6 +159,7 @@ export function resolveInvoiceView(
       lines: snap.lines,
       rot: snap.rot,
       taxReductionTerms: snap.taxReductionTerms,
+      taxReductionDetails: snap.taxReductionDetails,
     },
   };
 }

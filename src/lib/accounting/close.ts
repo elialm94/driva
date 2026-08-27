@@ -63,7 +63,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
       ok: unbookedBank.length === 0,
       blocking: true,
       detail: unbookedBank.length ? `${unbookedBank.length} banktransaktion${unbookedBank.length > 1 ? "er" : ""} behöver hanteras.` : "Alla banktransaktioner är bokförda.",
-      href: "/pengar?flik=bank",
+      href: "/ekonomi?flik=bank",
     },
     {
       key: "kvitton",
@@ -81,7 +81,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
       detail: draftInvoices.length
         ? `${draftInvoices.length} fakturautkast är inte utfärdade – utfärda eller kasta dem.`
         : "Utfärdade fakturor bokförs automatiskt.",
-      href: "/pengar?flik=fakturor",
+      href: "/ekonomi?flik=fakturor",
     },
     {
       key: "fordringar",
@@ -91,7 +91,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
       detail: overdue.length
         ? `${overdue.length} förfallen faktura${overdue.length > 1 ? "or" : ""} – bedöm om de kommer betalas.`
         : "Inga förfallna kundfordringar.",
-      href: "/pengar?flik=fakturor",
+      href: "/ekonomi?flik=fakturor",
     },
     {
       key: "moms",

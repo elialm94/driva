@@ -134,7 +134,7 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
   return quote;
 }
 
-/** Skicka offerten till kunden (efter preview). */
+/** Skicka offerten till kunden. */
 export function sendQuote(quoteId: string): Quote {
   const quote = getQuote(quoteId);
   if (!quote) throw new Error("Offerten finns inte");

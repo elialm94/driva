@@ -24,7 +24,7 @@ const NAV_ICONS: Record<NavSection, typeof Home> = {
   hem: Home,
   kunder: Users,
   uppdrag: Hammer,
-  pengar: Wallet,
+  ekonomi: Wallet,
   bokforing: BookOpenCheck,
   hemsida: Globe,
   assistent: Sparkles,
@@ -35,7 +35,7 @@ const NAV = NAV_ITEMS.map((item) => ({
   icon: NAV_ICONS[item.section],
 }));
 
-export function Sidebar({ companyName }: { companyName: string }) {
+export function Sidebar({ companyName, openInquiryCount = 0 }: { companyName: string; openInquiryCount?: number }) {
   const pathname = usePathname();
   const [isResetting, startReset] = useTransition();
 
@@ -55,6 +55,7 @@ export function Sidebar({ companyName }: { companyName: string }) {
             <Link
               key={href}
               href={href as never}
+              aria-label={href === "/kunder" && openInquiryCount > 0 ? `Kunder, ${openInquiryCount} öppna förfrågningar` : label}
               className={cx(
                 "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] transition-colors",
                 active
@@ -63,7 +64,19 @@ export function Sidebar({ companyName }: { companyName: string }) {
               )}
             >
               <Icon className={cx("size-[18px]", active ? "text-white" : "text-muted")} strokeWidth={2} />
-              {label}
+              <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                {label}
+                {href === "/kunder" && openInquiryCount > 0 ? (
+                  <span
+                    className={cx(
+                      "rounded-full px-1.5 py-px text-[11px] font-medium tabular",
+                      active ? "bg-white/15 text-white/80" : "bg-ink/6 text-muted"
+                    )}
+                  >
+                    {openInquiryCount}
+                  </span>
+                ) : null}
+              </span>
             </Link>
           );
         })}

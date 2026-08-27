@@ -15,6 +15,7 @@ import { jobMoneySummary } from "@/lib/services/attention";
 import { docTotals } from "@/lib/calc";
 import { db } from "@/lib/store";
 import { kr, relativ, datumKort } from "@/lib/format";
+import { maskPersonnummer } from "@/lib/personnummer";
 import { Avatar, Badge, Breadcrumbs, ButtonLink, Card, SectionTitle, cx } from "@/components/ui";
 import { InvoiceStatusBadge, JobStatusBadge, QuoteStatusBadge } from "@/components/status";
 import { NotesEditor } from "@/components/notes-editor";
@@ -79,6 +80,9 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
                       .filter(Boolean)
                       .join(", ")}
                   </span>
+                ) : null}
+                {customer.kind === "privat" && customer.personalIdentityNumber ? (
+                  <span>Personnr {maskPersonnummer(customer.personalIdentityNumber)}</span>
                 ) : null}
               </div>
             </div>

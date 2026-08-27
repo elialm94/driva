@@ -1,9 +1,13 @@
 import type { DocLine, RotRut, VatRate } from "./types";
 
 /** Skattereduktion: ROT 30 % av arbetskostnaden inkl. moms, RUT 50 %. Tak 50 000 kr/person och år. */
-const ROT_ANDEL = 0.3;
-const RUT_ANDEL = 0.5;
-const AVDRAG_TAK = 50_000;
+export const ROT_ANDEL = 0.3;
+export const RUT_ANDEL = 0.5;
+export const AVDRAG_TAK = 50_000;
+
+export function taxReductionRate(type: RotRut["type"]): number {
+  return type === "rot" ? ROT_ANDEL : RUT_ANDEL;
+}
 
 /**
  * V1-moms: svensk säljare → svensk kund, SEK, dessa satser.

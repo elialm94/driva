@@ -71,7 +71,7 @@ export function financeOverview(): FinanceOverview {
   };
 }
 
-/** Nyckeltal för Pengar-sidan och assistenten – samma motor som rapporterna. */
+/** Nyckeltal för Ekonomi-sidan och assistenten – samma motor som rapporterna. */
 export function businessStats() {
   const data = db();
   const today = todayDate();

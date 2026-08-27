@@ -18,6 +18,11 @@ export interface CompanySettings {
   orgNumber: string;
   vatNumber: string;
   email: string;
+  /**
+   * Vart nya förfrågningar från hemsidan mejlas.
+   * Tomt = samma som `email`. Ändras inte när den publika kontaktadressen ändras.
+   */
+  inquiryNotificationEmail?: string;
   phone: string;
   /** Företagets webbplats (URL). Inte densamma som Driva-hemsidan. */
   websiteUrl?: string;
@@ -63,6 +68,11 @@ export interface Customer {
   address?: string;
   postalCode?: string;
   city?: string;
+  /**
+   * Personnummer för skattereduktion. Känsligt: maskas i vanliga vyer,
+   * skickas inte till LLM, loggas inte i klartext.
+   */
+  personalIdentityNumber?: string;
   notes: string;
   createdAt: string;
 }
@@ -80,6 +90,15 @@ export interface CustomerRequest {
   status: "ny" | "offert_skapad" | "besvarad" | "avslutad";
   quoteId?: ID;
   createdAt: string;
+  /** Klientnyckel så att refresh/retry inte skapar dubletter. */
+  idempotencyKey?: string;
+  /** Avisering till företagaren – sparas före utskick, kan retrys utan ny förfrågan. */
+  notification?: {
+    status: "pending" | "sent" | "failed";
+    sentAt?: string;
+    lastError?: string;
+    attempts: number;
+  };
   /** AI-tolkning av förfrågan. */
   ai?: {
     workType?: string;
@@ -104,6 +123,49 @@ export interface DocLine {
 
 export interface RotRut {
   type: "rot" | "rut";
+}
+
+/** Bostadstyp för ROT – bara ett fältset visas åt gången. */
+export type DwellingType = "smahus" | "bostadsratt";
+
+/** Fastighets-/bostadsuppgifter. Ägs av uppdraget och återanvänds på del-fakturor. */
+export interface HousingDetails {
+  dwellingType?: DwellingType;
+  /** Fastighetsbeteckning – endast vid Fastighet/småhus. */
+  propertyDesignation?: string;
+  /** BRF organisationsnummer – endast vid Bostadsrätt. */
+  brfOrgNumber?: string;
+  /** Lägenhetsnummer – endast vid Bostadsrätt. */
+  apartmentNumber?: string;
+}
+
+export type TaxReductionApplicationStatus =
+  | "preliminar"
+  | "redo_att_ansokas"
+  | "underlag_skapat"
+  | "godkant"
+  | "delvis_godkant"
+  | "nekat";
+
+/** Manuellt ansökningssteg – ingen Skatteverket-API i V1. */
+export interface TaxReductionApplication {
+  status: TaxReductionApplicationStatus;
+  underlagCreatedAt?: string;
+  /** Sammanfattning för export. Innehåller inte personnummer i aktivitetsloggen. */
+  underlagSummary?: string;
+  decision?: {
+    outcome: "godkant" | "delvis_godkant" | "nekat";
+    decidedAt: string;
+    deniedAmount?: number;
+  };
+}
+
+/** ROT/RUT-uppgifter på fakturan. Personnummer ligger på kunden, inte här. */
+export interface TaxReductionDetails {
+  workAddress?: string;
+  workPeriodStart?: string;
+  workPeriodEnd?: string;
+  housing?: HousingDetails;
 }
 
 /**
@@ -241,6 +303,10 @@ export interface Job {
   notes: string;
   createdAt: string;
   completedAt?: string;
+  /** Bostadsuppgifter för ROT. Prefillas på fakturor från uppdraget. */
+  housing?: HousingDetails;
+  /** ROT/RUT-ansökan för uppdraget (delas av alla fakturor på jobbet). */
+  taxReductionApplication?: TaxReductionApplication;
 }
 
 /* ---------------------------------- Fakturor --------------------------------- */
@@ -305,6 +371,7 @@ export interface InvoiceIssuedSnapshot {
   lines: DocLine[];
   rot: RotRut | null;
   taxReductionTerms?: TaxReductionTermsSnapshot | null;
+  taxReductionDetails?: TaxReductionDetails | null;
   totals: {
     subtotal: number;
     vat: number;
@@ -331,6 +398,10 @@ export interface Invoice {
   rot: RotRut | null;
   /** Kopia av ROT/RUT-villkor vid utkast/utfärdande. Fryses i issuedSnapshot. */
   taxReductionTerms?: TaxReductionTermsSnapshot | null;
+  /** Adress, period och bostad. Personnummer ligger på kunden. */
+  taxReductionDetails?: TaxReductionDetails | null;
+  /** Ansökan för fristående faktura (utan uppdrag). */
+  taxReductionApplication?: TaxReductionApplication;
   issueDate: string;
   dueDate: string;
   paymentTermsDays: number;
@@ -696,7 +767,7 @@ export interface ActivityEvent {
   customerId?: ID;
   createdBy?: "anvandare" | "assistent";
   entity?: {
-    type: "offert" | "faktura" | "jobb" | "forfragan" | "utgift" | "verifikation" | "hemsida";
+    type: "offert" | "faktura" | "jobb" | "forfragan" | "utgift" | "verifikation" | "hemsida" | "doman";
     id: ID;
   };
 }
@@ -725,6 +796,10 @@ export interface WebsiteSection {
   visible?: boolean;
 }
 
+/** Standardtext för primärknappen i sidhuvud och startsektion. */
+export const DEFAULT_PRIMARY_CTA_LABEL = "Begär offert";
+export const PRIMARY_CTA_LABEL_MAX = 40;
+
 export interface Website {
   id: ID;
   slug: string;
@@ -735,9 +810,143 @@ export interface Website {
   theme: WebsiteTheme;
   /** Arrayordning = visningsordning på sajten. */
   sections: WebsiteSection[];
+  /** Gemensam primärknapp i sidhuvud och startsektion. Saknas = DEFAULT_PRIMARY_CTA_LABEL. */
+  primaryCta?: { label: string };
   publishedAt?: string;
   createdAt: string;
   submissions: number;
+}
+
+/* ---------------------------------- Domän ---------------------------------- */
+
+/** V1: endast .se. Fler TLD:er kan läggas till utan att byta modell. */
+export type DomainTld = "se";
+
+export type DomainStatus =
+  | "checking"
+  | "available"
+  | "purchasing"
+  | "registering"
+  | "registered"
+  | "configuring"
+  | "verifying"
+  | "active"
+  | "failed"
+  | "expired";
+
+export type DomainSource = "purchased" | "existing";
+
+export type DomainBillingStatus = "pending" | "paid" | "failed" | "renewal_failed";
+
+export type DomainSslStatus = "pending" | "active" | "failed";
+
+export type DomainVerificationStatus = "pending" | "verified" | "failed";
+
+export type DomainErrorCategory =
+  | "profile_incomplete"
+  | "unavailable"
+  | "payment_failed"
+  | "registrar_failed"
+  | "hosting_failed"
+  | "dns_pending"
+  | "ssl_pending"
+  | "validation"
+  | "conflict";
+
+export type DomainRegistrarProviderId = "openprovider" | "mock";
+
+export interface DomainBilling {
+  customerPrice: number;
+  purchasePrice: number;
+  currency: "SEK";
+  purchasedAt?: string;
+  renewsAt?: string;
+  autoRenew: boolean;
+  status: DomainBillingStatus;
+  chargeId?: string;
+  idempotencyKey: string;
+}
+
+export type DomainProvisioningStep =
+  | "profile"
+  | "availability"
+  | "billing"
+  | "registrant"
+  | "register"
+  | "nameservers"
+  | "hosting"
+  | "dns"
+  | "ssl"
+  | "done";
+
+export interface DomainProvisioning {
+  step: DomainProvisioningStep;
+  billed: boolean;
+  registered: boolean;
+  registrantCreated: boolean;
+  nameserversConfigured: boolean;
+  hostingAttached: boolean;
+  dnsVerified: boolean;
+  sslReady: boolean;
+  /** Antal poll-tick, används av mock för att simulera väntan. */
+  ticks: number;
+  lastError?: { category: DomainErrorCategory; message: string; at: string };
+}
+
+export interface Domain {
+  id: ID;
+  /** En-tenant i V1: alltid aktuellt företag. Fältet finns för att blockera cross-tenant takeover. */
+  businessId: ID;
+  websiteId?: ID;
+  hostname: string;
+  tld: DomainTld;
+  source: DomainSource;
+  registrarProvider: DomainRegistrarProviderId;
+  registrarDomainId?: string;
+  registrarRegistrantId?: string;
+  status: DomainStatus;
+  isPrimary: boolean;
+  registeredAt?: string;
+  expiresAt?: string;
+  autoRenew: boolean;
+  verificationStatus: DomainVerificationStatus;
+  sslStatus: DomainSslStatus;
+  billing: DomainBilling;
+  provisioning: DomainProvisioning;
+  idempotencyKey: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DomainAuditAction =
+  | "domain_searched"
+  | "domain_purchase_started"
+  | "domain_paid"
+  | "domain_payment_failed"
+  | "domain_registrant_created"
+  | "domain_registered"
+  | "domain_register_failed"
+  | "domain_nameservers_set"
+  | "domain_hosting_attached"
+  | "domain_hosting_failed"
+  | "domain_dns_verified"
+  | "domain_ssl_active"
+  | "domain_active"
+  | "domain_failed"
+  | "domain_retry"
+  | "domain_autorenew_changed"
+  | "domain_renewal_failed"
+  | "domain_existing_started"
+  | "domain_existing_verified";
+
+export interface DomainAuditEvent {
+  id: ID;
+  at: string;
+  actor: "anvandare" | "assistent" | "system";
+  action: DomainAuditAction;
+  domainId?: ID;
+  hostname?: string;
+  details: string;
 }
 
 /* ---------------------------------- Assistent -------------------------------- */
@@ -787,7 +996,13 @@ export interface AssistantMessage {
 export type ResumeAfterCustomer =
   | { kind: "create_quote"; title?: string; amountInclVat?: number; rot?: "rot" | "rut" | null }
   | { kind: "create_job"; title: string; startDate?: string; description?: string }
-  | { kind: "create_invoice"; title?: string; amountInclVat?: number; jobId?: ID };
+  | {
+      kind: "create_invoice";
+      title?: string;
+      amountInclVat?: number;
+      jobId?: ID;
+      taxReduction?: "rot" | "rut" | null;
+    };
 
 export type PendingAssistantAction =
   | { id: ID; type: "paminn_forsenade"; invoiceIds: ID[] }
@@ -803,7 +1018,8 @@ export type PendingAssistantAction =
   | { id: ID; type: "slutfor_bokslut"; fiscalYearId: ID }
   | { id: ID; type: "angra_utgift"; expenseId: ID }
   | { id: ID; type: "markera_moms_deklarerad"; reportId: ID }
-  | { id: ID; type: "skapa_tillaggsoffert"; customerId: ID; jobId: ID; title: string; amountInclVat: number };
+  | { id: ID; type: "skapa_tillaggsoffert"; customerId: ID; jobId: ID; title: string; amountInclVat: number }
+  | { id: ID; type: "kop_doman"; hostname: string };
 
 /** Internt verktygsaudit – visas inte i chatten. */
 export interface AssistantAuditEntry {
@@ -847,6 +1063,8 @@ export interface DB {
   annualReports: AnnualReport[];
   activity: ActivityEvent[];
   website: Website | null;
+  domains: Domain[];
+  domainAudit: DomainAuditEvent[];
   assistantMessages: AssistantMessage[];
   pendingActions: PendingAssistantAction[];
   assistantAudit: AssistantAuditEntry[];

@@ -5,6 +5,7 @@ import { Card, EmptyState, PageHeader, cx } from "@/components/ui";
 import { BackLink } from "@/components/back-link";
 import { huvudbok } from "@/lib/accounting/ledger";
 import { PrintButton } from "@/components/bokforing-widgets";
+import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 
 export const metadata = { title: "Huvudbok" };
 
@@ -29,6 +30,7 @@ export default async function HuvudbokPage({ searchParams }: { searchParams: Pro
           </div>
         }
       />
+      <BokforingAdvancedTabs />
 
       {/* Kontoväljare */}
       <div className="mb-6 flex flex-wrap gap-1.5 print:hidden">

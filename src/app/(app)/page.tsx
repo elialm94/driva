@@ -1,15 +1,18 @@
 import Link from "next/link";
-import { ArrowRight, Banknote, CalendarDays, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { db } from "@/lib/store";
-import { attentionItems, homeSummary, jobsThisWeek } from "@/lib/services/attention";
+import {
+  attentionItems,
+  HOME_ATTENTION_VISIBLE,
+  homeNextSteps,
+} from "@/lib/services/attention";
 import { financeOverview } from "@/lib/services/finance";
-import { recentActivity } from "@/lib/services/activity";
 import { kr, halsning, datumUtanAr, veckodag, relativ, datumLang, isoNow } from "@/lib/format";
 import { Card, SectionTitle, cx } from "@/components/ui";
-import { JobStatusBadge } from "@/components/status";
 import { AttentionList, type AttentionDTO } from "@/components/attention-list";
 import { HomeAiBar } from "@/components/home-ai-bar";
-import { invoiceHref, newQuoteHref, quoteHref } from "@/lib/nav";
+import { HomeNextSteps, type NextStepDTO } from "@/components/home-next-steps";
+import { invoiceHref, inquiryHref, newQuoteHref, quoteHref } from "@/lib/nav";
 
 export const metadata = { title: "Hem" };
 
@@ -25,23 +28,41 @@ function buildAttentionDTOs(): AttentionDTO[] {
           href: invoiceHref(item.invoice.id),
           action: { type: "remindInvoice", label: "Skicka påminnelse", invoiceId: item.invoice.id },
         };
+      case "betalningsbeslut":
+        return item.source === "inbetalning"
+          ? {
+              id: item.id,
+              icon: "bank",
+              title: `Inbetalning från ${item.tx.counterpart} kunde inte matchas`,
+              text: `${kr(item.amount)} behöver kopplas till en faktura.`,
+              href: "/ekonomi?flik=bank",
+              action: { type: "link", label: "Visa", href: "/ekonomi?flik=bank" },
+            }
+          : {
+              id: item.id,
+              icon: "bank",
+              title: `${item.supplierInvoice.supplier} ${item.supplierInvoice.invoiceNumber} är förfallen`,
+              text: `${kr(item.amount)} ska betalas.`,
+              href: "/ekonomi?flik=utgifter",
+              action: { type: "link", label: "Visa", href: "/ekonomi?flik=utgifter" },
+            };
       case "forfragan":
         return {
           id: item.id,
           icon: "inbox",
           title: `Ny förfrågan: ${item.customer.name} – ${item.request.title}`,
           text: `”${item.request.message.length > 110 ? item.request.message.slice(0, 107) + "…" : item.request.message}”`,
-          href: `/kunder/${item.customer.id}`,
+          href: inquiryHref(item.request.id),
           action: {
             type: "link",
             label: "Skapa offert",
             href: newQuoteHref({
               kund: item.customer.id,
               forfragan: item.request.id,
-              from: { href: `/kunder/${item.customer.id}`, label: item.customer.name },
+              from: { href: inquiryHref(item.request.id), label: item.request.title },
             }),
           },
-          secondary: { label: "Visa", href: `/kunder/${item.customer.id}` },
+          secondary: { label: "Visa", href: inquiryHref(item.request.id) },
         };
       case "offert_uppfoljning":
         return {
@@ -72,14 +93,61 @@ function buildAttentionDTOs(): AttentionDTO[] {
             expenseId: item.expense.id,
           },
         };
-      case "fakturera_jobb":
+    }
+  });
+}
+
+function buildNextStepDTOs(): NextStepDTO[] {
+  return homeNextSteps().map((step): NextStepDTO => {
+    switch (step.kind) {
+      case "forsta_faktura":
         return {
-          id: item.id,
-          icon: "invoice",
-          title: `${item.job.title} är klart – dags att fakturera`,
-          text: `Vill du skapa slutfakturan på ${kr(item.amount)} till ${item.customer.name}?`,
-          href: `/uppdrag/${item.job.id}`,
-          action: { type: "createFinalInvoice", label: "Skapa faktura", jobId: item.job.id, jobTitle: item.job.title },
+          id: step.id,
+          title: `Skapa första fakturan till ${step.customer.name}`,
+          text: `Offerten är godkänd med BankID. ${step.percent} % ${step.partLabel.toLowerCase()} · ${kr(step.amount)}.`,
+          href: `/uppdrag/${step.job.id}`,
+          action: {
+            type: "createJobInvoice",
+            label: "Skapa faktura",
+            jobId: step.job.id,
+            jobTitle: step.job.title,
+          },
+        };
+      case "kan_fakturera":
+        return {
+          id: step.id,
+          title: `Fakturera ${kr(step.amount)} till ${step.customer.name}`,
+          text: `Enligt den BankID-godkända offerten för ${step.job.title}.`,
+          href: `/uppdrag/${step.job.id}`,
+          action: {
+            type: "createJobInvoice",
+            label: "Skapa faktura",
+            jobId: step.job.id,
+            jobTitle: step.job.title,
+          },
+        };
+      case "resterande":
+        return {
+          id: step.id,
+          title: step.isFinal
+            ? `${kr(step.amount)} återstår – slutfaktura till ${step.customer.name}`
+            : `${kr(step.amount)} kan faktureras till ${step.customer.name}`,
+          text: `Enligt den godkända offerten för ${step.job.title}.`,
+          href: `/uppdrag/${step.job.id}`,
+          action: {
+            type: "createJobInvoice",
+            label: step.isFinal ? "Skapa slutfaktura" : "Skapa faktura",
+            jobId: step.job.id,
+            jobTitle: step.job.title,
+          },
+        };
+      case "rot_ansok":
+        return {
+          id: step.id,
+          title: step.label,
+          text: `${step.job.title} hos ${step.customer.name}.`,
+          href: `/uppdrag/${step.job.id}`,
+          action: { type: "link", label: "Öppna", href: `/uppdrag/${step.job.id}` },
         };
     }
   });
@@ -87,21 +155,10 @@ function buildAttentionDTOs(): AttentionDTO[] {
 
 export default function HomePage() {
   const data = db();
-  const s = homeSummary();
   const f = financeOverview();
   const dtos = buildAttentionDTOs();
-  const activity = recentActivity(6);
-
-  const weekJobs = jobsThisWeek();
-
-  const chips: { label: string; href: string; tone?: "danger" | "warn" }[] = [];
-  if (s.newRequests > 0) chips.push({ label: `${s.newRequests} nya förfrågningar`, href: "/kunder" });
-  if (s.waitingQuotes > 0) chips.push({ label: `${s.waitingQuotes} offerter väntar på BankID`, href: "/pengar?flik=offerter", tone: "warn" });
-  if (s.jobsThisWeek > 0) chips.push({ label: `${s.jobsThisWeek} uppdrag den här veckan`, href: "/uppdrag" });
-  if (s.unpaidSum > 0) chips.push({ label: `${kr(s.unpaidSum)} väntar på betalning`, href: "/pengar?flik=fakturor" });
-  if (s.overdueCount > 0) chips.push({ label: `${s.overdueCount} försenad${s.overdueCount > 1 ? "e" : ""} faktur${s.overdueCount > 1 ? "or" : "a"}`, href: "/pengar?flik=fakturor", tone: "danger" });
-  if (s.missingReceipts > 0) chips.push({ label: `${s.missingReceipts} köp saknar kvitto`, href: "/pengar?flik=utgifter", tone: "warn" });
-
+  const nextSteps = buildNextStepDTOs();
+  const bankConnected = data.bankAccounts.length > 0;
   const now = isoNow();
 
   return (
@@ -111,155 +168,107 @@ export default function HomePage() {
       </p>
       <h1 className="mt-1 text-[28px] font-semibold tracking-tight">{halsning()}</h1>
 
-      {chips.length > 0 ? (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {chips.map((chip) => (
-            <Link
-              key={chip.label}
-              href={chip.href as never}
-              className={cx(
-                "rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition-colors",
-                chip.tone === "danger"
-                  ? "border-danger/20 bg-danger-soft text-danger hover:border-danger/40"
-                  : chip.tone === "warn"
-                    ? "border-warn/20 bg-warn-soft text-warn hover:border-warn/40"
-                    : "border-line bg-card text-soft hover:border-line-strong hover:text-ink"
-              )}
-            >
-              {chip.label}
-            </Link>
-          ))}
-        </div>
-      ) : null}
-
-      {/* Finansiell överblick */}
-      <Card className="mt-8 overflow-hidden">
-        <div className="grid grid-cols-2 divide-line/70 max-sm:gap-y-5 sm:grid-cols-4 sm:divide-x">
-          {[
-            { label: "På banken", value: kr(f.bank) },
-            { label: "Reserverat för moms & skatt (beräknat)", value: `−${kr(f.reserved)}` },
-            { label: "Kommande utgifter", value: `−${kr(f.upcoming)}` },
-            { label: "Ungefär tillgängligt", value: kr(f.available), highlight: true },
-          ].map((col) => (
-            <div key={col.label} className="px-6 py-5">
-              <p className="text-[13px] font-medium text-muted">{col.label}</p>
-              <p
-                className={cx(
-                  "mt-1 text-[21px] font-semibold tracking-tight tabular",
-                  col.highlight ? "text-accent-deep" : "text-ink"
-                )}
-              >
-                {col.value}
-              </p>
-            </div>
-          ))}
-        </div>
-        <details className="group border-t border-line/70">
-          <summary className="flex cursor-pointer items-center justify-between px-6 py-3 text-[13px] font-medium text-muted transition-colors hover:text-ink [&::-webkit-details-marker]:hidden">
-            Vad ingår i beräkningen?
-            <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
-          </summary>
-          <div className="grid gap-x-10 gap-y-1.5 px-6 pb-5 text-[13px] sm:grid-cols-2">
-            <div className="flex justify-between text-soft">
-              <span>Moms för perioden (betalas {datumLang(f.momsDue)})</span>
-              <span className="tabular">{kr(f.moms)}</span>
-            </div>
-            <div className="flex justify-between text-soft">
-              <span>F-skatt, kommande två månader</span>
-              <span className="tabular">{kr(f.fSkatt)}</span>
-            </div>
-            <div className="flex justify-between text-soft">
-              <span>Arbetsgivaravgifter & personalskatt</span>
-              <span className="tabular">{kr(f.payrollReserve)}</span>
-            </div>
-            {f.upcomingRows.map((r) => (
-              <div key={r.label + r.due} className="flex justify-between text-soft">
-                <span>
-                  {r.label} (förfaller {relativ(r.due)})
-                </span>
-                <span className="tabular">{kr(r.amount)}</span>
-              </div>
-            ))}
-          </div>
-        </details>
-      </Card>
-
       <HomeAiBar
         messages={data.assistantMessages.slice(-6)}
         hasUserTurn={data.assistantMessages.some((m) => m.role === "user")}
       />
 
-      {/* Behöver din uppmärksamhet */}
       <div className="mt-10">
         <SectionTitle>Behöver din uppmärksamhet</SectionTitle>
         {dtos.length > 0 ? (
-          <AttentionList items={dtos} />
+          <AttentionList items={dtos} initialVisible={HOME_ATTENTION_VISIBLE} />
         ) : (
-          <Card className="flex items-center gap-3 px-6 py-5">
-            <Banknote className="size-5 text-accent" />
-            <p className="text-[15px] text-soft">Allt är omhändertaget. Njut av dagen!</p>
+          <p className="text-[15px] text-soft">Allt ser bra ut ✓</p>
+        )}
+      </div>
+
+      <div className="mt-10">
+        <SectionTitle>Pengar</SectionTitle>
+        {bankConnected ? (
+          <Card className="overflow-hidden">
+            <div className="grid gap-5 px-6 py-5 sm:grid-cols-2">
+              <div>
+                <p className="text-[13px] font-medium text-muted">På banken</p>
+                <p className="mt-1 text-[21px] font-semibold tracking-tight tabular">{kr(f.bank)}</p>
+              </div>
+              <div>
+                <p className="text-[13px] font-medium text-muted">Ungefär tillgängligt</p>
+                <p className="mt-1 text-[21px] font-semibold tracking-tight tabular text-accent-deep">
+                  {kr(f.available)}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line/70 px-6 py-3">
+              <Link href="/ekonomi" className="text-[13px] font-medium text-soft hover:text-ink">
+                Visa ekonomi →
+              </Link>
+            </div>
+            <details className="group border-t border-line/70">
+              <summary className="flex cursor-pointer items-center justify-between px-6 py-3 text-[13px] font-medium text-muted transition-colors hover:text-ink [&::-webkit-details-marker]:hidden">
+                Hur räknas detta?
+                <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="space-y-1.5 px-6 pb-5 text-[13px]">
+                <p className="pb-2 text-soft">
+                  På banken minus reserverat för moms och skatt minus kommande utgifter blir ungefär tillgängligt.
+                </p>
+                <div className="flex justify-between text-soft">
+                  <span>På banken</span>
+                  <span className="tabular">{kr(f.bank)}</span>
+                </div>
+                <div className="flex justify-between text-soft">
+                  <span>Reserverat för moms & skatt</span>
+                  <span className="tabular">−{kr(f.reserved)}</span>
+                </div>
+                <div className="flex justify-between text-soft">
+                  <span>Kommande utgifter</span>
+                  <span className="tabular">−{kr(f.upcoming)}</span>
+                </div>
+                <div className="flex justify-between border-t border-line/60 pt-1.5 font-medium text-ink">
+                  <span>Ungefär tillgängligt</span>
+                  <span className="tabular">{kr(f.available)}</span>
+                </div>
+                <div className={cx("grid gap-x-10 gap-y-1.5 pt-3 sm:grid-cols-2")}>
+                  <div className="flex justify-between text-muted">
+                    <span>Moms för perioden (betalas {datumLang(f.momsDue)})</span>
+                    <span className="tabular">{kr(f.moms)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted">
+                    <span>F-skatt, kommande två månader</span>
+                    <span className="tabular">{kr(f.fSkatt)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted">
+                    <span>Arbetsgivaravgifter & personalskatt</span>
+                    <span className="tabular">{kr(f.payrollReserve)}</span>
+                  </div>
+                  {f.upcomingRows.map((r) => (
+                    <div key={r.label + r.due} className="flex justify-between text-muted">
+                      <span>
+                        {r.label} (förfaller {relativ(r.due)})
+                      </span>
+                      <span className="tabular">{kr(r.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </details>
+          </Card>
+        ) : (
+          <Card className="px-6 py-5">
+            <p className="text-[15px] text-soft">Koppla bankkonto för att se vad som finns på kontot.</p>
+            <Link href="/ekonomi?flik=bank" className="mt-2 inline-block text-[13px] font-medium text-soft hover:text-ink">
+              Koppla bank →
+            </Link>
           </Card>
         )}
       </div>
 
-      <div className="mt-10 grid gap-8 lg:grid-cols-2">
-        {/* Veckans jobb */}
-        <div>
-          <SectionTitle
-            right={
-              <Link href="/uppdrag" className="flex items-center gap-1 text-[13px] font-medium text-soft hover:text-ink">
-                Alla uppdrag <ArrowRight className="size-3.5" />
-              </Link>
-            }
-          >
-            Den här veckan
-          </SectionTitle>
-          {weekJobs.length > 0 ? (
-            <Card className="divide-y divide-line/70">
-              {weekJobs.map((job) => {
-                const customer = data.customers.find((c) => c.id === job.customerId);
-                return (
-                  <Link
-                    key={job.id}
-                    href={`/uppdrag/${job.id}` as never}
-                    className="flex items-center gap-4 px-5 py-4 transition-colors first:rounded-t-[calc(1.25rem-1px)] last:rounded-b-[calc(1.25rem-1px)] hover:bg-canvas/60"
-                  >
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-accent-soft">
-                      <CalendarDays className="size-4.5 text-accent" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[15px] font-medium">{job.title}</p>
-                      <p className="text-[13px] text-muted">
-                        {customer?.name}
-                        {job.startDate ? ` · ${job.status === "pagar" ? "startade" : "startar"} ${relativ(job.startDate)}` : ""}
-                      </p>
-                    </div>
-                    <JobStatusBadge status={job.status} />
-                  </Link>
-                );
-              })}
-            </Card>
-          ) : (
-            <Card className="px-6 py-5 text-[15px] text-soft">Inga uppdrag planerade den här veckan.</Card>
-          )}
+      {nextSteps.length > 0 ? (
+        <div className="mt-10">
+          <SectionTitle>Nästa steg</SectionTitle>
+          <HomeNextSteps items={nextSteps} />
         </div>
-
-        {/* Senaste aktivitet */}
-        <div>
-          <SectionTitle>Nyligen hänt</SectionTitle>
-          <Card className="px-5 py-2">
-            {activity.map((a, i) => (
-              <div key={a.id} className={cx("flex gap-3 py-3", i > 0 && "border-t border-line/60")}>
-                <div className="mt-[7px] size-1.5 shrink-0 rounded-full bg-line-strong" />
-                <div className="min-w-0">
-                  <p className="text-[14px] leading-snug text-soft">{a.text}</p>
-                  <p className="mt-0.5 text-[12px] text-muted">{relativ(a.at)}</p>
-                </div>
-              </div>
-            ))}
-          </Card>
-        </div>
-      </div>
+      ) : null}
     </div>
   );
 }

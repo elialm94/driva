@@ -45,7 +45,7 @@ try {
   await sleep(1500);
 
   // 1. Nytt offertformulär
-  await goto("/pengar/offerter/ny");
+  await goto("/ekonomi/offerter/ny");
   await waitText("Ny offert");
   await shot("28-offert-formular");
 

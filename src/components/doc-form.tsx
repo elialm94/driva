@@ -13,8 +13,9 @@ import { addCustomerOption, CustomerPicker, type CustomerOption } from "./custom
 import { useUnsavedLeave } from "./unsaved-changes";
 import { hrefWithNav } from "@/lib/nav";
 import { taxReductionDeductionLabel } from "@/lib/tax-reduction-terms";
-import { TaxReductionFormPreview, TaxReductionInvoiceDisclaimer } from "./tax-reduction-terms";
-import { MissingTaxReductionAcceptanceCard } from "./denied-reduction-card";
+import { TaxReductionFormPreview, TaxReductionEditorHint, TaxReductionCalcHint } from "./tax-reduction-terms";
+import { TaxReductionFields, taxReductionDetailsFromForm, type TaxReductionFormValue } from "./tax-reduction-fields";
+import { suggestedServiceDate } from "@/lib/tax-reduction-gaps";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -247,15 +248,22 @@ function TotalsPanel({
         <span className="tabular">{kr(t.total)}</span>
       </div>
       {rot ? (
-        <div className="flex justify-between text-accent-deep">
-          <span>{taxReductionDeductionLabel(rot.type)}</span>
-          <span className="tabular">−{kr(t.deduction)}</span>
-        </div>
+        <>
+          <div className="flex justify-between text-soft">
+            <span>Arbetskostnad inkl. moms</span>
+            <span className="tabular">{kr(t.laborInclVat)}</span>
+          </div>
+          <div className="flex justify-between text-accent-deep">
+            <span>{taxReductionDeductionLabel(rot.type)}</span>
+            <span className="tabular">−{kr(t.deduction)}</span>
+          </div>
+        </>
       ) : null}
       <div className="flex justify-between border-t border-line pt-2 text-[16px] font-semibold">
         <span>{toPayLabel}</span>
         <span className="tabular">{kr(t.toPay)}</span>
       </div>
+      {rot ? <TaxReductionCalcHint type={rot.type} laborInclVat={t.laborInclVat} /> : null}
     </div>
   );
 }
@@ -358,7 +366,7 @@ export function QuoteForm({
     startTransition(async () => {
       if (quoteId) {
         await updateQuoteAction(quoteId, payload);
-        router.push(hrefWithNav(`/pengar/offerter/${quoteId}`, nav) as never);
+        router.push(hrefWithNav(`/ekonomi/offerter/${quoteId}`, nav) as never);
       } else {
         await createQuoteAction({ ...payload, customerId, requestId, jobId }, nav);
       }
@@ -531,7 +539,7 @@ export function QuoteForm({
             Avbryt
           </button>
           <p className="mt-3 text-center text-[12px] leading-relaxed text-muted">
-            Inget skickas ännu – du granskar alltid exakt hur kunden ser offerten innan den går iväg.
+            Inget skickas ännu. Utkastet visas som offerten, och du bekräftar när du skickar.
           </p>
         </Card>
         {dialog}
@@ -546,7 +554,16 @@ export interface InvoiceFormInitial {
   dueInDays: number;
   lateInterestRate?: number;
   serviceDate?: string;
+  taxReduction?: TaxReductionFormValue;
 }
+
+const emptyTaxFields = (): TaxReductionFormValue => ({
+  personalIdentityNumber: "",
+  workAddress: "",
+  workPeriodStart: "",
+  workPeriodEnd: "",
+  housing: {},
+});
 
 export function InvoiceForm({
   customers,
@@ -555,8 +572,10 @@ export function InvoiceForm({
   defaultPaymentTermsDays = 30,
   defaultVatRate = 25,
   invoiceId,
+  jobId,
+  quoteId,
+  rotByCustomer,
   initial,
-  documentedTaxReductionAcceptance = false,
   cancelHref,
   returnTo,
   returnLabel,
@@ -566,10 +585,11 @@ export function InvoiceForm({
   defaultLateInterestRate?: number;
   defaultPaymentTermsDays?: number;
   defaultVatRate?: VatRate;
-  /** Sätt vid redigering av befintligt utkast. */
   invoiceId?: string;
+  jobId?: string;
+  quoteId?: string;
+  rotByCustomer?: Record<string, { personalIdentityNumber?: string; addressLine?: string }>;
   initial?: InvoiceFormInitial;
-  documentedTaxReductionAcceptance?: boolean;
   cancelHref: string;
   returnTo?: string;
   returnLabel?: string;
@@ -583,10 +603,11 @@ export function InvoiceForm({
   const [dueDays, setDueDays] = useState(initial?.dueInDays ?? defaultPaymentTermsDays);
   const [lateInterest, setLateInterest] = useState(initial?.lateInterestRate ?? defaultLateInterestRate);
   const [serviceDate, setServiceDate] = useState((initial?.serviceDate ?? "").slice(0, 10));
+  const [taxFields, setTaxFields] = useState<TaxReductionFormValue>(initial?.taxReduction ?? emptyTaxFields());
   const [isPending, startTransition] = useTransition();
   const [saving, setSaving] = useState(false);
 
-  const snapshot = JSON.stringify({ customerId, lines, rot, dueDays, lateInterest, serviceDate });
+  const snapshot = JSON.stringify({ customerId, lines, rot, dueDays, lateInterest, serviceDate, taxFields });
   const initialSnapshot = useRef(snapshot);
   const dirty = snapshot !== initialSnapshot.current;
   const { confirmLeave, dialog } = useUnsavedLeave(dirty && !saving);
@@ -594,9 +615,49 @@ export function InvoiceForm({
   const valid = customerId && lines.length > 0 && lines.every((l) => l.description.trim());
   const nav = { returnTo, returnLabel };
 
+  function applyCustomerRot(id: string) {
+    const row = rotByCustomer?.[id];
+    setTaxFields((prev) => ({
+      ...prev,
+      personalIdentityNumber: row?.personalIdentityNumber ?? prev.personalIdentityNumber,
+      workAddress: prev.workAddress || row?.addressLine || "",
+    }));
+  }
+
+  function syncServiceFromPeriod(fields: TaxReductionFormValue) {
+    const suggested = suggestedServiceDate(fields);
+    if (suggested) setServiceDate(suggested);
+  }
+
+  function setTaxFieldsAndDates(next: TaxReductionFormValue) {
+    setTaxFields(next);
+    if (rot) syncServiceFromPeriod(next);
+  }
+
+  const rotLiveTotals = useMemo(
+    () =>
+      rot
+        ? docTotals(
+            lines.map((l) => ({
+              ...l,
+              qty: Number.isFinite(l.qty) ? l.qty : 0,
+              unitPrice: Number.isFinite(l.unitPrice) ? l.unitPrice : 0,
+            })),
+            rot
+          )
+        : null,
+    [lines, rot]
+  );
+
   function submit() {
     if (!valid) return;
     setSaving(true);
+    const taxPayload = rot
+      ? {
+          taxReductionDetails: taxReductionDetailsFromForm(taxFields),
+          personalIdentityNumber: taxFields.personalIdentityNumber || undefined,
+        }
+      : { taxReductionDetails: null as null, personalIdentityNumber: undefined };
     startTransition(async () => {
       if (invoiceId) {
         await updateInvoiceAction(
@@ -607,6 +668,7 @@ export function InvoiceForm({
             dueInDays: dueDays,
             lateInterestRate: lateInterest,
             serviceDate: serviceDate || null,
+            ...taxPayload,
           },
           nav
         );
@@ -614,12 +676,15 @@ export function InvoiceForm({
         await createInvoiceAction(
           {
             customerId,
+            jobId,
+            quoteId,
             type: "faktura",
             lines,
             rot,
             dueInDays: dueDays,
             lateInterestRate: lateInterest,
             serviceDate: serviceDate || undefined,
+            ...taxPayload,
           },
           nav
         );
@@ -646,7 +711,10 @@ export function InvoiceForm({
                 <CustomerPicker
                   customers={customerOptions}
                   value={customerId}
-                  onChange={setCustomerId}
+                  onChange={(id) => {
+                    setCustomerId(id);
+                    if (!jobId) applyCustomerRot(id);
+                  }}
                   onCreated={(customer) => setCustomerOptions((prev) => addCustomerOption(prev, customer))}
                 />
               )}
@@ -668,11 +736,13 @@ export function InvoiceForm({
                 />
               </div>
             </div>
-            <div>
-              <label className={labelCls}>Utförandedatum (valfritt)</label>
-              <DateField value={serviceDate} onChange={setServiceDate} className={inputCls} />
-              <p className="mt-1 text-[12px] text-muted">Visas på fakturan om det skiljer sig från fakturadatum.</p>
-            </div>
+            {rot ? null : (
+              <div>
+                <label className={labelCls}>Utförandedatum (valfritt)</label>
+                <DateField value={serviceDate} onChange={setServiceDate} className={inputCls} />
+                <p className="mt-1 text-[12px] text-muted">Visas på fakturan om det skiljer sig från fakturadatum.</p>
+              </div>
+            )}
           </div>
         </Card>
         <Card className="p-6">
@@ -691,7 +761,12 @@ export function InvoiceForm({
                 <button
                   key={label}
                   type="button"
-                  onClick={() => setRot(value ? { type: value } : null)}
+                  onClick={() => {
+                    const next = value ? { type: value } : null;
+                    setRot(next);
+                    if (value && customerId) applyCustomerRot(customerId);
+                    if (value) syncServiceFromPeriod(taxFields);
+                  }}
                   className={cx(
                     "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors",
                     (rot?.type ?? null) === value ? "border-ink bg-ink text-white" : "border-line-strong text-soft hover:border-muted"
@@ -701,11 +776,25 @@ export function InvoiceForm({
                 </button>
               ))}
             </div>
-            {rot ? (
-              <div className="mt-3">
-                <TaxReductionInvoiceDisclaimer />
-                {!documentedTaxReductionAcceptance ? <div className="mt-3"><MissingTaxReductionAcceptanceCard /></div> : null}
+            {rot && rotLiveTotals ? (
+              <div className="mt-3 space-y-1 text-[13px]">
+                <div className="flex justify-between text-soft">
+                  <span>Arbetskostnad</span>
+                  <span className="tabular">{kr(rotLiveTotals.laborInclVat)}</span>
+                </div>
+                <div className="flex justify-between text-accent-deep">
+                  <span>{taxReductionDeductionLabel(rot.type)}</span>
+                  <span className="tabular">−{kr(rotLiveTotals.deduction)}</span>
+                </div>
+                <div className="flex justify-between font-medium">
+                  <span>Att betala</span>
+                  <span className="tabular">{kr(rotLiveTotals.toPay)}</span>
+                </div>
+                <TaxReductionEditorHint />
               </div>
+            ) : null}
+            {rot ? (
+              <TaxReductionFields key={rot.type} type={rot.type} value={taxFields} onChange={setTaxFieldsAndDates} />
             ) : null}
           </div>
         </Card>

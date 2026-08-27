@@ -50,6 +50,7 @@ export function buildSeed(): DB {
       address: "Folkungagatan 62",
       postalCode: "116 30",
       city: "Stockholm",
+      personalIdentityNumber: "19850515-1234",
       notes: "Vill helst ha sms före besök. Porten har kod 4218.",
       createdAt: d(75),
     },
@@ -420,6 +421,7 @@ export function buildSeed(): DB {
       notes:
         "Bänkskivan levererades 21 aug. Kunden ville flytta ett eluttag – löst med elektriker 25 aug.",
       createdAt: d(24, 14, 32),
+      housing: { dwellingType: "smahus" },
     },
     {
       id: "job-altan",
@@ -1434,6 +1436,8 @@ export function buildSeed(): DB {
     annualReports: [],
     activity: activity.sort((a, b) => b.at.localeCompare(a.at)),
     website,
+    domains: [],
+    domainAudit: [],
     assistantMessages,
     pendingActions: [],
     assistantAudit: [],

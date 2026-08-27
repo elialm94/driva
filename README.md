@@ -9,7 +9,9 @@ npm install
 npm run dev
 ```
 
-Öppna [http://localhost:3000](http://localhost:3000). Appen seedas automatiskt med demodata för **Södermalms Snickeri AB** (fil-baserad databas i `.data/db.json`). Klicka på företagsnamnet nere i vänstermenyn för att återställa demon.
+Öppna [http://localhost:3123](http://localhost:3123). `npm run dev` kör `scripts/dev-3123.sh`: den binder **endast 3123**, startar inte en andra server om GET `/` redan är 200, och startar om Next inom en sekund om processen dör. Agents: kill:a inte next på 3123 om porten redan svarar HTTP 200.
+
+Appen seedas automatiskt med demodata för **Södermalms Snickeri AB** (fil-baserad databas i `.data/db.json`). Klicka på företagsnamnet nere i vänstermenyn för att återställa demon.
 
 ### Google Maps-adresssökning (valfritt)
 
@@ -51,7 +53,7 @@ npm run test:assistant
 
 **Förfrågan → Offert → BankID-godkännande → Jobb → Faktura → Betalning → Bokföring**
 
-- Offert- och faktura­utskick har alltid en preview: *"Så här ser kunden offerten"* (desktop/mobil/PDF).
+- Offert- och fakturautkast visas som dokumentet på detaljsidan. Skicka bekräftas i en liten dialog – ingen extra förhandsgranskning.
 - Kundens offertsida (`/offert/[token]`) är mobil-först med **Godkänn med BankID** som primär handling.
 - Vid godkännande låses offertversionen, en SHA-256-hash av innehållet sparas med signaturen, och jobbet skapas automatiskt. Signeringsunderlaget kan öppnas och verifieras i efterhand.
 - Betalningar matchas mot fakturor (OCR/belopp) och bokförs automatiskt enligt BAS-kontoplanen.
@@ -67,7 +69,12 @@ npm run test:assistant
 | Open Banking | `src/lib/services/banking.ts` | `BankProvider`-abstraktion förberedd för t.ex. Tink; matchningsmotorn är riktig |
 | Bokföring | `src/lib/bas.ts` | BAS-konton, momssatser, konteringsregler, verifikationer |
 | AI-assistent | `src/lib/services/assistant.ts`, `src/lib/ai/` | LLM med tool calling mot samma tjänster som UI:t; regelbaserad fallback utan `AI_API_KEY` |
+| Domän | `src/lib/domains/` | `.se`-köp via registrar-abstraktion (Openprovider + mock). Hosting mot Vercel-projektet **driva** (`driva-alpha.vercel.app`), inte noxfort |
 | Lagring | `src/lib/store.ts` | JSON-fil (`.data/db.json`) – byts mot riktig databas i produktion |
+
+### Egen .se-adress
+
+Hemsida → Domän: sök, köp, koppla. Standard är **mock** (ingen riktig .se köps). Se `.env.example` för Openprovider-sandbox och `VERCEL_PROJECT_NAME=driva`.
 
 ## Verifiering
 

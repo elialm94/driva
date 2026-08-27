@@ -5,6 +5,7 @@ import { buildSeed } from "./seed";
 import { hydrateIssuedInvoices, hydrateQuoteSellerSnapshots } from "./invoices/snapshot";
 import { taxReductionFields } from "./tax-reduction-terms";
 import { migrateAccounting } from "./accounting/migrate";
+import { normalizeDomains } from "./domains/normalize";
 
 /**
  * Enkel JSON-baserad lagring för demon.
@@ -40,6 +41,21 @@ function hydrateTaxReductionTerms(data: DB): boolean {
   return changed;
 }
 
+function hydrateTaxReductionDemo(data: DB): boolean {
+  let changed = false;
+  const anna = data.customers.find((c) => c.id === "cust-anna");
+  if (anna && !anna.personalIdentityNumber) {
+    anna.personalIdentityNumber = "19850515-1234";
+    changed = true;
+  }
+  const kok = data.jobs.find((j) => j.id === "job-kok");
+  if (kok && !kok.housing) {
+    kok.housing = { dwellingType: "smahus" };
+    changed = true;
+  }
+  return changed;
+}
+
 function normalize(loaded: DB): DB {
   // Fält tillagda efter att filen skapades får sina standardvärden här.
   loaded.settings.lateInterestRate ??= 10;
@@ -49,19 +65,31 @@ function normalize(loaded: DB): DB {
   loaded.assistantAudit ??= [];
   loaded.assistantMessages ??= [];
   loaded.pendingActions ??= [];
+  const domainsChanged = normalizeDomains(loaded);
   // Bokföringsmotorn: räkenskapsår, IB och verifikationsfält (idempotent).
   const migrated = migrateAccounting(loaded);
   const dirty =
     hydrateIssuedInvoices(loaded) ||
     hydrateQuoteSellerSnapshots(loaded) ||
-    hydrateTaxReductionTerms(loaded);
+    hydrateTaxReductionTerms(loaded) ||
+    hydrateTaxReductionDemo(loaded);
   // Persist snapshots so later settings changes cannot rewrite seed/historical docs.
-  if (dirty || migrated) persist(loaded);
+  if (dirty || migrated || domainsChanged) persist(loaded);
   return loaded;
 }
 
 function freshSeed(): DB {
   return normalize(buildSeed());
+}
+
+function schemaNeedsNormalize(data: DB | undefined): boolean {
+  if (!data) return true;
+  if (!Array.isArray(data.domains) || !Array.isArray(data.domainAudit)) return true;
+  const anna = data.customers.find((c) => c.id === "cust-anna");
+  if (anna && !anna.personalIdentityNumber) return true;
+  const kok = data.jobs.find((j) => j.id === "job-kok");
+  if (kok && !kok.housing) return true;
+  return false;
 }
 
 export function db(): DB {
@@ -78,6 +106,9 @@ export function db(): DB {
       g.__drivaDb = freshSeed();
       persist(g.__drivaDb);
     }
+  } else if (schemaNeedsNormalize(g.__drivaDb)) {
+    // HMR / äldre in-memory cache saknar nya fält – kör migration igen.
+    g.__drivaDb = normalize(g.__drivaDb);
   }
   return g.__drivaDb;
 }

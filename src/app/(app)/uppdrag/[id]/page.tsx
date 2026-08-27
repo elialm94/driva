@@ -9,6 +9,8 @@ import { Avatar, Breadcrumbs, Card, SectionTitle } from "@/components/ui";
 import { InvoiceStatusBadge, JobStatusBadge, QuoteStatusBadge } from "@/components/status";
 import { JobActions } from "@/components/job-controls";
 import { JobNotes } from "@/components/job-notes";
+import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
+import { taxReductionCaseForJob } from "@/lib/services/tax-reduction";
 import type { Quote } from "@/lib/types";
 import { BackLink } from "@/components/back-link";
 import { invoiceHref, newQuoteHref, quoteHref } from "@/lib/nav";
@@ -46,6 +48,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
   const fromHere = { href: `/uppdrag/${job.id}`, label: job.title };
   const notes = parseJobNotes(job.notes);
   const hasEconomy = Boolean(quote) || invoices.length > 0;
+  const taxCase = taxReductionCaseForJob(job);
 
   return (
     <div className="animate-fade-up">
@@ -76,7 +79,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
             </p>
           ) : null}
           <div>
-            <JobStatusBadge status={job.status} />
+            <JobStatusBadge status={job.status} startDate={job.startDate} completedAt={job.completedAt} />
           </div>
         </div>
 
@@ -106,7 +109,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
           waitingLabel={admin.waitingLabel}
           doneLabel={admin.doneLabel}
           canMarkDone={admin.canMarkDone}
-          quoteHref={quote ? quoteHref(quote.id, fromHere) : "/pengar?flik=offerter"}
+          quoteHref={quote ? quoteHref(quote.id, fromHere) : "/ekonomi?flik=offerter"}
           newQuoteHref={newQuoteHref({ kund: customer.id, job: job.id, from: fromHere })}
           job={{
             title: job.title,
@@ -164,6 +167,15 @@ Offert #{quote.number} · {kr(money.quoteAmount)}
               </Link>
             ))}
           </Card>
+        </div>
+      ) : null}
+
+      {taxCase.phase !== "none" && taxCase.phase !== "preliminar" && taxCase.phase !== "waiting_payment" && taxCase.phase !== "waiting_work" ? (
+        <div className="mb-8">
+          <TaxReductionApplicationCard
+            cse={taxCase}
+            editHref={taxCase.invoiceId ? invoiceHref(taxCase.invoiceId, fromHere) : undefined}
+          />
         </div>
       ) : null}
 

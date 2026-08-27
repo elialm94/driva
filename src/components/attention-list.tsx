@@ -10,6 +10,7 @@ import {
   Receipt,
   HelpCircle,
   FileText,
+  Landmark,
   Check,
   Upload,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import { buttonClasses, cx } from "./ui";
 import {
   answerExpenseQuestionAction,
   createFinalInvoiceForJobAction,
+  createNextInvoiceForJobAction,
   followUpQuoteAction,
   sendReminderAction,
   uploadReceiptAction,
@@ -29,11 +31,12 @@ export type AttentionAction =
   | { type: "remindInvoice"; label: string; invoiceId: string }
   | { type: "uploadReceipt"; label: string; expenseId: string }
   | { type: "answerQuestion"; options: string[]; expenseId: string }
-  | { type: "createFinalInvoice"; label: string; jobId: string; jobTitle?: string };
+  | { type: "createFinalInvoice"; label: string; jobId: string; jobTitle?: string }
+  | { type: "createJobInvoice"; label: string; jobId: string; jobTitle?: string };
 
 export interface AttentionDTO {
   id: string;
-  icon: "inbox" | "clock" | "alert" | "receipt" | "question" | "invoice";
+  icon: "inbox" | "clock" | "alert" | "receipt" | "question" | "invoice" | "bank";
   title: string;
   text: string;
   href?: string;
@@ -48,6 +51,7 @@ const ICONS = {
   receipt: { icon: Receipt, cls: "bg-warn-soft text-warn" },
   question: { icon: HelpCircle, cls: "bg-info-soft text-info" },
   invoice: { icon: FileText, cls: "bg-accent-soft text-accent-deep" },
+  bank: { icon: Landmark, cls: "bg-info-soft text-info" },
 };
 
 function AttentionRow({ item }: { item: AttentionDTO }) {
@@ -152,14 +156,17 @@ function AttentionRow({ item }: { item: AttentionDTO }) {
                   </button>
                 ))
               : null}
-            {item.action.type === "createFinalInvoice" ? (
+            {item.action.type === "createFinalInvoice" || item.action.type === "createJobInvoice" ? (
               <button
                 className={buttonClasses("accent", "sm")}
                 disabled={isPending}
                 onClick={() => {
-                  const action = item.action as { jobId: string; jobTitle?: string };
+                  const action = item.action as { jobId: string; jobTitle?: string; type: string };
                   startTransition(async () => {
-                    const invoiceId = await createFinalInvoiceForJobAction(action.jobId);
+                    const invoiceId =
+                      action.type === "createJobInvoice"
+                        ? await createNextInvoiceForJobAction(action.jobId)
+                        : await createFinalInvoiceForJobAction(action.jobId);
                     router.push(
                       invoiceHref(invoiceId, {
                         href: `/uppdrag/${action.jobId}`,
@@ -184,13 +191,34 @@ function AttentionRow({ item }: { item: AttentionDTO }) {
   );
 }
 
-export function AttentionList({ items }: { items: AttentionDTO[] }) {
+export function AttentionList({
+  items,
+  initialVisible,
+}: {
+  items: AttentionDTO[];
+  initialVisible?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
   if (items.length === 0) return null;
+  const limit = initialVisible ?? items.length;
+  const hidden = Math.max(0, items.length - limit);
+  const visible = expanded || hidden === 0 ? items : items.slice(0, limit);
   return (
-    <div className="card divide-y divide-line/70">
-      {items.map((item) => (
-        <AttentionRow key={item.id} item={item} />
-      ))}
+    <div>
+      <div className="card divide-y divide-line/70">
+        {visible.map((item) => (
+          <AttentionRow key={item.id} item={item} />
+        ))}
+      </div>
+      {hidden > 0 && !expanded ? (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="mt-2 text-[13px] font-medium text-soft hover:text-ink"
+        >
+          Visa {hidden} till
+        </button>
+      ) : null}
     </div>
   );
 }

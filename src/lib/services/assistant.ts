@@ -7,6 +7,8 @@ import { followUpQuote, sendQuote } from "./quotes";
 import { sendInvoice, sendReminder } from "./invoices";
 import { generateWebsite, publishWebsite } from "./website";
 import { applyBusinessProfilePatch } from "./settings";
+import { purchaseDomain } from "../domains/purchase";
+import { isDomainError } from "../domains/errors";
 import { runBokslutAutomation, closeFiscalYear } from "../accounting/close";
 import { markVatReportDeclared } from "../accounting/vat";
 import { isAiConfigured, chatWithTools, type AiChatMessage } from "../ai/provider";
@@ -19,6 +21,8 @@ import {
   companyStatusResult,
   createQuoteDraft,
   createJobDraft,
+  createInvoiceDraft,
+  listOpenInquiriesResult,
   missingReceiptsResult,
   momsResult,
   offerCreateCustomer,
@@ -35,6 +39,8 @@ import {
   todayAttentionResult,
   unpaidInvoicesResult,
   businessProfileResult,
+  requestPurchaseDomain,
+  getDomainStatusResult,
   type DomainResult,
 } from "../ai/domain";
 import {
@@ -138,16 +144,23 @@ function intentBankIdRefuse(text: string): boolean {
 function intentCreateQuote(text: string): boolean {
   if (!/offert/i.test(text) || !/(skapa|gör|ta fram|skriv|fixa)/i.test(text)) return false;
 
-  const nameMatch = text.match(/till\s+([A-Za-zÅÄÖåäö]+(?:\s+[A-ZÅÄÖ][a-zåäö]+)?)/);
+  const nameMatch = text.match(/(?:till|för)\s+([A-Za-zÅÄÖåäö]+(?:\s+[A-ZÅÄÖ][a-zåäö]+)?)/);
   if (!nameMatch) {
     reply("Vem ska offerten till? Skriv till exempel: ”Skapa en offert till Anna för köksrenoveringen, 85 000 kr”.");
     return true;
   }
+  let name = nameMatch[1];
+  if (resolveCustomerName(name).kind === "none" && /s$/i.test(name) && !name.includes(" ")) {
+    name = name.slice(0, -1);
+  }
   const amount = parseAmountInclVat(text);
-  const titleMatch = text.match(/för\s+(?:en\s+|ett\s+)?([^.,\d]+?)(?=\s*[,.]|\s*\d|$)/i);
+  const afterName = text.slice((nameMatch.index ?? 0) + nameMatch[0].length).replace(/^s\b/i, "");
+  const titleMatch =
+    afterName.match(/(?:för\s+)?(?:en\s+|ett\s+)?([^.,\d]+?)(?=\s*[,.]|\s*\d|$)/i) ||
+    text.match(/för\s+(?:en\s+|ett\s+)?([^.,\d]+?)(?=\s*[,.]|\s*\d|$)/i);
   let title = titleMatch ? cap(titleMatch[1].trim()) : "Offererat arbete";
   title = title.replace(/^(Den|Det|En|Ett)\s+/i, "");
-  if (title.toLowerCase() === nameMatch[1].toLowerCase()) title = "Offererat arbete";
+  if (title.toLowerCase() === name.toLowerCase()) title = "Offererat arbete";
 
   const inclMaterial = /inklusive material|inkl\.? material/i.test(text);
   const start = parseStartLabel(text);
@@ -161,7 +174,7 @@ function intentCreateQuote(text: string): boolean {
   const percentAtStart = percentMatch ? parseInt(percentMatch[1], 10) : undefined;
   const rot: "rot" | "rut" | null = /\brut\b/i.test(text) ? "rut" : /\brot\b/i.test(text) ? "rot" : null;
 
-  return withCustomer(nameMatch[1], { kind: "create_quote", title, amountInclVat: amount ?? undefined, rot }, (customerId) =>
+  return withCustomer(name, { kind: "create_quote", title, amountInclVat: amount ?? undefined, rot }, (customerId) =>
     createQuoteDraft({
       customerId,
       title,
@@ -171,6 +184,13 @@ function intentCreateQuote(text: string): boolean {
       rot,
     })
   );
+}
+
+function intentListInquiries(text: string): boolean {
+  if (!/förfråg/i.test(text)) return false;
+  if (!/(vilka|öppna|nya|lista|visa|inbox)/i.test(text) && !/förfrågningar/i.test(text)) return false;
+  if (/(skapa|offert)/i.test(text)) return false;
+  return apply(listOpenInquiriesResult());
 }
 
 function intentCreateJob(text: string): boolean {
@@ -197,6 +217,27 @@ function intentExtraFromNotes(text: string): boolean {
   const amount = parseAmountInclVat(text);
   return withCustomer(name, { kind: "create_invoice", amountInclVat: amount ?? undefined }, (customerId) =>
     proposeExtraFromNotes(customerId, amount ?? undefined)
+  );
+}
+
+function intentRotInvoice(text: string): boolean {
+  if (!/(rot|rut)[-\s]?faktura|faktura.{0,20}(rot|rut)/i.test(text)) return false;
+  const type: "rot" | "rut" = /\brut\b/i.test(text) ? "rut" : "rot";
+  let name = extractCustomerName(text);
+  if (!name) {
+    reply(`Vem ska ${type.toUpperCase()}-fakturan till? Skriv till exempel: ”Skapa ROT-faktura för Annas köksrenovering”.`);
+    return true;
+  }
+  if (resolveCustomerName(name).kind === "none" && /s$/i.test(name)) {
+    name = name.slice(0, -1);
+  }
+  const titleHint = text
+    .replace(/skapa\s+(en\s+)?(rot|rut)[-\s]?faktura/gi, "")
+    .replace(new RegExp(`(?:för|till)\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}s?`, "i"), "")
+    .replace(/[,.:]/g, " ")
+    .trim();
+  return withCustomer(name, { kind: "create_invoice", title: titleHint || undefined, taxReduction: type }, (customerId) =>
+    createInvoiceDraft({ customerId, title: titleHint || undefined, taxReduction: type })
   );
 }
 
@@ -243,7 +284,7 @@ function intentSendInvoice(text: string): boolean {
           kind: "list",
           rows: drafts.map((i) => ({
             label: `Faktura #${i.number}`,
-            href: `/pengar/fakturor/${i.id}`,
+            href: `/ekonomi/fakturor/${i.id}`,
           })),
         });
         return true;
@@ -327,6 +368,25 @@ function intentBookExpense(text: string): boolean {
   return apply(requestBookExpense({ expenseId: expense.id, category: categoryKey, jobId }));
 }
 
+function intentDomain(text: string): boolean {
+  if (!/domän/i.test(text) && !/(ledig|upptagen|skaffa).*\.se|\.se.*(ledig|upptagen|köp)/i.test(text)) return false;
+  if (/(köp|skaffa|beställ)/i.test(text)) {
+    const m = text.match(/([a-z0-9-]+(?:\.se)?)/i);
+    if (!m) {
+      reply("Vilken .se-adress vill du skaffa? Skriv till exempel sodermalmssnickeri.");
+      return true;
+    }
+    return apply(requestPurchaseDomain(m[1]));
+  }
+  if (/(status|hur går|kopplad|live)/i.test(text)) return apply(getDomainStatusResult());
+  return apply({
+    ok: true,
+    text: "Sök och köp .se-adressen under Hemsida → Domän. Jag köper inget utan att du bekräftar.",
+    card: { kind: "links", links: [{ label: "Öppna Domän", href: "/hemsida/doman" }] },
+    forModel: { hint: "domain_ui" },
+  });
+}
+
 function intentWebsite(text: string): boolean {
   if (!/hemsida|webbplats|sajt/i.test(text) || !/(skapa|bygg|gör|fixa|generera|publicera)/i.test(text)) return false;
   if (/publicera/i.test(text)) return apply(requestPublishWebsite());
@@ -391,7 +451,9 @@ export function dispatchRules(text: string): boolean {
     intentGreetingOrHelp(text) ||
     intentCreateJob(text) ||
     intentCreateQuote(text) ||
+    intentListInquiries(text) ||
     intentExtraFromNotes(text) ||
+    intentRotInvoice(text) ||
     intentInvoiceCustomer(text) ||
     intentSendQuote(text) ||
     intentSendInvoice(text) ||
@@ -410,6 +472,7 @@ export function dispatchRules(text: string): boolean {
     intentResultatBalans(text) ||
     intentToday(text) ||
     intentBookExpense(text) ||
+    intentDomain(text) ||
     intentWebsite(text) ||
     intentMoms(text)
   );
@@ -449,7 +512,7 @@ export async function interpret(): Promise<boolean> {
       } catch {
         parsed = {};
       }
-      const out = executeTool(call.function.name, parsed);
+      const out = await executeTool(call.function.name, parsed);
       if (out.card) lastCard = out.card;
       if (out.text) lastText = out.text;
       const payload = out.ok
@@ -516,7 +579,7 @@ function updateConfirmCard(actionId: string, state: "utford" | "avbruten", resul
   }
 }
 
-export function confirmPendingAction(actionId: string): void {
+export async function confirmPendingAction(actionId: string): Promise<void> {
   const data = db();
   const idx = data.pendingActions.findIndex((a) => a.id === actionId);
   if (idx === -1) return;
@@ -671,6 +734,21 @@ export function confirmPendingAction(actionId: string): void {
       reply(result.text, result.card);
       break;
     }
+    case "kop_doman": {
+      try {
+        await purchaseDomain(action.hostname, { actor: "assistent" });
+        updateConfirmCard(actionId, "utford", `${action.hostname} är köpt och kopplas.`);
+        reply(`Klart – ${action.hostname} är köpt och kopplas till hemsidan.`, {
+          kind: "links",
+          links: [{ label: "Öppna Domän", href: "/hemsida/doman" }],
+        });
+      } catch (e) {
+        const message = isDomainError(e) || e instanceof Error ? (e as Error).message : "Kunde inte köpa adressen.";
+        updateConfirmCard(actionId, "avbruten", message);
+        reply(message, { kind: "links", links: [{ label: "Öppna Domän", href: "/hemsida/doman" }] });
+      }
+      break;
+    }
   }
   save();
 }
@@ -711,7 +789,15 @@ export function completeCreateCustomerAndResume(actionId: string, customerId: st
   } else if (resume.kind === "create_job") {
     apply(createJobDraft({ customerId, title: resume.title, startDate: resume.startDate, description: resume.description }));
   } else if (resume.kind === "create_invoice") {
-    apply(proposeInvoiceForCustomer(customerId));
+    apply(
+      createInvoiceDraft({
+        customerId,
+        title: resume.title,
+        amountInclVat: resume.amountInclVat,
+        jobId: resume.jobId,
+        taxReduction: resume.taxReduction ?? null,
+      })
+    );
   }
   save();
 }

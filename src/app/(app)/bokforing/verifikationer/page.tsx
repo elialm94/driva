@@ -5,6 +5,7 @@ import { BAS } from "@/lib/bas";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { BackLink } from "@/components/back-link";
 import { UndoBookingButton } from "@/components/bokforing-widgets";
+import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { verificationLabel } from "@/lib/accounting/engine";
 import type { Verification } from "@/lib/types";
 
@@ -41,6 +42,7 @@ export default function VerifikationerPage() {
         title="Verifikationer"
         subtitle={`${verifications.length} bokförda händelser. Varje verifikation är låst när den bokförts – rättelser blir nya verifikationer.`}
       />
+      <BokforingAdvancedTabs />
 
       {verifications.length === 0 ? (
         <EmptyState

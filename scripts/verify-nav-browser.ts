@@ -31,20 +31,35 @@ async function main() {
     console.log("ok", name, extra);
   }
 
-  // 1. Pengar → Fakturor → Faktura → back to Fakturor
+  // 0. Old /pengar bookmarks redirect to /ekonomi
   await page.setViewport({ width: 1280, height: 900 });
-  await page.goto(`${BASE}/pengar?flik=fakturor`, { waitUntil: "networkidle0" });
-  await page.click('a[href^="/pengar/fakturor/inv-1045"]');
+  const redirectRes = await page.goto(`${BASE}/pengar?flik=fakturor`, { waitUntil: "networkidle0" });
+  await ok(
+    "0 /pengar redirects to /ekonomi",
+    page.url().includes("/ekonomi") && page.url().includes("flik=fakturor"),
+    `status=${redirectRes?.status()} url=${page.url()}`
+  );
+  const nestedRedirect = await page.goto(`${BASE}/pengar/fakturor/inv-1045`, { waitUntil: "networkidle0" });
+  await ok(
+    "0 nested /pengar/fakturor redirects",
+    page.url().includes("/ekonomi/fakturor/inv-1045"),
+    `status=${nestedRedirect?.status()} url=${page.url()}`
+  );
+
+  // 1. Ekonomi → Fakturor → Faktura → back to Fakturor
+  await page.setViewport({ width: 1280, height: 900 });
+  await page.goto(`${BASE}/ekonomi?flik=fakturor`, { waitUntil: "networkidle0" });
+  await page.click('a[href^="/ekonomi/fakturor/inv-1045"]');
   await page.waitForSelector("h1");
   const back1 = await textOf(page, "a[data-nav=back]");
   await ok("1 back label Fakturor", (back1 ?? "").includes("Fakturor"), back1 ?? "");
   await page.click("a[data-nav=back]");
-  await page.waitForFunction(() => location.pathname === "/pengar");
-  await ok("1 back lands on Pengar", page.url().includes("/pengar") && page.url().includes("flik=fakturor"));
+  await page.waitForFunction(() => location.pathname === "/ekonomi");
+  await ok("1 back lands on Ekonomi", page.url().includes("/ekonomi") && page.url().includes("flik=fakturor"));
 
   // 2. Uppdrag → Köksrenovering → Faktura → back to Köksrenovering
   await page.goto(`${BASE}/uppdrag/job-kok`, { waitUntil: "networkidle0" });
-  const invoiceLink = await page.$('a[href*="/pengar/fakturor/inv-1045"]');
+  const invoiceLink = await page.$('a[href*="/ekonomi/fakturor/inv-1045"]');
   await ok("2 invoice link from uppdrag", !!invoiceLink);
   await invoiceLink!.click();
   await page.waitForSelector("h1");
@@ -58,21 +73,21 @@ async function main() {
   await page.waitForFunction(() => location.pathname === "/uppdrag/job-kok");
   await ok("2 back lands on uppdrag", page.url().includes("/uppdrag/job-kok"));
 
-  // 3. Pengar → Offerter → Ny offert → avbryt → Offerter
-  await page.goto(`${BASE}/pengar?flik=offerter`, { waitUntil: "networkidle0" });
-  await page.click('a[href="/pengar/offerter/ny"]');
-  await page.waitForFunction(() => location.pathname === "/pengar/offerter/ny");
+  // 3. Ekonomi → Offerter → Ny offert → avbryt → Offerter
+  await page.goto(`${BASE}/ekonomi?flik=offerter`, { waitUntil: "networkidle0" });
+  await page.click('a[href="/ekonomi/offerter/ny"]');
+  await page.waitForFunction(() => location.pathname === "/ekonomi/offerter/ny");
   const back3 = await textOf(page, "a[data-nav=back]");
   await ok("3 ny offert back Offerter", (back3 ?? "").includes("Offerter"), back3 ?? "");
   const avbryt = await page.$("button::-p-text(Avbryt)") ?? await page.evaluateHandle(() =>
     [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Avbryt") ?? null
   );
   await (avbryt as puppeteer.ElementHandle).click();
-  await page.waitForFunction(() => location.pathname === "/pengar");
-  await ok("3 avbryt to offerter", page.url().includes("flik=offerter") || page.url().includes("/pengar"));
+  await page.waitForFunction(() => location.pathname === "/ekonomi");
+  await ok("3 avbryt to offerter", page.url().includes("flik=offerter") || page.url().includes("/ekonomi"));
 
   // 4. Uppdrag → Skapa offert → avbryt → same uppdrag
-  await page.goto(`${BASE}/pengar/offerter/ny?kund=cust-anna&job=job-kok`, { waitUntil: "networkidle0" });
+  await page.goto(`${BASE}/ekonomi/offerter/ny?kund=cust-anna&job=job-kok`, { waitUntil: "networkidle0" });
   await page.waitForSelector("a[data-nav=back]");
   const back4 = await textOf(page, "a[data-nav=back]");
   await ok("4 back is Köksrenovering", (back4 ?? "").includes("Köksrenovering"), back4 ?? "");
@@ -97,7 +112,7 @@ async function main() {
   await ok("5 back from uppdrag is Anna Andersson", (back5 ?? "").includes("Anna Andersson"), back5 ?? "");
 
   // 6. Ny offert → ny kund modal → stäng → quote data intact
-  await page.goto(`${BASE}/pengar/offerter/ny`, { waitUntil: "networkidle0" });
+  await page.goto(`${BASE}/ekonomi/offerter/ny`, { waitUntil: "networkidle0" });
   await page.waitForSelector('input[placeholder="T.ex. Köksrenovering"]');
   await page.type('input[placeholder="T.ex. Köksrenovering"]', "Navtest-titel");
   const picker = await page.evaluateHandle(() =>
@@ -135,42 +150,32 @@ async function main() {
   const stillTitle = await page.$eval('input[placeholder="T.ex. Köksrenovering"]', (el) => (el as HTMLInputElement).value);
   await ok("unsaved stay keeps form", stillTitle.includes("Navtest-titel"));
 
-  // 7. Preview: create is heavy; use existing sent quote view modal if send not available.
-  await page.goto(`${BASE}/pengar/offerter/quote-dorrar`, { waitUntil: "networkidle0" });
-  const previewBtn = await page.evaluateHandle(() =>
-    [...document.querySelectorAll("button")].find((b) => /Förhandsgranska|ser kunden|Visa offerten/.test(b.textContent ?? "")) ?? null
-  );
-  await ok("7 preview trigger", !!previewBtn.asElement());
-  await previewBtn.asElement()!.click();
-  await page.waitForFunction(() =>
-    [...document.querySelectorAll("button")].some((b) => /Tillbaka och redigera|Stäng/.test(b.textContent ?? ""))
-  );
-  const closePreview = await page.evaluateHandle(() =>
-    [...document.querySelectorAll("button")].find((b) => /Tillbaka och redigera|Stäng/.test(b.textContent ?? "")) ?? null
-  );
-  await closePreview.asElement()!.click();
-  await page.waitForFunction(() => location.pathname.includes("/pengar/offerter/quote-dorrar"));
-  await ok("7 preview close stays on quote", page.url().includes("quote-dorrar"));
+  // 7. Offertdetaljen visar dokumentet – ingen extra förhandsgranskning.
+  await page.goto(`${BASE}/ekonomi/offerter/quote-dorrar`, { waitUntil: "networkidle0" });
+  const quotePageText = await page.evaluate(() => document.body.innerText);
+  await ok("7 quote document on detail", quotePageText.includes("Byte av förrådsdörrar"));
+  await ok("7 no preview CTA", !/Förhandsgranska & skicka|Så här ser kunden offerten|Visa offerten/.test(quotePageText));
+  await ok("7 stays on quote", page.url().includes("quote-dorrar"));
 
   // 8. Browser back through objects
-  await page.goto(`${BASE}/pengar?flik=fakturor`, { waitUntil: "networkidle0" });
+  await page.goto(`${BASE}/ekonomi?flik=fakturor`, { waitUntil: "networkidle0" });
   await Promise.all([
-    page.waitForFunction(() => location.pathname.includes("/pengar/fakturor/inv-1045")),
-    page.click('a[href^="/pengar/fakturor/inv-1045"]'),
+    page.waitForFunction(() => location.pathname.includes("/ekonomi/fakturor/inv-1045")),
+    page.click('a[href^="/ekonomi/fakturor/inv-1045"]'),
   ]);
   await page.goBack();
-  await page.waitForFunction(() => location.pathname === "/pengar" && location.search.includes("flik=fakturor"));
+  await page.waitForFunction(() => location.pathname === "/ekonomi" && location.search.includes("flik=fakturor"));
   await ok("8 browser back to fakturor list", page.url().includes("flik=fakturor"));
 
   // Dead-end pages load
-  for (const path of ["/bokforing", "/hemsida", "/assistent", "/pengar?flik=utgifter", "/pengar?flik=bank"]) {
+  for (const path of ["/bokforing", "/hemsida", "/assistent", "/ekonomi?flik=utgifter", "/ekonomi?flik=bank"]) {
     const res = await page.goto(`${BASE}${path}`, { waitUntil: "networkidle0" });
     await ok(`section ${path}`, res?.ok() ?? false);
   }
 
   // 9. Mobile header/back
   await page.setViewport({ width: 390, height: 844 });
-  await page.goto(`${BASE}/pengar/fakturor/inv-1045`, { waitUntil: "networkidle0" });
+  await page.goto(`${BASE}/ekonomi/fakturor/inv-1045`, { waitUntil: "networkidle0" });
   const mobileBack = await page.$("a[data-nav=back]");
   const box = await mobileBack?.boundingBox();
   await ok("9 mobile back visible", !!box && box.width > 20 && box.y < 200, JSON.stringify(box));

@@ -25,7 +25,6 @@ export function InvoiceDraftSend({
   hasIssuanceBlockers = false,
   excessAmount,
   tillaggHref,
-  missingTaxReductionAcceptance = false,
 }: {
   customerName: string;
   amount: number;
@@ -38,11 +37,9 @@ export function InvoiceDraftSend({
   /** Positivt belopp om fakturan överstiger tröskeln; annars utelämnas varningen. */
   excessAmount?: number;
   tillaggHref?: string;
-  missingTaxReductionAcceptance?: boolean;
 }) {
   const router = useRouter();
   const [warnOpen, setWarnOpen] = useState(false);
-  const [taxWarnOpen, setTaxWarnOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -57,8 +54,7 @@ export function InvoiceDraftSend({
 
   function afterExcessContinue() {
     setWarnOpen(false);
-    if (missingTaxReductionAcceptance) setTaxWarnOpen(true);
-    else openConfirm();
+    openConfirm();
   }
 
   function requestSend() {
@@ -71,7 +67,6 @@ export function InvoiceDraftSend({
       return;
     }
     if (needsWarning) setWarnOpen(true);
-    else if (missingTaxReductionAcceptance) setTaxWarnOpen(true);
     else openConfirm();
   }
 
@@ -152,32 +147,6 @@ export function InvoiceDraftSend({
               Skapa tilläggsoffert
             </button>
             <button className={buttonClasses("primary")} onClick={afterExcessContinue}>
-              Fortsätt
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal open={taxWarnOpen} onClose={() => setTaxWarnOpen(false)} size="sm" title="ROT/RUT-villkor saknas">
-        <div className="px-6 py-5">
-          <p className="text-[15px] font-semibold text-ink">Kunden har inte godkänt något ROT/RUT-villkor i Driva.</p>
-          <p className="mt-2 text-[14px] leading-relaxed text-soft">
-            Vi rekommenderar att villkoren godkänns innan fakturan skickas.
-          </p>
-          <p className="mt-3 text-[13px] leading-relaxed text-muted">
-            Dokumenterat godkännande saknas i Driva. Du kan skicka ändå, men villkoren är inte avtalade via BankID.
-          </p>
-          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <button className={buttonClasses("secondary")} onClick={() => setTaxWarnOpen(false)}>
-              Avbryt
-            </button>
-            <button
-              className={buttonClasses("primary")}
-              onClick={() => {
-                setTaxWarnOpen(false);
-                openConfirm();
-              }}
-            >
               Fortsätt
             </button>
           </div>

@@ -1,6 +1,6 @@
 import { db, save } from "../store";
 import { uid, publicToken, ocrForInvoice } from "../ids";
-import type { DocLine, Invoice, RotRut, TaxReductionTermsSnapshot, Verification } from "../types";
+import type { DocLine, Invoice, RotRut, TaxReductionDetails, TaxReductionTermsSnapshot, Verification } from "../types";
 import { currentVersion, getInvoice, getJob, getQuote, invoiceTotals, jobQuote, quoteSignature, requireCustomer } from "./data";
 import { docTotals } from "../calc";
 import { entriesCredit, entriesInvoicePaid, entriesInvoiceSent } from "../bas";
@@ -12,6 +12,11 @@ import { assertInvoiceReadyToIssue, collectIssueErrors, InvoiceNotReadyError } f
 import { invoiceNumberLabel } from "../invoices/display";
 import { snapshotTaxReductionTerms } from "../tax-reduction-terms";
 import { postVerification } from "../accounting/engine";
+import {
+  detailsFromPrefill,
+  persistTaxReductionOwnership,
+  resolveTaxReductionPrefill,
+} from "./tax-reduction";
 
 export type Actor = "anvandare" | "assistent";
 
@@ -74,13 +79,40 @@ function invoiceTaxReductionFields(
   };
 }
 
-/**
- * True när fakturans ROT/RUT täcks av en BankID-låst offertversion med villkoren.
- * Saknas det: varna, men blockera inte skickning.
- */
-export function invoiceHasDocumentedTaxReductionAcceptance(invoice: Pick<Invoice, "rot" | "quoteId">): boolean {
-  if (!invoice.rot) return true;
-  return signedTaxReductionTerms(invoice.quoteId, invoice.rot.type) != null;
+function applyTaxReductionContext(
+  invoice: Invoice,
+  input: {
+    rot: RotRut | null;
+    taxReductionDetails?: TaxReductionDetails | null;
+    personalIdentityNumber?: string;
+  }
+): void {
+  if (!input.rot) {
+    invoice.taxReductionDetails = null;
+    return;
+  }
+  const prefill = resolveTaxReductionPrefill({
+    customerId: invoice.customerId,
+    jobId: invoice.jobId,
+    details: input.taxReductionDetails ?? invoice.taxReductionDetails,
+  });
+  const details = detailsFromPrefill({
+    ...prefill,
+    workAddress: input.taxReductionDetails?.workAddress ?? prefill.workAddress,
+    workPeriodStart: input.taxReductionDetails?.workPeriodStart ?? prefill.workPeriodStart,
+    workPeriodEnd: input.taxReductionDetails?.workPeriodEnd ?? prefill.workPeriodEnd,
+    housing: input.taxReductionDetails?.housing ?? prefill.housing,
+  });
+  invoice.taxReductionDetails = details;
+  persistTaxReductionOwnership({
+    customerId: invoice.customerId,
+    jobId: invoice.jobId,
+    personalIdentityNumber: input.personalIdentityNumber,
+    details,
+  });
+  if (!invoice.serviceDate && invoice.rot) {
+    invoice.serviceDate = details.workPeriodEnd || details.workPeriodStart || undefined;
+  }
 }
 
 export interface InvoiceInput {
@@ -93,6 +125,8 @@ export interface InvoiceInput {
   dueInDays?: number;
   lateInterestRate?: number;
   serviceDate?: string;
+  taxReductionDetails?: TaxReductionDetails | null;
+  personalIdentityNumber?: string;
 }
 
 export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare"): Invoice {
@@ -110,6 +144,7 @@ export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare
     status: "utkast",
     lines: cloneLines(input.lines),
     ...invoiceTaxReductionFields(input.rot, input.quoteId),
+    taxReductionDetails: null,
     issueDate: now,
     dueDate: isoDaysFromNow(paymentTermsDays),
     paymentTermsDays,
@@ -121,6 +156,7 @@ export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare
     createdBy,
     createdAt: now,
   };
+  applyTaxReductionContext(invoice, input);
   data.invoices.push(invoice);
   logActivity(`Fakturautkast skapades för ${customer.name}.`, {
     customerId: customer.id,
@@ -137,6 +173,8 @@ export interface InvoiceUpdateInput {
   dueInDays?: number;
   lateInterestRate?: number;
   serviceDate?: string | null;
+  taxReductionDetails?: TaxReductionDetails | null;
+  personalIdentityNumber?: string;
 }
 
 /** Uppdatera ett fakturautkast. Skickade, betalda och krediterade fakturor får inte ändras. */
@@ -149,6 +187,7 @@ export function updateInvoice(invoiceId: string, input: InvoiceUpdateInput, crea
 
   invoice.lines = cloneLines(input.lines);
   Object.assign(invoice, invoiceTaxReductionFields(input.rot, invoice.quoteId));
+  applyTaxReductionContext(invoice, input);
   if (input.dueInDays != null) {
     invoice.paymentTermsDays = input.dueInDays;
     invoice.dueDate = isoDaysFromNow(input.dueInDays);
@@ -173,7 +212,21 @@ export function updateInvoice(invoiceId: string, input: InvoiceUpdateInput, crea
 function serviceDateFromJob(jobId: string | undefined): string | undefined {
   if (!jobId) return undefined;
   const job = getJob(jobId);
-  return job?.completedAt;
+  if (!job) return undefined;
+  return (job.completedAt || job.endDate || job.startDate || "").slice(0, 10) || undefined;
+}
+
+function rotFromJob(jobId: string | undefined): RotRut | null {
+  if (!jobId) return null;
+  const job = getJob(jobId);
+  if (!job) return null;
+  const quote = jobQuote(job);
+  const fromQuote = quote ? currentVersion(quote).rot : null;
+  if (fromQuote) return fromQuote;
+  const prev = db().invoices.find(
+    (i) => i.jobId === job.id && i.rot && i.type !== "kredit" && i.status !== "krediterad"
+  );
+  return prev?.rot ?? null;
 }
 
 /** Slutfaktura för ett uppdrag – resterande belopp enligt den godkända offerten. */
@@ -222,7 +275,7 @@ export function createFinalInvoiceForJob(jobId: string, createdBy: Actor = "anva
             vatRate: 25,
           },
         ],
-        rot: null,
+        rot: rotFromJob(jobId),
         dueInDays: version.paymentTermsDays,
         lateInterestRate: version.lateInterestRate,
         serviceDate,
@@ -483,6 +536,7 @@ export function creditInvoice(invoiceId: string, createdBy: Actor = "anvandare")
     lines: cloneLines(original.issuedSnapshot?.lines ?? original.lines),
     rot: original.issuedSnapshot?.rot ?? original.rot,
     taxReductionTerms: original.issuedSnapshot?.taxReductionTerms ?? original.taxReductionTerms ?? null,
+    taxReductionDetails: original.issuedSnapshot?.taxReductionDetails ?? original.taxReductionDetails ?? null,
     issueDate: now,
     dueDate: now,
     paymentTermsDays: original.paymentTermsDays,

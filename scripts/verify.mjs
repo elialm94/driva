@@ -108,31 +108,25 @@ try {
   before !== after ? ok(`Checklista togglades (${before} → ${after})`) : fail(`Checklista (${before} → ${after})`);
   await shot("05-jobb-detalj");
 
-  /* ---------- 4. Pengar-flikar ---------- */
-  await goto("/pengar");
+  /* ---------- 4. Ekonomi-flikar ---------- */
+  await goto("/ekonomi");
   await waitText("Offerter");
   await shot("06-pengar-offerter");
-  await goto("/pengar?flik=fakturor");
+  await goto("/ekonomi?flik=fakturor");
   await waitText("Faktura");
   await shot("07-pengar-fakturor");
-  await goto("/pengar?flik=utgifter");
+  await goto("/ekonomi?flik=utgifter");
   await waitText("kvitto");
   await shot("08-pengar-utgifter");
-  await goto("/pengar?flik=bank");
+  await goto("/ekonomi?flik=bank");
   await waitText("bank");
   await shot("09-pengar-bank");
 
-  /* ---------- 5. Offertdetalj + preview ---------- */
-  await goto("/pengar/offerter/quote-dorrar");
+  /* ---------- 5. Offertdetalj (dokumentet är förhandsvisningen) ---------- */
+  await goto("/ekonomi/offerter/quote-dorrar");
   await waitText("Byte av förrådsdörrar");
   await shot("10-offert-detalj");
-  await clickText("button", "Så här ser kunden offerten");
-  await waitText("Godkänns med BankID", 6000).catch(() => {});
-  await shot("11-offert-preview-desktop");
-  await clickText("button", "Mobil");
-  await shot("12-offert-preview-mobil");
-  await page.keyboard.press("Escape");
-  ok("Offert-preview öppnades med Desktop/Mobil-växling");
+  ok("Offertdetaljen visar dokumentet utan extra förhandsgranskning");
 
   /* ---------- 6. Publik offert + BankID (mobil viewport) ---------- */
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
@@ -170,7 +164,7 @@ try {
   ok("Jobb skapades automatiskt efter BankID-godkännande");
 
   /* ---------- 9. Faktura: simulera betalning ---------- */
-  await goto("/pengar/fakturor/inv-1042");
+  await goto("/ekonomi/fakturor/inv-1042");
   await waitText("Faktura #1042");
   await clickText("button", "Simulera inbetalning");
   await waitText("Betald och bokförd", 10000);

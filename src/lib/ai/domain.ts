@@ -10,25 +10,20 @@ import type {
   Quote,
   ResumeAfterCustomer,
 } from "../types";
-import { createCustomer } from "../services/customers";
+import { createCustomer, findMatchingOpenInquiry, listInquiriesInbox } from "../services/customers";
 import { createQuote, quoteDefaults } from "../services/quotes";
 import { createJob } from "../services/jobs";
-import { createFinalInvoiceForJob, createInvoice, type InvoiceInput } from "../services/invoices";
-import {
-  currentVersion,
-  daysOverdue,
-  getCustomer,
-  getInvoice,
-  getJob,
-  getQuote,
-  invoiceTotals,
-  isOverdue,
-  quoteStatusLabel,
-  quoteTotals,
-  quoteWaitingDays,
-  requireCustomer,
-} from "../services/data";
+import { createFinalInvoiceForJob, createInvoice, createNextInvoiceForJob, updateInvoice, type InvoiceInput } from "../services/invoices";
+import { currentVersion, daysOverdue, getCustomer, getInvoice, getJob, getQuote, getRequest, invoiceTotals, isOverdue, quoteStatusLabel, quoteTotals, quoteWaitingDays, requireCustomer } from "../services/data";
 import { attentionItems, remainingToInvoiceForJob } from "../services/attention";
+import { derivedJobStatus } from "../services/job-lifecycle";
+import {
+  findJobsForTaxReduction,
+  resolveTaxReductionPrefill,
+  taxReductionMissingFields,
+  detailsFromPrefill,
+} from "../services/tax-reduction";
+import { maskPersonnummer } from "../personnummer";
 import { businessStats, financeOverview, momsForCurrentPeriod } from "../services/finance";
 import {
   applyBusinessProfilePatch,
@@ -37,6 +32,8 @@ import {
   getInvoiceDefaults,
   SETTINGS_FIELD_LABELS,
 } from "../services/settings";
+import { domainCardView, primaryDomain } from "../domains";
+import { searchDomain } from "../domains/availability";
 
 export type DomainResult = {
   text: string;
@@ -122,17 +119,24 @@ export function createQuoteDraft(input: {
   intro?: string;
   percentAtStart?: number;
   rot?: "rot" | "rut" | null;
+  requestId?: string;
 }): DomainResult {
   const customer = requireCustomer(input.customerId);
   const defaults = quoteDefaults();
-  const title = input.title.trim() || "Offererat arbete";
+  const request =
+    (input.requestId ? getRequest(input.requestId) : undefined) ??
+    findMatchingOpenInquiry(input.customerId, input.title);
+  const title = input.title.trim() || request?.ai?.workType || request?.title || "Offererat arbete";
+  const genericIntro = !input.intro || /enligt överenskommelse/i.test(input.intro);
+  const intro = request && genericIntro ? request.message : (input.intro ?? `${title} enligt överenskommelse.`);
   const percent = input.percentAtStart && input.percentAtStart > 0 && input.percentAtStart < 100 ? input.percentAtStart : undefined;
   const rot = input.rot === "rot" || input.rot === "rut" ? { type: input.rot } : null;
   const quote = createQuote(
     {
       customerId: customer.id,
+      requestId: request?.id,
       title,
-      intro: input.intro ?? `${title} enligt överenskommelse.`,
+      intro,
       lines: [laborLine(title, input.amountInclVat ?? 0)],
       rot,
       paymentPlan: percent
@@ -153,14 +157,22 @@ export function createQuoteDraft(input: {
     ok: true,
     text: `Klart – utkast till offert #${quote.number} för ${customer.name} på ${kr(t.total)} inkl. moms${
       rot ? ` med preliminärt ${rot.type.toUpperCase()}-avdrag` : ""
-    }${percent ? ` med delbetalning ${percent} % vid start` : ""}. Den är inte skickad.`,
+    }${percent ? ` med delbetalning ${percent} % vid start` : ""}${request ? " utifrån förfrågan" : ""}. Den är inte skickad.`,
     card: entityCard(
       "offert",
       `Offert #${quote.number} · ${title}`,
-      `/pengar/offerter/${quote.id}`,
+      `/ekonomi/offerter/${quote.id}`,
       `${customer.name} · ${kr(t.total)} inkl. moms · utkast`
     ),
-    forModel: { quoteId: quote.id, number: quote.number, status: quote.status, totalIncl: t.total, sent: false, rot: rot?.type ?? null },
+    forModel: {
+      quoteId: quote.id,
+      number: quote.number,
+      status: quote.status,
+      totalIncl: t.total,
+      sent: false,
+      rot: rot?.type ?? null,
+      requestId: request?.id ?? null,
+    },
   };
 }
 
@@ -191,7 +203,17 @@ export function createInvoiceDraft(input: {
   title?: string;
   amountInclVat?: number;
   jobId?: string;
+  taxReduction?: "rot" | "rut" | null;
 }): DomainResult {
+  if (input.taxReduction === "rot" || input.taxReduction === "rut") {
+    return createTaxReductionInvoiceDraft({
+      customerId: input.customerId,
+      jobId: input.jobId,
+      titleHint: input.title,
+      amountInclVat: input.amountInclVat,
+      type: input.taxReduction,
+    });
+  }
   const customer = requireCustomer(input.customerId);
   const title = input.title?.trim() || "Arbete";
   const payload: InvoiceInput = {
@@ -209,10 +231,116 @@ export function createInvoiceDraft(input: {
     card: entityCard(
       "faktura",
       "Fakturautkast",
-      `/pengar/fakturor/${invoice.id}`,
+      `/ekonomi/fakturor/${invoice.id}`,
       `${customer.name} · ${kr(t.toPay)} · utkast`
     ),
     forModel: { invoiceId: invoice.id, number: null, status: invoice.status, sent: false },
+  };
+}
+
+export function createTaxReductionInvoiceDraft(input: {
+  customerId: string;
+  jobId?: string;
+  titleHint?: string;
+  amountInclVat?: number;
+  type: "rot" | "rut";
+}): DomainResult {
+  const customer = requireCustomer(input.customerId);
+  const kind = input.type.toUpperCase();
+  let job = input.jobId ? getJob(input.jobId) : undefined;
+  if (!job) {
+    const jobs = findJobsForTaxReduction(customer.id, input.titleHint);
+    if (jobs.length > 1 && input.titleHint) {
+      const matched = jobs.filter(
+        (j) =>
+          j.title.toLowerCase().includes(input.titleHint!.toLowerCase()) ||
+          input.titleHint!.toLowerCase().includes(j.title.toLowerCase())
+      );
+      if (matched.length === 1) job = matched[0];
+      else if (matched.length > 1 || jobs.length > 1) {
+        return {
+          ok: true,
+          text: `Vilket uppdrag ska ${kind}-fakturan gälla?`,
+          card: {
+            kind: "list",
+            rows: jobs.map((j) => ({ label: j.title, href: `/uppdrag/${j.id}` })),
+          },
+          forModel: {
+            needsJobChoice: true,
+            jobs: jobs.map((j) => ({ id: j.id, title: j.title, status: j.status })),
+          },
+        };
+      }
+    } else if (jobs.length === 1) {
+      job = jobs[0];
+    }
+  }
+
+  let invoice;
+  if (job && remainingToInvoiceForJob(job.id) > 0) {
+    invoice = createNextInvoiceForJob(job.id, "assistent");
+    if (!invoice.rot || invoice.rot.type !== input.type) {
+      invoice = updateInvoice(
+        invoice.id,
+        { lines: invoice.lines, rot: { type: input.type }, taxReductionDetails: invoice.taxReductionDetails },
+        "assistent"
+      );
+    }
+  } else {
+    const title = input.titleHint?.trim() || job?.title || `${kind}-arbete`;
+    invoice = createInvoice(
+      {
+        customerId: customer.id,
+        jobId: job?.id,
+        quoteId: job?.quoteId,
+        type: "faktura",
+        lines: [laborLine(title, input.amountInclVat ?? 0)],
+        rot: { type: input.type },
+      },
+      "assistent"
+    );
+  }
+
+  const prefill = resolveTaxReductionPrefill({
+    customerId: customer.id,
+    jobId: job?.id ?? invoice.jobId,
+    details: invoice.taxReductionDetails,
+  });
+  const missing = taxReductionMissingFields({
+    type: input.type,
+    personalIdentityNumber: customer.personalIdentityNumber,
+    details: detailsFromPrefill(prefill),
+    scope: "invoice",
+  });
+  const t = invoiceTotals(invoice);
+  const missingText =
+    missing.length === 0
+      ? ""
+      : missing.length === 1
+        ? ` Jag hittar inte på saknade uppgifter. ${missing[0].label} saknas för ${kind}-ansökan.`
+        : ` Jag hittar inte på saknade uppgifter. ${missing[0].label} saknas.`;
+  return {
+    ok: true,
+    text: `Klart – utkast till ${kind}-faktura för ${job ? job.title : customer.name} på ${kr(t.toPay)}. Villkoren är preliminära.${missingText}`,
+    card: entityCard(
+      "faktura",
+      `${kind}-fakturautkast`,
+      `/ekonomi/fakturor/${invoice.id}`,
+      `${customer.name} · ${kr(t.toPay)} · utkast`
+    ),
+    forModel: {
+      invoiceId: invoice.id,
+      number: null,
+      status: invoice.status,
+      sent: false,
+      taxReduction: input.type,
+      jobId: job?.id ?? null,
+      missingFields: missing.map((m) => m.code),
+      missingLabels: missing.map((m) => m.label),
+      personalIdentityNumberMasked: prefill.personalIdentityNumber
+        ? maskPersonnummer(prefill.personalIdentityNumber)
+        : null,
+    },
   };
 }
 
@@ -236,7 +364,7 @@ export function createFinalInvoiceDraft(jobId: string): DomainResult {
     card: entityCard(
       "faktura",
       "Slutfaktura (utkast)",
-      `/pengar/fakturor/${invoice.id}`,
+      `/ekonomi/fakturor/${invoice.id}`,
       `${customer.name} · ${kr(t.toPay)} · utkast`
     ),
     forModel: { invoiceId: invoice.id, number: null, status: invoice.status, sent: false },
@@ -270,7 +398,7 @@ export function proposeInvoiceForCustomer(customerId: string): DomainResult {
       card: entityCard(
         "faktura",
         "Slutfaktura (utkast)",
-        `/pengar/fakturor/${invoice.id}`,
+        `/ekonomi/fakturor/${invoice.id}`,
         `${customer.name} · ${kr(t.toPay)} · utkast`
       ),
       forModel: { invoiceId: invoice.id, jobId: job.id, remaining, sent: false, notes: notes || null },
@@ -490,7 +618,7 @@ export function unpaidInvoicesResult(): DomainResult {
       rows: unpaid.map((i) => ({
         label: `${requireCustomer(i.customerId).name} – faktura #${i.number}`,
         value: `${kr(invoiceTotals(i).toPay)}${isOverdue(i) ? ` · ${daysOverdue(i)} dagar sen` : ` · förfaller ${relativ(i.dueDate)}`}`,
-        href: `/pengar/fakturor/${i.id}`,
+        href: `/ekonomi/fakturor/${i.id}`,
       })),
     },
     forModel: {
@@ -534,7 +662,7 @@ export function missingReceiptsResult(): DomainResult {
         label: `${e.supplier} – ${kr(e.amount)}`,
         value: datumLang(e.date),
       })),
-      links: [{ label: "Lägg till kvitton under Pengar", href: "/pengar?flik=utgifter" }],
+      links: [{ label: "Lägg till kvitton under Ekonomi", href: "/ekonomi?flik=utgifter" }],
     },
     forModel: { count: missing.length, suppliers: missing.map((e) => e.supplier) },
   };
@@ -550,7 +678,7 @@ export function companyStatusResult(): DomainResult {
     )}. ${kr(s.unpaidSum)} väntar på betalning${s.overdueCount > 0 ? ` (varav ${kr(s.overdueSum)} är försenat)` : ""} och ${kr(
       s.upcomingIncome
     )} är på väg in från godkända offerter som inte fakturerats klart. På banken finns ${kr(f.bank)}, varav ungefär ${kr(f.available)} är tillgängligt efter moms, skatt och räkningar.`,
-    card: { kind: "links", links: [{ label: "Öppna Pengar", href: "/pengar" }] },
+    card: { kind: "links", links: [{ label: "Öppna Ekonomi", href: "/ekonomi" }] },
     forModel: { revenueMonth: s.revenueMonth, unpaidSum: s.unpaidSum, available: f.available },
   };
 }
@@ -578,26 +706,32 @@ export function todayAttentionResult(): DomainResult {
         return {
           label: `Faktura #${item.invoice.number} · ${item.customer.name}`,
           value: `${item.days} d sen`,
-          href: `/pengar/fakturor/${item.invoice.id}`,
+          href: `/ekonomi/fakturor/${item.invoice.id}`,
         };
       case "forfragan":
-        return { label: `Förfrågan · ${item.customer.name}`, value: item.request.title, href: `/kunder/${item.customer.id}` };
+        return { label: `Förfrågan · ${item.customer.name}`, value: item.request.title, href: `/kunder/forfragningar/${item.request.id}` };
       case "offert_uppfoljning":
         return {
           label: `Offert #${item.quote.number} · ${item.customer.name}`,
           value: `${item.days} d`,
-          href: `/pengar/offerter/${item.quote.id}`,
+          href: `/ekonomi/offerter/${item.quote.id}`,
         };
       case "kvitto_saknas":
         return { label: `Kvitto saknas · ${item.expense.supplier}`, value: kr(item.expense.amount) };
       case "bokforingsfraga":
         return { label: item.expense.question?.text ?? item.expense.supplier, value: kr(item.expense.amount) };
-      case "fakturera_jobb":
-        return {
-          label: `Fakturera · ${item.job.title}`,
-          value: kr(item.amount),
-          href: `/uppdrag/${item.job.id}`,
-        };
+      case "betalningsbeslut":
+        return item.source === "inbetalning"
+          ? {
+              label: `Inbetalning · ${item.tx.counterpart}`,
+              value: kr(item.amount),
+              href: "/ekonomi?flik=bank",
+            }
+          : {
+              label: `Betala · ${item.supplierInvoice.supplier}`,
+              value: kr(item.amount),
+              href: "/ekonomi?flik=utgifter",
+            };
     }
   });
   return {
@@ -605,6 +739,41 @@ export function todayAttentionResult(): DomainResult {
     text: `Du har ${items.length === 1 ? "1 sak" : `${items.length} saker`} som behöver din uppmärksamhet idag.`,
     card: { kind: "list", title: "Att göra", rows },
     forModel: { count: items.length, kinds: items.map((i) => i.kind) },
+  };
+}
+
+export function listOpenInquiriesResult(q?: string): DomainResult {
+  const page = listInquiriesInbox({ q, filter: "oppna", pageSize: 20 });
+  if (page.total === 0) {
+    return {
+      ok: true,
+      text: q ? `Inga öppna förfrågningar matchar ”${q}”.` : "Inga öppna förfrågningar just nu.",
+      forModel: { count: 0, inquiries: [] },
+    };
+  }
+  return {
+    ok: true,
+    text: page.total === 1 ? "1 öppen förfrågan." : `${page.total} öppna förfrågningar.`,
+    card: {
+      kind: "list",
+      title: "Öppna förfrågningar",
+      rows: page.rows.map((r) => ({
+        label: `${r.customerName} · ${r.title}`,
+        value: r.summary,
+        href: `/kunder/forfragningar/${r.id}`,
+      })),
+      links: [{ label: "Öppna inboxen", href: "/kunder?flik=forfragningar" }],
+    },
+    forModel: {
+      count: page.total,
+      inquiries: page.rows.map((r) => ({
+        id: r.id,
+        customerId: r.customerId,
+        customerName: r.customerName,
+        title: r.title,
+        createdAt: r.createdAt,
+      })),
+    },
   };
 }
 
@@ -702,7 +871,15 @@ export function createCustomerDirect(input: {
 }
 
 export function compactCustomer(c: Customer) {
-  return { id: c.id, name: c.name, kind: c.kind, email: c.email, phone: c.phone, city: c.city };
+  return {
+    id: c.id,
+    name: c.name,
+    kind: c.kind,
+    email: c.email,
+    phone: c.phone,
+    city: c.city,
+    hasPersonalIdentityNumber: Boolean(c.personalIdentityNumber),
+  };
 }
 
 export function compactJob(j: Job) {
@@ -711,11 +888,15 @@ export function compactJob(j: Job) {
     id: j.id,
     title: j.title,
     status: j.status,
+    lifecycle: derivedJobStatus(j),
     customerId: j.customerId,
     customerName: customer?.name,
     startDate: j.startDate,
+    address: j.address ?? null,
     remainingToInvoice: remainingToInvoiceForJob(j.id),
     notes: j.notes.trim() || null,
+    dwellingType: j.housing?.dwellingType ?? null,
+    hasPropertyDesignation: Boolean(j.housing?.propertyDesignation),
   };
 }
 
@@ -834,4 +1015,87 @@ function fmt(value: string | number | null | undefined): string {
 
 function fail(text: string): DomainResult {
   return { ok: false, text, forModel: { error: text } };
+}
+
+export async function checkDomainAvailabilityResult(query: string): Promise<DomainResult> {
+  try {
+    const result = await searchDomain(query, "assistent");
+    if (result.available) {
+      return {
+        ok: true,
+        text: `${result.hostname} är ledig${result.price ? ` för ${kr(result.price.customerPrice)}/år` : ""}. Köp sker bara om du bekräftar.`,
+        card: {
+          kind: "list",
+          title: result.hostname,
+          rows: [
+            { label: "Status", value: "Ledig" },
+            ...(result.price ? [{ label: "Pris", value: `${kr(result.price.customerPrice)}/år` }] : []),
+          ],
+          links: [{ label: "Öppna Domän", href: "/hemsida/doman" }],
+        },
+        forModel: { hostname: result.hostname, available: true, price: result.price?.customerPrice ?? null },
+      };
+    }
+    return {
+      ok: true,
+      text: `${result.hostname} är upptagen.${result.alternatives.length ? ` Alternativ: ${result.alternatives.join(", ")}.` : ""}`,
+      card: {
+        kind: "list",
+        title: "Upptagen",
+        rows: result.alternatives.map((a) => ({ label: a })),
+        links: [{ label: "Öppna Domän", href: "/hemsida/doman" }],
+      },
+      forModel: { hostname: result.hostname, available: false, alternatives: result.alternatives },
+    };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Kunde inte söka.");
+  }
+}
+
+export function getDomainStatusResult(): DomainResult {
+  const domain = primaryDomain();
+  if (!domain) {
+    return {
+      ok: true,
+      text: "Ingen egen .se-adress är kopplad ännu.",
+      card: { kind: "links", links: [{ label: "Skaffa .se-adress", href: "/hemsida/doman" }] },
+      forModel: { domain: null },
+    };
+  }
+  const view = domainCardView(domain, getBusinessProfile());
+  return {
+    ok: true,
+    text: view.live
+      ? `${view.hostname} är live.`
+      : `${view.hostname} kopplas just nu.`,
+    card: {
+      kind: "list",
+      title: view.hostname,
+      rows: [{ label: "Status", value: view.live ? "Live" : "Kopplas" }],
+      links: [{ label: "Öppna Domän", href: "/hemsida/doman" }],
+    },
+    forModel: { hostname: view.hostname, status: domain.status, live: view.live },
+  };
+}
+
+export function requestPurchaseDomain(hostname: string): DomainResult {
+  const action: PendingAssistantAction = { id: uid(), type: "kop_doman", hostname };
+  addPending(action);
+  const s = getBusinessProfile();
+  return {
+    ok: true,
+    text: `Ska jag köpa och koppla ${hostname}? Den registreras på ${s.name} och förnyas automatiskt varje år. Inget köps förrän du bekräftar.`,
+    card: {
+      kind: "confirm",
+      actionId: action.id,
+      summary: `Registreras på ${s.name} · ${s.orgNumber}. Förnyas automatiskt varje år.`,
+      rows: [
+        { label: hostname, value: "Köp och koppla" },
+        { label: "Företag", value: `${s.name} · ${s.orgNumber}` },
+      ],
+      confirmLabel: "Köp och koppla",
+      state: "vantar",
+    },
+    forModel: { pendingConfirmation: true, hostname, purchased: false },
+  };
 }

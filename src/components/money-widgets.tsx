@@ -185,7 +185,7 @@ export function CreatePartInvoiceButton({
           const id = await createPartInvoiceAction(quoteId, partIndex);
           router.push(
             invoiceHref(id, {
-              href: returnTo ?? `/pengar/offerter/${quoteId}`,
+              href: returnTo ?? `/ekonomi/offerter/${quoteId}`,
               label: returnLabel ?? "Offert",
             }) as never
           );

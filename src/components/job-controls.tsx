@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Play, CheckCircle2, PartyPopper, Plus, FileText, Pencil } from "lucide-react";
+import { CheckCircle2, PartyPopper, Plus, FileText, Pencil } from "lucide-react";
 import { buttonClasses, ButtonLink } from "./ui";
 import { Modal } from "./modal";
 import { ActionMenu, PageActions, actionMenuItemClassName, useActionMenu } from "./action-menu";
@@ -85,10 +85,6 @@ export function JobActions({
   const router = useRouter();
   const fromHere = { href: `/uppdrag/${jobId}`, label: jobTitle };
 
-  function startJob() {
-    startTransition(async () => setJobStatusAction(jobId, "pagar"));
-  }
-
   function markDone() {
     startTransition(async () => {
       await setJobStatusAction(jobId, "klart");
@@ -112,11 +108,6 @@ export function JobActions({
       <ButtonLink href={quoteHref}>
         <FileText className="size-4" /> Visa offert
       </ButtonLink>
-    ) : primary === "starta" ? (
-      <button className={buttonClasses("primary")} disabled={isPending} onClick={startJob}>
-        <Play className="size-4" />
-        {isPending ? "Startar …" : "Starta uppdrag"}
-      </button>
     ) : primary === "skapa_faktura" ? (
       <button className={buttonClasses("accent")} disabled={isPending} onClick={() => createInvoice(false)}>
         <Plus className="size-4" />
@@ -136,6 +127,20 @@ export function JobActions({
       </ButtonLink>
     ) : null;
 
+  const markDoneBtn = canMarkDone ? (
+    <button type="button" className={buttonClasses("secondary")} disabled={isPending} onClick={markDone}>
+      <CheckCircle2 className="size-4" />
+      Markera som klart
+    </button>
+  ) : null;
+
+  const editBtn = (
+    <button type="button" className={buttonClasses("secondary")} onClick={() => setShowEdit(true)}>
+      <Pencil className="size-4" />
+      Redigera uppdrag
+    </button>
+  );
+
   return (
     <>
       <PageActions>
@@ -143,20 +148,26 @@ export function JobActions({
         {secondaryBtn}
         {waitingLabel ? <p className="text-[14px] font-medium text-soft">{waitingLabel}</p> : null}
         {doneLabel ? <p className="text-[14px] font-semibold text-ok">{doneLabel}</p> : null}
-        <ActionMenu>
-          <JobMenuItem
-            onSelect={() => setShowEdit(true)}
-            icon={<Pencil className="size-4 shrink-0" />}
-            label="Redigera uppdrag"
-          />
-          {canMarkDone ? (
+        <div className="hidden md:contents">
+          {markDoneBtn}
+          {editBtn}
+        </div>
+        <div className="md:hidden">
+          <ActionMenu>
             <JobMenuItem
-              onSelect={markDone}
-              icon={<CheckCircle2 className="size-4 shrink-0" />}
-              label="Markera som klart"
+              onSelect={() => setShowEdit(true)}
+              icon={<Pencil className="size-4 shrink-0" />}
+              label="Redigera uppdrag"
             />
-          ) : null}
-        </ActionMenu>
+            {canMarkDone ? (
+              <JobMenuItem
+                onSelect={markDone}
+                icon={<CheckCircle2 className="size-4 shrink-0" />}
+                label="Markera som klart"
+              />
+            ) : null}
+          </ActionMenu>
+        </div>
       </PageActions>
 
       <EditUppdragModal

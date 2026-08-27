@@ -142,7 +142,14 @@ export function appendJobNote(jobId: string, text: string): void {
 
 export function updateJob(
   jobId: string,
-  input: { title?: string; description?: string; address?: string; startDate?: string; endDate?: string }
+  input: {
+    title?: string;
+    description?: string;
+    address?: string;
+    startDate?: string;
+    endDate?: string;
+    housing?: Job["housing"];
+  }
 ): Job {
   const job = db().jobs.find((j) => j.id === jobId);
   if (!job) throw new Error("Uppdraget finns inte");
@@ -156,6 +163,7 @@ export function updateJob(
   if (input.address !== undefined) job.address = input.address.trim() || undefined;
   if (input.startDate !== undefined) job.startDate = input.startDate || undefined;
   if (input.endDate !== undefined) job.endDate = input.endDate || undefined;
+  if (input.housing !== undefined) job.housing = input.housing;
   logActivity(`Uppdraget ${job.title} hos ${customer.name} uppdaterades.`, {
     customerId: customer.id,
     entity: { type: "jobb", id: job.id },

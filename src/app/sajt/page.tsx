@@ -1,23 +1,46 @@
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { db } from "@/lib/store";
 import { SiteRenderer } from "@/components/site-renderer";
+import { isMockDomainMode, resolvePublicSite } from "@/lib/domains";
 
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata() {
-  const site = db().website;
+export async function generateMetadata(props: PageProps<"/sajt">) {
+  const searchParams = await props.searchParams;
+  const host = await publicHost(searchParams);
+  const mapped = host ? resolvePublicSite(host) : null;
+  const site = mapped?.website ?? db().website;
   return {
     title: site ? `${site.businessName} – ${site.tagline}` : "Hemsida",
     description: site?.sections.find((s) => s.type === "hero")?.body,
   };
 }
 
+async function publicHost(searchParams: { host?: string | string[] }): Promise<string | null> {
+  const h = await headers();
+  const fromProxy = h.get("x-driva-public-host");
+  if (fromProxy) return fromProxy;
+  const fromHeader = h.get("x-forwarded-host") ?? h.get("host");
+  const mapped = resolvePublicSite(fromHeader);
+  if (mapped) return fromHeader;
+  if (isMockDomainMode()) {
+    const q = searchParams.host;
+    return typeof q === "string" ? q : null;
+  }
+  return null;
+}
+
 export default async function PublicSitePage(props: PageProps<"/sajt">) {
   const searchParams = await props.searchParams;
   const preview = searchParams.preview === "1";
+  const host = await publicHost(searchParams);
+  const mapped = host ? resolvePublicSite(host) : null;
   const data = db();
-  const site = data.website;
+  const site = mapped?.website ?? data.website;
+  const company = mapped?.company ?? data.settings;
   if (!site) notFound();
+  if (host && !mapped && !preview) notFound();
   if (site.status !== "publicerad" && !preview) notFound();
 
   return (
@@ -27,7 +50,7 @@ export default async function PublicSitePage(props: PageProps<"/sajt">) {
           Förhandsvisning – sajten är inte publicerad ännu
         </div>
       ) : null}
-      <SiteRenderer website={site} company={data.settings} />
+      <SiteRenderer website={site} company={company} />
     </div>
   );
 }

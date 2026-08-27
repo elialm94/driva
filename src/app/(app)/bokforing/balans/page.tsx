@@ -2,6 +2,7 @@ import { kr, datumLang } from "@/lib/format";
 import { Card, PageHeader } from "@/components/ui";
 import { BackLink } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
+import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { balansrapport, type BalansRad } from "@/lib/accounting/ledger";
 
 export const metadata = { title: "Balansrapport" };
@@ -39,6 +40,7 @@ export default function BalansPage() {
           </div>
         }
       />
+      <BokforingAdvancedTabs />
 
       {/* Ägarvänlig sammanfattning */}
       <Card className="mb-6 px-6 py-5">

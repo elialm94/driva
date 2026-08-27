@@ -15,7 +15,7 @@ import {
   Trash2,
   WandSparkles,
 } from "lucide-react";
-import { buttonClasses, cx, DemoTag } from "./ui";
+import { buttonClasses, cx } from "./ui";
 import { Modal } from "./modal";
 import { humanizeMediaError, ImageDropzone } from "./image-dropzone";
 import {
@@ -33,6 +33,7 @@ import {
   updateServiceItemAction,
 } from "@/app/actions";
 import type { WebsiteSection, WebsiteSectionItem } from "@/lib/types";
+import { DEFAULT_PRIMARY_CTA_LABEL, PRIMARY_CTA_LABEL_MAX } from "@/lib/types";
 import { swedishFormProps } from "@/lib/swedish-validity";
 
 /**
@@ -63,8 +64,12 @@ export function SiteContactForm({
   ink: string;
 }) {
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [form, setForm] = useState({ name: "", email: "", phone: "", message: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", message: "", website: "" });
+  const [idempotencyKey] = useState(() =>
+    typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
+  );
 
   const inputStyle = { background: bg, border: `1px solid ${line}`, color: ink } as const;
 
@@ -80,22 +85,46 @@ export function SiteContactForm({
 
   return (
     <form
-      className="space-y-3"
+      className="relative space-y-3"
+      method="post"
+      action="#kontakt"
       {...swedishFormProps()}
       onSubmit={(e) => {
         e.preventDefault();
         if (!interactive || !form.name.trim() || !form.email.trim() || !form.message.trim()) return;
+        setError(null);
         startTransition(async () => {
-          await submitContactFormAction({
+          const result = await submitContactFormAction({
             name: form.name.trim(),
             email: form.email.trim(),
             phone: form.phone.trim(),
             message: form.message.trim(),
+            website: form.website,
+            idempotencyKey,
           });
+          if (result.ok === false) {
+            setError(result.error);
+            return;
+          }
           setSent(true);
         });
       }}
     >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -left-[9999px] h-0 w-0 overflow-hidden opacity-0"
+      >
+        <label>
+          Webbplats
+          <input
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            value={form.website}
+            onChange={(e) => setForm({ ...form, website: e.target.value })}
+          />
+        </label>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <input
           required
@@ -135,6 +164,7 @@ export function SiteContactForm({
         className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
         style={inputStyle}
       />
+      {error ? <p className="text-[13px] font-medium" style={{ color: "#b42318" }}>{error}</p> : null}
       <button
         type="submit"
         disabled={pending}
@@ -348,36 +378,36 @@ function VisibilitySwitch({
   on,
   onChange,
   disabled,
+  label,
 }: {
   on: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
+  label: string;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
-      aria-label={on ? "Dölj sektion" : "Visa sektion"}
+      aria-label={on ? `Dölj ${label}` : `Visa ${label}`}
+      title={on ? "Dölj från hemsidan" : "Visa på hemsidan"}
       disabled={disabled}
       onClick={(e) => {
         e.stopPropagation();
         onChange(!on);
       }}
-      className={cx(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full py-0.5 text-[11px] font-semibold",
-        on ? "text-ok" : "text-muted",
-      )}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="inline-flex h-8 w-9 shrink-0 items-center justify-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
     >
-      <span className={cx("relative h-4 w-7 rounded-full transition-colors", on ? "bg-ok" : "bg-line-strong")}>
+      <span className={cx("relative h-5 w-9 rounded-full transition-colors", on ? "bg-ok" : "bg-line-strong")}>
         <span
           className={cx(
-            "absolute top-0.5 size-3 rounded-full bg-white shadow-sm transition-transform",
-            on ? "translate-x-3.5" : "translate-x-0.5",
+            "absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform",
+            on ? "translate-x-4" : "translate-x-0.5",
           )}
         />
       </span>
-      {on ? "På" : "Av"}
     </button>
   );
 }
@@ -391,9 +421,11 @@ function sectionIsVisible(section: SectionListSection): boolean {
 export function SectionList({
   sections,
   labels,
+  primaryCtaLabel = DEFAULT_PRIMARY_CTA_LABEL,
 }: {
   sections: SectionListSection[];
   labels: Record<string, string>;
+  primaryCtaLabel?: string;
 }) {
   const [rows, setRows] = useState(sections);
   const [pending, startTransition] = useTransition();
@@ -450,6 +482,7 @@ export function SectionList({
             last={index === rows.length - 1}
             dragging={reorder.dragIndex === index}
             pending={pending}
+            primaryCtaLabel={primaryCtaLabel}
             onMoveUp={() => move(index, index - 1)}
             onMoveDown={() => move(index, index + 1)}
             canMoveUp={index > 0}
@@ -473,6 +506,7 @@ function SectionRow({
   last,
   dragging,
   pending,
+  primaryCtaLabel,
   onMoveUp,
   onMoveDown,
   canMoveUp,
@@ -488,6 +522,7 @@ function SectionRow({
   last: boolean;
   dragging: boolean;
   pending: boolean;
+  primaryCtaLabel: string;
   onMoveUp: () => void;
   onMoveDown: () => void;
   canMoveUp: boolean;
@@ -505,14 +540,17 @@ function SectionRow({
   return (
     <>
       <div data-section-row className={cx(!last && "border-b border-line/70", dragging && "opacity-40")}>
-        <div className={cx("flex items-start gap-1 px-3 py-3 sm:px-4", !visible && "opacity-55")}>
+        <div className="flex min-w-0 items-center gap-1 px-3 py-3 sm:px-4">
           <div
-            onPointerDown={onPointerDown}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              onPointerDown(e);
+            }}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerCancel}
             className={cx(
-              "mt-0.5 hidden touch-none select-none rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink sm:block",
+              "hidden shrink-0 touch-none select-none rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink sm:block",
               dragging ? "cursor-grabbing" : "cursor-grab",
             )}
             aria-label="Dra för att ändra ordning"
@@ -521,11 +559,14 @@ function SectionRow({
           >
             <GripVertical className="size-4" />
           </div>
-          <div className="mt-0.5 flex sm:hidden">
+          <div className="flex shrink-0 sm:hidden">
             <button
               type="button"
               disabled={pending || !canMoveUp}
-              onClick={onMoveUp}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveUp();
+              }}
               className="rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink disabled:opacity-30"
               aria-label="Flytta upp"
             >
@@ -534,32 +575,39 @@ function SectionRow({
             <button
               type="button"
               disabled={pending || !canMoveDown}
-              onClick={onMoveDown}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveDown();
+              }}
               className="rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink disabled:opacity-30"
               aria-label="Flytta ner"
             >
               <ChevronDown className="size-4" />
             </button>
           </div>
-          <button type="button" onClick={() => setOpen(true)} className="min-w-0 flex-1 text-left">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{typeLabel}</p>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className={cx("min-w-0 flex-1 overflow-hidden text-left", !visible && "opacity-55")}
+          >
+            <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted">{typeLabel}</p>
             <p className="truncate text-[14px] font-medium">{section.heading}</p>
           </button>
-          <div className="flex shrink-0 flex-col items-end gap-0.5 pt-0.5">
-            {canHide ? (
-              <VisibilitySwitch on={visible} onChange={onToggle} disabled={pending} />
-            ) : (
-              <span className="px-0.5 py-0.5 text-[11px] font-semibold text-muted">På</span>
-            )}
-            <button
-              type="button"
-              onClick={() => setOpen(true)}
-              className="rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink"
-              aria-label={`Redigera ${typeLabel.toLowerCase()}`}
-            >
-              <Pencil className="size-4" />
-            </button>
-          </div>
+          {canHide ? (
+            <VisibilitySwitch on={visible} onChange={onToggle} disabled={pending} label={typeLabel} />
+          ) : null}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(true);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-ink/5 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            aria-label={`Redigera ${typeLabel.toLowerCase()}`}
+          >
+            <Pencil className="size-4" />
+          </button>
         </div>
         {section.type === "kontakt" && !visible ? (
           <p className="px-3 pb-3 text-[12px] leading-relaxed text-warn sm:pl-11 sm:pr-4">
@@ -575,6 +623,7 @@ function SectionRow({
           heading={section.heading}
           body={section.body}
           hasImage={section.hasImage}
+          primaryCtaLabel={section.type === "hero" ? primaryCtaLabel : undefined}
           items={section.type === "tjanster" ? (section.items ?? []) : undefined}
           onClose={() => setOpen(false)}
         />
@@ -597,6 +646,7 @@ function SectionEditor({
   heading,
   body,
   hasImage,
+  primaryCtaLabel,
   items,
   onClose,
 }: {
@@ -607,16 +657,19 @@ function SectionEditor({
   body: string;
   onClose: () => void;
   hasImage?: boolean;
+  primaryCtaLabel?: string;
   items?: SectionListItem[];
 }) {
   const isServices = items !== undefined;
+  const isHero = sectionType === "hero" || typeLabel === "Startsektion";
   const showSectionImage =
-    sectionType === "hero" ||
+    isHero ||
     sectionType === "om" ||
-    typeLabel === "Startsektion" ||
     typeLabel === "Om oss";
   const [h, setH] = useState(heading);
   const [b, setB] = useState(body);
+  const [cta, setCta] = useState(primaryCtaLabel ?? DEFAULT_PRIMARY_CTA_LABEL);
+  const [ctaError, setCtaError] = useState<string | null>(null);
   const [image, setImage] = useState<string | undefined>(undefined);
   // Sparad bild på servern – jämförelsepunkt så att oförändrade bilder inte skickas om vid spara.
   const [baselineImage, setBaselineImage] = useState<string | undefined>(undefined);
@@ -662,6 +715,7 @@ function SectionEditor({
     setDraft(null);
     setListError(null);
     setImageError(null);
+    setCtaError(null);
     onClose();
   }
 
@@ -702,6 +756,29 @@ function SectionEditor({
               className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] leading-relaxed focus:border-accent"
             />
           </div>
+
+          {isHero ? (
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="hero-cta-label">
+                Knapptext
+              </label>
+              <input
+                id="hero-cta-label"
+                value={cta}
+                onChange={(e) => {
+                  setCta(e.target.value);
+                  if (ctaError) setCtaError(null);
+                }}
+                maxLength={PRIMARY_CTA_LABEL_MAX}
+                placeholder={DEFAULT_PRIMARY_CTA_LABEL}
+                className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
+              />
+              <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
+                Samma knapp i sidhuvudet och på startsidan. Till exempel Kontakta oss, Få en offert eller Boka hembesök.
+              </p>
+              {ctaError ? <p className="mt-1.5 text-[13px] text-danger">{ctaError}</p> : null}
+            </div>
+          ) : null}
 
           {showSectionImage ? (
             <SectionImageField
@@ -764,18 +841,35 @@ function SectionEditor({
             </button>
             <button
               className={buttonClasses("primary")}
-              disabled={pending || readingImage}
+              disabled={pending || readingImage || (isHero && !cta.trim())}
               onClick={() =>
                 startTransition(async () => {
                   try {
+                    if (isHero) {
+                      const label = cta.trim();
+                      if (!label) {
+                        setCtaError("Fyll i det här fältet.");
+                        return;
+                      }
+                      if (label.length > PRIMARY_CTA_LABEL_MAX) {
+                        setCtaError("Knapptexten är för lång.");
+                        return;
+                      }
+                    }
                     // Bilden skickas bara om den faktiskt ändrats (data-URL:er är tunga).
                     const result = await updateSectionAction(sectionId, {
                       heading: h,
                       body: b,
+                      ...(isHero ? { primaryCtaLabel: cta.trim() } : {}),
                       ...(showSectionImage && image !== baselineImage ? { image: image ?? null } : {}),
                     });
                     if (result && result.ok === false) {
-                      setImageError(humanizeMediaError(result.error, "Kunde inte spara."));
+                      const msg = result.error;
+                      if (isHero && /fältet|för lång|knapptext/i.test(msg)) {
+                        setCtaError(msg);
+                        return;
+                      }
+                      setImageError(humanizeMediaError(msg, "Kunde inte spara."));
                       return;
                     }
                     closeAll();
@@ -1134,12 +1228,9 @@ export function PublishWebsiteButton({ published }: { published: boolean }) {
         ) : (
           <div className="px-6 py-5">
             <p className="text-[14px] leading-relaxed text-soft">
-              Sajten blir tillgänglig för besökare och kontaktformuläret börjar skapa förfrågningar i Driva.
-              I produktion kopplar du din egen domän här (t.ex. <span className="font-medium text-ink">dittforetag.se</span>).{" "}
+              Sajten blir tillgänglig för besökare och kontaktformuläret börjar skapa förfrågningar i Driva. En egen
+              .se-adress skaffar du under Domän när du vill.
             </p>
-            <div className="mt-2">
-              <DemoTag>I demon publiceras sajten på /sajt</DemoTag>
-            </div>
             <div className="mt-5 flex justify-end gap-2">
               <button className={buttonClasses("ghost")} onClick={() => setOpen(false)}>
                 Avbryt

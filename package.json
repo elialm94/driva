@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "bash scripts/dev-3123.sh",
+    "dev:next": "next dev -p 3123",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "DRIVA_TEST=1 tsx --test src/lib/invoices/*.test.ts src/lib/accounting/*.test.ts",
+    "test": "DRIVA_TEST=1 tsx --test src/lib/*.test.ts src/lib/invoices/*.test.ts src/lib/accounting/*.test.ts src/lib/domains/*.test.ts",
     "typecheck": "tsc --noEmit",
     "test:assistant": "DRIVA_TEST=1 npx --yes tsx scripts/verify-assistant.ts",
     "test:tax-reduction": "DRIVA_TEST=1 npx --yes tsx scripts/verify-tax-reduction.ts"

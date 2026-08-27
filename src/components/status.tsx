@@ -1,6 +1,7 @@
 import type { Invoice, Job, Quote, TxStatus } from "@/lib/types";
 import { Badge, StatusDot, type BadgeTone } from "./ui";
 import { dagarTill } from "@/lib/format";
+import { derivedJobStatus, type DerivedJobStatus } from "@/lib/services/job-lifecycle";
 
 export function QuoteStatusBadge({ quote }: { quote: Quote }) {
   const map: Record<Quote["status"], { tone: BadgeTone; label: string }> = {
@@ -43,13 +44,23 @@ export function InvoiceStatusBadge({ invoice }: { invoice: Invoice }) {
   );
 }
 
-export function JobStatusBadge({ status }: { status: Job["status"] }) {
-  const map: Record<Job["status"], { tone: BadgeTone; label: string }> = {
-    kommande: { tone: "info", label: "Kommande" },
+export function JobStatusBadge({
+  status,
+  startDate,
+  completedAt,
+}: {
+  status: Job["status"] | DerivedJobStatus;
+  startDate?: string;
+  completedAt?: string;
+}) {
+  const stored: Job["status"] = status === "planerat" ? "kommande" : status;
+  const derived = derivedJobStatus({ status: stored, startDate, completedAt });
+  const map: Record<DerivedJobStatus, { tone: BadgeTone; label: string }> = {
+    planerat: { tone: "info", label: "Planerat" },
     pagar: { tone: "warn", label: "Pågår" },
     klart: { tone: "ok", label: "Klart" },
   };
-  const { tone, label } = map[status];
+  const { tone, label } = map[derived];
   return (
     <Badge tone={tone}>
       <StatusDot tone={tone} />

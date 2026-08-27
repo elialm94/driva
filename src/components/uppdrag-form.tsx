@@ -16,11 +16,15 @@ const inputCls =
 export function NewUppdragButton({
   customers,
   defaultCustomerId,
+  defaultTitle,
+  defaultDescription,
   size = "md",
   variant = "primary",
 }: {
   customers: CustomerOption[];
   defaultCustomerId?: string;
+  defaultTitle?: string;
+  defaultDescription?: string;
   size?: "sm" | "md";
   variant?: "primary" | "secondary";
 }) {
@@ -72,7 +76,13 @@ export function NewUppdragButton({
           </div>
           <div>
             <label className="mb-1 block text-[13px] font-medium text-soft">Vad gäller det?</label>
-            <input name="title" required className={inputCls} placeholder="T.ex. Köksrenovering" />
+            <input
+              name="title"
+              required
+              defaultValue={defaultTitle}
+              className={inputCls}
+              placeholder="T.ex. Köksrenovering"
+            />
           </div>
           <div>
             <label className="mb-1 block text-[13px] font-medium text-soft">Beskrivning</label>
@@ -80,6 +90,7 @@ export function NewUppdragButton({
               name="description"
               rows={3}
               className={inputCls}
+              defaultValue={defaultDescription}
               placeholder="Kort vad som ska göras, så du känner igen uppdraget …"
             />
           </div>

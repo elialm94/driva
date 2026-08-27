@@ -21,12 +21,24 @@ export function getBusinessProfile(): CompanySettings {
   return db().settings;
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isEmailFormat(value: string): boolean {
+  return EMAIL_RE.test(value.trim());
+}
+
+/** Vart nya sajtförfrågningar mejlas. Följer företagets e-post tills en annan adress sparas. */
+export function getInquiryNotificationEmail(profile: CompanySettings = db().settings): string {
+  return (profile.inquiryNotificationEmail?.trim() || profile.email).trim();
+}
+
 export type BusinessProfileInput = Pick<
   CompanySettings,
   | "name"
   | "orgNumber"
   | "vatNumber"
   | "email"
+  | "inquiryNotificationEmail"
   | "phone"
   | "websiteUrl"
   | "address"
@@ -104,6 +116,10 @@ function validateProfile(input: BusinessProfileInput): string[] {
   if (input.logoDataUrl && !input.logoDataUrl.startsWith("data:image/")) {
     errors.push("Logotypen måste vara en bild.");
   }
+  const notify = input.inquiryNotificationEmail?.trim();
+  if (notify && !isEmailFormat(notify)) {
+    errors.push("Ange en giltig e-postadress för förfrågningar.");
+  }
   return errors;
 }
 
@@ -112,6 +128,9 @@ function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
   s.orgNumber = input.orgNumber.trim() ? normalizeOrgnr(input.orgNumber) : "";
   s.vatNumber = input.vatNumber.trim().toUpperCase().replace(/\s/g, "");
   s.email = input.email.trim();
+  const notify = optional(input.inquiryNotificationEmail);
+  s.inquiryNotificationEmail =
+    notify && notify.toLowerCase() !== s.email.toLowerCase() ? notify : undefined;
   s.phone = input.phone.trim();
   s.websiteUrl = optional(input.websiteUrl);
   s.address = input.address.trim();
@@ -199,7 +218,7 @@ export function billingReadiness(profile: CompanySettings = db().settings): {
 export function connectedBankSummary(): { label: string; href: string } | null {
   const account = db().bankAccounts[0];
   if (!account) return null;
-  return { label: `${account.name} · ${account.accountNumber}`, href: "/pengar?flik=bank" };
+  return { label: `${account.name} · ${account.accountNumber}`, href: "/ekonomi?flik=bank" };
 }
 
 const PATCHABLE: (keyof CompanySettingsInput)[] = [
@@ -230,6 +249,7 @@ export const SETTINGS_FIELD_LABELS: Record<string, string> = {
   orgNumber: "Organisationsnummer",
   vatNumber: "Momsregistreringsnummer",
   email: "E-post",
+  inquiryNotificationEmail: "Skicka nya förfrågningar till",
   phone: "Telefon",
   websiteUrl: "Webbplats",
   address: "Adress",
@@ -255,6 +275,7 @@ export function applyBusinessProfilePatch(patch: Record<string, string | number 
     orgNumber: s.orgNumber,
     vatNumber: s.vatNumber,
     email: s.email,
+    inquiryNotificationEmail: s.inquiryNotificationEmail,
     phone: s.phone,
     websiteUrl: s.websiteUrl,
     address: s.address,

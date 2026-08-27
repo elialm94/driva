@@ -1,22 +1,88 @@
 import { db } from "../store";
-import type { Customer, CustomerRequest, Expense, Invoice, Job, Quote } from "../types";
-import { currentVersion, daysOverdue, invoiceTotals, isOverdue, jobQuote, quoteTotals, quoteWaitingDays, requireCustomer } from "./data";
+import type {
+  BankTransaction,
+  Customer,
+  CustomerRequest,
+  Expense,
+  Invoice,
+  Job,
+  Quote,
+  SupplierInvoice,
+} from "../types";
+import {
+  currentVersion,
+  daysOverdue,
+  invoiceTotals,
+  isOverdue,
+  jobQuote,
+  quoteTotals,
+  quoteWaitingDays,
+  requireCustomer,
+} from "./data";
 import { docTotals } from "../calc";
+import { derivedJobStatus } from "./job-lifecycle";
+import { taxReductionCaseForJob } from "./tax-reduction";
+import { dagarTill } from "../format";
+
+export const HOME_ATTENTION_VISIBLE = 3;
+
+/** Prioritet på Hem: försenad faktura > betalningsbeslut > bokföring > förfrågan > offert > kvitto. */
+export const ATTENTION_PRIORITY: Record<AttentionItem["kind"], number> = {
+  forsenad_faktura: 0,
+  betalningsbeslut: 1,
+  bokforingsfraga: 2,
+  forfragan: 3,
+  offert_uppfoljning: 4,
+  kvitto_saknas: 5,
+};
 
 export type AttentionItem =
   | { kind: "forfragan"; id: string; request: CustomerRequest; customer: Customer }
   | { kind: "offert_uppfoljning"; id: string; quote: Quote; customer: Customer; days: number; toPay: number }
   | { kind: "forsenad_faktura"; id: string; invoice: Invoice; customer: Customer; days: number; toPay: number }
+  | {
+      kind: "betalningsbeslut";
+      id: string;
+      source: "inbetalning";
+      tx: BankTransaction;
+      amount: number;
+    }
+  | {
+      kind: "betalningsbeslut";
+      id: string;
+      source: "leverantor";
+      supplierInvoice: SupplierInvoice;
+      amount: number;
+    }
   | { kind: "kvitto_saknas"; id: string; expense: Expense }
-  | { kind: "bokforingsfraga"; id: string; expense: Expense }
-  | { kind: "fakturera_jobb"; id: string; job: Job; customer: Customer; amount: number };
+  | { kind: "bokforingsfraga"; id: string; expense: Expense };
+
+export type HomeNextStep =
+  | {
+      kind: "forsta_faktura";
+      id: string;
+      job: Job;
+      customer: Customer;
+      amount: number;
+      percent: number;
+      partLabel: string;
+    }
+  | { kind: "kan_fakturera"; id: string; job: Job; customer: Customer; amount: number }
+  | {
+      kind: "resterande";
+      id: string;
+      job: Job;
+      customer: Customer;
+      amount: number;
+      isFinal: boolean;
+    }
+  | { kind: "rot_ansok"; id: string; job: Job; customer: Customer; label: string };
 
 /** Allt som behöver användarens uppmärksamhet, viktigast först. */
 export function attentionItems(): AttentionItem[] {
   const data = db();
   const items: AttentionItem[] = [];
 
-  // Försenade fakturor.
   for (const inv of data.invoices.filter(isOverdue)) {
     items.push({
       kind: "forsenad_faktura",
@@ -28,12 +94,36 @@ export function attentionItems(): AttentionItem[] {
     });
   }
 
-  // Nya förfrågningar.
+  for (const tx of data.bankTransactions) {
+    if (tx.amount <= 0 || tx.status !== "behover_atgard") continue;
+    items.push({
+      kind: "betalningsbeslut",
+      id: `pay-${tx.id}`,
+      source: "inbetalning",
+      tx,
+      amount: tx.amount,
+    });
+  }
+
+  for (const s of data.supplierInvoices) {
+    if (s.status !== "obetald" || dagarTill(s.dueDate) >= 0) continue;
+    items.push({
+      kind: "betalningsbeslut",
+      id: `sup-${s.id}`,
+      source: "leverantor",
+      supplierInvoice: s,
+      amount: s.amount,
+    });
+  }
+
+  for (const e of data.expenses.filter((e) => e.status === "behover_svar")) {
+    items.push({ kind: "bokforingsfraga", id: `question-${e.id}`, expense: e });
+  }
+
   for (const r of data.requests.filter((r) => r.status === "ny")) {
     items.push({ kind: "forfragan", id: `req-${r.id}`, request: r, customer: requireCustomer(r.customerId) });
   }
 
-  // Offerter som väntat på BankID i mer än 7 dagar.
   for (const q of data.quotes.filter((q) => q.status === "skickad")) {
     const days = quoteWaitingDays(q);
     if (days >= 7) {
@@ -48,31 +138,105 @@ export function attentionItems(): AttentionItem[] {
     }
   }
 
-  // Klara jobb som inte slutfakturerats.
-  for (const job of data.jobs.filter((j) => j.status === "klart")) {
-    const remaining = remainingToInvoiceForJob(job.id);
-    if (remaining > 0) {
-      items.push({
-        kind: "fakturera_jobb",
-        id: `bill-${job.id}`,
-        job,
-        customer: requireCustomer(job.customerId),
-        amount: remaining,
-      });
-    }
-  }
-
-  // Köp som saknar kvitto.
   for (const e of data.expenses.filter((e) => e.status === "saknar_kvitto")) {
     items.push({ kind: "kvitto_saknas", id: `receipt-${e.id}`, expense: e });
   }
 
-  // Bokföringsfrågor (låg säkerhet).
-  for (const e of data.expenses.filter((e) => e.status === "behover_svar")) {
-    items.push({ kind: "bokforingsfraga", id: `question-${e.id}`, expense: e });
+  return rankAttention(items);
+}
+
+export function rankAttention(items: AttentionItem[]): AttentionItem[] {
+  return [...items].sort((a, b) => {
+    const byKind = ATTENTION_PRIORITY[a.kind] - ATTENTION_PRIORITY[b.kind];
+    if (byKind !== 0) return byKind;
+    return attentionTieBreak(a, b);
+  });
+}
+
+function attentionTieBreak(a: AttentionItem, b: AttentionItem): number {
+  if (a.kind === "forsenad_faktura" && b.kind === "forsenad_faktura") {
+    return b.days - a.days || b.toPay - a.toPay;
+  }
+  if (a.kind === "betalningsbeslut" && b.kind === "betalningsbeslut") {
+    return b.amount - a.amount;
+  }
+  if (a.kind === "bokforingsfraga" && b.kind === "bokforingsfraga") {
+    return a.expense.date.localeCompare(b.expense.date);
+  }
+  if (a.kind === "forfragan" && b.kind === "forfragan") {
+    return b.request.createdAt.localeCompare(a.request.createdAt);
+  }
+  if (a.kind === "offert_uppfoljning" && b.kind === "offert_uppfoljning") {
+    return b.days - a.days;
+  }
+  if (a.kind === "kvitto_saknas" && b.kind === "kvitto_saknas") {
+    return a.expense.date.localeCompare(b.expense.date);
+  }
+  return 0;
+}
+
+/**
+ * Administrativa nästa steg från offerter/fakturor – inte pågående jobb.
+ * Kräver inte att användaren markerar uppdrag som klart.
+ */
+export function homeNextSteps(): HomeNextStep[] {
+  const data = db();
+  const steps: HomeNextStep[] = [];
+
+  for (const job of data.jobs) {
+    const quote = jobQuote(job);
+    if (!quote || quote.status !== "godkand") continue;
+
+    const remaining = remainingToInvoiceForJob(job.id);
+    const money = jobMoneySummary(job.id);
+    const next = nextPaymentPlanPartForJob(job.id);
+
+    if (remaining > 0) {
+      if (money.invoiced <= 0) {
+        if (next && !next.isLast) {
+          steps.push({
+            kind: "forsta_faktura",
+            id: `first-${job.id}`,
+            job,
+            customer: requireCustomer(job.customerId),
+            amount: next.amount,
+            percent: next.percent,
+            partLabel: next.label,
+          });
+        } else {
+          steps.push({
+            kind: "kan_fakturera",
+            id: `bill-${job.id}`,
+            job,
+            customer: requireCustomer(job.customerId),
+            amount: remaining,
+          });
+        }
+      } else {
+        steps.push({
+          kind: "resterande",
+          id: `rest-${job.id}`,
+          job,
+          customer: requireCustomer(job.customerId),
+          amount: next && !next.isLast ? next.amount : remaining,
+          isFinal: !next || next.isLast,
+        });
+      }
+    }
+
+    const tax = taxReductionCaseForJob(job);
+    if (tax.phase === "ready") {
+      steps.push({
+        kind: "rot_ansok",
+        id: `rot-${job.id}`,
+        job,
+        customer: requireCustomer(job.customerId),
+        label: tax.nextStep ?? `${tax.label} redo att ansökas`,
+      });
+    }
   }
 
-  return items;
+  return steps;
 }
 
 /** Hur mycket som återstår att fakturera för ett uppdrag (utifrån godkänd offert). */
@@ -131,16 +295,16 @@ export function nextPaymentPlanPartForJob(jobId: string): {
   return { index, percent: part.percent, label: part.label, amount: isLast ? remaining : fromPlan, isLast };
 }
 
-/** Uppdrag som pågår eller startar inom en vecka, sorterade på startdatum. */
-export function jobsThisWeek() {
+/** Uppdrag som pågår eller startar inom en vecka, utifrån planerade datum. */
+export function jobsThisWeek(now = new Date()) {
   return db()
     .jobs.filter((j) => {
-      if (j.status === "pagar") return true;
-      if (j.status === "kommande" && j.startDate) {
-        const days = (new Date(j.startDate).getTime() - Date.now()) / 86_400_000;
-        return days <= 7;
-      }
-      return false;
+      const lifecycle = derivedJobStatus(j, now);
+      if (lifecycle === "klart") return false;
+      if (lifecycle === "pagar") return true;
+      if (!j.startDate) return false;
+      const days = (new Date(j.startDate).getTime() - now.getTime()) / 86_400_000;
+      return days >= 0 && days <= 7;
     })
     .sort((a, b) => (a.startDate ?? "").localeCompare(b.startDate ?? ""));
 }

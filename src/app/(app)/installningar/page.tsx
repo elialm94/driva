@@ -7,6 +7,7 @@ import {
 } from "@/lib/services/settings";
 import { parseSettingsFlik } from "@/lib/settings-routes";
 import { sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
+import { primaryDomain } from "@/lib/domains";
 
 export const metadata = { title: "Inställningar" };
 
@@ -29,6 +30,10 @@ export default async function SettingsPage(props: {
       bank={connectedBankSummary()}
       returnTo={tillbaka}
       returnLabel={tillbakaNamn}
+      domainSummary={(() => {
+        const d = primaryDomain();
+        return d ? { hostname: d.hostname, live: d.status === "active" } : null;
+      })()}
     />
   );
 }

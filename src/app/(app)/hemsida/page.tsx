@@ -1,11 +1,16 @@
-import { ExternalLink, Globe, Inbox, WandSparkles } from "lucide-react";
+import { ExternalLink, Globe, Mail, WandSparkles } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/lib/store";
 import { datumTid } from "@/lib/format";
+import { DEFAULT_PRIMARY_CTA_LABEL } from "@/lib/types";
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { SiteRenderer } from "@/components/site-renderer";
 import { GenerateWebsiteForm, PublishWebsiteButton, SectionList } from "@/components/site-widgets";
 import { CopyLinkButton } from "@/components/copy-button";
+import { DomainSidebarCard } from "@/components/domain-widgets";
+import { isMockDomainMode, primaryDomain } from "@/lib/domains";
+import { getInquiryNotificationEmail } from "@/lib/services/settings";
+import { SETTINGS_HREF } from "@/lib/settings-routes";
 
 export const metadata = { title: "Hemsida" };
 
@@ -45,6 +50,9 @@ export default function WebsitePage() {
   }
 
   const published = site.status === "publicerad";
+  const domain = primaryDomain();
+  const liveHost = domain?.status === "active" ? domain.hostname : null;
+  const inquiryEmail = getInquiryNotificationEmail(data.settings);
 
   // Redigeringslistan behöver inte bilddatan (tunga data-URL:er) – bara vetskap om att bild finns.
   // Själva bilderna hämtas när en sektion öppnas för redigering.
@@ -78,14 +86,14 @@ export default function WebsitePage() {
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         {/* Live-preview */}
-        <div>
+        <div className="min-w-0">
           <div className="mb-2.5 flex items-center justify-between">
             <div className="flex items-center gap-2 text-[13px] text-muted">
               <Globe className="size-4" />
               <span className="font-mono text-[12px]">
-                {published ? "driva.site/" + site.slug : "Förhandsvisning"}
+                {liveHost ? liveHost : published ? "driva.site/" + site.slug : "Förhandsvisning"}
               </span>
               <Badge tone={published ? "ok" : "warn"}>{published ? "Publicerad" : "Utkast"}</Badge>
             </div>
@@ -107,11 +115,15 @@ export default function WebsitePage() {
         </div>
 
         {/* Sidopanel */}
-        <div className="space-y-6">
-          <div>
+        <div className="min-w-0 space-y-6">
+          <div className="min-w-0">
             <SectionTitle>Innehåll</SectionTitle>
-            <Card>
-              <SectionList sections={listSections} labels={SECTION_LABELS} />
+            <Card className="min-w-0 overflow-hidden">
+              <SectionList
+                sections={listSections}
+                labels={SECTION_LABELS}
+                primaryCtaLabel={site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL}
+              />
             </Card>
             <p className="mt-2 text-[12px] leading-relaxed text-muted">
               Dra för att ändra ordning. Klicka för att redigera. Dolda sektioner syns inte på sajten, men innehållet
@@ -120,36 +132,37 @@ export default function WebsitePage() {
           </div>
 
           <div>
-            <SectionTitle>Förfrågningar från sajten</SectionTitle>
+            <SectionTitle>Förfrågningar</SectionTitle>
             <Card className="px-5 py-4">
-              <div className="flex items-center gap-3">
-                <div className="flex size-9 items-center justify-center rounded-xl bg-info-soft">
-                  <Inbox className="size-4.5 text-info" />
+              <div className="flex items-start gap-3">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-info-soft">
+                  <Mail className="size-4.5 text-info" />
                 </div>
-                <div>
-                  <p className="text-[15px] font-semibold tabular">{site.submissions}</p>
-                  <p className="text-[12px] text-muted">förfrågningar via formuläret</p>
+                <div className="min-w-0">
+                  <p className="text-[14px] font-medium text-ink">
+                    Skickas till {inquiryEmail || "din e-post"}
+                  </p>
+                  <p className="mt-1 text-[13px] leading-relaxed text-soft">
+                    Förfrågningar skickas till din e-post och sparas automatiskt i Driva.
+                  </p>
+                  <Link
+                    href={`${SETTINGS_HREF.foretag}#forfragningar` as never}
+                    className="mt-2 inline-block text-[13px] font-medium text-accent hover:underline"
+                  >
+                    Ändra →
+                  </Link>
                 </div>
               </div>
-              <p className="mt-3 text-[13px] leading-relaxed text-soft">
-                När någon skickar formuläret skapas kunden och förfrågan automatiskt och dyker upp på{" "}
-                <Link href="/" className="font-medium text-accent hover:underline">
-                  Hem
-                </Link>
-                .
-              </p>
             </Card>
           </div>
 
           <div>
             <SectionTitle>Domän</SectionTitle>
-            <Card className="px-5 py-4">
-              <p className="text-[13px] leading-relaxed text-soft">
-                I produktion kopplar du din egen domän (t.ex.{" "}
-                <span className="font-medium text-ink">{site.slug}.se</span>) med automatiskt SSL. I demon ligger sajten
-                på <span className="font-mono text-[12px]">/sajt</span>.
-              </p>
-            </Card>
+            <DomainSidebarCard
+              hostname={domain?.hostname}
+              live={domain?.status === "active"}
+              demo={isMockDomainMode()}
+            />
           </div>
         </div>
       </div>

@@ -8,7 +8,6 @@ import { createQuote, STANDARD_TERMS, updateQuote, quoteDefaults, type QuoteInpu
 import {
   createDeniedReductionInvoice,
   createInvoice,
-  invoiceHasDocumentedTaxReductionAcceptance,
   issueInvoice,
 } from "../src/lib/services/invoices";
 import { finalizeApproval } from "../src/lib/services/bankid";
@@ -54,7 +53,7 @@ function baseInput(overrides: Partial<QuoteInput> = {}): QuoteInput {
   };
 }
 
-function run(): Check[] {
+async function run(): Promise<Check[]> {
   const checks: Check[] = [];
 
   reset();
@@ -127,13 +126,12 @@ function run(): Check[] {
       lines: [labor],
       rot: { type: "rot" },
     });
-    const warned = !invoiceHasDocumentedTaxReductionAcceptance(inv);
     const hasClause = Boolean(inv.taxReductionTerms);
     checks.push(
       assert(
-        "Manual ROT invoice without signed quote is warned",
-        warned && hasClause,
-        `documented=${!warned} snapshot=${inv.taxReductionTerms?.version}`
+        "Manual ROT invoice without signed quote still gets disclaimer",
+        hasClause && inv.rot?.type === "rot",
+        `snapshot=${inv.taxReductionTerms?.version}`
       )
     );
   }
@@ -163,9 +161,8 @@ function run(): Check[] {
     const ok =
       Boolean(signed.lockedAt) &&
       signed.contentHash === quoteVersionHash(signed) &&
-      invoiceHasDocumentedTaxReductionAcceptance(inv) &&
       inv.taxReductionTerms?.text === signed.taxReductionTerms?.text;
-    checks.push(assert("Signed ROT quote documents acceptance on invoice", ok, `locked=${Boolean(signed.lockedAt)} documented=${invoiceHasDocumentedTaxReductionAcceptance(inv)}`));
+    checks.push(assert("Signed ROT quote copies locked terms onto invoice", ok, `locked=${Boolean(signed.lockedAt)}`));
   }
 
   reset();
@@ -184,7 +181,7 @@ function run(): Check[] {
 
   reset();
   {
-    executeTool("create_quote", {
+    await executeTool("create_quote", {
       customerId: "cust-anna",
       title: "Garderob",
       amountInclVat: 20000,
@@ -228,15 +225,17 @@ function run(): Check[] {
   return checks;
 }
 
-const checks = run();
-let failed = 0;
-for (const c of checks) {
-  const mark = c.ok ? "ok" : "FAIL";
-  if (!c.ok) failed += 1;
-  console.log(`${mark}  ${c.name}  — ${c.detail}`);
-}
-if (failed > 0) {
-  console.error(`\n${failed} tester misslyckades.`);
-  process.exit(1);
-}
-console.log(`\n${checks.length} tester godkända.`);
+void (async () => {
+  const checks = await run();
+  let failed = 0;
+  for (const c of checks) {
+    const mark = c.ok ? "ok" : "FAIL";
+    if (!c.ok) failed += 1;
+    console.log(`${mark}  ${c.name}  — ${c.detail}`);
+  }
+  if (failed > 0) {
+    console.error(`\n${failed} tester misslyckades.`);
+    process.exit(1);
+  }
+  console.log(`\n${checks.length} tester godkända.`);
+})();

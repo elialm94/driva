@@ -3,7 +3,7 @@ import { docTotals, lineTotal, vatBreakdown } from "@/lib/calc";
 import { kr, datumLang, datumTid, datumNumeriskt } from "@/lib/format";
 import { ShieldCheck, BadgeCheck } from "lucide-react";
 import { taxReductionDeductionLabel, getTaxReductionTerms } from "@/lib/tax-reduction-terms";
-import { TaxReductionQuoteClause } from "./tax-reduction-terms";
+import { TaxReductionQuoteClause, TaxReductionCalcHint } from "./tax-reduction-terms";
 import { CompanyLogo } from "./company-logo";
 import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
 
@@ -125,22 +125,29 @@ export function DocTotalsBlock({
         <span className="tabular">{kr(t.total)}</span>
       </div>
       {rot ? (
-        <div className="flex justify-between text-accent-deep">
-          <span>{taxReductionDeductionLabel(rot.type)}</span>
-          <span className="tabular">−{kr(t.deduction)}</span>
-        </div>
+        <>
+          <div className="flex justify-between text-soft">
+            <span>Arbetskostnad inkl. moms</span>
+            <span className="tabular">{kr(t.laborInclVat)}</span>
+          </div>
+          <div className="flex justify-between text-accent-deep">
+            <span>{taxReductionDeductionLabel(rot.type)}</span>
+            <span className="tabular">−{kr(t.deduction)}</span>
+          </div>
+        </>
       ) : null}
       <div className="mt-2 flex items-baseline justify-between border-t border-line pt-2.5">
         <span className="text-[15px] font-semibold text-ink">{toPayLabel}</span>
         <span className="text-[20px] font-semibold tracking-tight text-ink tabular">{kr(t.toPay)}</span>
       </div>
+      {rot ? <TaxReductionCalcHint type={rot.type} laborInclVat={t.laborInclVat} /> : null}
     </div>
   );
 }
 
 /**
  * Offertdokumentet exakt som kunden ser det.
- * Används i preview före skickning, på den publika offertsidan och i PDF-vyn.
+ * Används på offertdetaljen, på den publika offertsidan och i PDF-vyn.
  */
 export function QuoteDocument({
   company,

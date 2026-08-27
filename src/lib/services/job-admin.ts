@@ -2,11 +2,12 @@ import { kr } from "../format";
 import type { Job, Quote } from "../types";
 import { jobMoneySummary, nextPaymentPlanPartForJob } from "./attention";
 import { quoteSignature } from "./data";
+import { derivedJobStatus, isPaymentPlanPartDue } from "./job-lifecycle";
+import { taxReductionCaseForJob } from "./tax-reduction";
 
 export type JobPrimaryKind =
   | "skapa_offert"
   | "visa_offert"
-  | "starta"
   | "skapa_faktura"
   | "skapa_slutfaktura";
 
@@ -25,7 +26,14 @@ export interface JobAdminState {
   doneLabel: string | null;
   nextStep: string | null;
   canMarkDone: boolean;
-  canStart: boolean;
+  lifecycle: ReturnType<typeof derivedJobStatus>;
+}
+
+function installmentDue(
+  nextPart: ReturnType<typeof nextPaymentPlanPartForJob>,
+  lifecycle: ReturnType<typeof derivedJobStatus>
+): boolean {
+  return Boolean(nextPart && isPaymentPlanPartDue(nextPart, lifecycle));
 }
 
 export function jobAdminState(job: Job): JobAdminState {
@@ -38,6 +46,8 @@ export function jobAdminState(job: Job): JobAdminState {
   const approved = quote?.status === "godkand";
   const fullyInvoiced = approved && remaining <= 0 && money.invoiced > 0;
   const fullyPaid = fullyInvoiced && !unpaid && money.paid > 0;
+  const lifecycle = derivedJobStatus(job);
+  const dueNow = installmentDue(nextPart, lifecycle);
 
   let primary: JobPrimaryKind | null = null;
   let secondary: "visa_offert" | null = null;
@@ -54,20 +64,15 @@ export function jobAdminState(job: Job): JobAdminState {
   } else if (quote.status === "avbojd" || quote.status === "utgangen") {
     primary = "skapa_offert";
     secondary = "visa_offert";
-  } else if (job.status === "kommande") {
-    primary = "starta";
+  } else if (lifecycle === "planerat") {
     secondary = "visa_offert";
-  } else if (job.status === "pagar") {
-    if (remaining > 0) {
-      primary = "skapa_faktura";
-      secondary = "visa_offert";
-    } else if (unpaid) {
-      waitingLabel = "Väntar på betalning";
-      secondary = "visa_offert";
-    } else {
-      secondary = "visa_offert";
-    }
-  } else if (job.status === "klart") {
+    if (dueNow && remaining > 0) primary = "skapa_faktura";
+    else if (unpaid) waitingLabel = "Väntar på betalning";
+  } else if (lifecycle === "pagar") {
+    secondary = "visa_offert";
+    if (dueNow && remaining > 0) primary = "skapa_faktura";
+    else if (unpaid) waitingLabel = "Väntar på betalning";
+  } else if (lifecycle === "klart") {
     if (remaining > 0) {
       primary = "skapa_slutfaktura";
       secondary = quote ? "visa_offert" : null;
@@ -91,16 +96,26 @@ export function jobAdminState(job: Job): JobAdminState {
     nextStep = "Offerten avböjdes. Skapa en ny om ni går vidare.";
   } else if (quote.status === "utgangen") {
     nextStep = "Offerten har gått ut. Skapa en ny om ni går vidare.";
-  } else if (job.status === "kommande" && nextPart) {
-    nextStep = `När du startar: fakturera ${nextPart.percent} % ${nextPart.label.toLowerCase()} (${kr(nextPart.amount)}).`;
-  } else if (job.status === "pagar" && nextPart) {
-    nextStep = `Nästa enligt offerten: ${nextPart.percent} % ${nextPart.label.toLowerCase()} · ${kr(nextPart.amount)}.`;
+  } else if (lifecycle === "planerat" && nextPart && !dueNow) {
+    nextStep = `När startdatumet infaller: fakturera ${nextPart.percent} % ${nextPart.label.toLowerCase()} (${kr(nextPart.amount)}).`;
+  } else if (dueNow && nextPart && remaining > 0) {
+    nextStep = `${kr(nextPart.amount)} kan faktureras enligt offerten.`;
   } else if (remaining > 0 && approved) {
     nextStep = `${kr(remaining)} återstår enligt den godkända offerten.`;
   } else if (unpaid) {
     nextStep = "Väntar på betalning.";
   } else if (fullyPaid) {
     nextStep = null;
+  }
+
+  const tax = taxReductionCaseForJob(job);
+  if (
+    remaining <= 0 &&
+    !unpaid &&
+    tax.nextStep &&
+    (tax.phase === "ready" || tax.phase === "missing_fields" || tax.phase === "underlag")
+  ) {
+    nextStep = tax.nextStep;
   }
 
   return {
@@ -117,7 +132,7 @@ export function jobAdminState(job: Job): JobAdminState {
     waitingLabel,
     doneLabel,
     nextStep,
-    canMarkDone: job.status === "pagar",
-    canStart: job.status === "kommande",
+    canMarkDone: lifecycle === "pagar",
+    lifecycle,
   };
 }

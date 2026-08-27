@@ -2,6 +2,7 @@ import { kr } from "@/lib/format";
 import { Card, PageHeader } from "@/components/ui";
 import { BackLink } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
+import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { resultatrapport } from "@/lib/accounting/ledger";
 
 export const metadata = { title: "Resultatrapport" };
@@ -24,6 +25,7 @@ export default function ResultatPage() {
           </div>
         }
       />
+      <BokforingAdvancedTabs />
 
       {/* Ägarvänlig sammanfattning */}
       <Card className="mb-6 px-6 py-5">
