@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Search, Plus, UserRound } from "lucide-react";
 import { Avatar, Badge, buttonClasses, Card, EmptyState } from "./ui";
 import { Modal } from "./modal";
+import { AddressFields } from "./address-input";
 import { createCustomerAction } from "@/app/actions";
 
 export interface CustomerRow {
@@ -41,6 +42,7 @@ export function NewCustomerButton({ full = false }: { full?: boolean }) {
         email: String(formData.get("email") ?? ""),
         phone: String(formData.get("phone") ?? ""),
         address: String(formData.get("address") ?? "") || undefined,
+        postalCode: String(formData.get("postalCode") ?? "") || undefined,
         city: String(formData.get("city") ?? "") || undefined,
       });
       setOpen(false);
@@ -97,16 +99,7 @@ export function NewCustomerButton({ full = false }: { full?: boolean }) {
               <input name="phone" className={inputCls} placeholder="070-123 45 67" />
             </div>
           </div>
-          <div className="grid grid-cols-[2fr_1fr] gap-3">
-            <div>
-              <label className="mb-1 block text-[13px] font-medium text-soft">Adress</label>
-              <input name="address" className={inputCls} />
-            </div>
-            <div>
-              <label className="mb-1 block text-[13px] font-medium text-soft">Ort</label>
-              <input name="city" className={inputCls} defaultValue="Stockholm" />
-            </div>
-          </div>
+          <AddressFields />
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className={buttonClasses("ghost")} onClick={() => setOpen(false)}>
               Avbryt

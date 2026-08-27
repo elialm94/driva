@@ -68,7 +68,10 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
                 ) : null}
                 {customer.address ? (
                   <span className="flex items-center gap-1.5">
-                    <MapPin className="size-3.5 text-muted" /> {customer.address}, {customer.city}
+                    <MapPin className="size-3.5 text-muted" />{" "}
+                    {[customer.address, [customer.postalCode, customer.city].filter(Boolean).join(" ")]
+                      .filter(Boolean)
+                      .join(", ")}
                   </span>
                 ) : null}
               </div>

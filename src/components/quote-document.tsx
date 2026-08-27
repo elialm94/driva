@@ -157,7 +157,9 @@ export function QuoteDocument({
           <p className="font-medium">{customer.name}</p>
           {customer.address ? (
             <p className="text-muted">
-              {customer.address}, {customer.city}
+              {[customer.address, [customer.postalCode, customer.city].filter(Boolean).join(" ")]
+                .filter(Boolean)
+                .join(", ")}
             </p>
           ) : null}
         </div>

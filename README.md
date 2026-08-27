@@ -11,6 +11,16 @@ npm run dev
 
 Öppna [http://localhost:3000](http://localhost:3000). Appen seedas automatiskt med demodata för **Södermalms Snickeri AB** (fil-baserad databas i `.data/db.json`). Klicka på företagsnamnet nere i vänstermenyn för att återställa demon.
 
+### Google Maps-adresssökning (valfritt)
+
+Adressfältet i "Ny kund" använder Google Places-autocomplete och fyller i postnummer och ort automatiskt. Lägg en nyckel med **Places API (New)** aktiverat i `.env.local`:
+
+```bash
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=din-nyckel
+```
+
+Utan nyckel används svenska exempeladresser, tydligt märkta "Demo" i förslagslistan.
+
 ## Kärnflödet
 
 **Förfrågan → Offert → BankID-godkännande → Jobb → Faktura → Betalning → Bokföring**
