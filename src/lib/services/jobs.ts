@@ -6,6 +6,16 @@ import { logActivity } from "./activity";
 
 export function createJobFromQuote(quote: Quote): Job {
   const data = db();
+  const existing =
+    (quote.jobId ? data.jobs.find((j) => j.id === quote.jobId) : undefined) ??
+    data.jobs.find((j) => j.quoteId === quote.id);
+  if (existing) {
+    existing.quoteId = quote.id;
+    quote.jobId = existing.id;
+    save();
+    return existing;
+  }
+
   const version = currentVersion(quote);
   const customer = requireCustomer(quote.customerId);
   const job: Job = {
@@ -21,6 +31,7 @@ export function createJobFromQuote(quote: Quote): Job {
     createdAt: new Date().toISOString(),
   };
   data.jobs.push(job);
+  quote.jobId = job.id;
   save();
   return job;
 }
@@ -46,7 +57,7 @@ export function createJob(input: {
     createdAt: new Date().toISOString(),
   };
   data.jobs.push(job);
-  logActivity(`Jobbet ${job.title} skapades för ${customer.name}.`, {
+  logActivity(`Uppdraget ${job.title} skapades för ${customer.name}.`, {
     customerId: customer.id,
     entity: { type: "jobb", id: job.id },
   });
@@ -56,18 +67,18 @@ export function createJob(input: {
 
 export function setJobStatus(jobId: string, status: Job["status"]): Job {
   const job = db().jobs.find((j) => j.id === jobId);
-  if (!job) throw new Error("Jobbet finns inte");
+  if (!job) throw new Error("Uppdraget finns inte");
   const customer = requireCustomer(job.customerId);
   job.status = status;
   if (status === "klart") {
     job.completedAt = new Date().toISOString();
-    logActivity(`Jobbet ${job.title} hos ${customer.name} markerades som klart.`, {
+    logActivity(`Uppdraget ${job.title} hos ${customer.name} markerades som klart.`, {
       customerId: customer.id,
       entity: { type: "jobb", id: jobId },
     });
   } else if (status === "pagar") {
     if (!job.startDate) job.startDate = new Date().toISOString();
-    logActivity(`Jobbet ${job.title} hos ${customer.name} startades.`, {
+    logActivity(`Uppdraget ${job.title} hos ${customer.name} startades.`, {
       customerId: customer.id,
       entity: { type: "jobb", id: jobId },
     });

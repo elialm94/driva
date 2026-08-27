@@ -1,6 +1,6 @@
 import { db } from "../store";
 import type { Customer, CustomerRequest, Expense, Invoice, Job, Quote } from "../types";
-import { currentVersion, daysOverdue, invoiceTotals, isOverdue, quoteTotals, quoteWaitingDays, requireCustomer } from "./data";
+import { currentVersion, daysOverdue, invoiceTotals, isOverdue, jobQuote, quoteTotals, quoteWaitingDays, requireCustomer } from "./data";
 import { docTotals } from "../calc";
 
 export type AttentionItem =
@@ -75,12 +75,12 @@ export function attentionItems(): AttentionItem[] {
   return items;
 }
 
-/** Hur mycket som återstår att fakturera för ett jobb (utifrån godkänd offert). */
+/** Hur mycket som återstår att fakturera för ett uppdrag (utifrån godkänd offert). */
 export function remainingToInvoiceForJob(jobId: string): number {
   const data = db();
   const job = data.jobs.find((j) => j.id === jobId);
-  if (!job || !job.quoteId) return 0;
-  const quote = data.quotes.find((q) => q.id === job.quoteId);
+  if (!job) return 0;
+  const quote = jobQuote(job);
   if (!quote || quote.status !== "godkand") return 0;
   const version = currentVersion(quote);
   const total = docTotals(version.lines, version.rot).total;
@@ -88,6 +88,18 @@ export function remainingToInvoiceForJob(jobId: string): number {
     .filter((i) => i.jobId === jobId && i.status !== "krediterad")
     .reduce((s, i) => s + invoiceTotals(i).total, 0);
   return Math.max(0, total - invoiced);
+}
+
+/** Offertbelopp, fakturerat, kvar och betalt för ett uppdrag. */
+export function jobMoneySummary(jobId: string) {
+  const data = db();
+  const job = data.jobs.find((j) => j.id === jobId);
+  const quote = job ? jobQuote(job) : undefined;
+  const quoteAmount = quote ? quoteTotals(quote).toPay : 0;
+  const invoices = data.invoices.filter((i) => i.jobId === jobId && i.status !== "krediterad");
+  const invoiced = invoices.reduce((s, i) => s + invoiceTotals(i).total, 0);
+  const paid = invoices.filter((i) => i.status === "betald").reduce((s, i) => s + invoiceTotals(i).toPay, 0);
+  return { quote, quoteAmount, invoiced, remaining: remainingToInvoiceForJob(jobId), paid, invoices };
 }
 
 /** Sammanfattning till Hem-sidans "Du har"-rad. */

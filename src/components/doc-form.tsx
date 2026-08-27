@@ -309,19 +309,19 @@ function TotalsPanel({ lines, rot }: { lines: DocLine[]; rot: RotRut | null }) {
 }
 
 const PLAN_PRESETS: { label: string; plan: PaymentPlanPart[] }[] = [
-  { label: "Allt när jobbet är klart", plan: [{ label: "Betalning när arbetet är klart", percent: 100 }] },
+  { label: "Allt när arbetet är klart", plan: [{ label: "Betalning när arbetet är klart", percent: 100 }] },
   {
     label: "30 % vid start",
     plan: [
       { label: "Vid arbetets start", percent: 30 },
-      { label: "När jobbet är klart och godkänt", percent: 70 },
+      { label: "När arbetet är klart och godkänt", percent: 70 },
     ],
   },
   {
     label: "50 / 50",
     plan: [
       { label: "Vid arbetets start", percent: 50 },
-      { label: "När jobbet är klart och godkänt", percent: 50 },
+      { label: "När arbetet är klart och godkänt", percent: 50 },
     ],
   },
 ];
@@ -342,6 +342,7 @@ export function QuoteForm({
   customers,
   defaultCustomerId,
   requestId,
+  jobId,
   quoteId,
   initial,
   defaults,
@@ -349,6 +350,7 @@ export function QuoteForm({
   customers: CustomerOption[];
   defaultCustomerId?: string;
   requestId?: string;
+  jobId?: string;
   /** Sätt vid redigering av befintlig offert. */
   quoteId?: string;
   initial?: QuoteFormInitial;
@@ -392,7 +394,7 @@ export function QuoteForm({
         await updateQuoteAction(quoteId, payload);
         router.push(`/pengar/offerter/${quoteId}`);
       } else {
-        await createQuoteAction({ ...payload, customerId, requestId });
+        await createQuoteAction({ ...payload, customerId, requestId, jobId });
       }
     });
   }
@@ -404,7 +406,7 @@ export function QuoteForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className={labelCls}>Kund</label>
-              {quoteId ? (
+              {quoteId || jobId ? (
                 <select value={customerId} className={inputCls} disabled>
                   {customerOptions.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -440,7 +442,7 @@ export function QuoteForm({
             </div>
           </div>
           <div>
-            <label className={labelCls}>Beskrivning av jobbet</label>
+            <label className={labelCls}>Beskrivning av arbetet</label>
             <textarea
               value={intro}
               onChange={(e) => setIntro(e.target.value)}

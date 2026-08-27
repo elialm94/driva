@@ -177,11 +177,11 @@ export default async function QuotePage(props: PageProps<"/pengar/offerter/[id]"
               <SectionTitle>Nästa steg</SectionTitle>
               <Card className="space-y-3 px-5 py-4">
                 {job ? (
-                  <Link href={`/jobb/${job.id}` as never} className="flex items-center gap-3 rounded-xl border border-line px-4 py-3 transition-colors hover:bg-canvas">
+                  <Link href={`/uppdrag/${job.id}` as never} className="flex items-center gap-3 rounded-xl border border-line px-4 py-3 transition-colors hover:bg-canvas">
                     <Hammer className="size-4 text-accent" />
                     <div className="flex-1">
                       <p className="text-[14px] font-medium">{job.title}</p>
-                      <p className="text-[12px] text-muted">Jobb skapat automatiskt</p>
+                      <p className="text-[12px] text-muted">Uppdrag</p>
                     </div>
                   </Link>
                 ) : null}

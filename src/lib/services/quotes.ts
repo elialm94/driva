@@ -9,6 +9,7 @@ import { logActivity } from "./activity";
 export interface QuoteInput {
   customerId: string;
   requestId?: string;
+  jobId?: string;
   title: string;
   intro: string;
   lines: DocLine[];
@@ -52,6 +53,7 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
     number,
     customerId: input.customerId,
     requestId: input.requestId,
+    jobId: input.jobId,
     status: "utkast",
     currentVersionId: versionId,
     token: publicToken(),
@@ -70,6 +72,11 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
     }
   }
 
+  if (input.jobId) {
+    const job = data.jobs.find((j) => j.id === input.jobId);
+    if (job && !job.quoteId) job.quoteId = quoteId;
+  }
+
   logActivity(
     createdBy === "assistent"
       ? `Assistenten skapade utkast till offert #${number} för ${customer.name}.`
@@ -80,7 +87,7 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
   return quote;
 }
 
-export type QuoteVersionInput = Omit<QuoteInput, "customerId" | "requestId">;
+export type QuoteVersionInput = Omit<QuoteInput, "customerId" | "requestId" | "jobId">;
 
 /**
  * Uppdatera en offert. Låsta (BankID-signerade) versioner ändras aldrig –

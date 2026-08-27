@@ -56,6 +56,16 @@ export function getJob(id: string): Job | undefined {
   return db().jobs.find((j) => j.id === id);
 }
 
+/** Offerten kopplad till ett uppdrag – via job.quoteId eller quote.jobId. */
+export function jobQuote(job: Job): Quote | undefined {
+  const data = db();
+  if (job.quoteId) {
+    const q = data.quotes.find((q) => q.id === job.quoteId);
+    if (q) return q;
+  }
+  return data.quotes.find((q) => q.jobId === job.id);
+}
+
 export function getInvoice(id: string): Invoice | undefined {
   return db().invoices.find((i) => i.id === id);
 }

@@ -21,7 +21,7 @@ export default async function PublicSitePage(props: PageProps<"/sajt">) {
   if (site.status !== "publicerad" && !preview) notFound();
 
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh" data-public-site>
       {site.status !== "publicerad" && preview ? (
         <div className="sticky top-0 z-50 bg-warn px-4 py-2 text-center text-[13px] font-medium text-white">
           Förhandsvisning – sajten är inte publicerad ännu

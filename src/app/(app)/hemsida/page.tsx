@@ -4,7 +4,7 @@ import { db } from "@/lib/store";
 import { datumTid } from "@/lib/format";
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { SiteRenderer } from "@/components/site-renderer";
-import { GenerateWebsiteForm, PublishWebsiteButton, SectionEditor } from "@/components/site-widgets";
+import { GenerateWebsiteForm, PublishWebsiteButton, SectionList } from "@/components/site-widgets";
 import { CopyLinkButton } from "@/components/copy-button";
 
 export const metadata = { title: "Hemsida" };
@@ -89,7 +89,7 @@ export default function WebsitePage() {
               <span className="size-2.5 rounded-full bg-line-strong" />
               <span className="size-2.5 rounded-full bg-line-strong" />
             </div>
-            <div className="max-h-[640px] overflow-y-auto">
+            <div className="site-preview-scroll max-h-[640px] overflow-y-auto">
               <SiteRenderer website={site} company={data.settings} interactive={false} />
             </div>
           </div>
@@ -102,20 +102,12 @@ export default function WebsitePage() {
         <div className="space-y-6">
           <div>
             <SectionTitle>Innehåll</SectionTitle>
-            <Card className="divide-y divide-line/70">
-              {site.sections.map((s) => (
-                <SectionEditor
-                  key={s.id}
-                  sectionId={s.id}
-                  typeLabel={SECTION_LABELS[s.type] ?? s.type}
-                  heading={s.heading}
-                  body={s.body}
-                  items={s.type === "tjanster" ? (s.items ?? []) : undefined}
-                />
-              ))}
+            <Card>
+              <SectionList sections={site.sections} labels={SECTION_LABELS} />
             </Card>
             <p className="mt-2 text-[12px] leading-relaxed text-muted">
-              Klicka på en sektion för att ändra text, eller under Tjänster lägga till, flytta och ta bort korten.
+              Dra för att ändra ordning. Klicka för att redigera. Dolda sektioner syns inte på sajten, men innehållet
+              sparas.
             </p>
           </div>
 

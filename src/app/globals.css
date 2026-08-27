@@ -97,6 +97,22 @@ input, textarea, select {
   border-radius: 4px;
 }
 
+/* Publika sajten (/sajt) – inte Driva-appen. Förhandsvisningen scroller i .site-preview-scroll. */
+html:has([data-public-site]) {
+  scroll-behavior: smooth;
+}
+
+.site-preview-scroll {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:has([data-public-site]),
+  .site-preview-scroll {
+    scroll-behavior: auto;
+  }
+}
+
 @media print {
   body {
     background: #fff;

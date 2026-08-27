@@ -174,7 +174,7 @@ export interface BankIDOrder {
   updatedAt: string;
 }
 
-/* ---------------------------------- Jobb ------------------------------------- */
+/* ---------------------------------- Uppdrag (Job) ------------------------------------- */
 
 export type JobStatus = "kommande" | "pagar" | "klart";
 
@@ -384,8 +384,12 @@ export interface WebsiteSection {
   type: "hero" | "tjanster" | "om" | "galleri" | "kontakt";
   heading: string;
   body: string;
+  /** Valfri bild (data-URL). Hero och om oss: saknas = endast text, ingen platshållare. */
+  image?: string;
   /** Tjänster-kort. Arrayordning = visningsordning. */
   items?: WebsiteSectionItem[];
+  /** false = dold på sajten. Saknas eller true = synlig. Innehållet sparas. */
+  visible?: boolean;
 }
 
 export interface Website {
@@ -396,6 +400,7 @@ export interface Website {
   city?: string;
   status: "utkast" | "publicerad";
   theme: WebsiteTheme;
+  /** Arrayordning = visningsordning på sajten. */
   sections: WebsiteSection[];
   publishedAt?: string;
   createdAt: string;

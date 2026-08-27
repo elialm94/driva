@@ -88,7 +88,11 @@ export function CustomerList({ customers }: { customers: CustomerRow[] }) {
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {c.newRequests > 0 ? <Badge tone="info">{c.newRequests} ny förfrågan</Badge> : null}
                     {c.openQuotes > 0 ? <Badge tone="warn">{c.openQuotes} väntar på BankID</Badge> : null}
-                    {c.activeJobs > 0 ? <Badge tone="accent">{c.activeJobs} aktivt jobb</Badge> : null}
+                    {c.activeJobs > 0 ? (
+                      <Badge tone="accent">
+                        {c.activeJobs} {c.activeJobs === 1 ? "aktivt uppdrag" : "aktiva uppdrag"}
+                      </Badge>
+                    ) : null}
                     {c.unpaid ? <Badge tone="danger">{c.unpaid} obetalt</Badge> : null}
                     {c.newRequests + c.openQuotes + c.activeJobs === 0 && !c.unpaid ? (
                       <span className="text-[12px] text-muted">Inget pågående</span>

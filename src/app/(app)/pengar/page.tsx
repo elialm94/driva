@@ -131,7 +131,7 @@ export default async function MoneyPage(props: PageProps<"/pengar">) {
 
       {tab === "fakturor" ? (
         invoices.length === 0 ? (
-          <EmptyState icon={ReceiptText} title="Inga fakturor ännu" text="Fakturor skapas oftast direkt från ett klart jobb – eller manuellt här." action={<ButtonLink href="/pengar/fakturor/ny">Ny faktura</ButtonLink>} />
+          <EmptyState icon={ReceiptText} title="Inga fakturor ännu" text="Fakturor skapas oftast direkt från ett klart uppdrag – eller manuellt här." action={<ButtonLink href="/pengar/fakturor/ny">Ny faktura</ButtonLink>} />
         ) : (
           <Card className="divide-y divide-line/70">
             {invoices.map((inv) => {

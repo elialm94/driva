@@ -73,7 +73,7 @@ function buildAttentionDTOs(): AttentionDTO[] {
           icon: "invoice",
           title: `${item.job.title} är klart – dags att fakturera`,
           text: `Vill du skapa slutfakturan på ${kr(item.amount)} till ${item.customer.name}?`,
-          href: `/jobb/${item.job.id}`,
+          href: `/uppdrag/${item.job.id}`,
           action: { type: "createFinalInvoice", label: "Skapa faktura", jobId: item.job.id },
         };
     }
@@ -100,7 +100,7 @@ export default function HomePage() {
   const chips: { label: string; href: string; tone?: "danger" | "warn" }[] = [];
   if (s.newRequests > 0) chips.push({ label: `${s.newRequests} nya förfrågningar`, href: "/kunder" });
   if (s.waitingQuotes > 0) chips.push({ label: `${s.waitingQuotes} offerter väntar på BankID`, href: "/pengar?flik=offerter", tone: "warn" });
-  if (s.jobsThisWeek > 0) chips.push({ label: `${s.jobsThisWeek} jobb den här veckan`, href: "/jobb" });
+  if (s.jobsThisWeek > 0) chips.push({ label: `${s.jobsThisWeek} uppdrag den här veckan`, href: "/uppdrag" });
   if (s.unpaidSum > 0) chips.push({ label: `${kr(s.unpaidSum)} väntar på betalning`, href: "/pengar?flik=fakturor" });
   if (s.overdueCount > 0) chips.push({ label: `${s.overdueCount} försenad${s.overdueCount > 1 ? "e" : ""} faktur${s.overdueCount > 1 ? "or" : "a"}`, href: "/pengar?flik=fakturor", tone: "danger" });
   if (s.missingReceipts > 0) chips.push({ label: `${s.missingReceipts} köp saknar kvitto`, href: "/pengar?flik=utgifter", tone: "warn" });
@@ -205,8 +205,8 @@ export default function HomePage() {
         <div>
           <SectionTitle
             right={
-              <Link href="/jobb" className="flex items-center gap-1 text-[13px] font-medium text-soft hover:text-ink">
-                Alla jobb <ArrowRight className="size-3.5" />
+              <Link href="/uppdrag" className="flex items-center gap-1 text-[13px] font-medium text-soft hover:text-ink">
+                Alla uppdrag <ArrowRight className="size-3.5" />
               </Link>
             }
           >
@@ -219,7 +219,7 @@ export default function HomePage() {
                 return (
                   <Link
                     key={job.id}
-                    href={`/jobb/${job.id}` as never}
+                    href={`/uppdrag/${job.id}` as never}
                     className="flex items-center gap-4 px-5 py-4 transition-colors first:rounded-t-[calc(1.25rem-1px)] last:rounded-b-[calc(1.25rem-1px)] hover:bg-canvas/60"
                   >
                     <div className="flex size-9 items-center justify-center rounded-xl bg-accent-soft">
@@ -238,7 +238,7 @@ export default function HomePage() {
               })}
             </Card>
           ) : (
-            <Card className="px-6 py-5 text-[15px] text-soft">Inga jobb planerade den här veckan.</Card>
+            <Card className="px-6 py-5 text-[15px] text-soft">Inga uppdrag planerade den här veckan.</Card>
           )}
         </div>
 

@@ -1,7 +1,7 @@
 import { db, save } from "../store";
 import { uid, publicToken, ocrForInvoice } from "../ids";
 import type { DocLine, Invoice, RotRut, Verification } from "../types";
-import { currentVersion, getInvoice, getJob, getQuote, invoiceTotals, requireCustomer } from "./data";
+import { currentVersion, getInvoice, getJob, getQuote, invoiceTotals, jobQuote, requireCustomer } from "./data";
 import { docTotals } from "../calc";
 import { entriesCredit, entriesInvoicePaid, entriesInvoiceSent } from "../bas";
 import { kr, isoDaysFromNow } from "../format";
@@ -97,12 +97,12 @@ export function updateInvoice(invoiceId: string, input: InvoiceUpdateInput): Inv
   return invoice;
 }
 
-/** Slutfaktura för ett jobb – resterande belopp enligt den godkända offerten. */
+/** Slutfaktura för ett uppdrag – resterande belopp enligt den godkända offerten. */
 export function createFinalInvoiceForJob(jobId: string): Invoice {
   const job = getJob(jobId);
-  if (!job) throw new Error("Jobbet finns inte");
+  if (!job) throw new Error("Uppdraget finns inte");
   const remaining = remainingToInvoiceForJob(jobId);
-  const quote = job.quoteId ? getQuote(job.quoteId) : undefined;
+  const quote = jobQuote(job);
   const data = db();
 
   if (quote) {
@@ -145,7 +145,7 @@ export function createFinalInvoiceForJob(jobId: string): Invoice {
     });
   }
 
-  throw new Error("Jobbet saknar godkänd offert att fakturera från");
+  throw new Error("Uppdraget saknar godkänd offert att fakturera från");
 }
 
 /** Delbetalning (deposition/förskott) enligt offertens betalningsplan. */

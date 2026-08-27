@@ -123,7 +123,7 @@ function intentCreateQuote(text: string): boolean {
       paymentPlan: percentMatch
         ? [
             { label: "Vid arbetets start", percent: parseInt(percentMatch[1], 10) },
-            { label: "När jobbet är klart och godkänt", percent: 100 - parseInt(percentMatch[1], 10) },
+            { label: "När arbetet är klart och godkänt", percent: 100 - parseInt(percentMatch[1], 10) },
           ]
         : [{ label: "Betalning när arbetet är klart", percent: 100 }],
       paymentTermsDays: defaults.paymentTermsDays,
@@ -277,14 +277,14 @@ function intentBookExpense(text: string): boolean {
 
   let jobId: string | undefined;
   let jobLabel = "";
-  const jobMatch = text.match(/till\s+([A-Za-zÅÄÖåäö]+)s?\s+jobb/i);
+  const jobMatch = text.match(/till\s+([A-Za-zÅÄÖåäö]+)s?\s+(?:jobb|uppdrag)/i);
   if (jobMatch) {
     const jobCustomers = findCustomersByName(jobMatch[1]);
     if (jobCustomers.length === 1) {
       const job = data.jobs.find((j) => j.customerId === jobCustomers[0].id && j.status !== "klart");
       if (job) {
         jobId = job.id;
-        jobLabel = ` och kopplas till jobbet ${job.title}`;
+        jobLabel = ` och kopplas till uppdraget ${job.title}`;
       }
     }
   }
@@ -300,7 +300,7 @@ function intentBookExpense(text: string): boolean {
     rows: [
       { label: expense.supplier, value: kr(expense.amount) },
       { label: "Kategori", value: categoryKey === "material" ? "Material" : cap(categoryKey) },
-      ...(jobLabel ? [{ label: "Kopplas till", value: jobLabel.replace(" och kopplas till jobbet ", "") }] : []),
+      ...(jobLabel ? [{ label: "Kopplas till", value: jobLabel.replace(" och kopplas till uppdraget ", "") }] : []),
     ],
     confirmLabel: "Bokför",
     state: "vantar",
@@ -357,7 +357,7 @@ function helpCard(): AssistantCard {
       { label: "”Vilka kunder har inte betalat?”" },
       { label: "”Hur mycket kan jag spendera utan att riskera momsen?”" },
       { label: "”Vilka köp saknar kvitto?”" },
-      { label: "”Boka Bauhaus-köpet som material till Annas jobb”" },
+      { label: "”Boka Bauhaus-köpet som material till Annas uppdrag”" },
       { label: "”Hur går företaget?”" },
     ],
   };
@@ -426,7 +426,7 @@ export function confirmPendingAction(actionId: string): void {
       bookExpenseToJob(action.expenseId, action.category, action.jobId, "assistent");
       updateConfirmCard(actionId, "utford", "Bokfört.");
       const expense = db().expenses.find((e) => e.id === action.expenseId);
-      reply(`Klart – köpet hos ${expense?.supplier ?? ""} är bokfört${action.jobId ? " och kopplat till jobbet" : ""}. Verifikationen ligger under Bokföring.`, {
+      reply(`Klart – köpet hos ${expense?.supplier ?? ""} är bokfört${action.jobId ? " och kopplat till uppdraget" : ""}. Verifikationen ligger under Bokföring.`, {
         kind: "links",
         links: [{ label: "Öppna Bokföring", href: "/bokforing" }],
       });

@@ -123,7 +123,7 @@ export function answerExpenseQuestion(expenseId: string, answer: string, by: "an
   save();
 }
 
-/** Koppla en utgift till ett jobb och bokför den (t.ex. via assistenten). */
+/** Koppla en utgift till ett uppdrag och bokför den (t.ex. via assistenten). */
 export function bookExpenseToJob(expenseId: string, categoryKey: string, jobId?: string, by: "anvandare" | "assistent" = "anvandare"): void {
   const data = db();
   const expense = data.expenses.find((e) => e.id === expenseId);
@@ -140,7 +140,7 @@ export function bookExpenseToJob(expenseId: string, categoryKey: string, jobId?:
   } else {
     expense.category = categoryKey;
   }
-  const jobText = expense.jobId ? ` och kopplades till jobbet ${data.jobs.find((j) => j.id === expense.jobId)?.title}` : "";
+  const jobText = expense.jobId ? ` och kopplades till uppdraget ${data.jobs.find((j) => j.id === expense.jobId)?.title}` : "";
   logActivity(`Köpet hos ${expense.supplier} (${kr(expense.amount)}) bokfördes som ${categoryByKey(categoryKey).label.toLowerCase()}${jobText}.`, {
     entity: { type: "utgift", id: expenseId },
   });

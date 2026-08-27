@@ -138,9 +138,9 @@ export default async function InvoicePage(props: PageProps<"/pengar/fakturor/[id
             <SectionTitle>Kopplat till</SectionTitle>
             <Card className="divide-y divide-line/70">
               {job ? (
-                <Link href={`/jobb/${job.id}` as never} className="block px-4 py-3 text-[14px] font-medium transition-colors hover:bg-canvas/60">
+                <Link href={`/uppdrag/${job.id}` as never} className="block px-4 py-3 text-[14px] font-medium transition-colors hover:bg-canvas/60">
                   {job.title}
-                  <span className="block text-[12px] font-normal text-muted">Jobb</span>
+                  <span className="block text-[12px] font-normal text-muted">Uppdrag</span>
                 </Link>
               ) : null}
               {quote ? (

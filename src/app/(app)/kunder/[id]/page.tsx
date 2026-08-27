@@ -12,6 +12,7 @@ import {
   ReceiptText,
 } from "lucide-react";
 import { getCustomer, customerBundle, quoteTotals } from "@/lib/services/data";
+import { jobMoneySummary } from "@/lib/services/attention";
 import { docTotals } from "@/lib/calc";
 import { db } from "@/lib/store";
 import { kr, relativ, datumKort } from "@/lib/format";
@@ -19,6 +20,7 @@ import { Avatar, Badge, ButtonLink, Card, SectionTitle, cx } from "@/components/
 import { InvoiceStatusBadge, JobStatusBadge, QuoteStatusBadge } from "@/components/status";
 import { NotesEditor } from "@/components/notes-editor";
 import { NewRequestButton } from "@/components/request-form";
+import { NewUppdragButton } from "@/components/uppdrag-form";
 import { updateCustomerNotesAction } from "@/app/actions";
 
 export const metadata = { title: "Kund" };
@@ -79,6 +81,12 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
           </div>
           <div className="flex gap-2">
             <NewRequestButton customerId={customer.id} customerName={customer.name} />
+            <NewUppdragButton
+              customers={[{ id: customer.id, name: customer.name }]}
+              defaultCustomerId={customer.id}
+              size="sm"
+              variant="secondary"
+            />
             <ButtonLink href={`/pengar/offerter/ny?kund=${customer.id}`} size="sm">
               <Plus className="size-3.5" /> Ny offert
             </ButtonLink>
@@ -157,21 +165,26 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
           </div>
 
           <div>
-            <SectionTitle>Jobb</SectionTitle>
+            <SectionTitle>Uppdrag</SectionTitle>
             <Card className="divide-y divide-line/70">
               {bundle.jobs.length === 0 ? (
-                <p className={sectionEmpty}>Inga jobb ännu.</p>
+                <p className={sectionEmpty}>Inga uppdrag ännu.</p>
               ) : (
-                bundle.jobs.map((j) => (
-                  <Link key={j.id} href={`/jobb/${j.id}` as never} className={rowCls}>
-                    <Hammer className="size-4 shrink-0 text-muted" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[14px] font-medium">{j.title}</p>
-                      {j.startDate ? <p className="text-[13px] text-muted">{datumKort(j.startDate)}</p> : null}
-                    </div>
-                    <JobStatusBadge status={j.status} />
-                  </Link>
-                ))
+                bundle.jobs.map((j) => {
+                  const money = jobMoneySummary(j.id);
+                  return (
+                    <Link key={j.id} href={`/uppdrag/${j.id}` as never} className={rowCls}>
+                      <Hammer className="size-4 shrink-0 text-muted" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[14px] font-medium">{j.title}</p>
+                        <p className="text-[13px] text-muted">
+                          {money.quoteAmount > 0 ? kr(money.quoteAmount) : j.startDate ? datumKort(j.startDate) : "Inget belopp ännu"}
+                        </p>
+                      </div>
+                      <JobStatusBadge status={j.status} />
+                    </Link>
+                  );
+                })
               )}
             </Card>
           </div>

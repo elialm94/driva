@@ -241,7 +241,7 @@ export function tillaggQuoteFromInvoice(invoiceId: string): TillaggQuotePrefill 
   const extrasNote =
     addedLines.length > 0
       ? addedLines.map((l) => l.description).join(", ")
-      : "extra arbete och material som tillkommit under jobbet";
+      : "extra arbete och material som tillkommit under arbetet";
 
   return {
     customerId: invoice.customerId,

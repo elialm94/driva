@@ -108,7 +108,7 @@ export function signText(quote: Quote): string {
 /**
  * Slutför godkännandet efter genomförd BankID-signering:
  * låser offertversionen, sparar verifierbart signeringsunderlag,
- * skapar jobbet och informerar företagaren.
+ * skapar eller kopplar uppdraget och informerar företagaren.
  */
 export function finalizeApproval(order: BankIDOrder): BankIDSignature {
   const data = db();
@@ -156,13 +156,18 @@ export function finalizeApproval(order: BankIDOrder): BankIDSignature {
   quote.status = "godkand";
   quote.decidedAt = now;
 
-  // 4. Skapa jobbet automatiskt.
+  // 4. Koppla till befintligt uppdrag, eller skapa ett – aldrig ett andra.
+  const hadJob = Boolean(
+    (quote.jobId && data.jobs.some((j) => j.id === quote.jobId)) || data.jobs.some((j) => j.quoteId === quote.id)
+  );
   const job = createJobFromQuote(quote);
   quote.jobId = job.id;
 
   // 5. Informera företagaren.
   logActivity(
-    `${signature.signerName} godkände offert #${quote.number} med BankID. Jobbet ${version.title} skapades.`,
+    hadJob
+      ? `${signature.signerName} godkände offert #${quote.number} med BankID.`
+      : `${signature.signerName} godkände offert #${quote.number} med BankID. Uppdraget ${version.title} skapades.`,
     { customerId: customer.id, entity: { type: "offert", id: quote.id } }
   );
 

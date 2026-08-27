@@ -113,15 +113,16 @@ export function generateWebsite(description: string): Website {
   const tagline = branch.taglines[0];
 
   const sections: WebsiteSection[] = [
-    { id: uid(), type: "hero", heading: tagline, body: branch.heroBody(city) },
-    { id: uid(), type: "tjanster", heading: "Det här hjälper vi dig med", body: "", items: branch.services },
-    { id: uid(), type: "om", heading: "Om oss", body: `${name} – ${branch.about}` },
-    { id: uid(), type: "galleri", heading: "Utvalda projekt", body: "Ett urval av uppdrag vi genomfört det senaste året." },
+    { id: uid(), type: "hero", heading: tagline, body: branch.heroBody(city), visible: true },
+    { id: uid(), type: "tjanster", heading: "Det här hjälper vi dig med", body: "", items: branch.services, visible: true },
+    { id: uid(), type: "om", heading: "Om oss", body: `${name} – ${branch.about}`, visible: true },
+    { id: uid(), type: "galleri", heading: "Utvalda projekt", body: "Ett urval av uppdrag vi genomfört det senaste året.", visible: true },
     {
       id: uid(),
       type: "kontakt",
       heading: "Berätta om ditt projekt",
       body: "Beskriv vad du behöver hjälp med så återkommer vi inom en arbetsdag med nästa steg.",
+      visible: true,
     },
   ];
 
@@ -170,13 +171,22 @@ export function rewriteSectionHeading(sectionId: string): void {
   save();
 }
 
-export function updateSection(sectionId: string, fields: { heading?: string; body?: string }): void {
+export function updateSection(
+  sectionId: string,
+  fields: { heading?: string; body?: string; image?: string | null },
+): void {
   const site = db().website;
   if (!site) return;
   const section = site.sections.find((s) => s.id === sectionId);
   if (!section) return;
   if (fields.heading !== undefined) section.heading = fields.heading;
   if (fields.body !== undefined) section.body = fields.body;
+  if (fields.image === null || fields.image === "") {
+    delete section.image;
+  } else if (fields.image !== undefined) {
+    assertItemImage(fields.image);
+    section.image = fields.image;
+  }
   site.status = site.status === "publicerad" ? "publicerad" : "utkast";
   save();
 }
@@ -280,6 +290,35 @@ export function reorderServiceItems(sectionId: string, fromIndex: number, toInde
   }
   const [moved] = items.splice(fromIndex, 1);
   items.splice(toIndex, 0, moved);
+  touchSite(site);
+}
+
+/** Arrayordning = visningsordning. Okända id:n ignoreras; saknade sektioner behålls sist. */
+export function reorderSections(orderedIds: string[]): void {
+  const site = db().website;
+  if (!site) return;
+  const byId = new Map(site.sections.map((section) => [section.id, section]));
+  const next: WebsiteSection[] = [];
+  for (const id of orderedIds) {
+    const section = byId.get(id);
+    if (!section) continue;
+    next.push(section);
+    byId.delete(id);
+  }
+  for (const leftover of byId.values()) next.push(leftover);
+  site.sections = next;
+  touchSite(site);
+}
+
+export function setSectionVisible(sectionId: string, visible: boolean): void {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att uppdatera");
+  const section = site.sections.find((s) => s.id === sectionId);
+  if (!section) throw new Error("Sektionen hittades inte");
+  if (section.type === "hero" && !visible) {
+    throw new Error("Startsektionen kan inte döljas");
+  }
+  section.visible = visible;
   touchSite(site);
 }
 

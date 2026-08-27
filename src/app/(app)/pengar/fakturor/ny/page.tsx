@@ -21,7 +21,7 @@ export default async function NewInvoicePage(props: PageProps<"/pengar/fakturor/
       </Link>
       <PageHeader
         title="Ny faktura"
-        subtitle="Tips: fakturor skapas oftast automatiskt från klara jobb eller från offertens betalningsplan."
+        subtitle="Tips: fakturor skapas oftast automatiskt från klara uppdrag eller från offertens betalningsplan."
       />
       <InvoiceForm
         customers={customers}

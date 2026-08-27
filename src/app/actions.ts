@@ -43,9 +43,11 @@ import {
   generateWebsite,
   publishWebsite,
   removeServiceItem,
+  reorderSections,
   reorderServiceItems,
   rewriteSectionHeading,
   setSectionItems,
+  setSectionVisible,
   submitContactForm,
   updateSection,
   updateServiceItem,
@@ -134,7 +136,7 @@ export async function askQuoteQuestionAction(quoteId: string, question: string) 
   refresh();
 }
 
-/* ----------------------------------- Jobb ---------------------------------- */
+/* ----------------------------------- Uppdrag ---------------------------------- */
 
 export async function createJobAction(input: {
   customerId: string;
@@ -242,7 +244,10 @@ export async function generateWebsiteAction(description: string) {
   refresh();
 }
 
-export async function updateSectionAction(sectionId: string, fields: { heading?: string; body?: string }) {
+export async function updateSectionAction(
+  sectionId: string,
+  fields: { heading?: string; body?: string; image?: string | null },
+) {
   updateSection(sectionId, fields);
   refresh();
 }
@@ -274,6 +279,16 @@ export async function removeServiceItemAction(sectionId: string, index: number) 
 
 export async function reorderServiceItemsAction(sectionId: string, fromIndex: number, toIndex: number) {
   reorderServiceItems(sectionId, fromIndex, toIndex);
+  refresh();
+}
+
+export async function reorderSectionsAction(orderedIds: string[]) {
+  reorderSections(orderedIds);
+  refresh();
+}
+
+export async function setSectionVisibleAction(sectionId: string, visible: boolean) {
+  setSectionVisible(sectionId, visible);
   refresh();
 }
 

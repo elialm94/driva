@@ -21,7 +21,7 @@ import { resetDemoAction } from "@/app/actions";
 const NAV = [
   { href: "/", label: "Hem", icon: Home },
   { href: "/kunder", label: "Kunder", icon: Users },
-  { href: "/jobb", label: "Jobb", icon: Hammer },
+  { href: "/uppdrag", label: "Uppdrag", icon: Hammer },
   { href: "/pengar", label: "Pengar", icon: Wallet },
   { href: "/bokforing", label: "Bokföring", icon: BookOpenCheck },
   { href: "/hemsida", label: "Hemsida", icon: Globe },

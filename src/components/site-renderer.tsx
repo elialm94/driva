@@ -1,5 +1,6 @@
-import type { CompanySettings, Website, WebsiteSectionItem, WebsiteTheme } from "@/lib/types";
+import type { CompanySettings, Website, WebsiteSection, WebsiteSectionItem, WebsiteTheme } from "@/lib/types";
 import { SiteContactForm } from "./site-widgets";
+import { SmoothSectionLink } from "./smooth-section-link";
 
 /**
  * Ren renderare för den publika hemsidan. Används både i det publika läget (/sajt)
@@ -18,6 +19,11 @@ const THEMES: Record<
 };
 
 const GALLERY_TONES = ["0.16", "0.28", "0.22", "0.34", "0.12", "0.26"];
+const SECTION_SCROLL = "scroll-mt-[4.5rem]";
+
+function isVisible(section: WebsiteSection): boolean {
+  return section.visible !== false;
+}
 
 export function SiteRenderer({
   website,
@@ -29,11 +35,9 @@ export function SiteRenderer({
   interactive?: boolean;
 }) {
   const t = THEMES[website.theme] ?? THEMES.tra;
-  const hero = website.sections.find((s) => s.type === "hero");
-  const services = website.sections.find((s) => s.type === "tjanster");
-  const about = website.sections.find((s) => s.type === "om");
-  const gallery = website.sections.find((s) => s.type === "galleri");
-  const contact = website.sections.find((s) => s.type === "kontakt");
+  const sections = website.sections.filter(isVisible);
+  const contactOn = sections.some((s) => s.type === "kontakt");
+  const servicesOn = sections.some((s) => s.type === "tjanster");
 
   return (
     <div style={{ background: t.bg, color: t.ink }} className="min-h-full font-sans">
@@ -41,132 +45,293 @@ export function SiteRenderer({
       <header className="sticky top-0 z-10 backdrop-blur" style={{ background: `${t.bg}e6`, borderBottom: `1px solid ${t.line}` }}>
         <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
           <span className="text-[15px] font-bold tracking-tight">{website.businessName}</span>
-          <a
-            href="#kontakt"
-            className="rounded-full px-4 py-2 text-[13px] font-semibold transition-opacity hover:opacity-90"
-            style={{ background: t.accent, color: t.accentInk }}
-          >
-            Begär offert
-          </a>
-        </div>
-      </header>
-
-      {/* Hero */}
-      {hero ? (
-        <section className="mx-auto max-w-4xl px-6 pb-16 pt-16 text-center sm:pt-24">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.18em]" style={{ color: t.accent }}>
-            {website.city ?? company.city}
-          </p>
-          <h1 className="mx-auto mt-3 max-w-2xl text-[34px] font-bold leading-[1.12] tracking-tight sm:text-[44px]">
-            {hero.heading}
-          </h1>
-          <p className="mx-auto mt-4 max-w-xl text-[16px] leading-relaxed" style={{ color: t.soft }}>
-            {hero.body}
-          </p>
-          <div className="mt-7 flex items-center justify-center gap-3">
-            <a
+          {contactOn ? (
+            <SmoothSectionLink
               href="#kontakt"
-              className="rounded-full px-6 py-3 text-[14px] font-semibold shadow-sm transition-opacity hover:opacity-90"
+              className="rounded-full px-4 py-2 text-[13px] font-semibold transition-opacity hover:opacity-90"
               style={{ background: t.accent, color: t.accentInk }}
             >
               Begär offert
-            </a>
-            <a
-              href="#tjanster"
-              className="rounded-full px-6 py-3 text-[14px] font-semibold"
-              style={{ border: `1px solid ${t.line}`, background: t.card, color: t.ink }}
-            >
-              Våra tjänster
-            </a>
-          </div>
-        </section>
-      ) : null}
-
-      {/* Tjänster */}
-      {services ? (
-        <section id="tjanster" className="mx-auto max-w-4xl px-6 py-14" style={{ borderTop: `1px solid ${t.line}` }}>
-          <h2 className="text-[24px] font-bold tracking-tight">{services.heading}</h2>
-          {services.body ? (
-            <p className="mt-2 max-w-xl text-[15px] leading-relaxed" style={{ color: t.soft }}>
-              {services.body}
-            </p>
+            </SmoothSectionLink>
           ) : null}
-          <ServicesGrid items={services.items ?? []} card={t.card} line={t.line} soft={t.soft} accent={t.accent} />
-        </section>
-      ) : null}
+        </div>
+      </header>
 
-      {/* Om oss */}
-      {about ? (
-        <section className="mx-auto max-w-4xl px-6 py-14" style={{ borderTop: `1px solid ${t.line}` }}>
-          <div className="grid items-center gap-8 sm:grid-cols-[1.2fr_1fr]">
-            <div>
-              <h2 className="text-[24px] font-bold tracking-tight">{about.heading}</h2>
-              <p className="mt-3 text-[15px] leading-relaxed" style={{ color: t.soft }}>
-                {about.body}
-              </p>
-            </div>
-            <div
-              className="flex aspect-[4/3] items-center justify-center rounded-3xl text-[13px] font-medium"
-              style={{ background: `color-mix(in srgb, ${t.accent} 14%, ${t.card})`, color: t.soft, border: `1px solid ${t.line}` }}
-            >
-              Bild: {website.businessName}
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {/* Galleri */}
-      {gallery ? (
-        <section className="mx-auto max-w-4xl px-6 py-14" style={{ borderTop: `1px solid ${t.line}` }}>
-          <h2 className="text-[24px] font-bold tracking-tight">{gallery.heading}</h2>
-          <p className="mt-2 text-[15px]" style={{ color: t.soft }}>
-            {gallery.body}
-          </p>
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {GALLERY_TONES.map((opacity, i) => (
-              <div
-                key={i}
-                className="flex aspect-square items-end rounded-2xl p-3"
-                style={{ background: `color-mix(in srgb, ${t.accent} ${Number(opacity) * 100}%, ${t.card})`, border: `1px solid ${t.line}` }}
-              >
-                <span className="text-[11px] font-medium" style={{ color: t.soft }}>
-                  Projekt {i + 1}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {/* Kontakt */}
-      {contact ? (
-        <section id="kontakt" className="px-6 py-16" style={{ borderTop: `1px solid ${t.line}`, background: t.card }}>
-          <div className="mx-auto max-w-xl text-center">
-            <h2 className="text-[24px] font-bold tracking-tight">{contact.heading}</h2>
-            <p className="mt-2 text-[15px] leading-relaxed" style={{ color: t.soft }}>
-              {contact.body}
-            </p>
-            <div className="mt-7 text-left">
-              <SiteContactForm
-                interactive={interactive}
-                accent={t.accent}
-                accentInk={t.accentInk}
-                line={t.line}
-                bg={t.bg}
-                ink={t.ink}
+      {sections.map((section, index) => {
+        const lined = index > 0;
+        switch (section.type) {
+          case "hero":
+            return (
+              <HeroSection
+                key={section.id}
+                website={website}
+                company={company}
+                section={section}
+                theme={t}
+                lined={lined}
+                contactOn={contactOn}
+                servicesOn={servicesOn}
               />
-            </div>
-            <p className="mt-6 text-[13px]" style={{ color: t.soft }}>
-              {company.phone} · {company.email} · {website.city ?? company.city}
-            </p>
-          </div>
-        </section>
-      ) : null}
+            );
+          case "tjanster":
+            return <ServicesSection key={section.id} section={section} theme={t} lined={lined} />;
+          case "om":
+            return <AboutSection key={section.id} section={section} theme={t} lined={lined} />;
+          case "galleri":
+            return <GallerySection key={section.id} section={section} theme={t} lined={lined} />;
+          case "kontakt":
+            return (
+              <ContactSection
+                key={section.id}
+                website={website}
+                company={company}
+                section={section}
+                theme={t}
+                lined={lined}
+                interactive={interactive}
+              />
+            );
+          default:
+            return null;
+        }
+      })}
 
       <footer className="px-6 py-8 text-center text-[12px]" style={{ color: t.soft, borderTop: `1px solid ${t.line}` }}>
         © {new Date().getFullYear()} {website.businessName} · Org.nr {company.orgNumber} · Hemsida byggd med Driva
       </footer>
     </div>
+  );
+}
+
+type Theme = (typeof THEMES)[WebsiteTheme];
+
+function HeroSection({
+  website,
+  company,
+  section,
+  theme: t,
+  lined,
+  contactOn,
+  servicesOn,
+}: {
+  website: Website;
+  company: CompanySettings;
+  section: WebsiteSection;
+  theme: Theme;
+  lined: boolean;
+  contactOn: boolean;
+  servicesOn: boolean;
+}) {
+  const city = website.city ?? company.city;
+  const ctas =
+    contactOn || servicesOn ? (
+      <>
+        {contactOn ? (
+          <SmoothSectionLink
+            href="#kontakt"
+            className="rounded-full px-6 py-3 text-[14px] font-semibold shadow-sm transition-opacity hover:opacity-90"
+            style={{ background: t.accent, color: t.accentInk }}
+          >
+            Begär offert
+          </SmoothSectionLink>
+        ) : null}
+        {servicesOn ? (
+          <SmoothSectionLink
+            href="#tjanster"
+            className="rounded-full px-6 py-3 text-[14px] font-semibold"
+            style={{ border: `1px solid ${t.line}`, background: t.card, color: t.ink }}
+          >
+            Våra tjänster
+          </SmoothSectionLink>
+        ) : null}
+      </>
+    ) : null;
+
+  if (!section.image) {
+    return (
+      <section
+        id="start"
+        className={`mx-auto max-w-4xl px-6 pb-16 pt-16 text-center sm:pt-24 ${SECTION_SCROLL}`}
+        style={lined ? { borderTop: `1px solid ${t.line}` } : undefined}
+      >
+        <p className="text-[12px] font-semibold uppercase tracking-[0.18em]" style={{ color: t.accent }}>
+          {city}
+        </p>
+        <h1 className="mx-auto mt-3 max-w-2xl text-[34px] font-bold leading-[1.12] tracking-tight sm:text-[44px]">
+          {section.heading}
+        </h1>
+        <p className="mx-auto mt-4 max-w-xl text-[16px] leading-relaxed" style={{ color: t.soft }}>
+          {section.body}
+        </p>
+        {ctas ? <div className="mt-7 flex items-center justify-center gap-3">{ctas}</div> : null}
+      </section>
+    );
+  }
+
+  return (
+    <section
+      id="start"
+      className={`mx-auto max-w-4xl px-6 pb-16 pt-12 sm:pt-16 ${SECTION_SCROLL}`}
+      style={lined ? { borderTop: `1px solid ${t.line}` } : undefined}
+    >
+      <div className="grid items-center gap-8 md:grid-cols-2 md:gap-10">
+        <div>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.18em]" style={{ color: t.accent }}>
+            {city}
+          </p>
+          <h1 className="mt-3 text-[34px] font-bold leading-[1.12] tracking-tight sm:text-[40px]">
+            {section.heading}
+          </h1>
+          <p className="mt-4 max-w-xl text-[16px] leading-relaxed" style={{ color: t.soft }}>
+            {section.body}
+          </p>
+          {ctas ? <div className="mt-7 flex flex-wrap items-center gap-3">{ctas}</div> : null}
+        </div>
+        <div
+          className="aspect-[4/3] max-h-[26rem] overflow-hidden rounded-3xl"
+          style={{ border: `1px solid ${t.line}` }}
+        >
+          {/* Data-URL:er (inga filer i en mediabank) – next/image passar inte här. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={section.image} alt="" className="size-full object-cover" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ServicesSection({
+  section,
+  theme: t,
+  lined,
+}: {
+  section: WebsiteSection;
+  theme: Theme;
+  lined: boolean;
+}) {
+  return (
+    <section id="tjanster" className={`mx-auto max-w-4xl px-6 py-14 ${SECTION_SCROLL}`} style={lined ? { borderTop: `1px solid ${t.line}` } : undefined}>
+      <h2 className="text-[24px] font-bold tracking-tight">{section.heading}</h2>
+      {section.body ? (
+        <p className="mt-2 max-w-xl text-[15px] leading-relaxed" style={{ color: t.soft }}>
+          {section.body}
+        </p>
+      ) : null}
+      <ServicesGrid items={section.items ?? []} card={t.card} line={t.line} soft={t.soft} accent={t.accent} />
+    </section>
+  );
+}
+
+function AboutSection({
+  section,
+  theme: t,
+  lined,
+}: {
+  section: WebsiteSection;
+  theme: Theme;
+  lined: boolean;
+}) {
+  const copy = (
+    <>
+      <h2 className="text-[24px] font-bold tracking-tight">{section.heading}</h2>
+      <p className="mt-3 text-[15px] leading-relaxed" style={{ color: t.soft }}>
+        {section.body}
+      </p>
+    </>
+  );
+
+  return (
+    <section id="om" className={`mx-auto max-w-4xl px-6 py-14 ${SECTION_SCROLL}`} style={lined ? { borderTop: `1px solid ${t.line}` } : undefined}>
+      {section.image ? (
+        <div className="grid items-center gap-8 sm:grid-cols-2">
+          <div>{copy}</div>
+          {/* Data-URL:er (inga filer i en mediabank) – next/image passar inte här. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={section.image} alt="" className="aspect-[4/3] w-full rounded-3xl object-cover" />
+        </div>
+      ) : (
+        <div className="mx-auto max-w-2xl text-center">{copy}</div>
+      )}
+    </section>
+  );
+}
+
+function GallerySection({
+  section,
+  theme: t,
+  lined,
+}: {
+  section: WebsiteSection;
+  theme: Theme;
+  lined: boolean;
+}) {
+  return (
+    <section id="galleri" className={`mx-auto max-w-4xl px-6 py-14 ${SECTION_SCROLL}`} style={lined ? { borderTop: `1px solid ${t.line}` } : undefined}>
+      <h2 className="text-[24px] font-bold tracking-tight">{section.heading}</h2>
+      <p className="mt-2 text-[15px]" style={{ color: t.soft }}>
+        {section.body}
+      </p>
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {GALLERY_TONES.map((opacity, i) => (
+          <div
+            key={i}
+            className="flex aspect-square items-end rounded-2xl p-3"
+            style={{ background: `color-mix(in srgb, ${t.accent} ${Number(opacity) * 100}%, ${t.card})`, border: `1px solid ${t.line}` }}
+          >
+            <span className="text-[11px] font-medium" style={{ color: t.soft }}>
+              Projekt {i + 1}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ContactSection({
+  website,
+  company,
+  section,
+  theme: t,
+  lined,
+  interactive,
+}: {
+  website: Website;
+  company: CompanySettings;
+  section: WebsiteSection;
+  theme: Theme;
+  lined: boolean;
+  interactive: boolean;
+}) {
+  return (
+    <section
+      id="kontakt"
+      className={`px-6 py-16 ${SECTION_SCROLL}`}
+      style={{
+        borderTop: lined ? `1px solid ${t.line}` : undefined,
+        background: t.card,
+      }}
+    >
+      <div className="mx-auto max-w-xl text-center">
+        <h2 className="text-[24px] font-bold tracking-tight">{section.heading}</h2>
+        <p className="mt-2 text-[15px] leading-relaxed" style={{ color: t.soft }}>
+          {section.body}
+        </p>
+        <div className="mt-7 text-left">
+          <SiteContactForm
+            interactive={interactive}
+            accent={t.accent}
+            accentInk={t.accentInk}
+            line={t.line}
+            bg={t.bg}
+            ink={t.ink}
+          />
+        </div>
+        <p className="mt-6 text-[13px]" style={{ color: t.soft }}>
+          {company.phone} · {company.email} · {website.city ?? company.city}
+        </p>
+      </div>
+    </section>
   );
 }
 

@@ -39,7 +39,7 @@ export function JobStatusControls({
           onClick={() => startTransition(async () => setJobStatusAction(jobId, "pagar"))}
         >
           <Play className="size-4" />
-          {isPending ? "Startar …" : "Starta jobbet"}
+          {isPending ? "Startar …" : "Starta arbetet"}
         </button>
       ) : (
         <button
@@ -62,9 +62,9 @@ export function JobStatusControls({
           <div className="flex size-14 items-center justify-center rounded-full bg-ok-soft">
             <PartyPopper className="size-7 text-ok" />
           </div>
-          <p className="mt-4 text-[19px] font-semibold tracking-tight">Jobbet är klart</p>
+          <p className="mt-4 text-[19px] font-semibold tracking-tight">Uppdraget är klart</p>
           <p className="mt-2 text-sm leading-relaxed text-soft">
-            Jobbet hos {customerName} är markerat som klart.
+            Uppdraget hos {customerName} är markerat som klart.
             {remainingAmount ? ` Vill du skapa slutfakturan på ${remainingAmount}?` : ""}
           </p>
           <div className="mt-6 flex gap-2">
@@ -89,6 +89,36 @@ export function JobStatusControls({
         </div>
       </Modal>
     </>
+  );
+}
+
+export function CreateInvoiceButton({
+  jobId,
+  label = "Skapa faktura",
+  variant = "accent",
+  size = "md",
+}: {
+  jobId: string;
+  label?: string;
+  variant?: "primary" | "accent" | "secondary";
+  size?: "sm" | "md";
+}) {
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+  return (
+    <button
+      className={buttonClasses(variant, size)}
+      disabled={isPending}
+      onClick={() =>
+        startTransition(async () => {
+          const invoiceId = await createFinalInvoiceForJobAction(jobId);
+          router.push(`/pengar/fakturor/${invoiceId}`);
+        })
+      }
+    >
+      <Plus className="size-3.5" />
+      {isPending ? "Skapar …" : label}
+    </button>
   );
 }
 

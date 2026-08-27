@@ -231,7 +231,7 @@ export function buildSeed(): DB {
       rot: null,
       paymentPlan: [
         { label: "Vid arbetets start", percent: 30 },
-        { label: "När jobbet är klart och godkänt", percent: 70 },
+        { label: "När arbetet är klart och godkänt", percent: 70 },
       ],
       paymentTermsDays: 10,
       validUntil: d(-3),
@@ -262,7 +262,7 @@ export function buildSeed(): DB {
       rot: null,
       paymentPlan: [
         { label: "Vid arbetets start", percent: 50 },
-        { label: "När jobbet är klart och godkänt", percent: 50 },
+        { label: "När arbetet är klart och godkänt", percent: 50 },
       ],
       paymentTermsDays: 14,
       validUntil: d(-5),
@@ -393,7 +393,7 @@ export function buildSeed(): DB {
     },
   ];
 
-  /* -------------------------------- Jobb -------------------------------- */
+  /* -------------------------------- Uppdrag -------------------------------- */
 
   const jobs: Job[] = [
     {
@@ -1293,11 +1293,11 @@ export function buildSeed(): DB {
     { id: "act-8", at: d(6, 11, 30), text: "Faktura #1047 skickades till Johan Lindberg (25 500 kr).", customerId: "cust-johan", entity: { type: "faktura", id: "inv-1047" } },
     { id: "act-9", at: d(6, 9, 2), text: "Betalning på 4 800 kr från Johan Lindberg matchades mot faktura #1041 och bokfördes.", customerId: "cust-johan", entity: { type: "faktura", id: "inv-1041" } },
     { id: "act-10", at: d(9, 16, 40), text: "Kvitto från Beijer Bygg (12 400 kr) matchades mot bankköpet och bokfördes som material.", entity: { type: "utgift", id: "exp-beijer" } },
-    { id: "act-11", at: d(10, 7, 30), text: "Jobbet Köksrenovering hos Anna Andersson startades.", customerId: "cust-anna", entity: { type: "jobb", id: "job-kok" } },
+    { id: "act-11", at: d(10, 7, 30), text: "Uppdraget Köksrenovering hos Anna Andersson startades.", customerId: "cust-anna", entity: { type: "jobb", id: "job-kok" } },
     { id: "act-12", at: d(16, 10, 20), text: "Betalning på 25 500 kr från Anna Andersson matchades mot faktura #1045 och bokfördes.", customerId: "cust-anna", entity: { type: "faktura", id: "inv-1045" } },
-    { id: "act-13", at: d(20, 11, 18), text: "Johan Lindberg godkände offert #111 med BankID. Jobbet Altanrenovering skapades.", customerId: "cust-johan", entity: { type: "offert", id: "quote-altan" } },
-    { id: "act-14", at: d(24, 14, 32), text: "Anna Andersson godkände offert #110 med BankID. Jobbet Köksrenovering skapades.", customerId: "cust-anna", entity: { type: "offert", id: "quote-kok" } },
-    { id: "act-15", at: d(26, 16, 20), text: "Jobbet Fönsterbyte gårdshus markerades som klart.", customerId: "cust-brf", entity: { type: "jobb", id: "job-fonster" } },
+    { id: "act-13", at: d(20, 11, 18), text: "Johan Lindberg godkände offert #111 med BankID. Uppdraget Altanrenovering skapades.", customerId: "cust-johan", entity: { type: "offert", id: "quote-altan" } },
+    { id: "act-14", at: d(24, 14, 32), text: "Anna Andersson godkände offert #110 med BankID. Uppdraget Köksrenovering skapades.", customerId: "cust-anna", entity: { type: "offert", id: "quote-kok" } },
+    { id: "act-15", at: d(26, 16, 20), text: "Uppdraget Fönsterbyte gårdshus markerades som klart.", customerId: "cust-brf", entity: { type: "jobb", id: "job-fonster" } },
   ];
 
   /* -------------------------------- Hemsida ------------------------------ */
@@ -1319,12 +1319,14 @@ export function buildSeed(): DB {
         type: "hero" as const,
         heading: "Platsbyggt snickeri med känsla för detaljer",
         body: "Vi ritar, bygger och monterar kök, garderober och platsbyggda möbler på Södermalm med omnejd. Fast pris, tydlig offert och alltid BankID-signerat avtal.",
+        visible: true,
       },
       {
         id: "sec-tjanster",
         type: "tjanster" as const,
         heading: "Det här hjälper vi dig med",
         body: "",
+        visible: true,
         items: [
           { title: "Kök", text: "Renovering, nya luckor och bänkskivor eller helt nytt kök – vi tar hand om helheten." },
           { title: "Garderober & förvaring", text: "Platsbyggda garderober och smart förvaring som passar ditt hem exakt." },
@@ -1336,18 +1338,21 @@ export function buildSeed(): DB {
         type: "om" as const,
         heading: "Om oss",
         body: "Södermalms Snickeri drivs av två snickare med över 20 års samlad erfarenhet. Vi tror på raka besked, fasta priser och att alltid lämna ett städat hem efter oss. F-skatt, ansvarsförsäkring och ROT-avdrag direkt på fakturan.",
+        visible: true,
       },
       {
         id: "sec-galleri",
         type: "galleri" as const,
         heading: "Utvalda projekt",
         body: "Ett urval av kök, garderober och möbler vi byggt det senaste året.",
+        visible: true,
       },
       {
         id: "sec-kontakt",
         type: "kontakt" as const,
         heading: "Berätta om ditt projekt",
         body: "Beskriv vad du vill ha gjort så återkommer vi inom en arbetsdag med nästa steg – oftast ett kostnadsfritt hembesök.",
+        visible: true,
       },
     ],
   };
