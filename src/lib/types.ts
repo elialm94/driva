@@ -425,6 +425,21 @@ export type AssistantCard =
       confirmLabel: string;
       state: "vantar" | "utford" | "avbruten";
       resultText?: string;
+    }
+  | {
+      kind: "entity";
+      entity: "kund" | "uppdrag" | "offert" | "faktura";
+      title: string;
+      subtitle?: string;
+      href: string;
+      openLabel: string;
+    }
+  | {
+      kind: "create_customer";
+      actionId: ID;
+      suggestedName: string;
+      state: "vantar" | "utford" | "avbruten";
+      resultText?: string;
     };
 
 export interface AssistantMessage {
@@ -435,11 +450,32 @@ export interface AssistantMessage {
   card?: AssistantCard;
 }
 
+/** Vad assistenten ska fortsätta med efter att en saknad kund skapats. */
+export type ResumeAfterCustomer =
+  | { kind: "create_quote"; title?: string; amountInclVat?: number }
+  | { kind: "create_job"; title: string; startDate?: string; description?: string }
+  | { kind: "create_invoice"; title?: string; amountInclVat?: number; jobId?: ID };
+
 export type PendingAssistantAction =
   | { id: ID; type: "paminn_forsenade"; invoiceIds: ID[] }
   | { id: ID; type: "folj_upp_offerter"; quoteIds: ID[] }
   | { id: ID; type: "bokfor_utgift"; expenseId: ID; category: string; jobId?: ID }
-  | { id: ID; type: "generera_hemsida"; description: string };
+  | { id: ID; type: "generera_hemsida"; description: string }
+  | { id: ID; type: "skicka_offert"; quoteId: ID }
+  | { id: ID; type: "skicka_faktura"; invoiceId: ID }
+  | { id: ID; type: "publicera_hemsida" }
+  | { id: ID; type: "skapa_kund"; name: string; resume?: ResumeAfterCustomer };
+
+/** Internt verktygsaudit – visas inte i chatten. */
+export interface AssistantAuditEntry {
+  id: ID;
+  at: string;
+  tool: string;
+  params: unknown;
+  success: boolean;
+  ms: number;
+  error?: string;
+}
 
 /* ---------------------------------- Databas ---------------------------------- */
 
@@ -465,5 +501,6 @@ export interface DB {
   website: Website | null;
   assistantMessages: AssistantMessage[];
   pendingActions: PendingAssistantAction[];
+  assistantAudit: AssistantAuditEntry[];
   meta: { seededAt: string };
 }

@@ -1416,6 +1416,7 @@ export function buildSeed(): DB {
     website,
     assistantMessages,
     pendingActions: [],
+    assistantAudit: [],
     meta: { seededAt: new Date().toISOString() },
   };
 }

@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cx } from "./ui";
+
+/** Topmost open modal wins Escape / z-index. Ids stay in the stack until that modal unmounts. */
+const modalStack: string[] = [];
 
 export function Modal({
   open,
@@ -19,23 +23,46 @@ export function Modal({
   footer?: ReactNode;
   size?: "sm" | "md" | "lg" | "xl";
 }) {
+  const id = useId();
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    modalStack.push(id);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (modalStack[modalStack.length - 1] !== id) return;
+      e.stopPropagation();
+      onCloseRef.current();
+    };
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => {
+      const idx = modalStack.lastIndexOf(id);
+      if (idx >= 0) modalStack.splice(idx, 1);
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      if (modalStack.length === 0) document.body.style.overflow = "";
     };
-  }, [open, onClose]);
+  }, [open, id]);
 
   if (!open) return null;
 
   const sizes = { sm: "max-w-md", md: "max-w-xl", lg: "max-w-3xl", xl: "max-w-6xl" };
+  const stackedAt = modalStack.lastIndexOf(id);
+  const layer = stackedAt >= 0 ? stackedAt : modalStack.length;
+  const zIndex = 50 + layer * 10;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6 animate-fade-in">
+  const node = (
+    <div
+      className="fixed inset-0 flex items-end justify-center p-0 sm:items-center sm:p-6 animate-fade-in"
+      style={{ zIndex }}
+    >
       {/* Blur layer is non-interactive so backdrop-filter cannot swallow clicks. */}
       <div className="pointer-events-none absolute inset-0 bg-ink/40 backdrop-blur-[3px]" aria-hidden />
       <div className="absolute inset-0" aria-hidden onClick={() => onClose()} />
@@ -61,4 +88,7 @@ export function Modal({
       </div>
     </div>
   );
+
+  if (!mounted) return node;
+  return createPortal(node, document.body);
 }

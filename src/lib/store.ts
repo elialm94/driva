@@ -25,6 +25,9 @@ const g = globalThis as GlobalWithDb;
 function normalize(loaded: DB): DB {
   // Fält tillagda efter att filen skapades får sina standardvärden här.
   loaded.settings.lateInterestRate ??= 10;
+  loaded.assistantAudit ??= [];
+  loaded.assistantMessages ??= [];
+  loaded.pendingActions ??= [];
   return loaded;
 }
 
@@ -47,6 +50,7 @@ export function db(): DB {
 }
 
 function persist(data: DB) {
+  if (process.env.DRIVA_TEST === "1") return;
   try {
     fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
     const tmp = DATA_FILE + ".tmp";
@@ -55,6 +59,11 @@ function persist(data: DB) {
   } catch {
     // Read-only FS: in-memory räcker för demon.
   }
+}
+
+/** Ersätt in-memory-databasen utan att skriva till disk (tester). */
+export function replaceDb(data: DB): void {
+  g.__drivaDb = normalize(data);
 }
 
 /** Spara efter varje mutation. */

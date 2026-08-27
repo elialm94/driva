@@ -3,9 +3,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
+import { DateField } from "./date-field";
 import { Modal } from "./modal";
 import { buttonClasses } from "./ui";
 import { createJobAction } from "@/app/actions";
+import { addCustomerOption, CustomerPicker, type CustomerOption } from "./customer-picker";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
@@ -16,23 +18,25 @@ export function NewUppdragButton({
   size = "md",
   variant = "primary",
 }: {
-  customers: { id: string; name: string }[];
+  customers: CustomerOption[];
   defaultCustomerId?: string;
   size?: "sm" | "md";
   variant?: "primary" | "secondary";
 }) {
   const [open, setOpen] = useState(false);
+  const [customerOptions, setCustomerOptions] = useState(customers);
+  const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const lockedCustomer = Boolean(defaultCustomerId);
 
   function submit(formData: FormData) {
-    const customerId = String(formData.get("customerId") ?? defaultCustomerId ?? "");
+    const selectedId = String(formData.get("customerId") ?? customerId ?? defaultCustomerId ?? "");
     const title = String(formData.get("title") ?? "").trim();
-    if (!customerId || !title) return;
+    if (!selectedId || !title) return;
     startTransition(async () => {
       const id = await createJobAction({
-        customerId,
+        customerId: selectedId,
         title,
         description: String(formData.get("description") ?? "") || undefined,
         startDate: String(formData.get("startDate") ?? "")
@@ -54,20 +58,16 @@ export function NewUppdragButton({
         <form action={submit} className="space-y-4 px-6 py-5">
           <div>
             <label className="mb-1 block text-[13px] font-medium text-soft">Kund</label>
-            <select
+            <CustomerPicker
               name="customerId"
-              required
-              defaultValue={defaultCustomerId ?? customers[0]?.id ?? ""}
+              customers={customerOptions}
+              value={customerId}
+              onChange={setCustomerId}
+              allowCreateCustomer={!lockedCustomer}
               disabled={lockedCustomer}
               className={inputCls}
-            >
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            {lockedCustomer ? <input type="hidden" name="customerId" value={defaultCustomerId} /> : null}
+              onCreated={(customer) => setCustomerOptions((prev) => addCustomerOption(prev, customer))}
+            />
           </div>
           <div>
             <label className="mb-1 block text-[13px] font-medium text-soft">Vad gäller det?</label>
@@ -84,13 +84,13 @@ export function NewUppdragButton({
           </div>
           <div>
             <label className="mb-1 block text-[13px] font-medium text-soft">Planerad start</label>
-            <input name="startDate" type="date" className={inputCls} />
+            <DateField name="startDate" className={inputCls} />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className={buttonClasses("ghost")} onClick={() => setOpen(false)}>
               Avbryt
             </button>
-            <button type="submit" className={buttonClasses("primary")} disabled={isPending}>
+            <button type="submit" className={buttonClasses("primary")} disabled={isPending || !customerId}>
               {isPending ? "Skapar …" : "Skapa uppdrag"}
             </button>
           </div>

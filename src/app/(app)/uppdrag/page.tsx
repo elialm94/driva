@@ -61,7 +61,7 @@ export default function UppdragPage() {
   const jobs = data.jobs;
   const customers = [...data.customers]
     .sort((a, b) => a.name.localeCompare(b.name, "sv"))
-    .map((c) => ({ id: c.id, name: c.name }));
+    .map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
   const groups: { key: Job["status"]; title: string; jobs: Job[] }[] = [
     { key: "pagar", title: "Pågår", jobs: jobs.filter((j) => j.status === "pagar") },
     {

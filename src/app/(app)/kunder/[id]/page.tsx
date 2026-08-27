@@ -82,7 +82,7 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
           <div className="flex gap-2">
             <NewRequestButton customerId={customer.id} customerName={customer.name} />
             <NewUppdragButton
-              customers={[{ id: customer.id, name: customer.name }]}
+              customers={[{ id: customer.id, name: customer.name, kind: customer.kind }]}
               defaultCustomerId={customer.id}
               size="sm"
               variant="secondary"

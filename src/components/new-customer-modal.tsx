@@ -19,10 +19,12 @@ export function NewCustomerModal({
   open,
   onClose,
   onCreated,
+  initialName = "",
 }: {
   open: boolean;
   onClose: () => void;
   onCreated?: (customer: CreatedCustomer) => void;
+  initialName?: string;
 }) {
   const [kind, setKind] = useState<"privat" | "foretag">("privat");
   const [isPending, startTransition] = useTransition();
@@ -72,7 +74,14 @@ export function NewCustomerModal({
           <label className="mb-1 block text-[13px] font-medium text-soft">
             {kind === "privat" ? "Namn" : "Företagsnamn"}
           </label>
-          <input name="name" required className={inputCls} placeholder={kind === "privat" ? "Anna Andersson" : "Exempel AB"} />
+          <input
+            name="name"
+            required
+            key={`${open}-${initialName}`}
+            defaultValue={initialName}
+            className={inputCls}
+            placeholder={kind === "privat" ? "Anna Andersson" : "Exempel AB"}
+          />
         </div>
         {kind === "foretag" ? (
           <div className="grid grid-cols-2 gap-3">

@@ -1,189 +1,80 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, useTransition, type KeyboardEvent } from "react";
-import { ChevronDown, Plus, Search, Trash2 } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { Plus, Trash2 } from "lucide-react";
 import { buttonClasses, Card, cx } from "./ui";
 import { docTotals } from "@/lib/calc";
 import { kr } from "@/lib/format";
 import type { DocLine, LineKind, PaymentPlanPart, RotRut, VatRate } from "@/lib/types";
 import { createQuoteAction, updateQuoteAction, createInvoiceAction, updateInvoiceAction } from "@/app/actions";
 import { useRouter } from "next/navigation";
-import { NewCustomerModal, type CreatedCustomer } from "./new-customer-modal";
+import { DateField } from "./date-field";
+import { addCustomerOption, CustomerPicker, type CustomerOption } from "./customer-picker";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
 const labelCls = "mb-1 block text-[13px] font-medium text-soft";
 
-export interface CustomerOption {
-  id: string;
-  name: string;
-  kind: "privat" | "foretag";
+const DECIMAL_PARTIAL = /^-?\d*[.,]?\d*$/;
+const DECIMAL_PARTIAL_UNSIGNED = /^\d*[.,]?\d*$/;
+
+function parseDecimal(raw: string): number {
+  const normalized = raw.trim().replace(",", ".");
+  if (normalized === "" || normalized === "-" || normalized === "." || normalized === "-.") return 0;
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : 0;
 }
 
-function QuoteCustomerSelect({
-  customers,
+function formatDecimal(n: number): string {
+  return Number.isFinite(n) ? String(n) : "0";
+}
+
+/** Text input that keeps an empty display while typing; numeric state is 0 until blur. */
+function DecimalInput({
   value,
-  onChange,
-  onCreateNew,
+  onValueChange,
+  className,
+  allowNegative = false,
+  "aria-label": ariaLabel,
 }: {
-  customers: CustomerOption[];
-  value: string;
-  onChange: (id: string) => void;
-  onCreateNew: () => void;
+  value: number;
+  onValueChange: (n: number) => void;
+  className?: string;
+  allowNegative?: boolean;
+  "aria-label"?: string;
 }) {
-  const listId = useId();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [highlight, setHighlight] = useState(0);
+  const [draft, setDraft] = useState<string | null>(null);
+  const pattern = allowNegative ? DECIMAL_PARTIAL : DECIMAL_PARTIAL_UNSIGNED;
 
-  const selected = customers.find((c) => c.id === value);
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return customers;
-    return customers.filter((c) => c.name.toLowerCase().includes(q));
-  }, [customers, query]);
-
-  const optionCount = filtered.length + 1;
-
-  useEffect(() => {
-    if (!open) return;
-    const frame = requestAnimationFrame(() => searchRef.current?.focus());
-    function onPointerDown(e: PointerEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) {
-        setOpen(false);
-        setQuery("");
-      }
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => {
-      cancelAnimationFrame(frame);
-      document.removeEventListener("pointerdown", onPointerDown);
-    };
-  }, [open]);
-
-  function close() {
-    setOpen(false);
-    setQuery("");
-  }
-
-  function openMenu() {
-    const selectedIndex = customers.findIndex((c) => c.id === value);
-    setHighlight(selectedIndex >= 0 ? selectedIndex : 0);
-    setOpen(true);
-  }
-
-  function pick(id: string) {
-    onChange(id);
-    close();
-  }
-
-  function create() {
-    close();
-    onCreateNew();
-  }
-
-  function onKeyDown(e: KeyboardEvent<HTMLElement>) {
-    if (!open) {
-      if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        openMenu();
-      }
-      return;
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setHighlight((h) => Math.min(h + 1, optionCount - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHighlight((h) => Math.max(h - 1, 0));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      if (highlight >= filtered.length) create();
-      else if (filtered[highlight]) pick(filtered[highlight].id);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      close();
-    }
+  function clamp(n: number) {
+    return allowNegative ? n : Math.max(0, n);
   }
 
   return (
-    <div ref={containerRef} className="relative">
-      <button
-        type="button"
-        onClick={() => (open ? close() : openMenu())}
-        onKeyDown={onKeyDown}
-        className={cx(inputCls, "flex items-center justify-between gap-2 text-left")}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listId}
-        role="combobox"
-      >
-        <span className={selected ? "truncate" : "truncate text-muted"}>{selected?.name ?? "Välj kund"}</span>
-        <ChevronDown className={cx("size-4 shrink-0 text-muted transition-transform", open && "rotate-180")} />
-      </button>
-
-      {open ? (
-        <div className="absolute inset-x-0 top-full z-20 mt-1.5 flex max-h-80 flex-col overflow-hidden rounded-xl border border-line bg-card shadow-pop animate-fade-in">
-          <div className="relative border-b border-line">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
-            <input
-              ref={searchRef}
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setHighlight(0);
-              }}
-              onKeyDown={onKeyDown}
-              placeholder="Sök kund …"
-              className="w-full bg-transparent py-2.5 pl-10 pr-3.5 text-[14px] text-ink placeholder:text-muted"
-              autoComplete="off"
-              aria-autocomplete="list"
-            />
-          </div>
-          <ul id={listId} role="listbox" className="max-h-52 overflow-y-auto py-1">
-            {filtered.length === 0 ? (
-              <li className="px-3.5 py-2.5 text-[13px] text-muted">
-                {query.trim() ? `Ingen kund matchar ”${query.trim()}”` : "Inga kunder ännu"}
-              </li>
-            ) : (
-              filtered.map((c, i) => (
-                <li key={c.id} role="option" aria-selected={c.id === value}>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => pick(c.id)}
-                    onMouseEnter={() => setHighlight(i)}
-                    className={cx(
-                      "flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-[14px] transition-colors",
-                      i === highlight ? "bg-canvas" : "bg-card"
-                    )}
-                  >
-                    <span className="min-w-0 truncate font-medium text-ink">{c.name}</span>
-                    {c.kind === "foretag" ? <span className="shrink-0 text-[12px] text-muted">Företag</span> : null}
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={create}
-            onMouseEnter={() => setHighlight(filtered.length)}
-            className={cx(
-              "flex w-full items-center gap-2 border-t border-line px-3.5 py-2.5 text-left text-[14px] font-medium text-accent transition-colors",
-              highlight === filtered.length ? "bg-accent-soft" : "bg-canvas/60 hover:bg-accent-soft"
-            )}
-          >
-            <Plus className="size-4" /> Skapa ny kund
-          </button>
-        </div>
-      ) : null}
-    </div>
+    <input
+      type="text"
+      inputMode="decimal"
+      autoComplete="off"
+      aria-label={ariaLabel}
+      value={draft ?? formatDecimal(value)}
+      className={className}
+      onFocus={() => setDraft(formatDecimal(value))}
+      onChange={(e) => {
+        const raw = e.target.value;
+        if (!pattern.test(raw)) return;
+        setDraft(raw);
+        onValueChange(clamp(parseDecimal(raw)));
+      }}
+      onBlur={() => {
+        const next = clamp(parseDecimal(draft ?? formatDecimal(value)));
+        onValueChange(next);
+        setDraft(null);
+      }}
+    />
   );
 }
+
+export type { CustomerOption };
 
 function newLine(kind: LineKind = "arbete"): DocLine {
   return {
@@ -232,19 +123,19 @@ function LinesEditor({ lines, onChange }: { lines: DocLine[]; onChange: (lines: 
             placeholder="Vad ingår? (rabatt läggs som rad med minusbelopp)"
             className={cx(inputCls, "col-span-2 sm:col-span-1")}
           />
-          <input
-            type="number"
+          <DecimalInput
             value={line.qty}
-            min={0}
-            onChange={(e) => update(line.id, { qty: Number(e.target.value) })}
+            onValueChange={(qty) => update(line.id, { qty })}
             className={inputCls}
+            aria-label="Antal"
           />
           <input value={line.unit} onChange={(e) => update(line.id, { unit: e.target.value })} className={inputCls} />
-          <input
-            type="number"
+          <DecimalInput
             value={line.unitPrice}
-            onChange={(e) => update(line.id, { unitPrice: Number(e.target.value) })}
+            onValueChange={(unitPrice) => update(line.id, { unitPrice })}
             className={inputCls}
+            allowNegative
+            aria-label="À-pris exkl."
           />
           <select
             value={line.vatRate}
@@ -279,7 +170,18 @@ function LinesEditor({ lines, onChange }: { lines: DocLine[]; onChange: (lines: 
 }
 
 function TotalsPanel({ lines, rot }: { lines: DocLine[]; rot: RotRut | null }) {
-  const t = useMemo(() => docTotals(lines, rot), [lines, rot]);
+  const t = useMemo(
+    () =>
+      docTotals(
+        lines.map((l) => ({
+          ...l,
+          qty: Number.isFinite(l.qty) ? l.qty : 0,
+          unitPrice: Number.isFinite(l.unitPrice) ? l.unitPrice : 0,
+        })),
+        rot
+      ),
+    [lines, rot]
+  );
   return (
     <div className="space-y-1.5 text-[14px]">
       <div className="flex justify-between text-soft">
@@ -359,7 +261,6 @@ export function QuoteForm({
   const router = useRouter();
   const [customerOptions, setCustomerOptions] = useState(customers);
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
-  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [title, setTitle] = useState(initial?.title ?? "");
   const [intro, setIntro] = useState(initial?.intro ?? "");
   const [lines, setLines] = useState<DocLine[]>(
@@ -415,25 +316,12 @@ export function QuoteForm({
                   ))}
                 </select>
               ) : (
-                <>
-                  <QuoteCustomerSelect
-                    customers={customerOptions}
-                    value={customerId}
-                    onChange={setCustomerId}
-                    onCreateNew={() => setCreateCustomerOpen(true)}
-                  />
-                  <NewCustomerModal
-                    open={createCustomerOpen}
-                    onClose={() => setCreateCustomerOpen(false)}
-                    onCreated={(customer: CreatedCustomer) => {
-                      setCustomerOptions((prev) => {
-                        if (prev.some((c) => c.id === customer.id)) return prev;
-                        return [...prev, customer].sort((a, b) => a.name.localeCompare(b.name, "sv"));
-                      });
-                      setCustomerId(customer.id);
-                    }}
-                  />
-                </>
+                <CustomerPicker
+                  customers={customerOptions}
+                  value={customerId}
+                  onChange={setCustomerId}
+                  onCreated={(customer) => setCustomerOptions((prev) => addCustomerOption(prev, customer))}
+                />
               )}
             </div>
             <div>
@@ -531,7 +419,7 @@ export function QuoteForm({
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <label className={labelCls}>Giltig till</label>
-              <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} className={inputCls} />
+              <DateField value={validUntil} onChange={setValidUntil} className={inputCls} />
             </div>
             <div>
               <label className={labelCls}>Betalningsvillkor (dagar)</label>
@@ -594,6 +482,7 @@ export function InvoiceForm({
   invoiceId?: string;
   initial?: InvoiceFormInitial;
 }) {
+  const [customerOptions, setCustomerOptions] = useState(customers);
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
   const [lines, setLines] = useState<DocLine[]>(initial?.lines?.length ? initial.lines : [newLine("arbete")]);
   const [rot, setRot] = useState<RotRut | null>(initial?.rot ?? null);
@@ -633,13 +522,22 @@ export function InvoiceForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className={labelCls}>Kund</label>
-              <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className={inputCls} disabled={!!invoiceId}>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              {invoiceId ? (
+                <select value={customerId} className={inputCls} disabled>
+                  {customerOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <CustomerPicker
+                  customers={customerOptions}
+                  value={customerId}
+                  onChange={setCustomerId}
+                  onCreated={(customer) => setCustomerOptions((prev) => addCustomerOption(prev, customer))}
+                />
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
