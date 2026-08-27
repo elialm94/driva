@@ -48,6 +48,7 @@ export default async function EditQuotePage(props: PageProps<"/pengar/offerter/[
           rot: version.rot,
           paymentPlan: version.paymentPlan,
           paymentTermsDays: version.paymentTermsDays,
+          lateInterestRate: version.lateInterestRate,
           validUntil: version.validUntil,
           terms: version.terms,
         }}

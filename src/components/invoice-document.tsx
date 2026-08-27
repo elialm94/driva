@@ -100,6 +100,9 @@ export function InvoiceDocument({
           </div>
           <p className="mt-3 text-[12px] text-muted">
             Betala senast {datumLang(invoice.dueDate)}. Ange OCR-numret som referens.
+            {invoice.lateInterestRate
+              ? ` Efter förfallodagen debiteras dröjsmålsränta med ${invoice.lateInterestRate} % per år.`
+              : ""}
           </p>
         </div>
       ) : null}

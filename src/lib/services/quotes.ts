@@ -15,6 +15,7 @@ export interface QuoteInput {
   rot: RotRut | null;
   paymentPlan: PaymentPlanPart[];
   paymentTermsDays: number;
+  lateInterestRate?: number;
   validUntil: string;
   terms: string;
 }
@@ -40,6 +41,7 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
     rot: input.rot,
     paymentPlan: input.paymentPlan,
     paymentTermsDays: input.paymentTermsDays,
+    lateInterestRate: input.lateInterestRate ?? data.settings.lateInterestRate,
     validUntil: input.validUntil,
     terms: input.terms,
     createdAt: now,
@@ -195,6 +197,7 @@ export function quoteDefaults() {
   const settings = db().settings;
   return {
     paymentTermsDays: settings.paymentTermsDays,
+    lateInterestRate: settings.lateInterestRate,
     validUntil: isoDaysFromNow(30),
     terms: STANDARD_TERMS,
   };

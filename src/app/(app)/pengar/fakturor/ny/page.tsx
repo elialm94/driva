@@ -23,7 +23,11 @@ export default async function NewInvoicePage(props: PageProps<"/pengar/fakturor/
         title="Ny faktura"
         subtitle="Tips: fakturor skapas oftast automatiskt från klara jobb eller från offertens betalningsplan."
       />
-      <InvoiceForm customers={customers} defaultCustomerId={kund} />
+      <InvoiceForm
+        customers={customers}
+        defaultCustomerId={kund}
+        defaultLateInterestRate={db().settings.lateInterestRate}
+      />
     </div>
   );
 }

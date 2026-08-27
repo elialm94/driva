@@ -22,6 +22,8 @@ export function quoteVersionHash(v: QuoteVersion): string {
     rot: v.rot,
     paymentPlan: v.paymentPlan,
     paymentTermsDays: v.paymentTermsDays,
+    // Villkorligt så att versioner signerade innan fältet fanns behåller sitt hash.
+    ...(v.lateInterestRate !== undefined ? { lateInterestRate: v.lateInterestRate } : {}),
     validUntil: v.validUntil,
     terms: v.terms,
   });

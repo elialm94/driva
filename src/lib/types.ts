@@ -24,6 +24,8 @@ export interface CompanySettings {
   payrollReservePerMonth: number;
   /** Standard betalningsvillkor i dagar. */
   paymentTermsDays: number;
+  /** Standard dröjsmålsränta i procent per år (räntelagen: referensränta + 8 %-enheter). */
+  lateInterestRate: number;
 }
 
 /* ---------------------------------- Kunder ---------------------------------- */
@@ -104,6 +106,8 @@ export interface QuoteVersion {
   rot: RotRut | null;
   paymentPlan: PaymentPlanPart[];
   paymentTermsDays: number;
+  /** Dröjsmålsränta i procent per år vid försenad betalning. */
+  lateInterestRate?: number;
   validUntil: string;
   terms: string;
   createdAt: string;
@@ -213,6 +217,8 @@ export interface Invoice {
   rot: RotRut | null;
   issueDate: string;
   dueDate: string;
+  /** Dröjsmålsränta i procent per år vid försenad betalning. */
+  lateInterestRate?: number;
   sentAt?: string;
   paidAt?: string;
   reminders: string[];

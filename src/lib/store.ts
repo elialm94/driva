@@ -19,7 +19,10 @@ export function db(): DB {
   if (!g.__drivaDb) {
     if (fs.existsSync(DATA_FILE)) {
       try {
-        g.__drivaDb = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")) as DB;
+        const loaded = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")) as DB;
+        // Fält tillagda efter att filen skapades får sina standardvärden här.
+        loaded.settings.lateInterestRate ??= 10;
+        g.__drivaDb = loaded;
       } catch {
         g.__drivaDb = buildSeed();
         persist(g.__drivaDb);

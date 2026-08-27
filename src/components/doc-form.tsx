@@ -167,6 +167,7 @@ export interface QuoteFormInitial {
   rot: RotRut | null;
   paymentPlan: PaymentPlanPart[];
   paymentTermsDays: number;
+  lateInterestRate?: number;
   validUntil: string;
   terms: string;
 }
@@ -185,7 +186,7 @@ export function QuoteForm({
   /** Sätt vid redigering av befintlig offert. */
   quoteId?: string;
   initial?: QuoteFormInitial;
-  defaults: { paymentTermsDays: number; validUntil: string; terms: string };
+  defaults: { paymentTermsDays: number; lateInterestRate: number; validUntil: string; terms: string };
 }) {
   const router = useRouter();
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
@@ -197,6 +198,7 @@ export function QuoteForm({
   const [rot, setRot] = useState<RotRut | null>(initial?.rot ?? null);
   const [plan, setPlan] = useState<PaymentPlanPart[]>(initial?.paymentPlan ?? PLAN_PRESETS[0].plan);
   const [termsDays, setTermsDays] = useState(initial?.paymentTermsDays ?? defaults.paymentTermsDays);
+  const [lateInterest, setLateInterest] = useState(initial?.lateInterestRate ?? defaults.lateInterestRate);
   const [validUntil, setValidUntil] = useState((initial?.validUntil ?? defaults.validUntil).slice(0, 10));
   const [terms, setTerms] = useState(initial?.terms ?? defaults.terms);
   const [isPending, startTransition] = useTransition();
@@ -213,6 +215,7 @@ export function QuoteForm({
       rot,
       paymentPlan: plan,
       paymentTermsDays: termsDays,
+      lateInterestRate: lateInterest,
       validUntil: new Date(validUntil + "T12:00:00").toISOString(),
       terms,
     };
@@ -333,7 +336,7 @@ export function QuoteForm({
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <label className={labelCls}>Giltig till</label>
               <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} className={inputCls} />
@@ -341,6 +344,17 @@ export function QuoteForm({
             <div>
               <label className={labelCls}>Betalningsvillkor (dagar)</label>
               <input type="number" value={termsDays} min={1} onChange={(e) => setTermsDays(Number(e.target.value))} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Dröjsmålsränta (% per år)</label>
+              <input
+                type="number"
+                value={lateInterest}
+                min={0}
+                step={0.5}
+                onChange={(e) => setLateInterest(Number(e.target.value))}
+                className={inputCls}
+              />
             </div>
           </div>
 
@@ -370,14 +384,17 @@ export function QuoteForm({
 export function InvoiceForm({
   customers,
   defaultCustomerId,
+  defaultLateInterestRate = 10,
 }: {
   customers: CustomerOption[];
   defaultCustomerId?: string;
+  defaultLateInterestRate?: number;
 }) {
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
   const [lines, setLines] = useState<DocLine[]>([newLine("arbete")]);
   const [rot, setRot] = useState<RotRut | null>(null);
   const [dueDays, setDueDays] = useState(30);
+  const [lateInterest, setLateInterest] = useState(defaultLateInterestRate);
   const [isPending, startTransition] = useTransition();
 
   const valid = customerId && lines.length > 0 && lines.every((l) => l.description.trim());
@@ -397,9 +414,22 @@ export function InvoiceForm({
                 ))}
               </select>
             </div>
-            <div>
-              <label className={labelCls}>Förfaller om (dagar)</label>
-              <input type="number" min={1} value={dueDays} onChange={(e) => setDueDays(Number(e.target.value))} className={inputCls} />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>Förfaller om (dagar)</label>
+                <input type="number" min={1} value={dueDays} onChange={(e) => setDueDays(Number(e.target.value))} className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Dröjsmålsränta (%)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={lateInterest}
+                  onChange={(e) => setLateInterest(Number(e.target.value))}
+                  className={inputCls}
+                />
+              </div>
             </div>
           </div>
         </Card>
@@ -447,6 +477,7 @@ export function InvoiceForm({
                   lines,
                   rot,
                   dueInDays: dueDays,
+                  lateInterestRate: lateInterest,
                 });
               })
             }

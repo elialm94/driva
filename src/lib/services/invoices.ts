@@ -29,6 +29,7 @@ export interface InvoiceInput {
   lines: DocLine[];
   rot: RotRut | null;
   dueInDays?: number;
+  lateInterestRate?: number;
 }
 
 export function createInvoice(input: InvoiceInput): Invoice {
@@ -48,6 +49,7 @@ export function createInvoice(input: InvoiceInput): Invoice {
     rot: input.rot,
     issueDate: now,
     dueDate: isoDaysFromNow(input.dueInDays ?? data.settings.paymentTermsDays),
+    lateInterestRate: input.lateInterestRate ?? data.settings.lateInterestRate,
     reminders: [],
     token: publicToken(),
     ocr: ocrForInvoice(number),
@@ -83,6 +85,7 @@ export function createFinalInvoiceForJob(jobId: string): Invoice {
         lines: version.lines.map((l) => ({ ...l, id: uid() })),
         rot: version.rot,
         dueInDays: version.paymentTermsDays,
+        lateInterestRate: version.lateInterestRate,
       });
     }
     // Delbetalning finns → resterande som en tydlig rad.
@@ -105,6 +108,7 @@ export function createFinalInvoiceForJob(jobId: string): Invoice {
       ],
       rot: null,
       dueInDays: version.paymentTermsDays,
+      lateInterestRate: version.lateInterestRate,
     });
   }
 
@@ -139,6 +143,7 @@ export function createPartInvoiceForQuote(quoteId: string, partIndex: number): I
     ],
     rot: null,
     dueInDays: Math.min(version.paymentTermsDays, 14),
+    lateInterestRate: version.lateInterestRate,
   });
 }
 

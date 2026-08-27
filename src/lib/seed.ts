@@ -151,6 +151,7 @@ export function buildSeed(): DB {
       rot: q.version.rot,
       paymentPlan: q.version.paymentPlan,
       paymentTermsDays: q.version.paymentTermsDays,
+      lateInterestRate: q.version.lateInterestRate ?? 10,
       validUntil: q.version.validUntil,
       terms: q.version.terms,
     };
@@ -512,6 +513,7 @@ export function buildSeed(): DB {
     invoices.push({
       ...inv,
       rot: inv.rot ?? null,
+      lateInterestRate: 10,
       reminders: inv.reminders ?? [],
       ocr: ocrForInvoice(inv.number),
       createdAt: inv.issueDate,
@@ -1378,6 +1380,7 @@ export function buildSeed(): DB {
       fSkattPerMonth: 12400,
       payrollReservePerMonth: 20800,
       paymentTermsDays: 30,
+      lateInterestRate: 10,
     },
     sequences: { quote: 115, invoice: 1048, verification: verifications.length + 1 },
     customers,

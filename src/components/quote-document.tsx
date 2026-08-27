@@ -196,7 +196,10 @@ export function QuoteDocument({
               </div>
             ))}
           </div>
-          <p className="mt-2 text-[12px] text-muted">Betalningsvillkor: {version.paymentTermsDays} dagar per faktura.</p>
+          <p className="mt-2 text-[12px] text-muted">
+            Betalningsvillkor: {version.paymentTermsDays} dagar per faktura.
+            {version.lateInterestRate ? ` Vid försenad betalning debiteras dröjsmålsränta med ${version.lateInterestRate} % per år.` : ""}
+          </p>
         </div>
       ) : null}
 
