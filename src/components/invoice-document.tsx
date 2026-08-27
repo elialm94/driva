@@ -1,17 +1,51 @@
 import type { CompanySettings, Customer, Invoice } from "@/lib/types";
-import { docTotals } from "@/lib/calc";
+import { docTotals, lineTotal } from "@/lib/calc";
 import { kr, datumNumeriskt, datumLang } from "@/lib/format";
 import { BadgeCheck } from "lucide-react";
-import { DocCompanyHeader, DocFooter, DocLinesTable, DocTotalsBlock } from "./quote-document";
+import { DocCompanyHeader, DocFooter, DocTotalsBlock } from "./quote-document";
+import { resolveInvoiceView } from "@/lib/invoices/snapshot";
+import { invoiceNumberLabel, invoiceTypeLabel, sameCalendarDay } from "@/lib/invoices/display";
+import { TaxReductionInvoiceDisclaimer } from "./tax-reduction-terms";
 
-const TYPE_LABEL: Record<Invoice["type"], string> = {
-  faktura: "Faktura",
-  delbetalning: "Delbetalning",
-  slutfaktura: "Slutfaktura",
-  kredit: "Kreditfaktura",
+const LINE_KIND_LABEL: Record<string, string> = {
+  arbete: "Arbete",
+  material: "Material",
+  ovrigt: "Övrigt",
 };
 
-/** Fakturadokumentet exakt som kunden ser det – preview, publik sida och PDF. */
+function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
+  return (
+    <table className="w-full text-left text-[14px]">
+      <thead>
+        <tr className="border-b border-line text-[12px] font-semibold uppercase tracking-wide text-muted">
+          <th className="pb-2 pr-3 font-semibold">Beskrivning</th>
+          <th className="pb-2 pr-3 text-right font-semibold">Antal</th>
+          <th className="pb-2 pr-3 text-right font-semibold">À-pris exkl.</th>
+          <th className="pb-2 pr-3 text-right font-semibold">Moms</th>
+          <th className="pb-2 text-right font-semibold">Underlag</th>
+        </tr>
+      </thead>
+      <tbody>
+        {lines.map((line) => (
+          <tr key={line.id} className="border-b border-line/60 last:border-0">
+            <td className="py-3 pr-3">
+              <p className="font-medium text-ink">{line.description}</p>
+              <p className="text-[12px] text-muted">{LINE_KIND_LABEL[line.kind]}</p>
+            </td>
+            <td className="py-3 pr-3 text-right text-soft tabular whitespace-nowrap">
+              {line.qty} {line.unit}
+            </td>
+            <td className="py-3 pr-3 text-right text-soft tabular whitespace-nowrap">{kr(line.unitPrice)}</td>
+            <td className="py-3 pr-3 text-right text-soft tabular whitespace-nowrap">{line.vatRate} %</td>
+            <td className="py-3 text-right font-medium text-ink tabular whitespace-nowrap">{kr(lineTotal(line))}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** Fakturadokumentet. Utkast: live säljare/köpare. Utfärdad: issuedSnapshot. */
 export function InvoiceDocument({
   company,
   customer,
@@ -21,8 +55,14 @@ export function InvoiceDocument({
   customer: Customer;
   invoice: Invoice;
 }) {
-  const t = docTotals(invoice.lines, invoice.rot);
-  const isCredit = invoice.type === "kredit";
+  const view = resolveInvoiceView(invoice, { seller: company, buyer: customer });
+  const seller = view.seller;
+  const buyer = view.buyer;
+  const doc = view.invoice;
+  const t = docTotals(doc.lines, doc.rot);
+  const isCredit = doc.type === "kredit";
+  const showServiceDate = Boolean(doc.serviceDate && !sameCalendarDay(doc.serviceDate, doc.issueDate));
+  const originalNumber = doc.issuedSnapshot?.creditsInvoiceNumber ?? invoice.issuedSnapshot?.creditsInvoiceNumber;
 
   return (
     <div className="relative bg-white px-7 py-8 text-ink sm:px-10 sm:py-10">
@@ -32,66 +72,106 @@ export function InvoiceDocument({
         </div>
       ) : null}
 
-      <DocCompanyHeader company={company} docType={TYPE_LABEL[invoice.type]} docNumber={`#${invoice.number}`} />
+      <DocCompanyHeader
+        company={seller}
+        docType={invoiceTypeLabel(doc.type)}
+        docNumber={invoiceNumberLabel(doc)}
+      />
 
       <div className="mt-8 grid grid-cols-2 gap-x-6 gap-y-4 text-[13px] sm:grid-cols-4">
         <div>
           <p className="text-muted">Fakturadatum</p>
-          <p className="font-medium">{datumNumeriskt(invoice.issueDate)}</p>
+          <p className="font-medium">{datumNumeriskt(doc.issueDate)}</p>
         </div>
         <div>
           <p className="text-muted">Förfallodatum</p>
-          <p className="font-medium">{datumNumeriskt(invoice.dueDate)}</p>
+          <p className="font-medium">{datumNumeriskt(doc.dueDate)}</p>
         </div>
         <div>
           <p className="text-muted">OCR-nummer</p>
-          <p className="font-medium tabular">{invoice.ocr}</p>
+          <p className="font-medium tabular">{doc.ocr || "–"}</p>
         </div>
         <div>
-          <p className="text-muted">Till</p>
-          <p className="font-medium">{customer.name}</p>
-          {customer.address ? (
+          <p className="text-muted">Valuta</p>
+          <p className="font-medium">SEK</p>
+        </div>
+        {showServiceDate ? (
+          <div>
+            <p className="text-muted">Utförandedatum</p>
+            <p className="font-medium">{datumNumeriskt(doc.serviceDate!)}</p>
+          </div>
+        ) : null}
+        <div className={showServiceDate ? undefined : "sm:col-span-2"}>
+          <p className="text-muted">Kund</p>
+          <p className="font-medium">{buyer.name}</p>
+          {buyer.address ? (
             <p className="text-muted">
-              {[customer.address, [customer.postalCode, customer.city].filter(Boolean).join(" ")]
+              {[buyer.address, [buyer.postalCode, buyer.city].filter(Boolean).join(" ")]
                 .filter(Boolean)
                 .join(", ")}
             </p>
           ) : null}
+          {buyer.orgNumber ? <p className="text-muted">Org.nr {buyer.orgNumber}</p> : null}
+        </div>
+        <div>
+          <p className="text-muted">Betalningsvillkor</p>
+          <p className="font-medium">{doc.paymentTermsDays} dagar netto</p>
         </div>
       </div>
 
       {isCredit ? (
         <p className="mt-6 rounded-xl bg-canvas px-4 py-3 text-[13px] text-soft">
-          Denna kreditfaktura krediterar tidigare skickad faktura i sin helhet.
+          Denna kreditfaktura krediterar
+          {originalNumber != null ? ` faktura #${originalNumber}` : " tidigare skickad faktura"} i sin helhet.
+          Delkredit stöds inte.
         </p>
       ) : null}
 
       <div className="mt-8">
-        <DocLinesTable lines={invoice.lines} />
+        <InvoiceLinesTable lines={doc.lines} />
       </div>
 
       <div className="mt-5">
-        <DocTotalsBlock lines={invoice.lines} rot={invoice.rot} toPayLabel={isCredit ? "Att kreditera" : "Att betala"} />
+        <DocTotalsBlock
+          lines={doc.lines}
+          rot={doc.rot}
+          toPayLabel={isCredit ? "Att kreditera" : "Att betala nu"}
+        />
       </div>
 
-      {invoice.rot && t.deduction > 0 ? (
-        <p className="mt-3 text-[12px] leading-relaxed text-muted">
-          {invoice.rot.type === "rot" ? "ROT-avdrag" : "RUT-avdrag"} om {kr(t.deduction)} har dragits av. Vi begär
-          utbetalningen från Skatteverket – du behöver inte göra något.
-        </p>
-      ) : null}
+      {doc.rot ? <TaxReductionInvoiceDisclaimer version={doc.taxReductionTerms?.version} /> : null}
 
       {!isCredit && invoice.status !== "betald" ? (
         <div className="mt-8 rounded-2xl border border-line bg-canvas/70 p-5">
           <p className="text-[13px] font-semibold uppercase tracking-wide text-muted">Betalning</p>
           <div className="mt-3 grid grid-cols-1 gap-3 text-[14px] sm:grid-cols-3">
-            <div>
-              <p className="text-muted">Bankgiro</p>
-              <p className="font-semibold tabular">{company.bankgiro}</p>
-            </div>
+            {seller.bankgiro ? (
+              <div>
+                <p className="text-muted">Bankgiro</p>
+                <p className="font-semibold tabular">{seller.bankgiro}</p>
+              </div>
+            ) : null}
+            {seller.plusgiro ? (
+              <div>
+                <p className="text-muted">PlusGiro</p>
+                <p className="font-semibold tabular">{seller.plusgiro}</p>
+              </div>
+            ) : null}
+            {seller.iban ? (
+              <div>
+                <p className="text-muted">IBAN</p>
+                <p className="font-semibold tabular">{seller.iban}</p>
+              </div>
+            ) : null}
+            {seller.bankAccount && !seller.iban ? (
+              <div>
+                <p className="text-muted">Bankkonto</p>
+                <p className="font-semibold tabular">{seller.bankAccount}</p>
+              </div>
+            ) : null}
             <div>
               <p className="text-muted">OCR</p>
-              <p className="font-semibold tabular">{invoice.ocr}</p>
+              <p className="font-semibold tabular">{doc.ocr || "–"}</p>
             </div>
             <div>
               <p className="text-muted">Belopp</p>
@@ -99,9 +179,9 @@ export function InvoiceDocument({
             </div>
           </div>
           <p className="mt-3 text-[12px] text-muted">
-            Betala senast {datumLang(invoice.dueDate)}. Ange OCR-numret som referens.
-            {invoice.lateInterestRate
-              ? ` Efter förfallodagen debiteras dröjsmålsränta med ${invoice.lateInterestRate} % per år.`
+            Betala senast {datumLang(doc.dueDate)}. Ange OCR-numret som referens.
+            {doc.lateInterestRate
+              ? ` Efter förfallodagen debiteras dröjsmålsränta med ${doc.lateInterestRate} % per år.`
               : ""}
           </p>
         </div>
@@ -117,7 +197,7 @@ export function InvoiceDocument({
         </div>
       ) : null}
 
-      <DocFooter company={company} />
+      <DocFooter company={seller} />
     </div>
   );
 }

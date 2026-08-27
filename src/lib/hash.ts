@@ -26,6 +26,18 @@ export function quoteVersionHash(v: QuoteVersion): string {
     ...(v.lateInterestRate !== undefined ? { lateInterestRate: v.lateInterestRate } : {}),
     validUntil: v.validUntil,
     terms: v.terms,
+    // Villkorligt så att versioner signerade innan ROT/RUT-villkoren fanns behåller sitt hash.
+    ...(v.taxReductionTerms
+      ? {
+          taxReductionTerms: {
+            version: v.taxReductionTerms.version,
+            type: v.taxReductionTerms.type,
+            heading: v.taxReductionTerms.heading,
+            body: v.taxReductionTerms.body,
+            text: v.taxReductionTerms.text,
+          },
+        }
+      : {}),
   });
   return createHash("sha256").update(canonical, "utf8").digest("hex");
 }

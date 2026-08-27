@@ -32,6 +32,24 @@ export function updateCustomerNotes(customerId: string, notes: string): void {
   save();
 }
 
+export function updateCustomer(
+  customerId: string,
+  patch: Partial<Pick<Customer, "name" | "email" | "phone" | "address" | "postalCode" | "city" | "orgNumber" | "contactPerson">>
+): Customer {
+  const c = db().customers.find((x) => x.id === customerId);
+  if (!c) throw new Error("Kunden finns inte");
+  if (patch.name !== undefined) c.name = patch.name.trim();
+  if (patch.email !== undefined) c.email = patch.email.trim();
+  if (patch.phone !== undefined) c.phone = patch.phone.trim();
+  if (patch.address !== undefined) c.address = patch.address.trim() || undefined;
+  if (patch.postalCode !== undefined) c.postalCode = patch.postalCode.trim() || undefined;
+  if (patch.city !== undefined) c.city = patch.city.trim() || undefined;
+  if (patch.orgNumber !== undefined) c.orgNumber = patch.orgNumber.trim() || undefined;
+  if (patch.contactPerson !== undefined) c.contactPerson = patch.contactPerson.trim() || undefined;
+  save();
+  return c;
+}
+
 export function findOrCreateCustomerByEmail(input: {
   name: string;
   email: string;
@@ -109,11 +127,4 @@ export function createRequest(input: {
   );
   save();
   return request;
-}
-
-export function markRequestHandled(requestId: string, status: "besvarad" | "avslutad"): void {
-  const r = db().requests.find((r) => r.id === requestId);
-  if (!r) return;
-  r.status = status;
-  save();
 }

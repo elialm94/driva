@@ -93,19 +93,50 @@ export function PageHeader({
   title,
   subtitle,
   actions,
+  back,
+  crumbs,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
+  back?: ReactNode;
+  crumbs?: { href?: string; label: string }[];
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 className="text-[26px] font-semibold tracking-tight text-ink">{title}</h1>
-        {subtitle ? <p className="mt-1 text-[15px] text-soft">{subtitle}</p> : null}
+    <div className="mb-6">
+      {back ? <div className="mb-2.5">{back}</div> : null}
+      {crumbs && crumbs.length > 0 ? <Breadcrumbs items={crumbs} /> : null}
+      <div className={cx("flex flex-wrap justify-between gap-4", back ? "items-start" : "items-end")}>
+        <div className="min-w-0">
+          <h1 className="text-[26px] font-semibold tracking-tight text-ink">{title}</h1>
+          {subtitle ? <p className="mt-1 text-[15px] text-soft">{subtitle}</p> : null}
+        </div>
+        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
-      {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
     </div>
+  );
+}
+
+export function Breadcrumbs({ items }: { items: { href?: string; label: string }[] }) {
+  if (items.length === 0) return null;
+  return (
+    <nav aria-label="Brödsmulor" className="mb-2 flex flex-wrap items-center gap-1 text-[12px] text-muted">
+      {items.map((item, i) => {
+        const last = i === items.length - 1;
+        return (
+          <span key={`${item.label}-${i}`} className="flex items-center gap-1">
+            {i > 0 ? <span aria-hidden>/</span> : null}
+            {item.href && !last ? (
+              <Link href={item.href as never} className="transition-colors hover:text-ink">
+                {item.label}
+              </Link>
+            ) : (
+              <span className={last ? "text-soft" : undefined}>{item.label}</span>
+            )}
+          </span>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -175,22 +206,6 @@ export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md"
 }
 
 /* ---------------------------------- Diverse ----------------------------------- */
-
-export function Stat({ label, value, sub, tone }: { label: string; value: ReactNode; sub?: ReactNode; tone?: "danger" | "ok" }) {
-  return (
-    <div>
-      <p className="text-[13px] font-medium text-muted">{label}</p>
-      <p className={cx("mt-0.5 text-[22px] font-semibold tracking-tight tabular", tone === "danger" ? "text-danger" : tone === "ok" ? "text-accent-deep" : "text-ink")}>
-        {value}
-      </p>
-      {sub ? <p className="mt-0.5 text-[13px] text-muted">{sub}</p> : null}
-    </div>
-  );
-}
-
-export function Hairline({ className }: { className?: string }) {
-  return <div className={cx("h-px w-full bg-line", className)} />;
-}
 
 export function DemoTag({ children = "Demo" }: { children?: ReactNode }) {
   return (

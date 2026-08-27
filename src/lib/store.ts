@@ -2,6 +2,9 @@ import fs from "fs";
 import path from "path";
 import type { DB } from "./types";
 import { buildSeed } from "./seed";
+import { hydrateIssuedInvoices, hydrateQuoteSellerSnapshots } from "./invoices/snapshot";
+import { taxReductionFields } from "./tax-reduction-terms";
+import { migrateAccounting } from "./accounting/migrate";
 
 /**
  * Enkel JSON-baserad lagring för demon.
@@ -22,13 +25,43 @@ const DATA_FILE = onServerless
 type GlobalWithDb = typeof globalThis & { __drivaDb?: DB };
 const g = globalThis as GlobalWithDb;
 
+function hydrateTaxReductionTerms(data: DB): boolean {
+  let changed = false;
+  for (const v of data.quoteVersions) {
+    if (v.lockedAt) continue;
+    if (v.rot && !v.taxReductionTerms) {
+      Object.assign(v, taxReductionFields(v.rot));
+      changed = true;
+    } else if (!v.rot && v.taxReductionTerms) {
+      v.taxReductionTerms = null;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function normalize(loaded: DB): DB {
   // Fält tillagda efter att filen skapades får sina standardvärden här.
   loaded.settings.lateInterestRate ??= 10;
+  loaded.settings.quoteValidityDays ??= 30;
+  loaded.settings.defaultVatRate ??= 25;
+  loaded.settings.country ??= "Sverige";
   loaded.assistantAudit ??= [];
   loaded.assistantMessages ??= [];
   loaded.pendingActions ??= [];
+  // Bokföringsmotorn: räkenskapsår, IB och verifikationsfält (idempotent).
+  const migrated = migrateAccounting(loaded);
+  const dirty =
+    hydrateIssuedInvoices(loaded) ||
+    hydrateQuoteSellerSnapshots(loaded) ||
+    hydrateTaxReductionTerms(loaded);
+  // Persist snapshots so later settings changes cannot rewrite seed/historical docs.
+  if (dirty || migrated) persist(loaded);
   return loaded;
+}
+
+function freshSeed(): DB {
+  return normalize(buildSeed());
 }
 
 export function db(): DB {
@@ -38,11 +71,11 @@ export function db(): DB {
         const loaded = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")) as DB;
         g.__drivaDb = normalize(loaded);
       } catch {
-        g.__drivaDb = buildSeed();
+        g.__drivaDb = freshSeed();
         persist(g.__drivaDb);
       }
     } else {
-      g.__drivaDb = buildSeed();
+      g.__drivaDb = freshSeed();
       persist(g.__drivaDb);
     }
   }
@@ -73,6 +106,6 @@ export function save(): void {
 
 /** Återställ demodatat helt. */
 export function resetDemoData(): void {
-  g.__drivaDb = buildSeed();
+  g.__drivaDb = freshSeed();
   persist(g.__drivaDb);
 }

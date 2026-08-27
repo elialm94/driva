@@ -110,3 +110,56 @@ export function updateJobNotes(jobId: string, notes: string): void {
   job.notes = notes;
   save();
 }
+
+export interface JobNoteEntry {
+  at?: string;
+  text: string;
+}
+
+const NOTE_SEP = "\n\n---\n";
+
+export function parseJobNotes(notes: string): JobNoteEntry[] {
+  if (!notes.trim()) return [];
+  return notes
+    .split(NOTE_SEP)
+    .map((part) => {
+      const m = part.match(/^(\d{4}-\d{2}-\d{2}T[^\n]*)\n([\s\S]*)$/);
+      if (m) return { at: m[1], text: m[2].trim() };
+      return { text: part.trim() };
+    })
+    .filter((n) => n.text);
+}
+
+export function appendJobNote(jobId: string, text: string): void {
+  const job = db().jobs.find((j) => j.id === jobId);
+  if (!job) return;
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  const entry = `${new Date().toISOString()}\n${trimmed}`;
+  job.notes = job.notes.trim() ? `${job.notes.trim()}${NOTE_SEP}${entry}` : entry;
+  save();
+}
+
+export function updateJob(
+  jobId: string,
+  input: { title?: string; description?: string; address?: string; startDate?: string; endDate?: string }
+): Job {
+  const job = db().jobs.find((j) => j.id === jobId);
+  if (!job) throw new Error("Uppdraget finns inte");
+  const customer = requireCustomer(job.customerId);
+  if (input.title !== undefined) {
+    const title = input.title.trim();
+    if (!title) throw new Error("Uppdraget behöver en titel");
+    job.title = title;
+  }
+  if (input.description !== undefined) job.description = input.description;
+  if (input.address !== undefined) job.address = input.address.trim() || undefined;
+  if (input.startDate !== undefined) job.startDate = input.startDate || undefined;
+  if (input.endDate !== undefined) job.endDate = input.endDate || undefined;
+  logActivity(`Uppdraget ${job.title} hos ${customer.name} uppdaterades.`, {
+    customerId: customer.id,
+    entity: { type: "jobb", id: job.id },
+  });
+  save();
+  return job;
+}

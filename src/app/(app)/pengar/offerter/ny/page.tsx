@@ -1,11 +1,11 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/store";
 import { quoteDefaults } from "@/lib/services/quotes";
 import { getJob, getRequest } from "@/lib/services/data";
 import { tillaggQuoteFromInvoice } from "@/lib/services/invoice-quote-deviation";
 import { PageHeader } from "@/components/ui";
 import { QuoteForm, type QuoteFormInitial } from "@/components/doc-form";
+import { BackLink } from "@/components/back-link";
+import { labelForHref, sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
 
 export const metadata = { title: "Ny offert" };
 
@@ -71,12 +71,33 @@ export default async function NewQuotePage(props: PageProps<"/pengar/offerter/ny
           }
         : undefined;
 
+  const tillbaka = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : null;
+  const tillbakaNamn =
+    typeof searchParams.tillbakaNamn === "string" ? sanitizeReturnLabel(searchParams.tillbakaNamn) : null;
+
+  let cancelHref = "/pengar?flik=offerter";
+  let cancelLabel = "Offerter";
+  let returnTo = tillbaka ?? undefined;
+  let returnLabel = tillbakaNamn ?? undefined;
+
+  if (job) {
+    cancelHref = `/uppdrag/${job.id}`;
+    cancelLabel = job.title;
+    returnTo = returnTo ?? cancelHref;
+    returnLabel = returnLabel ?? job.title;
+  } else if (tillaggFran) {
+    cancelHref = `/pengar/fakturor/${tillaggFran}`;
+    cancelLabel = "Faktura";
+    returnTo = returnTo ?? cancelHref;
+  } else if (tillbaka) {
+    cancelHref = tillbaka;
+    cancelLabel = tillbakaNamn ?? labelForHref(tillbaka);
+  }
+
   return (
     <div className="animate-fade-up">
-      <Link href="/pengar?flik=offerter" className="mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-        <ArrowLeft className="size-4" /> Offerter
-      </Link>
       <PageHeader
+        back={<BackLink fallbackHref={cancelHref} fallbackLabel={cancelLabel} />}
         title={tillagg ? tillagg.title : "Ny offert"}
         subtitle={
           tillagg
@@ -109,6 +130,9 @@ export default async function NewQuotePage(props: PageProps<"/pengar/offerter/ny
         jobId={job?.id}
         initial={initial}
         defaults={defaults}
+        cancelHref={cancelHref}
+        returnTo={returnTo}
+        returnLabel={returnLabel}
       />
     </div>
   );

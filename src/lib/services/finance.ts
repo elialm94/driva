@@ -1,32 +1,31 @@
 import { db } from "../store";
-import { isCostAccount, isRevenueAccount } from "../bas";
+import { docTotals } from "../calc";
 import { invoiceTotals, isOverdue } from "./data";
+import { currentVatPosition } from "../accounting/vat";
+import { accountBalance, resultatrapport } from "../accounting/ledger";
+import { todayDate } from "../accounting/dates";
 
 /** Innevarande momsperiod (kvartal) med deklarations- och betaldatum. */
 export function momsPeriod() {
-  const now = new Date();
-  const q = Math.floor(now.getMonth() / 3); // 0..3
-  const start = new Date(now.getFullYear(), q * 3, 1);
-  const end = new Date(now.getFullYear(), q * 3 + 3, 0, 23, 59, 59);
-  // Kvartalsmoms deklareras och betalas den 12:e i andra månaden efter periodens slut.
-  const due = new Date(now.getFullYear(), q * 3 + 4, 12);
-  const namn = `${["januari–mars", "april–juni", "juli–september", "oktober–december"][q]} ${now.getFullYear()}`;
-  return { start: start.toISOString(), end: end.toISOString(), due: due.toISOString(), namn };
+  const pos = currentVatPosition();
+  return {
+    start: pos.period.start,
+    end: pos.period.end,
+    due: `${pos.dueDate}T12:00:00.000Z`,
+    namn: pos.period.label,
+  };
 }
 
-/** Momsberäkning från verifikationerna – samma siffror som bokföringen. */
+/** Momsberäkning från huvudboken (alla momssatser) – samma siffror som momsrapporten. */
 export function momsForCurrentPeriod() {
-  const { start, end, due, namn } = momsPeriod();
-  let utgaende = 0;
-  let ingaende = 0;
-  for (const v of db().verifications) {
-    if (v.date < start || v.date > end) continue;
-    for (const e of v.entries) {
-      if (e.account === 2611) utgaende += e.credit - e.debit;
-      if (e.account === 2641) ingaende += e.debit - e.credit;
-    }
-  }
-  return { utgaende, ingaende, attBetala: utgaende - ingaende, due, namn };
+  const pos = currentVatPosition();
+  return {
+    utgaende: pos.utgaende,
+    ingaende: pos.ingaende,
+    attBetala: pos.attBetala,
+    due: `${pos.dueDate}T12:00:00.000Z`,
+    namn: pos.period.label,
+  };
 }
 
 export interface FinanceOverview {
@@ -45,8 +44,11 @@ export interface FinanceOverview {
 export function financeOverview(): FinanceOverview {
   const data = db();
   const bank = data.bankAccounts.reduce((s, a) => s + a.balance, 0);
-  const moms = Math.max(0, momsForCurrentPeriod().attBetala);
-  const momsDue = momsForCurrentPeriod().due;
+  const momsNu = momsForCurrentPeriod();
+  // Reserv för moms: innevarande period + deklarerad men obetald moms (2650 kredit).
+  const declaredUnpaid = Math.max(0, -accountBalance(2650, todayDate()));
+  const moms = Math.max(0, momsNu.attBetala) + declaredUnpaid;
+  const momsDue = momsNu.due;
   // Reserv: kommande två månaders F-skatt + en månads arbetsgivaravgifter/personalskatt.
   const fSkatt = data.settings.fSkattPerMonth * 2;
   const payrollReserve = data.settings.payrollReservePerMonth;
@@ -69,29 +71,16 @@ export function financeOverview(): FinanceOverview {
   };
 }
 
-/** Nyckeltal för Pengar-sidan och assistenten. */
+/** Nyckeltal för Pengar-sidan och assistenten – samma motor som rapporterna. */
 export function businessStats() {
   const data = db();
-  const year = new Date().getFullYear();
-  const monthKey = new Date().toISOString().slice(0, 7);
+  const today = todayDate();
+  const year = resultatrapport(); // räkenskapsåret hittills
+  const month = resultatrapport({ from: `${today.slice(0, 7)}-01`, to: today });
 
-  let revenueYear = 0;
-  let revenueMonth = 0;
-  let costsYear = 0;
-  for (const v of data.verifications) {
-    const inYear = new Date(v.date).getFullYear() === year;
-    const inMonth = v.date.slice(0, 7) === monthKey;
-    for (const e of v.entries) {
-      if (isRevenueAccount(e.account)) {
-        const net = e.credit - e.debit;
-        if (inYear) revenueYear += net;
-        if (inMonth) revenueMonth += net;
-      }
-      if (isCostAccount(e.account) && inYear) {
-        costsYear += e.debit - e.credit;
-      }
-    }
-  }
+  const revenueYear = year.omsattning;
+  const revenueMonth = month.omsattning;
+  const costsYear = year.kostnaderSumma;
 
   const unpaidInvoices = data.invoices.filter((i) => i.status === "skickad");
   const unpaidSum = unpaidInvoices.reduce((s, i) => s + invoiceTotals(i).toPay, 0);
@@ -99,15 +88,16 @@ export function businessStats() {
   const overdueSum = overdue.reduce((s, i) => s + invoiceTotals(i).toPay, 0);
 
   // Kommande intäkter: godkända offerter som ännu inte fakturerats fullt ut.
+  // Samma totalberäkning (docTotals) som offerter, fakturor och bokföring använder.
   let upcomingIncome = 0;
   for (const q of data.quotes.filter((q) => q.status === "godkand")) {
     const v = data.quoteVersions.find((v) => v.id === q.currentVersionId);
     if (!v) continue;
-    const total = v.lines.reduce((s, l) => s + Math.round(l.qty * l.unitPrice) * (1 + l.vatRate / 100), 0);
+    const total = docTotals(v.lines, v.rot).total;
     const invoiced = data.invoices
       .filter((i) => i.quoteId === q.id && i.status !== "krediterad")
       .reduce((s, i) => s + invoiceTotals(i).total, 0);
-    upcomingIncome += Math.max(0, Math.round(total) - invoiced);
+    upcomingIncome += Math.max(0, total - invoiced);
   }
 
   return {

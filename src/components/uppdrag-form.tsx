@@ -6,8 +6,9 @@ import { Plus } from "lucide-react";
 import { DateField } from "./date-field";
 import { Modal } from "./modal";
 import { buttonClasses } from "./ui";
-import { createJobAction } from "@/app/actions";
+import { createJobAction, updateJobAction } from "@/app/actions";
 import { addCustomerOption, CustomerPicker, type CustomerOption } from "./customer-picker";
+import { swedishFormProps } from "@/lib/swedish-validity";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
@@ -55,7 +56,7 @@ export function NewUppdragButton({
         Skapa uppdrag
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title="Nytt uppdrag" size="md">
-        <form action={submit} className="space-y-4 px-6 py-5">
+        <form action={submit} className="space-y-4 px-6 py-5" {...swedishFormProps()}>
           <div>
             <label className="mb-1 block text-[13px] font-medium text-soft">Kund</label>
             <CustomerPicker
@@ -97,5 +98,88 @@ export function NewUppdragButton({
         </form>
       </Modal>
     </>
+  );
+}
+
+function isoDate(iso?: string) {
+  return iso ? iso.slice(0, 10) : "";
+}
+
+export function EditUppdragModal({
+  open,
+  onClose,
+  jobId,
+  customerId,
+  customerName,
+  initial,
+}: {
+  open: boolean;
+  onClose: () => void;
+  jobId: string;
+  customerId: string;
+  customerName: string;
+  initial: { title: string; description: string; address?: string; startDate?: string; endDate?: string };
+}) {
+  const [isPending, startTransition] = useTransition();
+
+  function submit(formData: FormData) {
+    const title = String(formData.get("title") ?? "").trim();
+    if (!title) return;
+    startTransition(async () => {
+      await updateJobAction(jobId, {
+        title,
+        description: String(formData.get("description") ?? ""),
+        address: String(formData.get("address") ?? ""),
+        startDate: String(formData.get("startDate") ?? "")
+          ? new Date(`${formData.get("startDate")}T09:00:00`).toISOString()
+          : "",
+        endDate: String(formData.get("endDate") ?? "")
+          ? new Date(`${formData.get("endDate")}T17:00:00`).toISOString()
+          : "",
+      });
+      onClose();
+    });
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Redigera uppdrag" size="md">
+      <form action={submit} className="space-y-4 px-6 py-5">
+        <input type="hidden" name="customerId" value={customerId} />
+        <div>
+          <label className="mb-1 block text-[13px] font-medium text-soft">Kund</label>
+          <p className="text-[15px] text-ink">{customerName}</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-[13px] font-medium text-soft">Vad gäller det?</label>
+          <input name="title" required defaultValue={initial.title} className={inputCls} />
+        </div>
+        <div>
+          <label className="mb-1 block text-[13px] font-medium text-soft">Beskrivning</label>
+          <textarea name="description" rows={3} defaultValue={initial.description} className={inputCls} />
+        </div>
+        <div>
+          <label className="mb-1 block text-[13px] font-medium text-soft">Adress</label>
+          <input name="address" defaultValue={initial.address ?? ""} className={inputCls} />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-[13px] font-medium text-soft">Planerad start</label>
+            <DateField name="startDate" defaultValue={isoDate(initial.startDate)} className={inputCls} />
+          </div>
+          <div>
+            <label className="mb-1 block text-[13px] font-medium text-soft">Planerat klart</label>
+            <DateField name="endDate" defaultValue={isoDate(initial.endDate)} className={inputCls} />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" className={buttonClasses("ghost")} onClick={onClose}>
+            Avbryt
+          </button>
+          <button type="submit" className={buttonClasses("primary")} disabled={isPending}>
+            {isPending ? "Sparar …" : "Spara"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

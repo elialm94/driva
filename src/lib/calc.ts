@@ -1,9 +1,19 @@
-import type { DocLine, RotRut } from "./types";
+import type { DocLine, RotRut, VatRate } from "./types";
 
 /** Skattereduktion: ROT 30 % av arbetskostnaden inkl. moms, RUT 50 %. Tak 50 000 kr/person och år. */
 const ROT_ANDEL = 0.3;
 const RUT_ANDEL = 0.5;
 const AVDRAG_TAK = 50_000;
+
+/**
+ * V1-moms: svensk säljare → svensk kund, SEK, dessa satser.
+ * Omvänd skattskyldighet, EU-försäljning, export, byggmoms och vinstmarginal stöds inte.
+ */
+export const SUPPORTED_VAT_RATES: readonly VatRate[] = [0, 6, 12, 25];
+
+export function isSupportedVatRate(n: number): n is VatRate {
+  return (SUPPORTED_VAT_RATES as readonly number[]).includes(n);
+}
 
 export interface DocTotals {
   /** Summa exkl. moms. */
@@ -18,6 +28,12 @@ export interface DocTotals {
   deduction: number;
   /** Det kunden faktiskt betalar. */
   toPay: number;
+}
+
+export interface VatBreakdownRow {
+  rate: number;
+  base: number;
+  vat: number;
 }
 
 export function lineTotal(line: DocLine): number {
@@ -43,8 +59,12 @@ export function docTotals(lines: DocLine[], rot: RotRut | null): DocTotals {
   return { subtotal, vat, total, laborInclVat, deduction, toPay: total - deduction };
 }
 
-/** Moms per momssats – för dokumentens summering. */
-export function vatBreakdown(lines: DocLine[]): { rate: number; base: number; vat: number }[] {
+/**
+ * Moms per momssats – enda summeringen för offerter, fakturor, PDF och bokföring.
+ * Inkluderar 0 % när sådana rader finns, så underlaget syns.
+ * Radrabatt som eget fält finns inte i V1; negativt à-pris på en rad är den stödda rabattformen.
+ */
+export function vatBreakdown(lines: DocLine[]): VatBreakdownRow[] {
   const map = new Map<number, { base: number; vat: number }>();
   for (const l of lines) {
     const cur = map.get(l.vatRate) ?? { base: 0, vat: 0 };
@@ -53,7 +73,6 @@ export function vatBreakdown(lines: DocLine[]): { rate: number; base: number; va
     map.set(l.vatRate, cur);
   }
   return [...map.entries()]
-    .filter(([rate]) => rate > 0)
     .sort((a, b) => b[0] - a[0])
     .map(([rate, v]) => ({ rate, ...v }));
 }

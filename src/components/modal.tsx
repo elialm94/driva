@@ -78,7 +78,12 @@ export function Modal({
         {title !== undefined ? (
           <div className="flex items-center justify-between border-b border-line px-6 py-4">
             <div className="text-[17px] font-semibold tracking-tight text-ink">{title}</div>
-            <button onClick={onClose} className="rounded-lg p-1.5 text-muted transition-colors hover:bg-ink/5 hover:text-ink">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Stäng"
+              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-ink/5 hover:text-ink"
+            >
               <X className="size-4.5" />
             </button>
           </div>

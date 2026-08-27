@@ -5,14 +5,18 @@ import { getQuoteByToken, currentVersion, quoteSignature, quoteTotals, requireCu
 import { markQuoteViewed } from "@/lib/services/quotes";
 import { kr, datumTid, datumLang, dagarTill } from "@/lib/format";
 import { QuoteDocument } from "@/components/quote-document";
+import { CompanyLogo } from "@/components/company-logo";
 import { BankIDApproval, DeclineQuoteButton, QuoteQuestionButton } from "@/components/bankid-flow";
+import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(props: PageProps<"/offert/[token]">) {
   const { token } = await props.params;
   const quote = getQuoteByToken(token);
-  return { title: quote ? `Offert #${quote.number} – ${db().settings.name}` : "Offert" };
+  const version = quote ? currentVersion(quote) : undefined;
+  const seller = version ? resolveQuoteCompany(version, db().settings) : db().settings;
+  return { title: quote ? `Offert #${quote.number} – ${seller.name}` : "Offert" };
 }
 
 export default async function PublicQuotePage(props: PageProps<"/offert/[token]">) {
@@ -30,16 +34,16 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
   const expired = quote.status === "skickad" && dagarTill(version.validUntil) < 0;
   const canSign = quote.status === "skickad" && !expired;
 
+  const seller = resolveQuoteCompany(version, data.settings);
+
   return (
     <div className="min-h-dvh bg-canvas">
       <header className="border-b border-line bg-card/80 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-accent text-[13px] font-bold text-white">
-              {data.settings.logoInitials}
-            </div>
+            <CompanyLogo company={seller} size="sm" />
             <div>
-              <p className="text-[14px] font-semibold leading-tight">{data.settings.name}</p>
+              <p className="text-[14px] font-semibold leading-tight">{seller.name}</p>
               <p className="text-[12px] text-muted">Offert #{quote.number} till {customer.name}</p>
             </div>
           </div>
@@ -75,7 +79,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
             <div>
               <p className="text-[15px] font-semibold">Offerten är avböjd</p>
               <p className="text-[14px] text-soft">
-                Ändrat dig? Hör av dig till {data.settings.name} på {data.settings.phone} så tar vi det därifrån.
+                Ändrat dig? Hör av dig till {seller.name} på {seller.phone} så tar vi det därifrån.
               </p>
             </div>
           </div>
@@ -87,7 +91,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
             <div>
               <p className="text-[15px] font-semibold text-warn">Offerten har gått ut</p>
               <p className="text-[14px] text-soft">
-                Giltighetstiden gick ut {datumLang(version.validUntil)}. Kontakta {data.settings.name} för en uppdaterad
+                Giltighetstiden gick ut {datumLang(version.validUntil)}. Kontakta {seller.name} för en uppdaterad
                 offert.
               </p>
             </div>
@@ -99,7 +103,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
         </div>
 
         <p className="mt-6 text-center text-[12px] text-muted">
-          Skickad med Driva · Frågor? Kontakta {data.settings.name} på {data.settings.email}
+          Skickad med Driva · Frågor? Kontakta {seller.name} på {seller.email}
         </p>
         <div className="h-28" />
       </main>
@@ -114,12 +118,12 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
               <DeclineQuoteButton quoteId={quote.id} />
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <QuoteQuestionButton quoteId={quote.id} companyName={data.settings.name} />
+              <QuoteQuestionButton quoteId={quote.id} companyName={seller.name} />
               <BankIDApproval
                 token={quote.token}
                 quoteNumber={quote.number}
                 toPay={kr(totals.toPay)}
-                companyName={data.settings.name}
+                companyName={seller.name}
               />
             </div>
           </div>

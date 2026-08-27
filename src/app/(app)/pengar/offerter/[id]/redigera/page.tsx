@@ -1,21 +1,26 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { db } from "@/lib/store";
 import { getQuote, currentVersion, requireCustomer } from "@/lib/services/data";
 import { quoteDefaults } from "@/lib/services/quotes";
 import { PageHeader } from "@/components/ui";
 import { QuoteForm } from "@/components/doc-form";
+import { BackLink } from "@/components/back-link";
+import { hrefWithNav, sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
 
 export const metadata = { title: "Redigera offert" };
 
 export default async function EditQuotePage(props: PageProps<"/pengar/offerter/[id]/redigera">) {
   const { id } = await props.params;
+  const searchParams = await props.searchParams;
   const quote = getQuote(id);
   if (!quote) notFound();
   const version = currentVersion(quote);
   const customer = requireCustomer(quote.customerId);
   const isLocked = !!version.lockedAt;
+  const returnTo = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : undefined;
+  const returnLabel =
+    typeof searchParams.tillbakaNamn === "string" ? sanitizeReturnLabel(searchParams.tillbakaNamn) ?? undefined : undefined;
+  const quoteHref = hrefWithNav(`/pengar/offerter/${quote.id}`, { returnTo, returnLabel });
 
   const customers = [...db().customers]
     .sort((a, b) => a.name.localeCompare(b.name, "sv"))
@@ -23,13 +28,14 @@ export default async function EditQuotePage(props: PageProps<"/pengar/offerter/[
 
   return (
     <div className="animate-fade-up">
-      <Link
-        href={`/pengar/offerter/${quote.id}` as never}
-        className="mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink"
-      >
-        <ArrowLeft className="size-4" /> Offert #{quote.number}
-      </Link>
       <PageHeader
+        back={<BackLink fallbackHref={quoteHref} fallbackLabel={`Offert #${quote.number}`} ignoreReturnTo />}
+        crumbs={[
+          { href: "/pengar", label: "Pengar" },
+          { href: "/pengar?flik=offerter", label: "Offerter" },
+          { href: quoteHref, label: `#${quote.number}` },
+          { label: isLocked ? "Ny version" : "Redigera" },
+        ]}
         title={isLocked ? `Ny version av offert #${quote.number}` : `Redigera offert #${quote.number}`}
         subtitle={
           isLocked
@@ -53,6 +59,9 @@ export default async function EditQuotePage(props: PageProps<"/pengar/offerter/[
           terms: version.terms,
         }}
         defaults={quoteDefaults()}
+        cancelHref={quoteHref}
+        returnTo={returnTo ?? undefined}
+        returnLabel={returnLabel}
       />
     </div>
   );

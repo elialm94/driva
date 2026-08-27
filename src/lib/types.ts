@@ -5,19 +5,37 @@
 
 export type ID = string;
 
+export type LineKind = "arbete" | "material" | "ovrigt";
+/** V1: endast inhemsk svensk moms. Omvänd skattskyldighet, EU, export och byggmoms stöds inte. */
+export type VatRate = 0 | 6 | 12 | 25;
+
 /* ---------------------------------- Företag ---------------------------------- */
 
 export interface CompanySettings {
   name: string;
+  /** Bolagsform. Styr eget kapital-konton och skatt vid bokslut. Default "ab". */
+  companyForm?: "ab" | "enskild";
   orgNumber: string;
   vatNumber: string;
   email: string;
   phone: string;
+  /** Företagets webbplats (URL). Inte densamma som Driva-hemsidan. */
+  websiteUrl?: string;
   address: string;
   postalCode: string;
   city: string;
+  /** Juridiskt säte. Om tomt används city på fakturan. */
+  sate?: string;
+  country?: string;
   bankgiro: string;
+  plusgiro?: string;
+  /** Fritt bankkontonummer, t.ex. clearing + konto. */
+  bankAccount?: string;
+  iban?: string;
+  bic?: string;
   logoInitials: string;
+  /** JPEG data-URL. Saknas = visa initialer. */
+  logoDataUrl?: string;
   /** Preliminärskatt (F-skatt) som dras varje månad. */
   fSkattPerMonth: number;
   /** Reserv för arbetsgivaravgifter och personalskatt per månad. */
@@ -26,6 +44,10 @@ export interface CompanySettings {
   paymentTermsDays: number;
   /** Standard dröjsmålsränta i procent per år (räntelagen: referensränta + 8 %-enheter). */
   lateInterestRate: number;
+  /** Standard giltighetstid för nya offerter, i dagar. */
+  quoteValidityDays: number;
+  /** Vanlig momssats för nya dokumentrader. */
+  defaultVatRate: VatRate;
 }
 
 /* ---------------------------------- Kunder ---------------------------------- */
@@ -69,9 +91,6 @@ export interface CustomerRequest {
 
 /* ---------------------------------- Dokumentrader ---------------------------- */
 
-export type LineKind = "arbete" | "material" | "ovrigt";
-export type VatRate = 0 | 6 | 12 | 25;
-
 export interface DocLine {
   id: ID;
   kind: LineKind;
@@ -85,6 +104,19 @@ export interface DocLine {
 
 export interface RotRut {
   type: "rot" | "rut";
+}
+
+/**
+ * Immutabelt utdrag av ROT/RUT-villkor som kunden såg och (vid BankID) godkände.
+ * Version + full text sparas så att senare ändringar av standardtexten inte
+ * skriver över det signerade innehållet.
+ */
+export interface TaxReductionTermsSnapshot {
+  version: string;
+  type: "rot" | "rut";
+  heading: string;
+  body: string;
+  text: string;
 }
 
 export interface PaymentPlanPart {
@@ -109,7 +141,18 @@ export interface QuoteVersion {
   /** Dröjsmålsränta i procent per år vid försenad betalning. */
   lateInterestRate?: number;
   validUntil: string;
+  /** Användarens egna villkor. ROT/RUT-villkor ligger i taxReductionTerms, inte här. */
   terms: string;
+  /**
+   * Systemgenererade ROT/RUT-villkor. Sätts av offerttjänsten när rot är valt,
+   * tas bort när rot slås av. Snapshoten låses med versionen vid BankID.
+   */
+  taxReductionTerms?: TaxReductionTermsSnapshot | null;
+  /**
+   * Företagsuppgifter när versionen skickades eller BankID-låstes.
+   * Ingår inte i contentHash – ändra inte hash-payloaden.
+   */
+  sellerSnapshot?: InvoiceSellerSnapshot;
   createdAt: string;
   /** Sätts när versionen låses vid BankID-godkännande. Låsta versioner får aldrig ändras. */
   lockedAt?: string;
@@ -205,9 +248,80 @@ export interface Job {
 export type InvoiceStatus = "utkast" | "skickad" | "betald" | "krediterad";
 export type InvoiceType = "faktura" | "delbetalning" | "slutfaktura" | "kredit";
 
+/** Säljaren vid utfärdandet – fryses så att senare ändringar i företagsuppgifter inte ändrar gamla fakturor. */
+export interface InvoiceSellerSnapshot {
+  name: string;
+  orgNumber: string;
+  vatNumber: string;
+  address: string;
+  postalCode: string;
+  city: string;
+  sate: string;
+  country?: string;
+  email: string;
+  phone: string;
+  websiteUrl?: string;
+  bankgiro: string;
+  plusgiro?: string;
+  bankAccount?: string;
+  iban?: string;
+  bic?: string;
+  logoInitials: string;
+  logoDataUrl?: string;
+}
+
+/** Köparen vid utfärdandet. */
+export interface InvoiceBuyerSnapshot {
+  name: string;
+  kind: Customer["kind"];
+  orgNumber?: string;
+  address: string;
+  postalCode: string;
+  city: string;
+  country: string;
+  email: string;
+  phone: string;
+}
+
+export interface InvoiceVatRow {
+  rate: number;
+  base: number;
+  vat: number;
+}
+
+/** Juridisk kopia av utfärdad faktura. InvoiceDocument för skickad+ renderar härifrån, inte live-data. */
+export interface InvoiceIssuedSnapshot {
+  issuedAt: string;
+  number: number;
+  ocr: string;
+  issueDate: string;
+  dueDate: string;
+  paymentTermsDays: number;
+  lateInterestRate?: number;
+  currency: "SEK";
+  serviceDate?: string;
+  seller: InvoiceSellerSnapshot;
+  buyer: InvoiceBuyerSnapshot;
+  lines: DocLine[];
+  rot: RotRut | null;
+  taxReductionTerms?: TaxReductionTermsSnapshot | null;
+  totals: {
+    subtotal: number;
+    vat: number;
+    total: number;
+    laborInclVat: number;
+    deduction: number;
+    toPay: number;
+  };
+  vatBreakdown: InvoiceVatRow[];
+  creditsInvoiceId?: ID;
+  creditsInvoiceNumber?: number;
+}
+
 export interface Invoice {
   id: ID;
-  number: number;
+  /** Löpnummer. null på nya utkast – tilldelas atomärt vid issueInvoice. Äldre utkast kan redan ha nummer. */
+  number: number | null;
   customerId: ID;
   jobId?: ID;
   quoteId?: ID;
@@ -215,16 +329,28 @@ export interface Invoice {
   status: InvoiceStatus;
   lines: DocLine[];
   rot: RotRut | null;
+  /** Kopia av ROT/RUT-villkor vid utkast/utfärdande. Fryses i issuedSnapshot. */
+  taxReductionTerms?: TaxReductionTermsSnapshot | null;
   issueDate: string;
   dueDate: string;
+  paymentTermsDays: number;
+  /** Utförandedatum/leveransdatum. Visas på dokumentet om det skiljer sig från fakturadatum. */
+  serviceDate?: string;
   /** Dröjsmålsränta i procent per år vid försenad betalning. */
   lateInterestRate?: number;
+  /** När fakturan blev juridiskt utfärdad (nummer + snapshot). */
+  issuedAt?: string;
+  /** Första e-postleveransen (i demon: mock-logg). Misslyckad leverans rullar inte tillbaka numret. */
   sentAt?: string;
+  /** Senaste leveransförsöket (skicka igen). */
+  lastSentAt?: string;
   paidAt?: string;
   reminders: string[];
   token: string;
   ocr: string;
   creditsInvoiceId?: ID;
+  issuedSnapshot?: InvoiceIssuedSnapshot;
+  createdBy?: "anvandare" | "assistent";
   createdAt: string;
 }
 
@@ -331,6 +457,10 @@ export interface VerificationEntry {
   accountName: string;
   debit: number;
   credit: number;
+  /** Momskod (t.ex. "MP1", "I"). Härleds annars centralt från kontot. */
+  vatCode?: string;
+  /** Radbeskrivning/dimension, t.ex. koppling till uppdrag. */
+  note?: string;
 }
 
 export type VerificationSource =
@@ -340,19 +470,221 @@ export type VerificationSource =
   | { type: "leverantorsfaktura"; id: ID }
   | { type: "banktransaktion"; id: ID }
   | { type: "rattelse"; id: ID }
+  | { type: "avskrivning"; id: ID }
+  | { type: "periodisering"; id: ID }
+  | { type: "moms"; id: ID }
+  | { type: "bokslut"; id: ID }
+  | { type: "ingaende_balans"; id: ID }
   | { type: "manuell" };
 
+/**
+ * Verifikation = bokförd affärshändelse. Bokförda verifikationer är
+ * oföränderliga: rättelser görs alltid som ny rättelseverifikation
+ * (se accounting/engine.ts), aldrig genom att ändra eller ta bort.
+ */
 export interface Verification {
   id: ID;
-  series: "A";
+  /** Verifikationsserie. V1 använder "A"; arkitekturen tillåter fler. */
+  series: string;
   number: number;
+  /** Bokföringsdatum (styr period, momsperiod och räkenskapsår). */
   date: string;
   description: string;
   entries: VerificationEntry[];
   source: VerificationSource;
   confidence: "hog" | "medel" | "lag";
   createdBy: "auto" | "anvandare" | "assistent";
+  /** V1 bokförs verifikationer direkt (inga utkast). Fältet finns för arkitekturen. */
+  status: "bokford";
+  /** När verifikationen bokfördes (låstes). */
+  postedAt: string;
+  /** Räkenskapsår verifikationen hör till. */
+  fiscalYearId?: ID;
+  /** Denna verifikation rättar en tidigare. */
+  correctsVerificationId?: ID;
+  /** Denna verifikation har rättats av en senare. */
+  correctedByVerificationId?: ID;
+  /** Klarspråksförklaring: varför bokfördes det så här? */
+  explanation?: string;
   createdAt: string;
+}
+
+/* ------------------------- Räkenskapsår och perioder ------------------------- */
+
+export interface FiscalYear {
+  id: ID;
+  /** T.ex. "2026". */
+  label: string;
+  /** YYYY-MM-DD (inklusive). */
+  startDate: string;
+  /** YYYY-MM-DD (inklusive). */
+  endDate: string;
+  status: "oppet" | "stangt";
+  /**
+   * Ingående balanser per konto (kontonummer som nyckel).
+   * Positivt = debetsaldo, negativt = kreditsaldo. Summan är alltid 0.
+   */
+  openingBalances: Record<string, number>;
+  /** Varifrån IB kommer. */
+  openingSource: "migrering" | "foregaende_ar" | "manuell";
+  closedAt?: string;
+  /** Bokslutsverifikationer som skapades när året stängdes. */
+  closingVerificationIds?: ID[];
+}
+
+/* ----------------------------------- Moms ------------------------------------ */
+
+export interface VatBox {
+  /** Deklarationsruta, t.ex. "05", "10", "48", "49". */
+  code: string;
+  label: string;
+  amount: number;
+}
+
+export interface VatReport {
+  id: ID;
+  fiscalYearId: ID;
+  /** YYYY-MM-DD. */
+  periodStart: string;
+  periodEnd: string;
+  /** T.ex. "april–juni 2026". */
+  label: string;
+  status: "utkast" | "deklarerad";
+  boxes: VatBox[];
+  utgaende: number;
+  ingaende: number;
+  /** Positivt = att betala, negativt = att få tillbaka. */
+  attBetala: number;
+  generatedAt: string;
+  declaredAt?: string;
+  /** Omföringsverifikation till 2650 när rapporten markerats deklarerad. */
+  settleVerificationId?: ID;
+}
+
+/* -------------------------------- Inventarier -------------------------------- */
+
+export interface AssetDepreciation {
+  fiscalYearId: ID;
+  amount: number;
+  verificationId: ID;
+}
+
+export interface Asset {
+  id: ID;
+  name: string;
+  /** YYYY-MM-DD. */
+  acquisitionDate: string;
+  /** Anskaffningsvärde exkl. moms, hela kronor. */
+  acquisitionValue: number;
+  assetAccount: number;
+  depreciationAccount: number;
+  accumulatedDepreciationAccount: number;
+  usefulLifeYears: number;
+  status: "aktiv" | "fullt_avskriven" | "utrangerad";
+  sourceExpenseId?: ID;
+  acquisitionVerificationId?: ID;
+  depreciations: AssetDepreciation[];
+  createdAt: string;
+}
+
+/* ------------------------------ Periodiseringar ------------------------------ */
+
+export type AccrualKind =
+  | "forutbetald_kostnad"
+  | "upplupen_kostnad"
+  | "forutbetald_intakt"
+  | "upplupen_intakt";
+
+export interface Accrual {
+  id: ID;
+  kind: AccrualKind;
+  description: string;
+  /** Belopp exkl. moms som flyttas över bokslutet. */
+  amount: number;
+  /** Kostnads-/intäktskontot som justeras. */
+  counterAccount: number;
+  /** Interimskonto (1710/1790/2970/2990). */
+  balanceAccount: number;
+  /** Perioden underlaget avser (YYYY-MM-DD). */
+  fromDate: string;
+  toDate: string;
+  /** Räkenskapsåret där bokslutsposten bokförs. */
+  fiscalYearId: ID;
+  status: "planerad" | "bokford" | "aterford";
+  sourceType?: "utgift" | "leverantorsfaktura" | "kundfaktura";
+  sourceId?: ID;
+  bookVerificationId?: ID;
+  reverseVerificationId?: ID;
+  createdAt: string;
+}
+
+/* --------------------------------- Audit trail -------------------------------- */
+
+export type AuditAction =
+  | "verifikation_bokford"
+  | "verifikation_rattad"
+  | "period_last"
+  | "momsrapport_genererad"
+  | "momsrapport_deklarerad"
+  | "rakenskapsar_skapat"
+  | "rakenskapsar_stangt"
+  | "inventarie_registrerad"
+  | "avskrivning_bokford"
+  | "periodisering_planerad"
+  | "periodisering_bokford"
+  | "arsredovisning_genererad"
+  | "arsredovisning_status"
+  | "bokforing_angrad";
+
+export interface AuditEvent {
+  id: ID;
+  at: string;
+  actor: "anvandare" | "assistent" | "system";
+  action: AuditAction;
+  targetType?: string;
+  targetId?: ID;
+  details: string;
+}
+
+/* ------------------------------- Årsredovisning ------------------------------- */
+
+export interface ReportRow {
+  label: string;
+  amount: number;
+  /** Summeringsrad. */
+  bold?: boolean;
+  /** Notreferens. */
+  note?: number;
+}
+
+export interface AnnualReportContent {
+  companyName: string;
+  orgNumber: string;
+  fiscalLabel: string;
+  periodStart: string;
+  periodEnd: string;
+  forvaltningsberattelse: {
+    verksamhet: string;
+    vasentligaHandelser: string;
+    flerarsoversikt: { label: string; nettoomsattning: number; resultatEfterFinansiella: number; soliditetProcent: number }[];
+    resultatdisposition: { tillForfogande: number; balanserasINyRakning: number };
+  };
+  resultatrakning: ReportRow[];
+  balansrakningTillgangar: ReportRow[];
+  balansrakningEgetKapitalSkulder: ReportRow[];
+  noter: { title: string; body: string }[];
+}
+
+export interface AnnualReport {
+  id: ID;
+  fiscalYearId: ID;
+  /** Ingen riktig inlämning sker – "inlamnad_markerad" är en manuell markering med audit trail. */
+  status: "genererad" | "granskad" | "signerad" | "inlamnad_markerad";
+  content: AnnualReportContent;
+  generatedAt: string;
+  reviewedAt?: string;
+  signedAt?: string;
+  markedFiledAt?: string;
 }
 
 /* ---------------------------------- Aktivitet -------------------------------- */
@@ -362,6 +694,7 @@ export interface ActivityEvent {
   at: string;
   text: string;
   customerId?: ID;
+  createdBy?: "anvandare" | "assistent";
   entity?: {
     type: "offert" | "faktura" | "jobb" | "forfragan" | "utgift" | "verifikation" | "hemsida";
     id: ID;
@@ -452,7 +785,7 @@ export interface AssistantMessage {
 
 /** Vad assistenten ska fortsätta med efter att en saknad kund skapats. */
 export type ResumeAfterCustomer =
-  | { kind: "create_quote"; title?: string; amountInclVat?: number }
+  | { kind: "create_quote"; title?: string; amountInclVat?: number; rot?: "rot" | "rut" | null }
   | { kind: "create_job"; title: string; startDate?: string; description?: string }
   | { kind: "create_invoice"; title?: string; amountInclVat?: number; jobId?: ID };
 
@@ -464,7 +797,13 @@ export type PendingAssistantAction =
   | { id: ID; type: "skicka_offert"; quoteId: ID }
   | { id: ID; type: "skicka_faktura"; invoiceId: ID }
   | { id: ID; type: "publicera_hemsida" }
-  | { id: ID; type: "skapa_kund"; name: string; resume?: ResumeAfterCustomer };
+  | { id: ID; type: "skapa_kund"; name: string; resume?: ResumeAfterCustomer }
+  | { id: ID; type: "uppdatera_foretag"; patch: Record<string, string | number | null> }
+  | { id: ID; type: "kor_bokslut_automatik"; fiscalYearId: ID }
+  | { id: ID; type: "slutfor_bokslut"; fiscalYearId: ID }
+  | { id: ID; type: "angra_utgift"; expenseId: ID }
+  | { id: ID; type: "markera_moms_deklarerad"; reportId: ID }
+  | { id: ID; type: "skapa_tillaggsoffert"; customerId: ID; jobId: ID; title: string; amountInclVat: number };
 
 /** Internt verktygsaudit – visas inte i chatten. */
 export interface AssistantAuditEntry {
@@ -497,6 +836,15 @@ export interface DB {
   receipts: Receipt[];
   supplierInvoices: SupplierInvoice[];
   verifications: Verification[];
+  /** Räkenskapsår. Skapas automatiskt (kalenderår) av bokföringsmotorn. */
+  fiscalYears: FiscalYear[];
+  /** Bokföringsinställningar. lockedThrough: bokföringen är låst t.o.m. detta datum (YYYY-MM-DD). */
+  accounting: { lockedThrough?: string };
+  vatReports: VatReport[];
+  assets: Asset[];
+  accruals: Accrual[];
+  auditTrail: AuditEvent[];
+  annualReports: AnnualReport[];
   activity: ActivityEvent[];
   website: Website | null;
   assistantMessages: AssistantMessage[];

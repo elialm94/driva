@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { buttonClasses, Card, cx } from "./ui";
 import { docTotals } from "@/lib/calc";
@@ -10,6 +10,11 @@ import { createQuoteAction, updateQuoteAction, createInvoiceAction, updateInvoic
 import { useRouter } from "next/navigation";
 import { DateField } from "./date-field";
 import { addCustomerOption, CustomerPicker, type CustomerOption } from "./customer-picker";
+import { useUnsavedLeave } from "./unsaved-changes";
+import { hrefWithNav } from "@/lib/nav";
+import { taxReductionDeductionLabel } from "@/lib/tax-reduction-terms";
+import { TaxReductionFormPreview, TaxReductionInvoiceDisclaimer } from "./tax-reduction-terms";
+import { MissingTaxReductionAcceptanceCard } from "./denied-reduction-card";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -29,7 +34,15 @@ function formatDecimal(n: number): string {
   return Number.isFinite(n) ? String(n) : "0";
 }
 
-/** Text input that keeps an empty display while typing; numeric state is 0 until blur. */
+/** "02" → "2" when selection-replace failed; keep "0.5", "0,", "10". */
+function collapseLeadingZeros(raw: string): string {
+  return raw.replace(/^(-?)0+(\d)/, "$1$2");
+}
+
+/**
+ * Local string draft is the display source of truth while focused.
+ * Parent numeric 0 must not rewrite the input mid-edit (that produced "02").
+ */
 function DecimalInput({
   value,
   onValueChange,
@@ -43,11 +56,24 @@ function DecimalInput({
   allowNegative?: boolean;
   "aria-label"?: string;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
+  const [text, setText] = useState(() => formatDecimal(value));
+  const selectOnMouseUp = useRef(false);
   const pattern = allowNegative ? DECIMAL_PARTIAL : DECIMAL_PARTIAL_UNSIGNED;
+
+  useEffect(() => {
+    if (!focused) setText(formatDecimal(value));
+  }, [value, focused]);
 
   function clamp(n: number) {
     return allowNegative ? n : Math.max(0, n);
+  }
+
+  function commitText(raw: string) {
+    const next = collapseLeadingZeros(raw);
+    if (!pattern.test(next)) return;
+    setText(next);
+    onValueChange(clamp(parseDecimal(next)));
   }
 
   return (
@@ -55,20 +81,27 @@ function DecimalInput({
       type="text"
       inputMode="decimal"
       autoComplete="off"
+      spellCheck={false}
       aria-label={ariaLabel}
-      value={draft ?? formatDecimal(value)}
+      value={text}
       className={className}
-      onFocus={() => setDraft(formatDecimal(value))}
-      onChange={(e) => {
-        const raw = e.target.value;
-        if (!pattern.test(raw)) return;
-        setDraft(raw);
-        onValueChange(clamp(parseDecimal(raw)));
+      onFocus={(e) => {
+        setFocused(true);
+        selectOnMouseUp.current = true;
+        e.currentTarget.select();
       }}
+      onMouseUp={(e) => {
+        if (!selectOnMouseUp.current) return;
+        selectOnMouseUp.current = false;
+        e.preventDefault();
+        e.currentTarget.select();
+      }}
+      onChange={(e) => commitText(e.target.value)}
       onBlur={() => {
-        const next = clamp(parseDecimal(draft ?? formatDecimal(value)));
+        const next = clamp(parseDecimal(text));
         onValueChange(next);
-        setDraft(null);
+        setText(formatDecimal(next));
+        setFocused(false);
       }}
     />
   );
@@ -76,7 +109,7 @@ function DecimalInput({
 
 export type { CustomerOption };
 
-function newLine(kind: LineKind = "arbete"): DocLine {
+function newLine(kind: LineKind = "arbete", vatRate: VatRate = 25): DocLine {
   return {
     id: crypto.randomUUID(),
     kind,
@@ -84,11 +117,19 @@ function newLine(kind: LineKind = "arbete"): DocLine {
     qty: 1,
     unit: kind === "arbete" ? "tim" : "st",
     unitPrice: 0,
-    vatRate: 25,
+    vatRate,
   };
 }
 
-function LinesEditor({ lines, onChange }: { lines: DocLine[]; onChange: (lines: DocLine[]) => void }) {
+function LinesEditor({
+  lines,
+  onChange,
+  defaultVatRate = 25,
+}: {
+  lines: DocLine[];
+  onChange: (lines: DocLine[]) => void;
+  defaultVatRate?: VatRate;
+}) {
   function update(id: string, patch: Partial<DocLine>) {
     onChange(lines.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   }
@@ -146,6 +187,7 @@ function LinesEditor({ lines, onChange }: { lines: DocLine[]; onChange: (lines: 
             <option value={12}>12 %</option>
             <option value={6}>6 %</option>
             <option value={0}>0 %</option>
+            {/* V1: endast 0/6/12/25. Omvänd skattskyldighet, EU och export stöds inte. */}
           </select>
           <button
             type="button"
@@ -158,10 +200,10 @@ function LinesEditor({ lines, onChange }: { lines: DocLine[]; onChange: (lines: 
         </div>
       ))}
       <div className="flex gap-2 pt-1">
-        <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => onChange([...lines, newLine("arbete")])}>
+        <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => onChange([...lines, newLine("arbete", defaultVatRate)])}>
           <Plus className="size-3.5" /> Arbete
         </button>
-        <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => onChange([...lines, newLine("material")])}>
+        <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => onChange([...lines, newLine("material", defaultVatRate)])}>
           <Plus className="size-3.5" /> Material
         </button>
       </div>
@@ -169,7 +211,15 @@ function LinesEditor({ lines, onChange }: { lines: DocLine[]; onChange: (lines: 
   );
 }
 
-function TotalsPanel({ lines, rot }: { lines: DocLine[]; rot: RotRut | null }) {
+function TotalsPanel({
+  lines,
+  rot,
+  toPayLabel = "Att betala",
+}: {
+  lines: DocLine[];
+  rot: RotRut | null;
+  toPayLabel?: string;
+}) {
   const t = useMemo(
     () =>
       docTotals(
@@ -198,12 +248,12 @@ function TotalsPanel({ lines, rot }: { lines: DocLine[]; rot: RotRut | null }) {
       </div>
       {rot ? (
         <div className="flex justify-between text-accent-deep">
-          <span>{rot.type === "rot" ? "ROT-avdrag" : "RUT-avdrag"}</span>
+          <span>{taxReductionDeductionLabel(rot.type)}</span>
           <span className="tabular">−{kr(t.deduction)}</span>
         </div>
       ) : null}
       <div className="flex justify-between border-t border-line pt-2 text-[16px] font-semibold">
-        <span>Att betala</span>
+        <span>{toPayLabel}</span>
         <span className="tabular">{kr(t.toPay)}</span>
       </div>
     </div>
@@ -248,6 +298,9 @@ export function QuoteForm({
   quoteId,
   initial,
   defaults,
+  cancelHref,
+  returnTo,
+  returnLabel,
 }: {
   customers: CustomerOption[];
   defaultCustomerId?: string;
@@ -256,15 +309,19 @@ export function QuoteForm({
   /** Sätt vid redigering av befintlig offert. */
   quoteId?: string;
   initial?: QuoteFormInitial;
-  defaults: { paymentTermsDays: number; lateInterestRate: number; validUntil: string; terms: string };
+  defaults: { paymentTermsDays: number; lateInterestRate: number; validUntil: string; terms: string; defaultVatRate?: VatRate };
+  cancelHref: string;
+  returnTo?: string;
+  returnLabel?: string;
 }) {
   const router = useRouter();
   const [customerOptions, setCustomerOptions] = useState(customers);
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
   const [title, setTitle] = useState(initial?.title ?? "");
   const [intro, setIntro] = useState(initial?.intro ?? "");
+  const vat = defaults.defaultVatRate ?? 25;
   const [lines, setLines] = useState<DocLine[]>(
-    initial?.lines?.length ? initial.lines : [newLine("arbete"), newLine("material")]
+    initial?.lines?.length ? initial.lines : [newLine("arbete", vat), newLine("material", vat)]
   );
   const [rot, setRot] = useState<RotRut | null>(initial?.rot ?? null);
   const [plan, setPlan] = useState<PaymentPlanPart[]>(initial?.paymentPlan ?? PLAN_PRESETS[0].plan);
@@ -273,9 +330,16 @@ export function QuoteForm({
   const [validUntil, setValidUntil] = useState((initial?.validUntil ?? defaults.validUntil).slice(0, 10));
   const [terms, setTerms] = useState(initial?.terms ?? defaults.terms);
   const [isPending, startTransition] = useTransition();
+  const [saving, setSaving] = useState(false);
+
+  const snapshot = JSON.stringify({ customerId, title, intro, lines, rot, plan, termsDays, lateInterest, validUntil, terms });
+  const initialSnapshot = useRef(snapshot);
+  const dirty = snapshot !== initialSnapshot.current;
+  const { confirmLeave, dialog } = useUnsavedLeave(dirty && !saving);
 
   const planTotal = plan.reduce((s, p) => s + p.percent, 0);
   const valid = customerId && title.trim() && lines.length > 0 && planTotal === 100;
+  const nav = { returnTo, returnLabel };
 
   function submit() {
     if (!valid) return;
@@ -290,12 +354,13 @@ export function QuoteForm({
       validUntil: new Date(validUntil + "T12:00:00").toISOString(),
       terms,
     };
+    setSaving(true);
     startTransition(async () => {
       if (quoteId) {
         await updateQuoteAction(quoteId, payload);
-        router.push(`/pengar/offerter/${quoteId}`);
+        router.push(hrefWithNav(`/pengar/offerter/${quoteId}`, nav) as never);
       } else {
-        await createQuoteAction({ ...payload, customerId, requestId, jobId });
+        await createQuoteAction({ ...payload, customerId, requestId, jobId }, nav);
       }
     });
   }
@@ -343,7 +408,7 @@ export function QuoteForm({
 
         <Card className="p-6">
           <p className="mb-4 text-[15px] font-semibold">Prisrader</p>
-          <LinesEditor lines={lines} onChange={setLines} />
+          <LinesEditor lines={lines} onChange={setLines} defaultVatRate={vat} />
         </Card>
 
         <Card className="space-y-5 p-6">
@@ -370,6 +435,7 @@ export function QuoteForm({
                 </button>
               ))}
             </div>
+            {rot ? <TaxReductionFormPreview type={rot.type} /> : null}
           </div>
 
           <div>
@@ -441,6 +507,10 @@ export function QuoteForm({
           <div>
             <label className={labelCls}>Villkor</label>
             <textarea value={terms} onChange={(e) => setTerms(e.target.value)} rows={3} className={inputCls} />
+            <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
+              Egna villkor. ROT/RUT-villkor läggs till automatiskt när skattereduktion är vald och hamnar inte i det
+              här fältet.
+            </p>
           </div>
         </Card>
       </div>
@@ -452,10 +522,19 @@ export function QuoteForm({
           <button className={cx(buttonClasses("primary"), "mt-5 w-full")} disabled={!valid || isPending} onClick={submit}>
             {isPending ? "Sparar …" : quoteId ? "Spara ändringar" : "Spara utkast"}
           </button>
+          <button
+            type="button"
+            className={cx(buttonClasses("ghost"), "mt-2 w-full")}
+            disabled={isPending}
+            onClick={() => confirmLeave(cancelHref)}
+          >
+            Avbryt
+          </button>
           <p className="mt-3 text-center text-[12px] leading-relaxed text-muted">
             Inget skickas ännu – du granskar alltid exakt hur kunden ser offerten innan den går iväg.
           </p>
         </Card>
+        {dialog}
       </div>
     </div>
   );
@@ -466,51 +545,84 @@ export interface InvoiceFormInitial {
   rot: RotRut | null;
   dueInDays: number;
   lateInterestRate?: number;
+  serviceDate?: string;
 }
 
 export function InvoiceForm({
   customers,
   defaultCustomerId,
   defaultLateInterestRate = 10,
+  defaultPaymentTermsDays = 30,
+  defaultVatRate = 25,
   invoiceId,
   initial,
+  documentedTaxReductionAcceptance = false,
+  cancelHref,
+  returnTo,
+  returnLabel,
 }: {
   customers: CustomerOption[];
   defaultCustomerId?: string;
   defaultLateInterestRate?: number;
+  defaultPaymentTermsDays?: number;
+  defaultVatRate?: VatRate;
   /** Sätt vid redigering av befintligt utkast. */
   invoiceId?: string;
   initial?: InvoiceFormInitial;
+  documentedTaxReductionAcceptance?: boolean;
+  cancelHref: string;
+  returnTo?: string;
+  returnLabel?: string;
 }) {
   const [customerOptions, setCustomerOptions] = useState(customers);
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
-  const [lines, setLines] = useState<DocLine[]>(initial?.lines?.length ? initial.lines : [newLine("arbete")]);
+  const [lines, setLines] = useState<DocLine[]>(
+    initial?.lines?.length ? initial.lines : [newLine("arbete", defaultVatRate)]
+  );
   const [rot, setRot] = useState<RotRut | null>(initial?.rot ?? null);
-  const [dueDays, setDueDays] = useState(initial?.dueInDays ?? 30);
+  const [dueDays, setDueDays] = useState(initial?.dueInDays ?? defaultPaymentTermsDays);
   const [lateInterest, setLateInterest] = useState(initial?.lateInterestRate ?? defaultLateInterestRate);
+  const [serviceDate, setServiceDate] = useState((initial?.serviceDate ?? "").slice(0, 10));
   const [isPending, startTransition] = useTransition();
+  const [saving, setSaving] = useState(false);
+
+  const snapshot = JSON.stringify({ customerId, lines, rot, dueDays, lateInterest, serviceDate });
+  const initialSnapshot = useRef(snapshot);
+  const dirty = snapshot !== initialSnapshot.current;
+  const { confirmLeave, dialog } = useUnsavedLeave(dirty && !saving);
 
   const valid = customerId && lines.length > 0 && lines.every((l) => l.description.trim());
+  const nav = { returnTo, returnLabel };
 
   function submit() {
     if (!valid) return;
+    setSaving(true);
     startTransition(async () => {
       if (invoiceId) {
-        await updateInvoiceAction(invoiceId, {
-          lines,
-          rot,
-          dueInDays: dueDays,
-          lateInterestRate: lateInterest,
-        });
+        await updateInvoiceAction(
+          invoiceId,
+          {
+            lines,
+            rot,
+            dueInDays: dueDays,
+            lateInterestRate: lateInterest,
+            serviceDate: serviceDate || null,
+          },
+          nav
+        );
       } else {
-        await createInvoiceAction({
-          customerId,
-          type: "faktura",
-          lines,
-          rot,
-          dueInDays: dueDays,
-          lateInterestRate: lateInterest,
-        });
+        await createInvoiceAction(
+          {
+            customerId,
+            type: "faktura",
+            lines,
+            rot,
+            dueInDays: dueDays,
+            lateInterestRate: lateInterest,
+            serviceDate: serviceDate || undefined,
+          },
+          nav
+        );
       }
     });
   }
@@ -556,11 +668,16 @@ export function InvoiceForm({
                 />
               </div>
             </div>
+            <div>
+              <label className={labelCls}>Utförandedatum (valfritt)</label>
+              <DateField value={serviceDate} onChange={setServiceDate} className={inputCls} />
+              <p className="mt-1 text-[12px] text-muted">Visas på fakturan om det skiljer sig från fakturadatum.</p>
+            </div>
           </div>
         </Card>
         <Card className="p-6">
           <p className="mb-4 text-[15px] font-semibold">Fakturarader</p>
-          <LinesEditor lines={lines} onChange={setLines} />
+          <LinesEditor lines={lines} onChange={setLines} defaultVatRate={defaultVatRate} />
           <div className="mt-5">
             <label className={labelCls}>Skattereduktion</label>
             <div className="flex flex-wrap gap-1.5">
@@ -584,22 +701,37 @@ export function InvoiceForm({
                 </button>
               ))}
             </div>
+            {rot ? (
+              <div className="mt-3">
+                <TaxReductionInvoiceDisclaimer />
+                {!documentedTaxReductionAcceptance ? <div className="mt-3"><MissingTaxReductionAcceptanceCard /></div> : null}
+              </div>
+            ) : null}
           </div>
         </Card>
       </div>
       <div className="lg:sticky lg:top-8 lg:self-start">
         <Card className="p-5">
           <p className="mb-3 text-[15px] font-semibold">Summering</p>
-          <TotalsPanel lines={lines} rot={rot} />
+          <TotalsPanel lines={lines} rot={rot} toPayLabel="Att betala nu" />
           <button className={cx(buttonClasses("primary"), "mt-5 w-full")} disabled={!valid || isPending} onClick={submit}>
             {isPending ? "Sparar …" : invoiceId ? "Spara ändringar" : "Spara utkast"}
           </button>
+          <button
+            type="button"
+            className={cx(buttonClasses("ghost"), "mt-2 w-full")}
+            disabled={isPending}
+            onClick={() => confirmLeave(cancelHref)}
+          >
+            Avbryt
+          </button>
           <p className="mt-3 text-center text-[12px] leading-relaxed text-muted">
             {invoiceId
-              ? "Nummer, OCR och koppling till offert är oförändrade. Kunden ser inget förrän du skickar."
-              : "Du förhandsgranskar fakturan exakt som kunden ser den innan den skickas."}
+              ? "Nummer tilldelas när du skickar. Koppling till offert är oförändrad."
+              : "Utkastet får inget löpnummer förrän du skickar."}
           </p>
         </Card>
+        {dialog}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, FileLock2, ShieldCheck } from "lucide-react";
+import { FileLock2, ShieldCheck } from "lucide-react";
+import { BackAnchor } from "@/components/back-link";
 import { db } from "@/lib/store";
 import { getQuoteByToken, quoteSignature } from "@/lib/services/data";
 import { quoteVersionHash } from "@/lib/hash";
@@ -34,15 +34,19 @@ export default async function SigningEvidencePage(props: PageProps<"/offert/[tok
     { label: "Hash vid kontroll nu", value: recomputed, mono: true },
   ];
 
+  if (version.taxReductionTerms) {
+    rows.splice(5, 0,
+      { label: "ROT/RUT", value: version.taxReductionTerms.type === "rot" ? "ROT" : "RUT" },
+      { label: "ROT/RUT-villkor", value: `Version ${version.taxReductionTerms.version}` },
+    );
+  }
+
   return (
     <div className="min-h-dvh bg-canvas">
       <main className="mx-auto max-w-2xl px-5 py-10">
-        <Link
-          href={`/offert/${quote.token}` as never}
-          className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink"
-        >
-          <ArrowLeft className="size-4" /> Tillbaka till offerten
-        </Link>
+        <div className="mb-6">
+          <BackAnchor href={`/offert/${quote.token}`} label={`Offert #${quote.number}`} />
+        </div>
 
         <div className="overflow-hidden rounded-3xl border border-line bg-card shadow-card">
           <div className="border-b border-line bg-bankid-soft/50 px-7 py-6">
@@ -79,6 +83,16 @@ export default async function SigningEvidencePage(props: PageProps<"/offert/[tok
                 </div>
               ))}
             </dl>
+
+            {version.taxReductionTerms ? (
+              <div className="mt-5 rounded-2xl border border-line bg-canvas/50 px-4 py-3.5">
+                <p className="text-[13px] font-semibold text-ink">{version.taxReductionTerms.heading}</p>
+                <p className="mt-1 text-[13px] leading-relaxed text-soft">{version.taxReductionTerms.body}</p>
+                <p className="mt-2 text-[12px] text-muted">
+                  Den här texten ingick i den signerade versionen och ingår i dokument-hashen.
+                </p>
+              </div>
+            ) : null}
 
             <div className="mt-5 rounded-2xl bg-canvas/70 px-4 py-3.5 text-[13px] leading-relaxed text-soft">
               <p className="font-medium text-ink">Så fungerar verifieringen</p>

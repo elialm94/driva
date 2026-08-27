@@ -30,8 +30,13 @@ import {
 } from "../services/data";
 import { attentionItems, remainingToInvoiceForJob } from "../services/attention";
 import { businessStats, financeOverview, momsForCurrentPeriod } from "../services/finance";
-import { answerExpenseQuestion, bookExpenseToJob } from "../services/expenses";
-import { generateWebsite, publishWebsite } from "../services/website";
+import {
+  applyBusinessProfilePatch,
+  billingReadiness,
+  getBusinessProfile,
+  getInvoiceDefaults,
+  SETTINGS_FIELD_LABELS,
+} from "../services/settings";
 
 export type DomainResult = {
   text: string;
@@ -97,7 +102,8 @@ export function ambiguousCustomers(query: string, customers: Customer[]): Domain
 }
 
 export function laborLine(description: string, amountInclVat: number) {
-  const exkl = Math.round(amountInclVat / 1.25);
+  const vat = (db().settings.defaultVatRate ?? 25) as 0 | 6 | 12 | 25;
+  const exkl = Math.round(amountInclVat / (1 + vat / 100));
   return {
     id: uid(),
     kind: "arbete" as const,
@@ -105,7 +111,7 @@ export function laborLine(description: string, amountInclVat: number) {
     qty: 1,
     unit: "st",
     unitPrice: exkl,
-    vatRate: 25 as const,
+    vatRate: vat,
   };
 }
 
@@ -114,19 +120,29 @@ export function createQuoteDraft(input: {
   title: string;
   amountInclVat?: number;
   intro?: string;
+  percentAtStart?: number;
+  rot?: "rot" | "rut" | null;
 }): DomainResult {
   const customer = requireCustomer(input.customerId);
   const defaults = quoteDefaults();
   const title = input.title.trim() || "Offererat arbete";
+  const percent = input.percentAtStart && input.percentAtStart > 0 && input.percentAtStart < 100 ? input.percentAtStart : undefined;
+  const rot = input.rot === "rot" || input.rot === "rut" ? { type: input.rot } : null;
   const quote = createQuote(
     {
       customerId: customer.id,
       title,
       intro: input.intro ?? `${title} enligt överenskommelse.`,
       lines: [laborLine(title, input.amountInclVat ?? 0)],
-      rot: null,
-      paymentPlan: [{ label: "Betalning när arbetet är klart", percent: 100 }],
+      rot,
+      paymentPlan: percent
+        ? [
+            { label: "Vid arbetets start", percent },
+            { label: "När arbetet är klart och godkänt", percent: 100 - percent },
+          ]
+        : [{ label: "Betalning när arbetet är klart", percent: 100 }],
       paymentTermsDays: defaults.paymentTermsDays,
+      lateInterestRate: defaults.lateInterestRate,
       validUntil: defaults.validUntil,
       terms: defaults.terms,
     },
@@ -135,14 +151,16 @@ export function createQuoteDraft(input: {
   const t = quoteTotals(quote);
   return {
     ok: true,
-    text: `Klart – utkast till offert #${quote.number} för ${customer.name} på ${kr(t.total)} inkl. moms. Den är inte skickad.`,
+    text: `Klart – utkast till offert #${quote.number} för ${customer.name} på ${kr(t.total)} inkl. moms${
+      rot ? ` med preliminärt ${rot.type.toUpperCase()}-avdrag` : ""
+    }${percent ? ` med delbetalning ${percent} % vid start` : ""}. Den är inte skickad.`,
     card: entityCard(
       "offert",
       `Offert #${quote.number} · ${title}`,
       `/pengar/offerter/${quote.id}`,
       `${customer.name} · ${kr(t.total)} inkl. moms · utkast`
     ),
-    forModel: { quoteId: quote.id, number: quote.number, status: quote.status, totalIncl: t.total, sent: false },
+    forModel: { quoteId: quote.id, number: quote.number, status: quote.status, totalIncl: t.total, sent: false, rot: rot?.type ?? null },
   };
 }
 
@@ -183,18 +201,18 @@ export function createInvoiceDraft(input: {
     lines: [laborLine(title, input.amountInclVat ?? 0)],
     rot: null,
   };
-  const invoice = createInvoice(payload);
+  const invoice = createInvoice(payload, "assistent");
   const t = invoiceTotals(invoice);
   return {
     ok: true,
-    text: `Klart – utkast till faktura #${invoice.number} för ${customer.name} på ${kr(t.toPay)}. Den är inte skickad.`,
+    text: `Klart – utkast till faktura för ${customer.name} på ${kr(t.toPay)}. Den har inget löpnummer än och är inte skickad.`,
     card: entityCard(
       "faktura",
-      `Faktura #${invoice.number}`,
+      "Fakturautkast",
       `/pengar/fakturor/${invoice.id}`,
       `${customer.name} · ${kr(t.toPay)} · utkast`
     ),
-    forModel: { invoiceId: invoice.id, number: invoice.number, status: invoice.status, sent: false },
+    forModel: { invoiceId: invoice.id, number: null, status: invoice.status, sent: false },
   };
 }
 
@@ -209,19 +227,19 @@ export function createFinalInvoiceDraft(jobId: string): DomainResult {
       forModel: { error: "nothing_to_invoice", jobId },
     };
   }
-  const invoice = createFinalInvoiceForJob(jobId);
+  const invoice = createFinalInvoiceForJob(jobId, "assistent");
   const customer = requireCustomer(job.customerId);
   const t = invoiceTotals(invoice);
   return {
     ok: true,
-    text: `Klart – utkast till slutfaktura #${invoice.number} för ${job.title} på ${kr(t.toPay)}. Den är inte skickad.`,
+    text: `Klart – utkast till slutfaktura för ${job.title} på ${kr(t.toPay)}. Den har inget löpnummer än och är inte skickad.`,
     card: entityCard(
       "faktura",
-      `Slutfaktura #${invoice.number}`,
+      "Slutfaktura (utkast)",
       `/pengar/fakturor/${invoice.id}`,
       `${customer.name} · ${kr(t.toPay)} · utkast`
     ),
-    forModel: { invoiceId: invoice.id, number: invoice.number, status: invoice.status, sent: false },
+    forModel: { invoiceId: invoice.id, number: null, status: invoice.status, sent: false },
   };
 }
 
@@ -240,18 +258,22 @@ export function proposeInvoiceForCustomer(customerId: string): DomainResult {
   }
   if (rows.length === 1) {
     const { job, remaining } = rows[0];
-    const invoice = createFinalInvoiceForJob(job.id);
+    const invoice = createFinalInvoiceForJob(job.id, "assistent");
     const t = invoiceTotals(invoice);
+    const notes = job.notes.trim();
+    const extraAsk = notes
+      ? ` I anteckningarna står: “${notes.length > 180 ? notes.slice(0, 177) + "…" : notes}”. Ska extraarbete läggas till? Vilket belopp? Jag hittar inte på pris.`
+      : "";
     return {
       ok: true,
-      text: `Jag skapade ett utkast till slutfaktura för ${job.title} (${kr(remaining)} kvar). Den är inte skickad.`,
+      text: `Jag skapade ett utkast till slutfaktura för ${job.title} (${kr(remaining)} kvar). Den har inget löpnummer än och är inte skickad.${extraAsk}`,
       card: entityCard(
         "faktura",
-        `Slutfaktura #${invoice.number}`,
+        "Slutfaktura (utkast)",
         `/pengar/fakturor/${invoice.id}`,
         `${customer.name} · ${kr(t.toPay)} · utkast`
       ),
-      forModel: { invoiceId: invoice.id, jobId: job.id, remaining, sent: false },
+      forModel: { invoiceId: invoice.id, jobId: job.id, remaining, sent: false, notes: notes || null },
     };
   }
   return {
@@ -267,8 +289,62 @@ export function proposeInvoiceForCustomer(customerId: string): DomainResult {
       })),
     },
     forModel: {
-      jobs: rows.map(({ job, remaining }) => ({ jobId: job.id, title: job.title, remaining })),
+      jobs: rows.map(({ job, remaining }) => ({ jobId: job.id, title: job.title, remaining, notes: job.notes.trim() || null })),
     },
+  };
+}
+
+/** Läs uppdragsanteckningar och fråga om extraarbete – hitta aldrig på pris. */
+export function proposeExtraFromNotes(customerId: string, amountInclVat?: number): DomainResult {
+  const customer = requireCustomer(customerId);
+  const jobs = db()
+    .jobs.filter((j) => j.customerId === customerId)
+    .filter((j) => j.notes.trim());
+  if (jobs.length === 0) {
+    return {
+      ok: true,
+      text: `${customer.name} har inga uppdragsanteckningar om extraarbete. Jag hittar inte på något belopp.`,
+      forModel: { customerId, notes: false },
+    };
+  }
+  const job = jobs.length === 1 ? jobs[0] : jobs.find((j) => j.status !== "klart") ?? jobs[0];
+  const note = job.notes.trim();
+  if (amountInclVat == null || !(amountInclVat > 0)) {
+    return {
+      ok: true,
+      text: `I anteckningarna på ${job.title} står: “${note}”. Ska det faktureras som extraarbete? Vilket belopp ska det vara? Jag hittar inte på pris.`,
+      card: {
+        kind: "list",
+        title: "Anteckning",
+        rows: [{ label: job.title, value: note, href: `/uppdrag/${job.id}` }],
+      },
+      forModel: { jobId: job.id, notes: note, needsAmount: true, remainingToInvoice: remainingToInvoiceForJob(job.id) },
+    };
+  }
+  const action: PendingAssistantAction = {
+    id: uid(),
+    type: "skapa_tillaggsoffert",
+    customerId,
+    jobId: job.id,
+    title: `Tillägg – ${job.title}`,
+    amountInclVat,
+  };
+  addPending(action);
+  return {
+    ok: true,
+    text: `Ska jag skapa en tilläggsoffert för extraarbetet på ${job.title}? Beloppet är det du angav – jag hittar inte på pris. Den skickas inte förrän du bekräftar.`,
+    card: {
+      kind: "confirm",
+      actionId: action.id,
+      summary: "Tilläggsoffert som utkast, utifrån uppdragsanteckningen. Inte en slutfaktura från den godkända offerten.",
+      rows: [
+        { label: job.title, value: kr(amountInclVat) },
+        { label: "Anteckning", value: note.length > 120 ? note.slice(0, 117) + "…" : note },
+      ],
+      confirmLabel: "Skapa tilläggsoffert",
+      state: "vantar",
+    },
+    forModel: { pendingConfirmation: true, jobId: job.id, amountInclVat, sent: false },
   };
 }
 
@@ -303,22 +379,40 @@ export function requestSendQuote(quoteId: string): DomainResult {
 export function requestSendInvoice(invoiceId: string): DomainResult {
   const invoice = getInvoice(invoiceId);
   if (!invoice) return fail("Fakturan finns inte.");
-  if (invoice.status !== "utkast") {
-    return fail(`Faktura #${invoice.number} är redan ${invoice.status} och skickas inte igen.`);
-  }
   const customer = requireCustomer(invoice.customerId);
   const t = invoiceTotals(invoice);
+  const label = invoice.number == null ? "fakturautkastet" : `faktura #${invoice.number}`;
+  if (invoice.status !== "utkast") {
+    const action: PendingAssistantAction = { id: uid(), type: "skicka_faktura", invoiceId };
+    addPending(action);
+    return {
+      ok: true,
+      text: `${label} är redan utfärdad. Ska jag skicka den igen till ${customer.name}? Samma nummer behålls.`,
+      card: {
+        kind: "confirm",
+        actionId: action.id,
+        summary: "Samma fakturanummer skickas igen. Inget nytt nummer tilldelas.",
+        rows: [
+          { label: invoice.number == null ? "Fakturautkast" : `Faktura #${invoice.number}`, value: kr(t.toPay) },
+          { label: "Till", value: customer.name },
+        ],
+        confirmLabel: "Skicka igen",
+        state: "vantar",
+      },
+      forModel: { pendingConfirmation: true, invoiceId, number: invoice.number, resent: true },
+    };
+  }
   const action: PendingAssistantAction = { id: uid(), type: "skicka_faktura", invoiceId };
   addPending(action);
   return {
     ok: true,
-    text: `Ska jag skicka faktura #${invoice.number} till ${customer.name}? Den går inte iväg förrän du bekräftar.`,
+    text: `Ska jag skicka ${label} till ${customer.name}? Löpnummer tilldelas vid utfärdandet, och den går inte iväg förrän du bekräftar.`,
     card: {
       kind: "confirm",
       actionId: action.id,
-      summary: "Fakturan skickas till kunden och bokförs.",
+      summary: "Fakturan utfärdas (får nummer), skickas till kunden och bokförs.",
       rows: [
-        { label: `Faktura #${invoice.number}`, value: kr(t.toPay) },
+        { label: invoice.number == null ? "Fakturautkast" : `Faktura #${invoice.number}`, value: kr(t.toPay) },
         { label: "Till", value: customer.name },
       ],
       confirmLabel: "Skicka faktura",
@@ -621,6 +715,7 @@ export function compactJob(j: Job) {
     customerName: customer?.name,
     startDate: j.startDate,
     remainingToInvoice: remainingToInvoiceForJob(j.id),
+    notes: j.notes.trim() || null,
   };
 }
 
@@ -635,6 +730,7 @@ export function compactQuote(q: Quote) {
     title: currentVersion(q).title,
     total: t.total,
     toPay: t.toPay,
+    rot: currentVersion(q).rot?.type ?? null,
   };
 }
 
@@ -658,6 +754,82 @@ export function bankIdRefuseResult(): DomainResult {
     text: "Jag kan inte godkänna offerter. Det kan bara kunden göra med BankID på offertlänken. Vill du att jag skickar en påminnelse i stället?",
     forModel: { refused: "bankid_approval" },
   };
+}
+
+export function businessProfileResult(): DomainResult {
+  const s = getBusinessProfile();
+  const d = getInvoiceDefaults();
+  const ready = billingReadiness(s);
+  return {
+    ok: true,
+    text: `${s.name} har org.nr ${s.orgNumber || "saknas"} och momsreg.nr ${s.vatNumber || "saknas"}. ${ready.ready ? "Fakturering är redo." : `${ready.missingCount} uppgifter saknas för att kunna fakturera.`}`,
+    card: {
+      kind: "list",
+      title: "Företagsuppgifter",
+      rows: [
+        { label: "Företag", value: s.name },
+        { label: "Org.nr", value: s.orgNumber || "–" },
+        { label: "Momsreg.nr", value: s.vatNumber || "–" },
+        { label: "Adress", value: [s.address, s.postalCode, s.city].filter(Boolean).join(", ") || "–" },
+        { label: "E-post", value: s.email || "–" },
+        { label: "Telefon", value: s.phone || "–" },
+        { label: "Bankgiro", value: s.bankgiro || "–" },
+        { label: "Betalningsvillkor", value: `${d.paymentTermsDays} dagar` },
+        { label: "Dröjsmålsränta", value: `${d.lateInterestRate} %` },
+      ],
+      links: [{ label: "Öppna Inställningar", href: "/installningar" }],
+    },
+    forModel: {
+      name: s.name,
+      orgNumber: s.orgNumber,
+      vatNumber: s.vatNumber,
+      email: s.email,
+      phone: s.phone,
+      address: s.address,
+      postalCode: s.postalCode,
+      city: s.city,
+      bankgiro: s.bankgiro,
+      readyToInvoice: ready.ready,
+    },
+  };
+}
+
+export function requestUpdateBusinessProfile(patch: Record<string, string | number | null>): DomainResult {
+  const keys = Object.keys(patch).filter((k) => k in SETTINGS_FIELD_LABELS && patch[k] !== undefined);
+  if (keys.length === 0) return fail("Inget att ändra. Säg vad som ska uppdateras, till exempel bankgiro.");
+  const current = getBusinessProfile();
+  const defaults = getInvoiceDefaults();
+  const currentMap: Record<string, string | number | undefined> = {
+    ...current,
+    ...defaults,
+  };
+  const rows = keys.map((key) => ({
+    label: SETTINGS_FIELD_LABELS[key] ?? key,
+    value: `${fmt(currentMap[key])} → ${fmt(patch[key])}`,
+  }));
+  const action: PendingAssistantAction = { id: uid(), type: "uppdatera_foretag", patch };
+  addPending(action);
+  const sensitive = keys.some((k) => ["bankgiro", "plusgiro", "iban", "bic", "bankAccount", "orgNumber", "vatNumber"].includes(k));
+  return {
+    ok: true,
+    text: sensitive
+      ? "Det här ändrar betalnings- eller bolagsuppgifter. Bekräfta så sparar jag det i Inställningar. Utfärdade fakturor ändras inte."
+      : "Så här blir ändringen i Inställningar. Bekräfta så sparar jag. Utfärdade fakturor och signerade offerter ändras inte.",
+    card: {
+      kind: "confirm",
+      actionId: action.id,
+      summary: rows.map((r) => `${r.label}: ${r.value}`).join(" · "),
+      rows,
+      confirmLabel: "Bekräfta",
+      state: "vantar",
+    },
+    forModel: { pendingConfirmation: true, fields: keys },
+  };
+}
+
+function fmt(value: string | number | null | undefined): string {
+  if (value == null || value === "") return "–";
+  return String(value);
 }
 
 function fail(text: string): DomainResult {

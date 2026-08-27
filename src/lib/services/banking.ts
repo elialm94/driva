@@ -6,6 +6,7 @@ import { markInvoicePaid } from "./invoices";
 import { entriesSupplierInvoicePaid } from "../bas";
 import { kr } from "../format";
 import { logActivity } from "./activity";
+import { postVerification } from "../accounting/engine";
 
 /**
  * Open Banking-abstraktion.
@@ -89,20 +90,16 @@ export function paySupplierInvoice(supplierInvoiceId: string): void {
     matchedType: "leverantorsfaktura",
     matchedId: sup.id,
   };
-  const ver = {
-    id: uid(),
-    series: "A" as const,
-    number: data.sequences.verification++,
+  const ver = postVerification({
     date: now,
     description: `Betalning ${sup.supplier} ${sup.invoiceNumber}`,
     entries: entriesSupplierInvoicePaid(sup.amount),
-    source: { type: "leverantorsfaktura" as const, id: sup.id },
-    confidence: "hog" as const,
-    createdBy: "auto" as const,
-    createdAt: now,
-  };
+    source: { type: "leverantorsfaktura", id: sup.id },
+    confidence: "hog",
+    createdBy: "auto",
+    explanation: `Betalningen drogs från företagskontot och leverantörsskulden till ${sup.supplier} bockades av. Kostnaden och momsen bokfördes redan när fakturan togs emot.`,
+  });
   tx.verificationId = ver.id;
-  data.verifications.push(ver);
   data.bankTransactions.unshift(tx);
   data.bankAccounts[0].balance -= sup.amount;
   sup.status = "betald";
@@ -110,11 +107,4 @@ export function paySupplierInvoice(supplierInvoiceId: string): void {
   sup.paymentVerificationId = ver.id;
   logActivity(`${sup.supplier} ${sup.invoiceNumber} betalades (${kr(sup.amount)}) och bokfördes.`);
   save();
-}
-
-/** Bankavstämning: allt utom det som behöver åtgärd är avstämt. */
-export function reconciliationStatus() {
-  const txs = db().bankTransactions;
-  const needsAction = txs.filter((t) => t.status === "behover_atgard" || t.status === "ny").length;
-  return { total: txs.length, needsAction, reconciled: txs.length - needsAction };
 }

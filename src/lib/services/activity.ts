@@ -4,7 +4,7 @@ import type { ActivityEvent } from "../types";
 
 export function logActivity(
   text: string,
-  opts: { customerId?: string; entity?: ActivityEvent["entity"] } = {}
+  opts: { customerId?: string; entity?: ActivityEvent["entity"]; createdBy?: ActivityEvent["createdBy"] } = {}
 ): void {
   db().activity.unshift({
     id: uid(),
@@ -12,6 +12,7 @@ export function logActivity(
     text,
     customerId: opts.customerId,
     entity: opts.entity,
+    createdBy: opts.createdBy,
   });
 }
 

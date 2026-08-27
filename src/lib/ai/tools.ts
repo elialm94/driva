@@ -10,6 +10,8 @@ import {
   compactJob,
   compactQuote,
   companyStatusResult,
+  businessProfileResult,
+  requestUpdateBusinessProfile,
   createCustomerDirect,
   createFinalInvoiceDraft,
   createInvoiceDraft,
@@ -19,6 +21,7 @@ import {
   momsResult,
   offerCreateCustomer,
   proposeInvoiceForCustomer,
+  proposeExtraFromNotes,
   requestBookExpense,
   requestFollowUpQuotes,
   requestGenerateWebsite,
@@ -28,11 +31,24 @@ import {
   requestSendQuote,
   spendingRoomResult,
   todayAttentionResult,
+  unpaidInvoicesResult,
   type DomainResult,
 } from "./domain";
 import { currentVersion, getCustomer, getInvoice, getJob, getQuote, isOverdue } from "../services/data";
 import { answerExpenseQuestion } from "../services/expenses";
 import { setJobStatus } from "../services/jobs";
+import {
+  balansRapportResult,
+  bokforingStatusResult,
+  bokslutStatusResult,
+  forklaraVerifikationResult,
+  momsRapportResult,
+  requestCloseFiscalYear,
+  requestMarkVatDeclared,
+  requestRunBokslutAutomation,
+  requestUndoExpense,
+  resultatRapportResult,
+} from "./accounting-domain";
 
 export type ToolResult = {
   ok: boolean;
@@ -187,7 +203,7 @@ const specs: ToolSpec[] = [
       type: "function",
       function: {
         name: "get_assignment",
-        description: "Hämta ett uppdrag (get job) via id.",
+        description: "Hämta ett uppdrag (get job) via id. Inkluderar anteckningar som kontext – hitta inte på pris för extraarbete.",
         parameters: obj({ jobId: { type: "string" } }, ["jobId"]),
       },
     },
@@ -296,6 +312,18 @@ const specs: ToolSpec[] = [
     def: {
       type: "function",
       function: {
+        name: "list_unpaid_invoices",
+        description: "Kunder/fakturor som väntar på betalning (unpaid invoices, status skickad).",
+        parameters: obj({}),
+      },
+    },
+    handler: () => fromDomain(unpaidInvoicesResult()),
+  },
+  {
+    requiresConfirmation: false,
+    def: {
+      type: "function",
+      function: {
         name: "list_overdue_invoices",
         description: "Lista försenade fakturor (overdue invoices).",
         parameters: obj({}),
@@ -329,6 +357,60 @@ const specs: ToolSpec[] = [
       },
     },
     handler: () => fromDomain(companyStatusResult()),
+  },
+  {
+    requiresConfirmation: false,
+    def: {
+      type: "function",
+      function: {
+        name: "get_business_profile",
+        description:
+          "Läs företagsuppgifter och standardval (org.nr, momsreg.nr, adress, bankgiro, betalningsvillkor). Ändrar ingenting.",
+        parameters: obj({}),
+      },
+    },
+    handler: () => fromDomain(businessProfileResult()),
+  },
+  {
+    requiresConfirmation: true,
+    def: {
+      type: "function",
+      function: {
+        name: "update_business_profile",
+        description:
+          "Be om bekräftelse att ändra företagsuppgifter eller betalningsuppgifter. Sparar inte själv. Använd samma fältnamn som i Inställningar, t.ex. bankgiro, orgNumber, vatNumber, address.",
+        parameters: obj({
+          name: { type: "string" },
+          orgNumber: { type: "string" },
+          vatNumber: { type: "string" },
+          email: { type: "string" },
+          phone: { type: "string" },
+          websiteUrl: { type: "string" },
+          address: { type: "string" },
+          postalCode: { type: "string" },
+          city: { type: "string" },
+          sate: { type: "string" },
+          country: { type: "string" },
+          bankgiro: { type: "string" },
+          plusgiro: { type: "string" },
+          bankAccount: { type: "string" },
+          iban: { type: "string" },
+          bic: { type: "string" },
+          paymentTermsDays: { type: "number" },
+          lateInterestRate: { type: "number" },
+          quoteValidityDays: { type: "number" },
+          defaultVatRate: { type: "number" },
+        }),
+      },
+    },
+    handler: (args) => {
+      const patch: Record<string, string | number | null> = {};
+      for (const [key, value] of Object.entries(args)) {
+        if (value == null || value === "") continue;
+        if (typeof value === "string" || typeof value === "number") patch[key] = value;
+      }
+      return fromDomain(requestUpdateBusinessProfile(patch), true);
+    },
   },
   {
     requiresConfirmation: false,
@@ -464,13 +546,16 @@ const specs: ToolSpec[] = [
       type: "function",
       function: {
         name: "create_quote",
-        description: "Skapa offertutkast (create quote draft). Skickas inte. amountInclVat i kronor inkl. moms.",
+        description:
+          "Skapa offertutkast (create quote draft). Skickas inte. amountInclVat i kronor inkl. moms. ROT/RUT-villkor läggs till av offerttjänsten – skriv inte egna villkor.",
         parameters: obj(
           {
             customerName: { type: "string" },
             customerId: { type: "string" },
             title: { type: "string" },
             amountInclVat: { type: "number" },
+            percentAtStart: { type: "number", description: "Andel i procent som betalas vid start" },
+            taxReduction: { type: "string", enum: ["rot", "rut"], description: "Sätt rot eller rut. Villkorstexten läggs till automatiskt." },
           },
           ["title"]
         ),
@@ -479,15 +564,17 @@ const specs: ToolSpec[] = [
     handler: (args) => {
       const title = str(args, "title") ?? "Offererat arbete";
       const amount = num(args, "amountInclVat");
+      const taxReduction = str(args, "taxReduction");
+      const rot = taxReduction === "rot" || taxReduction === "rut" ? taxReduction : null;
       let customerId = str(args, "customerId");
       const name = str(args, "customerName");
       if (!customerId && name) {
-        const resolved = resolveOrAsk(name, { kind: "create_quote", title, amountInclVat: amount });
+        const resolved = resolveOrAsk(name, { kind: "create_quote", title, amountInclVat: amount, rot });
         if (!("customer" in resolved)) return resolved;
         customerId = resolved.customer.id;
       }
       if (!customerId) return { ok: false, forModel: {}, error: "customerName eller customerId krävs" };
-      return fromDomain(createQuoteDraft({ customerId, title, amountInclVat: amount }));
+      return fromDomain(createQuoteDraft({ customerId, title, amountInclVat: amount, percentAtStart: num(args, "percentAtStart"), rot }));
     },
   },
   {
@@ -565,6 +652,34 @@ const specs: ToolSpec[] = [
       } catch (e) {
         return { ok: false, forModel: {}, error: e instanceof Error ? e.message : "Kunde inte fakturera. Inget sparades." };
       }
+    },
+  },
+  {
+    requiresConfirmation: false,
+    def: {
+      type: "function",
+      function: {
+        name: "propose_extra_from_notes",
+        description:
+          "Läs uppdragsanteckningar och fråga om extraarbete. Hitta ALDRIG på pris. Utan amountInclVat: visa anteckningen och fråga. Med belopp: bekräftelsekort för tilläggsoffert (utkast, skickas inte).",
+        parameters: obj({
+          customerName: { type: "string" },
+          customerId: { type: "string" },
+          amountInclVat: { type: "number", description: "Endast om användaren angett belopp. Hitta inte på pris." },
+        }),
+      },
+    },
+    handler: (args) => {
+      let customerId = str(args, "customerId");
+      const name = str(args, "customerName");
+      const amount = num(args, "amountInclVat");
+      if (!customerId && name) {
+        const resolved = resolveOrAsk(name);
+        if (!("customer" in resolved)) return resolved;
+        customerId = resolved.customer.id;
+      }
+      if (!customerId) return { ok: false, forModel: {}, error: "kund krävs" };
+      return fromDomain(proposeExtraFromNotes(customerId, amount), Boolean(amount && amount > 0));
     },
   },
   {
@@ -694,6 +809,143 @@ const specs: ToolSpec[] = [
         text: `Köpet hos ${expense.supplier} är bokfört som ${answer}.`,
       };
     },
+  },
+  /* ------------------------- Bokföringsmotorn (läsning) ------------------------ */
+  {
+    requiresConfirmation: false,
+    def: {
+      type: "function",
+      function: {
+        name: "bokforing_status",
+        description:
+          "Vad behöver göras med bokföringen (bookkeeping status): obesvarade frågor, kvitton, bankavstämning, nästa moms, periodlås.",
+        parameters: obj({}),
+      },
+    },
+    handler: () => fromDomain(bokforingStatusResult()),
+  },
+  {
+    requiresConfirmation: false,
+    def: {
+      type: "function",
+      function: {
+        name: "moms_rapport",
+        description:
+          "Momsrapport per deklarationsruta för en momsperiod (VAT report). periodKey t.ex. 2026-K2; utelämna för aktuell period.",
+        parameters: obj({ periodKey: { type: "string", description: "T.ex. 2026-K2" } }),
+      },
+    },
+    handler: (args) => fromDomain(momsRapportResult(str(args, "periodKey"))),
+  },
+  {
+    requiresConfirmation: false,
+    def: {
+      type: "function",
+      function: {
+        name: "resultat_rapport",
+        description: "Resultatrapport ur bokföringen (income statement): omsättning, kostnader, resultat.",
+        parameters: obj({}),
+      },
+    },
+    handler: () => fromDomain(resultatRapportResult()),
+  },
+  {
+    requiresConfirmation: false,
+    def: {
+      type: "function",
+      function: {
+        name: "balans_rapport",
+        description: "Balansrapport ur bokföringen (balance sheet): tillgångar, skulder, eget kapital.",
+        parameters: obj({}),
+      },
+    },
+    handler: () => fromDomain(balansRapportResult()),
+  },
+  {
+    requiresConfirmation: false,
+    def: {
+      type: "function",
+      function: {
+        name: "bokslut_status",
+        description: "Bokslutets checklista och vad som återstår för att stänga året (year-end closing status).",
+        parameters: obj({}),
+      },
+    },
+    handler: () => fromDomain(bokslutStatusResult()),
+  },
+  {
+    requiresConfirmation: false,
+    def: {
+      type: "function",
+      function: {
+        name: "forklara_verifikation",
+        description:
+          "Förklara varför något bokfördes som det gjorde (explain booking). query = verifikationsnummer (A12) eller del av beskrivningen (t.ex. Bauhaus).",
+        parameters: obj({ query: { type: "string" } }, ["query"]),
+      },
+    },
+    handler: (args) => {
+      const query = str(args, "query");
+      if (!query) return { ok: false, forModel: {}, error: "query krävs" };
+      return fromDomain(forklaraVerifikationResult(query));
+    },
+  },
+  /* --------------------- Bokföringsmotorn (bekräftelsekort) -------------------- */
+  {
+    requiresConfirmation: true,
+    def: {
+      type: "function",
+      function: {
+        name: "bokfor_bokslutsposter",
+        description:
+          "Be om bekräftelse att bokföra årets avskrivningar och planerade periodiseringar (year-end automation). Bokför inte själv.",
+        parameters: obj({}),
+      },
+    },
+    handler: () => fromDomain(requestRunBokslutAutomation(), true),
+  },
+  {
+    requiresConfirmation: true,
+    def: {
+      type: "function",
+      function: {
+        name: "slutfor_bokslut",
+        description:
+          "Be om bekräftelse att slutföra bokslutet och stänga räkenskapsåret (close fiscal year). Kräver att checklistan är grön. Stänger inte själv.",
+        parameters: obj({}),
+      },
+    },
+    handler: () => fromDomain(requestCloseFiscalYear(), true),
+  },
+  {
+    requiresConfirmation: true,
+    def: {
+      type: "function",
+      function: {
+        name: "angra_bokforing",
+        description:
+          "Be om bekräftelse att ångra en bokförd utgift via rättelseverifikation (undo booking). query = leverantörsnamn eller expenseId.",
+        parameters: obj({ query: { type: "string" } }, ["query"]),
+      },
+    },
+    handler: (args) => {
+      const query = str(args, "query");
+      if (!query) return { ok: false, forModel: {}, error: "query krävs" };
+      return fromDomain(requestUndoExpense(query), true);
+    },
+  },
+  {
+    requiresConfirmation: true,
+    def: {
+      type: "function",
+      function: {
+        name: "markera_moms_deklarerad",
+        description:
+          "Be om bekräftelse att markera en momsperiod som deklarerad (mark VAT declared). Skickar INGET till Skatteverket – låser perioden och för om momsen.",
+        parameters: obj({ periodKey: { type: "string", description: "T.ex. 2026-K2. Utelämna för perioden som väntar." } }),
+      },
+    },
+    handler: (args) => fromDomain(requestMarkVatDeclared(str(args, "periodKey")), true),
   },
 ];
 

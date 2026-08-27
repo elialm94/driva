@@ -25,6 +25,7 @@ import {
 } from "./bas";
 import { quoteVersionHash } from "./hash";
 import { ocrForInvoice } from "./ids";
+import { snapshotTaxReductionTerms } from "./tax-reduction-terms";
 
 /* Datum relativt "nu" så att demon alltid känns levande. */
 function d(daysAgo: number, hour = 10, minute = 0): string {
@@ -154,6 +155,7 @@ export function buildSeed(): DB {
       lateInterestRate: q.version.lateInterestRate ?? 10,
       validUntil: q.version.validUntil,
       terms: q.version.terms,
+      taxReductionTerms: q.version.taxReductionTerms,
     };
     if (q.locked && q.decidedAt) {
       version.lockedAt = q.decidedAt;
@@ -314,6 +316,7 @@ export function buildSeed(): DB {
         L("material", "Stomme, dörrar och inredning", 1, "st", 9600),
       ],
       rot: { type: "rot" },
+      taxReductionTerms: snapshotTaxReductionTerms("rot"),
       paymentPlan: [{ label: "Betalning när arbetet är klart", percent: 100 }],
       paymentTermsDays: 10,
       validUntil: d(-28),
@@ -514,6 +517,8 @@ export function buildSeed(): DB {
       ...inv,
       rot: inv.rot ?? null,
       lateInterestRate: 10,
+      paymentTermsDays: 30,
+      issuedAt: inv.status === "utkast" ? undefined : inv.sentAt ?? inv.issueDate,
       reminders: inv.reminders ?? [],
       ocr: ocrForInvoice(inv.number),
       createdAt: inv.issueDate,
@@ -1205,6 +1210,8 @@ export function buildSeed(): DB {
       source: v.source,
       confidence: v.confidence ?? "hog",
       createdBy: "auto",
+      status: "bokford",
+      postedAt: v.date,
       createdAt: v.date,
     });
   }
@@ -1377,15 +1384,20 @@ export function buildSeed(): DB {
       vatNumber: "SE559123456701",
       email: "info@sodermalmssnickeri.se",
       phone: "08-410 245 30",
+      websiteUrl: "https://sodermalmssnickeri.se",
       address: "Renstiernas gata 12",
       postalCode: "116 28",
       city: "Stockholm",
+      sate: "Stockholm",
+      country: "Sverige",
       bankgiro: "5678-1234",
       logoInitials: "SS",
       fSkattPerMonth: 12400,
       payrollReservePerMonth: 20800,
       paymentTermsDays: 30,
       lateInterestRate: 10,
+      quoteValidityDays: 30,
+      defaultVatRate: 25,
     },
     sequences: { quote: 115, invoice: 1048, verification: verifications.length + 1 },
     customers,
@@ -1412,6 +1424,14 @@ export function buildSeed(): DB {
     receipts,
     supplierInvoices,
     verifications,
+    // Bokföringsmotorn: räkenskapsår och IB backfylls av migrateAccounting i store.normalize.
+    fiscalYears: [],
+    accounting: {},
+    vatReports: [],
+    assets: [],
+    accruals: [],
+    auditTrail: [],
+    annualReports: [],
     activity: activity.sort((a, b) => b.at.localeCompare(a.at)),
     website,
     assistantMessages,

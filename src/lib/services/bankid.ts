@@ -2,6 +2,7 @@ import { db, save } from "../store";
 import { uid } from "../ids";
 import type { BankIDOrder, BankIDSignature, Quote } from "../types";
 import { quoteVersionHash } from "../hash";
+import { sellerSnapshot } from "../invoices/snapshot";
 import { currentVersion, getQuote, requireCustomer } from "./data";
 import { logActivity } from "./activity";
 import { createJobFromQuote } from "./jobs";
@@ -102,7 +103,10 @@ export const bankidProvider = new MockBankIDProvider();
 /** Texten kunden ser i BankID-appen (userVisibleData i riktiga API:et). */
 export function signText(quote: Quote): string {
   const version = currentVersion(quote);
-  return `Jag godkänner offert #${quote.number} ”${version.title}” (version ${version.version}) från ${db().settings.name}.`;
+  const rotNote = version.taxReductionTerms
+    ? ` ROT/RUT-villkor (${version.taxReductionTerms.version}) ingår.`
+    : "";
+  return `Jag godkänner offert #${quote.number} ”${version.title}” (version ${version.version}) från ${db().settings.name}.${rotNote}`;
 }
 
 /**
@@ -129,6 +133,9 @@ export function finalizeApproval(order: BankIDOrder): BankIDSignature {
   const now = new Date().toISOString();
 
   // 1. Lås exakt den version kunden signerade.
+  if (!version.sellerSnapshot) {
+    version.sellerSnapshot = sellerSnapshot(data.settings);
+  }
   version.lockedAt = now;
   version.contentHash = quoteVersionHash(version);
 

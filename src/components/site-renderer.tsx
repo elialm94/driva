@@ -1,6 +1,7 @@
 import type { CompanySettings, Website, WebsiteSection, WebsiteSectionItem, WebsiteTheme } from "@/lib/types";
 import { SiteContactForm } from "./site-widgets";
 import { SmoothSectionLink } from "./smooth-section-link";
+import { CompanyLogo } from "./company-logo";
 
 /**
  * Ren renderare för den publika hemsidan. Används både i det publika läget (/sajt)
@@ -44,7 +45,10 @@ export function SiteRenderer({
       {/* Sitehuvud */}
       <header className="sticky top-0 z-10 backdrop-blur" style={{ background: `${t.bg}e6`, borderBottom: `1px solid ${t.line}` }}>
         <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
-          <span className="text-[15px] font-bold tracking-tight">{website.businessName}</span>
+          <span className="flex items-center gap-2.5 text-[15px] font-bold tracking-tight">
+            {company.logoDataUrl ? <CompanyLogo company={company} size="sm" /> : null}
+            {website.businessName}
+          </span>
           {contactOn ? (
             <SmoothSectionLink
               href="#kontakt"
@@ -247,7 +251,7 @@ function AboutSection({
           <div>{copy}</div>
           {/* Data-URL:er (inga filer i en mediabank) – next/image passar inte här. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={section.image} alt="" className="aspect-[4/3] w-full rounded-3xl object-cover" />
+          <img src={section.image} alt="" loading="lazy" decoding="async" className="aspect-[4/3] w-full rounded-3xl object-cover" />
         </div>
       ) : (
         <div className="mx-auto max-w-2xl text-center">{copy}</div>
@@ -377,7 +381,7 @@ function ServicesGrid({
           {item.image ? (
             // Data-URL:er (inga filer i en mediabank) – next/image passar inte här.
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={item.image} alt="" className="aspect-[16/10] w-full object-cover" />
+            <img src={item.image} alt="" loading="lazy" decoding="async" className="aspect-[16/10] w-full object-cover" />
           ) : null}
           <div className="p-5">
             {item.image ? null : <div className="size-2.5 rounded-full" style={{ background: accent }} />}

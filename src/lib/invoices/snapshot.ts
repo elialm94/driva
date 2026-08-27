@@ -1,0 +1,206 @@
+import type {
+  CompanySettings,
+  Customer,
+  DB,
+  Invoice,
+  InvoiceBuyerSnapshot,
+  InvoiceIssuedSnapshot,
+  InvoiceSellerSnapshot,
+} from "../types";
+import { docTotals, vatBreakdown } from "../calc";
+
+export function sellerSnapshot(settings: CompanySettings): InvoiceSellerSnapshot {
+  return {
+    name: settings.name,
+    orgNumber: settings.orgNumber,
+    vatNumber: settings.vatNumber,
+    address: settings.address,
+    postalCode: settings.postalCode,
+    city: settings.city,
+    sate: settings.sate?.trim() || settings.city,
+    country: settings.country?.trim() || "Sverige",
+    email: settings.email,
+    phone: settings.phone,
+    websiteUrl: settings.websiteUrl,
+    bankgiro: settings.bankgiro,
+    plusgiro: settings.plusgiro,
+    bankAccount: settings.bankAccount,
+    iban: settings.iban,
+    bic: settings.bic,
+    logoInitials: settings.logoInitials,
+    logoDataUrl: settings.logoDataUrl,
+  };
+}
+
+export function buyerSnapshot(customer: Customer): InvoiceBuyerSnapshot {
+  return {
+    name: customer.name,
+    kind: customer.kind,
+    orgNumber: customer.orgNumber,
+    address: customer.address?.trim() ?? "",
+    postalCode: customer.postalCode?.trim() ?? "",
+    city: customer.city?.trim() ?? "",
+    country: "Sverige",
+    email: customer.email,
+    phone: customer.phone,
+  };
+}
+
+export function sellerAsCompany(seller: InvoiceSellerSnapshot, fallback?: CompanySettings): CompanySettings {
+  return {
+    name: seller.name,
+    orgNumber: seller.orgNumber,
+    vatNumber: seller.vatNumber,
+    email: seller.email,
+    phone: seller.phone,
+    websiteUrl: seller.websiteUrl,
+    address: seller.address,
+    postalCode: seller.postalCode,
+    city: seller.city,
+    sate: seller.sate,
+    country: seller.country ?? "Sverige",
+    bankgiro: seller.bankgiro,
+    plusgiro: seller.plusgiro,
+    bankAccount: seller.bankAccount,
+    iban: seller.iban,
+    bic: seller.bic,
+    logoInitials: seller.logoInitials,
+    logoDataUrl: seller.logoDataUrl,
+    fSkattPerMonth: fallback?.fSkattPerMonth ?? 0,
+    payrollReservePerMonth: fallback?.payrollReservePerMonth ?? 0,
+    paymentTermsDays: fallback?.paymentTermsDays ?? 30,
+    lateInterestRate: fallback?.lateInterestRate ?? 0,
+    quoteValidityDays: fallback?.quoteValidityDays ?? 30,
+    defaultVatRate: fallback?.defaultVatRate ?? 25,
+  };
+}
+
+/** Skickad/låst offert: snapshot. Utkast: live företagsuppgifter. */
+export function resolveQuoteCompany(
+  version: { lockedAt?: string; sellerSnapshot?: InvoiceSellerSnapshot },
+  live: CompanySettings
+): CompanySettings {
+  if (version.sellerSnapshot) return sellerAsCompany(version.sellerSnapshot, live);
+  return live;
+}
+
+export function buyerAsCustomer(buyer: InvoiceBuyerSnapshot, fallback?: Customer): Customer {
+  return {
+    id: fallback?.id ?? "snapshot",
+    kind: buyer.kind,
+    name: buyer.name,
+    orgNumber: buyer.orgNumber,
+    email: buyer.email,
+    phone: buyer.phone,
+    address: buyer.address,
+    postalCode: buyer.postalCode,
+    city: buyer.city,
+    notes: fallback?.notes ?? "",
+    createdAt: fallback?.createdAt ?? "",
+    contactPerson: fallback?.contactPerson,
+  };
+}
+
+export function buildIssuedSnapshot(input: {
+  invoice: Invoice;
+  seller: CompanySettings;
+  buyer: Customer;
+  issuedAt: string;
+  number: number;
+  ocr: string;
+  creditsInvoiceNumber?: number;
+}): InvoiceIssuedSnapshot {
+  const { invoice } = input;
+  const lines = invoice.lines.map((l) => ({ ...l }));
+  return {
+    issuedAt: input.issuedAt,
+    number: input.number,
+    ocr: input.ocr,
+    issueDate: invoice.issueDate,
+    dueDate: invoice.dueDate,
+    paymentTermsDays: invoice.paymentTermsDays,
+    lateInterestRate: invoice.lateInterestRate,
+    currency: "SEK",
+    serviceDate: invoice.serviceDate,
+    seller: sellerSnapshot(input.seller),
+    buyer: buyerSnapshot(input.buyer),
+    lines,
+    rot: invoice.rot ? { ...invoice.rot } : null,
+    taxReductionTerms: invoice.taxReductionTerms ? { ...invoice.taxReductionTerms } : null,
+    totals: { ...docTotals(lines, invoice.rot) },
+    vatBreakdown: vatBreakdown(lines),
+    creditsInvoiceId: invoice.creditsInvoiceId,
+    creditsInvoiceNumber: input.creditsInvoiceNumber,
+  };
+}
+
+/** Dokumentvy: utfärdad faktura från snapshot, utkast från live säljare/köpare. */
+export function resolveInvoiceView(
+  invoice: Invoice,
+  live: { seller: CompanySettings; buyer: Customer }
+): { seller: CompanySettings; buyer: Customer; invoice: Invoice } {
+  const snap = invoice.status !== "utkast" ? invoice.issuedSnapshot : undefined;
+  if (!snap) return { seller: live.seller, buyer: live.buyer, invoice };
+  return {
+    seller: sellerAsCompany(snap.seller, live.seller),
+    buyer: buyerAsCustomer(snap.buyer, live.buyer),
+    invoice: {
+      ...invoice,
+      number: snap.number,
+      ocr: snap.ocr,
+      issueDate: snap.issueDate,
+      dueDate: snap.dueDate,
+      paymentTermsDays: snap.paymentTermsDays,
+      lateInterestRate: snap.lateInterestRate,
+      serviceDate: snap.serviceDate,
+      lines: snap.lines,
+      rot: snap.rot,
+      taxReductionTerms: snap.taxReductionTerms,
+    },
+  };
+}
+
+/** Backfill snapshot på äldre utfärdade fakturor (seed / .data/db.json). Returnerar true om något skrevs. */
+export function hydrateIssuedInvoices(data: DB): boolean {
+  let changed = false;
+  for (const inv of data.invoices) {
+    if (inv.paymentTermsDays == null) {
+      inv.paymentTermsDays = data.settings.paymentTermsDays;
+      changed = true;
+    }
+    if (inv.status === "utkast") continue;
+    if (inv.number == null) continue;
+    if (!inv.issuedAt) {
+      inv.issuedAt = inv.sentAt ?? inv.issueDate;
+      changed = true;
+    }
+    if (inv.issuedSnapshot) continue;
+    const buyer = data.customers.find((c) => c.id === inv.customerId);
+    if (!buyer) continue;
+    inv.issuedSnapshot = buildIssuedSnapshot({
+      invoice: inv,
+      seller: data.settings,
+      buyer,
+      issuedAt: inv.issuedAt,
+      number: inv.number,
+      ocr: inv.ocr,
+    });
+    changed = true;
+  }
+  return changed;
+}
+
+/** Backfill företagssnapshot på skickade/godkända offerter. Utkast läser live. */
+export function hydrateQuoteSellerSnapshots(data: DB): boolean {
+  let changed = false;
+  const snap = sellerSnapshot(data.settings);
+  for (const version of data.quoteVersions) {
+    if (version.sellerSnapshot) continue;
+    const quote = data.quotes.find((q) => q.id === version.quoteId);
+    if (!quote) continue;
+    if (quote.status === "utkast" && !version.lockedAt) continue;
+    version.sellerSnapshot = { ...snap };
+    changed = true;
+  }
+  return changed;
+}

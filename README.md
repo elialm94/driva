@@ -21,6 +21,32 @@ NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=din-nyckel
 
 Utan nyckel används svenska exempeladresser, tydligt märkta "Demo" i förslagslistan.
 
+### AI-assistent (valfritt)
+
+Hemsidans kommandorad och `/assistent` delar samma tråd (`assistantMessages`) och samma tjänstelager. Med API-nyckel används LLM med tool calling; **utan nyckel faller assistenten tillbaka på regelbaserade intents** – vi låtsas inte att en modell svarar (samma ärlighet som BankID-mock).
+
+Lägg i `.env.local`:
+
+```bash
+AI_PROVIDER=openai-compatible
+AI_MODEL=gpt-4.1-mini
+AI_API_KEY=sk-...
+AI_BASE_URL=https://api.openai.com/v1
+```
+
+| Variabel | Standard | Anteckning |
+| --- | --- | --- |
+| `AI_PROVIDER` | `openai-compatible` | Sätt `none` för att tvinga regel-fallback även med nyckel |
+| `AI_MODEL` | `gpt-4.1-mini` | Billig OpenAI-kompatibel modell. På OpenRouter: `openai/gpt-4.1-mini` |
+| `AI_API_KEY` | (tom) | Saknas den → regelbaserad demo |
+| `AI_BASE_URL` | `https://api.openai.com/v1` | OpenRouter: `https://openrouter.ai/api/v1` |
+
+Verifiera assistentens tjänstelager (utan att skriva till `.data/db.json`):
+
+```bash
+npm run test:assistant
+```
+
 ## Kärnflödet
 
 **Förfrågan → Offert → BankID-godkännande → Jobb → Faktura → Betalning → Bokföring**
@@ -40,9 +66,31 @@ Utan nyckel används svenska exempeladresser, tydligt märkta "Demo" i förslags
 | BankID | `src/lib/services/bankid.ts` | `BankIDProvider`-interface; demon kör `MockBankIDProvider` (tydligt markerat i UI). Byt till riktig RP-API-integration här |
 | Open Banking | `src/lib/services/banking.ts` | `BankProvider`-abstraktion förberedd för t.ex. Tink; matchningsmotorn är riktig |
 | Bokföring | `src/lib/bas.ts` | BAS-konton, momssatser, konteringsregler, verifikationer |
-| AI-assistent | `src/lib/services/assistant.ts` | Regelbaserad intent-tolkning i demon; utför riktiga åtgärder med bekräftelsekort |
+| AI-assistent | `src/lib/services/assistant.ts`, `src/lib/ai/` | LLM med tool calling mot samma tjänster som UI:t; regelbaserad fallback utan `AI_API_KEY` |
 | Lagring | `src/lib/store.ts` | JSON-fil (`.data/db.json`) – byts mot riktig databas i produktion |
 
 ## Verifiering
 
 `scripts/verify.mjs` och `scripts/verify2.mjs` klickar igenom alla flöden i headless Chrome (kräver `puppeteer-core` + lokal Chrome) och sparar skärmdumpar i `.shots/`.
+
+Fakturaenhetstester:
+
+```bash
+npm test
+```
+
+## Fakturering V1 – omfattning och begränsningar
+
+Driva utfärdar **vanliga svenska småföretagsfakturor**: svensk säljare → svensk kund, valuta **SEK**, momssatser **0 / 6 / 12 / 25 %**. UI, assistent och bokföring går genom samma tjänster (`issueInvoice` / `sendInvoice` i `src/lib/services/invoices.ts`) och samma momsräkning (`docTotals` / `vatBreakdown` i `src/lib/calc.ts`).
+
+**Stöds inte i V1** (inget val i UI, ingen påhittad logik):
+
+- Omvänd skattskyldighet, EU-försäljning, export, byggmoms, vinstmarginalbeskattning
+- Andra valutor än SEK
+- Delkredit, kredit av redan betald faktura, Peppol/e-faktura
+- Verifiering mot Skatteverket, Bolagsverket eller Bankgirot (endast formatkontroll)
+- Sparad PDF-blob – den utfärdade `issuedSnapshot` + `InvoiceDocument` är den juridiska kopian (utskrift via `/faktura/[token]/pdf`)
+
+**Nummer:** nya utkast får `number: null` och visas som ”Utkast”. Löpnummer och OCR tilldelas först i `issueInvoice` på servern. Äldre utkast som redan har nummer behåller det. Misslyckad e-post (i demon: mock-logg) rullar inte tillbaka numret; **Skicka igen** återanvänder samma nummer.
+
+**Rabatt:** inget eget radfält. Negativt à-pris på en rad räknas i samma VAT-motor.

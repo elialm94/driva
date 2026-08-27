@@ -6,6 +6,7 @@ import { Modal } from "./modal";
 import { buttonClasses } from "./ui";
 import { createRequestAction } from "@/app/actions";
 import type { RequestSource } from "@/lib/types";
+import { swedishFormProps } from "@/lib/swedish-validity";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
@@ -34,7 +35,7 @@ export function NewRequestButton({ customerId, customerName }: { customerId: str
         Ny förfrågan
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title={`Ny förfrågan från ${customerName}`} size="md">
-        <form action={submit} className="space-y-4 px-6 py-5">
+        <form action={submit} className="space-y-4 px-6 py-5" {...swedishFormProps()}>
           <div>
             <label className="mb-1 block text-[13px] font-medium text-soft">Vad gäller det?</label>
             <input name="title" required className={inputCls} placeholder="T.ex. Platsbyggd bokhylla" />

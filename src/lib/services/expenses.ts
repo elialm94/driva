@@ -1,16 +1,40 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
 import type { Expense, Receipt, Verification } from "../types";
-import { categoryByKey, entriesExpense, guessCategory, EXPENSE_CATEGORIES } from "../bas";
+import { categoryByKey, entriesExpense, guessCategory, EXPENSE_CATEGORIES, KNOWN_SUPPLIERS } from "../bas";
 import { kr } from "../format";
 import { logActivity } from "./activity";
+import { postVerification, createCorrection } from "../accounting/engine";
+import { clampToOpenDate } from "../accounting/fiscal";
+import { assetSuggestionForExpense, registerAssetFromExpense, INVENTARIE_GRANS } from "../accounting/assets";
 
 /**
  * Kvittotolkning ("AI-extraktion") är mockad i demon: när ett kvitto laddas upp
  * mot en känd banktransaktion läses leverantör/belopp/moms därifrån, precis som
  * en riktig OCR/LLM-tjänst hade returnerat. Gränssnittet är byggt så att en
  * riktig extraktionstjänst kan kopplas in i `extractReceipt`.
+ *
+ * AI:n klassificerar VAD köpet var – den deterministiska motorn avgör konton,
+ * moms och kontering. Inga debet/kredit-rader utan central validering.
  */
+
+export const ASSET_QUESTION_OPTIONS = ["Registrera som inventarie", "Bokför som vanlig kostnad"] as const;
+
+/** Klarspråksförklaring till varför köpet konterades som det gjorde. */
+function expenseExplanation(expense: Expense, categoryKey: string, createdBy: Verification["createdBy"]): string {
+  const cat = categoryByKey(categoryKey);
+  const known = Object.keys(KNOWN_SUPPLIERS).find((name) => expense.supplier.toLowerCase().includes(name));
+  const why =
+    createdBy === "auto" && known
+      ? `Driva känner igen ${expense.supplier} och bokför köp där som ${cat.label.toLowerCase()}`
+      : createdBy === "assistent"
+        ? `Assistenten valde kategorin ${cat.label.toLowerCase()} och du godkände`
+        : `Du svarade att köpet gällde ${cat.label.toLowerCase()}`;
+  const vatText = cat.vatFree
+    ? "Kategorin saknar avdragsgill moms, så hela beloppet bokförs som kostnad."
+    : `Momsen (${kr(expense.vatAmount)}) lyfts som ingående moms.`;
+  return `${why}. Kostnaden hamnar på konto ${cat.account} (${cat.label}) och betalningen dras från företagskontot. ${vatText}`;
+}
 
 function bookExpense(
   expense: Expense,
@@ -21,19 +45,18 @@ function bookExpense(
   const data = db();
   const cat = categoryByKey(categoryKey);
   const vat = cat.vatFree ? 0 : expense.vatAmount;
-  const ver: Verification = {
-    id: uid(),
-    series: "A",
-    number: data.sequences.verification++,
-    date: expense.date,
-    description: `${expense.supplier} – ${expense.description ?? cat.label.toLowerCase()}`,
+  const clamped = clampToOpenDate(expense.date);
+  const ver = postVerification({
+    date: clamped.date,
+    description: `${expense.supplier} – ${expense.description ?? cat.label.toLowerCase()}${clamped.adjusted ? ` (avser ${clamped.originalDate})` : ""}`,
     entries: entriesExpense(categoryKey, expense.amount, vat),
     source: { type: "utgift", id: expense.id },
     confidence,
     createdBy,
-    createdAt: new Date().toISOString(),
-  };
-  data.verifications.push(ver);
+    explanation:
+      expenseExplanation(expense, categoryKey, createdBy) +
+      (clamped.adjusted ? ` Bokfört ${clamped.date} eftersom perioden för ${clamped.originalDate} är låst.` : ""),
+  });
   expense.category = categoryKey;
   expense.status = "bokford";
   expense.verificationId = ver.id;
@@ -46,6 +69,15 @@ function bookExpense(
     }
   }
   return ver;
+}
+
+/** Ställ inventariefrågan i stället för att bokföra direkt – användaren avgör. */
+function askAssetQuestion(expense: Expense): void {
+  expense.status = "behover_svar";
+  expense.question = {
+    text: `Köpet på ${kr(expense.amount)} hos ${expense.supplier} ser ut som något som används i flera år (över ${kr(INVENTARIE_GRANS)}). Hur vill du bokföra det?`,
+    options: [...ASSET_QUESTION_OPTIONS],
+  };
 }
 
 /** Ladda upp kvitto för ett köp som saknar kvitto. */
@@ -80,7 +112,15 @@ export function uploadReceiptForExpense(
   expense.receiptId = receipt.id;
 
   let autoBooked = false;
-  if (guess && guess.confidence === "hog") {
+  if (assetSuggestionForExpense({ ...expense, category: guess?.key ?? expense.category })) {
+    // Stort köp som ser ut att användas i flera år → användaren avgör (inte AI:n).
+    if (!expense.description) expense.description = receipt.extracted.description;
+    askAssetQuestion(expense);
+    logActivity(
+      `Kvittot från ${expense.supplier} (${kr(expense.amount)}) ser ut som en inventarie – Driva frågar hur det ska bokföras.`,
+      { entity: { type: "utgift", id: expenseId } }
+    );
+  } else if (guess && guess.confidence === "hog") {
     // Hög säkerhet → bokför automatiskt.
     if (!expense.description) expense.description = receipt.extracted.description;
     bookExpense(expense, guess.key, "hog", "auto");
@@ -109,6 +149,28 @@ export function answerExpenseQuestion(expenseId: string, answer: string, by: "an
   const data = db();
   const expense = data.expenses.find((e) => e.id === expenseId);
   if (!expense) return;
+
+  // Inventariefrågan: användaren avgör om köpet är en tillgång eller kostnad.
+  if (answer === "Registrera som inventarie") {
+    const asset = registerAssetFromExpense(expenseId, { by: by === "assistent" ? "assistent" : "anvandare" });
+    logActivity(
+      `${asset.name} registrerades som inventarie (${kr(asset.acquisitionValue)}) och skrivs av över ${asset.usefulLifeYears} år.`,
+      { entity: { type: "utgift", id: expenseId } }
+    );
+    save();
+    return;
+  }
+  if (answer === "Bokför som vanlig kostnad") {
+    const key = guessCategory(expense.supplier)?.key ?? expense.category ?? "verktyg";
+    if (!expense.description) expense.description = categoryByKey(key).label;
+    bookExpense(expense, key, "hog", by === "assistent" ? "assistent" : "anvandare");
+    logActivity(
+      `Köpet hos ${expense.supplier} (${kr(expense.amount)}) bokfördes som ${categoryByKey(key).label.toLowerCase()} efter ditt val.`,
+      { entity: { type: "utgift", id: expenseId } }
+    );
+    save();
+    return;
+  }
 
   const key =
     EXPENSE_CATEGORIES.find((c) => c.label.toLowerCase() === answer.toLowerCase())?.key ??
@@ -142,6 +204,40 @@ export function bookExpenseToJob(expenseId: string, categoryKey: string, jobId?:
   }
   const jobText = expense.jobId ? ` och kopplades till uppdraget ${data.jobs.find((j) => j.id === expense.jobId)?.title}` : "";
   logActivity(`Köpet hos ${expense.supplier} (${kr(expense.amount)}) bokfördes som ${categoryByKey(categoryKey).label.toLowerCase()}${jobText}.`, {
+    entity: { type: "utgift", id: expenseId },
+  });
+  save();
+}
+
+/**
+ * Ångra en bokförd utgift. Historiken skrivs aldrig om: en rättelseverifikation
+ * återför originalet, och utgiften öppnas igen så att den kan bokföras rätt.
+ */
+export function undoExpenseBooking(expenseId: string, by: "anvandare" | "assistent" = "anvandare"): void {
+  const data = db();
+  const expense = data.expenses.find((e) => e.id === expenseId);
+  if (!expense || expense.status !== "bokford" || !expense.verificationId) {
+    throw new Error("Utgiften är inte bokförd, så det finns inget att ångra.");
+  }
+  createCorrection({
+    verificationId: expense.verificationId,
+    reason: `Användaren ångrade bokningen av köpet hos ${expense.supplier}`,
+    by: by === "assistent" ? "assistent" : "anvandare",
+  });
+  expense.verificationId = undefined;
+  expense.status = "behover_svar";
+  expense.question = {
+    text: `Bokningen är ångrad. Vad gällde köpet på ${kr(expense.amount)} hos ${expense.supplier}?`,
+    options: ["Material", "Verktyg & förbrukning", "Kundrepresentation", "Annat"],
+  };
+  if (expense.bankTransactionId) {
+    const tx = data.bankTransactions.find((t) => t.id === expense.bankTransactionId);
+    if (tx) {
+      tx.status = "behover_atgard";
+      tx.verificationId = undefined;
+    }
+  }
+  logActivity(`Bokningen av köpet hos ${expense.supplier} (${kr(expense.amount)}) ångrades – en rättelseverifikation skapades.`, {
     entity: { type: "utgift", id: expenseId },
   });
   save();

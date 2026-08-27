@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  ArrowLeft,
   Pencil,
   ExternalLink,
   BadgeCheck,
@@ -19,7 +18,7 @@ import {
   quoteVersions,
 } from "@/lib/services/data";
 import { kr, datumTid, relativ } from "@/lib/format";
-import { Badge, ButtonLink, Card, SectionTitle, cx } from "@/components/ui";
+import { Badge, ButtonLink, Breadcrumbs, Card, SectionTitle, cx } from "@/components/ui";
 import { QuoteStatusBadge, InvoiceStatusBadge } from "@/components/status";
 import { QuoteDocument } from "@/components/quote-document";
 import { PreviewModal } from "@/components/preview-modal";
@@ -27,11 +26,14 @@ import { CopyLinkButton } from "@/components/copy-button";
 import { CreatePartInvoiceButton, FollowUpButton } from "@/components/money-widgets";
 import { sendQuoteAction } from "@/app/actions";
 import { docTotals } from "@/lib/calc";
+import { BackLink } from "@/components/back-link";
+import { hrefWithNav, invoiceHref, sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
 
 export const metadata = { title: "Offert" };
 
 export default async function QuotePage(props: PageProps<"/pengar/offerter/[id]">) {
   const { id } = await props.params;
+  const searchParams = await props.searchParams;
   const quote = getQuote(id);
   if (!quote) notFound();
   const data = db();
@@ -43,6 +45,12 @@ export default async function QuotePage(props: PageProps<"/pengar/offerter/[id]"
   const relatedInvoices = data.invoices.filter((i) => i.quoteId === quote.id);
   const job = quote.jobId ? data.jobs.find((j) => j.id === quote.jobId) : undefined;
   const publicPath = `/offert/${quote.token}`;
+  const returnTo = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : undefined;
+  const returnLabel =
+    typeof searchParams.tillbakaNamn === "string" ? sanitizeReturnLabel(searchParams.tillbakaNamn) ?? undefined : undefined;
+  const nav = { returnTo, returnLabel };
+  const fromHere = { href: hrefWithNav(`/pengar/offerter/${quote.id}`, nav), label: `Offert #${quote.number}` };
+  const editHref = hrefWithNav(`/pengar/offerter/${quote.id}/redigera`, nav);
 
   const invoicedTotal = relatedInvoices
     .filter((i) => i.status !== "krediterad")
@@ -54,9 +62,16 @@ export default async function QuotePage(props: PageProps<"/pengar/offerter/[id]"
 
   return (
     <div className="animate-fade-up">
-      <Link href="/pengar?flik=offerter" className="mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-        <ArrowLeft className="size-4" /> Offerter
-      </Link>
+      <div className="mb-2.5">
+        <BackLink fallbackHref="/pengar?flik=offerter" fallbackLabel="Offerter" />
+      </div>
+      <Breadcrumbs
+        items={[
+          { href: "/pengar", label: "Pengar" },
+          { href: "/pengar?flik=offerter", label: "Offerter" },
+          { label: `#${quote.number}` },
+        ]}
+      />
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -77,7 +92,7 @@ export default async function QuotePage(props: PageProps<"/pengar/offerter/[id]"
         <div className="flex flex-wrap items-center gap-2">
           {quote.status === "utkast" ? (
             <>
-              <ButtonLink href={`/pengar/offerter/${quote.id}/redigera`} variant="secondary">
+              <ButtonLink href={editHref} variant="secondary">
                 <Pencil className="size-4" /> Redigera
               </ButtonLink>
               <PreviewModal
@@ -113,7 +128,7 @@ export default async function QuotePage(props: PageProps<"/pengar/offerter/[id]"
           ) : null}
           {quote.status === "godkand" || quote.status === "avbojd" ? (
             <>
-              <ButtonLink href={`/pengar/offerter/${quote.id}/redigera`} variant="secondary" size="md">
+              <ButtonLink href={editHref} variant="secondary" size="md">
                 <Pencil className="size-4" /> Ny version
               </ButtonLink>
               <PreviewModal
@@ -177,7 +192,7 @@ export default async function QuotePage(props: PageProps<"/pengar/offerter/[id]"
               <SectionTitle>Nästa steg</SectionTitle>
               <Card className="space-y-3 px-5 py-4">
                 {job ? (
-                  <Link href={`/uppdrag/${job.id}` as never} className="flex items-center gap-3 rounded-xl border border-line px-4 py-3 transition-colors hover:bg-canvas">
+                  <Link href={hrefWithNav(`/uppdrag/${job.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label }) as never} className="flex items-center gap-3 rounded-xl border border-line px-4 py-3 transition-colors hover:bg-canvas">
                     <Hammer className="size-4 text-accent" />
                     <div className="flex-1">
                       <p className="text-[14px] font-medium">{job.title}</p>
@@ -194,7 +209,13 @@ export default async function QuotePage(props: PageProps<"/pengar/offerter/[id]"
                       <p className="text-[13px] text-soft">
                         {part.label} · {kr(partAmount)}
                       </p>
-                      <CreatePartInvoiceButton quoteId={quote.id} partIndex={i} label="Fakturera" />
+                      <CreatePartInvoiceButton
+                        quoteId={quote.id}
+                        partIndex={i}
+                        label="Fakturera"
+                        returnTo={fromHere.href}
+                        returnLabel={fromHere.label}
+                      />
                     </div>
                   );
                 })}
@@ -212,7 +233,7 @@ export default async function QuotePage(props: PageProps<"/pengar/offerter/[id]"
                 {relatedInvoices.map((inv) => (
                   <Link
                     key={inv.id}
-                    href={`/pengar/fakturor/${inv.id}` as never}
+                    href={invoiceHref(inv.id, fromHere) as never}
                     className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-canvas/60 first:rounded-t-[calc(1.25rem-1px)] last:rounded-b-[calc(1.25rem-1px)]"
                   >
                     <div className="min-w-0 flex-1">

@@ -102,22 +102,57 @@ export function jobMoneySummary(jobId: string) {
   return { quote, quoteAmount, invoiced, remaining: remainingToInvoiceForJob(jobId), paid, invoices };
 }
 
+/** Nästa obetalda del i den godkända offertens betalningsplan, om det finns en. */
+export function nextPaymentPlanPartForJob(jobId: string): {
+  index: number;
+  percent: number;
+  label: string;
+  amount: number;
+  isLast: boolean;
+} | null {
+  const data = db();
+  const job = data.jobs.find((j) => j.id === jobId);
+  if (!job) return null;
+  const quote = jobQuote(job);
+  if (!quote || quote.status !== "godkand") return null;
+  const version = currentVersion(quote);
+  const plan = version.paymentPlan;
+  if (plan.length === 0) return null;
+  const issued = data.invoices.filter(
+    (i) => (i.quoteId === quote.id || i.jobId === jobId) && i.status !== "krediterad" && i.type !== "kredit"
+  );
+  const index = issued.length;
+  if (index >= plan.length) return null;
+  const part = plan[index];
+  const remaining = remainingToInvoiceForJob(jobId);
+  if (remaining <= 0) return null;
+  const isLast = index === plan.length - 1;
+  const fromPlan = Math.round((docTotals(version.lines, version.rot).total * part.percent) / 100);
+  return { index, percent: part.percent, label: part.label, amount: isLast ? remaining : fromPlan, isLast };
+}
+
+/** Uppdrag som pågår eller startar inom en vecka, sorterade på startdatum. */
+export function jobsThisWeek() {
+  return db()
+    .jobs.filter((j) => {
+      if (j.status === "pagar") return true;
+      if (j.status === "kommande" && j.startDate) {
+        const days = (new Date(j.startDate).getTime() - Date.now()) / 86_400_000;
+        return days <= 7;
+      }
+      return false;
+    })
+    .sort((a, b) => (a.startDate ?? "").localeCompare(b.startDate ?? ""));
+}
+
 /** Sammanfattning till Hem-sidans "Du har"-rad. */
 export function homeSummary() {
   const data = db();
   const newRequests = data.requests.filter((r) => r.status === "ny").length;
   const waitingQuotes = data.quotes.filter((q) => q.status === "skickad").length;
-  const jobsThisWeek = data.jobs.filter((j) => {
-    if (j.status === "pagar") return true;
-    if (j.status === "kommande" && j.startDate) {
-      const days = (new Date(j.startDate).getTime() - Date.now()) / 86_400_000;
-      return days <= 7;
-    }
-    return false;
-  }).length;
   const unpaid = data.invoices.filter((i) => i.status === "skickad");
   const unpaidSum = unpaid.reduce((s, i) => s + invoiceTotals(i).toPay, 0);
   const overdueCount = unpaid.filter(isOverdue).length;
   const missingReceipts = data.expenses.filter((e) => e.status === "saknar_kvitto").length;
-  return { newRequests, waitingQuotes, jobsThisWeek, unpaidSum, overdueCount, missingReceipts };
+  return { newRequests, waitingQuotes, jobsThisWeek: jobsThisWeek().length, unpaidSum, overdueCount, missingReceipts };
 }

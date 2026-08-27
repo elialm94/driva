@@ -13,24 +13,27 @@ import {
   Sparkles,
   MoreHorizontal,
   RotateCcw,
+  Settings,
   X,
 } from "lucide-react";
 import { cx } from "./ui";
 import { resetDemoAction } from "@/app/actions";
+import { isSectionActive, NAV_ITEMS, type NavSection } from "@/lib/nav";
 
-const NAV = [
-  { href: "/", label: "Hem", icon: Home },
-  { href: "/kunder", label: "Kunder", icon: Users },
-  { href: "/uppdrag", label: "Uppdrag", icon: Hammer },
-  { href: "/pengar", label: "Pengar", icon: Wallet },
-  { href: "/bokforing", label: "Bokföring", icon: BookOpenCheck },
-  { href: "/hemsida", label: "Hemsida", icon: Globe },
-  { href: "/assistent", label: "Assistent", icon: Sparkles },
-] as const;
+const NAV_ICONS: Record<NavSection, typeof Home> = {
+  hem: Home,
+  kunder: Users,
+  uppdrag: Hammer,
+  pengar: Wallet,
+  bokforing: BookOpenCheck,
+  hemsida: Globe,
+  assistent: Sparkles,
+};
 
-function isActive(pathname: string, href: string) {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
-}
+const NAV = NAV_ITEMS.map((item) => ({
+  ...item,
+  icon: NAV_ICONS[item.section],
+}));
 
 export function Sidebar({ companyName }: { companyName: string }) {
   const pathname = usePathname();
@@ -47,7 +50,7 @@ export function Sidebar({ companyName }: { companyName: string }) {
 
       <nav className="flex flex-1 flex-col gap-1 px-3">
         {NAV.map(({ href, label, icon: Icon }) => {
-          const active = isActive(pathname, href);
+          const active = isSectionActive(pathname, href);
           return (
             <Link
               key={href}
@@ -68,6 +71,17 @@ export function Sidebar({ companyName }: { companyName: string }) {
 
       <div className="border-t border-line px-6 py-4">
         <p className="truncate text-[13px] font-medium text-ink">{companyName}</p>
+        <Link
+          href="/installningar"
+          className={cx(
+            "mt-1 block text-xs transition-colors",
+            pathname.startsWith("/installningar") || pathname.startsWith("/foretag")
+              ? "font-medium text-ink"
+              : "text-muted hover:text-ink"
+          )}
+        >
+          Inställningar
+        </Link>
         <button
           onClick={() => startReset(async () => resetDemoAction())}
           disabled={isResetting}
@@ -86,7 +100,8 @@ export function BottomNav() {
   const [moreOpen, setMoreOpen] = useState(false);
   const primary = NAV.slice(0, 4);
   const more = NAV.slice(4);
-  const moreActive = more.some((m) => isActive(pathname, m.href));
+  const settingsActive = pathname.startsWith("/installningar") || pathname.startsWith("/foretag");
+  const moreActive = more.some((m) => isSectionActive(pathname, m.href)) || settingsActive;
 
   return (
     <>
@@ -98,28 +113,53 @@ export function BottomNav() {
           >
             <div className="flex items-center justify-between px-4 pt-3 pb-1">
               <p className="text-sm font-semibold text-ink">Mer</p>
-              <button onClick={() => setMoreOpen(false)} className="rounded-lg p-1 text-muted hover:bg-ink/5">
+              <button
+                type="button"
+                onClick={() => setMoreOpen(false)}
+                aria-label="Stäng"
+                className="rounded-lg p-1 text-muted hover:bg-ink/5"
+              >
                 <X className="size-4" />
               </button>
             </div>
-            {more.map(({ href, label, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href as never}
-                onClick={() => setMoreOpen(false)}
-                className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-[15px] text-ink hover:bg-canvas"
-              >
-                <Icon className="size-5 text-muted" />
-                {label}
-              </Link>
-            ))}
+            {more.map(({ href, label, icon: Icon }) => {
+              const active = isSectionActive(pathname, href);
+              return (
+                <Link
+                  key={href}
+                  href={href as never}
+                  onClick={() => setMoreOpen(false)}
+                  className={cx(
+                    "flex items-center gap-3 rounded-2xl px-4 py-3.5 text-[15px] hover:bg-canvas",
+                    active ? "bg-ink/5 font-medium text-ink" : "text-ink"
+                  )}
+                >
+                  <Icon className="size-5 text-muted" />
+                  {label}
+                </Link>
+              );
+            })}
+            <div className="mx-4 my-1 h-px bg-line" />
+            <Link
+              href="/installningar"
+              onClick={() => setMoreOpen(false)}
+              className={cx(
+                "flex items-center gap-3 rounded-2xl px-4 py-3.5 text-[15px] hover:bg-canvas",
+                pathname.startsWith("/installningar") || pathname.startsWith("/foretag")
+                  ? "bg-ink/5 font-medium text-ink"
+                  : "text-ink"
+              )}
+            >
+              <Settings className="size-5 text-muted" />
+              Inställningar
+            </Link>
           </div>
         </div>
       ) : null}
 
       <nav className="fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-line bg-card/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
         {primary.map(({ href, label, icon: Icon }) => {
-          const active = isActive(pathname, href);
+          const active = isSectionActive(pathname, href);
           return (
             <Link
               key={href}

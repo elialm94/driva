@@ -92,6 +92,9 @@ export function BankIDApproval({
 
   const start = useCallback(
     async (chosen: "same_device" | "qr") => {
+      // Stoppa ev. pågående poll/QR-intervaller så att ett snabbt andra klick
+      // inte lämnar föräldralösa intervaller kvar.
+      stopTimers();
       setMethod(chosen);
       const res = await fetch("/api/bankid/start", {
         method: "POST",

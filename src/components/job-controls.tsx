@@ -2,60 +2,171 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Play, CheckCircle2, PartyPopper, Plus } from "lucide-react";
-import { buttonClasses, cx } from "./ui";
+import { Play, CheckCircle2, PartyPopper, Plus, FileText, Pencil } from "lucide-react";
+import { buttonClasses, ButtonLink } from "./ui";
 import { Modal } from "./modal";
+import { ActionMenu, PageActions, actionMenuItemClassName, useActionMenu } from "./action-menu";
+import { EditUppdragModal } from "./uppdrag-form";
 import {
-  addChecklistItemAction,
   createFinalInvoiceForJobAction,
+  createNextInvoiceForJobAction,
   setJobStatusAction,
-  toggleChecklistAction,
 } from "@/app/actions";
-import type { ChecklistItem } from "@/lib/types";
+import { invoiceHref } from "@/lib/nav";
+import type { JobPrimaryKind } from "@/lib/services/job-admin";
+import type { ReactNode } from "react";
 
-export function JobStatusControls({
+function JobMenuItem({
+  onSelect,
+  icon,
+  label,
+}: {
+  onSelect: () => void;
+  icon: ReactNode;
+  label: string;
+}) {
+  const menu = useActionMenu();
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className={actionMenuItemClassName()}
+      onClick={() => {
+        menu?.close();
+        onSelect();
+      }}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+export function JobActions({
   jobId,
-  status,
+  jobTitle,
+  customerId,
   customerName,
   remainingAmount,
+  remainingLabel,
+  primary,
+  secondary,
+  waitingLabel,
+  doneLabel,
+  canMarkDone,
+  quoteHref,
+  newQuoteHref,
+  job,
 }: {
   jobId: string;
-  status: "kommande" | "pagar" | "klart";
+  jobTitle: string;
+  customerId: string;
   customerName: string;
-  remainingAmount: string | null;
+  remainingAmount: number;
+  remainingLabel: string | null;
+  primary: JobPrimaryKind | null;
+  secondary: "visa_offert" | null;
+  waitingLabel: string | null;
+  doneLabel: string | null;
+  canMarkDone: boolean;
+  quoteHref: string;
+  newQuoteHref: string;
+  job: {
+    title: string;
+    description: string;
+    address?: string;
+    startDate?: string;
+    endDate?: string;
+  };
 }) {
   const [isPending, startTransition] = useTransition();
   const [showDoneDialog, setShowDoneDialog] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const router = useRouter();
+  const fromHere = { href: `/uppdrag/${jobId}`, label: jobTitle };
 
-  if (status === "klart") return null;
+  function startJob() {
+    startTransition(async () => setJobStatusAction(jobId, "pagar"));
+  }
+
+  function markDone() {
+    startTransition(async () => {
+      await setJobStatusAction(jobId, "klart");
+      setShowDoneDialog(true);
+    });
+  }
+
+  function createInvoice(final: boolean) {
+    startTransition(async () => {
+      const invoiceId = final
+        ? await createFinalInvoiceForJobAction(jobId)
+        : await createNextInvoiceForJobAction(jobId);
+      router.push(invoiceHref(invoiceId, fromHere) as never);
+    });
+  }
+
+  const primaryBtn =
+    primary === "skapa_offert" ? (
+      <ButtonLink href={newQuoteHref}>Skapa offert</ButtonLink>
+    ) : primary === "visa_offert" ? (
+      <ButtonLink href={quoteHref}>
+        <FileText className="size-4" /> Visa offert
+      </ButtonLink>
+    ) : primary === "starta" ? (
+      <button className={buttonClasses("primary")} disabled={isPending} onClick={startJob}>
+        <Play className="size-4" />
+        {isPending ? "Startar …" : "Starta uppdrag"}
+      </button>
+    ) : primary === "skapa_faktura" ? (
+      <button className={buttonClasses("accent")} disabled={isPending} onClick={() => createInvoice(false)}>
+        <Plus className="size-4" />
+        {isPending ? "Skapar …" : "Skapa faktura"}
+      </button>
+    ) : primary === "skapa_slutfaktura" ? (
+      <button className={buttonClasses("accent")} disabled={isPending} onClick={() => createInvoice(true)}>
+        <Plus className="size-4" />
+        {isPending ? "Skapar …" : "Skapa slutfaktura"}
+      </button>
+    ) : null;
+
+  const secondaryBtn =
+    secondary === "visa_offert" && primary !== "visa_offert" ? (
+      <ButtonLink href={quoteHref} variant="secondary">
+        <FileText className="size-4" /> Visa offert
+      </ButtonLink>
+    ) : null;
 
   return (
     <>
-      {status === "kommande" ? (
-        <button
-          className={buttonClasses("primary")}
-          disabled={isPending}
-          onClick={() => startTransition(async () => setJobStatusAction(jobId, "pagar"))}
-        >
-          <Play className="size-4" />
-          {isPending ? "Startar …" : "Starta arbetet"}
-        </button>
-      ) : (
-        <button
-          className={buttonClasses("accent")}
-          disabled={isPending}
-          onClick={() =>
-            startTransition(async () => {
-              await setJobStatusAction(jobId, "klart");
-              setShowDoneDialog(true);
-            })
-          }
-        >
-          <CheckCircle2 className="size-4" />
-          {isPending ? "Sparar …" : "Markera som klart"}
-        </button>
-      )}
+      <PageActions>
+        {primaryBtn}
+        {secondaryBtn}
+        {waitingLabel ? <p className="text-[14px] font-medium text-soft">{waitingLabel}</p> : null}
+        {doneLabel ? <p className="text-[14px] font-semibold text-ok">{doneLabel}</p> : null}
+        <ActionMenu>
+          <JobMenuItem
+            onSelect={() => setShowEdit(true)}
+            icon={<Pencil className="size-4 shrink-0" />}
+            label="Redigera uppdrag"
+          />
+          {canMarkDone ? (
+            <JobMenuItem
+              onSelect={markDone}
+              icon={<CheckCircle2 className="size-4 shrink-0" />}
+              label="Markera som klart"
+            />
+          ) : null}
+        </ActionMenu>
+      </PageActions>
+
+      <EditUppdragModal
+        open={showEdit}
+        onClose={() => setShowEdit(false)}
+        jobId={jobId}
+        customerId={customerId}
+        customerName={customerName}
+        initial={job}
+      />
 
       <Modal open={showDoneDialog} onClose={() => setShowDoneDialog(false)} size="sm">
         <div className="flex flex-col items-center px-8 py-10 text-center">
@@ -64,25 +175,21 @@ export function JobStatusControls({
           </div>
           <p className="mt-4 text-[19px] font-semibold tracking-tight">Uppdraget är klart</p>
           <p className="mt-2 text-sm leading-relaxed text-soft">
-            Uppdraget hos {customerName} är markerat som klart.
-            {remainingAmount ? ` Vill du skapa slutfakturan på ${remainingAmount}?` : ""}
+            {remainingAmount > 0 && remainingLabel
+              ? `${remainingLabel} återstår enligt den godkända offerten.`
+              : `Uppdraget hos ${customerName} är markerat som klart.`}
           </p>
-          <div className="mt-6 flex gap-2">
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
             <button className={buttonClasses("ghost")} onClick={() => setShowDoneDialog(false)}>
-              Senare
+              Gör det senare
             </button>
-            {remainingAmount ? (
+            {remainingAmount > 0 ? (
               <button
                 className={buttonClasses("accent")}
                 disabled={isPending}
-                onClick={() =>
-                  startTransition(async () => {
-                    const invoiceId = await createFinalInvoiceForJobAction(jobId);
-                    router.push(`/pengar/fakturor/${invoiceId}`);
-                  })
-                }
+                onClick={() => createInvoice(true)}
               >
-                {isPending ? "Skapar …" : "Skapa faktura"}
+                {isPending ? "Skapar …" : "Skapa slutfaktura"}
               </button>
             ) : null}
           </div>
@@ -94,11 +201,13 @@ export function JobStatusControls({
 
 export function CreateInvoiceButton({
   jobId,
+  jobTitle,
   label = "Skapa faktura",
   variant = "accent",
   size = "md",
 }: {
   jobId: string;
+  jobTitle?: string;
   label?: string;
   variant?: "primary" | "accent" | "secondary";
   size?: "sm" | "md";
@@ -112,70 +221,12 @@ export function CreateInvoiceButton({
       onClick={() =>
         startTransition(async () => {
           const invoiceId = await createFinalInvoiceForJobAction(jobId);
-          router.push(`/pengar/fakturor/${invoiceId}`);
+          router.push(invoiceHref(invoiceId, { href: `/uppdrag/${jobId}`, label: jobTitle }) as never);
         })
       }
     >
       <Plus className="size-3.5" />
       {isPending ? "Skapar …" : label}
     </button>
-  );
-}
-
-export function Checklist({ jobId, items }: { jobId: string; items: ChecklistItem[] }) {
-  const [isPending, startTransition] = useTransition();
-  const [newItem, setNewItem] = useState("");
-  const done = items.filter((i) => i.done).length;
-
-  return (
-    <div>
-      {items.length > 0 ? (
-        <p className="mb-2 text-[13px] font-medium text-muted">
-          {done} av {items.length} klara
-        </p>
-      ) : null}
-      <div className="space-y-1">
-        {items.map((item) => (
-          <button
-            key={item.id}
-            disabled={isPending}
-            onClick={() => startTransition(async () => toggleChecklistAction(jobId, item.id))}
-            className="group flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-canvas"
-          >
-            <span
-              className={cx(
-                "flex size-5 shrink-0 items-center justify-center rounded-md border transition-all",
-                item.done ? "border-accent bg-accent text-white" : "border-line-strong bg-card group-hover:border-muted"
-              )}
-            >
-              {item.done ? (
-                <svg viewBox="0 0 12 12" className="size-3 fill-none stroke-current stroke-2">
-                  <path d="M2 6l3 3 5-6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              ) : null}
-            </span>
-            <span className={cx("text-[14px]", item.done ? "text-muted line-through" : "text-ink")}>{item.text}</span>
-          </button>
-        ))}
-      </div>
-      <form
-        className="mt-2 flex items-center gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const text = newItem.trim();
-          if (!text) return;
-          setNewItem("");
-          startTransition(async () => addChecklistItemAction(jobId, text));
-        }}
-      >
-        <Plus className="size-4 text-muted" />
-        <input
-          value={newItem}
-          onChange={(e) => setNewItem(e.target.value)}
-          placeholder="Lägg till punkt …"
-          className="flex-1 bg-transparent py-1.5 text-[14px] placeholder:text-muted"
-        />
-      </form>
-    </div>
   );
 }

@@ -9,8 +9,8 @@ import { CopyLinkButton } from "./copy-button";
 type Device = "desktop" | "mobil" | "pdf";
 
 /**
- * Preview före skickning – kärnprincipen är att inget kunddokument någonsin
- * skickas utan att användaren först sett exakt hur mottagaren ser det.
+ * Kundförhandsvisning för offerter (BankID, villkor, publik sida).
+ * Fakturor förhandsvisas i detaljvyn – använd inte den här modalen för fakturor.
  */
 export function PreviewModal({
   triggerLabel,
@@ -24,36 +24,24 @@ export function PreviewModal({
   sentText,
   publicPath,
   recipientEmail,
-  hideTrigger = false,
-  open: openProp,
-  onOpenChange,
 }: {
   triggerLabel: string;
   triggerVariant?: "primary" | "accent" | "secondary" | "ghost";
   title: string;
   document: ReactNode;
   mode: "send" | "view";
-  sendAction?: () => Promise<void>;
+  sendAction?: () => Promise<void | { ok: boolean; errors?: string[] }>;
   sendLabel?: string;
   sentTitle?: string;
   sentText?: string;
   publicPath: string;
   recipientEmail?: string;
-  hideTrigger?: boolean;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
 }) {
-  const isControlled = openProp !== undefined;
-  const [internalOpen, setInternalOpen] = useState(false);
-  const open = isControlled ? openProp : internalOpen;
+  const [open, setOpen] = useState(false);
   const [device, setDevice] = useState<Device>("desktop");
   const [sent, setSent] = useState(false);
   const [isSending, startSending] = useTransition();
-
-  function setOpen(next: boolean) {
-    if (!isControlled) setInternalOpen(next);
-    onOpenChange?.(next);
-  }
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const deviceTabs: { key: Device; label: string; icon: typeof Monitor }[] = [
     { key: "desktop", label: "Desktop", icon: Monitor },
@@ -64,17 +52,16 @@ export function PreviewModal({
   function close() {
     setOpen(false);
     setSent(false);
+    setSendError(null);
     setDevice("desktop");
   }
 
   return (
     <>
-      {hideTrigger ? null : (
-        <button className={buttonClasses(triggerVariant)} onClick={() => setOpen(true)}>
-          {mode === "send" ? <Send className="size-4" /> : <Eye className="size-4" />}
-          {triggerLabel}
-        </button>
-      )}
+      <button className={buttonClasses(triggerVariant)} onClick={() => setOpen(true)}>
+        {mode === "send" ? <Send className="size-4" /> : <Eye className="size-4" />}
+        {triggerLabel}
+      </button>
 
       <Modal open={open} onClose={close} size="xl" title={sent ? undefined : title}>
         {sent ? (
@@ -158,19 +145,27 @@ export function PreviewModal({
               {mode === "send" ? "Tillbaka och redigera" : "Stäng"}
             </button>
             {mode === "send" && sendAction ? (
-              <button
-                className={buttonClasses("accent")}
-                disabled={isSending}
-                onClick={() =>
-                  startSending(async () => {
-                    await sendAction();
-                    setSent(true);
-                  })
-                }
-              >
-                <Send className="size-4" />
-                {isSending ? "Skickar …" : sendLabel}
-              </button>
+              <div className="flex flex-col items-end gap-2">
+                {sendError ? <p className="max-w-sm text-right text-[13px] font-medium text-danger">{sendError}</p> : null}
+                <button
+                  className={buttonClasses("accent")}
+                  disabled={isSending}
+                  onClick={() =>
+                    startSending(async () => {
+                      setSendError(null);
+                      const result = await sendAction();
+                      if (result && result.ok === false) {
+                        setSendError((result.errors ?? []).join(" "));
+                        return;
+                      }
+                      setSent(true);
+                    })
+                  }
+                >
+                  <Send className="size-4" />
+                  {isSending ? "Skickar …" : sendLabel}
+                </button>
+              </div>
             ) : (
               <CopyLinkButton path={publicPath} />
             )}

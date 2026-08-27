@@ -6,14 +6,8 @@ const krFmt = new Intl.NumberFormat("sv-SE", {
   maximumFractionDigits: 0,
 });
 
-const nrFmt = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 0 });
-
 export function kr(n: number): string {
   return krFmt.format(Math.round(n));
-}
-
-export function nummer(n: number): string {
-  return nrFmt.format(Math.round(n));
 }
 
 const DAG_MS = 86_400_000;

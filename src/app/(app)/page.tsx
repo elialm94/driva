@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Banknote, CalendarDays, ChevronDown } from "lucide-react";
 import { db } from "@/lib/store";
-import { attentionItems } from "@/lib/services/attention";
-import { homeSummary } from "@/lib/services/attention";
+import { attentionItems, homeSummary, jobsThisWeek } from "@/lib/services/attention";
 import { financeOverview } from "@/lib/services/finance";
 import { recentActivity } from "@/lib/services/activity";
 import { kr, halsning, datumUtanAr, veckodag, relativ, datumLang, isoNow } from "@/lib/format";
@@ -10,6 +9,7 @@ import { Card, SectionTitle, cx } from "@/components/ui";
 import { JobStatusBadge } from "@/components/status";
 import { AttentionList, type AttentionDTO } from "@/components/attention-list";
 import { HomeAiBar } from "@/components/home-ai-bar";
+import { invoiceHref, newQuoteHref, quoteHref } from "@/lib/nav";
 
 export const metadata = { title: "Hem" };
 
@@ -20,9 +20,9 @@ function buildAttentionDTOs(): AttentionDTO[] {
         return {
           id: item.id,
           icon: "alert",
-          title: `Faktura #${item.invoice.number} är ${item.days} ${item.days === 1 ? "dag" : "dagar"} sen`,
+          title: `Faktura ${item.invoice.number != null ? `#${item.invoice.number}` : "(utkast)"} är ${item.days} ${item.days === 1 ? "dag" : "dagar"} sen`,
           text: `${item.customer.name} har inte betalat ${kr(item.toPay)} ännu.`,
-          href: `/pengar/fakturor/${item.invoice.id}`,
+          href: invoiceHref(item.invoice.id),
           action: { type: "remindInvoice", label: "Skicka påminnelse", invoiceId: item.invoice.id },
         };
       case "forfragan":
@@ -35,7 +35,11 @@ function buildAttentionDTOs(): AttentionDTO[] {
           action: {
             type: "link",
             label: "Skapa offert",
-            href: `/pengar/offerter/ny?kund=${item.customer.id}&forfragan=${item.request.id}`,
+            href: newQuoteHref({
+              kund: item.customer.id,
+              forfragan: item.request.id,
+              from: { href: `/kunder/${item.customer.id}`, label: item.customer.name },
+            }),
           },
           secondary: { label: "Visa", href: `/kunder/${item.customer.id}` },
         };
@@ -45,7 +49,7 @@ function buildAttentionDTOs(): AttentionDTO[] {
           icon: "clock",
           title: `${item.customer.name} har inte svarat på offert #${item.quote.number}`,
           text: `Offerten på ${kr(item.toPay)} skickades för ${item.days} dagar sedan och väntar på BankID-godkännande.`,
-          href: `/pengar/offerter/${item.quote.id}`,
+          href: quoteHref(item.quote.id),
           action: { type: "followUpQuote", label: "Följ upp", quoteId: item.quote.id },
         };
       case "kvitto_saknas":
@@ -75,7 +79,7 @@ function buildAttentionDTOs(): AttentionDTO[] {
           title: `${item.job.title} är klart – dags att fakturera`,
           text: `Vill du skapa slutfakturan på ${kr(item.amount)} till ${item.customer.name}?`,
           href: `/uppdrag/${item.job.id}`,
-          action: { type: "createFinalInvoice", label: "Skapa faktura", jobId: item.job.id },
+          action: { type: "createFinalInvoice", label: "Skapa faktura", jobId: item.job.id, jobTitle: item.job.title },
         };
     }
   });
@@ -88,15 +92,7 @@ export default function HomePage() {
   const dtos = buildAttentionDTOs();
   const activity = recentActivity(6);
 
-  const weekJobs = data.jobs
-    .filter((j) => {
-      if (j.status === "pagar") return true;
-      if (j.status === "kommande" && j.startDate) {
-        return (new Date(j.startDate).getTime() - Date.now()) / 86_400_000 <= 7;
-      }
-      return false;
-    })
-    .sort((a, b) => (a.startDate ?? "").localeCompare(b.startDate ?? ""));
+  const weekJobs = jobsThisWeek();
 
   const chips: { label: string; href: string; tone?: "danger" | "warn" }[] = [];
   if (s.newRequests > 0) chips.push({ label: `${s.newRequests} nya förfrågningar`, href: "/kunder" });
@@ -114,8 +110,6 @@ export default function HomePage() {
         {veckodag(now)} {datumUtanAr(now)}
       </p>
       <h1 className="mt-1 text-[28px] font-semibold tracking-tight">{halsning()}</h1>
-
-      <HomeAiBar messages={data.assistantMessages} />
 
       {chips.length > 0 ? (
         <div className="mt-4 flex flex-wrap gap-2">
@@ -143,7 +137,7 @@ export default function HomePage() {
         <div className="grid grid-cols-2 divide-line/70 max-sm:gap-y-5 sm:grid-cols-4 sm:divide-x">
           {[
             { label: "På banken", value: kr(f.bank) },
-            { label: "Reserverat för moms & skatt", value: `−${kr(f.reserved)}` },
+            { label: "Reserverat för moms & skatt (beräknat)", value: `−${kr(f.reserved)}` },
             { label: "Kommande utgifter", value: `−${kr(f.upcoming)}` },
             { label: "Ungefär tillgängligt", value: kr(f.available), highlight: true },
           ].map((col) => (
@@ -189,6 +183,11 @@ export default function HomePage() {
           </div>
         </details>
       </Card>
+
+      <HomeAiBar
+        messages={data.assistantMessages.slice(-6)}
+        hasUserTurn={data.assistantMessages.some((m) => m.role === "user")}
+      />
 
       {/* Behöver din uppmärksamhet */}
       <div className="mt-10">

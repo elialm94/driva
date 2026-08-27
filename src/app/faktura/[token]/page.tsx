@@ -4,13 +4,17 @@ import { db } from "@/lib/store";
 import { getInvoiceByToken, invoiceTotals, requireCustomer, isOverdue } from "@/lib/services/data";
 import { kr, datumLang } from "@/lib/format";
 import { InvoiceDocument } from "@/components/invoice-document";
+import { resolveInvoiceView } from "@/lib/invoices/snapshot";
+import { invoiceHeading } from "@/lib/invoices/display";
+import { CompanyLogo } from "@/components/company-logo";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(props: PageProps<"/faktura/[token]">) {
   const { token } = await props.params;
   const invoice = getInvoiceByToken(token);
-  return { title: invoice ? `Faktura #${invoice.number} – ${db().settings.name}` : "Faktura" };
+  const name = invoice?.issuedSnapshot?.seller.name ?? db().settings.name;
+  return { title: invoice ? `${invoiceHeading(invoice)} – ${name}` : "Faktura" };
 }
 
 export default async function PublicInvoicePage(props: PageProps<"/faktura/[token]">) {
@@ -20,19 +24,20 @@ export default async function PublicInvoicePage(props: PageProps<"/faktura/[toke
 
   const data = db();
   const customer = requireCustomer(invoice.customerId);
-  const totals = invoiceTotals(invoice);
+  const view = resolveInvoiceView(invoice, { seller: data.settings, buyer: customer });
+  const totals = invoiceTotals(view.invoice);
 
   return (
     <div className="min-h-dvh bg-canvas">
       <header className="border-b border-line bg-card/80 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-accent text-[13px] font-bold text-white">
-              {data.settings.logoInitials}
-            </div>
+            <CompanyLogo company={view.seller} size="sm" />
             <div>
-              <p className="text-[14px] font-semibold leading-tight">{data.settings.name}</p>
-              <p className="text-[12px] text-muted">Faktura #{invoice.number} till {customer.name}</p>
+              <p className="text-[14px] font-semibold leading-tight">{view.seller.name}</p>
+              <p className="text-[12px] text-muted">
+                {invoiceHeading(invoice)} till {view.buyer.name}
+              </p>
             </div>
           </div>
           <p className="text-[15px] font-semibold tabular">{kr(totals.toPay)}</p>
@@ -52,8 +57,8 @@ export default async function PublicInvoicePage(props: PageProps<"/faktura/[toke
           <div className="mb-6 rounded-2xl border border-danger/20 bg-danger-soft/50 px-5 py-4">
             <p className="text-[15px] font-semibold text-danger">Fakturan har förfallit</p>
             <p className="text-[14px] text-soft">
-              Förfallodatum var {datumLang(invoice.dueDate)}. Betala {kr(totals.toPay)} till bankgiro{" "}
-              {data.settings.bankgiro} med OCR {invoice.ocr}.
+              Förfallodatum var {datumLang(view.invoice.dueDate)}. Betala {kr(totals.toPay)} till bankgiro{" "}
+              {view.seller.bankgiro} med OCR {view.invoice.ocr}.
             </p>
           </div>
         ) : null}
@@ -63,7 +68,7 @@ export default async function PublicInvoicePage(props: PageProps<"/faktura/[toke
         </div>
 
         <p className="mt-6 text-center text-[12px] text-muted">
-          Skickad med Driva · Frågor? Kontakta {data.settings.name} på {data.settings.email}
+          Skickad med Driva · Frågor? Kontakta {view.seller.name} på {view.seller.email}
         </p>
       </main>
     </div>

@@ -214,6 +214,20 @@ function normalizeItem(item: WebsiteSectionItem): WebsiteSectionItem {
   return next;
 }
 
+/**
+ * Bilddata för sektionsredigeraren. Hämtas separat (vid öppning) så att
+ * sektionslistan slipper skicka tunga data-URL:er till klienten på varje sidladdning.
+ */
+export function sectionImages(sectionId: string): { image?: string; itemImages: (string | null)[] } | null {
+  const site = db().website;
+  const section = site?.sections.find((s) => s.id === sectionId);
+  if (!section) return null;
+  return {
+    image: section.image,
+    itemImages: (section.items ?? []).map((it) => it.image ?? null),
+  };
+}
+
 function requireTjansterSection(sectionId: string): { site: Website; section: WebsiteSection } {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
@@ -226,13 +240,6 @@ function requireTjansterSection(sectionId: string): { site: Website; section: We
 function touchSite(site: Website): void {
   site.status = site.status === "publicerad" ? "publicerad" : "utkast";
   save();
-}
-
-/** Ersätter hela tjänstelistan. Arrayordning = visningsordning. */
-export function setSectionItems(sectionId: string, items: WebsiteSectionItem[]): void {
-  const { site, section } = requireTjansterSection(sectionId);
-  section.items = items.map(normalizeItem);
-  touchSite(site);
 }
 
 export function addServiceItem(sectionId: string, item: WebsiteSectionItem): void {

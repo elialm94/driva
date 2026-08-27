@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  ArrowLeft,
   Mail,
   Phone,
   MapPin,
@@ -16,12 +15,15 @@ import { jobMoneySummary } from "@/lib/services/attention";
 import { docTotals } from "@/lib/calc";
 import { db } from "@/lib/store";
 import { kr, relativ, datumKort } from "@/lib/format";
-import { Avatar, Badge, ButtonLink, Card, SectionTitle, cx } from "@/components/ui";
+import { Avatar, Badge, Breadcrumbs, ButtonLink, Card, SectionTitle, cx } from "@/components/ui";
 import { InvoiceStatusBadge, JobStatusBadge, QuoteStatusBadge } from "@/components/status";
 import { NotesEditor } from "@/components/notes-editor";
+import { CustomerDetailsForm } from "@/components/customer-details-form";
 import { NewRequestButton } from "@/components/request-form";
 import { NewUppdragButton } from "@/components/uppdrag-form";
 import { updateCustomerNotesAction } from "@/app/actions";
+import { BackLink } from "@/components/back-link";
+import { invoiceHref, newQuoteHref, quoteHref, withReturnTo } from "@/lib/nav";
 
 export const metadata = { title: "Kund" };
 
@@ -42,12 +44,14 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
   const sectionEmpty = "px-5 py-4 text-[14px] text-muted";
   const rowCls =
     "flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-canvas/60 first:rounded-t-[calc(1.25rem-1px)] last:rounded-b-[calc(1.25rem-1px)]";
+  const fromHere = { href: `/kunder/${customer.id}`, label: customer.name };
 
   return (
     <div className="animate-fade-up">
-      <Link href="/kunder" className="mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-        <ArrowLeft className="size-4" /> Kunder
-      </Link>
+      <div className="mb-2.5">
+        <BackLink fallbackHref="/kunder" fallbackLabel="Kunder" />
+      </div>
+      <Breadcrumbs items={[{ href: "/kunder", label: "Kunder" }, { label: customer.name }]} />
 
       <Card className="p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -87,10 +91,14 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
               size="sm"
               variant="secondary"
             />
-            <ButtonLink href={`/pengar/offerter/ny?kund=${customer.id}`} size="sm">
+            <ButtonLink href={newQuoteHref({ kund: customer.id, from: fromHere })} size="sm">
               <Plus className="size-3.5" /> Ny offert
             </ButtonLink>
           </div>
+        </div>
+        <div className="mt-5 border-t border-line pt-4">
+          <p className="mb-3 text-[13px] font-medium text-muted">Uppgifter för faktura</p>
+          <CustomerDetailsForm customer={customer} />
         </div>
         <div className="mt-5 border-t border-line pt-4">
           <p className="mb-1.5 text-[13px] font-medium text-muted">Anteckningar</p>
@@ -130,7 +138,7 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
                       <div className="flex shrink-0 flex-col items-end gap-2">
                         <Badge tone={st.tone}>{st.label}</Badge>
                         {r.status === "ny" ? (
-                          <ButtonLink href={`/pengar/offerter/ny?kund=${customer.id}&forfragan=${r.id}`} size="sm">
+                          <ButtonLink href={newQuoteHref({ kund: customer.id, forfragan: r.id, from: fromHere })} size="sm">
                             Skapa offert
                           </ButtonLink>
                         ) : null}
@@ -149,7 +157,7 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
                 <p className={sectionEmpty}>Inga offerter ännu.</p>
               ) : (
                 bundle.quotes.map((q) => (
-                  <Link key={q.id} href={`/pengar/offerter/${q.id}` as never} className={rowCls}>
+                  <Link key={q.id} href={quoteHref(q.id, fromHere) as never} className={rowCls}>
                     <FileText className="size-4 shrink-0 text-muted" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[14px] font-medium">
@@ -173,7 +181,7 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
                 bundle.jobs.map((j) => {
                   const money = jobMoneySummary(j.id);
                   return (
-                    <Link key={j.id} href={`/uppdrag/${j.id}` as never} className={rowCls}>
+                    <Link key={j.id} href={withReturnTo(`/uppdrag/${j.id}`, fromHere.href, fromHere.label) as never} className={rowCls}>
                       <Hammer className="size-4 shrink-0 text-muted" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[14px] font-medium">{j.title}</p>
@@ -196,10 +204,12 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
                 <p className={sectionEmpty}>Inga fakturor ännu.</p>
               ) : (
                 bundle.invoices.map((inv) => (
-                  <Link key={inv.id} href={`/pengar/fakturor/${inv.id}` as never} className={rowCls}>
+                  <Link key={inv.id} href={invoiceHref(inv.id, fromHere) as never} className={rowCls}>
                     <ReceiptText className="size-4 shrink-0 text-muted" />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[14px] font-medium">Faktura #{inv.number}</p>
+                      <p className="truncate text-[14px] font-medium">
+                        {inv.number == null ? "Fakturautkast" : `Faktura #${inv.number}`}
+                      </p>
                       <p className="text-[13px] text-muted">{kr(docTotals(inv.lines, inv.rot).toPay)}</p>
                     </div>
                     <InvoiceStatusBadge invoice={inv} />

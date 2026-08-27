@@ -5,6 +5,7 @@ import { buttonClasses } from "./ui";
 import { Modal } from "./modal";
 import { AddressFields } from "./address-input";
 import { createCustomerAction } from "@/app/actions";
+import { swedishFormProps } from "@/lib/swedish-validity";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
@@ -55,7 +56,7 @@ export function NewCustomerModal({
 
   return (
     <Modal open={open} onClose={onClose} title="Ny kund" size="md">
-      <form action={submit} className="space-y-4 px-6 py-5">
+      <form action={submit} className="space-y-4 px-6 py-5" {...swedishFormProps()}>
         <div className="flex rounded-xl bg-canvas p-1">
           {(["privat", "foretag"] as const).map((k) => (
             <button

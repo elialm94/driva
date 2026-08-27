@@ -1,31 +1,38 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ExternalLink, BadgeCheck, Pencil } from "lucide-react";
+import { ExternalLink, BadgeCheck, Pencil } from "lucide-react";
 import { db } from "@/lib/store";
 import { getInvoice, invoiceTotals, requireCustomer, isOverdue } from "@/lib/services/data";
 import { invoiceQuoteDeviation } from "@/lib/services/invoice-quote-deviation";
+import { validateInvoiceForIssue } from "@/lib/invoices/validate";
+import { invoiceHeading } from "@/lib/invoices/display";
 import { kr, datumTid, datumLang, relativ } from "@/lib/format";
-import { ButtonLink, Card, SectionTitle, cx } from "@/components/ui";
+import { ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
 import { InvoiceStatusBadge } from "@/components/status";
 import { InvoiceDocument } from "@/components/invoice-document";
-import { PreviewModal } from "@/components/preview-modal";
+import { ActionMenu, PageActions } from "@/components/action-menu";
 import { CopyLinkButton } from "@/components/copy-button";
-import { CreditInvoiceButton, SendReminderButton, SimulatePaymentButton } from "@/components/money-widgets";
+import {
+  CreditInvoiceButton,
+  DiscardInvoiceButton,
+  ResendInvoiceButton,
+  SendReminderButton,
+  SimulatePaymentButton,
+} from "@/components/money-widgets";
 import { QuoteDeviationCard } from "@/components/quote-deviation-card";
 import { InvoiceDraftSend } from "@/components/invoice-draft-send";
+import { InvoiceIssueChecklist } from "@/components/invoice-issue-checklist";
 import { sendInvoiceAction } from "@/app/actions";
+import { invoiceHasDocumentedTaxReductionAcceptance } from "@/lib/services/invoices";
+import { DeniedReductionCard, MissingTaxReductionAcceptanceCard } from "@/components/denied-reduction-card";
+import { BackLink } from "@/components/back-link";
+import { hrefWithNav, newQuoteHref, sanitizeReturnLabel, sanitizeReturnTo, withReturnTo } from "@/lib/nav";
 
 export const metadata = { title: "Faktura" };
 
-const TYPE_LABEL: Record<string, string> = {
-  faktura: "Faktura",
-  delbetalning: "Delbetalning",
-  slutfaktura: "Slutfaktura",
-  kredit: "Kreditfaktura",
-};
-
 export default async function InvoicePage(props: PageProps<"/pengar/fakturor/[id]">) {
   const { id } = await props.params;
+  const searchParams = await props.searchParams;
   const invoice = getInvoice(id);
   if (!invoice) notFound();
   const data = db();
@@ -36,21 +43,123 @@ export default async function InvoicePage(props: PageProps<"/pengar/fakturor/[id
   const payment = data.payments.find((p) => p.invoiceId === invoice.id);
   const publicPath = `/faktura/${invoice.token}`;
   const deviation = invoiceQuoteDeviation(invoice);
+  const missingAcceptance = Boolean(invoice.rot) && !invoiceHasDocumentedTaxReductionAcceptance(invoice);
+  const showDeniedFollowUp =
+    Boolean(invoice.rot) &&
+    totals.deduction > 0 &&
+    invoice.status !== "utkast" &&
+    invoice.type !== "kredit";
+  const blockers = invoice.status === "utkast" ? validateInvoiceForIssue(invoice.id) : [];
+  const isDraft = invoice.status === "utkast";
+  const returnTo = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : undefined;
+  const returnLabel =
+    typeof searchParams.tillbakaNamn === "string" ? sanitizeReturnLabel(searchParams.tillbakaNamn) ?? undefined : undefined;
+  const nav = { returnTo, returnLabel };
+  const fromHere = { href: hrefWithNav(`/pengar/fakturor/${invoice.id}`, nav), label: invoiceHeading(invoice) };
+  const settingsReturn = `/pengar/fakturor/${invoice.id}`;
+  const linkedBlockers = blockers.map((b) =>
+    b.href ? { ...b, href: withReturnTo(b.href, settingsReturn, invoiceHeading(invoice)) } : b
+  );
+  const missingEmail = !customer.email.trim();
+  const sendBlockers = missingEmail
+    ? [
+        ...linkedBlockers,
+        {
+          code: "buyer_email",
+          message: "Kunden saknar e-postadress.",
+          href: withReturnTo(`/kunder/${customer.id}`, settingsReturn, invoiceHeading(invoice)),
+          actionLabel: "Lägg till e-post",
+        },
+      ]
+    : linkedBlockers;
+  const editHref = hrefWithNav(`/pengar/fakturor/${invoice.id}/redigera`, nav);
+  const addEmailHref = withReturnTo(`/kunder/${customer.id}`, settingsReturn, invoiceHeading(invoice));
+  const tillaggHref = deviation?.largeExcess
+    ? newQuoteHref({
+        kund: invoice.customerId,
+        tillaggFran: invoice.id,
+        from: fromHere,
+      })
+    : undefined;
+  const justSent = typeof searchParams.skickad === "string" && searchParams.skickad === "1" && !isDraft;
+  const deliveryFailed =
+    (typeof searchParams.leveransfel === "string" && searchParams.leveransfel === "1") ||
+    Boolean(!isDraft && invoice.issuedAt && !invoice.sentAt);
 
   const doc = <InvoiceDocument company={data.settings} customer={customer} invoice={invoice} />;
 
+  const overdue = isOverdue(invoice);
+  const isCreditNote = invoice.type === "kredit";
+  const canRemind = invoice.status === "skickad" && !isCreditNote && overdue;
+  const canCredit = invoice.status === "skickad" && !isCreditNote;
+  const canSimulate = invoice.status === "skickad" && !isCreditNote;
+  const canCustomerView = !isDraft;
+  const canCopyLink = !isDraft;
+  const canResend = !isDraft;
+
+  const customerView = canCustomerView ? (
+    <a href={publicPath} target="_blank" rel="noreferrer" className={buttonClasses("secondary")}>
+      <ExternalLink className="size-4" /> Visa kundvy
+    </a>
+  ) : null;
+
+  const moreMenu = (
+    <ActionMenu>
+      {canCredit ? <CreditInvoiceButton invoiceId={invoice.id} appearance="menu" /> : null}
+      {canCopyLink ? (
+        <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
+      ) : null}
+      {canResend ? <ResendInvoiceButton invoiceId={invoice.id} retry={!invoice.sentAt} appearance="menu" /> : null}
+      {canSimulate ? <SimulatePaymentButton invoiceId={invoice.id} appearance="menu" /> : null}
+      {isDraft ? <DiscardInvoiceButton invoiceId={invoice.id} appearance="menu" /> : null}
+    </ActionMenu>
+  );
+
+  const headerActions = isDraft ? (
+    <PageActions>
+      <ButtonLink href={editHref} variant="secondary">
+        <Pencil className="size-4" /> Redigera faktura
+      </ButtonLink>
+      <InvoiceDraftSend
+        customerName={customer.name}
+        amount={totals.toPay}
+        dueDateLabel={datumLang(invoice.dueDate)}
+        sendAction={sendInvoiceAction.bind(null, invoice.id)}
+        detailHref={fromHere.href}
+        recipientEmail={customer.email}
+        addEmailHref={addEmailHref}
+        hasIssuanceBlockers={linkedBlockers.length > 0}
+        excessAmount={deviation?.largeExcess ? deviation.delta : undefined}
+        tillaggHref={tillaggHref}
+        missingTaxReductionAcceptance={missingAcceptance}
+      />
+      {moreMenu}
+    </PageActions>
+  ) : (
+    <PageActions>
+      {canRemind ? <SendReminderButton invoiceId={invoice.id} variant="primary" size="md" /> : null}
+      {customerView}
+      {moreMenu}
+    </PageActions>
+  );
+
   return (
     <div className="animate-fade-up">
-      <Link href="/pengar?flik=fakturor" className="mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink">
-        <ArrowLeft className="size-4" /> Fakturor
-      </Link>
+      <div className="mb-2.5">
+        <BackLink fallbackHref="/pengar?flik=fakturor" fallbackLabel="Fakturor" />
+      </div>
+      <Breadcrumbs
+        items={[
+          { href: "/pengar", label: "Pengar" },
+          { href: "/pengar?flik=fakturor", label: "Fakturor" },
+          { label: invoiceHeading(invoice) },
+        ]}
+      />
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-[26px] font-semibold tracking-tight">
-              {TYPE_LABEL[invoice.type]} #{invoice.number}
-            </h1>
+            <h1 className="text-[26px] font-semibold tracking-tight">{invoiceHeading(invoice)}</h1>
             <InvoiceStatusBadge invoice={invoice} />
           </div>
           <p className="mt-1 text-[15px] text-soft">
@@ -60,63 +169,44 @@ export default async function InvoicePage(props: PageProps<"/pengar/fakturor/[id
             · {kr(totals.toPay)} · förfaller {datumLang(invoice.dueDate)}
           </p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {invoice.status === "utkast" ? (
-            <>
-              <ButtonLink href={`/pengar/fakturor/${invoice.id}/redigera`} variant="secondary">
-                <Pencil className="size-4" /> Redigera faktura
-              </ButtonLink>
-              <InvoiceDraftSend
-                customerFirstName={customer.name.split(" ")[0]}
-                document={doc}
-                sendAction={sendInvoiceAction.bind(null, invoice.id)}
-                publicPath={publicPath}
-                recipientEmail={customer.email}
-                excessAmount={deviation?.largeExcess ? deviation.delta : undefined}
-                tillaggHref={deviation?.largeExcess ? deviation.tillaggHref : undefined}
-              />
-            </>
-          ) : (
-            <>
-              {invoice.status === "skickad" ? (
-                <>
-                  <SimulatePaymentButton invoiceId={invoice.id} />
-                  <SendReminderButton invoiceId={invoice.id} />
-                  <CreditInvoiceButton invoiceId={invoice.id} />
-                </>
-              ) : null}
-              <CopyLinkButton path={publicPath} />
-              <a
-                href={publicPath}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-8 items-center gap-1.5 rounded-xl px-3 text-[13px] font-medium text-soft hover:bg-ink/5 hover:text-ink"
-              >
-                <ExternalLink className="size-3.5" /> Kundvy
-              </a>
-              <PreviewModal
-                triggerLabel="Så här ser kunden fakturan"
-                triggerVariant="secondary"
-                title={`Så här ser ${customer.name.split(" ")[0]} fakturan`}
-                document={doc}
-                mode="view"
-                publicPath={publicPath}
-              />
-            </>
-          )}
-        </div>
+        <div className="min-w-0">{headerActions}</div>
       </div>
+
+      {justSent ? (
+        <Card className="mb-6 border-ok/20 bg-ok-soft/50 px-5 py-4 text-[14px] text-soft">
+          <span className="font-medium text-ok">
+            Faktura {invoice.number != null ? `#${invoice.number}` : ""} skickades till {customer.name}.
+          </span>
+        </Card>
+      ) : null}
+
+      {deliveryFailed && !justSent ? (
+        <Card className="mb-6 border-warn/30 bg-warn-soft/40 px-5 py-4 text-[14px] text-soft">
+          <span className="font-medium text-ink">Fakturan utfärdades men kunde inte skickas via e-post.</span> Samma
+          nummer behålls – försök skicka igen.
+        </Card>
+      ) : null}
+
+      {isDraft ? <InvoiceIssueChecklist blockers={sendBlockers} /> : null}
+
+      {missingAcceptance ? <MissingTaxReductionAcceptanceCard /> : null}
+
+      {showDeniedFollowUp ? <DeniedReductionCard invoiceId={invoice.id} deduction={totals.deduction} /> : null}
 
       {deviation ? <QuoteDeviationCard deviation={deviation} /> : null}
 
-      {invoice.status === "skickad" && isOverdue(invoice) ? (
+      {invoice.status === "skickad" && overdue && !isCreditNote ? (
         <Card className="mb-6 border-danger/20 bg-danger-soft/40 px-5 py-4 text-[14px] text-soft">
-          <span className="font-medium text-danger">Fakturan är försenad.</span>{" "}
-          {customer.name} har inte betalat {kr(totals.toPay)} ännu.
-          {invoice.reminders.length > 0
-            ? ` ${invoice.reminders.length} påminnelse${invoice.reminders.length > 1 ? "r" : ""} skickad, senast ${relativ(invoice.reminders[invoice.reminders.length - 1])}.`
-            : " Ingen påminnelse skickad ännu."}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p>
+              <span className="font-medium text-danger">Fakturan är försenad.</span>{" "}
+              {customer.name} har inte betalat {kr(totals.toPay)} ännu.
+              {invoice.reminders.length > 0
+                ? ` ${invoice.reminders.length} påminnelse${invoice.reminders.length > 1 ? "r" : ""} skickad, senast ${relativ(invoice.reminders[invoice.reminders.length - 1])}.`
+                : " Ingen påminnelse skickad ännu."}
+            </p>
+            {invoice.reminders.length === 0 ? <SendReminderButton invoiceId={invoice.id} /> : null}
+          </div>
         </Card>
       ) : null}
 
@@ -138,13 +228,13 @@ export default async function InvoicePage(props: PageProps<"/pengar/fakturor/[id
             <SectionTitle>Kopplat till</SectionTitle>
             <Card className="divide-y divide-line/70">
               {job ? (
-                <Link href={`/uppdrag/${job.id}` as never} className="block px-4 py-3 text-[14px] font-medium transition-colors hover:bg-canvas/60">
+                <Link href={hrefWithNav(`/uppdrag/${job.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label }) as never} className="block px-4 py-3 text-[14px] font-medium transition-colors hover:bg-canvas/60">
                   {job.title}
                   <span className="block text-[12px] font-normal text-muted">Uppdrag</span>
                 </Link>
               ) : null}
               {quote ? (
-                <Link href={`/pengar/offerter/${quote.id}` as never} className="block px-4 py-3 text-[14px] font-medium transition-colors hover:bg-canvas/60">
+                <Link href={hrefWithNav(`/pengar/offerter/${quote.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label }) as never} className="block px-4 py-3 text-[14px] font-medium transition-colors hover:bg-canvas/60">
                   Offert #{quote.number}
                   <span className="block text-[12px] font-normal text-muted">
                     {quote.status === "godkand" ? "Godkänd med BankID" : "Offert"}
@@ -161,7 +251,11 @@ export default async function InvoicePage(props: PageProps<"/pengar/fakturor/[id
               <ol className="space-y-3">
                 {[
                   { label: "Skapad", at: invoice.createdAt as string | undefined, done: true },
-                  { label: "Skickad & bokförd", at: invoice.sentAt, done: !!invoice.sentAt },
+                  { label: "Utfärdad", at: invoice.issuedAt, done: !!invoice.issuedAt },
+                  { label: "Skickad", at: invoice.sentAt, done: !!invoice.sentAt },
+                  ...(invoice.lastSentAt && invoice.sentAt && invoice.lastSentAt !== invoice.sentAt
+                    ? [{ label: "Skickad igen", at: invoice.lastSentAt as string | undefined, done: true }]
+                    : []),
                   ...invoice.reminders.map((r, i) => ({ label: `Påminnelse ${i + 1}`, at: r as string | undefined, done: true })),
                   { label: "Betald", at: invoice.paidAt, done: invoice.status === "betald" },
                 ].map((step, i) => (

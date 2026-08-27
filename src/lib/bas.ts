@@ -1,16 +1,39 @@
-import type { DocLine, Invoice, RotRut, VerificationEntry } from "./types";
-import { docTotals } from "./calc";
+import type { DocLine, RotRut, VerificationEntry } from "./types";
+import { docTotals, vatBreakdown } from "./calc";
 
-/** Utdrag ur BAS-kontoplanen – det som produkten använder. */
+const SALES_BY_VAT: Record<number, number> = { 25: 3001, 12: 3002, 6: 3003, 0: 3004 };
+const VAT_OUT_BY_RATE: Record<number, number> = { 25: 2611, 12: 2621, 6: 2631 };
+
+/** Utdrag ur BAS-kontoplanen – det som produkten använder. Utökas vid behov, aldrig hela registret. */
 export const BAS: Record<number, string> = {
+  1220: "Inventarier och verktyg",
+  1229: "Ack. avskrivningar inventarier",
   1510: "Kundfordringar",
   1513: "Kundfordringar ROT/RUT",
+  1710: "Förutbetalda kostnader",
+  1790: "Upplupna intäkter",
   1930: "Företagskonto",
+  2010: "Eget kapital (enskild firma)",
+  2013: "Egna uttag",
+  2018: "Egna insättningar",
+  2019: "Årets resultat (enskild firma)",
+  2081: "Aktiekapital",
+  2091: "Balanserad vinst eller förlust",
+  2099: "Årets resultat",
   2440: "Leverantörsskulder",
   2510: "Skatteskulder",
+  2512: "Beräknad inkomstskatt",
   2611: "Utgående moms 25 %",
+  2621: "Utgående moms 12 %",
+  2631: "Utgående moms 6 %",
   2641: "Ingående moms",
-  3001: "Försäljning tjänster 25 %",
+  2650: "Redovisningskonto för moms",
+  2970: "Förutbetalda intäkter",
+  2990: "Upplupna kostnader",
+  3001: "Försäljning 25 %",
+  3002: "Försäljning 12 %",
+  3003: "Försäljning 6 %",
+  3004: "Försäljning 0 %",
   4010: "Material och varor",
   5010: "Lokalhyra",
   5410: "Förbrukningsinventarier",
@@ -21,6 +44,9 @@ export const BAS: Record<number, string> = {
   6310: "Företagsförsäkringar",
   6212: "Telefon och internet",
   6991: "Övriga externa kostnader",
+  7832: "Avskrivningar inventarier och verktyg",
+  8910: "Skatt på årets resultat",
+  8999: "Årets resultat",
 };
 
 export interface ExpenseCategory {
@@ -85,13 +111,25 @@ function e(account: number, debit: number, credit: number): VerificationEntry {
 
 /* ------------------------- Verifikationsbyggare (rena) ------------------------- */
 
-/** Kundfaktura skickad: fordran mot kund (och Skatteverket vid ROT/RUT), intäkt + utgående moms. */
+function entriesSalesAndVat(lines: DocLine[], reverse: boolean): VerificationEntry[] {
+  const entries: VerificationEntry[] = [];
+  for (const row of vatBreakdown(lines)) {
+    const salesAcc = SALES_BY_VAT[row.rate] ?? 3001;
+    if (row.base) entries.push(reverse ? e(salesAcc, row.base, 0) : e(salesAcc, 0, row.base));
+    if (row.vat) {
+      const vatAcc = VAT_OUT_BY_RATE[row.rate] ?? 2611;
+      entries.push(reverse ? e(vatAcc, row.vat, 0) : e(vatAcc, 0, row.vat));
+    }
+  }
+  return entries;
+}
+
+/** Kundfaktura skickad: fordran mot kund (och Skatteverket vid ROT/RUT), intäkt + utgående moms per sats. */
 export function entriesInvoiceSent(lines: DocLine[], rot: RotRut | null): VerificationEntry[] {
   const t = docTotals(lines, rot);
   const entries: VerificationEntry[] = [e(1510, t.toPay, 0)];
   if (t.deduction > 0) entries.push(e(1513, t.deduction, 0));
-  entries.push(e(3001, 0, t.subtotal));
-  if (t.vat > 0) entries.push(e(2611, 0, t.vat));
+  entries.push(...entriesSalesAndVat(lines, false));
   return entries;
 }
 
@@ -101,8 +139,7 @@ export function entriesInvoicePaid(amount: number): VerificationEntry[] {
 
 export function entriesCredit(lines: DocLine[], rot: RotRut | null): VerificationEntry[] {
   const t = docTotals(lines, rot);
-  const entries: VerificationEntry[] = [e(3001, t.subtotal, 0)];
-  if (t.vat > 0) entries.push(e(2611, t.vat, 0));
+  const entries: VerificationEntry[] = [...entriesSalesAndVat(lines, true)];
   entries.push(e(1510, 0, t.toPay));
   if (t.deduction > 0) entries.push(e(1513, 0, t.deduction));
   return entries;
@@ -150,6 +187,3 @@ export function isCostAccount(account: number): boolean {
   return account >= 4000 && account < 8000;
 }
 
-export function invoiceTotals(inv: Invoice) {
-  return docTotals(inv.lines, inv.rot);
-}

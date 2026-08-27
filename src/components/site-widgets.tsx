@@ -17,9 +17,11 @@ import {
 } from "lucide-react";
 import { buttonClasses, cx, DemoTag } from "./ui";
 import { Modal } from "./modal";
+import { humanizeMediaError, ImageDropzone } from "./image-dropzone";
 import {
   addServiceItemAction,
   generateWebsiteAction,
+  getSectionImagesAction,
   publishWebsiteAction,
   removeServiceItemAction,
   reorderSectionsAction,
@@ -31,6 +33,17 @@ import {
   updateServiceItemAction,
 } from "@/app/actions";
 import type { WebsiteSection, WebsiteSectionItem } from "@/lib/types";
+import { swedishFormProps } from "@/lib/swedish-validity";
+
+/**
+ * Sektionsdata för redigeringslistan – utan tunga bild-data-URL:er.
+ * Bilderna hämtas först när en sektion öppnas för redigering (getSectionImagesAction).
+ */
+export type SectionListItem = Omit<WebsiteSectionItem, "image"> & { hasImage: boolean };
+export type SectionListSection = Omit<WebsiteSection, "image" | "items"> & {
+  hasImage: boolean;
+  items?: SectionListItem[];
+};
 
 /* ------------------------- Kontaktformulär på sajten ------------------------- */
 
@@ -68,9 +81,10 @@ export function SiteContactForm({
   return (
     <form
       className="space-y-3"
+      {...swedishFormProps()}
       onSubmit={(e) => {
         e.preventDefault();
-        if (!interactive || !form.name.trim() || !form.message.trim()) return;
+        if (!interactive || !form.name.trim() || !form.email.trim() || !form.message.trim()) return;
         startTransition(async () => {
           await submitContactFormAction({
             name: form.name.trim(),
@@ -85,6 +99,7 @@ export function SiteContactForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <input
           required
+          name="name"
           placeholder="Namn"
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -92,7 +107,9 @@ export function SiteContactForm({
           style={inputStyle}
         />
         <input
+          required
           type="email"
+          name="email"
           placeholder="E-post"
           value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -101,6 +118,7 @@ export function SiteContactForm({
         />
       </div>
       <input
+        name="phone"
         placeholder="Telefon (valfritt)"
         value={form.phone}
         onChange={(e) => setForm({ ...form, phone: e.target.value })}
@@ -109,6 +127,7 @@ export function SiteContactForm({
       />
       <textarea
         required
+        name="message"
         rows={4}
         placeholder="Berätta kort om vad du behöver hjälp med …"
         value={form.message}
@@ -365,7 +384,7 @@ function VisibilitySwitch({
 
 /* ------------------------------ Sektionslista ------------------------------ */
 
-function sectionIsVisible(section: WebsiteSection): boolean {
+function sectionIsVisible(section: SectionListSection): boolean {
   return section.visible !== false;
 }
 
@@ -373,7 +392,7 @@ export function SectionList({
   sections,
   labels,
 }: {
-  sections: WebsiteSection[];
+  sections: SectionListSection[];
   labels: Record<string, string>;
 }) {
   const [rows, setRows] = useState(sections);
@@ -464,7 +483,7 @@ function SectionRow({
   onPointerUp,
   onPointerCancel,
 }: {
-  section: WebsiteSection;
+  section: SectionListSection;
   typeLabel: string;
   last: boolean;
   dragging: boolean;
@@ -555,7 +574,7 @@ function SectionRow({
           typeLabel={typeLabel}
           heading={section.heading}
           body={section.body}
-          image={section.image}
+          hasImage={section.hasImage}
           items={section.type === "tjanster" ? (section.items ?? []) : undefined}
           onClose={() => setOpen(false)}
         />
@@ -568,13 +587,16 @@ function SectionRow({
 
 type ServiceDraft = { index: number | "new"; title: string; text: string; image?: string };
 
+/** Listrad i redigeraren: bild-URL fylls i när bilddata hämtats. */
+type EditorItem = WebsiteSectionItem & { hasImage?: boolean };
+
 function SectionEditor({
   sectionId,
   sectionType,
   typeLabel,
   heading,
   body,
-  image: savedImage,
+  hasImage,
   items,
   onClose,
 }: {
@@ -584,8 +606,8 @@ function SectionEditor({
   heading: string;
   body: string;
   onClose: () => void;
-  image?: string;
-  items?: WebsiteSectionItem[];
+  hasImage?: boolean;
+  items?: SectionListItem[];
 }) {
   const isServices = items !== undefined;
   const showSectionImage =
@@ -595,16 +617,46 @@ function SectionEditor({
     typeLabel === "Om oss";
   const [h, setH] = useState(heading);
   const [b, setB] = useState(body);
-  const [image, setImage] = useState<string | undefined>(savedImage);
+  const [image, setImage] = useState<string | undefined>(undefined);
+  // Sparad bild på servern – jämförelsepunkt så att oförändrade bilder inte skickas om vid spara.
+  const [baselineImage, setBaselineImage] = useState<string | undefined>(undefined);
   const [imageError, setImageError] = useState<string | null>(null);
   const [readingImage, setReadingImage] = useState(false);
-  const [list, setList] = useState<WebsiteSectionItem[]>(items ?? []);
+  const [list, setList] = useState<EditorItem[]>(items ?? []);
   const [draft, setDraft] = useState<ServiceDraft | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [itemsPending, startItems] = useTransition();
   const [aiPending, startAi] = useTransition();
   const router = useRouter();
+
+  // Bilddata skickas inte med sidan (tunga data-URL:er) utan hämtas när redigeraren öppnas.
+  const needsImages = Boolean(hasImage) || (items?.some((it) => it.hasImage) ?? false);
+  const [imagesLoaded, setImagesLoaded] = useState(!needsImages);
+
+  useEffect(() => {
+    if (!needsImages) return;
+    let cancelled = false;
+    getSectionImagesAction(sectionId)
+      .then((res) => {
+        if (cancelled) return;
+        if (res) {
+          // Skriv inte över en bild användaren redan hunnit välja.
+          setImage((prev) => prev ?? res.image ?? undefined);
+          setBaselineImage(res.image ?? undefined);
+          setList((prev) => prev.map((it, i) => (it.image ? it : { ...it, image: res.itemImages[i] ?? undefined })));
+        }
+        setImagesLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) setImagesLoaded(true); // Spara fungerar ändå; oförändrad bild lämnas orörd.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Körs en gång när redigeraren öppnas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function closeAll() {
     setDraft(null);
@@ -654,6 +706,7 @@ function SectionEditor({
           {showSectionImage ? (
             <SectionImageField
               image={image}
+              loading={Boolean(hasImage) && !imagesLoaded}
               onChange={setImage}
               error={imageError}
               onError={setImageError}
@@ -666,7 +719,7 @@ function SectionEditor({
             <ServiceItemsEditor
               items={list}
               error={listError}
-              busy={itemsPending}
+              busy={itemsPending || !imagesLoaded}
               onEdit={(index) => {
                 const item = list[index];
                 setDraft({ index, title: item.title, text: item.text, image: item.image });
@@ -715,15 +768,20 @@ function SectionEditor({
               onClick={() =>
                 startTransition(async () => {
                   try {
-                    await updateSectionAction(sectionId, {
+                    // Bilden skickas bara om den faktiskt ändrats (data-URL:er är tunga).
+                    const result = await updateSectionAction(sectionId, {
                       heading: h,
                       body: b,
-                      ...(showSectionImage ? { image: image ?? null } : {}),
+                      ...(showSectionImage && image !== baselineImage ? { image: image ?? null } : {}),
                     });
+                    if (result && result.ok === false) {
+                      setImageError(humanizeMediaError(result.error, "Kunde inte spara."));
+                      return;
+                    }
                     closeAll();
                     router.refresh();
                   } catch (err) {
-                    setImageError(err instanceof Error ? err.message : "Kunde inte spara.");
+                    setImageError(humanizeMediaError(err, "Kunde inte spara."));
                   }
                 })
               }
@@ -740,7 +798,15 @@ function SectionEditor({
           onClose={() => setDraft(null)}
           onSaved={(saved) => {
             setList((prev) =>
-              saved.index === "new" ? [...prev, saved.item] : prev.map((it, i) => (i === saved.index ? saved.item : it)),
+              saved.index === "new"
+                ? [...prev, saved.item]
+                : prev.map((it, i) =>
+                    i !== saved.index
+                      ? it
+                      : saved.imageChanged
+                        ? saved.item
+                        : { ...saved.item, image: it.image, hasImage: it.hasImage },
+                  ),
             );
             setDraft(null);
             setListError(null);
@@ -762,7 +828,7 @@ function ServiceItemsEditor({
   onRemove,
   onReorder,
 }: {
-  items: WebsiteSectionItem[];
+  items: EditorItem[];
   error: string | null;
   busy: boolean;
   onEdit: (index: number) => void;
@@ -827,7 +893,9 @@ function ServiceItemsEditor({
               </div>
               {item.image ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.image} alt="" className="size-9 shrink-0 rounded-lg object-cover" />
+                <img src={item.image} alt="" loading="lazy" decoding="async" className="size-9 shrink-0 rounded-lg object-cover" />
+              ) : item.hasImage ? (
+                <div className="size-9 shrink-0 animate-pulse rounded-lg bg-ink/10" aria-hidden />
               ) : (
                 <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-ink/5 text-muted">
                   <ImagePlus className="size-3.5" />
@@ -840,7 +908,8 @@ function ServiceItemsEditor({
               <button
                 type="button"
                 onClick={() => onEdit(index)}
-                className="rounded-lg p-1.5 text-muted hover:bg-ink/5 hover:text-ink"
+                disabled={busy}
+                className="rounded-lg p-1.5 text-muted hover:bg-ink/5 hover:text-ink disabled:opacity-40"
                 aria-label="Redigera tjänst"
               >
                 <Pencil className="size-3.5" />
@@ -873,58 +942,9 @@ function ServiceItemsEditor({
   );
 }
 
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-const MAX_IMAGE_EDGE = 960;
-const JPEG_QUALITY = 0.78;
-const MAX_DATA_URL_CHARS = 750_000;
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Kunde inte läsa filen."));
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.readAsDataURL(file);
-  });
-}
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Kunde inte läsa bilden."));
-    img.src = src;
-  });
-}
-
-async function fileToItemImage(file: File): Promise<string> {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("Välj en bildfil (JPG, PNG eller WebP).");
-  }
-  if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error("Bilden är för stor. Välj en bild som är mindre än 5 MB.");
-  }
-  const original = await readFileAsDataUrl(file);
-  const img = await loadImage(original);
-  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.width, img.height));
-  const width = Math.max(1, Math.round(img.width * scale));
-  const height = Math.max(1, Math.round(img.height * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Kunde inte behandla bilden.");
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, width, height);
-  ctx.drawImage(img, 0, 0, width, height);
-  const dataUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
-  if (dataUrl.length > MAX_DATA_URL_CHARS) {
-    throw new Error("Bilden är för stor även efter komprimering. Välj en enklare bild.");
-  }
-  return dataUrl;
-}
-
 export function SectionImageField({
   image,
+  loading,
   onChange,
   error,
   onError,
@@ -932,107 +952,28 @@ export function SectionImageField({
   variant,
 }: {
   image?: string;
+  /** Befintlig bild håller på att hämtas från servern. */
+  loading?: boolean;
   onChange: (next: string | undefined) => void;
   error?: string | null;
   onError?: (msg: string | null) => void;
   onBusy?: (busy: boolean) => void;
   variant: "card" | "section";
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [reading, setReading] = useState(false);
-
-  function setBusy(next: boolean) {
-    setReading(next);
-    onBusy?.(next);
-  }
-
-  function pickFile(file: File) {
-    onError?.(null);
-    setBusy(true);
-    void fileToItemImage(file)
-      .then((url) => onChange(url))
-      .catch((err: unknown) => {
-        onError?.(err instanceof Error ? err.message : "Kunde inte läsa bilden.");
-      })
-      .finally(() => setBusy(false));
-  }
-
-  const fileInput = (
-    <input
-      ref={fileRef}
-      type="file"
-      accept="image/*"
-      className="hidden"
-      onChange={(e) => {
-        const file = e.target.files?.[0];
-        e.target.value = "";
-        if (file) pickFile(file);
-      }}
-    />
-  );
-
-  const addOrReplace = (
-    <button
-      type="button"
-      className={buttonClasses("secondary", "sm")}
-      disabled={reading}
-      onClick={() => fileRef.current?.click()}
-    >
-      <ImagePlus className="size-3.5" />
-      {reading ? "Läser in bild …" : image ? "Byt bild" : "Lägg till bild"}
-    </button>
-  );
-
-  const remove = image ? (
-    <button
-      type="button"
-      className={buttonClasses("ghost", "sm")}
-      onClick={() => {
-        onChange(undefined);
-        onError?.(null);
-      }}
-    >
-      Ta bort bild
-    </button>
-  ) : null;
-
   return (
-    <div>
-      <label className="mb-1.5 block text-[13px] font-medium text-soft">Bild (valfritt)</label>
-      {fileInput}
-      {variant === "section" ? (
-        image ? (
-          <div className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image} alt="" className="h-20 w-28 shrink-0 rounded-xl object-cover" />
-            <div className="flex flex-wrap gap-2">
-              {addOrReplace}
-              {remove}
-            </div>
-          </div>
-        ) : (
-          addOrReplace
-        )
-      ) : (
-        <>
-          {image ? (
-            <div className="overflow-hidden rounded-xl border border-line">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={image} alt="" className="aspect-[16/10] w-full object-cover" />
-            </div>
-          ) : (
-            <div className="flex aspect-[16/10] items-center justify-center rounded-xl border border-dashed border-line-strong bg-canvas/50 text-[13px] text-muted">
-              Ingen bild tillagd
-            </div>
-          )}
-          <div className="mt-2 flex flex-wrap gap-2">
-            {addOrReplace}
-            {remove}
-          </div>
-        </>
-      )}
-      {error ? <p className="mt-2 text-[13px] text-danger">{error}</p> : null}
-    </div>
+    <ImageDropzone
+      label="Bild (valfritt)"
+      value={image}
+      loading={loading}
+      error={error}
+      onChange={onChange}
+      onError={onError}
+      onBusy={onBusy}
+      variant={variant === "section" ? "thumb" : "banner"}
+      addLabel="Välj bild"
+      replaceLabel="Byt bild"
+      removeLabel="Ta bort bild"
+    />
   );
 }
 
@@ -1045,26 +986,17 @@ function ServiceItemModal({
   draft: ServiceDraft | null;
   sectionId: string;
   onClose: () => void;
-  onSaved: (saved: { index: number | "new"; item: WebsiteSectionItem }) => void;
+  onSaved: (saved: { index: number | "new"; item: WebsiteSectionItem; imageChanged: boolean }) => void;
 }) {
-  return (
-    <Modal
-      open={draft !== null}
+  return draft ? (
+    <ServiceItemForm
+      key={String(draft.index)}
+      draft={draft}
+      sectionId={sectionId}
       onClose={onClose}
-      title={draft?.index === "new" ? "Lägg till tjänst" : "Redigera tjänst"}
-      size="md"
-    >
-      {draft ? (
-        <ServiceItemForm
-          key={`${draft.index}-${draft.title}-${draft.text}-${draft.image ?? ""}`}
-          draft={draft}
-          sectionId={sectionId}
-          onClose={onClose}
-          onSaved={onSaved}
-        />
-      ) : null}
-    </Modal>
-  );
+      onSaved={onSaved}
+    />
+  ) : null;
 }
 
 function ServiceItemForm({
@@ -1076,7 +1008,7 @@ function ServiceItemForm({
   draft: ServiceDraft;
   sectionId: string;
   onClose: () => void;
-  onSaved: (saved: { index: number | "new"; item: WebsiteSectionItem }) => void;
+  onSaved: (saved: { index: number | "new"; item: WebsiteSectionItem; imageChanged: boolean }) => void;
 }) {
   const [title, setTitle] = useState(draft.title);
   const [text, setText] = useState(draft.text);
@@ -1085,69 +1017,91 @@ function ServiceItemForm({
   const [readingImage, setReadingImage] = useState(false);
   const [pending, startTransition] = useTransition();
 
+  function save() {
+    if (!title.trim()) return;
+    const item: WebsiteSectionItem = { title: title.trim(), text: text.trim() };
+    if (image) item.image = image;
+    const imageChanged = image !== draft.image;
+    startTransition(async () => {
+      try {
+        if (draft.index === "new") {
+          const result = await addServiceItemAction(sectionId, item);
+          if (result && result.ok === false) {
+            setImageError(humanizeMediaError(result.error, "Kunde inte spara tjänsten."));
+            return;
+          }
+          onSaved({ index: "new", item, imageChanged: true });
+        } else {
+          // Oförändrad bild skickas inte om – data-URL:er är tunga.
+          const result = await updateServiceItemAction(sectionId, draft.index, {
+            title: item.title,
+            text: item.text,
+            ...(imageChanged ? { image: image ?? null } : {}),
+          });
+          if (result && result.ok === false) {
+            setImageError(humanizeMediaError(result.error, "Kunde inte spara tjänsten."));
+            return;
+          }
+          onSaved({ index: draft.index, item, imageChanged });
+        }
+      } catch (err) {
+        setImageError(humanizeMediaError(err, "Kunde inte spara tjänsten."));
+      }
+    });
+  }
+
   return (
-    <div className="space-y-4 px-6 py-5">
-      <div>
-        <label className="mb-1.5 block text-[13px] font-medium text-soft">Namn</label>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="T.ex. Kök"
-          className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
+    <Modal
+      open
+      onClose={onClose}
+      title={draft.index === "new" ? "Lägg till tjänst" : "Redigera tjänst"}
+      size="md"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button type="button" className={buttonClasses("ghost")} onClick={onClose}>
+            Avbryt
+          </button>
+          <button
+            type="button"
+            className={buttonClasses("primary")}
+            disabled={pending || readingImage || !title.trim()}
+            onClick={save}
+          >
+            {pending ? "Sparar …" : "Spara tjänst"}
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-4 px-6 py-5">
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-soft">Namn</label>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="T.ex. Kök"
+            className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-soft">Beskrivning</label>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={3}
+            placeholder="Kort vad ni hjälper till med …"
+            className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] leading-relaxed focus:border-accent"
+          />
+        </div>
+        <SectionImageField
+          image={image}
+          onChange={setImage}
+          error={imageError}
+          onError={setImageError}
+          onBusy={setReadingImage}
+          variant="card"
         />
       </div>
-      <div>
-        <label className="mb-1.5 block text-[13px] font-medium text-soft">Beskrivning</label>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={4}
-          placeholder="Kort vad ni hjälper till med …"
-          className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] leading-relaxed focus:border-accent"
-        />
-      </div>
-      <SectionImageField
-        image={image}
-        onChange={setImage}
-        error={imageError}
-        onError={setImageError}
-        onBusy={setReadingImage}
-        variant="card"
-      />
-      <div className="flex justify-end gap-2">
-        <button className={buttonClasses("ghost")} onClick={onClose}>
-          Avbryt
-        </button>
-        <button
-          className={buttonClasses("primary")}
-          disabled={pending || readingImage || !title.trim()}
-          onClick={() => {
-            if (!title.trim()) return;
-            const item: WebsiteSectionItem = { title: title.trim(), text: text.trim() };
-            if (image) item.image = image;
-            startTransition(async () => {
-              try {
-                if (draft.index === "new") {
-                  await addServiceItemAction(sectionId, item);
-                  onSaved({ index: "new", item });
-                } else {
-                  await updateServiceItemAction(sectionId, draft.index, {
-                    title: item.title,
-                    text: item.text,
-                    image: image ?? null,
-                  });
-                  onSaved({ index: draft.index, item });
-                }
-              } catch (err) {
-                setImageError(err instanceof Error ? err.message : "Kunde inte spara tjänsten.");
-              }
-            });
-          }}
-        >
-          {pending ? "Sparar …" : "Spara tjänst"}
-        </button>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

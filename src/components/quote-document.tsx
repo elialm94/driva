@@ -2,6 +2,10 @@ import type { BankIDSignature, CompanySettings, Customer, Quote, QuoteVersion } 
 import { docTotals, lineTotal, vatBreakdown } from "@/lib/calc";
 import { kr, datumLang, datumTid, datumNumeriskt } from "@/lib/format";
 import { ShieldCheck, BadgeCheck } from "lucide-react";
+import { taxReductionDeductionLabel, getTaxReductionTerms } from "@/lib/tax-reduction-terms";
+import { TaxReductionQuoteClause } from "./tax-reduction-terms";
+import { CompanyLogo } from "./company-logo";
+import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
 
 const LINE_KIND_LABEL: Record<string, string> = {
   arbete: "Arbete",
@@ -13,9 +17,7 @@ export function DocCompanyHeader({ company, docType, docNumber }: { company: Com
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="flex items-center gap-3">
-        <div className="flex size-11 items-center justify-center rounded-xl bg-accent text-[15px] font-bold text-white">
-          {company.logoInitials}
-        </div>
+        <CompanyLogo company={company} size="md" />
         <div>
           <p className="text-[15px] font-semibold leading-tight text-ink">{company.name}</p>
           <p className="text-[13px] text-muted">
@@ -31,12 +33,26 @@ export function DocCompanyHeader({ company, docType, docNumber }: { company: Com
   );
 }
 
+function paymentBits(company: CompanySettings): string[] {
+  const bits: string[] = [];
+  if (company.bankgiro) bits.push(`Bankgiro ${company.bankgiro}`);
+  if (company.plusgiro) bits.push(`PlusGiro ${company.plusgiro}`);
+  if (company.bankAccount) bits.push(`Bankkonto ${company.bankAccount}`);
+  if (company.iban) bits.push(`IBAN ${company.iban}`);
+  if (company.bic) bits.push(`BIC ${company.bic}`);
+  return bits;
+}
+
 export function DocFooter({ company }: { company: CompanySettings }) {
+  const sate = company.sate?.trim() || company.city;
+  const pay = paymentBits(company).join(" · ");
   return (
     <div className="mt-10 border-t border-line pt-4 text-center text-[12px] leading-relaxed text-muted">
       {company.name} · Org.nr {company.orgNumber} · Momsreg.nr {company.vatNumber}
+      {sate ? ` · Säte ${sate}` : ""}
       <br />
-      Bankgiro {company.bankgiro} · {company.email} · {company.phone} · Godkänd för F-skatt
+      {pay ? `${pay} · ` : ""}
+      {company.email} · {company.phone} · Godkänd för F-skatt
     </div>
   );
 }
@@ -98,13 +114,19 @@ export function DocTotalsBlock({
           <span className="tabular">{kr(v.vat)}</span>
         </div>
       ))}
+      {vat.length > 1 ? (
+        <div className="flex justify-between text-soft">
+          <span>Moms totalt</span>
+          <span className="tabular">{kr(t.vat)}</span>
+        </div>
+      ) : null}
       <div className="flex justify-between font-medium text-ink">
         <span>Totalt inkl. moms</span>
         <span className="tabular">{kr(t.total)}</span>
       </div>
-      {t.deduction > 0 && rot ? (
+      {rot ? (
         <div className="flex justify-between text-accent-deep">
-          <span>{rot.type === "rot" ? "ROT-avdrag" : "RUT-avdrag"}</span>
+          <span>{taxReductionDeductionLabel(rot.type)}</span>
           <span className="tabular">−{kr(t.deduction)}</span>
         </div>
       ) : null}
@@ -133,11 +155,12 @@ export function QuoteDocument({
   version: QuoteVersion;
   signature?: BankIDSignature;
 }) {
+  const seller = resolveQuoteCompany(version, company);
   const t = docTotals(version.lines, version.rot);
 
   return (
     <div className="bg-white px-7 py-8 text-ink sm:px-10 sm:py-10">
-      <DocCompanyHeader company={company} docType="Offert" docNumber={`#${quote.number}`} />
+      <DocCompanyHeader company={seller} docType="Offert" docNumber={`#${quote.number}`} />
 
       <div className="mt-8 grid grid-cols-2 gap-x-6 gap-y-4 text-[13px] sm:grid-cols-4">
         <div>
@@ -176,11 +199,8 @@ export function QuoteDocument({
         <DocTotalsBlock lines={version.lines} rot={version.rot} toPayLabel="Att betala" />
       </div>
 
-      {version.rot && t.deduction > 0 ? (
-        <p className="mt-3 text-[12px] leading-relaxed text-muted">
-          {version.rot.type === "rot" ? "ROT-avdraget" : "RUT-avdraget"} ({kr(t.deduction)}) dras direkt på fakturan.
-          Vi begär utbetalningen från Skatteverket – du behöver inte göra något.
-        </p>
+      {version.rot ? (
+        <TaxReductionQuoteClause terms={version.taxReductionTerms ?? getTaxReductionTerms(version.rot.type)} />
       ) : null}
 
       {version.paymentPlan.length > 0 ? (
@@ -231,7 +251,7 @@ export function QuoteDocument({
         </div>
       )}
 
-      <DocFooter company={company} />
+      <DocFooter company={seller} />
     </div>
   );
 }

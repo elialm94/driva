@@ -5,6 +5,8 @@ import { currentVersion, getQuote, requireCustomer } from "./data";
 import { docTotals } from "../calc";
 import { kr, isoDaysFromNow } from "../format";
 import { logActivity } from "./activity";
+import { taxReductionFields } from "../tax-reduction-terms";
+import { sellerSnapshot } from "../invoices/snapshot";
 
 export interface QuoteInput {
   customerId: string;
@@ -39,12 +41,12 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
     title: input.title,
     intro: input.intro,
     lines: input.lines,
-    rot: input.rot,
     paymentPlan: input.paymentPlan,
     paymentTermsDays: input.paymentTermsDays,
     lateInterestRate: input.lateInterestRate ?? data.settings.lateInterestRate,
     validUntil: input.validUntil,
     terms: input.terms,
+    ...taxReductionFields(input.rot),
     createdAt: now,
   };
 
@@ -106,6 +108,7 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
       quoteId,
       version: version.version + 1,
       ...input,
+      ...taxReductionFields(input.rot),
       createdAt: new Date().toISOString(),
     };
     data.quoteVersions.push(newVersion);
@@ -119,7 +122,8 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
       { customerId: quote.customerId, entity: { type: "offert", id: quoteId } }
     );
   } else {
-    Object.assign(version, input);
+    Object.assign(version, input, taxReductionFields(input.rot));
+    version.sellerSnapshot = undefined;
     if (quote.status === "skickad") {
       quote.status = "utkast";
       quote.sentAt = undefined;
@@ -136,6 +140,11 @@ export function sendQuote(quoteId: string): Quote {
   if (!quote) throw new Error("Offerten finns inte");
   const customer = requireCustomer(quote.customerId);
   const version = currentVersion(quote);
+  // Ingen ROT/RUT-offert får skickas utan systemvillkoret, oavsett skapandeflöde.
+  if (!version.lockedAt) {
+    Object.assign(version, taxReductionFields(version.rot));
+    version.sellerSnapshot = sellerSnapshot(db().settings);
+  }
   const t = docTotals(version.lines, version.rot);
   quote.status = "skickad";
   quote.sentAt = new Date().toISOString();
@@ -205,7 +214,8 @@ export function quoteDefaults() {
   return {
     paymentTermsDays: settings.paymentTermsDays,
     lateInterestRate: settings.lateInterestRate,
-    validUntil: isoDaysFromNow(30),
+    validUntil: isoDaysFromNow(settings.quoteValidityDays ?? 30),
+    defaultVatRate: settings.defaultVatRate ?? 25,
     terms: STANDARD_TERMS,
   };
 }

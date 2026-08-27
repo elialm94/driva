@@ -12,17 +12,11 @@ import {
   PaySupplierButton,
   UploadReceiptButton,
 } from "@/components/money-widgets";
+import { PENGAR_TABS, type PengarTab } from "@/lib/nav";
 
 export const metadata = { title: "Pengar" };
 
-type Tab = "offerter" | "fakturor" | "utgifter" | "bank";
-
-const TABS: { key: Tab; label: string }[] = [
-  { key: "offerter", label: "Offerter" },
-  { key: "fakturor", label: "Fakturor" },
-  { key: "utgifter", label: "Utgifter & kvitton" },
-  { key: "bank", label: "Bank" },
-];
+type Tab = PengarTab;
 
 export default async function MoneyPage(props: PageProps<"/pengar">) {
   const searchParams = await props.searchParams;
@@ -34,7 +28,12 @@ export default async function MoneyPage(props: PageProps<"/pengar">) {
   const stats = businessStats();
 
   const quotes = [...data.quotes].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const invoices = [...data.invoices].sort((a, b) => b.number - a.number);
+  const invoices = [...data.invoices].sort((a, b) => {
+    if (a.number == null && b.number == null) return b.createdAt.localeCompare(a.createdAt);
+    if (a.number == null) return -1;
+    if (b.number == null) return 1;
+    return b.number - a.number;
+  });
   const expenses = [...data.expenses].sort((a, b) => b.date.localeCompare(a.date));
   const supplierInvoices = [...data.supplierInvoices].sort((a, b) =>
     (a.status + a.dueDate).localeCompare(b.status + b.dueDate)
@@ -86,7 +85,7 @@ export default async function MoneyPage(props: PageProps<"/pengar">) {
       </Card>
 
       <div className="mb-5 flex gap-1 overflow-x-auto rounded-2xl bg-ink/4 p-1">
-        {TABS.map((t) => (
+        {PENGAR_TABS.map((t) => (
           <Link
             key={t.key}
             href={`/pengar?flik=${t.key}` as never}
@@ -140,7 +139,7 @@ export default async function MoneyPage(props: PageProps<"/pengar">) {
                 <Link key={inv.id} href={`/pengar/fakturor/${inv.id}` as never} className={rowCls}>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[15px] font-medium">
-                      #{inv.number}
+                      {inv.number == null ? "Utkast" : `#${inv.number}`}
                       {inv.type !== "faktura" ? (
                         <span className="ml-2 text-[13px] font-normal text-muted">
                           {inv.type === "delbetalning" ? "Delbetalning" : inv.type === "slutfaktura" ? "Slutfaktura" : "Kredit"}

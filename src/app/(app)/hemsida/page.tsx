@@ -46,6 +46,14 @@ export default function WebsitePage() {
 
   const published = site.status === "publicerad";
 
+  // Redigeringslistan behöver inte bilddatan (tunga data-URL:er) – bara vetskap om att bild finns.
+  // Själva bilderna hämtas när en sektion öppnas för redigering.
+  const listSections = site.sections.map(({ image, items, ...rest }) => ({
+    ...rest,
+    hasImage: Boolean(image),
+    items: items?.map(({ image: itemImage, ...itemRest }) => ({ ...itemRest, hasImage: Boolean(itemImage) })),
+  }));
+
   return (
     <div className="animate-fade-up">
       <PageHeader
@@ -103,7 +111,7 @@ export default function WebsitePage() {
           <div>
             <SectionTitle>Innehåll</SectionTitle>
             <Card>
-              <SectionList sections={site.sections} labels={SECTION_LABELS} />
+              <SectionList sections={listSections} labels={SECTION_LABELS} />
             </Card>
             <p className="mt-2 text-[12px] leading-relaxed text-muted">
               Dra för att ändra ordning. Klicka för att redigera. Dolda sektioner syns inte på sajten, men innehållet

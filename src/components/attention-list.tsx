@@ -21,6 +21,7 @@ import {
   sendReminderAction,
   uploadReceiptAction,
 } from "@/app/actions";
+import { invoiceHref } from "@/lib/nav";
 
 export type AttentionAction =
   | { type: "link"; label: string; href: string }
@@ -28,7 +29,7 @@ export type AttentionAction =
   | { type: "remindInvoice"; label: string; invoiceId: string }
   | { type: "uploadReceipt"; label: string; expenseId: string }
   | { type: "answerQuestion"; options: string[]; expenseId: string }
-  | { type: "createFinalInvoice"; label: string; jobId: string };
+  | { type: "createFinalInvoice"; label: string; jobId: string; jobTitle?: string };
 
 export interface AttentionDTO {
   id: string;
@@ -156,10 +157,15 @@ function AttentionRow({ item }: { item: AttentionDTO }) {
                 className={buttonClasses("accent", "sm")}
                 disabled={isPending}
                 onClick={() => {
-                  const id = (item.action as { jobId: string }).jobId;
+                  const action = item.action as { jobId: string; jobTitle?: string };
                   startTransition(async () => {
-                    const invoiceId = await createFinalInvoiceForJobAction(id);
-                    router.push(`/pengar/fakturor/${invoiceId}`);
+                    const invoiceId = await createFinalInvoiceForJobAction(action.jobId);
+                    router.push(
+                      invoiceHref(invoiceId, {
+                        href: `/uppdrag/${action.jobId}`,
+                        label: action.jobTitle,
+                      }) as never
+                    );
                   });
                 }}
               >

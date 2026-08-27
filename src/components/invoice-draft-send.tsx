@@ -1,64 +1,141 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
 import { Modal } from "./modal";
-import { PreviewModal } from "./preview-modal";
 import { buttonClasses } from "./ui";
 import { kr } from "@/lib/format";
 import { QUOTE_EXCESS_WARN_AMOUNT, QUOTE_EXCESS_WARN_PERCENT } from "@/lib/quote-excess";
 
+function withFlag(href: string, key: string, value: string) {
+  const url = new URL(href, "https://driva.local");
+  url.searchParams.set(key, value);
+  return `${url.pathname}${url.search}`;
+}
+
 export function InvoiceDraftSend({
-  customerFirstName,
-  document,
+  customerName,
+  amount,
+  dueDateLabel,
   sendAction,
-  publicPath,
+  detailHref,
   recipientEmail,
+  addEmailHref,
+  hasIssuanceBlockers = false,
   excessAmount,
   tillaggHref,
+  missingTaxReductionAcceptance = false,
 }: {
-  customerFirstName: string;
-  document: ReactNode;
-  sendAction: () => Promise<void>;
-  publicPath: string;
+  customerName: string;
+  amount: number;
+  dueDateLabel: string;
+  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; issued?: boolean }>;
+  detailHref: string;
   recipientEmail?: string;
+  addEmailHref: string;
+  hasIssuanceBlockers?: boolean;
   /** Positivt belopp om fakturan överstiger tröskeln; annars utelämnas varningen. */
   excessAmount?: number;
   tillaggHref?: string;
+  missingTaxReductionAcceptance?: boolean;
 }) {
   const router = useRouter();
   const [warnOpen, setWarnOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [taxWarnOpen, setTaxWarnOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [isSending, startSending] = useTransition();
   const needsWarning = (excessAmount ?? 0) > 0 && !!tillaggHref;
+  const email = recipientEmail?.trim() ?? "";
 
-  function requestPreview() {
+  function openConfirm() {
+    setSendError(null);
+    setConfirmOpen(true);
+  }
+
+  function afterExcessContinue() {
+    setWarnOpen(false);
+    if (missingTaxReductionAcceptance) setTaxWarnOpen(true);
+    else openConfirm();
+  }
+
+  function requestSend() {
+    if (hasIssuanceBlockers) {
+      document.getElementById("invoice-send-blockers")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    if (!email) {
+      setEmailOpen(true);
+      return;
+    }
     if (needsWarning) setWarnOpen(true);
-    else setPreviewOpen(true);
+    else if (missingTaxReductionAcceptance) setTaxWarnOpen(true);
+    else openConfirm();
+  }
+
+  function finish(flag: "skickad" | "leveransfel") {
+    router.replace(withFlag(detailHref, flag, "1"));
+    router.refresh();
+  }
+
+  function confirmSend() {
+    startSending(async () => {
+      setSendError(null);
+      const result = await sendAction();
+      if (result && result.ok === false) {
+        setSendError((result.errors ?? []).join(" "));
+        if (result.issued) finish("leveransfel");
+        return;
+      }
+      finish("skickad");
+    });
   }
 
   return (
     <>
-      <button className={buttonClasses("primary")} onClick={requestPreview}>
+      <button className={buttonClasses("primary")} onClick={requestSend}>
         <Send className="size-4" />
-        Förhandsgranska & skicka
+        Skicka faktura
       </button>
 
-      <PreviewModal
-        hideTrigger
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-        triggerLabel="Förhandsgranska & skicka"
-        title={`Så här ser ${customerFirstName} fakturan`}
-        document={document}
-        mode="send"
-        sendAction={sendAction}
-        sendLabel="Skicka faktura"
-        sentTitle="Fakturan är skickad"
-        sentText="Fakturan är bokförd och kunden har fått den med e-post."
-        publicPath={publicPath}
-        recipientEmail={recipientEmail}
-      />
+      <Modal open={confirmOpen} onClose={() => !isSending && setConfirmOpen(false)} size="sm" title="Skicka faktura?">
+        <div className="px-6 py-5">
+          <p className="text-[17px] font-semibold tracking-tight text-ink">{customerName}</p>
+          <p className="mt-1 text-[15px] text-soft">{kr(amount)}</p>
+          <p className="mt-1 text-[14px] text-muted">Förfaller {dueDateLabel}</p>
+          <p className="mt-4 text-[14px] leading-relaxed text-soft">
+            Fakturan skickas till: <span className="font-semibold text-ink">{email}</span>
+          </p>
+          {sendError ? <p className="mt-3 text-[13px] font-medium text-danger">{sendError}</p> : null}
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button className={buttonClasses("secondary")} disabled={isSending} onClick={() => setConfirmOpen(false)}>
+              Avbryt
+            </button>
+            <button className={buttonClasses("primary")} disabled={isSending} onClick={confirmSend}>
+              <Send className="size-4" />
+              {isSending ? "Skickar …" : "Skicka faktura"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={emailOpen} onClose={() => setEmailOpen(false)} size="sm" title="Kunden saknar e-postadress">
+        <div className="px-6 py-5">
+          <p className="text-[15px] leading-relaxed text-soft">
+            Kunden saknar e-postadress. Utkastet sparas – lägg till e-post och skicka sedan.
+          </p>
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button className={buttonClasses("secondary")} onClick={() => setEmailOpen(false)}>
+              Avbryt
+            </button>
+            <a href={addEmailHref} className={buttonClasses("primary")}>
+              Lägg till e-post
+            </a>
+          </div>
+        </div>
+      </Modal>
 
       <Modal open={warnOpen} onClose={() => setWarnOpen(false)} size="sm" title="Högre än den godkända offerten">
         <div className="px-6 py-5">
@@ -74,14 +151,34 @@ export function InvoiceDraftSend({
             <button className={buttonClasses("secondary")} onClick={() => tillaggHref && router.push(tillaggHref)}>
               Skapa tilläggsoffert
             </button>
+            <button className={buttonClasses("primary")} onClick={afterExcessContinue}>
+              Fortsätt
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={taxWarnOpen} onClose={() => setTaxWarnOpen(false)} size="sm" title="ROT/RUT-villkor saknas">
+        <div className="px-6 py-5">
+          <p className="text-[15px] font-semibold text-ink">Kunden har inte godkänt något ROT/RUT-villkor i Driva.</p>
+          <p className="mt-2 text-[14px] leading-relaxed text-soft">
+            Vi rekommenderar att villkoren godkänns innan fakturan skickas.
+          </p>
+          <p className="mt-3 text-[13px] leading-relaxed text-muted">
+            Dokumenterat godkännande saknas i Driva. Du kan skicka ändå, men villkoren är inte avtalade via BankID.
+          </p>
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button className={buttonClasses("secondary")} onClick={() => setTaxWarnOpen(false)}>
+              Avbryt
+            </button>
             <button
               className={buttonClasses("primary")}
               onClick={() => {
-                setWarnOpen(false);
-                setPreviewOpen(true);
+                setTaxWarnOpen(false);
+                openConfirm();
               }}
             >
-              Fortsätt till förhandsgranskning
+              Fortsätt
             </button>
           </div>
         </div>
