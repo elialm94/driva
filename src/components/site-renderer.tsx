@@ -1,4 +1,4 @@
-import type { CompanySettings, Website, WebsiteTheme } from "@/lib/types";
+import type { CompanySettings, Website, WebsiteSectionItem, WebsiteTheme } from "@/lib/types";
 import { SiteContactForm } from "./site-widgets";
 
 /**
@@ -86,20 +86,12 @@ export function SiteRenderer({
       {services ? (
         <section id="tjanster" className="mx-auto max-w-4xl px-6 py-14" style={{ borderTop: `1px solid ${t.line}` }}>
           <h2 className="text-[24px] font-bold tracking-tight">{services.heading}</h2>
-          <p className="mt-2 max-w-xl text-[15px] leading-relaxed" style={{ color: t.soft }}>
-            {services.body}
-          </p>
-          <div className="mt-8 grid gap-4 sm:grid-cols-3">
-            {(services.items ?? []).map((item) => (
-              <div key={item.title} className="rounded-2xl p-5" style={{ background: t.card, border: `1px solid ${t.line}` }}>
-                <div className="size-2.5 rounded-full" style={{ background: t.accent }} />
-                <h3 className="mt-3 text-[16px] font-semibold">{item.title}</h3>
-                <p className="mt-1.5 text-[13.5px] leading-relaxed" style={{ color: t.soft }}>
-                  {item.text}
-                </p>
-              </div>
-            ))}
-          </div>
+          {services.body ? (
+            <p className="mt-2 max-w-xl text-[15px] leading-relaxed" style={{ color: t.soft }}>
+              {services.body}
+            </p>
+          ) : null}
+          <ServicesGrid items={services.items ?? []} card={t.card} line={t.line} soft={t.soft} accent={t.accent} />
         </section>
       ) : null}
 
@@ -174,6 +166,63 @@ export function SiteRenderer({
       <footer className="px-6 py-8 text-center text-[12px]" style={{ color: t.soft, borderTop: `1px solid ${t.line}` }}>
         © {new Date().getFullYear()} {website.businessName} · Org.nr {company.orgNumber} · Hemsida byggd med Driva
       </footer>
+    </div>
+  );
+}
+
+function ServicesGrid({
+  items,
+  card,
+  line,
+  soft,
+  accent,
+}: {
+  items: WebsiteSectionItem[];
+  card: string;
+  line: string;
+  soft: string;
+  accent: string;
+}) {
+  if (items.length === 0) {
+    return (
+      <p
+        className="mt-8 rounded-2xl px-5 py-8 text-center text-[14px]"
+        style={{ color: soft, background: card, border: `1px solid ${line}` }}
+      >
+        Inga tjänster att visa ännu.
+      </p>
+    );
+  }
+
+  const cols =
+    items.length === 1
+      ? "grid-cols-1 sm:max-w-xl"
+      : items.length === 2
+        ? "grid-cols-1 sm:grid-cols-2"
+        : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
+
+  return (
+    <div className={`mt-8 grid gap-4 ${cols}`}>
+      {items.map((item, i) => (
+        <div
+          key={`${item.title}-${i}`}
+          className="overflow-hidden rounded-2xl"
+          style={{ background: card, border: `1px solid ${line}` }}
+        >
+          {item.image ? (
+            // Data-URL:er (inga filer i en mediabank) – next/image passar inte här.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={item.image} alt="" className="aspect-[16/10] w-full object-cover" />
+          ) : null}
+          <div className="p-5">
+            {item.image ? null : <div className="size-2.5 rounded-full" style={{ background: accent }} />}
+            <h3 className={item.image ? "text-[16px] font-semibold" : "mt-3 text-[16px] font-semibold"}>{item.title}</h3>
+            <p className="mt-1.5 text-[13.5px] leading-relaxed" style={{ color: soft }}>
+              {item.text}
+            </p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

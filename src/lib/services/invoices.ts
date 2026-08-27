@@ -64,6 +64,39 @@ export function createInvoice(input: InvoiceInput): Invoice {
   return invoice;
 }
 
+export interface InvoiceUpdateInput {
+  lines: DocLine[];
+  rot: RotRut | null;
+  dueInDays?: number;
+  lateInterestRate?: number;
+}
+
+/** Uppdatera ett fakturautkast. Skickade, betalda och krediterade fakturor får inte ändras. */
+export function updateInvoice(invoiceId: string, input: InvoiceUpdateInput): Invoice {
+  const invoice = getInvoice(invoiceId);
+  if (!invoice) throw new Error("Fakturan finns inte");
+  if (invoice.status !== "utkast") {
+    throw new Error("Bara utkast kan redigeras. Skickade fakturor korrigeras med kreditfaktura.");
+  }
+
+  invoice.lines = input.lines;
+  invoice.rot = input.rot;
+  if (input.dueInDays != null) {
+    invoice.dueDate = isoDaysFromNow(input.dueInDays);
+  }
+  if (input.lateInterestRate != null) {
+    invoice.lateInterestRate = input.lateInterestRate;
+  }
+
+  const customer = requireCustomer(invoice.customerId);
+  logActivity(`Faktura #${invoice.number} uppdaterades (utkast).`, {
+    customerId: customer.id,
+    entity: { type: "faktura", id: invoice.id },
+  });
+  save();
+  return invoice;
+}
+
 /** Slutfaktura för ett jobb – resterande belopp enligt den godkända offerten. */
 export function createFinalInvoiceForJob(jobId: string): Invoice {
   const job = getJob(jobId);

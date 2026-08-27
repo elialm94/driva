@@ -28,7 +28,9 @@ import {
   creditInvoice,
   sendInvoice,
   sendReminder,
+  updateInvoice,
   type InvoiceInput,
+  type InvoiceUpdateInput,
 } from "@/lib/services/invoices";
 import { paySupplierInvoice, simulateIncomingPayment } from "@/lib/services/banking";
 import {
@@ -37,18 +39,23 @@ import {
   uploadStandaloneReceipt,
 } from "@/lib/services/expenses";
 import {
+  addServiceItem,
   generateWebsite,
   publishWebsite,
+  removeServiceItem,
+  reorderServiceItems,
   rewriteSectionHeading,
+  setSectionItems,
   submitContactForm,
   updateSection,
+  updateServiceItem,
 } from "@/lib/services/website";
 import {
   cancelPendingAction,
   confirmPendingAction,
   sendUserMessage,
 } from "@/lib/services/assistant";
-import type { Customer, RequestSource } from "@/lib/types";
+import type { Customer, RequestSource, WebsiteSectionItem } from "@/lib/types";
 
 function refresh() {
   revalidatePath("/", "layout");
@@ -180,6 +187,12 @@ export async function createInvoiceAction(input: InvoiceInput): Promise<never> {
   redirect(`/pengar/fakturor/${inv.id}`);
 }
 
+export async function updateInvoiceAction(invoiceId: string, input: InvoiceUpdateInput): Promise<never> {
+  const inv = updateInvoice(invoiceId, input);
+  refresh();
+  redirect(`/pengar/fakturor/${inv.id}`);
+}
+
 export async function sendInvoiceAction(invoiceId: string) {
   sendInvoice(invoiceId);
   refresh();
@@ -231,6 +244,36 @@ export async function generateWebsiteAction(description: string) {
 
 export async function updateSectionAction(sectionId: string, fields: { heading?: string; body?: string }) {
   updateSection(sectionId, fields);
+  refresh();
+}
+
+export async function setSectionItemsAction(sectionId: string, items: WebsiteSectionItem[]) {
+  setSectionItems(sectionId, items);
+  refresh();
+}
+
+export async function addServiceItemAction(sectionId: string, item: WebsiteSectionItem) {
+  addServiceItem(sectionId, item);
+  refresh();
+}
+
+export async function updateServiceItemAction(
+  sectionId: string,
+  index: number,
+  fields: { title?: string; text?: string; image?: string | null },
+) {
+  updateServiceItem(sectionId, index, fields);
+  refresh();
+}
+
+export async function removeServiceItemAction(sectionId: string, index: number) {
+  const result = removeServiceItem(sectionId, index);
+  if (!result.error) refresh();
+  return result;
+}
+
+export async function reorderServiceItemsAction(sectionId: string, fromIndex: number, toIndex: number) {
+  reorderServiceItems(sectionId, fromIndex, toIndex);
   refresh();
 }
 

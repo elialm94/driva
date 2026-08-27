@@ -24,6 +24,9 @@ export function PreviewModal({
   sentText,
   publicPath,
   recipientEmail,
+  hideTrigger = false,
+  open: openProp,
+  onOpenChange,
 }: {
   triggerLabel: string;
   triggerVariant?: "primary" | "accent" | "secondary" | "ghost";
@@ -36,11 +39,21 @@ export function PreviewModal({
   sentText?: string;
   publicPath: string;
   recipientEmail?: string;
+  hideTrigger?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const isControlled = openProp !== undefined;
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = isControlled ? openProp : internalOpen;
   const [device, setDevice] = useState<Device>("desktop");
   const [sent, setSent] = useState(false);
   const [isSending, startSending] = useTransition();
+
+  function setOpen(next: boolean) {
+    if (!isControlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  }
 
   const deviceTabs: { key: Device; label: string; icon: typeof Monitor }[] = [
     { key: "desktop", label: "Desktop", icon: Monitor },
@@ -56,10 +69,12 @@ export function PreviewModal({
 
   return (
     <>
-      <button className={buttonClasses(triggerVariant)} onClick={() => setOpen(true)}>
-        {mode === "send" ? <Send className="size-4" /> : <Eye className="size-4" />}
-        {triggerLabel}
-      </button>
+      {hideTrigger ? null : (
+        <button className={buttonClasses(triggerVariant)} onClick={() => setOpen(true)}>
+          {mode === "send" ? <Send className="size-4" /> : <Eye className="size-4" />}
+          {triggerLabel}
+        </button>
+      )}
 
       <Modal open={open} onClose={close} size="xl" title={sent ? undefined : title}>
         {sent ? (

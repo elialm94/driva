@@ -1,6 +1,6 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
-import type { Website, WebsiteSection, WebsiteTheme } from "../types";
+import type { Website, WebsiteSection, WebsiteSectionItem, WebsiteTheme } from "../types";
 import { logActivity } from "./activity";
 import { createRequest, findOrCreateCustomerByEmail } from "./customers";
 
@@ -13,7 +13,7 @@ interface BranchTemplate {
   theme: WebsiteTheme;
   taglines: string[];
   heroBody: (city: string) => string;
-  services: { title: string; text: string }[];
+  services: WebsiteSectionItem[];
   about: string;
 }
 
@@ -179,6 +179,108 @@ export function updateSection(sectionId: string, fields: { heading?: string; bod
   if (fields.body !== undefined) section.body = fields.body;
   site.status = site.status === "publicerad" ? "publicerad" : "utkast";
   save();
+}
+
+const MAX_ITEM_IMAGE_CHARS = 900_000;
+
+function assertItemImage(image: string): void {
+  if (!image.startsWith("data:image/") && !image.startsWith("/")) {
+    throw new Error("Ogiltig bild. Välj en JPG, PNG eller WebP.");
+  }
+  if (image.startsWith("data:") && image.length > MAX_ITEM_IMAGE_CHARS) {
+    throw new Error("Bilden är för stor. Välj en mindre bild eller en med lägre upplösning.");
+  }
+}
+
+function normalizeItem(item: WebsiteSectionItem): WebsiteSectionItem {
+  const next: WebsiteSectionItem = {
+    title: item.title.trim(),
+    text: item.text.trim(),
+  };
+  if (item.image) {
+    assertItemImage(item.image);
+    next.image = item.image;
+  }
+  return next;
+}
+
+function requireTjansterSection(sectionId: string): { site: Website; section: WebsiteSection } {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att uppdatera");
+  const section = site.sections.find((s) => s.id === sectionId);
+  if (!section || section.type !== "tjanster") throw new Error("Tjänstesektionen hittades inte");
+  if (!section.items) section.items = [];
+  return { site, section };
+}
+
+function touchSite(site: Website): void {
+  site.status = site.status === "publicerad" ? "publicerad" : "utkast";
+  save();
+}
+
+/** Ersätter hela tjänstelistan. Arrayordning = visningsordning. */
+export function setSectionItems(sectionId: string, items: WebsiteSectionItem[]): void {
+  const { site, section } = requireTjansterSection(sectionId);
+  section.items = items.map(normalizeItem);
+  touchSite(site);
+}
+
+export function addServiceItem(sectionId: string, item: WebsiteSectionItem): void {
+  if (!item.title.trim()) throw new Error("Ange ett namn på tjänsten.");
+  const { site, section } = requireTjansterSection(sectionId);
+  section.items!.push(normalizeItem(item));
+  touchSite(site);
+}
+
+export function updateServiceItem(
+  sectionId: string,
+  index: number,
+  fields: { title?: string; text?: string; image?: string | null },
+): void {
+  const { site, section } = requireTjansterSection(sectionId);
+  const item = section.items![index];
+  if (!item) throw new Error("Tjänsten hittades inte");
+  if (fields.title !== undefined) {
+    const title = fields.title.trim();
+    if (!title) throw new Error("Ange ett namn på tjänsten.");
+    item.title = title;
+  }
+  if (fields.text !== undefined) item.text = fields.text.trim();
+  if (fields.image === null || fields.image === "") {
+    delete item.image;
+  } else if (fields.image !== undefined) {
+    assertItemImage(fields.image);
+    item.image = fields.image;
+  }
+  touchSite(site);
+}
+
+export function removeServiceItem(sectionId: string, index: number): { error?: string } {
+  const { site, section } = requireTjansterSection(sectionId);
+  if ((section.items?.length ?? 0) <= 1) {
+    return { error: "Minst en tjänst behövs" };
+  }
+  if (!section.items![index]) return { error: "Tjänsten hittades inte" };
+  section.items!.splice(index, 1);
+  touchSite(site);
+  return {};
+}
+
+export function reorderServiceItems(sectionId: string, fromIndex: number, toIndex: number): void {
+  const { site, section } = requireTjansterSection(sectionId);
+  const items = section.items!;
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= items.length ||
+    toIndex >= items.length
+  ) {
+    return;
+  }
+  const [moved] = items.splice(fromIndex, 1);
+  items.splice(toIndex, 0, moved);
+  touchSite(site);
 }
 
 export function publishWebsite(): Website {

@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, useTransition, type KeyboardEvent } from "react";
+import { ChevronDown, Plus, Search, Trash2 } from "lucide-react";
 import { buttonClasses, Card, cx } from "./ui";
 import { docTotals } from "@/lib/calc";
 import { kr } from "@/lib/format";
 import type { DocLine, LineKind, PaymentPlanPart, RotRut, VatRate } from "@/lib/types";
-import { createQuoteAction, updateQuoteAction, createInvoiceAction } from "@/app/actions";
+import { createQuoteAction, updateQuoteAction, createInvoiceAction, updateInvoiceAction } from "@/app/actions";
 import { useRouter } from "next/navigation";
+import { NewCustomerModal, type CreatedCustomer } from "./new-customer-modal";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -17,6 +18,171 @@ export interface CustomerOption {
   id: string;
   name: string;
   kind: "privat" | "foretag";
+}
+
+function QuoteCustomerSelect({
+  customers,
+  value,
+  onChange,
+  onCreateNew,
+}: {
+  customers: CustomerOption[];
+  value: string;
+  onChange: (id: string) => void;
+  onCreateNew: () => void;
+}) {
+  const listId = useId();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [highlight, setHighlight] = useState(0);
+
+  const selected = customers.find((c) => c.id === value);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return customers;
+    return customers.filter((c) => c.name.toLowerCase().includes(q));
+  }, [customers, query]);
+
+  const optionCount = filtered.length + 1;
+
+  useEffect(() => {
+    if (!open) return;
+    const frame = requestAnimationFrame(() => searchRef.current?.focus());
+    function onPointerDown(e: PointerEvent) {
+      if (!containerRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [open]);
+
+  function close() {
+    setOpen(false);
+    setQuery("");
+  }
+
+  function openMenu() {
+    const selectedIndex = customers.findIndex((c) => c.id === value);
+    setHighlight(selectedIndex >= 0 ? selectedIndex : 0);
+    setOpen(true);
+  }
+
+  function pick(id: string) {
+    onChange(id);
+    close();
+  }
+
+  function create() {
+    close();
+    onCreateNew();
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLElement>) {
+    if (!open) {
+      if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openMenu();
+      }
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlight((h) => Math.min(h + 1, optionCount - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (highlight >= filtered.length) create();
+      else if (filtered[highlight]) pick(filtered[highlight].id);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+    }
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => (open ? close() : openMenu())}
+        onKeyDown={onKeyDown}
+        className={cx(inputCls, "flex items-center justify-between gap-2 text-left")}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        role="combobox"
+      >
+        <span className={selected ? "truncate" : "truncate text-muted"}>{selected?.name ?? "Välj kund"}</span>
+        <ChevronDown className={cx("size-4 shrink-0 text-muted transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open ? (
+        <div className="absolute inset-x-0 top-full z-20 mt-1.5 flex max-h-80 flex-col overflow-hidden rounded-xl border border-line bg-card shadow-pop animate-fade-in">
+          <div className="relative border-b border-line">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setHighlight(0);
+              }}
+              onKeyDown={onKeyDown}
+              placeholder="Sök kund …"
+              className="w-full bg-transparent py-2.5 pl-10 pr-3.5 text-[14px] text-ink placeholder:text-muted"
+              autoComplete="off"
+              aria-autocomplete="list"
+            />
+          </div>
+          <ul id={listId} role="listbox" className="max-h-52 overflow-y-auto py-1">
+            {filtered.length === 0 ? (
+              <li className="px-3.5 py-2.5 text-[13px] text-muted">
+                {query.trim() ? `Ingen kund matchar ”${query.trim()}”` : "Inga kunder ännu"}
+              </li>
+            ) : (
+              filtered.map((c, i) => (
+                <li key={c.id} role="option" aria-selected={c.id === value}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pick(c.id)}
+                    onMouseEnter={() => setHighlight(i)}
+                    className={cx(
+                      "flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-[14px] transition-colors",
+                      i === highlight ? "bg-canvas" : "bg-card"
+                    )}
+                  >
+                    <span className="min-w-0 truncate font-medium text-ink">{c.name}</span>
+                    {c.kind === "foretag" ? <span className="shrink-0 text-[12px] text-muted">Företag</span> : null}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={create}
+            onMouseEnter={() => setHighlight(filtered.length)}
+            className={cx(
+              "flex w-full items-center gap-2 border-t border-line px-3.5 py-2.5 text-left text-[14px] font-medium text-accent transition-colors",
+              highlight === filtered.length ? "bg-accent-soft" : "bg-canvas/60 hover:bg-accent-soft"
+            )}
+          >
+            <Plus className="size-4" /> Skapa ny kund
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function newLine(kind: LineKind = "arbete"): DocLine {
@@ -189,7 +355,9 @@ export function QuoteForm({
   defaults: { paymentTermsDays: number; lateInterestRate: number; validUntil: string; terms: string };
 }) {
   const router = useRouter();
+  const [customerOptions, setCustomerOptions] = useState(customers);
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
+  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
   const [title, setTitle] = useState(initial?.title ?? "");
   const [intro, setIntro] = useState(initial?.intro ?? "");
   const [lines, setLines] = useState<DocLine[]>(
@@ -236,13 +404,35 @@ export function QuoteForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className={labelCls}>Kund</label>
-              <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className={inputCls} disabled={!!quoteId}>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              {quoteId ? (
+                <select value={customerId} className={inputCls} disabled>
+                  {customerOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <>
+                  <QuoteCustomerSelect
+                    customers={customerOptions}
+                    value={customerId}
+                    onChange={setCustomerId}
+                    onCreateNew={() => setCreateCustomerOpen(true)}
+                  />
+                  <NewCustomerModal
+                    open={createCustomerOpen}
+                    onClose={() => setCreateCustomerOpen(false)}
+                    onCreated={(customer: CreatedCustomer) => {
+                      setCustomerOptions((prev) => {
+                        if (prev.some((c) => c.id === customer.id)) return prev;
+                        return [...prev, customer].sort((a, b) => a.name.localeCompare(b.name, "sv"));
+                      });
+                      setCustomerId(customer.id);
+                    }}
+                  />
+                </>
+              )}
             </div>
             <div>
               <label className={labelCls}>Rubrik</label>
@@ -381,23 +571,58 @@ export function QuoteForm({
   );
 }
 
+export interface InvoiceFormInitial {
+  lines: DocLine[];
+  rot: RotRut | null;
+  dueInDays: number;
+  lateInterestRate?: number;
+}
+
 export function InvoiceForm({
   customers,
   defaultCustomerId,
   defaultLateInterestRate = 10,
+  invoiceId,
+  initial,
 }: {
   customers: CustomerOption[];
   defaultCustomerId?: string;
   defaultLateInterestRate?: number;
+  /** Sätt vid redigering av befintligt utkast. */
+  invoiceId?: string;
+  initial?: InvoiceFormInitial;
 }) {
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
-  const [lines, setLines] = useState<DocLine[]>([newLine("arbete")]);
-  const [rot, setRot] = useState<RotRut | null>(null);
-  const [dueDays, setDueDays] = useState(30);
-  const [lateInterest, setLateInterest] = useState(defaultLateInterestRate);
+  const [lines, setLines] = useState<DocLine[]>(initial?.lines?.length ? initial.lines : [newLine("arbete")]);
+  const [rot, setRot] = useState<RotRut | null>(initial?.rot ?? null);
+  const [dueDays, setDueDays] = useState(initial?.dueInDays ?? 30);
+  const [lateInterest, setLateInterest] = useState(initial?.lateInterestRate ?? defaultLateInterestRate);
   const [isPending, startTransition] = useTransition();
 
   const valid = customerId && lines.length > 0 && lines.every((l) => l.description.trim());
+
+  function submit() {
+    if (!valid) return;
+    startTransition(async () => {
+      if (invoiceId) {
+        await updateInvoiceAction(invoiceId, {
+          lines,
+          rot,
+          dueInDays: dueDays,
+          lateInterestRate: lateInterest,
+        });
+      } else {
+        await createInvoiceAction({
+          customerId,
+          type: "faktura",
+          lines,
+          rot,
+          dueInDays: dueDays,
+          lateInterestRate: lateInterest,
+        });
+      }
+    });
+  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_290px]">
@@ -406,7 +631,7 @@ export function InvoiceForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className={labelCls}>Kund</label>
-              <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className={inputCls}>
+              <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className={inputCls} disabled={!!invoiceId}>
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -466,26 +691,13 @@ export function InvoiceForm({
         <Card className="p-5">
           <p className="mb-3 text-[15px] font-semibold">Summering</p>
           <TotalsPanel lines={lines} rot={rot} />
-          <button
-            className={cx(buttonClasses("primary"), "mt-5 w-full")}
-            disabled={!valid || isPending}
-            onClick={() =>
-              startTransition(async () => {
-                await createInvoiceAction({
-                  customerId,
-                  type: "faktura",
-                  lines,
-                  rot,
-                  dueInDays: dueDays,
-                  lateInterestRate: lateInterest,
-                });
-              })
-            }
-          >
-            {isPending ? "Sparar …" : "Spara utkast"}
+          <button className={cx(buttonClasses("primary"), "mt-5 w-full")} disabled={!valid || isPending} onClick={submit}>
+            {isPending ? "Sparar …" : invoiceId ? "Spara ändringar" : "Spara utkast"}
           </button>
           <p className="mt-3 text-center text-[12px] leading-relaxed text-muted">
-            Du förhandsgranskar fakturan exakt som kunden ser den innan den skickas.
+            {invoiceId
+              ? "Nummer, OCR och koppling till offert är oförändrade. Kunden ser inget förrän du skickar."
+              : "Du förhandsgranskar fakturan exakt som kunden ser den innan den skickas."}
           </p>
         </Card>
       </div>

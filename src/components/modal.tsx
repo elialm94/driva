@@ -35,13 +35,15 @@ export function Modal({
   const sizes = { sm: "max-w-md", md: "max-w-xl", lg: "max-w-3xl", xl: "max-w-6xl" };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-0 backdrop-blur-[3px] sm:items-center sm:p-6 animate-fade-in"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6 animate-fade-in">
+      {/* Blur layer is non-interactive so backdrop-filter cannot swallow clicks. */}
+      <div className="pointer-events-none absolute inset-0 bg-ink/40 backdrop-blur-[3px]" aria-hidden />
+      <div className="absolute inset-0" aria-hidden onClick={() => onClose()} />
       <div
+        role="dialog"
+        aria-modal="true"
         className={cx(
-          "flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-card shadow-pop sm:rounded-3xl animate-fade-up",
+          "relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-card shadow-pop sm:rounded-3xl animate-fade-up",
           sizes[size]
         )}
         onClick={(e) => e.stopPropagation()}

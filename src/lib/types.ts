@@ -372,12 +372,20 @@ export interface ActivityEvent {
 
 export type WebsiteTheme = "tra" | "studio" | "ren" | "el" | "konsult";
 
+export interface WebsiteSectionItem {
+  title: string;
+  text: string;
+  /** Data-URL eller relativ sökväg. Valfri – kortet fungerar utan bild. */
+  image?: string;
+}
+
 export interface WebsiteSection {
   id: ID;
   type: "hero" | "tjanster" | "om" | "galleri" | "kontakt";
   heading: string;
   body: string;
-  items?: { title: string; text: string }[];
+  /** Tjänster-kort. Arrayordning = visningsordning. */
+  items?: WebsiteSectionItem[];
 }
 
 export interface Website {

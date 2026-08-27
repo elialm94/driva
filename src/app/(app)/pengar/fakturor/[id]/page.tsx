@@ -1,15 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ExternalLink, BadgeCheck } from "lucide-react";
+import { ArrowLeft, ExternalLink, BadgeCheck, Pencil } from "lucide-react";
 import { db } from "@/lib/store";
 import { getInvoice, invoiceTotals, requireCustomer, isOverdue } from "@/lib/services/data";
+import { invoiceQuoteDeviation } from "@/lib/services/invoice-quote-deviation";
 import { kr, datumTid, datumLang, relativ } from "@/lib/format";
-import { Card, SectionTitle, cx } from "@/components/ui";
+import { ButtonLink, Card, SectionTitle, cx } from "@/components/ui";
 import { InvoiceStatusBadge } from "@/components/status";
 import { InvoiceDocument } from "@/components/invoice-document";
 import { PreviewModal } from "@/components/preview-modal";
 import { CopyLinkButton } from "@/components/copy-button";
 import { CreditInvoiceButton, SendReminderButton, SimulatePaymentButton } from "@/components/money-widgets";
+import { QuoteDeviationCard } from "@/components/quote-deviation-card";
+import { InvoiceDraftSend } from "@/components/invoice-draft-send";
 import { sendInvoiceAction } from "@/app/actions";
 
 export const metadata = { title: "Faktura" };
@@ -32,6 +35,7 @@ export default async function InvoicePage(props: PageProps<"/pengar/fakturor/[id
   const quote = invoice.quoteId ? data.quotes.find((q) => q.id === invoice.quoteId) : undefined;
   const payment = data.payments.find((p) => p.invoiceId === invoice.id);
   const publicPath = `/faktura/${invoice.token}`;
+  const deviation = invoiceQuoteDeviation(invoice);
 
   const doc = <InvoiceDocument company={data.settings} customer={customer} invoice={invoice} />;
 
@@ -59,18 +63,20 @@ export default async function InvoicePage(props: PageProps<"/pengar/fakturor/[id
 
         <div className="flex flex-wrap items-center gap-2">
           {invoice.status === "utkast" ? (
-            <PreviewModal
-              triggerLabel="Förhandsgranska & skicka"
-              title={`Så här ser ${customer.name.split(" ")[0]} fakturan`}
-              document={doc}
-              mode="send"
-              sendAction={sendInvoiceAction.bind(null, invoice.id)}
-              sendLabel="Skicka faktura"
-              sentTitle="Fakturan är skickad"
-              sentText="Fakturan är bokförd och kunden har fått den med e-post."
-              publicPath={publicPath}
-              recipientEmail={customer.email}
-            />
+            <>
+              <ButtonLink href={`/pengar/fakturor/${invoice.id}/redigera`} variant="secondary">
+                <Pencil className="size-4" /> Redigera faktura
+              </ButtonLink>
+              <InvoiceDraftSend
+                customerFirstName={customer.name.split(" ")[0]}
+                document={doc}
+                sendAction={sendInvoiceAction.bind(null, invoice.id)}
+                publicPath={publicPath}
+                recipientEmail={customer.email}
+                excessAmount={deviation?.largeExcess ? deviation.delta : undefined}
+                tillaggHref={deviation?.largeExcess ? deviation.tillaggHref : undefined}
+              />
+            </>
           ) : (
             <>
               {invoice.status === "skickad" ? (
@@ -101,6 +107,8 @@ export default async function InvoicePage(props: PageProps<"/pengar/fakturor/[id
           )}
         </div>
       </div>
+
+      {deviation ? <QuoteDeviationCard deviation={deviation} /> : null}
 
       {invoice.status === "skickad" && isOverdue(invoice) ? (
         <Card className="mb-6 border-danger/20 bg-danger-soft/40 px-5 py-4 text-[14px] text-soft">

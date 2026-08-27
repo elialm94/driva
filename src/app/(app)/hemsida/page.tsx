@@ -110,11 +110,12 @@ export default function WebsitePage() {
                   typeLabel={SECTION_LABELS[s.type] ?? s.type}
                   heading={s.heading}
                   body={s.body}
+                  items={s.type === "tjanster" ? (s.items ?? []) : undefined}
                 />
               ))}
             </Card>
             <p className="mt-2 text-[12px] leading-relaxed text-muted">
-              Klicka på en sektion för att ändra text själv eller låta AI:n skriva om den.
+              Klicka på en sektion för att ändra text, eller under Tjänster lägga till, flytta och ta bort korten.
             </p>
           </div>
 
