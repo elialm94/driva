@@ -9,6 +9,7 @@ import { kr, halsning, datumUtanAr, veckodag, relativ, datumLang, isoNow } from 
 import { Card, SectionTitle, cx } from "@/components/ui";
 import { JobStatusBadge } from "@/components/status";
 import { AttentionList, type AttentionDTO } from "@/components/attention-list";
+import { HomeAiBar } from "@/components/home-ai-bar";
 
 export const metadata = { title: "Hem" };
 
@@ -113,6 +114,8 @@ export default function HomePage() {
         {veckodag(now)} {datumUtanAr(now)}
       </p>
       <h1 className="mt-1 text-[28px] font-semibold tracking-tight">{halsning()}</h1>
+
+      <HomeAiBar messages={data.assistantMessages} />
 
       {chips.length > 0 ? (
         <div className="mt-4 flex flex-wrap gap-2">

@@ -54,6 +54,7 @@ import {
 } from "@/lib/services/website";
 import {
   cancelPendingAction,
+  completeCreateCustomerAndResume,
   confirmPendingAction,
   sendUserMessage,
 } from "@/lib/services/assistant";
@@ -315,7 +316,7 @@ export async function submitContactFormAction(input: {
 /* --------------------------------- Assistent -------------------------------- */
 
 export async function sendAssistantMessageAction(text: string) {
-  sendUserMessage(text);
+  await sendUserMessage(text);
   refresh();
 }
 
@@ -326,6 +327,11 @@ export async function confirmAssistantActionAction(actionId: string) {
 
 export async function cancelAssistantActionAction(actionId: string) {
   cancelPendingAction(actionId);
+  refresh();
+}
+
+export async function completeAssistantCustomerAction(actionId: string, customerId: string) {
+  completeCreateCustomerAndResume(actionId, customerId);
   refresh();
 }
 
