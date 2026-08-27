@@ -30,7 +30,7 @@ import {
   todayAttentionResult,
   type DomainResult,
 } from "./domain";
-import { currentVersion, getCustomer, getInvoice, getJob, getQuote } from "../services/data";
+import { currentVersion, getCustomer, getInvoice, getJob, getQuote, isOverdue } from "../services/data";
 import { answerExpenseQuestion } from "../services/expenses";
 import { setJobStatus } from "../services/jobs";
 
@@ -302,7 +302,7 @@ const specs: ToolSpec[] = [
       },
     },
     handler: () => {
-      const late = db().invoices.filter((i) => i.status === "skickad" && new Date(i.dueDate).getTime() < Date.now());
+      const late = db().invoices.filter(isOverdue);
       return { ok: true, forModel: { invoices: late.map(compactInvoice), count: late.length } };
     },
   },
