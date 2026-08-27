@@ -77,11 +77,54 @@ function CardView({ card, busy, onConfirm, onCancel }: {
     );
   }
 
-  // confirm-kort
+  if (card.kind === "entity") {
+    return (
+      <div className="mt-2.5 overflow-hidden rounded-xl border border-line bg-card">
+        <div className="flex items-center justify-between gap-3 px-3.5 py-3">
+          <div className="min-w-0">
+            <p className="text-[13.5px] font-medium">{card.title}</p>
+            {card.subtitle ? <p className="mt-0.5 text-[12.5px] text-muted">{card.subtitle}</p> : null}
+          </div>
+          <Link href={card.href as never} className={buttonClasses("secondary", "sm")}>
+            {card.openLabel}
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (card.kind === "create_customer") {
+    return (
+      <div className="mt-2.5 overflow-hidden rounded-xl border border-accent/25 bg-accent-soft/40">
+        <div className="px-3.5 py-3">
+          <p className="text-[13.5px] font-medium leading-relaxed">
+            Lägg till {card.suggestedName} som kund?
+          </p>
+        </div>
+        <div className="border-t border-accent/15 px-3.5 py-2.5">
+          {card.state === "vantar" ? (
+            <div className="flex gap-2">
+              <button className={buttonClasses("primary", "sm")} disabled={busy} onClick={() => onConfirm(card.actionId)}>
+                <Check className="size-3.5" /> Lägg till kund
+              </button>
+              <button className={buttonClasses("ghost", "sm")} disabled={busy} onClick={() => onCancel(card.actionId)}>
+                <X className="size-3.5" /> Avbryt
+              </button>
+            </div>
+          ) : (
+            <p className={cx("text-[13px] font-medium", card.state === "utford" ? "text-ok" : "text-muted")}>
+              {card.state === "utford" ? (card.resultText ?? "Utfört.") : "Avbrutet – inget skickades."}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-2.5 overflow-hidden rounded-xl border border-accent/25 bg-accent-soft/40">
       <div className="px-3.5 py-3">
-        <p className="text-[13.5px] font-medium leading-relaxed">{card.summary}</p>
+        <p className="text-[13.5px] leading-relaxed font-medium">{card.summary}</p>
         {card.rows?.length ? (
           <div className="mt-2 space-y-1">
             {card.rows.map((r, i) => (
