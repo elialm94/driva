@@ -243,7 +243,7 @@ describe("domän: business id", () => {
 
 describe("domän: normalize", () => {
   it("skapar tomma domains om fältet saknas", () => {
-    const data: { domains?: unknown; domainAudit?: unknown } = {};
+    const data: { domains?: Domain[]; domainAudit?: unknown } = {};
     const changed = normalizeDomains(data);
     assert.equal(changed, true);
     assert.deepEqual(data.domains, []);
