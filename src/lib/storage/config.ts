@@ -42,7 +42,21 @@ export function supabaseServiceRoleKey(): string | undefined {
 }
 
 export function supabaseDbUrl(): string | undefined {
-  return trimmed("SUPABASE_DB_URL") ?? trimmed("DATABASE_URL");
+  // Accepterade namn, i prioritetsordning:
+  //   1. SUPABASE_DB_URL / DATABASE_URL – explicit satta enligt README.
+  //   2. Vercel↔Supabase-integrationens namn. Marketplace-integrationen sätter
+  //      ALDRIG SUPABASE_DB_URL utan lägger anslutningssträngen under POSTGRES_URL*
+  //      (POSTGRES_URL/POSTGRES_PRISMA_URL är poolade via Supavisor, lämpliga för
+  //      serverless; POSTGRES_URL_NON_POOLING är direktanslutning som sista utväg).
+  //      Utan den här mappningen blir hasSupabaseEnv() falsk och appen vägrar
+  //      starta i produktion trots att Supabase är kopplat – hela sajten 500:ar.
+  return (
+    trimmed("SUPABASE_DB_URL") ??
+    trimmed("DATABASE_URL") ??
+    trimmed("POSTGRES_URL") ??
+    trimmed("POSTGRES_PRISMA_URL") ??
+    trimmed("POSTGRES_URL_NON_POOLING")
+  );
 }
 
 /** Komplett Supabase-miljö? (Storage/Auth-nycklar + databas-URL.) */
@@ -63,8 +77,8 @@ export function supabaseEnv(): SupabaseEnv {
 export function missingEnvMessage(): string {
   const missing = [
     !supabaseUrl() && "NEXT_PUBLIC_SUPABASE_URL",
-    !supabaseAnonKey() && "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    !supabaseDbUrl() && "SUPABASE_DB_URL",
+    !supabaseAnonKey() && "NEXT_PUBLIC_SUPABASE_ANON_KEY (eller NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)",
+    !supabaseDbUrl() && "SUPABASE_DB_URL (eller DATABASE_URL / POSTGRES_URL)",
   ]
     .filter(Boolean)
     .join(", ");

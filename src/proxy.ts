@@ -20,6 +20,7 @@ const PUBLIC_PREFIXES = [
   "/offert",
   "/faktura",
   "/sajt",
+  "/api/health", // driftdiagnostik: måste nås utan inloggning när appen är trasig
   "/api/bankid",
   "/api/inbox",
   "/api/dev", // vaktas internt: endast utveckling
