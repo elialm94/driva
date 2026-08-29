@@ -52,6 +52,12 @@
   }
 }
 
+:root {
+  /* Bottennavets höjd på mobil/surfplatta (exkl. safe area). Delas av
+     app-skalet, "Mer"-panelen och StickyMobileActions så allt staplar rätt. */
+  --bottom-nav-h: 3.75rem;
+}
+
 body {
   background: var(--color-canvas);
   color: var(--color-ink);
@@ -91,6 +97,20 @@ input, textarea, select {
   outline: none;
 }
 
+/*
+ * iOS Safari zoomar in på fokuserade fält vars font-size är under 16px.
+ * På touch-skärmar och smala viewports tvingas fältstorleken upp till 16px
+ * i stället för user-scalable-hack. Desktop behåller den tätare 14px-skalan.
+ * (Inga fält i produkten har avsiktligt större text än 16px – se audit.)
+ */
+@media (max-width: 1023px), (pointer: coarse) {
+  input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="file"])),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 *:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
@@ -119,5 +139,105 @@ html:has([data-public-site]) {
   }
   .no-print {
     display: none !important;
+  }
+}
+
+/*
+ * Rik text – editorn OCH dokumentrenderaren (RichTextView).
+ * Tailwind Preflight sätter h1–h6 till inherit; storlekarna måste därför
+ * sättas explicit här (inte via webbläsarens default-rubriker).
+ */
+.richtext-editor .ProseMirror,
+.richtext-doc {
+  font-size: 14px;
+  line-height: 1.625;
+  color: var(--color-ink);
+}
+.richtext-editor .ProseMirror {
+  min-height: 8.5rem;
+  padding: 0.75rem 0.875rem;
+  outline: none;
+}
+.richtext-editor .ProseMirror p,
+.richtext-doc p {
+  margin: 0.4em 0;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.625;
+}
+.richtext-editor .ProseMirror h1,
+.richtext-doc h1 {
+  margin: 0.85em 0 0.35em;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  color: var(--color-ink);
+}
+.richtext-editor .ProseMirror h2,
+.richtext-doc h2 {
+  margin: 0.8em 0 0.3em;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+}
+.richtext-editor .ProseMirror h3,
+.richtext-doc h3 {
+  margin: 0.7em 0 0.25em;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--color-ink);
+}
+.richtext-editor .ProseMirror :is(h1, h2, h3, p):first-child,
+.richtext-doc :is(h1, h2, h3, p):first-child {
+  margin-top: 0;
+}
+.richtext-editor .ProseMirror u,
+.richtext-doc u {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.richtext-editor .ProseMirror ul,
+.richtext-doc ul {
+  margin: 0.4em 0;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+.richtext-editor .ProseMirror ol,
+.richtext-doc ol {
+  margin: 0.4em 0;
+  padding-left: 1.25rem;
+  list-style: decimal;
+}
+.richtext-editor .ProseMirror li p,
+.richtext-doc li p {
+  margin: 0.15em 0;
+}
+.richtext-editor .ProseMirror hr {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid var(--color-line);
+}
+.richtext-editor .ProseMirror a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* TipTap-placeholder (Placeholder-extensionen sätter data-placeholder). */
+.richtext-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--color-muted);
+}
+/* iOS zoomar på fokus när texten är under 16px – bara brödtext, inte rubriker. */
+@media (max-width: 1023px), (pointer: coarse) {
+  .richtext-editor .ProseMirror,
+  .richtext-editor .ProseMirror p {
+    font-size: 16px;
   }
 }

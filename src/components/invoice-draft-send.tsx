@@ -23,17 +23,20 @@ export function InvoiceDraftSend({
   recipientEmail,
   addEmailHref,
   hasIssuanceBlockers = false,
+  mailConfigured = true,
   excessAmount,
   tillaggHref,
 }: {
   customerName: string;
   amount: number;
   dueDateLabel: string;
-  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; issued?: boolean }>;
+  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; issued?: boolean; mailed?: boolean }>;
   detailHref: string;
   recipientEmail?: string;
   addEmailHref: string;
   hasIssuanceBlockers?: boolean;
+  /** Om e-postutskick är konfigurerat på servern – styr ärlig text i dialogen. */
+  mailConfigured?: boolean;
   /** Positivt belopp om fakturan överstiger tröskeln; annars utelämnas varningen. */
   excessAmount?: number;
   tillaggHref?: string;
@@ -70,8 +73,8 @@ export function InvoiceDraftSend({
     else openConfirm();
   }
 
-  function finish(flag: "skickad" | "leveransfel") {
-    router.replace(withFlag(detailHref, flag, "1"));
+  function finish(flag: "skickad" | "leveransfel", value = "1") {
+    router.replace(withFlag(detailHref, flag, value));
     router.refresh();
   }
 
@@ -84,7 +87,8 @@ export function InvoiceDraftSend({
         if (result.issued) finish("leveransfel");
         return;
       }
-      finish("skickad");
+      // "1" = e-post skickades, "manuell" = markerad som skickad utan e-post.
+      finish("skickad", result && result.mailed ? "1" : "manuell");
     });
   }
 
@@ -100,9 +104,16 @@ export function InvoiceDraftSend({
           <p className="text-[17px] font-semibold tracking-tight text-ink">{customerName}</p>
           <p className="mt-1 text-[15px] text-soft">{kr(amount)}</p>
           <p className="mt-1 text-[14px] text-muted">Förfaller {dueDateLabel}</p>
-          <p className="mt-4 text-[14px] leading-relaxed text-soft">
-            Fakturan skickas till: <span className="font-semibold text-ink">{email}</span>
-          </p>
+          {mailConfigured ? (
+            <p className="mt-4 text-[14px] leading-relaxed text-soft">
+              Fakturan skickas till: <span className="font-semibold text-ink">{email}</span>
+            </p>
+          ) : (
+            <p className="mt-4 text-[14px] leading-relaxed text-soft">
+              E-postutskick är inte konfigurerat ännu. Fakturan får nummer, bokförs och markeras som skickad – dela
+              sedan kundlänken med <span className="font-semibold text-ink">{customerName}</span> själv.
+            </p>
+          )}
           {sendError ? <p className="mt-3 text-[13px] font-medium text-danger">{sendError}</p> : null}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button className={buttonClasses("secondary")} disabled={isSending} onClick={() => setConfirmOpen(false)}>

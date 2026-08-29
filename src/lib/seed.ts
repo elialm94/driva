@@ -23,6 +23,7 @@ import {
   entriesSupplierInvoiceReceived,
   entriesTaxPayment,
 } from "./bas";
+import { docTotals } from "./calc";
 import { quoteVersionHash } from "./hash";
 import { ocrForInvoice } from "./ids";
 import { snapshotTaxReductionTerms } from "./tax-reduction-terms";
@@ -51,6 +52,17 @@ export function buildSeed(): DB {
       postalCode: "116 30",
       city: "Stockholm",
       personalIdentityNumber: "19850515-1234",
+      workLocations: [
+        {
+          id: "loc-anna-hem",
+          label: "Hem",
+          address: "Folkungagatan 62",
+          postalCode: "116 30",
+          city: "Stockholm",
+          propertyType: "smahus" as const,
+        },
+      ],
+      defaultWorkLocationId: "loc-anna-hem",
       notes: "Vill helst ha sms före besök. Porten har kod 4218.",
       createdAt: d(75),
     },
@@ -156,6 +168,7 @@ export function buildSeed(): DB {
       lateInterestRate: q.version.lateInterestRate ?? 10,
       validUntil: q.version.validUntil,
       terms: q.version.terms,
+      richText: q.version.richText,
       taxReductionTerms: q.version.taxReductionTerms,
     };
     if (q.locked && q.decidedAt) {
@@ -295,6 +308,28 @@ export function buildSeed(): DB {
       paymentTermsDays: 30,
       validUntil: d(-22),
       terms: standardTerms,
+      // Demodata för "Övrig information" (rik text) – visas på offerten/kundvyn/PDF.
+      richText: {
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Detta ingår" }] },
+          {
+            type: "bulletList",
+            content: [
+              { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Bortforsling av gamla dörrar och emballage" }] }] },
+              { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Nya hänglåsbeslag monterade på samtliga dörrar" }] }] },
+            ],
+          },
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "Arbetet utförs vardagar 07–16. Vi behöver " },
+              { type: "text", text: "fri tillgång till källargången", marks: [{ type: "bold" }] },
+              { type: "text", text: " under arbetsdagen." },
+            ],
+          },
+        ],
+      },
     },
   });
 
@@ -421,6 +456,7 @@ export function buildSeed(): DB {
       notes:
         "Bänkskivan levererades 21 aug. Kunden ville flytta ett eluttag – löst med elektriker 25 aug.",
       createdAt: d(24, 14, 32),
+      workLocationId: "loc-anna-hem",
       housing: { dwellingType: "smahus" },
     },
     {
@@ -508,6 +544,7 @@ export function buildSeed(): DB {
     status: Invoice["status"];
     lines: DocLine[];
     rot?: Invoice["rot"];
+    richText?: Invoice["richText"];
     issueDate: string;
     dueDate: string;
     sentAt?: string;
@@ -626,6 +663,21 @@ export function buildSeed(): DB {
       L("arbete", "Fönsterbyte gårdshus: demontering och montering", 24, "tim", 550),
       L("material", "Foder, smygar och drev", 1, "st", 5200),
     ],
+    // Demodata för "Övrig information" – fryses i issuedSnapshot (hydrering i store).
+    richText: {
+      type: "doc",
+      content: [
+        { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Om fakturan" }] },
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Avser slutfört fönsterbyte enligt godkänd offert. Frågor om fakturan? Mejla " },
+            { type: "text", text: "info@sodermalmssnickeri.se", marks: [{ type: "link", attrs: { href: "mailto:info@sodermalmssnickeri.se" } }] },
+            { type: "text", text: "." },
+          ],
+        },
+      ],
+    },
     issueDate: d(36),
     dueDate: d(6),
     sentAt: d(36, 14, 10),
@@ -1141,11 +1193,12 @@ export function buildSeed(): DB {
   ];
   for (const [invId, txId, counterpart] of paidInvoiceTx) {
     const inv = invoices.find((i) => i.id === invId)!;
-    const total = inv.lines.reduce((s, l) => s + Math.round(l.qty * l.unitPrice) * (1 + l.vatRate / 100), 0);
+    // Samma pengalogik som resten av appen: docTotals är enda sanningen.
+    const total = docTotals(inv.lines, inv.rot ?? null).toPay;
     addTx({
       id: txId,
       date: inv.paidAt!,
-      amount: Math.round(total),
+      amount: total,
       counterpart,
       description: `Inbetalning bankgiro`,
       reference: `OCR ${inv.ocr}`,
@@ -1180,12 +1233,12 @@ export function buildSeed(): DB {
 
   const payments = paidInvoiceTx.map(([invId, txId]) => {
     const inv = invoices.find((i) => i.id === invId)!;
-    const total = inv.lines.reduce((s, l) => s + Math.round(l.qty * l.unitPrice) * (1 + l.vatRate / 100), 0);
+    const total = docTotals(inv.lines, inv.rot ?? null).toPay;
     return {
       id: `pay-${inv.number}`,
       invoiceId: invId,
       bankTransactionId: txId,
-      amount: Math.round(total),
+      amount: total,
       date: inv.paidAt!,
       matchedBy: "auto" as const,
     };
@@ -1228,12 +1281,12 @@ export function buildSeed(): DB {
       source: { type: "kundfaktura", id: inv.id },
     });
     if (inv.status === "betald" && inv.paidAt) {
-      const total = inv.lines.reduce((s, l) => s + Math.round(l.qty * l.unitPrice) * (1 + l.vatRate / 100), 0);
+      const total = docTotals(inv.lines, inv.rot ?? null).toPay;
       addVer({
         id: `ver-pay-${inv.number}`,
         date: inv.paidAt,
         description: `Betalning faktura #${inv.number} – ${customer.name}`,
-        entries: entriesInvoicePaid(Math.round(total)),
+        entries: entriesInvoicePaid(total),
         source: { type: "betalning", id: `pay-${inv.number}` },
       });
     }
@@ -1400,6 +1453,7 @@ export function buildSeed(): DB {
       lateInterestRate: 10,
       quoteValidityDays: 30,
       defaultVatRate: 25,
+      inboundMailSlug: "demo",
     },
     sequences: { quote: 115, invoice: 1048, verification: verifications.length + 1 },
     customers,
@@ -1441,6 +1495,48 @@ export function buildSeed(): DB {
     assistantMessages,
     pendingActions: [],
     assistantAudit: [],
+    reminders: [],
+    attentionStates: [],
+    inboxItems: [
+      {
+        id: "inbox-mail-byggmax",
+        kind: "mail" as const,
+        status: "ny" as const,
+        externalId: "seed-byggmax-kvitto-1",
+        fromAddress: "faktura@byggmax.se",
+        toAddress: "demo@in.driva.se",
+        subject: "Kvitto Byggmax Hornstull",
+        textBody:
+          "Tack för ditt köp hos Byggmax Hornstull. Kvittot finns bifogat. Vi har inte tolkat beloppet – öppna posten i Inboxen.",
+        attachments: [
+          {
+            id: "att-byggmax",
+            filename: "kvitto-byggmax.pdf",
+            contentType: "application/pdf",
+            size: 42_000,
+            storageKey: "demo/inbox-mail-byggmax/kvitto-byggmax.pdf",
+          },
+        ],
+        createdAt: d(0, 10, 15),
+      },
+      {
+        id: "inbox-mail-okq8",
+        kind: "mail" as const,
+        status: "behandlad" as const,
+        externalId: "seed-okq8-kvitto-1",
+        fromAddress: "kvitto@okq8.se",
+        toAddress: "demo@in.driva.se",
+        subject: "Kvitto OKQ8 diesel",
+        textBody: "Kvitto för tankning. Posten är redan markerad som behandlad i demon.",
+        attachments: [],
+        parsedAmount: 745,
+        parsedVatAmount: 149,
+        parsedSupplier: "OKQ8",
+        confidence: 0.99,
+        createdAt: d(3, 16, 20),
+        processedAt: d(2, 11, 0),
+      },
+    ],
     meta: { seededAt: new Date().toISOString() },
   };
 }

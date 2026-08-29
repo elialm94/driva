@@ -1,33 +1,29 @@
 /**
  * Central navigation config for the Driva app.
- * Pages should use BackLink / withReturnTo instead of hardcoded back hrefs.
+ *
+ * Back = origin ("← Hem"). Breadcrumbs = structure ("Kunder / Förfrågningar / …").
+ * Origin lives on the navigation event (`tillbaka` query + optional label), never on
+ * the domain object. AppLink / resolveAppHref stamp origin; SmartBack reads it.
+ * Canonical parent in ROUTES is the fallback when origin is missing or invalid.
  */
 
 export const RETURN_TO_PARAM = "tillbaka";
 export const RETURN_LABEL_PARAM = "tillbakaNamn";
 
-export type NavSection =
-  | "hem"
-  | "kunder"
-  | "uppdrag"
-  | "ekonomi"
-  | "bokforing"
-  | "hemsida"
-  | "assistent";
+export type NavSection = "hem" | "kunder" | "ekonomi" | "inbox" | "bokforing" | "hemsida";
 
 export const NAV_ITEMS: { href: string; section: NavSection; label: string }[] = [
   { href: "/", section: "hem", label: "Hem" },
   { href: "/kunder", section: "kunder", label: "Kunder" },
-  { href: "/uppdrag", section: "uppdrag", label: "Uppdrag" },
   { href: "/ekonomi", section: "ekonomi", label: "Ekonomi" },
+  { href: "/inbox", section: "inbox", label: "Inbox" },
   { href: "/bokforing", section: "bokforing", label: "Bokföring" },
   { href: "/hemsida", section: "hemsida", label: "Hemsida" },
-  { href: "/assistent", section: "assistent", label: "Assistent" },
 ];
 
 export const KUNDER_TABS = [
-  { key: "kunder", href: "/kunder", label: "Kunder" },
-  { key: "forfragningar", href: "/kunder?flik=forfragningar", label: "Förfrågningar" },
+  { key: "kunder", href: "/kunder?flik=kunder", label: "Kunder" },
+  { key: "uppdrag", href: "/kunder?flik=uppdrag", label: "Uppdrag" },
 ] as const;
 
 export type KunderTab = (typeof KUNDER_TABS)[number]["key"];
@@ -106,13 +102,13 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/ekonomi/offerter/ny", section: "ekonomi", parent: "/ekonomi?flik=offerter", label: "Ny offert", backLabel: "Offerter", showBack: true },
   { pattern: "/ekonomi/offerter/:id", section: "ekonomi", parent: "/ekonomi?flik=offerter", label: "Offert", backLabel: "Offerter", showBack: true },
   { pattern: "/ekonomi", section: "ekonomi", label: "Ekonomi" },
-  { pattern: "/kunder/forfragningar/:id", section: "kunder", parent: "/kunder?flik=forfragningar", label: "Förfrågan", backLabel: "Förfrågningar", showBack: true },
-  { pattern: "/kunder/:id", section: "kunder", parent: "/kunder", label: "Kund", backLabel: "Kunder", showBack: true },
+  { pattern: "/inbox/:id", section: "inbox", parent: "/inbox", label: "Inkorgspost", backLabel: "Inbox", showBack: true },
+  { pattern: "/inbox", section: "inbox", label: "Inbox" },
+  { pattern: "/kunder/forfragningar/:id", section: "inbox", parent: "/inbox", label: "Förfrågan", backLabel: "Inbox", showBack: true },
+  { pattern: "/kunder/:id", section: "kunder", parent: "/kunder?flik=kunder", label: "Kund", backLabel: "Kunder", showBack: true },
   { pattern: "/kunder", section: "kunder", label: "Kunder" },
-  { pattern: "/uppdrag/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
-  { pattern: "/uppdrag", section: "uppdrag", label: "Uppdrag" },
-  { pattern: "/jobb/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
-  { pattern: "/jobb", section: "uppdrag", label: "Uppdrag" },
+  { pattern: "/uppdrag/:id", section: "kunder", parent: "/kunder?flik=uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
+  { pattern: "/jobb/:id", section: "kunder", parent: "/kunder?flik=uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
   { pattern: "/bokforing/verifikationer", section: "bokforing", parent: "/bokforing", label: "Verifikationer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/huvudbok", section: "bokforing", parent: "/bokforing", label: "Huvudbok", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/saldobalans", section: "bokforing", parent: "/bokforing", label: "Saldobalans", backLabel: "Bokföring", showBack: true },
@@ -126,7 +122,6 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/foretag", section: null, parent: "/installningar", label: "Företagsuppgifter" },
   { pattern: "/hemsida/doman", section: "hemsida", parent: "/hemsida", label: "Domän", backLabel: "Hemsida", showBack: true },
   { pattern: "/hemsida", section: "hemsida", label: "Hemsida" },
-  { pattern: "/assistent", section: "assistent", label: "Assistent" },
   { pattern: "/", section: "hem", label: "Hem" },
   { pattern: "/offert/:token/underlag", section: null, parent: "/offert/:token", label: "Signeringsunderlag", backLabel: "Offerten", showBack: true },
   { pattern: "/offert/:token", section: null, label: "Offert" },
@@ -142,6 +137,7 @@ const APP_PATH_PREFIXES = [
   "/pengar",
   "/bokforing",
   "/hemsida",
+  "/inbox",
   "/assistent",
   "/installningar",
   "/foretag",
@@ -159,7 +155,7 @@ export interface MatchedRoute {
 }
 
 export function matchRoute(pathname: string): MatchedRoute | null {
-  const path = rewritePengarPath(normalizePathname(pathname));
+  const path = rewriteAppPath(normalizePathname(pathname));
   for (const meta of ROUTES) {
     const params = matchPattern(meta.pattern, path);
     if (params) return { meta, params, pathname: path };
@@ -179,21 +175,23 @@ export function isSectionActive(pathname: string, href: string): boolean {
 }
 
 export function labelForHref(href: string): string {
-  const { pathname: rawPath, searchParams } = splitHref(href);
-  const pathname = rewritePengarPath(rawPath);
+  const rewritten = rewriteLegacyHref(href);
+  const { pathname, searchParams } = splitHref(rewritten);
   if (pathname === "/ekonomi") {
     const flik = searchParams.get("flik");
     const tab = EKONOMI_TABS.find((t) => t.key === flik);
     if (tab) return tab.label;
     return "Ekonomi";
   }
+  if (pathname === "/kunder") {
+    const flik = searchParams.get("flik");
+    const tab = KUNDER_TABS.find((t) => t.key === flik);
+    if (tab) return tab.label;
+    return "Kunder";
+  }
+  if (pathname === "/inbox") return "Inbox";
   const matched = matchRoute(pathname);
   if (!matched) return "Tillbaka";
-  if (matched.meta.pattern === "/uppdrag/:id" || matched.meta.pattern === "/jobb/:id") return "Uppdrag";
-  if (matched.meta.pattern === "/kunder/:id") return "Kunder";
-  if (matched.meta.pattern === "/kunder/forfragningar/:id") return "Förfrågningar";
-  if (matched.meta.pattern === "/ekonomi/fakturor/:id") return "Faktura";
-  if (matched.meta.pattern === "/ekonomi/offerter/:id") return "Offert";
   return matched.meta.label;
 }
 
@@ -212,6 +210,133 @@ export function defaultBack(pathname: string): { href: string; label: string } |
   };
 }
 
+/** Pathname+query for the current view, used as origin when leaving. */
+export function locationHref(pathname: string, search?: { toString(): string } | string | null): string {
+  const qs = !search ? "" : typeof search === "string" ? search.replace(/^\?/, "") : search.toString();
+  return rewriteLegacyHref(qs ? `${normalizePathname(pathname)}?${qs}` : pathname);
+}
+
+export function isBackAwarePath(pathname: string): boolean {
+  return matchRoute(pathname)?.meta.showBack === true;
+}
+
+/**
+ * If `destPathname` already appears in the origin's tillbaka-chain, return that
+ * node (including nested tillbaka). Prevents A→B→A loops when cross-linking.
+ */
+export function originNodeMatching(originHref: string, destPathname: string): string | null {
+  const dest = rewriteAppPath(splitHref(destPathname).pathname);
+  let cursor: string | null = sanitizeReturnTo(originHref);
+  for (let i = 0; i < 8 && cursor; i++) {
+    const { pathname, searchParams } = splitHref(cursor);
+    if (rewritePengarPath(pathname) === dest) return cursor;
+    cursor = sanitizeReturnTo(searchParams.get(RETURN_TO_PARAM));
+  }
+  return null;
+}
+
+export function shouldStampOrigin(originHref: string, destHref: string): boolean {
+  const trimmed = destHref.trim();
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return false;
+  const destParts = splitHref(trimmed);
+  const destPath = rewriteAppPath(destParts.pathname);
+  if (!isInternalAppPath(destPath) || !isBackAwarePath(destPath)) return false;
+  if (destParts.searchParams.has(RETURN_TO_PARAM)) return false;
+  if (originNodeMatching(originHref, destPath)) return false;
+  const origin = sanitizeReturnTo(originHref);
+  if (!origin) return false;
+  if (splitHref(origin).pathname === destPath) return false;
+  return true;
+}
+
+/**
+ * Stamp origin onto an internal detail href, or reuse a chain node to avoid loops.
+ * Destinations that already have `tillbaka`, list pages, and invalid origins are left as-is.
+ */
+export function resolveAppHref(destHref: string, originHref: string, originLabel?: string | null): string {
+  const trimmed = destHref.trim();
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return destHref;
+  const rewritten = rewriteLegacyHref(trimmed);
+  const destParts = splitHref(rewritten);
+  const destPath = destParts.pathname;
+  if (!isInternalAppPath(destPath)) return destHref;
+  if (destParts.searchParams.has(RETURN_TO_PARAM)) return rewritten;
+
+  const chained = originNodeMatching(originHref, destPath);
+  if (chained) return chained;
+
+  if (!shouldStampOrigin(originHref, rewritten)) return rewritten;
+  return withReturnTo(rewritten, originHref, originLabel ?? labelForHref(originHref));
+}
+
+/** sessionStorage key for scroll of a view. Strips origin params so the list state is the key. */
+export function scrollKeyForHref(href: string): string {
+  const { pathname, searchParams } = splitHref(href);
+  searchParams.delete(RETURN_TO_PARAM);
+  searchParams.delete(RETURN_LABEL_PARAM);
+  const qs = searchParams.toString();
+  return `driva:scroll:${rewriteLegacyHref(qs ? `${pathname}?${qs}` : pathname)}`;
+}
+
+/** Structural crumbs — hierarchy, never navigation history. */
+export function structuralCrumbs(
+  pathname: string,
+  currentLabel?: string
+): { href?: string; label: string }[] {
+  const matched = matchRoute(pathname);
+  if (!matched) return [];
+  const title = currentLabel ?? matched.meta.label;
+  switch (matched.meta.pattern) {
+    case "/inbox/:id":
+    case "/kunder/forfragningar/:id":
+      return [{ href: "/inbox", label: "Inbox" }, { label: title }];
+    case "/kunder/:id":
+      return [{ href: "/kunder?flik=kunder", label: "Kunder" }, { label: title }];
+    case "/uppdrag/:id":
+    case "/jobb/:id":
+      return [
+        { href: "/kunder?flik=kunder", label: "Kunder" },
+        { href: "/kunder?flik=uppdrag", label: "Uppdrag" },
+        { label: title },
+      ];
+    case "/ekonomi/fakturor/ny":
+    case "/ekonomi/fakturor/:id":
+    case "/ekonomi/fakturor/:id/redigera":
+      return [
+        { href: "/ekonomi", label: "Ekonomi" },
+        { href: "/ekonomi?flik=fakturor", label: "Fakturor" },
+        { label: title },
+      ];
+    case "/ekonomi/offerter/ny":
+    case "/ekonomi/offerter/:id":
+    case "/ekonomi/offerter/:id/redigera":
+      return [
+        { href: "/ekonomi", label: "Ekonomi" },
+        { href: "/ekonomi?flik=offerter", label: "Offerter" },
+        { label: title },
+      ];
+    case "/hemsida/doman":
+      return [{ href: "/hemsida", label: "Hemsida" }, { label: title }];
+    case "/bokforing/verifikationer":
+    case "/bokforing/huvudbok":
+    case "/bokforing/saldobalans":
+    case "/bokforing/resultat":
+    case "/bokforing/balans":
+    case "/bokforing/moms":
+    case "/bokforing/bokslut":
+    case "/bokforing/detaljer":
+      return [{ href: "/bokforing", label: "Bokföring" }, { label: title }];
+    default:
+      if (matched.meta.showBack && matched.meta.parent) {
+        return [
+          { href: fillPattern(matched.meta.parent, matched.params), label: matched.meta.backLabel ?? matched.meta.label },
+          { label: title },
+        ];
+      }
+      return [];
+  }
+}
+
 /**
  * In-app back: explicit returnTo, then create-flow query context, then route parent.
  * Browser back remains real history and is not overridden here.
@@ -223,8 +348,8 @@ export function resolveBack(
 ): { href: string; label: string } | null {
   const fromParam = sanitizeReturnTo(search.get(RETURN_TO_PARAM));
   const labelParam = sanitizeReturnLabel(search.get(RETURN_LABEL_PARAM));
-  const current = rewritePengarPath(normalizePathname(pathname));
-  if (fromParam && rewritePengarPath(splitHref(fromParam).pathname) !== current) {
+  const current = rewriteAppPath(pathname);
+  if (fromParam && rewriteAppPath(splitHref(fromParam).pathname) !== current) {
     return { href: fromParam, label: labelParam ?? labelForHref(fromParam) };
   }
 
@@ -281,12 +406,22 @@ export function invoiceHref(id: string, from?: { href: string; label?: string })
 }
 
 export function inquiryHref(id: string, from?: { href: string; label?: string }): string {
-  const path = `/kunder/forfragningar/${id}`;
+  const path = `/inbox/${id}`;
+  return from ? withReturnTo(path, from.href, from.label) : path;
+}
+
+export function customerHref(id: string, from?: { href: string; label?: string }): string {
+  const path = `/kunder/${id}`;
+  return from ? withReturnTo(path, from.href, from.label) : path;
+}
+
+export function jobHref(id: string, from?: { href: string; label?: string }): string {
+  const path = `/uppdrag/${id}`;
   return from ? withReturnTo(path, from.href, from.label) : path;
 }
 
 export function kunderInboxHref(): string {
-  return "/kunder?flik=forfragningar";
+  return "/inbox";
 }
 
 export function newQuoteHref(params: {
@@ -334,15 +469,23 @@ export function sanitizeReturnTo(raw: string | null | undefined, depth = 0): str
   if (hashIndex >= 0) value = value.slice(0, hashIndex);
 
   const { pathname, searchParams } = splitHref(value);
-  const path = rewritePengarPath(rewriteJobPath(normalizePathname(pathname)));
+  const sourcePath = rewritePengarPath(rewriteJobPath(normalizePathname(pathname)));
+  let path = rewriteInquiryPath(rewriteAssistentPath(rewriteUppdragListPath(sourcePath)));
+  if (sourcePath === "/kunder" && searchParams.get("flik") === "forfragningar") {
+    path = "/inbox";
+  }
   if (!isInternalAppPath(path)) return null;
 
   const allowed = new URLSearchParams();
   for (const [key, val] of searchParams.entries()) {
     if (key === RETURN_TO_PARAM || key === RETURN_LABEL_PARAM) continue;
+    if (key === "flik" && val === "forfragningar") continue;
     if (!/^[a-zA-Z0-9_-]{1,40}$/.test(key)) continue;
     if (val.length > 120 || /[<>]/.test(val)) continue;
     allowed.set(key, val);
+  }
+  if (sourcePath === "/uppdrag" && path === "/kunder" && !allowed.has("flik")) {
+    allowed.set("flik", "uppdrag");
   }
   const nestedReturn = sanitizeReturnTo(searchParams.get(RETURN_TO_PARAM), depth + 1);
   if (nestedReturn) allowed.set(RETURN_TO_PARAM, nestedReturn);
@@ -364,7 +507,7 @@ export function sanitizeId(raw: string | null | undefined): string | null {
   return SAFE_ID.test(value) ? value : null;
 }
 
-function isInternalAppPath(pathname: string): boolean {
+export function isInternalAppPath(pathname: string): boolean {
   if (pathname === "/") return true;
   return APP_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
@@ -375,10 +518,51 @@ function rewriteJobPath(pathname: string): string {
   return pathname;
 }
 
+/** Uppdragslistan flyttade under Kunder. Detalj `/uppdrag/:id` lämnas orörd. */
+export function rewriteUppdragListPath(pathname: string): string {
+  if (pathname === "/uppdrag") return "/kunder";
+  return pathname;
+}
+
+function rewriteAssistentPath(pathname: string): string {
+  if (pathname === "/assistent") return "/";
+  return pathname;
+}
+
+function rewriteInquiryPath(pathname: string): string {
+  if (pathname.startsWith("/kunder/forfragningar/")) {
+    return `/inbox/${pathname.slice("/kunder/forfragningar/".length)}`;
+  }
+  return pathname;
+}
+
 function rewritePengarPath(pathname: string): string {
   if (pathname === "/pengar") return "/ekonomi";
   if (pathname.startsWith("/pengar/")) return `/ekonomi/${pathname.slice("/pengar/".length)}`;
   return pathname;
+}
+
+function rewriteAppPath(pathname: string): string {
+  return rewriteInquiryPath(
+    rewriteAssistentPath(rewriteUppdragListPath(rewritePengarPath(rewriteJobPath(normalizePathname(pathname)))))
+  );
+}
+
+/** Path + query för gamla bokmärken och `tillbaka=`-kedjor. */
+export function rewriteLegacyHref(href: string): string {
+  const { pathname, searchParams } = splitHref(href);
+  const sourcePath = rewritePengarPath(rewriteJobPath(normalizePathname(pathname)));
+  let path = rewriteInquiryPath(rewriteAssistentPath(rewriteUppdragListPath(sourcePath)));
+  const params = new URLSearchParams(searchParams);
+  if (sourcePath === "/kunder" && params.get("flik") === "forfragningar") {
+    path = "/inbox";
+    params.delete("flik");
+  }
+  if (sourcePath === "/uppdrag" && path === "/kunder" && !params.has("flik")) {
+    params.set("flik", "uppdrag");
+  }
+  const qs = params.toString();
+  return qs ? `${path}?${qs}` : path;
 }
 
 function normalizePathname(pathname: string): string {

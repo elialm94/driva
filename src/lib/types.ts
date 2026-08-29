@@ -3,6 +3,8 @@
  * Alla belopp är i SEK (hela kronor om inget annat anges), datum är ISO-strängar.
  */
 
+import type { RichTextDoc } from "./richtext";
+
 export type ID = string;
 
 export type LineKind = "arbete" | "material" | "ovrigt";
@@ -53,6 +55,11 @@ export interface CompanySettings {
   quoteValidityDays: number;
   /** Vanlig momssats för nya dokumentrader. */
   defaultVatRate: VatRate;
+  /**
+   * Stabil lokal-del för inkommande leverantörsmejl (`slug@in.driva.se`).
+   * Tenantuppslag sker på den här sluggen – aldrig på From-headern.
+   */
+  inboundMailSlug?: string;
 }
 
 /* ---------------------------------- Kunder ---------------------------------- */
@@ -69,12 +76,37 @@ export interface Customer {
   postalCode?: string;
   city?: string;
   /**
-   * Personnummer för skattereduktion. Känsligt: maskas i vanliga vyer,
-   * skickas inte till LLM, loggas inte i klartext.
+   * Personnummer för skattereduktion. Hör till den privata kunden – inte till
+   * offert, faktura, uppdrag eller bostad. Känsligt: maskas i vanliga vyer
+   * (`1985••••-1234`), skickas inte till LLM, läggs inte i URL eller
+   * analytics, och loggas inte i klartext. Serveractions som läser/skriver
+   * värdet validerar input och returnerar maskat värde om det inte är en
+   * dedikerad "Visa"-åtgärd.
+   *
+   * JSON-lagret (`src/lib/store.ts`) sparar fältet i klartext. Kryptering i
+   * vila kräver en riktig databas – vi hittar inte på krypto här.
    */
   personalIdentityNumber?: string;
+  /** Arbetsplatser/bostäder. En privat kund kan ha hem + fritidshus. */
+  workLocations?: WorkLocation[];
+  /** Standardadress för nytt uppdrag / ROT-prefill när flera bostäder finns. */
+  defaultWorkLocationId?: ID;
   notes: string;
   createdAt: string;
+}
+
+/** Bostad där arbete utförs. ROT-uppgifter (beteckning/BRF) bor här, personnummer på kunden. */
+export interface WorkLocation {
+  id: ID;
+  label: string;
+  address: string;
+  postalCode: string;
+  city: string;
+  placeId?: string;
+  propertyType: DwellingType;
+  propertyDesignation?: string;
+  brfOrgNumber?: string;
+  apartmentNumber?: string;
 }
 
 /* -------------------------------- Förfrågningar ------------------------------ */
@@ -123,6 +155,15 @@ export interface DocLine {
 
 export interface RotRut {
   type: "rot" | "rut";
+  /**
+   * Maximalt avdrag utifrån denna offert/faktura (arbetskostnad + ROT/RUT-regler).
+   * Inte kundens saldo hos Skatteverket.
+   */
+  calculatedEligibleTaxReduction?: number;
+  /** Avdraget som används på dokumentet. Standard: samma som calculated. */
+  appliedTaxReduction?: number;
+  /** true när användaren sänkt avdraget manuellt. */
+  taxReductionManuallyAdjusted?: boolean;
 }
 
 /** Bostadstyp för ROT – bara ett fältset visas åt gången. */
@@ -157,6 +198,17 @@ export interface TaxReductionApplication {
     outcome: "godkant" | "delvis_godkant" | "nekat";
     decidedAt: string;
     deniedAmount?: number;
+  };
+  /**
+   * Skatteverkets utbetalning: bokas 1930 mot 1513 när pengarna kommer.
+   * Sätts EN gång per ansökan (idempotensvakt – en ansökan kan aldrig få
+   * dubbla utbetalningsbokningar).
+   */
+  payout?: {
+    amount: number;
+    at: string;
+    verificationId: ID;
+    bankTransactionId?: ID;
   };
 }
 
@@ -205,6 +257,12 @@ export interface QuoteVersion {
   validUntil: string;
   /** Användarens egna villkor. ROT/RUT-villkor ligger i taxReductionTerms, inte här. */
   terms: string;
+  /**
+   * "Övrig information" – rik text (strikt vitlistad delmängd, se lib/richtext).
+   * Saneras vid varje servergräns. Ligger på versionen → BankID-låsning fryser
+   * den, och den ingår villkorligt i contentHash (endast när den finns).
+   */
+  richText?: RichTextDoc;
   /**
    * Systemgenererade ROT/RUT-villkor. Sätts av offerttjänsten när rot är valt,
    * tas bort när rot slås av. Snapshoten låses med versionen vid BankID.
@@ -299,6 +357,8 @@ export interface Job {
   startDate?: string;
   endDate?: string;
   address?: string;
+  /** Kundens bostad där jobbet görs. ROT-beteckning/BRF hämtas härifrån; personnummer från kunden. */
+  workLocationId?: ID;
   checklist: ChecklistItem[];
   notes: string;
   createdAt: string;
@@ -311,7 +371,11 @@ export interface Job {
 
 /* ---------------------------------- Fakturor --------------------------------- */
 
-export type InvoiceStatus = "utkast" | "skickad" | "betald" | "krediterad";
+/**
+ * Fakturastatus. "delbetald" = utfärdad fordran där inbetalningar täcker en
+ * del av att-betala. Förfallen härleds (isOverdue) och lagras aldrig.
+ */
+export type InvoiceStatus = "utkast" | "skickad" | "delbetald" | "betald" | "krediterad";
 export type InvoiceType = "faktura" | "delbetalning" | "slutfaktura" | "kredit";
 
 /** Säljaren vid utfärdandet – fryses så att senare ändringar i företagsuppgifter inte ändrar gamla fakturor. */
@@ -370,6 +434,8 @@ export interface InvoiceIssuedSnapshot {
   buyer: InvoiceBuyerSnapshot;
   lines: DocLine[];
   rot: RotRut | null;
+  /** Frusen kopia av "Övrig information" vid utfärdandet. */
+  richText?: RichTextDoc;
   taxReductionTerms?: TaxReductionTermsSnapshot | null;
   taxReductionDetails?: TaxReductionDetails | null;
   totals: {
@@ -377,8 +443,11 @@ export interface InvoiceIssuedSnapshot {
     vat: number;
     total: number;
     laborInclVat: number;
+    /** Använt (applied) avdrag – det kunden ser och det som ansöks. */
     deduction: number;
     toPay: number;
+    /** Internt max utifrån dokumentets rader. Saknas på äldre snapshots. */
+    calculatedEligibleTaxReduction?: number;
   };
   vatBreakdown: InvoiceVatRow[];
   creditsInvoiceId?: ID;
@@ -396,6 +465,12 @@ export interface Invoice {
   status: InvoiceStatus;
   lines: DocLine[];
   rot: RotRut | null;
+  /**
+   * "Övrig information" – rik text (strikt vitlistad delmängd, se lib/richtext).
+   * Saneras vid varje servergräns. Fryses i issuedSnapshot vid utfärdandet –
+   * utfärdade fakturor renderar alltid den frusna kopian.
+   */
+  richText?: RichTextDoc;
   /** Kopia av ROT/RUT-villkor vid utkast/utfärdande. Fryses i issuedSnapshot. */
   taxReductionTerms?: TaxReductionTermsSnapshot | null;
   /** Adress, period och bostad. Personnummer ligger på kunden. */
@@ -420,7 +495,24 @@ export interface Invoice {
   token: string;
   ocr: string;
   creditsInvoiceId?: ID;
+  /**
+   * Restfaktura för nekat ROT/RUT-avdrag: pekar på ursprungsfakturan.
+   * Bokförs som omflytt av fordran (1513 → 1510) – aldrig ny intäkt eller moms,
+   * eftersom hela intäkten och momsen redovisades när ursprungsfakturan utfärdades.
+   */
+  deniedReductionOf?: ID;
   issuedSnapshot?: InvoiceIssuedSnapshot;
+  /**
+   * Återbetalning till kund – sätts EN gång när utbetalningen bokförs
+   * (kreditering av betald faktura eller överbetalning). Exceptionen
+   * "återbetala X kr" härleds ur betalningar/krediter tills fältet är satt.
+   */
+  refund?: { amount: number; at: string; verificationId: ID; bankTransactionId?: ID };
+  /**
+   * Överbetalning bokförd som skuld till kunden (2420), ej återbetald.
+   * Styr vilket konto en återbetalning ska nollställa (2420 vs negativ 1510).
+   */
+  overpaymentCredit?: number;
   createdBy?: "anvandare" | "assistent";
   createdAt: string;
 }
@@ -445,19 +537,29 @@ export interface BankAccount {
   connectedAt: string;
 }
 
-export type TxStatus = "ny" | "matchad" | "bokford" | "behover_atgard";
+/**
+ * Banktransaktionens livscykel: ny → bokford (matchad + verifikation) eller
+ * behover_atgard (ingen säker matchning – väntar på människa). Matchnings-
+ * förslag härleds vid läsning (services/payment-matching.ts) och lagras inte.
+ */
+export type TxStatus = "ny" | "bokford" | "behover_atgard";
 
 export interface BankTransaction {
   id: ID;
   accountId: ID;
+  /**
+   * Leverantörens transaktions-id. Gör återimport idempotent: samma id kan
+   * aldrig skapa en dubblett (unikt index i DB + domänvakt vid import).
+   */
+  externalId?: string;
   date: string;
-  /** Positivt = inbetalning, negativt = utbetalning. */
+  /** Positivt = inbetalning, negativt = utbetalning. Hela kronor (öre avrundas vid importgränsen – se README-ADR). */
   amount: number;
   counterpart: string;
   description: string;
   reference?: string;
   status: TxStatus;
-  matchedType?: "faktura" | "utgift" | "leverantorsfaktura" | "skatt" | "ovrigt";
+  matchedType?: "faktura" | "utgift" | "leverantorsfaktura" | "skatt" | "skattereduktion" | "aterbetalning" | "ovrigt";
   matchedId?: ID;
   verificationId?: ID;
 }
@@ -705,7 +807,19 @@ export type AuditAction =
   | "periodisering_bokford"
   | "arsredovisning_genererad"
   | "arsredovisning_status"
-  | "bokforing_angrad";
+  | "bokforing_angrad"
+  // Affärshändelser (autopiloten): kritiska pengaflöden auditloggas alltid,
+  // i samma transaktion som själva händelsen.
+  | "faktura_utfardad"
+  | "faktura_skickad"
+  | "faktura_krediterad"
+  | "betalning_matchad"
+  | "utgift_bokford"
+  | "banktransaktion_bokford"
+  | "rot_underlag_skapat"
+  | "rot_beslut"
+  | "rot_utbetalning_mottagen"
+  | "taxreduktion_uppgift_andrad";
 
 export interface AuditEvent {
   id: ID;
@@ -994,7 +1108,7 @@ export interface AssistantMessage {
 
 /** Vad assistenten ska fortsätta med efter att en saknad kund skapats. */
 export type ResumeAfterCustomer =
-  | { kind: "create_quote"; title?: string; amountInclVat?: number; rot?: "rot" | "rut" | null }
+  | { kind: "create_quote"; title?: string; amountInclVat?: number; rot?: "rot" | "rut" | null; appliedTaxReduction?: number }
   | { kind: "create_job"; title: string; startDate?: string; description?: string }
   | {
       kind: "create_invoice";
@@ -1002,6 +1116,7 @@ export type ResumeAfterCustomer =
       amountInclVat?: number;
       jobId?: ID;
       taxReduction?: "rot" | "rut" | null;
+      appliedTaxReduction?: number;
     };
 
 export type PendingAssistantAction =
@@ -1020,6 +1135,112 @@ export type PendingAssistantAction =
   | { id: ID; type: "markera_moms_deklarerad"; reportId: ID }
   | { id: ID; type: "skapa_tillaggsoffert"; customerId: ID; jobId: ID; title: string; amountInclVat: number }
   | { id: ID; type: "kop_doman"; hostname: string };
+
+/* --------------------------------- Påminnelser -------------------------------- */
+
+export type ReminderStatus = "PENDING" | "COMPLETED" | "DISMISSED";
+
+export type ReminderRelatedType = "customer" | "quote" | "invoice" | "job";
+
+/**
+ * Persisterad påminnelse skapad ur naturligt språk (eller manuellt).
+ * "Förfallen" är HÄRLETT ur dueAt/status – aldrig lagrat. Borttagning är
+ * mjuk (DISMISSED) så historiken bevaras.
+ */
+export interface Reminder {
+  id: ID;
+  /** Skaparen (auth.users.id). null i JSON-läget utan inloggning. */
+  userId: string | null;
+  title: string;
+  description?: string;
+  /** Absolut tidpunkt (ISO, UTC-instant). Lokal semantik via timezone. */
+  dueAt: string;
+  /** IANA-tidszon, t.ex. Europe/Stockholm – styr all användarvänd formatering. */
+  timezone: string;
+  /** Angav användaren klockslag/dagsdel? Styr när den dyker upp i uppmärksamhetslistan. */
+  hasExplicitTime: boolean;
+  status: ReminderStatus;
+  source: "assistant" | "user";
+  relatedEntityType?: ReminderRelatedType;
+  relatedEntityId?: ID;
+  createdAt: string;
+  completedAt?: string;
+  /** Uppskjuten till (ISO) – döljs ur uppmärksamhet tills dess. */
+  snoozedUntil?: string;
+  /** Reserverad för framtida återkommande påminnelser – ingen implementation ännu. */
+  recurrenceRule?: string;
+}
+
+/* --------------------------- Uppmärksamhetstillstånd -------------------------- */
+
+/**
+ * Snooze/avfärdan för en rad i "Behöver din uppmärksamhet". Ren presentations-
+ * policy: domänstatus ändras ALDRIG här – en snoozad faktura är fortfarande
+ * försenad, den döljs bara ur uppmärksamhetslistan (och räknaren) tills
+ * snoozedUntil passerats. Därefter syns den automatiskt igen OM åtgärds-
+ * motorn fortfarande härleder den; är saken löst under tiden är den borta.
+ *
+ * userId: per användare när inloggning finns (auth.users.id); null i
+ * JSON-/demoläget utan inloggning → gäller hela företaget. En rad per
+ * (företag, actionId, användare) – tjänstelagret upserttar.
+ */
+export interface AttentionState {
+  id: ID;
+  /** Den som snoozade (auth.users.id). null i JSON-läget → företagsgemensam. */
+  userId: string | null;
+  /** Åtgärdsmotorns stabila rad-id, t.ex. "invoice-late-<id>". */
+  actionId: string;
+  /** Dold ur uppmärksamhet till denna tidpunkt (ISO). */
+  snoozedUntil?: string;
+  /** Endast för dismissBehavior HIDE (rena info-rader) – aldrig domänstatus. */
+  dismissedAt?: string;
+  dismissalReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/* ---------------------------------- Inbox --------------------------------- */
+
+export type InboxItemKind = "mail";
+export type InboxItemStatus = "ny" | "behandlad" | "bokford";
+
+/** Privat bilaga – lagras i bucket `inbox_attachments`, aldrig som publik URL. */
+export interface InboxAttachment {
+  id: ID;
+  filename: string;
+  contentType: string;
+  size: number;
+  storageKey: string;
+}
+
+/**
+ * Inkommande leverantörsmejl/kvitto. Förfrågningar från hemsidan är
+ * `CustomerRequest` och listas tillsammans med dessa i Inbox-UI:t.
+ * Ingen hård radering – statusmaskin (ny → behandlad/bokford).
+ */
+export interface InboxItem {
+  id: ID;
+  kind: InboxItemKind;
+  status: InboxItemStatus;
+  /** Leverantörens meddelande-id – unique per företag när det finns. */
+  externalId?: string;
+  fromAddress: string;
+  toAddress: string;
+  subject: string;
+  textBody: string;
+  htmlBody?: string;
+  attachments: InboxAttachment[];
+  /** Tolkat belopp i hela kronor – saknas = inte gissat. */
+  parsedAmount?: number;
+  parsedVatAmount?: number;
+  parsedSupplier?: string;
+  parsedDate?: string;
+  /** 0–1. Autopilot bokar bara vid ≥ 0,98 och känt belopp. */
+  confidence?: number;
+  expenseId?: ID;
+  createdAt: string;
+  processedAt?: string;
+}
 
 /** Internt verktygsaudit – visas inte i chatten. */
 export interface AssistantAuditEntry {
@@ -1068,5 +1289,30 @@ export interface DB {
   assistantMessages: AssistantMessage[];
   pendingActions: PendingAssistantAction[];
   assistantAudit: AssistantAuditEntry[];
-  meta: { seededAt: string };
+  reminders: Reminder[];
+  /** Snooze/avfärdan för uppmärksamhetsrader – presentationspolicy, aldrig domänstatus. */
+  attentionStates: AttentionState[];
+  /** Inkommande leverantörsmejl. Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  inboxItems: InboxItem[];
+  meta: {
+    seededAt: string;
+    /** Engångshydrering av ROT-demodata (personnummer m.m.) – får inte återuppstå om användaren tagit bort det. */
+    taxReductionDemoHydrated?: boolean;
+    /**
+     * Deterministiska kategoriregler lärda av användarens val: när ett köp
+     * hos en leverantör bokförs med en kategori räknas det upp här, och nästa
+     * köp hos samma leverantör föreslås/bokförs likadant med förklaringen
+     * "X har bokförts som Y n gånger". Ingen ML – bara räknade beslut.
+     */
+    merchantCategoryRules?: Record<string, MerchantCategoryRule>;
+  };
+}
+
+/** Lärd kategoriregel per leverantör (normaliserat namn som nyckel). */
+export interface MerchantCategoryRule {
+  /** Kategori-nyckel ur EXPENSE_CATEGORIES. */
+  category: string;
+  /** Antal gånger användaren bekräftat/valt kategorin för leverantören. */
+  count: number;
+  lastUsedAt: string;
 }

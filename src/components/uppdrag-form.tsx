@@ -1,23 +1,27 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useAppNavigate } from "./app-link";
 import { Plus } from "lucide-react";
 import { DateField } from "./date-field";
 import { Modal } from "./modal";
-import { buttonClasses } from "./ui";
+import { buttonClasses, cx } from "./ui";
 import { createJobAction, updateJobAction } from "@/app/actions";
 import { addCustomerOption, CustomerPicker, type CustomerOption } from "./customer-picker";
-import { swedishFormProps } from "@/lib/swedish-validity";
+import { FieldError, focusField, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
+
+export type JobWorkLocationOption = { id: string; label: string; city?: string };
 
 export function NewUppdragButton({
   customers,
   defaultCustomerId,
   defaultTitle,
   defaultDescription,
+  workLocations = [],
+  defaultWorkLocationId,
   size = "md",
   variant = "primary",
 }: {
@@ -25,21 +29,37 @@ export function NewUppdragButton({
   defaultCustomerId?: string;
   defaultTitle?: string;
   defaultDescription?: string;
+  workLocations?: JobWorkLocationOption[];
+  defaultWorkLocationId?: string;
   size?: "sm" | "md";
   variant?: "primary" | "secondary";
 }) {
   const [open, setOpen] = useState(false);
   const [customerOptions, setCustomerOptions] = useState(customers);
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
+  const [customerError, setCustomerError] = useState<string | null>(null);
+  const [workLocationId, setWorkLocationId] = useState(
+    workLocations.length === 1 ? workLocations[0].id : (defaultWorkLocationId ?? "")
+  );
+  const [newAddress, setNewAddress] = useState(false);
   const [isPending, startTransition] = useTransition();
-  const router = useRouter();
+  const navigate = useAppNavigate();
   const lockedCustomer = Boolean(defaultCustomerId);
+  const { errors, formProps, fieldProps, reset } = useNativeFieldErrors({
+    title: "Ange vad uppdraget gäller.",
+  });
 
   function submit(formData: FormData) {
     const selectedId = String(formData.get("customerId") ?? customerId ?? defaultCustomerId ?? "");
     const title = String(formData.get("title") ?? "").trim();
-    if (!selectedId || !title) return;
+    if (!selectedId) {
+      setCustomerError("Välj kund först.");
+      focusField("nytt-uppdrag-kund");
+      return;
+    }
+    if (!title) return;
     startTransition(async () => {
+      const newStreet = String(formData.get("newAddress") ?? "").trim();
       const id = await createJobAction({
         customerId: selectedId,
         title,
@@ -47,42 +67,124 @@ export function NewUppdragButton({
         startDate: String(formData.get("startDate") ?? "")
           ? new Date(`${formData.get("startDate")}T09:00:00`).toISOString()
           : undefined,
+        workLocationId: !newAddress && workLocationId ? workLocationId : undefined,
+        newWorkLocation: newAddress && newStreet
+          ? {
+              label: String(formData.get("newLabel") ?? "").trim() || "Ny adress",
+              address: newStreet,
+              postalCode: String(formData.get("newPostalCode") ?? ""),
+              city: String(formData.get("newCity") ?? ""),
+            }
+          : undefined,
       });
       setOpen(false);
-      router.push(`/uppdrag/${id}`);
+      navigate(`/uppdrag/${id}`);
     });
   }
 
   return (
     <>
-      <button className={buttonClasses(variant, size)} onClick={() => setOpen(true)}>
+      <button
+        className={buttonClasses(variant, size)}
+        onClick={() => {
+          setCustomerError(null);
+          reset();
+          setOpen(true);
+        }}
+      >
         <Plus className={size === "sm" ? "size-3.5" : "size-4"} />
         Skapa uppdrag
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title="Nytt uppdrag" size="md">
-        <form action={submit} className="space-y-4 px-6 py-5" {...swedishFormProps()}>
-          <div>
+        <form action={submit} className="space-y-4 px-6 py-5" {...formProps()}>
+          <div id="nytt-uppdrag-kund">
             <label className="mb-1 block text-[13px] font-medium text-soft">Kund</label>
             <CustomerPicker
               name="customerId"
               customers={customerOptions}
               value={customerId}
-              onChange={setCustomerId}
+              onChange={(id) => {
+                setCustomerId(id);
+                if (id) setCustomerError(null);
+              }}
               allowCreateCustomer={!lockedCustomer}
               disabled={lockedCustomer}
               className={inputCls}
               onCreated={(customer) => setCustomerOptions((prev) => addCustomerOption(prev, customer))}
             />
+            <FieldError>{customerError}</FieldError>
           </div>
+          {lockedCustomer && workLocations.length > 1 ? (
+            <div>
+              <label className="mb-1 block text-[13px] font-medium text-soft">Var ska jobbet göras?</label>
+              <div className="space-y-1">
+                {workLocations.map((loc) => (
+                  // py ger radioraderna en rimlig träffyta på touch.
+                  <label key={loc.id} className="flex items-center gap-2.5 py-1.5 text-[14px] text-ink">
+                    <input
+                      type="radio"
+                      name="workLocation"
+                      className="size-4 accent-ink"
+                      checked={!newAddress && workLocationId === loc.id}
+                      onChange={() => {
+                        setNewAddress(false);
+                        setWorkLocationId(loc.id);
+                      }}
+                    />
+                    {loc.label}
+                    {loc.city ? <span className="text-muted">· {loc.city}</span> : null}
+                  </label>
+                ))}
+                <label className="flex items-center gap-2.5 py-1.5 text-[14px] text-ink">
+                  <input
+                    type="radio"
+                    name="workLocation"
+                    className="size-4 accent-ink"
+                    checked={newAddress}
+                    onChange={() => setNewAddress(true)}
+                  />
+                  Ny adress
+                </label>
+              </div>
+              {newAddress ? (
+                <div className="mt-3 space-y-2">
+                  <input name="newLabel" aria-label="Namn på adressen (valfritt)" placeholder="T.ex. Fritidshus" className={inputCls} />
+                  <input
+                    name="newAddress"
+                    aria-label="Gatuadress"
+                    autoComplete="street-address"
+                    placeholder="Gatuadress"
+                    className={inputCls}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      name="newPostalCode"
+                      aria-label="Postnummer"
+                      inputMode="numeric"
+                      autoComplete="postal-code"
+                      placeholder="Postnummer"
+                      className={inputCls}
+                    />
+                    <input name="newCity" aria-label="Ort" autoComplete="address-level2" placeholder="Ort" className={inputCls} />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div>
-            <label className="mb-1 block text-[13px] font-medium text-soft">Vad gäller det?</label>
+            <label className="mb-1 block text-[13px] font-medium text-soft" htmlFor="nytt-uppdrag-titel">
+              Vad gäller det?
+            </label>
             <input
+              id="nytt-uppdrag-titel"
               name="title"
               required
               defaultValue={defaultTitle}
-              className={inputCls}
+              className={cx(inputCls, errors.title && invalidFieldCls)}
               placeholder="T.ex. Köksrenovering"
+              {...fieldProps("title", "nytt-uppdrag-titel-fel")}
             />
+            <FieldError id="nytt-uppdrag-titel-fel">{errors.title}</FieldError>
           </div>
           <div>
             <label className="mb-1 block text-[13px] font-medium text-soft">Beskrivning</label>
@@ -102,7 +204,7 @@ export function NewUppdragButton({
             <button type="button" className={buttonClasses("ghost")} onClick={() => setOpen(false)}>
               Avbryt
             </button>
-            <button type="submit" className={buttonClasses("primary")} disabled={isPending || !customerId}>
+            <button type="submit" className={buttonClasses("primary")} disabled={isPending}>
               {isPending ? "Skapar …" : "Skapa uppdrag"}
             </button>
           </div>
@@ -132,6 +234,9 @@ export function EditUppdragModal({
   initial: { title: string; description: string; address?: string; startDate?: string; endDate?: string };
 }) {
   const [isPending, startTransition] = useTransition();
+  const { errors, formProps, fieldProps } = useNativeFieldErrors({
+    title: "Ange vad uppdraget gäller.",
+  });
 
   function submit(formData: FormData) {
     const title = String(formData.get("title") ?? "").trim();
@@ -154,15 +259,25 @@ export function EditUppdragModal({
 
   return (
     <Modal open={open} onClose={onClose} title="Redigera uppdrag" size="md">
-      <form action={submit} className="space-y-4 px-6 py-5">
+      <form action={submit} className="space-y-4 px-6 py-5" {...formProps()}>
         <input type="hidden" name="customerId" value={customerId} />
         <div>
           <label className="mb-1 block text-[13px] font-medium text-soft">Kund</label>
           <p className="text-[15px] text-ink">{customerName}</p>
         </div>
         <div>
-          <label className="mb-1 block text-[13px] font-medium text-soft">Vad gäller det?</label>
-          <input name="title" required defaultValue={initial.title} className={inputCls} />
+          <label className="mb-1 block text-[13px] font-medium text-soft" htmlFor="uppdrag-titel">
+            Vad gäller det?
+          </label>
+          <input
+            id="uppdrag-titel"
+            name="title"
+            required
+            defaultValue={initial.title}
+            className={cx(inputCls, errors.title && invalidFieldCls)}
+            {...fieldProps("title", "uppdrag-titel-fel")}
+          />
+          <FieldError id="uppdrag-titel-fel">{errors.title}</FieldError>
         </div>
         <div>
           <label className="mb-1 block text-[13px] font-medium text-soft">Beskrivning</label>

@@ -8,6 +8,7 @@ import { pendingAccruals, bookAccrual, reverseAccrualsInto } from "./accruals";
 import { computeTaxCalculation } from "./tax";
 import { logAudit } from "./audit";
 import { vatPeriods } from "./vat";
+import { isOverdue } from "../services/data";
 
 /**
  * Bokslut. Deterministiskt: alla kontroller körs på servern, bara riktiga
@@ -23,6 +24,8 @@ export interface BokslutCheckItem {
   blocking: boolean;
   detail?: string;
   href?: string;
+  /** Länketikett som namnger destinationen ("Öppna banken") – aldrig vaga "Åtgärda". */
+  hrefLabel?: string;
 }
 
 export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
@@ -37,7 +40,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
   const unbookedBank = data.bankTransactions.filter((t) => t.status !== "bokford" && inYear(t.date));
   const openExpenses = data.expenses.filter((e) => e.status !== "bokford" && inYear(e.date));
   const draftInvoices = data.invoices.filter((i) => i.status === "utkast");
-  const overdue = data.invoices.filter((i) => i.status === "skickad" && i.dueDate < new Date().toISOString());
+  const overdue = data.invoices.filter(isOverdue);
   // Momsperioder som passerat med aktivitet men inte deklarerats blockerar.
   const vatUndeclared = vatPeriods(Number(fy.label)).filter(
     (p) => p.state === "att_deklarera" && (p.position.utgaende !== 0 || p.position.ingaende !== 0)
@@ -64,6 +67,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
       blocking: true,
       detail: unbookedBank.length ? `${unbookedBank.length} banktransaktion${unbookedBank.length > 1 ? "er" : ""} behöver hanteras.` : "Alla banktransaktioner är bokförda.",
       href: "/ekonomi?flik=bank",
+      hrefLabel: "Öppna banken",
     },
     {
       key: "kvitton",
@@ -72,6 +76,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
       blocking: true,
       detail: openExpenses.length ? `${openExpenses.length} köp behöver kvitto eller svar.` : "Alla köp är bokförda med underlag.",
       href: "/bokforing",
+      hrefLabel: "Öppna bokföringen",
     },
     {
       key: "fakturor",
@@ -82,6 +87,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
         ? `${draftInvoices.length} fakturautkast är inte utfärdade – utfärda eller kasta dem.`
         : "Utfärdade fakturor bokförs automatiskt.",
       href: "/ekonomi?flik=fakturor",
+      hrefLabel: "Visa fakturorna",
     },
     {
       key: "fordringar",
@@ -92,6 +98,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
         ? `${overdue.length} förfallen faktura${overdue.length > 1 ? "or" : ""} – bedöm om de kommer betalas.`
         : "Inga förfallna kundfordringar.",
       href: "/ekonomi?flik=fakturor",
+      hrefLabel: "Visa fakturorna",
     },
     {
       key: "moms",
@@ -102,6 +109,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
         ? `${vatUndeclared.map((p) => p.period.label).join(", ")} är inte markerad${vatUndeclared.length > 1 ? "e" : ""} som deklarerad.`
         : "Alla avslutade momsperioder är deklarerade.",
       href: "/bokforing/moms",
+      hrefLabel: "Öppna momsöversikten",
     },
     {
       key: "avskrivningar",

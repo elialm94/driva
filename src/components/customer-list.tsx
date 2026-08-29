@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, ListFilter, Plus, Search, UserRound } from "lucide-react";
+import { AppLink, useAppNavigate } from "./app-link";
+import { ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ListFilter, Plus, Search, UserRound } from "lucide-react";
 import { Avatar, Badge, buttonClasses, Card, EmptyState, cx } from "./ui";
 import { NewCustomerModal } from "./new-customer-modal";
 import { kr } from "@/lib/format";
@@ -18,7 +18,7 @@ import type {
 
 export function NewCustomerButton({ full = false }: { full?: boolean }) {
   const [open, setOpen] = useState(false);
-  const router = useRouter();
+  const navigate = useAppNavigate();
 
   return (
     <>
@@ -28,7 +28,7 @@ export function NewCustomerButton({ full = false }: { full?: boolean }) {
       <NewCustomerModal
         open={open}
         onClose={() => setOpen(false)}
-        onCreated={({ id }) => router.push(`/kunder/${id}`)}
+        onCreated={({ id }) => navigate(`/kunder/${id}`)}
       />
     </>
   );
@@ -45,14 +45,14 @@ export interface CustomerRegisterQuery {
 
 export function kunderRegisterHref(query: Partial<CustomerRegisterQuery>): string {
   const sp = new URLSearchParams();
+  sp.set("flik", "kunder");
   if (query.q) sp.set("q", query.q);
   if (query.kind && query.kind !== "alla") sp.set("typ", query.kind);
   if (query.activity && query.activity !== "alla") sp.set("aktivitet", query.activity);
   if (query.payment && query.payment !== "alla") sp.set("betalning", query.payment);
   if (query.sort && query.sort !== "aktivitet") sp.set("sortering", query.sort);
   if (query.page && query.page > 1) sp.set("sida", String(query.page));
-  const qs = sp.toString();
-  return qs ? `/kunder?${qs}` : "/kunder";
+  return `/kunder?${sp.toString()}`;
 }
 
 export function CustomerRegister({
@@ -119,7 +119,8 @@ export function CustomerRegister({
                     <SortTh
                       label="Kund"
                       active={query.sort === "namn"}
-                      onClick={() => go({ sort: "namn", page: 1 })}
+                      direction="asc"
+                      onClick={() => go({ sort: query.sort === "namn" ? "aktivitet" : "namn", page: 1 })}
                     />
                     <th className="px-3 py-2.5 font-medium">Kontakt</th>
                     <th className="px-3 py-2.5 font-medium">Status</th>
@@ -127,8 +128,9 @@ export function CustomerRegister({
                     <SortTh
                       label="Att betala"
                       active={query.sort === "attBetala"}
+                      direction="desc"
                       align="right"
-                      onClick={() => go({ sort: "attBetala", page: 1 })}
+                      onClick={() => go({ sort: query.sort === "attBetala" ? "aktivitet" : "attBetala", page: 1 })}
                     />
                   </tr>
                 </thead>
@@ -136,9 +138,9 @@ export function CustomerRegister({
                   {result.rows.map((c) => (
                     <tr key={c.id} className="relative border-b border-line/60 last:border-0 hover:bg-canvas/70">
                       <td className="px-3 py-2.5">
-                        <Link href={`/kunder/${c.id}` as never} className="absolute inset-0 z-10" aria-label={c.name}>
+                        <AppLink href={`/kunder/${c.id}`} className="absolute inset-0 z-10" aria-label={c.name}>
                           <span className="sr-only">{c.name}</span>
-                        </Link>
+                        </AppLink>
                         <div className="pointer-events-none flex items-center gap-3">
                           <Avatar name={c.name} size="sm" />
                           <span className="min-w-0">
@@ -175,9 +177,9 @@ export function CustomerRegister({
 
           <div className="space-y-2 md:hidden">
             {result.rows.map((c) => (
-              <Link
+              <AppLink
                 key={c.id}
-                href={`/kunder/${c.id}` as never}
+                href={`/kunder/${c.id}`}
                 className="card flex items-start gap-3 px-4 py-3"
               >
                 <Avatar name={c.name} size="sm" />
@@ -199,7 +201,7 @@ export function CustomerRegister({
                           : c.statusLabel}
                   </p>
                 </div>
-              </Link>
+              </AppLink>
             ))}
           </div>
 
@@ -213,23 +215,32 @@ export function CustomerRegister({
 function SortTh({
   label,
   active,
+  direction,
   align,
   onClick,
 }: {
   label: string;
   active: boolean;
+  direction: "asc" | "desc";
   align?: "right";
   onClick: () => void;
 }) {
+  const Icon = active ? (direction === "asc" ? ChevronUp : ChevronDown) : ArrowUpDown;
   return (
-    <th className={cx("px-3 py-2.5", align === "right" && "text-right")}>
+    <th
+      className={cx("px-3 py-2.5", align === "right" && "text-right")}
+      aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}
+    >
       <button
         type="button"
         onClick={onClick}
-        className={cx("font-medium transition-colors hover:text-ink", active ? "text-ink" : "text-muted")}
+        className={cx(
+          "inline-flex cursor-pointer items-center gap-1 font-medium transition-colors hover:text-ink",
+          active ? "text-ink" : "text-muted"
+        )}
       >
         {label}
-        {active ? <span className="ml-1 text-muted">↓</span> : null}
+        <Icon className="size-3 shrink-0 text-muted" aria-hidden />
       </button>
     </th>
   );

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AppLink } from "@/components/app-link";
 import { Info } from "lucide-react";
 import { Card, cx } from "./ui";
 import { kr } from "@/lib/format";
@@ -65,9 +65,9 @@ export function QuoteDeviationCard({ deviation }: { deviation: QuoteDeviation })
 
           {warn ? (
             <p className="mt-2">
-              <Link href={deviation.tillaggHref as never} className="font-medium text-ink underline-offset-2 hover:underline">
+              <AppLink href={deviation.tillaggHref} className="font-medium text-ink underline-offset-2 hover:underline">
                 Skapa tilläggsoffert
-              </Link>
+              </AppLink>
             </p>
           ) : null}
         </div>

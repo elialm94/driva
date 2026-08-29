@@ -1,29 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getQuoteByToken } from "@/lib/services/data";
+import { currentVersion, getQuoteByToken } from "@/lib/services/data";
 import { bankidProvider, signText } from "@/lib/services/bankid";
+import { dagarTill } from "@/lib/format";
+import { withPublicBusiness } from "@/lib/auth/session";
 
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as { token?: string; method?: "same_device" | "qr" };
   if (!body.token) return NextResponse.json({ error: "token saknas" }, { status: 400 });
 
-  const quote = getQuoteByToken(body.token);
-  if (!quote) return NextResponse.json({ error: "Offerten finns inte" }, { status: 404 });
-  if (quote.status === "godkand") {
-    return NextResponse.json({ error: "already_approved" }, { status: 409 });
-  }
-  if (quote.status !== "skickad") {
-    return NextResponse.json({ error: "Offerten kan inte signeras i nuvarande status" }, { status: 409 });
-  }
+  // Publikt flöde: företaget löses från offert-token, aldrig från session.
+  const result = await withPublicBusiness("quote", body.token, () => {
+    const quote = getQuoteByToken(body.token!);
+    if (!quote) return { status: 404, error: "Offerten finns inte" } as const;
+    if (quote.status === "godkand") {
+      return { status: 409, error: "already_approved" } as const;
+    }
+    if (quote.status !== "skickad") {
+      return { status: 409, error: "Offerten kan inte signeras i nuvarande status" } as const;
+    }
+    if (dagarTill(currentVersion(quote).validUntil) < 0) {
+      return { status: 409, error: "Offerten har gått ut och kan inte längre godkännas." } as const;
+    }
 
-  const order = bankidProvider.startSign({
-    quoteId: quote.id,
-    quoteVersionId: quote.currentVersionId,
-    method: body.method ?? "qr",
+    const order = bankidProvider.startSign({
+      quoteId: quote.id,
+      quoteVersionId: quote.currentVersionId,
+      method: body.method ?? "qr",
+    });
+
+    return {
+      status: 200,
+      payload: {
+        orderRef: order.orderRef,
+        environment: bankidProvider.environment,
+        signText: signText(quote),
+      },
+    } as const;
   });
 
-  return NextResponse.json({
-    orderRef: order.orderRef,
-    environment: bankidProvider.environment,
-    signText: signText(quote),
-  });
+  if (!result) return NextResponse.json({ error: "Offerten finns inte" }, { status: 404 });
+  if (result.status !== 200) return NextResponse.json({ error: result.error }, { status: result.status });
+  return NextResponse.json(result.payload);
 }

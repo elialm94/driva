@@ -3,7 +3,7 @@ import { Badge, StatusDot, type BadgeTone } from "./ui";
 import { dagarTill } from "@/lib/format";
 import { derivedJobStatus, type DerivedJobStatus } from "@/lib/services/job-lifecycle";
 
-export function QuoteStatusBadge({ quote }: { quote: Quote }) {
+export function QuoteStatusBadge({ quote, status }: { quote: Quote; status?: Quote["status"] }) {
   const map: Record<Quote["status"], { tone: BadgeTone; label: string }> = {
     utkast: { tone: "neutral", label: "Utkast" },
     skickad: { tone: "warn", label: "Väntar på BankID" },
@@ -11,7 +11,7 @@ export function QuoteStatusBadge({ quote }: { quote: Quote }) {
     avbojd: { tone: "danger", label: "Avböjd" },
     utgangen: { tone: "neutral", label: "Utgången" },
   };
-  const { tone, label } = map[quote.status];
+  const { tone, label } = map[status ?? quote.status];
   return (
     <Badge tone={tone}>
       <StatusDot tone={tone} />
@@ -21,7 +21,16 @@ export function QuoteStatusBadge({ quote }: { quote: Quote }) {
 }
 
 export function InvoiceStatusBadge({ invoice }: { invoice: Invoice }) {
-  if (invoice.status === "skickad" && dagarTill(invoice.dueDate) < 0) {
+  // En kreditfaktura är ingen fordran – den kan aldrig vara "försenad" eller "obetald".
+  if (invoice.type === "kredit") {
+    return (
+      <Badge tone="neutral">
+        <StatusDot tone="neutral" />
+        Kreditfaktura
+      </Badge>
+    );
+  }
+  if ((invoice.status === "skickad" || invoice.status === "delbetald") && dagarTill(invoice.dueDate) < 0) {
     return (
       <Badge tone="danger">
         <StatusDot tone="danger" />
@@ -32,6 +41,7 @@ export function InvoiceStatusBadge({ invoice }: { invoice: Invoice }) {
   const map: Record<Invoice["status"], { tone: BadgeTone; label: string }> = {
     utkast: { tone: "neutral", label: "Utkast" },
     skickad: { tone: "info", label: "Skickad" },
+    delbetald: { tone: "warn", label: "Delbetald" },
     betald: { tone: "ok", label: "Betald" },
     krediterad: { tone: "neutral", label: "Krediterad" },
   };
@@ -72,7 +82,6 @@ export function JobStatusBadge({
 export function TxStatusBadge({ status }: { status: TxStatus }) {
   const map: Record<TxStatus, { tone: BadgeTone; label: string }> = {
     ny: { tone: "neutral", label: "Ny" },
-    matchad: { tone: "info", label: "Matchad" },
     bokford: { tone: "ok", label: "Bokförd" },
     behover_atgard: { tone: "warn", label: "Behöver åtgärd" },
   };

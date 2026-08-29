@@ -7,18 +7,23 @@ import { InvoiceDocument } from "@/components/invoice-document";
 import { resolveInvoiceView } from "@/lib/invoices/snapshot";
 import { invoiceHeading } from "@/lib/invoices/display";
 import { CompanyLogo } from "@/components/company-logo";
+import { ensurePublicPage } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(props: PageProps<"/faktura/[token]">) {
   const { token } = await props.params;
+  if (!(await ensurePublicPage("invoice", token))) return { title: "Faktura" };
   const invoice = getInvoiceByToken(token);
-  const name = invoice?.issuedSnapshot?.seller.name ?? db().settings.name;
-  return { title: invoice ? `${invoiceHeading(invoice)} – ${name}` : "Faktura" };
+  // Utkast är inte publika – läck inte fakturanummer/avsändare via metadata.
+  if (!invoice || invoice.status === "utkast") return { title: "Faktura" };
+  const name = invoice.issuedSnapshot?.seller.name ?? db().settings.name;
+  return { title: `${invoiceHeading(invoice)} – ${name}` };
 }
 
 export default async function PublicInvoicePage(props: PageProps<"/faktura/[token]">) {
   const { token } = await props.params;
+  if (!(await ensurePublicPage("invoice", token))) notFound();
   const invoice = getInvoiceByToken(token);
   if (!invoice || invoice.status === "utkast") notFound();
 

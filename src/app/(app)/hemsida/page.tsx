@@ -10,7 +10,9 @@ import { CopyLinkButton } from "@/components/copy-button";
 import { DomainSidebarCard } from "@/components/domain-widgets";
 import { isMockDomainMode, primaryDomain } from "@/lib/domains";
 import { getInquiryNotificationEmail } from "@/lib/services/settings";
+import { isLiveMailConfigured } from "@/lib/mail";
 import { SETTINGS_HREF } from "@/lib/settings-routes";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Hemsida" };
 
@@ -22,7 +24,8 @@ const SECTION_LABELS: Record<string, string> = {
   kontakt: "Kontakt & offertförfrågan",
 };
 
-export default function WebsitePage() {
+export default async function WebsitePage() {
+  await ensurePageBusiness();
   const data = db();
   const site = data.website;
 
@@ -53,6 +56,7 @@ export default function WebsitePage() {
   const domain = primaryDomain();
   const liveHost = domain?.status === "active" ? domain.hostname : null;
   const inquiryEmail = getInquiryNotificationEmail(data.settings);
+  const mailLive = isLiveMailConfigured();
 
   // Redigeringslistan behöver inte bilddatan (tunga data-URL:er) – bara vetskap om att bild finns.
   // Själva bilderna hämtas när en sektion öppnas för redigering.
@@ -89,10 +93,11 @@ export default function WebsitePage() {
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         {/* Live-preview */}
         <div className="min-w-0">
-          <div className="mb-2.5 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-[13px] text-muted">
-              <Globe className="size-4" />
-              <span className="font-mono text-[12px]">
+          {/* flex-wrap: på smala skärmar lägger sig Kopiera länk under adressen i stället för att spränga bredden. */}
+          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+            <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted">
+              <Globe className="size-4 shrink-0" />
+              <span className="min-w-0 break-all font-mono text-[12px]">
                 {liveHost ? liveHost : published ? "driva.site/" + site.slug : "Förhandsvisning"}
               </span>
               <Badge tone={published ? "ok" : "warn"}>{published ? "Publicerad" : "Utkast"}</Badge>
@@ -140,10 +145,12 @@ export default function WebsitePage() {
                 </div>
                 <div className="min-w-0">
                   <p className="text-[14px] font-medium text-ink">
-                    Skickas till {inquiryEmail || "din e-post"}
+                    {mailLive ? `Skickas till ${inquiryEmail || "din e-post"}` : "Sparas i Driva"}
                   </p>
                   <p className="mt-1 text-[13px] leading-relaxed text-soft">
-                    Förfrågningar skickas till din e-post och sparas automatiskt i Driva.
+                    {mailLive
+                      ? "Förfrågningar skickas till din e-post och sparas automatiskt i Driva."
+                      : "Förfrågningar sparas automatiskt under Kunder → Förfrågningar. E-postavisering kräver att utskick konfigureras (Resend)."}
                   </p>
                   <Link
                     href={`${SETTINGS_HREF.foretag}#forfragningar` as never}

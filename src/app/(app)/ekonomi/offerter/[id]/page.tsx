@@ -11,7 +11,9 @@ import {
 import { db } from "@/lib/store";
 import {
   getQuote,
+  countsTowardInvoiced,
   currentVersion,
+  effectiveQuoteStatus,
   quoteSignature,
   quoteTotals,
   requireCustomer,
@@ -21,18 +23,24 @@ import { kr, datumTid, datumLang, relativ } from "@/lib/format";
 import { Badge, ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
 import { QuoteStatusBadge, InvoiceStatusBadge } from "@/components/status";
 import { QuoteDocument } from "@/components/quote-document";
-import { ActionMenu, PageActions, actionMenuItemClassName } from "@/components/action-menu";
+import { ActionMenu, PageActions } from "@/components/action-menu";
 import { CopyLinkButton } from "@/components/copy-button";
 import { CreatePartInvoiceButton, FollowUpButton } from "@/components/money-widgets";
 import { QuoteDraftSend } from "@/components/quote-draft-send";
+import { SendChecklist } from "@/components/send-checklist";
+import { quoteSendBlockers } from "@/lib/services/quotes";
 import { sendQuoteAction } from "@/app/actions";
+import { isLiveMailConfigured } from "@/lib/mail";
 import { docTotals } from "@/lib/calc";
-import { BackLink } from "@/components/back-link";
+import { SmartBack } from "@/components/back-link";
+import { AppLink } from "@/components/app-link";
 import { hrefWithNav, invoiceHref, sanitizeReturnLabel, sanitizeReturnTo, withReturnTo } from "@/lib/nav";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Offert" };
 
 export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]">) {
+  await ensurePageBusiness();
   const { id } = await props.params;
   const searchParams = await props.searchParams;
   const quote = getQuote(id);
@@ -53,11 +61,28 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   const fromHere = { href: hrefWithNav(`/ekonomi/offerter/${quote.id}`, nav), label: `Offert #${quote.number}` };
   const editHref = hrefWithNav(`/ekonomi/offerter/${quote.id}/redigera`, nav);
   const isDraft = quote.status === "utkast";
-  const justSent = typeof searchParams.skickad === "string" && searchParams.skickad === "1" && !isDraft;
+  const sentParam = typeof searchParams.skickad === "string" ? searchParams.skickad : null;
+  const justSent = sentParam === "1" && !isDraft;
+  const justSentManual = sentParam === "manuell" && !isDraft;
   const addEmailHref = withReturnTo(`/kunder/${customer.id}`, fromHere.href, fromHere.label);
+  // Affärsblockerare (t.ex. passerat giltig till-datum) + saknad e-post visas i checklistan.
+  const businessBlockers = isDraft
+    ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefWithNav(b.href, nav) } : b))
+    : [];
+  const sendBlockers = !customer.email.trim()
+    ? [
+        ...businessBlockers,
+        {
+          code: "buyer_email",
+          message: "Kunden saknar e-postadress.",
+          href: addEmailHref,
+          actionLabel: "Lägg till e-post",
+        },
+      ]
+    : businessBlockers;
 
   const invoicedTotal = relatedInvoices
-    .filter((i) => i.status !== "krediterad")
+    .filter(countsTowardInvoiced)
     .reduce((s, i) => s + docTotals(i.lines, i.rot).total, 0);
 
   const doc = (
@@ -67,7 +92,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   return (
     <div className="animate-fade-up">
       <div className="mb-2.5">
-        <BackLink fallbackHref="/ekonomi?flik=offerter" fallbackLabel="Offerter" />
+        <SmartBack />
       </div>
       <Breadcrumbs
         items={[
@@ -81,7 +106,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-[26px] font-semibold tracking-tight">Offert #{quote.number}</h1>
-            <QuoteStatusBadge quote={quote} />
+            <QuoteStatusBadge quote={quote} status={effectiveQuoteStatus(quote)} />
             {version.lockedAt ? (
               <Badge tone="bankid">
                 <FileLock2 className="size-3" /> Version {version.version} låst
@@ -89,7 +114,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
             ) : null}
           </div>
           <p className="mt-1 text-[15px] text-soft">
-            {version.title} · <Link href={`/kunder/${customer.id}` as never} className="font-medium text-ink hover:underline">{customer.name}</Link> · {kr(totals.toPay)}
+            {version.title} · <AppLink href={`/kunder/${customer.id}`} originLabel={`Offert #${quote.number}`} className="font-medium text-ink hover:underline">{customer.name}</AppLink> · {kr(totals.toPay)}
           </p>
         </div>
 
@@ -105,8 +130,10 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                 validUntilLabel={datumLang(version.validUntil)}
                 sendAction={sendQuoteAction.bind(null, quote.id)}
                 detailHref={fromHere.href}
+                mailConfigured={isLiveMailConfigured()}
                 recipientEmail={customer.email}
                 addEmailHref={addEmailHref}
+                hasSendBlockers={businessBlockers.length > 0}
               />
             </PageActions>
           ) : null}
@@ -126,16 +153,10 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               <ButtonLink href={editHref} variant="secondary">
                 <Pencil className="size-4" /> Ny version
               </ButtonLink>
+              <a href={publicPath} target="_blank" rel="noreferrer" className={buttonClasses("secondary")}>
+                <ExternalLink className="size-4" /> Öppna kundvyn
+              </a>
               <ActionMenu>
-                <a
-                  href={publicPath}
-                  target="_blank"
-                  rel="noreferrer"
-                  role="menuitem"
-                  className={actionMenuItemClassName()}
-                >
-                  <ExternalLink className="size-3.5" /> Öppna kundvyn
-                </a>
                 <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
               </ActionMenu>
             </PageActions>
@@ -150,6 +171,15 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
           </span>
         </Card>
       ) : null}
+
+      {justSentManual ? (
+        <Card className="mb-6 border-ok/20 bg-ok-soft/50 px-5 py-4 text-[14px] text-soft">
+          <span className="font-medium text-ok">Offert #{quote.number} är markerad som skickad.</span> Ingen e-post är
+          konfigurerad – dela kundlänken med {customer.name} via ”Kopiera kundlänk”.
+        </Card>
+      ) : null}
+
+      {isDraft ? <SendChecklist id="quote-send-blockers" title="Innan offerten kan skickas" blockers={sendBlockers} /> : null}
 
       {quote.status === "skickad" ? (
         <Card className="mb-6 flex items-start gap-3 border-warn/20 bg-warn-soft/40 px-5 py-4">
@@ -208,7 +238,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                   </Link>
                 ) : null}
                 {version.paymentPlan.map((part, i) => {
-                  const alreadyInvoiced = i < relatedInvoices.filter((inv) => inv.status !== "krediterad").length;
+                  const alreadyInvoiced = i < relatedInvoices.filter(countsTowardInvoiced).length;
                   const partAmount = Math.round((totals.total * part.percent) / 100);
                   if (invoicedTotal >= totals.total) return null;
                   return alreadyInvoiced ? null : (

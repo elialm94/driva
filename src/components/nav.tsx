@@ -2,32 +2,29 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import {
   Home,
   Users,
-  Hammer,
   Wallet,
+  Inbox,
   BookOpenCheck,
   Globe,
-  Sparkles,
   MoreHorizontal,
-  RotateCcw,
   Settings,
   X,
 } from "lucide-react";
 import { cx } from "./ui";
-import { resetDemoAction } from "@/app/actions";
+import { LogoutRow } from "./logout-button";
 import { isSectionActive, NAV_ITEMS, type NavSection } from "@/lib/nav";
 
 const NAV_ICONS: Record<NavSection, typeof Home> = {
   hem: Home,
   kunder: Users,
-  uppdrag: Hammer,
   ekonomi: Wallet,
+  inbox: Inbox,
   bokforing: BookOpenCheck,
   hemsida: Globe,
-  assistent: Sparkles,
 };
 
 const NAV = NAV_ITEMS.map((item) => ({
@@ -35,9 +32,18 @@ const NAV = NAV_ITEMS.map((item) => ({
   icon: NAV_ICONS[item.section],
 }));
 
-export function Sidebar({ companyName, openInquiryCount = 0 }: { companyName: string; openInquiryCount?: number }) {
+export function Sidebar({
+  companyName,
+  inboxCount = 0,
+  canLogout = false,
+}: {
+  companyName: string;
+  inboxCount?: number;
+  /** Logga ut visas bara i Supabase-läge – JSON-/demoläget har inga sessioner. */
+  canLogout?: boolean;
+}) {
   const pathname = usePathname();
-  const [isResetting, startReset] = useTransition();
+  const settingsActive = pathname.startsWith("/installningar") || pathname.startsWith("/foretag");
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-card/70 backdrop-blur-xl lg:flex">
@@ -55,9 +61,9 @@ export function Sidebar({ companyName, openInquiryCount = 0 }: { companyName: st
             <Link
               key={href}
               href={href as never}
-              aria-label={href === "/kunder" && openInquiryCount > 0 ? `Kunder, ${openInquiryCount} öppna förfrågningar` : label}
+              aria-label={href === "/inbox" && inboxCount > 0 ? `Inbox, ${inboxCount} öppna` : label}
               className={cx(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] transition-colors",
+                "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] transition-colors",
                 active
                   ? "bg-ink text-white font-medium shadow-sm"
                   : "text-soft hover:bg-ink/5 hover:text-ink"
@@ -66,14 +72,14 @@ export function Sidebar({ companyName, openInquiryCount = 0 }: { companyName: st
               <Icon className={cx("size-[18px]", active ? "text-white" : "text-muted")} strokeWidth={2} />
               <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
                 {label}
-                {href === "/kunder" && openInquiryCount > 0 ? (
+                {href === "/inbox" && inboxCount > 0 ? (
                   <span
                     className={cx(
                       "rounded-full px-1.5 py-px text-[11px] font-medium tabular",
                       active ? "bg-white/15 text-white/80" : "bg-ink/6 text-muted"
                     )}
                   >
-                    {openInquiryCount}
+                    {inboxCount}
                   </span>
                 ) : null}
               </span>
@@ -82,33 +88,30 @@ export function Sidebar({ companyName, openInquiryCount = 0 }: { companyName: st
         })}
       </nav>
 
-      <div className="border-t border-line px-6 py-4">
-        <p className="truncate text-[13px] font-medium text-ink">{companyName}</p>
+      {/* Fot: företagsnamnet är ren kontext (ej klickbart); Inställningar är en
+          riktig nav-rad och Logga ut en dämpad rad (endast Supabase-läge). */}
+      <div className="flex flex-col gap-1 border-t border-line px-3 py-4">
+        <p className="truncate px-3 pb-1 text-[13px] font-medium text-soft">{companyName}</p>
         <Link
           href="/installningar"
+          aria-current={settingsActive ? "page" : undefined}
           className={cx(
-            "mt-1 block text-xs transition-colors",
-            pathname.startsWith("/installningar") || pathname.startsWith("/foretag")
-              ? "font-medium text-ink"
-              : "text-muted hover:text-ink"
+            "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+            settingsActive
+              ? "bg-ink text-white font-medium shadow-sm"
+              : "text-soft hover:bg-ink/5 hover:text-ink"
           )}
         >
+          <Settings className={cx("size-[18px]", settingsActive ? "text-white" : "text-muted")} strokeWidth={2} />
           Inställningar
         </Link>
-        <button
-          onClick={() => startReset(async () => resetDemoAction())}
-          disabled={isResetting}
-          className="mt-1 flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-ink disabled:opacity-50"
-        >
-          <RotateCcw className="size-3" />
-          {isResetting ? "Återställer …" : "Återställ demodata"}
-        </button>
+        {canLogout ? <LogoutRow variant="sidebar" /> : null}
       </div>
     </aside>
   );
 }
 
-export function BottomNav() {
+export function BottomNav({ canLogout = false, inboxCount = 0 }: { canLogout?: boolean; inboxCount?: number }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const primary = NAV.slice(0, 4);
@@ -121,7 +124,9 @@ export function BottomNav() {
       {moreOpen ? (
         <div className="fixed inset-0 z-40 bg-ink/30 backdrop-blur-[2px] lg:hidden" onClick={() => setMoreOpen(false)}>
           <div
-            className="absolute inset-x-3 bottom-24 rounded-3xl bg-card p-2 shadow-pop animate-fade-up"
+            role="dialog"
+            aria-label="Mer"
+            className="absolute inset-x-3 bottom-[calc(var(--bottom-nav-h)+env(safe-area-inset-bottom)+0.75rem)] rounded-3xl bg-card p-2 shadow-pop animate-fade-up"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 pt-3 pb-1">
@@ -130,7 +135,7 @@ export function BottomNav() {
                 type="button"
                 onClick={() => setMoreOpen(false)}
                 aria-label="Stäng"
-                className="rounded-lg p-1 text-muted hover:bg-ink/5"
+                className="-my-2 flex size-10 items-center justify-center rounded-lg text-muted hover:bg-ink/5"
               >
                 <X className="size-4" />
               </button>
@@ -166,36 +171,46 @@ export function BottomNav() {
               <Settings className="size-5 text-muted" />
               Inställningar
             </Link>
+            {canLogout ? <LogoutRow variant="sheet" /> : null}
           </div>
         </div>
       ) : null}
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-line bg-card/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex h-[calc(var(--bottom-nav-h)+env(safe-area-inset-bottom))] items-stretch border-t border-line bg-card/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
         {primary.map(({ href, label, icon: Icon }) => {
           const active = isSectionActive(pathname, href);
           return (
             <Link
               key={href}
               href={href as never}
+              aria-label={href === "/inbox" && inboxCount > 0 ? `Inbox, ${inboxCount} öppna` : label}
               className={cx(
-                "flex flex-1 flex-col items-center gap-1 pt-2.5 pb-2 text-[11px] font-medium",
+                "relative flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium",
                 active ? "text-ink" : "text-muted"
               )}
             >
-              <Icon className="size-[22px]" strokeWidth={active ? 2.2 : 1.8} />
-              {label}
+              <span className="relative">
+                <Icon className="size-[22px]" strokeWidth={active ? 2.2 : 1.8} />
+                {href === "/inbox" && inboxCount > 0 ? (
+                  <span className="absolute -right-2.5 -top-1 min-w-4 rounded-full bg-ink px-1 text-center text-[10px] font-medium leading-4 text-white tabular">
+                    {inboxCount > 99 ? "99+" : inboxCount}
+                  </span>
+                ) : null}
+              </span>
+              <span className="max-w-full truncate">{label}</span>
             </Link>
           );
         })}
         <button
           onClick={() => setMoreOpen((v) => !v)}
+          aria-expanded={moreOpen}
           className={cx(
-            "flex flex-1 flex-col items-center gap-1 pt-2.5 pb-2 text-[11px] font-medium",
+            "flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium",
             moreActive || moreOpen ? "text-ink" : "text-muted"
           )}
         >
           <MoreHorizontal className="size-[22px]" strokeWidth={1.8} />
-          Mer
+          <span className="max-w-full truncate">Mer</span>
         </button>
       </nav>
     </>

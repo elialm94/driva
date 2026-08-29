@@ -3,7 +3,7 @@ import { Check, CircleAlert, FileText, Lock, Wrench } from "lucide-react";
 import { db } from "@/lib/store";
 import { kr, datumKort, datumLang } from "@/lib/format";
 import { Badge, Card, PageHeader, SectionTitle, cx } from "@/components/ui";
-import { BackLink } from "@/components/back-link";
+import { SmartBack } from "@/components/back-link";
 import {
   BokslutAutomationButton,
   CloseFiscalYearButton,
@@ -20,6 +20,7 @@ import { pendingAccruals, accrualSuggestions } from "@/lib/accounting/accruals";
 import { computeTaxCalculation } from "@/lib/accounting/tax";
 import { annualReportFor } from "@/lib/accounting/annual-report";
 import type { ReportRow } from "@/lib/types";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Bokslut" };
 
@@ -48,7 +49,8 @@ function ReportTable({ rows }: { rows: ReportRow[] }) {
   );
 }
 
-export default function BokslutPage() {
+export default async function BokslutPage() {
+  await ensurePageBusiness();
   const data = db();
   const years = fiscalYears();
   const openYears = years.filter((f) => f.status === "oppet");
@@ -69,7 +71,7 @@ export default function BokslutPage() {
   return (
     <div className="animate-fade-up">
       <PageHeader
-        back={<BackLink fallbackHref="/bokforing" fallbackLabel="Bokföring" />}
+        back={<SmartBack />}
         title="Bokslut"
         subtitle="Driva kontrollerar allt som går att kontrollera automatiskt – du ser bara det som faktiskt behöver dig."
         actions={<PrintButton />}
@@ -97,8 +99,9 @@ export default function BokslutPage() {
                         {!c.ok && c.href ? (
                           <>
                             {" "}
+                            {/* Namnge destinationen – aldrig vaga "Åtgärda". */}
                             <Link href={c.href as never} className="font-medium text-accent hover:underline">
-                              Åtgärda
+                              {c.hrefLabel ?? "Visa"}
                             </Link>
                           </>
                         ) : null}

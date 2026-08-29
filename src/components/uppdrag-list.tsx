@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
+import { AppLink } from "./app-link";
 import { useRouter } from "next/navigation";
 import { Hammer, Search } from "lucide-react";
 import { Card, EmptyState, cx } from "./ui";
 import { Pagination } from "./customer-list";
 import { JobStatusBadge } from "./status";
-import type {
-  JobEconomyFilter,
-  JobLifecycleFilter,
-  JobListRow,
-  JobSort,
-} from "@/lib/services/job-list";
+import {
+  reconcileJobListFilters,
+  type JobEconomyFilter,
+  type JobLifecycleFilter,
+  type JobSort,
+} from "@/lib/services/job-list-filters";
+import type { JobListRow } from "@/lib/services/job-list";
 import type { PagedResult } from "@/lib/services/customers";
 
 export interface UppdragListQuery {
@@ -25,13 +26,13 @@ export interface UppdragListQuery {
 
 export function uppdragListHref(query: Partial<UppdragListQuery>): string {
   const sp = new URLSearchParams();
+  sp.set("flik", "uppdrag");
   if (query.q) sp.set("q", query.q);
   if (query.lifecycle && query.lifecycle !== "aktiva") sp.set("visning", query.lifecycle);
   if (query.economy && query.economy !== "alla") sp.set("ekonomi", query.economy);
   if (query.sort && query.sort !== "standard") sp.set("sortering", query.sort);
   if (query.page && query.page > 1) sp.set("sida", String(query.page));
-  const qs = sp.toString();
-  return qs ? `/uppdrag?${qs}` : "/uppdrag";
+  return `/kunder?${sp.toString()}`;
 }
 
 const LIFECYCLE_CHIPS: [JobLifecycleFilter, string][] = [
@@ -71,7 +72,14 @@ export function UppdragList({
   }, [q, query, router]);
 
   function go(patch: Partial<UppdragListQuery>) {
-    startTransition(() => router.replace(uppdragListHref({ ...query, ...patch }), { scroll: false }));
+    const filters = reconcileJobListFilters({
+      lifecycle: query.lifecycle,
+      economy: query.economy,
+      patch,
+    });
+    startTransition(() =>
+      router.replace(uppdragListHref({ ...query, ...patch, ...filters }), { scroll: false }),
+    );
   }
 
   return (
@@ -93,7 +101,7 @@ export function UppdragList({
             type="button"
             onClick={() => go({ lifecycle: key, page: 1 })}
             className={cx(
-              "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors",
+              "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors max-lg:py-2",
               query.lifecycle === key
                 ? "border-ink bg-ink text-white"
                 : "border-line-strong text-soft hover:border-muted"
@@ -109,7 +117,7 @@ export function UppdragList({
             type="button"
             onClick={() => go({ economy: query.economy === key ? "alla" : key, page: 1 })}
             className={cx(
-              "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors",
+              "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors max-lg:py-2",
               query.economy === key
                 ? "border-ink bg-ink text-white"
                 : "border-line text-muted hover:border-muted hover:text-soft"
@@ -160,7 +168,7 @@ export function UppdragList({
                   {result.rows.map((job) => (
                     <tr key={job.id} className="relative border-b border-line/60 last:border-0 hover:bg-canvas/70">
                       <td className="px-3 py-2.5">
-                        <Link href={`/uppdrag/${job.id}` as never} className="absolute inset-0" aria-label={job.title} />
+                        <AppLink href={`/uppdrag/${job.id}`} className="absolute inset-0" aria-label={job.title} />
                         <span className="block truncate font-medium text-ink">{job.title}</span>
                         {job.address ? (
                           <span className="mt-0.5 block truncate text-[12px] text-muted">{job.address}</span>
@@ -185,9 +193,9 @@ export function UppdragList({
 
           <div className="divide-y divide-line/70 overflow-hidden rounded-[1.25rem] border border-line bg-card shadow-card md:hidden">
             {result.rows.map((job) => (
-              <Link
+              <AppLink
                 key={job.id}
-                href={`/uppdrag/${job.id}` as never}
+                href={`/uppdrag/${job.id}`}
                 className="flex items-start justify-between gap-3 px-4 py-3 hover:bg-canvas/70"
               >
                 <div className="min-w-0 flex-1">
@@ -203,7 +211,7 @@ export function UppdragList({
                   startDate={job.startDate}
                   completedAt={job.completedAt}
                 />
-              </Link>
+              </AppLink>
             ))}
           </div>
 

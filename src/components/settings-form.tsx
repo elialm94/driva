@@ -9,16 +9,18 @@ import { BackLink } from "./back-link";
 import { useUnsavedLeave } from "./unsaved-changes";
 import { CompanyLogo } from "./company-logo";
 import { ImageDropzone } from "./image-dropzone";
-import { updateCompanySettingsAction } from "@/app/actions";
-import { resetDemoAction } from "@/app/actions";
+import { saveLogoAction, updateCompanySettingsAction } from "@/app/actions";
 import type { CompanySettings, VatRate } from "@/lib/types";
 import type { InvoiceDefaults } from "@/lib/services/settings";
 import { SETTINGS_HREF, type SettingsFlik } from "@/lib/settings-routes";
 import { formatOrgnr, formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "@/lib/invoices/formats";
-import { withReturnTo } from "@/lib/nav";
+import { labelForHref, withReturnTo } from "@/lib/nav";
 import type { IssueBlocker } from "@/lib/invoices/validate";
-import { swedishFormProps } from "@/lib/swedish-validity";
+import { settingsFieldErrors, type SettingsFieldError, type SettingsTab } from "@/lib/settings-validation";
+import { FieldError, FormValidationSummary, focusField, invalidFieldCls } from "./form-validation";
+import type { MissingRequirement } from "@/lib/form-requirements";
 import { DomainSettingsCard } from "./domain-widgets";
+import { StickyMobileActions } from "./sticky-actions";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -115,7 +117,7 @@ export function SettingsForm({
   );
   const [notifyTouched, setNotifyTouched] = useState(() => Boolean(initial.inquiryNotificationEmail));
   const [isPending, startTransition] = useTransition();
-  const [resetting, startReset] = useTransition();
+  const [logoSaving, startLogoSave] = useTransition();
   const baseline = useRef(JSON.stringify(fromInitial(initial, defaults)));
   const dirty = JSON.stringify(form) !== baseline.current;
   const { dialog } = useUnsavedLeave(dirty && !isPending);
@@ -134,13 +136,79 @@ export function SettingsForm({
     });
   }
 
+  // Logotypen autosparas direkt vid uppladdning/borttagning – ett dedikerat anrop som
+  // aldrig tar med resten av ett halvredigerat formulär. Formulärets state patchas ändå
+  // (och baslinjen flyttas efter lyckat spar) så att ett senare "Spara ändringar" med
+  // hela formuläret aldrig kan backa logotypen.
+  function saveLogo(url: string | undefined) {
+    const next = url ?? "";
+    patch("logoDataUrl", next);
+    startLogoSave(async () => {
+      const result = await saveLogoAction(url ?? null);
+      if (result.ok === false) {
+        // Misslyckat autospar: behåll bilden i formuläret så att "Spara ändringar" kan ta den.
+        setLogoError(result.error);
+        return;
+      }
+      setLogoError(null);
+      const base = JSON.parse(baseline.current) as FormState;
+      base.logoDataUrl = next;
+      baseline.current = JSON.stringify(base);
+      router.refresh();
+    });
+  }
+
   const orgnrOk = form.orgNumber.trim() ? isOrgnrFormat(form.orgNumber) : false;
   const vatOk = form.vatNumber.trim() ? isVatNumberFormat(form.vatNumber) : false;
   const vatSuggested = orgnrOk && form.vatNumber.trim() === formatVatNumber(form.orgNumber);
 
   const tabHref = (href: string) => withReturnTo(href, returnTo, returnLabel);
 
+  // Realtidsvalidering – samma regler som servern (settings-validation.ts).
+  const [attempted, setAttempted] = useState(false);
+  const fieldErrors = useMemo(() => settingsFieldErrors(form), [form]);
+  const showErrors = attempted && fieldErrors.length > 0;
+
+  function errorFor(field: string): string | undefined {
+    if (!showErrors) return undefined;
+    return fieldErrors.find((e) => e.field === field)?.message;
+  }
+
+  function fieldMarkProps(field: string, base: string) {
+    const message = errorFor(field);
+    return {
+      id: `installningar-${field}`,
+      "aria-invalid": message ? true : undefined,
+      "aria-describedby": message ? `installningar-${field}-fel` : undefined,
+      className: cx(base, message && invalidFieldCls),
+    };
+  }
+
+  // Betalningsvillkor och dröjsmålsränta redigeras på två flikar; fokusera lokalt när fältet finns här.
+  function renderedOnCurrentTab(e: SettingsFieldError): boolean {
+    if (e.tab === flik) return true;
+    return flik === "fakturering" && (e.field === "paymentTermsDays" || e.field === "lateInterestRate");
+  }
+
+  const TAB_LABELS: Record<SettingsTab, string> = {
+    foretag: "Företag",
+    fakturering: "Fakturering & betalning",
+    standardval: "Standardval",
+  };
+
+  const missingSummary: MissingRequirement[] = fieldErrors.map((e) =>
+    renderedOnCurrentTab(e)
+      ? { id: e.field, label: e.label, fieldId: `installningar-${e.field}` }
+      : { id: e.field, label: `${e.label} – fliken ${TAB_LABELS[e.tab]}`, href: tabHref(SETTINGS_HREF[e.tab]) }
+  );
+
   function save() {
+    if (fieldErrors.length > 0) {
+      setAttempted(true);
+      const first = fieldErrors.find(renderedOnCurrentTab);
+      if (first) focusField(`installningar-${first.field}`);
+      return;
+    }
     setError(null);
     setSaved(false);
     startTransition(async () => {
@@ -192,7 +260,7 @@ export function SettingsForm({
     <div className="animate-fade-up">
       {returnTo ? (
         <PageHeader
-          back={<BackLink fallbackHref={returnTo} fallbackLabel={returnLabel ?? "Tillbaka"} />}
+          back={<BackLink fallbackHref={returnTo} fallbackLabel={returnLabel ?? labelForHref(returnTo)} />}
           title="Inställningar"
           subtitle={subtitle}
         />
@@ -237,7 +305,7 @@ export function SettingsForm({
       </div>
 
       <form
-        {...swedishFormProps()}
+        noValidate
         onSubmit={(e) => {
           e.preventDefault();
           if (!isPending && dirty) save();
@@ -249,39 +317,42 @@ export function SettingsForm({
           <Card className="space-y-4 p-6">
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Identitet</p>
             <div>
-              <div className="flex flex-wrap items-start gap-4">
-                <CompanyLogo
-                  company={{ name: form.name, logoInitials: form.logoInitials || "FÖ", logoDataUrl: form.logoDataUrl || undefined }}
-                  size="lg"
-                />
-                <div className="min-w-[16rem] flex-1">
-                  <ImageDropzone
-                    label="Logotyp"
-                    hint={form.logoDataUrl ? undefined : "Valfritt. Utan logotyp visas initialerna."}
-                    value={form.logoDataUrl || undefined}
-                    error={logoError}
-                    onChange={(url) => patch("logoDataUrl", url ?? "")}
-                    onError={setLogoError}
-                    variant="thumb"
-                    addLabel="Välj bild"
-                    replaceLabel="Byt logotyp"
-                    removeLabel="Ta bort"
-                    compress={{ maxEdge: 800, quality: 0.88, maxChars: 400_000 }}
+              {/* En kompakt rad: förhandsvisning (logga/initialer) + klick-/släppyta. Sparas direkt. */}
+              <ImageDropzone
+                label="Logotyp"
+                variant="compact"
+                previewSlot={
+                  <CompanyLogo
+                    company={{ name: form.name, logoInitials: form.logoInitials || "FÖ", logoDataUrl: form.logoDataUrl || undefined }}
+                    size="lg"
                   />
-                </div>
-              </div>
+                }
+                value={form.logoDataUrl || undefined}
+                error={logoError}
+                saving={logoSaving}
+                onChange={saveLogo}
+                onError={setLogoError}
+                emptyLabel="Klicka eller släpp logotyp här"
+                hint="JPG, PNG eller WebP · Valfritt"
+                addLabel="Ladda upp logotyp"
+                replaceLabel="Byt logotyp"
+                removeLabel="Ta bort"
+                compress={{ maxEdge: 800, quality: 0.88, maxChars: 400_000 }}
+              />
             </div>
             <div>
-              <label className={labelCls}>Företagsnamn</label>
-              <input value={form.name} onChange={(e) => patch("name", e.target.value)} className={inputCls} required />
+              <label className={labelCls} htmlFor="installningar-name">
+                Företagsnamn
+              </label>
+              <input value={form.name} onChange={(e) => patch("name", e.target.value)} {...fieldMarkProps("name", inputCls)} />
+              <FieldError id="installningar-name-fel">{errorFor("name")}</FieldError>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className={labelCls} htmlFor="orgnr">
+                <label className={labelCls} htmlFor="installningar-orgNumber">
                   Organisationsnummer
                 </label>
                 <input
-                  id="orgnr"
                   value={form.orgNumber}
                   onChange={(e) => {
                     const formatted = formatOrgnr(e.target.value);
@@ -296,29 +367,33 @@ export function SettingsForm({
                   inputMode="numeric"
                   autoComplete="off"
                   spellCheck={false}
-                  className={inputCls}
+                  {...fieldMarkProps("orgNumber", inputCls)}
                 />
+                <FieldError id="installningar-orgNumber-fel">{errorFor("orgNumber")}</FieldError>
                 {orgnrOk ? (
                   <p className={cx(hintCls, "text-ok")}>Format OK. Inte kontrollerat mot Skatteverket.</p>
-                ) : (
+                ) : errorFor("orgNumber") ? null : (
                   <p className={hintCls}>
                     Format NNNNNN-NNNN. Senare kan Driva hämta namn och adress härifrån – idag kontrolleras bara formatet.
                   </p>
                 )}
               </div>
               <div>
-                <label className={labelCls}>Momsregistreringsnummer</label>
+                <label className={labelCls} htmlFor="installningar-vatNumber">
+                  Momsregistreringsnummer
+                </label>
                 <input
                   value={form.vatNumber}
                   onChange={(e) => patch("vatNumber", e.target.value)}
                   placeholder="SE559123456701"
-                  className={inputCls}
+                  {...fieldMarkProps("vatNumber", inputCls)}
                 />
+                <FieldError id="installningar-vatNumber-fel">{errorFor("vatNumber")}</FieldError>
                 {vatOk ? (
-                  <p className={cx(hintCls, vatSuggested ? "text-ok" : "text-ok")}>
+                  <p className={cx(hintCls, "text-ok")}>
                     {vatSuggested ? "Föreslaget från org.nr. Format OK – inte verifierat." : "Format OK. Inte verifierat mot Skatteverket."}
                   </p>
-                ) : (
+                ) : errorFor("vatNumber") ? null : (
                   <p className={hintCls}>Svenskt momsreg.nr: SE + org.nr utan bindestreck + 01.</p>
                 )}
               </div>
@@ -362,17 +437,34 @@ export function SettingsForm({
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Kontakt</p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className={labelCls}>E-post</label>
-                <input type="email" value={form.email} onChange={(e) => patch("email", e.target.value)} className={inputCls} />
+                <label className={labelCls} htmlFor="installningar-email">
+                  E-post
+                </label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => patch("email", e.target.value)}
+                  {...fieldMarkProps("email", inputCls)}
+                />
+                <FieldError id="installningar-email-fel">{errorFor("email")}</FieldError>
               </div>
               <div>
                 <label className={labelCls}>Telefon</label>
-                <input value={form.phone} onChange={(e) => patch("phone", e.target.value)} className={inputCls} />
+                <input
+                  type="tel"
+                  autoComplete="tel"
+                  value={form.phone}
+                  onChange={(e) => patch("phone", e.target.value)}
+                  className={inputCls}
+                />
               </div>
             </div>
             <div>
               <label className={labelCls}>Webbplats</label>
               <input
+                type="url"
+                inputMode="url"
+                autoCapitalize="none"
                 value={form.websiteUrl}
                 onChange={(e) => patch("websiteUrl", e.target.value)}
                 placeholder="https://"
@@ -385,19 +477,19 @@ export function SettingsForm({
           <Card className="space-y-4 p-6">
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Förfrågningar från hemsidan</p>
             <div>
-              <label className={labelCls} htmlFor="inquiry-notify-email">
+              <label className={labelCls} htmlFor="installningar-inquiryNotificationEmail">
                 Skicka nya förfrågningar till
               </label>
               <input
-                id="inquiry-notify-email"
                 type="email"
                 value={form.inquiryNotificationEmail}
                 onChange={(e) => {
                   setNotifyTouched(true);
                   patch("inquiryNotificationEmail", e.target.value);
                 }}
-                className={inputCls}
+                {...fieldMarkProps("inquiryNotificationEmail", inputCls)}
               />
+              <FieldError id="installningar-inquiryNotificationEmail-fel">{errorFor("inquiryNotificationEmail")}</FieldError>
               <p className={hintCls}>
                 Standard är företagets e-post. En annan adress här ändrar inte den publika kontaktadressen på hemsidan.
               </p>
@@ -415,20 +507,33 @@ export function SettingsForm({
               Adress och organisationsnummer hämtas från Företag. Fyll i de betalningssätt du faktiskt använder – du behöver inte ange alla.
             </p>
             <div>
-              <label className={labelCls}>Bankgiro</label>
+              <label className={labelCls} htmlFor="installningar-bankgiro">
+                Bankgiro
+              </label>
               <input
                 value={form.bankgiro}
                 onChange={(e) => patch("bankgiro", e.target.value)}
                 placeholder="5678-1234"
-                className={inputCls}
+                {...fieldMarkProps("bankgiro", inputCls)}
               />
-              <p className={hintCls}>Format NNN-NNNN eller NNNN-NNNN. Vi kontrollerar inte mot Bankgirot.</p>
+              <FieldError id="installningar-bankgiro-fel">{errorFor("bankgiro")}</FieldError>
+              {errorFor("bankgiro") ? null : (
+                <p className={hintCls}>Format NNN-NNNN eller NNNN-NNNN. Vi kontrollerar inte mot Bankgirot.</p>
+              )}
             </div>
             {extraPay ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className={labelCls}>PlusGiro</label>
-                  <input value={form.plusgiro} onChange={(e) => patch("plusgiro", e.target.value)} placeholder="123456-1" className={inputCls} />
+                  <label className={labelCls} htmlFor="installningar-plusgiro">
+                    PlusGiro
+                  </label>
+                  <input
+                    value={form.plusgiro}
+                    onChange={(e) => patch("plusgiro", e.target.value)}
+                    placeholder="123456-1"
+                    {...fieldMarkProps("plusgiro", inputCls)}
+                  />
+                  <FieldError id="installningar-plusgiro-fel">{errorFor("plusgiro")}</FieldError>
                 </div>
                 <div>
                   <label className={labelCls}>Bankkonto</label>
@@ -440,12 +545,28 @@ export function SettingsForm({
                   />
                 </div>
                 <div>
-                  <label className={labelCls}>IBAN</label>
-                  <input value={form.iban} onChange={(e) => patch("iban", e.target.value)} placeholder="SE00 0000 0000 0000 0000 0000" className={inputCls} />
+                  <label className={labelCls} htmlFor="installningar-iban">
+                    IBAN
+                  </label>
+                  <input
+                    value={form.iban}
+                    onChange={(e) => patch("iban", e.target.value)}
+                    placeholder="SE00 0000 0000 0000 0000 0000"
+                    {...fieldMarkProps("iban", inputCls)}
+                  />
+                  <FieldError id="installningar-iban-fel">{errorFor("iban")}</FieldError>
                 </div>
                 <div>
-                  <label className={labelCls}>BIC/SWIFT</label>
-                  <input value={form.bic} onChange={(e) => patch("bic", e.target.value)} placeholder="ESSESESS" className={inputCls} />
+                  <label className={labelCls} htmlFor="installningar-bic">
+                    BIC/SWIFT
+                  </label>
+                  <input
+                    value={form.bic}
+                    onChange={(e) => patch("bic", e.target.value)}
+                    placeholder="ESSESESS"
+                    {...fieldMarkProps("bic", inputCls)}
+                  />
+                  <FieldError id="installningar-bic-fel">{errorFor("bic")}</FieldError>
                 </div>
               </div>
             ) : (
@@ -459,25 +580,31 @@ export function SettingsForm({
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Standard på nya fakturor</p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className={labelCls}>Betalningsvillkor (dagar)</label>
+                <label className={labelCls} htmlFor="installningar-paymentTermsDays">
+                  Betalningsvillkor (dagar)
+                </label>
                 <input
                   type="number"
                   min={1}
                   value={form.paymentTermsDays}
                   onChange={(e) => patch("paymentTermsDays", Number(e.target.value))}
-                  className={inputCls}
+                  {...fieldMarkProps("paymentTermsDays", inputCls)}
                 />
+                <FieldError id="installningar-paymentTermsDays-fel">{errorFor("paymentTermsDays")}</FieldError>
               </div>
               <div>
-                <label className={labelCls}>Dröjsmålsränta (% per år)</label>
+                <label className={labelCls} htmlFor="installningar-lateInterestRate">
+                  Dröjsmålsränta (% per år)
+                </label>
                 <input
                   type="number"
                   min={0}
                   step={0.5}
                   value={form.lateInterestRate}
                   onChange={(e) => patch("lateInterestRate", Number(e.target.value))}
-                  className={inputCls}
+                  {...fieldMarkProps("lateInterestRate", inputCls)}
                 />
+                <FieldError id="installningar-lateInterestRate-fel">{errorFor("lateInterestRate")}</FieldError>
                 <p className={hintCls}>Kan ändras per faktura.</p>
               </div>
             </div>
@@ -508,39 +635,48 @@ export function SettingsForm({
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Fakturor</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <div>
-                <label className={labelCls}>Betalningsvillkor (dagar)</label>
+                <label className={labelCls} htmlFor="installningar-paymentTermsDays">
+                  Betalningsvillkor (dagar)
+                </label>
                 <input
                   type="number"
                   min={1}
                   value={form.paymentTermsDays}
                   onChange={(e) => patch("paymentTermsDays", Number(e.target.value))}
-                  className={inputCls}
+                  {...fieldMarkProps("paymentTermsDays", inputCls)}
                 />
+                <FieldError id="installningar-paymentTermsDays-fel">{errorFor("paymentTermsDays")}</FieldError>
               </div>
               <div>
-                <label className={labelCls}>Dröjsmålsränta (% per år)</label>
+                <label className={labelCls} htmlFor="installningar-lateInterestRate">
+                  Dröjsmålsränta (% per år)
+                </label>
                 <input
                   type="number"
                   min={0}
                   step={0.5}
                   value={form.lateInterestRate}
                   onChange={(e) => patch("lateInterestRate", Number(e.target.value))}
-                  className={inputCls}
+                  {...fieldMarkProps("lateInterestRate", inputCls)}
                 />
+                <FieldError id="installningar-lateInterestRate-fel">{errorFor("lateInterestRate")}</FieldError>
               </div>
             </div>
           </div>
           <div>
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Offerter</p>
             <div className="mt-3 max-w-xs">
-              <label className={labelCls}>Standard giltighetstid (dagar)</label>
+              <label className={labelCls} htmlFor="installningar-quoteValidityDays">
+                Standard giltighetstid (dagar)
+              </label>
               <input
                 type="number"
                 min={1}
                 value={form.quoteValidityDays}
                 onChange={(e) => patch("quoteValidityDays", Number(e.target.value))}
-                className={inputCls}
+                {...fieldMarkProps("quoteValidityDays", inputCls)}
               />
+              <FieldError id="installningar-quoteValidityDays-fel">{errorFor("quoteValidityDays")}</FieldError>
             </div>
           </div>
           <div>
@@ -577,34 +713,71 @@ export function SettingsForm({
               <span className="font-medium text-ink">{initial.email || "–"}</span>.
             </p>
           </Card>
-          <Card className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-            <div>
-              <p className="text-[14px] font-medium text-ink">Återställ demodata</p>
-              <p className="text-[13px] text-muted">Nollställer företaget, kunder och dokument till exempeldatat.</p>
-            </div>
-            <button
-              type="button"
-              className={buttonClasses("secondary", "sm")}
-              disabled={resetting}
-              onClick={() => startReset(async () => resetDemoAction())}
-            >
-              {resetting ? "Återställer …" : "Återställ"}
-            </button>
-          </Card>
         </div>
       ) : null}
 
       {flik !== "konto" ? (
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <button type="submit" className={buttonClasses("primary")} disabled={isPending || !dirty}>
-            {isPending ? "Sparar …" : "Spara ändringar"}
-          </button>
-          {saved && !dirty ? (
-            <p className="flex items-center gap-1.5 text-[14px] font-medium text-ok">
-              <Check className="size-4" /> Ändringarna är sparade
-            </p>
+        <div className="mt-6">
+          {showErrors ? (
+            <FormValidationSummary
+              id="installningar-saknas"
+              missing={missingSummary}
+              heading={missingSummary.length === 1 ? "1 uppgift behöver rättas" : `${missingSummary.length} uppgifter behöver rättas`}
+              className="mb-4 max-w-xl"
+            />
           ) : null}
-          {error ? <p className="text-[14px] font-medium text-danger">{error}</p> : null}
+          {/* Mobil: spara-knappen bor i den stickiga raden nedanför i stället. */}
+          <div className="hidden flex-wrap items-center gap-3 lg:flex">
+            <button
+              type="submit"
+              className={buttonClasses("primary")}
+              disabled={isPending || !dirty}
+              aria-describedby={showErrors ? "installningar-saknas" : undefined}
+            >
+              {isPending ? "Sparar …" : "Spara ändringar"}
+            </button>
+            {saved && !dirty ? (
+              <p className="flex items-center gap-1.5 text-[14px] font-medium text-ok">
+                <Check className="size-4" /> Ändringarna är sparade
+              </p>
+            ) : null}
+            {!dirty && !saved ? <p className="text-[13px] text-muted">Inga osparade ändringar.</p> : null}
+            {error ? (
+              <p className="text-[14px] font-medium text-danger">
+                Ändringarna kunde inte sparas just nu. Inget har gått förlorat. {error}
+              </p>
+            ) : null}
+          </div>
+          <StickyMobileActions
+            summary={
+              showErrors ? (
+                <button
+                  type="button"
+                  onClick={() => focusField("installningar-saknas")}
+                  className="text-[12px] font-medium text-warn underline decoration-warn/60 underline-offset-2"
+                >
+                  {missingSummary.length === 1
+                    ? "1 uppgift behöver rättas"
+                    : `${missingSummary.length} uppgifter behöver rättas`}
+                </button>
+              ) : error ? (
+                <p className="text-[13px] font-medium text-danger">Kunde inte spara just nu. Inget har gått förlorat.</p>
+              ) : saved && !dirty ? (
+                <p className="flex items-center gap-1.5 text-[13px] font-medium text-ok">
+                  <Check className="size-4" /> Ändringarna är sparade
+                </p>
+              ) : null
+            }
+          >
+            <button
+              type="submit"
+              className={buttonClasses("primary", "lg", "flex-1")}
+              disabled={isPending || !dirty}
+              aria-describedby={showErrors ? "installningar-saknas" : undefined}
+            >
+              {isPending ? "Sparar …" : dirty ? "Spara ändringar" : "Inga osparade ändringar"}
+            </button>
+          </StickyMobileActions>
         </div>
       ) : null}
       </form>

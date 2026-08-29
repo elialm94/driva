@@ -42,7 +42,9 @@ export function jobAdminState(job: Job): JobAdminState {
   const signature = quote ? quoteSignature(quote.id) : undefined;
   const nextPart = nextPaymentPlanPartForJob(job.id);
   const remaining = money.remaining;
-  const unpaid = money.invoices.some((i) => i.status === "skickad" || i.status === "utkast");
+  const unpaid = money.invoices.some(
+    (i) => i.status === "skickad" || i.status === "delbetald" || i.status === "utkast"
+  );
   const approved = quote?.status === "godkand";
   const fullyInvoiced = approved && remaining <= 0 && money.invoiced > 0;
   const fullyPaid = fullyInvoiced && !unpaid && money.paid > 0;

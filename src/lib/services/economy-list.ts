@@ -1,0 +1,387 @@
+import { db } from "../store";
+import type { Invoice, Quote } from "../types";
+import { currentVersion, effectiveQuoteStatus, invoiceTotals, isOpenReceivable, isOverdue, daysOverdue, quoteTotals } from "./data";
+import type { PagedResult } from "./customers";
+import { categoryByKey } from "../bas";
+import { dagarTill } from "../format";
+import { getBusinessActions, type BusinessAction } from "./actions";
+import { indexActionsBySource, issueForAction } from "./action-issue";
+
+/**
+ * Läsmodeller för Ekonomi-registret: en genomläsning av lagret per flik,
+ * sök + statusfilter + serversidig paginering. Skalar till tusentals rader –
+ * bara sidans rader lämnar servern.
+ */
+
+export const ECONOMY_PAGE_SIZE = 50;
+
+/** Samma toner som Badge i UI:t – hålls som data så läsmodellen är ren serverkod. */
+export type StatusTone = "neutral" | "info" | "ok" | "warn" | "danger";
+
+function normalize(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function paginate<T>(items: T[], page: number, pageSize: number): PagedResult<T> {
+  const size = Math.max(1, pageSize);
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  const current = Math.min(Math.max(1, page), totalPages);
+  const start = (current - 1) * size;
+  return { rows: items.slice(start, start + size), page: current, pageSize: size, total, totalPages };
+}
+
+function customersById(): Map<string, string> {
+  return new Map(db().customers.map((c) => [c.id, c.name]));
+}
+
+/**
+ * "entitet:id" → åtgärdsmotorns rad, för konkreta registeretiketter
+ * ("Matcha betalning", "Saknar kvitto", "Välj kategori" – aldrig ett generiskt
+ * "Behöver åtgärd" när motorn vet mer). includeSnoozed: registret visar FAKTA
+ * och påverkas aldrig av att uppmärksamhetsraden är snoozad.
+ */
+function attentionBySource(): Map<string, BusinessAction> {
+  return indexActionsBySource(getBusinessActions(new Date(), { includeSnoozed: true }).attention);
+}
+
+/* ---------------------------------- Offerter ---------------------------------- */
+
+export type QuoteStatusFilter = "alla" | "utkast" | "skickad" | "godkand" | "avbojd" | "utgangen";
+
+export const QUOTE_STATUS_OPTIONS: [QuoteStatusFilter, string][] = [
+  ["alla", "Alla"],
+  ["utkast", "Utkast"],
+  ["skickad", "Väntar på BankID"],
+  ["godkand", "Godkända"],
+  ["avbojd", "Avböjda"],
+  ["utgangen", "Utgångna"],
+];
+
+export interface QuoteTableRow {
+  id: string;
+  number: number;
+  title: string;
+  customerName: string;
+  /** Skickad-datum om det finns, annars skapad. */
+  date: string;
+  amount: number;
+  statusKey: Quote["status"];
+  statusLabel: string;
+  statusTone: StatusTone;
+}
+
+const QUOTE_STATUS_META: Record<Quote["status"], { label: string; tone: StatusTone }> = {
+  utkast: { label: "Utkast", tone: "neutral" },
+  skickad: { label: "Väntar på BankID", tone: "warn" },
+  godkand: { label: "Godkänd med BankID", tone: "ok" },
+  avbojd: { label: "Avböjd", tone: "danger" },
+  utgangen: { label: "Utgången", tone: "neutral" },
+};
+
+export function listQuotesForTable(
+  input: { q?: string; status?: QuoteStatusFilter; page?: number; pageSize?: number } = {}
+): PagedResult<QuoteTableRow> {
+  const names = customersById();
+  const q = normalize(input.q ?? "");
+  const status = input.status ?? "alla";
+
+  const rows: QuoteTableRow[] = [];
+  for (const quote of db().quotes) {
+    const effective = effectiveQuoteStatus(quote);
+    if (status !== "alla" && effective !== status) continue;
+    const version = currentVersion(quote);
+    const customerName = names.get(quote.customerId) ?? "";
+    if (q) {
+      const hay = `#${quote.number} ${quote.number} ${version.title} ${customerName}`.toLowerCase();
+      if (!hay.includes(q)) continue;
+    }
+    const meta = QUOTE_STATUS_META[effective];
+    rows.push({
+      id: quote.id,
+      number: quote.number,
+      title: version.title,
+      customerName,
+      date: quote.sentAt ?? quote.createdAt,
+      amount: quoteTotals(quote).toPay,
+      statusKey: effective,
+      statusLabel: meta.label,
+      statusTone: meta.tone,
+    });
+  }
+
+  rows.sort((a, b) => b.date.localeCompare(a.date) || b.number - a.number);
+  return paginate(rows, input.page ?? 1, input.pageSize ?? ECONOMY_PAGE_SIZE);
+}
+
+/* ---------------------------------- Fakturor ---------------------------------- */
+
+export type InvoiceStatusFilter = "alla" | "utkast" | "obetald" | "forsenad" | "betald" | "kredit";
+
+export const INVOICE_STATUS_OPTIONS: [InvoiceStatusFilter, string][] = [
+  ["alla", "Alla"],
+  ["utkast", "Utkast"],
+  ["obetald", "Obetalda"],
+  ["forsenad", "Försenade"],
+  ["betald", "Betalda"],
+  ["kredit", "Krediterade"],
+];
+
+export interface InvoiceTableRow {
+  id: string;
+  /** "#1042" eller "Utkast". */
+  label: string;
+  /** "Delbetalning"/"Slutfaktura"/"Kredit" – tomt för vanlig faktura. */
+  typeLabel: string;
+  customerName: string;
+  dueDate: string;
+  amount: number;
+  statusLabel: string;
+  statusTone: StatusTone;
+}
+
+function invoiceStatusMeta(inv: Invoice): { label: string; tone: StatusTone } {
+  // Speglar InvoiceStatusBadge: kredit är ingen fordran och kan aldrig vara försenad.
+  if (inv.type === "kredit") return { label: "Kreditfaktura", tone: "neutral" };
+  if (isOverdue(inv)) return { label: `Försenad ${daysOverdue(inv)} dagar`, tone: "danger" };
+  switch (inv.status) {
+    case "utkast":
+      return { label: "Utkast", tone: "neutral" };
+    case "skickad":
+      return { label: "Skickad", tone: "info" };
+    case "delbetald":
+      return { label: "Delbetald", tone: "warn" };
+    case "betald":
+      return { label: "Betald", tone: "ok" };
+    case "krediterad":
+      return { label: "Krediterad", tone: "neutral" };
+  }
+}
+
+function invoiceMatchesFilter(inv: Invoice, filter: InvoiceStatusFilter): boolean {
+  switch (filter) {
+    case "alla":
+      return true;
+    case "utkast":
+      return inv.status === "utkast";
+    case "obetald":
+      return isOpenReceivable(inv);
+    case "forsenad":
+      return isOverdue(inv);
+    case "betald":
+      return inv.status === "betald" && inv.type !== "kredit";
+    case "kredit":
+      return inv.type === "kredit" || inv.status === "krediterad";
+  }
+}
+
+const INVOICE_TYPE_LABEL: Record<Invoice["type"], string> = {
+  faktura: "",
+  delbetalning: "Delbetalning",
+  slutfaktura: "Slutfaktura",
+  kredit: "Kredit",
+};
+
+export function listInvoicesForTable(
+  input: { q?: string; status?: InvoiceStatusFilter; page?: number; pageSize?: number } = {}
+): PagedResult<InvoiceTableRow> {
+  const names = customersById();
+  const q = normalize(input.q ?? "");
+  const status = input.status ?? "alla";
+
+  const withSort: { row: InvoiceTableRow; draft: boolean; number: number; createdAt: string }[] = [];
+  for (const inv of db().invoices) {
+    if (!invoiceMatchesFilter(inv, status)) continue;
+    const customerName = names.get(inv.customerId) ?? "";
+    if (q) {
+      const hay = `#${inv.number ?? ""} ${inv.number ?? ""} ${customerName} ${inv.ocr}`.toLowerCase();
+      if (!hay.includes(q)) continue;
+    }
+    const meta = invoiceStatusMeta(inv);
+    withSort.push({
+      draft: inv.status === "utkast",
+      number: inv.number ?? 0,
+      createdAt: inv.createdAt,
+      row: {
+        id: inv.id,
+        label: inv.number == null ? "Utkast" : `#${inv.number}`,
+        typeLabel: INVOICE_TYPE_LABEL[inv.type],
+        customerName,
+        dueDate: inv.dueDate,
+        amount: invoiceTotals(inv).toPay,
+        statusLabel: meta.label,
+        statusTone: meta.tone,
+      },
+    });
+  }
+
+  // Utkast överst (senaste först), sedan fallande fakturanummer – samma ordning som tidigare listan.
+  withSort.sort((a, b) => {
+    if (a.draft !== b.draft) return a.draft ? -1 : 1;
+    if (a.draft) return b.createdAt.localeCompare(a.createdAt);
+    return b.number - a.number;
+  });
+
+  return paginate(
+    withSort.map((w) => w.row),
+    input.page ?? 1,
+    input.pageSize ?? ECONOMY_PAGE_SIZE
+  );
+}
+
+/* ------------------------------ Utgifter & kvitton ---------------------------- */
+
+export type ExpenseStatusFilter = "alla" | "atgard" | "klar";
+
+export const EXPENSE_STATUS_OPTIONS: [ExpenseStatusFilter, string][] = [
+  ["alla", "Alla"],
+  ["atgard", "Behöver åtgärd"],
+  ["klar", "Klara"],
+];
+
+export interface ExpenseTableRow {
+  id: string;
+  /** Kvittoköp eller leverantörsfaktura – båda är utgifter i registret. */
+  kind: "utgift" | "leverantorsfaktura";
+  date: string;
+  supplier: string;
+  /** Fakturanummer för leverantörsfakturor. */
+  reference?: string;
+  categoryLabel: string;
+  amount: number;
+  statusLabel: string;
+  statusTone: StatusTone;
+  /** Underlag: kvitto/bankkoppling finns. */
+  hasReceipt: boolean;
+}
+
+export function listExpensesForTable(
+  input: { q?: string; status?: ExpenseStatusFilter; page?: number; pageSize?: number } = {}
+): PagedResult<ExpenseTableRow> {
+  const q = normalize(input.q ?? "");
+  const status = input.status ?? "alla";
+  const rows: ExpenseTableRow[] = [];
+  const attention = attentionBySource();
+
+  for (const e of db().expenses) {
+    const needsAction = e.status !== "bokford";
+    if (status === "atgard" && !needsAction) continue;
+    if (status === "klar" && needsAction) continue;
+    const categoryLabel = e.category ? categoryByKey(e.category).label : "—";
+    if (q) {
+      const hay = `${e.supplier} ${e.description ?? ""} ${categoryLabel}`.toLowerCase();
+      if (!hay.includes(q)) continue;
+    }
+    // Konkret åtgärdsetikett från motorn ("Saknar kvitto", "Välj kategori").
+    const action = needsAction ? attention.get(`expense:${e.id}`) : undefined;
+    const meta: { label: string; tone: StatusTone } =
+      e.status === "bokford"
+        ? { label: "Bokförd", tone: "ok" }
+        : action
+          ? { label: issueForAction(action), tone: "warn" }
+          : e.status === "saknar_kvitto"
+            ? { label: "Saknar kvitto", tone: "warn" }
+            : { label: "Välj kategori", tone: "warn" };
+    rows.push({
+      id: e.id,
+      kind: "utgift",
+      date: e.date,
+      supplier: e.supplier,
+      categoryLabel,
+      amount: e.amount,
+      statusLabel: meta.label,
+      statusTone: meta.tone,
+      hasReceipt: Boolean(e.receiptId),
+    });
+  }
+
+  for (const s of db().supplierInvoices) {
+    const needsAction = s.status === "obetald";
+    if (status === "atgard" && !needsAction) continue;
+    if (status === "klar" && needsAction) continue;
+    const categoryLabel = categoryByKey(s.category).label;
+    if (q) {
+      const hay = `${s.supplier} ${s.description} ${categoryLabel} ${s.invoiceNumber}`.toLowerCase();
+      if (!hay.includes(q)) continue;
+    }
+    const overdue = s.status === "obetald" && dagarTill(s.dueDate) < 0;
+    rows.push({
+      id: s.id,
+      kind: "leverantorsfaktura",
+      date: s.date,
+      supplier: s.supplier,
+      reference: s.invoiceNumber,
+      categoryLabel,
+      amount: s.amount,
+      statusLabel: s.status === "betald" ? "Betald & bokförd" : overdue ? "Förfallen" : "Obetald",
+      statusTone: s.status === "betald" ? "ok" : overdue ? "danger" : "warn",
+      hasReceipt: true,
+    });
+  }
+
+  rows.sort((a, b) => b.date.localeCompare(a.date));
+  return paginate(rows, input.page ?? 1, input.pageSize ?? ECONOMY_PAGE_SIZE);
+}
+
+/* ---------------------------------- Bank -------------------------------------- */
+
+export type BankStatusFilter = "alla" | "atgard" | "bokford";
+
+export const BANK_STATUS_OPTIONS: [BankStatusFilter, string][] = [
+  ["alla", "Alla"],
+  ["atgard", "Behöver åtgärd"],
+  ["bokford", "Bokförda"],
+];
+
+export interface BankTableRow {
+  id: string;
+  date: string;
+  counterpart: string;
+  description: string;
+  reference?: string;
+  amount: number;
+  statusLabel: string;
+  statusTone: StatusTone;
+}
+
+const TX_STATUS_META: Record<string, { label: string; tone: StatusTone }> = {
+  ny: { label: "Ny", tone: "neutral" },
+  matchad: { label: "Matchad", tone: "info" },
+  bokford: { label: "Bokförd", tone: "ok" },
+  behover_atgard: { label: "Behöver åtgärd", tone: "warn" },
+};
+
+export function listBankForTable(
+  input: { q?: string; status?: BankStatusFilter; page?: number; pageSize?: number } = {}
+): PagedResult<BankTableRow> {
+  const q = normalize(input.q ?? "");
+  const status = input.status ?? "alla";
+  const rows: BankTableRow[] = [];
+  const attention = attentionBySource();
+
+  for (const tx of db().bankTransactions) {
+    if (status === "bokford" && tx.status !== "bokford") continue;
+    if (status === "atgard" && tx.status !== "behover_atgard" && tx.status !== "ny") continue;
+    if (q) {
+      const hay = `${tx.counterpart} ${tx.description} ${tx.reference ?? ""}`.toLowerCase();
+      if (!hay.includes(q)) continue;
+    }
+    // Motorn vet den konkreta åtgärden ("Matcha betalning" osv.) – visa den
+    // i stället för generiska "Behöver åtgärd" när transaktionen har en rad.
+    const action = tx.status === "behover_atgard" || tx.status === "ny" ? attention.get(`bank:${tx.id}`) : undefined;
+    const meta = action ? { label: issueForAction(action), tone: "warn" as StatusTone } : TX_STATUS_META[tx.status];
+    rows.push({
+      id: tx.id,
+      date: tx.date,
+      counterpart: tx.counterpart,
+      description: tx.description,
+      reference: tx.reference,
+      amount: tx.amount,
+      statusLabel: meta.label,
+      statusTone: meta.tone,
+    });
+  }
+
+  rows.sort((a, b) => b.date.localeCompare(a.date));
+  return paginate(rows, input.page ?? 1, input.pageSize ?? ECONOMY_PAGE_SIZE);
+}

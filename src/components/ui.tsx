@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
+import { AppLink } from "./app-link";
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -11,7 +12,7 @@ type ButtonVariant = "primary" | "accent" | "secondary" | "ghost" | "danger" | "
 type ButtonSize = "sm" | "md" | "lg";
 
 const buttonBase =
-  "inline-flex items-center justify-center gap-2 font-medium whitespace-nowrap rounded-xl transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none select-none";
+  "inline-flex items-center justify-center gap-2 font-medium whitespace-nowrap rounded-xl transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 const buttonVariants: Record<ButtonVariant, string> = {
   primary: "bg-ink text-white hover:bg-black shadow-sm",
@@ -22,9 +23,10 @@ const buttonVariants: Record<ButtonVariant, string> = {
   bankid: "bg-bankid text-white hover:brightness-110 shadow-sm",
 };
 
+/** Under lg växer knapparna något så träffytan blir ≥ ~44px på touch. Desktop oförändrad. */
 const buttonSizes: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-[13px]",
-  md: "h-10 px-4 text-sm",
+  sm: "h-8 px-3 text-[13px] max-lg:h-9",
+  md: "h-10 px-4 text-sm max-lg:h-11",
   lg: "h-12 px-6 text-[15px]",
 };
 
@@ -46,9 +48,9 @@ export function ButtonLink({
   children: ReactNode;
 }) {
   return (
-    <Link href={href as never} className={buttonClasses(variant, size, className)}>
+    <AppLink href={href} className={buttonClasses(variant, size, className)}>
       {children}
-    </Link>
+    </AppLink>
   );
 }
 

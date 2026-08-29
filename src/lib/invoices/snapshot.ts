@@ -100,6 +100,8 @@ export function buyerAsCustomer(buyer: InvoiceBuyerSnapshot, fallback?: Customer
     createdAt: fallback?.createdAt ?? "",
     contactPerson: fallback?.contactPerson,
     personalIdentityNumber: fallback?.personalIdentityNumber,
+    workLocations: fallback?.workLocations,
+    defaultWorkLocationId: fallback?.defaultWorkLocationId,
   };
 }
 
@@ -127,6 +129,8 @@ export function buildIssuedSnapshot(input: {
     seller: sellerSnapshot(input.seller),
     buyer: buyerSnapshot(input.buyer),
     lines,
+    // Villkorligt: äldre snapshots utan fältet förblir värde-exakta.
+    ...(invoice.richText ? { richText: invoice.richText } : {}),
     rot: invoice.rot ? { ...invoice.rot } : null,
     taxReductionTerms: invoice.taxReductionTerms ? { ...invoice.taxReductionTerms } : null,
     taxReductionDetails: invoice.taxReductionDetails ? { ...invoice.taxReductionDetails, housing: invoice.taxReductionDetails.housing ? { ...invoice.taxReductionDetails.housing } : undefined } : null,
@@ -157,6 +161,8 @@ export function resolveInvoiceView(
       lateInterestRate: snap.lateInterestRate,
       serviceDate: snap.serviceDate,
       lines: snap.lines,
+      // Alltid från snapshoten: en muterad live-rad får aldrig synas på utfärdat dokument.
+      richText: snap.richText,
       rot: snap.rot,
       taxReductionTerms: snap.taxReductionTerms,
       taxReductionDetails: snap.taxReductionDetails,

@@ -6,12 +6,15 @@ import { getQuoteByToken, quoteSignature } from "@/lib/services/data";
 import { quoteVersionHash } from "@/lib/hash";
 import { datumTid } from "@/lib/format";
 import { Badge, DemoTag } from "@/components/ui";
+import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
+import { ensurePublicPage } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Signeringsunderlag" };
 
 export default async function SigningEvidencePage(props: PageProps<"/offert/[token]/underlag">) {
   const { token } = await props.params;
+  if (!(await ensurePublicPage("quote", token))) notFound();
   const quote = getQuoteByToken(token);
   if (!quote) notFound();
   const signature = quoteSignature(quote.id);
@@ -22,11 +25,13 @@ export default async function SigningEvidencePage(props: PageProps<"/offert/[tok
   if (!version) notFound();
   const recomputed = quoteVersionHash(version);
   const intact = recomputed === signature.evidence.contentHash;
+  // Avsändaren i underlaget ska spegla den signerade versionen, inte dagens inställningar.
+  const seller = resolveQuoteCompany(version, data.settings);
 
   const rows: { label: string; value: string; mono?: boolean }[] = [
     { label: "Dokument", value: `Offert #${quote.number} – ${version.title}` },
     { label: "Offertversion", value: `Version ${version.version} (låst ${version.lockedAt ? datumTid(version.lockedAt) : "–"})` },
-    { label: "Avsändare", value: `${data.settings.name} (org.nr ${data.settings.orgNumber})` },
+    { label: "Avsändare", value: `${seller.name} (org.nr ${seller.orgNumber})` },
     { label: "Undertecknare", value: `${signature.signerName} (${signature.signerPersonalNumberMasked})` },
     { label: "Tidpunkt", value: datumTid(signature.signedAt) },
     { label: "Ordernummer (orderRef)", value: signature.orderRef, mono: true },

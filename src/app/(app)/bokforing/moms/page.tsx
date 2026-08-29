@@ -1,20 +1,22 @@
 import { Check, CircleAlert, Landmark } from "lucide-react";
 import { kr, datumLang } from "@/lib/format";
 import { Badge, Card, PageHeader, cx } from "@/components/ui";
-import { BackLink } from "@/components/back-link";
+import { SmartBack } from "@/components/back-link";
 import { GenerateVatReportButton, MarkVatDeclaredButton, PrintButton } from "@/components/bokforing-widgets";
 import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { vatPeriods, vatChecklist } from "@/lib/accounting/vat";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Moms" };
 
-export default function MomsPage() {
+export default async function MomsPage() {
+  await ensurePageBusiness();
   const periods = vatPeriods().filter((p) => p.state !== "kommande");
 
   return (
     <div className="animate-fade-up">
       <PageHeader
-        back={<BackLink fallbackHref="/bokforing" fallbackLabel="Bokföring" />}
+        back={<SmartBack />}
         title="Moms"
         subtitle="Momsen räknas direkt ur bokföringen – samma siffror som huvudboken. Kvartalsmoms, deklareras den 12:e andra månaden efter periodens slut."
         actions={<PrintButton />}
@@ -55,8 +57,9 @@ export default function MomsPage() {
                 <summary className="cursor-pointer list-none text-[13px] font-medium text-accent hover:underline">
                   Visa underlag per deklarationsruta
                 </summary>
-                <div className="mt-3 overflow-x-auto rounded-xl bg-canvas/70 px-4 py-3">
-                  <table className="w-full min-w-[380px] text-[13px]">
+                {/* Tre kolumner där beskrivningen radbryts – ingen minbredd behövs på smal skärm. */}
+                <div className="mt-3 rounded-xl bg-canvas/70 px-4 py-3">
+                  <table className="w-full text-[13px]">
                     <thead>
                       <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
                         <th className="pb-1.5 font-semibold">Ruta</th>

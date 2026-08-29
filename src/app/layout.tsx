@@ -15,6 +15,12 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#f7f6f2",
+  width: "device-width",
+  initialScale: 1,
+  // Krävs för env(safe-area-inset-*) på iOS – bottennav och sticky knappar
+  // lägger sig annars bakom hemindikatorn. Ingen maximum-scale/user-scalable:
+  // användare ska kunna zooma.
+  viewportFit: "cover",
 };
 
 // All data läses från den fil-baserade demodatabasen vid varje request.

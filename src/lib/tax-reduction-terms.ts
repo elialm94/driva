@@ -71,6 +71,41 @@ export function taxReductionDeductionLabel(type: RotRut["type"]): string {
   return type === "rot" ? "Preliminärt ROT-avdrag" : "Preliminärt RUT-avdrag";
 }
 
+export function taxReductionMaxLabel(type: RotRut["type"]): string {
+  return type === "rot" ? "Maximalt preliminärt ROT-avdrag" : "Maximalt preliminärt RUT-avdrag";
+}
+
+export function taxReductionAppliedLabel(type: RotRut["type"]): string {
+  return type === "rot" ? "ROT-avdrag att använda" : "RUT-avdrag att använda";
+}
+
+export function taxReductionExceedsMaxError(max: number, documentKind: "faktura" | "offert" = "faktura"): string {
+  const doc = documentKind === "offert" ? "offerten" : "fakturan";
+  return `Avdraget kan inte vara högre än maximalt ${kr(max)} för den här ${doc}.`;
+}
+
+export function taxReductionClampedMessage(
+  type: RotRut["type"],
+  applied: number,
+  documentKind: "faktura" | "offert" = "faktura"
+): string {
+  const kind = type === "rot" ? "ROT" : "RUT";
+  const whose = documentKind === "offert" ? "offertens" : "fakturans";
+  return `${kind}-avdraget justerades till ${kr(applied)} eftersom ${whose} avdragsgrundande arbetskostnad ändrades.`;
+}
+
+export function taxReductionAmountHelp(documentKind: "faktura" | "offert" = "faktura"): string {
+  const doc = documentKind === "offert" ? "offerten" : "fakturan";
+  return `Driva visar det maximala avdrag som ${doc} medger. Sänk beloppet om kunden har mindre ROT/RUT-utrymme kvar.`;
+}
+
+export function taxReductionDocumentMaxLabel(documentKind: "faktura" | "offert", max: number): string {
+  const doc = documentKind === "offert" ? "offerten" : "fakturan";
+  return `Max för ${doc}: ${kr(max)}`;
+}
+
+export const TAX_REDUCTION_USE_MAX_LABEL = "Använd max";
+
 export function getDeniedReductionNotice(deniedAmount: number): string {
   return `Skatteverket godkände inte ${kr(deniedAmount)} av avdraget. Enligt ROT/RUT-villkoret återstår beloppet att betala av kunden.`;
 }

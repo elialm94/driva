@@ -8,10 +8,20 @@ import type {
   TaxReductionDetails,
 } from "../types";
 import { currentVersion, getInvoice, getJob, invoiceTotals, jobQuote, requireCustomer } from "./data";
+import { invoicesForJob } from "./job-economy";
+import {
+  formatLocationAddress,
+  resolveJobWorkLocation,
+  syncWorkLocationHousing,
+  workLocationToHousing,
+} from "./work-locations";
 import { kr, datumKort } from "../format";
 import { maskPersonnummer, normalizePersonnummer } from "../personnummer";
 import { normalizeOrgnr } from "../invoices/formats";
 import { logActivity } from "./activity";
+import { logAudit } from "../accounting/audit";
+import { postVerification } from "../accounting/engine";
+import { entriesTaxReductionPayout } from "../bas";
 import { docTotals } from "../calc";
 import {
   taxReductionMissingFields,
@@ -80,14 +90,16 @@ export function resolveTaxReductionPrefill(input: {
   const customer = requireCustomer(input.customerId);
   const job = input.jobId ? getJob(input.jobId) : undefined;
   const details = input.details;
+  const location = resolveJobWorkLocation(customer, job);
   const pn = customer.personalIdentityNumber ?? "";
   const workAddress =
     details?.workAddress?.trim() ||
     job?.address?.trim() ||
+    formatLocationAddress(location) ||
     formatWorkAddress(customer);
   const workPeriodStart = isoDate(details?.workPeriodStart) || isoDate(job?.startDate);
   const workPeriodEnd = isoDate(details?.workPeriodEnd) || isoDate(job?.endDate) || isoDate(job?.completedAt);
-  const housing = mergeHousing(job?.housing, details?.housing);
+  const housing = mergeHousing(mergeHousing(workLocationToHousing(location), job?.housing), details?.housing);
   return {
     personalIdentityNumber: pn,
     personalIdentityNumberMasked: pn ? maskPersonnummer(pn) : "",
@@ -128,6 +140,7 @@ export function persistTaxReductionOwnership(input: {
       if (input.details.workPeriodEnd) job.endDate = input.details.workPeriodEnd;
       if (input.details.housing && Object.keys(sanitizeHousing(input.details.housing)).length) {
         job.housing = mergeHousing(job.housing, input.details.housing);
+        syncWorkLocationHousing(customer, job.workLocationId, job.housing);
       }
     }
   }
@@ -158,7 +171,7 @@ export interface TaxReductionCase {
 }
 
 function rotInvoicesForJob(jobId: string): Invoice[] {
-  return db().invoices.filter((i) => i.jobId === jobId && i.rot && i.type !== "kredit" && i.status !== "krediterad");
+  return invoicesForJob(jobId).filter((i) => i.rot && i.type !== "kredit" && i.status !== "krediterad");
 }
 
 function customerSharePaid(invoices: Invoice[]): boolean {
@@ -370,6 +383,14 @@ export function createTaxReductionUnderlag(input: { jobId?: string; invoiceId?: 
   const taxInvoice = invoice ?? (job ? rotInvoicesForJob(job.id)[0] : undefined);
   if (!taxInvoice?.rot) throw new Error("Ingen ROT/RUT-faktura att skapa underlag för.");
 
+  // Idempotens: ett underlag per ärende – dubbelklick/retry skapar aldrig
+  // dubbla ansökningar, och avgjorda ärenden kan inte "ansökas om" igen.
+  const existingApp = applicationHost(job?.id ?? taxInvoice.jobId, taxInvoice).get();
+  if (existingApp?.status === "underlag_skapat") return existingApp;
+  if (existingApp && ["godkant", "delvis_godkant", "nekat"].includes(existingApp.status)) {
+    throw new Error("ROT/RUT-ärendet är redan avgjort – det kan inte ansökas om igen.");
+  }
+
   const cse = taxReductionCaseForInvoice(taxInvoice);
   if (cse.phase === "waiting_payment" || cse.phase === "waiting_work" || cse.phase === "preliminar") {
     throw new Error("ROT/RUT kan inte ansökas ännu. Kunden ska ha betalat sin del och arbetet ska vara klart.");
@@ -385,7 +406,7 @@ export function createTaxReductionUnderlag(input: { jobId?: string; invoiceId?: 
   const totals = job
     ? rotInvoicesForJob(job.id).reduce(
         (acc, inv) => {
-          const x = docTotals(inv.issuedSnapshot?.lines ?? inv.lines, inv.rot);
+          const x = docTotals(inv.issuedSnapshot?.lines ?? inv.lines, inv.issuedSnapshot?.rot ?? inv.rot);
           acc.laborInclVat += x.laborInclVat;
           acc.deduction += x.deduction;
           acc.toPay += x.toPay;
@@ -411,6 +432,10 @@ export function createTaxReductionUnderlag(input: { jobId?: string; invoiceId?: 
     underlagSummary: summary,
   };
   applicationHost(job?.id ?? taxInvoice.jobId, taxInvoice).set(app);
+  logAudit("anvandare", "rot_underlag_skapat", `Ansökningsunderlag för ${cse.label} skapades (${kr(totals.deduction)}).`, {
+    targetType: job ? "jobb" : "faktura",
+    targetId: job?.id ?? taxInvoice.id,
+  });
   logActivity(`Ansökningsunderlag för ${cse.label} skapades (${customer.name}, ${maskPersonnummer(customer.personalIdentityNumber ?? "")}).`, {
     customerId: customer.id,
     entity: { type: job ? "jobb" : "faktura", id: job?.id ?? taxInvoice.id },
@@ -445,12 +470,188 @@ export function setTaxReductionDecision(
   const kind = taxInvoice.rot.type.toUpperCase();
   const label =
     input.outcome === "godkant" ? "godkänt" : input.outcome === "delvis_godkant" ? "delvis godkänt" : "nekat";
+  logAudit("anvandare", "rot_beslut", `${kind}-ansökan markerades som ${label}${input.deniedAmount ? ` (nekat belopp ${kr(input.deniedAmount)})` : ""}.`, {
+    targetType: job ? "jobb" : "faktura",
+    targetId: job?.id ?? taxInvoice.id,
+  });
   logActivity(`${kind} markerades som ${label} för ${customer.name}.`, {
     customerId: customer.id,
     entity: { type: job ? "jobb" : "faktura", id: job?.id ?? taxInvoice.id },
   });
   save();
   return app;
+}
+
+/* ------------------------- Skatteverkets utbetalning ------------------------- */
+
+export interface ExpectedTaxReductionPayout {
+  jobId?: string;
+  invoiceId?: string;
+  type: "rot" | "rut";
+  label: string;
+  customerName: string;
+  /** Belopp Skatteverket väntas betala: ansökt avdrag minus ev. nekad del. */
+  expectedAmount: number;
+  /** Hela det ansökta avdraget (fordran på 1513 för ärendet). */
+  claimAmount: number;
+}
+
+function issuedRotInvoices(invoices: Invoice[]): Invoice[] {
+  return invoices.filter((i) => i.status !== "utkast");
+}
+
+function claimAmountFor(invoices: Invoice[]): number {
+  return issuedRotInvoices(invoices).reduce((s, i) => s + invoiceTotals(i).deduction, 0);
+}
+
+function payoutCandidate(
+  application: TaxReductionApplication | undefined,
+  invoices: Invoice[],
+  base: { jobId?: string; invoiceId?: string; type: "rot" | "rut"; label: string; customerName: string }
+): ExpectedTaxReductionPayout | null {
+  if (!application || application.payout) return null;
+  if (!["underlag_skapat", "godkant", "delvis_godkant"].includes(application.status)) return null;
+  const claim = claimAmountFor(invoices);
+  const denied = application.status === "delvis_godkant" ? (application.decision?.deniedAmount ?? 0) : 0;
+  const expected = Math.max(0, claim - denied);
+  if (expected <= 0) return null;
+  return { ...base, expectedAmount: expected, claimAmount: claim };
+}
+
+/**
+ * Öppna ROT/RUT-fordringar som väntar på utbetalning från Skatteverket.
+ * Matchningsmotorn använder listan för att känna igen SKV-inbetalningar,
+ * actionmotorn för "väntar på Skatteverket"-raderna.
+ */
+export function expectedTaxReductionPayouts(): ExpectedTaxReductionPayout[] {
+  const data = db();
+  const out: ExpectedTaxReductionPayout[] = [];
+  for (const job of data.jobs) {
+    const invoices = rotInvoicesForJob(job.id);
+    const type = invoices[0]?.rot?.type;
+    if (!type) continue;
+    const candidate = payoutCandidate(job.taxReductionApplication, invoices, {
+      jobId: job.id,
+      type,
+      label: `${type.toUpperCase()} – ${job.title}`,
+      customerName: requireCustomer(job.customerId).name,
+    });
+    if (candidate) out.push(candidate);
+  }
+  for (const inv of data.invoices) {
+    if (!inv.rot || inv.jobId || inv.type === "kredit" || inv.status === "krediterad") continue;
+    const candidate = payoutCandidate(inv.taxReductionApplication, [inv], {
+      invoiceId: inv.id,
+      type: inv.rot.type,
+      label: `${inv.rot.type.toUpperCase()} – faktura #${inv.number}`,
+      customerName: requireCustomer(inv.customerId).name,
+    });
+    if (candidate) out.push(candidate);
+  }
+  return out;
+}
+
+export interface RegisterPayoutInput {
+  jobId?: string;
+  invoiceId?: string;
+  /** Faktiskt utbetalt belopp från Skatteverket. */
+  amount: number;
+  bankTransactionId?: string;
+  matchReason?: string;
+  by?: "anvandare" | "assistent";
+}
+
+/**
+ * Bokför Skatteverkets ROT/RUT-utbetalning: 1930 debet / 1513 kredit.
+ *
+ *   * Full utbetalning → ansökan "godkant".
+ *   * Mindre än ansökt → "delvis_godkant" med nekat belopp = skillnaden;
+ *     restfakturaflödet (befintligt) tar fordran på kunden därifrån.
+ *   * Idempotent: en ansökan kan bara få EN utbetalningsbokning – dubbla
+ *     bankmatchningar mot samma ärende är omöjliga.
+ *
+ * Ingen intäkt bokförs – den redovisades när fakturan utfärdades.
+ */
+export function registerTaxReductionPayout(input: RegisterPayoutInput): TaxReductionApplication {
+  const invoice = input.invoiceId ? getInvoice(input.invoiceId) : undefined;
+  const job = input.jobId ? getJob(input.jobId) : invoice?.jobId ? getJob(invoice.jobId) : undefined;
+  const taxInvoice = invoice ?? (job ? rotInvoicesForJob(job.id)[0] : undefined);
+  if (!taxInvoice?.rot) throw new Error("Ingen ROT/RUT-faktura att registrera utbetalning för.");
+  const host = applicationHost(job?.id ?? taxInvoice.jobId, taxInvoice);
+  const app = host.get();
+  if (!app || app.status === "preliminar" || app.status === "redo_att_ansokas") {
+    throw new Error("Skapa ansökningsunderlag innan en utbetalning registreras.");
+  }
+  if (app.status === "nekat") {
+    throw new Error("Ansökan är markerad som nekad – en utbetalning kan inte registreras på den.");
+  }
+  if (app.payout) {
+    throw new Error("Utbetalningen är redan registrerad för det här ärendet.");
+  }
+
+  const invoices = job ? rotInvoicesForJob(job.id) : [taxInvoice];
+  const claim = claimAmountFor(invoices);
+  const amount = Math.round(input.amount);
+  if (!Number.isInteger(amount) || amount < 1) {
+    throw new Error("Utbetalningsbeloppet måste vara minst 1 kr.");
+  }
+  if (amount > claim) {
+    throw new Error(
+      `Utbetalningen (${kr(amount)}) överstiger fordran på Skatteverket (${kr(claim)}) – kontrollera beloppet innan något bokförs.`
+    );
+  }
+
+  const customer = requireCustomer(taxInvoice.customerId);
+  const kind = taxInvoice.rot.type.toUpperCase();
+  const now = new Date().toISOString();
+  const partial = amount < claim;
+
+  const ver = postVerification({
+    date: now,
+    description: `${kind}-utbetalning från Skatteverket – ${customer.name}`,
+    entries: entriesTaxReductionPayout(amount),
+    source: { type: "banktransaktion", id: input.bankTransactionId ?? taxInvoice.id },
+    confidence: "hog",
+    createdBy: input.by === "assistent" ? "assistent" : "auto",
+    explanation: `${input.matchReason ?? "Skatteverkets utbetalning registrerades"}: pengarna sattes in på företagskontot och fordran på Skatteverket (1513) bockades av med ${kr(amount)}.${partial ? ` ${kr(claim - amount)} av avdraget godkändes inte – fakturera kunden restbeloppet.` : ""} Ingen ny intäkt – den bokfördes när fakturan utfärdades.`,
+  });
+
+  const outcome = partial ? "delvis_godkant" : "godkant";
+  const updated: TaxReductionApplication = {
+    ...app,
+    status: outcome,
+    decision: app.decision?.outcome === outcome
+      ? app.decision
+      : { outcome, decidedAt: now, deniedAmount: partial ? claim - amount : undefined },
+    payout: { amount, at: now, verificationId: ver.id, bankTransactionId: input.bankTransactionId },
+  };
+  host.set(updated);
+
+  if (input.bankTransactionId) {
+    const tx = db().bankTransactions.find((t) => t.id === input.bankTransactionId);
+    if (tx) {
+      tx.status = "bokford";
+      tx.matchedType = "skattereduktion";
+      tx.matchedId = job?.id ?? taxInvoice.id;
+      tx.verificationId = ver.id;
+    }
+  }
+
+  logAudit("system", "rot_utbetalning_mottagen", `${kind}-utbetalning ${kr(amount)} av ${kr(claim)} bokfördes (${outcome === "godkant" ? "fullt godkänd" : "delvis godkänd"}).`, {
+    targetType: job ? "jobb" : "faktura",
+    targetId: job?.id ?? taxInvoice.id,
+  });
+  logActivity(
+    partial
+      ? `Skatteverket betalade ut ${kr(amount)} av ${kr(claim)} i ${kind} för ${customer.name} – fakturera kunden resterande ${kr(claim - amount)}.`
+      : `Skatteverket betalade ut ${kind}-avdraget ${kr(amount)} för ${customer.name}.`,
+    {
+      customerId: customer.id,
+      entity: { type: job ? "jobb" : "faktura", id: job?.id ?? taxInvoice.id },
+    }
+  );
+  save();
+  return updated;
 }
 
 export function patchTaxReductionFields(input: {
@@ -494,10 +695,17 @@ export function patchTaxReductionFields(input: {
     personalIdentityNumber: input.personalIdentityNumber,
     details,
   });
-  if (invoice && invoice.status === "utkast") {
+  if (invoice) {
     invoice.taxReductionDetails = details;
-  } else if (invoice) {
-    invoice.taxReductionDetails = details;
+    if (invoice.status !== "utkast") {
+      // Utfärdade fakturor är frysta – ROT/RUT-uppföljningsfälten är det
+      // dokumenterade undantaget (uppgifterna samlas in efter utfärdandet
+      // för ansökan). Varje ändring auditloggas. Aldrig personnummer i loggen.
+      logAudit("anvandare", "taxreduktion_uppgift_andrad", `ROT/RUT-uppgifter uppdaterades på utfärdad faktura #${invoice.number}.`, {
+        targetType: "faktura",
+        targetId: invoice.id,
+      });
+    }
   }
   save();
 }

@@ -1,11 +1,14 @@
 import { db, save } from "../store";
 import { uid, publicToken } from "../ids";
 import type { DocLine, PaymentPlanPart, Quote, QuoteVersion, RotRut } from "../types";
+import type { RichTextDoc } from "../richtext";
+import { sanitizeRichText } from "../richtext";
 import { currentVersion, getQuote, requireCustomer } from "./data";
 import { docTotals } from "../calc";
-import { kr, isoDaysFromNow } from "../format";
+import { kr, isoDaysFromNow, dagarTill, datumKort } from "../format";
 import { logActivity } from "./activity";
 import { taxReductionFields } from "../tax-reduction-terms";
+import { rotWithAmounts } from "../tax-reduction-amount";
 import { sellerSnapshot } from "../invoices/snapshot";
 
 export interface QuoteInput {
@@ -21,6 +24,8 @@ export interface QuoteInput {
   lateInterestRate?: number;
   validUntil: string;
   terms: string;
+  /** "Övrig information" – saneras alltid serverside (vitlista, se lib/richtext). */
+  richText?: RichTextDoc;
 }
 
 export const STANDARD_TERMS =
@@ -46,7 +51,8 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
     lateInterestRate: input.lateInterestRate ?? data.settings.lateInterestRate,
     validUntil: input.validUntil,
     terms: input.terms,
-    ...taxReductionFields(input.rot),
+    richText: sanitizeRichText(input.richText),
+    ...taxReductionFields(rotWithAmounts(input.rot, input.lines, { documentKind: "offert" })),
     createdAt: now,
   };
 
@@ -100,6 +106,8 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
   const quote = getQuote(quoteId);
   if (!quote) throw new Error("Offerten finns inte");
   const version = currentVersion(quote);
+  // Servergräns: klientens rika text lita aldrig på rakt av.
+  input = { ...input, richText: sanitizeRichText(input.richText) };
 
   if (version.lockedAt || quote.status === "godkand") {
     // Ny version krävs efter signering.
@@ -108,7 +116,7 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
       quoteId,
       version: version.version + 1,
       ...input,
-      ...taxReductionFields(input.rot),
+      ...taxReductionFields(rotWithAmounts(input.rot, input.lines, { documentKind: "offert" })),
       createdAt: new Date().toISOString(),
     };
     data.quoteVersions.push(newVersion);
@@ -122,7 +130,7 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
       { customerId: quote.customerId, entity: { type: "offert", id: quoteId } }
     );
   } else {
-    Object.assign(version, input, taxReductionFields(input.rot));
+    Object.assign(version, input, taxReductionFields(rotWithAmounts(input.rot, input.lines, { documentKind: "offert" })));
     version.sellerSnapshot = undefined;
     if (quote.status === "skickad") {
       quote.status = "utkast";
@@ -134,24 +142,67 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
   return quote;
 }
 
-/** Skicka offerten till kunden. */
-export function sendQuote(quoteId: string): Quote {
+export interface QuoteSendBlocker {
+  code: string;
+  message: string;
+  href?: string;
+  actionLabel?: string;
+}
+
+/** Affärsregler som hindrar att offerten skickas — UI:t visar dem i checklistan på offertsidan. */
+export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
+  const quote = getQuote(quoteId);
+  if (!quote) return [];
+  const version = currentVersion(quote);
+  const blockers: QuoteSendBlocker[] = [];
+  if (dagarTill(version.validUntil) < 0) {
+    blockers.push({
+      code: "valid_until_passed",
+      message: `Giltig till-datumet (${datumKort(version.validUntil)}) har passerat – kunden skulle inte kunna godkänna offerten.`,
+      href: `/ekonomi/offerter/${quote.id}/redigera`,
+      actionLabel: "Ändra datum",
+    });
+  }
+  return blockers;
+}
+
+/** Leveransutfall från e-postlagret. Utan uppgift antas mock (ingen e-post konfigurerad). */
+export interface QuoteDeliveryInfo {
+  mode: "mock" | "live" | "test";
+  ok: boolean;
+}
+
+const MOCK_DELIVERY: QuoteDeliveryInfo = { mode: "mock", ok: true };
+
+/** Skicka offerten till kunden. E-posten skickas av document-mail.ts – här uppdateras tillstånd och aktivitet. */
+export function sendQuote(quoteId: string, delivery: QuoteDeliveryInfo = MOCK_DELIVERY): Quote {
   const quote = getQuote(quoteId);
   if (!quote) throw new Error("Offerten finns inte");
   const customer = requireCustomer(quote.customerId);
   const version = currentVersion(quote);
+  if (dagarTill(version.validUntil) < 0) {
+    throw new Error(
+      `Offertens giltighetsdatum (${datumKort(version.validUntil)}) har passerat – kunden skulle inte kunna godkänna den. Ändra "Giltig till" och skicka sedan.`
+    );
+  }
   // Ingen ROT/RUT-offert får skickas utan systemvillkoret, oavsett skapandeflöde.
   if (!version.lockedAt) {
-    Object.assign(version, taxReductionFields(version.rot));
+    Object.assign(version, taxReductionFields(rotWithAmounts(version.rot, version.lines, { documentKind: "offert", mode: "clamp" })));
     version.sellerSnapshot = sellerSnapshot(db().settings);
   }
   const t = docTotals(version.lines, version.rot);
   quote.status = "skickad";
   quote.sentAt = new Date().toISOString();
-  logActivity(`Offert #${quote.number} skickades till ${customer.name} (${kr(t.toPay)}).`, {
-    customerId: customer.id,
-    entity: { type: "offert", id: quoteId },
-  });
+  const emailed = delivery.mode !== "mock" && delivery.ok;
+  logActivity(
+    emailed
+      ? `Offert #${quote.number} skickades med e-post till ${customer.name} (${kr(t.toPay)}).`
+      : `Offert #${quote.number} markerades som skickad (${kr(t.toPay)}) – ingen e-post är konfigurerad, dela offertlänken med ${customer.name}.`,
+    {
+      customerId: customer.id,
+      entity: { type: "offert", id: quoteId },
+    }
+  );
   save();
   return quote;
 }
@@ -183,14 +234,44 @@ export function declineQuote(quoteId: string, reason?: string): void {
   save();
 }
 
+/**
+ * "Inte aktuell" – ägarsidans avslut av en väntande/utgången offert (till
+ * skillnad från declineQuote som är kundens nej via den publika länken).
+ * Riktig domänövergång: status avbojd + skäl; offerten ligger kvar i
+ * registret och kundhistoriken men lämnar "Behöver din uppmärksamhet".
+ */
+export function markQuoteNotRelevant(quoteId: string, reason = "Inte längre aktuell"): Quote {
+  const quote = getQuote(quoteId);
+  if (!quote) throw new Error("Offerten finns inte.");
+  if (quote.status !== "skickad") throw new Error("Bara skickade offerter kan markeras som inte aktuella.");
+  quote.status = "avbojd";
+  quote.decidedAt = new Date().toISOString();
+  quote.declineReason = reason;
+  const customer = requireCustomer(quote.customerId);
+  logActivity(`Offert #${quote.number} markerades som inte aktuell.`, {
+    customerId: customer.id,
+    entity: { type: "offert", id: quoteId },
+  });
+  save();
+  return quote;
+}
+
 /** Skicka en vänlig påminnelse om en obesvarad offert. */
-export function followUpQuote(quoteId: string, by: "anvandare" | "assistent" = "anvandare"): void {
+export function followUpQuote(
+  quoteId: string,
+  by: "anvandare" | "assistent" = "anvandare",
+  delivery: QuoteDeliveryInfo = MOCK_DELIVERY
+): void {
   const quote = getQuote(quoteId);
   if (!quote || quote.status !== "skickad") return;
   quote.followUps.push(new Date().toISOString());
   const customer = requireCustomer(quote.customerId);
+  const emailed = delivery.mode !== "mock" && delivery.ok;
+  const who = by === "assistent" ? "Assistenten" : "Du";
   logActivity(
-    `${by === "assistent" ? "Assistenten skickade" : "Du skickade"} en påminnelse till ${customer.name} om offert #${quote.number}.`,
+    emailed
+      ? `${who} skickade en påminnelse med e-post till ${customer.name} om offert #${quote.number}.`
+      : `${who} noterade en påminnelse om offert #${quote.number} – ingen e-post är konfigurerad, kontakta ${customer.name} direkt.`,
     { customerId: customer.id, entity: { type: "offert", id: quoteId } }
   );
   save();

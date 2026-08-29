@@ -21,14 +21,19 @@ export function QuoteDraftSend({
   detailHref,
   recipientEmail,
   addEmailHref,
+  hasSendBlockers = false,
+  mailConfigured = true,
 }: {
   customerName: string;
   amount: number;
   validUntilLabel: string;
-  sendAction: () => Promise<void | { ok: boolean; errors?: string[] }>;
+  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; mailed?: boolean }>;
   detailHref: string;
   recipientEmail?: string;
   addEmailHref: string;
+  hasSendBlockers?: boolean;
+  /** Om e-postutskick är konfigurerat på servern – styr ärlig text i dialogen. */
+  mailConfigured?: boolean;
 }) {
   const router = useRouter();
   const [emailOpen, setEmailOpen] = useState(false);
@@ -39,6 +44,11 @@ export function QuoteDraftSend({
 
   function requestSend() {
     setSendError(null);
+    if (hasSendBlockers) {
+      // Checklistan "Innan offerten kan skickas" förklarar vad som behövs.
+      document.getElementById("quote-send-blockers")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     if (!email) {
       setEmailOpen(true);
       return;
@@ -46,8 +56,9 @@ export function QuoteDraftSend({
     setConfirmOpen(true);
   }
 
-  function finish() {
-    router.replace(withFlag(detailHref, "skickad", "1"));
+  function finish(mailed: boolean) {
+    // "1" = e-post skickades, "manuell" = markerad som skickad utan e-post.
+    router.replace(withFlag(detailHref, "skickad", mailed ? "1" : "manuell"));
     router.refresh();
   }
 
@@ -59,7 +70,7 @@ export function QuoteDraftSend({
         setSendError((result.errors ?? []).join(" "));
         return;
       }
-      finish();
+      finish(Boolean(result && result.mailed));
     });
   }
 
@@ -75,9 +86,16 @@ export function QuoteDraftSend({
           <p className="text-[17px] font-semibold tracking-tight text-ink">{customerName}</p>
           <p className="mt-1 text-[15px] text-soft">{kr(amount)}</p>
           <p className="mt-1 text-[14px] text-muted">Giltig till {validUntilLabel}</p>
-          <p className="mt-4 text-[14px] leading-relaxed text-soft">
-            Offerten skickas till: <span className="font-semibold text-ink">{email}</span>
-          </p>
+          {mailConfigured ? (
+            <p className="mt-4 text-[14px] leading-relaxed text-soft">
+              Offerten skickas till: <span className="font-semibold text-ink">{email}</span>
+            </p>
+          ) : (
+            <p className="mt-4 text-[14px] leading-relaxed text-soft">
+              E-postutskick är inte konfigurerat ännu. Offerten markeras som skickad – dela sedan kundlänken med{" "}
+              <span className="font-semibold text-ink">{customerName}</span> själv.
+            </p>
+          )}
           {sendError ? <p className="mt-3 text-[13px] font-medium text-danger">{sendError}</p> : null}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button className={buttonClasses("secondary")} disabled={isSending} onClick={() => setConfirmOpen(false)}>

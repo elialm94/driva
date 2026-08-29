@@ -1,15 +1,19 @@
-import { ReceiptText, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight, ReceiptText, ShieldCheck } from "lucide-react";
 import { db } from "@/lib/store";
 import { kr, datumKort, datumTid } from "@/lib/format";
 import { BAS } from "@/lib/bas";
-import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
-import { BackLink } from "@/components/back-link";
+import { Badge, Card, EmptyState, PageHeader, cx } from "@/components/ui";
+import { SmartBack } from "@/components/back-link";
 import { UndoBookingButton } from "@/components/bokforing-widgets";
 import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { verificationLabel } from "@/lib/accounting/engine";
 import type { Verification } from "@/lib/types";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Verifikationer" };
+
+const PAGE_SIZE = 100;
 
 const SOURCE_LABEL: Record<string, string> = {
   kundfaktura: "kundfaktura",
@@ -30,21 +34,31 @@ function creatorLabel(v: Verification): string {
   return v.createdBy === "auto" ? "automatiskt av Driva" : v.createdBy === "assistent" ? "av assistenten" : "av dig";
 }
 
-export default function VerifikationerPage() {
+export default async function VerifikationerPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sida?: string }>;
+}) {
+  await ensurePageBusiness();
+  const params = await searchParams;
   const data = db();
-  const verifications = [...data.verifications].sort((a, b) => b.number - a.number);
-  const byId = new Map(verifications.map((v) => [v.id, v]));
+  const all = [...data.verifications].sort((a, b) => b.number - a.number);
+  const byId = new Map(all.map((v) => [v.id, v]));
+
+  const totalPages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
+  const page = Math.min(Math.max(1, Number(params.sida) || 1), totalPages);
+  const verifications = all.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="animate-fade-up">
       <PageHeader
-        back={<BackLink fallbackHref="/bokforing" fallbackLabel="Bokföring" />}
+        back={<SmartBack />}
         title="Verifikationer"
-        subtitle={`${verifications.length} bokförda händelser. Varje verifikation är låst när den bokförts – rättelser blir nya verifikationer.`}
+        subtitle={`${all.length} bokförda händelser. Varje verifikation är låst när den bokförts – rättelser blir nya verifikationer.`}
       />
       <BokforingAdvancedTabs />
 
-      {verifications.length === 0 ? (
+      {all.length === 0 ? (
         <EmptyState
           icon={ReceiptText}
           title="Inga verifikationer ännu"
@@ -61,17 +75,27 @@ export default function VerifikationerPage() {
             const canUndo = expense && expense.status === "bokford" && expense.verificationId === v.id && !correctedBy;
             return (
               <details key={v.id} className="group">
-                <summary className="flex cursor-pointer list-none items-center gap-4 px-5 py-3.5 transition-colors hover:bg-canvas/60">
-                  <span className="w-14 shrink-0 font-mono text-[12px] font-medium text-muted">{verificationLabel(v)}</span>
-                  <span className="flex-1 truncate text-[14px] font-medium">
-                    {v.description}
-                    {correctedBy ? <span className="ml-2 text-[12px] font-normal text-warn">rättad av {verificationLabel(correctedBy)}</span> : null}
+                {/* Mobil: beskrivning + belopp på rad 1, nr/datum/typ på rad 2 – annars trunkeras beskrivningen till oigenkännlighet. */}
+                <summary className="cursor-pointer list-none px-5 py-3.5 transition-colors hover:bg-canvas/60">
+                  <span className="flex items-center gap-3 sm:gap-4">
+                    <span className="hidden w-14 shrink-0 font-mono text-[12px] font-medium text-muted sm:block">
+                      {verificationLabel(v)}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[14px] font-medium">
+                      {v.description}
+                      {correctedBy ? <span className="ml-2 text-[12px] font-normal text-warn">rättad av {verificationLabel(correctedBy)}</span> : null}
+                    </span>
+                    <span className="hidden text-[13px] text-muted sm:block">{datumKort(v.date)}</span>
+                    <span className="shrink-0 text-right text-[14px] font-medium tabular sm:w-24">{kr(total)}</span>
+                    <Badge tone={v.createdBy === "auto" ? "accent" : "neutral"} className="hidden sm:inline-flex">
+                      {v.createdBy === "auto" ? "Auto" : v.createdBy === "assistent" ? "Assistent" : "Manuell"}
+                    </Badge>
                   </span>
-                  <span className="hidden text-[13px] text-muted sm:block">{datumKort(v.date)}</span>
-                  <span className="w-24 text-right text-[14px] font-medium tabular">{kr(total)}</span>
-                  <Badge tone={v.createdBy === "auto" ? "accent" : "neutral"} className="hidden sm:inline-flex">
-                    {v.createdBy === "auto" ? "Auto" : v.createdBy === "assistent" ? "Assistent" : "Manuell"}
-                  </Badge>
+                  <span className="mt-0.5 flex items-center gap-1.5 text-[12px] text-muted sm:hidden">
+                    <span className="font-mono font-medium">{verificationLabel(v)}</span>
+                    <span>· {datumKort(v.date)}</span>
+                    <span>· {v.createdBy === "auto" ? "Auto" : v.createdBy === "assistent" ? "Assistent" : "Manuell"}</span>
+                  </span>
                 </summary>
                 <div className="border-t border-line/60 bg-canvas/50 px-5 py-3.5">
                   {v.explanation ? (
@@ -115,6 +139,36 @@ export default function VerifikationerPage() {
           })}
         </Card>
       )}
+
+      {totalPages > 1 ? (
+        <div className="mt-4 flex items-center justify-between gap-3 text-[13px] text-muted">
+          <p className="tabular">
+            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, all.length)} av {all.length}
+          </p>
+          <div className="flex gap-1">
+            <Link
+              href={`/bokforing/verifikationer?sida=${page - 1}`}
+              aria-disabled={page <= 1}
+              className={cx(
+                "inline-flex items-center gap-1 rounded-full border border-line bg-white px-3 py-1.5 font-medium",
+                page <= 1 ? "pointer-events-none opacity-40" : "hover:bg-canvas"
+              )}
+            >
+              <ChevronLeft className="size-3.5" /> Föregående
+            </Link>
+            <Link
+              href={`/bokforing/verifikationer?sida=${page + 1}`}
+              aria-disabled={page >= totalPages}
+              className={cx(
+                "inline-flex items-center gap-1 rounded-full border border-line bg-white px-3 py-1.5 font-medium",
+                page >= totalPages ? "pointer-events-none opacity-40" : "hover:bg-canvas"
+              )}
+            >
+              Nästa <ChevronRight className="size-3.5" />
+            </Link>
+          </div>
+        </div>
+      ) : null}
 
       <p className="mt-4 flex items-start gap-2 text-[12px] leading-relaxed text-muted">
         <ShieldCheck className="mt-0.5 size-3.5 shrink-0" />

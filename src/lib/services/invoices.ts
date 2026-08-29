@@ -1,16 +1,40 @@
 import { db, save } from "../store";
 import { uid, publicToken, ocrForInvoice } from "../ids";
-import type { DocLine, Invoice, RotRut, TaxReductionDetails, TaxReductionTermsSnapshot, Verification } from "../types";
-import { currentVersion, getInvoice, getJob, getQuote, invoiceTotals, jobQuote, quoteSignature, requireCustomer } from "./data";
-import { docTotals } from "../calc";
-import { entriesCredit, entriesInvoicePaid, entriesInvoiceSent } from "../bas";
+import type { DocLine, Invoice, QuoteVersion, RotRut, TaxReductionDetails, TaxReductionTermsSnapshot, VatRate, Verification } from "../types";
+import type { RichTextDoc } from "../richtext";
+import { sanitizeRichText } from "../richtext";
+import {
+  currentVersion,
+  getInvoice,
+  getJob,
+  getQuote,
+  invoiceCreditedAmount,
+  invoiceOutstanding,
+  invoicePaidAmount,
+  invoiceTotals,
+  jobQuote,
+  quoteSignature,
+  requireCustomer,
+} from "./data";
+import { docTotals, vatBreakdown } from "../calc";
+import {
+  entriesCredit,
+  entriesCustomerRefund,
+  entriesDeniedReductionCredit,
+  entriesDeniedReductionInvoice,
+  entriesInvoicePaymentReceived,
+  entriesInvoiceSent,
+} from "../bas";
+import { ORE_TOLERANS_KR, verificationConfidence } from "../autopilot";
 import { kr, isoDaysFromNow } from "../format";
 import { logActivity } from "./activity";
+import { logAudit } from "../accounting/audit";
 import { nextPaymentPlanPartForJob, remainingToInvoiceForJob } from "./attention";
 import { buildIssuedSnapshot } from "../invoices/snapshot";
 import { assertInvoiceReadyToIssue, collectIssueErrors, InvoiceNotReadyError } from "../invoices/validate";
 import { invoiceNumberLabel } from "../invoices/display";
 import { snapshotTaxReductionTerms } from "../tax-reduction-terms";
+import { rotWithAmounts } from "../tax-reduction-amount";
 import { postVerification } from "../accounting/engine";
 import {
   detailsFromPrefill,
@@ -70,11 +94,24 @@ function signedTaxReductionTerms(quoteId: string | undefined, type: RotRut["type
 
 function invoiceTaxReductionFields(
   rot: RotRut | null,
-  quoteId?: string
+  lines: DocLine[],
+  quoteId?: string,
+  inheritFrom?: RotRut | null,
+  mode: "strict" | "clamp" = "clamp"
 ): { rot: RotRut | null; taxReductionTerms: TaxReductionTermsSnapshot | null } {
   if (!rot) return { rot: null, taxReductionTerms: null };
+  let inherit = inheritFrom ?? null;
+  if (inherit == null && quoteId && rot.appliedTaxReduction == null) {
+    const quote = getQuote(quoteId);
+    if (quote) inherit = currentVersion(quote).rot;
+  }
+  const resolved = rotWithAmounts(rot, lines, {
+    inheritFrom: inherit,
+    mode,
+    documentKind: "faktura",
+  });
   return {
-    rot,
+    rot: resolved,
     taxReductionTerms: signedTaxReductionTerms(quoteId, rot.type) ?? snapshotTaxReductionTerms(rot.type),
   };
 }
@@ -127,6 +164,8 @@ export interface InvoiceInput {
   serviceDate?: string;
   taxReductionDetails?: TaxReductionDetails | null;
   personalIdentityNumber?: string;
+  /** "Övrig information" – saneras alltid serverside (vitlista, se lib/richtext). */
+  richText?: RichTextDoc;
 }
 
 export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare"): Invoice {
@@ -143,7 +182,8 @@ export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare
     type: input.type,
     status: "utkast",
     lines: cloneLines(input.lines),
-    ...invoiceTaxReductionFields(input.rot, input.quoteId),
+    richText: sanitizeRichText(input.richText),
+    ...invoiceTaxReductionFields(input.rot, input.lines, input.quoteId),
     taxReductionDetails: null,
     issueDate: now,
     dueDate: isoDaysFromNow(paymentTermsDays),
@@ -175,6 +215,8 @@ export interface InvoiceUpdateInput {
   serviceDate?: string | null;
   taxReductionDetails?: TaxReductionDetails | null;
   personalIdentityNumber?: string;
+  /** "Övrig information" – saneras alltid serverside (vitlista, se lib/richtext). */
+  richText?: RichTextDoc;
 }
 
 /** Uppdatera ett fakturautkast. Skickade, betalda och krediterade fakturor får inte ändras. */
@@ -186,7 +228,17 @@ export function updateInvoice(invoiceId: string, input: InvoiceUpdateInput, crea
   }
 
   invoice.lines = cloneLines(input.lines);
-  Object.assign(invoice, invoiceTaxReductionFields(input.rot, invoice.quoteId));
+  invoice.richText = sanitizeRichText(input.richText);
+  Object.assign(
+    invoice,
+    invoiceTaxReductionFields(
+      input.rot,
+      input.lines,
+      invoice.quoteId,
+      invoice.rot,
+      input.rot?.appliedTaxReduction != null ? "strict" : "clamp"
+    )
+  );
   applyTaxReductionContext(invoice, input);
   if (input.dueInDays != null) {
     invoice.paymentTermsDays = input.dueInDays;
@@ -240,7 +292,9 @@ export function createFinalInvoiceForJob(jobId: string, createdBy: Actor = "anva
 
   if (quote) {
     const version = currentVersion(quote);
-    const alreadyInvoiced = data.invoices.some((i) => i.jobId === jobId && i.status !== "krediterad");
+    const alreadyInvoiced = data.invoices.some(
+      (i) => i.jobId === jobId && i.status !== "krediterad" && i.type !== "kredit"
+    );
     if (!alreadyInvoiced) {
       return createInvoice(
         {
@@ -257,24 +311,17 @@ export function createFinalInvoiceForJob(jobId: string, createdBy: Actor = "anva
         createdBy
       );
     }
-    const exkl = Math.round(remaining / 1.25);
     return createInvoice(
       {
         customerId: job.customerId,
         jobId,
         quoteId: quote.id,
         type: "slutfaktura",
-        lines: [
-          {
-            id: uid(),
-            kind: "arbete",
-            description: `Slutfaktura – ${job.title} (resterande enligt offert #${quote.number})`,
-            qty: 1,
-            unit: "st",
-            unitPrice: exkl,
-            vatRate: 25,
-          },
-        ],
+        lines: shareLinesFromVersion(
+          version,
+          remaining,
+          `Slutfaktura – ${job.title} (resterande enligt offert #${quote.number})`
+        ),
         rot: rotFromJob(jobId),
         dueInDays: version.paymentTermsDays,
         lateInterestRate: version.lateInterestRate,
@@ -285,6 +332,53 @@ export function createFinalInvoiceForJob(jobId: string, createdBy: Actor = "anva
   }
 
   throw new Error("Uppdraget saknar godkänd offert att fakturera från");
+}
+
+/**
+ * Rader för en klumpsumma som ärver ett radsets momssats(er).
+ * Enhetlig momssats → en rad med rätt sats. Blandade satser → en rad per sats,
+ * proportionell mot satsens andel av underlaget, så momsredovisningen blir rätt.
+ * Delas av delbetalningar (offertens rader) och delkrediter (fakturans rader).
+ */
+function shareLines(
+  sourceLines: DocLine[],
+  sourceRot: RotRut | null,
+  amountInclVat: number,
+  description: string,
+  kind: DocLine["kind"] = "arbete"
+): DocLine[] {
+  const rates: VatRate[] = [...new Set(sourceLines.map((l) => l.vatRate))];
+  if (rates.length <= 1) {
+    const rate: VatRate = rates[0] ?? 25;
+    return [
+      {
+        id: uid(),
+        kind,
+        description,
+        qty: 1,
+        unit: "st",
+        unitPrice: Math.round(amountInclVat / (1 + rate / 100)),
+        vatRate: rate,
+      },
+    ];
+  }
+  const totals = docTotals(sourceLines, sourceRot);
+  return vatBreakdown(sourceLines)
+    .filter((row) => row.base + row.vat > 0)
+    .map((row) => ({
+      id: uid(),
+      kind,
+      description: `${description} – andel med ${row.rate} % moms`,
+      qty: 1,
+      unit: "st",
+      unitPrice: Math.round((row.base * amountInclVat) / totals.total),
+      // vatBreakdown grupperar på radernas momssatser, så raten är alltid en giltig VatRate.
+      vatRate: row.rate as VatRate,
+    }));
+}
+
+function shareLinesFromVersion(version: QuoteVersion, amountInclVat: number, description: string): DocLine[] {
+  return shareLines(version.lines, version.rot, amountInclVat, description);
 }
 
 /** Nästa faktura för uppdraget: del enligt betalningsplanen, annars resterande som slutfaktura. */
@@ -310,24 +404,17 @@ export function createPartInvoiceForQuote(quoteId: string, partIndex: number, cr
   if (!part) throw new Error("Delbetalningen finns inte i betalningsplanen");
   const totals = docTotals(version.lines, version.rot);
   const partInkl = Math.round((totals.total * part.percent) / 100);
-  const exkl = Math.round(partInkl / 1.25);
   return createInvoice(
     {
       customerId: quote.customerId,
       jobId: quote.jobId,
       quoteId: quote.id,
       type: "delbetalning",
-      lines: [
-        {
-          id: uid(),
-          kind: "arbete",
-          description: `Delbetalning ${partIndex + 1} av ${version.paymentPlan.length} – ${version.title} (${part.percent} % ${part.label.toLowerCase()})`,
-          qty: 1,
-          unit: "st",
-          unitPrice: exkl,
-          vatRate: 25,
-        },
-      ],
+      lines: shareLinesFromVersion(
+        version,
+        partInkl,
+        `Delbetalning ${partIndex + 1} av ${version.paymentPlan.length} – ${version.title} (${part.percent} % ${part.label.toLowerCase()})`
+      ),
       rot: null,
       dueInDays: Math.min(version.paymentTermsDays, 14),
       lateInterestRate: version.lateInterestRate,
@@ -380,11 +467,17 @@ export function issueInvoice(invoiceId: string, createdBy: Actor = "anvandare"):
   addVerification({
     date: now,
     description: `Faktura #${number} – ${customer.name}`,
-    entries: entriesInvoiceSent(invoice.lines, invoice.rot),
+    // Restfaktura för nekat ROT/RUT: fordran flyttas 1513 → 1510. Intäkten och
+    // momsen bokfördes redan på ursprungsfakturan och får inte bokas igen.
+    entries: invoice.deniedReductionOf
+      ? entriesDeniedReductionInvoice(invoiceTotals(invoice).toPay)
+      : entriesInvoiceSent(invoice.lines, invoice.rot),
     source: { type: "kundfaktura", id: invoice.id },
     confidence: "hog",
     createdBy: createdBy === "assistent" ? "assistent" : "auto",
-    explanation: `Fakturan bokfördes när den utfärdades (faktureringsmetoden): kundfordran mot intäkt och utgående moms. Beloppen kommer direkt från fakturan${invoice.rot ? `, och ${invoice.rot.type.toUpperCase()}-delen ligger som fordran på Skatteverket tills den betalas ut` : ""}.`,
+    explanation: invoice.deniedReductionOf
+      ? "Skatteverket nekade (en del av) ROT/RUT-utbetalningen, så fordran flyttades från Skatteverket till kunden. Ingen ny intäkt eller moms bokförs – de redovisades när ursprungsfakturan utfärdades."
+      : `Fakturan bokfördes när den utfärdades (faktureringsmetoden): kundfordran mot intäkt och utgående moms. Beloppen kommer direkt från fakturan${invoice.rot ? `, och ${invoice.rot.type.toUpperCase()}-delen ligger som fordran på Skatteverket tills den betalas ut` : ""}.`,
   });
 
   if (allocatedNew) {
@@ -394,6 +487,10 @@ export function issueInvoice(invoiceId: string, createdBy: Actor = "anvandare"):
       createdBy,
     });
   }
+  logAudit(createdBy, "faktura_utfardad", `Faktura #${number} utfärdades för ${customer.name} (${kr(invoiceTotals(invoice).toPay)}).`, {
+    targetType: "faktura",
+    targetId: invoice.id,
+  });
   logActivity(`Faktura #${number} utfärdades för ${customer.name} (${kr(invoiceTotals(invoice).toPay)}).`, {
     customerId: customer.id,
     entity: { type: "faktura", id: invoice.id },
@@ -403,8 +500,25 @@ export function issueInvoice(invoiceId: string, createdBy: Actor = "anvandare"):
   return invoice;
 }
 
-/** Mockad e-postleverans. Misslyckande får inte rulla tillbaka nummer eller skapa ny faktura. */
-export function deliverInvoice(invoiceId: string, createdBy: Actor = "anvandare"): Invoice {
+/** Leveransutfall från e-postlagret (document-mail.ts). Utan uppgift antas mock (ingen e-post konfigurerad). */
+export interface InvoiceDeliveryInfo {
+  mode: "mock" | "live" | "test";
+  ok: boolean;
+}
+
+const MOCK_DELIVERY: InvoiceDeliveryInfo = { mode: "mock", ok: true };
+
+/**
+ * Registrera leverans av en utfärdad faktura. E-posten skickas av
+ * document-mail.ts – här uppdateras tillstånd och aktivitet ärligt:
+ * "skickades med e-post" bara när ett riktigt mejl gått iväg.
+ * Misslyckande får inte rulla tillbaka nummer eller skapa ny faktura.
+ */
+export function deliverInvoice(
+  invoiceId: string,
+  createdBy: Actor = "anvandare",
+  delivery: InvoiceDeliveryInfo = MOCK_DELIVERY
+): Invoice {
   const invoice = getInvoice(invoiceId);
   if (!invoice) throw new Error("Fakturan finns inte");
   if (invoice.status === "utkast") {
@@ -417,16 +531,27 @@ export function deliverInvoice(invoiceId: string, createdBy: Actor = "anvandare"
   invoice.lastSentAt = now;
 
   const number = invoice.number;
-  const to = customer.email || "(saknar e-post)";
-  const from = db().settings.email || db().settings.name;
-  console.info(
-    `[driva:email] Från ${from}: Faktura #${number} till ${to} (${resend ? "skicka igen" : "första utskick"}). Ingen riktig e-post skickas i demon.`
-  );
+  if (delivery.mode === "mock") {
+    console.info(
+      `[driva:email] Faktura #${number} markerades som skickad. Ingen e-post är konfigurerad (RESEND_API_KEY + MAIL_FROM saknas) – dela kundlänken manuellt.`
+    );
+  }
 
+  const emailed = delivery.mode !== "mock" && delivery.ok;
+  if (!resend) {
+    logAudit(createdBy, "faktura_skickad", `Faktura #${number} ${emailed ? "skickades med e-post" : "markerades som skickad (ingen e-post konfigurerad)"}.`, {
+      targetType: "faktura",
+      targetId: invoice.id,
+    });
+  }
   logActivity(
     resend
-      ? `Faktura #${number} skickades igen till ${customer.name}.`
-      : `Faktura #${number} skickades till ${customer.name} (${kr(invoiceTotals(invoice).toPay)}).`,
+      ? emailed
+        ? `Faktura #${number} skickades igen med e-post till ${customer.name}.`
+        : `Faktura #${number} markerades som skickad igen – ingen e-post är konfigurerad, dela kundlänken.`
+      : emailed
+        ? `Faktura #${number} skickades med e-post till ${customer.name} (${kr(invoiceTotals(invoice).toPay)}).`
+        : `Faktura #${number} markerades som skickad (${kr(invoiceTotals(invoice).toPay)}) – ingen e-post är konfigurerad, dela kundlänken med ${customer.name}.`,
     {
       customerId: customer.id,
       entity: { type: "faktura", id: invoice.id },
@@ -443,53 +568,134 @@ export function sendInvoice(invoiceId: string, createdBy: Actor = "anvandare"): 
   return deliverInvoice(invoiceId, createdBy);
 }
 
-export function sendReminder(invoiceId: string, by: Actor = "anvandare"): void {
+export function sendReminder(
+  invoiceId: string,
+  by: Actor = "anvandare",
+  delivery: InvoiceDeliveryInfo = MOCK_DELIVERY
+): void {
   const invoice = getInvoice(invoiceId);
-  if (!invoice || invoice.status !== "skickad") return;
+  if (!invoice || !(invoice.status === "skickad" || invoice.status === "delbetald") || invoice.type === "kredit") return;
   invoice.reminders.push(new Date().toISOString());
   const customer = requireCustomer(invoice.customerId);
+  const emailed = delivery.mode !== "mock" && delivery.ok;
+  const who = by === "assistent" ? "Assistenten" : "Du";
   logActivity(
-    `${by === "assistent" ? "Assistenten skickade" : "Du skickade"} en betalningspåminnelse för faktura #${invoice.number} till ${customer.name}.`,
+    emailed
+      ? `${who} skickade en betalningspåminnelse med e-post för faktura #${invoice.number} till ${customer.name}.`
+      : `${who} noterade en betalningspåminnelse för faktura #${invoice.number} – ingen e-post är konfigurerad, kontakta ${customer.name} direkt.`,
     { customerId: customer.id, entity: { type: "faktura", id: invoice.id }, createdBy: by }
   );
   save();
 }
 
-/** Markera betald och bokför betalningen (används av bankmatchningen). */
-export function markInvoicePaid(invoiceId: string, opts: { bankTransactionId?: string; matchedBy: "auto" | "manuell" }): void {
+/* --------------------------------- Betalningar --------------------------------- */
+
+export interface RegisterPaymentInput {
+  /** Faktiskt bankbelopp i kronor. Utan belopp betalas hela utestående (manuell markering). */
+  amount?: number;
+  bankTransactionId?: string;
+  matchedBy: "auto" | "manuell";
+  /** Klartext från matchningsmotorn, t.ex. "Matchad på exakt OCR + exakt belopp". */
+  matchReason?: string;
+  /** Numerisk matchningskonfidens (0–1) från motorn. Saknas = manuell/1.0. */
+  confidence?: number;
+}
+
+export interface RegisterPaymentResult {
+  invoice: Invoice;
+  payment: { id: string; amount: number };
+  /** Fakturans status efter betalningen. */
+  status: "betald" | "delbetald";
+  /** Öresdiff som bokades på 3740 (±, 0 om ingen). */
+  oresDiff: number;
+  /** Överbetalning som bokades som skuld till kunden (2420). */
+  excess: number;
+  /** Kvarvarande fordran efter betalningen. */
+  outstanding: number;
+}
+
+/**
+ * Registrera en kundinbetalning – ENDA vägen att boka betalning av en faktura.
+ *
+ * Bokar ALLTID det faktiska bankbeloppet mot 1930 (aldrig fakturans belopp
+ * när de skiljer sig):
+ *   * exakt belopp            → fordran bockas av, status "betald".
+ *   * avvikelse ≤ öre-tolerans → fordran bockas av helt, differensen bokas på
+ *                                3740 Öres- och kronutjämning, status "betald".
+ *   * underbetalning därutöver → delbetalning: fordran minskas med det
+ *                                inbetalda, status "delbetald" (rest kvarstår).
+ *   * överbetalning därutöver  → fordran bockas av, överskottet bokas som
+ *                                skuld till kunden (2420) och blir en
+ *                                exception – aldrig en intäkt, aldrig tyst.
+ */
+export function registerInvoicePayment(invoiceId: string, input: RegisterPaymentInput): RegisterPaymentResult {
   const data = db();
   const invoice = getInvoice(invoiceId);
-  if (!invoice || invoice.status === "betald") return;
+  if (!invoice) throw new Error("Fakturan finns inte");
   if (invoice.status === "utkast") throw new Error("Ett utkast kan inte markeras som betalt.");
   if (invoice.status === "krediterad") throw new Error("En krediterad faktura kan inte markeras som betald.");
-  const customer = requireCustomer(invoice.customerId);
-  const t = invoiceTotals(invoice);
-  const now = new Date().toISOString();
-  invoice.status = "betald";
-  invoice.paidAt = now;
+  if (invoice.type === "kredit") throw new Error("En kreditfaktura är ingen fordran och kan inte markeras som betald.");
+  if (invoice.status === "betald") throw new Error(`Faktura #${invoice.number} är redan betald.`);
 
+  const customer = requireCustomer(invoice.customerId);
+  const outstandingBefore = invoiceOutstanding(invoice);
+  const amount = input.amount ?? outstandingBefore;
+  if (!Number.isInteger(amount) || amount < 1) {
+    throw new Error("Betalningsbeloppet måste vara minst 1 kr (hela kronor).");
+  }
+
+  const diff = outstandingBefore - amount; // >0 = underbetalt, <0 = överbetalt
+  const withinTolerance = Math.abs(diff) <= ORE_TOLERANS_KR;
+  const settles = diff <= 0 || withinTolerance;
+  const settleReceivable = settles ? outstandingBefore : amount;
+  const oresDiff = settles && withinTolerance ? diff : 0;
+  const excess = diff < 0 && !withinTolerance ? -diff : 0;
+
+  const now = new Date().toISOString();
   const payment = {
     id: uid(),
     invoiceId,
-    bankTransactionId: opts.bankTransactionId,
-    amount: t.toPay,
+    bankTransactionId: input.bankTransactionId,
+    amount,
     date: now,
-    matchedBy: opts.matchedBy,
+    matchedBy: input.matchedBy,
   };
   data.payments.push(payment);
+
+  const newStatus: "betald" | "delbetald" = settles ? "betald" : "delbetald";
+  invoice.status = newStatus;
+  if (newStatus === "betald") invoice.paidAt = now;
+  if (excess > 0) invoice.overpaymentCredit = (invoice.overpaymentCredit ?? 0) + excess;
+
+  const matchText =
+    input.matchReason ??
+    (input.matchedBy === "auto" ? "Matchad automatiskt mot fakturan (OCR/belopp)" : "Matchad manuellt mot fakturan");
+  const diffText =
+    oresDiff !== 0
+      ? ` Differensen ${kr(Math.abs(oresDiff))} bokfördes som öresavrundning (3740).`
+      : excess > 0
+        ? ` Överskottet ${kr(excess)} bokfördes som skuld till kunden (2420 Förskott från kunder) – återbetala eller kreditera.`
+        : newStatus === "delbetald"
+          ? ` Fakturan är delbetald – ${kr(outstandingBefore - amount)} återstår.`
+          : "";
 
   const ver = addVerification({
     date: now,
     description: `Betalning faktura #${invoice.number} – ${customer.name}`,
-    entries: entriesInvoicePaid(t.toPay),
+    entries: entriesInvoicePaymentReceived({
+      bankAmount: amount,
+      settleReceivable,
+      oresDiff,
+      excessToCustomerCredit: excess,
+    }),
     source: { type: "betalning", id: payment.id },
-    confidence: "hog",
+    confidence: input.confidence != null ? verificationConfidence(input.confidence) : "hog",
     createdBy: "auto",
-    explanation: `Inbetalningen ${opts.matchedBy === "auto" ? "matchades automatiskt mot fakturan (OCR/belopp)" : "matchades manuellt mot fakturan"}: pengarna sattes in på företagskontot och kundfordran bockades av.`,
+    explanation: `${matchText}: det faktiska bankbeloppet ${kr(amount)} sattes in på företagskontot och kundfordran ${newStatus === "betald" ? "bockades av" : "minskades"}.${diffText}`,
   });
 
-  if (opts.bankTransactionId) {
-    const tx = data.bankTransactions.find((x) => x.id === opts.bankTransactionId);
+  if (input.bankTransactionId) {
+    const tx = data.bankTransactions.find((x) => x.id === input.bankTransactionId);
     if (tx) {
       tx.status = "bokford";
       tx.matchedType = "faktura";
@@ -498,33 +704,106 @@ export function markInvoicePaid(invoiceId: string, opts: { bankTransactionId?: s
     }
   }
 
+  logAudit("system", "betalning_matchad", `Betalning ${kr(amount)} matchades mot faktura #${invoice.number} (${matchText}).`, {
+    targetType: "faktura",
+    targetId: invoiceId,
+  });
   logActivity(
-    `Betalning på ${kr(t.toPay)} från ${customer.name} matchades mot faktura #${invoice.number} och bokfördes.`,
+    newStatus === "betald"
+      ? `Betalning på ${kr(amount)} från ${customer.name} matchades mot faktura #${invoice.number} och bokfördes.${excess > 0 ? ` Överbetalning ${kr(excess)} väntar på hantering.` : ""}`
+      : `Delbetalning på ${kr(amount)} från ${customer.name} matchades mot faktura #${invoice.number} – ${kr(invoiceOutstanding(invoice))} återstår.`,
     { customerId: customer.id, entity: { type: "faktura", id: invoiceId } }
   );
   save();
+  return {
+    invoice,
+    payment: { id: payment.id, amount },
+    status: newStatus,
+    oresDiff,
+    excess,
+    outstanding: invoiceOutstanding(invoice),
+  };
 }
 
 /**
- * Kreditera en faktura helt. Delkredit stöds inte i V1.
+ * Bakåtkompatibel hjälpare: markera hela utestående som betalt (manuell
+ * markering/assistenten). Idempotent no-op om fakturan redan är betald.
+ */
+export function markInvoicePaid(invoiceId: string, opts: { bankTransactionId?: string; matchedBy: "auto" | "manuell" }): void {
+  const invoice = getInvoice(invoiceId);
+  if (!invoice || invoice.status === "betald") return;
+  registerInvoicePayment(invoiceId, { bankTransactionId: opts.bankTransactionId, matchedBy: opts.matchedBy });
+}
+
+export interface CreditInvoiceOptions {
+  /** Belopp inkl. moms att kreditera (delkredit). Utan belopp krediteras hela fakturan. */
+  amountInclVat?: number;
+}
+
+/** Blockerar kreditering när ROT/RUT-ärendet gått för långt för att en kredit ska vara entydig. */
+function assertCreditableTaxReductionState(original: Invoice): void {
+  const t = invoiceTotals(original);
+  if (!original.rot || t.deduction <= 0) return;
+  const application = original.jobId ? getJob(original.jobId)?.taxReductionApplication : original.taxReductionApplication;
+  const status = application?.status;
+  if (status === "underlag_skapat" || status === "godkant" || status === "delvis_godkant" || status === "nekat") {
+    throw new Error(
+      "ROT/RUT-ärendet är ansökt eller avgjort – fakturan kan inte krediteras rakt av. Hantera utfallet via restfaktura/återbetalning i ROT/RUT-flödet."
+    );
+  }
+}
+
+/**
+ * Kreditera en faktura – helt eller delvis.
+ *
+ *   * Hel kredit: originalet → "krediterad", intäkt/moms/fordran återförs.
+ *     Betalda och delbetalda original får krediteras – det inbetalda blir en
+ *     skuld till kunden och en "återbetala"-exception tills utbetalningen bokförs.
+ *   * Delkredit (amountInclVat): proportionella rader per momssats, originalet
+ *     behåller sin status och utestående minskar. Delkredit av ROT/RUT-fakturor
+ *     stöds inte (avdraget mot Skatteverket blir tvetydigt) – kreditera helt.
+ *
  * Krediten får eget nummer, refererar originalet, fryser snapshot och bokför omvänd moms.
  */
-export function creditInvoice(invoiceId: string, createdBy: Actor = "anvandare"): Invoice {
+export function creditInvoice(invoiceId: string, createdBy: Actor = "anvandare", opts: CreditInvoiceOptions = {}): Invoice {
   const data = db();
   const original = getInvoice(invoiceId);
   if (!original) throw new Error("Fakturan finns inte");
   if (original.status === "utkast") throw new Error("Ett utkast kan inte krediteras. Kasta det i stället.");
   if (original.status === "krediterad") throw new Error("Fakturan är redan krediterad.");
   if (original.type === "kredit") throw new Error("En kreditfaktura kan inte krediteras.");
-  if (original.status === "betald") {
-    throw new Error("Betald faktura kan inte krediteras i V1. Del- och återbetalning av betald faktura stöds inte ännu.");
-  }
   if (original.number == null) throw new Error("Originalfakturan saknar nummer.");
+  assertCreditableTaxReductionState(original);
+
+  const totals = invoiceTotals(original);
+  const alreadyCredited = invoiceCreditedAmount(original.id);
+  const paid = invoicePaidAmount(original.id);
+  const remainingToCredit = totals.toPay - alreadyCredited;
+
+  const partialAmount = opts.amountInclVat != null ? Math.round(opts.amountInclVat) : undefined;
+  const isPartial = partialAmount != null && partialAmount < remainingToCredit;
+
+  if (partialAmount != null) {
+    if (!Number.isFinite(partialAmount) || partialAmount < 1) {
+      throw new Error("Kreditbeloppet måste vara minst 1 kr.");
+    }
+    if (partialAmount > remainingToCredit) {
+      throw new Error(`Kreditbeloppet kan inte överstiga kvarvarande belopp (${kr(remainingToCredit)}).`);
+    }
+    if (isPartial && original.rot && totals.deduction > 0) {
+      throw new Error("Delkredit stöds inte för fakturor med ROT/RUT-avdrag – kreditera hela fakturan.");
+    }
+  }
+  if (!isPartial && alreadyCredited > 0 && partialAmount == null) {
+    throw new Error(`Fakturan är delvis krediterad – kreditera resterande ${kr(remainingToCredit)} som delkredit.`);
+  }
 
   const customer = requireCustomer(original.customerId);
   const now = new Date().toISOString();
   const number = allocateNextInvoiceNumber();
   const ocr = ocrForInvoice(number);
+  const sourceLines = original.issuedSnapshot?.lines ?? original.lines;
+  const sourceRot = original.issuedSnapshot?.rot ?? original.rot;
   const credit: Invoice = {
     id: uid(),
     number,
@@ -533,10 +812,12 @@ export function creditInvoice(invoiceId: string, createdBy: Actor = "anvandare")
     quoteId: original.quoteId,
     type: "kredit",
     status: "utkast",
-    lines: cloneLines(original.issuedSnapshot?.lines ?? original.lines),
-    rot: original.issuedSnapshot?.rot ?? original.rot,
-    taxReductionTerms: original.issuedSnapshot?.taxReductionTerms ?? original.taxReductionTerms ?? null,
-    taxReductionDetails: original.issuedSnapshot?.taxReductionDetails ?? original.taxReductionDetails ?? null,
+    lines: isPartial
+      ? shareLines(sourceLines, sourceRot, partialAmount!, `Delkredit av faktura #${original.number}`, "ovrigt")
+      : cloneLines(sourceLines),
+    rot: isPartial ? null : sourceRot,
+    taxReductionTerms: isPartial ? null : (original.issuedSnapshot?.taxReductionTerms ?? original.taxReductionTerms ?? null),
+    taxReductionDetails: isPartial ? null : (original.issuedSnapshot?.taxReductionDetails ?? original.taxReductionDetails ?? null),
     issueDate: now,
     dueDate: now,
     paymentTermsDays: original.paymentTermsDays,
@@ -546,6 +827,7 @@ export function creditInvoice(invoiceId: string, createdBy: Actor = "anvandare")
     token: publicToken(),
     ocr,
     creditsInvoiceId: original.id,
+    deniedReductionOf: original.deniedReductionOf,
     createdBy,
     createdAt: now,
   };
@@ -580,26 +862,132 @@ export function creditInvoice(invoiceId: string, createdBy: Actor = "anvandare")
     creditsInvoiceNumber: original.number,
   });
 
-  original.status = "krediterad";
   data.invoices.push(credit);
+  const creditToPay = invoiceTotals(credit).toPay;
+
+  // Statusövergång härleds ur belopp – aldrig ad hoc:
+  //   * hel kredit → "krediterad".
+  //   * delkredit som nollställer utestående → "betald" om inbetalningar finns
+  //     (fordran slutreglerad), annars "krediterad" (helt krediterad i steg).
+  //   * annars: status orörd, utestående minskar.
+  if (!isPartial) {
+    original.status = "krediterad";
+  } else {
+    const outstandingAfter = totals.toPay - paid - alreadyCredited - creditToPay;
+    if (outstandingAfter <= 0 && original.status !== "betald") {
+      original.status = paid > 0 ? "betald" : "krediterad";
+      if (paid > 0) original.paidAt = original.paidAt ?? now;
+    }
+  }
 
   addVerification({
     date: now,
     description: `Kreditfaktura #${number} (krediterar #${original.number}) – ${customer.name}`,
-    entries: entriesCredit(credit.lines, credit.rot),
+    // En restfaktura för nekat avdrag bokades som omflytt 1513 → 1510;
+    // krediteringen flyttar tillbaka fordran i stället för att återföra intäkt.
+    entries: credit.deniedReductionOf
+      ? entriesDeniedReductionCredit(creditToPay)
+      : entriesCredit(credit.lines, credit.rot),
     source: { type: "kundfaktura", id: credit.id },
     confidence: "hog",
     createdBy: createdBy === "assistent" ? "assistent" : "auto",
-    explanation: `Kreditfakturan återför faktura #${original.number}: intäkten, momsen och kundfordran bokas bort med omvända tecken. Originalverifikationen står kvar – inget skrivs över.`,
+    explanation: credit.deniedReductionOf
+      ? `Kreditfakturan återför restfakturan #${original.number} för nekat ROT/RUT: fordran flyttas tillbaka till Skatteverkskontot. Ingen intäkt eller moms påverkas.`
+      : isPartial
+        ? `Delkrediten återför ${kr(creditToPay)} av faktura #${original.number}: intäkt, moms och kundfordran minskas proportionellt. Originalverifikationen står kvar – inget skrivs över.`
+        : `Kreditfakturan återför faktura #${original.number}: intäkten, momsen och kundfordran bokas bort med omvända tecken. Originalverifikationen står kvar – inget skrivs över.`,
   });
 
-  logActivity(`Faktura #${original.number} krediterades med kreditfaktura #${number}.`, {
-    customerId: customer.id,
-    entity: { type: "faktura", id: credit.id },
-    createdBy,
+  const refundDue = creditRefundDue(original);
+  logAudit(createdBy, "faktura_krediterad", `Faktura #${original.number} krediterades med #${number} (${kr(creditToPay)}${isPartial ? ", delkredit" : ""}).`, {
+    targetType: "faktura",
+    targetId: original.id,
   });
+  logActivity(
+    `Faktura #${original.number} krediterades ${isPartial ? `delvis (${kr(creditToPay)})` : "helt"} med kreditfaktura #${number}.${refundDue > 0 ? ` ${kr(refundDue)} är inbetalt och ska återbetalas till kunden.` : ""}`,
+    {
+      customerId: customer.id,
+      entity: { type: "faktura", id: credit.id },
+      createdBy,
+    }
+  );
   save();
   return credit;
+}
+
+/**
+ * Belopp som ska återbetalas till kunden: inbetalt som inte längre motsvaras
+ * av en fordran (kreditering av betald/delbetald faktura) och som ännu inte
+ * återbetalats. EN härledning – actionmotorn och UI:t använder samma.
+ */
+export function creditRefundDue(invoice: Invoice): number {
+  if (invoice.type === "kredit") return 0;
+  if (invoice.refund) return 0;
+  const paid = invoicePaidAmount(invoice.id);
+  if (paid <= 0) return 0;
+  const t = invoiceTotals(invoice);
+  const credited = invoiceCreditedAmount(invoice.id);
+  if (invoice.status === "krediterad") return paid;
+  // Delkrediterad: återbetala det som inbetalts utöver kvarvarande fordran.
+  return Math.max(0, paid + credited - t.toPay);
+}
+
+/**
+ * Registrera återbetalning till kund (efter kreditering av betald faktura).
+ * Bokför 1510 debet / 1930 kredit och stänger "återbetala"-exceptionen.
+ * Idempotent: en faktura kan bara ha EN återbetalning.
+ */
+export function registerCreditRefund(
+  invoiceId: string,
+  input: { bankTransactionId?: string; amount?: number; by?: Actor } = {}
+): Invoice {
+  const invoice = getInvoice(invoiceId);
+  if (!invoice) throw new Error("Fakturan finns inte");
+  if (invoice.refund) throw new Error("Återbetalningen är redan registrerad.");
+  const due = creditRefundDue(invoice);
+  if (due <= 0) throw new Error("Fakturan har ingen återbetalning att registrera.");
+  const amount = input.amount ?? due;
+  if (!Number.isInteger(amount) || amount < 1 || amount > due) {
+    throw new Error(`Återbetalningsbeloppet måste vara 1–${due} kr.`);
+  }
+  const customer = requireCustomer(invoice.customerId);
+  const now = new Date().toISOString();
+  // Skulden kan sitta på 2420 (överbetalning) och/eller som negativ 1510
+  // (kreditering av betald faktura) – nollställ i den ordningen.
+  const fromOverpayment = Math.min(amount, invoice.overpaymentCredit ?? 0);
+  const fromCredit = amount - fromOverpayment;
+  const ver = addVerification({
+    date: now,
+    description: `Återbetalning faktura #${invoice.number} – ${customer.name}`,
+    entries: entriesCustomerRefund({ fromOverpayment, fromCredit }),
+    source: { type: "betalning", id: invoice.id },
+    confidence: "hog",
+    createdBy: input.by === "assistent" ? "assistent" : "anvandare",
+    explanation:
+      fromCredit > 0
+        ? `Fakturan krediterades efter att kunden betalat – utbetalningen på ${kr(amount)} nollställer skulden till kunden${fromOverpayment > 0 ? " (delvis överbetalning på 2420, resten negativ kundfordran)" : " (den negativa kundfordran)"}.`
+        : `Kunden betalade för mycket – utbetalningen på ${kr(amount)} nollställer skulden som bokfördes på 2420 Förskott från kunder.`,
+  });
+  if (fromOverpayment > 0) {
+    const remainingExcess = (invoice.overpaymentCredit ?? 0) - fromOverpayment;
+    invoice.overpaymentCredit = remainingExcess > 0 ? remainingExcess : undefined;
+  }
+  invoice.refund = { amount, at: now, verificationId: ver.id, bankTransactionId: input.bankTransactionId };
+  if (input.bankTransactionId) {
+    const tx = db().bankTransactions.find((t) => t.id === input.bankTransactionId);
+    if (tx) {
+      tx.status = "bokford";
+      tx.matchedType = "aterbetalning";
+      tx.matchedId = invoiceId;
+      tx.verificationId = ver.id;
+    }
+  }
+  logActivity(`${kr(amount)} återbetalades till ${customer.name} för krediterad faktura #${invoice.number}.`, {
+    customerId: customer.id,
+    entity: { type: "faktura", id: invoiceId },
+  });
+  save();
+  return invoice;
 }
 
 /** Kasta ett utkast. Utfärdade fakturor får inte tas bort. */
@@ -646,9 +1034,11 @@ export function createDeniedReductionInvoice(
 
   const kind = original.rot.type === "rot" ? "ROT" : "RUT";
   const originalLabel = original.number != null ? `faktura #${original.number}` : "tidigare faktura";
-  const exkl = Math.round(amount / 1.25);
 
-  return createInvoice(
+  // Restbeloppet är samma ersättning som redan fakturerats och momsredovisats
+  // på ursprungsfakturan – därför 0 % moms här och omflytt av fordran i böckerna
+  // (1513 → 1510) i stället för ny intäkt.
+  const invoice = createInvoice(
     {
       customerId: original.customerId,
       jobId: original.jobId,
@@ -658,11 +1048,11 @@ export function createDeniedReductionInvoice(
         {
           id: uid(),
           kind: "ovrigt",
-          description: `Resterande belopp efter att Skatteverket nekat ${kr(amount)} av ${kind}-avdraget (${originalLabel})`,
+          description: `Resterande belopp efter att Skatteverket nekat ${kr(amount)} av ${kind}-avdraget (${originalLabel}). Moms redovisad på ursprungsfakturan.`,
           qty: 1,
           unit: "st",
-          unitPrice: exkl,
-          vatRate: 25,
+          unitPrice: amount,
+          vatRate: 0,
         },
       ],
       rot: null,
@@ -672,6 +1062,9 @@ export function createDeniedReductionInvoice(
     },
     createdBy
   );
+  invoice.deniedReductionOf = original.id;
+  save();
+  return invoice;
 }
 
 export { InvoiceNotReadyError };

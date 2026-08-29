@@ -1,8 +1,15 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
-import type { Job, Quote } from "../types";
+import type { Job, Quote, WorkLocation } from "../types";
 import { currentVersion, requireCustomer } from "./data";
 import { logActivity } from "./activity";
+import {
+  addWorkLocation,
+  applyWorkLocationToJob,
+  defaultWorkLocation,
+  getWorkLocation,
+  type WorkLocationInput,
+} from "./work-locations";
 
 export function createJobFromQuote(quote: Quote): Job {
   const data = db();
@@ -18,6 +25,7 @@ export function createJobFromQuote(quote: Quote): Job {
 
   const version = currentVersion(quote);
   const customer = requireCustomer(quote.customerId);
+  const location = defaultWorkLocation(customer);
   const job: Job = {
     id: uid(),
     customerId: quote.customerId,
@@ -30,6 +38,7 @@ export function createJobFromQuote(quote: Quote): Job {
     notes: "",
     createdAt: new Date().toISOString(),
   };
+  if (location) applyWorkLocationToJob(job, location);
   data.jobs.push(job);
   quote.jobId = job.id;
   save();
@@ -41,9 +50,21 @@ export function createJob(input: {
   title: string;
   description?: string;
   startDate?: string;
+  workLocationId?: string;
+  newWorkLocation?: WorkLocationInput;
 }): Job {
   const data = db();
   const customer = requireCustomer(input.customerId);
+  let location: WorkLocation | undefined;
+  if (input.newWorkLocation) {
+    location = addWorkLocation(customer.id, { ...input.newWorkLocation, asDefault: false });
+  } else if (input.workLocationId) {
+    location = getWorkLocation(customer, input.workLocationId);
+  } else {
+    const locs = customer.workLocations ?? [];
+    if (locs.length === 1) location = locs[0];
+    else if (locs.length > 1) location = defaultWorkLocation(customer);
+  }
   const job: Job = {
     id: uid(),
     customerId: input.customerId,
@@ -56,6 +77,7 @@ export function createJob(input: {
     notes: "",
     createdAt: new Date().toISOString(),
   };
+  if (location) applyWorkLocationToJob(job, location);
   data.jobs.push(job);
   logActivity(`Uppdraget ${job.title} skapades för ${customer.name}.`, {
     customerId: customer.id,

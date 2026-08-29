@@ -35,6 +35,7 @@ import {
 import type { WebsiteSection, WebsiteSectionItem } from "@/lib/types";
 import { DEFAULT_PRIMARY_CTA_LABEL, PRIMARY_CTA_LABEL_MAX } from "@/lib/types";
 import { swedishFormProps } from "@/lib/swedish-validity";
+import { FieldError, focusField, invalidFieldCls } from "./form-validation";
 
 /**
  * Sektionsdata för redigeringslistan – utan tunga bild-data-URL:er.
@@ -130,6 +131,8 @@ export function SiteContactForm({
           required
           name="name"
           placeholder="Namn"
+          aria-label="Namn"
+          autoComplete="name"
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
@@ -140,6 +143,9 @@ export function SiteContactForm({
           type="email"
           name="email"
           placeholder="E-post"
+          aria-label="E-post"
+          autoComplete="email"
+          autoCapitalize="none"
           value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })}
           className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
@@ -148,7 +154,10 @@ export function SiteContactForm({
       </div>
       <input
         name="phone"
+        type="tel"
         placeholder="Telefon (valfritt)"
+        aria-label="Telefon (valfritt)"
+        autoComplete="tel"
         value={form.phone}
         onChange={(e) => setForm({ ...form, phone: e.target.value })}
         className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
@@ -159,6 +168,7 @@ export function SiteContactForm({
         name="message"
         rows={4}
         placeholder="Berätta kort om vad du behöver hjälp med …"
+        aria-label="Beskriv vad du behöver hjälp med"
         value={form.message}
         onChange={(e) => setForm({ ...form, message: e.target.value })}
         className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
@@ -187,10 +197,17 @@ const EXAMPLES = [
 
 export function GenerateWebsiteForm() {
   const [description, setDescription] = useState("");
+  const [missingHint, setMissingHint] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
-  function generate(text: string) {
+  function generate() {
+    const text = description.trim();
+    if (!text) {
+      setMissingHint(true);
+      focusField("hemsida-ai-beskrivning");
+      return;
+    }
     startTransition(async () => {
       await generateWebsiteAction(text);
       router.refresh();
@@ -200,30 +217,41 @@ export function GenerateWebsiteForm() {
   return (
     <div>
       <textarea
+        id="hemsida-ai-beskrivning"
         value={description}
-        onChange={(e) => setDescription(e.target.value)}
+        onChange={(e) => {
+          setDescription(e.target.value);
+          if (e.target.value.trim()) setMissingHint(false);
+        }}
         rows={3}
         placeholder={`T.ex. "${EXAMPLES[0]}"`}
-        className="w-full rounded-2xl border border-line-strong bg-card px-4 py-3.5 text-[15px] leading-relaxed placeholder:text-muted focus:border-accent"
+        aria-invalid={missingHint || undefined}
+        aria-describedby={missingHint ? "hemsida-ai-beskrivning-fel" : undefined}
+        className={cx(
+          "w-full rounded-2xl border border-line-strong bg-card px-4 py-3.5 text-[15px] leading-relaxed placeholder:text-muted focus:border-accent",
+          missingHint && invalidFieldCls
+        )}
       />
+      <FieldError id="hemsida-ai-beskrivning-fel">
+        {missingHint ? "Beskriv först ditt företag – vad ni gör och var. Eller utgå från ett exempel nedan." : null}
+      </FieldError>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1.5">
           {EXAMPLES.map((ex) => (
             <button
               key={ex}
               type="button"
-              onClick={() => setDescription(ex)}
+              onClick={() => {
+                setDescription(ex);
+                setMissingHint(false);
+              }}
               className="max-w-60 truncate rounded-full border border-line bg-card px-3 py-1.5 text-[12px] text-soft transition-colors hover:border-accent hover:text-ink"
             >
               {ex.slice(0, 52)}…
             </button>
           ))}
         </div>
-        <button
-          className={buttonClasses("primary", "lg")}
-          disabled={!description.trim() || pending}
-          onClick={() => generate(description.trim())}
-        >
+        <button className={buttonClasses("primary", "lg")} disabled={pending} onClick={generate}>
           <WandSparkles className={cx("size-4.5", pending && "animate-pulse")} />
           {pending ? "Bygger din hemsida …" : "Skapa hemsida med AI"}
         </button>
@@ -398,13 +426,19 @@ function VisibilitySwitch({
         onChange(!on);
       }}
       onPointerDown={(e) => e.stopPropagation()}
-      className="inline-flex h-8 w-9 shrink-0 items-center justify-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
+      className="inline-flex h-8 w-11 shrink-0 items-center justify-center rounded-lg p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50"
     >
-      <span className={cx("relative h-5 w-9 rounded-full transition-colors", on ? "bg-ok" : "bg-line-strong")}>
+      <span
+        aria-hidden="true"
+        className={cx(
+          "flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors",
+          on ? "bg-ok" : "bg-line-strong",
+        )}
+      >
         <span
           className={cx(
-            "absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform",
-            on ? "translate-x-4" : "translate-x-0.5",
+            "size-4 shrink-0 rounded-full bg-white shadow-sm transition-transform duration-200",
+            on ? "translate-x-4" : "translate-x-0",
           )}
         />
       </span>
@@ -550,7 +584,7 @@ function SectionRow({
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerCancel}
             className={cx(
-              "hidden shrink-0 touch-none select-none rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink sm:block",
+              "hidden shrink-0 touch-none select-none rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink sm:block max-lg:p-2.5",
               dragging ? "cursor-grabbing" : "cursor-grab",
             )}
             aria-label="Dra för att ändra ordning"
@@ -567,7 +601,7 @@ function SectionRow({
                 e.stopPropagation();
                 onMoveUp();
               }}
-              className="rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink disabled:opacity-30"
+              className="rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink disabled:opacity-30 max-lg:p-2.5"
               aria-label="Flytta upp"
             >
               <ChevronUp className="size-4" />
@@ -579,7 +613,7 @@ function SectionRow({
                 e.stopPropagation();
                 onMoveDown();
               }}
-              className="rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink disabled:opacity-30"
+              className="rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink disabled:opacity-30 max-lg:p-2.5"
               aria-label="Flytta ner"
             >
               <ChevronDown className="size-4" />
@@ -771,12 +805,19 @@ function SectionEditor({
                 }}
                 maxLength={PRIMARY_CTA_LABEL_MAX}
                 placeholder={DEFAULT_PRIMARY_CTA_LABEL}
-                className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
+                aria-invalid={ctaError ? true : undefined}
+                aria-describedby={ctaError ? "hero-cta-label-fel" : undefined}
+                className={cx(
+                  "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent",
+                  ctaError && invalidFieldCls
+                )}
               />
               <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
                 Samma knapp i sidhuvudet och på startsidan. Till exempel Kontakta oss, Få en offert eller Boka hembesök.
               </p>
-              {ctaError ? <p className="mt-1.5 text-[13px] text-danger">{ctaError}</p> : null}
+              <FieldError id="hero-cta-label-fel" className="mt-1.5">
+                {ctaError}
+              </FieldError>
             </div>
           ) : null}
 
@@ -788,7 +829,6 @@ function SectionEditor({
               error={imageError}
               onError={setImageError}
               onBusy={setReadingImage}
-              variant="section"
             />
           ) : null}
 
@@ -841,21 +881,23 @@ function SectionEditor({
             </button>
             <button
               className={buttonClasses("primary")}
-              disabled={pending || readingImage || (isHero && !cta.trim())}
-              onClick={() =>
+              disabled={pending || readingImage}
+              onClick={() => {
+                if (isHero) {
+                  const label = cta.trim();
+                  if (!label) {
+                    setCtaError("Fyll i knapptexten – till exempel Kontakta oss.");
+                    focusField("hero-cta-label");
+                    return;
+                  }
+                  if (label.length > PRIMARY_CTA_LABEL_MAX) {
+                    setCtaError("Knapptexten är för lång.");
+                    focusField("hero-cta-label");
+                    return;
+                  }
+                }
                 startTransition(async () => {
                   try {
-                    if (isHero) {
-                      const label = cta.trim();
-                      if (!label) {
-                        setCtaError("Fyll i det här fältet.");
-                        return;
-                      }
-                      if (label.length > PRIMARY_CTA_LABEL_MAX) {
-                        setCtaError("Knapptexten är för lång.");
-                        return;
-                      }
-                    }
                     // Bilden skickas bara om den faktiskt ändrats (data-URL:er är tunga).
                     const result = await updateSectionAction(sectionId, {
                       heading: h,
@@ -877,8 +919,8 @@ function SectionEditor({
                   } catch (err) {
                     setImageError(humanizeMediaError(err, "Kunde inte spara."));
                   }
-                })
-              }
+                });
+              }}
             >
               {pending ? "Sparar …" : "Spara ändringar"}
             </button>
@@ -956,7 +998,7 @@ function ServiceItemsEditor({
                 onPointerUp={() => reorder.finishDrag()}
                 onPointerCancel={() => reorder.finishDrag(true)}
                 className={cx(
-                  "hidden touch-none select-none rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink sm:block",
+                  "hidden touch-none select-none rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink sm:block max-lg:p-2.5",
                   reorder.dragIndex === index ? "cursor-grabbing" : "cursor-grab",
                 )}
                 aria-label="Dra för att ändra ordning"
@@ -970,7 +1012,7 @@ function ServiceItemsEditor({
                   type="button"
                   disabled={busy || index === 0}
                   onClick={() => onReorder(index, index - 1)}
-                  className="rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink disabled:opacity-30"
+                  className="rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink disabled:opacity-30 max-lg:p-2.5"
                   aria-label="Flytta upp"
                 >
                   <ChevronUp className="size-4" />
@@ -979,7 +1021,7 @@ function ServiceItemsEditor({
                   type="button"
                   disabled={busy || index === items.length - 1}
                   onClick={() => onReorder(index, index + 1)}
-                  className="rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink disabled:opacity-30"
+                  className="rounded-lg p-1 text-muted hover:bg-ink/5 hover:text-ink disabled:opacity-30 max-lg:p-2.5"
                   aria-label="Flytta ner"
                 >
                   <ChevronDown className="size-4" />
@@ -1043,7 +1085,6 @@ export function SectionImageField({
   error,
   onError,
   onBusy,
-  variant,
 }: {
   image?: string;
   /** Befintlig bild håller på att hämtas från servern. */
@@ -1052,8 +1093,8 @@ export function SectionImageField({
   error?: string | null;
   onError?: (msg: string | null) => void;
   onBusy?: (busy: boolean) => void;
-  variant: "card" | "section";
 }) {
+  // Ett enda bildfält: hela zonen är klickbar, ingen separat "Välj bild"-knapp.
   return (
     <ImageDropzone
       label="Bild (valfritt)"
@@ -1063,8 +1104,8 @@ export function SectionImageField({
       onChange={onChange}
       onError={onError}
       onBusy={onBusy}
-      variant={variant === "section" ? "thumb" : "banner"}
-      addLabel="Välj bild"
+      variant="compact"
+      addLabel="Ladda upp bild"
       replaceLabel="Byt bild"
       removeLabel="Ta bort bild"
     />
@@ -1105,6 +1146,7 @@ function ServiceItemForm({
   onSaved: (saved: { index: number | "new"; item: WebsiteSectionItem; imageChanged: boolean }) => void;
 }) {
   const [title, setTitle] = useState(draft.title);
+  const [titleError, setTitleError] = useState<string | null>(null);
   const [text, setText] = useState(draft.text);
   const [image, setImage] = useState<string | undefined>(draft.image);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -1112,7 +1154,11 @@ function ServiceItemForm({
   const [pending, startTransition] = useTransition();
 
   function save() {
-    if (!title.trim()) return;
+    if (!title.trim()) {
+      setTitleError("Ange tjänstens namn, till exempel Kök.");
+      focusField("tjanst-namn");
+      return;
+    }
     const item: WebsiteSectionItem = { title: title.trim(), text: text.trim() };
     if (image) item.image = image;
     const imageChanged = image !== draft.image;
@@ -1155,12 +1201,7 @@ function ServiceItemForm({
           <button type="button" className={buttonClasses("ghost")} onClick={onClose}>
             Avbryt
           </button>
-          <button
-            type="button"
-            className={buttonClasses("primary")}
-            disabled={pending || readingImage || !title.trim()}
-            onClick={save}
-          >
+          <button type="button" className={buttonClasses("primary")} disabled={pending || readingImage} onClick={save}>
             {pending ? "Sparar …" : "Spara tjänst"}
           </button>
         </div>
@@ -1168,13 +1209,27 @@ function ServiceItemForm({
     >
       <div className="space-y-4 px-6 py-5">
         <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-soft">Namn</label>
+          <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="tjanst-namn">
+            Namn
+          </label>
           <input
+            id="tjanst-namn"
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              if (e.target.value.trim()) setTitleError(null);
+            }}
             placeholder="T.ex. Kök"
-            className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
+            aria-invalid={titleError ? true : undefined}
+            aria-describedby={titleError ? "tjanst-namn-fel" : undefined}
+            className={cx(
+              "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent",
+              titleError && invalidFieldCls
+            )}
           />
+          <FieldError id="tjanst-namn-fel" className="mt-1.5">
+            {titleError}
+          </FieldError>
         </div>
         <div>
           <label className="mb-1.5 block text-[13px] font-medium text-soft">Beskrivning</label>
@@ -1192,7 +1247,6 @@ function ServiceItemForm({
           error={imageError}
           onError={setImageError}
           onBusy={setReadingImage}
-          variant="card"
         />
       </div>
     </Modal>

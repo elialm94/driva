@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Modal } from "./modal";
 import { buttonClasses, cx, DemoTag } from "./ui";
-import { askQuoteQuestionAction, declineQuoteAction } from "@/app/actions";
+import { askQuoteQuestionByTokenAction, declineQuoteByTokenAction } from "@/app/actions";
 
 type Step = "choose" | "pending" | "done" | "failed";
 
@@ -317,7 +317,7 @@ export function BankIDApproval({
   );
 }
 
-export function QuoteQuestionButton({ quoteId, companyName }: { quoteId: string; companyName: string }) {
+export function QuoteQuestionButton({ token, companyName }: { token: string; companyName: string }) {
   const [open, setOpen] = useState(false);
   const [sent, setSent] = useState(false);
   const [text, setText] = useState("");
@@ -342,7 +342,7 @@ export function QuoteQuestionButton({ quoteId, companyName }: { quoteId: string;
             className="space-y-4 px-6 py-5"
             action={async () => {
               if (!text.trim()) return;
-              await askQuoteQuestionAction(quoteId, text.trim());
+              await askQuoteQuestionByTokenAction(token, text.trim());
               setSent(true);
             }}
           >
@@ -368,7 +368,7 @@ export function QuoteQuestionButton({ quoteId, companyName }: { quoteId: string;
   );
 }
 
-export function DeclineQuoteButton({ quoteId }: { quoteId: string }) {
+export function DeclineQuoteButton({ token }: { token: string }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const router = useRouter();
@@ -381,7 +381,7 @@ export function DeclineQuoteButton({ quoteId }: { quoteId: string }) {
         <form
           className="space-y-4 px-6 py-5"
           action={async () => {
-            await declineQuoteAction(quoteId, reason.trim() || undefined);
+            await declineQuoteByTokenAction(token, reason.trim() || undefined);
             setOpen(false);
             router.refresh();
           }}

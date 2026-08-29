@@ -6,12 +6,20 @@ import { runBokslutAutomation, closeFiscalYear } from "@/lib/accounting/close";
 import { undoExpenseBooking } from "@/lib/services/expenses";
 import { generateAnnualReport, advanceAnnualReportStatus } from "@/lib/accounting/annual-report";
 import { planAccrualForSource } from "@/lib/accounting/accruals";
+import {
+  confirmCreditRefundMatch,
+  confirmPaymentMatch,
+  confirmTaxReductionPayoutMatch,
+} from "@/lib/services/payment-matching";
+import { registerCreditRefund } from "@/lib/services/invoices";
 import { db } from "@/lib/store";
 import type { AnnualReport } from "@/lib/types";
+import { withBusiness } from "@/lib/auth/session";
 
 /**
  * Serveråtgärder för bokföringen. Tunna omslag runt domänlagret –
- * all logik och validering bor i src/lib/accounting.
+ * all logik och validering bor i src/lib/accounting. Allt körs i
+ * tenantkontext (withBusiness) – atomär commit mot Postgres i Supabase-läge.
  */
 
 function refresh() {
@@ -20,10 +28,12 @@ function refresh() {
 
 type Result = { ok: true } | { ok: false; error: string };
 
-function run(fn: () => void): Result {
+async function run(fn: () => void): Promise<Result> {
   try {
-    fn();
-    refresh();
+    await withBusiness(() => {
+      fn();
+      refresh();
+    });
     return { ok: true };
   } catch (e) {
     refresh();
@@ -43,8 +53,11 @@ export async function runBokslutAutomationAction(
   fiscalYearId: string
 ): Promise<Result & { depreciations?: number; accruals?: number }> {
   try {
-    const res = runBokslutAutomation(fiscalYearId, "anvandare");
-    refresh();
+    const res = await withBusiness(() => {
+      const out = runBokslutAutomation(fiscalYearId, "anvandare");
+      refresh();
+      return out;
+    });
     return { ok: true, ...res };
   } catch (e) {
     refresh();
@@ -69,6 +82,29 @@ export async function advanceAnnualReportStatusAction(
   to: AnnualReport["status"]
 ): Promise<Result> {
   return run(() => advanceAnnualReportStatus(reportId, to, "anvandare"));
+}
+
+/* ---------------------- Betalningsmatchning (bekräfta) ---------------------- */
+
+/** Bekräfta ett matchningsförslag: boka det faktiska bankbeloppet mot fakturan. */
+export async function confirmPaymentMatchAction(txId: string, invoiceId: string): Promise<Result> {
+  return run(() => confirmPaymentMatch(txId, invoiceId, "anvandare"));
+}
+
+/** Bekräfta en föreslagen ROT/RUT-utbetalning från Skatteverket. */
+export async function confirmRotPayoutAction(txId: string): Promise<Result> {
+  return run(() => confirmTaxReductionPayoutMatch(txId));
+}
+
+/**
+ * Markera återbetalning till kund som gjord. Med en utgående banktransaktion
+ * bokas den; utan bokförs utbetalningen direkt (1510 D / 1930 K).
+ */
+export async function registerCreditRefundAction(invoiceId: string, txId?: string): Promise<Result> {
+  return run(() => {
+    if (txId) confirmCreditRefundMatch(txId, invoiceId);
+    else registerCreditRefund(invoiceId, {});
+  });
 }
 
 export async function planAccrualAction(input: {

@@ -7,24 +7,36 @@ import { kr, datumTid, datumLang, dagarTill } from "@/lib/format";
 import { QuoteDocument } from "@/components/quote-document";
 import { CompanyLogo } from "@/components/company-logo";
 import { BankIDApproval, DeclineQuoteButton, QuoteQuestionButton } from "@/components/bankid-flow";
+import { DemoTag } from "@/components/ui";
 import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
+import { ensurePublicPage, withPublicBusiness } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(props: PageProps<"/offert/[token]">) {
   const { token } = await props.params;
+  if (!(await ensurePublicPage("quote", token))) return { title: "Offert" };
   const quote = getQuoteByToken(token);
-  const version = quote ? currentVersion(quote) : undefined;
-  const seller = version ? resolveQuoteCompany(version, db().settings) : db().settings;
-  return { title: quote ? `Offert #${quote.number} – ${seller.name}` : "Offert" };
+  // Utkast är inte publika – läck inte offertnummer/avsändare via metadata.
+  if (!quote || quote.status === "utkast") return { title: "Offert" };
+  const seller = resolveQuoteCompany(currentVersion(quote), db().settings);
+  return { title: `Offert #${quote.number} – ${seller.name}` };
 }
 
 export default async function PublicQuotePage(props: PageProps<"/offert/[token]">) {
   const { token } = await props.params;
+  // "Visad"-stämpeln är en mutation – den körs i ett eget skrivblock INNAN
+  // sidans läs-state laddas, så att renderingen ser stämpeln direkt.
+  const marked = await withPublicBusiness("quote", token, () => {
+    const q = getQuoteByToken(token);
+    if (!q || q.status === "utkast") return false;
+    markQuoteViewed(q.id);
+    return true;
+  });
+  if (marked === null || marked === false) notFound();
+  if (!(await ensurePublicPage("quote", token))) notFound();
   const quote = getQuoteByToken(token);
   if (!quote || quote.status === "utkast") notFound();
-
-  markQuoteViewed(quote.id);
 
   const data = db();
   const version = currentVersion(quote);
@@ -57,7 +69,10 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
             <div className="flex items-start gap-3">
               <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
               <div className="flex-1">
-                <p className="text-[15px] font-semibold text-ok">Offerten är godkänd</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[15px] font-semibold text-ok">Offerten är godkänd</p>
+                  {signature.environment === "mock" ? <DemoTag>Demo-signering</DemoTag> : null}
+                </div>
                 <p className="mt-0.5 text-[14px] text-soft">
                   Tack! Din BankID-signering är registrerad. Godkänd av {signature.signerName},{" "}
                   {datumTid(signature.signedAt)}.
@@ -115,10 +130,10 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
               <p className="text-[14px] font-medium">
                 Att betala: <span className="font-semibold">{kr(totals.toPay)}</span>
               </p>
-              <DeclineQuoteButton quoteId={quote.id} />
+              <DeclineQuoteButton token={quote.token} />
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <QuoteQuestionButton quoteId={quote.id} companyName={seller.name} />
+              <QuoteQuestionButton token={quote.token} companyName={seller.name} />
               <BankIDApproval
                 token={quote.token}
                 quoteNumber={quote.number}

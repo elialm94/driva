@@ -13,9 +13,12 @@ import type {
 import { createCustomer, findMatchingOpenInquiry, listInquiriesInbox } from "../services/customers";
 import { createQuote, quoteDefaults } from "../services/quotes";
 import { createJob } from "../services/jobs";
-import { createFinalInvoiceForJob, createInvoice, createNextInvoiceForJob, updateInvoice, type InvoiceInput } from "../services/invoices";
-import { currentVersion, daysOverdue, getCustomer, getInvoice, getJob, getQuote, getRequest, invoiceTotals, isOverdue, quoteStatusLabel, quoteTotals, quoteWaitingDays, requireCustomer } from "../services/data";
-import { attentionItems, remainingToInvoiceForJob } from "../services/attention";
+import { findWorkLocationByHint, formatLocationAddress, workLocationToHousing, workLocationsForModel } from "../services/work-locations";
+import { createFinalInvoiceForJob, createInvoice, createNextInvoiceForJob, discardInvoice, updateInvoice, type InvoiceInput } from "../services/invoices";
+import { rotWithAmounts } from "../tax-reduction-amount";
+import { currentVersion, daysOverdue, getCustomer, getInvoice, getJob, getQuote, getRequest, invoiceTotals, isOpenReceivable, isOverdue, quoteStatusLabel, quoteTotals, quoteWaitingDays, requireCustomer } from "../services/data";
+import { remainingToInvoiceForJob } from "../services/attention";
+import { getBusinessActions } from "../services/actions";
 import { derivedJobStatus } from "../services/job-lifecycle";
 import {
   findJobsForTaxReduction,
@@ -120,6 +123,7 @@ export function createQuoteDraft(input: {
   percentAtStart?: number;
   rot?: "rot" | "rut" | null;
   requestId?: string;
+  appliedTaxReduction?: number;
 }): DomainResult {
   const customer = requireCustomer(input.customerId);
   const defaults = quoteDefaults();
@@ -130,34 +134,51 @@ export function createQuoteDraft(input: {
   const genericIntro = !input.intro || /enligt överenskommelse/i.test(input.intro);
   const intro = request && genericIntro ? request.message : (input.intro ?? `${title} enligt överenskommelse.`);
   const percent = input.percentAtStart && input.percentAtStart > 0 && input.percentAtStart < 100 ? input.percentAtStart : undefined;
-  const rot = input.rot === "rot" || input.rot === "rut" ? { type: input.rot } : null;
-  const quote = createQuote(
-    {
-      customerId: customer.id,
-      requestId: request?.id,
-      title,
-      intro,
-      lines: [laborLine(title, input.amountInclVat ?? 0)],
-      rot,
-      paymentPlan: percent
-        ? [
-            { label: "Vid arbetets start", percent },
-            { label: "När arbetet är klart och godkänt", percent: 100 - percent },
-          ]
-        : [{ label: "Betalning när arbetet är klart", percent: 100 }],
-      paymentTermsDays: defaults.paymentTermsDays,
-      lateInterestRate: defaults.lateInterestRate,
-      validUntil: defaults.validUntil,
-      terms: defaults.terms,
-    },
-    "assistent"
-  );
+  const rot =
+    input.rot === "rot" || input.rot === "rut"
+      ? input.appliedTaxReduction != null
+        ? { type: input.rot, appliedTaxReduction: Math.round(input.appliedTaxReduction), taxReductionManuallyAdjusted: true }
+        : { type: input.rot }
+      : null;
+  let quote;
+  try {
+    quote = createQuote(
+      {
+        customerId: customer.id,
+        requestId: request?.id,
+        title,
+        intro,
+        lines: [laborLine(title, input.amountInclVat ?? 0)],
+        rot,
+        paymentPlan: percent
+          ? [
+              { label: "Vid arbetets start", percent },
+              { label: "När arbetet är klart och godkänt", percent: 100 - percent },
+            ]
+          : [{ label: "Betalning när arbetet är klart", percent: 100 }],
+        paymentTermsDays: defaults.paymentTermsDays,
+        lateInterestRate: defaults.lateInterestRate,
+        validUntil: defaults.validUntil,
+        terms: defaults.terms,
+      },
+      "assistent"
+    );
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Kunde inte skapa offerten.");
+  }
   const t = quoteTotals(quote);
+  const version = currentVersion(quote);
+  const appliedNote =
+    version.rot?.appliedTaxReduction != null
+      ? ` Preliminärt ${version.rot.type.toUpperCase()}-avdrag ${kr(version.rot.appliedTaxReduction)} utifrån offerten.`
+      : rot
+        ? ` med preliminärt ${rot.type.toUpperCase()}-avdrag`
+        : "";
   return {
     ok: true,
-    text: `Klart – utkast till offert #${quote.number} för ${customer.name} på ${kr(t.total)} inkl. moms${
-      rot ? ` med preliminärt ${rot.type.toUpperCase()}-avdrag` : ""
-    }${percent ? ` med delbetalning ${percent} % vid start` : ""}${request ? " utifrån förfrågan" : ""}. Den är inte skickad.`,
+    text: `Klart – utkast till offert #${quote.number} för ${customer.name} på ${kr(t.total)} inkl. moms.${appliedNote}${
+      percent ? ` Delbetalning ${percent} % vid start.` : ""
+    }${request ? " Utifrån förfrågan." : ""} Den är inte skickad.`,
     card: entityCard(
       "offert",
       `Offert #${quote.number} · ${title}`,
@@ -171,6 +192,8 @@ export function createQuoteDraft(input: {
       totalIncl: t.total,
       sent: false,
       rot: rot?.type ?? null,
+      appliedTaxReduction: version.rot?.appliedTaxReduction ?? null,
+      calculatedEligibleTaxReduction: version.rot?.calculatedEligibleTaxReduction ?? null,
       requestId: request?.id ?? null,
     },
   };
@@ -181,20 +204,34 @@ export function createJobDraft(input: {
   title: string;
   startDate?: string;
   description?: string;
+  workLocationHint?: string;
+  workLocationId?: string;
 }): DomainResult {
   const customer = requireCustomer(input.customerId);
+  const location =
+    (input.workLocationId
+      ? (customer.workLocations ?? []).find((l) => l.id === input.workLocationId)
+      : undefined) ?? findWorkLocationByHint(customer, input.workLocationHint);
   const job = createJob({
     customerId: customer.id,
     title: input.title.trim() || "Uppdrag",
     startDate: input.startDate,
     description: input.description,
+    workLocationId: location?.id,
   });
   const when = job.startDate ? ` · start ${datumLang(job.startDate)}` : "";
   return {
     ok: true,
     text: `Klart – uppdraget ${job.title} för ${customer.name} är skapat${when}.`,
     card: entityCard("uppdrag", job.title, `/uppdrag/${job.id}`, `${customer.name}${when}`),
-    forModel: { jobId: job.id, title: job.title, status: job.status, startDate: job.startDate },
+    forModel: {
+      jobId: job.id,
+      title: job.title,
+      status: job.status,
+      startDate: job.startDate,
+      workLocationId: job.workLocationId ?? null,
+      workLocationLabel: location?.label ?? null,
+    },
   };
 }
 
@@ -204,6 +241,8 @@ export function createInvoiceDraft(input: {
   amountInclVat?: number;
   jobId?: string;
   taxReduction?: "rot" | "rut" | null;
+  appliedTaxReduction?: number;
+  workLocationHint?: string;
 }): DomainResult {
   if (input.taxReduction === "rot" || input.taxReduction === "rut") {
     return createTaxReductionInvoiceDraft({
@@ -212,6 +251,8 @@ export function createInvoiceDraft(input: {
       titleHint: input.title,
       amountInclVat: input.amountInclVat,
       type: input.taxReduction,
+      appliedTaxReduction: input.appliedTaxReduction,
+      workLocationHint: input.workLocationHint,
     });
   }
   const customer = requireCustomer(input.customerId);
@@ -244,10 +285,17 @@ export function createTaxReductionInvoiceDraft(input: {
   titleHint?: string;
   amountInclVat?: number;
   type: "rot" | "rut";
+  appliedTaxReduction?: number;
+  workLocationHint?: string;
 }): DomainResult {
   const customer = requireCustomer(input.customerId);
   const kind = input.type.toUpperCase();
+  const location = findWorkLocationByHint(customer, input.workLocationHint ?? input.titleHint);
   let job = input.jobId ? getJob(input.jobId) : undefined;
+  if (!job && location) {
+    const atLocation = db().jobs.filter((j) => j.customerId === customer.id && j.workLocationId === location.id);
+    if (atLocation.length === 1) job = atLocation[0];
+  }
   if (!job) {
     const jobs = findJobsForTaxReduction(customer.id, input.titleHint);
     if (jobs.length > 1 && input.titleHint) {
@@ -277,28 +325,80 @@ export function createTaxReductionInvoiceDraft(input: {
   }
 
   let invoice;
-  if (job && remainingToInvoiceForJob(job.id) > 0) {
-    invoice = createNextInvoiceForJob(job.id, "assistent");
-    if (!invoice.rot || invoice.rot.type !== input.type) {
-      invoice = updateInvoice(
-        invoice.id,
-        { lines: invoice.lines, rot: { type: input.type }, taxReductionDetails: invoice.taxReductionDetails },
+  try {
+    if (job && remainingToInvoiceForJob(job.id) > 0) {
+      invoice = createNextInvoiceForJob(job.id, "assistent");
+      if (!invoice.rot || invoice.rot.type !== input.type) {
+        invoice = updateInvoice(
+          invoice.id,
+          { lines: invoice.lines, rot: { type: input.type }, taxReductionDetails: invoice.taxReductionDetails },
+          "assistent"
+        );
+      }
+    } else {
+      const title = input.titleHint?.trim() || job?.title || `${kind}-arbete`;
+      const lines = [laborLine(title, input.amountInclVat ?? 0)];
+      if (input.appliedTaxReduction != null) {
+        rotWithAmounts(
+          {
+            type: input.type,
+            appliedTaxReduction: Math.round(input.appliedTaxReduction),
+            taxReductionManuallyAdjusted: true,
+          },
+          lines,
+          { mode: "strict", documentKind: "faktura" }
+        );
+      }
+      invoice = createInvoice(
+        {
+          customerId: customer.id,
+          jobId: job?.id,
+          quoteId: job?.quoteId,
+          type: "faktura",
+          lines,
+          taxReductionDetails: location
+            ? {
+                workAddress: formatLocationAddress(location) || undefined,
+                housing: workLocationToHousing(location),
+              }
+            : undefined,
+          rot:
+            input.appliedTaxReduction != null
+              ? {
+                  type: input.type,
+                  appliedTaxReduction: Math.round(input.appliedTaxReduction),
+                  taxReductionManuallyAdjusted: true,
+                }
+              : { type: input.type },
+        },
         "assistent"
       );
     }
-  } else {
-    const title = input.titleHint?.trim() || job?.title || `${kind}-arbete`;
-    invoice = createInvoice(
-      {
-        customerId: customer.id,
-        jobId: job?.id,
-        quoteId: job?.quoteId,
-        type: "faktura",
-        lines: [laborLine(title, input.amountInclVat ?? 0)],
-        rot: { type: input.type },
-      },
-      "assistent"
-    );
+
+    if (input.appliedTaxReduction != null && invoice.rot?.appliedTaxReduction !== Math.round(input.appliedTaxReduction)) {
+      invoice = updateInvoice(
+        invoice.id,
+        {
+          lines: invoice.lines,
+          rot: {
+            type: input.type,
+            appliedTaxReduction: Math.round(input.appliedTaxReduction),
+            taxReductionManuallyAdjusted: true,
+          },
+          taxReductionDetails: invoice.taxReductionDetails,
+        },
+        "assistent"
+      );
+    }
+  } catch (e) {
+    if (invoice?.status === "utkast") {
+      try {
+        discardInvoice(invoice.id, "assistent");
+      } catch {
+        /* already failed */
+      }
+    }
+    return fail(e instanceof Error ? e.message : "Kunde inte skapa fakturan.");
   }
 
   const prefill = resolveTaxReductionPrefill({
@@ -313,6 +413,8 @@ export function createTaxReductionInvoiceDraft(input: {
     scope: "invoice",
   });
   const t = invoiceTotals(invoice);
+  const applied = invoice.rot?.appliedTaxReduction ?? t.deduction;
+  const appliedNote = input.appliedTaxReduction != null ? ` Preliminärt ${kind}-avdrag ${kr(applied)}.` : "";
   const missingText =
     missing.length === 0
       ? ""
@@ -321,7 +423,7 @@ export function createTaxReductionInvoiceDraft(input: {
         : ` Jag hittar inte på saknade uppgifter. ${missing[0].label} saknas.`;
   return {
     ok: true,
-    text: `Klart – utkast till ${kind}-faktura för ${job ? job.title : customer.name} på ${kr(t.toPay)}. Villkoren är preliminära.${missingText}`,
+    text: `Klart – utkast till ${kind}-faktura för ${job ? job.title : customer.name} på ${kr(t.toPay)}. Villkoren är preliminära.${appliedNote}${missingText}`,
     card: entityCard(
       "faktura",
       `${kind}-fakturautkast`,
@@ -335,6 +437,8 @@ export function createTaxReductionInvoiceDraft(input: {
       sent: false,
       taxReduction: input.type,
       jobId: job?.id ?? null,
+      appliedTaxReduction: applied,
+      calculatedEligibleTaxReduction: t.calculatedEligibleTaxReduction,
       missingFields: missing.map((m) => m.code),
       missingLabels: missing.map((m) => m.label),
       personalIdentityNumberMasked: prefill.personalIdentityNumber
@@ -368,6 +472,44 @@ export function createFinalInvoiceDraft(jobId: string): DomainResult {
       `${customer.name} · ${kr(t.toPay)} · utkast`
     ),
     forModel: { invoiceId: invoice.id, number: null, status: invoice.status, sent: false },
+  };
+}
+
+/**
+ * Nästa fakturautkast för ett uppdrag: del enligt betalningsplanen, annars
+ * resterande som slutfaktura. Samma tjänst (createNextInvoiceForJob) som
+ * åtgärdsmotorns "Skapa faktura"-knapp på Hem – pengalogiken räknas aldrig om.
+ */
+export function createJobInvoiceDraft(jobId: string): DomainResult {
+  const job = getJob(jobId);
+  if (!job) return fail("Uppdraget finns inte.");
+  const remaining = remainingToInvoiceForJob(jobId);
+  if (remaining <= 0) {
+    return {
+      ok: false,
+      text: "Det finns inget kvar att fakturera på uppdraget.",
+      forModel: { error: "nothing_to_invoice", jobId },
+    };
+  }
+  let invoice;
+  try {
+    invoice = createNextInvoiceForJob(jobId, "assistent");
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Kunde inte skapa fakturan. Inget sparades.");
+  }
+  const customer = requireCustomer(job.customerId);
+  const t = invoiceTotals(invoice);
+  const typeLabel = invoice.type === "delbetalning" ? "Delbetalning (utkast)" : "Slutfaktura (utkast)";
+  return {
+    ok: true,
+    text: `Klart – utkast till ${invoice.type === "delbetalning" ? "delbetalning" : "slutfaktura"} för ${job.title} på ${kr(t.toPay)}. Den har inget löpnummer än och är inte skickad.`,
+    card: entityCard(
+      "faktura",
+      typeLabel,
+      `/ekonomi/fakturor/${invoice.id}`,
+      `${customer.name} · ${kr(t.toPay)} · utkast`
+    ),
+    forModel: { invoiceId: invoice.id, jobId, number: null, status: invoice.status, type: invoice.type, sent: false },
   };
 }
 
@@ -605,7 +747,7 @@ export function requestFollowUpQuotes(minDays = 7): DomainResult {
 }
 
 export function unpaidInvoicesResult(): DomainResult {
-  const unpaid = db().invoices.filter((i) => i.status === "skickad");
+  const unpaid = db().invoices.filter(isOpenReceivable);
   if (unpaid.length === 0) {
     return { ok: true, text: "Alla fakturor är betalda. Snyggt!", forModel: { count: 0, total: 0 } };
   }
@@ -696,49 +838,50 @@ export function momsResult(): DomainResult {
 }
 
 export function todayAttentionResult(): DomainResult {
-  const items = attentionItems();
+  const items = getBusinessActions().attention;
   if (items.length === 0) {
     return { ok: true, text: "Inget särskilt just nu – allt är omhändertaget.", forModel: { count: 0 } };
   }
-  const rows = items.slice(0, 8).map((item) => {
-    switch (item.kind) {
-      case "forsenad_faktura":
-        return {
-          label: `Faktura #${item.invoice.number} · ${item.customer.name}`,
-          value: `${item.days} d sen`,
-          href: `/ekonomi/fakturor/${item.invoice.id}`,
-        };
-      case "forfragan":
-        return { label: `Förfrågan · ${item.customer.name}`, value: item.request.title, href: `/kunder/forfragningar/${item.request.id}` };
-      case "offert_uppfoljning":
-        return {
-          label: `Offert #${item.quote.number} · ${item.customer.name}`,
-          value: `${item.days} d`,
-          href: `/ekonomi/offerter/${item.quote.id}`,
-        };
-      case "kvitto_saknas":
-        return { label: `Kvitto saknas · ${item.expense.supplier}`, value: kr(item.expense.amount) };
-      case "bokforingsfraga":
-        return { label: item.expense.question?.text ?? item.expense.supplier, value: kr(item.expense.amount) };
-      case "betalningsbeslut":
-        return item.source === "inbetalning"
-          ? {
-              label: `Inbetalning · ${item.tx.counterpart}`,
-              value: kr(item.amount),
-              href: "/ekonomi?flik=bank",
-            }
-          : {
-              label: `Betala · ${item.supplierInvoice.supplier}`,
-              value: kr(item.amount),
-              href: "/ekonomi?flik=utgifter",
-            };
-    }
-  });
+  const rows = items.slice(0, 8).map((item) => ({
+    label: item.title,
+    value: item.subtitle,
+    href: item.href,
+  }));
   return {
     ok: true,
     text: `Du har ${items.length === 1 ? "1 sak" : `${items.length} saker`} som behöver din uppmärksamhet idag.`,
     card: { kind: "list", title: "Att göra", rows },
-    forModel: { count: items.length, kinds: items.map((i) => i.kind) },
+    forModel: { count: items.length, kinds: items.map((i) => i.category) },
+  };
+}
+
+/** Samma På gång-feed som Hem – inte en separat AI-logik. */
+export function watchingResult(): DomainResult {
+  const items = getBusinessActions().watching;
+  if (items.length === 0) {
+    return {
+      ok: true,
+      text: "Inget särskilt är på gång just nu – Driva håller koll och säger till när något behöver din uppmärksamhet.",
+      forModel: { count: 0 },
+    };
+  }
+  const rows = items.slice(0, 8).map((item) => ({
+    label: item.title,
+    value: item.subtitle,
+    href: item.href,
+  }));
+  const summary = items
+    .slice(0, 5)
+    .map((item) => item.title)
+    .join("; ");
+  return {
+    ok: true,
+    text:
+      items.length === 1
+        ? `På gång: ${items[0].title}.`
+        : `${items.length} saker är på gång. ${summary}.`,
+    card: { kind: "list", title: "På gång", rows },
+    forModel: { count: items.length, kinds: items.map((i) => i.category) },
   };
 }
 
@@ -760,9 +903,9 @@ export function listOpenInquiriesResult(q?: string): DomainResult {
       rows: page.rows.map((r) => ({
         label: `${r.customerName} · ${r.title}`,
         value: r.summary,
-        href: `/kunder/forfragningar/${r.id}`,
+        href: `/inbox/${r.id}`,
       })),
-      links: [{ label: "Öppna inboxen", href: "/kunder?flik=forfragningar" }],
+      links: [{ label: "Öppna inboxen", href: "/inbox" }],
     },
     forModel: {
       count: page.total,
@@ -879,6 +1022,7 @@ export function compactCustomer(c: Customer) {
     phone: c.phone,
     city: c.city,
     hasPersonalIdentityNumber: Boolean(c.personalIdentityNumber),
+    workLocations: workLocationsForModel(c),
   };
 }
 
@@ -893,6 +1037,7 @@ export function compactJob(j: Job) {
     customerName: customer?.name,
     startDate: j.startDate,
     address: j.address ?? null,
+    workLocationId: j.workLocationId ?? null,
     remainingToInvoice: remainingToInvoiceForJob(j.id),
     notes: j.notes.trim() || null,
     dwellingType: j.housing?.dwellingType ?? null,

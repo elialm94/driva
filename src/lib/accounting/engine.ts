@@ -197,10 +197,21 @@ export interface CorrectionResult {
   replacement?: Verification;
 }
 
+/** Första öppna bokföringsdag: idag, eller dagen efter periodlåset om idag är låst. */
+function firstOpenPostingDate(): string {
+  const now = new Date().toISOString();
+  const lock = lockedThrough();
+  if (!lock || bokforingsdatum(now) > lock) return now;
+  const d = new Date(`${lock}T12:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString();
+}
+
 /**
  * Rättelseverifikation: originalet lämnas orört, en omvänd verifikation
  * bokförs (i öppen period), och eventuellt en ny korrekt bokning.
- * Historiken skrivs aldrig om.
+ * Historiken skrivs aldrig om. Är dagens datum låst bokförs rättelsen på
+ * första öppna dag – sena rättelser landar alltid i öppen period.
  */
 export function createCorrection(input: CorrectionInput): CorrectionResult {
   const original = getVerification(input.verificationId);
@@ -209,7 +220,7 @@ export function createCorrection(input: CorrectionInput): CorrectionResult {
     throw new PostingError("redan_rattad", `${verificationLabel(original)} är redan rättad.`);
   }
 
-  const today = new Date().toISOString();
+  const today = firstOpenPostingDate();
   const reversedEntries: PostLineInput[] = original.entries.map((e) => ({
     account: e.account,
     debit: e.credit,

@@ -6,6 +6,8 @@ import { taxReductionDeductionLabel, getTaxReductionTerms } from "@/lib/tax-redu
 import { TaxReductionQuoteClause, TaxReductionCalcHint } from "./tax-reduction-terms";
 import { CompanyLogo } from "./company-logo";
 import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
+import { RichTextView } from "./rich-text";
+import { isRichTextEmpty } from "@/lib/richtext";
 
 const LINE_KIND_LABEL: Record<string, string> = {
   arbete: "Arbete",
@@ -63,12 +65,13 @@ export function DocLinesTable({
   lines: QuoteVersion["lines"];
 }) {
   return (
+    // Smal skärm: Antal/À-pris flyttar in som underrad så tabellen aldrig kläms.
     <table className="w-full text-left text-[14px]">
       <thead>
         <tr className="border-b border-line text-[12px] font-semibold uppercase tracking-wide text-muted">
           <th className="pb-2 pr-3 font-semibold">Beskrivning</th>
-          <th className="pb-2 pr-3 text-right font-semibold">Antal</th>
-          <th className="pb-2 pr-3 text-right font-semibold">À-pris</th>
+          <th className="hidden pb-2 pr-3 text-right font-semibold sm:table-cell">Antal</th>
+          <th className="hidden pb-2 pr-3 text-right font-semibold sm:table-cell">À-pris</th>
           <th className="pb-2 text-right font-semibold">Summa</th>
         </tr>
       </thead>
@@ -77,12 +80,18 @@ export function DocLinesTable({
           <tr key={line.id} className="border-b border-line/60 last:border-0">
             <td className="py-3 pr-3">
               <p className="font-medium text-ink">{line.description}</p>
-              <p className="text-[12px] text-muted">{LINE_KIND_LABEL[line.kind]}</p>
+              <p className="text-[12px] text-muted">
+                {LINE_KIND_LABEL[line.kind]}
+                <span className="sm:hidden">
+                  {" "}
+                  · {line.qty} {line.unit} × {kr(line.unitPrice)}
+                </span>
+              </p>
             </td>
-            <td className="py-3 pr-3 text-right text-soft tabular whitespace-nowrap">
+            <td className="hidden py-3 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">
               {line.qty} {line.unit}
             </td>
-            <td className="py-3 pr-3 text-right text-soft tabular whitespace-nowrap">{kr(line.unitPrice)}</td>
+            <td className="hidden py-3 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">{kr(line.unitPrice)}</td>
             <td className="py-3 text-right font-medium text-ink tabular whitespace-nowrap">{kr(lineTotal(line))}</td>
           </tr>
         ))}
@@ -140,7 +149,9 @@ export function DocTotalsBlock({
         <span className="text-[15px] font-semibold text-ink">{toPayLabel}</span>
         <span className="text-[20px] font-semibold tracking-tight text-ink tabular">{kr(t.toPay)}</span>
       </div>
-      {rot ? <TaxReductionCalcHint type={rot.type} laborInclVat={t.laborInclVat} /> : null}
+      {rot && rot.appliedTaxReduction != null && rot.appliedTaxReduction !== t.calculatedEligibleTaxReduction ? null : rot ? (
+        <TaxReductionCalcHint type={rot.type} laborInclVat={t.laborInclVat} />
+      ) : null}
     </div>
   );
 }
@@ -227,6 +238,13 @@ export function QuoteDocument({
             Betalningsvillkor: {version.paymentTermsDays} dagar per faktura.
             {version.lateInterestRate ? ` Vid försenad betalning debiteras dröjsmålsränta med ${version.lateInterestRate} % per år.` : ""}
           </p>
+        </div>
+      ) : null}
+
+      {!isRichTextEmpty(version.richText) ? (
+        <div className="mt-8">
+          <p className="text-[13px] font-semibold uppercase tracking-wide text-muted">Övrig information</p>
+          <RichTextView doc={version.richText} className="mt-1.5" />
         </div>
       ) : null}
 

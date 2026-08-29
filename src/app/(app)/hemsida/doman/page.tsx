@@ -1,12 +1,15 @@
 import { PageHeader } from "@/components/ui";
-import { BackLink } from "@/components/back-link";
+import { SmartBack } from "@/components/back-link";
+import { structuralCrumbs } from "@/lib/nav";
 import { DomainSearchPanel } from "@/components/domain-widgets";
 import { enrichDomainView, isMockDomainMode, missingRegistrantFields, primaryDomain } from "@/lib/domains";
 import { getBusinessProfile } from "@/lib/services/settings";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Domän" };
 
 export default async function DomainPage() {
+  await ensurePageBusiness();
   const company = getBusinessProfile();
   const domain = primaryDomain();
   const missing = missingRegistrantFields(company);
@@ -15,7 +18,8 @@ export default async function DomainPage() {
   return (
     <div className="animate-fade-up">
       <PageHeader
-        back={<BackLink fallbackHref="/hemsida" fallbackLabel="Hemsida" />}
+        back={<SmartBack />}
+        crumbs={structuralCrumbs("/hemsida/doman")}
         title="Domän"
         subtitle="Sök en .se-adress, köp och koppla – vi sköter resten."
       />

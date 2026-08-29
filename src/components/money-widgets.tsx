@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, Check, Banknote, BellRing, FilePlus2, Undo2, Send } from "lucide-react";
+import { Upload, Check, Banknote, FilePlus2, Undo2, Send } from "lucide-react";
 import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
 import { Modal } from "./modal";
 import { buttonClasses, cx, DemoTag } from "./ui";
@@ -31,10 +31,19 @@ export function UploadReceiptButton({ expenseId, label = "Lägg till kvitto" }: 
       </span>
     );
   }
+  // Utan expenseId finns ingen banktransaktion att läsa fakta ur – i demon
+  // skapas då ett exempelköp. Det får aldrig se ut som riktig kvittotolkning.
   return (
-    <label className={cx(buttonClasses(expenseId ? "primary" : "secondary", "sm"), "cursor-pointer")}>
-      <Upload className="size-3.5" />
-      {isPending ? "Läser av …" : label}
+    <label
+      className={cx(buttonClasses(expenseId ? "primary" : "secondary", "sm"), "cursor-pointer")}
+      title={
+        expenseId
+          ? undefined
+          : "Demo: ett exempelköp skapas och bokförs. Riktig kvittotolkning är inte inkopplad ännu."
+      }
+    >
+      {expenseId ? <Upload className="size-3.5" /> : <DemoTag>DEMO</DemoTag>}
+      {isPending ? "Läser av …" : expenseId ? label : "Läs av exempelkvitto"}
       <input
         type="file"
         accept="image/*,.pdf"
@@ -134,9 +143,15 @@ export function SimulatePaymentButton({
   );
 }
 
+/**
+ * Skickar en påminnelse om offerten via e-post – etiketten säger vad som
+ * händer ("Skicka påminnelse", aldrig "Följ upp") och bekräftelsedialogen
+ * visas FÖRE utskicket. Inget mejl går från ett rent knappklick.
+ */
 export function FollowUpButton({ quoteId }: { quoteId: string }) {
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   if (done) {
     return (
       <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
@@ -145,19 +160,46 @@ export function FollowUpButton({ quoteId }: { quoteId: string }) {
     );
   }
   return (
-    <button
-      className={buttonClasses("secondary", "sm")}
-      disabled={isPending}
-      onClick={() =>
-        startTransition(async () => {
-          await followUpQuoteAction(quoteId);
-          setDone(true);
-        })
-      }
-    >
-      <BellRing className="size-3.5" />
-      {isPending ? "Skickar …" : "Följ upp"}
-    </button>
+    <>
+      <button className={buttonClasses("secondary", "sm")} disabled={isPending} onClick={() => setConfirmOpen(true)}>
+        <Send className="size-3.5" />
+        {isPending ? "Skickar …" : "Skicka påminnelse"}
+      </button>
+      <Modal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title="Skicka påminnelse?"
+        size="sm"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className={cx(buttonClasses("ghost", "sm"), "max-lg:min-h-11")}
+              onClick={() => setConfirmOpen(false)}
+            >
+              Avbryt
+            </button>
+            <button
+              type="button"
+              className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
+              onClick={() => {
+                setConfirmOpen(false);
+                startTransition(async () => {
+                  await followUpQuoteAction(quoteId);
+                  setDone(true);
+                });
+              }}
+            >
+              <Send className="size-3.5" /> Skicka påminnelse
+            </button>
+          </div>
+        }
+      >
+        <p className="px-6 py-4 text-[14px] leading-relaxed text-soft">
+          Kunden får ett mejl med en påminnelse om offerten och länken för att svara med BankID.
+        </p>
+      </Modal>
+    </>
   );
 }
 

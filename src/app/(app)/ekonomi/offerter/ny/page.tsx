@@ -4,12 +4,15 @@ import { getJob, getRequest } from "@/lib/services/data";
 import { tillaggQuoteFromInvoice } from "@/lib/services/invoice-quote-deviation";
 import { PageHeader } from "@/components/ui";
 import { QuoteForm, type QuoteFormInitial } from "@/components/doc-form";
-import { BackLink } from "@/components/back-link";
+import { SmartBack } from "@/components/back-link";
 import { labelForHref, sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
+import { ensurePageBusiness } from "@/lib/auth/session";
+import { isAiConfigured } from "@/lib/ai/provider";
 
 export const metadata = { title: "Ny offert" };
 
 export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/ny">) {
+  await ensurePageBusiness();
   const searchParams = await props.searchParams;
   const kund = typeof searchParams.kund === "string" ? searchParams.kund : undefined;
   const forfraganId = typeof searchParams.forfragan === "string" ? searchParams.forfragan : undefined;
@@ -93,16 +96,16 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
     cancelHref = tillbaka;
     cancelLabel = tillbakaNamn ?? labelForHref(tillbaka);
   } else if (request) {
-    cancelHref = `/kunder/forfragningar/${request.id}`;
+    cancelHref = `/inbox/${request.id}`;
     cancelLabel = "Förfrågan";
-    returnTo = `/kunder/forfragningar/${request.id}`;
+    returnTo = `/inbox/${request.id}`;
     returnLabel = request.title;
   }
 
   return (
     <div className="animate-fade-up">
       <PageHeader
-        back={<BackLink fallbackHref={cancelHref} fallbackLabel={cancelLabel} />}
+        back={<SmartBack fallbackHref={cancelHref} fallbackLabel={cancelLabel} />}
         title={tillagg ? tillagg.title : "Ny offert"}
         subtitle={
           tillagg
@@ -131,6 +134,7 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
       <QuoteForm
         customers={customers}
         defaultCustomerId={kund ?? tillagg?.customerId ?? job?.customerId ?? request?.customerId}
+        lockCustomer={Boolean(kund || job || request || tillagg)}
         requestId={forfraganId}
         jobId={job?.id}
         initial={initial}
@@ -138,6 +142,7 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
         cancelHref={cancelHref}
         returnTo={returnTo}
         returnLabel={returnLabel}
+        aiEnabled={isAiConfigured()}
       />
     </div>
   );

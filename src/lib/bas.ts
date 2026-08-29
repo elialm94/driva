@@ -20,6 +20,7 @@ export const BAS: Record<number, string> = {
   2081: "Aktiekapital",
   2091: "Balanserad vinst eller förlust",
   2099: "Årets resultat",
+  2420: "Förskott från kunder",
   2440: "Leverantörsskulder",
   2510: "Skatteskulder",
   2512: "Beräknad inkomstskatt",
@@ -34,6 +35,7 @@ export const BAS: Record<number, string> = {
   3002: "Försäljning 12 %",
   3003: "Försäljning 6 %",
   3004: "Försäljning 0 %",
+  3740: "Öres- och kronutjämning",
   4010: "Material och varor",
   5010: "Lokalhyra",
   5410: "Förbrukningsinventarier",
@@ -135,6 +137,73 @@ export function entriesInvoiceSent(lines: DocLine[], rot: RotRut | null): Verifi
 
 export function entriesInvoicePaid(amount: number): VerificationEntry[] {
   return [e(1930, amount, 0), e(1510, 0, amount)];
+}
+
+/**
+ * Kundinbetalning – bokar ALLTID det faktiska bankbeloppet mot 1930.
+ * Fordran (1510) bockas av med `settleReceivable`; skillnader hanteras öppet:
+ *
+ *   * `oresDiff` (± inom öres-toleransen, se autopilot.ORE_TOLERANS_KR)
+ *     bokas på 3740 Öres- och kronutjämning: positiv = kunden betalade för
+ *     lite (kostnad, debet), negativ = för mycket (intäkt, kredit).
+ *   * `excessToCustomerCredit` (överbetalning utöver toleransen) bokas som
+ *     skuld till kunden på 2420 Förskott från kunder – aldrig som intäkt.
+ *
+ * Invarianten bankAmount + max(0, oresDiff) = settleReceivable +
+ * max(0, -oresDiff) + excessToCustomerCredit måste hålla (debet = kredit);
+ * postVerification vägrar annars.
+ */
+export function entriesInvoicePaymentReceived(input: {
+  bankAmount: number;
+  settleReceivable: number;
+  oresDiff?: number;
+  excessToCustomerCredit?: number;
+}): VerificationEntry[] {
+  const oresDiff = input.oresDiff ?? 0;
+  const excess = input.excessToCustomerCredit ?? 0;
+  const entries: VerificationEntry[] = [e(1930, input.bankAmount, 0)];
+  if (oresDiff > 0) entries.push(e(3740, oresDiff, 0));
+  entries.push(e(1510, 0, input.settleReceivable));
+  if (oresDiff < 0) entries.push(e(3740, 0, -oresDiff));
+  if (excess > 0) entries.push(e(2420, 0, excess));
+  return entries;
+}
+
+/**
+ * Skatteverket betalar ut ROT/RUT: pengarna in på företagskontot och
+ * fordran på Skatteverket (1513) bockas av. Ingen intäkt – den bokfördes
+ * när fakturan utfärdades.
+ */
+export function entriesTaxReductionPayout(amount: number): VerificationEntry[] {
+  return [e(1930, amount, 0), e(1513, 0, amount)];
+}
+
+/**
+ * Återbetalning till kund. Skulden kan sitta på två ställen:
+ *   * 2420 Förskott från kunder – överbetalning som bokades som skuld.
+ *   * 1510 Kundfordringar (negativ) – kreditering av en redan betald faktura.
+ * Utbetalningen nollställer båda mot företagskontot.
+ */
+export function entriesCustomerRefund(input: { fromOverpayment: number; fromCredit: number }): VerificationEntry[] {
+  const entries: VerificationEntry[] = [];
+  if (input.fromOverpayment > 0) entries.push(e(2420, input.fromOverpayment, 0));
+  if (input.fromCredit > 0) entries.push(e(1510, input.fromCredit, 0));
+  entries.push(e(1930, 0, input.fromOverpayment + input.fromCredit));
+  return entries;
+}
+
+/**
+ * Skatteverket nekade (en del av) ROT/RUT-utbetalningen och kunden faktureras
+ * restbeloppet: fordran flyttas från Skatteverket (1513) till kunden (1510).
+ * Ingen ny intäkt eller utgående moms – de redovisades på ursprungsfakturan.
+ */
+export function entriesDeniedReductionInvoice(amount: number): VerificationEntry[] {
+  return [e(1510, amount, 0), e(1513, 0, amount)];
+}
+
+/** Kreditering av en restfaktura för nekat avdrag: flytta tillbaka fordran till Skatteverket. */
+export function entriesDeniedReductionCredit(amount: number): VerificationEntry[] {
+  return [e(1513, amount, 0), e(1510, 0, amount)];
 }
 
 export function entriesCredit(lines: DocLine[], rot: RotRut | null): VerificationEntry[] {

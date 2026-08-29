@@ -1,19 +1,21 @@
 import { kr } from "@/lib/format";
 import { Card, PageHeader } from "@/components/ui";
-import { BackLink } from "@/components/back-link";
+import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
 import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { resultatrapport } from "@/lib/accounting/ledger";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Resultatrapport" };
 
-export default function ResultatPage() {
+export default async function ResultatPage() {
+  await ensurePageBusiness();
   const rr = resultatrapport();
 
   return (
     <div className="animate-fade-up">
       <PageHeader
-        back={<BackLink fallbackHref="/bokforing" fallbackLabel="Bokföring" />}
+        back={<SmartBack />}
         title="Resultatrapport"
         subtitle={`Hur det går för företaget ${rr.range.from} till ${rr.range.to} – direkt ur bokföringen.`}
         actions={
@@ -50,8 +52,9 @@ export default function ResultatPage() {
         <summary className="mb-3 cursor-pointer list-none text-[14px] font-semibold text-accent hover:underline">
           Full resultatrapport per konto
         </summary>
-        <Card className="overflow-x-auto px-5 py-4">
-          <table className="w-full min-w-[420px] text-[13px]">
+        {/* Två kolumner (konto + belopp) – klarar smala skärmar utan minbredd/scroll. */}
+        <Card className="px-5 py-4">
+          <table className="w-full text-[13px]">
             <tbody>
               <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
                 <td className="pb-2">Intäkter</td>

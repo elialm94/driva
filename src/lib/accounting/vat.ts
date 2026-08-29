@@ -205,15 +205,55 @@ export function generateVatReport(periodKey: string, actor: "anvandare" | "assis
   return report;
 }
 
+/** Tidigare kvartal med momsaktivitet som inte deklarerats – de måste tas i ordning. */
+function undeclaredEarlierPeriods(report: VatReport): Period[] {
+  const data = db();
+  const years = new Set<number>();
+  for (const v of data.verifications) years.add(Number(bokforingsdatum(v.date).slice(0, 4)));
+  const out: Period[] = [];
+  for (const y of [...years].sort((a, b) => a - b)) {
+    const fy = ensureFiscalYearFor(`${y}-06-15`);
+    for (const p of quartersOf(fy)) {
+      if (p.end >= report.periodStart) continue;
+      const declared = data.vatReports.some(
+        (r) => r.periodStart === p.start && r.periodEnd === p.end && r.status === "deklarerad"
+      );
+      if (declared) continue;
+      const pos = computeVatPosition(p);
+      if (pos.utgaende !== 0 || pos.ingaende !== 0) out.push(p);
+    }
+  }
+  return out;
+}
+
 /**
  * Markera momsrapporten som deklarerad. Ingen riktig inlämning sker –
  * detta är en manuell markering med audit trail. Momskontona förs om till
  * 2650 Redovisningskonto för moms, och perioden låses.
+ *
+ * Servervakter (gäller alla vägar in, även assistenten):
+ *   * perioden måste ha tagit slut – annars skulle en PÅGÅENDE period låsas
+ *     och alla kommande köp/fakturor i den avvisas.
+ *   * tidigare perioder med momsaktivitet måste deklareras först (ordning).
+ *   * bank + underlag för perioden måste vara hanterade (checklistan).
  */
 export function markVatReportDeclared(reportId: string, actor: "anvandare" | "assistent"): VatReport {
   const report = db().vatReports.find((r) => r.id === reportId);
   if (!report) throw new Error("Momsrapporten finns inte.");
   if (report.status === "deklarerad") return report;
+
+  const today = todayDate();
+  if (report.periodEnd >= today) {
+    throw new Error(
+      `Momsperioden ${report.label} pågår fortfarande (till ${report.periodEnd}) – den kan markeras som deklarerad först när den är slut.`
+    );
+  }
+  const earlier = undeclaredEarlierPeriods(report);
+  if (earlier.length) {
+    throw new Error(
+      `Deklarera perioderna i ordning: ${earlier.map((p) => p.label).join(", ")} har momsaktivitet men är inte deklarerad${earlier.length > 1 ? "e" : ""} ännu.`
+    );
+  }
 
   const checklist = vatChecklist({
     key: "",

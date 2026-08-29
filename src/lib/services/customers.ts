@@ -3,7 +3,8 @@ import { uid } from "../ids";
 import type { Customer, CustomerRequest, RequestSource } from "../types";
 import { logActivity } from "./activity";
 import { normalizePersonnummer } from "../personnummer";
-import { invoiceTotals, isOverdue } from "./data";
+import { invoiceOutstanding, isOpenReceivable, isOverdue } from "./data";
+import { CustomerValidationError, customerContactFieldErrors, personnummerFieldError } from "../customer-validation";
 
 export function createCustomer(input: {
   kind: Customer["kind"];
@@ -36,10 +37,12 @@ export function updateCustomerNotes(customerId: string, notes: string): void {
 
 export function updateCustomer(
   customerId: string,
-  patch: Partial<Pick<Customer, "name" | "email" | "phone" | "address" | "postalCode" | "city" | "orgNumber" | "contactPerson" | "personalIdentityNumber">>
+  patch: Partial<Pick<Customer, "name" | "email" | "phone" | "address" | "postalCode" | "city" | "orgNumber" | "contactPerson" | "personalIdentityNumber" | "notes">>
 ): Customer {
   const c = db().customers.find((x) => x.id === customerId);
   if (!c) throw new Error("Kunden finns inte");
+  const fieldErrors = customerContactFieldErrors(patch);
+  if (fieldErrors.length) throw new CustomerValidationError(fieldErrors);
   if (patch.name !== undefined) c.name = patch.name.trim();
   if (patch.email !== undefined) c.email = patch.email.trim();
   if (patch.phone !== undefined) c.phone = patch.phone.trim();
@@ -48,7 +51,10 @@ export function updateCustomer(
   if (patch.city !== undefined) c.city = patch.city.trim() || undefined;
   if (patch.orgNumber !== undefined) c.orgNumber = patch.orgNumber.trim() || undefined;
   if (patch.contactPerson !== undefined) c.contactPerson = patch.contactPerson.trim() || undefined;
+  if (patch.notes !== undefined) c.notes = patch.notes;
   if (patch.personalIdentityNumber !== undefined) {
+    const pnError = personnummerFieldError(patch.personalIdentityNumber);
+    if (pnError) throw new CustomerValidationError([{ field: "personalIdentityNumber", message: pnError }]);
     const trimmed = patch.personalIdentityNumber.trim();
     c.personalIdentityNumber = trimmed ? normalizePersonnummer(trimmed) : undefined;
   }
@@ -248,8 +254,8 @@ function customerStatsById(): Map<string, CustomerStats> {
     bumpActivity(s, inv.createdAt);
     bumpActivity(s, inv.issueDate);
     bumpActivity(s, inv.paidAt);
-    if (inv.status !== "skickad") continue;
-    s.outstanding += invoiceTotals(inv).toPay;
+    if (!isOpenReceivable(inv)) continue;
+    s.outstanding += invoiceOutstanding(inv);
     if (isOverdue(inv)) s.overdue = true;
   }
 
@@ -444,6 +450,25 @@ export function getInquiryView(id: string): { request: CustomerRequest; customer
   const customer = db().customers.find((c) => c.id === request.customerId);
   if (!customer) return undefined;
   return { request, customer };
+}
+
+/**
+ * "Markera hanterad": riktig domänövergång (ny → besvarad) – t.ex. när
+ * företagaren redan pratat med kunden och ingen offert ska skapas.
+ * Förfrågan lämnar "Behöver din uppmärksamhet" men ligger kvar i
+ * inboxen/kundhistoriken som hanterad. Idempotent för redan hanterade.
+ */
+export function markInquiryHandled(requestId: string): CustomerRequest {
+  const request = db().requests.find((r) => r.id === requestId);
+  if (!request) throw new Error("Förfrågan finns inte.");
+  if (request.status !== "ny") return request;
+  request.status = "besvarad";
+  logActivity(`Förfrågan ”${request.title}” markerades som hanterad.`, {
+    customerId: request.customerId,
+    entity: { type: "forfragan", id: request.id },
+  });
+  save();
+  return request;
 }
 
 /** Hitta öppen förfrågan att koppla till en offert – samma objekt som inboxen. */

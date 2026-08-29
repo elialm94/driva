@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ArrowLeft } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { resolveBack } from "@/lib/nav";
+import { defaultBack, resolveBack } from "@/lib/nav";
 
 export const backLinkClassName =
   "inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-ink";
@@ -47,4 +47,28 @@ export function useBackNavigation(fallback: { href: string; label: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   return resolveBack(pathname, searchParams, fallback) ?? fallback;
+}
+
+/**
+ * Origin-aware back. Uses `tillbaka` when valid, otherwise the route's
+ * canonical parent. Pass fallback only to override label/href (create flows).
+ */
+export function SmartBack({
+  fallbackHref,
+  fallbackLabel,
+  ignoreReturnTo = false,
+}: {
+  fallbackHref?: string;
+  fallbackLabel?: string;
+  ignoreReturnTo?: boolean;
+} = {}) {
+  const pathname = usePathname();
+  const auto = defaultBack(pathname);
+  return (
+    <BackLink
+      fallbackHref={fallbackHref ?? auto?.href ?? "/"}
+      fallbackLabel={fallbackLabel ?? auto?.label ?? "Tillbaka"}
+      ignoreReturnTo={ignoreReturnTo}
+    />
+  );
 }

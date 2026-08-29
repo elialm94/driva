@@ -1,12 +1,14 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
-import type { Expense, Receipt, Verification } from "../types";
+import type { BankTransaction, Expense, MerchantCategoryRule, Receipt, Verification } from "../types";
 import { categoryByKey, entriesExpense, guessCategory, EXPENSE_CATEGORIES, KNOWN_SUPPLIERS } from "../bas";
 import { kr } from "../format";
 import { logActivity } from "./activity";
+import { logAudit } from "../accounting/audit";
 import { postVerification, createCorrection } from "../accounting/engine";
 import { clampToOpenDate } from "../accounting/fiscal";
 import { assetSuggestionForExpense, registerAssetFromExpense, INVENTARIE_GRANS } from "../accounting/assets";
+import { assertDemoMode } from "../demo";
 
 /**
  * Kvittotolkning ("AI-extraktion") är mockad i demon: när ett kvitto laddas upp
@@ -20,13 +22,86 @@ import { assetSuggestionForExpense, registerAssetFromExpense, INVENTARIE_GRANS }
 
 export const ASSET_QUESTION_OPTIONS = ["Registrera som inventarie", "Bokför som vanlig kostnad"] as const;
 
+/* --------------------------- Leverantörskategorier --------------------------- */
+/* Deterministiska regler: användarens egna val väger tyngst och byggs på       */
+/* varje gång ett köp bokförs av en människa. Ingen ML – en enkel regelbutik.   */
+
+export function merchantRuleKey(supplier: string): string {
+  return supplier
+    .toLowerCase()
+    .replace(/\b(ab|hb|kb|aktiebolag)\b/g, "")
+    .replace(/[^a-zåäö0-9]+/g, " ")
+    .trim();
+}
+
+export interface MerchantCategoryGuess {
+  key: string;
+  confidence: "hog" | "medel" | "lag";
+  /** Förklaring, t.ex. "Bauhaus har bokförts som Material 14 gånger". */
+  reason: string;
+}
+
+/**
+ * Kategorisera en leverantör: (1) användarens egna regler – 2+ bokningar ger
+ * hög konfidens (autobokning), 1 ger förslag; (2) kända leverantörer;
+ * (3) heuristik. Deterministiskt och förklarbart.
+ */
+export function categorizeMerchant(supplier: string): MerchantCategoryGuess | null {
+  const rules = db().meta.merchantCategoryRules ?? {};
+  const rule = rules[merchantRuleKey(supplier)];
+  if (rule) {
+    const label = categoryByKey(rule.category).label;
+    return {
+      key: rule.category,
+      confidence: rule.count >= 2 ? "hog" : "medel",
+      reason:
+        rule.count > 1
+          ? `${supplier} har bokförts som ${label} ${rule.count} gånger`
+          : `${supplier} bokfördes som ${label} senast`,
+    };
+  }
+  const known = guessCategory(supplier);
+  if (known) {
+    return {
+      key: known.key,
+      confidence: known.confidence,
+      reason:
+        known.confidence === "hog"
+          ? `Driva känner igen ${supplier} och bokför köp där som ${categoryByKey(known.key).label.toLowerCase()}`
+          : `Namnet antyder ${categoryByKey(known.key).label.toLowerCase()}`,
+    };
+  }
+  return null;
+}
+
+/** Mänskligt val av kategori → uppdatera regeln så nästa köp föreslås/bokas rätt. */
+export function recordMerchantRule(supplier: string, categoryKey: string): void {
+  const key = merchantRuleKey(supplier);
+  if (!key) return;
+  const data = db();
+  const rules: Record<string, MerchantCategoryRule> = data.meta.merchantCategoryRules ?? {};
+  const existing = rules[key];
+  rules[key] =
+    existing && existing.category === categoryKey
+      ? { category: categoryKey, count: existing.count + 1, lastUsedAt: new Date().toISOString() }
+      : // Nytt val ersätter gammal regel – räknaren börjar om (kräver en
+        // bekräftelse till innan autobokning).
+        { category: categoryKey, count: 1, lastUsedAt: new Date().toISOString() };
+  data.meta.merchantCategoryRules = rules;
+}
+
 /** Klarspråksförklaring till varför köpet konterades som det gjorde. */
-function expenseExplanation(expense: Expense, categoryKey: string, createdBy: Verification["createdBy"]): string {
+function expenseExplanation(
+  expense: Expense,
+  categoryKey: string,
+  createdBy: Verification["createdBy"],
+  matchReason?: string
+): string {
   const cat = categoryByKey(categoryKey);
   const known = Object.keys(KNOWN_SUPPLIERS).find((name) => expense.supplier.toLowerCase().includes(name));
   const why =
-    createdBy === "auto" && known
-      ? `Driva känner igen ${expense.supplier} och bokför köp där som ${cat.label.toLowerCase()}`
+    createdBy === "auto"
+      ? (matchReason ?? (known ? `Driva känner igen ${expense.supplier} och bokför köp där som ${cat.label.toLowerCase()}` : `Köpet bokfördes som ${cat.label.toLowerCase()}`))
       : createdBy === "assistent"
         ? `Assistenten valde kategorin ${cat.label.toLowerCase()} och du godkände`
         : `Du svarade att köpet gällde ${cat.label.toLowerCase()}`;
@@ -40,9 +115,14 @@ function bookExpense(
   expense: Expense,
   categoryKey: string,
   confidence: Verification["confidence"],
-  createdBy: Verification["createdBy"]
+  createdBy: Verification["createdBy"],
+  matchReason?: string
 ): Verification {
   const data = db();
+  if (expense.status === "bokford") {
+    // Idempotens: en utgift kan aldrig bokföras två gånger (dubbelklick/retry).
+    throw new Error(`Köpet hos ${expense.supplier} är redan bokfört.`);
+  }
   const cat = categoryByKey(categoryKey);
   const vat = cat.vatFree ? 0 : expense.vatAmount;
   const clamped = clampToOpenDate(expense.date);
@@ -54,7 +134,7 @@ function bookExpense(
     confidence,
     createdBy,
     explanation:
-      expenseExplanation(expense, categoryKey, createdBy) +
+      expenseExplanation(expense, categoryKey, createdBy, matchReason) +
       (clamped.adjusted ? ` Bokfört ${clamped.date} eftersom perioden för ${clamped.originalDate} är låst.` : ""),
   });
   expense.category = categoryKey;
@@ -65,9 +145,18 @@ function bookExpense(
     const tx = data.bankTransactions.find((t) => t.id === expense.bankTransactionId);
     if (tx) {
       tx.status = "bokford";
+      tx.matchedType = "utgift";
+      tx.matchedId = expense.id;
       tx.verificationId = ver.id;
     }
   }
+  // Mänskliga val bygger regelbutiken – autobokningar gör det inte
+  // (annars skulle en felgissning förstärka sig själv).
+  if (createdBy !== "auto") recordMerchantRule(expense.supplier, categoryKey);
+  logAudit(createdBy === "auto" ? "system" : createdBy, "utgift_bokford", `Köp hos ${expense.supplier} (${kr(expense.amount)}) bokfördes som ${cat.label}.`, {
+    targetType: "utgift",
+    targetId: expense.id,
+  });
   return ver;
 }
 
@@ -89,9 +178,13 @@ export function uploadReceiptForExpense(
   const data = db();
   const expense = data.expenses.find((e) => e.id === expenseId);
   if (!expense) throw new Error("Utgiften finns inte");
+  if (expense.receiptId) {
+    // Idempotens: ett köp har ETT kvitto – dubbel uppladdning kopplar aldrig två.
+    throw new Error(`Köpet hos ${expense.supplier} har redan ett kvitto kopplat.`);
+  }
 
   // "AI-extraktion" – i demon speglar den banktransaktionens fakta.
-  const guess = guessCategory(expense.supplier);
+  const guess = categorizeMerchant(expense.supplier);
   const receipt: Receipt = {
     id: uid(),
     expenseId,
@@ -121,20 +214,22 @@ export function uploadReceiptForExpense(
       { entity: { type: "utgift", id: expenseId } }
     );
   } else if (guess && guess.confidence === "hog") {
-    // Hög säkerhet → bokför automatiskt.
+    // Hög säkerhet (egen regel eller känd leverantör) → bokför automatiskt.
     if (!expense.description) expense.description = receipt.extracted.description;
-    bookExpense(expense, guess.key, "hog", "auto");
+    bookExpense(expense, guess.key, "hog", "auto", guess.reason);
     logActivity(
-      `Kvitto från ${expense.supplier} (${kr(expense.amount)}) matchades mot bankköpet och bokfördes som ${categoryByKey(guess.key).label.toLowerCase()}.`,
+      `Kvitto från ${expense.supplier} (${kr(expense.amount)}) matchades mot bankköpet och bokfördes som ${categoryByKey(guess.key).label.toLowerCase()} (${guess.reason}).`,
       { entity: { type: "utgift", id: expenseId } }
     );
     autoBooked = true;
   } else {
-    // Låg/medel säkerhet → ställ en enkel fråga.
+    // Låg/medel säkerhet → ställ en enkel fråga, med ev. förslag först.
     expense.status = "behover_svar";
+    const suggested = guess ? categoryByKey(guess.key).label : null;
+    const baseOptions = ["Material", "Verktyg & förbrukning", "Kundrepresentation", "Annat"];
     expense.question = {
-      text: `Vad gällde köpet på ${kr(expense.amount)} hos ${expense.supplier}?`,
-      options: ["Material", "Verktyg & förbrukning", "Kundrepresentation", "Annat"],
+      text: `Vad gällde köpet på ${kr(expense.amount)} hos ${expense.supplier}?${suggested ? ` Driva gissar ${suggested.toLowerCase()} (${guess!.reason}).` : ""}`,
+      options: suggested ? [suggested, ...baseOptions.filter((o) => o !== suggested)] : baseOptions,
     };
     logActivity(`Kvitto från ${expense.supplier} mottaget – produkten behöver veta vad köpet gällde.`, {
       entity: { type: "utgift", id: expenseId },
@@ -243,6 +338,134 @@ export function undoExpenseBooking(expenseId: string, by: "anvandare" | "assiste
   save();
 }
 
+/* ------------------------- Kvitto ↔ banktransaktion ------------------------- */
+
+export interface ReceiptTxMatch {
+  transactionId: string;
+  confidence: "hog" | "medel";
+  reason: string;
+}
+
+/**
+ * Matcha ett fristående kvitto mot obokade utgående banktransaktioner:
+ * exakt belopp + leverantörsnamn → hög (autolänk), exakt belopp entydigt
+ * inom ±3 dagar → medel (förslag). Aldrig dubbelkoppling: transaktioner som
+ * redan hör till en utgift utesluts.
+ */
+export function matchReceiptToTransaction(extracted: {
+  supplier: string;
+  amount: number;
+  date: string;
+}): ReceiptTxMatch | null {
+  const data = db();
+  const takenTx = new Set(data.expenses.filter((e) => e.bankTransactionId).map((e) => e.bankTransactionId));
+  const candidates = data.bankTransactions.filter(
+    (t) => t.status !== "bokford" && t.amount < 0 && -t.amount === extracted.amount && !takenTx.has(t.id)
+  );
+  if (candidates.length === 0) return null;
+  const supplierKey = merchantRuleKey(extracted.supplier);
+  const byName = candidates.filter((t) => merchantRuleKey(t.counterpart).includes(supplierKey) || supplierKey.includes(merchantRuleKey(t.counterpart)));
+  if (byName.length === 1) {
+    return {
+      transactionId: byName[0].id,
+      confidence: "hog",
+      reason: `Exakt belopp ${kr(extracted.amount)} + leverantörsnamn ${extracted.supplier}`,
+    };
+  }
+  const nearDate = candidates.filter(
+    (t) => Math.abs(Date.parse(t.date) - Date.parse(extracted.date)) <= 3 * 86_400_000
+  );
+  if (nearDate.length === 1) {
+    return {
+      transactionId: nearDate[0].id,
+      confidence: "medel",
+      reason: `Exakt belopp ${kr(extracted.amount)}, entydigt inom ±3 dagar`,
+    };
+  }
+  return null;
+}
+
+/**
+ * Skapa utgift från kända belopp (inkommande kvitto). Hitta ALDRIG på belopp –
+ * anroparen måste skicka hela kronor. Bokför bara om kategorin är högkonfident.
+ */
+export function createExpenseFromKnownReceipt(input: {
+  supplier: string;
+  amount: number;
+  vatAmount: number;
+  date: string;
+  description?: string;
+  filename?: string;
+  source?: Receipt["source"];
+}): { expense: Expense; autoBooked: boolean } {
+  if (!Number.isInteger(input.amount) || input.amount < 1) {
+    throw new Error("Belopp saknas – kan inte skapa utgift utan belopp i hela kronor.");
+  }
+  if (!Number.isInteger(input.vatAmount) || input.vatAmount < 0 || input.vatAmount > input.amount) {
+    throw new Error("Momsbelopp är ogiltigt.");
+  }
+  const supplier = input.supplier.trim();
+  if (!supplier) throw new Error("Leverantör saknas.");
+
+  const data = db();
+  const now = new Date().toISOString();
+  const expense: Expense = {
+    id: uid(),
+    supplier,
+    date: input.date.slice(0, 10),
+    amount: input.amount,
+    vatAmount: input.vatAmount,
+    description: input.description,
+    status: "saknar_kvitto",
+    createdAt: now,
+  };
+  data.expenses.push(expense);
+
+  const receipt: Receipt = {
+    id: uid(),
+    expenseId: expense.id,
+    filename: input.filename || `kvitto-${supplier.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`,
+    source: input.source ?? "email",
+    uploadedAt: now,
+    extracted: {
+      supplier,
+      date: expense.date,
+      amount: input.amount,
+      vatAmount: input.vatAmount,
+      description: input.description ?? "Inköp",
+      category: "",
+      confidence: "lag",
+    },
+  };
+  data.receipts.push(receipt);
+  expense.receiptId = receipt.id;
+
+  const guess = categorizeMerchant(supplier);
+  let autoBooked = false;
+  if (guess && guess.confidence === "hog" && !assetSuggestionForExpense({ ...expense, category: guess.key })) {
+    if (!expense.description) expense.description = receipt.extracted.description;
+    receipt.extracted.category = guess.key;
+    receipt.extracted.confidence = "hog";
+    bookExpense(expense, guess.key, "hog", "auto", guess.reason);
+    autoBooked = true;
+  } else if (guess) {
+    expense.status = "behover_svar";
+    const suggested = categoryByKey(guess.key).label;
+    expense.question = {
+      text: `Vad gällde köpet på ${kr(expense.amount)} hos ${expense.supplier}? Driva gissar ${suggested.toLowerCase()} (${guess.reason}).`,
+      options: [suggested, "Material", "Verktyg & förbrukning", "Annat"],
+    };
+  } else {
+    expense.status = "behover_svar";
+    expense.question = {
+      text: `Vad gällde köpet på ${kr(expense.amount)} hos ${expense.supplier}?`,
+      options: ["Material", "Verktyg & förbrukning", "Kundrepresentation", "Annat"],
+    };
+  }
+  save();
+  return { expense, autoBooked };
+}
+
 /** Fristående kvittouppladdning utan känd banktransaktion (demo-exempel). */
 const STANDALONE_TEMPLATES = [
   { supplier: "Byggmax", amount: 1240, vatAmount: 248, category: "material", description: "Reglar och skruv" },
@@ -250,7 +473,14 @@ const STANDALONE_TEMPLATES = [
   { supplier: "OKQ8", amount: 745, vatAmount: 149, category: "drivmedel", description: "Diesel, servicebil" },
 ];
 
+/**
+ * Demo: skapa ett exempelkvitto. Kvittot matchas mot en obokad banktransaktion
+ * om en passar; annars skapas motsvarande (demo-)kortköp i banken så att
+ * huvudboken (1930) aldrig glider ifrån bankens saldo – även demodata måste
+ * följa bokföringens invarianter.
+ */
 export function uploadStandaloneReceipt(filename: string): Expense {
+  assertDemoMode("Exempelkvitto");
   const data = db();
   const tpl = STANDALONE_TEMPLATES[data.receipts.length % STANDALONE_TEMPLATES.length];
   const now = new Date().toISOString();
@@ -264,6 +494,30 @@ export function uploadStandaloneReceipt(filename: string): Expense {
     status: "saknar_kvitto",
     createdAt: now,
   };
+
+  // Kvitto ↔ transaktion: återanvänd en obokad transaktion om den matchar.
+  const match = matchReceiptToTransaction({ supplier: tpl.supplier, amount: tpl.amount, date: now });
+  if (match) {
+    expense.bankTransactionId = match.transactionId;
+  } else {
+    const account = data.bankAccounts[0];
+    if (account) {
+      const tx: BankTransaction = {
+        id: uid(),
+        accountId: account.id,
+        externalId: `demo-${uid()}`,
+        date: now,
+        amount: -tpl.amount,
+        counterpart: tpl.supplier,
+        description: `Kortköp ${tpl.supplier.toUpperCase()}`,
+        status: "ny",
+      };
+      data.bankTransactions.unshift(tx);
+      account.balance -= tpl.amount;
+      expense.bankTransactionId = tx.id;
+    }
+  }
+
   data.expenses.push(expense);
   const receipt: Receipt = {
     id: uid(),
@@ -283,9 +537,9 @@ export function uploadStandaloneReceipt(filename: string): Expense {
   };
   data.receipts.push(receipt);
   expense.receiptId = receipt.id;
-  bookExpense(expense, tpl.category, "hog", "auto");
+  bookExpense(expense, tpl.category, "hog", "auto", match ? `Kvittot matchades mot bankköpet (${match.reason})` : undefined);
   logActivity(
-    `Kvitto från ${tpl.supplier} (${kr(tpl.amount)}) lästes av och bokfördes som ${categoryByKey(tpl.category).label.toLowerCase()}.`,
+    `Exempelkvitto (demo) från ${tpl.supplier} (${kr(tpl.amount)}) skapades och bokfördes som ${categoryByKey(tpl.category).label.toLowerCase()}.`,
     { entity: { type: "utgift", id: expense.id } }
   );
   save();

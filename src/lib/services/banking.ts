@@ -1,20 +1,27 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
 import type { BankTransaction } from "../types";
-import { getInvoice, invoiceTotals, requireCustomer } from "./data";
-import { markInvoicePaid } from "./invoices";
+import { getInvoice, invoiceOutstanding, isOpenReceivable, requireCustomer } from "./data";
 import { entriesSupplierInvoicePaid } from "../bas";
 import { kr } from "../format";
 import { logActivity } from "./activity";
+import { logAudit } from "../accounting/audit";
 import { postVerification } from "../accounting/engine";
+import { assertDemoMode } from "../demo";
+import { processIncomingTransaction } from "./payment-matching";
+import { expectedTaxReductionPayouts } from "./tax-reduction";
 
 /**
  * Open Banking-abstraktion.
  *
  * BankProvider är gränssnittet mot en riktig leverantör (t.ex. Tink, GoCardless
- * eller Enable Banking): kontosaldo + transaktionsström. MockBankProvider
- * simulerar händelser så att matchningsmotorn kan demonstreras på riktigt.
- * Matchningsmotorn (`matchIncomingTransaction`) är densamma oavsett provider.
+ * eller Enable Banking): kontosaldo + transaktionsström. Riktiga flöden bär
+ * öre – beloppen avrundas till hela kronor VID IMPORTGRÄNSEN (se README-ADR);
+ * matchningen tolererar öresdiffar och bokar dem på 3740.
+ *
+ * Alla funktioner som HITTAR PÅ pengar (simulera inbetalning, betala
+ * leverantörsfaktura utan riktig bank) är demo-gated (lib/demo.ts): i en
+ * produktionsmiljö utan bankkoppling visas ett ärligt oconfigurerat läge.
  */
 
 export interface BankProvider {
@@ -23,65 +30,121 @@ export interface BankProvider {
   sync(): BankTransaction[];
 }
 
-/** Matcha en inkommande banktransaktion mot obetalda kundfakturor. */
-export function matchIncomingTransaction(txId: string): boolean {
+/**
+ * Registrera importerade banktransaktioner idempotent: transaktioner med ett
+ * `externalId` som redan finns hoppar över (databasen har dessutom ett unikt
+ * index). Nya inbetalningar körs genom matchningsmotorn.
+ */
+export function registerBankTransactions(incoming: BankTransaction[]): { imported: number; skipped: number } {
   const data = db();
-  const tx = data.bankTransactions.find((t) => t.id === txId);
+  const known = new Set(
+    data.bankTransactions.filter((t) => t.externalId).map((t) => `${t.accountId}:${t.externalId}`)
+  );
+  let imported = 0;
+  let skipped = 0;
+  for (const tx of incoming) {
+    if (tx.externalId && known.has(`${tx.accountId}:${tx.externalId}`)) {
+      skipped++;
+      continue;
+    }
+    if (!Number.isInteger(tx.amount)) {
+      // Öre-gränsen: hela kronor i systemet – avrunda vid importen.
+      tx.amount = Math.round(tx.amount);
+    }
+    data.bankTransactions.unshift(tx);
+    if (tx.externalId) known.add(`${tx.accountId}:${tx.externalId}`);
+    imported++;
+    save();
+    processIncomingTransaction(tx.id);
+  }
+  if (imported > 0) save();
+  return { imported, skipped };
+}
+
+/**
+ * Matcha en inkommande banktransaktion mot obetalda kundfakturor.
+ * Returnerar true endast när betalningen bokfördes automatiskt.
+ */
+export function matchIncomingTransaction(txId: string): boolean {
+  const tx = db().bankTransactions.find((t) => t.id === txId);
   if (!tx || tx.amount <= 0 || tx.status === "bokford") return false;
-
-  const open = data.invoices.filter((i) => i.status === "skickad");
-
-  // 1. Säkrast: OCR-referens.
-  let match = open.find((i) => tx.reference?.includes(i.ocr));
-  // 2. Annars: exakt belopp (om entydigt).
-  if (!match) {
-    const byAmount = open.filter((i) => invoiceTotals(i).toPay === tx.amount);
-    if (byAmount.length === 1) match = byAmount[0];
-  }
-
-  if (match) {
-    markInvoicePaid(match.id, { bankTransactionId: tx.id, matchedBy: "auto" });
-    return true;
-  }
-
-  tx.status = "behover_atgard";
-  logActivity(`En inbetalning på ${kr(tx.amount)} från ${tx.counterpart} kunde inte matchas mot någon faktura.`);
-  save();
-  return false;
+  return processIncomingTransaction(txId).outcome === "booked";
 }
 
 /** Demo: simulera att kunden betalar en faktura – hela kedjan körs på riktigt. */
-export function simulateIncomingPayment(invoiceId: string): void {
+export function simulateIncomingPayment(invoiceId: string, opts: { amount?: number } = {}): void {
+  assertDemoMode("Simulerad inbetalning");
   const data = db();
   const invoice = getInvoice(invoiceId);
-  if (!invoice || invoice.status !== "skickad") return;
+  if (!invoice || !isOpenReceivable(invoice)) return;
+  const account = data.bankAccounts[0];
+  if (!account) throw new Error("Ingen bank är kopplad – det finns inget konto att simulera inbetalningen mot.");
   const customer = requireCustomer(invoice.customerId);
-  const t = invoiceTotals(invoice);
+  const amount = opts.amount ?? invoiceOutstanding(invoice);
+  if (!Number.isInteger(amount) || amount < 1) throw new Error("Beloppet måste vara minst 1 kr.");
   const tx: BankTransaction = {
     id: uid(),
-    accountId: data.bankAccounts[0].id,
+    accountId: account.id,
+    externalId: `demo-${uid()}`,
     date: new Date().toISOString(),
-    amount: t.toPay,
+    amount,
     counterpart: customer.name,
     description: "Inbetalning bankgiro",
     reference: `OCR ${invoice.ocr}`,
     status: "ny",
   };
   data.bankTransactions.unshift(tx);
-  data.bankAccounts[0].balance += t.toPay;
+  account.balance += amount;
   save();
-  matchIncomingTransaction(tx.id);
+  processIncomingTransaction(tx.id);
+}
+
+/**
+ * Demo: simulera Skatteverkets ROT/RUT-utbetalning för ett ärende.
+ * Utan belopp betalas hela den väntade summan; ett lägre belopp demonstrerar
+ * delvis godkännande (restfakturaflödet).
+ */
+export function simulateTaxReductionPayout(input: { jobId?: string; invoiceId?: string; amount?: number }): void {
+  assertDemoMode("Simulerad ROT/RUT-utbetalning");
+  const data = db();
+  const account = data.bankAccounts[0];
+  if (!account) throw new Error("Ingen bank är kopplad – det finns inget konto att simulera utbetalningen mot.");
+  const payout = expectedTaxReductionPayouts().find(
+    (p) => (input.jobId && p.jobId === input.jobId) || (input.invoiceId && p.invoiceId === input.invoiceId)
+  );
+  if (!payout) throw new Error("Ingen ROT/RUT-ansökan väntar på utbetalning för det här ärendet.");
+  const amount = input.amount ?? payout.expectedAmount;
+  if (!Number.isInteger(amount) || amount < 1) throw new Error("Beloppet måste vara minst 1 kr.");
+  const tx: BankTransaction = {
+    id: uid(),
+    accountId: account.id,
+    externalId: `demo-${uid()}`,
+    date: new Date().toISOString(),
+    amount,
+    counterpart: "Skatteverket",
+    description: `Utbetalning ${payout.type.toUpperCase()}`,
+    reference: payout.label,
+    status: "ny",
+  };
+  data.bankTransactions.unshift(tx);
+  account.balance += amount;
+  save();
+  processIncomingTransaction(tx.id);
 }
 
 /** Demo: betala en leverantörsfaktura från banken – matchas och bokförs. */
 export function paySupplierInvoice(supplierInvoiceId: string): void {
+  assertDemoMode("Leverantörsbetalning utan bankkoppling");
   const data = db();
   const sup = data.supplierInvoices.find((s) => s.id === supplierInvoiceId);
   if (!sup || sup.status === "betald") return;
+  const account = data.bankAccounts[0];
+  if (!account) throw new Error("Ingen bank är kopplad – det finns inget konto att betala från.");
   const now = new Date().toISOString();
   const tx: BankTransaction = {
     id: uid(),
-    accountId: data.bankAccounts[0].id,
+    accountId: account.id,
+    externalId: `demo-${uid()}`,
     date: now,
     amount: -sup.amount,
     counterpart: sup.supplier,
@@ -101,10 +164,14 @@ export function paySupplierInvoice(supplierInvoiceId: string): void {
   });
   tx.verificationId = ver.id;
   data.bankTransactions.unshift(tx);
-  data.bankAccounts[0].balance -= sup.amount;
+  account.balance -= sup.amount;
   sup.status = "betald";
   sup.bankTransactionId = tx.id;
   sup.paymentVerificationId = ver.id;
+  logAudit("system", "banktransaktion_bokford", `Leverantörsbetalning ${kr(sup.amount)} till ${sup.supplier} bokfördes.`, {
+    targetType: "leverantorsfaktura",
+    targetId: sup.id,
+  });
   logActivity(`${sup.supplier} ${sup.invoiceNumber} betalades (${kr(sup.amount)}) och bokfördes.`);
   save();
 }

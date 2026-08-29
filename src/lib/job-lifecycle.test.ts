@@ -7,7 +7,7 @@ import { buildSeed } from "./seed";
 import { emptyTestDb, testCustomer } from "./invoices/test-db";
 import { derivedJobStatus, isPaymentPlanPartDue, jobEconomyLine, jobWhenLabel } from "./services/job-lifecycle";
 import { jobAdminState } from "./services/job-admin";
-import { listJobsForTable } from "./services/job-list";
+import { listJobsForTable, reconcileJobListFilters } from "./services/job-list";
 import { jobsThisWeek } from "./services/attention";
 import { getJob } from "./services/data";
 import type { Job } from "./types";
@@ -110,6 +110,29 @@ describe("seedade uppdrag", () => {
     assert.equal(admin.canMarkDone, true);
     assert.equal(admin.primary, null);
     assert.equal(admin.secondary, "visa_offert");
+  });
+
+  it("Betalt släpper Aktiva/Planerade så listan inte blir tom", () => {
+    assert.deepEqual(
+      reconcileJobListFilters({ lifecycle: "aktiva", economy: "alla", patch: { economy: "betalt" } }),
+      { lifecycle: "alla", economy: "betalt" },
+    );
+    assert.deepEqual(
+      reconcileJobListFilters({ lifecycle: "planerade", economy: "alla", patch: { economy: "betalt" } }),
+      { lifecycle: "alla", economy: "betalt" },
+    );
+    assert.deepEqual(
+      reconcileJobListFilters({ lifecycle: "alla", economy: "betalt", patch: { lifecycle: "aktiva" } }),
+      { lifecycle: "aktiva", economy: "alla" },
+    );
+    assert.deepEqual(
+      reconcileJobListFilters({ lifecycle: "klart", economy: "alla", patch: { economy: "betalt" } }),
+      { lifecycle: "klart", economy: "betalt" },
+    );
+    assert.deepEqual(
+      reconcileJobListFilters({ lifecycle: "aktiva", economy: "alla", patch: { economy: "kvar" } }),
+      { lifecycle: "aktiva", economy: "kvar" },
+    );
   });
 
   it("listan är en tabellmodell: aktiva default, sök och paginering", () => {

@@ -3,8 +3,12 @@ import { uid } from "../ids";
 import type { AssistantCard, AssistantMessage } from "../types";
 import { findCustomersByName } from "./customers";
 import { bookExpenseToJob, undoExpenseBooking } from "./expenses";
-import { followUpQuote, sendQuote } from "./quotes";
-import { sendInvoice, sendReminder } from "./invoices";
+import {
+  followUpQuoteByEmail,
+  issueAndEmailInvoice,
+  remindInvoiceByEmail,
+  sendQuoteWithEmail,
+} from "./document-mail";
 import { generateWebsite, publishWebsite } from "./website";
 import { applyBusinessProfilePatch } from "./settings";
 import { purchaseDomain } from "../domains/purchase";
@@ -14,7 +18,7 @@ import { markVatReportDeclared } from "../accounting/vat";
 import { isAiConfigured, chatWithTools, type AiChatMessage } from "../ai/provider";
 import { assistantToolDefs, executeTool } from "../ai/tools";
 import { historyToAiMessages, systemPrompt } from "../ai/prompt";
-import { isBankIdApprovalRequest, parseAmountInclVat, parseFlexibleDate, cap, resolveCustomerName } from "../ai/resolve";
+import { isBankIdApprovalRequest, parseAmountInclVat, parseAppliedTaxReduction, parseFlexibleDate, cap, resolveCustomerName } from "../ai/resolve";
 import {
   ambiguousCustomers,
   bankIdRefuseResult,
@@ -153,7 +157,10 @@ function intentCreateQuote(text: string): boolean {
   if (resolveCustomerName(name).kind === "none" && /s$/i.test(name) && !name.includes(" ")) {
     name = name.slice(0, -1);
   }
-  const amount = parseAmountInclVat(text);
+  const appliedTaxReduction = parseAppliedTaxReduction(text);
+  const amount = parseAmountInclVat(
+    text.replace(/(\d{1,3}(?:[ .\u00a0]\d{3})+|\d{3,})\s*(?:kr)?\s*i\s+(?:rot[-\s]?|rut[-\s]?)?avdrag/gi, "")
+  );
   const afterName = text.slice((nameMatch.index ?? 0) + nameMatch[0].length).replace(/^s\b/i, "");
   const titleMatch =
     afterName.match(/(?:för\s+)?(?:en\s+|ett\s+)?([^.,\d]+?)(?=\s*[,.]|\s*\d|$)/i) ||
@@ -174,7 +181,7 @@ function intentCreateQuote(text: string): boolean {
   const percentAtStart = percentMatch ? parseInt(percentMatch[1], 10) : undefined;
   const rot: "rot" | "rut" | null = /\brut\b/i.test(text) ? "rut" : /\brot\b/i.test(text) ? "rot" : null;
 
-  return withCustomer(name, { kind: "create_quote", title, amountInclVat: amount ?? undefined, rot }, (customerId) =>
+  return withCustomer(name, { kind: "create_quote", title, amountInclVat: amount ?? undefined, rot, appliedTaxReduction: appliedTaxReduction ?? undefined }, (customerId) =>
     createQuoteDraft({
       customerId,
       title,
@@ -182,6 +189,7 @@ function intentCreateQuote(text: string): boolean {
       intro: introParts.join(" "),
       percentAtStart,
       rot,
+      appliedTaxReduction: appliedTaxReduction ?? undefined,
     })
   );
 }
@@ -235,9 +243,12 @@ function intentRotInvoice(text: string): boolean {
     .replace(/skapa\s+(en\s+)?(rot|rut)[-\s]?faktura/gi, "")
     .replace(new RegExp(`(?:för|till)\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}s?`, "i"), "")
     .replace(/[,.:]/g, " ")
+    .replace(/(\d{1,3}(?:[ .\u00a0]\d{3})+|\d{3,})\s*(?:kr)?\s*i\s+(?:rot[-\s]?|rut[-\s]?)?avdrag/gi, "")
+    .replace(/men\s+anv[aä]nd\s+(bara|endast)/gi, "")
     .trim();
-  return withCustomer(name, { kind: "create_invoice", title: titleHint || undefined, taxReduction: type }, (customerId) =>
-    createInvoiceDraft({ customerId, title: titleHint || undefined, taxReduction: type })
+  const appliedTaxReduction = parseAppliedTaxReduction(text);
+  return withCustomer(name, { kind: "create_invoice", title: titleHint || undefined, taxReduction: type, appliedTaxReduction: appliedTaxReduction ?? undefined }, (customerId) =>
+    createInvoiceDraft({ customerId, title: titleHint || undefined, taxReduction: type, appliedTaxReduction: appliedTaxReduction ?? undefined })
   );
 }
 
@@ -588,19 +599,33 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
 
   switch (action.type) {
     case "paminn_forsenade": {
-      for (const id of action.invoiceIds) sendReminder(id, "assistent");
-      updateConfirmCard(actionId, "utford", `${action.invoiceIds.length === 1 ? "Påminnelsen" : "Påminnelserna"} har skickats.`);
+      let mailed = false;
+      for (const id of action.invoiceIds) {
+        const { outcome } = await remindInvoiceByEmail(id, "assistent");
+        if (outcome.ok && outcome.mode === "live") mailed = true;
+      }
+      updateConfirmCard(actionId, "utford", `${action.invoiceIds.length === 1 ? "Påminnelsen" : "Påminnelserna"} har ${mailed ? "skickats" : "noterats"}.`);
       reply(
-        action.invoiceIds.length === 1
-          ? "Klart – påminnelsen är skickad. Jag säger till om betalningen inte dyker upp inom några dagar."
-          : `Klart – ${action.invoiceIds.length} påminnelser är skickade. Jag säger till om betalningarna inte dyker upp inom några dagar.`
+        mailed
+          ? action.invoiceIds.length === 1
+            ? "Klart – påminnelsen är skickad med e-post. Jag säger till om betalningen inte dyker upp inom några dagar."
+            : `Klart – ${action.invoiceIds.length} påminnelser är skickade med e-post. Jag säger till om betalningarna inte dyker upp inom några dagar.`
+          : "Klart – påminnelserna är noterade. Ingen e-post är konfigurerad, så kontakta kunderna direkt eller dela fakturalänkarna."
       );
       break;
     }
     case "folj_upp_offerter": {
-      for (const id of action.quoteIds) followUpQuote(id, "assistent");
-      updateConfirmCard(actionId, "utford", "Påminnelserna har skickats.");
-      reply(`Klart – jag har påmint ${action.quoteIds.length === 1 ? "kunden" : `${action.quoteIds.length} kunder`} om att offerten väntar på BankID-godkännande.`);
+      let mailed = false;
+      for (const id of action.quoteIds) {
+        const { outcome } = await followUpQuoteByEmail(id, "assistent");
+        if (outcome.ok && outcome.mode === "live") mailed = true;
+      }
+      updateConfirmCard(actionId, "utford", `Påminnelserna har ${mailed ? "skickats" : "noterats"}.`);
+      reply(
+        mailed
+          ? `Klart – jag har påmint ${action.quoteIds.length === 1 ? "kunden" : `${action.quoteIds.length} kunder`} med e-post om att offerten väntar på BankID-godkännande.`
+          : "Klart – påminnelserna är noterade. Ingen e-post är konfigurerad, så kontakta kunderna direkt eller dela offertlänkarna."
+      );
       break;
     }
     case "bokfor_utgift": {
@@ -623,16 +648,37 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
       break;
     }
     case "skicka_offert": {
-      sendQuote(action.quoteId);
-      updateConfirmCard(actionId, "utford", "Offerten har skickats.");
-      reply("Klart – offerten är skickad. Kunden godkänner med BankID när hen är redo.");
+      try {
+        const { outcome } = await sendQuoteWithEmail(action.quoteId);
+        if (!outcome.ok) {
+          updateConfirmCard(actionId, "avbruten", outcome.error ?? "Kunde inte skicka offerten.");
+          reply(outcome.error ?? "Kunde inte skicka offerten.");
+          break;
+        }
+        updateConfirmCard(actionId, "utford", "Offerten har skickats.");
+        reply(
+          outcome.mode === "live"
+            ? "Klart – offerten är skickad med e-post. Kunden godkänner med BankID när hen är redo."
+            : "Klart – offerten är markerad som skickad. Ingen e-post är konfigurerad, så dela offertlänken med kunden. Hen godkänner med BankID."
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Kunde inte skicka offerten.";
+        updateConfirmCard(actionId, "avbruten", message);
+        reply(message);
+      }
       break;
     }
     case "skicka_faktura": {
       try {
-        sendInvoice(action.invoiceId, "assistent");
+        const { outcome } = await issueAndEmailInvoice(action.invoiceId, "assistent");
         updateConfirmCard(actionId, "utford", "Fakturan har skickats.");
-        reply("Klart – fakturan är utfärdad, skickad och bokförd.");
+        reply(
+          outcome.ok && outcome.mode === "live"
+            ? "Klart – fakturan är utfärdad, skickad med e-post och bokförd."
+            : outcome.ok
+              ? "Klart – fakturan är utfärdad och bokförd. Ingen e-post är konfigurerad, så dela fakturalänken med kunden."
+              : `Fakturan är utfärdad och bokförd, men e-posten misslyckades: ${outcome.error ?? "okänt fel"}. Skicka igen eller dela fakturalänken.`
+        );
       } catch (e) {
         const message = e instanceof Error ? e.message : "Kunde inte skicka fakturan.";
         updateConfirmCard(actionId, "avbruten", message);
@@ -785,7 +831,7 @@ export function completeCreateCustomerAndResume(actionId: string, customerId: st
   }
 
   if (resume.kind === "create_quote") {
-    apply(createQuoteDraft({ customerId, title: resume.title || "Offererat arbete", amountInclVat: resume.amountInclVat, rot: resume.rot ?? null }));
+    apply(createQuoteDraft({ customerId, title: resume.title || "Offererat arbete", amountInclVat: resume.amountInclVat, rot: resume.rot ?? null, appliedTaxReduction: resume.appliedTaxReduction }));
   } else if (resume.kind === "create_job") {
     apply(createJobDraft({ customerId, title: resume.title, startDate: resume.startDate, description: resume.description }));
   } else if (resume.kind === "create_invoice") {
@@ -796,6 +842,7 @@ export function completeCreateCustomerAndResume(actionId: string, customerId: st
         amountInclVat: resume.amountInclVat,
         jobId: resume.jobId,
         taxReduction: resume.taxReduction ?? null,
+        appliedTaxReduction: resume.appliedTaxReduction,
       })
     );
   }

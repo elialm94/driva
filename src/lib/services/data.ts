@@ -13,8 +13,26 @@ import { dagarSedan, dagarTill } from "../format";
 
 /* Små, väl använda uppslag och joins. */
 
+/*
+ * Kundindex: id → objekt. Kundobjekt muteras på plats (fälten uppdateras) men
+ * id:t ändras aldrig, så mappen förblir korrekt; nya kunder läggs alltid till
+ * med push → längdkontrollen invaliderar. Gör kunduppslag O(1) i stället för
+ * O(kunder) – actionmotorn och listorna slår upp kunder per rad.
+ */
+const customerIndexCache = new WeakMap<object, { len: number; byId: Map<string, Customer> }>();
+
+function customersById(): Map<string, Customer> {
+  const customers = db().customers;
+  let cached = customerIndexCache.get(customers);
+  if (!cached || cached.len !== customers.length) {
+    cached = { len: customers.length, byId: new Map(customers.map((c) => [c.id, c])) };
+    customerIndexCache.set(customers, cached);
+  }
+  return cached.byId;
+}
+
 export function getCustomer(id: string): Customer | undefined {
-  return db().customers.find((c) => c.id === id);
+  return customersById().get(id);
 }
 
 export function requireCustomer(id: string): Customer {
@@ -75,11 +93,122 @@ export function getInvoiceByToken(token: string): Invoice | undefined {
 }
 
 export function invoiceTotals(inv: Invoice): DocTotals {
+  if (inv.status !== "utkast" && inv.issuedSnapshot) {
+    return docTotals(inv.issuedSnapshot.lines, inv.issuedSnapshot.rot);
+  }
   return docTotals(inv.lines, inv.rot);
 }
 
+/**
+ * Öppen kundfordran: utfärdad och inte fullbetald. Kreditfakturor är inte
+ * fordringar – de får aldrig räknas som obetalda, bli försenade eller matchas
+ * mot inbetalningar. "delbetald" är fortfarande en öppen fordran (restbeloppet).
+ */
+export function isOpenReceivable(inv: Invoice): boolean {
+  return (inv.status === "skickad" || inv.status === "delbetald") && inv.type !== "kredit";
+}
+
+/**
+ * Räknas mot fakturerat belopp (kvar att fakturera, fakturerat på uppdrag/offert).
+ * Krediterade original och deras kreditfakturor tar ut varandra och utesluts båda.
+ * Delkrediter hanteras via invoicedTotalContribution (negativt bidrag).
+ */
+export function countsTowardInvoiced(inv: Invoice): boolean {
+  return inv.status !== "krediterad" && inv.type !== "kredit";
+}
+
+/* ------------------------- Betalningar och krediter ------------------------- */
+/* EN härledning av betalt/krediterat/utestående – används av fakturasidor,   */
+/* uppdragsekonomi, actionmotorn och matchningsmotorn. Aldrig egna varianter. */
+
+/*
+ * Prestanda: betalningar och kreditfakturor är append-only (rader läggs till,
+ * ändras aldrig i efterhand – belopp/koppling är oföränderliga per rad).
+ * Indexen nedan cachas per arrayinstans + längd: en ny laddning (ny array)
+ * eller en push invaliderar automatiskt. Gör utestående-beräkningen O(1)
+ * per faktura i stället för O(betalningar) – actionmotorn och listorna går
+ * från kvadratiskt till linjärt vid stora dataset.
+ */
+const paidSumsCache = new WeakMap<object, { len: number; sums: Map<string, number> }>();
+const creditsCache = new WeakMap<object, { len: number; byOriginal: Map<string, Invoice[]> }>();
+
+function paidSums(): Map<string, number> {
+  const payments = db().payments;
+  let cached = paidSumsCache.get(payments);
+  if (!cached || cached.len !== payments.length) {
+    const sums = new Map<string, number>();
+    for (const p of payments) sums.set(p.invoiceId, (sums.get(p.invoiceId) ?? 0) + p.amount);
+    cached = { len: payments.length, sums };
+    paidSumsCache.set(payments, cached);
+  }
+  return cached.sums;
+}
+
+function creditsByOriginal(): Map<string, Invoice[]> {
+  const invoices = db().invoices;
+  let cached = creditsCache.get(invoices);
+  if (!cached || cached.len !== invoices.length) {
+    const byOriginal = new Map<string, Invoice[]>();
+    for (const c of invoices) {
+      if (c.type !== "kredit" || !c.creditsInvoiceId) continue;
+      const list = byOriginal.get(c.creditsInvoiceId);
+      if (list) list.push(c);
+      else byOriginal.set(c.creditsInvoiceId, [c]);
+    }
+    cached = { len: invoices.length, byOriginal };
+    creditsCache.set(invoices, cached);
+  }
+  return cached.byOriginal;
+}
+
+/** Summa registrerade inbetalningar för fakturan (faktiska bankbelopp). */
+export function invoicePaidAmount(invoiceId: string): number {
+  return paidSums().get(invoiceId) ?? 0;
+}
+
+/** Kreditfakturor som refererar fakturan. */
+export function creditsOfInvoice(invoiceId: string): Invoice[] {
+  return creditsByOriginal().get(invoiceId) ?? [];
+}
+
+/**
+ * Summa krediterat att-betala mot fakturan (delkrediter). Fullkrediterade
+ * original har status "krediterad" och är inga fordringar alls.
+ */
+export function invoiceCreditedAmount(invoiceId: string): number {
+  return creditsOfInvoice(invoiceId).reduce((s, c) => s + invoiceTotals(c).toPay, 0);
+}
+
+/**
+ * Utestående fordran i kronor: att-betala minus inbetalningar minus
+ * delkrediter. 0 för allt som inte är en öppen fordran. Aldrig negativt –
+ * överbetalningar bokas som skuld (2420) och syns som exception, inte här.
+ */
+export function invoiceOutstanding(inv: Invoice): number {
+  if (!isOpenReceivable(inv)) return 0;
+  const t = invoiceTotals(inv);
+  return Math.max(0, t.toPay - invoicePaidAmount(inv.id) - invoiceCreditedAmount(inv.id));
+}
+
+/**
+ * Fakturans bidrag till "fakturerat" (total inkl. moms) för uppdrag/offert:
+ * original räknas positivt, delkrediter negativt, fullkrediterade par tar ut
+ * varandra (båda 0). Utkast räknas med så att "kvar att fakturera" inte
+ * föreslår dubbelfakturering medan ett utkast ligger öppet.
+ */
+export function invoicedTotalContribution(inv: Invoice): number {
+  if (inv.status === "krediterad") return 0;
+  if (inv.type === "kredit") {
+    const original = inv.creditsInvoiceId ? getInvoice(inv.creditsInvoiceId) : undefined;
+    // Fullkredit: originalet är "krediterad" och redan exkluderat – krediten också.
+    if (!original || original.status === "krediterad") return 0;
+    return -invoiceTotals(inv).total;
+  }
+  return invoiceTotals(inv).total;
+}
+
 export function isOverdue(inv: Invoice): boolean {
-  return inv.status === "skickad" && dagarTill(inv.dueDate) < 0;
+  return isOpenReceivable(inv) && dagarTill(inv.dueDate) < 0;
 }
 
 export function daysOverdue(inv: Invoice): number {
@@ -90,9 +219,18 @@ export function getRequest(id: string): CustomerRequest | undefined {
   return db().requests.find((r) => r.id === id);
 }
 
+/**
+ * Effektiv offertstatus: en skickad offert vars giltighetsdatum passerat är
+ * utgången (kan inte signeras) – lagret sätter aldrig "utgangen" explicit.
+ */
+export function effectiveQuoteStatus(quote: Quote): Quote["status"] {
+  if (quote.status === "skickad" && dagarTill(currentVersion(quote).validUntil) < 0) return "utgangen";
+  return quote.status;
+}
+
 /** Status-etikett för offerter – speglar flödet Utkast → Skickad → Väntar på BankID → Godkänd/Avböjd. */
 export function quoteStatusLabel(quote: Quote): string {
-  switch (quote.status) {
+  switch (effectiveQuoteStatus(quote)) {
     case "utkast":
       return "Utkast";
     case "skickad":
@@ -137,9 +275,7 @@ export function customerSummary(customerId: string) {
   const b = customerBundle(customerId);
   const openQuotes = b.quotes.filter((q) => q.status === "skickad").length;
   const activeJobs = b.jobs.filter((j) => j.status !== "klart").length;
-  const unpaid = b.invoices
-    .filter((i) => i.status === "skickad")
-    .reduce((s, i) => s + invoiceTotals(i).toPay, 0);
+  const unpaid = b.invoices.reduce((s, i) => s + invoiceOutstanding(i), 0);
   const newRequests = b.requests.filter((r) => r.status === "ny").length;
   return { openQuotes, activeJobs, unpaid, newRequests };
 }

@@ -3,11 +3,13 @@ import { ArrowRight, BadgeCheck, Check, CircleAlert, CircleHelp } from "lucide-r
 import { db } from "@/lib/store";
 import { kr, datumKort } from "@/lib/format";
 import { ButtonLink, Card, PageHeader, SectionTitle } from "@/components/ui";
-import { ExpenseQuestionButtons, UploadReceiptButton } from "@/components/money-widgets";
+import { AttentionSection } from "@/components/attention-list";
+import { getBusinessActions } from "@/lib/services/actions";
 import { bankReconciliation } from "@/lib/accounting/reconciliation";
 import { vatChecklist, vatPeriods } from "@/lib/accounting/vat";
 import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
 import { resultatrapport } from "@/lib/accounting/ledger";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Bokföring" };
 
@@ -21,19 +23,20 @@ function monthsBefore(date: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export default function BookkeepingPage() {
+export default async function BookkeepingPage() {
+  await ensurePageBusiness();
   const data = db();
   const recon = bankReconciliation();
   const rr = resultatrapport();
   const today = todayDate();
 
-  const questions = data.expenses.filter((e) => e.status === "behover_svar");
-  const missingReceipts = data.expenses.filter((e) => e.status === "saknar_kvitto");
-  const uncoveredBank = recon.unhandled.filter(
-    (t) => !data.expenses.some((e) => e.bankTransactionId === t.id && e.status !== "bokford")
+  // Samma åtgärdsmotor som Hem, filtrerad till bokföringsundantag + moms.
+  // Offerter/BankID/ej förfallna fakturor hör inte hemma här.
+  const bookkeepingActions = getBusinessActions().attention.filter(
+    (a) => a.category === "accounting" || a.category === "vat"
   );
-  const showBankException = uncoveredBank.length > 0 || Math.abs(recon.unexplained) > 0.5;
-  const needsHelp = questions.length + missingReceipts.length + (showBankException ? 1 : 0);
+  const vatIsAttention = bookkeepingActions.some((a) => a.category === "vat");
+  const needsHelp = bookkeepingActions.length;
   const allGood = needsHelp === 0;
 
   const vatPeriodsNow = vatPeriods().filter((p) => p.state !== "kommande");
@@ -80,54 +83,15 @@ export default function BookkeepingPage() {
         </p>
       </div>
 
-      {/* 2. Behöver jag göra något? */}
+      {/* 2. Behöver jag göra något? Samma motor som Hem, filtrerad till bokföring + moms. */}
       {needsHelp > 0 ? (
         <section className="mb-8">
-          <SectionTitle>Behöver din hjälp</SectionTitle>
-          <div className="space-y-3">
-            {questions.map((e) => (
-              <Card key={e.id} className="px-5 py-4">
-                <p className="text-[15px] font-medium">{e.question?.text ?? `Vad gällde köpet hos ${e.supplier}?`}</p>
-                <p className="mt-0.5 text-[13px] text-soft">
-                  {e.supplier} · {kr(e.amount)} · {datumKort(e.date)}
-                </p>
-                <div className="mt-3">
-                  <ExpenseQuestionButtons expenseId={e.id} options={e.question?.options ?? []} />
-                </div>
-              </Card>
-            ))}
-            {missingReceipts.map((e) => (
-              <Card key={e.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-                <div>
-                  <p className="text-[15px] font-medium">
-                    Vi hittar inget kvitto för köpet på {kr(e.amount)} hos {e.supplier}
-                  </p>
-                  <p className="mt-0.5 text-[13px] text-soft">{datumKort(e.date)}</p>
-                </div>
-                <UploadReceiptButton expenseId={e.id} />
-              </Card>
-            ))}
-            {showBankException ? (
-              <Card className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-                <div>
-                  <p className="text-[15px] font-medium">
-                    {uncoveredBank.length > 0
-                      ? `${uncoveredBank.length} banktransaktion${uncoveredBank.length > 1 ? "er" : ""} behöver hanteras`
-                      : "Banken stämmer inte"}
-                  </p>
-                  <p className="mt-0.5 text-[13px] text-soft">Skillnad: {kr(recon.difference)}</p>
-                </div>
-                <ButtonLink href="/ekonomi?flik=bank" variant="secondary" size="sm">
-                  Lös nu
-                </ButtonLink>
-              </Card>
-            ) : null}
-          </div>
+          <AttentionSection title="Behöver din hjälp" items={bookkeepingActions} />
         </section>
       ) : null}
 
-      {/* 3. Vad behöver jag snart betala/deklarera? */}
-      {vat ? (
+      {/* 3. Vad behöver jag snart betala/deklarera? (Om momsen redan ligger som åtgärd ovan visas den inte dubbelt.) */}
+      {vat && !vatIsAttention ? (
         <section className="mb-8">
           <SectionTitle>Kommande</SectionTitle>
           <Card className="px-5 py-4">

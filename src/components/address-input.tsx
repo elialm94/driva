@@ -136,8 +136,12 @@ function demoSuggestions(query: string): Suggestion[] {
 
 export function AddressFields({
   defaults,
+  onChange,
+  onBlur,
 }: {
   defaults?: Partial<AddressParts>;
+  onChange?: (parts: AddressParts) => void;
+  onBlur?: () => void;
 }) {
   const [address, setAddress] = useState(defaults?.address ?? "");
   const [postalCode, setPostalCode] = useState(defaults?.postalCode ?? "");
@@ -218,8 +222,13 @@ export function AddressFields({
     }
   }, []);
 
+  function emit(next: AddressParts) {
+    onChange?.(next);
+  }
+
   function onAddressChange(value: string) {
     setAddress(value);
+    emit({ address: value, postalCode, city });
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => void search(value), liveMode ? 250 : 80);
   }
@@ -231,6 +240,11 @@ export function AddressFields({
     setAddress(parts.address);
     if (parts.postalCode) setPostalCode(parts.postalCode);
     if (parts.city) setCity(parts.city);
+    emit({
+      address: parts.address,
+      postalCode: parts.postalCode || postalCode,
+      city: parts.city || city,
+    });
   }
 
   // Stäng vid klick utanför
@@ -251,6 +265,7 @@ export function AddressFields({
           value={address}
           onChange={(e) => onAddressChange(e.target.value)}
           onFocus={() => suggestions.length > 0 && setOpen(true)}
+          onBlur={onBlur}
           onKeyDown={(e) => {
             if (!open) return;
             if (e.key === "ArrowDown") {
@@ -325,7 +340,11 @@ export function AddressFields({
           <input
             name="postalCode"
             value={postalCode}
-            onChange={(e) => setPostalCode(e.target.value)}
+            onChange={(e) => {
+              setPostalCode(e.target.value);
+              emit({ address, postalCode: e.target.value, city });
+            }}
+            onBlur={onBlur}
             className={inputCls}
             placeholder="116 24"
             autoComplete="off"
@@ -337,7 +356,11 @@ export function AddressFields({
           <input
             name="city"
             value={city}
-            onChange={(e) => setCity(e.target.value)}
+            onChange={(e) => {
+              setCity(e.target.value);
+              emit({ address, postalCode, city: e.target.value });
+            }}
+            onBlur={onBlur}
             className={inputCls}
             placeholder="Fylls i från adressen"
             autoComplete="off"

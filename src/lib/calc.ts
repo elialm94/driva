@@ -1,12 +1,29 @@
 import type { DocLine, RotRut, VatRate } from "./types";
 
-/** Skattereduktion: ROT 30 % av arbetskostnaden inkl. moms, RUT 50 %. Tak 50 000 kr/person och år. */
+/**
+ * Skattereduktion: ROT 30 % av arbetskostnaden inkl. moms, RUT 50 %.
+ * Tak (2026): ROT 50 000 kr respektive RUT 75 000 kr per person och år.
+ *
+ * VIKTIGT ANTAGANDE: taken är dokumentbaserade vakter, inte Skatteverkets
+ * saldo. Systemet KAN INTE veta kundens kvarvarande utrymme (andra utförares
+ * fakturor, årets tidigare avdrag). Avdraget är därför alltid PRELIMINÄRT
+ * tills Skatteverket betalat ut; nekade/delvis godkända beslut hanteras med
+ * restfaktura (fordran flyttas 1513 → 1510, aldrig ny intäkt).
+ */
 export const ROT_ANDEL = 0.3;
 export const RUT_ANDEL = 0.5;
-export const AVDRAG_TAK = 50_000;
+export const ROT_TAK = 50_000;
+export const RUT_TAK = 75_000;
+/** @deprecated Använd taxReductionCap(type) – ROT och RUT har olika tak. */
+export const AVDRAG_TAK = ROT_TAK;
 
 export function taxReductionRate(type: RotRut["type"]): number {
   return type === "rot" ? ROT_ANDEL : RUT_ANDEL;
+}
+
+/** Lagstadgat tak per person och år för respektive avdragstyp. */
+export function taxReductionCap(type: RotRut["type"]): number {
+  return type === "rot" ? ROT_TAK : RUT_TAK;
 }
 
 /**
@@ -28,10 +45,12 @@ export interface DocTotals {
   total: number;
   /** Arbetskostnad inkl. moms (underlag för ROT/RUT). */
   laborInclVat: number;
-  /** Skattereduktion (ROT/RUT). */
+  /** Skattereduktion som används (applied). Saknas applied → beräknat max. */
   deduction: number;
   /** Det kunden faktiskt betalar. */
   toPay: number;
+  /** Maximalt avdrag utifrån denna offert/faktura. Inte Skatteverkets saldo. */
+  calculatedEligibleTaxReduction: number;
 }
 
 export interface VatBreakdownRow {
@@ -55,12 +74,24 @@ export function docTotals(lines: DocLine[], rot: RotRut | null): DocTotals {
   const laborInclVat = lines
     .filter((l) => l.kind === "arbete")
     .reduce((s, l) => s + lineTotal(l) + lineVat(l), 0);
-  let deduction = 0;
+  let calculatedEligibleTaxReduction = 0;
   if (rot) {
     const andel = rot.type === "rot" ? ROT_ANDEL : RUT_ANDEL;
-    deduction = Math.min(Math.round(laborInclVat * andel), AVDRAG_TAK);
+    calculatedEligibleTaxReduction = Math.min(Math.round(laborInclVat * andel), taxReductionCap(rot.type));
   }
-  return { subtotal, vat, total, laborInclVat, deduction, toPay: total - deduction };
+  let deduction = calculatedEligibleTaxReduction;
+  if (rot && rot.appliedTaxReduction != null) {
+    deduction = Math.max(0, Math.min(Math.round(rot.appliedTaxReduction), calculatedEligibleTaxReduction));
+  }
+  return {
+    subtotal,
+    vat,
+    total,
+    laborInclVat,
+    deduction,
+    toPay: total - deduction,
+    calculatedEligibleTaxReduction,
+  };
 }
 
 /**

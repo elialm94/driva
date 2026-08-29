@@ -1,9 +1,10 @@
 import { kr, datumLang } from "@/lib/format";
 import { Card, PageHeader } from "@/components/ui";
-import { BackLink } from "@/components/back-link";
+import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
 import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { balansrapport, type BalansRad } from "@/lib/accounting/ledger";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Balansrapport" };
 
@@ -22,13 +23,14 @@ function Rows({ rows }: { rows: BalansRad[] }) {
   );
 }
 
-export default function BalansPage() {
+export default async function BalansPage() {
+  await ensurePageBusiness();
   const br = balansrapport();
 
   return (
     <div className="animate-fade-up">
       <PageHeader
-        back={<BackLink fallbackHref="/bokforing" fallbackLabel="Bokföring" />}
+        back={<SmartBack />}
         title="Balansrapport"
         subtitle={`Vad företaget äger och är skyldigt per ${datumLang(br.atDate)}.`}
         actions={

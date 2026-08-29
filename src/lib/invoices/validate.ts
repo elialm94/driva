@@ -1,7 +1,9 @@
 import type { CompanySettings, Customer, Invoice } from "../types";
 import { docTotals, isSupportedVatRate, lineTotal, vatBreakdown } from "../calc";
+import { taxReductionExceedsMaxError } from "../tax-reduction-terms";
 import { getInvoice, requireCustomer } from "../services/data";
 import { db } from "../store";
+import { radLabel } from "../form-requirements";
 import { isBankgiroFormat, isIbanFormat, isOrgnrFormat, isPlusgiroFormat, isVatNumberFormat, vatMatchesOrgnr } from "./formats";
 
 export interface IssueBlocker {
@@ -132,23 +134,25 @@ export function collectLineBlockers(invoice: Invoice): IssueBlocker[] {
     return blockers;
   }
   invoice.lines.forEach((line, i) => {
-    const n = i + 1;
+    const name = line.description?.trim();
+    // "raden ”Montör”" när beskrivning finns, annars "första raden" osv.
+    const label = name ? `raden ”${name}”` : radLabel(i);
     if (missing(line.description)) {
-      blockers.push({ code: "line_description", message: `Rad ${n} saknar beskrivning.` });
+      blockers.push({ code: "line_description", message: `Beskrivning saknas på ${radLabel(i)}.` });
     }
     if (!Number.isFinite(line.qty)) {
-      blockers.push({ code: "line_qty", message: `Rad ${n} har ogiltigt antal.` });
+      blockers.push({ code: "line_qty", message: `Antalet på ${label} är ogiltigt.` });
     }
     if (missing(line.unit)) {
-      blockers.push({ code: "line_unit", message: `Rad ${n} saknar enhet.` });
+      blockers.push({ code: "line_unit", message: `Enhet saknas på ${label}.` });
     }
     if (!Number.isFinite(line.unitPrice)) {
-      blockers.push({ code: "line_price", message: `Rad ${n} har ogiltigt à-pris.` });
+      blockers.push({ code: "line_price", message: `À-priset på ${label} är ogiltigt.` });
     }
     if (!isSupportedVatRate(line.vatRate)) {
       blockers.push({
         code: "line_vat",
-        message: `Rad ${n} har momssatsen ${line.vatRate} %, som inte stöds. V1 tillåter bara 0, 6, 12 och 25 %.`,
+        message: `Momssatsen ${line.vatRate} % på ${label} stöds inte. V1 tillåter bara 0, 6, 12 och 25 %.`,
       });
     }
   });
@@ -172,6 +176,16 @@ export function collectTotalsBlockers(invoice: Invoice): IssueBlocker[] {
   }
   if (t.total !== t.subtotal + t.vat) {
     blockers.push({ code: "total_mismatch", message: "Totalt inkl. moms stämmer inte med underlag och moms." });
+  }
+  if (
+    invoice.rot &&
+    invoice.rot.appliedTaxReduction != null &&
+    invoice.rot.appliedTaxReduction > t.calculatedEligibleTaxReduction
+  ) {
+    blockers.push({
+      code: "tax_reduction_applied",
+      message: taxReductionExceedsMaxError(t.calculatedEligibleTaxReduction, "faktura"),
+    });
   }
   return blockers;
 }

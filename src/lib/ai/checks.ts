@@ -7,7 +7,16 @@ import { executeTool, ASSISTANT_TOOL_NAMES } from "./tools";
 import { isAiConfigured } from "./provider";
 import { isBankIdApprovalRequest } from "./resolve";
 import { financeOverview } from "../services/finance";
-import { invoiceTotals, currentVersion } from "../services/data";
+import { getBusinessActions } from "../services/actions";
+import { invoiceTotals, currentVersion, isOpenReceivable } from "../services/data";
+import { remainingToInvoiceForJob } from "../services/attention";
+import { FREE_TEXT_FALLBACK_MESSAGE, parseFreeText } from "../command-bar";
+import {
+  interpretFreeTextViaAi,
+  invoiceTargetOptionsFor,
+  runBarCommand,
+  searchCustomersForCommand,
+} from "../services/command-bar";
 import { kr } from "../format";
 
 type Check = { name: string; ok: boolean; detail: string };
@@ -203,6 +212,165 @@ export async function runAssistantChecks(): Promise<Check[]> {
         "Offert för Karins bokhylla kopplar förfrågan",
         Boolean(handled && quote && req?.status === "offert_skapad" && req.quoteId === quote?.id),
         `handled=${handled} status=${req?.status} quote=${quote?.id}`
+      )
+    );
+  }
+
+  reset();
+  {
+    const engine = getBusinessActions().watching;
+    const result = await executeTool("list_watching", {});
+    const forModel = result.forModel as { count?: number };
+    const ok = result.ok && forModel.count === engine.length;
+    checks.push(
+      assert(
+        "list_watching svarar ur samma På gång-feed som Hem",
+        ok,
+        `motor=${engine.length} verktyg=${forModel.count ?? "saknas"}`
+      )
+    );
+  }
+
+  reset();
+  {
+    const engine = getBusinessActions().attention;
+    const result = await executeTool("list_actions", {});
+    const forModel = result.forModel as { count?: number };
+    const ok = result.ok && engine.length > 0 && forModel.count === engine.length;
+    checks.push(
+      assert(
+        "list_actions svarar ur samma åtgärdsmotor som Hem",
+        ok,
+        `motor=${engine.length} verktyg=${forModel.count ?? "saknas"}`
+      )
+    );
+  }
+
+  reset();
+  {
+    const engine = getBusinessActions().attention;
+    const handled = dispatchRules("Vad behöver jag göra idag?");
+    const reply = lastAssistant();
+    const rows = reply.card?.kind === "list" ? reply.card.rows : [];
+    const ok =
+      Boolean(handled) &&
+      reply.text.includes(String(engine.length)) &&
+      rows.length === Math.min(engine.length, 8) &&
+      rows[0]?.label === engine[0]?.title;
+    checks.push(
+      assert(
+        "”Vad behöver jag göra idag?” listar samma åtgärder som Hem",
+        ok,
+        `motor=${engine.length} rader=${rows.length} första=${rows[0]?.label?.slice(0, 50) ?? "—"}`
+      )
+    );
+  }
+
+  /* ------------------------------ Kommandofältet ------------------------------ */
+
+  reset();
+  {
+    // Hela kedjan för "fakturera Johan": deterministisk tolkning → serversidigt
+    // kundsök → uppdragsval med kvar-att-fakturera från tjänstelagret →
+    // fakturautkast via SAMMA verktygslager. Beloppet räknas aldrig om i fältet.
+    const parsed = parseFreeText("fakturera Johan");
+    const hits = parsed.confidence === "high" && parsed.entityQuery ? searchCustomersForCommand(parsed.entityQuery) : [];
+    const johan = hits.find((h) => h.label === "Johan Lindberg");
+    const options = johan ? invoiceTargetOptionsFor(johan.id) : [];
+    const jobOption = options.find((o) => o.kind === "job");
+    const expected = jobOption?.kind === "job" ? remainingToInvoiceForJob(jobOption.jobId) : 0;
+    const run =
+      johan && jobOption?.kind === "job"
+        ? await runBarCommand("create_invoice", { customerId: johan.id, jobId: jobOption.jobId })
+        : null;
+    const created = db().invoices[db().invoices.length - 1];
+    const ok =
+      parsed.confidence === "high" &&
+      parsed.commandId === "create_invoice" &&
+      Boolean(johan) &&
+      jobOption?.kind === "job" &&
+      expected > 0 &&
+      jobOption.amount === expected &&
+      run?.ok === true &&
+      created.status === "utkast" &&
+      invoiceTotals(created).toPay === expected &&
+      run.href === `/ekonomi/fakturor/${created.id}`;
+    checks.push(
+      assert(
+        "Kommandofältet: ”fakturera Johan” → utkast via verktygslagret",
+        ok,
+        `kvar=${kr(expected)} utkast=${created ? kr(invoiceTotals(created).toPay) : "—"} status=${created?.status}`
+      )
+    );
+  }
+
+  reset();
+  {
+    const run = await runBarCommand("show_unpaid_invoices");
+    const open = db().invoices.filter(isOpenReceivable);
+    const rows = run.card?.kind === "list" ? run.card.rows : [];
+    const ok =
+      run.ok &&
+      open.length > 0 &&
+      open.every((i) => i.type !== "kredit") &&
+      rows.length === open.length &&
+      run.text.includes(String(open.length));
+    checks.push(
+      assert(
+        "Kommandofältet: obetalda = riktiga fordringar, aldrig kreditfakturor",
+        ok,
+        `öppna=${open.length} rader=${rows.length}`
+      )
+    );
+  }
+
+  reset();
+  {
+    const engine = getBusinessActions().watching;
+    const run = await runBarCommand("show_watching");
+    const rows = run.card?.kind === "list" ? run.card.rows : [];
+    const ok = run.ok && rows.length === Math.min(engine.length, 8);
+    checks.push(
+      assert(
+        "Kommandofältet: ”på gång” = getBusinessActions().watching",
+        ok,
+        `motor=${engine.length} rader=${rows.length}`
+      )
+    );
+  }
+
+  reset();
+  {
+    const engine = getBusinessActions().attention;
+    const run = await runBarCommand("show_today_actions");
+    const rows = run.card?.kind === "list" ? run.card.rows : [];
+    const ok =
+      run.ok && engine.length > 0 && rows.length === Math.min(engine.length, 8) && rows[0]?.label === engine[0]?.title;
+    checks.push(
+      assert(
+        "Kommandofältet: ”idag” = getBusinessActions()",
+        ok,
+        `motor=${engine.length} rader=${rows.length}`
+      )
+    );
+  }
+
+  reset();
+  {
+    // Utan LLM ska fri text som reglerna inte klarar ge det ÄRLIGA svaret –
+    // typat not_configured, aldrig ett fejkat modellsvar.
+    const parsed = parseFreeText("hjälp mig planera veckan och skriv ett kärleksbrev");
+    const viaAi = await interpretFreeTextViaAi("hjälp mig planera veckan");
+    const ok =
+      parsed.confidence === "none" &&
+      !viaAi.ok &&
+      viaAi.notConfigured === true &&
+      viaAi.text === FREE_TEXT_FALLBACK_MESSAGE;
+    checks.push(
+      assert(
+        "Kommandofältet: okänd fri text utan LLM → ärlig fallback, inget fejkat svar",
+        ok,
+        `parse=${parsed.confidence} text=${viaAi.text.slice(0, 60)}`
       )
     );
   }

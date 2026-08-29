@@ -5,12 +5,15 @@ import { formatWorkAddress, resolveTaxReductionPrefill } from "@/lib/services/ta
 import { suggestedServiceDate } from "@/lib/tax-reduction-gaps";
 import { PageHeader } from "@/components/ui";
 import { InvoiceForm } from "@/components/doc-form";
-import { BackLink } from "@/components/back-link";
+import { SmartBack } from "@/components/back-link";
 import { labelForHref, sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
+import { ensurePageBusiness } from "@/lib/auth/session";
+import { isAiConfigured } from "@/lib/ai/provider";
 
 export const metadata = { title: "Ny faktura" };
 
 export default async function NewInvoicePage(props: PageProps<"/ekonomi/fakturor/ny">) {
+  await ensurePageBusiness();
   const searchParams = await props.searchParams;
   const kund = typeof searchParams.kund === "string" ? searchParams.kund : undefined;
   const jobId =
@@ -50,13 +53,14 @@ export default async function NewInvoicePage(props: PageProps<"/ekonomi/fakturor
   return (
     <div className="animate-fade-up">
       <PageHeader
-        back={<BackLink fallbackHref={cancelHref} fallbackLabel={cancelLabel} />}
+        back={<SmartBack fallbackHref={cancelHref} fallbackLabel={cancelLabel} />}
         title="Ny faktura"
         subtitle="Tips: fakturor skapas oftast automatiskt från klara uppdrag eller från offertens betalningsplan."
       />
       <InvoiceForm
         customers={customers}
         defaultCustomerId={defaultCustomerId}
+        lockCustomer={Boolean(kund || job)}
         defaultLateInterestRate={defaults.lateInterestRate}
         defaultPaymentTermsDays={defaults.paymentTermsDays}
         defaultVatRate={defaults.defaultVatRate}
@@ -84,6 +88,7 @@ export default async function NewInvoicePage(props: PageProps<"/ekonomi/fakturor
         cancelHref={cancelHref}
         returnTo={tillbaka ?? undefined}
         returnLabel={tillbakaNamn ?? undefined}
+        aiEnabled={isAiConfigured()}
       />
     </div>
   );

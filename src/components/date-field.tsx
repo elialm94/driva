@@ -190,7 +190,7 @@ export function DateField({
             <div className="mb-2 flex items-center justify-between gap-2">
               <button
                 type="button"
-                className="rounded-lg p-1.5 text-muted transition-colors hover:bg-ink/5 hover:text-ink"
+                className="flex size-10 items-center justify-center rounded-lg text-muted transition-colors hover:bg-ink/5 hover:text-ink"
                 aria-label="Föregående månad"
                 onClick={() =>
                   setView((v) => (v.month === 0 ? { year: v.year - 1, month: 11 } : { year: v.year, month: v.month - 1 }))
@@ -201,7 +201,7 @@ export function DateField({
               <p className="text-[13px] font-semibold text-ink">{formatMonthTitle(view.year, view.month)}</p>
               <button
                 type="button"
-                className="rounded-lg p-1.5 text-muted transition-colors hover:bg-ink/5 hover:text-ink"
+                className="flex size-10 items-center justify-center rounded-lg text-muted transition-colors hover:bg-ink/5 hover:text-ink"
                 aria-label="Nästa månad"
                 onClick={() =>
                   setView((v) => (v.month === 11 ? { year: v.year + 1, month: 0 } : { year: v.year, month: v.month + 1 }))
@@ -229,7 +229,7 @@ export function DateField({
                     aria-pressed={isSelected}
                     aria-current={isToday ? "date" : undefined}
                     className={cx(
-                      "flex h-9 w-full items-center justify-center rounded-lg text-[13px] tabular transition-colors",
+                      "flex h-10 w-full items-center justify-center rounded-lg text-[13px] tabular transition-colors sm:h-9",
                       cell.outside && "text-muted/70",
                       !isSelected && !cell.outside && "text-ink hover:bg-canvas",
                       !isSelected && cell.outside && "hover:bg-canvas",
@@ -245,14 +245,14 @@ export function DateField({
             <div className="mt-2 flex items-center justify-between border-t border-line pt-2">
               <button
                 type="button"
-                className="rounded-lg px-2.5 py-1 text-[13px] font-medium text-soft transition-colors hover:bg-ink/5 hover:text-ink"
+                className="rounded-lg px-3 py-2 text-[13px] font-medium text-soft transition-colors hover:bg-ink/5 hover:text-ink"
                 onClick={() => setIso("")}
               >
                 Rensa
               </button>
               <button
                 type="button"
-                className="rounded-lg px-2.5 py-1 text-[13px] font-medium text-accent transition-colors hover:bg-accent-soft"
+                className="rounded-lg px-3 py-2 text-[13px] font-medium text-accent transition-colors hover:bg-accent-soft"
                 onClick={() => {
                   setView({ year: today.getFullYear(), month: today.getMonth() });
                   pick(todayIso);

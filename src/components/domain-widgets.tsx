@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { AppLink, useAppNavigate } from "./app-link";
 import { Check, ExternalLink, Globe, Search } from "lucide-react";
 import { Badge, Card, DemoTag, buttonClasses, cx } from "./ui";
+import { FieldError, focusField, invalidFieldCls } from "./form-validation";
 import { kr } from "@/lib/format";
 import { SETTINGS_HREF } from "@/lib/settings-routes";
 import { withReturnTo } from "@/lib/nav";
@@ -40,6 +40,7 @@ export function DomainSearchPanel({
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<SearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<SearchResult | null>(null);
   const [view, setView] = useState<DomainCardView | null>(initialView);
   const [existingOpen, setExistingOpen] = useState(false);
@@ -50,6 +51,14 @@ export function DomainSearchPanel({
   }, [initialView]);
 
   function onSearch(q = query) {
+    if (!q.trim()) {
+      setFieldError("Ange en adress att söka");
+      setError(null);
+      setResult(null);
+      focusField("doman-sok");
+      return;
+    }
+    setFieldError(null);
     setError(null);
     setResult(null);
     setConfirming(null);
@@ -117,27 +126,39 @@ export function DomainSearchPanel({
     <div className="space-y-5">
       <Card className="px-5 py-5 sm:px-6">
         <form
-          className="flex flex-col gap-3 sm:flex-row"
+          className="flex flex-col gap-3 sm:flex-row sm:items-start"
           onSubmit={(e) => {
             e.preventDefault();
             onSearch();
           }}
         >
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="sodermalmssnickeri"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              className="h-12 w-full rounded-xl border border-line-strong bg-card pl-10 pr-16 text-[15px] text-ink placeholder:text-muted focus:border-accent"
-              aria-label="Sök .se-adress"
-            />
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] font-medium text-muted">
-              .se
-            </span>
+          <div className="min-w-0 flex-1">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+              <input
+                id="doman-sok"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  if (fieldError) setFieldError(null);
+                }}
+                placeholder="sodermalmssnickeri"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-invalid={fieldError ? true : undefined}
+                aria-describedby={fieldError ? "doman-sok-fel" : undefined}
+                className={cx(
+                  "h-12 w-full rounded-xl border border-line-strong bg-card pl-10 pr-16 text-[15px] text-ink placeholder:text-muted focus:border-accent",
+                  fieldError && invalidFieldCls,
+                )}
+                aria-label="Sök .se-adress"
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] font-medium text-muted">
+                .se
+              </span>
+            </div>
+            <FieldError id="doman-sok-fel">{fieldError}</FieldError>
           </div>
           <button type="submit" className={cx(buttonClasses("primary", "lg"), "w-full sm:w-auto")} disabled={searching}>
             {searching ? "Söker …" : "Sök"}
@@ -174,9 +195,9 @@ function MissingProfileCard() {
       <p className="mt-2 text-[14px] leading-relaxed text-soft">
         Adressen registreras på ditt företag. Komplettera uppgifterna så tar vi vid där du var.
       </p>
-      <Link href={COMPLETE_COMPANY_HREF as never} className={cx(buttonClasses("primary"), "mt-5")}>
+      <AppLink href={COMPLETE_COMPANY_HREF} className={cx(buttonClasses("primary"), "mt-5")}>
         Komplettera företagsuppgifter
-      </Link>
+      </AppLink>
     </Card>
   );
 }
@@ -272,9 +293,9 @@ function PurchaseConfirm({
       </dl>
       {error ? <p className="mt-3 text-[14px] font-medium text-danger">{error}</p> : null}
       {missing ? (
-        <Link href={COMPLETE_COMPANY_HREF as never} className={cx(buttonClasses("primary"), "mt-4")}>
+        <AppLink href={COMPLETE_COMPANY_HREF} className={cx(buttonClasses("primary"), "mt-4")}>
           Komplettera företagsuppgifter
-        </Link>
+        </AppLink>
       ) : (
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button type="button" className={buttonClasses("ghost")} onClick={onCancel} disabled={pending}>
@@ -578,6 +599,7 @@ function ExistingDomainForm({
 }) {
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   return (
@@ -593,6 +615,13 @@ function ExistingDomainForm({
         className="mt-4 space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
+          if (!query.trim()) {
+            setFieldError("Ange domänen du redan äger");
+            setError(null);
+            focusField("doman-befintlig");
+            return;
+          }
+          setFieldError(null);
           setError(null);
           start(async () => {
             const res = await startExistingDomainAction(query);
@@ -605,11 +634,21 @@ function ExistingDomainForm({
         }}
       >
         <input
+          id="doman-befintlig"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            if (fieldError) setFieldError(null);
+          }}
           placeholder="mittforetag.se"
-          className="h-12 w-full rounded-xl border border-line-strong bg-card px-3 text-[15px] focus:border-accent"
+          aria-invalid={fieldError ? true : undefined}
+          aria-describedby={fieldError ? "doman-befintlig-fel" : undefined}
+          className={cx(
+            "h-12 w-full rounded-xl border border-line-strong bg-card px-3 text-[15px] focus:border-accent",
+            fieldError && invalidFieldCls,
+          )}
         />
+        <FieldError id="doman-befintlig-fel">{fieldError}</FieldError>
         {error ? <p className="text-[14px] font-medium text-danger">{error}</p> : null}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button type="button" className={buttonClasses("ghost")} onClick={onBack}>
@@ -651,9 +690,9 @@ export function DomainSidebarCard({
           ) : (
             <p className="text-[13px] leading-relaxed text-soft">Skaffa en .se-adress så ligger hemsidan på ditt namn.</p>
           )}
-          <Link href={"/hemsida/doman" as never} className="mt-2 inline-block text-[13px] font-medium text-accent hover:underline">
-            {hostname ? "Hantera →" : "Skaffa .se-adress →"}
-          </Link>
+          <AppLink href="/hemsida/doman" className="mt-2 inline-block text-[13px] font-medium text-accent hover:underline">
+            {hostname ? "Öppna domänsidan →" : "Skaffa .se-adress →"}
+          </AppLink>
         </div>
       </div>
     </Card>
@@ -665,7 +704,7 @@ export function DomainSettingsCard({
 }: {
   summary: { hostname: string; live: boolean } | null;
 }) {
-  const router = useRouter();
+  const navigate = useAppNavigate();
   if (!summary) return null;
   return (
     <Card className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
@@ -674,8 +713,8 @@ export function DomainSettingsCard({
         <p className="font-mono text-[14px] font-medium text-ink">{summary.hostname}</p>
         <p className="text-[13px] text-soft">{summary.live ? "Live" : "Kopplas"}</p>
       </div>
-      <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => router.push("/hemsida/doman")}>
-        Hantera →
+      <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => navigate("/hemsida/doman")}>
+        Öppna domänsidan →
       </button>
     </Card>
   );

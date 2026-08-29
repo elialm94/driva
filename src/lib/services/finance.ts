@@ -1,6 +1,6 @@
 import { db } from "../store";
 import { docTotals } from "../calc";
-import { invoiceTotals, isOverdue } from "./data";
+import { countsTowardInvoiced, invoiceOutstanding, invoiceTotals, isOpenReceivable, isOverdue } from "./data";
 import { currentVatPosition } from "../accounting/vat";
 import { accountBalance, resultatrapport } from "../accounting/ledger";
 import { todayDate } from "../accounting/dates";
@@ -43,7 +43,10 @@ export interface FinanceOverview {
 /** Den enkla ekonomiska överblicken: banken, reserverat, kommande, ungefär tillgängligt. */
 export function financeOverview(): FinanceOverview {
   const data = db();
-  const bank = data.bankAccounts.reduce((s, a) => s + a.balance, 0);
+  // Banksiffran härleds ur HUVUDBOKEN (1930), aldrig ur bankens muterbara
+  // saldofält – bokföringen är sanningen och avstämningen (reconciliation.ts)
+  // visar diffen mot bankens uppgift som en egen exception.
+  const bank = accountBalance(1930, todayDate());
   const momsNu = momsForCurrentPeriod();
   // Reserv för moms: innevarande period + deklarerad men obetald moms (2650 kredit).
   const declaredUnpaid = Math.max(0, -accountBalance(2650, todayDate()));
@@ -82,10 +85,10 @@ export function businessStats() {
   const revenueMonth = month.omsattning;
   const costsYear = year.kostnaderSumma;
 
-  const unpaidInvoices = data.invoices.filter((i) => i.status === "skickad");
-  const unpaidSum = unpaidInvoices.reduce((s, i) => s + invoiceTotals(i).toPay, 0);
+  const unpaidInvoices = data.invoices.filter(isOpenReceivable);
+  const unpaidSum = unpaidInvoices.reduce((s, i) => s + invoiceOutstanding(i), 0);
   const overdue = unpaidInvoices.filter((i) => isOverdue(i));
-  const overdueSum = overdue.reduce((s, i) => s + invoiceTotals(i).toPay, 0);
+  const overdueSum = overdue.reduce((s, i) => s + invoiceOutstanding(i), 0);
 
   // Kommande intäkter: godkända offerter som ännu inte fakturerats fullt ut.
   // Samma totalberäkning (docTotals) som offerter, fakturor och bokföring använder.
@@ -95,7 +98,7 @@ export function businessStats() {
     if (!v) continue;
     const total = docTotals(v.lines, v.rot).total;
     const invoiced = data.invoices
-      .filter((i) => i.quoteId === q.id && i.status !== "krediterad")
+      .filter((i) => i.quoteId === q.id && countsTowardInvoiced(i))
       .reduce((s, i) => s + invoiceTotals(i).total, 0);
     upcomingIncome += Math.max(0, total - invoiced);
   }

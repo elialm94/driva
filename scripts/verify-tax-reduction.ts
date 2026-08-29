@@ -4,7 +4,7 @@ import { db, replaceDb } from "../src/lib/store";
 import { buildSeed } from "../src/lib/seed";
 import { quoteVersionHash } from "../src/lib/hash";
 import { currentVersion } from "../src/lib/services/data";
-import { createQuote, STANDARD_TERMS, updateQuote, quoteDefaults, type QuoteInput } from "../src/lib/services/quotes";
+import { createQuote, sendQuote, STANDARD_TERMS, updateQuote, quoteDefaults, type QuoteInput } from "../src/lib/services/quotes";
 import {
   createDeniedReductionInvoice,
   createInvoice,
@@ -105,6 +105,20 @@ async function run(): Promise<Check[]> {
     const locked = db().quoteVersions.find((v) => v.id === "quote-nord1-v1");
     const ok = Boolean(locked?.contentHash) && quoteVersionHash(locked!) === locked!.contentHash;
     checks.push(assert("Existing signed quotes hash unchanged without taxReductionTerms", ok, `hash=${locked?.contentHash?.slice(0, 12)}`));
+
+    const rotOnly = { ...locked!, rot: { type: "rot" as const }, taxReductionTerms: undefined };
+    const withoutApplied = quoteVersionHash(rotOnly);
+    const withApplied = quoteVersionHash({
+      ...rotOnly,
+      rot: { type: "rot", appliedTaxReduction: 3_000, taxReductionManuallyAdjusted: true },
+    });
+    checks.push(
+      assert(
+        "Old ROT quotes without applied amount hash unchanged vs extra rot keys stripped",
+        withoutApplied !== withApplied && quoteVersionHash({ ...rotOnly, rot: { type: "rot" } }) === withoutApplied,
+        `without=${withoutApplied.slice(0, 8)} with=${withApplied.slice(0, 8)}`
+      )
+    );
   }
 
   reset();
@@ -139,6 +153,7 @@ async function run(): Promise<Check[]> {
   reset();
   {
     const q = createQuote(baseInput({ rot: { type: "rot" } }));
+    sendQuote(q.id); // BankID kan bara slutföras för skickade offerter
     const version = currentVersion(q);
     finalizeApproval({
       orderRef: "test-rot",

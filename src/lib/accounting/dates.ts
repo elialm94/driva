@@ -12,8 +12,13 @@ const dateFmt = new Intl.DateTimeFormat("sv-SE", {
   day: "2-digit",
 });
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
 /** Bokföringsdatum (YYYY-MM-DD i svensk tid) ur en ISO-sträng. */
 export function bokforingsdatum(iso: string): string {
+  // Rena datum är redan bokföringsdatum – hoppa över Date/Intl, som annars
+  // dominerar huvudbok/saldobalans-kostnaden vid många verifikationer.
+  if (DATE_ONLY.test(iso)) return iso;
   // sv-SE formaterar redan som YYYY-MM-DD.
   return dateFmt.format(new Date(iso));
 }

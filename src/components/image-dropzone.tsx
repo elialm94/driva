@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, type DragEvent, type KeyboardEvent, type ClipboardEvent } from "react";
+import { useId, useRef, useState, type DragEvent, type KeyboardEvent, type ClipboardEvent, type ReactNode } from "react";
 import { ImagePlus } from "lucide-react";
 import { buttonClasses, cx } from "./ui";
 
@@ -20,13 +20,23 @@ export type ImageCompressOptions = {
 
 export type ImageDropzoneProps = {
   label?: string;
+  /** Below the zone (banner/thumb). In the compact variant it renders inside the zone's empty state. */
   hint?: string;
   value?: string;
   loading?: boolean;
+  /** Persisting right now (e.g. autosave) – the compact zone shows "Laddar upp …". */
+  saving?: boolean;
   error?: string | null;
   disabled?: boolean;
-  /** Compact full-width banner (modals). Thumb is a short row preview. */
-  variant?: "banner" | "thumb";
+  /**
+   * banner: tall drop area + button row (modals). thumb: short row preview once an image exists.
+   * compact: one low full-width clickable zone next to the preview – no separate pick button.
+   */
+  variant?: "banner" | "thumb" | "compact";
+  /** Compact only: custom preview to the left of the zone (e.g. CompanyLogo initials/image). */
+  previewSlot?: ReactNode;
+  /** Compact only: zone copy when no image exists yet (desktop). */
+  emptyLabel?: string;
   /** Gallery-style: accept several files. Single-image fields ignore extras. */
   multiple?: boolean;
   addLabel?: string;
@@ -126,9 +136,12 @@ export function ImageDropzone({
   hint,
   value,
   loading,
+  saving,
   error,
   disabled,
   variant = "banner",
+  previewSlot,
+  emptyLabel = "Klicka eller släpp en bild här",
   multiple = false,
   addLabel = "Välj bild",
   replaceLabel = "Byt bild",
@@ -144,7 +157,7 @@ export function ImageDropzone({
   const dragDepth = useRef(0);
   const [dragging, setDragging] = useState(false);
   const [reading, setReading] = useState(false);
-  const busy = reading || loading || disabled;
+  const busy = reading || loading || disabled || saving;
 
   function setBusy(next: boolean) {
     setReading(next);
@@ -280,7 +293,15 @@ export function ImageDropzone({
   const emptyCopy = (
     <div className="flex flex-col items-center justify-center gap-0.5 px-3 text-center">
       <ImagePlus className={cx("text-muted", variant === "banner" ? "size-5" : "size-4")} />
-      <p className="text-[13px] font-medium text-soft">{dropLabel ?? "Släpp en bild här"}</p>
+      {/* Mobil har ingen dra-och-släpp – där är ytan en tryckyta för att välja bild. */}
+      <p className="text-[13px] font-medium text-soft">
+        {dropLabel ?? (
+          <>
+            <span className="sm:hidden">Tryck för att välja bild</span>
+            <span className="hidden sm:inline">Släpp en bild här</span>
+          </>
+        )}
+      </p>
       {dropLabel ? null : <p className="text-[12px] text-muted">JPG, PNG eller WebP</p>}
     </div>
   );
@@ -295,6 +316,37 @@ export function ImageDropzone({
       emptyCopy
     );
 
+  // Compact: hela zonen är klickbar/släppbar – ingen separat "Välj bild"-knapp.
+  const compactMain =
+    reading || saving ? (
+      "Laddar upp …"
+    ) : dropLabel ? (
+      dropLabel
+    ) : hasImage || loading ? (
+      replaceLabel
+    ) : (
+      <>
+        {/* Mobil har ingen dra-och-släpp – där är zonen en tryckyta för att välja bild. */}
+        <span className="sm:hidden">Tryck för att välja bild</span>
+        <span className="hidden sm:inline">{emptyLabel}</span>
+      </>
+    );
+  const compactSub =
+    reading || saving || dropLabel ? null : hasImage || loading ? "JPG, PNG eller WebP" : (hint ?? "JPG, PNG eller WebP");
+
+  const compactPreview =
+    previewSlot ??
+    (hasImage || loading ? (
+      <div className="h-16 w-24 shrink-0 overflow-hidden rounded-xl border border-line">
+        {value ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={value} alt="" className="size-full object-cover" />
+        ) : (
+          <div className="size-full animate-pulse bg-ink/10" aria-hidden />
+        )}
+      </div>
+    ) : null);
+
   return (
     <div>
       {label ? (
@@ -304,7 +356,50 @@ export function ImageDropzone({
       ) : null}
       {fileInput}
 
-      {variant === "thumb" && (hasImage || loading) ? (
+      {variant === "compact" ? (
+        <>
+          <div className="flex items-center gap-3">
+            {compactPreview}
+            <div
+              role="button"
+              tabIndex={busy ? -1 : 0}
+              aria-label={hasImage ? replaceLabel : addLabel}
+              aria-disabled={busy || undefined}
+              className={cx(surfaceClass, "flex min-h-16 min-w-0 flex-1 items-center justify-center px-3 py-2")}
+              onClick={openPicker}
+              onKeyDown={onKeyDown}
+              onDragEnter={onDragEnter}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
+              onPaste={onPaste}
+            >
+              <div className="flex min-w-0 items-center gap-2.5">
+                <ImagePlus className="size-4 shrink-0 text-muted" />
+                <div className="min-w-0 text-left">
+                  <p className="truncate text-[13px] font-medium text-soft">{compactMain}</p>
+                  {compactSub ? <p className="truncate text-[12px] text-muted">{compactSub}</p> : null}
+                </div>
+              </div>
+            </div>
+          </div>
+          {hasImage ? (
+            <div className="mt-1">
+              <button
+                type="button"
+                className={buttonClasses("ghost", "sm", "max-lg:h-11")}
+                disabled={busy}
+                onClick={() => {
+                  onChange(undefined);
+                  onError?.(null);
+                }}
+              >
+                {removeLabel}
+              </button>
+            </div>
+          ) : null}
+        </>
+      ) : variant === "thumb" && (hasImage || loading) ? (
         <div
           className={cx("flex items-center gap-3 rounded-xl", dragging && "ring-2 ring-accent/30")}
           tabIndex={busy ? -1 : 0}
@@ -365,7 +460,8 @@ export function ImageDropzone({
         </>
       )}
 
-      {hint && !error ? <p className="mt-1.5 text-[12px] text-muted">{hint}</p> : null}
+      {/* I compact-varianten visas hinten inne i zonen i stället. */}
+      {hint && !error && variant !== "compact" ? <p className="mt-1.5 text-[12px] text-muted">{hint}</p> : null}
       {error ? <p className="mt-2 text-[13px] text-danger">{error}</p> : null}
     </div>
   );

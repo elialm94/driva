@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import type { QuoteVersion } from "./types";
+import { canonicalRichText } from "./richtext";
 
 /**
  * Kanoniskt, verifierbart hash av en offertversions innehåll.
@@ -19,13 +20,20 @@ export function quoteVersionHash(v: QuoteVersion): string {
       unitPrice: l.unitPrice,
       vatRate: l.vatRate,
     })),
-    rot: v.rot,
+    rot: v.rot ? { type: v.rot.type } : v.rot,
     paymentPlan: v.paymentPlan,
     paymentTermsDays: v.paymentTermsDays,
     // Villkorligt så att versioner signerade innan fältet fanns behåller sitt hash.
     ...(v.lateInterestRate !== undefined ? { lateInterestRate: v.lateInterestRate } : {}),
     validUntil: v.validUntil,
     terms: v.terms,
+    // Villkorligt: offerter utan applied-belopp behåller sitt hash.
+    ...(v.rot && v.rot.appliedTaxReduction !== undefined
+      ? { appliedTaxReduction: v.rot.appliedTaxReduction }
+      : {}),
+    ...(v.rot && v.rot.taxReductionManuallyAdjusted
+      ? { taxReductionManuallyAdjusted: true }
+      : {}),
     // Villkorligt så att versioner signerade innan ROT/RUT-villkoren fanns behåller sitt hash.
     ...(v.taxReductionTerms
       ? {
@@ -38,6 +46,9 @@ export function quoteVersionHash(v: QuoteVersion): string {
           },
         }
       : {}),
+    // Villkorligt så att versioner signerade innan fältet fanns behåller sitt hash.
+    // Kanonisk (nyckelsorterad) form: jsonb bevarar inte nyckelordning.
+    ...(v.richText ? { richText: canonicalRichText(v.richText) } : {}),
   });
   return createHash("sha256").update(canonical, "utf8").digest("hex");
 }

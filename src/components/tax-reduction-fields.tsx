@@ -1,16 +1,28 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { DwellingType, HousingDetails, TaxReductionDetails } from "@/lib/types";
 import { formatPersonnummer, isPersonnummerFormat, maskPersonnummer } from "@/lib/personnummer";
 import { formatOrgnr } from "@/lib/invoices/formats";
 import {
   formatWorkPeriodRange,
   taxReductionMissingFields,
-  taxReductionMissingHint,
+  type TaxReductionMissingCode,
 } from "@/lib/tax-reduction-gaps";
 import { DateField } from "./date-field";
 import { cx } from "./ui";
+import { SoftMissingHint } from "./form-validation";
+import { kr } from "@/lib/format";
+import {
+  TAX_REDUCTION_USE_MAX_LABEL,
+  taxReductionAmountHelp,
+  taxReductionAppliedLabel,
+  taxReductionDeductionLabel,
+  taxReductionDocumentMaxLabel,
+  taxReductionExceedsMaxError,
+  taxReductionMaxLabel,
+} from "@/lib/tax-reduction-terms";
+import type { TaxReductionDocumentKind } from "@/lib/tax-reduction-amount";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -55,6 +67,151 @@ function ChangeButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+function parseKronorInput(raw: string): number | null {
+  const cleaned = raw.replace(/[\s\u00a0]/g, "");
+  if (cleaned === "") return 0;
+  if (!/^\d+$/.test(cleaned)) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function TaxReductionAmountPanel({
+  type,
+  documentKind,
+  laborInclVat,
+  calculated,
+  applied,
+  toPay,
+  toPayLabel = "Att betala",
+  manuallyAdjusted,
+  clampNotice,
+  onApply,
+  onUseMax,
+}: {
+  type: "rot" | "rut";
+  documentKind: TaxReductionDocumentKind;
+  laborInclVat: number;
+  calculated: number;
+  applied: number;
+  toPay: number;
+  toPayLabel?: string;
+  manuallyAdjusted: boolean;
+  clampNotice?: string | null;
+  onApply: (amount: number) => void;
+  onUseMax: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(applied));
+  const [error, setError] = useState<string | null>(null);
+  const prevCalculated = useRef(calculated);
+
+  function startEdit() {
+    setDraft(String(applied));
+    setError(null);
+    setEditing(true);
+  }
+
+  useEffect(() => {
+    if (!editing) setDraft(String(applied));
+  }, [applied, editing]);
+
+  useEffect(() => {
+    const previous = prevCalculated.current;
+    prevCalculated.current = calculated;
+    if (calculated >= previous) return;
+    setDraft(String(applied));
+    setEditing(false);
+    setError(null);
+  }, [applied, calculated]);
+
+  function tryApply(raw: string, commit: boolean) {
+    if (raw.trim() === "" && !commit) {
+      setError(null);
+      return;
+    }
+    const parsed = parseKronorInput(raw);
+    if (parsed == null) {
+      setError("Ange avdraget i hela kronor.");
+      return;
+    }
+    if (parsed > calculated) {
+      setError(taxReductionExceedsMaxError(calculated, documentKind));
+      return;
+    }
+    setError(null);
+    onApply(parsed);
+    if (commit) {
+      setDraft(String(parsed));
+      setEditing(false);
+    }
+  }
+
+  return (
+    <div className="space-y-1.5 text-[13px]">
+      <div className="flex justify-between text-soft">
+        <span>Arbetskostnad</span>
+        <span className="tabular">{kr(laborInclVat)}</span>
+      </div>
+      <div className="flex justify-between text-soft">
+        <span>{taxReductionMaxLabel(type)}</span>
+        <span className="tabular">{kr(calculated)}</span>
+      </div>
+      {editing ? (
+        <div>
+          <label className="mb-1 block text-[13px] font-medium text-soft">{taxReductionAppliedLabel(type)}</label>
+          <input
+            value={draft}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (next !== "" && !/^[\d\s\u00a0]*$/.test(next)) return;
+              setDraft(next);
+              tryApply(next, false);
+            }}
+            onBlur={() => tryApply(draft, true)}
+            inputMode="numeric"
+            autoComplete="off"
+            autoFocus
+            className={cx(inputCls, error ? "border-danger" : "")}
+            aria-invalid={Boolean(error)}
+            aria-label={taxReductionAppliedLabel(type)}
+          />
+        </div>
+      ) : (
+        <p className="flex justify-between text-accent-deep">
+          <span>
+            {taxReductionDeductionLabel(type)} {kr(applied)}
+            <ChangeButton onClick={startEdit} />
+          </span>
+          <span className="tabular">−{kr(applied)}</span>
+        </p>
+      )}
+      {error ? <p className="text-[13px] font-medium text-danger">{error}</p> : null}
+      {clampNotice ? <p className="text-[13px] font-medium text-soft">{clampNotice}</p> : null}
+      {manuallyAdjusted ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-muted">{taxReductionDocumentMaxLabel(documentKind, calculated)}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setEditing(false);
+              onUseMax();
+            }}
+            className="text-[13px] font-medium text-soft underline-offset-2 hover:text-ink hover:underline"
+          >
+            {TAX_REDUCTION_USE_MAX_LABEL}
+          </button>
+        </div>
+      ) : null}
+      <div className="flex justify-between font-medium">
+        <span>{toPayLabel}</span>
+        <span className="tabular">{kr(toPay)}</span>
+      </div>
+      <p className="text-[12px] leading-relaxed text-muted">{taxReductionAmountHelp(documentKind)}</p>
+    </div>
+  );
+}
+
 function KnownRow({ children }: { children: ReactNode }) {
   return <p className="text-[13px] leading-relaxed text-soft">{children}</p>;
 }
@@ -63,10 +220,12 @@ export function TaxReductionFields({
   type,
   value,
   onChange,
+  amountSlot,
 }: {
   type: "rot" | "rut";
   value: TaxReductionFormValue;
   onChange: (next: TaxReductionFormValue) => void;
+  amountSlot?: ReactNode;
 }) {
   const pnKnown = isPersonnummerFormat(value.personalIdentityNumber);
   const periodKnown = Boolean(value.workPeriodStart || value.workPeriodEnd);
@@ -91,7 +250,15 @@ export function TaxReductionFields({
     details: taxReductionDetailsFromForm(value),
     scope: "invoice",
   });
-  const hint = taxReductionMissingHint(type, missing);
+  const fieldIds: Partial<Record<TaxReductionMissingCode, string>> = {
+    personnummer: `${type}-personnummer`,
+    workPeriod: `${type}-arbetsperiod`,
+    dwellingType: `${type}-bostadstyp`,
+    propertyDesignation: `${type}-fastighetsbeteckning`,
+    brfOrgNumber: `${type}-brf-orgnr`,
+    apartmentNumber: `${type}-lagenhetsnummer`,
+  };
+  const missingItems = missing.map((m) => ({ id: m.code, label: m.label, fieldId: fieldIds[m.code] }));
 
   function patch(partial: Partial<TaxReductionFormValue>) {
     onChange({ ...value, ...partial });
@@ -126,8 +293,9 @@ export function TaxReductionFields({
 
   return (
     <div className="mt-3 space-y-2.5">
+      {amountSlot}
       {showPnInput ? (
-        <div>
+        <div id={`${type}-personnummer`}>
           <label className={labelCls}>Personnummer</label>
           <input
             value={formatPersonnummer(value.personalIdentityNumber)}
@@ -149,7 +317,7 @@ export function TaxReductionFields({
       )}
 
       {showPeriodInput ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div id={`${type}-arbetsperiod`} className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className={labelCls}>Arbetsperiod från</label>
             <DateField
@@ -182,7 +350,7 @@ export function TaxReductionFields({
 
       {type === "rot" ? (
         showDwellingPicker ? (
-          <div>
+          <div id={`${type}-bostadstyp`}>
             <label className={labelCls}>Bostadstyp</label>
             <div className="flex flex-wrap gap-1.5">
               {(
@@ -196,7 +364,7 @@ export function TaxReductionFields({
                   type="button"
                   onClick={() => setDwelling(id)}
                   className={cx(
-                    "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors",
+                    "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors max-lg:py-2",
                     value.housing.dwellingType === id
                       ? "border-ink bg-ink text-white"
                       : "border-line-strong text-soft hover:border-muted"
@@ -216,7 +384,7 @@ export function TaxReductionFields({
       ) : null}
 
       {showProperty ? (
-        <div>
+        <div id={`${type}-fastighetsbeteckning`}>
           <label className={labelCls}>Fastighetsbeteckning</label>
           <input
             value={value.housing.propertyDesignation ?? ""}
@@ -233,7 +401,7 @@ export function TaxReductionFields({
       ) : null}
 
       {showBrf ? (
-        <div>
+        <div id={`${type}-brf-orgnr`}>
           <label className={labelCls}>BRF organisationsnummer</label>
           <input
             value={formatOrgnr(value.housing.brfOrgNumber ?? "")}
@@ -257,7 +425,7 @@ export function TaxReductionFields({
       ) : null}
 
       {showApt ? (
-        <div>
+        <div id={`${type}-lagenhetsnummer`}>
           <label className={labelCls}>Lägenhetsnummer</label>
           <input
             value={value.housing.apartmentNumber ?? ""}
@@ -280,9 +448,9 @@ export function TaxReductionFields({
 
       {missing.length === 0 ? (
         <p className="text-[13px] font-medium text-ok">✓ Alla uppgifter finns</p>
-      ) : hint ? (
-        <p className="text-[12px] leading-relaxed text-muted">{hint}</p>
-      ) : null}
+      ) : (
+        <SoftMissingHint missing={missingItems} intro={`för ${type === "rot" ? "ROT" : "RUT"}-ansökan`} />
+      )}
     </div>
   );
 }

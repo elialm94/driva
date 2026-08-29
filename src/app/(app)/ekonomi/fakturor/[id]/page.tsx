@@ -23,15 +23,19 @@ import { QuoteDeviationCard } from "@/components/quote-deviation-card";
 import { InvoiceDraftSend } from "@/components/invoice-draft-send";
 import { InvoiceIssueChecklist } from "@/components/invoice-issue-checklist";
 import { sendInvoiceAction } from "@/app/actions";
+import { isLiveMailConfigured } from "@/lib/mail";
 import { DeniedReductionCard } from "@/components/denied-reduction-card";
 import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
 import { taxReductionCaseForInvoice } from "@/lib/services/tax-reduction";
-import { BackLink } from "@/components/back-link";
+import { SmartBack } from "@/components/back-link";
+import { AppLink } from "@/components/app-link";
 import { hrefWithNav, newQuoteHref, sanitizeReturnLabel, sanitizeReturnTo, withReturnTo } from "@/lib/nav";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Faktura" };
 
 export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[id]">) {
+  await ensurePageBusiness();
   const { id } = await props.params;
   const searchParams = await props.searchParams;
   const invoice = getInvoice(id);
@@ -82,7 +86,9 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         from: fromHere,
       })
     : undefined;
-  const justSent = typeof searchParams.skickad === "string" && searchParams.skickad === "1" && !isDraft;
+  const sentParam = typeof searchParams.skickad === "string" ? searchParams.skickad : null;
+  const justSent = sentParam === "1" && !isDraft;
+  const justSentManual = sentParam === "manuell" && !isDraft;
   const deliveryFailed =
     (typeof searchParams.leveransfel === "string" && searchParams.leveransfel === "1") ||
     Boolean(!isDraft && invoice.issuedAt && !invoice.sentAt);
@@ -93,7 +99,8 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   const isCreditNote = invoice.type === "kredit";
   const canRemind = invoice.status === "skickad" && !isCreditNote && overdue;
   const canCredit = invoice.status === "skickad" && !isCreditNote;
-  const canSimulate = invoice.status === "skickad" && !isCreditNote;
+  // Simulering kräver ett (demo-)bankkonto att bokföra inbetalningen mot.
+  const canSimulate = invoice.status === "skickad" && !isCreditNote && data.bankAccounts.length > 0;
   const canCustomerView = !isDraft;
   const canCopyLink = !isDraft;
   const canResend = !isDraft;
@@ -127,6 +134,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         dueDateLabel={datumLang(invoice.dueDate)}
         sendAction={sendInvoiceAction.bind(null, invoice.id)}
         detailHref={fromHere.href}
+        mailConfigured={isLiveMailConfigured()}
         recipientEmail={customer.email}
         addEmailHref={addEmailHref}
         hasIssuanceBlockers={linkedBlockers.length > 0}
@@ -146,7 +154,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   return (
     <div className="animate-fade-up">
       <div className="mb-2.5">
-        <BackLink fallbackHref="/ekonomi?flik=fakturor" fallbackLabel="Fakturor" />
+        <SmartBack />
       </div>
       <Breadcrumbs
         items={[
@@ -163,9 +171,9 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
             <InvoiceStatusBadge invoice={invoice} />
           </div>
           <p className="mt-1 text-[15px] text-soft">
-            <Link href={`/kunder/${customer.id}` as never} className="font-medium text-ink hover:underline">
+            <AppLink href={`/kunder/${customer.id}`} originLabel={invoiceHeading(invoice)} className="font-medium text-ink hover:underline">
               {customer.name}
-            </Link>{" "}
+            </AppLink>{" "}
             · {kr(totals.toPay)} · förfaller {datumLang(invoice.dueDate)}
           </p>
         </div>
@@ -180,7 +188,16 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         </Card>
       ) : null}
 
-      {deliveryFailed && !justSent ? (
+      {justSentManual ? (
+        <Card className="mb-6 border-ok/20 bg-ok-soft/50 px-5 py-4 text-[14px] text-soft">
+          <span className="font-medium text-ok">
+            Faktura {invoice.number != null ? `#${invoice.number}` : ""} är utfärdad, bokförd och markerad som skickad.
+          </span>{" "}
+          Ingen e-post är konfigurerad – dela kundlänken med {customer.name} via ”Kopiera kundlänk”.
+        </Card>
+      ) : null}
+
+      {deliveryFailed && !justSent && !justSentManual ? (
         <Card className="mb-6 border-warn/30 bg-warn-soft/40 px-5 py-4 text-[14px] text-soft">
           <span className="font-medium text-ink">Fakturan utfärdades men kunde inte skickas via e-post.</span> Samma
           nummer behålls – försök skicka igen.

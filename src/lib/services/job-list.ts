@@ -1,7 +1,5 @@
 import { db } from "../store";
-import type { Invoice, Job, Quote } from "../types";
-import { docTotals } from "../calc";
-import { invoiceTotals } from "./data";
+import type { Job } from "../types";
 import {
   compareJobsDefault,
   derivedJobStatus,
@@ -10,13 +8,20 @@ import {
   type DerivedJobStatus,
   type JobEconomyKind,
 } from "./job-lifecycle";
+import { jobMoneyForAll, type JobMoney } from "./job-economy";
 import type { PagedResult } from "./customers";
 
 export const JOB_PAGE_SIZE = 50;
 
-export type JobLifecycleFilter = "aktiva" | "planerade" | "klart" | "alla";
-export type JobEconomyFilter = "alla" | "kvar" | "vantar" | "betalt";
-export type JobSort = "standard" | "datum" | "kund" | "belopp";
+// Klientsäkra delar (filtertyper + avstämning) bor i job-list-filters –
+// den här modulen drar in store/fs och får inte nå klientbundlar.
+export {
+  reconcileJobListFilters,
+  type JobEconomyFilter,
+  type JobLifecycleFilter,
+  type JobSort,
+} from "./job-list-filters";
+import type { JobEconomyFilter, JobLifecycleFilter, JobSort } from "./job-list-filters";
 
 export interface JobListRow {
   id: string;
@@ -37,13 +42,6 @@ export interface JobListRow {
   completedAt?: string;
 }
 
-interface JobMoney {
-  quoteAmount: number;
-  remaining: number;
-  unpaid: number;
-  paid: number;
-}
-
 function paginate<T>(items: T[], page: number, pageSize: number): PagedResult<T> {
   const size = Math.max(1, pageSize);
   const total = items.length;
@@ -57,46 +55,6 @@ function paginate<T>(items: T[], page: number, pageSize: number): PagedResult<T>
     total,
     totalPages: total === 0 ? 1 : totalPages,
   };
-}
-
-/** En genomläsning: uppdrag + kund + offert/fakturasummor. Ingen N+1 per rad. */
-function jobMoneyById(): Map<string, JobMoney> {
-  const data = db();
-  const versionById = new Map(data.quoteVersions.map((v) => [v.id, v]));
-  const quoteById = new Map(data.quotes.map((q) => [q.id, q]));
-  const quoteByJobId = new Map<string, Quote>();
-  for (const q of data.quotes) {
-    if (q.jobId) quoteByJobId.set(q.jobId, q);
-  }
-
-  const invoicesByJob = new Map<string, Invoice[]>();
-  for (const inv of data.invoices) {
-    if (!inv.jobId || inv.status === "krediterad") continue;
-    const list = invoicesByJob.get(inv.jobId);
-    if (list) list.push(inv);
-    else invoicesByJob.set(inv.jobId, [inv]);
-  }
-
-  const money = new Map<string, JobMoney>();
-  for (const job of data.jobs) {
-    const quote = (job.quoteId ? quoteById.get(job.quoteId) : undefined) ?? quoteByJobId.get(job.id);
-    const version = quote ? versionById.get(quote.currentVersionId) : undefined;
-    const quoteTotals = version ? docTotals(version.lines, version.rot) : undefined;
-    const quoteAmount = quoteTotals?.toPay ?? 0;
-    const invoices = invoicesByJob.get(job.id) ?? [];
-    let invoiced = 0;
-    let unpaid = 0;
-    let paid = 0;
-    for (const inv of invoices) {
-      const t = invoiceTotals(inv);
-      invoiced += t.total;
-      if (inv.status === "skickad" || inv.status === "utkast") unpaid += t.toPay;
-      if (inv.status === "betald") paid += t.toPay;
-    }
-    const remaining = quote?.status === "godkand" && quoteTotals ? Math.max(0, quoteTotals.total - invoiced) : 0;
-    money.set(job.id, { quoteAmount, remaining, unpaid, paid });
-  }
-  return money;
 }
 
 function toRow(job: Job, money: JobMoney, customer: { name: string; kind: "privat" | "foretag" }): JobListRow {
@@ -145,7 +103,9 @@ export function listJobsForTable(input: {
   pageSize?: number;
 } = {}): PagedResult<JobListRow> {
   const data = db();
-  const money = jobMoneyById();
+  // Delad uppdragsekonomi (job-economy.ts) – samma siffror som uppdragssidan
+  // och actionmotorn, en genomläsning för hela listan.
+  const money = jobMoneyForAll();
   const customers = new Map(data.customers.map((c) => [c.id, c]));
   const q = (input.q ?? "").trim().toLowerCase();
   const lifecycleFilter = input.lifecycle ?? "aktiva";
@@ -156,7 +116,9 @@ export function listJobsForTable(input: {
   for (const job of data.jobs) {
     const customer = customers.get(job.customerId);
     if (!customer) continue;
-    const row = toRow(job, money.get(job.id) ?? { quoteAmount: 0, remaining: 0, unpaid: 0, paid: 0 }, customer);
+    const jm = money.get(job.id);
+    if (!jm) continue; // jobMoneyForAll täcker alla jobb – saknas den är datat trasigt
+    const row = toRow(job, jm, customer);
     if (lifecycleFilter === "aktiva" && row.lifecycle === "klart") continue;
     if (lifecycleFilter === "planerade" && row.lifecycle !== "planerat") continue;
     if (lifecycleFilter === "klart" && row.lifecycle !== "klart") continue;

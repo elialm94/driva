@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { bankidProvider } from "@/lib/services/bankid";
+import { withPublicBusiness } from "@/lib/auth/session";
 
 /**
  * Demo-endpoint som driver mock-BankID-ordrar framåt.
@@ -18,7 +19,13 @@ export async function POST(req: NextRequest) {
   if (!body.orderRef || !body.event) {
     return NextResponse.json({ error: "orderRef och event krävs" }, { status: 400 });
   }
-  const order = bankidProvider.advance(body.orderRef, body.event);
+  // "complete" fullbordar signeringen (mejl kan skickas) → ingen retry.
+  const order = await withPublicBusiness(
+    "bankid_order",
+    body.orderRef,
+    () => bankidProvider.advance(body.orderRef!, body.event!),
+    { retry: false }
+  );
   if (!order) return NextResponse.json({ error: "Ordern finns inte" }, { status: 404 });
   revalidatePath("/", "layout");
   return NextResponse.json({ status: order.status, hintCode: order.hintCode });

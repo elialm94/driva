@@ -75,7 +75,7 @@ async function main() {
 
   // 3. Ekonomi → Offerter → Ny offert → avbryt → Offerter
   await page.goto(`${BASE}/ekonomi?flik=offerter`, { waitUntil: "networkidle0" });
-  await page.click('a[href="/ekonomi/offerter/ny"]');
+  await page.click('a[href^="/ekonomi/offerter/ny"]');
   await page.waitForFunction(() => location.pathname === "/ekonomi/offerter/ny");
   const back3 = await textOf(page, "a[data-nav=back]");
   await ok("3 ny offert back Offerter", (back3 ?? "").includes("Offerter"), back3 ?? "");
@@ -168,10 +168,46 @@ async function main() {
   await ok("8 browser back to fakturor list", page.url().includes("flik=fakturor"));
 
   // Dead-end pages load
-  for (const path of ["/bokforing", "/hemsida", "/assistent", "/ekonomi?flik=utgifter", "/ekonomi?flik=bank"]) {
+  for (const path of ["/bokforing", "/hemsida", "/ekonomi?flik=utgifter", "/ekonomi?flik=bank"]) {
     const res = await page.goto(`${BASE}${path}`, { waitUntil: "networkidle0" });
     await ok(`section ${path}`, res?.ok() ?? false);
   }
+
+  // IA: sidebar + redirects
+  await page.setViewport({ width: 1280, height: 900 });
+  await page.goto(`${BASE}/`, { waitUntil: "networkidle0" });
+  const sidebarText = await page.$eval("aside", (el) => (el.textContent ?? "").replace(/\s+/g, " "));
+  await ok("IA sidebar has Inbox", sidebarText.includes("Inbox"));
+  await ok("IA sidebar has no Assistent", !sidebarText.includes("Assistent"));
+  await ok("IA sidebar keeps Settings", sidebarText.includes("Inställningar"));
+  await page.screenshot({ path: ".shots/ia-desktop-hem.png" });
+
+  await page.goto(`${BASE}/kunder`, { waitUntil: "networkidle0" });
+  await ok("IA bare /kunder stays on register", page.url().includes("/kunder") && !page.url().includes("flik=forfragningar"));
+  const kunderTabs = await page.evaluate(() => document.body.innerText);
+  await ok("IA Kunder tabs are Kunder|Uppdrag", kunderTabs.includes("Uppdrag") && !/Förfrågningar/.test(kunderTabs.split("\n").slice(0, 20).join("\n")));
+  await page.screenshot({ path: ".shots/ia-desktop-kunder.png" });
+
+  await page.goto(`${BASE}/uppdrag`, { waitUntil: "networkidle0" });
+  await ok("IA /uppdrag redirects to Kunder Uppdrag", page.url().includes("/kunder") && page.url().includes("flik=uppdrag"));
+
+  await page.goto(`${BASE}/assistent`, { waitUntil: "networkidle0" });
+  await ok("IA /assistent redirects home", new URL(page.url()).pathname === "/");
+
+  await page.goto(`${BASE}/inbox`, { waitUntil: "networkidle0" });
+  const inboxText = await page.evaluate(() => document.body.innerText);
+  await ok("IA Inbox lists inquiries", inboxText.includes("Karin") || inboxText.includes("bokhylla") || inboxText.includes("Förfrågan"));
+  await ok("IA Inbox lists seed mail", inboxText.includes("Byggmax") || inboxText.includes("Kvitto"));
+  await ok("IA Inbox shows inbound address", inboxText.includes("demo@in.driva.se"));
+  await page.screenshot({ path: ".shots/ia-desktop-inbox.png" });
+
+  await page.goto(`${BASE}/kunder/forfragningar/req-karin`, { waitUntil: "networkidle0" });
+  await ok("IA old forfragningar URL redirects", page.url().includes("/inbox/req-karin"));
+  const inquiryTitle = await textOf(page, "h1");
+  await ok("IA inquiry detail at new path", (inquiryTitle ?? "").includes("bokhylla") || (inquiryTitle ?? "").length > 0);
+
+  await page.goto(`${BASE}/kunder?flik=forfragningar`, { waitUntil: "networkidle0" });
+  await ok("IA forfragningar flik redirects to /inbox", new URL(page.url()).pathname === "/inbox");
 
   // 9. Mobile header/back
   await page.setViewport({ width: 390, height: 844 });
@@ -185,6 +221,31 @@ async function main() {
   await page.goto(`${BASE}/uppdrag/job-kok`, { waitUntil: "networkidle0" });
   const mobileBack2 = await textOf(page, "a[data-nav=back]");
   await ok("9 mobile uppdrag back", (mobileBack2 ?? "").includes("Uppdrag"), mobileBack2 ?? "");
+
+  await page.goto(`${BASE}/`, { waitUntil: "networkidle0" });
+  const bottom = await page.evaluate(() => {
+    const nav = [...document.querySelectorAll("nav")].find((n) => n.className.includes("lg:hidden") || n.getBoundingClientRect().bottom > 500);
+    return (nav?.textContent ?? "").replace(/\s+/g, " ");
+  });
+  await ok("IA mobile primary has Inbox", /Hem/.test(bottom) && /Kunder/.test(bottom) && /Ekonomi/.test(bottom) && /Inbox/.test(bottom));
+  await ok("IA mobile primary has Mer", /Mer/.test(bottom));
+  const merBtn = await page.evaluateHandle(() =>
+    [...document.querySelectorAll("button")].find((b) => (b.textContent ?? "").includes("Mer")) ?? null
+  );
+  if (merBtn.asElement()) {
+    await merBtn.asElement()!.click();
+    await page.waitForFunction(() => [...document.querySelectorAll("[role=dialog]")].some((d) => (d.textContent ?? "").includes("Bokföring")));
+    const merText = await page.evaluate(() => {
+      const dialog = document.querySelector("[role=dialog]");
+      return (dialog?.textContent ?? "").replace(/\s+/g, " ");
+    });
+    await ok("IA Mer has Bokföring and Hemsida", merText.includes("Bokföring") && merText.includes("Hemsida"));
+    await ok("IA Mer has Settings", merText.includes("Inställningar"));
+    await page.screenshot({ path: ".shots/ia-mobile-mer.png" });
+  }
+
+  await page.goto(`${BASE}/inbox`, { waitUntil: "networkidle0" });
+  await page.screenshot({ path: ".shots/ia-mobile-inbox.png" });
 
   await browser.close();
   console.log("\nAll nav scenarios passed:\n" + results.map((r) => "  " + r).join("\n"));

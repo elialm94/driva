@@ -21,14 +21,17 @@ function vDate(v: Verification): string {
 
 /** Verifikationer sorterade på bokföringsdatum + nummer. */
 export function verificationsInRange(range?: Partial<DateRange>): Verification[] {
-  return db()
-    .verifications.filter((v) => {
-      const d = vDate(v);
-      if (range?.from && d < range.from) return false;
-      if (range?.to && d > range.to) return false;
-      return true;
-    })
-    .sort((a, b) => vDate(a).localeCompare(vDate(b)) || a.number - b.number);
+  // Beräkna datumet en gång per verifikation – i sorteringskomparatorn körs
+  // vDate annars O(n log n) gånger, vilket märks vid tusentals verifikationer.
+  const withDate: { v: Verification; d: string }[] = [];
+  for (const v of db().verifications) {
+    const d = vDate(v);
+    if (range?.from && d < range.from) continue;
+    if (range?.to && d > range.to) continue;
+    withDate.push({ v, d });
+  }
+  withDate.sort((a, b) => a.d.localeCompare(b.d) || a.v.number - b.v.number);
+  return withDate.map((x) => x.v);
 }
 
 /** IB för ett konto vid ett datum: räkenskapsårets IB + rörelser från årets start fram till (exkl.) datumet. */

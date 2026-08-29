@@ -2,15 +2,17 @@ import Link from "next/link";
 import { Table2 } from "lucide-react";
 import { kr } from "@/lib/format";
 import { Card, EmptyState, PageHeader, cx } from "@/components/ui";
-import { BackLink } from "@/components/back-link";
+import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
 import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { saldobalans } from "@/lib/accounting/ledger";
 import { fiscalYears } from "@/lib/accounting/fiscal";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Saldobalans" };
 
 export default async function SaldobalansPage({ searchParams }: { searchParams: Promise<{ ar?: string }> }) {
+  await ensurePageBusiness();
   const params = await searchParams;
   const years = fiscalYears();
   const chosen = params.ar ? years.find((f) => f.label === params.ar) : undefined;
@@ -20,7 +22,7 @@ export default async function SaldobalansPage({ searchParams }: { searchParams: 
   return (
     <div className="animate-fade-up">
       <PageHeader
-        back={<BackLink fallbackHref="/bokforing" fallbackLabel="Bokföring" />}
+        back={<SmartBack />}
         title="Saldobalans"
         subtitle={`Alla konton med ingående balans, periodens debet/kredit och utgående balans (${sb.range.from} till ${sb.range.to}).`}
         actions={

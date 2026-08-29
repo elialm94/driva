@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
+import { AppLink } from "./app-link";
 import { useRouter } from "next/navigation";
 import { Inbox, Search } from "lucide-react";
 import { Avatar, Badge, Card, EmptyState, cx } from "./ui";
@@ -18,11 +18,11 @@ export interface InquiryInboxQuery {
 
 export function kunderInboxHref(query: Partial<InquiryInboxQuery> = {}): string {
   const sp = new URLSearchParams();
-  sp.set("flik", "forfragningar");
   if (query.q) sp.set("q", query.q);
   if (query.filter && query.filter !== "oppna") sp.set("visning", query.filter);
   if (query.page && query.page > 1) sp.set("sida", String(query.page));
-  return `/kunder?${sp.toString()}`;
+  const qs = sp.toString();
+  return qs ? `/inbox?${qs}` : "/inbox";
 }
 
 export function InquiryInbox({
@@ -115,9 +115,9 @@ export function InquiryInbox({
                   {result.rows.map((r) => (
                     <tr key={r.id} className="relative border-b border-line/60 last:border-0 hover:bg-canvas/70">
                       <td className="px-3 py-2.5">
-                        <Link href={inquiryHref(r.id) as never} className="absolute inset-0 z-10" aria-label={r.title}>
+                        <AppLink href={inquiryHref(r.id)} className="absolute inset-0 z-10" aria-label={r.title}>
                           <span className="sr-only">{r.customerName}</span>
-                        </Link>
+                        </AppLink>
                         <div className="pointer-events-none flex items-center gap-3">
                           <Avatar name={r.customerName} size="sm" />
                           <span className="truncate font-medium text-ink">{r.customerName}</span>
@@ -142,7 +142,7 @@ export function InquiryInbox({
 
           <div className="space-y-2 md:hidden">
             {result.rows.map((r) => (
-              <Link key={r.id} href={inquiryHref(r.id) as never} className="card flex items-start gap-3 px-4 py-3">
+              <AppLink key={r.id} href={inquiryHref(r.id)} className="card flex items-start gap-3 px-4 py-3">
                 <Avatar name={r.customerName} size="sm" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
@@ -154,7 +154,7 @@ export function InquiryInbox({
                   <p className="mt-0.5 truncate text-[13px] text-ink">{r.title}</p>
                   <p className="mt-0.5 text-[12px] text-muted">{relativ(r.createdAt)}</p>
                 </div>
-              </Link>
+              </AppLink>
             ))}
           </div>
 

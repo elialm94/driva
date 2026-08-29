@@ -3,12 +3,27 @@ import { headers } from "next/headers";
 import { db } from "@/lib/store";
 import { SiteRenderer } from "@/components/site-renderer";
 import { isMockDomainMode, resolvePublicSite } from "@/lib/domains";
+import { ensurePageBusiness, ensurePublicPage } from "@/lib/auth/session";
+import { isSupabaseMode } from "@/lib/storage/config";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Tenantupplösning för den publika sajten: i Supabase-läge löses företaget
+ * från värdnamnet (kundens domän). Utan träff (t.ex. appens egen värd vid
+ * förhandsvisning) krävs inloggad session. Returnerar false = 404.
+ */
+async function ensureSiteTenant(host: string | null): Promise<boolean> {
+  if (!isSupabaseMode()) return true;
+  if (host && (await ensurePublicPage("hostname", host))) return true;
+  await ensurePageBusiness(); // redirectar till /login utan session
+  return true;
+}
 
 export async function generateMetadata(props: PageProps<"/sajt">) {
   const searchParams = await props.searchParams;
   const host = await publicHost(searchParams);
+  if (!(await ensureSiteTenant(host))) return { title: "Hemsida" };
   const mapped = host ? resolvePublicSite(host) : null;
   const site = mapped?.website ?? db().website;
   return {
@@ -35,6 +50,7 @@ export default async function PublicSitePage(props: PageProps<"/sajt">) {
   const searchParams = await props.searchParams;
   const preview = searchParams.preview === "1";
   const host = await publicHost(searchParams);
+  if (!(await ensureSiteTenant(host))) notFound();
   const mapped = host ? resolvePublicSite(host) : null;
   const data = db();
   const site = mapped?.website ?? data.website;

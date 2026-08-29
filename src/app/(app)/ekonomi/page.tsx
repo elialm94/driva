@@ -1,54 +1,64 @@
 import Link from "next/link";
-import { Plus, Landmark, ReceiptText, FileText, ShoppingBag } from "lucide-react";
+import { Plus, Landmark } from "lucide-react";
 import { db } from "@/lib/store";
-import { businessStats } from "@/lib/services/finance";
-import { currentVersion, invoiceTotals, quoteTotals, requireCustomer } from "@/lib/services/data";
-import { categoryByKey } from "@/lib/bas";
-import { kr, relativ, datumKort } from "@/lib/format";
+import { kr } from "@/lib/format";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader, cx } from "@/components/ui";
-import { InvoiceStatusBadge, QuoteStatusBadge, TxStatusBadge } from "@/components/status";
+import { UploadReceiptButton } from "@/components/money-widgets";
 import {
-  ExpenseQuestionButtons,
-  PaySupplierButton,
-  UploadReceiptButton,
-} from "@/components/money-widgets";
+  BankRegister,
+  ExpenseRegister,
+  InvoiceRegister,
+  QuoteRegister,
+} from "@/components/economy-register";
+import {
+  BANK_STATUS_OPTIONS,
+  EXPENSE_STATUS_OPTIONS,
+  INVOICE_STATUS_OPTIONS,
+  QUOTE_STATUS_OPTIONS,
+  listBankForTable,
+  listExpensesForTable,
+  listInvoicesForTable,
+  listQuotesForTable,
+  type BankStatusFilter,
+  type ExpenseStatusFilter,
+  type InvoiceStatusFilter,
+  type QuoteStatusFilter,
+} from "@/lib/services/economy-list";
 import { EKONOMI_TABS, type EkonomiTab } from "@/lib/nav";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Ekonomi" };
 
-type Tab = EkonomiTab;
+function param(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function statusParam<S extends string>(value: unknown, options: readonly [S, string][]): S {
+  const raw = param(value);
+  return (options.some(([key]) => key === raw) ? raw : "alla") as S;
+}
+
+function pageParam(value: unknown): number {
+  const n = Number(param(value));
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+}
 
 export default async function MoneyPage(props: PageProps<"/ekonomi">) {
+  await ensurePageBusiness();
   const searchParams = await props.searchParams;
   const tab = (["offerter", "fakturor", "utgifter", "bank"].includes(String(searchParams.flik))
     ? String(searchParams.flik)
-    : "offerter") as Tab;
+    : "offerter") as EkonomiTab;
 
-  const data = db();
-  const stats = businessStats();
-
-  const quotes = [...data.quotes].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const invoices = [...data.invoices].sort((a, b) => {
-    if (a.number == null && b.number == null) return b.createdAt.localeCompare(a.createdAt);
-    if (a.number == null) return -1;
-    if (b.number == null) return 1;
-    return b.number - a.number;
-  });
-  const expenses = [...data.expenses].sort((a, b) => b.date.localeCompare(a.date));
-  const supplierInvoices = [...data.supplierInvoices].sort((a, b) =>
-    (a.status + a.dueDate).localeCompare(b.status + b.dueDate)
-  );
-  const transactions = [...data.bankTransactions].sort((a, b) => b.date.localeCompare(a.date));
-  const account = data.bankAccounts[0];
-
-  const rowCls =
-    "flex items-center gap-4 px-5 py-4 transition-colors hover:bg-canvas/60 first:rounded-t-[calc(1.25rem-1px)] last:rounded-b-[calc(1.25rem-1px)]";
+  const q = param(searchParams.q);
+  const page = pageParam(searchParams.sida);
+  const account = db().bankAccounts[0];
 
   return (
     <div className="animate-fade-up">
       <PageHeader
         title="Ekonomi"
-        subtitle="Offerter, fakturor, betalningar och utgifter – ihopkopplat och bokfört automatiskt."
+        subtitle="Alla offerter, fakturor, utgifter och banktransaktioner – sök och hitta."
         actions={
           <>
             <ButtonLink href="/ekonomi/fakturor/ny" variant="secondary">
@@ -60,29 +70,6 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
           </>
         }
       />
-
-      <Card className="mb-7 grid grid-cols-2 gap-y-5 px-6 py-5 sm:grid-cols-3 lg:grid-cols-6">
-        {[
-          { label: "Fakturerat i månaden", value: kr(stats.revenueMonth) },
-          { label: "Fakturerat i år", value: kr(stats.revenueYear) },
-          { label: "Kostnader i år", value: kr(stats.costsYear) },
-          { label: "Uppskattad vinst", value: kr(stats.profitYear), ok: true },
-          { label: "Väntar på betalning", value: kr(stats.unpaidSum), warn: stats.overdueSum > 0 },
-          { label: "På väg in (godkända offerter)", value: kr(stats.upcomingIncome) },
-        ].map((s) => (
-          <div key={s.label}>
-            <p className="text-[12px] font-medium text-muted">{s.label}</p>
-            <p
-              className={cx(
-                "mt-0.5 text-[17px] font-semibold tracking-tight tabular",
-                s.ok ? "text-accent-deep" : s.warn ? "text-danger" : "text-ink"
-              )}
-            >
-              {s.value}
-            </p>
-          </div>
-        ))}
-      </Card>
 
       <div className="mb-5 flex gap-1 overflow-x-auto rounded-2xl bg-ink/4 p-1">
         {EKONOMI_TABS.map((t) => (
@@ -100,177 +87,91 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
       </div>
 
       {tab === "offerter" ? (
-        quotes.length === 0 ? (
-          <EmptyState icon={FileText} title="Inga offerter ännu" text="Skapa din första offert – kunden godkänner den tryggt med BankID." action={<ButtonLink href="/ekonomi/offerter/ny">Ny offert</ButtonLink>} />
-        ) : (
-          <Card className="divide-y divide-line/70">
-            {quotes.map((q) => {
-              const v = currentVersion(q);
-              const customer = requireCustomer(q.customerId);
-              return (
-                <Link key={q.id} href={`/ekonomi/offerter/${q.id}` as never} className={rowCls}>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15px] font-medium">
-                      #{q.number} · {v.title}
-                    </p>
-                    <p className="text-[13px] text-muted">
-                      {customer.name}
-                      {q.sentAt ? ` · skickad ${relativ(q.sentAt)}` : ""}
-                      {q.status === "skickad" && q.viewedAt ? " · öppnad av kunden" : ""}
-                    </p>
-                  </div>
-                  <p className="text-[15px] font-semibold tabular">{kr(quoteTotals(q).toPay)}</p>
-                  <QuoteStatusBadge quote={q} />
-                </Link>
-              );
-            })}
-          </Card>
-        )
+        <QuoteRegister
+          result={listQuotesForTable({
+            q,
+            status: statusParam<QuoteStatusFilter>(searchParams.status, QUOTE_STATUS_OPTIONS),
+            page,
+          })}
+          query={{ q, status: statusParam<QuoteStatusFilter>(searchParams.status, QUOTE_STATUS_OPTIONS), page }}
+          options={QUOTE_STATUS_OPTIONS}
+        />
       ) : null}
 
       {tab === "fakturor" ? (
-        invoices.length === 0 ? (
-          <EmptyState icon={ReceiptText} title="Inga fakturor ännu" text="Fakturor skapas oftast direkt från ett klart uppdrag – eller manuellt här." action={<ButtonLink href="/ekonomi/fakturor/ny">Ny faktura</ButtonLink>} />
-        ) : (
-          <Card className="divide-y divide-line/70">
-            {invoices.map((inv) => {
-              const customer = requireCustomer(inv.customerId);
-              return (
-                <Link key={inv.id} href={`/ekonomi/fakturor/${inv.id}` as never} className={rowCls}>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15px] font-medium">
-                      {inv.number == null ? "Utkast" : `#${inv.number}`}
-                      {inv.type !== "faktura" ? (
-                        <span className="ml-2 text-[13px] font-normal text-muted">
-                          {inv.type === "delbetalning" ? "Delbetalning" : inv.type === "slutfaktura" ? "Slutfaktura" : "Kredit"}
-                        </span>
-                      ) : null}
-                    </p>
-                    <p className="text-[13px] text-muted">
-                      {customer.name} · förfaller {datumKort(inv.dueDate)}
-                      {inv.reminders.length > 0 ? ` · ${inv.reminders.length} påminnelse${inv.reminders.length > 1 ? "r" : ""}` : ""}
-                    </p>
-                  </div>
-                  <p className="text-[15px] font-semibold tabular">{kr(invoiceTotals(inv).toPay)}</p>
-                  <InvoiceStatusBadge invoice={inv} />
-                </Link>
-              );
-            })}
-          </Card>
-        )
+        <InvoiceRegister
+          result={listInvoicesForTable({
+            q,
+            status: statusParam<InvoiceStatusFilter>(searchParams.status, INVOICE_STATUS_OPTIONS),
+            page,
+          })}
+          query={{ q, status: statusParam<InvoiceStatusFilter>(searchParams.status, INVOICE_STATUS_OPTIONS), page }}
+          options={INVOICE_STATUS_OPTIONS}
+        />
       ) : null}
 
       {tab === "utgifter" ? (
-        <div className="space-y-8">
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Köp & kvitton</h2>
-              <UploadReceiptButton label="Ladda upp kvitto" />
-            </div>
-            {expenses.length === 0 ? (
-              <EmptyState icon={ShoppingBag} title="Inga utgifter ännu" text="Köp från banken dyker upp här automatiskt och matchas mot kvitton." />
-            ) : (
-              <Card className="divide-y divide-line/70">
-                {expenses.map((e) => (
-                  <div key={e.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[15px] font-medium">{e.supplier}</p>
-                      <p className="text-[13px] text-muted">
-                        {datumKort(e.date)}
-                        {e.status === "bokford" && e.category ? ` · ${categoryByKey(e.category).label}` : ""}
-                        {e.receiptId ? " · kvitto ✓" : ""}
-                        {e.bankTransactionId ? " · bank ✓" : ""}
-                        {e.jobId ? ` · ${data.jobs.find((j) => j.id === e.jobId)?.title ?? ""}` : ""}
-                      </p>
-                    </div>
-                    <p className="text-[15px] font-semibold tabular">{kr(e.amount)}</p>
-                    {e.status === "bokford" ? <Badge tone="ok">Bokförd</Badge> : null}
-                    {e.status === "saknar_kvitto" ? <UploadReceiptButton expenseId={e.id} /> : null}
-                    {e.status === "behover_svar" && e.question ? (
-                      <div className="w-full sm:w-auto">
-                        <p className="mb-1.5 text-right text-[13px] font-medium text-soft sm:hidden">{e.question.text}</p>
-                        <ExpenseQuestionButtons expenseId={e.id} options={e.question.options} />
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </Card>
-            )}
-          </div>
-
-          <div>
-            <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Leverantörsfakturor</h2>
-            <Card className="divide-y divide-line/70">
-              {supplierInvoices.map((s) => (
-                <div key={s.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[15px] font-medium">
-                      {s.supplier} <span className="text-[13px] font-normal text-muted">· {s.invoiceNumber}</span>
-                    </p>
-                    <p className="text-[13px] text-muted">
-                      {s.description} · {s.status === "obetald" ? `förfaller ${relativ(s.dueDate)}` : "betald"}
-                    </p>
-                  </div>
-                  <p className="text-[15px] font-semibold tabular">{kr(s.amount)}</p>
-                  {s.status === "obetald" ? (
-                    <>
-                      <Badge tone="warn">Obetald</Badge>
-                      <PaySupplierButton supplierInvoiceId={s.id} />
-                    </>
-                  ) : (
-                    <Badge tone="ok">Betald & bokförd</Badge>
-                  )}
-                </div>
-              ))}
-            </Card>
-            <p className="mt-2.5 text-[13px] text-muted">
-              Leverantörsfakturor kan även mejlas till <span className="font-medium text-soft">faktura@sodermalmssnickeri.se</span> – de läses av och bokförs automatiskt.
+        <div>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <p className="text-[13px] text-muted">
+              Kvitton och leverantörsfakturor. Åtgärder som behövs dyker upp på Hem och Bokföring.
             </p>
+            <UploadReceiptButton label="Ladda upp kvitto" />
           </div>
+          <ExpenseRegister
+            result={listExpensesForTable({
+              q,
+              status: statusParam<ExpenseStatusFilter>(searchParams.status, EXPENSE_STATUS_OPTIONS),
+              page,
+            })}
+            query={{ q, status: statusParam<ExpenseStatusFilter>(searchParams.status, EXPENSE_STATUS_OPTIONS), page }}
+            options={EXPENSE_STATUS_OPTIONS}
+          />
         </div>
       ) : null}
 
       {tab === "bank" ? (
-        <div className="space-y-6">
-          <Card className="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
-            <div className="flex items-center gap-4">
-              <div className="flex size-11 items-center justify-center rounded-xl bg-accent-soft">
-                <Landmark className="size-5 text-accent" />
-              </div>
-              <div>
-                <p className="text-[15px] font-semibold">
-                  {account.name} <span className="font-normal text-muted">· {account.accountNumber}</span>
-                </p>
-                <p className="text-[13px] text-muted">
-                  Kopplad via Open Banking <Badge tone="neutral" className="ml-1">Demo – Tink/riktig bank kopplas senare</Badge>
-                </p>
-              </div>
-            </div>
-            <div className="text-right">
-              <p className="text-[12px] font-medium text-muted">Saldo</p>
-              <p className="text-[22px] font-semibold tracking-tight tabular">{kr(account.balance)}</p>
-            </div>
-          </Card>
-
-          <Card className="divide-y divide-line/70">
-            {transactions.slice(0, 25).map((tx) => (
-              <div key={tx.id} className="flex items-center gap-4 px-5 py-3.5">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[14px] font-medium">{tx.counterpart}</p>
+        !account ? (
+          <EmptyState
+            icon={Landmark}
+            title="Ingen bank kopplad ännu"
+            text="När företagskontot kopplas via Open Banking dyker saldo och transaktioner upp här och matchas mot fakturor automatiskt."
+          />
+        ) : (
+          <div className="space-y-6">
+            <Card className="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
+              <div className="flex items-center gap-4">
+                <div className="flex size-11 items-center justify-center rounded-xl bg-accent-soft">
+                  <Landmark className="size-5 text-accent" />
+                </div>
+                <div>
+                  <p className="text-[15px] font-semibold">
+                    {account.name} <span className="font-normal text-muted">· {account.accountNumber}</span>
+                  </p>
                   <p className="text-[13px] text-muted">
-                    {datumKort(tx.date)} · {tx.description}
-                    {tx.reference ? ` · ${tx.reference}` : ""}
+                    Kopplad via Open Banking{" "}
+                    <Badge tone="neutral" className="ml-1">
+                      Demo – Tink/riktig bank kopplas senare
+                    </Badge>
                   </p>
                 </div>
-                <p className={cx("text-[15px] font-semibold tabular", tx.amount > 0 ? "text-accent-deep" : "text-ink")}>
-                  {tx.amount > 0 ? "+" : ""}
-                  {kr(tx.amount)}
-                </p>
-                <TxStatusBadge status={tx.status} />
               </div>
-            ))}
-          </Card>
-        </div>
+              <div className="text-right">
+                <p className="text-[12px] font-medium text-muted">Saldo</p>
+                <p className="text-[22px] font-semibold tracking-tight tabular">{kr(account.balance)}</p>
+              </div>
+            </Card>
+            <BankRegister
+              result={listBankForTable({
+                q,
+                status: statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS),
+                page,
+              })}
+              query={{ q, status: statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS), page }}
+              options={BANK_STATUS_OPTIONS}
+            />
+          </div>
+        )
       ) : null}
     </div>
   );

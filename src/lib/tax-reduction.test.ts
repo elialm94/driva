@@ -5,8 +5,18 @@ import assert from "node:assert/strict";
 import { replaceDb } from "./store";
 import { buildSeed } from "./seed";
 import { formatPersonnummer, isPersonnummerFormat, maskPersonnummer, normalizePersonnummer } from "./personnummer";
-import { docTotals, ROT_ANDEL, RUT_ANDEL, AVDRAG_TAK } from "./calc";
+import { docTotals, ROT_ANDEL, RUT_ANDEL, ROT_TAK, RUT_TAK } from "./calc";
 import { createInvoice, issueInvoice, markInvoicePaid, sendInvoice, updateInvoice } from "./services/invoices";
+import { createQuote, STANDARD_TERMS, quoteDefaults } from "./services/quotes";
+import { currentVersion, getInvoice, getJob, requireCustomer } from "./services/data";
+import { quoteVersionHash } from "./hash";
+import {
+  calculatedEligibleTaxReduction,
+  rotWithAmounts,
+  syncRotWithLines,
+  taxReductionAmountCopyCorpus,
+} from "./tax-reduction-amount";
+import { snapshotTaxReductionTerms, taxReductionExceedsMaxError } from "./tax-reduction-terms";
 import { setJobStatus } from "./services/jobs";
 import {
   createTaxReductionUnderlag,
@@ -17,9 +27,7 @@ import {
   taxReductionMissingFields,
 } from "./services/tax-reduction";
 import { formatWorkPeriodRange } from "./tax-reduction-gaps";
-import { getInvoice, getJob, requireCustomer } from "./services/data";
 import { createTaxReductionInvoiceDraft } from "./ai/domain";
-import { snapshotTaxReductionTerms } from "./tax-reduction-terms";
 import { labor } from "./invoices/test-db";
 
 function reset() {
@@ -199,10 +207,13 @@ describe("ROT-beräkning och villkor", () => {
     assert.equal(t.deduction < t.total, true);
   });
 
-  it("RUT är 50 % och taket är 50 000", () => {
-    const t = docTotals([labor({ kind: "arbete", unitPrice: 200_000, qty: 1, vatRate: 25 })], { type: "rut" });
-    assert.equal(t.deduction, AVDRAG_TAK);
-    assert.equal(Math.round(t.laborInclVat * RUT_ANDEL) > AVDRAG_TAK, true);
+  it("RUT är 50 % med tak 75 000 – ROT 30 % med tak 50 000 (per person och år)", () => {
+    const rut = docTotals([labor({ kind: "arbete", unitPrice: 200_000, qty: 1, vatRate: 25 })], { type: "rut" });
+    assert.equal(rut.deduction, RUT_TAK);
+    assert.equal(Math.round(rut.laborInclVat * RUT_ANDEL) > RUT_TAK, true);
+    const rot = docTotals([labor({ kind: "arbete", unitPrice: 200_000, qty: 1, vatRate: 25 })], { type: "rot" });
+    assert.equal(rot.deduction, ROT_TAK);
+    assert.equal(Math.round(rot.laborInclVat * ROT_ANDEL) > ROT_TAK, true);
   });
 });
 
@@ -286,5 +297,209 @@ describe("AI ROT-faktura", () => {
     assert.equal(result.forModel.personalIdentityNumberMasked, "1985••••-1234");
     assert.match(result.text, /fastighetsbeteckning/i);
     assert.ok(!/adress|arbetsperiod|personnummer/i.test(result.text.split("Jag hittar")[1] ?? ""));
+  });
+
+  it("sätter applied avdrag via tjänsten och påstår inte Skatteverkets saldo", () => {
+    const result = createTaxReductionInvoiceDraft({
+      customerId: "cust-anna",
+      amountInclVat: 12_500,
+      type: "rot",
+      appliedTaxReduction: 2_000,
+    });
+    assert.equal(result.ok, true);
+    const inv = getInvoice(result.forModel.invoiceId as string)!;
+    assert.equal(inv.rot?.appliedTaxReduction, 2_000);
+    assert.equal(inv.rot?.taxReductionManuallyAdjusted, true);
+    assert.ok(inv.rot!.calculatedEligibleTaxReduction! >= 2_000);
+    assert.ok(!/kvarvarande utrymme|kundens max|tillgängligt ROT-utrymme|kunden har .* kvar/i.test(result.text));
+  });
+});
+
+describe("Manuellt sänkt ROT-avdrag", () => {
+  beforeEach(() => reset());
+
+  const work = () => labor({ unitPrice: 8_000 });
+
+  it("applied följer calculated som standard", () => {
+    const inv = createInvoice({
+      customerId: "cust-anna",
+      type: "faktura",
+      lines: [work()],
+      rot: { type: "rot" },
+    });
+    const t = docTotals(inv.lines, { type: "rot" });
+    assert.equal(inv.rot?.calculatedEligibleTaxReduction, t.calculatedEligibleTaxReduction);
+    assert.equal(inv.rot?.appliedTaxReduction, t.calculatedEligibleTaxReduction);
+    assert.equal(inv.rot?.taxReductionManuallyAdjusted, false);
+    assert.equal(docTotals(inv.lines, inv.rot).deduction, t.calculatedEligibleTaxReduction);
+    assert.equal(docTotals(inv.lines, inv.rot).toPay, t.total - t.calculatedEligibleTaxReduction);
+  });
+
+  it("behåller applied när arbetskostnaden tillfälligt är 0", () => {
+    const empty = [labor({ unitPrice: 0 })];
+    const held = syncRotWithLines(
+      { type: "rot", appliedTaxReduction: 15_000, taxReductionManuallyAdjusted: true },
+      empty
+    );
+    assert.equal(held.rot.appliedTaxReduction, 15_000);
+    assert.equal(held.clamped, false);
+    const withLabor = syncRotWithLines(held.rot, [labor({ unitPrice: 80_000 })]);
+    assert.equal(withLabor.rot.appliedTaxReduction, 15_000);
+  });
+
+  it("noll kronor i avdrag är tillåtet", () => {
+    const inv = createInvoice({
+      customerId: "cust-anna",
+      type: "faktura",
+      lines: [work()],
+      rot: { type: "rot", appliedTaxReduction: 0, taxReductionManuallyAdjusted: true },
+    });
+    assert.equal(inv.rot?.appliedTaxReduction, 0);
+    assert.equal(docTotals(inv.lines, inv.rot).toPay, docTotals(inv.lines, null).total);
+  });
+
+  it("kan inte överstiga max vid uppdatering", () => {
+    const inv = createInvoice({
+      customerId: "cust-anna",
+      type: "faktura",
+      lines: [work()],
+      rot: { type: "rot" },
+    });
+    const max = inv.rot!.calculatedEligibleTaxReduction!;
+    assert.throws(
+      () =>
+        updateInvoice(inv.id, {
+          lines: inv.lines,
+          rot: { type: "rot", appliedTaxReduction: max + 1, taxReductionManuallyAdjusted: true },
+        }),
+      (err: Error) => err.message === taxReductionExceedsMaxError(max, "faktura")
+    );
+  });
+
+  it("klampar applied när raderna sänker max, behåller applied när max räcker", () => {
+    const lines = [work()];
+    const max = calculatedEligibleTaxReduction(lines, "rot");
+    const lowered = Math.max(0, max - 1_000);
+    const inv = createInvoice({
+      customerId: "cust-anna",
+      type: "faktura",
+      lines,
+      rot: { type: "rot", appliedTaxReduction: lowered, taxReductionManuallyAdjusted: true },
+    });
+    assert.equal(inv.rot?.appliedTaxReduction, lowered);
+
+    const stillOk = [labor({ unitPrice: 20_000 })];
+    const kept = updateInvoice(inv.id, {
+      lines: stillOk,
+      rot: { type: "rot", appliedTaxReduction: lowered, taxReductionManuallyAdjusted: true },
+    });
+    assert.equal(kept.rot?.appliedTaxReduction, lowered);
+
+    const small = [labor({ unitPrice: 2_000 })];
+    const smallMax = calculatedEligibleTaxReduction(small, "rot");
+    assert.ok(smallMax < lowered);
+    const clamped = rotWithAmounts(
+      { type: "rot", appliedTaxReduction: lowered, taxReductionManuallyAdjusted: true },
+      small,
+      { mode: "clamp" }
+    );
+    assert.equal(clamped?.appliedTaxReduction, smallMax);
+    assert.equal(clamped?.taxReductionManuallyAdjusted, true);
+    const alreadyClamped = syncRotWithLines(clamped!, small);
+    assert.equal(alreadyClamped.clamped, false);
+    assert.equal(alreadyClamped.rot.appliedTaxReduction, smallMax);
+  });
+
+  it("faktura från offert ärver applied och klampar mot fakturans max", () => {
+    const defaults = quoteDefaults();
+    const quoteLines = [work()];
+    const quoteMax = calculatedEligibleTaxReduction(quoteLines, "rot");
+    const applied = Math.max(0, quoteMax - 500);
+    const quote = createQuote({
+      customerId: "cust-anna",
+      title: "ROT-offert",
+      intro: "Test",
+      lines: quoteLines,
+      rot: { type: "rot", appliedTaxReduction: applied, taxReductionManuallyAdjusted: true },
+      paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
+      paymentTermsDays: defaults.paymentTermsDays,
+      validUntil: defaults.validUntil,
+      terms: STANDARD_TERMS,
+    });
+    assert.equal(currentVersion(quote).rot?.appliedTaxReduction, applied);
+
+    const same = createInvoice({
+      customerId: "cust-anna",
+      quoteId: quote.id,
+      type: "faktura",
+      lines: quoteLines.map((l) => ({ ...l, id: "inv-1" })),
+      rot: { type: "rot" },
+    });
+    assert.equal(same.rot?.appliedTaxReduction, applied);
+
+    const smallerLines = [labor({ unitPrice: 2_000 })];
+    const invoiceMax = calculatedEligibleTaxReduction(smallerLines, "rot");
+    assert.ok(invoiceMax < applied);
+    const clamped = createInvoice({
+      customerId: "cust-anna",
+      quoteId: quote.id,
+      type: "faktura",
+      lines: smallerLines,
+      rot: { type: "rot" },
+    });
+    assert.equal(clamped.rot?.appliedTaxReduction, invoiceMax);
+  });
+
+  it("ansökningsunderlag använder applied, inte teoretiskt max", () => {
+    const job = getJob("job-kok")!;
+    job.housing = { dwellingType: "smahus", propertyDesignation: "Södermalm 12:34" };
+    const inv = createInvoice({
+      customerId: "cust-anna",
+      jobId: "job-kok",
+      type: "faktura",
+      lines: [work()],
+      rot: { type: "rot", appliedTaxReduction: 1_200, taxReductionManuallyAdjusted: true },
+    });
+    issueInvoice(inv.id);
+    markInvoicePaid(inv.id, { matchedBy: "manuell" });
+    setJobStatus("job-kok", "klart");
+    const app = createTaxReductionUnderlag({ jobId: "job-kok", invoiceId: inv.id });
+    assert.ok(app.underlagSummary?.includes("1\u00a0200") || app.underlagSummary?.includes("1 200"));
+    const max = calculatedEligibleTaxReduction(inv.lines, "rot");
+    assert.ok(max > 1_200);
+    assert.equal((app.underlagSummary ?? "").includes(String(max)), false);
+  });
+
+  it("äldre offerter utan applied-fält behåller samma hash", () => {
+    const defaults = quoteDefaults();
+    const q = createQuote({
+      customerId: "cust-anna",
+      title: "Hash-test",
+      intro: "Test",
+      lines: [work()],
+      rot: { type: "rot" },
+      paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
+      paymentTermsDays: defaults.paymentTermsDays,
+      validUntil: defaults.validUntil,
+      terms: STANDARD_TERMS,
+    });
+    const v = currentVersion(q);
+    const withoutField = quoteVersionHash({ ...v, rot: { type: "rot" } });
+    const alsoWithout = quoteVersionHash({ ...v, rot: { type: "rot" } });
+    assert.equal(withoutField, alsoWithout);
+    const withApplied = quoteVersionHash({
+      ...v,
+      rot: { type: "rot", appliedTaxReduction: 1_000, taxReductionManuallyAdjusted: true },
+    });
+    assert.notEqual(withoutField, withApplied);
+  });
+
+  it("copy nämner aldrig kvarvarande utrymme eller kundens max", () => {
+    const corpus = `${taxReductionAmountCopyCorpus("faktura")}\n${taxReductionAmountCopyCorpus("offert")}`;
+    assert.equal(/kvarvarande utrymme/i.test(corpus), false);
+    assert.equal(/kundens max/i.test(corpus), false);
+    assert.equal(/tillgängligt ROT-utrymme/i.test(corpus), false);
+    assert.equal(/kunden har \d/i.test(corpus), false);
+    assert.match(corpus, /maximala avdrag som fakturan medger/);
   });
 });

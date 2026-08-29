@@ -70,7 +70,8 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         className={cx(
-          "relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-card shadow-pop sm:rounded-3xl animate-fade-up",
+          // Bottensheet på mobil: safe-area-padding så knappar inte hamnar bakom hemindikatorn.
+          "relative z-10 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-card pb-[env(safe-area-inset-bottom)] shadow-pop sm:rounded-3xl sm:pb-0 animate-fade-up",
           sizes[size]
         )}
         onClick={(e) => e.stopPropagation()}
@@ -82,7 +83,7 @@ export function Modal({
               type="button"
               onClick={onClose}
               aria-label="Stäng"
-              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-ink/5 hover:text-ink"
+              className="-my-2 -mr-2 flex size-11 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-ink/5 hover:text-ink"
             >
               <X className="size-4.5" />
             </button>

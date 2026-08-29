@@ -1,247 +1,120 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  Mail,
-  Phone,
-  MapPin,
-  Plus,
-  Inbox,
-  FileText,
-  Hammer,
-  ReceiptText,
-} from "lucide-react";
-import { getCustomer, customerBundle, quoteTotals } from "@/lib/services/data";
-import { jobMoneySummary } from "@/lib/services/attention";
-import { docTotals } from "@/lib/calc";
-import { db } from "@/lib/store";
-import { kr, relativ, datumKort } from "@/lib/format";
+import { Mail, Phone, MapPin, Plus } from "lucide-react";
+import { getCustomer } from "@/lib/services/data";
 import { maskPersonnummer } from "@/lib/personnummer";
-import { Avatar, Badge, Breadcrumbs, ButtonLink, Card, SectionTitle, cx } from "@/components/ui";
-import { InvoiceStatusBadge, JobStatusBadge, QuoteStatusBadge } from "@/components/status";
-import { NotesEditor } from "@/components/notes-editor";
-import { CustomerDetailsForm } from "@/components/customer-details-form";
-import { NewRequestButton } from "@/components/request-form";
+import { customerActivityFeed, customerMoneyLine } from "@/lib/services/customer-activity";
+import { ButtonLink, PageHeader, SectionTitle } from "@/components/ui";
+import { CustomerAutosaveFields } from "@/components/customer-details-form";
+import { CustomerRotSection } from "@/components/customer-rot-section";
+import { CustomerActivity } from "@/components/customer-activity";
 import { NewUppdragButton } from "@/components/uppdrag-form";
-import { updateCustomerNotesAction } from "@/app/actions";
-import { BackLink } from "@/components/back-link";
-import { invoiceHref, newQuoteHref, quoteHref, withReturnTo } from "@/lib/nav";
+import { SmartBack } from "@/components/back-link";
+import { newInvoiceHref, newQuoteHref } from "@/lib/nav";
+import { CustomerEditDisclosure } from "@/components/customer-edit-disclosure";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Kund" };
 
-const REQUEST_STATUS: Record<string, { label: string; tone: "info" | "neutral" | "ok" }> = {
-  ny: { label: "Ny", tone: "info" },
-  offert_skapad: { label: "Offert skapad", tone: "ok" },
-  besvarad: { label: "Besvarad", tone: "neutral" },
-  avslutad: { label: "Avslutad", tone: "neutral" },
-};
-
 export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
+  await ensurePageBusiness();
   const { id } = await props.params;
   const customer = getCustomer(id);
   if (!customer) notFound();
-  const bundle = customerBundle(id);
-  const data = db();
 
-  const sectionEmpty = "px-5 py-4 text-[14px] text-muted";
-  const rowCls =
-    "flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-canvas/60 first:rounded-t-[calc(1.25rem-1px)] last:rounded-b-[calc(1.25rem-1px)]";
   const fromHere = { href: `/kunder/${customer.id}`, label: customer.name };
+  const activity = customerActivityFeed(customer.id);
+  const money = customerMoneyLine(customer.id);
+  const addressLine = [customer.address, [customer.postalCode, customer.city].filter(Boolean).join(" ")]
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <div className="animate-fade-up">
-      <div className="mb-2.5">
-        <BackLink fallbackHref="/kunder" fallbackLabel="Kunder" />
-      </div>
-      <Breadcrumbs items={[{ href: "/kunder", label: "Kunder" }, { label: customer.name }]} />
-
-      <Card className="p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Avatar name={customer.name} size="lg" />
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-[22px] font-semibold tracking-tight">{customer.name}</h1>
-                <Badge tone="neutral">{customer.kind === "foretag" ? "Företag" : "Privatperson"}</Badge>
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-[14px] text-soft">
-                {customer.contactPerson ? <span>{customer.contactPerson}</span> : null}
-                <a href={`mailto:${customer.email}`} className="flex items-center gap-1.5 hover:text-ink">
-                  <Mail className="size-3.5 text-muted" /> {customer.email}
-                </a>
-                {customer.phone ? (
-                  <span className="flex items-center gap-1.5">
-                    <Phone className="size-3.5 text-muted" /> {customer.phone}
-                  </span>
-                ) : null}
-                {customer.address ? (
-                  <span className="flex items-center gap-1.5">
-                    <MapPin className="size-3.5 text-muted" />{" "}
-                    {[customer.address, [customer.postalCode, customer.city].filter(Boolean).join(" ")]
-                      .filter(Boolean)
-                      .join(", ")}
-                  </span>
-                ) : null}
-                {customer.kind === "privat" && customer.personalIdentityNumber ? (
-                  <span>Personnr {maskPersonnummer(customer.personalIdentityNumber)}</span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <NewRequestButton customerId={customer.id} customerName={customer.name} />
+      <PageHeader
+        back={<SmartBack />}
+        crumbs={[{ href: "/kunder?flik=kunder", label: "Kunder" }, { label: customer.name }]}
+        title={customer.name}
+        subtitle={customer.kind === "foretag" ? "Företag" : "Privatperson"}
+        actions={
+          <div className="flex flex-wrap gap-2">
             <NewUppdragButton
               customers={[{ id: customer.id, name: customer.name, kind: customer.kind }]}
               defaultCustomerId={customer.id}
+              workLocations={(customer.workLocations ?? []).map((l) => ({
+                id: l.id,
+                label: l.label,
+                city: l.city,
+              }))}
+              defaultWorkLocationId={customer.defaultWorkLocationId}
               size="sm"
               variant="secondary"
             />
-            <ButtonLink href={newQuoteHref({ kund: customer.id, from: fromHere })} size="sm">
+            <ButtonLink href={newQuoteHref({ kund: customer.id, from: fromHere })} size="sm" variant="secondary">
               <Plus className="size-3.5" /> Ny offert
             </ButtonLink>
+            <ButtonLink href={newInvoiceHref({ kund: customer.id, from: fromHere })} size="sm">
+              <Plus className="size-3.5" /> Ny faktura
+            </ButtonLink>
           </div>
-        </div>
-        <div className="mt-5 border-t border-line pt-4">
-          <p className="mb-3 text-[13px] font-medium text-muted">Uppgifter för faktura</p>
-          <CustomerDetailsForm customer={customer} />
-        </div>
-        <div className="mt-5 border-t border-line pt-4">
-          <p className="mb-1.5 text-[13px] font-medium text-muted">Anteckningar</p>
-          <NotesEditor
-            initial={customer.notes}
-            placeholder="Portkod, önskemål, bra att veta …"
-            save={updateCustomerNotesAction.bind(null, customer.id)}
+        }
+      />
+
+      <div className="-mt-3 mb-6 flex flex-wrap items-center gap-x-5 gap-y-1 text-[14px] text-soft">
+        {customer.kind === "foretag" && customer.orgNumber ? <span>Org.nr {customer.orgNumber}</span> : null}
+        {customer.kind === "foretag" && customer.contactPerson ? <span>{customer.contactPerson}</span> : null}
+        {customer.email ? (
+          <a href={`mailto:${customer.email}`} className="flex items-center gap-1.5 hover:text-ink">
+            <Mail className="size-3.5 text-muted" /> {customer.email}
+          </a>
+        ) : null}
+        {customer.phone ? (
+          <span className="flex items-center gap-1.5">
+            <Phone className="size-3.5 text-muted" /> {customer.phone}
+          </span>
+        ) : null}
+        {addressLine ? (
+          <span className="flex items-center gap-1.5">
+            <MapPin className="size-3.5 text-muted" /> {addressLine}
+          </span>
+        ) : null}
+      </div>
+
+      <CustomerEditDisclosure>
+        <CustomerAutosaveFields
+          customer={{
+            id: customer.id,
+            kind: customer.kind,
+            name: customer.name,
+            email: customer.email,
+            phone: customer.phone,
+            address: customer.address,
+            postalCode: customer.postalCode,
+            city: customer.city,
+            orgNumber: customer.orgNumber,
+            contactPerson: customer.contactPerson,
+            notes: customer.notes,
+          }}
+        />
+      </CustomerEditDisclosure>
+
+      {customer.kind === "privat" ? (
+        <div className="mt-8">
+          <SectionTitle>ROT/RUT</SectionTitle>
+          <CustomerRotSection
+            customerId={customer.id}
+            personalIdentityNumberMasked={
+              customer.personalIdentityNumber ? maskPersonnummer(customer.personalIdentityNumber) : ""
+            }
+            hasPersonnummer={Boolean(customer.personalIdentityNumber)}
+            workLocations={customer.workLocations ?? []}
+            defaultWorkLocationId={customer.defaultWorkLocationId}
           />
         </div>
-      </Card>
+      ) : null}
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-2">
-        <div className="space-y-8">
-          <div>
-            <SectionTitle>Förfrågningar</SectionTitle>
-            <Card className="divide-y divide-line/70">
-              {bundle.requests.length === 0 ? (
-                <p className={sectionEmpty}>Inga förfrågningar ännu.</p>
-              ) : (
-                bundle.requests.map((r) => {
-                  const st = REQUEST_STATUS[r.status];
-                  return (
-                    <div key={r.id} className={cx(rowCls, "items-start")}>
-                      <Inbox className="mt-1 size-4 shrink-0 text-muted" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[14px] font-medium">{r.title}</p>
-                        <p className="mt-0.5 line-clamp-2 text-[13px] text-soft">”{r.message}”</p>
-                        {r.ai ? (
-                          <div className="mt-1.5 flex flex-wrap gap-1.5">
-                            {r.ai.workType ? <Badge tone="accent">{r.ai.workType}</Badge> : null}
-                            {r.ai.desiredStart ? <Badge tone="neutral">Önskad start: {r.ai.desiredStart}</Badge> : null}
-                            {r.ai.budget ? <Badge tone="neutral">Budget: {r.ai.budget}</Badge> : null}
-                          </div>
-                        ) : null}
-                        <p className="mt-1 text-[12px] text-muted">{relativ(r.createdAt)}</p>
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-2">
-                        <Badge tone={st.tone}>{st.label}</Badge>
-                        {r.status === "ny" ? (
-                          <ButtonLink href={newQuoteHref({ kund: customer.id, forfragan: r.id, from: fromHere })} size="sm">
-                            Skapa offert
-                          </ButtonLink>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </Card>
-          </div>
-
-          <div>
-            <SectionTitle>Offerter</SectionTitle>
-            <Card className="divide-y divide-line/70">
-              {bundle.quotes.length === 0 ? (
-                <p className={sectionEmpty}>Inga offerter ännu.</p>
-              ) : (
-                bundle.quotes.map((q) => (
-                  <Link key={q.id} href={quoteHref(q.id, fromHere) as never} className={rowCls}>
-                    <FileText className="size-4 shrink-0 text-muted" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[14px] font-medium">
-                        Offert #{q.number} · {data.quoteVersions.find((v) => v.id === q.currentVersionId)?.title}
-                      </p>
-                      <p className="text-[13px] text-muted">{kr(quoteTotals(q).toPay)}</p>
-                    </div>
-                    <QuoteStatusBadge quote={q} />
-                  </Link>
-                ))
-              )}
-            </Card>
-          </div>
-
-          <div>
-            <SectionTitle>Uppdrag</SectionTitle>
-            <Card className="divide-y divide-line/70">
-              {bundle.jobs.length === 0 ? (
-                <p className={sectionEmpty}>Inga uppdrag ännu.</p>
-              ) : (
-                bundle.jobs.map((j) => {
-                  const money = jobMoneySummary(j.id);
-                  return (
-                    <Link key={j.id} href={withReturnTo(`/uppdrag/${j.id}`, fromHere.href, fromHere.label) as never} className={rowCls}>
-                      <Hammer className="size-4 shrink-0 text-muted" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[14px] font-medium">{j.title}</p>
-                        <p className="text-[13px] text-muted">
-                          {money.quoteAmount > 0 ? kr(money.quoteAmount) : j.startDate ? datumKort(j.startDate) : "Inget belopp ännu"}
-                        </p>
-                      </div>
-                      <JobStatusBadge status={j.status} />
-                    </Link>
-                  );
-                })
-              )}
-            </Card>
-          </div>
-
-          <div>
-            <SectionTitle>Fakturor</SectionTitle>
-            <Card className="divide-y divide-line/70">
-              {bundle.invoices.length === 0 ? (
-                <p className={sectionEmpty}>Inga fakturor ännu.</p>
-              ) : (
-                bundle.invoices.map((inv) => (
-                  <Link key={inv.id} href={invoiceHref(inv.id, fromHere) as never} className={rowCls}>
-                    <ReceiptText className="size-4 shrink-0 text-muted" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[14px] font-medium">
-                        {inv.number == null ? "Fakturautkast" : `Faktura #${inv.number}`}
-                      </p>
-                      <p className="text-[13px] text-muted">{kr(docTotals(inv.lines, inv.rot).toPay)}</p>
-                    </div>
-                    <InvoiceStatusBadge invoice={inv} />
-                  </Link>
-                ))
-              )}
-            </Card>
-          </div>
-        </div>
-
-        <div>
-          <SectionTitle>Historik</SectionTitle>
-          <Card className="px-5 py-2">
-            {bundle.activity.length === 0 ? (
-              <p className="py-3 text-[14px] text-muted">Ingen aktivitet ännu.</p>
-            ) : (
-              bundle.activity.map((a, i) => (
-                <div key={a.id} className={cx("flex gap-3 py-3", i > 0 && "border-t border-line/60")}>
-                  <div className="mt-[7px] size-1.5 shrink-0 rounded-full bg-line-strong" />
-                  <div className="min-w-0">
-                    <p className="text-[14px] leading-snug text-soft">{a.text}</p>
-                    <p className="mt-0.5 text-[12px] text-muted">{relativ(a.at)}</p>
-                  </div>
-                </div>
-              ))
-            )}
-          </Card>
-        </div>
+      <div className="mt-8">
+        <SectionTitle>Aktivitet</SectionTitle>
+        <CustomerActivity rows={activity} money={money} originLabel={customer.name} />
       </div>
     </div>
   );

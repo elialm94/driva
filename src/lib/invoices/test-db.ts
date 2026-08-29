@@ -86,6 +86,9 @@ export function emptyTestDb(over: Partial<DB> = {}): DB {
     assistantMessages: over.assistantMessages ?? [],
     pendingActions: over.pendingActions ?? [],
     assistantAudit: over.assistantAudit ?? [],
+    reminders: over.reminders ?? [],
+    attentionStates: over.attentionStates ?? [],
+    inboxItems: over.inboxItems ?? [],
     meta: over.meta ?? { seededAt: new Date().toISOString() },
   };
 }

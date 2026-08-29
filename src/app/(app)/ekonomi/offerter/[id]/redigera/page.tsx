@@ -4,12 +4,15 @@ import { getQuote, currentVersion, requireCustomer } from "@/lib/services/data";
 import { quoteDefaults } from "@/lib/services/quotes";
 import { PageHeader } from "@/components/ui";
 import { QuoteForm } from "@/components/doc-form";
-import { BackLink } from "@/components/back-link";
+import { SmartBack } from "@/components/back-link";
 import { hrefWithNav, sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
+import { ensurePageBusiness } from "@/lib/auth/session";
+import { isAiConfigured } from "@/lib/ai/provider";
 
 export const metadata = { title: "Redigera offert" };
 
 export default async function EditQuotePage(props: PageProps<"/ekonomi/offerter/[id]/redigera">) {
+  await ensurePageBusiness();
   const { id } = await props.params;
   const searchParams = await props.searchParams;
   const quote = getQuote(id);
@@ -29,7 +32,7 @@ export default async function EditQuotePage(props: PageProps<"/ekonomi/offerter/
   return (
     <div className="animate-fade-up">
       <PageHeader
-        back={<BackLink fallbackHref={quoteHref} fallbackLabel={`Offert #${quote.number}`} ignoreReturnTo />}
+        back={<SmartBack fallbackHref={quoteHref} fallbackLabel={`Offert #${quote.number}`} ignoreReturnTo />}
         crumbs={[
           { href: "/ekonomi", label: "Ekonomi" },
           { href: "/ekonomi?flik=offerter", label: "Offerter" },
@@ -57,11 +60,13 @@ export default async function EditQuotePage(props: PageProps<"/ekonomi/offerter/
           lateInterestRate: version.lateInterestRate,
           validUntil: version.validUntil,
           terms: version.terms,
+          richText: version.richText,
         }}
         defaults={quoteDefaults()}
         cancelHref={quoteHref}
         returnTo={returnTo ?? undefined}
         returnLabel={returnLabel}
+        aiEnabled={isAiConfigured()}
       />
     </div>
   );

@@ -80,7 +80,7 @@ try {
 
   /* ---------- 1. Hem ---------- */
   await waitText("Behöver din uppmärksamhet");
-  const hemChecks = ["På banken", "Ungefär tillgängligt", "den här veckan"];
+  const hemChecks = ["Behöver din uppmärksamhet", "På gång", "Vad vill du göra"];
   for (const t of hemChecks) (await hasText(t)) ? ok(`Hem: "${t}"`) : fail(`Hem saknar "${t}"`);
   await shot("01-hem");
 

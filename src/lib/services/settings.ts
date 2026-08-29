@@ -4,28 +4,19 @@ import { logActivity } from "./activity";
 import { collectSellerBlockers, type IssueBlocker } from "../invoices/validate";
 import {
   formatVatNumber,
-  isBankgiroFormat,
-  isBicFormat,
-  isIbanFormat,
-  isOrgnrFormat,
-  isPlusgiroFormat,
-  isVatNumberFormat,
   normalizeBankgiro,
   normalizeBic,
   normalizeIban,
   normalizeOrgnr,
   normalizePlusgiro,
 } from "../invoices/formats";
+import { settingsDefaultsFieldErrors, settingsProfileFieldErrors } from "../settings-validation";
 
 export function getBusinessProfile(): CompanySettings {
   return db().settings;
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-export function isEmailFormat(value: string): boolean {
-  return EMAIL_RE.test(value.trim());
-}
+export { isEmailFormat } from "../settings-validation";
 
 /** Vart nya sajtförfrågningar mejlas. Följer företagets e-post tills en annan adress sparas. */
 export function getInquiryNotificationEmail(profile: CompanySettings = db().settings): string {
@@ -62,8 +53,6 @@ export interface InvoiceDefaults {
   defaultVatRate: VatRate;
 }
 
-const VAT_RATES: VatRate[] = [0, 6, 12, 25];
-
 export function getInvoiceDefaults(): InvoiceDefaults {
   const s = db().settings;
   return {
@@ -92,35 +81,9 @@ function optional(value: string | undefined | null): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+/** Samma regler som klienten visar i realtid — se settings-validation.ts. */
 function validateProfile(input: BusinessProfileInput): string[] {
-  const errors: string[] = [];
-  if (!input.name.trim()) errors.push("Företagsnamn saknas.");
-  if (input.orgNumber.trim() && !isOrgnrFormat(input.orgNumber)) {
-    errors.push("Organisationsnumret ska anges som NNNNNN-NNNN (10 siffror). Vi kontrollerar inte mot Skatteverket.");
-  }
-  if (input.vatNumber.trim() && !isVatNumberFormat(input.vatNumber)) {
-    errors.push("Momsregistreringsnumret ska anges som SE följt av 12 siffror.");
-  }
-  if (input.bankgiro.trim() && !isBankgiroFormat(input.bankgiro)) {
-    errors.push("Bankgiro ska anges som NNN-NNNN eller NNNN-NNNN.");
-  }
-  if (input.plusgiro?.trim() && !isPlusgiroFormat(input.plusgiro)) {
-    errors.push("PlusGiro ska anges med 2–8 siffror, t.ex. 123456-1.");
-  }
-  if (input.iban?.trim() && !isIbanFormat(input.iban)) {
-    errors.push("IBAN ska anges som landskod plus kontonummer, t.ex. SE följt av 22 tecken.");
-  }
-  if (input.bic?.trim() && !isBicFormat(input.bic)) {
-    errors.push("BIC/SWIFT ska vara 8 eller 11 tecken.");
-  }
-  if (input.logoDataUrl && !input.logoDataUrl.startsWith("data:image/")) {
-    errors.push("Logotypen måste vara en bild.");
-  }
-  const notify = input.inquiryNotificationEmail?.trim();
-  if (notify && !isEmailFormat(notify)) {
-    errors.push("Ange en giltig e-postadress för förfrågningar.");
-  }
-  return errors;
+  return settingsProfileFieldErrors(input).map((e) => e.message);
 }
 
 function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
@@ -148,20 +111,7 @@ function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
 }
 
 function validateDefaults(input: InvoiceDefaults): string[] {
-  const errors: string[] = [];
-  if (!Number.isFinite(input.paymentTermsDays) || input.paymentTermsDays < 1) {
-    errors.push("Betalningsvillkor måste vara minst 1 dag.");
-  }
-  if (!Number.isFinite(input.lateInterestRate) || input.lateInterestRate < 0) {
-    errors.push("Dröjsmålsränta kan inte vara negativ.");
-  }
-  if (!Number.isFinite(input.quoteValidityDays) || input.quoteValidityDays < 1) {
-    errors.push("Offertens giltighetstid måste vara minst 1 dag.");
-  }
-  if (!VAT_RATES.includes(input.defaultVatRate)) {
-    errors.push("Vanlig momssats måste vara 0, 6, 12 eller 25 %.");
-  }
-  return errors;
+  return settingsDefaultsFieldErrors(input).map((e) => e.message);
 }
 
 export function updateBusinessProfile(input: BusinessProfileInput): CompanySettings {
@@ -238,6 +188,7 @@ const PATCHABLE: (keyof CompanySettingsInput)[] = [
   "bankAccount",
   "iban",
   "bic",
+  "logoDataUrl",
   "paymentTermsDays",
   "lateInterestRate",
   "quoteValidityDays",
@@ -321,6 +272,8 @@ export function applyBusinessProfilePatch(patch: Record<string, string | number 
     else if (key === "bankAccount") next.bankAccount = String(value ?? "");
     else if (key === "iban") next.iban = String(value ?? "");
     else if (key === "bic") next.bic = String(value ?? "");
+    // Logotypens autospar går den här vägen: null/tom sträng tar bort logotypen.
+    else if (key === "logoDataUrl") next.logoDataUrl = value === null ? undefined : String(value);
   }
   return updateCompanySettings(next);
 }

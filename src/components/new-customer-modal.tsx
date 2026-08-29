@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { buttonClasses } from "./ui";
+import { buttonClasses, cx } from "./ui";
 import { Modal } from "./modal";
 import { AddressFields } from "./address-input";
 import { createCustomerAction } from "@/app/actions";
-import { swedishFormProps } from "@/lib/swedish-validity";
+import { FieldError, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
@@ -29,10 +29,17 @@ export function NewCustomerModal({
 }) {
   const [kind, setKind] = useState<"privat" | "foretag">("privat");
   const [isPending, startTransition] = useTransition();
+  const { errors, formProps, fieldProps, reset } = useNativeFieldErrors({
+    name: kind === "privat" ? "Ange kundens namn." : "Ange företagsnamnet.",
+    email: "Ange kundens e-postadress.",
+  });
 
   useEffect(() => {
-    if (open) setKind("privat");
-  }, [open]);
+    if (open) {
+      setKind("privat");
+      reset();
+    }
+  }, [open, reset]);
 
   function submit(formData: FormData) {
     const name = String(formData.get("name") ?? "");
@@ -56,7 +63,7 @@ export function NewCustomerModal({
 
   return (
     <Modal open={open} onClose={onClose} title="Ny kund" size="md">
-      <form action={submit} className="space-y-4 px-6 py-5" {...swedishFormProps()}>
+      <form action={submit} className="space-y-4 px-6 py-5" {...formProps()}>
         <div className="flex rounded-xl bg-canvas p-1">
           {(["privat", "foretag"] as const).map((k) => (
             <button
@@ -72,38 +79,54 @@ export function NewCustomerModal({
           ))}
         </div>
         <div>
-          <label className="mb-1 block text-[13px] font-medium text-soft">
+          <label className="mb-1 block text-[13px] font-medium text-soft" htmlFor="ny-kund-namn">
             {kind === "privat" ? "Namn" : "Företagsnamn"}
           </label>
           <input
+            id="ny-kund-namn"
             name="name"
             required
             key={`${open}-${initialName}`}
             defaultValue={initialName}
-            className={inputCls}
+            className={cx(inputCls, errors.name && invalidFieldCls)}
             placeholder={kind === "privat" ? "Anna Andersson" : "Exempel AB"}
+            {...fieldProps("name", "ny-kund-namn-fel")}
           />
+          <FieldError id="ny-kund-namn-fel">{errors.name}</FieldError>
         </div>
         {kind === "foretag" ? (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-[13px] font-medium text-soft">Kontaktperson</label>
-              <input name="contactPerson" className={inputCls} />
+              <input name="contactPerson" autoComplete="name" className={inputCls} />
             </div>
             <div>
               <label className="mb-1 block text-[13px] font-medium text-soft">Org.nummer</label>
-              <input name="orgNumber" className={inputCls} placeholder="556000-0000" />
+              <input name="orgNumber" inputMode="numeric" autoComplete="off" className={inputCls} placeholder="556000-0000" />
             </div>
           </div>
         ) : null}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <label className="mb-1 block text-[13px] font-medium text-soft">E-post</label>
-            <input name="email" type="email" required className={inputCls} placeholder="namn@exempel.se" />
+            <label className="mb-1 block text-[13px] font-medium text-soft" htmlFor="ny-kund-epost">
+              E-post
+            </label>
+            <input
+              id="ny-kund-epost"
+              name="email"
+              type="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              required
+              className={cx(inputCls, errors.email && invalidFieldCls)}
+              placeholder="namn@exempel.se"
+              {...fieldProps("email", "ny-kund-epost-fel")}
+            />
+            <FieldError id="ny-kund-epost-fel">{errors.email}</FieldError>
           </div>
           <div>
             <label className="mb-1 block text-[13px] font-medium text-soft">Telefon</label>
-            <input name="phone" className={inputCls} placeholder="070-123 45 67" />
+            <input name="phone" type="tel" autoComplete="tel" className={inputCls} placeholder="070-123 45 67" />
           </div>
         </div>
         <AddressFields />

@@ -104,6 +104,17 @@ export function parseAmountInclVat(text: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** "använd bara 30 000 kr i avdrag" – inte kundens saldo hos Skatteverket. */
+export function parseAppliedTaxReduction(text: string): number | null {
+  const m =
+    text.match(/(\d{1,3}(?:[ .\u00a0]\d{3})+|\d{3,})\s*(?:kr)?\s*i\s+(?:rot[-\s]?|rut[-\s]?)?avdrag/i) ||
+    text.match(/avdrag(?:et)?\s+(?:på\s+|om\s+|till\s+)?(\d{1,3}(?:[ .\u00a0]\d{3})+|\d{3,})/i) ||
+    text.match(/anv[aä]nd(?:a|a)?\s+(?:bara\s+|endast\s+)?(\d{1,3}(?:[ .\u00a0]\d{3})+|\d{3,})/i);
+  if (!m) return null;
+  const n = parseInt(m[1].replace(/[ .\u00a0]/g, ""), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function cap(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);

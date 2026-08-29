@@ -80,9 +80,17 @@ class MockBankIDProvider implements BankIDProvider {
         order.hintCode = "userSign";
         break;
       case "complete":
-        order.status = "complete";
-        order.hintCode = "complete";
-        finalizeApproval(order);
+        // Slutför godkännandet FÖRST – om offerten hunnit avböjas/ändras
+        // kastar finalizeApproval, och ordern ska då bli failed i stället
+        // för att sparas som complete utan signatur.
+        try {
+          finalizeApproval(order);
+          order.status = "complete";
+          order.hintCode = "complete";
+        } catch {
+          order.status = "failed";
+          order.hintCode = "startFailed";
+        }
         break;
       case "cancel":
         order.status = "failed";
@@ -122,6 +130,11 @@ export function finalizeApproval(order: BankIDOrder): BankIDSignature {
   // Idempotent: redan godkänd → returnera befintlig signatur.
   const existing = data.signatures.find((s) => s.quoteId === quote.id);
   if (quote.status === "godkand" && existing) return existing;
+
+  // Offerten kan ha avböjts eller redigerats mellan start och slutförande.
+  if (quote.status !== "skickad") {
+    throw new Error("Offerten kan inte godkännas i nuvarande status");
+  }
 
   const version = data.quoteVersions.find((v) => v.id === order.quoteVersionId);
   if (!version) throw new Error("Offertversionen finns inte");
