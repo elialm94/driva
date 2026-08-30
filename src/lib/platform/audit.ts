@@ -12,6 +12,7 @@ import { insertAdminAuditRow, listAdminAudit } from "./store";
 import type { AdminAuditEntry, PlatformAdmin } from "./types";
 
 export type AdminAuditAction =
+  | "admin_bootstrap"
   | "admin_invited"
   | "admin_invite_resent"
   | "admin_invite_revoked"

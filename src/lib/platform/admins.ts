@@ -6,7 +6,7 @@
  *   * admin kan aldrig skapa/inaktivera/ta bort/ändra en super_admin,
  *     inte heller uppgradera sig själv – all teamhantering kräver super_admin.
  *   * super_admin skapas ALDRIG via inbjudan – endast via bootstrap-skriptet
- *     (scripts/platform-admin-bootstrap.ts, se docs/admin.md).
+ *     (scripts/platform-bootstrap.ts, se docs/admin.md).
  *   * Den sista aktiva super_admin kan inte tas bort/inaktiveras (vakt i
  *     store-lagret + databastrigger).
  */

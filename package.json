@@ -15,6 +15,7 @@
     "test:db": "tsx scripts/db-validate.ts",
     "test:adapter": "tsx scripts/adapter-validate.ts",
     "db:seed": "tsx scripts/db-seed.ts",
+    "platform:bootstrap": "tsx scripts/platform-bootstrap.ts",
     "migrate:local-to-supabase": "tsx scripts/migrate-local-to-supabase.ts"
   },
   "dependencies": {

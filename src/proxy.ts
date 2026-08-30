@@ -21,6 +21,7 @@ const PUBLIC_PREFIXES = [
   "/faktura",
   "/sajt",
   "/inbjudan",
+  "/admin/inbjudan", // admin-invitationens acceptsida: mottagaren saknar ofta konto ännu
   "/api/bankid",
   "/api/inbox",
   "/api/dev", // vaktas internt: endast utveckling
