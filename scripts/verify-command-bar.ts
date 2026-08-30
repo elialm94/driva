@@ -282,32 +282,64 @@ async function main() {
   await mobile.setViewport({ width: 390, height: 844, hasTouch: true, isMobile: true });
   await mobile.goto(`${BASE}/`, { waitUntil: "networkidle0" });
   await mobile.tap('input[role="combobox"]');
-  await mobile.waitForFunction(() => {
-    const sheets = document.querySelectorAll(".fixed.inset-0");
-    return Array.from(sheets).some((el) => el.querySelector('input[role="combobox"]'));
-  });
+  await mobile.waitForFunction(() => Boolean(document.querySelector("[data-command-sheet] input[role='combobox']")));
   const sheetLayout = await mobile.evaluate(() => {
-    const sheet = Array.from(document.querySelectorAll(".fixed.inset-0")).find((el) =>
-      el.querySelector('input[role="combobox"]')
-    ) as HTMLElement | undefined;
+    const sheet = document.querySelector("[data-command-sheet]") as HTMLElement | null;
     if (!sheet) return null;
     const inputEl = sheet.querySelector('input[role="combobox"]') as HTMLInputElement;
     const rect = inputEl.getBoundingClientRect();
     const focused = document.activeElement === inputEl;
     const sections = (sheet.textContent ?? "").replace(/\s+/g, " ");
+    const labels = Array.from(sheet.querySelectorAll('[role="option"]')).map((el) =>
+      (el.textContent ?? "").replace(/\s+/g, " ").trim()
+    );
     return {
       inputTop: rect.top,
       focused,
-      senasteFirst: sections.indexOf("Senaste") < sections.indexOf("Vanliga åtgärder"),
-      rows: sheet.querySelectorAll('[role="option"]').length,
+      senasteFirst: sections.indexOf("Senaste") < sections.indexOf("Vanliga"),
+      rows: labels.length,
+      labels,
     };
   });
   await ok(
     "10 mobil: ark öppnas vid fokus, sökfältet överst (tangentbordet täcker inte listan)",
-    sheetLayout !== null && sheetLayout.focused && sheetLayout.inputTop < 100 && sheetLayout.rows >= 5,
+    sheetLayout !== null && sheetLayout.focused && sheetLayout.inputTop < 100 && sheetLayout.rows >= 3 && sheetLayout.rows <= 8,
     JSON.stringify(sheetLayout)
   );
   await ok("10 mobil: Senaste före Vanliga", sheetLayout?.senasteFirst === true);
+  await ok(
+    "10 mobil: idle är kompakt (faktura/offert/påminnelse, inte hela katalogen)",
+    Boolean(sheetLayout?.labels.some((t) => t.includes("Skapa faktura"))) &&
+      Boolean(sheetLayout?.labels.some((t) => t.includes("Skapa offert"))) &&
+      Boolean(sheetLayout?.labels.some((t) => t.includes("Skapa påminnelse"))) &&
+      !sheetLayout?.labels.some((t) => t.includes("Hitta kund")),
+    JSON.stringify(sheetLayout?.labels)
+  );
+
+  await mobile.type('input[role="combobox"]', "Påminn mig att ringa Göran kl 12");
+  await mobile.waitForFunction(() =>
+    Array.from(document.querySelectorAll("[data-command-sheet] [role='option']")).some((el) =>
+      (el.textContent ?? "").includes("Ring Göran")
+    )
+  );
+  const typedLabels = await mobile.evaluate(() =>
+    Array.from(document.querySelectorAll("[data-command-sheet] [role='option']")).map((el) =>
+      (el.textContent ?? "").replace(/\s+/g, " ").trim()
+    )
+  );
+  await ok(
+    "10 mobil: NL-påminnelse döljer generiska actions",
+    typedLabels.some((t) => t.includes("Ring Göran")) &&
+      !typedLabels.some((t) => t.includes("Skapa faktura")) &&
+      !typedLabels.some((t) => t.includes("Hitta kund")),
+    typedLabels.join(" | ")
+  );
+  await mobile.evaluate(() => {
+    const input = document.querySelector("[data-command-sheet] input[role='combobox']") as HTMLInputElement | null;
+    if (input) input.value = "";
+  });
+  // Töm fältet så nästa steg (Skapa faktura) ser idle-listan igen.
+  for (let i = 0; i < 40; i++) await mobile.keyboard.press("Backspace");
 
   // Tryck på en rad: Skapa faktura → kundsteget med stora radytor.
   const tapped = await mobile.evaluate(() => {

@@ -13,6 +13,8 @@ import {
   matchCommands,
   parseCommand,
   parseFreeText,
+  idleCommandsForSurface,
+  showCatalogBesideInterpretation,
   type CommandId,
 } from "./command-bar";
 import { previewReminderDueFromArgs } from "./reminders/parse";
@@ -101,12 +103,22 @@ describe("matchCommands (autocomplete utan nätverk)", () => {
   });
 
   it("Skapa påminnelse ryms bland Vanliga åtgärder (idle)", () => {
-    const idle = [...COMMANDS]
-      .filter((c) => commandWorkspace(c) === "owner")
-      .sort((a, b) => b.priority - a.priority || a.label.localeCompare(b.label, "sv"))
-      .slice(0, 6)
-      .map((c) => c.id);
+    const idle = idleCommandsForSurface("owner", "desktop").map((c) => c.id);
     assert.ok(idle.includes("create_reminder"), idle.join(","));
+    assert.ok(idle.length >= 6, idle.join(","));
+  });
+
+  it("mobil idle är kompakt: faktura, offert, påminnelse – inte hela katalogen", () => {
+    const ids = idleCommandsForSurface("owner", "mobile").map((c) => c.id);
+    assert.deepEqual(ids, ["create_invoice", "create_quote", "create_reminder"]);
+    assert.equal(ids.includes("create_assignment"), false);
+    assert.equal(ids.includes("create_customer"), false);
+    assert.equal(ids.includes("find_customer"), false);
+  });
+
+  it("mobil döljer katalogen när NL redan har en primär åtgärd", () => {
+    assert.equal(showCatalogBesideInterpretation("mobile"), false);
+    assert.equal(showCatalogBesideInterpretation("desktop"), true);
   });
 
   it("redovisningsytan föreslår inte offert/uppdrag", () => {

@@ -10,6 +10,8 @@ export interface VoiceUiState {
   available: boolean;
   /** Pågående session (väntar/lyssnar/transkriberar) – fältet breddar högermarginalen. */
   active: boolean;
+  /** Sant bara under aktiv inspelning – sheet kan visa Lyssnar… utan tangentbord. */
+  listening: boolean;
 }
 
 /**
@@ -28,6 +30,8 @@ export function VoiceInputButton({
   onUiState,
   onHint,
   forSheet,
+  autoStart,
+  blurOnToggle,
 }: {
   value: string;
   onValueChange(next: string): void;
@@ -40,8 +44,20 @@ export function VoiceInputButton({
   /** Vänligt felmeddelande till fältets hintyta (null rensar). */
   onHint?(hint: string | null): void;
   forSheet: boolean;
+  /** Starta inspelning när knappen monteras (mobil hem → sheet). */
+  autoStart?: boolean;
+  /** Blur aktivt fält så tangentbordet stängs när röst börjar. */
+  blurOnToggle?: boolean;
 }) {
   const voice = useVoiceInput({ value, onValueChange, onCommit });
+  const autoStarted = useRef(false);
+  const toggleRef = useRef(voice.toggle);
+  toggleRef.current = voice.toggle;
+  useEffect(() => {
+    if (!autoStart || autoStarted.current || !voice.supported) return;
+    autoStarted.current = true;
+    toggleRef.current();
+  }, [autoStart, voice.supported]);
 
   // Rapportera UI-läge/fel uppåt bara när något faktiskt ändrats – annars
   // riskerar inline-callbacks från föräldern att skapa render-loopar.
@@ -52,8 +68,16 @@ export function VoiceInputButton({
   useEffect(() => {
     onUiStateRef.current = onUiState;
     onHintRef.current = onHint;
-    const next: VoiceUiState = { available: voice.supported, active: voice.active };
-    if (lastUi.current?.available !== next.available || lastUi.current?.active !== next.active) {
+    const next: VoiceUiState = {
+      available: voice.supported,
+      active: voice.active,
+      listening: voice.status === "listening",
+    };
+    if (
+      lastUi.current?.available !== next.available ||
+      lastUi.current?.active !== next.active ||
+      lastUi.current?.listening !== next.listening
+    ) {
       lastUi.current = next;
       onUiState?.(next);
     }
@@ -71,7 +95,7 @@ export function VoiceInputButton({
     () => () => {
       lastUi.current = null;
       lastHint.current = null;
-      onUiStateRef.current?.({ available: false, active: false });
+      onUiStateRef.current?.({ available: false, active: false, listening: false });
       onHintRef.current?.(null);
     },
     []
@@ -141,10 +165,17 @@ export function VoiceInputButton({
       <button
         type="button"
         onClick={() => {
+          if (blurOnToggle && !voice.active) {
+            (document.activeElement as HTMLElement | null)?.blur();
+          }
           onActive?.();
           voice.toggle();
         }}
-        onMouseDown={(e) => e.preventDefault() /* behåll fokus i sökfältet */}
+        onMouseDown={(e) => {
+          // Mobil röst: släpp fokus så tangentbordet kan stängas.
+          if (blurOnToggle && !voice.active) return;
+          e.preventDefault();
+        }}
         disabled={transcribing}
         aria-label={mainLabel}
         aria-pressed={listening}

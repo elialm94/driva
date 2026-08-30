@@ -479,6 +479,33 @@ export function getCommand(id: CommandId): CommandDef {
   return def;
 }
 
+/** Desktop idle: hela vanliga-listan. Mobil: 3–5 rader, inte katalogen. */
+export const IDLE_COMMAND_COUNT = 6;
+export const MOBILE_IDLE_COMMAND_IDS: CommandId[] = ["create_invoice", "create_quote", "create_reminder"];
+export const MOBILE_RECENT_LIMIT = 2;
+
+export type CommandBarSurface = "desktop" | "mobile";
+
+/** Vanliga åtgärder för idle – mobil visar bara de tre vanligaste. */
+export function idleCommandsForSurface(workspace: CommandWorkspace, surface: CommandBarSurface): CommandDef[] {
+  const pool = COMMANDS.filter((c) => commandWorkspace(c) === workspace).sort(
+    (a, b) => b.priority - a.priority || a.label.localeCompare(b.label, "sv")
+  );
+  if (surface === "mobile" && workspace === "owner") {
+    return MOBILE_IDLE_COMMAND_IDS.map((id) => getCommand(id));
+  }
+  if (surface === "mobile") return pool.slice(0, 3);
+  return pool.slice(0, IDLE_COMMAND_COUNT);
+}
+
+/**
+ * På mobil döljs katalogen när NL-tolkningen redan har en primär åtgärd.
+ * Desktop behåller extra förslag som idag.
+ */
+export function showCatalogBesideInterpretation(surface: CommandBarSurface): boolean {
+  return surface === "desktop";
+}
+
 /* ------------------------------- Normalisering ------------------------------- */
 
 function normalize(text: string): string {

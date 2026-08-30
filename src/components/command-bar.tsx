@@ -24,6 +24,7 @@ import {
   List,
   ListTodo,
   Loader2,
+  Mic,
   PenLine,
   Receipt,
   Search,
@@ -35,13 +36,15 @@ import {
 import type { AssistantCard } from "@/lib/types";
 import {
   ACCOUNTANT_FALLBACK_COMMAND_IDS,
-  COMMANDS,
   FALLBACK_COMMAND_IDS,
   FREE_TEXT_FALLBACK_MESSAGE,
-  commandWorkspace,
   getCommand,
+  idleCommandsForSurface,
   matchCommands,
   parseFreeText,
+  showCatalogBesideInterpretation,
+  MOBILE_RECENT_LIMIT,
+  type CommandBarSurface,
   type CommandDef,
   type CommandIcon,
   type CommandStep,
@@ -67,6 +70,8 @@ import {
 } from "@/lib/reminders/parse";
 import { DEFAULT_TIMEZONE } from "@/lib/reminders/when";
 import { DateTimePopover as DateTimePicker } from "./date-time-picker";
+import { useVisualViewport } from "./use-visual-viewport";
+import { resolveSpeechProvider } from "@/lib/speech/provider";
 import type {
   CommandBarPrefetch,
   CommandEntityHit,
@@ -187,12 +192,12 @@ interface PanelModel {
 const IDLE_COMMAND_COUNT = 6;
 const RECENT_PER_GROUP = 3;
 
-function idleCommandItems(workspace: CommandWorkspace): BarItem[] {
-  return [...COMMANDS]
-    .filter((c) => commandWorkspace(c) === workspace)
-    .sort((a, b) => b.priority - a.priority || a.label.localeCompare(b.label, "sv"))
-    .slice(0, IDLE_COMMAND_COUNT)
-    .map((command) => ({ key: `cmd-${command.id}`, kind: "command" as const, command }));
+function idleCommandItems(workspace: CommandWorkspace, surface: CommandBarSurface): BarItem[] {
+  return idleCommandsForSurface(workspace, surface).map((command) => ({
+    key: `cmd-${command.id}`,
+    kind: "command" as const,
+    command,
+  }));
 }
 
 function commandItem(command: CommandDef, entityQuery?: string): BarItem {
@@ -227,15 +232,20 @@ export function CommandBar({
   const [isMobile, setIsMobile] = useState(false);
   const [customerModal, setCustomerModal] = useState<null | { name: string; mode: "flow" | "navigate" }>(null);
   /** Röstinmatning: kapabilitet/aktivitet styr fältets padding och ⌘K-märket. */
-  const [voiceUi, setVoiceUi] = useState<VoiceUiState>({ available: false, active: false });
+  const [voiceUi, setVoiceUi] = useState<VoiceUiState>({ available: false, active: false, listening: false });
   /** Vänligt röstfel (t.ex. nekad mikrofon) i panelens befintliga hintyta. */
   const [voiceHint, setVoiceHint] = useState<string | null>(null);
+  /** Mobil: öppna sheet för röst utan att autofokusa (inget tangentbord). */
+  const [voiceFirst, setVoiceFirst] = useState(false);
+  const [speechAvailable, setSpeechAvailable] = useState(false);
+  const visualViewport = useVisualViewport();
   const [pending, startTransition] = useTransition();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const desktopInputRef = useRef<HTMLInputElement>(null);
   const sheetInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const sheetScrollRef = useRef<HTMLDivElement>(null);
   const searchSeq = useRef(0);
   const listboxId = useId();
 
@@ -247,6 +257,10 @@ export function CommandBar({
     update();
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    setSpeechAvailable(resolveSpeechProvider() !== null);
   }, []);
 
   const focusInput = useCallback(() => {
@@ -269,7 +283,9 @@ export function CommandBar({
   const closeAll = useCallback(() => {
     resetAll();
     setOpen(false);
+    setVoiceFirst(false);
     desktopInputRef.current?.blur();
+    sheetInputRef.current?.blur();
   }, [resetAll]);
 
   const navigateTo = useCallback(
@@ -725,46 +741,50 @@ export function CommandBar({
     }
 
     const q = query.trim();
+    const surface: CommandBarSurface = isMobile ? "mobile" : "desktop";
     if (!q) {
-      const vanliga: Section = { title: "Vanliga åtgärder", items: idleCommandItems(workspace) };
+      const vanliga: Section = {
+        title: isMobile ? "Vanliga" : "Vanliga åtgärder",
+        items: idleCommandItems(workspace, surface),
+      };
+      const recentHits = isMobile
+        ? [
+            ...prefetch.recentInvoices.slice(0, 1),
+            ...prefetch.recentCustomers.slice(0, 1),
+          ].slice(0, MOBILE_RECENT_LIMIT)
+        : [
+            ...prefetch.recentCustomers.slice(0, RECENT_PER_GROUP),
+            ...prefetch.activeJobs.slice(0, RECENT_PER_GROUP),
+            ...prefetch.recentInvoices.slice(0, RECENT_PER_GROUP),
+          ];
       const senaste: Section = {
         title: "Senaste",
-        items: [
-          ...prefetch.recentCustomers.slice(0, RECENT_PER_GROUP).map((hit) => ({
-            key: `rc-${hit.id}`,
+        items: recentHits.map((hit) => {
+          const fromInvoice = prefetch.recentInvoices.some((row) => row.id === hit.id);
+          const fromJob = prefetch.activeJobs.some((row) => row.id === hit.id);
+          const icon: CommandIcon = fromInvoice ? "invoice" : fromJob ? "job" : "customer";
+          return {
+            key: `r-${hit.id}`,
             kind: "link" as const,
             label: hit.label,
             sublabel: hit.sublabel,
             href: hit.href,
-            icon: "customer" as const,
-          })),
-          ...prefetch.activeJobs.slice(0, RECENT_PER_GROUP).map((hit) => ({
-            key: `rj-${hit.id}`,
-            kind: "link" as const,
-            label: hit.label,
-            sublabel: hit.sublabel,
-            href: hit.href,
-            icon: "job" as const,
-          })),
-          ...prefetch.recentInvoices.slice(0, RECENT_PER_GROUP).map((hit) => ({
-            key: `ri-${hit.id}`,
-            kind: "link" as const,
-            label: hit.label,
-            sublabel: hit.sublabel,
-            href: hit.href,
-            icon: "invoice" as const,
-          })),
-        ],
+            icon,
+          };
+        }),
       };
       if (workspace === "accountant") {
         return { sections: [vanliga], preselect: false, honest: false };
       }
-      // Mobil följer "Senaste/Vanliga", desktop leder med åtgärderna.
-      return { sections: isMobile ? [senaste, vanliga] : [vanliga, senaste], preselect: false, honest: false };
+      // Mobil: Senaste + 3 vanliga. Desktop leder med hela vanliga-listan.
+      return { sections: isMobile ? [senaste, vanliga] : [vanliga, { ...senaste, title: "Senaste" }], preselect: false, honest: false };
     }
 
     const parsed = parseFreeText(q, workspace);
-    const matches = matchCommands(q, IDLE_COMMAND_COUNT, workspace);
+    const matches = matchCommands(q, isMobile ? 3 : IDLE_COMMAND_COUNT, workspace);
+    const catalogExtras = showCatalogBesideInterpretation(surface)
+      ? matches.slice(0, 3).map((m) => commandItem(m.command))
+      : [];
     const reminderIntent = isInternalReminderIntent(q);
     // Deterministiska förslag leder alltid; med nyckel finns en explicit rad
     // för att skicka frågan till LLM:n när förslagen inte är det man menade.
@@ -787,7 +807,7 @@ export function CommandBar({
           ? [{ key: "ai-interpret", kind: "aiInterpret", text: q }]
           : [];
       return {
-        sections: [{ items: [...matches.slice(0, 3).map((m) => commandItem(m.command)), ...escapeAi] }],
+        sections: [{ items: [...catalogExtras, ...escapeAi] }],
         preselect: false,
         honest: false,
         emptyText: reminderClarify.clarify,
@@ -812,7 +832,7 @@ export function CommandBar({
                 // Tolkningen visas INNAN något skapas – aldrig en dold gissning.
                 due: previewReminderDueFromArgs(reminderParsed.args, new Date(), DEFAULT_TIMEZONE) ?? undefined,
               },
-              ...matches.slice(0, 3).map((m) => commandItem(m.command)),
+              ...catalogExtras,
             ],
           },
         ],
@@ -833,7 +853,7 @@ export function CommandBar({
                 title: slotTitle,
                 args: "args" in reminderSlots ? reminderSlots.args : undefined,
               },
-              ...matches.slice(0, 3).map((m) => commandItem(m.command)),
+              ...catalogExtras,
             ],
           },
         ],
@@ -844,10 +864,12 @@ export function CommandBar({
 
     if (parsed.confidence === "high") {
       const primary = getCommand(parsed.commandId);
-      const rest = matches
-        .filter((m) => m.command.id !== parsed.commandId)
-        .slice(0, 3)
-        .map((m) => commandItem(m.command));
+      const rest = showCatalogBesideInterpretation(surface)
+        ? matches
+            .filter((m) => m.command.id !== parsed.commandId)
+            .slice(0, 3)
+            .map((m) => commandItem(m.command))
+        : [];
       return {
         sections: [{ items: [commandItem(primary, parsed.entityQuery), ...rest] }],
         preselect: true,
@@ -901,8 +923,9 @@ export function CommandBar({
 
   useEffect(() => {
     if (highlight < 0) return;
-    const el = listRef.current?.querySelector(`[data-bar-index="${highlight}"]`);
-    el?.scrollIntoView({ block: "nearest" });
+    const root = sheetScrollRef.current ?? listRef.current;
+    const el = root?.querySelector(`[data-bar-index="${highlight}"]`);
+    el?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [highlight]);
 
   /* ------------------------------- Tangentbord -------------------------------- */
@@ -1017,8 +1040,12 @@ export function CommandBar({
     if (!(open && isMobile)) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
     return () => {
       document.body.style.overflow = prev;
+      document.documentElement.style.overflow = "";
+      document.body.style.touchAction = "";
     };
   }, [open, isMobile]);
 
@@ -1153,6 +1180,12 @@ export function CommandBar({
               {voiceHint}
             </p>
           ) : null}
+          {isMobile && voiceUi.listening ? (
+            <p role="status" className="flex items-center gap-2 px-4 py-3 text-[15px] font-medium text-danger">
+              <span aria-hidden className="size-2 animate-pulse rounded-full bg-danger" />
+              Lyssnar…
+            </p>
+          ) : null}
           {pending || (searching && query.trim() && flow?.step === "customer") || flow?.optionsLoading ? (
             <div className="flex items-center gap-2 px-4 py-2.5 text-[13px] text-muted">
               <Loader2 className="size-3.5 animate-spin" /> Hämtar …
@@ -1242,7 +1275,7 @@ export function CommandBar({
         enterKeyHint="go"
         value={inputValueDisabled ? "" : query}
         readOnly={inputValueDisabled}
-        autoFocus={forSheet}
+        autoFocus={forSheet && !voiceFirst && !voiceUi.active}
         placeholder={placeholder}
         onChange={(e) => {
           setQuery(e.target.value);
@@ -1252,16 +1285,26 @@ export function CommandBar({
         onFocus={(e) => {
           if (!forSheet && isMobile) {
             e.currentTarget.blur();
+            setVoiceFirst(false);
             setOpen(true);
             return;
           }
           if (!forSheet) setOpen(true);
+          if (forSheet) setVoiceFirst(false);
         }}
         onKeyDown={onInputKeyDown}
         className={cx(
           "h-12 w-full rounded-2xl border border-line-strong bg-card pl-10 text-ink placeholder:text-muted focus:border-accent",
           // Mikrofonen (och ev. ⌘K) behöver högerkant – utan röststöd som förut.
-          voiceUi.active ? (forSheet ? "pr-48" : "pr-40") : voiceUi.available ? (forSheet ? "pr-14" : "pr-24") : "pr-16",
+          voiceUi.active
+            ? forSheet
+              ? "pr-48"
+              : "pr-40"
+            : voiceUi.available || (isMobile && speechAvailable)
+              ? forSheet || isMobile
+                ? "pr-14"
+                : "pr-24"
+              : "pr-16",
           forSheet ? "text-[16px]" : "text-[15px]"
         )}
       />
@@ -1279,6 +1322,8 @@ export function CommandBar({
       {(forSheet || !isMobile) && !inputValueDisabled ? (
         <VoiceInputButton
           forSheet={forSheet}
+          autoStart={forSheet && voiceFirst}
+          blurOnToggle={isMobile}
           value={query}
           onValueChange={(next) => {
             setQuery(next);
@@ -1286,11 +1331,30 @@ export function CommandBar({
           }}
           onActive={() => {
             setOpen(true);
-            focusInput();
+            if (isMobile) {
+              setVoiceFirst(true);
+              desktopInputRef.current?.blur();
+              sheetInputRef.current?.blur();
+            } else {
+              focusInput();
+            }
           }}
           onUiState={setVoiceUi}
           onHint={setVoiceHint}
         />
+      ) : null}
+      {!forSheet && isMobile && !open && speechAvailable && !inputValueDisabled ? (
+        <button
+          type="button"
+          aria-label="Använd röst"
+          onClick={() => {
+            setVoiceFirst(true);
+            setOpen(true);
+          }}
+          className="absolute right-1.5 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-xl text-muted"
+        >
+          <Mic className="size-5" />
+        </button>
       ) : null}
     </div>
   );
@@ -1314,21 +1378,32 @@ export function CommandBar({
         </div>
       ) : null}
 
-      {/* Mobil: fullbreddsark med eget sökfält – tangentbordet täcker aldrig fältet. */}
+      {/* Mobil: command-läge i visual viewport – ovanför tangentbordet, inte 100vh bakom. */}
       {open && isMobile
         ? createPortal(
-            <div className="fixed inset-0 z-50 flex h-dvh flex-col bg-canvas lg:hidden">
-              <div className="flex items-center gap-2 border-b border-line bg-card px-3 pb-2.5 pt-[max(env(safe-area-inset-top),0.625rem)]">
+            <div
+              data-command-sheet
+              className="fixed left-0 right-0 z-50 flex flex-col bg-canvas lg:hidden"
+              style={{
+                top: visualViewport.offsetTop,
+                height: visualViewport.height || "100dvh",
+              }}
+            >
+              <div className="flex shrink-0 items-center gap-2 border-b border-line bg-card px-3 pb-2.5 pt-[max(env(safe-area-inset-top),0.625rem)]">
                 {inputField(true)}
                 <button
                   type="button"
                   onClick={closeAll}
+                  aria-label="Avbryt"
                   className="shrink-0 px-1.5 py-2 text-[14px] font-medium text-soft transition-colors hover:text-ink"
                 >
                   Avbryt
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
+              <div
+                ref={sheetScrollRef}
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[max(env(safe-area-inset-bottom),0.75rem)]"
+              >
                 {panelBody}
               </div>
             </div>,
