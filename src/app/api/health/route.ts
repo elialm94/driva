@@ -7,6 +7,7 @@ import {
   hasSupabaseEnv,
 } from "@/lib/storage/config";
 import { getSqlClient } from "@/lib/storage/executor";
+import { applyPendingPageLoadSchema } from "@/lib/storage/apply-pending-schema";
 
 /**
  * Driftdiagnostik för produktion (Vercel). Kräver INGEN inloggning så att den
@@ -29,6 +30,7 @@ interface DbProbe {
   /** Tabeller som inloggade sidor läser – saknade = migrationer inte körda. */
   pageLoadTables?: Record<string, boolean>;
   hasDisabledAt?: boolean;
+  schemaApplied?: string[];
   error?: string;
 }
 
@@ -64,6 +66,11 @@ async function probeDatabase(dbUrl: string): Promise<DbProbe> {
       "select to_regclass('public.businesses') is not null as present"
     );
     probe.hasCoreTables = Boolean(tableRows[0]?.present);
+    try {
+      probe.schemaApplied = await applyPendingPageLoadSchema(client);
+    } catch (err) {
+      probe.error = err instanceof Error ? err.message : String(err);
+    }
     const pageLoadTables: Record<string, boolean> = {};
     for (const name of PAGE_LOAD_TABLES) {
       const rows = await client.query(`select to_regclass($1) is not null as present`, [`public.${name}`]);

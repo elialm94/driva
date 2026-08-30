@@ -20,7 +20,6 @@ import { getSqlClient, type SqlClient } from "./executor";
 import { bindTransaction, loadTenantState, type LoadedTenantState } from "./load";
 import { cachedStateIfFresh, clearSnapshotCache, invalidateSnapshot, putSnapshot } from "./snapshot-cache";
 import { markCacheHit, withPerfSpan } from "../perf/telemetry";
-import { isUndefinedColumn } from "./sql-errors";
 
 const MAX_ATTEMPTS = 3;
 
@@ -197,33 +196,36 @@ export interface MembershipInfo {
  */
 export async function membershipsForUser(userId: string): Promise<MembershipInfo[]> {
   const client = await sqlClient();
-  let rows;
-  try {
-    rows = await client.query(
-      `select m.business_id, m.role, m.last_active_at, m.invited_by_user_id
-         from public.business_memberships m
-         join public.businesses b on b.id = m.business_id
-        where m.user_id = $1 and m.revoked_at is null and b.disabled_at is null
-        order by m.created_at, m.business_id`,
-      [userId]
-    );
-  } catch (err) {
-    if (!isUndefinedColumn(err)) throw err;
-    // Äldre schema utan businesses.disabled_at (admin-migrationen inte körd).
-    rows = await client.query(
-      `select m.business_id, m.role, m.last_active_at, m.invited_by_user_id
-         from public.business_memberships m
-        where m.user_id = $1 and m.revoked_at is null
-        order by m.created_at, m.business_id`,
-      [userId]
-    );
-  }
-  return rows.map((r) => ({
-    businessId: String(r.business_id),
-    role: r.role as MembershipInfo["role"],
-    lastActiveAt: r.last_active_at ? String(r.last_active_at) : undefined,
-    invitedByUserId: r.invited_by_user_id ? String(r.invited_by_user_id) : undefined,
-  }));
+  // Inte b.disabled_at i SQL: kolumnen saknas tills admin-migrationen körts
+  // och en saknad kolumn inne i andra tx kan fälla sidladdningen. Filtrera
+  // inaktiverade företag i JS när kolumnen finns.
+  const rows = await client.query(
+    `select m.business_id, m.role, m.last_active_at, m.invited_by_user_id,
+            ${await businessesDisabledAtSql(client)} as disabled_at
+       from public.business_memberships m
+       join public.businesses b on b.id = m.business_id
+      where m.user_id = $1 and m.revoked_at is null
+      order by m.created_at, m.business_id`,
+    [userId]
+  );
+  return rows
+    .filter((r) => !r.disabled_at)
+    .map((r) => ({
+      businessId: String(r.business_id),
+      role: r.role as MembershipInfo["role"],
+      lastActiveAt: r.last_active_at ? String(r.last_active_at) : undefined,
+      invitedByUserId: r.invited_by_user_id ? String(r.invited_by_user_id) : undefined,
+    }));
+}
+
+async function businessesDisabledAtSql(client: SqlClient): Promise<string> {
+  const rows = await client.query(
+    `select exists (
+       select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = 'businesses' and column_name = 'disabled_at'
+     ) as present`
+  );
+  return rows[0]?.present ? "b.disabled_at" : "null::timestamptz";
 }
 
 export async function insertMembership(input: {
