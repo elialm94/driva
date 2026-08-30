@@ -34,6 +34,11 @@ import {
 } from "@/app/actions";
 import type { WebsiteSection, WebsiteSectionItem } from "@/lib/types";
 import { DEFAULT_PRIMARY_CTA_LABEL, PRIMARY_CTA_LABEL_MAX } from "@/lib/types";
+import {
+  CONTACT_FORM_PRIVACY_LINK_LABEL,
+  contactFormPrivacyLead,
+  privacyPolicyHref,
+} from "@/lib/website-privacy";
 import { FieldError, focusField, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
 
 /**
@@ -62,14 +67,20 @@ export interface SiteFormTokens {
   confirm: string;
   /** Klasser för felmeddelandet (ljus röd på mörka band). */
   error: string;
+  /** Diskret integritetsnotis ovanför skicka-knappen. */
+  notice: string;
 }
 
 export function SiteContactForm({
   interactive,
   tokens,
+  companyName,
+  privacyHref = privacyPolicyHref(),
 }: {
   interactive: boolean;
   tokens: SiteFormTokens;
+  companyName: string;
+  privacyHref?: string;
 }) {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,6 +198,13 @@ export function SiteContactForm({
       <FieldError id="sajtkontakt-epost-fel">{errors.email}</FieldError>
       <FieldError id="sajtkontakt-meddelande-fel">{errors.message}</FieldError>
       {error ? <p className={tokens.error}>{error}</p> : null}
+      <p className={tokens.notice} data-privacy-notice>
+        {contactFormPrivacyLead(companyName)} Läs{" "}
+        <a href={privacyHref} className="underline decoration-from-font underline-offset-2 hover:opacity-80">
+          {CONTACT_FORM_PRIVACY_LINK_LABEL}
+        </a>
+        .
+      </p>
       <button type="submit" disabled={pending} className={tokens.button}>
         {pending ? "Skickar …" : "Skicka meddelande"}
       </button>

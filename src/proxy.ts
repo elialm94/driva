@@ -28,6 +28,7 @@ const PUBLIC_PREFIXES = [
   "/offert",
   "/faktura",
   "/sajt",
+  "/integritetspolicy",
   "/inbjudan",
   "/api/health", // driftdiagnostik: måste nås utan inloggning när appen är trasig
   "/admin/inbjudan", // admin-invitationens acceptsida: mottagaren saknar ofta konto ännu

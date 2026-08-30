@@ -155,6 +155,7 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/offert/:token", section: null, label: "Offert" },
   { pattern: "/faktura/:token", section: null, label: "Faktura" },
   { pattern: "/sajt", section: null, label: "Hemsida" },
+  { pattern: "/integritetspolicy", section: null, label: "Integritetspolicy" },
 ];
 
 const APP_PATH_PREFIXES = [
@@ -175,6 +176,7 @@ const APP_PATH_PREFIXES = [
   "/offert",
   "/faktura",
   "/sajt",
+  "/integritetspolicy",
 ] as const;
 
 const SAFE_ID = /^[a-zA-Z0-9._-]{1,80}$/;

@@ -125,7 +125,13 @@ export function SitePreviewFrame({
           className={cx("mx-auto min-h-full transition-[max-width] duration-200", viewport !== "dator" && "shadow-pop")}
           style={{ maxWidth: active.width }}
         >
-          <SiteRenderer website={website} company={company} design={design} interactive={false} />
+          <SiteRenderer
+            website={website}
+            company={company}
+            design={design}
+            interactive={false}
+            privacyHref="/integritetspolicy?preview=1"
+          />
         </div>
       </div>
     </div>
