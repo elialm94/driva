@@ -79,7 +79,13 @@ export async function requireUser(): Promise<SessionUser> {
   return user;
 }
 
-export async function listMemberships(userId: string): Promise<MembershipInfo[]> {
+/**
+ * Medlemskap per request: layout, sida och åtgärdsvakter frågar alla efter
+ * samma lista – React cache() deduperar till EN databasfråga per request.
+ * Muterade medlemskap (invite/revoke) följs alltid av redirect, så en
+ * memoiserad läsning kan aldrig ge inaktuell auktorisering inom en request.
+ */
+export const listMemberships = cache(async (userId: string): Promise<MembershipInfo[]> => {
   if (isSupabaseMode()) return membershipsForUser(userId);
   return activeMembershipsForUser(userId).map((m) => ({
     businessId: m.businessId,
@@ -87,7 +93,7 @@ export async function listMemberships(userId: string): Promise<MembershipInfo[]>
     lastActiveAt: m.lastActiveAt,
     invitedByUserId: m.invitedByUserId,
   }));
-}
+});
 
 function pickMembership(
   memberships: MembershipInfo[],
@@ -318,14 +324,24 @@ export async function withPublicBusiness<T>(
   );
 }
 
+/** Skriv last_active_at högst så här ofta – aldrig en write per sidladdning. */
+const TOUCH_ACTIVE_MIN_INTERVAL_MS = 60_000;
+
+function membershipNeedsTouch(lastActiveAt: string | undefined): boolean {
+  if (!lastActiveAt) return true;
+  const last = Date.parse(lastActiveAt);
+  if (Number.isNaN(last)) return true;
+  return Date.now() - last > TOUCH_ACTIVE_MIN_INTERVAL_MS;
+}
+
 const loadPageBusiness = cache(async (businessId?: string): Promise<void> => {
-  const { user, businessId: sessionId, role } = businessId
+  const { user, businessId: sessionId, role, memberships } = businessId
     ? await (async () => {
         const user = await requireUser();
         const memberships = await listMemberships(user.id);
         const membership = memberships.find((m) => m.businessId === businessId);
         if (!membership) redirect("/");
-        return { user, businessId, role: membership.role };
+        return { user, businessId, role: membership.role, memberships };
       })()
     : await requireBusiness();
   const id = businessId ?? sessionId;
@@ -335,10 +351,15 @@ const loadPageBusiness = cache(async (businessId?: string): Promise<void> => {
   slot.businessId = id;
   slot.actor = actorFrom(user, id, role);
   if (isAccountingRole(role)) {
-    try {
-      await touchMembershipActive(id, user.id);
-    } catch {
-      touchLastActive(user.id, id);
+    // Debouncad aktivitetsstämpel: "aktiv idag"-indikatorn behöver inte en
+    // databas-write per navigering.
+    const membership = memberships.find((m) => m.businessId === id);
+    if (membershipNeedsTouch(membership?.lastActiveAt)) {
+      try {
+        await touchMembershipActive(id, user.id);
+      } catch {
+        touchLastActive(user.id, id);
+      }
     }
   }
 });
