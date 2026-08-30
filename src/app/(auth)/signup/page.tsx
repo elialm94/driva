@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { safeAuthNext } from "@/lib/auth/signup-flow";
 import { SignupForm } from "./signup-form";
 
-export const metadata: Metadata = { title: "Skapa konto – Driva" };
+export const metadata: Metadata = { title: "Skapa konto" };
 export const dynamic = "force-dynamic";
 
 export default async function SignupPage({
