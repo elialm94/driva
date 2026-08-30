@@ -5,8 +5,10 @@ import { loginAction, signupAction, type AuthFormState } from "@/app/auth-action
 
 const initialState: AuthFormState = {};
 
-export function LoginForm({ next }: { next: string }) {
-  const [mode, setMode] = useState<"login" | "signup">(next.startsWith("/inbjudan") ? "signup" : "login");
+export function LoginForm({ next, startInSignup = false }: { next: string; startInSignup?: boolean }) {
+  const [mode, setMode] = useState<"login" | "signup">(
+    startInSignup || next.startsWith("/inbjudan") ? "signup" : "login"
+  );
   const [loginState, submitLogin, loginPending] = useActionState(loginAction, initialState);
   const [signupState, submitSignup, signupPending] = useActionState(signupAction, initialState);
 

@@ -120,7 +120,8 @@ import type { Customer, WebsiteSectionItem } from "@/lib/types";
 import { hrefWithNav, type ReturnNav } from "@/lib/nav";
 import { headers } from "next/headers";
 import { isSupabaseMode } from "@/lib/storage/config";
-import { withBusiness, withBusinessRead, withPublicBusiness } from "@/lib/auth/session";
+import { requireBusiness, withBusiness, withBusinessRead, withPublicBusiness } from "@/lib/auth/session";
+import { isDemoUserEmail, rateLimitDemoReset } from "@/lib/auth/demo-session";
 
 /**
  * Alla åtgärder körs i tenantkontext via withBusiness (ladda → domänlogik →
@@ -1151,8 +1152,30 @@ export async function saveLogoAction(
 
 /* ------------------------------------ Demo ---------------------------------- */
 
-export async function resetDemoAction() {
-  // Endast JSON-läget – resetDemoData() vägrar köra mot Supabase.
+export async function resetDemoAction(): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (isSupabaseMode()) {
+    // Publika demosessionen: töm demoföretaget i databasen (SQL-funktionen
+    // vägrar för alla företag som inte skapades som demo) och spela upp
+    // exempeldatat igen genom appens vanliga importväg.
+    const { user, businessId } = await requireBusiness();
+    if (!isDemoUserEmail(user.email)) {
+      return { ok: false, error: "Endast demosessionen kan återställa demon." };
+    }
+    if (!rateLimitDemoReset()) {
+      return { ok: false, error: "Demon återställdes nyss. Vänta en liten stund och försök igen." };
+    }
+    const { resetDemoBusinessToSeed } = await import("@/lib/storage/demo-reset");
+    try {
+      await resetDemoBusinessToSeed(businessId, user.id);
+    } catch (e) {
+      console.error(`[driva:demo] återställning misslyckades: ${e instanceof Error ? e.message : e}`);
+      return { ok: false, error: "Demon kunde inte återställas just nu. Försök igen om en stund." };
+    }
+    refresh();
+    return { ok: true };
+  }
+  // JSON-läget – resetDemoData() vägrar köra mot Supabase.
   resetDemoData();
   refresh();
+  return { ok: true };
 }
