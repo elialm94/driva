@@ -3,9 +3,10 @@ import Link from "next/link";
 import { db } from "@/lib/store";
 import { datumTid } from "@/lib/format";
 import { DEFAULT_PRIMARY_CTA_LABEL } from "@/lib/types";
+import { draftWebsiteDesign, publishedWebsiteDesign } from "@/lib/website-design";
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
-import { SiteRenderer } from "@/components/site-renderer";
 import { GenerateWebsiteForm, PublishWebsiteButton, SectionList } from "@/components/site-widgets";
+import { SitePreviewFrame, UtseendePanel, WebsiteDesignProvider } from "@/components/site-design-widgets";
 import { CopyLinkButton } from "@/components/copy-button";
 import { DomainSidebarCard } from "@/components/domain-widgets";
 import { isMockDomainMode, primaryDomain } from "@/lib/domains";
@@ -90,6 +91,7 @@ export default async function WebsitePage() {
         }
       />
 
+      <WebsiteDesignProvider initial={draftWebsiteDesign(site)}>
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         {/* Live-preview */}
         <div className="min-w-0">
@@ -104,16 +106,7 @@ export default async function WebsitePage() {
             </div>
             <CopyLinkButton path="/sajt" label="Kopiera länk" />
           </div>
-          <div className="overflow-hidden rounded-3xl border border-line shadow-card">
-            <div className="flex items-center gap-1.5 border-b border-line bg-canvas px-4 py-2.5">
-              <span className="size-2.5 rounded-full bg-line-strong" />
-              <span className="size-2.5 rounded-full bg-line-strong" />
-              <span className="size-2.5 rounded-full bg-line-strong" />
-            </div>
-            <div className="site-preview-scroll max-h-[640px] overflow-y-auto">
-              <SiteRenderer website={site} company={data.settings} interactive={false} />
-            </div>
-          </div>
+          <SitePreviewFrame website={site} company={data.settings} />
           <p className="mt-2 text-[12px] text-muted">
             Det här är exakt vad besökarna ser. Formuläret är aktivt på den publicerade sajten.
           </p>
@@ -121,6 +114,16 @@ export default async function WebsitePage() {
 
         {/* Sidopanel */}
         <div className="min-w-0 space-y-6">
+          <div className="min-w-0">
+            <SectionTitle>Utseende</SectionTitle>
+            <Card className="min-w-0">
+              <UtseendePanel publishedDesign={publishedWebsiteDesign(site)} published={published} />
+            </Card>
+            <p className="mt-2 text-[12px] leading-relaxed text-muted">
+              Välj känslan som passar ditt företag – innehållet är detsamma i alla teman.
+            </p>
+          </div>
+
           <div className="min-w-0">
             <SectionTitle>Innehåll</SectionTitle>
             <Card className="min-w-0 overflow-hidden">
@@ -173,6 +176,7 @@ export default async function WebsitePage() {
           </div>
         </div>
       </div>
+      </WebsiteDesignProvider>
     </div>
   );
 }

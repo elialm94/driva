@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { db } from "@/lib/store";
 import { SiteRenderer } from "@/components/site-renderer";
+import { draftWebsiteDesign, publishedWebsiteDesign, sameDesign } from "@/lib/website-design";
 import { isMockDomainMode, resolvePublicSite } from "@/lib/domains";
 import { ensurePageBusiness, ensurePublicPage } from "@/lib/auth/session";
 import { isSupabaseMode } from "@/lib/storage/config";
@@ -59,14 +60,24 @@ export default async function PublicSitePage(props: PageProps<"/sajt">) {
   if (host && !mapped && !preview) notFound();
   if (site.status !== "publicerad" && !preview) notFound();
 
+  // Utseendet följer utkast → publicera-modellen: den publika sajten renderas
+  // alltid med det PUBLICERADE utseendet; ?preview=1 visar utkastet.
+  const design = preview ? draftWebsiteDesign(site) : publishedWebsiteDesign(site);
+  const draftDesignPending =
+    preview && site.status === "publicerad" && !sameDesign(design, publishedWebsiteDesign(site));
+
   return (
     <div className="min-h-dvh" data-public-site>
       {site.status !== "publicerad" && preview ? (
         <div className="sticky top-0 z-50 bg-warn px-4 py-2 text-center text-[13px] font-medium text-white">
           Förhandsvisning – sajten är inte publicerad ännu
         </div>
+      ) : draftDesignPending ? (
+        <div className="sticky top-0 z-50 bg-warn px-4 py-2 text-center text-[13px] font-medium text-white">
+          Förhandsvisning av nytt utseende – publicera ändringar för att uppdatera sajten
+        </div>
       ) : null}
-      <SiteRenderer website={site} company={company} />
+      <SiteRenderer website={site} company={company} design={design} />
     </div>
   );
 }
