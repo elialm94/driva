@@ -250,12 +250,24 @@ export async function platformOverview(now = new Date()): Promise<PlatformOvervi
          (select count(distinct a.business_id)::int from public.audit_log a
            join public.businesses b on b.id = a.business_id
            where b.is_demo = false and a.created_at >= $3) as active_30d,
-         (select count(*)::int from public.quotes q where q.created_at >= $3) as quotes_30d,
-         (select count(*)::int from public.invoices i where i.issued_at is not null and i.issued_at >= $3) as invoices_30d,
-         (select count(*)::int from public.jobs j where j.created_at >= $3) as jobs_30d,
-         (select count(*)::int from public.inbox_items x where x.processed_at is not null and x.processed_at >= $3) as documents_30d,
-         (select count(*)::int from public.verifications v where v.posted_at >= $3) as verifications_30d,
-         (select count(*)::int from public.verifications v where v.posted_at >= $3 and v.created_by = 'auto') as verifications_auto_30d`,
+         (select count(*)::int from public.quotes q
+           join public.businesses b on b.id = q.business_id
+           where b.is_demo = false and q.created_at >= $3) as quotes_30d,
+         (select count(*)::int from public.invoices i
+           join public.businesses b on b.id = i.business_id
+           where b.is_demo = false and i.issued_at is not null and i.issued_at >= $3) as invoices_30d,
+         (select count(*)::int from public.jobs j
+           join public.businesses b on b.id = j.business_id
+           where b.is_demo = false and j.created_at >= $3) as jobs_30d,
+         (select count(*)::int from public.inbox_items x
+           join public.businesses b on b.id = x.business_id
+           where b.is_demo = false and x.processed_at is not null and x.processed_at >= $3) as documents_30d,
+         (select count(*)::int from public.verifications v
+           join public.businesses b on b.id = v.business_id
+           where b.is_demo = false and v.posted_at >= $3) as verifications_30d,
+         (select count(*)::int from public.verifications v
+           join public.businesses b on b.id = v.business_id
+           where b.is_demo = false and v.posted_at >= $3 and v.created_by = 'auto') as verifications_auto_30d`,
       [todayStart, since7, since30]
     ),
     client.query(
@@ -277,13 +289,16 @@ export async function platformOverview(now = new Date()): Promise<PlatformOvervi
            from public.businesses b where b.is_demo = false and b.created_at >= $1 group by 2
          union all
          select 'quote', date_trunc('day', q.created_at)::date::text, count(*)::int
-           from public.quotes q where q.created_at >= $1 group by 2
+           from public.quotes q join public.businesses b on b.id = q.business_id
+           where b.is_demo = false and q.created_at >= $1 group by 2
          union all
          select 'invoice', date_trunc('day', i.issued_at)::date::text, count(*)::int
-           from public.invoices i where i.issued_at is not null and i.issued_at >= $1 group by 2
+           from public.invoices i join public.businesses b on b.id = i.business_id
+           where b.is_demo = false and i.issued_at is not null and i.issued_at >= $1 group by 2
          union all
          select 'document', date_trunc('day', x.processed_at)::date::text, count(*)::int
-           from public.inbox_items x where x.processed_at is not null and x.processed_at >= $1 group by 2
+           from public.inbox_items x join public.businesses b on b.id = x.business_id
+           where b.is_demo = false and x.processed_at is not null and x.processed_at >= $1 group by 2
        ) t`,
       [sinceTrend]
     ),

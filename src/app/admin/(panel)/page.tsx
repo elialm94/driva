@@ -19,7 +19,8 @@ export default async function AdminOverviewPage() {
       <header>
         <h1 className="text-[20px] font-semibold tracking-tight text-white">Översikt</h1>
         <p className="mt-0.5 text-[13px] text-neutral-500">
-          Idag (UTC), rullande fönster där det anges. Demoföretag ingår inte i KPI:erna.
+          Idag (UTC), rullande fönster där det anges. Demoföretag ingår inte i KPI:erna –
+          AI-anrop räknas dock totalt (demoanvändning kostar också).
         </p>
       </header>
 
