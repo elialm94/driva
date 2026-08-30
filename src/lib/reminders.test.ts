@@ -21,13 +21,16 @@ import {
   type WhenExpression,
 } from "./reminders/when";
 import {
+  isReminderIntentQuery,
   parseReminderCommandInput,
   parseReminderText,
   parseWhenText,
+  prettyReminderTitle,
   previewReminderDue,
   previewReminderDueFromArgs,
   reminderTextFromParts,
 } from "./reminders/parse";
+import { identifyUtteranceIntent, isInternalReminderIntent } from "./ai/utterance";
 import {
   completeReminder,
   createReminder,
@@ -499,5 +502,116 @@ describe("påminnelser i åtgärdsmotorn", () => {
       listReminders().map((r) => r.id),
       [sooner.id, later.id]
     );
+  });
+});
+
+describe("påminnelse-intent: synonymer och ordföljd", () => {
+  const NOW = new Date("2026-08-30T08:00:00.000Z"); // söndag, lokal 10:00
+
+  function complete(text: string) {
+    const p = parseReminderCommandInput(text, NOW, TZ);
+    assert.ok(p?.complete, `"${text}" borde vara komplett one-shot`);
+    if (!p || !p.complete) throw new Error("unreachable");
+    return p;
+  }
+
+  it("skärmdumpsfallet: 'Gör en påminnelse att ringa Göran kl 12 idag'", () => {
+    const source = "Gör en påminnelse att ringa Göran kl 12 idag";
+    assert.equal(isInternalReminderIntent(source), true);
+    assert.equal(isReminderIntentQuery(source), true);
+    assert.equal(identifyUtteranceIntent(source), "create_reminder");
+    const p = complete(source);
+    assert.equal(prettyReminderTitle(p.title), "Ring Göran");
+    assert.equal(p.args.time, "12:00");
+    assert.equal(p.args.whenDate, "2026-08-30");
+  });
+
+  it("'Påminn mig att ringa Göran kl 12' ger samma intent och tid", () => {
+    const p = complete("Påminn mig att ringa Göran kl 12");
+    assert.equal(prettyReminderTitle(p.title), "Ring Göran");
+    assert.equal(p.args.time, "12:00");
+    assert.equal(p.args.whenDate, "2026-08-30");
+  });
+
+  it("synonymer: skapa / lägg in / bli påmind / kan du påminna / påminnelse:", () => {
+    const variants = [
+      "Skapa en påminnelse att ringa Göran kl 12",
+      "Lägg in en påminnelse att ringa Göran kl 12",
+      "Jag behöver bli påmind om att ringa Göran kl 12",
+      "Påminnelse: ring Göran kl 12",
+      "Kan du påminna mig om att ringa Göran kl 12?",
+      "Ring Göran kl 12, påminn mig",
+      "Kom ihåg att ringa Göran kl 12",
+    ];
+    for (const source of variants) {
+      const p = complete(source);
+      assert.equal(prettyReminderTitle(p.title), "Ring Göran", source);
+      assert.equal(p.args.time, "12:00", source);
+    }
+  });
+
+  it("ordföljd: tid före/efter uppgift och omslag", () => {
+    const variants = [
+      "Påminn mig idag kl 12 att ringa Göran",
+      "Idag kl 12, påminn mig att ringa Göran",
+      "Ring Göran idag kl 12 - gör en påminnelse",
+      "Skapa en påminnelse idag 12:00: ring Göran",
+    ];
+    for (const source of variants) {
+      const p = complete(source);
+      assert.match(prettyReminderTitle(p.title), /Ring Göran/i, source);
+      assert.match(String(p.args.time), /^12:00$/, source);
+      assert.equal(p.args.whenDate, "2026-08-30", source);
+    }
+  });
+
+  it("skiftläge och skiljetecken normaliseras", () => {
+    const p = complete("gör en påminnelse att ringa göran kl. 12");
+    assert.equal(prettyReminderTitle(p.title), "Ring Göran");
+    assert.equal(p.args.time, "12:00");
+  });
+
+  it("'Skapa en påminnelse om att betala hyran imorgon kl 9'", () => {
+    const p = complete("Skapa en påminnelse om att betala hyran imorgon kl 9");
+    assert.match(prettyReminderTitle(p.title), /Betala hyran/i);
+    assert.equal(p.args.whenDate, "2026-08-31");
+    assert.match(String(p.args.time), /^9:00$/);
+  });
+
+  it("'Kan du påminna mig nästa onsdag att ringa Anna?'", () => {
+    const p = complete("Kan du påminna mig nästa onsdag att ringa Anna?");
+    assert.match(prettyReminderTitle(p.title), /Ring Anna/i);
+    assert.equal(p.args.weekday, "onsdag");
+    assert.equal(p.args.nextWeek, true);
+  });
+
+  it("halv två och om två timmar", () => {
+    const half = complete("Påminn mig halv två att ringa Göran");
+    assert.equal(half.args.time, "1:30");
+    const rel = complete("Gör en påminnelse om två timmar att ringa Göran");
+    assert.equal(rel.args.relativeHours, 2);
+  });
+
+  it("korrigering: 'Gör en påminnelse … kl 12, nej kl 10'", () => {
+    const p = parseReminderText("Gör en påminnelse att ringa Göran kl 12, nej kl 10", NOW, TZ);
+    assert.ok(p);
+    assert.equal(p.args.time, "10:00");
+    assert.notEqual(p.args.time, "12:00");
+    assert.equal(prettyReminderTitle(p.title), "Ring Göran");
+  });
+
+  it("'vid lunch' är olåst tidsspråk → null så OpenRouter får hela frasen", () => {
+    const phrase = "Kan du påminna mig att ringa Göran imorgon vid lunch?";
+    assert.equal(parseReminderText(phrase, NOW, TZ), null);
+    assert.equal(parseReminderCommandInput(phrase, NOW, TZ), null);
+  });
+
+  it("faktura/idag-fråga är INTE intern påminnelse", () => {
+    assert.equal(isInternalReminderIntent("Vad behöver jag göra idag?"), false);
+    assert.equal(identifyUtteranceIntent("Vad behöver jag göra idag?"), "unknown");
+    assert.equal(isInternalReminderIntent("Skapa faktura till Göran"), false);
+    assert.equal(identifyUtteranceIntent("Skapa faktura till Göran"), "create_invoice");
+    assert.equal(parseReminderText("Skapa faktura till Göran", NOW, TZ), null);
+    assert.equal(parseReminderText("skicka påminnelse till Johan om faktura", NOW, TZ), null);
   });
 });

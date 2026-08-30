@@ -269,6 +269,34 @@ describe("parseCommand (hela originalfrasen → intent + argument)", () => {
     if (p.confidence !== "high") throw new Error("unreachable");
     assert.equal(p.commandId, "remind_late_invoices");
   });
+
+  it("Gör en påminnelse … idag → CREATE_REMINDER, inte generiska förslag", () => {
+    const source = "Gör en påminnelse att ringa Göran kl 12 idag";
+    const p = parseCommand(source, "owner", SUNDAY, TZ);
+    assert.equal(p.confidence, "high");
+    if (p.confidence !== "high") throw new Error("unreachable");
+    assert.equal(p.commandId, "create_reminder");
+    assert.ok(p.reminder?.complete);
+    if (!p.reminder || !p.reminder.complete) throw new Error("unreachable");
+    assert.match(p.reminder.title, /ringa Göran/i);
+    assert.equal(p.reminder.args.time, "12:00");
+    assert.equal(p.reminder.args.whenDate, "2026-08-30");
+    assert.equal(matchCommands(source)[0]?.command.id, "create_reminder");
+  });
+
+  it("Vad behöver jag göra idag? är INTE påminnelse", () => {
+    const p = parseCommand("Vad behöver jag göra idag?");
+    assert.equal(p.confidence, "high");
+    if (p.confidence !== "high") throw new Error("unreachable");
+    assert.equal(p.commandId, "show_today_actions");
+  });
+
+  it("Skapa faktura till Göran är INTE påminnelse", () => {
+    const p = parseCommand("Skapa faktura till Göran");
+    assert.equal(p.confidence, "high");
+    if (p.confidence !== "high") throw new Error("unreachable");
+    assert.equal(p.commandId, "create_invoice");
+  });
 });
 
 /* ----------------------------- LLM-abstraktion -------------------------- */

@@ -75,19 +75,35 @@ export function relatedFromTitle(title: string): { relatedType: string; relatedQ
 }
 
 /**
- * Inledningar som markerar intern påminnelse. Resten av meningen slängs
- * ALDRIG – rättelselagret får hela kroppen.
+ * Inledningar som markerar intern påminnelse (äldre prefixform).
+ * Semantisk intent bor i isInternalReminderIntent – wrappers kan sitta
+ * var som helst i meningen.
  */
 const REMINDER_LEAD_RE =
   /^\s*(?:skapa(?:\s+en)?\s+påminnelse|påminn(?:a)?(?:\s+mig)?)(?:\s+gärna)?(?:\s+om(?=\s+att\b))?(?:\s+|$)/i;
 
+/** Längsta wrapper först så "kan du påminna mig om att" äts i ett svep. */
+const REMINDER_WRAPPER_RE =
+  /\b(?:kan\s+du\s+påminna\s+mig(?:\s+om(?=\s+att\b))?(?:\s+att)?|jag\s+behöver\s+bli\s+påmind(?:\s+om(?=\s+att\b))?(?:\s+att)?|bli\s+påmind(?:\s+om(?=\s+att\b))?(?:\s+att)?|(?:gör|skapa|lägg\s+in|lägg\s+till)\s+(?:en\s+)?påminnelse(?:\s*[:–—-])?(?:\s+om(?=\s+att\b))?(?:\s+att)?|påminnelse\s*[:–—-]|påminnelse\b|påminn(?:a)?(?:\s+mig)?(?:\s+gärna)?(?:\s+om(?=\s+att\b))?(?:\s+att)?|kom\s+ihåg(?:\s+att)?)\b/gi;
+
 const PAYMENT_REMINDER_RE = /^\s*skicka\s+(?:en\s+)?påminnelse/i;
+
+/**
+ * Tidsspråk parsern inte kan låsa – "vid lunch", "när det passar".
+ * Då ska hela originalfrasen gå till OpenRouter, inte one-shot eller slot-fill.
+ */
+const UNRESOLVED_WHEN_RE =
+  /\b(?:vid\s+lunch|till\s+lunch|efter\s+lunch|före\s+lunch|kring\s+lunch|lunchtid|när\s+(?:det|lunchen|jag)|n[åa]n\s+g[åa]ng|någon\s+gång)\b/i;
+
+export function hasUnresolvedWhenLanguage(text: string): boolean {
+  return UNRESOLVED_WHEN_RE.test(text);
+}
 
 export function isPaymentReminderQuery(text: string): boolean {
   return PAYMENT_REMINDER_RE.test(text.trim()) || isPaymentReminderUtterance(text);
 }
 
-/** Deterministisk intern påminnelse-intent (prefix), inte bara ämnesordet. */
+/** Deterministisk intern påminnelse-intent – synonym/ordföljd, inte exakt fras. */
 export function isReminderIntentQuery(text: string): boolean {
   const t = text.trim();
   if (!t || isPaymentReminderQuery(t)) return false;
@@ -103,6 +119,21 @@ function stripReminderLeadPrefix(text: string): string {
     .trim();
 }
 
+/** Tar bort påminnelse-omslag var de än sitter; tid och uppgift lämnas kvar. */
+export function stripReminderWrappers(text: string): string {
+  let rest = text.replace(/\s+/g, " ").trim();
+  REMINDER_WRAPPER_RE.lastIndex = 0;
+  rest = rest.replace(REMINDER_WRAPPER_RE, " ");
+  REMINDER_WRAPPER_RE.lastIndex = 0;
+  rest = rest
+    .replace(/^\s*att\s+/i, "")
+    .replace(/\s+att\s*$/i, "")
+    .replace(/^[\s,.;!?…–—-]+|[\s,.;!?…–—-]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return rest;
+}
+
 function prepareReminderBody(body: string): { rest: string; prettyTitle: boolean } | null {
   const collapsed = body.replace(/\s+/g, " ").trim();
   if (!collapsed) return null;
@@ -114,13 +145,28 @@ function prepareReminderBody(body: string): { rest: string; prettyTitle: boolean
   return { rest: collapsed, prettyTitle: false };
 }
 
+const HALF_HOUR_WORDS: Record<string, number> = {
+  ett: 12,
+  två: 1,
+  tre: 2,
+  fyra: 3,
+  fem: 4,
+  sex: 5,
+  sju: 6,
+  åtta: 7,
+  nio: 8,
+  tio: 9,
+  elva: 10,
+  tolv: 11,
+};
+
 export function parseReminderText(text: string, now: Date, timezone: string): ParsedReminder | null {
   const trimmed = text.trim();
   if (!trimmed || isPaymentReminderUtterance(trimmed)) return null;
-  // Prefix krävs för den fria NL-snabbvägen; nakna meningar går via
-  // parseReminderCommandInput som sätter prefixet.
-  if (!isInternalReminderIntent(trimmed) && !REMINDER_LEAD_RE.test(trimmed + " ")) return null;
-  const body = stripReminderLeadPrefix(trimmed);
+  // Semantisk intent – inte bara "påminn mig" som prefix. Nakna meningar
+  // utan påminnelseord går via parseReminderCommandInput som sätter prefixet.
+  if (!isReminderIntentQuery(trimmed)) return null;
+  const body = stripReminderWrappers(trimmed) || stripReminderLeadPrefix(trimmed);
   if (!body) return null;
   const prepared = prepareReminderBody(body);
   if (!prepared) return null;
@@ -163,13 +209,44 @@ export function parseReminderText(text: string, now: Date, timezone: string): Pa
     }
   }
 
-  // Klockslag: "kl 14" / "klockan 14:30" (kombineras med dag ovan; kräver dag)
+  // "idag" som dag – oberoende av ordföljd. Klockslag fylls i nedan.
+  if (!matched) {
+    const today = /\bidag\b/i.exec(rest);
+    if (today) {
+      args.whenDate = localDatePlusDays(now, timezone, 0);
+      rest = rest.replace(today[0], " ");
+      matched = true;
+    }
+  }
+
+  // Klockslag: "kl 14" / "klockan 14:30" / "kl. 12" / "12:30" / "halv två"
   const clock = /\bkl(?:ockan)?\.?\s*(\d{1,2})(?:[:.](\d{2}))?\b/i.exec(rest);
+  const bareClock = !clock ? /\b(\d{1,2})[:.](\d{2})\b/.exec(rest) : null;
+  const half =
+    !clock && !bareClock
+      ? /\bhalv\s+(ett|två|tre|fyra|fem|sex|sju|åtta|nio|tio|elva|tolv)(?=$|[^A-Za-zÅÄÖåäö])/i.exec(rest)
+      : null;
   if (clock) {
     args.time = `${clock[1]}:${clock[2] ?? "00"}`;
     rest = rest.replace(clock[0], " ");
     if (!matched) {
-      // "idag kl 15" eller bara "kl 15" → idag.
+      rest = rest.replace(/\bidag\b/i, " ");
+      args.whenDate = localDatePlusDays(now, timezone, 0);
+      matched = true;
+    }
+  } else if (bareClock) {
+    args.time = `${bareClock[1]}:${bareClock[2]}`;
+    rest = rest.replace(bareClock[0], " ");
+    if (!matched) {
+      rest = rest.replace(/\bidag\b/i, " ");
+      args.whenDate = localDatePlusDays(now, timezone, 0);
+      matched = true;
+    }
+  } else if (half) {
+    const hour = HALF_HOUR_WORDS[half[1].toLowerCase()];
+    args.time = `${hour}:30`;
+    rest = rest.replace(half[0], " ");
+    if (!matched) {
       rest = rest.replace(/\bidag\b/i, " ");
       args.whenDate = localDatePlusDays(now, timezone, 0);
       matched = true;
@@ -196,9 +273,11 @@ export function parseReminderText(text: string, now: Date, timezone: string): Pa
     .replace(/^\s*att\s+/i, "")
     .replace(/\s+att\s*$/i, "")
     .replace(/\s+/g, " ")
-    .replace(/[\s,.!?…]+$/g, "")
+    .replace(/^[\s,.;:!?…–—-]+|[\s,.;:!?…–—-]+$/g, "")
     .trim();
   if (!title) return null;
+  // Klockslag/datum vi inte förstår får inte fastna i titeln ("vid lunch").
+  if (hasUnresolvedWhenLanguage(title)) return null;
   if (prepared.prettyTitle) {
     title = prettyReminderTitle(title);
     const resolution = resolveUtteranceCorrections(body);
@@ -446,8 +525,7 @@ export type ReminderCommandParse =
   | { complete: false; missing: "both" };
 
 function hasReminderLead(text: string): boolean {
-  const t = text.trim();
-  return REMINDER_LEAD_RE.test(t + " ") || REMINDER_LEAD_RE.test(t);
+  return isReminderIntentQuery(text);
 }
 
 /**
@@ -465,7 +543,9 @@ export function parseReminderCommandInput(text: string, now: Date, timezone: str
     (prefixed ? null : parseReminderText(`påminn mig ${trimmed}`, now, timezone));
   if (parsed) return { complete: true, title: parsed.title, args: parsed.args };
 
-  const body = prefixed ? stripReminderLeadPrefix(trimmed) : trimmed;
+  const body = prefixed ? stripReminderWrappers(trimmed) || stripReminderLeadPrefix(trimmed) : trimmed;
+  // Tydlig påminnelse men olåst tidsspråk → null så OpenRouter får HELA frasen.
+  if (hasUnresolvedWhenLanguage(trimmed) || hasUnresolvedWhenLanguage(body)) return null;
   if (!body) return { complete: false, missing: "both" };
 
   const whenArgs = parseWhenText(body, now, timezone);

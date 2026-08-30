@@ -193,8 +193,19 @@ export const COMMANDS: CommandDef[] = [
     id: "create_reminder",
     label: "Skapa påminnelse",
     hint: "Intern påminnelse till dig – skickas inte till kunden",
-    aliases: ["skapa påminnelse", "påminnelse", "ny påminnelse", "påminn mig", "påminn", "reminder"],
-    keywords: ["påminnelse", "påminn", "komma ihåg", "reminder"],
+    aliases: [
+      "skapa påminnelse",
+      "gör en påminnelse",
+      "påminnelse",
+      "ny påminnelse",
+      "påminn mig",
+      "påminn",
+      "lägg in en påminnelse",
+      "jag behöver bli påmind",
+      "kom ihåg att",
+      "reminder",
+    ],
+    keywords: ["påminnelse", "påminn", "påmind", "komma ihåg", "reminder"],
     icon: "clock",
     risk: "SAFE_WRITE",
     requiredContext: null,
@@ -561,6 +572,13 @@ function commandScore(cmd: CommandDef, query: string): number {
   const tokenLevel = tokens.length > 0 ? sum / tokens.length : 0;
 
   const raw = Math.max(phraseLevel, tokenLevel);
+  if (
+    cmd.id === "create_reminder" &&
+    isReminderIntentQuery(query) &&
+    !isPaymentReminderQuery(query)
+  ) {
+    return Math.max(raw + cmd.priority, 120);
+  }
   return raw > 0 ? raw + cmd.priority : 0;
 }
 

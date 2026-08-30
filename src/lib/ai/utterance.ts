@@ -48,29 +48,31 @@ export function isPaymentReminderUtterance(text: string): boolean {
 }
 
 /**
- * Intern påminnelse-intent (prefix). Inte betalningspåminnelse.
- * Liten, återanvändbar – reminder-oneshot kan anropa samma funktion.
+ * Explicit intern påminnelse – var som helst i meningen, inte bara
+ * "påminn mig …" som prefix. Betalningspåminnelse och faktura/offert vinner.
  */
+const REMINDER_SIGNAL_RE =
+  /\b(?:påminn(?:a|else|d)?|bli\s+påmind|kom\s+ihåg(?:\s+att)?|lägg\s+(?:in|till)\s+(?:en\s+)?påminnelse)\b/i;
+
+const INVOICE_SIGNAL_RE = /\b(?:fakturera|skapa(?:\s+en)?\s+(?:ny\s+)?faktura|ny faktura)\b/i;
+const QUOTE_SIGNAL_RE = /\b(?:offerera|skapa(?:\s+en)?\s+(?:ny\s+)?offert|ny offert)\b/i;
+
 export function isInternalReminderIntent(text: string): boolean {
-  const t = text.trim();
+  const t = collapseUtterance(text);
   if (!t || isPaymentReminderUtterance(t)) return false;
-  return /^(?:skapa(?:\s+en)?\s+påminnelse|påminn(?:a)?(?:\s+mig)?)\b/i.test(t);
+  if (INVOICE_SIGNAL_RE.test(t) || QUOTE_SIGNAL_RE.test(t)) return false;
+  return REMINDER_SIGNAL_RE.test(t);
 }
 
 export function identifyUtteranceIntent(text: string): UtteranceIntent {
   const t = collapseUtterance(text);
   if (!t) return "unknown";
   if (isPaymentReminderUtterance(t)) return "unknown";
-  if (/\b(?:fakturera|skapa(?:\s+en)?\s+(?:ny\s+)?faktura|ny faktura)\b/i.test(t)) return "create_invoice";
-  if (/\b(?:offerera|skapa(?:\s+en)?\s+(?:ny\s+)?offert|ny offert)\b/i.test(t)) return "create_quote";
+  if (INVOICE_SIGNAL_RE.test(t)) return "create_invoice";
+  if (QUOTE_SIGNAL_RE.test(t)) return "create_quote";
   if (/\b(?:ny kund|skapa kund|lägg till kund)\b/i.test(t)) return "create_customer";
   if (/\btelefon\b/i.test(t) && extractPhoneCandidates(t).length > 0) return "create_customer";
-  if (
-    isInternalReminderIntent(t) ||
-    (/\b(?:skapa(?:\s+en)?\s+påminnelse|påminn(?:a)?(?:\s+mig)?)\b/i.test(t) && !isPaymentReminderUtterance(t))
-  ) {
-    return "create_reminder";
-  }
+  if (isInternalReminderIntent(t)) return "create_reminder";
   return "unknown";
 }
 

@@ -51,10 +51,10 @@ import {
   formatResolvedCommandCta,
   resolveUtteranceCorrections,
 } from "@/lib/ai/corrections";
-import { isInternalReminderIntent } from "@/lib/ai/utterance";
 import {
   applyReminderFollowUp,
   formatReminderDateChip,
+  isReminderIntentQuery,
   parseReminderCommandInput,
   parseReminderText,
   prettyReminderTitle,
@@ -765,7 +765,7 @@ export function CommandBar({
 
     const parsed = parseFreeText(q, workspace);
     const matches = matchCommands(q, IDLE_COMMAND_COUNT, workspace);
-    const reminderIntent = isInternalReminderIntent(q);
+    const reminderIntent = isReminderIntentQuery(q);
     // Deterministiska förslag leder alltid; med nyckel finns en explicit rad
     // för att skicka frågan till LLM:n när förslagen inte är det man menade.
     // Påminnelsefraser som parsern redan förstår (komplett eller slot-fill)
@@ -971,7 +971,7 @@ export function CommandBar({
     // fallbacktexten redan i panelen och inget nätverksanrop görs.
     // Ofullständig påminnelse → guidat När/Vad, aldrig OpenRouter.
     const entered = query.trim();
-    if (!flow && !result && entered && isInternalReminderIntent(entered)) {
+    if (!flow && !result && entered && isReminderIntentQuery(entered)) {
       const slots = parseReminderCommandInput(entered, new Date(), DEFAULT_TIMEZONE);
       if (slots && !slots.complete) {
         startReminderSlotFill(slots);
