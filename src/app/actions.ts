@@ -1204,15 +1204,19 @@ export async function setWebsiteDesignAction(input: {
   themeId: string;
   accent: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  return withBusiness(() => {
-    try {
-      setWebsiteDesign(input);
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte byta utseende." } as const;
-    }
-    refresh();
-    return { ok: true } as const;
-  }, { capability: "change_website" });
+  try {
+    return await withBusiness(() => {
+      try {
+        setWebsiteDesign(input);
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : "Kunde inte byta utseende." } as const;
+      }
+      refresh();
+      return { ok: true } as const;
+    }, { capability: "change_website" });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara utseendet." };
+  }
 }
 
 export async function publishWebsiteAction() {

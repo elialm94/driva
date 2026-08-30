@@ -30,6 +30,7 @@ interface DbProbe {
   /** Tabeller som inloggade sidor läser – saknade = migrationer inte körda. */
   pageLoadTables?: Record<string, boolean>;
   hasDisabledAt?: boolean;
+  hasWebsiteDesign?: boolean;
   schemaApplied?: string[];
   error?: string;
 }
@@ -84,6 +85,13 @@ async function probeDatabase(dbUrl: string): Promise<DbProbe> {
        ) as present`
     );
     probe.hasDisabledAt = Boolean(colRows[0]?.present);
+    const designRows = await client.query(
+      `select exists (
+         select 1 from information_schema.columns
+          where table_schema = 'public' and table_name = 'websites' and column_name = 'draft_design'
+       ) as present`
+    );
+    probe.hasWebsiteDesign = Boolean(designRows[0]?.present);
   } catch (err) {
     // Aldrig kasta – health-endpointen ska alltid svara med JSON.
     probe.error = err instanceof Error ? err.message : String(err);
