@@ -66,6 +66,7 @@ export default async function EditInvoicePage(props: { params: Promise<{ id: str
         initial={{
           lines: invoice.lines,
           rot: invoice.rot,
+          workLocationId: invoice.workLocationId,
           dueInDays,
           lateInterestRate: invoice.lateInterestRate,
           serviceDate: invoice.serviceDate || suggestedServiceDate(prefill) || undefined,

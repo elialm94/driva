@@ -223,12 +223,12 @@ export function TaxReductionFields({
   value,
   onChange,
   amountSlot,
-  properties,
 }: {
   type: "rot" | "rut";
   value: TaxReductionFormValue;
   onChange: (next: TaxReductionFormValue) => void;
   amountSlot?: ReactNode;
+  /** Bostad väljs via TaxReductionDocumentProperty och sparas som workLocationId. */
   properties?: InvoicePropertyOption[];
 }) {
   const pnKnown = isPersonnummerFormat(value.personalIdentityNumber);
@@ -351,39 +351,6 @@ export function TaxReductionFields({
           <ChangeButton onClick={() => setPeriodEditing(true)} />
         </KnownRow>
       )}
-
-      {type === "rot" && properties && properties.length > 1 ? (
-        <div>
-          <label className={labelCls} htmlFor={`${type}-fastighet`}>
-            Fastighet
-          </label>
-          <select
-            id={`${type}-fastighet`}
-            value={
-              properties.find(
-                (property) =>
-                  property.designation.trim().toLowerCase() ===
-                  (value.housing.propertyDesignation ?? "").trim().toLowerCase()
-              )?.id ?? ""
-            }
-            onChange={(e) => {
-              const selected = properties.find((property) => property.id === e.target.value);
-              if (!selected) return;
-              patch({ housing: { dwellingType: "smahus", propertyDesignation: selected.designation } });
-              setDwellingEditing(false);
-              setPropertyEditing(!selected.designation.trim());
-            }}
-            className={inputCls}
-          >
-            <option value="">Välj fastighet</option>
-            {properties.map((property) => (
-              <option key={property.id} value={property.id}>
-                {property.label || property.designation}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
 
       {type === "rot" ? (
         showDwellingPicker ? (

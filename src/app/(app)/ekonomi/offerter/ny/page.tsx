@@ -1,5 +1,6 @@
 import { db } from "@/lib/store";
 import { quoteDefaults } from "@/lib/services/quotes";
+import { customerInvoiceRotPrefill } from "@/lib/services/tax-reduction";
 import { getJob } from "@/lib/services/data";
 import { tillaggQuoteFromInvoice } from "@/lib/services/invoice-quote-deviation";
 import { quotePrefillFromJob } from "@/lib/services/job-work";
@@ -30,6 +31,7 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
   const customers = [...db().customers]
     .sort((a, b) => a.name.localeCompare(b.name, "sv"))
     .map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
+  const rotByCustomer = Object.fromEntries(db().customers.map((c) => [c.id, customerInvoiceRotPrefill(c)]));
 
   const defaults = quoteDefaults();
 
@@ -113,6 +115,7 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
         defaultCustomerId={kund ?? tillagg?.customerId ?? job?.customerId}
         lockCustomer={Boolean(kund || job || tillagg)}
         jobId={job?.id}
+        rotByCustomer={rotByCustomer}
         initial={initial}
         defaults={defaults}
         cancelHref={cancelHref}

@@ -204,7 +204,7 @@ export function NewCustomerModal({
                 {...fieldProps("personalIdentityNumber", "ny-kund-personnummer-fel")}
               />
               <FieldError id="ny-kund-personnummer-fel">{errors.personalIdentityNumber}</FieldError>
-              <p className="mt-1 text-[12px] text-muted">Behövs först vid ROT/RUT – går att lägga till då.</p>
+              <p className="mt-1 text-[12px] text-muted">Behövs för ROT/RUT – går att lägga till då.</p>
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">

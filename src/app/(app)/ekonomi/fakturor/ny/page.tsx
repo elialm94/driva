@@ -64,6 +64,7 @@ export default async function NewInvoicePage(props: PageProps<"/ekonomi/fakturor
             ? {
                 lines: [],
                 rot: quoteRot,
+                workLocationId: quote?.workLocationId,
                 dueInDays: defaults.paymentTermsDays,
                 lateInterestRate: defaults.lateInterestRate,
                 serviceDate: suggestedServiceDate(prefill) || undefined,
