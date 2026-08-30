@@ -27,6 +27,7 @@ import {
 } from "./reminders";
 import { paymentSuggestionForTransaction } from "./payment-matching";
 import { suppressedActionIds } from "./attention-state";
+import { defaultReminderChannels } from "../sms/channels";
 import { bankReconciliation } from "../accounting/reconciliation";
 import { bokforingsdatum, calendarFiscalYear, quartersOf, vatDueDate, type Period } from "../accounting/dates";
 import { computeVatPosition } from "../accounting/vat";
@@ -165,6 +166,13 @@ export interface ActionConfirm {
   rows: { label: string; value: string }[];
   /** Utför-knappen, t.ex. "Skicka påminnelse". */
   confirmLabel: string;
+  /** Kanalval för e-post/SMS när åtgärden skickar till kunden. */
+  delivery?: {
+    email?: string;
+    phone?: string;
+    defaultEmail: boolean;
+    defaultSms: boolean;
+  };
 }
 
 export interface BusinessAction {
@@ -525,9 +533,17 @@ function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) 
               { label: "Faktura", value: `${invoiceLabel(inv)} · ${customer.name}` },
               { label: "Utestående", value: `${kr(outstanding)}${partial ? " (delbetald)" : ""}` },
               { label: "Förfallen", value: `${days} ${days === 1 ? "dag" : "dagar"}` },
-              { label: "Mottagare", value: customer.email || "E-postadress saknas" },
             ],
             confirmLabel: "Skicka påminnelse",
+            delivery: (() => {
+              const defaults = defaultReminderChannels(inv, customer);
+              return {
+                email: customer.email,
+                phone: customer.phone,
+                defaultEmail: defaults.email,
+                defaultSms: defaults.sms,
+              };
+            })(),
           },
         },
       });

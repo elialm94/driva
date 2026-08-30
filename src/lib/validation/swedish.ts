@@ -229,6 +229,27 @@ export function normalizeSwedishPhone(value: string): string {
   return formatSwedishPhone(value);
 }
 
+/**
+ * Svenskt/internationellt nummer → E.164 (+46701234567) för 46elks.
+ * Ogiltigt eller tomt: null.
+ */
+export function toE164Swedish(value: string): string | null {
+  if (!value.trim() || !isSwedishPhoneFormat(value)) return null;
+  const compact = compactSwedishPhone(value);
+  if (!compact) return null;
+  if (compact.startsWith("+46")) {
+    const rest = compact.slice(3).replace(/^0+/, "");
+    return rest ? `+46${rest}` : null;
+  }
+  if (compact.startsWith("+")) {
+    return /^\+\d{8,15}$/.test(compact) ? compact : null;
+  }
+  if (compact.startsWith("0")) {
+    return `+46${compact.slice(1)}`;
+  }
+  return null;
+}
+
 export function validateSwedishPhone(
   value: string,
   opts?: { required?: boolean }

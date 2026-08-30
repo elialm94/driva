@@ -173,6 +173,27 @@ describe("skicka offert till kund utan e-post", () => {
     assert.equal(sent.status, "skickad");
   });
 
+  it("kund med bara telefon blockeras inte av saknad e-post", () => {
+    replaceDb(emptyTestDb({ customers: [] }));
+    const maja = createCustomer({ kind: "privat", name: "Maja", phone: "070-123 45 67" });
+    const defaults = quoteDefaults();
+    const quote = createQuote({
+      customerId: maja.id,
+      title: "Altanbygge",
+      intro: "",
+      lines: [labor({ unitPrice: 50_000_00 })],
+      rot: null,
+      paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
+      paymentTermsDays: defaults.paymentTermsDays,
+      validUntil: defaults.validUntil,
+      terms: defaults.terms,
+    });
+    assert.equal(
+      quoteSendBlockers(quote.id).some((b) => b.code === "buyer_email"),
+      false
+    );
+  });
+
   it("saknade företagsuppgifter ger samma checklista-mönster som fakturan", () => {
     replaceDb(emptyTestDb({ settings: { ...emptyTestDb().settings, name: "", orgNumber: "", address: "" } }));
     const defaults = quoteDefaults();

@@ -19,11 +19,13 @@ import {
   type JobInvoiceBasis,
 } from "@/lib/services/invoices";
 import {
+  deliverInvoiceWithChannels,
   emailInvoice,
   followUpQuoteByEmail,
-  remindInvoiceByEmail,
-  sendQuoteWithEmail,
+  remindInvoiceWithChannels,
+  sendQuoteWithChannels,
 } from "@/lib/services/document-mail";
+import type { SelectedChannels } from "@/lib/sms/channels";
 import { issueInvoice } from "@/lib/services/invoices";
 import { InvoiceNotReadyError } from "@/lib/invoices/validate";
 import { userFacingInvoiceSendError, userFacingIssueError } from "@/lib/invoices/issue-errors";
@@ -339,17 +341,26 @@ export async function updateQuoteAction(quoteId: string, input: QuoteVersionInpu
 }
 
 export async function sendQuoteAction(
-  quoteId: string
-): Promise<{ ok: true; mailed: boolean; demo?: boolean } | { ok: false; errors: string[] }> {
+  quoteId: string,
+  channels?: SelectedChannels
+): Promise<
+  { ok: true; mailed: boolean; texted?: boolean; demo?: boolean; warning?: string } | { ok: false; errors: string[] }
+> {
   return withBusiness(
     async () => {
       try {
-        const { outcome } = await sendQuoteWithEmail(quoteId);
+        const { outcome } = await sendQuoteWithChannels(quoteId, channels);
         if (!outcome.ok) {
           return { ok: false, errors: [outcome.error ?? "Kunde inte skicka offerten."] } as const;
         }
         refresh();
-        return { ok: true, mailed: outcome.mode === "live", demo: outcome.mode === "demo" } as const;
+        return {
+          ok: true,
+          mailed: outcome.email ? outcome.email.mode === "live" : false,
+          texted: Boolean(outcome.sms?.ok),
+          demo: outcome.email?.mode === "demo" || outcome.sms?.mode === "demo",
+          warning: outcome.warning,
+        } as const;
       } catch (e) {
         if (e instanceof QuoteNotReadyError) {
           return { ok: false, errors: e.blockers.map((b) => b.message) } as const;
@@ -574,8 +585,12 @@ export async function updateInvoiceAction(
 }
 
 export async function sendInvoiceAction(
-  invoiceId: string
-): Promise<{ ok: true; mailed: boolean; demo?: boolean } | { ok: false; errors: string[]; issued?: boolean }> {
+  invoiceId: string,
+  channels?: SelectedChannels
+): Promise<
+  | { ok: true; mailed: boolean; texted?: boolean; demo?: boolean; warning?: string }
+  | { ok: false; errors: string[]; issued?: boolean }
+> {
   // Steg 1: utfärda + committa ATOMÄRT – ingen e-post i den här transaktionen.
   // issueInvoice är idempotent, så dubbelklick/CAS-retry kan aldrig ge två nummer.
   try {
@@ -596,12 +611,18 @@ export async function sendInvoiceAction(
   return withBusiness(
     async () => {
       try {
-        const { outcome } = await emailInvoice(invoiceId);
+        const { outcome } = await deliverInvoiceWithChannels(invoiceId, channels);
         refresh();
         if (!outcome.ok) {
-          return { ok: false, errors: [outcome.error ?? "E-posten kunde inte skickas."], issued: true } as const;
+          return { ok: false, errors: [outcome.error ?? "Fakturan kunde inte skickas."], issued: true } as const;
         }
-        return { ok: true, mailed: outcome.mode === "live", demo: outcome.mode === "demo" } as const;
+        return {
+          ok: true,
+          mailed: outcome.email ? outcome.email.mode === "live" : false,
+          texted: Boolean(outcome.sms?.ok),
+          demo: outcome.email?.mode === "demo" || outcome.sms?.mode === "demo",
+          warning: outcome.warning,
+        } as const;
       } catch (e) {
         refresh();
         return {
@@ -644,17 +665,18 @@ export async function discardInvoiceAction(invoiceId: string): Promise<never> {
 }
 
 export async function sendReminderAction(
-  invoiceId: string
-): Promise<{ ok: true } | { ok: false; errors: string[] }> {
+  invoiceId: string,
+  channels?: SelectedChannels
+): Promise<{ ok: true; warning?: string } | { ok: false; errors: string[] }> {
   return withBusiness(
     async () => {
       try {
-        const { outcome } = await remindInvoiceByEmail(invoiceId);
+        const { outcome } = await remindInvoiceWithChannels(invoiceId, channels);
         if (!outcome.ok) {
           return { ok: false, errors: [outcome.error ?? "Påminnelsen kunde inte skickas. Försök igen."] } as const;
         }
         refresh();
-        return { ok: true } as const;
+        return { ok: true, warning: outcome.warning } as const;
       } catch (e) {
         return {
           ok: false,

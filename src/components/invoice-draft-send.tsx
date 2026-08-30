@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
 import { Modal } from "./modal";
@@ -10,6 +10,8 @@ import { QUOTE_EXCESS_WARN_AMOUNT, QUOTE_EXCESS_WARN_PERCENT } from "@/lib/quote
 import { CustomerEmailPrompt } from "./customer-email-prompt";
 import { useBlockedAction } from "./blocked-action";
 import type { PendingAction } from "@/lib/missing-requirements";
+import { defaultSendChannels, type SelectedChannels } from "@/lib/sms/channels";
+import { DeliveryChannelPicker } from "./delivery-channel-picker";
 
 function withFlag(href: string, key: string, value: string) {
   const url = new URL(href, "https://driva.local");
@@ -26,6 +28,7 @@ export function InvoiceDraftSend({
   sendAction,
   detailHref,
   recipientEmail,
+  recipientPhone,
   hasIssuanceBlockers = false,
   mailConfigured: _mailConfigured = true,
   excessAmount,
@@ -36,9 +39,12 @@ export function InvoiceDraftSend({
   customerName: string;
   amount: number;
   dueDateLabel: string;
-  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; issued?: boolean; mailed?: boolean; demo?: boolean }>;
+  sendAction: (
+    channels: SelectedChannels
+  ) => Promise<void | { ok: boolean; errors?: string[]; issued?: boolean; mailed?: boolean; texted?: boolean; demo?: boolean; warning?: string }>;
   detailHref: string;
   recipientEmail?: string;
+  recipientPhone?: string;
   hasIssuanceBlockers?: boolean;
   /** Om e-postutskick är konfigurerat på servern – styr ärlig text i dialogen. */
   mailConfigured?: boolean;
@@ -53,9 +59,15 @@ export function InvoiceDraftSend({
   const [isSending, startSending] = useTransition();
   const needsWarning = (excessAmount ?? 0) > 0 && !!tillaggHref;
   const pendingAction: PendingAction = { kind: "SEND_INVOICE", documentId, customerId };
+  const defaults = useMemo(
+    () => defaultSendChannels(recipientEmail, recipientPhone),
+    [recipientEmail, recipientPhone]
+  );
+  const [channels, setChannels] = useState<SelectedChannels>(defaults);
 
   function openConfirm() {
     setSendError(null);
+    setChannels(defaultSendChannels(recipientEmail, recipientPhone));
     setConfirmOpen(true);
   }
 
@@ -73,6 +85,7 @@ export function InvoiceDraftSend({
   const { email, collecting, requestAction, resumeAfterResolve, cancelCollect } = useBlockedAction({
     action: pendingAction,
     customerEmail: recipientEmail,
+    customerPhone: recipientPhone,
     onResume: continueSendFlow,
   });
 
@@ -90,16 +103,20 @@ export function InvoiceDraftSend({
   }
 
   function confirmSend() {
-    if (isSending) return;
+    if (isSending || (!channels.email && !channels.sms)) return;
     startSending(async () => {
       setSendError(null);
-      const result = await sendAction();
+      const result = await sendAction(channels);
       if (result && result.ok === false) {
         setSendError((result.errors ?? []).join(" ") || "Fakturan kunde inte skickas. Försök igen.");
         if (result.issued) finish("leveransfel");
         return;
       }
-      // "demo": demoföretaget – notisen berättar att mejlet simulerades.
+      if (result?.warning) {
+        finish("skickad", "delvis");
+        return;
+      }
+      // "demo": demoföretaget – notisen berättar att utskicket simulerades.
       finish("skickad", result && result.demo ? "demo" : "1");
     });
   }
@@ -118,20 +135,30 @@ export function InvoiceDraftSend({
         </button>
       )}
 
-      <Modal open={confirmOpen} onClose={() => !isSending && setConfirmOpen(false)} size="sm" title="Skicka faktura?">
+      <Modal open={confirmOpen} onClose={() => !isSending && setConfirmOpen(false)} size="sm" title="Skicka faktura">
         <div className="px-6 py-5">
           <p className="text-[17px] font-semibold tracking-tight text-ink">{customerName}</p>
           <p className="mt-1 text-[15px] text-soft">{kr(amount)}</p>
           <p className="mt-1 text-[14px] text-muted">Förfaller {dueDateLabel}</p>
-          <p className="mt-4 text-[14px] leading-relaxed text-soft">
-            Fakturan skickas till: <span className="font-semibold text-ink">{email}</span>
-          </p>
+          <div className="mt-4">
+            <DeliveryChannelPicker
+              email={email}
+              phone={recipientPhone}
+              selected={channels}
+              onChange={setChannels}
+              disabled={isSending}
+            />
+          </div>
           {sendError ? <p className="mt-3 text-[13px] font-medium text-danger">{sendError}</p> : null}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button className={buttonClasses("secondary")} disabled={isSending} onClick={() => setConfirmOpen(false)}>
               Avbryt
             </button>
-            <button className={buttonClasses("primary")} disabled={isSending} onClick={confirmSend}>
+            <button
+              className={buttonClasses("primary")}
+              disabled={isSending || (!channels.email && !channels.sms)}
+              onClick={confirmSend}
+            >
               <Send className="size-4" />
               {isSending ? "Skickar …" : sendError ? "Försök igen" : "Skicka faktura"}
             </button>

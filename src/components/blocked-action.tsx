@@ -15,6 +15,7 @@ import {
 export function useBlockedAction(opts: {
   action: PendingAction;
   customerEmail?: string | null;
+  customerPhone?: string | null;
   onResume: (resolved: { email: string }) => void;
 }) {
   const onResumeRef = useRef(opts.onResume);
@@ -25,7 +26,7 @@ export function useBlockedAction(opts: {
   const email = emailOverride ?? opts.customerEmail?.trim() ?? "";
 
   function requestAction() {
-    const next = nextAfterResolve(opts.action, { email });
+    const next = nextAfterResolve(opts.action, { email, phone: opts.customerPhone });
     if (next.type === "collect") {
       setCollecting(next.field);
       return;

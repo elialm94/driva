@@ -80,6 +80,10 @@ describe("skicka faktura när kunden saknar e-post", () => {
     const resumed: string[] = [];
 
     assert.deepEqual(nextAfterResolve(pending, sara), { type: "collect", field: "buyer_email" });
+    assert.deepEqual(nextAfterResolve(pending, { email: "", phone: "070-123 45 67" }), {
+      type: "resume",
+      action: pending,
+    });
 
     const session = createBlockedActionSession({
       action: pending,

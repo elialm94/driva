@@ -20,6 +20,7 @@ import {
   uploadStandaloneReceiptAction,
 } from "@/app/actions";
 import { invoiceHref } from "@/lib/nav";
+import { DeliveryChannelPicker } from "./delivery-channel-picker";
 
 export function UploadReceiptButton({ expenseId, label = "Lägg till kvitto" }: { expenseId?: string; label?: string }) {
   const [isPending, startTransition] = useTransition();
@@ -468,15 +469,27 @@ export function SendReminderButton({
   invoiceId,
   variant = "secondary",
   size = "sm",
+  recipientEmail,
+  recipientPhone,
+  defaultEmail,
+  defaultSms,
 }: {
   invoiceId: string;
   variant?: "primary" | "secondary";
   size?: "sm" | "md";
+  recipientEmail?: string;
+  recipientPhone?: string;
+  defaultEmail?: boolean;
+  defaultSms?: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [channels, setChannels] = useState({
+    email: defaultEmail ?? Boolean(recipientEmail?.trim()),
+    sms: defaultSms ?? false,
+  });
   if (done) {
     return (
       <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
@@ -492,6 +505,10 @@ export function SendReminderButton({
         disabled={isPending}
         onClick={() => {
           setError(null);
+          setChannels({
+            email: defaultEmail ?? Boolean(recipientEmail?.trim()),
+            sms: defaultSms ?? false,
+          });
           setConfirmOpen(true);
         }}
       >
@@ -505,8 +522,17 @@ export function SendReminderButton({
       >
         <div className="px-6 py-5">
           <p className="text-[14px] leading-relaxed text-soft">
-            Kunden får ett mejl med en påminnelse om den förfallna fakturan och länken för att betala.
+            Kunden får en påminnelse om den förfallna fakturan och länken för att betala.
           </p>
+          <div className="mt-4">
+            <DeliveryChannelPicker
+              email={recipientEmail}
+              phone={recipientPhone}
+              selected={channels}
+              onChange={setChannels}
+              disabled={isPending}
+            />
+          </div>
           {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button className={buttonClasses("secondary")} disabled={isPending} onClick={() => setConfirmOpen(false)}>
@@ -514,13 +540,16 @@ export function SendReminderButton({
             </button>
             <button
               className={buttonClasses("primary")}
-              disabled={isPending}
+              disabled={isPending || (!channels.email && !channels.sms)}
               onClick={() => {
                 startTransition(async () => {
-                  const result = await sendReminderAction(invoiceId);
+                  const result = await sendReminderAction(invoiceId, channels);
                   if (result && result.ok === false) {
                     setError(result.errors.join(" ") || "Påminnelsen kunde inte skickas. Försök igen.");
                     return;
+                  }
+                  if (result.ok && result.warning) {
+                    setError(result.warning);
                   }
                   setConfirmOpen(false);
                   setDone(true);

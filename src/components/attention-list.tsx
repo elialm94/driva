@@ -56,6 +56,7 @@ import {
 } from "@/app/bokforing-actions";
 import { invoiceHref } from "@/lib/nav";
 import type { ActionConfirm, BusinessAction } from "@/lib/services/actions";
+import { DeliveryChannelPicker } from "./delivery-channel-picker";
 import {
   actionResolveHref,
   ATTENTION_SNOOZE_PRESETS,
@@ -108,6 +109,8 @@ function ConfirmDialog({
   note,
   danger,
   onConfirm,
+  channels,
+  onChannelsChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -115,6 +118,8 @@ function ConfirmDialog({
   note?: string;
   danger?: boolean;
   onConfirm: () => void;
+  channels?: { email: boolean; sms: boolean };
+  onChannelsChange?: (next: { email: boolean; sms: boolean }) => void;
 }) {
   return (
     <Modal
@@ -130,6 +135,7 @@ function ConfirmDialog({
           <button
             type="button"
             className={cx(buttonClasses(danger ? "danger" : "primary", "sm"), "max-lg:min-h-11")}
+            disabled={Boolean(confirm.delivery && channels && !channels.email && !channels.sms)}
             onClick={onConfirm}
           >
             {confirm.confirmLabel}
@@ -147,6 +153,16 @@ function ConfirmDialog({
           ))}
         </dl>
         {note ? <p className="mt-3 text-[13px] leading-relaxed text-soft">{note}</p> : null}
+        {confirm.delivery && channels && onChannelsChange ? (
+          <div className="mt-4">
+            <DeliveryChannelPicker
+              email={confirm.delivery.email}
+              phone={confirm.delivery.phone}
+              selected={channels}
+              onChange={onChannelsChange}
+            />
+          </div>
+        ) : null}
       </div>
     </Modal>
   );
@@ -503,6 +519,10 @@ function AttentionRow({
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [reminderChannels, setReminderChannels] = useState({
+    email: item.confirm?.delivery?.defaultEmail ?? true,
+    sms: item.confirm?.delivery?.defaultSms ?? false,
+  });
   const [undoing, setUndoing] = useState(false);
   // Skapad bankfil: raden är löst men nedladdningen ska vara ett klick bort.
   const [createdFile, setCreatedFile] = useState<{ fileId: string; filename: string } | null>(null);
@@ -552,8 +572,15 @@ function AttentionRow({
 
   /** Primärknapp som kräver bekräftelse öppnar dialogen; utan confirm körs direkt. */
   function confirmable(execute: () => void) {
-    if (item.confirm) setConfirmOpen(true);
-    else execute();
+    if (item.confirm) {
+      if (item.confirm.delivery) {
+        setReminderChannels({
+          email: item.confirm.delivery.defaultEmail,
+          sms: item.confirm.delivery.defaultSms,
+        });
+      }
+      setConfirmOpen(true);
+    } else execute();
   }
 
   // Vad bekräftelseknappen faktiskt utför – per CTA-typ.
@@ -561,7 +588,7 @@ function AttentionRow({
     if (!cta) return;
     if (cta.type === "remindInvoice") {
       startTransition(async () => {
-        const result = await sendReminderAction(cta.invoiceId);
+        const result = await sendReminderAction(cta.invoiceId, reminderChannels);
         if (result && result.ok === false) setError(result.errors.join(" "));
         else finish("Påminnelse skickad");
         router.refresh();
@@ -878,6 +905,8 @@ function AttentionRow({
           open={confirmOpen}
           onClose={() => setConfirmOpen(false)}
           confirm={item.confirm}
+          channels={item.confirm.delivery ? reminderChannels : undefined}
+          onChannelsChange={item.confirm.delivery ? setReminderChannels : undefined}
           onConfirm={() => {
             setConfirmOpen(false);
             executePrimary();

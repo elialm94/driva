@@ -39,6 +39,7 @@ import { ensurePageBusiness } from "@/lib/auth/session";
 import { quoteChainState } from "@/lib/services/business-chain";
 import { QuoteChainActions } from "@/components/quote-chain-actions";
 import { QUOTE_TIMELINE, signedWithBankIdBy } from "@/lib/status-labels";
+import { lastSendWarning, quoteDeliverySteps } from "@/lib/services/deliveries";
 
 export const metadata = { title: "Offert" };
 
@@ -68,6 +69,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   const justSent = sentParam === "1" && !isDraft;
   const justSentDemo = sentParam === "demo" && !isDraft;
   const justSentManual = sentParam === "manuell" && !isDraft;
+  const justSentPartial = sentParam === "delvis" && !isDraft;
   // EN källa (quoteSendBlockers). buyer_email kompletteras inline – ingen länk till Kunden.
   const sendBlockers = isDraft
     ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefWithNav(b.href, nav) } : b))
@@ -127,6 +129,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                 detailHref={fromHere.href}
                 mailConfigured={isLiveMailConfigured()}
                 recipientEmail={customer.email}
+                recipientPhone={customer.phone}
                 hasSendBlockers={businessBlockers.length > 0}
               />
             </PageActions>
@@ -189,6 +192,13 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
         <Card className="mb-6 border-ok/20 bg-ok-soft/50 px-5 py-4 text-[14px] text-soft">
           <span className="font-medium text-ok">Offert #{quote.number} är markerad som skickad.</span> Ingen e-post är
           konfigurerad – dela kundlänken med {customer.name} via ”Kopiera kundlänk”.
+        </Card>
+      ) : null}
+
+      {justSentPartial ? (
+        <Card className="mb-6 border-warn/30 bg-warn-soft/40 px-5 py-4 text-[14px] text-soft">
+          <span className="font-medium text-ink">Offert #{quote.number} skickades delvis.</span>{" "}
+          {lastSendWarning(quote) ?? "En kanal lyckades och en misslyckades."}
         </Card>
       ) : null}
 
@@ -302,7 +312,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               <ol className="space-y-3">
                 {[
                   { label: QUOTE_TIMELINE.skapad, at: quote.createdAt, done: true },
-                  { label: QUOTE_TIMELINE.skickad, at: quote.sentAt, done: !!quote.sentAt },
+                  ...quoteDeliverySteps(quote),
                   { label: QUOTE_TIMELINE.oppnad, at: quote.viewedAt, done: !!quote.viewedAt },
                   ...quote.followUps.map((f, i) => ({ label: `${QUOTE_TIMELINE.paminnelse} ${i + 1}`, at: f as string | undefined, done: true })),
                   quote.status === "avbojd"

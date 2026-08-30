@@ -12,6 +12,7 @@ import {
   normalizeSwedishOrganizationNumber,
   normalizeSwedishPersonalIdentityNumber,
   normalizeSwedishPhone,
+  toE164Swedish,
   normalizeSwedishPostalCode,
   swedishEmailInputProps,
   swedishOrgnrInputProps,
@@ -155,6 +156,15 @@ describe("telefon", () => {
 
   it("tomt är ok när fältet är valfritt", () => {
     assert.equal(validateSwedishPhone("").ok, true);
+  });
+
+  it("normaliserar svenska nummer till E.164 för 46elks", () => {
+    assert.equal(toE164Swedish("070-123 45 67"), "+46701234567");
+    assert.equal(toE164Swedish("0701234567"), "+46701234567");
+    assert.equal(toE164Swedish("+46 70 123 45 67"), "+46701234567");
+    assert.equal(toE164Swedish("+46701234567"), "+46701234567");
+    assert.equal(toE164Swedish("123"), null);
+    assert.equal(toE164Swedish(""), null);
   });
 });
 

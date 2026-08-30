@@ -306,6 +306,8 @@ export interface Quote {
   declineReason?: string;
   /** Senaste lyckade e-postleveransen. Sätts bara efter provider-succé. */
   lastEmail?: DocumentEmailDelivery;
+  /** Leveransförsök per kanal (e-post/SMS). Utökar lastEmail, ersätter den inte. */
+  deliveries?: DocumentDelivery[];
   lastSendAttemptAt?: string;
   /** Tidpunkter då påminnelser/uppföljningar skickats. */
   followUps: string[];
@@ -317,6 +319,23 @@ export interface DocumentEmailDelivery {
   provider: "resend";
   messageId: string;
   sentTo: string;
+}
+
+export type DeliveryChannel = "EMAIL" | "SMS";
+export type DeliveryKind = "send" | "reminder";
+export type DeliveryAttemptStatus = "sent" | "failed";
+export type DeliveryProvider = "resend" | "46elks" | "demo" | "test" | "mock";
+
+/** Ett leveransförsök för offert/faktura. Fejkar aldrig "levererat" utan callback. */
+export interface DocumentDelivery {
+  channel: DeliveryChannel;
+  kind: DeliveryKind;
+  destination: string;
+  provider: DeliveryProvider;
+  providerMessageId?: string;
+  sentAt?: string;
+  failedAt?: string;
+  status: DeliveryAttemptStatus;
 }
 
 /* ---------------------------------- BankID ----------------------------------- */
@@ -575,6 +594,8 @@ export interface Invoice {
   /** Senaste leveransförsöket (skicka igen). */
   lastSentAt?: string;
   lastEmail?: DocumentEmailDelivery;
+  /** Leveransförsök per kanal (e-post/SMS). Utökar lastEmail, ersätter den inte. */
+  deliveries?: DocumentDelivery[];
   lastSendAttemptAt?: string;
   paidAt?: string;
   reminders: string[];

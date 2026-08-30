@@ -17,6 +17,7 @@ export {
   normalizeSwedishOrganizationNumber,
   normalizeSwedishPersonalIdentityNumber,
   normalizeSwedishPhone,
+  toE164Swedish,
   normalizeSwedishPlusgiro,
   normalizeSwedishPostalCode,
   swedishAmountError,

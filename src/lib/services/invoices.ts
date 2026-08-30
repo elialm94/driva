@@ -729,13 +729,14 @@ export function issueInvoice(invoiceId: string, createdBy: Actor = "anvandare"):
   return invoice;
 }
 
-/** Leveransutfall från e-postlagret. Produktionsvägen anropar bara hit efter provider-succé. */
+/** Leveransutfall från e-post-/SMS-lagret. Produktionsvägen anropar bara hit efter provider-succé. */
 export interface InvoiceDeliveryInfo {
   /** "demo": demoföretagets utskick – simulerat eller till DEMO_EMAIL_SINK. */
   mode: "mock" | "live" | "test" | "demo";
   ok: boolean;
   messageId?: string;
   sentTo?: string;
+  channel?: "EMAIL" | "SMS";
 }
 
 const MOCK_DELIVERY: InvoiceDeliveryInfo = { mode: "mock", ok: true };
@@ -762,25 +763,27 @@ export function deliverInvoice(
   if (!invoice.sentAt) invoice.sentAt = now;
   invoice.lastSentAt = now;
   invoice.lastSendAttemptAt = now;
-  if (delivery.messageId && delivery.sentTo) {
+  const channel = delivery.channel ?? "EMAIL";
+  if (channel === "EMAIL" && delivery.messageId && delivery.sentTo) {
     invoice.lastEmail = { provider: "resend", messageId: delivery.messageId, sentTo: delivery.sentTo };
   }
 
   const number = invoice.number;
-  const emailed = delivery.mode !== "mock" && delivery.ok;
+  const delivered = delivery.mode !== "mock" && delivery.ok;
+  const via = channel === "SMS" ? "SMS" : "e-post";
   if (!resend) {
-    logAudit(createdBy, "faktura_skickad", `Faktura #${number} ${emailed ? "skickades med e-post" : "markerades som skickad"}.`, {
+    logAudit(createdBy, "faktura_skickad", `Faktura #${number} ${delivered ? `skickades med ${via}` : "markerades som skickad"}.`, {
       targetType: "faktura",
       targetId: invoice.id,
     });
   }
   logActivity(
     resend
-      ? emailed
-        ? `Faktura #${number} skickades igen med e-post till ${delivery.sentTo ?? customer.email}.`
+      ? delivered
+        ? `Faktura #${number} skickades igen med ${via} till ${delivery.sentTo ?? (channel === "SMS" ? customer.phone : customer.email)}.`
         : `Faktura #${number} markerades som skickad igen.`
-      : emailed
-        ? `Faktura #${number} skickades med e-post till ${delivery.sentTo ?? customer.email} (${kr(invoiceTotals(invoice).toPay)}).`
+      : delivered
+        ? `Faktura #${number} skickades med ${via} till ${delivery.sentTo ?? (channel === "SMS" ? customer.phone : customer.email)} (${kr(invoiceTotals(invoice).toPay)}).`
         : `Faktura #${number} markerades som skickad (${kr(invoiceTotals(invoice).toPay)}).`,
     {
       customerId: customer.id,
@@ -807,11 +810,13 @@ export function sendReminder(
   if (!invoice || !(invoice.status === "skickad" || invoice.status === "delbetald") || invoice.type === "kredit") return;
   invoice.reminders.push(new Date().toISOString());
   const customer = requireCustomer(invoice.customerId);
-  const emailed = delivery.mode !== "mock" && delivery.ok;
+  const delivered = delivery.mode !== "mock" && delivery.ok;
+  const channel = delivery.channel ?? "EMAIL";
+  const via = channel === "SMS" ? "SMS" : "e-post";
   const who = by === "assistent" ? "Assistenten" : "Du";
   logActivity(
-    emailed
-      ? `${who} skickade en betalningspåminnelse med e-post för faktura #${invoice.number} till ${delivery.sentTo ?? customer.email}.`
+    delivered
+      ? `${who} skickade en betalningspåminnelse med ${via} för faktura #${invoice.number} till ${delivery.sentTo ?? (channel === "SMS" ? customer.phone : customer.email)}.`
       : `${who} noterade en betalningspåminnelse för faktura #${invoice.number}.`,
     { customerId: customer.id, entity: { type: "faktura", id: invoice.id }, createdBy: by }
   );

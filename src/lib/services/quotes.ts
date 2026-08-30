@@ -12,6 +12,7 @@ import { rotWithAmounts } from "../tax-reduction-amount";
 import { syncDocLineClassification } from "../economic-line-type";
 import { sellerSnapshot } from "../invoices/snapshot";
 import { missingEmailForSend } from "../customer-validation";
+import { hasSendablePhone } from "../sms/channels";
 import { collectSellerBlockers } from "../invoices/validate";
 import {
   assertTaxReductionSendReady,
@@ -228,8 +229,9 @@ export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
     });
   }
   const emailBlocker = missingEmailForSend(customer);
-  if (emailBlocker) {
+  if (emailBlocker && !hasSendablePhone(customer.phone)) {
     // Namnges i checklistan; kompletteras inline i skickaflödet – ingen länk till Kunden.
+    // Giltig telefon räcker för SMS – e-post ska då inte blockera utskick.
     blockers.push(emailBlocker);
   }
   blockers.push(
@@ -251,13 +253,14 @@ export function assertQuoteReadyToSend(quoteId: string): void {
   if (blockers.length) throw new QuoteNotReadyError(blockers);
 }
 
-/** Leveransutfall från e-postlagret. Produktionsvägen anropar bara hit efter provider-succé. */
+/** Leveransutfall från e-post-/SMS-lagret. Produktionsvägen anropar bara hit efter provider-succé. */
 export interface QuoteDeliveryInfo {
   /** "demo": demoföretagets utskick – simulerat eller till DEMO_EMAIL_SINK. */
   mode: "mock" | "live" | "test" | "demo";
   ok: boolean;
   messageId?: string;
   sentTo?: string;
+  channel?: "EMAIL" | "SMS";
 }
 
 const MOCK_DELIVERY: QuoteDeliveryInfo = { mode: "mock", ok: true };
@@ -290,13 +293,15 @@ export function sendQuote(quoteId: string, delivery: QuoteDeliveryInfo = MOCK_DE
   quote.status = "skickad";
   quote.sentAt = new Date().toISOString();
   quote.lastSendAttemptAt = quote.sentAt;
-  if (delivery.messageId && delivery.sentTo) {
+  const channel = delivery.channel ?? "EMAIL";
+  if (channel === "EMAIL" && delivery.messageId && delivery.sentTo) {
     quote.lastEmail = { provider: "resend", messageId: delivery.messageId, sentTo: delivery.sentTo };
   }
-  const emailed = delivery.mode !== "mock" && delivery.ok;
+  const delivered = delivery.mode !== "mock" && delivery.ok;
+  const via = channel === "SMS" ? "SMS" : "e-post";
   logActivity(
-    emailed
-      ? `Offert #${quote.number} skickades med e-post till ${delivery.sentTo ?? customer.email} (${kr(t.toPay)}).`
+    delivered
+      ? `Offert #${quote.number} skickades med ${via} till ${delivery.sentTo ?? (channel === "SMS" ? customer.phone : customer.email)} (${kr(t.toPay)}).`
       : `Offert #${quote.number} markerades som skickad (${kr(t.toPay)}) – ingen e-post är konfigurerad, dela offertlänken med ${customer.name}.`,
     {
       customerId: customer.id,

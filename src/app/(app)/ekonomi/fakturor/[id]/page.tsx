@@ -6,6 +6,8 @@ import { getInvoice, invoiceTotals, requireCustomer, isOverdue } from "@/lib/ser
 import { invoiceQuoteDeviation } from "@/lib/services/invoice-quote-deviation";
 import { validateInvoiceForIssue } from "@/lib/invoices/validate";
 import { missingEmailForSend } from "@/lib/customer-validation";
+import { defaultReminderChannels, hasSendablePhone } from "@/lib/sms/channels";
+import { invoiceDeliverySteps, lastSendWarning } from "@/lib/services/deliveries";
 import { invoiceHeading } from "@/lib/invoices/display";
 import { kr, datumTid, datumLang, relativ } from "@/lib/format";
 import { ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
@@ -69,7 +71,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   );
   // Saknad e-post namnges i checklistan men kompletteras inline i skickaflödet
   // (pendingAction SEND_INVOICE → resolveMissingRequirements → resume).
-  const emailBlocker = isDraft ? missingEmailForSend(customer) : null;
+  const emailBlocker = isDraft && !hasSendablePhone(customer.phone) ? missingEmailForSend(customer) : null;
   const sendBlockers = emailBlocker ? [...linkedBlockers, emailBlocker] : linkedBlockers;
   const editHref = hrefWithNav(`/ekonomi/fakturor/${invoice.id}/redigera`, nav);
   const tillaggHref = deviation?.largeExcess
@@ -83,6 +85,8 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   const justSent = sentParam === "1" && !isDraft;
   const justSentDemo = sentParam === "demo" && !isDraft;
   const justSentManual = sentParam === "manuell" && !isDraft;
+  const justSentPartial = sentParam === "delvis" && !isDraft;
+  const reminderDefaults = defaultReminderChannels(invoice, customer);
   const deliveryFailed =
     (typeof searchParams.leveransfel === "string" && searchParams.leveransfel === "1") ||
     Boolean(!isDraft && invoice.issuedAt && !invoice.sentAt);
@@ -132,6 +136,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         detailHref={fromHere.href}
         mailConfigured={isLiveMailConfigured()}
         recipientEmail={customer.email}
+        recipientPhone={customer.phone}
         hasIssuanceBlockers={linkedBlockers.length > 0}
         excessAmount={deviation?.largeExcess ? deviation.delta : undefined}
         tillaggHref={tillaggHref}
@@ -140,7 +145,17 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
     </PageActions>
   ) : (
     <PageActions>
-      {canRemind ? <SendReminderButton invoiceId={invoice.id} variant="primary" size="md" /> : null}
+      {canRemind ? (
+        <SendReminderButton
+          invoiceId={invoice.id}
+          variant="primary"
+          size="md"
+          recipientEmail={customer.email}
+          recipientPhone={customer.phone}
+          defaultEmail={reminderDefaults.email}
+          defaultSms={reminderDefaults.sms}
+        />
+      ) : null}
       {customerView}
       {moreMenu}
     </PageActions>
@@ -201,7 +216,16 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         </Card>
       ) : null}
 
-      {deliveryFailed && !justSent && !justSentManual ? (
+      {justSentPartial ? (
+        <Card className="mb-6 border-warn/30 bg-warn-soft/40 px-5 py-4 text-[14px] text-soft">
+          <span className="font-medium text-ink">
+            Faktura {invoice.number != null ? `#${invoice.number}` : ""} skickades delvis.
+          </span>{" "}
+          {lastSendWarning(invoice) ?? "En kanal lyckades och en misslyckades."}
+        </Card>
+      ) : null}
+
+      {deliveryFailed && !justSent && !justSentManual && !justSentPartial ? (
         <Card className="mb-6 border-warn/30 bg-warn-soft/40 px-5 py-4 text-[14px] text-soft">
           <span className="font-medium text-ink">Fakturan utfärdades men kunde inte skickas via e-post.</span> Samma
           nummer behålls – försök skicka igen.
@@ -226,7 +250,15 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
                 ? ` ${invoice.reminders.length} påminnelse${invoice.reminders.length > 1 ? "r" : ""} skickad, senast ${relativ(invoice.reminders[invoice.reminders.length - 1])}.`
                 : " Ingen påminnelse skickad ännu."}
             </p>
-            {invoice.reminders.length === 0 ? <SendReminderButton invoiceId={invoice.id} /> : null}
+            {invoice.reminders.length === 0 ? (
+              <SendReminderButton
+                invoiceId={invoice.id}
+                recipientEmail={customer.email}
+                recipientPhone={customer.phone}
+                defaultEmail={reminderDefaults.email}
+                defaultSms={reminderDefaults.sms}
+              />
+            ) : null}
           </div>
         </Card>
       ) : null}
@@ -283,11 +315,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
                 {[
                   { label: "Skapad", at: invoice.createdAt as string | undefined, done: true },
                   { label: "Utfärdad", at: invoice.issuedAt, done: !!invoice.issuedAt },
-                  { label: "Skickad", at: invoice.sentAt, done: !!invoice.sentAt },
-                  ...(invoice.lastSentAt && invoice.sentAt && invoice.lastSentAt !== invoice.sentAt
-                    ? [{ label: "Skickad igen", at: invoice.lastSentAt as string | undefined, done: true }]
-                    : []),
-                  ...invoice.reminders.map((r, i) => ({ label: `Påminnelse ${i + 1}`, at: r as string | undefined, done: true })),
+                  ...invoiceDeliverySteps(invoice),
                   { label: "Betald", at: invoice.paidAt, done: invoice.status === "betald" },
                 ].map((step, i) => (
                   <li key={i} className="flex items-start gap-3">

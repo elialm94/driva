@@ -1,5 +1,6 @@
 import { isEmailFormat } from "./settings-validation";
 import { missingEmailForSend } from "./customer-validation";
+import { hasSendablePhone } from "./sms/channels";
 
 /**
  * Generellt "saknas något → komplettera på plats → återuppta":
@@ -42,10 +43,10 @@ export function missingEmailDialogCopy(kind: PendingActionKind): { title: string
 /** Vilka krav som saknas för att den blockerade åtgärden ska kunna återupptas. */
 export function requirementsForAction(
   _action: PendingAction,
-  customer: { email?: string | null }
+  customer: { email?: string | null; phone?: string | null }
 ): MissingRequirementCode[] {
   const missing: MissingRequirementCode[] = [];
-  if (missingEmailForSend(customer)) missing.push("buyer_email");
+  if (missingEmailForSend(customer) && !hasSendablePhone(customer.phone)) missing.push("buyer_email");
   return missing;
 }
 
@@ -55,7 +56,7 @@ export type NextAfterResolve =
 
 export function nextAfterResolve(
   action: PendingAction,
-  customer: { email?: string | null }
+  customer: { email?: string | null; phone?: string | null }
 ): NextAfterResolve {
   const missing = requirementsForAction(action, customer);
   if (missing.length === 0) return { type: "resume", action };
@@ -81,6 +82,7 @@ export type ResolveStep =
 export function createBlockedActionSession(opts: {
   action: PendingAction;
   customerEmail?: string | null;
+  customerPhone?: string | null;
   persist: (customerId: string, email: string) => ResolveEmailResult;
   onResume: (resolved: { email: string }) => void;
 }) {
@@ -95,7 +97,7 @@ export function createBlockedActionSession(opts: {
   }
 
   function request(): ResolveStep {
-    const next = nextAfterResolve(opts.action, { email: currentEmail() });
+    const next = nextAfterResolve(opts.action, { email: currentEmail(), phone: opts.customerPhone });
     if (next.type === "collect") {
       collecting = next.field;
       lastError = null;
