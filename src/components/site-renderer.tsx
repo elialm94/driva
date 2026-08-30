@@ -15,6 +15,7 @@ import {
 } from "@/lib/website-design";
 import { SiteContactForm, type SiteFormTokens } from "./site-widgets";
 import { SmoothSectionLink } from "./smooth-section-link";
+import { controllerName, privacyPolicyHref } from "@/lib/website-privacy";
 
 /**
  * Ren renderare för den publika hemsidan. Används i tre lägen: publika sajten
@@ -140,12 +141,15 @@ export function SiteRenderer({
   company,
   interactive = true,
   design,
+  privacyHref = privacyPolicyHref(),
 }: {
   website: Website;
   company: CompanySettings;
   interactive?: boolean;
   /** Utseendet som ska renderas. Saknas → sajtens publicerade utseende. */
   design?: WebsiteDesign;
+  /** Länk till /integritetspolicy (kan ha ?preview=1). */
+  privacyHref?: string;
 }) {
   const { theme, vars } = resolveSiteDesign(design ?? publishedWebsiteDesign(website));
   const sections = website.sections.filter(isVisible);
@@ -192,6 +196,7 @@ export function SiteRenderer({
                 theme={theme}
                 lined={lined}
                 interactive={interactive}
+                privacyHref={privacyHref}
               />
             );
           default:
@@ -199,7 +204,7 @@ export function SiteRenderer({
         }
       })}
 
-      <SiteFooter website={website} company={company} theme={theme} />
+      <SiteFooter website={website} company={company} theme={theme} privacyHref={privacyHref} />
     </div>
   );
 }
@@ -737,6 +742,9 @@ function contactFormTokens(theme: SiteThemeTokens, onBand: boolean): SiteFormTok
     confirm:
       "rounded-(--site-radius-card) border border-(--site-line) bg-(--site-card) p-6 text-center text-(--site-ink)",
     error: onBand ? "text-[13px] font-medium text-[#ffb3a8]" : "text-[13px] font-medium text-[#b42318]",
+    notice: onBand
+      ? "text-[12.5px] leading-relaxed text-(--site-band-soft)"
+      : "text-[12.5px] leading-relaxed text-(--site-soft)",
   };
 }
 
@@ -747,6 +755,7 @@ function ContactSection({
   theme,
   lined,
   interactive,
+  privacyHref,
 }: {
   website: Website;
   company: CompanySettings;
@@ -754,11 +763,20 @@ function ContactSection({
   theme: SiteThemeTokens;
   lined: boolean;
   interactive: boolean;
+  privacyHref: string;
 }) {
   const info = (
     <>
       {company.phone} · {company.email} · {website.city ?? company.city}
     </>
+  );
+  const form = (onBand: boolean) => (
+    <SiteContactForm
+      interactive={interactive}
+      tokens={contactFormTokens(theme, onBand)}
+      companyName={controllerName(company, website)}
+      privacyHref={privacyHref}
+    />
   );
 
   switch (theme.contact) {
@@ -776,7 +794,7 @@ function ContactSection({
             </SiteHeading>
             <p className="mt-2 text-[15px] leading-relaxed text-(--site-soft)">{section.body}</p>
             <div className="mt-7 text-left">
-              <SiteContactForm interactive={interactive} tokens={contactFormTokens(theme, false)} />
+              {form(false)}
             </div>
             <p className="mt-6 text-[13px] text-(--site-soft)">{info}</p>
           </div>
@@ -799,7 +817,7 @@ function ContactSection({
               <p className="mt-6 text-[14px] font-medium text-(--site-ink)">{info}</p>
             </div>
             <div>
-              <SiteContactForm interactive={interactive} tokens={contactFormTokens(theme, false)} />
+              {form(false)}
             </div>
           </div>
         </SectionShell>
@@ -821,7 +839,7 @@ function ContactSection({
               <p className="mt-2 text-[15px] leading-relaxed text-(--site-band-soft)">{section.body}</p>
             </div>
             <div className="mt-7">
-              <SiteContactForm interactive={interactive} tokens={contactFormTokens(theme, true)} />
+              {form(true)}
             </div>
             <p className="mt-6 text-center text-[13px] text-(--site-band-soft)">{info}</p>
           </div>
@@ -838,7 +856,7 @@ function ContactSection({
             </SiteHeading>
             <p className={`mt-3 text-[15px] ${theme.bodyClass} text-(--site-soft)`}>{section.body}</p>
             <div className="mt-9 text-left">
-              <SiteContactForm interactive={interactive} tokens={contactFormTokens(theme, false)} />
+              {form(false)}
             </div>
             <p className="mt-8 text-[13px] tracking-[0.02em] text-(--site-soft)">{info}</p>
           </div>
@@ -853,28 +871,42 @@ function SiteFooter({
   website,
   company,
   theme,
+  privacyHref,
 }: {
   website: Website;
   company: CompanySettings;
   theme: SiteThemeTokens;
+  privacyHref: string;
 }) {
-  const line = (
+  const name = controllerName(company, website);
+  const inner = (
     <>
-      © {new Date().getFullYear()} {website.businessName} · Org.nr {company.orgNumber} · Hemsida byggd med Driva
+      <p>
+        © {new Date().getFullYear()} {name}
+      </p>
+      {company.orgNumber.trim() ? <p className="mt-1">Org.nr {company.orgNumber}</p> : null}
+      <p className="mt-2">
+        <a href={privacyHref} className="underline decoration-from-font underline-offset-2 hover:opacity-80">
+          Integritetspolicy
+        </a>
+      </p>
+      <p className="mt-2 opacity-70">Hemsida byggd med Driva</p>
     </>
   );
   if (theme.header === "band") {
     return (
-      <footer className="bg-(--site-band) px-6 py-8 text-center text-[12px] text-(--site-band-soft)">{line}</footer>
+      <footer className="bg-(--site-band) px-6 py-8 text-center text-[12px] leading-relaxed text-(--site-band-soft)">
+        {inner}
+      </footer>
     );
   }
   return (
     <footer
-      className={`px-6 text-center text-[12px] text-(--site-soft) ${
+      className={`px-6 text-center text-[12px] leading-relaxed text-(--site-soft) ${
         theme.sections === "open" ? "py-12" : "border-t border-(--site-line) py-8"
       }`}
     >
-      {line}
+      {inner}
     </footer>
   );
 }

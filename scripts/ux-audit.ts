@@ -42,6 +42,7 @@ const DEFAULT_ROUTES = [
   "/assistent",
   "/installningar",
   "/sajt",
+  "/integritetspolicy",
   "@offert-publik",
   "@offert-underlag",
   "@faktura-publik",

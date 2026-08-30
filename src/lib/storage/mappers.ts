@@ -1233,7 +1233,8 @@ export const websitesSpec: TableSpec<Website> = {
   pk: ["id"],
   columns: [
     "id", "business_id", "slug", "business_name", "tagline", "city", "status", "theme",
-    "design", "draft_design", "sections", "primary_cta", "published_at", "submissions", "created_at",
+    "design", "draft_design", "sections", "primary_cta", "privacy_policy_supplement",
+    "published_at", "submissions", "created_at",
   ],
   toRow: (w, businessId) => ({
     id: w.id,
@@ -1248,6 +1249,7 @@ export const websitesSpec: TableSpec<Website> = {
     draft_design: jsonParamOrNull(w.draftDesign),
     sections: jsonParam(w.sections),
     primary_cta: jsonParamOrNull(w.primaryCta),
+    privacy_policy_supplement: w.privacyPolicySupplement ?? null,
     published_at: w.publishedAt ?? null,
     submissions: w.submissions,
     created_at: w.createdAt,
@@ -1264,6 +1266,7 @@ export const websitesSpec: TableSpec<Website> = {
     ...opt("draftDesign", jsonOrU<NonNullable<Website["draftDesign"]>>(r.draft_design)),
     sections: jsonVal<Website["sections"]>(r.sections),
     ...opt("primaryCta", jsonOrU<NonNullable<Website["primaryCta"]>>(r.primary_cta)),
+    ...opt("privacyPolicySupplement", strOrU(r.privacy_policy_supplement)),
     ...opt("publishedAt", tsIsoOrU(r.published_at)),
     createdAt: tsIso(r.created_at),
     submissions: num(r.submissions),

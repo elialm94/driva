@@ -1,24 +1,27 @@
 import { notFound } from "next/navigation";
-import { SiteRenderer } from "@/components/site-renderer";
+import { SitePrivacyPolicy } from "@/components/site-privacy";
 import { ensureSiteTenant, loadPublicSite, publicSiteHost } from "@/lib/public-site";
 import { db } from "@/lib/store";
 import { resolvePublicSite } from "@/lib/domains";
 
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata(props: PageProps<"/sajt">) {
+export async function generateMetadata(props: PageProps<"/integritetspolicy">) {
   const searchParams = await props.searchParams;
   const host = await publicSiteHost(searchParams);
-  if (!(await ensureSiteTenant(host))) return { title: "Hemsida" };
+  if (!(await ensureSiteTenant(host))) return { title: "Integritetspolicy" };
   const mapped = host ? resolvePublicSite(host) : null;
   const site = mapped?.website ?? db().website;
+  const name = mapped?.company.name ?? db().settings.name ?? site?.businessName;
   return {
-    title: site ? `${site.businessName} – ${site.tagline}` : "Hemsida",
-    description: site?.sections.find((s) => s.type === "hero")?.body,
+    title: name ? `Integritetspolicy – ${name}` : "Integritetspolicy",
+    description: name
+      ? `Så här behandlar ${name} personuppgifter som du lämnar via den här hemsidan.`
+      : "Integritetspolicy",
   };
 }
 
-export default async function PublicSitePage(props: PageProps<"/sajt">) {
+export default async function PrivacyPolicyPage(props: PageProps<"/integritetspolicy">) {
   const searchParams = await props.searchParams;
   const loaded = await loadPublicSite(searchParams);
   if (!loaded) notFound();
@@ -34,11 +37,11 @@ export default async function PublicSitePage(props: PageProps<"/sajt">) {
           Förhandsvisning av nytt utseende – publicera ändringar för att uppdatera sajten
         </div>
       ) : null}
-      <SiteRenderer
+      <SitePrivacyPolicy
         website={loaded.website}
         company={loaded.company}
         design={loaded.design}
-        privacyHref={loaded.privacyHref}
+        homeHref={loaded.homeHref}
       />
     </div>
   );

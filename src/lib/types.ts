@@ -1214,6 +1214,11 @@ export interface Website {
   sections: WebsiteSection[];
   /** Gemensam primärknapp i sidhuvud och startsektion. Saknas = DEFAULT_PRIMARY_CTA_LABEL. */
   primaryCta?: { label: string };
+  /**
+   * Valfritt tillägg till den automatiska integritetspolicyn. Företagsnamn,
+   * org.nr, adress och kontakt hämtas alltid live från företagsuppgifterna.
+   */
+  privacyPolicySupplement?: string;
   publishedAt?: string;
   createdAt: string;
   submissions: number;
