@@ -629,7 +629,7 @@ describe("påminnelser via verktygsloopen", () => {
     assert.equal(viaAi.ok, false);
     assert.equal(viaAi.notConfigured, true);
     assert.equal(viaAi.text, FREE_TEXT_FALLBACK_MESSAGE);
-    assert.notMatch(viaAi.text, /12:00/);
+    assert.doesNotMatch(viaAi.text, /12:00/);
   });
 
   test("skicka påminnelse till Johan om faktura skapar inte intern påminnelse", async () => {
