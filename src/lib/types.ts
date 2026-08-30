@@ -1453,11 +1453,15 @@ export interface Reminder {
   userId: string | null;
   title: string;
   description?: string;
-  /** Absolut tidpunkt (ISO, UTC-instant). Lokal semantik via timezone. */
-  dueAt: string;
+  /**
+   * Absolut tidpunkt (ISO, UTC-instant) när en dag är känd. Saknas helt för
+   * odaterade påminnelser – det är giltigt, inte försenat. Lokal semantik via
+   * timezone + hasExplicitTime (datum utan klockslag ≠ midnatt).
+   */
+  dueAt?: string;
   /** IANA-tidszon, t.ex. Europe/Stockholm – styr all användarvänd formatering. */
   timezone: string;
-  /** Angav användaren klockslag/dagsdel? Styr när den dyker upp i uppmärksamhetslistan. */
+  /** Angav användaren klockslag/dagsdel? Styr visning och när den dyker upp i uppmärksamhet. */
   hasExplicitTime: boolean;
   status: ReminderStatus;
   source: "assistant" | "user";

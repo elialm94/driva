@@ -194,5 +194,117 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
        check (type in ('labor', 'material', 'travel', 'other'))`
   );
 
+  const supportApplied = await ensurePlatformSupportSchema(client);
+  applied.push(...supportApplied);
+
+  return applied;
+}
+
+/**
+ * Kundens "Hjälp & support" skriver till support_tickets. Utan tabellen
+ * (migrationen inte körd) blir formuläret ett generiskt fel. Skapas här
+ * med IF NOT EXISTS så health/första ärendet räcker.
+ */
+export async function ensurePlatformSupportSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  const table = await client.query(`select to_regclass('public.support_tickets') is not null as present`);
+  if (!table[0]?.present) {
+    await run(
+      client,
+      `create table if not exists public.support_tickets (
+        id text primary key,
+        business_id uuid references public.businesses (id) on delete set null,
+        user_id uuid,
+        user_email text not null default '',
+        user_name text not null default '',
+        business_name text not null default '',
+        subject text not null default '',
+        message text not null default '',
+        status text not null default 'open'
+          check (status in ('open', 'in_progress', 'waiting_for_customer', 'resolved')),
+        priority text not null default 'normal' check (priority in ('low', 'normal', 'high')),
+        assigned_admin_id uuid,
+        route text not null default '',
+        user_agent text not null default '',
+        app_version text not null default '',
+        attachment_name text,
+        attachment_data_url text,
+        attachment_path text,
+        environment text not null default '',
+        admin_notes text not null default '',
+        resolved_at timestamptz,
+        resolved_by uuid,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )`
+    );
+    await run(
+      client,
+      `create index if not exists support_tickets_status_idx
+         on public.support_tickets (status, created_at desc)`
+    );
+    await run(
+      client,
+      `create index if not exists support_tickets_business_idx
+         on public.support_tickets (business_id, created_at desc)`
+    );
+    await run(client, `grant select, insert, update on public.support_tickets to driva_app`);
+    await run(client, `alter table public.support_tickets enable row level security`);
+    await run(client, `drop policy if exists support_tickets_select on public.support_tickets`);
+    await run(
+      client,
+      `create policy support_tickets_select on public.support_tickets
+         for select to driva_app
+         using (app.is_platform_context() or app.is_member(business_id))`
+    );
+    await run(client, `drop policy if exists support_tickets_insert on public.support_tickets`);
+    await run(
+      client,
+      `create policy support_tickets_insert on public.support_tickets
+         for insert to driva_app
+         with check (app.is_platform_context() or app.is_member(business_id))`
+    );
+    await run(client, `drop policy if exists support_tickets_update on public.support_tickets`);
+    await run(
+      client,
+      `create policy support_tickets_update on public.support_tickets
+         for update to driva_app
+         using (app.is_platform_context()) with check (app.is_platform_context())`
+    );
+    applied.push("support_tickets");
+  }
+
+  const extras: [string, string][] = [
+    ["resolved_at", `alter table public.support_tickets add column if not exists resolved_at timestamptz`],
+    ["resolved_by", `alter table public.support_tickets add column if not exists resolved_by uuid`],
+    ["admin_notes", `alter table public.support_tickets add column if not exists admin_notes text not null default ''`],
+    ["attachment_path", `alter table public.support_tickets add column if not exists attachment_path text`],
+    ["environment", `alter table public.support_tickets add column if not exists environment text not null default ''`],
+  ];
+  for (const [column, ddl] of extras) {
+    if (await columnExists(client, "support_tickets", column)) continue;
+    await run(client, ddl);
+    applied.push(`support_tickets.${column}`);
+  }
+
+  try {
+    await client.query(
+      `insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+       values (
+         'support_attachments',
+         'support_attachments',
+         false,
+         10485760,
+         array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']
+       )
+       on conflict (id) do update
+         set public = excluded.public,
+             file_size_limit = excluded.file_size_limit,
+             allowed_mime_types = excluded.allowed_mime_types`
+    );
+  } catch {
+    // storage-schemat finns inte i alla miljöer (PGlite, lokal JSON-bro).
+  }
+
   return applied;
 }

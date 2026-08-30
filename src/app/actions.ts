@@ -36,6 +36,7 @@ import {
   reopenReminder,
   snoozeReminderBy,
   unsnoozeReminder,
+  updateReminder,
 } from "@/lib/services/reminders";
 import { clearAttentionSnooze, snoozeAttention } from "@/lib/services/attention-state";
 import { snoozeDoneText } from "@/lib/reminders/when";
@@ -731,6 +732,28 @@ export async function dismissReminderAction(reminderId: string) {
     async () => {
       dismissReminder(reminderId);
       refresh();
+    },
+    { retry: false }
+  );
+}
+
+export async function updateReminderAction(
+  reminderId: string,
+  patch: { title?: string; whenDate?: string; time?: string; clearWhen?: boolean }
+) {
+  return withBusiness(
+    async () => {
+      const updated = updateReminder(reminderId, {
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+        when: patch.clearWhen
+          ? { kind: "none" }
+          : patch.whenDate
+            ? { kind: "date", date: patch.whenDate, time: patch.time }
+            : undefined,
+      });
+      if (!updated.ok) return { ok: false as const, error: updated.error };
+      refresh();
+      return { ok: true as const };
     },
     { retry: false }
   );

@@ -223,11 +223,15 @@ describe("parseCommand (hela originalfrasen → intent + argument)", () => {
     assert.equal(p.reminder.args.time, "8:00");
   });
 
-  it("saknad tid → bara När; saknad uppgift → bara Vad", () => {
-    const whenMissing = parseCommand("Påminn mig att ringa Göran", "owner", SUNDAY, TZ);
-    assert.equal(whenMissing.confidence, "high");
-    if (whenMissing.confidence !== "high") throw new Error("unreachable");
-    assert.equal(whenMissing.reminder && !whenMissing.reminder.complete && whenMissing.reminder.missing, "when");
+  it("saknad tid är ändå komplett (odaterad); saknad uppgift → bara Vad", () => {
+    const undated = parseCommand("Påminn mig att ringa Göran", "owner", SUNDAY, TZ);
+    assert.equal(undated.confidence, "high");
+    if (undated.confidence !== "high") throw new Error("unreachable");
+    assert.ok(undated.reminder?.complete);
+    if (!undated.reminder || !undated.reminder.complete) throw new Error("unreachable");
+    assert.equal(undated.reminder.title, "ringa Göran");
+    assert.equal(undated.reminder.args.whenDate, undefined);
+    assert.equal(undated.reminder.args.weekday, undefined);
 
     const titleMissing = parseCommand("Skapa påminnelse imorgon kl 8", "owner", SUNDAY, TZ);
     assert.equal(titleMissing.confidence, "high");

@@ -14,6 +14,7 @@ const BASE = "http://localhost:3123";
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const INPUT = 'input[role="combobox"]';
 const WHEN_PLACEHOLDER = "imorgon / onsdag / om 2 timmar";
+const OPTIONAL_WHEN_HINT = "Ändra tid? Skriv t.ex. imorgon kl 9";
 
 let passed = 0;
 function ok(name: string, detail = "") {
@@ -110,29 +111,26 @@ async function main() {
     if (!body.includes("kl 08:00")) fail("bekräftelsen saknar den tolkade tiden");
     ok("1c skapad med tolkad tid", "”påminner dig … kl 08:00”");
 
-    // 2. Persistens + läsmodell: framtida påminnelse under Hem → På gång.
+    // 2. Persistens + läsmodell: framtida påminnelse under Hem → Påminnelser.
     await page.goto(`${BASE}/`, { waitUntil: "networkidle0" });
-    await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").startsWith("Visa ")
-      );
-      (btn as HTMLButtonElement | undefined)?.click();
-    });
     body = await bodyText(page);
-    if (!body.includes("Ring Göran")) fail("skapad påminnelse syns inte under På gång");
-    ok("2 persisterad och läses tillbaka på Hem (På gång)");
+    if (!body.toLowerCase().includes("påminnelser")) fail("Påminnelser-sektionen saknas");
+    if (!body.includes("Ring Göran")) fail("skapad påminnelse syns inte under Påminnelser");
+    ok("2 persisterad och läses tillbaka på Hem (Påminnelser)");
 
-    // 3. Bara VAD → ENDAST tidsfrågan ställs; tvåstegsvägen fungerar som förut.
+    // 3. Bara VAD → förhandsvisning med ”Ingen tid”, tid är valfritt.
     await startReminderFlow(page);
     await page.type(INPUT, "Ring Göran");
     await page.keyboard.press("Enter");
     await page.waitForFunction(
-      (sel, whenPh) => (document.querySelector(sel) as HTMLInputElement | null)?.placeholder === whenPh,
-      {},
-      INPUT,
-      WHEN_PLACEHOLDER
+      () => (document.body.textContent ?? "").includes("Ingen tid")
     );
-    ok("3a utan tid i meningen frågas ENBART ”När?”");
+    const whenPh = await placeholderOf(page);
+    if (whenPh === WHEN_PLACEHOLDER) fail("flödet tvingade fram obligatorisk tidsfråga");
+    if (!whenPh.includes("Ändra tid") && whenPh !== OPTIONAL_WHEN_HINT) {
+      fail(`oväntad tidsplaceholder: ${whenPh}`);
+    }
+    ok("3a utan tid i meningen → förhandsvisning med Ingen tid, inte obligatorisk När-fråga");
     await page.type(INPUT, "blahonga");
     await page.waitForFunction(() => (document.body.textContent ?? "").includes("Jag förstod inte tidpunkten"));
     const keptValue = await page.$eval(INPUT, (el) => (el as HTMLInputElement).value);

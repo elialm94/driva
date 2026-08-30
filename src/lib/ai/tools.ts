@@ -217,8 +217,9 @@ function compactReminder(r: Reminder) {
   return {
     id: r.id,
     title: r.title,
-    due: formatDueAt(r.dueAt, r.timezone),
-    dueAt: r.dueAt,
+    due: r.dueAt ? formatDueAt(r.dueAt, r.timezone, r.hasExplicitTime) : "Ingen tid",
+    ...(r.dueAt ? { dueAt: r.dueAt } : {}),
+    hasExplicitTime: r.hasExplicitTime,
     status: r.status,
     ...(r.snoozedUntil ? { snoozedUntil: r.snoozedUntil } : {}),
     ...(r.relatedEntityType ? { related: { type: r.relatedEntityType, id: r.relatedEntityId } } : {}),
@@ -361,14 +362,16 @@ function resolveReminderLink(
   }
 }
 
+function formatReminderWhenText(reminder: Reminder): string {
+  if (!reminder.dueAt) return "Ingen tid";
+  return formatDueAtDisplay(reminder.dueAt, reminder.timezone, reminder.hasExplicitTime);
+}
+
 function handleCreateReminder(args: Record<string, unknown>): ToolResult {
   const title = str(args, "title");
   if (!title) return { ok: false, forModel: {}, error: "title krävs" };
   const when = whenFromArgs(args);
-  if (!when) {
-    return { ok: false, forModel: {}, error: "Ange när jag ska påminna (dag, klockslag eller relativ tid)." };
-  }
-  if ("error" in when) return { ok: false, forModel: {}, error: when.error };
+  if (when && "error" in when) return { ok: false, forModel: {}, error: when.error };
 
   const link = resolveReminderLink(str(args, "relatedType"), str(args, "relatedQuery"));
   if ("ask" in link) return link.ask; // klargörande – inget skapas
@@ -376,16 +379,17 @@ function handleCreateReminder(args: Record<string, unknown>): ToolResult {
   const created = createReminder({
     title,
     description: str(args, "description"),
-    when,
+    when: when && !("error" in when) ? when : { kind: "none" },
     source: "assistant",
     related: link.related,
   });
   if (!created.ok) return { ok: false, forModel: {}, error: created.error };
 
   const reminder = created.reminder;
-  const dueText = formatDueAt(reminder.dueAt, reminder.timezone);
-  const dueDisplay = formatDueAtDisplay(reminder.dueAt, reminder.timezone);
-  const parts = [`Påminnelse skapad till ${dueDisplay}.`];
+  const dueDisplay = formatReminderWhenText(reminder);
+  const parts = [
+    reminder.dueAt ? `Påminnelse skapad till ${dueDisplay}.` : `Påminnelse skapad – ${dueDisplay}.`,
+  ];
   if (link.relatedLabel) parts.push(`Kopplad till ${link.relatedLabel}.`);
   if (link.note) parts.push(link.note);
   return {
@@ -1844,7 +1848,7 @@ const specs: ToolSpec[] = [
       function: {
         name: "create_reminder",
         description:
-          "Skapa en persisterad påminnelse (create reminder). Ange NÄR med exakt ett tidsuttryck: whenIso (lokal tid), whenDate (+ valfri time/daypart), weekday (+ nextWeek/time/daypart), relativeMinutes/relativeHours/relativeDays, eller enbart daypart (idag). relatedType+relatedQuery kopplar till kund/offert/faktura/uppdrag – hitta ALDRIG på kopplingar. Svara alltid med den tolkade tidpunkten.",
+          "Skapa en persisterad påminnelse (create reminder). NÄR är valfritt: whenIso, whenDate (+ valfri time/daypart), weekday, relativeMinutes/Hours/Days, eller daypart. Utan tidsfält skapas en odaterad påminnelse (giltig, inte försenad). relatedType+relatedQuery kopplar till kund/offert/faktura/uppdrag – hitta ALDRIG på kopplingar.",
         parameters: obj(
           {
             title: { type: "string", description: "Vad som ska göras, t.ex. 'Ringa Göran Svensson'" },
@@ -1939,7 +1943,9 @@ const specs: ToolSpec[] = [
       return {
         ok: true,
         forModel: { reminder: compactReminder(updated.reminder) },
-        text: `Klart – påminnelsen "${updated.reminder.title}" gäller nu ${formatDueAt(updated.reminder.dueAt, updated.reminder.timezone)}.`,
+        text: updated.reminder.dueAt
+          ? `Klart – påminnelsen "${updated.reminder.title}" gäller nu ${formatDueAt(updated.reminder.dueAt, updated.reminder.timezone, updated.reminder.hasExplicitTime)}.`
+          : `Klart – påminnelsen "${updated.reminder.title}" har ingen tid.`,
         card: {
           kind: "list",
           title: "Påminnelse uppdaterad",

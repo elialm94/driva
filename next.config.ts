@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
-      bodySizeLimit: "2mb",
+      bodySizeLimit: "8mb",
     },
     // Ingen staleTimes: dynamic-default är 0 sedan Next 15. Prestandapassets
     // 30 s klientcache återanvände avhuggna RSC-prefetch-payloads vid klick
