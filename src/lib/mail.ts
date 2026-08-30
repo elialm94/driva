@@ -166,7 +166,7 @@ async function recordEmailEvent(
       status,
       error: detail?.error,
       providerMessageId: detail?.messageId,
-      mode,
+      mode: mode === "live" ? "live" : "test",
       createdAt: new Date().toISOString(),
     });
   } catch {
