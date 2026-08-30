@@ -414,6 +414,8 @@ describe("röstkontrollern: auto-stopp efter tystnad", () => {
     h.provider.grant();
     h.provider.speechStart();
     h.provider.update("långt pågående kommando", false);
+    h.provider.speechEnd();
+    h.provider.speechStart(); // motorn säger fortfarande pågående yttrande
     h.clock.advance(VOICE_MAX_DURATION_MS - 1);
     assert.equal(h.provider.stopped, 0);
     h.clock.advance(1);
@@ -665,9 +667,9 @@ describe("web speech-leverantören", () => {
     const rec = FakeRecognition.instances[0]!;
     session.abort();
     assert.equal(rec.abortCalls, 1);
-    rec.onerror!({ error: "aborted" });
-    rec.onresult!(recognitionEvent([{ text: "spök", final: false }]));
-    rec.onend!();
+    assert.equal(rec.onerror, null);
+    assert.equal(rec.onresult, null);
+    assert.equal(rec.onend, null);
     assert.deepEqual(events, []);
   });
 
