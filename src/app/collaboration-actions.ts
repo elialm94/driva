@@ -9,10 +9,12 @@ import {
   BUSINESS_COOKIE,
   LOCAL_USER_COOKIE,
   WORKSPACE_COOKIE,
+  isDemoSession,
   requireOwnerBusiness,
   requireUser,
   withBusiness,
 } from "@/lib/auth/session";
+import { DEMO_ACTOR_COOKIE } from "@/lib/auth/demo-session";
 import {
   LOCAL_JSON_ACCOUNTANT_ID,
   LOCAL_JSON_BUSINESS_ID,
@@ -185,9 +187,26 @@ export async function switchWorkspaceAction(workspace: "owner" | "redovisning", 
   redirect(workspace === "redovisning" ? "/redovisning" : "/");
 }
 
-/** JSON-demo: bli Anna och öppna redovisningsytan. */
+/**
+ * Demo: öppna redovisningsytan som Anna Svensson.
+ *
+ *   * JSON-läget: byt lokal identitet till den seedade konsulten.
+ *   * Publika demosessionen (Supabase): sätt demo-aktörskakan – sessionslagret
+ *     presenterar då demoföretagets ägarmedlemskap som redovisningskonsult
+ *     (endast en vy, isolerad till demoföretaget – ingen impersonering av
+ *     riktiga företag finns).
+ */
 export async function enterLocalAccountantDemoAction(): Promise<void> {
-  if (isSupabaseMode()) redirect("/login?next=/redovisning");
+  if (isSupabaseMode()) {
+    if (!(await isDemoSession())) redirect("/login?next=/redovisning");
+    const jar = await cookies();
+    jar.set(DEMO_ACTOR_COOKIE, "accountant", { path: "/", sameSite: "lax", httpOnly: true });
+    jar.set(WORKSPACE_COOKIE, "redovisning", { path: "/", sameSite: "lax" });
+    jar.set(BUSINESS_COOKIE, "", { path: "/", maxAge: 0, sameSite: "lax" });
+    jar.delete(BUSINESS_COOKIE);
+    refresh();
+    redirect("/redovisning");
+  }
   restoreLocalAccountantDemo();
   const membership = activeMembershipFor(LOCAL_JSON_ACCOUNTANT_ID, LOCAL_JSON_BUSINESS_ID);
   if (!membership || !isAccountingRole(membership.role)) redirect("/");
@@ -200,9 +219,14 @@ export async function enterLocalAccountantDemoAction(): Promise<void> {
   redirect("/redovisning");
 }
 
-/** JSON-demo: tillbaka till ägaren. */
+/** Demo: tillbaka till ägaren. */
 export async function leaveLocalAccountantDemoAction(): Promise<void> {
   if (isSupabaseMode()) {
+    const jar = await cookies();
+    jar.set(DEMO_ACTOR_COOKIE, "", { path: "/", maxAge: 0, sameSite: "lax" });
+    jar.delete(DEMO_ACTOR_COOKIE);
+    jar.set(WORKSPACE_COOKIE, "owner", { path: "/", sameSite: "lax" });
+    refresh();
     redirect("/");
   }
   const jar = await cookies();

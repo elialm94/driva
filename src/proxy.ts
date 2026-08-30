@@ -14,9 +14,16 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import {
+  DEMO_ACTOR_COOKIE,
+  DEMO_SESSION_COOKIE,
+  isDemoCookieValueActive,
+  isDemoUserEmail,
+} from "@/lib/auth/demo-session";
 
 const PUBLIC_PREFIXES = [
   "/login",
+  "/demo", // publik demo-entré: sessionen skapas av en server action på sidan
   "/offert",
   "/faktura",
   "/sajt",
@@ -55,6 +62,26 @@ export async function proxy(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const isAuthenticated = Boolean(data?.claims?.sub);
   const { pathname, search } = request.nextUrl;
+
+  // Demosessioner är tidsbegränsade: utan giltig demo-cookie loggas
+  // demo-användarens session ut (endast DENNA besökares tokens – scope local)
+  // och besökaren landar på /demo igen. Riktiga användare berörs aldrig.
+  if (isAuthenticated && isDemoUserEmail(String(data?.claims?.email ?? ""))) {
+    const demoCookie = request.cookies.get(DEMO_SESSION_COOKIE)?.value;
+    if (!isDemoCookieValueActive(demoCookie)) {
+      await supabase.auth.signOut({ scope: "local" });
+      const demoUrl = request.nextUrl.clone();
+      demoUrl.pathname = "/demo";
+      demoUrl.search = "";
+      demoUrl.searchParams.set("utgangen", "1");
+      const redirectResponse = NextResponse.redirect(demoUrl);
+      // Bevara utloggningens Set-Cookie (skrevs till response via setAll ovan).
+      for (const cookie of response.cookies.getAll()) redirectResponse.cookies.set(cookie);
+      redirectResponse.cookies.delete(DEMO_SESSION_COOKIE);
+      redirectResponse.cookies.delete(DEMO_ACTOR_COOKIE);
+      return redirectResponse;
+    }
+  }
 
   if (!isAuthenticated && !isPublicPath(pathname)) {
     const loginUrl = request.nextUrl.clone();
