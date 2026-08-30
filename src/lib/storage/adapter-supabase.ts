@@ -147,6 +147,11 @@ function isNextControlFlowError(err: unknown): boolean {
  * sidorenderingar (request-scope-cellen). Ingen commit sker någonsin här.
  * Snapshot-cachen gör varma sidladdningar till EN versionsfråga i stället
  * för full tillståndsladdning.
+ *
+ * OBS: medvetet INTE React cache() här. AI-verktygsslingan läser tillstånd,
+ * committar och läser om INOM samma request – en per-request-memo hade gett
+ * inaktuella omläsningar. Snapshot-cachen gör ändå omläsningen till en enda
+ * billig PK-fråga.
  */
 export async function loadStateSnapshot(businessId: string): Promise<DB> {
   const client = await sqlClient();

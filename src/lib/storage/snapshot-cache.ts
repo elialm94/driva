@@ -33,8 +33,12 @@ interface CacheEntry {
   cachedAt: number;
 }
 
-/** Max antal företag i cachen (LRU). Räcker gott för en serverless-instans. */
-const MAX_ENTRIES = 24;
+/**
+ * Max antal företag i cachen (LRU). Dimensionerad för redovisningsytan:
+ * portföljvyn läser ALLA klienters tillstånd, så gränsen måste rymma en
+ * normal konsultportfölj utan att tumma (~78 kB JSON per demoklient).
+ */
+const MAX_ENTRIES = 64;
 /** Säkerhetsventil: full omläsning efter TTL även om versionen matchar. */
 const TTL_MS = 5 * 60 * 1000;
 
