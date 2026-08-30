@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Suspense } from "react";
 import { Sidebar, BottomNav } from "@/components/nav";
 import { NavOriginProvider } from "@/components/nav-origin";
+import { SupportModeBanner } from "@/components/support-mode-banner";
 import { db } from "@/lib/store";
 import { countOpenInbox } from "@/lib/services/inbox";
 import { ensurePageBusiness, getSessionUser, listMemberships } from "@/lib/auth/session";
@@ -21,6 +22,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     : 0;
   return (
     <div className="min-h-dvh">
+      <SupportModeBanner companyName={settings.name} />
       <Sidebar
         companyName={settings.name}
         inboxCount={countOpenInbox()}

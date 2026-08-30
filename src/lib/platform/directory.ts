@@ -9,7 +9,6 @@
  */
 import { isSupabaseMode } from "../storage/config";
 import { sqlClient } from "../storage/adapter-supabase";
-import type { SqlRow } from "../storage/executor";
 import { db } from "../store";
 import {
   activeMembershipsForBusiness,
@@ -578,6 +577,67 @@ export async function userDeletionPolicy(userId: string): Promise<UserDeletionPo
 
   policy.canDelete = policy.blockers.length === 0;
   return policy;
+}
+
+/* --------------------- Samarbetsinbjudningar (för detaljvyn) ---------------- */
+
+export interface CollaborationInviteRow {
+  id: string;
+  email: string;
+  role: string;
+  createdAt?: string;
+  expiresAt?: string;
+  status: "pending" | "accepted" | "revoked" | "expired";
+}
+
+function inviteStatus(row: {
+  acceptedAt?: string | null;
+  revokedAt?: string | null;
+  expiresAt?: string | null;
+}): CollaborationInviteRow["status"] {
+  if (row.revokedAt) return "revoked";
+  if (row.acceptedAt) return "accepted";
+  if (row.expiresAt && new Date(row.expiresAt).getTime() <= Date.now()) return "expired";
+  return "pending";
+}
+
+/** Företagets samarbetsinbjudningar (visning + "skicka om" i adminvyn). */
+export async function collaborationInvitesForBusiness(
+  businessId: string
+): Promise<CollaborationInviteRow[]> {
+  if (!isSupabaseMode()) {
+    return collaborationRegistry()
+      .invitations.filter((i) => i.businessId === businessId)
+      .map((i) => ({
+        id: i.id,
+        email: i.email,
+        role: i.role,
+        createdAt: i.createdAt,
+        expiresAt: i.expiresAt,
+        status: inviteStatus(i),
+      }));
+  }
+  const client = await sqlClient();
+  const rows = await client.query(
+    `select id, email, role, created_at, expires_at, accepted_at, revoked_at
+       from public.collaboration_invitations
+      where business_id = $1
+      order by created_at desc
+      limit 20`,
+    [businessId]
+  );
+  return rows.map((r) => ({
+    id: String(r.id),
+    email: String(r.email ?? ""),
+    role: String(r.role ?? ""),
+    createdAt: iso(r.created_at),
+    expiresAt: iso(r.expires_at),
+    status: inviteStatus({
+      acceptedAt: iso(r.accepted_at) ?? null,
+      revokedAt: iso(r.revoked_at) ?? null,
+      expiresAt: iso(r.expires_at) ?? null,
+    }),
+  }));
 }
 
 /* ---------------------- Raderingspolicy för företag ------------------------- */

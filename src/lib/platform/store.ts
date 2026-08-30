@@ -785,3 +785,14 @@ export async function businessDisabledAt(businessId: string): Promise<string | n
   const rows = await client.query(`select disabled_at from public.businesses where id = $1`, [businessId]);
   return rows[0]?.disabled_at ? new Date(rows[0].disabled_at as string).toISOString() : null;
 }
+
+/** Lätt namnuppslag för skalindikatorer (supportsessionens företag m.m.). */
+export async function businessNameById(businessId: string): Promise<string | null> {
+  if (!isSupabaseMode()) {
+    const { activeMembershipsForBusiness } = await import("../collaboration/registry");
+    return activeMembershipsForBusiness(businessId)[0]?.businessName ?? null;
+  }
+  const client = await sqlClient();
+  const rows = await client.query(`select name from public.businesses where id = $1`, [businessId]);
+  return rows[0]?.name ? String(rows[0].name) : null;
+}
