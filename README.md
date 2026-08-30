@@ -119,9 +119,10 @@ Nya schemaändringar: `npx supabase migration new <namn>` → skriv SQL → `db 
 npm run db:seed                       # skapar agare@driva.test + demoföretaget
 npm run db:seed -- --email du@x.se --password hemligt123
 npm run db:seed -- --empty            # bara användare + tomt företag
+npm run db:seed -- --demo             # seedar den PUBLIKA demon (se "Publik demo")
 ```
 
-Skriptet skapar auth-användaren (service role), företaget med ägarmedlemskap och spelar upp demodatat genom **samma atomära RPC:er som appen** (fakturanummer, verifikationer, betalningar). Körs aldrig automatiskt, och vägrar skriva till ett företag som redan har data.
+Skriptet skapar auth-användaren (service role), företaget med ägarmedlemskap och spelar upp demodatat genom **samma atomära RPC:er som appen** (fakturanummer, verifikationer, betalningar). Körs aldrig automatiskt, och vägrar skriva till ett företag som redan har data. Exempeldatats id:n är fasta – skriptet vägrar också om ett **annat** företag i samma databas redan bär dem (seeda dev- och demoföretag i olika databaser, eller ta bort det gamla först).
 
 ### 5. Lokal utveckling
 
@@ -141,6 +142,36 @@ Skriptet skapar auth-användaren (service role), företaget med ägarmedlemskap 
 2. **Auth → URL Configuration:** sätt *Site URL* till produktions-URL:en (t.ex. `https://driva-alpha.vercel.app`) och lägg till ev. preview-URL:er under *Redirect URLs*.
 3. **Buckets:** skapas av migrationerna (`receipts` privat, `website-images` publik) – inget manuellt steg om `db push` körts.
 4. **Auth → Rate limits:** standardvärdena räcker för start.
+
+### Publik demo (`/demo`)
+
+`/demo` låter vem som helst utforska en färdig demomiljö (Södermalms Snickeri AB med exempeldata) utan att skapa konto – samma app, riktig inloggning under huven. Knappen **Prova demo** på `/login` pekar hit. Utan Supabase-miljö är hela appen redan demon (JSON-läget ovan); det här avsnittet gäller produktionen.
+
+Så fungerar den:
+
+* **Riktig, begränsad session – aldrig en auth-bypass.** "Öppna demo" loggar in en dedikerad demo-användare i en server action (`signInWithPassword` på servern; inga uppgifter i klientbundeln). Användaren har medlemskap i exakt ett företag: demoföretaget, skapat med `businesses.is_demo` (fryst kolumn – ett riktigt företag kan aldrig bli demo i efterhand). RLS, proxy och all vanlig auktorisering gäller oförändrat.
+* **Delat demoföretag + återställning** (medvetet V1-val: per-besökare-kloning kräver service-role-nycklar i appen och öppnar för masskapande av tenants). Ändringar är verkliga och delas mellan besökare, men **Inställningar → Återställ demo** tömmer företaget atomärt i SQL (`app.reset_demo_business` – vägrar för alla icke-demo-företag) och spelar upp exempeldatat genom samma importväg som seedningen. Företagets inkommande mejladress är stabil över återställningar, och främmande medlemskap (t.ex. en accepterad inbjudan) återkallas.
+* **Tidsbegränsad:** demosessionen lever `DEMO_SESSION_HOURS` (standard 8 h). Därefter loggas just den besökaren ut (lokal scope – aldrig andras sessioner) och landar på `/demo` igen. **Avsluta demo** och **Skapa eget konto** finns i menyn, och ett diskret **Demo**-märke visas vid företagsnamnet.
+* **Inga externa sidoeffekter:** demons mejl går aldrig till riktiga mottagare – centralvakten i `sendMail` simulerar utskicket (UI:t visar "Demo: mejlet simulerades och skickades inte externt") eller skickar till `DEMO_EMAIL_SINK` med `[Demo]`-prefix om den är satt. BankID är mocken, bankflöden är simulerade (demoföretaget öppnar samma demogrindar som JSON-läget), och AI:n kör alltid den snabba modellen med dygnstak + per-sessionsfönster (ärligt gränsbesked, resten av demon fungerar vidare). Dokumentnedladdningar (t.ex. SIE-exporten) fungerar och innehåller bara demodata.
+* **Rate limits:** demostarter stryps per IP och instans, återställningen per instans. Fönstren är i minnet per serverless-instans (bäst ansträngning) – de durabla vakterna är Supabase Auths egna gränser och AI-dygnstaket som räknas i tenantens logg.
+
+Sätta upp:
+
+```bash
+npm run db:seed -- --demo    # skapar demo-användaren + demoföretaget (is_demo) + exempeldata
+```
+
+Skriptet skriver ut exakt vad som ska in i Vercels miljövariabler (endast servermiljö, aldrig `NEXT_PUBLIC_`):
+
+| Variabel | Krävs | Anteckning |
+| --- | --- | --- |
+| `DEMO_USER_EMAIL` | ja | Demo-användarens e-post (standard `demo@driva.test`). Måste matcha den seedade användaren |
+| `DEMO_USER_PASSWORD` | ja | Demo-användarens lösenord – **endast server**, aldrig i klientkod |
+| `DEMO_SESSION_HOURS` | nej (8) | Demosessionens livslängd, klampas till 1–72 h |
+| `DEMO_EMAIL_SINK` | nej | Om satt: demons mejl skickas hit (med `[Demo]`-prefix) i stället för att simuleras |
+| `DEMO_AI_DAILY_CAP` | nej (300) | Dygnstak för demons LLM-anrop (kräver `OPENROUTER_API_KEY` för AI alls) |
+
+Utan `DEMO_USER_EMAIL`/`DEMO_USER_PASSWORD` är demon avstängd: `/demo` visar "inte tillgänglig" och `/login` döljer demoknappen. Normal inloggning påverkas aldrig.
 
 ### Migrera lokal data
 
