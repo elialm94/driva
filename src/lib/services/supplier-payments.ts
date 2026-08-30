@@ -28,6 +28,7 @@ import type {
 const ACTIVE_STATUSES: ReadonlySet<SupplierPaymentStatus> = new Set([
   "DRAFT",
   "READY",
+  "PAYMENT_FILE_CREATED",
   "SUBMITTED_TO_BANK",
   "AWAITING_APPROVAL",
   "SCHEDULED",
@@ -141,6 +142,9 @@ export function prepareSupplierPayment(input: PrepareSupplierPaymentInput): Supp
     data.supplierPayments.find((p) => p.supplierInvoiceId === invoice.id && ACTIVE_STATUSES.has(p.status));
 
   if (existing) {
+    // En instruktion med aktiv bankfil muteras aldrig här – ändrade belopp/
+    // datum skulle tyst glida ifrån den redan genererade filen.
+    if (existing.status === "PAYMENT_FILE_CREATED") return existing;
     if (isPaymentInFlight(existing.status) || existing.status === "PAID") return existing;
     if (existing.status === "FAILED") {
       existing.status = destinationChanged ? "DRAFT" : "READY";
@@ -210,6 +214,13 @@ export function submitSupplierPayment(paymentId: string, scheduledDate?: string)
   if (payment.status === "CANCELLED") {
     return { ok: false, error: "Betalningen är avbruten.", payment };
   }
+  if (payment.status === "PAYMENT_FILE_CREATED") {
+    return {
+      ok: false,
+      error: "En bankfil är redan skapad för betalningen. Ladda upp filen i din internetbank – Driva skickar inget själv.",
+      payment,
+    };
+  }
 
   const invoice = getSupplierInvoice(payment.supplierInvoiceId);
   if (!invoice) return { ok: false, error: "Leverantörsfakturan finns inte.", payment };
@@ -278,6 +289,25 @@ export function cancelSupplierPayment(paymentId: string): SupplierPayment {
   if (!payment) throw new Error("Betalningen finns inte.");
   if (payment.status === "PAID") throw new Error("En genomförd betalning kan inte avbrytas.");
   if (payment.status === "CANCELLED") return payment;
+  // Avbryts en betalning med aktiv bankfil makuleras filen: den får inte
+  // laddas ned och användas efteråt som om instruktionen fortfarande gällde.
+  // Övriga betalningar i samma fil släpps tillbaka till READY så att en ny,
+  // korrekt fil kan skapas för dem.
+  if (payment.paymentFileId) {
+    const file = (db().paymentFiles ?? []).find((f) => f.id === payment.paymentFileId);
+    if (file && file.status === "CREATED") {
+      file.status = "CANCELLED";
+      for (const sibling of supplierPayments()) {
+        if (sibling.id === payment.id || sibling.paymentFileId !== file.id) continue;
+        if (sibling.status === "PAYMENT_FILE_CREATED") {
+          sibling.status = "READY";
+          sibling.updatedAt = new Date().toISOString();
+        }
+        sibling.paymentFileId = undefined;
+      }
+    }
+    payment.paymentFileId = undefined;
+  }
   payment.status = "CANCELLED";
   payment.updatedAt = new Date().toISOString();
   save();
@@ -412,6 +442,11 @@ export function verifySupplierPaymentDetails(input: VerifyPaymentDetailsInput): 
   if (active && isPaymentInFlight(active.status)) {
     throw new Error("Betalningen är redan skickad till banken – uppgifterna kan inte ändras nu.");
   }
+  if (active?.status === "PAYMENT_FILE_CREATED") {
+    throw new Error(
+      "En bankfil är redan skapad med de nuvarande uppgifterna. Avbryt betalningen eller skapa en ny bankfil efter ändringen."
+    );
+  }
 
   const before = paymentDetailsInfo(invoice);
   const source: PaymentDetailsProvenance =
@@ -544,7 +579,7 @@ function syncInboxAfterPayment(invoice: SupplierInvoice, payment: SupplierPaymen
     item.processedAt = item.processedAt ?? new Date().toISOString();
   } else if (payment.status === "FAILED") {
     item.status = "ny";
-  } else if (isPaymentInFlight(payment.status) && item.status === "ny") {
+  } else if ((isPaymentInFlight(payment.status) || payment.status === "PAYMENT_FILE_CREATED") && item.status === "ny") {
     item.status = "behandlad";
     item.processedAt = item.processedAt ?? new Date().toISOString();
   }

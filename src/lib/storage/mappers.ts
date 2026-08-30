@@ -41,6 +41,7 @@ import type {
   Job,
   JobWorkEntry,
   Payment,
+  PaymentFile,
   PendingAssistantAction,
   Reminder,
   Quote,
@@ -848,8 +849,8 @@ export const supplierPaymentsSpec: TableSpec<SupplierPayment> = {
     "id", "business_id", "supplier_invoice_id", "amount", "currency", "due_date",
     "scheduled_date", "ocr", "reference", "recipient_account", "recipient_name",
     "provider_payment_id", "idempotency_key", "status", "failure_reason",
-    "destination_changed", "bank_transaction_id", "created_at", "submitted_at",
-    "updated_at", "paid_at",
+    "destination_changed", "bank_transaction_id", "payment_file_id",
+    "created_at", "submitted_at", "updated_at", "paid_at",
   ],
   toRow: (p, businessId) => ({
     id: p.id,
@@ -869,6 +870,7 @@ export const supplierPaymentsSpec: TableSpec<SupplierPayment> = {
     failure_reason: p.failureReason ?? null,
     destination_changed: p.destinationChanged ?? false,
     bank_transaction_id: p.bankTransactionId ?? null,
+    payment_file_id: p.paymentFileId ?? null,
     created_at: p.createdAt,
     submitted_at: p.submittedAt ?? null,
     updated_at: p.updatedAt,
@@ -891,10 +893,54 @@ export const supplierPaymentsSpec: TableSpec<SupplierPayment> = {
     ...opt("failureReason", strOrU(r.failure_reason)),
     ...opt("destinationChanged", r.destination_changed ? true : undefined),
     ...opt("bankTransactionId", strOrU(r.bank_transaction_id)),
+    ...opt("paymentFileId", strOrU(r.payment_file_id)),
     createdAt: tsIso(r.created_at),
     ...opt("submittedAt", tsIsoOrU(r.submitted_at)),
     updatedAt: tsIso(r.updated_at),
     ...opt("paidAt", tsIsoOrU(r.paid_at)),
+  }),
+};
+
+/* ------------------------------ payment_files ------------------------------ */
+
+export const paymentFilesSpec: TableSpec<PaymentFile> = {
+  table: "payment_files",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "filename", "message_id", "format", "payment_ids",
+    "supplier_invoice_ids", "total_amount", "currency", "xml", "status",
+    "replaced_by_file_id", "created_at", "created_by",
+  ],
+  toRow: (f, businessId) => ({
+    id: f.id,
+    business_id: businessId,
+    filename: f.filename,
+    message_id: f.messageId,
+    format: f.format,
+    payment_ids: jsonParam(f.paymentIds),
+    supplier_invoice_ids: jsonParam(f.supplierInvoiceIds),
+    total_amount: f.totalAmount,
+    currency: f.currency,
+    xml: f.xml,
+    status: f.status,
+    replaced_by_file_id: f.replacedByFileId ?? null,
+    created_at: f.createdAt,
+    created_by: f.createdBy,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    filename: str(r.filename),
+    messageId: str(r.message_id),
+    format: r.format as PaymentFile["format"],
+    paymentIds: jsonVal<string[]>(r.payment_ids ?? []),
+    supplierInvoiceIds: jsonVal<string[]>(r.supplier_invoice_ids ?? []),
+    totalAmount: num(r.total_amount),
+    currency: "SEK",
+    xml: str(r.xml),
+    status: r.status as PaymentFile["status"],
+    ...opt("replacedByFileId", strOrU(r.replaced_by_file_id)),
+    createdAt: tsIso(r.created_at),
+    createdBy: (strOrU(r.created_by) as PaymentFile["createdBy"]) ?? "anvandare",
   }),
 };
 
@@ -1388,8 +1434,8 @@ export const inboxItemsSpec: TableSpec<InboxItem> = {
     "from_address", "to_address", "subject", "text_body", "html_body", "attachments",
     "parsed_amount", "parsed_vat_amount", "parsed_supplier", "parsed_date",
     "parsed_invoice_number", "parsed_due_date", "parsed_ocr", "parsed_bankgiro",
-    "parsed_details_confidence", "confidence", "expense_id", "supplier_invoice_id",
-    "created_at", "processed_at",
+    "parsed_details_confidence", "confidence", "extraction", "reviewed_at",
+    "expense_id", "supplier_invoice_id", "created_at", "processed_at",
   ],
   toRow: (item, businessId) => ({
     id: item.id,
@@ -1415,6 +1461,9 @@ export const inboxItemsSpec: TableSpec<InboxItem> = {
     parsed_bankgiro: item.parsedBankgiro ?? null,
     parsed_details_confidence: item.parsedDetailsConfidence ?? null,
     confidence: item.confidence ?? null,
+    // Per-fält-extraktion (värde + konfidens + källa) – litet och läses alltid ihop.
+    extraction: item.extraction ? jsonParam(item.extraction) : null,
+    reviewed_at: item.reviewedAt ?? null,
     expense_id: item.expenseId ?? null,
     supplier_invoice_id: item.supplierInvoiceId ?? null,
     created_at: item.createdAt,
@@ -1443,6 +1492,8 @@ export const inboxItemsSpec: TableSpec<InboxItem> = {
     ...opt("parsedBankgiro", strOrU(r.parsed_bankgiro)),
     ...opt("parsedDetailsConfidence", numOrU(r.parsed_details_confidence)),
     ...opt("confidence", numOrU(r.confidence)),
+    ...opt("extraction", r.extraction == null ? undefined : jsonVal<InboxItem["extraction"]>(r.extraction)),
+    ...opt("reviewedAt", tsIsoOrU(r.reviewed_at)),
     ...opt("expenseId", strOrU(r.expense_id)),
     ...opt("supplierInvoiceId", strOrU(r.supplier_invoice_id)),
     createdAt: tsIso(r.created_at),
@@ -1621,6 +1672,7 @@ export const settingsColumns = [
   "sate", "country", "bankgiro", "plusgiro", "bank_account", "iban", "bic", "logo_initials",
   "logo_data_url", "f_skatt_per_month", "payroll_reserve_per_month", "payment_terms_days",
   "late_interest_rate", "quote_validity_days", "default_vat_rate", "inbound_mail_slug",
+  "payer_bank_name", "payer_iban", "payer_bic",
 ];
 
 export function settingsToRow(s: CompanySettings, businessId: string): Record<string, unknown> {
@@ -1653,6 +1705,9 @@ export function settingsToRow(s: CompanySettings, businessId: string): Record<st
     quote_validity_days: s.quoteValidityDays,
     default_vat_rate: s.defaultVatRate,
     inbound_mail_slug: s.inboundMailSlug || "demo",
+    payer_bank_name: s.payerBankName ?? null,
+    payer_iban: s.payerIban ?? null,
+    payer_bic: s.payerBic ?? null,
   };
 }
 
@@ -1685,6 +1740,9 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
     quoteValidityDays: num(r.quote_validity_days),
     defaultVatRate: num(r.default_vat_rate) as CompanySettings["defaultVatRate"],
     ...opt("inboundMailSlug", strOrU(r.inbound_mail_slug)),
+    ...opt("payerBankName", strOrU(r.payer_bank_name)),
+    ...opt("payerIban", strOrU(r.payer_iban)),
+    ...opt("payerBic", strOrU(r.payer_bic)),
   };
 }
 

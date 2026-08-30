@@ -1,6 +1,8 @@
 import { datumKort, kr } from "../format";
+import { CONFIDENCE_THRESHOLDS } from "../autopilot";
 import type { PaymentDetailsCause } from "../services/payment-details";
 import type {
+  ExtractedField,
   InboxDocumentType,
   InboxItem,
   SupplierInvoice,
@@ -21,15 +23,21 @@ const IN_FLIGHT: ReadonlySet<SupplierPaymentStatus> = new Set([
   "SCHEDULED",
 ]);
 
+/** Hos banken (direktintegration). En skapad bankfil är INTE in flight – den har inte nått banken. */
 export function isPaymentInFlight(status: SupplierPaymentStatus): boolean {
   return IN_FLIGHT.has(status);
 }
+
+/** Hjälptext som alltid följer med "Bankfil skapad" – aldrig fejkad bankstatus. */
+export const PAYMENT_FILE_HELP_TEXT = "Ladda upp filen i din internetbank och godkänn betalningen där.";
 
 export function supplierPaymentUiLabel(status: SupplierPaymentStatus, scheduledDate?: string): string {
   switch (status) {
     case "DRAFT":
     case "READY":
-      return "Redo att betalas";
+      return "Redo att betala";
+    case "PAYMENT_FILE_CREATED":
+      return "Bankfil skapad";
     case "SUBMITTED_TO_BANK":
     case "AWAITING_APPROVAL":
       return "Skickad till bank";
@@ -74,8 +82,37 @@ export function inboxDocumentTitle(item: InboxItem, invoice?: SupplierInvoice): 
   return item.subject?.trim() || "Ekonomiskt dokument";
 }
 
+/* --------------------- Extraherade fält: mänskliga tillstånd ------------------ */
+
+/** "Säker" (≥ AUTO-tröskeln eller mänskligt kontrollerad) eller "Kontrollera". */
+export type ExtractedFieldState = "saker" | "kontrollera";
+
+export function extractedFieldState(field: ExtractedField<unknown> | undefined): ExtractedFieldState | undefined {
+  if (!field) return undefined;
+  return field.confidence >= CONFIDENCE_THRESHOLDS.AUTO ? "saker" : "kontrollera";
+}
+
+export function extractedFieldStateLabel(state: ExtractedFieldState): string {
+  return state === "saker" ? "Säker" : "Kontrollera";
+}
+
+/** Är dokumentets belopp säkert nog att agera på utan människa? */
+export function amountIsCertain(item: InboxItem): boolean {
+  if (item.parsedAmount == null) return false;
+  if (item.reviewedAt) return true;
+  const amountConfidence = item.extraction?.amount?.confidence ?? item.confidence ?? 0;
+  return amountConfidence >= CONFIDENCE_THRESHOLDS.AUTO;
+}
+
+/**
+ * Behöver beloppet mänsklig kontroll? Gäller både kvitton och fakturor –
+ * dokument med saknat ELLER osäkert belopp stannar tills en människa
+ * kontrollerat mot dokumentet (Kontrollera-vyn).
+ */
 export function needsAmountReview(item: InboxItem): boolean {
-  return item.parsedAmount == null && item.documentType !== "kvitto" ? item.status === "ny" : false;
+  if (item.status !== "ny") return false;
+  if (item.expenseId || item.supplierInvoiceId) return false;
+  return !amountIsCertain(item);
 }
 
 export function inboxDisplayStatus(input: {
@@ -92,6 +129,9 @@ export function inboxDisplayStatus(input: {
   }
   if (payment?.status === "PAID" || invoice?.status === "betald") {
     return { label: "Betald", tone: "ok" };
+  }
+  if (payment?.status === "PAYMENT_FILE_CREATED") {
+    return { label: "Bankfil skapad", tone: "info" };
   }
   if (payment && isPaymentInFlight(payment.status)) {
     if (payment.status === "SCHEDULED") {
@@ -119,7 +159,7 @@ export function inboxDisplayStatus(input: {
     return { label: "Kontrollera belopp", tone: "warn" };
   }
   if (invoice?.accountingStatus === "bokford" && (payment?.status === "READY" || payment?.status === "DRAFT")) {
-    return { label: "Redo att betalas", tone: "warn" };
+    return { label: "Bokförd · Redo att betala", tone: "warn" };
   }
   if (invoice?.accountingStatus === "bokford" && !payment) {
     return hasRecipientAccount(invoice)
@@ -141,7 +181,7 @@ export function hasRecipientAccount(invoice?: SupplierInvoice, payment?: Supplie
 
 /**
  * Öppna = behöver kompletteras, är redo att betalas, eller betalningen misslyckades.
- * Skickad/schemalagd/betald är hanterad historik (följs på På gång / Ekonomi).
+ * Bankfil skapad/skickad/schemalagd/betald är hanterad historik (följs på På gång / Ekonomi).
  */
 export function isInboxItemOpen(input: {
   item: InboxItem;
@@ -151,6 +191,7 @@ export function isInboxItemOpen(input: {
   const { item, invoice, payment } = input;
   if (payment?.status === "FAILED") return true;
   if (payment?.status === "PAID" || invoice?.status === "betald") return false;
+  if (payment?.status === "PAYMENT_FILE_CREATED") return false;
   if (payment && isPaymentInFlight(payment.status)) return false;
   if (item.documentType === "kvitto") {
     return item.status === "ny" || (item.status !== "bokford" && !item.expenseId);
@@ -182,7 +223,7 @@ export function countsTowardInboxBadge(input: {
   return false;
 }
 
-/** Redo att godkännas nu: bokförd, komplett, inte skickad, och förfallen eller nära. */
+/** Redo att godkännas nu: bokförd, komplett, ingen fil/inte skickad, och förfallen eller nära. */
 export function isReadyToApproveNow(input: {
   invoice?: SupplierInvoice;
   payment?: SupplierPayment;
@@ -191,6 +232,7 @@ export function isReadyToApproveNow(input: {
   const { invoice, payment, now = new Date() } = input;
   if (!invoice || invoice.accountingStatus !== "bokford" || invoice.status === "betald") return false;
   if (payment && isPaymentInFlight(payment.status)) return false;
+  if (payment?.status === "PAYMENT_FILE_CREATED") return false;
   if (payment?.status === "PAID" || payment?.status === "CANCELLED") return false;
   if (!hasRecipientAccount(invoice, payment)) return false;
   if (payment?.destinationChanged) return false;

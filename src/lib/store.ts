@@ -192,6 +192,7 @@ export function normalize(loaded: DB): DB {
   loaded.attentionStates ??= [];
   loaded.inboxItems ??= [];
   loaded.supplierPayments ??= [];
+  loaded.paymentFiles ??= [];
   loaded.jobWorkEntries ??= [];
   loaded.collaborationInvitations ??= [];
   loaded.clientInformationRequests ??= [];
@@ -227,6 +228,7 @@ function schemaNeedsNormalize(data: DB | undefined): boolean {
   if (!Array.isArray(data.domains) || !Array.isArray(data.domainAudit)) return true;
   if (!Array.isArray(data.inboxItems)) return true;
   if (!Array.isArray(data.supplierPayments)) return true;
+  if (!Array.isArray(data.paymentFiles)) return true;
   if (!Array.isArray(data.jobWorkEntries)) return true;
   if (!Array.isArray(data.collaborationInvitations)) return true;
   if (!Array.isArray(data.clientInformationRequests)) return true;
@@ -359,6 +361,7 @@ export function resetToEmptyCompany(): void {
     attentionStates: [],
     inboxItems: [],
     supplierPayments: [],
+    paymentFiles: [],
     collaborationInvitations: [],
     clientInformationRequests: [],
     meta: { seededAt: seeded, taxReductionDemoHydrated: true },

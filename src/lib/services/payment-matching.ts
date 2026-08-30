@@ -207,8 +207,15 @@ export interface PaymentSuggestion {
 }
 
 function scoreOutgoingSupplierPayments(tx: BankTransaction): PaymentSuggestion | null {
+  // PAYMENT_FILE_CREATED räknas som förväntad utbetalning: filen laddades
+  // upp i internetbanken utanför Driva, så banktransaktionen är första
+  // beviset på att betalningen faktiskt genomfördes.
   const open = supplierPayments().filter(
-    (p) => p.status === "SUBMITTED_TO_BANK" || p.status === "AWAITING_APPROVAL" || p.status === "SCHEDULED"
+    (p) =>
+      p.status === "PAYMENT_FILE_CREATED" ||
+      p.status === "SUBMITTED_TO_BANK" ||
+      p.status === "AWAITING_APPROVAL" ||
+      p.status === "SCHEDULED"
   );
   if (open.length === 0) return null;
   const amount = Math.abs(tx.amount);

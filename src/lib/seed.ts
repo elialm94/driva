@@ -1580,6 +1580,7 @@ export function buildSeed(): DB {
     receipts,
     supplierInvoices,
     supplierPayments,
+    paymentFiles: [],
     verifications,
     // Bokföringsmotorn: räkenskapsår och IB backfylls av migrateAccounting i store.normalize.
     fiscalYears: [],
