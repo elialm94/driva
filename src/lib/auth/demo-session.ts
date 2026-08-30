@@ -55,14 +55,20 @@ export function demoSessionMaxAgeSeconds(): number {
   return Math.round(hours * 3600);
 }
 
-/** Cookievärdet är sessionens utgångstid – proxyn litar aldrig enbart på maxAge. */
+/**
+ * Cookievärdet är "utgångstid.slumpdel": proxyn läser utgångstiden (litar
+ * aldrig enbart på maxAge) och slumpdelen gör värdet unikt per besökare –
+ * AI-budgetens per-sessionsfönster nycklar på det.
+ */
 export function demoCookieValueNow(): string {
-  return String(Date.now() + demoSessionMaxAgeSeconds() * 1000);
+  const expires = Date.now() + demoSessionMaxAgeSeconds() * 1000;
+  const nonce = Math.random().toString(36).slice(2, 12);
+  return `${expires}.${nonce}`;
 }
 
 export function isDemoCookieValueActive(value: string | undefined): boolean {
   if (!value) return false;
-  const expires = Number(value);
+  const expires = Number(value.split(".")[0]);
   return Number.isFinite(expires) && expires > Date.now();
 }
 

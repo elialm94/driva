@@ -22,6 +22,7 @@ import { uid } from "../ids";
 import { businessTimezone } from "../services/reminders";
 import type { AssistantCard } from "../types";
 import {
+  AiDemoLimitError,
   AiTransportError,
   aiConfig,
   chatWithTools,
@@ -164,6 +165,11 @@ export async function runAiCommandLoop(
     try {
       response = await chatWithTools({ messages, tools, model });
     } catch (e) {
+      // Demons AI-budget: ärligt demomeddelande, och nekade anrop loggas inte
+      // (dygnstaket räknar loggen – avslag får aldrig blåsa upp det).
+      if (e instanceof AiDemoLimitError) {
+        return { ok: false, text: e.message, unavailable: true, executedTools };
+      }
       const error = e instanceof AiTransportError ? e.message : "Okänt transportfel";
       logUsage({ model, inputTokens: 0, outputTokens: 0, toolCalls: [], latencyMs: Date.now() - started, success: false, error });
       return { ok: false, text: AI_UNAVAILABLE_MESSAGE, unavailable: true, executedTools };
