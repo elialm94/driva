@@ -129,8 +129,8 @@ export default async function AdminOverviewPage() {
         >
           <KeyValueList
             rows={[
-              { label: "Nya", value: m.support.open },
-              { label: "Pågående", value: m.support.inProgress },
+              { label: "Öppna", value: m.support.open },
+              { label: "Pågår", value: m.support.inProgress },
               { label: "Väntar på kund", value: m.support.waiting },
               { label: "Lösta totalt", value: m.support.resolvedTotal },
               {

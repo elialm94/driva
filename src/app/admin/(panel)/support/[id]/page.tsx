@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   assignTicketToMeAction,
+  setTicketAdminNotesAction,
   setTicketPriorityAction,
   setTicketStatusAction,
   startSupportSessionAction,
@@ -19,10 +20,11 @@ import { requirePlatformAdmin } from "@/lib/platform/auth";
 import { listPlatformAdmins, supportTicketById } from "@/lib/platform/store";
 import type { SupportTicketStatus } from "@/lib/platform/types";
 import { SUPPORT_TICKET_STATUS_LABEL } from "@/lib/platform/types";
+import { signedSupportAttachmentUrl } from "@/lib/platform/ticket-attachments";
 
 export const metadata = { title: "Supportärende" };
 
-const NEXT_STATUS: SupportTicketStatus[] = ["open", "in_progress", "waiting_for_customer", "resolved"];
+const PRIMARY_STATUS: SupportTicketStatus[] = ["open", "in_progress", "resolved"];
 
 export default async function TicketDetailPage(props: PageProps<"/admin/support/[id]">) {
   const ctx = await requirePlatformAdmin();
@@ -32,7 +34,14 @@ export default async function TicketDetailPage(props: PageProps<"/admin/support/
 
   const admins = await listPlatformAdmins();
   const assigned = admins.find((a) => a.userId === ticket.assignedAdminId);
+  const resolvedBy = ticket.resolvedBy ? admins.find((a) => a.userId === ticket.resolvedBy) : undefined;
   const mine = ticket.assignedAdminId === ctx.admin.userId;
+  const signedUrl = ticket.attachmentPath ? await signedSupportAttachmentUrl(ticket.attachmentPath) : null;
+  const attachmentHref =
+    signedUrl || (ticket.attachmentPath ? `/api/admin/support-bilaga/${ticket.id}` : ticket.attachmentDataUrl);
+  const attachmentIsImage =
+    Boolean(ticket.attachmentDataUrl?.startsWith("data:image/")) ||
+    /\.(png|jpe?g|webp|gif)$/i.test(ticket.attachmentName ?? "");
 
   return (
     <div className="space-y-4">
@@ -51,29 +60,33 @@ export default async function TicketDetailPage(props: PageProps<"/admin/support/
 
       <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
         <div className="space-y-4">
-          <AdminCard title="Meddelande från kunden">
+          <AdminCard title="Meddelande">
             <div className="px-4 py-3">
               <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-neutral-200">
                 {maskPersonnummer(ticket.message)}
               </p>
-              {ticket.attachmentDataUrl ? (
+              {ticket.attachmentName ? (
                 <div className="mt-3 border-t border-neutral-800 pt-3">
-                  <p className="text-[12px] text-neutral-500">Bilaga: {ticket.attachmentName}</p>
-                  {ticket.attachmentDataUrl.startsWith("data:image/") ? (
+                  <p className="text-[12px] text-neutral-500">Bilaga</p>
+                  {attachmentHref && attachmentIsImage ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={ticket.attachmentDataUrl}
-                      alt={ticket.attachmentName ?? "Bilaga"}
+                      src={attachmentHref}
+                      alt={ticket.attachmentName}
                       className="mt-2 max-h-96 rounded-lg border border-neutral-800"
                     />
-                  ) : (
+                  ) : null}
+                  {attachmentHref ? (
                     <a
-                      href={ticket.attachmentDataUrl}
-                      download={ticket.attachmentName ?? "bilaga"}
+                      href={attachmentHref}
+                      target="_blank"
+                      rel="noreferrer"
                       className="mt-2 inline-flex text-[13px] text-amber-300 hover:underline"
                     >
-                      Ladda ner bilagan
+                      {ticket.attachmentName}
                     </a>
+                  ) : (
+                    <p className="mt-1 text-[13px] text-neutral-400">{ticket.attachmentName}</p>
                   )}
                 </div>
               ) : null}
@@ -82,15 +95,24 @@ export default async function TicketDetailPage(props: PageProps<"/admin/support/
 
           <AdminCard title="Status">
             <div className="flex flex-wrap gap-2 px-4 py-3">
-              {NEXT_STATUS.filter((s) => s !== ticket.status).map((s) => (
+              {PRIMARY_STATUS.map((s) => (
                 <ActionButton
                   key={s}
                   action={setTicketStatusAction}
                   fields={{ ticketId: ticket.id, status: s }}
+                  variant={s === ticket.status ? "primary" : "secondary"}
                 >
-                  → {SUPPORT_TICKET_STATUS_LABEL[s]}
+                  {SUPPORT_TICKET_STATUS_LABEL[s]}
                 </ActionButton>
               ))}
+              {ticket.status !== "waiting_for_customer" ? (
+                <ActionButton
+                  action={setTicketStatusAction}
+                  fields={{ ticketId: ticket.id, status: "waiting_for_customer" }}
+                >
+                  Väntar på kund
+                </ActionButton>
+              ) : null}
               <ActionButton
                 action={assignTicketToMeAction}
                 fields={{ ticketId: ticket.id, release: mine ? "1" : "0" }}
@@ -111,13 +133,30 @@ export default async function TicketDetailPage(props: PageProps<"/admin/support/
             </div>
           </AdminCard>
 
+          <AdminCard title="Intern anteckning">
+            <div className="px-4 py-3">
+              <StateForm action={setTicketAdminNotesAction} className="flex flex-col gap-2">
+                <input type="hidden" name="ticketId" value={ticket.id} />
+                <textarea
+                  name="notes"
+                  rows={3}
+                  defaultValue={ticket.adminNotes ?? ""}
+                  placeholder="Bara synlig för Driva Admin"
+                  className={adminTextareaClass}
+                />
+                <div>
+                  <PendingButton variant="secondary">Spara anteckning</PendingButton>
+                </div>
+              </StateForm>
+            </div>
+          </AdminCard>
+
           {ticket.businessId ? (
             <AdminCard title="Starta supportläge (öppna som kund)">
               <div className="px-4 py-3">
                 <p className="text-[12.5px] leading-relaxed text-neutral-500">
-                  Öppnar kundens Driva i exakt den kontext ärendet gäller. Sessionen är tidsbegränsad
-                  (60 min), kräver ett skäl och allt du ändrar auditeras med ditt namn – aldrig
-                  kundens (spec: inga kundlösenord, ingen imitation).
+                  Öppnar kundens Driva i den kontext ärendet gäller. Sessionen är tidsbegränsad
+                  (60 min), kräver ett skäl och allt du ändrar auditeras med ditt namn.
                 </p>
                 <StateForm action={startSupportSessionAction} className="mt-3 flex flex-col gap-2">
                   <input type="hidden" name="businessId" value={ticket.businessId} />
@@ -140,11 +179,9 @@ export default async function TicketDetailPage(props: PageProps<"/admin/support/
         </div>
 
         <div className="space-y-4">
-          <AdminCard title="Kontext (automatiskt bifogad)">
+          <AdminCard title="Kontext">
             <KeyValueList
               rows={[
-                { label: "Skapat", value: datumTidKort(ticket.createdAt) },
-                { label: "Uppdaterat", value: datumTidKort(ticket.updatedAt) },
                 {
                   label: "Företag",
                   value: ticket.businessId ? (
@@ -165,14 +202,19 @@ export default async function TicketDetailPage(props: PageProps<"/admin/support/
                       href={(`/admin/users/${ticket.userId}`) as never}
                       className="text-amber-300 hover:underline"
                     >
-                      {ticket.userEmail}
+                      {ticket.userName || ticket.userEmail}
                     </Link>
                   ) : (
-                    ticket.userEmail
+                    ticket.userName || "–"
                   ),
                 },
-                { label: "Namn", value: ticket.userName || "–" },
-                { label: "Rutt i appen", value: <code className="text-[12px]">{ticket.route || "–"}</code> },
+                { label: "E-post", value: ticket.userEmail || "–" },
+                { label: "Skickat", value: datumTidKort(ticket.createdAt) },
+                { label: "Sida", value: <code className="text-[12px]">{ticket.route || "–"}</code> },
+                { label: "Miljö", value: ticket.environment || "–" },
+                { label: "Uppdaterat", value: datumTidKort(ticket.updatedAt) },
+                { label: "Löst", value: ticket.resolvedAt ? datumTidKort(ticket.resolvedAt) : "–" },
+                { label: "Löst av", value: resolvedBy ? resolvedBy.name || resolvedBy.email : "–" },
                 { label: "App-version", value: ticket.appVersion || "Okänd" },
                 {
                   label: "Enhet",
