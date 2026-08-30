@@ -228,7 +228,7 @@ describe("inputMode och native-validering i källan", () => {
     assert.match(src, /noValidate/);
     assert.doesNotMatch(src, /pattern=/);
     assert.match(src, /swedishOrgnrInputProps/);
-    assert.match(src, /555555-5555/);
+    assert.equal(swedishOrgnrInputProps.placeholder, "555555-5555");
     assert.match(src, /validateOnboardingFields/);
     assert.match(src, /inputMode/);
   });

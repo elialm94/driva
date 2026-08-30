@@ -315,9 +315,21 @@ const LEAD_VERBS = new Set([
   "ring", "ringa", "skicka", "beställa", "kolla", "kontakta", "maila", "mejla", "boka", "följa", "prata",
 ]);
 
+const INFINITIVE_HEAD: Record<string, string> = {
+  ringa: "Ring",
+  kolla: "Kolla",
+  skicka: "Skicka",
+  beställa: "Beställ",
+  fakturera: "Fakturera",
+  kontakta: "Kontakta",
+  maila: "Maila",
+  mejla: "Mejla",
+  boka: "Boka",
+};
+
 /**
- * Rimlig visningsversalisering: "skicka till göran" → "Skicka till Göran".
- * Byter ALDRIG verb ("skicka" förblir "skicka", inte "ring").
+ * Rimlig visningsversalisering: "skicka till göran" → "Skicka till Göran",
+ * "ringa Göran" → "Ring Göran".
  */
 export function prettyReminderTitle(title: string): string {
   const words = title.replace(/\s+/g, " ").trim().split(" ");
@@ -326,7 +338,7 @@ export function prettyReminderTitle(title: string): string {
     .map((raw, i) => {
       if (!raw) return raw;
       const lower = raw.toLocaleLowerCase("sv");
-      if (i === 0) return raw.charAt(0).toLocaleUpperCase("sv") + raw.slice(1);
+      if (i === 0) return INFINITIVE_HEAD[lower] ?? raw.charAt(0).toLocaleUpperCase("sv") + raw.slice(1);
       if (TITLE_STOP.has(lower)) return lower;
       const prev = words[i - 1]?.toLocaleLowerCase("sv");
       if (prev && NAME_AFTER.has(prev)) {

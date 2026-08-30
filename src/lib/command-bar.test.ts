@@ -206,7 +206,7 @@ describe("parseCommand (hela originalfrasen → intent + argument)", () => {
     assert.equal(p.reminder.title, "ringa Göran");
     assert.equal(p.reminder.args.time, "12:00");
     assert.equal(p.reminder.args.weekday, "onsdag");
-    assert.equal(previewReminderDueFromArgs(p.reminder.args, SUNDAY, TZ), "Onsdag 2 september kl. 12:00");
+    assert.equal(previewReminderDueFromArgs(p.reminder.args, SUNDAY, TZ), "Onsdag 2 september kl 12:00");
   });
 
   it("välja ”Skapa påminnelse” med kvarvarande originaltext extraherar fortfarande argument", () => {

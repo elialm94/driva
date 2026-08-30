@@ -16,6 +16,7 @@ import {
   validateOnboardingFields,
   type OnboardingPaymentMethod,
 } from "@/lib/onboarding";
+import { swedishOrgnrInputProps } from "@/lib/validation";
 
 const initialState: OnboardingFormState = {};
 
@@ -128,16 +129,13 @@ export function OnboardingForm({
         >
           <input
             name="orgNumber"
-            inputMode="numeric"
-            autoComplete="off"
-            spellCheck={false}
+            {...swedishOrgnrInputProps}
             value={orgNumber}
             onChange={(e) => {
               const formatted = formatOrgnr(e.target.value);
               setOrgNumber(formatted);
               suggestVatFromOrgnr(formatted);
             }}
-            placeholder="559123-4567"
             className={cx(field, errors?.orgNumber && invalidFieldCls)}
           />
         </FormField>
