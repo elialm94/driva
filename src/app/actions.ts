@@ -115,11 +115,20 @@ import {
 } from "@/lib/services/expenses";
 import {
   addServiceItem,
+  addTestimonialItem,
+  addWebsiteSection,
+  beginInstagramConnect,
+  disconnectInstagram,
   generateWebsite,
+  instagramConnectStatus,
   publishWebsite,
+  refreshInstagramPosts,
   removeServiceItem,
+  removeTestimonialItem,
+  removeWebsiteSection,
   reorderSections,
   reorderServiceItems,
+  reorderTestimonialItems,
   rewriteSectionHeading,
   sectionImages,
   setSectionVisible,
@@ -128,7 +137,10 @@ import {
   updatePrivacyPolicySupplement,
   updateSection,
   updateServiceItem,
+  updateTestimonialItem,
+  type UpdateSectionFields,
 } from "@/lib/services/website";
+import type { AddableSectionType } from "@/lib/website-sections";
 import {
   cancelPendingAction,
   completeCreateCustomerAndResume,
@@ -1129,7 +1141,7 @@ export async function generateWebsiteAction(description: string) {
 
 export async function updateSectionAction(
   sectionId: string,
-  fields: { heading?: string; body?: string; image?: string | null; primaryCtaLabel?: string },
+  fields: UpdateSectionFields,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return withBusiness(() => {
     try {
@@ -1210,6 +1222,134 @@ export async function setSectionVisibleAction(sectionId: string, visible: boolea
   await withBusiness(() => {
     setSectionVisible(sectionId, visible);
     refresh();
+  });
+}
+
+export async function addWebsiteSectionAction(
+  type: AddableSectionType,
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const section = addWebsiteSection(type);
+      refresh();
+      return { ok: true as const, id: section.id };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte lägga till sektionen." };
+    }
+  });
+}
+
+export async function removeWebsiteSectionAction(
+  sectionId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      removeWebsiteSection(sectionId);
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte ta bort sektionen." };
+    }
+    refresh();
+    return { ok: true as const };
+  });
+}
+
+export async function addTestimonialItemAction(
+  sectionId: string,
+  item: WebsiteSectionItem,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      addTestimonialItem(sectionId, item);
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte spara omdömet." };
+    }
+    refresh();
+    return { ok: true as const };
+  });
+}
+
+export async function updateTestimonialItemAction(
+  sectionId: string,
+  index: number,
+  fields: { title?: string; text?: string; location?: string | null; rating?: number | null },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      updateTestimonialItem(sectionId, index, fields);
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte spara omdömet." };
+    }
+    refresh();
+    return { ok: true as const };
+  });
+}
+
+export async function removeTestimonialItemAction(sectionId: string, index: number) {
+  return withBusiness(() => {
+    const result = removeTestimonialItem(sectionId, index);
+    if (!result.error) refresh();
+    return result;
+  });
+}
+
+export async function reorderTestimonialItemsAction(sectionId: string, fromIndex: number, toIndex: number) {
+  await withBusiness(() => {
+    reorderTestimonialItems(sectionId, fromIndex, toIndex);
+    refresh();
+  });
+}
+
+export async function instagramStatusAction(sectionId: string) {
+  return withBusinessRead(() => {
+    try {
+      return instagramConnectStatus(sectionId);
+    } catch {
+      return null;
+    }
+  });
+}
+
+export async function beginInstagramConnectAction(
+  sectionId: string,
+  handle: string,
+): Promise<{ ok: true; url: string } | { ok: false; error: string; needsSetup?: boolean }> {
+  return withBusiness(() => {
+    try {
+      const result = beginInstagramConnect(sectionId, handle);
+      refresh();
+      return { ok: true as const, url: result.url };
+    } catch (e) {
+      const error = e instanceof Error ? e.message : "Kunde inte ansluta Instagram.";
+      return {
+        ok: false as const,
+        error,
+        needsSetup: /INSTAGRAM_APP_|inte konfigurerat/i.test(error),
+      };
+    }
+  });
+}
+
+export async function disconnectInstagramAction(sectionId: string) {
+  return withBusiness(() => {
+    try {
+      disconnectInstagram(sectionId);
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte koppla från." };
+    }
+    refresh();
+    return { ok: true as const };
+  });
+}
+
+export async function refreshInstagramPostsAction(sectionId: string) {
+  return withBusiness(async () => {
+    try {
+      await refreshInstagramPosts(sectionId);
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte hämta inlägg." };
+    }
+    refresh();
+    return { ok: true as const };
   });
 }
 

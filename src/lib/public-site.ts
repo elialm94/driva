@@ -6,6 +6,7 @@ import { ensurePageBusiness, ensurePublicPage } from "./auth/session";
 import { isSupabaseMode } from "./storage/config";
 import type { CompanySettings, Website, WebsiteDesign } from "./types";
 import { privacyPolicyHref } from "./website-privacy";
+import { stripWebsiteSecrets } from "./website-sections";
 
 /**
  * Tenantupplösning för den publika sajten: i Supabase-läge löses företaget
@@ -62,7 +63,7 @@ export async function loadPublicSite(
     preview && website.status === "publicerad" && !sameDesign(design, publishedWebsiteDesign(website));
 
   return {
-    website,
+    website: stripWebsiteSecrets(website),
     company,
     preview,
     design,

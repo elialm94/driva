@@ -15,19 +15,36 @@ import { getWebsiteNotificationEmail } from "@/lib/services/settings";
 import { isLiveMailConfigured } from "@/lib/mail";
 import { SETTINGS_HREF } from "@/lib/settings-routes";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { SECTION_LABELS, stripWebsiteSecrets } from "@/lib/website-sections";
+import { resolveSiteContact } from "@/lib/website-contact";
 
 export const metadata = { title: "Hemsida" };
 
-const SECTION_LABELS: Record<string, string> = {
-  hero: "Startsektion",
-  tjanster: "Tjänster",
-  om: "Om oss",
-  galleri: "Galleri",
-  kontakt: "Kontakt",
-};
+function instagramBanner(status?: string) {
+  if (status === "ansluten") {
+    return { tone: "ok" as const, text: "Instagram är anslutet. Publicera ändringar för att visa inläggen på sajten." };
+  }
+  if (status === "nekad") {
+    return { tone: "warn" as const, text: "Instagram-anslutningen avbröts. Du kan försöka igen från sektionen." };
+  }
+  if (status === "saknar_uppgifter") {
+    return {
+      tone: "warn" as const,
+      text: "Instagram är inte konfigurerat. Sätt INSTAGRAM_APP_ID och INSTAGRAM_APP_SECRET, starta om och försök igen.",
+    };
+  }
+  if (status === "fel") {
+    return { tone: "danger" as const, text: "Kunde inte ansluta Instagram. Kontrollera kontot och försök igen." };
+  }
+  return null;
+}
 
-export default async function WebsitePage() {
+export default async function WebsitePage(props: PageProps<"/hemsida">) {
   await ensurePageBusiness();
+  const searchParams = await props.searchParams;
+  const instagramNotice = instagramBanner(
+    typeof searchParams.instagram === "string" ? searchParams.instagram : undefined,
+  );
   const data = db();
   const site = data.website;
 
@@ -62,14 +79,29 @@ export default async function WebsitePage() {
 
   // Redigeringslistan behöver inte bilddatan (tunga data-URL:er) – bara vetskap om att bild finns.
   // Själva bilderna hämtas när en sektion öppnas för redigering.
-  const listSections = site.sections.map(({ image, items, ...rest }) => ({
+  const safeSite = stripWebsiteSecrets(site);
+  const listSections = safeSite.sections.map(({ image, items, ...rest }) => ({
     ...rest,
     hasImage: Boolean(image),
     items: items?.map(({ image: itemImage, ...itemRest }) => ({ ...itemRest, hasImage: Boolean(itemImage) })),
   }));
+  const businessContact = resolveSiteContact(data.settings, site);
 
   return (
     <div className="animate-fade-up">
+      {instagramNotice ? (
+        <div
+          className={`mb-4 rounded-2xl px-4 py-3 text-[13px] leading-relaxed ${
+            instagramNotice.tone === "ok"
+              ? "bg-ok-soft text-ok"
+              : instagramNotice.tone === "danger"
+                ? "bg-danger-soft text-danger"
+                : "bg-warn-soft text-warn"
+          }`}
+        >
+          {instagramNotice.text}
+        </div>
+      ) : null}
       <PageHeader
         title="Hemsida"
         subtitle={
@@ -108,7 +140,7 @@ export default async function WebsitePage() {
             </div>
             <CopyLinkButton path="/sajt" label="Kopiera länk" />
           </div>
-          <SitePreviewFrame website={site} company={data.settings} />
+          <SitePreviewFrame website={safeSite} company={data.settings} />
           <p className="mt-2 text-[12px] text-muted">
             Det här är exakt vad besökarna ser. Formuläret är aktivt på den publicerade sajten.
           </p>
@@ -133,6 +165,7 @@ export default async function WebsitePage() {
                 sections={listSections}
                 labels={SECTION_LABELS}
                 primaryCtaLabel={site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL}
+                businessContact={businessContact}
               />
             </Card>
             <p className="mt-2 text-[12px] leading-relaxed text-muted">

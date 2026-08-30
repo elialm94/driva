@@ -3,6 +3,7 @@ import { SiteRenderer } from "@/components/site-renderer";
 import { ensureSiteTenant, loadPublicSite, publicSiteHost } from "@/lib/public-site";
 import { db } from "@/lib/store";
 import { resolvePublicSite } from "@/lib/domains";
+import { stripWebsiteSecrets } from "@/lib/website-sections";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export default async function PublicSitePage(props: PageProps<"/sajt">) {
         </div>
       ) : null}
       <SiteRenderer
-        website={loaded.website}
+        website={stripWebsiteSecrets(loaded.website)}
         company={loaded.company}
         design={loaded.design}
         privacyHref={loaded.privacyHref}
