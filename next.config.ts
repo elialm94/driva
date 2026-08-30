@@ -5,18 +5,9 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: "2mb",
     },
-    /**
-     * Klientcache för besökta sidor (§ prestandapasset): tillbaka-navigering
-     * och upprepade besök inom fönstret återanvänder RSC-payloaden direkt –
-     * ingen refetch-laddning-rendering. Muterande flöden invaliderar cachen
-     * (server actions med revalidatePath, router.refresh() efter åtgärder,
-     * cookie-byten vid företags-/arbetsytebyte), så finansiella vyer visar
-     * aldrig inaktuellt efter en egen ändring.
-     */
-    staleTimes: {
-      dynamic: 30,
-      static: 300,
-    },
+    // Ingen staleTimes: dynamic-default är 0 sedan Next 15. Prestandapassets
+    // 30 s klientcache återanvände avhuggna RSC-prefetch-payloads vid klick
+    // och gav "This page couldn't load" (React #412 Connection closed).
   },
   async redirects() {
     return [

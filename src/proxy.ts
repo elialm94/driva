@@ -40,7 +40,29 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+/** Next.js prefetch – inte en riktig navigering. */
+function isRouterPrefetch(request: NextRequest): boolean {
+  return (
+    request.headers.get("next-router-prefetch") === "1" ||
+    request.headers.get("next-router-segment-prefetch") !== null
+  );
+}
+
 export async function proxy(request: NextRequest) {
+  try {
+    return await runSessionProxy(request);
+  } catch {
+    // En kastad getClaims/nätverksmiss ska inte ge "This page couldn't load".
+    // Sidans requireUser/ensurePageBusiness är den riktiga auktoriseringen.
+    return NextResponse.next({ request });
+  }
+}
+
+async function runSessionProxy(request: NextRequest) {
+  // Prefetch ska inte friska session eller redirecta – det har på Vercel
+  // timeoutat och lämnat avhuggna RSC-payloads till klientcachen.
+  if (isRouterPrefetch(request)) return NextResponse.next({ request });
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const key =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
@@ -108,6 +130,10 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Hoppa över statiska filer och bildoptimering. Allt annat passerar proxyn.
-  matcher: ["/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)"],
+  // Hoppa över statiska filer, bildoptimering och interna Next-dataanrop.
+  // Bred matcher på _next/* + RSC har på Vercel gett trasiga navigeringar
+  // ("This page couldn't load").
+  matcher: [
+    "/((?!_next/static|_next/image|_next/data|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)",
+  ],
 };
