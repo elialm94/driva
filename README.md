@@ -101,6 +101,8 @@ Kopiera `.env.example` → `.env.local` och fyll i:
 
 Serverless (Vercel): använd **Transaction pooler**-URL:en (port 6543) som `SUPABASE_DB_URL`. Ingen av server-variablerna får någonsin ges ett `NEXT_PUBLIC_`-prefix.
 
+> **Vercel↔Supabase-integrationen:** kopplar du Supabase via Vercels Marketplace-integration i stället för att sätta variablerna för hand får du databas-URL:en under `POSTGRES_URL` / `POSTGRES_PRISMA_URL` / `POSTGRES_URL_NON_POOLING` – integrationen sätter **aldrig** `SUPABASE_DB_URL`. Appen accepterar dessa namn automatiskt (poolade `POSTGRES_URL*` föredras för serverless). Nyckeln kan heta `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` i stället för `NEXT_PUBLIC_SUPABASE_ANON_KEY`; båda fungerar.
+
 ### 3. Migrationer
 
 Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (8 filer: extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets).
@@ -134,6 +136,7 @@ Skriptet skapar auth-användaren (service role), företaget med ägarmedlemskap 
 1. Sätt `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` och `SUPABASE_DB_URL` (Transaction pooler) i Vercel-projektets miljövariabler. `SUPABASE_SERVICE_ROLE_KEY` behövs **inte** i appen – endast för seed-/migreringsskripten lokalt.
 2. Deploya. Utan komplett miljö vägrar appen starta mot data (inget tyst demoläge).
 3. Verifiera: `/login` ska visas, en ny användare ska hamna i onboarding och få ett eget företag.
+4. **Diagnostik:** öppna `/api/health` på den driftsatta sajten. Endpointen kräver ingen inloggning och läcker inga hemligheter – den visar vilka miljövariabler som saknas, om databasen svarar och om migrationerna körts. `status: "ok"` = allt på plats; `misconfigured` = sätt env; `degraded` med hint om schema = kör `supabase db push`.
 
 ### 7. Manuella steg i dashboarden
 

@@ -70,6 +70,12 @@ export function mailProviderAvailable(): boolean {
 export function appOrigin(): string {
   const raw = process.env.DRIVA_APP_URL?.trim() || process.env.APP_URL?.trim();
   if (raw) return raw.replace(/\/$/, "");
+  // På Vercel injiceras domänen automatiskt (utan protokoll). Använd den så att
+  // publika länkar (offert-/faktura-/BankID-länkar, e-post) pekar på den riktiga
+  // sajten i stället för localhost när DRIVA_APP_URL inte är satt.
+  const vercelHost =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.VERCEL_URL?.trim();
+  if (vercelHost) return `https://${vercelHost.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
   return "http://localhost:3123";
 }
 
