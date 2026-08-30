@@ -12,6 +12,11 @@ export const RETURN_LABEL_PARAM = "tillbakaNamn";
 
 export type NavSection = "hem" | "kunder" | "ekonomi" | "inbox" | "bokforing" | "hemsida" | "samarbeta";
 
+/**
+ * Primär sidomeny. Badge (tal) betyder "något väntar på dig" – bara Inbox
+ * och Bokföring. Hem är den samlade vyn och får ingen summerad badge.
+ * Kunder/Ekonomi/Samarbeta/Hemsida räknar inte poster.
+ */
 export const NAV_ITEMS: { href: string; section: NavSection; label: string }[] = [
   { href: "/", section: "hem", label: "Hem" },
   { href: "/kunder", section: "kunder", label: "Kunder" },
