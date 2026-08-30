@@ -1479,12 +1479,13 @@ function rowVisual(item: BarItem): { icon: CommandIcon; label: ReactNode; sublab
     case "reminderCreate":
       return {
         icon: "clock",
-        label: formatResolvedCommandCta({
-          command: "Skapa påminnelse",
-          detail: item.title.length > 40 ? `${item.title.slice(0, 37)}…` : item.title,
-          when: item.due,
-        }),
-        sublabel: "Enter för att skapa",
+        label: (
+          <span className="flex flex-col gap-0.5">
+            <span>Skapa påminnelse</span>
+            {item.title ? <span className="font-semibold text-ink">{item.title}</span> : null}
+          </span>
+        ),
+        sublabel: item.due ?? "Enter för att skapa",
       };
     case "reminderSlotFill":
       return {
@@ -1551,8 +1552,10 @@ function ItemRow({
         <Icon className="size-4" strokeWidth={2} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px] font-medium text-ink">{label}</span>
-        {sublabel ? <span className="block truncate text-[12.5px] text-muted">{sublabel}</span> : null}
+        <span className="block text-[14px] font-medium text-ink max-lg:whitespace-normal lg:truncate">{label}</span>
+        {sublabel ? (
+          <span className="block text-[12.5px] text-muted max-lg:whitespace-normal lg:truncate">{sublabel}</span>
+        ) : null}
       </span>
       {confirmRequired ? (
         <span className="shrink-0 rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn">
