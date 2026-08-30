@@ -21,9 +21,12 @@ function looksLikeEmail(value: string): boolean {
 export function SamarbetaView({
   people,
   localDemo = false,
+  demoSession = false,
 }: {
   people: SamarbetaPerson[];
   localDemo?: boolean;
+  /** Publika demosessionen: konsultbytet öppnas som vy på samma session. */
+  demoSession?: boolean;
 }) {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [confirm, setConfirm] = useState<SamarbetaPerson | null>(null);
@@ -172,7 +175,7 @@ export function SamarbetaView({
 
       <p className="text-[13px] text-muted">Du kan ta bort åtkomsten när som helst.</p>
 
-      {localDemo ? (
+      {localDemo || demoSession ? (
         <p className="text-[13px] text-soft">
           <button
             type="button"
@@ -181,7 +184,7 @@ export function SamarbetaView({
           >
             Öppna redovisningsytan som Anna Svensson
           </button>
-          <span className="text-muted"> · lokal förhandsvisning</span>
+          <span className="text-muted"> · {demoSession ? "demo" : "lokal förhandsvisning"}</span>
         </p>
       ) : null}
 

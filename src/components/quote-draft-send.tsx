@@ -33,7 +33,7 @@ export function QuoteDraftSend({
   customerName: string;
   amount: number;
   validUntilLabel: string;
-  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; mailed?: boolean }>;
+  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; mailed?: boolean; demo?: boolean }>;
   detailHref: string;
   recipientEmail?: string;
   hasSendBlockers?: boolean;
@@ -65,7 +65,7 @@ export function QuoteDraftSend({
     requestAction();
   }
 
-  function finish(flag: "1" | "manuell" = "1") {
+  function finish(flag: "1" | "manuell" | "demo" = "1") {
     router.replace(withFlag(detailHref, "skickad", flag));
     router.refresh();
   }
@@ -77,6 +77,10 @@ export function QuoteDraftSend({
       const result = await sendAction();
       if (result && result.ok === false) {
         setSendError((result.errors ?? []).join(" ") || "Offerten kunde inte skickas just nu.");
+        return;
+      }
+      if (result && result.demo) {
+        finish("demo");
         return;
       }
       const mailed = !result || result.mailed !== false;

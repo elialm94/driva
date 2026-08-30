@@ -13,6 +13,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { isSupabaseMode } from "@/lib/storage/config";
 import {
+  businessNameById,
   createBusinessWithOwner,
   loadStateSnapshot,
   membershipsForUser,
@@ -27,12 +28,14 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { BusinessRole } from "@/lib/types";
 import { isAccountingRole, isOwnerRole, type CollaborationCapability, assertCan } from "@/lib/collaboration/permissions";
 import {
+  LOCAL_JSON_ACCOUNTANT_NAME,
   LOCAL_JSON_BUSINESS_ID,
   LOCAL_JSON_USER_ID,
   runAsActor,
   setTestActor,
   type CollaborationActor,
 } from "@/lib/collaboration/actor";
+import { DEMO_ACTOR_COOKIE, isDemoUserEmail } from "@/lib/auth/demo-session";
 import { ensureLocalDemoCollaboration } from "@/lib/collaboration/local-demo";
 import {
   activeMembershipFor,
@@ -69,14 +72,73 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
   if (!claims?.sub) return null;
-  return { id: String(claims.sub), email: String(claims.email ?? "") };
+  const email = String(claims.email ?? "");
+  if (isDemoUserEmail(email)) {
+    // Demosessionen presenteras som "Du" (som lokala demon) – och som Anna
+    // Svensson när det demo-lokala konsultbytet är aktivt.
+    const name = (await readDemoActorCookie()) === "accountant" ? LOCAL_JSON_ACCOUNTANT_NAME : "Du";
+    return { id: String(claims.sub), email, name };
+  }
+  return { id: String(claims.sub), email };
 });
+
+/** Demo-only aktörsbyte (Anna-vyn). Läses aldrig för riktiga användare. */
+async function readDemoActorCookie(): Promise<"accountant" | null> {
+  try {
+    const jar = await cookies();
+    return jar.get(DEMO_ACTOR_COOKIE)?.value === "accountant" ? "accountant" : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Demo-only impersonering, isolerad till demoföretaget: när demosessionen
+ * öppnat redovisningsytan "som Anna Svensson" presenteras demo-användarens
+ * ägarmedlemskap som redovisningskonsult. Bara en VY på samma verifierade
+ * identitet – medlemskapet i databasen ändras inte, inga andra företag
+ * tillkommer, och all skrivauktorisering går genom samma capability-kontroll
+ * som för riktiga konsulter. Riktiga användare berörs aldrig (e-postgrind).
+ */
+async function applyDemoAccountantView(userId: string, memberships: MembershipInfo[]): Promise<MembershipInfo[]> {
+  if (!isSupabaseMode()) return memberships;
+  const user = await getSessionUser();
+  if (!user || user.id !== userId || !isDemoUserEmail(user.email)) return memberships;
+  if ((await readDemoActorCookie()) !== "accountant") return memberships;
+  const viewed = memberships.map((m) =>
+    isOwnerRole(m.role) ? { ...m, role: "accounting_consultant" as BusinessRole } : m
+  );
+  // Klientlistan i /redovisning läses ur det instanslokala registret – spegla
+  // konsultvyn dit så listan fungerar även på en kall serverless-instans.
+  // Registret ger aldrig åtkomst; auktoriseringen är SQL-medlemskapet + RLS.
+  for (const m of viewed) {
+    if (!isAccountingRole(m.role) || activeMembershipFor(userId, m.businessId)) continue;
+    const now = new Date().toISOString();
+    putMembership({
+      businessId: m.businessId,
+      businessName: await businessNameById(m.businessId),
+      userId,
+      role: m.role,
+      acceptedAt: now,
+      lastActiveAt: m.lastActiveAt ?? now,
+      createdAt: now,
+    });
+  }
+  return viewed;
+}
 
 /** Kräver inloggning – annars till /login (proxyn bevarar next-param). */
 export async function requireUser(): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) redirect("/login");
   return user;
+}
+
+/** Är den aktiva Supabase-sessionen den publika demosessionen? */
+export async function isDemoSession(): Promise<boolean> {
+  if (!isSupabaseMode()) return false;
+  const user = await getSessionUser();
+  return Boolean(user && isDemoUserEmail(user.email));
 }
 
 /**
@@ -86,7 +148,9 @@ export async function requireUser(): Promise<SessionUser> {
  * memoiserad läsning kan aldrig ge inaktuell auktorisering inom en request.
  */
 export const listMemberships = cache(async (userId: string): Promise<MembershipInfo[]> => {
-  if (isSupabaseMode()) return membershipsForUser(userId);
+  if (isSupabaseMode()) {
+    return applyDemoAccountantView(userId, await membershipsForUser(userId));
+  }
   return activeMembershipsForUser(userId).map((m) => ({
     businessId: m.businessId,
     role: m.role,

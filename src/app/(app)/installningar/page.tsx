@@ -10,7 +10,7 @@ import {
 import { parseSettingsFlik } from "@/lib/settings-routes";
 import { sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
 import { primaryDomain } from "@/lib/domains";
-import { ensurePageBusiness } from "@/lib/auth/session";
+import { ensurePageBusiness, isDemoSession } from "@/lib/auth/session";
 
 export const metadata = { title: "Inställningar" };
 
@@ -40,9 +40,9 @@ export default async function SettingsPage(props: {
           return d ? { hostname: d.hostname, live: d.status === "active" } : null;
         })()}
       />
-      {/* Endast JSON-demoläget: samma servergrind som resetDemoData kräver
-          (assertJsonMode) – i Supabase-/produktionsläge renderas inget. */}
-      {isJsonDemoStore() ? <DemoResetSection /> : null}
+      {/* Endast demon: JSON-läget lokalt eller den publika demosessionen.
+          Servervägen (resetDemoAction) vaktar dessutom oberoende av UI:t. */}
+      {isJsonDemoStore() || (await isDemoSession()) ? <DemoResetSection /> : null}
     </>
   );
 }

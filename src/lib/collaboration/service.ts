@@ -35,6 +35,10 @@ import { sendCollaborationInviteEmail } from "./mail";
 import { isLastActiveToday } from "./registry";
 import { roleLabel } from "./permissions";
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
 export async function persistInvitation(inv: CollaborationInvitation): Promise<void> {
   putInvitation(inv);
   try {
@@ -161,7 +165,9 @@ export async function revokeCollaborator(input: {
 }): Promise<{ name: string }> {
   const result = revokeAccess(input);
   if (result.invitation) await persistInvitation(result.invitation);
-  if (result.membership && isSupabaseMode()) {
+  // Registerpersoner utan auth-konto (demo-Anna) har inga SQL-rader – uuid-
+  // formatet skiljer riktiga Supabase-användare från registrets syntetiska id:n.
+  if (result.membership && isSupabaseMode() && isUuid(result.membership.userId)) {
     await revokeMembershipRow(input.businessId, result.membership.userId);
   }
   const name =

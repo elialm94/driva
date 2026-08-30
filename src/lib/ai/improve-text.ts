@@ -18,6 +18,7 @@ import { db, save } from "../store";
 import { uid } from "../ids";
 import {
   aiConfig,
+  AiDemoLimitError,
   AiTransportError,
   chatWithTools,
   estimateCostUsd,
@@ -116,6 +117,11 @@ export async function improveRichText(input: {
     if (!suggestion) return { ok: false, error: RICHTEXT_AI_EMPTY };
     return { ok: true, doc: suggestion };
   } catch (e) {
+    // Demons AI-budget: ärligt besked, och nekade anrop loggas inte (dygns-
+    // taket räknar loggen – avslag får aldrig blåsa upp det).
+    if (e instanceof AiDemoLimitError) {
+      return { ok: false, error: e.message };
+    }
     logImproveUsage({
       model,
       inputTokens: 0,

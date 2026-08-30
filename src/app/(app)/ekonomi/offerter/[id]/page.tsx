@@ -65,6 +65,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   const isDraft = quote.status === "utkast";
   const sentParam = typeof searchParams.skickad === "string" ? searchParams.skickad : null;
   const justSent = sentParam === "1" && !isDraft;
+  const justSentDemo = sentParam === "demo" && !isDraft;
   const justSentManual = sentParam === "manuell" && !isDraft;
   // EN källa (quoteSendBlockers). buyer_email kompletteras inline – ingen länk till Kunden.
   const sendBlockers = isDraft
@@ -173,6 +174,13 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
           <span className="font-medium text-ok">
             Offert #{quote.number} skickades till {customer.name}.
           </span>
+        </Card>
+      ) : null}
+
+      {justSentDemo ? (
+        <Card className="mb-6 border-ok/20 bg-ok-soft/50 px-5 py-4 text-[14px] text-soft">
+          <span className="font-medium text-ok">Offert #{quote.number} skickades till {customer.name}.</span>{" "}
+          Demo: mejlet simulerades och skickades inte externt.
         </Card>
       ) : null}
 

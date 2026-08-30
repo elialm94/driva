@@ -142,6 +142,12 @@ knapptryck (server action) utför åtgärden. Modellen kan inte bekräfta.
 - Varje anrop loggas i `assistantAudit` (`tool: "llm_request"`) med modell,
   tokens in/ut, verktygsnamn, uppskattad kostnad (USD), latens och utfall –
   i Supabase-läget med business/user via audit-mappningen.
+- **Publika demoföretaget** (`src/lib/ai/demo-limit.ts`, grinden sitter i
+  `chatWithTools` – transportens enda väg ut): alltid FAST-modellen, durabelt
+  dygnstak per tenant (`DEMO_AI_DAILY_CAP`, standard 300, räknas i
+  `assistantAudit` och avslag loggas aldrig) plus glidande per-sessionsfönster
+  (20 anrop/10 min, i minnet per instans). Överskriden gräns ger ett ärligt
+  demobesked (`AiDemoLimitError`) – riktiga företag berörs aldrig.
 
 ## Tester
 

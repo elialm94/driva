@@ -4,10 +4,10 @@
  * Autentisering: e-post + lösenord via Supabase Auth.
  * Medvetet minimalt: ingen social inloggning, ingen MFA, ingen SSO.
  */
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect, RedirectType } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createBusinessForCurrentUser } from "@/lib/auth/session";
+import { createBusinessForCurrentUser, getSessionUser } from "@/lib/auth/session";
 import {
   decideSignupResult,
   isSilentExistingUser,
@@ -17,6 +17,7 @@ import {
   validateLoginFields,
   validateSignupFields,
 } from "@/lib/auth/signup-flow";
+import { DEMO_ACTOR_COOKIE, DEMO_SESSION_COOKIE, isDemoUserEmail } from "@/lib/auth/demo-session";
 import { isSupabaseMode } from "@/lib/storage/config";
 import {
   readOnboardingFormData,
@@ -132,7 +133,19 @@ export async function resendVerificationAction(
 export async function logoutAction(): Promise<void> {
   if (isSupabaseMode()) {
     const supabase = await createSupabaseServerClient();
-    await supabase.auth.signOut();
+    const user = await getSessionUser();
+    if (user && isDemoUserEmail(user.email)) {
+      // Demo-användaren delas av alla demosessioner: släpp bara DENNA
+      // besökares tokens, annars loggas alla andra demobesökare ut.
+      await supabase.auth.signOut({ scope: "local" });
+      const jar = await cookies();
+      for (const name of [DEMO_SESSION_COOKIE, DEMO_ACTOR_COOKIE]) {
+        jar.set(name, "", { path: "/", maxAge: 0, sameSite: "lax" });
+        jar.delete(name);
+      }
+    } else {
+      await supabase.auth.signOut();
+    }
   }
   redirect("/login");
 }

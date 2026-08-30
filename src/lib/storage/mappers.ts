@@ -1766,8 +1766,14 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
 /* ------------------------------- DB-metadata ------------------------------ */
 
 export function metaFromBusinessRow(r: SqlRow): DB["meta"] {
-  const meta = jsonVal<DB["meta"]>(r.meta ?? {});
-  return { ...meta, seededAt: meta.seededAt ?? tsIso(r.created_at) };
+  // demo speglar ALLTID kolumnen is_demo (fryst vid insert) – aldrig jsonb-
+  // innehållet, som appen kan skriva. Commit-vägen skriver aldrig tillbaka den.
+  const { demo: _fromJsonb, ...meta } = jsonVal<DB["meta"]>(r.meta ?? {});
+  return {
+    ...meta,
+    seededAt: meta.seededAt ?? tsIso(r.created_at),
+    ...(r.is_demo === true ? { demo: true } : {}),
+  };
 }
 
 /* ------------------------- collaboration_invitations ---------------------- */

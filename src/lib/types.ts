@@ -1687,6 +1687,12 @@ export interface DB {
   clientInformationRequests?: ClientInformationRequest[];
   meta: {
     seededAt: string;
+    /**
+     * Sant för det publika demoföretaget. Läses från businesses.is_demo
+     * (kolumn, fryst vid insert) när tillståndet laddas i Supabase-läget och
+     * skrivs ALDRIG tillbaka – appen kan inte flagga om ett riktigt företag.
+     */
+    demo?: boolean;
     /** Engångshydrering av ROT-demodata (personnummer m.m.) – får inte återuppstå om användaren tagit bort det. */
     taxReductionDemoHydrated?: boolean;
     /**

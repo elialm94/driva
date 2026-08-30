@@ -21,6 +21,7 @@ import {
   createBusinessWithOwner,
   membershipsForUser,
   resolvePublicToken,
+  revokeMembershipRow,
   runWithTenant,
   setSqlClientForTests,
 } from "../src/lib/storage/adapter-supabase";
@@ -602,28 +603,191 @@ async function main() {
     assert.ok(JSON.parse(first).customers[0] && JSON.stringify(JSON.parse(first).customers[0]) === customerJson);
   });
 
-  console.log("\nSeed-/migreringsvägen (importStateIntoBusiness):");
+  console.log("\nSeed-/migreringsvägen (importStateIntoBusiness) – seedar demoföretaget:");
+  // Exempeldatats id:n är fasta (cust-anna, …) – precis som i en riktig databas
+  // kan seedet därför bara importeras till ETT företag. Företaget som skapas
+  // här är den publika demons (is_demo) och används av demokontrollerna nedan.
+  const USER_DEMO = "33333333-3333-4333-8333-333333333333";
+  const { demoSeedFor, resetDemoBusinessToSeed } = await import("../src/lib/storage/demo-reset");
+  const { importStateIntoBusiness, validateImport } = await import("../src/lib/storage/import-state");
+  await pg.query(`insert into auth.users (id, email) values ($1, 'demo@driva.test')`, [USER_DEMO]);
+  let bizDemo = "";
   await check("hela demoseedet importeras och validerar mot databasen", async () => {
-    const USER_C = "33333333-3333-4333-8333-333333333333";
-    await pg.query(`insert into auth.users (id, email) values ($1, 'c@test.se')`, [USER_C]);
     const { buildSeed } = await import("../src/lib/seed");
-    const { importStateIntoBusiness, validateImport } = await import("../src/lib/storage/import-state");
-    const seed = buildSeed();
-    const bizC = await createBusinessWithOwner({
-      userId: USER_C,
-      name: seed.settings.name,
-      orgNumber: seed.settings.orgNumber,
-      email: seed.settings.email,
-      phone: seed.settings.phone,
+    const settings = buildSeed().settings;
+    bizDemo = await createBusinessWithOwner({
+      userId: USER_DEMO,
+      name: settings.name,
+      orgNumber: settings.orgNumber,
+      email: settings.email,
+      phone: settings.phone,
+      isDemo: true,
     });
-    await importStateIntoBusiness(bizC, USER_C, seed);
-    const report = await validateImport(bizC, seed);
+    // Samma seedobjekt för import och validering – buildSeed är datumrelativ,
+    // så två anrop ger olika tidsstämplar i de hash-frysta ytorna.
+    const seed = demoSeedFor(bizDemo);
+    await importStateIntoBusiness(bizDemo, USER_DEMO, seed);
+    const report = await validateImport(bizDemo, seed);
     const bad = report.rows.filter((r) => !r.ok);
     assert.equal(
       bad.length,
       0,
       `avvikelser: ${bad.map((r) => `${r.label} ${r.actual}/${r.expected}`).join(", ")}`
     );
+  });
+
+  console.log("\nDemoföretaget – fryst flagga och säker återställning:");
+
+  await check("is_demo är fryst – varken demo- eller riktiga företag kan flippas", async () => {
+    await assert.rejects(pg.query(`update businesses set is_demo = false where id = $1`, [bizDemo]), /immutability/);
+    await assert.rejects(pg.query(`update businesses set is_demo = true where id = $1`, [bizA]), /immutability/);
+  });
+
+  await check("meta.demo speglar kolumnen och kan inte förfalskas via jsonb", async () => {
+    await runWithTenant({ businessId: bizDemo, userId: USER_DEMO, access: "read" }, () => {
+      assert.equal(db().meta.demo, true, "demoföretaget laddas med meta.demo");
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      assert.equal(db().meta.demo, undefined);
+      db().meta.demo = true;
+      save();
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      assert.equal(db().meta.demo, undefined, "riktiga företag kan aldrig flagga om sig till demo");
+    });
+    const metaRow = await pg.query<{ meta: Record<string, unknown> }>(
+      `select meta from businesses where id = $1`,
+      [bizA]
+    );
+    assert.equal("demo" in (metaRow.rows[0].meta ?? {}), false, "demo-nyckeln skrivs aldrig till jsonb-kolumnen");
+  });
+
+  // Utfärda en faktura i demoföretaget – oföränderligheten ska gälla precis
+  // som för riktiga företag så länge ingen återställning pågår.
+  let demoInvoiceId = "";
+  await runWithTenant({ businessId: bizDemo, userId: USER_DEMO, access: "write" }, () => {
+    demoInvoiceId = createInvoice({ customerId: db().customers[0].id, type: "faktura", lines: lines(), rot: null }).id;
+  });
+  await runWithTenant({ businessId: bizDemo, userId: USER_DEMO, access: "write" }, () => {
+    sendInvoice(demoInvoiceId);
+  });
+
+  await check("demoföretaget är lika oföränderligt som andra utanför återställningen", async () => {
+    await assert.rejects(pg.query(`delete from invoices where id = $1`, [demoInvoiceId]), /immutability/);
+    await assert.rejects(pg.query(`delete from verifications where business_id = $1`, [bizDemo]), /immutability/);
+  });
+
+  await check("återställningen vägrar riktiga företag i både SQL- och domänlagret", async () => {
+    await assert.rejects(pg.query(`select app.reset_demo_business($1, $2)`, [bizA, USER_A]), /inte ett demoföretag/);
+    await assert.rejects(resetDemoBusinessToSeed(bizA, USER_A), /Endast demoföretaget/);
+  });
+
+  // Simulera en accepterad demo-inbjudan: en främmande konsult i demoföretaget.
+  await pg.query(
+    `insert into business_memberships (business_id, user_id, role, accepted_at)
+     values ($1, $2, 'accounting_consultant', now())`,
+    [bizDemo, USER_B]
+  );
+
+  await check("SQL-återställningen tömmer varje företagsskopad tabell", async () => {
+    await pg.query(`select app.reset_demo_business($1, $2)`, [bizDemo, USER_DEMO]);
+    // Alla tabeller med business_id – fångar även tabeller som läggs till
+    // senare men glöms bort i reset-funktionens raderingslista.
+    const tables = await pg.query<{ relname: string }>(
+      `select c.relname
+         from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+         join pg_attribute a on a.attrelid = c.oid
+        where n.nspname = 'public' and c.relkind = 'r'
+          and a.attname = 'business_id' and not a.attisdropped
+        order by c.relname`
+    );
+    // Företagsraden, profilen (stabil inkommande-slug), medlemskapen och
+    // nummerserierna överlever – exempeldatat spelas upp igen efteråt.
+    const kept = new Set(["business_memberships", "business_sequences", "business_settings"]);
+    for (const { relname } of tables.rows) {
+      if (kept.has(relname)) continue;
+      const count = await pg.query<{ n: number }>(
+        `select count(*)::int as n from ${relname} where business_id = $1`,
+        [bizDemo]
+      );
+      assert.equal(Number(count.rows[0].n), 0, `${relname} ska vara tom efter återställning`);
+    }
+    const seqs = await pg.query<{ quote: number; invoice: number; verification: number }>(
+      `select quote, invoice, verification from business_sequences where business_id = $1`,
+      [bizDemo]
+    );
+    assert.deepEqual(
+      { quote: Number(seqs.rows[0].quote), invoice: Number(seqs.rows[0].invoice), verification: Number(seqs.rows[0].verification) },
+      { quote: 1, invoice: 1, verification: 1 }
+    );
+  });
+
+  await check("återställningen behåller demo-ägaren och återkallar gästmedlemskap", async () => {
+    const rows = await pg.query<{ user_id: string; revoked_at: string | null }>(
+      `select user_id, revoked_at from business_memberships where business_id = $1`,
+      [bizDemo]
+    );
+    const owner = rows.rows.find((r) => r.user_id === USER_DEMO);
+    const guest = rows.rows.find((r) => r.user_id === USER_B);
+    assert.ok(owner && owner.revoked_at === null, "demo-ägarens medlemskap är kvar");
+    assert.ok(guest?.revoked_at, "den inbjudna konsultens medlemskap återkallades");
+    const visible = await membershipsForUser(USER_B);
+    assert.deepEqual(
+      visible.map((m) => m.businessId),
+      [bizB],
+      "USER_B ser inte längre demoföretaget"
+    );
+  });
+
+  await check("återställningen spelar upp exempeldatat och mejladressen är stabil", async () => {
+    const slugBefore = await pg.query<{ inbound_mail_slug: string }>(
+      `select inbound_mail_slug from business_settings where business_id = $1`,
+      [bizDemo]
+    );
+    await resetDemoBusinessToSeed(bizDemo, USER_DEMO);
+    // Återställningen bygger sitt eget (datumrelativa) seedobjekt – jämför
+    // antal per samling här; värde-exaktheten bevisas i importkontrollen ovan.
+    const report = await validateImport(bizDemo, demoSeedFor(bizDemo, slugBefore.rows[0].inbound_mail_slug));
+    const exactness = new Set([
+      "offertversioner värde-exakta",
+      "offertversioner hashar identiskt (signaturer intakta)",
+      "fakturasnapshots värde-exakta",
+    ]);
+    const bad = report.rows.filter((r) => !r.ok && !exactness.has(r.label));
+    assert.equal(
+      bad.length,
+      0,
+      `avvikelser: ${bad.map((r) => `${r.label} ${r.actual}/${r.expected}`).join(", ")}`
+    );
+    const slugAfter = await pg.query<{ inbound_mail_slug: string }>(
+      `select inbound_mail_slug from business_settings where business_id = $1`,
+      [bizDemo]
+    );
+    assert.equal(slugAfter.rows[0].inbound_mail_slug, slugBefore.rows[0].inbound_mail_slug);
+  });
+
+  await check("demon fungerar som vanligt efter återställning (nästa nummer ur seedens serie)", async () => {
+    const seed = demoSeedFor(bizDemo);
+    let freshInvoiceId = "";
+    await runWithTenant({ businessId: bizDemo, userId: USER_DEMO, access: "write" }, () => {
+      freshInvoiceId = createInvoice({ customerId: db().customers[0].id, type: "faktura", lines: lines(), rot: null }).id;
+    });
+    await runWithTenant({ businessId: bizDemo, userId: USER_DEMO, access: "write" }, () => {
+      sendInvoice(freshInvoiceId);
+    });
+    await runWithTenant({ businessId: bizDemo, userId: USER_DEMO, access: "read" }, () => {
+      assert.equal(db().invoices.find((i) => i.id === freshInvoiceId)?.number, seed.sequences.invoice);
+    });
+  });
+
+  await check("samarbetsvägen kan aldrig återkalla ett ägarmedlemskap", async () => {
+    await revokeMembershipRow(bizDemo, USER_DEMO);
+    const row = await pg.query<{ revoked_at: string | null }>(
+      `select revoked_at from business_memberships where business_id = $1 and user_id = $2`,
+      [bizDemo, USER_DEMO]
+    );
+    assert.equal(row.rows[0].revoked_at, null, "ägarrollen omfattas inte av revoke-vägen");
   });
 
   await pg.close();

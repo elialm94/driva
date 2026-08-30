@@ -64,6 +64,21 @@ export class AiTransportError extends Error {
   }
 }
 
+export const DEMO_AI_LIMIT_MESSAGE =
+  "Demons AI-assistent har nått sin gräns för stunden. Prova igen om en liten stund – allt annat i demon fungerar som vanligt.";
+
+/**
+ * Demoföretagets AI-budget är slut. Ärver AiTransportError så att alla
+ * anropsvägar degraderar snyggt; de användarnära vägarna (verktygsloopen,
+ * textförbättringen, assistenten) visar det ärliga demomeddelandet.
+ */
+export class AiDemoLimitError extends AiTransportError {
+  constructor() {
+    super(DEMO_AI_LIMIT_MESSAGE, 429);
+    this.name = "AiDemoLimitError";
+  }
+}
+
 export const DEFAULT_MODEL_FAST = "google/gemini-3.7-flash";
 export const DEFAULT_MODEL_SMART = "openai/gpt-5.6-terra";
 const DEFAULT_TIMEOUT_MS = 25_000;
@@ -135,7 +150,13 @@ export async function chatWithTools(input: {
 }): Promise<ChatWithToolsResult> {
   const cfg = aiConfig();
   if (!cfg.apiKey) throw new AiTransportError("AI-nyckel saknas");
-  const model = input.model ?? cfg.modelFast;
+  // Demoföretaget: budgettak (kastar AiDemoLimitError) + alltid den snabba
+  // modellen. Grinden sitter HÄR – transportens enda väg ut – så att ingen
+  // anropsväg (loop, intent, textförbättring, assistent) kan glömmas.
+  const { assertDemoAiBudget } = await import("./demo-limit");
+  await assertDemoAiBudget();
+  const { isDemoBusiness } = await import("../demo");
+  const model = isDemoBusiness() ? cfg.modelFast : input.model ?? cfg.modelFast;
 
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), input.timeoutMs ?? cfg.timeoutMs);
