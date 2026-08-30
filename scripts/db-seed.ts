@@ -10,6 +10,12 @@
  *   --email <adress>     inloggningsmejl (standard: agare@driva.test)
  *   --password <lösen>   lösenord (standard: slumpas och skrivs ut)
  *   --empty              skapa bara användare + tomt företag, ingen demodata
+ *   --demo               seeda det PUBLIKA demoföretaget: företaget skapas
+ *                        med businesses.is_demo (fryst – krävs av både
+ *                        /demo-inloggningen och återställningsvägen).
+ *                        E-post/lösen tas från DEMO_USER_EMAIL /
+ *                        DEMO_USER_PASSWORD om de är satta – samma värden
+ *                        ska sedan in i Vercels servermiljö.
  *
  * Körs ALDRIG automatiskt – endast manuellt av en utvecklare. Vägrar köra
  * om företaget redan innehåller data.
@@ -37,8 +43,12 @@ async function main() {
   }
 
   const args = parseArgs(process.argv.slice(2));
-  const email = args.email ?? "agare@driva.test";
-  const password = args.password ?? crypto.randomBytes(9).toString("base64url");
+  const email =
+    args.email ?? (args.demo ? process.env.DEMO_USER_EMAIL?.trim() || "demo@driva.test" : "agare@driva.test");
+  const password =
+    args.password ??
+    (args.demo ? process.env.DEMO_USER_PASSWORD?.trim() : undefined) ??
+    crypto.randomBytes(9).toString("base64url");
 
   const { createBusinessWithOwner, membershipsForUser, sqlClient } = await import(
     "../src/lib/storage/adapter-supabase"
@@ -47,6 +57,7 @@ async function main() {
     "../src/lib/storage/import-state"
   );
   const { buildSeed } = await import("../src/lib/seed");
+  const { demoSeedFor } = await import("../src/lib/storage/demo-reset");
 
   /* 1. Auth-användare (service role, aldrig i klientkod). */
   const admin = createClient(supabaseEnv().url, serviceRoleKey, {
@@ -72,12 +83,26 @@ async function main() {
   }
 
   /* 2. Företag + ägarmedlemskap. */
-  const seed = buildSeed();
+  let seed = buildSeed();
   const memberships = await membershipsForUser(userId);
   let businessId: string;
   if (memberships.length > 0) {
     businessId = memberships[0].businessId;
     console.log(`Användaren har redan företaget ${businessId} – försöker importera dit.`);
+    if (args.demo) {
+      // Demoföretaget MÅSTE bära is_demo (fryst kolumn) – annars fungerar
+      // varken demogrindarna eller återställningen. Vägra hellre än att
+      // tyst seeda ett vanligt företag som "demo".
+      const client = await sqlClient();
+      const rows = await client.query(`select is_demo from public.businesses where id = $1`, [businessId]);
+      if (rows[0]?.is_demo !== true) {
+        console.error(
+          `Företaget ${businessId} är inte skapat som demoföretag (is_demo). ` +
+            `Använd en ny demo-användare (--email) så att ett riktigt demoföretag skapas.`
+        );
+        process.exit(1);
+      }
+    }
   } else {
     businessId = await createBusinessWithOwner({
       userId,
@@ -85,9 +110,13 @@ async function main() {
       orgNumber: seed.settings.orgNumber,
       email: seed.settings.email,
       phone: seed.settings.phone,
+      isDemo: args.demo,
     });
-    console.log(`Skapade företaget ${businessId} (${seed.settings.name}).`);
+    console.log(`Skapade företaget ${businessId} (${seed.settings.name})${args.demo ? " [demo]" : ""}.`);
   }
+  // Demoföretaget får en företagsunik inkommande-slug (aldrig seedens "demo")
+  // – exakt samma regel som återställningen använder, så adressen är stabil.
+  if (args.demo) seed = demoSeedFor(businessId);
 
   /* 3. Demodata via samma commit-väg som appen (RPC:er, immutabilitet, RLS). */
   if (!args.empty) {
@@ -115,17 +144,23 @@ async function main() {
   console.log(`  E-post:   ${email}`);
   if (createdUser) console.log(`  Lösenord: ${password}`);
   console.log(`  Företag:  ${businessId}`);
+  if (args.demo) {
+    console.log("\nFör den publika demon: sätt i Vercels servermiljö (aldrig i klientkod):");
+    console.log(`  DEMO_USER_EMAIL=${email}`);
+    console.log(`  DEMO_USER_PASSWORD=${createdUser ? password : "<demo-användarens lösenord>"}`);
+  }
 
   const client = await sqlClient();
   await client.close();
 }
 
-function parseArgs(argv: string[]): { email?: string; password?: string; empty: boolean } {
-  const out: { email?: string; password?: string; empty: boolean } = { empty: false };
+function parseArgs(argv: string[]): { email?: string; password?: string; empty: boolean; demo: boolean } {
+  const out: { email?: string; password?: string; empty: boolean; demo: boolean } = { empty: false, demo: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--email") out.email = argv[++i];
     else if (argv[i] === "--password") out.password = argv[++i];
     else if (argv[i] === "--empty") out.empty = true;
+    else if (argv[i] === "--demo") out.demo = true;
   }
   return out;
 }
