@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   createAutosaveLoop,
   IDLE_AUTOSAVE,
@@ -26,6 +27,7 @@ function here(): string {
  * webbläsarens "osparade ändringar"-dialog.
  */
 export function useAutosaveLoop(options?: { debounceMs?: number; savedHoldMs?: number }) {
+  const router = useRouter();
   const [state, setState] = useState<AutosaveState>(IDLE_AUTOSAVE);
   const loopRef = useRef<AutosaveLoop | null>(null);
   const setStateRef = useRef(setState);
@@ -86,12 +88,14 @@ export function useAutosaveLoop(options?: { debounceMs?: number; savedHoldMs?: n
       e.stopImmediatePropagation();
       if (failed) return;
       void api.flush().then((ok) => {
-        if (ok) window.location.assign(next);
+        // Klientnavigering – aldrig en helsidesomladdning bara för att en
+        // autosparning hann bli klar först.
+        if (ok) router.push(next as never);
       });
     }
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [api]);
+  }, [api, router]);
 
   return { state, loop: api };
 }
