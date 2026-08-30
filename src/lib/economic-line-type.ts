@@ -124,7 +124,7 @@ export function syncDocLineClassification<T extends LineClassificationSource>(
  * Historiska signerade/skickade dokument ska inte skrivas om härifrån.
  */
 const TRAVEL_HINT =
-  /\b(restid|resetid|resa|resor|milersättning|milersattning|framkörning|framkorning|körningstid|resetillägg|resetillagg|resetimme|resetimmar|körtid|milavgift|milersättning|km-ersättning|kmersättning)\b|\bmil\b/i;
+  /\b(restid|resetid|resa|resor|milersättning|milersattning|framkörning|framkorning|körningstid|resetillägg|resetillagg|resetimme|resetimmar|körtid|milavgift|km-ersättning|kmersättning)\b|\d+\s*mil\b/i;
 const MATERIAL_HINT =
   /\b(virke|material|luckor|skruv|stommar|trall|beslag|lister|foder|panel|reglar|plintar|bänkskiva|bankskiva)\b/i;
 const LABOR_HINT =

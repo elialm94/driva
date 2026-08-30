@@ -199,6 +199,8 @@ describe("§26 historik, AI och omräkning", () => {
     assert.equal(classifyEconomicLineType("Framkörning"), "TRAVEL");
     assert.equal(classifyEconomicLineType("Tryckimpregnerat virke"), "MATERIAL");
     assert.equal(classifyEconomicLineType("Snickeriarbete kök"), "LABOR");
+    assert.equal(classifyEconomicLineType("Miljövänligt snickeriarbete"), "LABOR");
+    assert.equal(classifyEconomicLineType("8 mil"), "TRAVEL");
     assert.equal(classifiedLine("Restid 2 timmar", 1000).type, "TRAVEL");
     assert.equal(classifiedLine("Virke till altanen", 2000).type, "MATERIAL");
     assert.equal(classifiedLine("Snickeriarbete", 5000).type, "LABOR");
