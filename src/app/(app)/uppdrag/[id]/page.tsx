@@ -152,6 +152,10 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
               </div>
             ) : null}
             <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-muted">Registrerat</dt>
+              <dd className="font-medium text-ink">{kr(money.registered)}</dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-3">
               <dt className="text-muted">Fakturerat</dt>
               <dd className="font-medium text-ink">{kr(money.invoicedIssued)}</dd>
             </div>
@@ -159,16 +163,12 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
               <dt className="text-muted">Betalt</dt>
               <dd className="font-medium text-ink">{kr(money.paid)}</dd>
             </div>
-            {quote?.status === "godkand" ? (
-              <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-muted">Kvar enligt offert</dt>
-                <dd className="font-medium text-ink">{kr(admin.remaining)}</dd>
-              </div>
-            ) : null}
-            {money.registeredUninvoiced > 0 ? (
+            {quote?.status === "godkand" || money.registeredUninvoiced > 0 ? (
               <div className="col-span-2 flex items-baseline justify-between gap-3 border-t border-line/60 pt-1.5">
-                <dt className="text-muted">Registrerat ej fakturerat</dt>
-                <dd className="font-medium text-ink">{kr(money.registeredUninvoiced)}</dd>
+                <dt className="text-muted">Kvar att fakturera</dt>
+                <dd className="font-medium text-ink">
+                  {kr(Math.max(admin.remaining, money.registeredUninvoiced))}
+                </dd>
               </div>
             ) : null}
           </dl>

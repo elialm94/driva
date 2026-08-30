@@ -104,14 +104,15 @@ export function JobActions({
   const [showRemove, setShowRemove] = useState(false);
 
   function openInvoice(preselect?: JobInvoiceOptionBasis) {
+    const auto = invoiceChoice.autoBasis;
     const skipPicker =
       !preselect &&
       !invoiceChoice.unapprovedQuoteNotice &&
-      invoiceChoice.options.length === 1 &&
-      invoiceChoice.options[0]?.basis === "empty";
-    if (skipPicker) {
+      auto != null &&
+      (auto === "empty" || invoiceChoice.options.filter((o) => o.basis !== "empty").length === 1);
+    if (skipPicker && auto) {
       startTransition(async () => {
-        const invoiceId = await createInvoiceForJobAction(jobId, "empty");
+        const invoiceId = await createInvoiceForJobAction(jobId, auto);
         router.push(invoiceEditHref(invoiceId, { href: `/uppdrag/${jobId}`, label: jobTitle }) as never);
       });
       return;
@@ -176,7 +177,11 @@ export function JobActions({
       onClick={() => openInvoice()}
     >
       <Plus className="size-4" />
-      {invoiceAction === "skapa_slutfaktura" ? "Skapa slutfaktura" : "Skapa faktura"}
+      {invoiceAction === "skapa_slutfaktura"
+        ? "Skapa slutfaktura"
+        : invoiceAction === "skapa_delfaktura"
+          ? "Skapa delfaktura"
+          : "Skapa faktura"}
     </button>
   );
 

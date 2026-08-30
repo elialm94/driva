@@ -298,6 +298,9 @@ describe("Uppdrag: avtalat vs registrerat vs fakturerat", () => {
     assert.equal(choice.pricingKind, "lopande");
     assert.deepEqual(choice.options.map((o) => o.basis), ["actuals", "empty"]);
     assert.equal(choice.recommendedBasis, "actuals");
+    assert.equal(choice.autoBasis, "actuals");
+    assert.equal(choice.options.find((o) => o.basis === "actuals")?.title, "Ofakturerat arbete & material");
+    assert.equal(choice.options.find((o) => o.basis === "empty")?.title, "Välj själv");
     assert.equal(choice.options.some((o) => o.basis === "quote"), false);
   });
 
@@ -310,6 +313,7 @@ describe("Uppdrag: avtalat vs registrerat vs fakturerat", () => {
     addJobMaterial(job.id, { description: "Extra gångjärn", qty: 1, unitPrice: 200 });
     const choice = jobInvoiceChoice(job.id);
     assert.deepEqual(choice.options.map((o) => o.basis), ["quote", "actuals", "empty"]);
+    assert.equal(choice.autoBasis, null);
     assert.equal(choice.options.some((o) => (o as { basis: string }).basis === "quote_plus_extras"), false);
     const quoteOpt = choice.options.find((o) => o.basis === "quote");
     const actualsOpt = choice.options.find((o) => o.basis === "actuals");

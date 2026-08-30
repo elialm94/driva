@@ -104,6 +104,7 @@ export type ActionCta =
   | { type: "uploadReceipt"; label: string; expenseId: string }
   | { type: "answerQuestion"; expenseId: string; options: string[] }
   | { type: "createJobInvoice"; label: string; jobId: string }
+  | { type: "startJobFromQuote"; label: string; quoteId: string }
   | { type: "paySupplier"; label: string; supplierInvoiceId: string; paymentId?: string }
   | { type: "confirmPaymentMatch"; label: string; txId: string; invoiceId: string }
   | { type: "pickPaymentMatch"; txId: string }
@@ -523,7 +524,30 @@ function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) 
 
 function collectQuotes(ranked: Ranked[], watching: WatchingItem[]) {
   for (const q of db().quotes) {
-    if (q.status !== "skickad") continue; // utkast/godkänd/avböjd kräver inget globalt
+    if (q.status === "godkand") {
+      const hasJob =
+        Boolean(q.jobId && db().jobs.some((j) => j.id === q.jobId)) || db().jobs.some((j) => j.quoteId === q.id);
+      if (hasJob) continue;
+      const toPay = quoteTotals(q).toPay;
+      const customer = requireCustomer(q.customerId);
+      ranked.push({
+        rank: RANK.jobInvoice,
+        order: -toPay,
+        action: {
+          id: `quote-start-job-${q.id}`,
+          priority: "action",
+          category: "quote",
+          icon: "inbox",
+          title: `Starta uppdrag från offert #${q.number}`,
+          subtitle: `${customer.name} · ${kr(toPay)} · godkänd`,
+          href: quoteHref(q.id),
+          cta: { type: "startJobFromQuote", label: "Starta uppdrag", quoteId: q.id },
+          amount: toPay,
+        },
+      });
+      continue;
+    }
+    if (q.status !== "skickad") continue; // utkast/avböjd kräver inget globalt
     const toPay = quoteTotals(q).toPay;
     const customer = requireCustomer(q.customerId);
 

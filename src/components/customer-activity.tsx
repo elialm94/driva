@@ -30,7 +30,7 @@ export function CustomerActivity({
 }) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("alla");
   const showFilter = rows.length > ACTIVITY_FILTER_MIN;
-  const visible = filter === "alla" ? rows : rows.filter((r) => r.kind === filter);
+  const visible = filter === "alla" ? rows : rows.filter((r) => (r.kinds ?? [r.kind]).includes(filter));
 
   return (
     <div>
@@ -80,6 +80,9 @@ export function CustomerActivity({
                   </td>
                   <td className="pointer-events-none px-4 py-3">
                     <span className="font-medium text-ink">{row.title}</span>
+                    {row.subtitle ? (
+                      <span className="mt-0.5 block text-[13px] text-muted">{row.subtitle}</span>
+                    ) : null}
                     {row.amount != null ? (
                       <span className="mt-0.5 block text-[13px] text-muted sm:hidden">{kr(row.amount)}</span>
                     ) : null}

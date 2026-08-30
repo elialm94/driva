@@ -43,6 +43,7 @@ const CTA_ISSUE: Partial<Record<ActionCta["type"], string>> = {
   // Skickar en påminnelse via e-post – etiketten säger vad som händer.
   followUpQuote: "Skicka påminnelse",
   createJobInvoice: "Fakturera",
+  startJobFromQuote: "Starta uppdrag",
   paySupplier: "Skicka till bank",
   confirmRotPayout: "Bekräfta utbetalning",
   registerCreditRefund: "Återbetala",
@@ -89,6 +90,7 @@ export function sourceForAction(action: BusinessAction): ActionSource | null {
   if (cta?.type === "registerCreditRefund") return { kind: "invoice", id: cta.invoiceId };
   if (cta?.type === "followUpQuote") return { kind: "quote", id: cta.quoteId };
   if (cta?.type === "createJobInvoice") return { kind: "job", id: cta.jobId };
+  if (cta?.type === "startJobFromQuote") return { kind: "quote", id: cta.quoteId };
   if (cta?.type === "paySupplier") return { kind: "supplier", id: cta.supplierInvoiceId };
   if (
     cta?.type === "verifyPaymentDetails" ||

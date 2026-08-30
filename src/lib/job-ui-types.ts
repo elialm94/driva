@@ -5,7 +5,7 @@
 import type { JobPricingKind } from "./types";
 
 export type JobQuoteAction = "skapa_offert" | "visa_offert" | "fortsatt_offert";
-export type JobInvoiceAction = "skapa_faktura" | "skapa_slutfaktura";
+export type JobInvoiceAction = "skapa_faktura" | "skapa_delfaktura" | "skapa_slutfaktura";
 export type JobPrimaryKind = JobQuoteAction | JobInvoiceAction;
 export type JobSecondaryKind = JobQuoteAction | JobInvoiceAction | "redigera";
 
@@ -25,6 +25,8 @@ export interface JobInvoiceChoice {
   pricingKind: JobPricingKind;
   options: JobInvoiceOption[];
   recommendedBasis: JobInvoiceOptionBasis | null;
+  /** Finns bara ett rimligt underlag – hoppa över valet. */
+  autoBasis: JobInvoiceOptionBasis | null;
   warning?: { excess: number; tillaggHref: string };
   tillaggHref: string;
   unapprovedQuoteNotice?: string;
@@ -32,6 +34,7 @@ export interface JobInvoiceChoice {
 
 export interface JobWorkComparison {
   hasQuote: boolean;
+  quoteNumber?: number;
   laborHoursQuoted: number;
   laborHoursRegistered: number;
   laborHoursDelta: number;

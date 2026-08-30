@@ -112,6 +112,19 @@ export interface WorkLocation {
 
 /* ---------------------------------- Dokumentrader ---------------------------- */
 
+/**
+ * Varifrån en fakturarad kommer. Sätts när information rör sig framåt i
+ * kedjan (offert → uppdrag → faktura). Utkast kan redigeras utan att
+ * källan (signerad offert) ändras.
+ */
+export type LineSourceKind =
+  | "QUOTE_LINE"
+  | "JOB_TIME_ENTRY"
+  | "JOB_MATERIAL"
+  | "JOB_OTHER"
+  | "PAYMENT_PLAN"
+  | "MANUAL";
+
 export interface DocLine {
   id: ID;
   /** Lagrad typ (arbete/material/resor/ovrigt). */
@@ -127,6 +140,11 @@ export interface DocLine {
   /** Pris per enhet, exkl. moms. */
   unitPrice: number;
   vatRate: VatRate;
+  sourceKind?: LineSourceKind;
+  /** Offertrad-id, uppdragspost-id eller motsvarande. */
+  sourceId?: ID;
+  sourceQuoteNumber?: number;
+  paymentPlanIndex?: number;
 }
 
 export interface RotRut {
@@ -571,6 +589,11 @@ export interface Invoice {
    * Styr vilket konto en återbetalning ska nollställa (2420 vs negativ 1510).
    */
   overpaymentCredit?: number;
+  /**
+   * Vilket steg i offertens betalningsplan den här fakturan täcker.
+   * Används för att inte fakturera samma del två gånger.
+   */
+  paymentPlanIndex?: number;
   createdBy?: "anvandare" | "assistent";
   createdAt: string;
 }

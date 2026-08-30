@@ -1,7 +1,7 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
 import type { Job, JobSource, Quote, WorkLocation } from "../types";
-import { currentVersion, invoicePaidAmount, invoiceTotals, jobQuote, requireCustomer } from "./data";
+import { currentVersion, getQuote, invoicePaidAmount, invoiceTotals, jobQuote, requireCustomer } from "./data";
 import { logActivity } from "./activity";
 import {
   addWorkLocation,
@@ -47,10 +47,24 @@ export function createJobFromQuote(quote: Quote): Job {
     createdAt: new Date().toISOString(),
   };
   if (location) applyWorkLocationToJob(job, location);
+  if (version.intro?.trim() && !job.notes) {
+    job.notes = `${new Date().toISOString()}\nFrån offert #${quote.number}: ${version.intro.trim()}`;
+  }
   data.jobs.push(job);
   quote.jobId = job.id;
   importQuotedBaseline(job, quote, false);
   save();
+  return job;
+}
+
+/** Starta uppdrag från offert: skapar eller återanvänder jobbet och sätter Pågår. */
+export function startJobFromQuote(quoteId: string): Job {
+  const quote = getQuote(quoteId);
+  if (!quote) throw new Error("Offerten finns inte");
+  const job = createJobFromQuote(quote);
+  if (job.status === "kommande") {
+    setJobStatus(job.id, "pagar");
+  }
   return job;
 }
 

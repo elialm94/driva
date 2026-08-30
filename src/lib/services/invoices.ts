@@ -50,6 +50,13 @@ import {
   unlinkJobWorkEntriesFromInvoice,
   uninvoicedActuals,
 } from "./job-work";
+import {
+  lineWithPaymentPlanProvenance,
+  lineWithQuoteProvenance,
+  liveInvoicesForQuote,
+  nextPaymentPlanPartForQuote,
+  paymentPlanPartAlreadyInvoiced,
+} from "./business-chain";
 
 export type Actor = "anvandare" | "assistent";
 
@@ -211,6 +218,7 @@ export interface InvoiceInput {
   personalIdentityNumber?: string;
   /** "Övrig information" – saneras alltid serverside (vitlista, se lib/richtext). */
   richText?: RichTextDoc;
+  paymentPlanIndex?: number;
 }
 
 export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare"): Invoice {
@@ -242,6 +250,7 @@ export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare
     createdBy,
     createdAt: now,
   };
+  if (input.paymentPlanIndex != null) invoice.paymentPlanIndex = input.paymentPlanIndex;
   applyTaxReductionContext(invoice, input);
   data.invoices.push(invoice);
   logActivity(`Fakturautkast skapades för ${customer.name}.`, {
@@ -352,7 +361,9 @@ export function createFinalInvoiceForJob(jobId: string, createdBy: Actor = "anva
           jobId,
           quoteId: quote.id,
           type: "slutfaktura",
-          lines: version.lines.map((l) => syncDocLineClassification({ ...l, id: uid() })),
+          lines: version.lines.map((l) =>
+            syncDocLineClassification(lineWithQuoteProvenance({ ...l, id: uid() }, quote, l.id))
+          ),
           rot: version.rot,
           dueInDays: version.paymentTermsDays,
           lateInterestRate: version.lateInterestRate,
@@ -371,7 +382,7 @@ export function createFinalInvoiceForJob(jobId: string, createdBy: Actor = "anva
           version,
           remaining,
           `Slutfaktura – ${job.title} (resterande enligt offert #${quote.number})`
-        ),
+        ).map((l) => lineWithQuoteProvenance(l, quote)),
         rot: rotFromJob(jobId),
         dueInDays: version.paymentTermsDays,
         lateInterestRate: version.lateInterestRate,
@@ -430,7 +441,7 @@ export function createInvoiceFromJobActuals(
       jobId,
       quoteId: approved?.id,
       type: "faktura",
-      lines: selected.map(entryToDocLine),
+      lines: selected.map((e) => entryToDocLine(e, approved?.number)),
       rot: rotFromJob(jobId),
       dueInDays: version?.paymentTermsDays,
       lateInterestRate: version?.lateInterestRate,
@@ -456,7 +467,7 @@ export function createInvoiceFromQuotePlusExtras(jobId: string, createdBy: Actor
   if (quote?.status === "godkand" && remaining > 0) {
     const invoice = createNextInvoiceForJob(jobId, createdBy);
     if (extras.length > 0) {
-      invoice.lines = [...invoice.lines, ...extras.map(entryToDocLine)];
+      invoice.lines = [...invoice.lines, ...extras.map((e) => entryToDocLine(e, quote?.number))];
       Object.assign(
         invoice,
         invoiceTaxReductionFields(invoice.rot, invoice.lines, invoice.quoteId, invoice.rot)
@@ -571,6 +582,9 @@ export function createPartInvoiceForQuote(quoteId: string, partIndex: number, cr
   const version = currentVersion(quote);
   const part = version.paymentPlan[partIndex];
   if (!part) throw new Error("Delbetalningen finns inte i betalningsplanen");
+  if (paymentPlanPartAlreadyInvoiced(quoteId, partIndex)) {
+    throw new Error(`Delbetalning ${partIndex + 1} är redan fakturerad`);
+  }
   const totals = docTotals(version.lines, version.rot);
   const partInkl = Math.round((totals.total * part.percent) / 100);
   return createInvoice(
@@ -583,9 +597,54 @@ export function createPartInvoiceForQuote(quoteId: string, partIndex: number, cr
         version,
         partInkl,
         `Delbetalning ${partIndex + 1} av ${version.paymentPlan.length} – ${version.title} (${part.percent} % ${part.label.toLowerCase()})`
-      ),
+      ).map((l) => lineWithPaymentPlanProvenance(l, quote, partIndex)),
       rot: null,
       dueInDays: Math.min(version.paymentTermsDays, 14),
+      lateInterestRate: version.lateInterestRate,
+      serviceDate: serviceDateFromJob(quote.jobId),
+      paymentPlanIndex: partIndex,
+    },
+    createdBy
+  );
+}
+
+/**
+ * Faktura direkt från godkänd offert – skapar inte uppdrag.
+ * Tar nästa del i betalningsplanen om det finns en, annars hela offerten.
+ */
+export function createInvoiceFromQuote(quoteId: string, createdBy: Actor = "anvandare"): Invoice {
+  const quote = getQuote(quoteId);
+  if (!quote) throw new Error("Offerten finns inte");
+  if (quote.status !== "godkand") {
+    throw new Error("Bara godkända offerter kan faktureras utan uppdrag");
+  }
+  const next = nextPaymentPlanPartForQuote(quoteId);
+  if (next && !next.isLast) {
+    return createPartInvoiceForQuote(quoteId, next.index, createdBy);
+  }
+  const version = currentVersion(quote);
+  const live = liveInvoicesForQuote(quoteId);
+  const already = live.reduce((s, i) => s + invoiceTotals(i).total, 0);
+  const totals = docTotals(version.lines, version.rot);
+  const remaining = Math.max(0, totals.total - already);
+  if (remaining <= 0 && live.length > 0) {
+    throw new Error("Hela offerten är redan fakturerad");
+  }
+  const lines =
+    already > 0
+      ? shareLinesFromVersion(version, remaining, `Slutfaktura – ${version.title} (resterande enligt offert #${quote.number})`).map(
+          (l) => lineWithQuoteProvenance(l, quote)
+        )
+      : version.lines.map((l) => lineWithQuoteProvenance({ ...l, id: uid() }, quote, l.id));
+  return createInvoice(
+    {
+      customerId: quote.customerId,
+      jobId: quote.jobId,
+      quoteId: quote.id,
+      type: already > 0 ? "slutfaktura" : "faktura",
+      lines,
+      rot: version.rot,
+      dueInDays: version.paymentTermsDays,
       lateInterestRate: version.lateInterestRate,
       serviceDate: serviceDateFromJob(quote.jobId),
     },

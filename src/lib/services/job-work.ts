@@ -370,7 +370,9 @@ export function deleteJobWorkEntry(entryId: string): void {
   save();
 }
 
-export function entryToDocLine(entry: JobWorkEntry): DocLine {
+export function entryToDocLine(entry: JobWorkEntry, quoteNumber?: number): DocLine {
+  const sourceKind =
+    entry.type === "labor" ? "JOB_TIME_ENTRY" : entry.type === "material" ? "JOB_MATERIAL" : "JOB_OTHER";
   return syncDocLineClassification({
     id: uid(),
     kind: workTypeToLineKind(entry.type),
@@ -379,6 +381,9 @@ export function entryToDocLine(entry: JobWorkEntry): DocLine {
     unit: entry.unit,
     unitPrice: entry.unitPrice,
     vatRate: entry.vatRate,
+    sourceKind,
+    sourceId: entry.id,
+    sourceQuoteNumber: quoteNumber,
   });
 }
 
@@ -445,8 +450,10 @@ export function jobWorkComparison(jobId: string): JobWorkComparison {
   } else if (quotedExcl > 0 && registeredExcl > quotedExcl) {
     overageLabel = `+${registeredExcl - quotedExcl} kr jämfört med offert`;
   }
+  const quote = jobQuote(requireJob(jobId));
   return {
     hasQuote: planned.length > 0,
+    quoteNumber: quote?.number,
     laborHoursQuoted,
     laborHoursRegistered,
     laborHoursDelta,
@@ -530,7 +537,7 @@ export function jobInvoiceChoice(jobId: string): JobInvoiceChoice {
   if (uninvoiced.length > 0) {
     options.push({
       basis: "actuals",
-      title: "Registrerat arbete & material",
+      title: "Ofakturerat arbete & material",
       hint: actualsHint(uninvoiced),
       amount: actualsAmount,
       extrasAmount: extrasAmount > 0 ? extrasAmount : undefined,
@@ -538,8 +545,8 @@ export function jobInvoiceChoice(jobId: string): JobInvoiceChoice {
   }
   options.push({
     basis: "empty",
-    title: "Tom faktura",
-    hint: "Kund och uppdrag ifyllt.",
+    title: "Välj själv",
+    hint: "Kund och uppdrag ifyllt. Du fyller i raderna.",
     amount: 0,
   });
 
@@ -569,7 +576,11 @@ export function jobInvoiceChoice(jobId: string): JobInvoiceChoice {
           : "Offerten är inte godkänd. Fakturera registrerat arbete eller skapa en tom faktura."
       : undefined;
 
-  return { pricingKind, options, recommendedBasis, warning, tillaggHref, unapprovedQuoteNotice };
+  const reasonable = options.filter((o) => o.basis !== "empty");
+  const autoBasis: JobInvoiceOptionBasis | null =
+    reasonable.length === 1 ? reasonable[0].basis : reasonable.length === 0 ? "empty" : null;
+
+  return { pricingKind, options, recommendedBasis, warning, tillaggHref, unapprovedQuoteNotice, autoBasis };
 }
 
 export function hoursLabel(n: number): string {

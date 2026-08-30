@@ -36,6 +36,8 @@ import { SmartBack } from "@/components/back-link";
 import { AppLink } from "@/components/app-link";
 import { hrefWithNav, invoiceHref, sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { quoteChainState } from "@/lib/services/business-chain";
+import { QuoteChainActions } from "@/components/quote-chain-actions";
 
 export const metadata = { title: "Offert" };
 
@@ -129,6 +131,11 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
           ) : null}
           {quote.status === "skickad" ? (
             <PageActions>
+              <QuoteChainActions
+                state={quoteChainState(quote, fromHere)}
+                returnTo={fromHere.href}
+                returnLabel={fromHere.label}
+              />
               <FollowUpButton quoteId={quote.id} />
               <a href={publicPath} target="_blank" rel="noreferrer" className={buttonClasses("secondary")}>
                 <ExternalLink className="size-4" /> Öppna kundvyn
@@ -140,6 +147,13 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
           ) : null}
           {quote.status === "godkand" || quote.status === "avbojd" ? (
             <PageActions>
+              {quote.status === "godkand" ? (
+                <QuoteChainActions
+                  state={quoteChainState(quote, fromHere)}
+                  returnTo={fromHere.href}
+                  returnLabel={fromHere.label}
+                />
+              ) : null}
               <ButtonLink href={editHref} variant="secondary">
                 <Pencil className="size-4" /> Ny version
               </ButtonLink>
@@ -175,7 +189,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
         <Card className="mb-6 flex items-start gap-3 border-warn/20 bg-warn-soft/40 px-5 py-4">
           <ShieldCheck className="mt-0.5 size-5 shrink-0 text-warn" />
           <div className="text-[14px] leading-relaxed text-soft">
-            <span className="font-medium text-ink">Väntar på BankID-godkännande.</span> Skickad {quote.sentAt ? relativ(quote.sentAt) : ""}
+            <span className="font-medium text-ink">Väntar på signering.</span> Skickad {quote.sentAt ? relativ(quote.sentAt) : ""}
             {quote.viewedAt ? `, öppnad av kunden ${relativ(quote.viewedAt)}` : ", inte öppnad ännu"}.
             {quote.followUps.length > 0 ? ` ${quote.followUps.length} påminnelse${quote.followUps.length > 1 ? "r" : ""} skickad.` : ""}{" "}
             I demoläget kan du öppna kundvyn själv och genomföra BankID-flödet.

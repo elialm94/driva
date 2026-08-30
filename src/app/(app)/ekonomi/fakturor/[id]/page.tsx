@@ -237,21 +237,31 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
           <div>
             <SectionTitle>Kopplat till</SectionTitle>
             <Card className="divide-y divide-line/70">
-              {job ? (
-                <Link href={hrefWithNav(`/uppdrag/${job.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label }) as never} className="block px-4 py-3 text-[14px] font-medium transition-colors hover:bg-canvas/60">
-                  {job.title}
-                  <span className="block text-[12px] font-normal text-muted">Uppdrag</span>
-                </Link>
-              ) : null}
-              {quote ? (
-                <Link href={hrefWithNav(`/ekonomi/offerter/${quote.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label }) as never} className="block px-4 py-3 text-[14px] font-medium transition-colors hover:bg-canvas/60">
-                  Offert #{quote.number}
+              {quote || job ? (
+                <Link
+                  href={
+                    (job
+                      ? hrefWithNav(`/uppdrag/${job.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label })
+                      : hrefWithNav(`/ekonomi/offerter/${quote!.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label })) as never
+                  }
+                  className="block px-4 py-3 text-[14px] font-medium transition-colors hover:bg-canvas/60"
+                >
+                  {[quote ? `Offert #${quote.number}` : null, job?.title].filter(Boolean).join(" · ")}
                   <span className="block text-[12px] font-normal text-muted">
-                    {quote.status === "godkand" ? "Godkänd med BankID" : "Offert"}
+                    {quote && job ? "Offert och uppdrag" : job ? "Uppdrag" : "Offert"}
                   </span>
                 </Link>
+              ) : (
+                <p className="px-4 py-3 text-[13px] text-muted">Fristående faktura.</p>
+              )}
+              {quote && job ? (
+                <Link
+                  href={hrefWithNav(`/ekonomi/offerter/${quote.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label }) as never}
+                  className="block px-4 py-3 text-[13px] text-soft transition-colors hover:bg-canvas/60"
+                >
+                  Visa offert #{quote.number}
+                </Link>
               ) : null}
-              {!job && !quote ? <p className="px-4 py-3 text-[13px] text-muted">Fristående faktura.</p> : null}
             </Card>
           </div>
 
