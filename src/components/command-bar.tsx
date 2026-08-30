@@ -381,7 +381,8 @@ export function CommandBar({
       const parsed = parseReminderCommandInput(title, new Date(), DEFAULT_TIMEZONE);
       // Guidat/slot-fill: alltid redigerbar preview när VAD+NÄR finns.
       // HIGH+SAFE utanför guidat läge one-shotas av NL-vägen (påminn mig …).
-      const pretty = prettyReminderTitle(parsed?.title || title.trim());
+      const parsedTitle = parsed && "title" in parsed ? parsed.title : undefined;
+      const pretty = prettyReminderTitle(parsedTitle || title.trim());
       setFlow(
         parsed?.complete
           ? {

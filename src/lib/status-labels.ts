@@ -196,6 +196,8 @@ export function supplierPaymentStatus(
     case "DRAFT":
     case "READY":
       return SUPPLIER_INVOICE_LIFECYCLE.REDO_ATT_BETALA;
+    case "PAYMENT_FILE_CREATED":
+      return SUPPLIER_INVOICE_LIFECYCLE.BANKFIL_SKAPAD;
     case "SUBMITTED_TO_BANK":
     case "AWAITING_APPROVAL":
       return { label: "Skickad till banken", tone: "info" };

@@ -327,15 +327,15 @@ describe("parseReminderCommandInput: ingen stel guide – bara det som saknas ef
 
   it("'Ring Göran' utan tid → complete:false – ENDAST 'När?' efterfrågas", () => {
     const p = parseReminderCommandInput("Ring Göran", NOW, TZ);
-    assert.ok(p);
-    assert.equal(p.complete, false);
+    assert.ok(p && !p.complete && p.missing === "when");
+    if (!p || p.complete || p.missing !== "when") throw new Error("unreachable");
     assert.equal(p.title, "Ring Göran");
   });
 
   it("'påminn mig att ringa Göran' utan tid → titel utan prefix, complete:false", () => {
     const p = parseReminderCommandInput("påminn mig att ringa Göran", NOW, TZ);
-    assert.ok(p);
-    assert.equal(p.complete, false);
+    assert.ok(p && !p.complete && p.missing === "when");
+    if (!p || p.complete || p.missing !== "when") throw new Error("unreachable");
     assert.equal(p.title, "ringa Göran");
   });
 

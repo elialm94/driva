@@ -11,7 +11,6 @@
  */
 import {
   collapseCorrectedUtterance,
-  prettyReminderTitle,
   resolveUtteranceCorrections,
 } from "../ai/corrections";
 import { isInternalReminderIntent, isPaymentReminderUtterance } from "../ai/utterance";
@@ -428,30 +427,39 @@ export type ReminderCommandParse =
   /** Både VAD och NÄR fanns i meningen → direkt till förhandsvisning/skapa. */
   | { complete: true; title: string; args: Record<string, string | number | boolean> }
   /** Bara VAD → fråga enbart efter NÄR. */
-  | { complete: false; title: string };
+  | { complete: false; missing: "when"; title: string }
+  /** Bara NÄR → fråga enbart efter VAD. */
+  | { complete: false; missing: "title"; args: Record<string, string | number | boolean> }
+  /** Varken VAD eller NÄR ("skapa påminnelse") → guidat flöde från början. */
+  | { complete: false; missing: "both" };
 
-/** Inledningar som inte hör till titeln: "skapa en påminnelse" / "påminn mig att …". */
-function stripReminderLead(text: string): string {
-  return stripReminderLeadPrefix(text);
+function hasReminderLead(text: string): boolean {
+  const t = text.trim();
+  return REMINDER_LEAD_RE.test(t + " ") || REMINDER_LEAD_RE.test(t);
 }
 
 /**
  * Tolkning INUTI påminnelsekommandot: en naken mening ("Ring Göran klockan 8
- * imorgon") ÄR en påminnelse. Försöker alltid extrahera både titel och tid
- * med samma deterministiska parser; hittas ingen tid returneras enbart titeln
- * så att flödet bara frågar efter det som faktiskt saknas.
+ * imorgon") ÄR en påminnelse. Prefixet stripas först så att
+ * "Skapa påminnelse imorgon kl 8" blir saknad titel, inte en titel som
+ * heter "Skapa påminnelse". Hittas ingen tid returneras enbart titeln.
  */
 export function parseReminderCommandInput(text: string, now: Date, timezone: string): ReminderCommandParse | null {
   const trimmed = text.replace(/\s+/g, " ").trim();
   if (!trimmed) return null;
-  // Redan en "påminn …"-fras? Tolka som den är; annars sätt prefixet så att
-  // samma parser förstår den nakna meningen.
+  const prefixed = hasReminderLead(trimmed);
   const parsed =
     parseReminderText(trimmed, now, timezone) ??
-    (/^påminn/i.test(trimmed) ? null : parseReminderText(`påminn mig ${trimmed}`, now, timezone));
+    (prefixed ? null : parseReminderText(`påminn mig ${trimmed}`, now, timezone));
   if (parsed) return { complete: true, title: parsed.title, args: parsed.args };
-  const title = stripReminderLead(trimmed);
-  return title ? { complete: false, title } : null;
+
+  const body = prefixed ? stripReminderLeadPrefix(trimmed) : trimmed;
+  if (!body) return { complete: false, missing: "both" };
+
+  const whenArgs = parseWhenText(body, now, timezone);
+  if (whenArgs) return { complete: false, missing: "title", args: whenArgs };
+
+  return { complete: false, missing: "when", title: body };
 }
 
 /* ------------------------------ Ren tidfras (NÄR-steget) ----------------------------- */

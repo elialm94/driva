@@ -154,7 +154,6 @@ export function inboxDisplayStatus(input: {
   if (invoice?.accountingStatus === "bokford" && (payment?.status === "READY" || payment?.status === "DRAFT")) {
     return { label: "Bokförd · Redo att betala", tone: SUPPLIER_INVOICE_LIFECYCLE.REDO_ATT_BETALA.tone };
   }
-  }
   if (invoice?.accountingStatus === "bokford" && !payment) {
     // Ingen betalning är planerad ännu – lova inte "Betalas", säg förfallodatum.
     return hasRecipientAccount(invoice)

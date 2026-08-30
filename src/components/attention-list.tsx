@@ -21,7 +21,6 @@ import {
   MoreHorizontal,
   ChevronDown,
   ChevronUp,
-  Trash2,
   XCircle,
 } from "lucide-react";
 import { DateTimePicker, DateTimePickerActions } from "./date-time-picker";
@@ -38,7 +37,6 @@ import {
   startJobFromQuoteAction,
   createPaymentFileAction,
   deliverInvoiceAction,
-  dismissReminderAction,
   followUpQuoteAction,
   markQuoteNotRelevantAction,
   sendReminderAction,
@@ -234,8 +232,6 @@ function RowMenu({
     close();
     if (controls.dismissBehavior === "MARK_NOT_RELEVANT" && source?.kind === "quote") {
       run(() => markQuoteNotRelevantAction(source.id), "Markerad som inte aktuell");
-    } else if (controls.dismissBehavior === "DISMISS_REMINDER" && source?.kind === "reminder") {
-      run(() => dismissReminderAction(source.id), "Borttagen");
     }
   }
 
@@ -266,7 +262,7 @@ function RowMenu({
             <button
               type="button"
               role="menuitem"
-              className={itemCls({ danger: controls.dismissBehavior === "DISMISS_REMINDER" })}
+              className={itemCls({ danger: controls.dismissBehavior === "MARK_NOT_RELEVANT" })}
               disabled={disabled}
               onClick={() => {
                 if (controls.dismissNeedsConfirm) {
@@ -279,7 +275,6 @@ function RowMenu({
             >
               {controls.dismissBehavior === "HIDE" ? <Check className="size-3.5 shrink-0" /> : null}
               {controls.dismissBehavior === "MARK_NOT_RELEVANT" ? <XCircle className="size-3.5 shrink-0" /> : null}
-              {controls.dismissBehavior === "DISMISS_REMINDER" ? <Trash2 className="size-3.5 shrink-0" /> : null}
               {controls.dismissLabel}
             </button>
           ) : null}
