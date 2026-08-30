@@ -11,7 +11,7 @@ import { getAiIntentProvider } from "../ai/intent";
 import type { LoopTurn } from "../ai/loop";
 import { isAiConfigured } from "../ai/provider";
 import { parseReminderCommandInput, parseReminderText, parseWhenText, relatedFromTitle } from "../reminders/parse";
-import { businessTimezone } from "./reminders";
+import { businessTimezone, dismissReminder } from "./reminders";
 import { getBusinessActions } from "./actions";
 import { listCustomersForTable } from "./customers";
 import { listJobsForTable } from "./job-list";
@@ -260,6 +260,8 @@ export interface CommandRunResult {
   href?: string;
   /** Sant när fri text inte kunde tolkas och ingen LLM är konfigurerad. */
   notConfigured?: boolean;
+  /** One-shot påminnelse: Ångra = dismiss_reminder på den nyss skapade raden. */
+  undo?: { kind: "dismiss_reminder"; id: string };
 }
 
 export interface CommandRunParams {
@@ -289,6 +291,7 @@ function toRunResult(result: ToolResult): CommandRunResult {
     card: result.card,
     requiresConfirmation: result.requiresConfirmation,
     href: result.card?.kind === "entity" ? result.card.href : undefined,
+    undo: result.undo,
   };
 }
 
@@ -355,9 +358,25 @@ export async function runBarCommand(
         // Guidade steget: titeln är DATA och tolkas aldrig om – bara tidfrasen
         // parsas (strikt: ord över ⇒ ärligt fel, ingen hoptrasslad titel).
         const whenArgs = parseWhenText(whenText, now, timezone);
-        result = whenArgs
-          ? await executeTool("create_reminder", { title, ...whenArgs, ...(relatedFromTitle(title) ?? {}) }, toolOptions)
-          : cannotParse;
+        if (whenArgs) {
+          result = await executeTool("create_reminder", { title, ...whenArgs, ...(relatedFromTitle(title) ?? {}) }, toolOptions);
+        } else {
+          // Hel mening i uppföljningen ("Ring Göran imorgon kl 8") – inte
+          // utfyllnadsord efter en tidfras ("imorgon kanske vid nio").
+          const parsedFollowUp = parseReminderCommandInput(whenText, now, timezone);
+          const followTitle = parsedFollowUp?.complete ? parsedFollowUp.title : "";
+          const looksLikeTask = Boolean(
+            followTitle &&
+              (relatedFromTitle(followTitle) ||
+                /^(ringa?|kolla|skicka|beställa|fakturera|kontakta|maila|mejla|boka|följa|prata|påminn)\b/i.test(
+                  followTitle
+                ))
+          );
+          result =
+            parsedFollowUp?.complete && looksLikeTask
+              ? await executeTool("create_reminder", parsedFollowUp.args, toolOptions)
+              : cannotParse;
+        }
         break;
       }
       default:
@@ -403,6 +422,17 @@ export function sanitizeTurns(turns: unknown): LoopTurn[] {
  * `turns` är det senaste utbytet i fältet så uppföljningsfrågor fungerar
  * ("Fakturera Johan" → "Altanen eller köket?" → "Altanen").
  */
+/** Ångra en nyss skapad intern påminnelse (mjuk dismiss). */
+export function undoCreatedReminder(reminderId: string): CommandRunResult {
+  try {
+    dismissReminder(reminderId);
+    save();
+    return { ok: true, text: "Påminnelsen togs bort." };
+  } catch {
+    return { ok: false, text: "Påminnelsen kunde inte tas bort." };
+  }
+}
+
 export async function interpretFreeTextViaAi(
   text: string,
   turns: LoopTurn[] = [],
@@ -450,6 +480,7 @@ export async function interpretFreeTextViaAi(
         text: intent.text,
         card: intent.card,
         requiresConfirmation: intent.requiresConfirmation,
+        undo: intent.undo,
       };
     }
     case "tool_call": {

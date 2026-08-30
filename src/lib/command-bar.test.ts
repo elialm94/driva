@@ -9,10 +9,13 @@ import {
   FREE_TEXT_FALLBACK_MESSAGE,
   commandWorkspace,
   getCommand,
+  leftoverAfterIntent,
   matchCommands,
+  parseCommand,
   parseFreeText,
   type CommandId,
 } from "./command-bar";
+import { previewReminderDueFromArgs } from "./reminders/parse";
 import { ASSISTANT_TOOL_NAMES } from "./ai/tools";
 import { getAiIntentProvider, NoopAiIntentProvider } from "./ai/intent";
 
@@ -181,6 +184,85 @@ describe("parseFreeText (regler, ingen modell)", () => {
     assert.ok(!(johan.confidence === "high" && johan.commandId === "remind_late_invoices"));
     const nl = parseFreeText("påminn mig imorgon att ringa Göran");
     assert.ok(!(nl.confidence === "high" && nl.commandId === "create_reminder"));
+  });
+});
+
+/* ---------- parseCommand: hela frasen bevaras, autocomplete slänger inget ---------- */
+
+describe("parseCommand (hela originalfrasen → intent + argument)", () => {
+  const SUNDAY = new Date("2026-08-30T08:00:00.000Z");
+  const TZ = "Europe/Stockholm";
+
+  it("screenshot: autocomplete-intent slänger inte leftover", () => {
+    const source = "Skapa en påminnelse att ringa Göran kl 12 nästa onsdag";
+    const p = parseCommand(source, "owner", SUNDAY, TZ);
+    assert.equal(p.confidence, "high");
+    if (p.confidence !== "high") throw new Error("unreachable");
+    assert.equal(p.commandId, "create_reminder");
+    assert.equal(p.source, source);
+    assert.equal(p.leftover, source);
+    assert.ok(p.reminder?.complete);
+    if (!p.reminder || !p.reminder.complete) throw new Error("unreachable");
+    assert.equal(p.reminder.title, "ringa Göran");
+    assert.equal(p.reminder.args.time, "12:00");
+    assert.equal(p.reminder.args.weekday, "onsdag");
+    assert.equal(previewReminderDueFromArgs(p.reminder.args, SUNDAY, TZ), "Onsdag 2 september kl. 12:00");
+  });
+
+  it("välja ”Skapa påminnelse” med kvarvarande originaltext extraherar fortfarande argument", () => {
+    const source = "Skapa påminnelse att ringa Göran imorgon kl 8";
+    const leftover = leftoverAfterIntent(source, "create_reminder");
+    assert.ok(leftover.length > 0, "leftover får inte vara tomt");
+    const p = parseCommand(source, "owner", SUNDAY, TZ);
+    assert.equal(p.confidence, "high");
+    if (p.confidence !== "high") throw new Error("unreachable");
+    assert.ok(p.reminder?.complete);
+    if (!p.reminder || !p.reminder.complete) throw new Error("unreachable");
+    assert.match(p.reminder.title, /ringa Göran/i);
+    assert.equal(p.reminder.args.whenDate, "2026-08-31");
+    assert.equal(p.reminder.args.time, "8:00");
+  });
+
+  it("saknad tid → bara När; saknad uppgift → bara Vad", () => {
+    const whenMissing = parseCommand("Påminn mig att ringa Göran", "owner", SUNDAY, TZ);
+    assert.equal(whenMissing.confidence, "high");
+    if (whenMissing.confidence !== "high") throw new Error("unreachable");
+    assert.equal(whenMissing.reminder && !whenMissing.reminder.complete && whenMissing.reminder.missing, "when");
+
+    const titleMissing = parseCommand("Skapa påminnelse imorgon kl 8", "owner", SUNDAY, TZ);
+    assert.equal(titleMissing.confidence, "high");
+    if (titleMissing.confidence !== "high") throw new Error("unreachable");
+    assert.equal(titleMissing.reminder && !titleMissing.reminder.complete && titleMissing.reminder.missing, "title");
+  });
+
+  it("faktura/offert: leftover (kund + belopp/kontext) kastas inte", () => {
+    const invoice = parseCommand("Skapa en faktura till Sara på 5 000 kronor");
+    assert.equal(invoice.confidence, "high");
+    if (invoice.confidence !== "high") throw new Error("unreachable");
+    assert.equal(invoice.commandId, "create_invoice");
+    assert.equal(invoice.source, "Skapa en faktura till Sara på 5 000 kronor");
+    assert.match(invoice.source, /5 000/);
+    assert.equal(invoice.entityQuery, "sara");
+
+    const quote = parseCommand("Skapa offert till Johan för altanen");
+    assert.equal(quote.confidence, "high");
+    if (quote.confidence !== "high") throw new Error("unreachable");
+    assert.equal(quote.commandId, "create_quote");
+    assert.equal(quote.entityQuery, "johan");
+    assert.match(quote.source, /altanen/);
+  });
+
+  it("exakt alias utan leftover är tom sträng – inte en titel", () => {
+    assert.equal(leftoverAfterIntent("Skapa påminnelse", "create_reminder"), "");
+    assert.equal(leftoverAfterIntent("påminnelse", "create_reminder"), "");
+    assert.ok(leftoverAfterIntent("Skapa en påminnelse att ringa Göran", "create_reminder").length > 0);
+  });
+
+  it("skicka påminnelse är INTE intern create_reminder", () => {
+    const p = parseCommand("skicka påminnelse till Johan om fakturan");
+    assert.equal(p.confidence, "high");
+    if (p.confidence !== "high") throw new Error("unreachable");
+    assert.equal(p.commandId, "remind_late_invoices");
   });
 });
 

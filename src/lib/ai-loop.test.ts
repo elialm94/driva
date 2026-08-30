@@ -20,7 +20,7 @@ import { aiCallableToolDefs, executeTool, toolRegistrySummary, toolRisk } from "
 import { getBusinessActions } from "./services/actions";
 import { validateToolArgs } from "./ai/validate";
 import { getAiIntentProvider, NoopAiIntentProvider } from "./ai/intent";
-import { interpretFreeTextViaAi, runBarCommand } from "./services/command-bar";
+import { interpretFreeTextViaAi, runBarCommand, undoCreatedReminder } from "./services/command-bar";
 import { matchCommands, parseFreeText, FREE_TEXT_FALLBACK_MESSAGE } from "./command-bar";
 import { parseReminderText } from "./reminders/parse";
 
@@ -424,7 +424,7 @@ describe("påminnelser via verktygsloopen", () => {
     const result = await interpretFreeTextViaAi("påminn mig imorgon att ringa Göran");
     assert.equal(called, 0, "noll LLM-anrop");
     assert.equal(result.ok, true);
-    assert.match(result.text, /påminner dig/);
+    assert.match(result.text, /påminnelse skapad/i);
     const rem = db().reminders.find((r) => r.title === "ringa Göran");
     assert.ok(rem, "skapades deterministiskt");
     assert.equal(rem.relatedEntityType, "customer");
@@ -435,7 +435,7 @@ describe("påminnelser via verktygsloopen", () => {
     createCustomer({ kind: "privat", name: "Göran Svensson", email: "goran@example.com", phone: "070" });
     const result = await runBarCommand("create_reminder", { title: "Ring Göran", whenText: "onsdag" });
     assert.equal(result.ok, true);
-    assert.match(result.text, /påminner dig/i);
+    assert.match(result.text, /påminnelse skapad/i);
     const rem = db().reminders.find((r) => r.title === "Ring Göran");
     assert.ok(rem, "påminnelsen persisterades");
     assert.equal(rem.hasExplicitTime, false);
@@ -484,7 +484,7 @@ describe("påminnelser via verktygsloopen", () => {
     const result = await runBarCommand("create_reminder", { text: "Ring Göran klockan 8 imorgon" });
     assert.equal(called, 0, "noll LLM-anrop");
     assert.equal(result.ok, true);
-    assert.match(result.text, /påminner dig/);
+    assert.match(result.text, /påminnelse skapad/i);
 
     const rem = db().reminders.find((r) => r.title === "Ring Göran");
     assert.ok(rem, "påminnelsen persisterades");
@@ -567,6 +567,80 @@ describe("påminnelser via verktygsloopen", () => {
     const rem = db().reminders.find((r) => r.title === "Ringa Göran");
     assert.ok(rem, "påminnelsen persisterades via SAMMA verktygslager");
     assert.equal(rem.relatedEntityType, "customer");
+    assert.equal(result.undo?.kind, "dismiss_reminder");
+    assert.equal(result.undo?.id, rem.id);
+  });
+
+  test("one-shot screenshot: 'Skapa en påminnelse att ringa Göran kl 12 nästa onsdag' utan guide", async () => {
+    let called = 0;
+    __setAiTransportForTests(async () => {
+      called += 1;
+      throw new Error("LLM-anrop från deterministisk väg!");
+    });
+    const phrase = "Skapa en påminnelse att ringa Göran kl 12 nästa onsdag";
+    const result = await interpretFreeTextViaAi(phrase);
+    assert.equal(called, 0, "noll LLM-anrop");
+    assert.equal(result.ok, true);
+    assert.match(result.text, /påminnelse skapad/i);
+    assert.match(result.text, /kl\. 12:00/);
+    const rem = db().reminders.find((r) => /göran/i.test(r.title));
+    assert.ok(rem);
+    assert.equal(result.undo?.id, rem.id);
+    const undone = undoCreatedReminder(rem.id);
+    assert.equal(undone.ok, true);
+    assert.equal(undone.text, "Påminnelsen togs bort.");
+    assert.equal(db().reminders.find((r) => r.id === rem.id)?.status, "DISMISSED");
+  });
+
+  test("one-shot via runBarCommand text: 'Påminn mig att ringa Göran imorgon kl 8'", async () => {
+    const result = await runBarCommand("create_reminder", {
+      text: "Påminn mig att ringa Göran imorgon kl 8",
+    });
+    assert.equal(result.ok, true);
+    assert.match(result.text, /påminnelse skapad/i);
+    const rem = db().reminders.find((r) => r.title === "ringa Göran");
+    assert.ok(rem);
+    assert.equal(rem.hasExplicitTime, true);
+  });
+
+  test("uppföljning 'nästa onsdag kl 12' är datum+tid – inte bara dag", async () => {
+    const result = await runBarCommand("create_reminder", {
+      title: "Ring Göran",
+      whenText: "nästa onsdag kl 12",
+    });
+    assert.equal(result.ok, true);
+    const rem = db().reminders.find((r) => r.title === "Ring Göran");
+    assert.ok(rem);
+    assert.equal(rem.hasExplicitTime, true);
+    const local = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: rem.timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(rem.dueAt));
+    assert.equal(local, "12:00");
+  });
+
+  test("OpenRouter-stub: oförstådd fras → LLM-verktygsanrop → create_reminder, ingen guide", async () => {
+    const phrase = "Slå en knut på näsduken att jag ringer Göran när lunchen är slut imorgon";
+    assert.equal(parseReminderText(phrase, new Date(), "Europe/Stockholm"), null);
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    scriptTransport([
+      {
+        toolCalls: [
+          {
+            name: "create_reminder",
+            args: { title: "Ring Göran", whenDate: tomorrow, time: "12:00" },
+          },
+        ],
+      },
+      { content: "Klart." },
+    ]);
+    const result = await interpretFreeTextViaAi(phrase);
+    assert.equal(result.ok, true);
+    const rem = db().reminders.find((r) => r.title === "Ring Göran");
+    assert.ok(rem, "samma create_reminder-verktyg, ingen wizard");
+    assert.equal(result.undo?.kind, "dismiss_reminder");
   });
 
   test("leverantörsfel via fritextvägen → ärligt besked (inte gamla fallbacktexten), inget skapas, ingen krasch", async () => {

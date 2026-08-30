@@ -45,6 +45,7 @@ export interface LoopResult {
   unavailable?: boolean;
   /** Verktyg som faktiskt kördes, i ordning (för logg/rapport). */
   executedTools: string[];
+  undo?: { kind: "dismiss_reminder"; id: string };
 }
 
 export const AI_UNAVAILABLE_MESSAGE = "AI-assistenten är tillfälligt otillgänglig. Åtgärderna nedan fungerar som vanligt.";
@@ -157,6 +158,7 @@ export async function runAiCommandLoop(
   const executedTools: string[] = [];
   let lastCard: AssistantCard | undefined;
   let lastOkText: string | undefined;
+  let lastUndo: { kind: "dismiss_reminder"; id: string } | undefined;
 
   for (let step = 0; step < cfg.maxToolSteps; step++) {
     const started = Date.now();
@@ -187,7 +189,7 @@ export async function runAiCommandLoop(
           executedTools,
         };
       }
-      return { ok: true, text, card: lastCard, executedTools };
+      return { ok: true, text, card: lastCard, executedTools, undo: lastUndo };
     }
 
     messages.push({ role: "assistant", content: response.content ?? null, tool_calls: response.toolCalls });
@@ -219,6 +221,7 @@ export async function runAiCommandLoop(
       if (result.ok) {
         if (result.card) lastCard = result.card;
         if (result.text) lastOkText = result.text;
+        if (result.undo) lastUndo = result.undo;
       }
       messages.push({
         role: "tool",

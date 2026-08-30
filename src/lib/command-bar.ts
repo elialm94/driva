@@ -9,8 +9,17 @@
  * exporterbart till en framtida LLM-agent: kommandon pekar på verktyg via
  * `run.tool`, och testerna verifierar att varje verktyg finns i registret.
  *
- * Princip: deterministiskt först, LLM sen. "Skriv tre bokstäver → välj → klart."
+ * Princip: HELA originalfrasen → intent + argument. Autocomplete identifierar
+ * intent men slänger ALDRIG resten. Deterministiskt först, LLM sen.
  */
+
+import { DEFAULT_TIMEZONE } from "./reminders/when";
+import {
+  isPaymentReminderQuery,
+  isReminderIntentQuery,
+  parseReminderCommandInput,
+  type ReminderCommandParse,
+} from "./reminders/parse";
 
 export type CommandRisk = "READ_ONLY" | "SAFE_WRITE" | "CONFIRM_REQUIRED";
 
@@ -584,6 +593,44 @@ export type ParsedInput =
   /** Ärligt: vi förstår inte. Inget fejkat AI-svar. */
   | { confidence: "none" };
 
+/**
+ * Fullständig kommandotolkning: originalfrasen bevaras alltid. Autocomplete
+ * eller alias-träff är BARA intent – argumenten kommer ur hela `source`.
+ */
+export type ParsedCommand =
+  | {
+      confidence: "high";
+      commandId: CommandId;
+      /** Hela originalfrasen – skickas till parsern, aldrig en avhuggen etikett. */
+      source: string;
+      /** Text efter intentfrasen (kund, belopp, uppgift …). Tom om bara alias. */
+      leftover: string;
+      entityQuery?: string;
+      reminder?: ReminderCommandParse;
+    }
+  | { confidence: "low"; suggestions: CommandId[]; source: string; leftover: string }
+  | { confidence: "none"; source: string; leftover: string };
+
+/** Texten efter en känd intentfras – tom sträng om frågan BARA var aliaset. */
+export function leftoverAfterIntent(source: string, commandId: CommandId): string {
+  const cmd = getCommand(commandId);
+  const raw = source.replace(/\s+/g, " ").trim();
+  const n = normalize(raw);
+  if (!n) return "";
+  const phrases = [normalize(cmd.label), ...cmd.aliases.map(normalize)].sort((a, b) => b.length - a.length);
+  for (const p of phrases) {
+    if (!p) continue;
+    if (n === p) return "";
+    if (n.startsWith(`${p} `)) {
+      const idx = n.indexOf(p);
+      // Samma längd i normaliserad form ≈ samma antal tecken i början.
+      return raw.slice(idx + p.length).trim();
+    }
+  }
+  // Inget rent prefix – hela frasen är leftover (parsern tar originalet).
+  return raw;
+}
+
 /** Ord som aldrig är kundnamn – rensas ur infångade namnfraser. */
 const NAME_STOPWORDS = new Set([
   "en", "ett", "den", "det", "min", "mitt", "mina", "kund", "kunden", "ny", "nytt",
@@ -666,4 +713,50 @@ export function parseFreeText(text: string, workspace: CommandWorkspace = "owner
   }
 
   return { confidence: "none" };
+}
+
+/**
+ * HELA originalfrasen → intent + argument. Används av kommandofältet så att
+ * autocomplete "Skapa påminnelse" aldrig reducerar inmatningen till bara
+ * etiketten och startar en tom guide.
+ *
+ * Pipeline: full input → deterministisk intent+args → complete? annars
+ * saknade fält (slot-fill) eller låg/ingen konfidens (LLM-reserv).
+ */
+export function parseCommand(
+  text: string,
+  workspace: CommandWorkspace = "owner",
+  now: Date = new Date(),
+  timezone: string = DEFAULT_TIMEZONE
+): ParsedCommand {
+  const source = text.replace(/\s+/g, " ").trim();
+  if (!source) return { confidence: "none", source: "", leftover: "" };
+
+  // Intern påminnelse: parsea ALLTID hela meningen innan något steg väljs.
+  if (isReminderIntentQuery(source) && !isPaymentReminderQuery(source)) {
+    const reminder = parseReminderCommandInput(source, now, timezone);
+    return {
+      confidence: "high",
+      commandId: "create_reminder",
+      source,
+      leftover: source,
+      reminder: reminder ?? { complete: false, missing: "both" },
+    };
+  }
+
+  const parsed = parseFreeText(source, workspace);
+  if (parsed.confidence === "high") {
+    const leftover = leftoverAfterIntent(source, parsed.commandId);
+    return {
+      confidence: "high",
+      commandId: parsed.commandId,
+      source,
+      leftover,
+      entityQuery: parsed.entityQuery,
+    };
+  }
+  if (parsed.confidence === "low") {
+    return { confidence: "low", suggestions: parsed.suggestions, source, leftover: source };
+  }
+  return { confidence: "none", source, leftover: source };
 }

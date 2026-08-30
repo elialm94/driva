@@ -10,6 +10,7 @@ import {
   runBarCommand,
   sanitizeTurns,
   searchCustomersForCommand,
+  undoCreatedReminder,
   type CommandEntityHit,
   type CommandRunParams,
   type CommandRunResult,
@@ -65,6 +66,14 @@ export async function runCommandAction(commandId: CommandId, params: CommandRunP
  * `turns` är fältets senaste utbyte (kompakt) så att uppföljningssvar
  * fortsätter samma flöde. Saneras serverside – klienten är opålitlig.
  */
+/** Ångra one-shot-påminnelse från kommandofältets succé-rad. */
+export async function undoCreatedReminderAction(reminderId: string): Promise<CommandRunResult> {
+  const { opts } = await commandToolOptions();
+  const result = await withBusiness(() => undoCreatedReminder(reminderId), opts);
+  if (result.ok) revalidatePath("/", "layout");
+  return result;
+}
+
 export async function interpretFreeTextAction(
   text: string,
   turns: { role: "user" | "assistant"; text: string }[] = []
