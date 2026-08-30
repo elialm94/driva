@@ -4,48 +4,43 @@
  * Demosessionens livscykel: starta från /demo, avsluta till /login,
  * eller avsluta och gå vidare till kontoskapande.
  *
- * Starten är den ENDA publika vägen in: en riktig Supabase-inloggning görs på
- * servern med demo-uppgifterna ur servermiljön (aldrig i klientbundeln), och
- * sessionen märks med en tidsbegränsad demo-cookie som proxyn upprätthåller.
- * Ingen auth hoppas över – demosessionen är en vanlig, begränsad användare.
+ * Starten är den enda publika vägen in. I produktion skapas en isolerad
+ * kopia av exempeldatat per besökare – ingen Supabase-inloggning, inget
+ * konto, ingen onboarding. JSON-läget (lokal utveckling) är redan demon.
  */
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseMode } from "@/lib/storage/config";
-import {
-  BUSINESS_COOKIE,
-  WORKSPACE_COOKIE,
-  getSessionUser,
-} from "@/lib/auth/session";
+import { BUSINESS_COOKIE, WORKSPACE_COOKIE, getSessionUser } from "@/lib/auth/session";
 import {
   DEMO_ACTOR_COOKIE,
   DEMO_SESSION_COOKIE,
   clientIpFrom,
   demoCookieValueNow,
+  demoSessionIdFromCookie,
   demoSessionMaxAgeSeconds,
-  demoUserEmail,
-  demoUserPassword,
-  isDemoLoginConfigured,
   isDemoUserEmail,
   rateLimitDemoStart,
+  readActiveDemoSessionId,
 } from "@/lib/auth/demo-session";
+import {
+  createDemoSessionStore,
+  deleteDemoSessionStore,
+} from "@/lib/storage/demo-session-store";
 
 export interface DemoStartState {
   error?: string;
 }
 
-const DEMO_UNAVAILABLE =
-  "Demon är inte tillgänglig i den här miljön ännu. Logga in eller skapa ett konto i stället.";
-
 function secureCookies(): boolean {
   return process.env.NODE_ENV === "production";
 }
 
-async function setDemoSessionCookie(): Promise<void> {
+async function setDemoSessionCookie(value: string): Promise<void> {
   const jar = await cookies();
-  jar.set(DEMO_SESSION_COOKIE, demoCookieValueNow(), {
+  jar.set(DEMO_SESSION_COOKIE, value, {
     path: "/",
     httpOnly: true,
     sameSite: "lax",
@@ -62,33 +57,43 @@ async function clearDemoCookies(): Promise<void> {
   }
 }
 
-/** Öppna demon: serverinloggning som demo-användaren + tidsbegränsad markering. */
+function supabaseEnabled(): boolean {
+  try {
+    return isSupabaseMode();
+  } catch {
+    return false;
+  }
+}
+
+/** Öppna demon: ny isolerad session från känt seed – rakt in i appen. */
 export async function startDemoAction(_prev: DemoStartState, _formData: FormData): Promise<DemoStartState> {
   // JSON-läget (lokal utveckling) ÄR demon – rakt in i appen.
-  if (!isSupabaseMode()) redirect("/");
-  if (!isDemoLoginConfigured()) return { error: DEMO_UNAVAILABLE };
+  if (!supabaseEnabled()) redirect("/");
 
   const ip = clientIpFrom(await headers());
   if (!rateLimitDemoStart(ip)) {
     return { error: "Många öppnar demon just nu. Vänta en liten stund och försök igen." };
   }
 
-  const supabase = await createSupabaseServerClient();
-  // En redan inloggad användare som uttryckligen öppnar demon byter session –
-  // samma semantik som att logga in med ett annat konto. Avsluta demo → /login.
-  const { error } = await supabase.auth.signInWithPassword({
-    email: demoUserEmail()!,
-    password: demoUserPassword()!,
-  });
-  if (error) {
-    console.error(`[driva:demo] demoinloggning misslyckades: ${error.code ?? error.message}`);
+  const value = demoCookieValueNow();
+  const sessionId = demoSessionIdFromCookie(value);
+  if (!sessionId) {
     return { error: "Demon kunde inte öppnas just nu. Försök igen om en stund." };
   }
-  await setDemoSessionCookie();
+
+  try {
+    const expires = Number(value.split(".")[0]);
+    await createDemoSessionStore(sessionId, expires);
+  } catch (err) {
+    console.error(`[driva:demo] kunde inte skapa demosession: ${err instanceof Error ? err.message : err}`);
+    return { error: "Demon kunde inte öppnas just nu. Försök igen om en stund." };
+  }
+
+  await setDemoSessionCookie(value);
   redirect("/");
 }
 
-/** Avsluta demo: släpp demosessionen (endast den – scope local) → /login. */
+/** Avsluta demo: släpp den här besökarens session → /login. */
 export async function endDemoAction(): Promise<void> {
   await endDemoSession();
   redirect("/login");
@@ -101,18 +106,17 @@ export async function endDemoToSignupAction(): Promise<void> {
 }
 
 async function endDemoSession(): Promise<void> {
-  if (!isSupabaseMode()) {
-    // JSON-läget har inga sessioner – bara ev. lokala demokakor städas.
-    await clearDemoCookies();
-    revalidatePath("/", "layout");
-    return;
-  }
-  const user = await getSessionUser();
-  if (user && isDemoUserEmail(user.email)) {
-    const supabase = await createSupabaseServerClient();
-    // scope "local": släpp bara DENNA besökares tokens. Demo-användaren delas
-    // av alla demosessioner – en global signOut skulle logga ut alla andra.
-    await supabase.auth.signOut({ scope: "local" });
+  const sessionId = await readActiveDemoSessionId();
+  if (sessionId) await deleteDemoSessionStore(sessionId);
+
+  if (isSupabaseMode()) {
+    const user = await getSessionUser();
+    if (user && isDemoUserEmail(user.email)) {
+      const supabase = await createSupabaseServerClient();
+      // scope "local": släpp bara DENNA besökares tokens om en äldre
+      // delad demo-användare fortfarande sitter i kakorna.
+      await supabase.auth.signOut({ scope: "local" });
+    }
   }
   await clearDemoCookies();
   revalidatePath("/", "layout");

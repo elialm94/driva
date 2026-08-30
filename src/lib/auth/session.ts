@@ -25,7 +25,7 @@ import {
 } from "@/lib/storage/adapter-supabase";
 import { requestSlot } from "@/lib/storage/request-scope";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { BusinessRole } from "@/lib/types";
+import type { BusinessRole, DB } from "@/lib/types";
 import { isAccountingRole, isOwnerRole, type CollaborationCapability, assertCan } from "@/lib/collaboration/permissions";
 import {
   LOCAL_JSON_ACCOUNTANT_NAME,
@@ -35,8 +35,10 @@ import {
   setTestActor,
   type CollaborationActor,
 } from "@/lib/collaboration/actor";
-import { DEMO_ACTOR_COOKIE, isDemoUserEmail } from "@/lib/auth/demo-session";
+import { DEMO_ACTOR_COOKIE, isDemoUserEmail, readActiveDemoSessionId } from "@/lib/auth/demo-session";
 import { ensureLocalDemoCollaboration } from "@/lib/collaboration/local-demo";
+import { loadDemoSessionStore, saveDemoSessionStore } from "@/lib/storage/demo-session-store";
+import { cloneState, runInTenantContext, type TenantContext } from "@/lib/storage/context";
 import {
   activeMembershipFor,
   activeMembershipsForUser,
@@ -61,8 +63,30 @@ export const LOCAL_USER_COOKIE = "driva_local_user";
 
 export type WorkspaceKind = "owner" | "redovisning";
 
-/** Verifierad användare från Supabase-sessionen, eller JSON-lokal aktör. */
+const PUBLIC_DEMO_USER: SessionUser = {
+  id: LOCAL_JSON_USER_ID,
+  email: "demo@driva.local",
+  name: "Du",
+};
+
+/** Aktiv publik demosession (kaka, ingen Supabase-auth)? */
+export const isPublicDemoSession = cache(async (): Promise<boolean> => {
+  if (!isSupabaseMode()) return false;
+  return Boolean(await readActiveDemoSessionId());
+});
+
+function isNextControlFlowError(err: unknown): boolean {
+  const digest = (err as { digest?: string } | null)?.digest;
+  return typeof digest === "string" && (digest.startsWith("NEXT_REDIRECT") || digest === "NEXT_HTTP_ERROR_FALLBACK;404");
+}
+
+/** Verifierad användare från Supabase-sessionen, JSON-lokal aktör, eller publik demo. */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
+  if (await isPublicDemoSession()) {
+    if (process.env.DRIVA_TEST !== "1") ensureLocalDemoCollaboration();
+    const name = (await readDemoActorCookie()) === "accountant" ? LOCAL_JSON_ACCOUNTANT_NAME : "Du";
+    return { ...PUBLIC_DEMO_USER, name };
+  }
   if (!isSupabaseMode()) {
     if (process.env.DRIVA_TEST !== "1") ensureLocalDemoCollaboration();
     const store = await cookies().catch(() => null);
@@ -137,8 +161,9 @@ export async function requireUser(): Promise<SessionUser> {
   return user;
 }
 
-/** Är den aktiva Supabase-sessionen den publika demosessionen? */
+/** Publik demo (isolerad kaka) eller äldre delad demo-användare. */
 export async function isDemoSession(): Promise<boolean> {
+  if (await isPublicDemoSession()) return true;
   if (!isSupabaseMode()) return false;
   const user = await getSessionUser();
   return Boolean(user && isDemoUserEmail(user.email));
@@ -151,6 +176,17 @@ export async function isDemoSession(): Promise<boolean> {
  * memoiserad läsning kan aldrig ge inaktuell auktorisering inom en request.
  */
 export const listMemberships = cache(async (userId: string): Promise<MembershipInfo[]> => {
+  if (await isPublicDemoSession()) {
+    if (process.env.DRIVA_TEST !== "1") ensureLocalDemoCollaboration();
+    return activeMembershipsForUser(userId)
+      .filter((m) => !platformRegistry().disabledBusinesses.some((d) => d.businessId === m.businessId))
+      .map((m) => ({
+        businessId: m.businessId,
+        role: m.role,
+        lastActiveAt: m.lastActiveAt,
+        invitedByUserId: m.invitedByUserId,
+      }));
+  }
   const base = isSupabaseMode()
     ? await applyDemoAccountantView(userId, await membershipsForUser(userId))
     : activeMembershipsForUser(userId)
@@ -236,7 +272,7 @@ export async function requireBusiness(): Promise<{
   const user = await requireUser();
   const memberships = await listMemberships(user.id);
   if (memberships.length === 0) {
-    if (!isSupabaseMode()) {
+    if (!isSupabaseMode() || (await isPublicDemoSession())) {
       ensureLocalOwner(user);
       return {
         user,
@@ -353,7 +389,9 @@ async function authorizeWrite(
   const memberships = await listMemberships(user.id);
   const membership = memberships.find((m) => m.businessId === businessId);
   if (!membership) {
-    if (!isSupabaseMode() && businessId === LOCAL_JSON_BUSINESS_ID) return "owner";
+    if (businessId === LOCAL_JSON_BUSINESS_ID && (!isSupabaseMode() || (await isPublicDemoSession()))) {
+      return "owner";
+    }
     throw new Error("Du har inte åtkomst till det företaget.");
   }
   if (capability) {
@@ -375,8 +413,20 @@ async function resolveActiveBusiness(userId: string, explicit?: string): Promise
   const cookieId = await preferredBusinessFromCookie();
   if (cookieId && memberships.some((m) => m.businessId === cookieId)) return cookieId;
   if (memberships[0]) return memberships[0].businessId;
-  if (!isSupabaseMode()) return LOCAL_JSON_BUSINESS_ID;
+  if (!isSupabaseMode() || (await isPublicDemoSession())) return LOCAL_JSON_BUSINESS_ID;
   throw new Error("Inget företag valt.");
+}
+
+async function requireLoadedDemoStore(): Promise<{ sessionId: string; state: DB }> {
+  const sessionId = await readActiveDemoSessionId();
+  if (!sessionId) redirect("/demo?utgangen=1");
+  const state = await loadDemoSessionStore(sessionId);
+  if (!state) redirect("/demo?utgangen=1");
+  return { sessionId, state };
+}
+
+async function persistDemoIfDirty(sessionId: string, ctx: TenantContext): Promise<void> {
+  if (ctx.dirty && ctx.writable) await saveDemoSessionStore(sessionId, ctx.state);
 }
 
 /** Skrivande flöde i tenantkontext. */
@@ -385,6 +435,33 @@ export async function withBusiness<T>(
   opts: { retry?: boolean; businessId?: string; capability?: CollaborationCapability } = {}
 ): Promise<T> {
   const support = await activeSupportContext().catch(() => null);
+  if (await isPublicDemoSession()) {
+    const user = (await getSessionUser()) ?? PUBLIC_DEMO_USER;
+    const businessId = opts.businessId ?? LOCAL_JSON_BUSINESS_ID;
+    const role = await authorizeWrite(user, businessId, opts.capability);
+    const { sessionId, state } = await requireLoadedDemoStore();
+    const ctx: TenantContext = {
+      businessId,
+      userId: user.id,
+      writable: true,
+      state,
+      baseline: cloneState(state),
+      stateVersion: 0,
+      dirty: false,
+    };
+    try {
+      const result = await runAsActor(labelSupportActor(actorFrom(user, businessId, role), support), () =>
+        runInTenantContext(ctx, fn)
+      );
+      await persistDemoIfDirty(sessionId, ctx);
+      return result;
+    } catch (err) {
+      if (isNextControlFlowError(err)) await persistDemoIfDirty(sessionId, ctx);
+      throw err;
+    } finally {
+      await auditSupportWrite(support, businessId);
+    }
+  }
   if (!isSupabaseMode()) {
     const user = (await getSessionUser()) ?? {
       id: LOCAL_JSON_USER_ID,
@@ -417,6 +494,21 @@ export async function withBusinessRead<T>(
   fn: () => T | Promise<T>,
   opts: { businessId?: string } = {}
 ): Promise<T> {
+  if (await isPublicDemoSession()) {
+    const { state } = await requireLoadedDemoStore();
+    return runInTenantContext(
+      {
+        businessId: opts.businessId ?? LOCAL_JSON_BUSINESS_ID,
+        userId: LOCAL_JSON_USER_ID,
+        writable: false,
+        state,
+        baseline: state,
+        stateVersion: 0,
+        dirty: false,
+      },
+      fn
+    );
+  }
   if (!isSupabaseMode()) return await fn();
   const user = await requireUser();
   const businessId = await resolveActiveBusiness(user.id, opts.businessId);
@@ -430,6 +522,27 @@ export async function withPublicBusiness<T>(
   fn: () => T | Promise<T>,
   opts: { access?: "read" | "write"; retry?: boolean } = {}
 ): Promise<T | null> {
+  if (await isPublicDemoSession()) {
+    const { sessionId, state } = await requireLoadedDemoStore();
+    const writable = (opts.access ?? "write") === "write";
+    const ctx: TenantContext = {
+      businessId: LOCAL_JSON_BUSINESS_ID,
+      userId: null,
+      writable,
+      state,
+      baseline: cloneState(state),
+      stateVersion: 0,
+      dirty: false,
+    };
+    try {
+      const result = await runInTenantContext(ctx, fn);
+      await persistDemoIfDirty(sessionId, ctx);
+      return result;
+    } catch (err) {
+      if (isNextControlFlowError(err)) await persistDemoIfDirty(sessionId, ctx);
+      throw err;
+    }
+  }
   if (!isSupabaseMode()) return await fn();
   const resolved = await resolvePublicToken(kind, token);
   if (!resolved) return null;
@@ -479,7 +592,17 @@ const loadPageBusiness = cache(async (businessId?: string): Promise<void> => {
   }
 });
 
+const loadPublicDemoPage = cache(async (): Promise<void> => {
+  const { state } = await requireLoadedDemoStore();
+  if (process.env.DRIVA_TEST !== "1") ensureLocalDemoCollaboration(state.settings.name);
+  const slot = requestSlot();
+  slot.state = state;
+  slot.businessId = LOCAL_JSON_BUSINESS_ID;
+  slot.actor = actorFrom(PUBLIC_DEMO_USER, LOCAL_JSON_BUSINESS_ID, "owner");
+});
+
 export async function ensurePageBusiness(): Promise<void> {
+  if (await isPublicDemoSession()) return loadPublicDemoPage();
   if (!isSupabaseMode()) return;
   return loadPageBusiness();
 }
@@ -505,6 +628,10 @@ const loadPublicPage = cache(async (kind: PublicTokenKind, token: string): Promi
 });
 
 export async function ensurePublicPage(kind: PublicTokenKind, token: string): Promise<boolean> {
+  if (await isPublicDemoSession()) {
+    await loadPublicDemoPage();
+    return true;
+  }
   if (!isSupabaseMode()) return true;
   return loadPublicPage(kind, token);
 }

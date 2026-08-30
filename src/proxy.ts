@@ -63,6 +63,15 @@ async function runSessionProxy(request: NextRequest) {
   // timeoutat och lämnat avhuggna RSC-payloads till klientcachen.
   if (isRouterPrefetch(request)) return NextResponse.next({ request });
 
+  const { pathname, search } = request.nextUrl;
+  const demoCookie = request.cookies.get(DEMO_SESSION_COOKIE)?.value;
+
+  // Publik demo: giltig kaka släpper in utan auth-redirect eller getClaims.
+  if (isDemoCookieValueActive(demoCookie)) {
+    return NextResponse.next({ request });
+  }
+  const expiredPublicDemo = Boolean(demoCookie);
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const key =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
@@ -86,7 +95,6 @@ async function runSessionProxy(request: NextRequest) {
   // Verifierar sessionen (och friskar upp den vid behov – setAll ovan).
   const { data } = await supabase.auth.getClaims();
   const isAuthenticated = Boolean(data?.claims?.sub);
-  const { pathname, search } = request.nextUrl;
 
   // Demosessioner är tidsbegränsade: utan giltig demo-cookie loggas
   // demo-användarens session ut (endast DENNA besökares tokens – scope local)
@@ -109,6 +117,16 @@ async function runSessionProxy(request: NextRequest) {
   }
 
   if (!isAuthenticated && !isPublicPath(pathname)) {
+    if (expiredPublicDemo) {
+      const demoUrl = request.nextUrl.clone();
+      demoUrl.pathname = "/demo";
+      demoUrl.search = "";
+      demoUrl.searchParams.set("utgangen", "1");
+      const redirectResponse = NextResponse.redirect(demoUrl);
+      redirectResponse.cookies.delete(DEMO_SESSION_COOKIE);
+      redirectResponse.cookies.delete(DEMO_ACTOR_COOKIE);
+      return redirectResponse;
+    }
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.search = "";

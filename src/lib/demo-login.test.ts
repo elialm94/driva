@@ -14,10 +14,12 @@ import { emptyTestDb, labor, testCustomer } from "./invoices/test-db";
 import {
   __resetDemoRateLimitForTests,
   demoCookieValueNow,
+  demoSessionIdFromCookie,
   demoSessionMaxAgeSeconds,
   isDemoCookieValueActive,
   isDemoLoginConfigured,
   isDemoUserEmail,
+  isPublicDemoAvailable,
   rateLimitDemoReset,
   rateLimitDemoStart,
 } from "./auth/demo-session";
@@ -94,12 +96,19 @@ describe("demosessionens kaka och livslängd", () => {
 
   it("nytt kakvärde är aktivt, unikt per besökare och bär utgångstiden", () => {
     const value = demoCookieValueNow();
-    assert.match(value, /^\d+\.[a-z0-9]+$/);
+    assert.match(value, /^\d+\.[a-f0-9]+$/);
     assert.equal(isDemoCookieValueActive(value), true);
-    assert.notEqual(demoCookieValueNow(), value);
+    assert.ok(demoSessionIdFromCookie(value));
+    assert.notEqual(demoSessionIdFromCookie(value), demoSessionIdFromCookie(demoCookieValueNow()));
     const expires = Number(value.split(".")[0]);
     const maxAge = demoSessionMaxAgeSeconds() * 1000;
     assert.ok(expires > Date.now() && expires <= Date.now() + maxAge + 1000);
+  });
+
+  it("session-id saknas på utgångna och äldre kakvärden utan slumpdel", () => {
+    assert.equal(demoSessionIdFromCookie(undefined), null);
+    assert.equal(demoSessionIdFromCookie(`${Date.now() - 1000}.abc123def4567890`), null);
+    assert.equal(demoSessionIdFromCookie(String(Date.now() + 60_000)), null);
   });
 
   it("utgångna, tomma och trasiga kakvärden är inaktiva", () => {
@@ -128,9 +137,15 @@ describe("demoanvändarens identitet", () => {
 
   it("demoinloggningen är avstängd utan Supabase-läge", () => {
     // Testmiljön kör JSON-läget – även med båda variablerna satta är den
-    // publika demoinloggningen bara aktuell där riktiga sessioner finns.
+    // äldre delade demo-användaren inte aktiv. Publik demo är ändå öppen.
     process.env.DEMO_USER_EMAIL = "demo@driva.test";
     process.env.DEMO_USER_PASSWORD = "hemligt";
+    assert.equal(isDemoLoginConfigured(), false);
+    assert.equal(isPublicDemoAvailable(), true);
+  });
+
+  it("publik demo är tillgänglig utan DEMO_USER-miljövariabler", () => {
+    assert.equal(isPublicDemoAvailable(), true);
     assert.equal(isDemoLoginConfigured(), false);
   });
 });

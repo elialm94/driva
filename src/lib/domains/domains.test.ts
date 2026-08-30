@@ -19,7 +19,7 @@ import { CURRENT_BUSINESS_ID } from "./config";
 import { resetMockRegistrar } from "./registrar/mock";
 import { resetMockHosting } from "./hosting/mock";
 import { resetMockBilling } from "./billing";
-import { resetRegistrarCache } from "./registrar";
+import { getDomainRegistrar, resetRegistrarCache } from "./registrar";
 import { resetHostingCache } from "./hosting";
 import { resetBillingCache } from "./billing";
 import { enrichDomainView } from "./view";
@@ -238,6 +238,19 @@ describe("domän: befintlig adress", () => {
 describe("domän: business id", () => {
   it("använder current business", () => {
     assert.equal(CURRENT_BUSINESS_ID, "biz-current");
+  });
+});
+
+describe("domän: demoläge", () => {
+  it("demoföretaget använder mock-registrar även om live är konfigurerat", () => {
+    process.env.DOMAIN_PROVIDER_MODE = "live";
+    process.env.DOMAIN_REGISTRAR_USERNAME = "x";
+    process.env.DOMAIN_REGISTRAR_PASSWORD = "y";
+    reset({ meta: { seededAt: new Date().toISOString(), demo: true } });
+    assert.equal(getDomainRegistrar().id, "mock");
+    delete process.env.DOMAIN_REGISTRAR_USERNAME;
+    delete process.env.DOMAIN_REGISTRAR_PASSWORD;
+    process.env.DOMAIN_PROVIDER_MODE = "mock";
   });
 });
 

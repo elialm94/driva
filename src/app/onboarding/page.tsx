@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getSessionUser } from "@/lib/auth/session";
+import { getSessionUser, isPublicDemoSession } from "@/lib/auth/session";
 import { needsCompanyOnboarding } from "@/lib/onboarding";
 import { membershipsForUser } from "@/lib/storage/adapter-supabase";
 import { isSupabaseMode } from "@/lib/storage/config";
@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function OnboardingPage() {
   if (!isSupabaseMode()) redirect("/"); // JSON-läget har ett färdigt demoföretag
+  if (await isPublicDemoSession()) redirect("/");
   const user = await getSessionUser();
   if (!user) redirect("/login");
   const memberships = await membershipsForUser(user.id);

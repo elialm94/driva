@@ -137,7 +137,9 @@ import { hrefWithNav, type ReturnNav } from "@/lib/nav";
 import { headers } from "next/headers";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { requireBusiness, withBusiness, withBusinessRead, withPublicBusiness } from "@/lib/auth/session";
-import { isDemoUserEmail, rateLimitDemoReset } from "@/lib/auth/demo-session";
+import { isDemoUserEmail, rateLimitDemoReset, readActiveDemoSessionId } from "@/lib/auth/demo-session";
+import { isPublicDemoSession } from "@/lib/auth/session";
+import { resetDemoSessionStore } from "@/lib/storage/demo-session-store";
 
 /**
  * Alla åtgärder körs i tenantkontext via withBusiness (ladda → domänlogik →
@@ -1316,10 +1318,22 @@ export async function saveLogoAction(
 /* ------------------------------------ Demo ---------------------------------- */
 
 export async function resetDemoAction(): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (await isPublicDemoSession()) {
+    const sessionId = await readActiveDemoSessionId();
+    if (!sessionId) return { ok: false, error: "Endast demosessionen kan återställa demon." };
+    if (!rateLimitDemoReset()) {
+      return { ok: false, error: "Demon återställdes nyss. Vänta en liten stund och försök igen." };
+    }
+    try {
+      await resetDemoSessionStore(sessionId);
+    } catch (e) {
+      console.error(`[driva:demo] återställning misslyckades: ${e instanceof Error ? e.message : e}`);
+      return { ok: false, error: "Demon kunde inte återställas just nu. Försök igen om en stund." };
+    }
+    refresh();
+    return { ok: true };
+  }
   if (isSupabaseMode()) {
-    // Publika demosessionen: töm demoföretaget i databasen (SQL-funktionen
-    // vägrar för alla företag som inte skapades som demo) och spela upp
-    // exempeldatat igen genom appens vanliga importväg.
     const { user, businessId } = await requireBusiness();
     if (!isDemoUserEmail(user.email)) {
       return { ok: false, error: "Endast demosessionen kan återställa demon." };
@@ -1337,7 +1351,6 @@ export async function resetDemoAction(): Promise<{ ok: true } | { ok: false; err
     refresh();
     return { ok: true };
   }
-  // JSON-läget – resetDemoData() vägrar köra mot Supabase.
   resetDemoData();
   refresh();
   return { ok: true };

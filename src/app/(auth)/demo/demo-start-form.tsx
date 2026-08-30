@@ -17,7 +17,7 @@ export function DemoStartForm() {
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-lg bg-stone-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-60"
+        className="w-full rounded-xl bg-stone-900 px-4 py-3.5 text-base font-semibold text-white hover:bg-stone-800 disabled:opacity-60"
       >
         {pending ? "Öppnar demo …" : "Öppna demo"}
       </button>

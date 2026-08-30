@@ -179,7 +179,7 @@ function migrateRequestsToJobs(data: DB): boolean {
 
 type QuoteWithLegacyRequest = { requestId?: string };
 
-export function normalize(loaded: DB): DB {
+export function normalize(loaded: DB, persistIfDirty = true): DB {
   // Fält tillagda efter att filen skapades får sina standardvärden här.
   loaded.settings.lateInterestRate ??= 10;
   loaded.settings.quoteValidityDays ??= 30;
@@ -215,8 +215,15 @@ export function normalize(loaded: DB): DB {
     hydrateTaxReductionDemo(loaded) ||
     hydrateQuotedBaselines(loaded);
   // Persist snapshots so later settings changes cannot rewrite seed/historical docs.
-  if (dirty || migrated || domainsChanged) persist(loaded);
+  if (persistIfDirty && (dirty || migrated || domainsChanged)) persist(loaded);
   return loaded;
+}
+
+/** Färdigt Södermalms-exempel med demo-flagga – används av publika demosessioner. */
+export function freshDemoDb(): DB {
+  const data = normalize(buildSeed(), false);
+  data.meta.demo = true;
+  return data;
 }
 
 function freshSeed(): DB {

@@ -194,5 +194,27 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
        check (type in ('labor', 'material', 'travel', 'other'))`
   );
 
+  const demoSessions = await client.query(`select to_regclass('public.demo_sessions') is not null as present`);
+  if (!demoSessions[0]?.present) {
+    await run(
+      client,
+      `create table if not exists public.demo_sessions (
+        id text primary key,
+        store jsonb not null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        expires_at timestamptz not null
+      )`
+    );
+    await run(client, `create index if not exists demo_sessions_expires_idx on public.demo_sessions (expires_at)`);
+    await run(client, `alter table public.demo_sessions enable row level security`);
+    try {
+      await client.query(`revoke all on public.demo_sessions from public, anon, authenticated`);
+    } catch {
+      // anon/authenticated finns i Supabase men inte i PGlite.
+    }
+    applied.push("demo_sessions");
+  }
+
   return applied;
 }

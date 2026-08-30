@@ -1,22 +1,17 @@
 /**
- * Publik demosession: en RIKTIG, begränsad identitet – aldrig en auth-bypass.
+ * Publik demosession – inget konto, ingen Supabase-auth för besökaren.
  *
- * Modellen (Supabase-läget):
- *   * En dedikerad, seedad demo-auth-användare (npm run db:seed -- --demo)
- *     äger ETT demoföretag (businesses.is_demo, fryst vid insert).
- *   * /demo startar sessionen på servern med signInWithPassword mot
- *     inloggningsuppgifter som ENDAST finns i servermiljön
- *     (DEMO_USER_EMAIL / DEMO_USER_PASSWORD) – aldrig i klientbundeln.
- *   * Varje besökare får en EGEN Supabase-session (egna tokens) för samma
- *     demo-användare. All auktorisering går den vanliga vägen: proxy →
- *     requireBusiness → medlemskap → RLS. Demo-användaren är bara medlem i
- *     demoföretaget och kan därför aldrig nå riktiga företag.
- *   * Sessionens livslängd begränsas av demo-cookien (DEMO_SESSION_HOURS,
- *     standard 8 h). Proxyn loggar ut demo-sessioner vars cookie saknas
- *     eller gått ut.
+ *   * JSON-läget (lokal utveckling) ÄR redan demon – /demo skickar rakt in.
+ *   * I produktion (Supabase-läge) får varje besökare en egen isolerad
+ *     kopia av Södermalms-exempeldatat, nycklad på demokakan. Muteringar
+ *     stannar i den sessionen; nästa besökare startar från seed.
+ *   * Inga DEMO_USER_EMAIL/PASSWORD krävs. Den äldre delade demo-användaren
+ *     används inte längre som primär väg (alla skulle skriva på samma rader).
  *
- * JSON-läget (lokal utveckling) ÄR redan demon – där behövs ingen session.
+ * Sessionens livslängd begränsas av demo-cookien (DEMO_SESSION_HOURS).
  */
+import { randomBytes } from "node:crypto";
+import { cookies } from "next/headers";
 import { isSupabaseMode } from "@/lib/storage/config";
 
 /** Markerar en aktiv demosession; värdet är utgångstiden (epoch ms). */
@@ -37,9 +32,17 @@ export function demoUserPassword(): string | undefined {
   return v || undefined;
 }
 
-/** Demoinloggning är på när Supabase-läget kör och båda variablerna finns. */
+/**
+ * Äldre delad demo-användare (signInWithPassword). Behålls för bakåt-
+ * kompatibilitet mot utgångna sessioner i proxyn – styr INTE tillgänglighet.
+ */
 export function isDemoLoginConfigured(): boolean {
   return isSupabaseMode() && Boolean(demoUserEmail()) && Boolean(demoUserPassword());
+}
+
+/** Publik demo är alltid tillgänglig – den är inte env-griad. */
+export function isPublicDemoAvailable(): boolean {
+  return true;
 }
 
 export function isDemoUserEmail(email: string | null | undefined): boolean {
@@ -62,8 +65,27 @@ export function demoSessionMaxAgeSeconds(): number {
  */
 export function demoCookieValueNow(): string {
   const expires = Date.now() + demoSessionMaxAgeSeconds() * 1000;
-  const nonce = Math.random().toString(36).slice(2, 12);
+  const nonce = randomBytes(24).toString("hex");
   return `${expires}.${nonce}`;
+}
+
+/** Sessionens id (ogissbar) ur kakvärdet, eller null om kakan är ogiltig. */
+export function demoSessionIdFromCookie(value: string | undefined): string | null {
+  if (!value || !isDemoCookieValueActive(value)) return null;
+  const dot = value.indexOf(".");
+  if (dot < 0) return null;
+  const id = value.slice(dot + 1).trim();
+  return id.length >= 16 ? id : null;
+}
+
+/** Aktiv publik demosession i den här requesten? Läser bara kakan. */
+export async function readActiveDemoSessionId(): Promise<string | null> {
+  try {
+    const jar = await cookies();
+    return demoSessionIdFromCookie(jar.get(DEMO_SESSION_COOKIE)?.value);
+  } catch {
+    return null;
+  }
 }
 
 export function isDemoCookieValueActive(value: string | undefined): boolean {
