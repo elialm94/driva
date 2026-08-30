@@ -6,6 +6,7 @@ import type {
   Invoice,
   Job,
   LineKind,
+  PaymentFile,
   Quote,
   QuoteVersion,
   SupplierInvoice,
@@ -15,6 +16,7 @@ import type {
   VerificationEntry,
   VerificationSource,
 } from "./types";
+import { getPaymentExportProvider } from "./banking/payment-export";
 import {
   entriesExpense,
   entriesInvoicePaid,
@@ -38,6 +40,13 @@ function d(daysAgo: number, hour = 10, minute = 0): string {
 function L(kind: LineKind, description: string, qty: number, unit: string, unitPrice: number, vatRate: VatRate = 25): DocLine {
   return { id: `line-${Math.random().toString(36).slice(2, 9)}`, kind, description, qty, unit, unitPrice, vatRate };
 }
+
+/**
+ * Företagets betalkonto i demon (pain.001-debitorn): SEB, slutar på 4512 –
+ * samma konto som bankkopplingen visar. Giltigt mod-97-IBAN.
+ */
+const PAYER_IBAN = "SE2750000000054910004512";
+const PAYER_BIC = "ESSESESS";
 
 export function buildSeed(): DB {
   /* ------------------------------- Kunder ------------------------------- */
@@ -794,14 +803,20 @@ export function buildSeed(): DB {
   /* ------------------------------- Utgifter ------------------------------ */
 
   const expenses = [
+    // Fall A i demon: kvittot kom via inboxen, matchades mot kortköpet och
+    // bokfördes automatiskt. Kvittoflöde = ingen utgående betalning.
     {
       id: "exp-bauhaus",
       supplier: "Bauhaus",
       date: d(3),
       amount: 875,
       vatAmount: 175,
-      status: "saknar_kvitto" as const,
+      category: "material",
+      description: "Skruv, lister och handverktyg",
+      receiptId: "rec-bauhaus",
       bankTransactionId: "tx-bauhaus",
+      status: "bokford" as const,
+      verificationId: "ver-exp-bauhaus",
       createdAt: d(3),
     },
     {
@@ -931,6 +946,22 @@ export function buildSeed(): DB {
   ];
 
   const receipts = [
+    {
+      id: "rec-bauhaus",
+      expenseId: "exp-bauhaus",
+      filename: "kvitto-bauhaus.pdf",
+      source: "email" as const,
+      uploadedAt: d(3, 12, 45),
+      extracted: {
+        supplier: "Bauhaus",
+        date: d(3),
+        amount: 875,
+        vatAmount: 175,
+        description: "Skruv, lister och handverktyg",
+        category: "material",
+        confidence: "hog" as const,
+      },
+    },
     {
       id: "rec-beijer",
       expenseId: "exp-beijer",
@@ -1064,21 +1095,34 @@ export function buildSeed(): DB {
   /* -------------------------- Leverantörsfakturor ------------------------ */
 
   const supplierInvoices: SupplierInvoice[] = [
+    // Fall B i demon: komplett leverantörsfaktura – tolkad med hög konfidens,
+    // bokförd av autopiloten och REDO ATT BETALA ([Skapa bankfil]).
     {
       id: "sup-beijer",
       supplier: "Beijer Bygg",
       invoiceNumber: "BB-48211",
       date: d(2),
-      dueDate: d(-11),
+      dueDate: d(-10),
       amount: 18500,
       vatAmount: 3700,
       description: "Virke och skivmaterial, altanprojekt",
       category: "material",
       status: "obetald",
       accountingStatus: "bokford" as const,
-      ocr: "4821171",
-      bankgiro: "5123-4567",
-      recipientAccount: "5123-4567",
+      ocr: "48211",
+      bankgiro: "123-4567",
+      recipientAccount: "123-4567",
+      paymentDetails: {
+        state: "VERIFIED" as const,
+        verified: {
+          method: "bankgiro" as const,
+          account: "123-4567",
+          ocr: "48211",
+          source: "document" as const,
+          verifiedAt: d(2, 9, 12),
+          verifiedBy: "assistent" as const,
+        },
+      },
       inboxItemId: "inbox-mail-beijer",
       verificationId: "ver-sup-beijer",
       createdAt: d(2),
@@ -1176,23 +1220,25 @@ export function buildSeed(): DB {
   ];
 
   const supplierPayments: SupplierPayment[] = [
+    // Fall B: instruktionen är förberedd och REDO – bankfilen skapas av
+    // användaren ([Skapa bankfil]). Ingen fejkad bankinlämning i demon.
     {
       id: "spay-beijer",
       supplierInvoiceId: "sup-beijer",
       amount: 18500,
       currency: "SEK",
-      dueDate: d(-11),
-      scheduledDate: d(-11).slice(0, 10),
-      ocr: "4821171",
-      recipientAccount: "5123-4567",
+      dueDate: d(-10),
+      scheduledDate: d(-10).slice(0, 10),
+      ocr: "48211",
+      recipientAccount: "123-4567",
       recipientName: "Beijer Bygg",
-      providerPaymentId: "seed-bank-beijer-1",
-      idempotencyKey: "suppay:sup-beijer:18500:" + d(-11).slice(0, 10),
-      status: "SCHEDULED",
-      createdAt: d(2, 9, 20),
-      submittedAt: d(2, 9, 21),
-      updatedAt: d(2, 9, 21),
+      idempotencyKey: "suppay:sup-beijer:18500:" + d(-10).slice(0, 10),
+      status: "READY",
+      createdAt: d(2, 9, 12),
+      updatedAt: d(2, 9, 12),
     },
+    // Telia: bankfil skapad i går – väntar på uppladdning i internetbanken.
+    // Fil skapad ≠ skickad till bank ≠ betald.
     {
       id: "spay-telia-aug",
       supplierInvoiceId: "sup-telia-aug",
@@ -1204,9 +1250,10 @@ export function buildSeed(): DB {
       recipientAccount: "991-2345",
       recipientName: "Telia",
       idempotencyKey: "suppay:sup-telia-aug:1295:" + d(-6).slice(0, 10),
-      status: "READY",
+      status: "PAYMENT_FILE_CREATED",
+      paymentFileId: "pf-telia-aug",
       createdAt: d(1, 11, 0),
-      updatedAt: d(1, 11, 0),
+      updatedAt: d(1, 11, 5),
     },
     {
       id: "spay-forsakring",
@@ -1262,6 +1309,53 @@ export function buildSeed(): DB {
     },
   ];
 
+  /* -------------------------------- Bankfiler ---------------------------- */
+
+  // Telias bankfil genereras med samma pain.001-byggare som produktflödet –
+  // demofilen är alltså en riktig, validerad ISO 20022-fil.
+  const teliaFile = getPaymentExportProvider("ISO20022_PAIN001").build({
+    messageId: "DRIVA-SEED-TELIA-AUG",
+    createdAt: d(1, 11, 5),
+    payer: {
+      name: "Södermalms Snickeri AB",
+      orgNumber: "559123-4567",
+      iban: PAYER_IBAN,
+      bic: PAYER_BIC,
+    },
+    instructions: [
+      {
+        instructionId: "SPAYTELIAAUG",
+        endToEndId: "SPAYTELIAAUG",
+        amount: 1295,
+        currency: "SEK",
+        requestedExecutionDate: d(-6).slice(0, 10),
+        recipientName: "Telia",
+        recipientAccount: { kind: "bankgiro", account: "991-2345" },
+        ocr: "20260881",
+      },
+    ],
+  });
+  if (!teliaFile.ok) {
+    throw new Error(`Seeddata: Telia-bankfilen kunde inte genereras: ${teliaFile.problems.join(" ")}`);
+  }
+
+  const paymentFiles: PaymentFile[] = [
+    {
+      id: "pf-telia-aug",
+      filename: `driva-betalningar-${d(1).slice(0, 10)}.xml`,
+      messageId: "DRIVA-SEED-TELIA-AUG",
+      format: "ISO20022_PAIN001",
+      paymentIds: ["spay-telia-aug"],
+      supplierInvoiceIds: ["sup-telia-aug"],
+      totalAmount: 1295,
+      currency: "SEK",
+      xml: teliaFile.content,
+      status: "CREATED",
+      createdAt: d(1, 11, 5),
+      createdBy: "anvandare",
+    },
+  ];
+
   /* ---------------------------- Banktransaktioner ------------------------ */
 
   const bankTransactions: BankTransaction[] = [];
@@ -1309,8 +1403,8 @@ export function buildSeed(): DB {
     });
   }
 
-  // Utgifter.
-  addTx({ id: "tx-bauhaus", date: d(3), amount: -875, counterpart: "Bauhaus", description: "Kortköp BAUHAUS SICKLA", status: "behover_atgard", matchedType: "utgift", matchedId: "exp-bauhaus" });
+  // Utgifter. Bauhaus-köpet (fall A) är matchat mot inboxkvittot och bokfört.
+  addTx({ id: "tx-bauhaus", date: d(3), amount: -875, counterpart: "Bauhaus", description: "Kortköp BAUHAUS SICKLA", status: "bokford", matchedType: "utgift", matchedId: "exp-bauhaus", verificationId: "ver-exp-bauhaus" });
   addTx({ id: "tx-clas", date: d(5), amount: -349, counterpart: "Clas Ohlson", description: "Kortköp CLAS OHLSON 224", status: "behover_atgard", matchedType: "utgift", matchedId: "exp-clas" });
   addTx({ id: "tx-hotel", date: d(4), amount: -4250, counterpart: "Grand Hôtel", description: "Kortköp GRAND HOTEL STHLM", status: "behover_atgard", matchedType: "utgift", matchedId: "exp-hotel" });
   addTx({ id: "tx-beijer", date: d(9), amount: -12400, counterpart: "Beijer Bygg", description: "Kortköp BEIJER BYGG 108", status: "bokford", matchedType: "utgift", matchedId: "exp-beijer", verificationId: "ver-exp-beijer" });
@@ -1450,7 +1544,10 @@ export function buildSeed(): DB {
     { id: "act-3", at: d(1, 15, 45), text: "Offert #114 skickades till Nord Studio AB (46 500 kr).", customerId: "cust-nord", entity: { type: "offert", id: "quote-nord2" } },
     { id: "act-4", at: d(1, 21, 8), text: "Anna Andersson öppnade offert #113.", customerId: "cust-anna", entity: { type: "offert", id: "quote-garderob" } },
     { id: "act-5", at: d(2, 10, 12), text: "Offert #113 skickades till Anna Andersson (26 000 kr att betala efter ROT).", customerId: "cust-anna", entity: { type: "offert", id: "quote-garderob" } },
-    { id: "act-6", at: d(3, 14, 55), text: "Köp hos Bauhaus på 875 kr saknar kvitto.", entity: { type: "utgift", id: "exp-bauhaus" } },
+    { id: "act-6", at: d(3, 12, 46), text: "Kvitto från Bauhaus (875 kr) matchades mot kortköpet och bokfördes som material.", entity: { type: "utgift", id: "exp-bauhaus" } },
+    { id: "act-16", at: d(2, 9, 12), text: "Leverantörsfaktura från Beijer Bygg (18 500 kr) bokfördes automatiskt. Redo att betala – förfaller " + d(-10).slice(0, 10) + ".", entity: { type: "verifikation", id: "ver-sup-beijer" } },
+    { id: "act-17", at: d(1, 11, 5), text: "Bankfil driva-betalningar-" + d(1).slice(0, 10) + ".xml skapades för Telia (1 295 kr). Ladda upp den i internetbanken och godkänn betalningen där." },
+    { id: "act-18", at: d(0, 10, 15), text: "Faktura från Byggmax behöver kontroll – totalbeloppet kunde inte läsas säkert." },
     { id: "act-7", at: d(4, 12, 30), text: "Betalningen på 4 250 kr till Grand Hôtel behöver klassificeras.", entity: { type: "utgift", id: "exp-hotel" } },
     { id: "act-8", at: d(6, 11, 30), text: "Faktura #1047 skickades till Johan Lindberg (25 500 kr).", customerId: "cust-johan", entity: { type: "faktura", id: "inv-1047" } },
     { id: "act-9", at: d(6, 9, 2), text: "Betalning på 4 800 kr från Johan Lindberg matchades mot faktura #1041 och bokfördes.", customerId: "cust-johan", entity: { type: "faktura", id: "inv-1041" } },
@@ -1554,6 +1651,10 @@ export function buildSeed(): DB {
       quoteValidityDays: 30,
       defaultVatRate: 25,
       inboundMailSlug: "demo",
+      // Betalkontot för utgående leverantörsbetalningar (pain.001-debitorn).
+      payerBankName: "SEB",
+      payerIban: PAYER_IBAN,
+      payerBic: PAYER_BIC,
     },
     sequences: { quote: 115, invoice: 1048, verification: verifications.length + 1 },
     customers,
@@ -1580,7 +1681,7 @@ export function buildSeed(): DB {
     receipts,
     supplierInvoices,
     supplierPayments,
-    paymentFiles: [],
+    paymentFiles,
     verifications,
     // Bokföringsmotorn: räkenskapsår och IB backfylls av migrateAccounting i store.normalize.
     fiscalYears: [],
@@ -1602,6 +1703,8 @@ export function buildSeed(): DB {
     collaborationInvitations: [],
     clientInformationRequests: [],
     inboxItems: [
+      // Fall B: komplett faktura, tolkad med hög konfidens per fält och
+      // bokförd av autopiloten. Betalningen är REDO – [Skapa bankfil].
       {
         id: "inbox-mail-beijer",
         kind: "mail" as const,
@@ -1612,13 +1715,13 @@ export function buildSeed(): DB {
         fromAddress: "faktura@beijerbygg.se",
         toAddress: "demo@in.driva.se",
         subject: "Faktura BB-48211",
-        textBody: "Bifogad leverantörsfaktura för virke och skivmaterial.",
+        textBody: "Bifogad leverantörsfaktura för virke och skivmaterial till altanprojektet.",
         attachments: [
           {
             id: "att-beijer",
             filename: "BB-48211.pdf",
             contentType: "application/pdf",
-            size: 88_000,
+            size: 2_900,
             storageKey: "demo/inbox-mail-beijer/BB-48211.pdf",
           },
         ],
@@ -1626,36 +1729,107 @@ export function buildSeed(): DB {
         parsedVatAmount: 3700,
         parsedSupplier: "Beijer Bygg",
         parsedInvoiceNumber: "BB-48211",
-        parsedDueDate: d(-11).slice(0, 10),
-        parsedOcr: "4821171",
-        parsedBankgiro: "5123-4567",
+        parsedDate: d(2).slice(0, 10),
+        parsedDueDate: d(-10).slice(0, 10),
+        parsedOcr: "48211",
+        parsedBankgiro: "123-4567",
         confidence: 0.99,
+        extraction: {
+          supplier: { value: "Beijer Bygg", confidence: 0.99, source: "dokument" },
+          invoiceNumber: { value: "BB-48211", confidence: 0.99, source: "dokument" },
+          invoiceDate: { value: d(2).slice(0, 10), confidence: 0.99, source: "dokument" },
+          dueDate: { value: d(-10).slice(0, 10), confidence: 0.99, source: "dokument" },
+          amount: { value: 18500, confidence: 0.99, source: "dokument" },
+          vatAmount: { value: 3700, confidence: 0.99, source: "dokument" },
+          ocr: { value: "48211", confidence: 0.99, source: "dokument" },
+          bankgiro: { value: "123-4567", confidence: 0.99, source: "dokument" },
+        },
         supplierInvoiceId: "sup-beijer",
         createdAt: d(2, 9, 10),
         processedAt: d(2, 9, 12),
       },
+      // Fall C: leverantörsfaktura där totalbeloppet lästes OSÄKERT (875 kr,
+      // låg konfidens) – PDF:en visar 2 340 kr. Ingen faktura skapas på en
+      // osäker siffra: posten väntar på [Kontrollera belopp].
       {
         id: "inbox-mail-byggmax",
         kind: "mail" as const,
         status: "ny" as const,
-        documentType: "kvitto" as const,
+        documentType: "leverantorsfaktura" as const,
         source: "email" as const,
-        externalId: "seed-byggmax-kvitto-1",
+        externalId: "seed-byggmax-faktura-1",
         fromAddress: "faktura@byggmax.se",
         toAddress: "demo@in.driva.se",
-        subject: "Kvitto Byggmax Hornstull",
+        subject: "Faktura BM-73821 Byggmax Hornstull",
         textBody:
-          "Tack för ditt köp hos Byggmax Hornstull. Kvittot finns bifogat. Vi har inte tolkat beloppet – öppna posten i Inboxen.",
+          "Hej! Här kommer fakturan för ert köp hos Byggmax Hornstull. Betalningsuppgifter finns i den bifogade fakturan.",
         attachments: [
           {
             id: "att-byggmax",
-            filename: "kvitto-byggmax.pdf",
+            filename: "faktura-byggmax.pdf",
             contentType: "application/pdf",
-            size: 42_000,
-            storageKey: "demo/inbox-mail-byggmax/kvitto-byggmax.pdf",
+            size: 2_800,
+            storageKey: "demo/inbox-mail-byggmax/faktura-byggmax.pdf",
           },
         ],
+        parsedAmount: 875,
+        parsedVatAmount: 175,
+        parsedSupplier: "Byggmax",
+        parsedInvoiceNumber: "BM-73821",
+        parsedDate: d(1).slice(0, 10),
+        parsedDueDate: d(-14).slice(0, 10),
+        parsedOcr: "7382101",
+        parsedBankgiro: "5786-8140",
+        parsedDetailsConfidence: 0.97,
+        confidence: 0.42,
+        extraction: {
+          supplier: { value: "Byggmax", confidence: 0.98, source: "dokument" },
+          invoiceNumber: { value: "BM-73821", confidence: 0.97, source: "dokument" },
+          invoiceDate: { value: d(1).slice(0, 10), confidence: 0.97, source: "dokument" },
+          dueDate: { value: d(-14).slice(0, 10), confidence: 0.96, source: "dokument" },
+          amount: { value: 875, confidence: 0.42, source: "dokument" },
+          vatAmount: { value: 175, confidence: 0.42, source: "dokument" },
+          ocr: { value: "7382101", confidence: 0.97, source: "dokument" },
+          bankgiro: { value: "5786-8140", confidence: 0.97, source: "dokument" },
+        },
         createdAt: d(0, 10, 15),
+      },
+      // Fall A: kvitto – tolkat säkert, matchat mot kortköpet och bokfört.
+      // Kvittoflödet har ingen utgående betalning.
+      {
+        id: "inbox-mail-bauhaus",
+        kind: "mail" as const,
+        status: "bokford" as const,
+        documentType: "kvitto" as const,
+        source: "email" as const,
+        externalId: "seed-bauhaus-kvitto-1",
+        fromAddress: "kvitto@bauhaus.se",
+        toAddress: "demo@in.driva.se",
+        subject: "Kvitto Bauhaus Sickla",
+        textBody: "Tack för ditt köp hos Bauhaus Sickla! Ditt kvitto finns bifogat.",
+        attachments: [
+          {
+            id: "att-bauhaus",
+            filename: "kvitto-bauhaus.pdf",
+            contentType: "application/pdf",
+            size: 2_400,
+            storageKey: "demo/inbox-mail-bauhaus/kvitto-bauhaus.pdf",
+          },
+        ],
+        parsedAmount: 875,
+        parsedVatAmount: 175,
+        parsedSupplier: "Bauhaus",
+        parsedDate: d(3).slice(0, 10),
+        confidence: 0.99,
+        extraction: {
+          supplier: { value: "Bauhaus", confidence: 0.99, source: "dokument" },
+          invoiceDate: { value: d(3).slice(0, 10), confidence: 0.99, source: "dokument" },
+          amount: { value: 875, confidence: 0.99, source: "dokument" },
+          vatAmount: { value: 175, confidence: 0.99, source: "dokument" },
+        },
+        expenseId: "exp-bauhaus",
+        createdAt: d(3, 12, 45),
+        processedAt: d(3, 12, 46),
       },
       {
         id: "inbox-mail-okq8",

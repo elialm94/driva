@@ -282,8 +282,10 @@ function extractionFromParsed(
  * AUTO-tröskeln blir betalbara ("document"); allt annat blir en kandidat
  * som människan kontrollerar ("document_uncertain"). Aldrig gissningar.
  */
-function detailsProvenanceForItem(item: InboxItem): "document" | "document_uncertain" | undefined {
+function detailsProvenanceForItem(item: InboxItem): "document" | "document_confirmed" | "document_uncertain" | undefined {
   if (!item.parsedBankgiro?.trim()) return undefined;
+  // Godkänd granskning = människan har sett bankgirot i Kontrollera-vyn.
+  if (item.reviewedAt) return "document_confirmed";
   const base = item.confidence ?? 0;
   const details = Math.min(base, item.parsedDetailsConfidence ?? base);
   return decideFromConfidence(details) === "AUTO_EXECUTE" ? "document" : "document_uncertain";

@@ -38,10 +38,11 @@ export interface ReceiveSupplierInvoiceInput {
   /**
    * Varifrån betalningsuppgifterna kommer:
    *   "document" (default) – säker läsning ur dokumentet → VERIFIED med proveniens.
+   *   "document_confirmed" – dokument + mänsklig kontroll (Kontrollera/Godkänn).
    *   "document_uncertain" – osäker läsning → EXTRACTION_UNCERTAIN-kandidat som
    *   aldrig hamnar i betalbara fält förrän en människa godkänt den.
    */
-  detailsProvenance?: "document" | "document_uncertain";
+  detailsProvenance?: "document" | "document_confirmed" | "document_uncertain";
   inboxItemId?: string;
   book?: boolean;
   by?: "anvandare" | "assistent";
@@ -117,7 +118,7 @@ export function receiveSupplierInvoice(input: ReceiveSupplierInvoiceInput): Supp
         method,
         account,
         ...(sup.ocr ? { ocr: sup.ocr } : {}),
-        source: "document",
+        source: input.detailsProvenance === "document_confirmed" ? "document_confirmed" : "document",
         verifiedAt: now,
         verifiedBy: input.by === "assistent" ? "assistent" : "anvandare",
       },
@@ -184,7 +185,12 @@ function getSupplierInvoiceOrThrow(id: string): SupplierInvoice {
  */
 export function attachExtractedPaymentDetails(
   invoiceId: string,
-  input: { account: string; ocr?: string; provenance: "document" | "document_uncertain"; by?: "anvandare" | "assistent" }
+  input: {
+    account: string;
+    ocr?: string;
+    provenance: "document" | "document_confirmed" | "document_uncertain";
+    by?: "anvandare" | "assistent";
+  }
 ): SupplierInvoice | undefined {
   const sup = db().supplierInvoices.find((s) => s.id === invoiceId);
   if (!sup || sup.status === "betald") return undefined;
@@ -214,7 +220,7 @@ export function attachExtractedPaymentDetails(
       method,
       account,
       ...(sup.ocr ? { ocr: sup.ocr } : {}),
-      source: "document",
+      source: input.provenance === "document_confirmed" ? "document_confirmed" : "document",
       verifiedAt: new Date().toISOString(),
       verifiedBy: input.by === "assistent" ? "assistent" : "anvandare",
     },
