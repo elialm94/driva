@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, ChevronLeft, MoreHorizontal, ShieldCheck } from "lucide-react";
 import { Badge, Card, EmptyState, buttonClasses, cx } from "./ui";
@@ -224,7 +225,8 @@ export function VerifikationerView({
             Sida {page} av {totalPages} · {total} totalt
           </p>
           <div className="flex gap-1">
-            <a
+            {/* Link i stället för <a>: sidbyte är klientnavigering, inte omladdning. */}
+            <Link
               href={`/bokforing/verifikationer?sida=${page - 1}`}
               aria-disabled={page <= 1}
               className={cx(
@@ -233,8 +235,8 @@ export function VerifikationerView({
               )}
             >
               <ChevronLeft className="size-3.5" /> Föregående
-            </a>
-            <a
+            </Link>
+            <Link
               href={`/bokforing/verifikationer?sida=${page + 1}`}
               aria-disabled={page >= totalPages}
               className={cx(
@@ -243,7 +245,7 @@ export function VerifikationerView({
               )}
             >
               Nästa
-            </a>
+            </Link>
           </div>
         </div>
       ) : null}
@@ -484,9 +486,9 @@ function CorrectionSheet({
             Avbryt
           </button>
           {flow.href ? (
-            <a href={flow.href} className={buttonClasses("primary")}>
+            <Link href={flow.href as never} className={buttonClasses("primary")}>
               {flow.hrefLabel ?? "Fortsätt"}
-            </a>
+            </Link>
           ) : null}
         </div>
       </div>

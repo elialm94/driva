@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, buttonClasses } from "./ui";
 import {
@@ -120,9 +121,9 @@ export function TaxReductionApplicationCard({
                 Lägg till
               </button>
               {editHref ? (
-                <a href={editHref} className={buttonClasses("secondary", "sm")}>
+                <Link href={editHref as never} className={buttonClasses("secondary", "sm")}>
                   Öppna fakturan
-                </a>
+                </Link>
               ) : null}
             </div>
           )}
