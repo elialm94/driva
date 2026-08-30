@@ -151,23 +151,22 @@ async function main() {
     );
     if (presets.length < 3) fail(`snooze-presets saknas: ${presets.join(", ")}`);
     if (!(await clickButtonInRow(page, "kolla pannan", "1 timme"))) fail("kunde inte klicka 1 timme");
-    await page.waitForFunction(() => (document.body.textContent ?? "").includes("Uppskjuten"));
+    await page.waitForFunction(() => (document.body.textContent ?? "").includes("Snoozad till"));
     attention = await attentionSection(page);
-    if (attention.includes("kolla pannan")) fail("uppskjuten påminnelse ligger kvar i uppmärksamhet");
-    ok("5 Snooza 1 timme → presets synliga, raden försvinner");
+    if (!attention.includes("Ångra")) fail("snooze saknar Ångra");
+    if (attention.includes("Ta bort")) fail("Ta bort syns fortfarande på påminnelsen");
+    ok("5 Snooza 1 timme → Snoozad till … med Ångra");
 
     // 5. Klar → försvinner (historiken kvar).
     await sendPhrase(page, "Påminn mig idag kl 06:30 att beställa skruv");
     attention = await attentionSection(page);
     if (!attention.includes("beställa skruv")) fail("andra förfallna påminnelsen saknas");
     if (!(await clickButtonInRow(page, "beställa skruv", "Klar"))) fail("kunde inte klicka Klar");
-    await page.waitForFunction(() => {
-      const els = Array.from(document.querySelectorAll("span"));
-      return els.some((el) => (el.textContent ?? "").trim() === "Klar" && el.className.includes("text-ok"));
-    });
+    await page.waitForFunction(() => (document.body.textContent ?? "").includes("Markerad som klar"));
     attention = await attentionSection(page);
-    if (attention.includes("beställa skruv")) fail("avklarad påminnelse ligger kvar");
-    ok("6 Klar → raden försvinner");
+    if (!attention.includes("Ångra")) fail("Klar saknar Ångra");
+    if (attention.includes("Ta bort")) fail("Ta bort syns fortfarande efter Klar");
+    ok("6 Klar → Markerad som klar med Ångra");
 
     // 6. Mobil 390: touchytor ≥44px och Klar fungerar.
     await sendPhrase(page, "Påminn mig idag kl 06:45 att tanka bilen"); // skapas på desktop-vy
@@ -200,10 +199,7 @@ async function main() {
     if (!btnBox) fail("mobil: Klar-knappen hittades inte");
     if (btnBox.h < 44) fail(`mobil: Klar-knappen är ${btnBox.h}px hög (<44)`);
     if (!(await clickButtonInRow(page, "tanka bilen", "Klar"))) fail("mobil: kunde inte klicka Klar");
-    await page.waitForFunction(() => {
-      const els = Array.from(document.querySelectorAll("span"));
-      return els.some((el) => (el.textContent ?? "").trim() === "Klar" && el.className.includes("text-ok"));
-    });
+    await page.waitForFunction(() => (document.body.textContent ?? "").includes("Markerad som klar"));
     ok("7 mobil 390 → knapphöjd ≥44px, Klar fungerar", `höjd=${Math.round(btnBox.h)}px`);
 
     console.log(`\n${passed} webbläsarkontroller godkända.`);

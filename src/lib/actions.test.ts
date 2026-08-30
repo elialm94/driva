@@ -6,7 +6,7 @@ import { db, replaceDb } from "./store";
 import { buildSeed } from "./seed";
 import { emptyTestDb, labor } from "./invoices/test-db";
 import { getBusinessActions, QUOTE_FOLLOW_UP_DAYS } from "./services/actions";
-import { controlsForAction, FALLBACK_ISSUE_LABEL, issueForAction } from "./services/action-issue";
+import { attentionRowHasOverflow, controlsForAction, FALLBACK_ISSUE_LABEL, issueForAction } from "./services/action-issue";
 import { snoozeAttention } from "./services/attention-state";
 import { createJob, setJobStatus } from "./services/jobs";
 import { createQuote, markQuoteNotRelevant, quoteDefaults } from "./services/quotes";
@@ -771,8 +771,10 @@ describe("åtgärdsmotorn: rankning, snooze och kontrolldeklaration", () => {
     assert.equal(quote.dismissBehavior, "MARK_NOT_RELEVANT");
     assert.equal(quote.dismissLabel, "Inte aktuell");
     const reminder = controlsForAction({ id: "reminder-rem-1" });
-    assert.equal(reminder.dismissBehavior, "DISMISS_REMINDER");
-    assert.equal(reminder.dismissLabel, "Ta bort");
+    assert.equal(reminder.canDismiss, false, "påminnelse avslutas med Klar, inte Ta bort");
+    assert.equal(reminder.dismissBehavior, "none");
+    assert.equal(reminder.dismissLabel, undefined);
+    assert.equal(attentionRowHasOverflow({ id: "reminder-rem-1", href: "/" }), false);
   });
 
   it("demodata: varje rad har känd typ, konkret etikett och bekräftelse där deklarationen kräver det", () => {
