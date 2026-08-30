@@ -13,16 +13,17 @@ export interface VoiceUiState {
 }
 
 /**
- * Mikrofonknappen i kommandofältet – röst som ENBART alternativ inmatning.
+ * Mikrofonknappen i kommandofältet – kort röstkommando, inte inspelning.
  *
- * Tal-till-text fyller i det befintliga textfältet (append med mellanslag,
- * aldrig överskrivning), användaren granskar och skickar som vanligt. Ingen
- * autosänd, ingen egen affärslogik, ingen ljudlagring. Döljs helt när
- * webbläsaren saknar taligenkänning – textfältet fungerar som förut.
+ * Tryck → prata → tystnad auto-stoppar → slutligt transkript skickas till
+ * samma parse-väg som Enter. Interim visas live. Avbryt (Esc/kryss) slänger
+ * utan att köra något. Ingen egen röstguide, ingen ljudlagring. Döljs när
+ * webbläsaren saknar taligenkänning.
  */
 export function VoiceInputButton({
   value,
   onValueChange,
+  onCommit,
   onActive,
   onUiState,
   onHint,
@@ -30,7 +31,9 @@ export function VoiceInputButton({
 }: {
   value: string;
   onValueChange(next: string): void;
-  /** Användaren tryckte på mikrofonen – fältet kan öppna panelen/fokusera. */
+  /** Slutligt transkript efter stopp – samma pipeline som Enter. */
+  onCommit?(text: string): void;
+  /** Användaren tryckte på mikrofonen – fältet kan öppna panelen. */
   onActive?(): void;
   /** Kapabilitet + aktiv inspelning, för fältets padding och ⌘K-märket. */
   onUiState?(state: VoiceUiState): void;
@@ -38,7 +41,7 @@ export function VoiceInputButton({
   onHint?(hint: string | null): void;
   forSheet: boolean;
 }) {
-  const voice = useVoiceInput({ value, onValueChange });
+  const voice = useVoiceInput({ value, onValueChange, onCommit });
 
   // Rapportera UI-läge/fel uppåt bara när något faktiskt ändrats – annars
   // riskerar inline-callbacks från föräldern att skapa render-loopar.
@@ -92,7 +95,7 @@ export function VoiceInputButton({
     <div
       className={cx(
         // bg-card täcker fältets text rent om statusklustret tillfälligt är
-        // bredare än reserverad padding (t.ex. "Transkriberar …" på mobil).
+        // bredare än reserverad padding (t.ex. "Tolkar…" på mobil).
         "absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center rounded-xl bg-card",
         forSheet ? "gap-1" : "gap-0.5"
       )}
@@ -104,7 +107,7 @@ export function VoiceInputButton({
           className="flex shrink-0 items-center gap-1.5 pl-1 pr-1 text-[12.5px] font-medium text-danger"
         >
           <span aria-hidden className="size-2 animate-pulse rounded-full bg-danger" />
-          Lyssnar …
+          Lyssnar…
         </span>
       ) : null}
       {transcribing ? (
@@ -113,7 +116,7 @@ export function VoiceInputButton({
           className="flex shrink-0 items-center gap-1.5 pl-1 pr-1 text-[12.5px] font-medium text-soft"
         >
           <Loader2 aria-hidden className="size-3.5 animate-spin" />
-          Transkriberar …
+          Tolkar…
         </span>
       ) : null}
 

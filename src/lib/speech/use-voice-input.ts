@@ -16,6 +16,11 @@ export interface UseVoiceInputOptions {
   value: string;
   /** Skriver nytt värde till fältet (interim-förhandsvisning + slutligt transkript). */
   onValueChange(next: string): void;
+  /**
+   * Slutligt transkript efter att inspelningen stoppats – samma väg som Enter.
+   * Anropas inte för interim, avbryt eller fel.
+   */
+  onCommit?(text: string): void;
 }
 
 export interface VoiceInputHandle {
@@ -45,9 +50,11 @@ export function useVoiceInput(options: UseVoiceInputOptions): VoiceInputHandle {
   // kontrollern kan skapas en gång och läsa färskt vid händelsetidpunkten.
   const valueRef = useRef(options.value);
   const changeRef = useRef(options.onValueChange);
+  const commitRef = useRef(options.onCommit);
   useEffect(() => {
     valueRef.current = options.value;
     changeRef.current = options.onValueChange;
+    commitRef.current = options.onCommit;
   });
 
   const controllerRef = useRef<VoiceController | null>(null);
@@ -59,6 +66,7 @@ export function useVoiceInput(options: UseVoiceInputOptions): VoiceInputHandle {
         getText: () => valueRef.current,
         setText: (text) => changeRef.current(text),
         onSnapshot: setSnapshot,
+        onCommit: (text) => commitRef.current?.(text),
       });
     }
     return controllerRef.current;

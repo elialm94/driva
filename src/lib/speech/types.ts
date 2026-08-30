@@ -1,10 +1,9 @@
 /**
  * Röstinmatning (tal-till-text) för kommandofältet.
  *
- * Rösten är ENBART en alternativ inmatningsmetod: transkriptet landar i det
- * befintliga textfältet, användaren läser/rättar, och texten följer sedan
- * exakt samma väg som skriven text (deterministisk tolk → kommandoflöden,
- * annars LLM-slingan). Ingen röstlogik i affärslagret, ingen autosänd.
+ * Rösten är ett kort kommando: tryck → prata → tystnad → slutligt transkript
+ * skickas till samma parse/submit-väg som Enter på skriven text. Ingen egen
+ * röstguide, ingen affärslogik här. Interim visas live men kör aldrig en åtgärd.
  *
  * Integritet: leverantören lämnar bara ifrån sig text. Ingen ljuddata lagras,
  * laddas upp eller loggas – med Web Speech API rör vi aldrig råa ljudbuffertar.
@@ -16,6 +15,7 @@ export type SpeechErrorCode =
   | "no-speech"
   | "audio-capture"
   | "network"
+  | "transcription-failed"
   | "unknown";
 
 export interface SpeechError {
@@ -32,8 +32,18 @@ export interface SpeechUpdate {
 export interface SpeechSessionHandlers {
   /** Ljudupptagningen har faktiskt startat (behörighet beviljad). */
   onStart(): void;
+  /**
+   * Motorns VAD hörde tal (Web Speech `speechstart`). Används för att skilja
+   * inledande tystnad från tystnad efter att användaren faktiskt pratat.
+   */
+  onSpeechStart?(): void;
+  /**
+   * Motorns VAD anser att yttrandet tog slut (Web Speech `speechend`).
+   * Kontrollern väntar därefter en kort end-silence innan auto-stopp.
+   */
+  onSpeechEnd?(): void;
   onUpdate(update: SpeechUpdate): void;
-  /** Sessionen är klar (manuellt stopp eller rimlig tystnad). Inget anropas efter. */
+  /** Sessionen är klar (manuellt stopp, auto-stopp eller motorns slut). Inget anropas efter. */
   onEnd(): void;
   /** Sessionen dog i ett fel. Varken onEnd eller fler onUpdate anropas efter. */
   onError(error: SpeechError): void;

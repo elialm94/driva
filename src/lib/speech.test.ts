@@ -4,6 +4,10 @@ import {
   createVoiceController,
   joinTranscript,
   speechErrorMessage,
+  VOICE_END_SILENCE_MS,
+  VOICE_INITIAL_SILENCE_MS,
+  VOICE_MAX_DURATION_MS,
+  type VoiceClock,
   type VoiceSnapshot,
   type VoiceStatus,
 } from "./speech/controller";
@@ -46,6 +50,12 @@ class MockProvider implements SpeechToTextProvider {
   grant() {
     this.handlers?.onStart();
   }
+  speechStart() {
+    this.handlers?.onSpeechStart?.();
+  }
+  speechEnd() {
+    this.handlers?.onSpeechEnd?.();
+  }
   update(text: string, isFinal = false) {
     this.handlers?.onUpdate({ text, isFinal });
   }
@@ -57,21 +67,57 @@ class MockProvider implements SpeechToTextProvider {
   }
 }
 
+/** Styrbar klocka – tystnad/maxtid utan riktig mikrofon eller väntan. */
+class FakeClock implements VoiceClock {
+  nowMs = 0;
+  private nextId = 1;
+  private timers = new Map<number, { fn: () => void; at: number }>();
+
+  now() {
+    return this.nowMs;
+  }
+  setTimeout(fn: () => void, ms: number) {
+    const id = this.nextId++;
+    this.timers.set(id, { fn, at: this.nowMs + ms });
+    return id;
+  }
+  clearTimeout(id: unknown) {
+    this.timers.delete(id as number);
+  }
+  get pending() {
+    return this.timers.size;
+  }
+  advance(ms: number) {
+    this.nowMs += ms;
+    const due = [...this.timers.entries()].filter(([, t]) => t.at <= this.nowMs);
+    for (const [id, t] of due) {
+      this.timers.delete(id);
+      t.fn();
+    }
+  }
+}
+
 function harness(initialText = "") {
   const provider = new MockProvider();
+  const clock = new FakeClock();
+  const commits: string[] = [];
   let text = initialText;
   const snapshots: VoiceSnapshot[] = [];
   const controller = createVoiceController({
     provider,
+    clock,
     getText: () => text,
     setText: (t) => {
       text = t;
     },
     onSnapshot: (s) => snapshots.push(s),
+    onCommit: (t) => commits.push(t),
   });
   return {
     provider,
     controller,
+    clock,
+    commits,
     snapshots,
     statuses: (): VoiceStatus[] => snapshots.map((s) => s.status),
     getText: () => text,
@@ -124,6 +170,7 @@ describe("röstkontrollern: lyckat flöde", () => {
     h.provider.end();
     assert.equal(h.getText(), "Påminn mig att ringa Göran på onsdag");
     assert.deepEqual(h.statuses(), ["requesting", "listening", "transcribing", "idle"]);
+    assert.deepEqual(h.commits, ["Påminn mig att ringa Göran på onsdag"]);
   });
 
   it("append: befintlig text behålls och transkriptet läggs till med mellanslag", () => {
@@ -136,6 +183,7 @@ describe("röstkontrollern: lyckat flöde", () => {
     h.provider.update("för köksrenovering på 85 000 kronor", true);
     h.provider.end();
     assert.equal(h.getText(), "Skapa offert till Anna för köksrenovering på 85 000 kronor");
+    assert.deepEqual(h.commits, ["Skapa offert till Anna för köksrenovering på 85 000 kronor"]);
   });
 
   it("motorns egen tystnadsstopp (onEnd utan manuellt stopp) committar texten", () => {
@@ -146,6 +194,7 @@ describe("röstkontrollern: lyckat flöde", () => {
     h.provider.end(); // t.ex. Safari slutar själv vid tystnad
     assert.equal(h.getText(), "visa obetalda fakturor");
     assert.equal(h.controller.getSnapshot().status, "idle");
+    assert.deepEqual(h.commits, ["visa obetalda fakturor"]);
   });
 
   it("stopp utan slutligt resultat använder senaste interim (användbar delvis text)", () => {
@@ -171,6 +220,7 @@ describe("röstkontrollern: avbryt", () => {
     assert.equal(h.getText(), "hej "); // exakt, inklusive avslutande blanksteg
     assert.equal(h.provider.aborted, 1);
     assert.equal(h.controller.getSnapshot().status, "idle");
+    assert.deepEqual(h.commits, []);
   });
 
   it("sena callbacks från en avbruten session ignoreras (ingen kapplöpning)", () => {
@@ -184,6 +234,7 @@ describe("röstkontrollern: avbryt", () => {
     ghost.onError({ code: "network" });
     assert.equal(h.getText(), "bas");
     assert.equal(h.controller.getSnapshot().status, "idle");
+    assert.deepEqual(h.commits, []);
   });
 
   it("dispose släpper sessionen tyst utan att röra fälttexten", () => {
@@ -207,10 +258,8 @@ describe("röstkontrollern: fel och nytt försök", () => {
     assert.equal(snap.status, "error");
     assert.equal(snap.errorCode, "permission-denied");
     assert.equal(h.getText(), "skriven text");
-    assert.equal(
-      speechErrorMessage("permission-denied"),
-      "Mikrofonåtkomst är avstängd. Tillåt mikrofonen i webbläsaren för att använda röst."
-    );
+    assert.equal(speechErrorMessage("permission-denied"), "Tillåt mikrofonåtkomst för att använda röstkommandon.");
+    assert.deepEqual(h.commits, []);
   });
 
   it("inget tal hört → no-speech med 'Försök igen', och nytt försök fungerar", () => {
@@ -219,7 +268,7 @@ describe("röstkontrollern: fel och nytt försök", () => {
     h.provider.grant();
     h.provider.fail("no-speech");
     assert.equal(h.controller.getSnapshot().status, "error");
-    assert.equal(speechErrorMessage("no-speech"), "Jag kunde inte höra det tydligt. Försök igen.");
+    assert.equal(speechErrorMessage("no-speech"), "Jag hörde inget. Försök igen.");
 
     h.controller.start(); // retry från felläget
     assert.equal(h.provider.starts, 2);
@@ -236,6 +285,7 @@ describe("röstkontrollern: fel och nytt försök", () => {
     assert.equal(snap.status, "error");
     assert.equal(snap.errorCode, "no-speech");
     assert.equal(h.getText(), "bas");
+    assert.deepEqual(h.commits, []);
   });
 
   it("cancel i felläge avfärdar felet utan att röra texten", () => {
@@ -281,6 +331,199 @@ describe("röstkontrollern: inga dubbelinspelningar", () => {
   });
 });
 
+/* --------------------- Auto-stopp: tystnad, maxtid, commit --------------------- */
+
+describe("röstkontrollern: auto-stopp efter tystnad", () => {
+  it("kort kommando: speechend + end-silence → stopp, Tolkar-väg, onCommit en gång", () => {
+    const h = harness();
+    h.controller.start();
+    h.provider.grant();
+    h.provider.speechStart();
+    h.provider.update("Skapa en faktura till Carina Johansson", false);
+    assert.deepEqual(h.commits, []); // interim kör aldrig åtgärd
+    h.provider.update("Skapa en faktura till Carina Johansson", true);
+    h.provider.speechEnd();
+    h.clock.advance(VOICE_END_SILENCE_MS - 1);
+    assert.equal(h.provider.stopped, 0);
+    assert.equal(h.controller.getSnapshot().status, "listening");
+    h.clock.advance(1);
+    assert.equal(h.provider.stopped, 1);
+    assert.equal(h.controller.getSnapshot().status, "transcribing");
+    h.provider.end();
+    assert.equal(h.getText(), "Skapa en faktura till Carina Johansson");
+    assert.deepEqual(h.commits, ["Skapa en faktura till Carina Johansson"]);
+    assert.equal(h.controller.getSnapshot().status, "idle");
+  });
+
+  it("påminnelsetranskript lämnas till samma pipeline (onCommit), ingen egen guide", () => {
+    const h = harness();
+    const phrase = "Påminn mig att ringa Göran imorgon klockan tolv";
+    h.controller.start();
+    h.provider.grant();
+    h.provider.speechStart();
+    h.provider.update(phrase, true);
+    h.provider.speechEnd();
+    h.clock.advance(VOICE_END_SILENCE_MS);
+    h.provider.end();
+    assert.deepEqual(h.commits, [phrase]);
+    assert.equal(h.getText(), phrase);
+  });
+
+  it("inledande tystnad → timeout, inget kommando, 'Jag hörde inget'", () => {
+    const h = harness();
+    h.controller.start();
+    h.provider.grant();
+    h.clock.advance(VOICE_INITIAL_SILENCE_MS - 1);
+    assert.equal(h.controller.getSnapshot().status, "listening");
+    h.clock.advance(1);
+    assert.equal(h.controller.getSnapshot().status, "error");
+    assert.equal(h.controller.getSnapshot().errorCode, "no-speech");
+    assert.equal(h.provider.aborted, 1);
+    assert.deepEqual(h.commits, []);
+    assert.equal(speechErrorMessage("no-speech"), "Jag hörde inget. Försök igen.");
+  });
+
+  it("manuellt stopp committar slutlig text (fallback när VAD inte triggar)", () => {
+    const h = harness();
+    h.controller.start();
+    h.provider.grant();
+    h.provider.update("visa obetalda fakturor", true);
+    h.controller.stop();
+    assert.equal(h.provider.stopped, 1);
+    assert.equal(h.controller.getSnapshot().status, "transcribing");
+    h.provider.end();
+    assert.deepEqual(h.commits, ["visa obetalda fakturor"]);
+  });
+
+  it("avbryt (Esc-väg) slänger sessionen och kör inget kommando", () => {
+    const h = harness("befintlig");
+    h.controller.start();
+    h.provider.grant();
+    h.provider.update("halvfärdigt", false);
+    h.controller.cancel();
+    h.clock.advance(VOICE_END_SILENCE_MS);
+    h.clock.advance(VOICE_MAX_DURATION_MS);
+    assert.equal(h.getText(), "befintlig");
+    assert.deepEqual(h.commits, []);
+    assert.equal(h.clock.pending, 0);
+  });
+
+  it("maxtid tvingar stopp och committar det som finns", () => {
+    const h = harness();
+    h.controller.start();
+    h.provider.grant();
+    h.provider.speechStart();
+    h.provider.update("långt pågående kommando", false);
+    h.provider.speechEnd();
+    h.provider.speechStart(); // motorn säger fortfarande pågående yttrande
+    h.clock.advance(VOICE_MAX_DURATION_MS - 1);
+    assert.equal(h.provider.stopped, 0);
+    h.clock.advance(1);
+    assert.equal(h.provider.stopped, 1);
+    assert.equal(h.controller.getSnapshot().status, "transcribing");
+    h.provider.end();
+    assert.deepEqual(h.commits, ["långt pågående kommando"]);
+  });
+
+  it("nekad mikrofon → svensk copy, inget kommando", () => {
+    const h = harness();
+    h.controller.start();
+    h.provider.fail("permission-denied");
+    assert.equal(h.controller.getSnapshot().errorCode, "permission-denied");
+    assert.equal(speechErrorMessage("permission-denied"), "Tillåt mikrofonåtkomst för att använda röstkommandon.");
+    assert.deepEqual(h.commits, []);
+  });
+
+  it("transkriptionsfel efter tal → ingen delåtgärd, fältet återställt", () => {
+    const h = harness("kvar");
+    h.controller.start();
+    h.provider.grant();
+    h.provider.speechStart();
+    h.provider.update("Skapa en faktura till", false);
+    h.provider.fail("network");
+    assert.equal(h.controller.getSnapshot().errorCode, "transcription-failed");
+    assert.equal(speechErrorMessage("transcription-failed"), "Kunde inte tolka det du sa. Försök igen.");
+    assert.equal(h.getText(), "kvar");
+    assert.deepEqual(h.commits, []);
+  });
+
+  it("interim uppdateringar kör aldrig onCommit, även när isFinal saknas", () => {
+    const h = harness();
+    h.controller.start();
+    h.provider.grant();
+    h.provider.update("Skapa en", false);
+    h.provider.update("Skapa en faktura", false);
+    h.clock.advance(VOICE_END_SILENCE_MS - 1);
+    assert.deepEqual(h.commits, []);
+    assert.equal(h.controller.getSnapshot().status, "listening");
+  });
+
+  it("kort paus mitt i meningen (interim + speechstart igen) stoppar inte", () => {
+    const h = harness();
+    h.controller.start();
+    h.provider.grant();
+    h.provider.speechStart();
+    h.provider.update("Skapa en faktura till", false);
+    h.provider.speechEnd();
+    h.clock.advance(VOICE_END_SILENCE_MS - 200);
+    // Användaren fortsätter efter en kort tankepaus.
+    h.provider.speechStart();
+    h.provider.update("Skapa en faktura till Carina Johansson", false);
+    h.clock.advance(VOICE_END_SILENCE_MS);
+    assert.equal(h.provider.stopped, 0, "pågående yttrande ska inte auto-stoppas");
+    assert.deepEqual(h.commits, []);
+    h.provider.update("Skapa en faktura till Carina Johansson", true);
+    h.provider.speechEnd();
+    h.clock.advance(VOICE_END_SILENCE_MS);
+    assert.equal(h.provider.stopped, 1);
+    h.provider.end();
+    assert.deepEqual(h.commits, ["Skapa en faktura till Carina Johansson"]);
+  });
+
+  it("inledande tystnad under 7 s räknas inte som sluttystnad – tal hinner börja", () => {
+    const h = harness();
+    h.controller.start();
+    h.provider.grant();
+    h.clock.advance(3_000);
+    assert.equal(h.controller.getSnapshot().status, "listening");
+    h.provider.speechStart();
+    h.provider.update("hej", true);
+    h.clock.advance(VOICE_INITIAL_SILENCE_MS);
+    // start-timern ska vara avväpnad; bara end-silence/maxtid gäller efter tal
+    assert.notEqual(h.controller.getSnapshot().status, "error");
+  });
+
+  it("generellt mikrofonfel före tal → 'Mikrofonen kunde inte användas.'", () => {
+    const h = harness();
+    h.controller.start();
+    h.provider.fail("audio-capture");
+    assert.equal(speechErrorMessage("audio-capture"), "Mikrofonen kunde inte användas.");
+    assert.equal(speechErrorMessage("unknown"), "Mikrofonen kunde inte användas.");
+    assert.deepEqual(h.commits, []);
+  });
+
+  it("dispose rensar timers så inget sent auto-stopp läcker", () => {
+    const h = harness();
+    h.controller.start();
+    h.provider.grant();
+    h.provider.update("pågående", false);
+    h.controller.dispose();
+    h.clock.advance(VOICE_MAX_DURATION_MS);
+    h.clock.advance(VOICE_END_SILENCE_MS);
+    assert.equal(h.clock.pending, 0);
+    assert.deepEqual(h.commits, []);
+    assert.equal(h.provider.aborted, 1);
+  });
+});
+
+/*
+ * Manuellt kvar (kräver riktig mikrofon / enhet – inte CI):
+ *  - bakgrundsljud på kontor, tangentbord, låg musik, utomhus
+ *  - Chrome/Safari/iOS faktiska speechend-latens och mic-indikatorn som släcks
+ *  - mobil: tap → prata → auto-stopp utan att tangentbord/bottennav täcker läget
+ *  - 2 s tankepaus när motorn fortfarande flaggar pågående yttrande
+ */
+
 /* --------------------------- Web Speech-leverantören ---------------------- */
 
 /** Fejkad SpeechRecognition som fångar konfiguration och händelser. */
@@ -295,6 +538,8 @@ class FakeRecognition {
     null;
   onerror: ((event: { error?: string }) => void) | null = null;
   onend: (() => void) | null = null;
+  onspeechstart: (() => void) | null = null;
+  onspeechend: (() => void) | null = null;
   started = 0;
   stopCalls = 0;
   abortCalls = 0;
@@ -344,6 +589,22 @@ describe("web speech-leverantören", () => {
     assert.equal(createWebSpeechProvider({ SpeechRecognition: 42 }), null);
     assert.notEqual(createWebSpeechProvider({ webkitSpeechRecognition: FakeRecognition }), null);
     assert.notEqual(getSpeechRecognitionCtor({ SpeechRecognition: FakeRecognition }), null);
+  });
+
+  it("vidarebefordrar native speechstart/speechend (VAD) till kontrollern", () => {
+    FakeRecognition.instances = [];
+    const provider = createWebSpeechProvider({ webkitSpeechRecognition: FakeRecognition })!;
+    const { handlers, events } = collectingHandlers();
+    const withSpeech: SpeechSessionHandlers = {
+      ...handlers,
+      onSpeechStart: () => events.push("speechstart"),
+      onSpeechEnd: () => events.push("speechend"),
+    };
+    provider.start({ lang: "sv-SE" }, withSpeech);
+    const rec = FakeRecognition.instances[0]!;
+    rec.onspeechstart?.();
+    rec.onspeechend?.();
+    assert.deepEqual(events, ["speechstart", "speechend"]);
   });
 
   it("konfigurerar sv-SE, interimresultat och kontinuerligt läge, och lazy-skapar motorn", () => {
@@ -406,9 +667,9 @@ describe("web speech-leverantören", () => {
     const rec = FakeRecognition.instances[0]!;
     session.abort();
     assert.equal(rec.abortCalls, 1);
-    rec.onerror!({ error: "aborted" });
-    rec.onresult!(recognitionEvent([{ text: "spök", final: false }]));
-    rec.onend!();
+    assert.equal(rec.onerror, null);
+    assert.equal(rec.onresult, null);
+    assert.equal(rec.onend, null);
     assert.deepEqual(events, []);
   });
 

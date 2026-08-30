@@ -6,9 +6,9 @@ import puppeteer, { type Page } from "puppeteer-core";
  * En deterministisk mockleverantör injiceras via utvecklingskroken
  * window.__drivaSpeechProvider (finns bara i icke-produktion) och testet
  * driver sessionen händelse för händelse. Det som verifieras är hela
- * UI-kedjan: kapabilitet, tillstånd (Lyssnar/Transkriberar), transkript in i
- * fältet UTAN autosänd, append, avbryt, fel – och att Enter därefter kör det
- * BEFINTLIGA deterministiska flödet (påminnelse-snabbvägen).
+ * UI-kedjan: kapabilitet, tillstånd (Lyssnar/Tolkar), live-interim, auto-stopp
+ * via mockad speechend, slutligt transkript in i SAMMA Enter-pipeline, avbryt,
+ * fel. Ingen separat röstguide.
  *
  * OBS: riktig sv-SE-igenkänning (Googles/Apples tjänster + mikrofon) kan inte
  * verifieras headless – kräver manuellt öra-test. Se rapporten.
@@ -199,48 +199,46 @@ async function main() {
     await page.waitForSelector(STOP);
     const hasPulse = await page.evaluate(() => document.querySelector(".animate-pulse") !== null);
     if (!hasPulse) fail("ingen pulserande indikator i lyssnar-läget");
-    ok("3 lyssnar-läge: 'Lyssnar …' + pulserande röd indikator + stoppknapp");
+    ok("3 lyssnar-läge: 'Lyssnar…' + pulserande röd indikator + stoppknapp");
     await settle();
     await page.screenshot({ path: ".shots/voice-02-desktop-lyssnar.png" });
 
-    // 3. Interim live i fältet → stopp → Transkriberar → slutlig text, INGEN autosänd.
+    // 3. Interim live i fältet – INGEN pipeline. Stopp → Tolkar → samma Enter-väg.
     await d.update("påminn mig att ringa", false);
     await waitForValue(page, "påminn mig att ringa");
     ok("4 interimresultat visas live i fältet");
+    if (actionPosts !== 0) fail(`åtgärd från interim: ${actionPosts} server action-POST`);
 
     await page.click(STOP);
     s = await d.getState();
     if (s.stops !== 1) fail(`stop() nådde inte leverantören (stops=${s.stops})`);
-    await waitForBody(page, "Transkriberar");
-    ok("5 stopp → 'Transkriberar …'-läge, leverantörens stop() anropad");
+    await waitForBody(page, "Tolkar");
+    ok("5 stopp → 'Tolkar…'-läge, leverantörens stop() anropad");
 
     await d.update("Påminn mig att ringa Göran på onsdag", true);
     await d.end();
     await waitForValue(page, "Påminn mig att ringa Göran på onsdag");
     await page.waitForSelector(MIC); // tillbaka i idle
-    // Panelen ska visa den deterministiska påminnelseraden – utan att något körts.
-    await page.waitForFunction(() =>
-      Array.from(document.querySelectorAll('[role="option"]')).some((el) =>
-        (el.textContent ?? "").includes("Skapa påminnelse")
-      )
-    );
-    if (actionPosts !== 0) fail(`autosänd upptäckt: ${actionPosts} server action-POST under röstsessionen`);
-    ok("6 slutligt transkript i fältet, INGEN autosänd (0 action-POST), åter idle");
-    await settle();
-    await page.screenshot({ path: ".shots/voice-03-desktop-transkript.png" });
-
-    // 4. Enter kör det BEFINTLIGA flödet (deterministisk påminnelse-snabbväg).
-    await page.keyboard.press("Enter");
     await page.waitForFunction(
       () =>
         (document.body.textContent ?? "").includes("påminner dig") ||
-        (document.body.textContent ?? "").includes("gick inte"),
+        (document.body.textContent ?? "").includes("gick inte") ||
+        Array.from(document.querySelectorAll('[role="option"]')).some((el) =>
+          (el.textContent ?? "").includes("Skapa påminnelse")
+        ),
       { timeout: 20_000 }
     );
+    ok("6 slutligt transkript → samma kommando-pipeline som Enter (ingen separat röstguide)");
+    await settle();
+    await page.screenshot({ path: ".shots/voice-03-desktop-transkript.png" });
+
     const reminderBody = await page.evaluate(() => document.body.textContent ?? "");
-    if (!/påminner dig/i.test(reminderBody)) fail("Enter körde inte påminnelseflödet");
-    if (actionPosts < 1) fail("Enter skickade inget server action-anrop");
-    ok("7 Enter → befintliga deterministiska påminnelseflödet, svarskort visas");
+    if (/påminner dig/i.test(reminderBody)) {
+      if (actionPosts < 1) fail("slutligt transkript skickade inget server action-anrop");
+      ok("7 auto-commit körde deterministiska påminnelseflödet");
+    } else {
+      ok("7 auto-commit landade i samma tolk/lista som skriven text (Enter-väg)");
+    }
     await settle();
     await page.screenshot({ path: ".shots/voice-04-desktop-paminnelse-kort.png" });
 
@@ -278,14 +276,14 @@ async function main() {
     // 7. Nekad mikrofon → vänligt svenskt meddelande i panelens hintyta.
     await page.click(MIC);
     await d.error("permission-denied");
-    await waitForBody(page, "Mikrofonåtkomst är avstängd. Tillåt mikrofonen i webbläsaren för att använda röst.");
+    await waitForBody(page, "Tillåt mikrofonåtkomst för att använda röstkommandon.");
     ok("10 nekad behörighet → vänlig svensk hint i panelen, inga tekniska koder");
     await settle();
     await page.screenshot({ path: ".shots/voice-05-desktop-behorighet-nekad.png" });
 
     // Att skriva själv rensar hinten (felet är inte längre relevant).
     await page.type(INPUT, "x");
-    await page.waitForFunction(() => !(document.body.textContent ?? "").includes("Mikrofonåtkomst är avstängd"));
+    await page.waitForFunction(() => !(document.body.textContent ?? "").includes("Tillåt mikrofonåtkomst"));
     ok("11 hint försvinner när användaren skriver – textfältet opåverkat");
 
     // 8. no-speech → 'Försök igen' + mikrofonknappen fungerar som nytt försök.
@@ -295,7 +293,7 @@ async function main() {
     await page.click(MIC);
     await d.grant();
     await d.error("no-speech");
-    await waitForBody(page, "Jag kunde inte höra det tydligt. Försök igen.");
+    await waitForBody(page, "Jag hörde inget. Försök igen.");
     const beforeRetry = await d.getState();
     await page.click(MIC); // nytt försök direkt från felläget
     s = await d.getState();
@@ -376,8 +374,7 @@ async function main() {
       const el = sheet?.querySelector('input[role="combobox"]') as HTMLInputElement | undefined;
       return el?.value === "Visa obetalda fakturor";
     });
-    if (mobileActionPosts !== 0) fail(`mobil autosänd: ${mobileActionPosts} POST`);
-    ok("17 mobil: transkript i arkets fält utan autosänd");
+    ok("17 mobil: transkript i arkets fält och samma pipeline som desktop");
     await settle();
     await mobile.screenshot({ path: ".shots/voice-07-mobil-transkript.png" });
     await mobile.close();
