@@ -1,7 +1,6 @@
 import { ReceiptText } from "lucide-react";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
-import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { VerifikationerView } from "@/components/verifikationer-view";
 import { listVerificationViews } from "@/lib/services/verification-correction";
 import { ensurePageBusiness } from "@/lib/auth/session";
@@ -23,13 +22,12 @@ export default async function VerifikationerPage({
   const views = all.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
-    <div className="animate-fade-up">
+    <div>
       <PageHeader
         back={<SmartBack />}
         title="Verifikationer"
         subtitle={`${all.length} bokförda händelser. Varje verifikation är låst när den bokförts – rättelser blir nya verifikationer.`}
       />
-      <BokforingAdvancedTabs />
 
       {all.length === 0 ? (
         <EmptyState

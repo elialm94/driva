@@ -12,7 +12,6 @@ import {
   PlanAccrualForm,
   PrintButton,
 } from "@/components/bokforing-widgets";
-import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { fiscalYears } from "@/lib/accounting/fiscal";
 import { bokslutChecklist } from "@/lib/accounting/close";
 import { listAssets, bookValue, assetsNeedingDepreciation, accumulatedDepreciation } from "@/lib/accounting/assets";
@@ -70,14 +69,13 @@ export default async function BokslutPage() {
   const hasAutomation = needsDepreciation.length > 0 || accrualsPlanned.length > 0;
 
   return (
-    <div className="animate-fade-up">
+    <div>
       <PageHeader
         back={<SmartBack />}
         title="Bokslut"
         subtitle="Driva kontrollerar allt som går att kontrollera automatiskt – du ser bara det som faktiskt behöver dig."
         actions={<PrintButton />}
       />
-      <BokforingAdvancedTabs />
 
       {fy ? (
         <>

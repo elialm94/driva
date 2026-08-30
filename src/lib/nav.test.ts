@@ -3,6 +3,8 @@ process.env.DRIVA_TEST = "1";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  BOKFORING_PREFETCH_HREFS,
+  bokforingDetailTabForPath,
   defaultBack,
   jobHref,
   isBackAwarePath,
@@ -82,6 +84,29 @@ describe("canonical fallback", () => {
     assert.deepEqual(defaultBack("/redovisning/k/biz-a/bank"), { href: "/redovisning/k/biz-a", label: "Arbeta" });
     assert.equal(defaultBack("/"), null);
     assert.equal(defaultBack("/kunder"), null);
+  });
+});
+
+describe("bokföring tab paths", () => {
+  it("maps each accounting URL to its workspace tab", () => {
+    assert.equal(bokforingDetailTabForPath("/bokforing"), "oversikt");
+    assert.equal(bokforingDetailTabForPath("/bokforing/verifikationer"), "verifikationer");
+    assert.equal(bokforingDetailTabForPath("/bokforing/huvudbok"), "huvudbok");
+    assert.equal(bokforingDetailTabForPath("/bokforing/resultat"), "rapporter");
+    assert.equal(bokforingDetailTabForPath("/bokforing/saldobalans"), "rapporter");
+    assert.equal(bokforingDetailTabForPath("/bokforing/balans"), "rapporter");
+    assert.equal(bokforingDetailTabForPath("/bokforing/moms"), "moms");
+    assert.equal(bokforingDetailTabForPath("/bokforing/bokslut"), "bokslut");
+    assert.equal(bokforingDetailTabForPath("/bokforing/detaljer"), "verifikationer");
+    assert.equal(bokforingDetailTabForPath("/kunder"), null);
+  });
+
+  it("prefetches overview, detail tabs and report subviews", () => {
+    assert.ok(BOKFORING_PREFETCH_HREFS.includes("/bokforing"));
+    assert.ok(BOKFORING_PREFETCH_HREFS.includes("/bokforing/verifikationer"));
+    assert.ok(BOKFORING_PREFETCH_HREFS.includes("/bokforing/moms"));
+    assert.ok(BOKFORING_PREFETCH_HREFS.includes("/bokforing/saldobalans"));
+    assert.ok(BOKFORING_PREFETCH_HREFS.includes("/bokforing/balans"));
   });
 });
 

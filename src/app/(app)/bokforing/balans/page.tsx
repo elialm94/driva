@@ -2,7 +2,6 @@ import { kr, datumLang } from "@/lib/format";
 import { Card, PageHeader } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
-import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { balansrapport, type BalansRad } from "@/lib/accounting/ledger";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
@@ -28,7 +27,7 @@ export default async function BalansPage() {
   const br = balansrapport();
 
   return (
-    <div className="animate-fade-up">
+    <div>
       <PageHeader
         back={<SmartBack />}
         title="Balansrapport"
@@ -42,7 +41,6 @@ export default async function BalansPage() {
           </div>
         }
       />
-      <BokforingAdvancedTabs />
 
       {/* Ägarvänlig sammanfattning */}
       <Card className="mb-6 px-6 py-5">
