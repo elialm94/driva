@@ -6,7 +6,8 @@ import { taxReductionDeductionLabel, getTaxReductionTerms } from "@/lib/tax-redu
 import { TaxReductionQuoteClause, TaxReductionCalcHint } from "./tax-reduction-terms";
 import { lineKindLabel } from "@/lib/economic-line-type";
 import { CompanyLogo } from "./company-logo";
-import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
+import { resolveQuoteView } from "@/lib/invoices/snapshot";
+import type { QuoteHousingSnapshot } from "@/lib/types";
 import { RichTextView } from "./rich-text";
 import { signedWithBankIdBy } from "@/lib/status-labels";
 
@@ -39,6 +40,27 @@ function paymentBits(company: CompanySettings): string[] {
   if (company.iban) bits.push(`IBAN ${company.iban}`);
   if (company.bic) bits.push(`BIC ${company.bic}`);
   return bits;
+}
+
+export function DocHousingBlock({ housing }: { housing: QuoteHousingSnapshot | null }) {
+  if (!housing) return null;
+  const bits: string[] = [];
+  if (housing.label) bits.push(housing.label);
+  if (housing.workAddress) bits.push(housing.workAddress);
+  if (housing.housing?.dwellingType === "smahus" && housing.housing.propertyDesignation) {
+    bits.push(`Fastighetsbeteckning ${housing.housing.propertyDesignation}`);
+  }
+  if (housing.housing?.dwellingType === "bostadsratt") {
+    if (housing.housing.brfOrgNumber) bits.push(`BRF org.nr ${housing.housing.brfOrgNumber}`);
+    if (housing.housing.apartmentNumber) bits.push(`Lgh ${housing.housing.apartmentNumber}`);
+  }
+  if (bits.length === 0) return null;
+  return (
+    <div className="mt-6">
+      <p className="text-[13px] font-semibold uppercase tracking-wide text-muted">Bostad</p>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-soft">{bits.join(" · ")}</p>
+    </div>
+  );
 }
 
 export function DocFooter({ company }: { company: CompanySettings }) {
@@ -169,7 +191,9 @@ export function QuoteDocument({
   version: QuoteVersion;
   signature?: BankIDSignature;
 }) {
-  const seller = resolveQuoteCompany(version, company);
+  const view = resolveQuoteView(quote, version, { seller: company, buyer: customer });
+  const seller = view.seller;
+  const buyer = view.buyer;
   const t = docTotals(version.lines, version.rot);
 
   return (
@@ -191,10 +215,10 @@ export function QuoteDocument({
         </div>
         <div>
           <p className="text-muted">Till</p>
-          <p className="font-medium">{customer.name}</p>
-          {customer.address ? (
+          <p className="font-medium">{buyer.name}</p>
+          {buyer.address ? (
             <p className="text-muted">
-              {[customer.address, [customer.postalCode, customer.city].filter(Boolean).join(" ")]
+              {[buyer.address, [buyer.postalCode, buyer.city].filter(Boolean).join(" ")]
                 .filter(Boolean)
                 .join(", ")}
             </p>
@@ -215,7 +239,10 @@ export function QuoteDocument({
       </div>
 
       {version.rot ? (
-        <TaxReductionQuoteClause terms={version.taxReductionTerms ?? getTaxReductionTerms(version.rot.type)} />
+        <>
+          <DocHousingBlock housing={view.housing} />
+          <TaxReductionQuoteClause terms={version.taxReductionTerms ?? getTaxReductionTerms(version.rot.type)} />
+        </>
       ) : null}
 
       {version.paymentPlan.length > 0 ? (

@@ -242,6 +242,13 @@ export interface PaymentPlanPart {
   percent: number;
 }
 
+/** Frusen bostad/fastighet på en skickad offert. */
+export interface QuoteHousingSnapshot {
+  label?: string;
+  workAddress?: string;
+  housing?: HousingDetails;
+}
+
 /* ---------------------------------- Offerter --------------------------------- */
 
 export type QuoteStatus = "utkast" | "skickad" | "godkand" | "avbojd" | "utgangen";
@@ -277,6 +284,16 @@ export interface QuoteVersion {
    * Ingår inte i contentHash – ändra inte hash-payloaden.
    */
   sellerSnapshot?: InvoiceSellerSnapshot;
+  /**
+   * Kunduppgifter när versionen skickades eller BankID-låstes.
+   * Samma modell som fakturans buyer-snapshot. Ingår inte i contentHash.
+   */
+  buyerSnapshot?: InvoiceBuyerSnapshot;
+  /**
+   * Vald bostad/fastighet vid utskick. Live-kundkortet får inte skriva över
+   * en skickad eller signerad offert. Ingår inte i contentHash.
+   */
+  housingSnapshot?: QuoteHousingSnapshot | null;
   createdAt: string;
   /** Sätts när versionen låses vid BankID-godkännande. Låsta versioner får aldrig ändras. */
   lockedAt?: string;

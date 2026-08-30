@@ -39,6 +39,7 @@ import { ensurePageBusiness } from "@/lib/auth/session";
 import { quoteChainState } from "@/lib/services/business-chain";
 import { QuoteChainActions } from "@/components/quote-chain-actions";
 import { QUOTE_TIMELINE, signedWithBankIdBy } from "@/lib/status-labels";
+import { DownloadPdfButton } from "@/components/download-pdf-button";
 
 export const metadata = { title: "Offert" };
 
@@ -117,6 +118,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               <ButtonLink href={editHref} variant="secondary">
                 <Pencil className="size-4" /> Redigera
               </ButtonLink>
+              <DownloadPdfButton href={`/api/offerter/${quote.id}/pdf`} />
               <QuoteDraftSend
                 documentId={quote.id}
                 customerId={customer.id}
@@ -139,6 +141,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                 returnLabel={fromHere.label}
               />
               <FollowUpButton quoteId={quote.id} />
+              <DownloadPdfButton href={`/api/offerter/${quote.id}/pdf`} />
               <a href={publicPath} target="_blank" rel="noreferrer" className={buttonClasses("secondary")}>
                 <ExternalLink className="size-4" /> Öppna kundvyn
               </a>
@@ -159,12 +162,21 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               <ButtonLink href={editHref} variant="secondary">
                 <Pencil className="size-4" /> Ny version
               </ButtonLink>
+              <DownloadPdfButton href={`/api/offerter/${quote.id}/pdf`} />
               <a href={publicPath} target="_blank" rel="noreferrer" className={buttonClasses("secondary")}>
                 <ExternalLink className="size-4" /> Öppna kundvyn
               </a>
               <ActionMenu>
                 <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
               </ActionMenu>
+            </PageActions>
+          ) : null}
+          {quote.status === "utgangen" ? (
+            <PageActions>
+              <DownloadPdfButton href={`/api/offerter/${quote.id}/pdf`} />
+              <a href={publicPath} target="_blank" rel="noreferrer" className={buttonClasses("secondary")}>
+                <ExternalLink className="size-4" /> Öppna kundvyn
+              </a>
             </PageActions>
           ) : null}
         </div>

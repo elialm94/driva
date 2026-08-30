@@ -2,6 +2,8 @@
  * Centralt e-postlager. React/routes anropar inte Resend.
  * sendQuote / sendInvoice / sendPaymentReminder / sendCollaborationInvite
  * skickar bara – persistens sker efter provider-succé i document-mail / collaboration.
+ * PDF-bilaga: samma generator som nedladdning (`quotePdfAttachment` / `invoicePdfAttachment`).
+ * Mejlet skickar i dag länk, inte bilaga. SMS skickar bara säker länk.
  */
 
 import { db } from "../store";

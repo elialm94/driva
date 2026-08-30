@@ -6,8 +6,13 @@ import type {
   InvoiceBuyerSnapshot,
   InvoiceIssuedSnapshot,
   InvoiceSellerSnapshot,
+  Quote,
+  QuoteHousingSnapshot,
+  QuoteVersion,
+  TaxReductionDetails,
 } from "../types";
 import { docTotals, vatBreakdown } from "../calc";
+import { formatLocationAddress, getWorkLocation, workLocationToHousing } from "../services/work-locations";
 
 export function sellerSnapshot(settings: CompanySettings): InvoiceSellerSnapshot {
   return {
@@ -83,6 +88,64 @@ export function resolveQuoteCompany(
 ): CompanySettings {
   if (version.sellerSnapshot) return sellerAsCompany(version.sellerSnapshot, live);
   return live;
+}
+
+export function housingSnapshotFromCustomer(
+  customer: Customer,
+  workLocationId?: string
+): QuoteHousingSnapshot | null {
+  const location = getWorkLocation(customer, workLocationId);
+  if (!location) return null;
+  const workAddress = formatLocationAddress(location);
+  const housing = workLocationToHousing(location);
+  return {
+    label: location.label,
+    ...(workAddress ? { workAddress } : {}),
+    ...(housing.dwellingType ? { housing } : {}),
+  };
+}
+
+export function freezeQuoteSnapshots(
+  version: QuoteVersion,
+  live: { seller: CompanySettings; buyer: Customer; workLocationId?: string }
+): void {
+  version.sellerSnapshot = sellerSnapshot(live.seller);
+  version.buyerSnapshot = buyerSnapshot(live.buyer);
+  version.housingSnapshot = version.rot ? housingSnapshotFromCustomer(live.buyer, live.workLocationId) : null;
+}
+
+/** Offertvy: skickad/låst från snapshot, utkast från live säljare/köpare/bostad. */
+export function resolveQuoteView(
+  quote: Quote,
+  version: QuoteVersion,
+  live: { seller: CompanySettings; buyer: Customer }
+): {
+  seller: CompanySettings;
+  buyer: Customer;
+  housing: QuoteHousingSnapshot | null;
+  version: QuoteVersion;
+} {
+  const sentOrLocked = Boolean(version.sellerSnapshot || version.buyerSnapshot || version.lockedAt);
+  const seller = resolveQuoteCompany(version, live.seller);
+  const buyer = version.buyerSnapshot ? buyerAsCustomer(version.buyerSnapshot, live.buyer) : live.buyer;
+  const housing = sentOrLocked
+    ? (version.housingSnapshot ?? null)
+    : housingSnapshotFromCustomer(live.buyer, quote.workLocationId);
+  return { seller, buyer, housing, version };
+}
+
+export function housingLinesFromDetails(details?: TaxReductionDetails | null): QuoteHousingSnapshot | null {
+  if (!details) return null;
+  const has =
+    Boolean(details.workAddress?.trim()) ||
+    Boolean(details.housing?.propertyDesignation?.trim()) ||
+    Boolean(details.housing?.brfOrgNumber?.trim()) ||
+    Boolean(details.housing?.apartmentNumber?.trim());
+  if (!has) return null;
+  return {
+    workAddress: details.workAddress?.trim() || undefined,
+    housing: details.housing,
+  };
 }
 
 export function buyerAsCustomer(buyer: InvoiceBuyerSnapshot, fallback?: Customer): Customer {

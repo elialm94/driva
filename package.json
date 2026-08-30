@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "DRIVA_TEST=1 tsx --test src/lib/*.test.ts src/lib/invoices/*.test.ts src/lib/accounting/*.test.ts src/lib/domains/*.test.ts",
+    "test": "DRIVA_TEST=1 tsx --test src/lib/*.test.ts src/lib/invoices/*.test.ts src/lib/accounting/*.test.ts src/lib/domains/*.test.ts src/lib/pdf/*.test.ts",
     "typecheck": "tsc --noEmit",
     "test:assistant": "DRIVA_TEST=1 npx --yes tsx scripts/verify-assistant.ts",
     "test:tax-reduction": "DRIVA_TEST=1 npx --yes tsx scripts/verify-tax-reduction.ts",

@@ -33,6 +33,7 @@ import { SmartBack } from "@/components/back-link";
 import { AppLink } from "@/components/app-link";
 import { hrefWithNav, newQuoteHref, sanitizeReturnLabel, sanitizeReturnTo, withReturnTo } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { DownloadPdfButton } from "@/components/download-pdf-button";
 
 export const metadata = { title: "Faktura" };
 
@@ -122,6 +123,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
       <ButtonLink href={editHref} variant="secondary">
         <Pencil className="size-4" /> Redigera faktura
       </ButtonLink>
+      <DownloadPdfButton href={`/api/fakturor/${invoice.id}/pdf`} />
       <InvoiceDraftSend
         documentId={invoice.id}
         customerId={customer.id}
@@ -141,6 +143,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   ) : (
     <PageActions>
       {canRemind ? <SendReminderButton invoiceId={invoice.id} variant="primary" size="md" /> : null}
+      <DownloadPdfButton href={`/api/fakturor/${invoice.id}/pdf`} />
       {customerView}
       {moreMenu}
     </PageActions>

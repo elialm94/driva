@@ -2,8 +2,8 @@ import type { CompanySettings, Customer, Invoice } from "@/lib/types";
 import { docTotals, lineTotal } from "@/lib/calc";
 import { kr, datumNumeriskt, datumLang } from "@/lib/format";
 import { BadgeCheck } from "lucide-react";
-import { DocCompanyHeader, DocFooter, DocTotalsBlock } from "./quote-document";
-import { resolveInvoiceView } from "@/lib/invoices/snapshot";
+import { DocCompanyHeader, DocFooter, DocHousingBlock, DocTotalsBlock } from "./quote-document";
+import { housingLinesFromDetails, resolveInvoiceView } from "@/lib/invoices/snapshot";
 import { invoiceNumberLabel, invoiceTypeLabel, sameCalendarDay } from "@/lib/invoices/display";
 import { TaxReductionInvoiceDisclaimer } from "./tax-reduction-terms";
 import { lineKindLabel } from "@/lib/economic-line-type";
@@ -144,7 +144,12 @@ export function InvoiceDocument({
         />
       </div>
 
-      {doc.rot ? <TaxReductionInvoiceDisclaimer version={doc.taxReductionTerms?.version} /> : null}
+      {doc.rot ? (
+        <>
+          <DocHousingBlock housing={housingLinesFromDetails(doc.taxReductionDetails)} />
+          <TaxReductionInvoiceDisclaimer version={doc.taxReductionTerms?.version} />
+        </>
+      ) : null}
 
       {!isCredit && invoice.status !== "betald" ? (
         <div className="mt-8 rounded-2xl border border-line bg-canvas/70 p-5">

@@ -21,6 +21,8 @@ import { followUpQuote, assertQuoteReadyToSend, sendQuote } from "./quotes";
  *
  * Ordning: validera → Resend → provider-succé/messageId → persist sent.
  * Misslyckad leverans markerar aldrig dokumentet som skickat.
+ * PDF: samma generator som /api/offerter|fakturor/[id]/pdf (quotePdfAttachment).
+ * Mejlet skickar länk i dag; SMS skickar bara säker länk, aldrig PDF-bilaga.
  */
 
 export type DeliveryOutcome = {

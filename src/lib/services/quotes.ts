@@ -10,7 +10,7 @@ import { logActivity } from "./activity";
 import { taxReductionFields } from "../tax-reduction-terms";
 import { rotWithAmounts } from "../tax-reduction-amount";
 import { syncDocLineClassification } from "../economic-line-type";
-import { sellerSnapshot } from "../invoices/snapshot";
+import { freezeQuoteSnapshots } from "../invoices/snapshot";
 import { missingEmailForSend } from "../customer-validation";
 import { collectSellerBlockers } from "../invoices/validate";
 import {
@@ -157,6 +157,8 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
   } else {
     Object.assign(version, input, taxReductionFields(rotWithAmounts(input.rot, input.lines, { documentKind: "offert" })));
     version.sellerSnapshot = undefined;
+    version.buyerSnapshot = undefined;
+    version.housingSnapshot = undefined;
     if (quote.status === "skickad") {
       quote.status = "utkast";
       quote.sentAt = undefined;
@@ -284,7 +286,11 @@ export function sendQuote(quoteId: string, delivery: QuoteDeliveryInfo = MOCK_DE
   // Ingen ROT/RUT-offert får skickas utan systemvillkoret, oavsett skapandeflöde.
   if (!version.lockedAt) {
     Object.assign(version, taxReductionFields(rotWithAmounts(version.rot, version.lines, { documentKind: "offert", mode: "clamp" })));
-    version.sellerSnapshot = sellerSnapshot(db().settings);
+    freezeQuoteSnapshots(version, {
+      seller: db().settings,
+      buyer: customer,
+      workLocationId: quote.workLocationId,
+    });
   }
   const t = docTotals(version.lines, version.rot);
   quote.status = "skickad";
