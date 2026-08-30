@@ -4,19 +4,15 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } f
 import { createPortal } from "react-dom";
 import { CalendarDays } from "lucide-react";
 import { cx } from "./ui";
-import {
-  CalendarPanel,
-  CalendarPopoverShell,
-  parseISODate,
-  startOfToday,
-  toISODate,
-  useFixedPopover,
-} from "./date-calendar";
+import { DateTimePicker } from "./date-time-picker";
+import { formatDateDisplay, parseISODate } from "@/lib/dates/iso-date";
 
-function formatDisplay(date: Date): string {
-  return new Intl.DateTimeFormat("sv-SE", { day: "numeric", month: "long", year: "numeric" }).format(date);
-}
+type Pos = { top: number; left: number };
 
+/**
+ * Datumfält (DATE ONLY) – återanvänder DateTimePicker i date-läge.
+ * Aldrig klockslag: förfallodatum, arbetsperiod, uppdrag, offert.
+ */
 export function DateField({
   name,
   value,
@@ -52,19 +48,18 @@ export function DateField({
   const [internal, setInternal] = useState(defaultValue);
   const iso = isControlled ? value : internal;
   const selected = iso ? parseISODate(iso) : null;
-  const minDate = min ? parseISODate(min) : null;
 
   const isOpenControlled = openProp !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = isOpenControlled ? openProp : uncontrolledOpen;
   const [mounted, setMounted] = useState(false);
-  const [view, setView] = useState(() => {
-    const base = selected ?? startOfToday();
-    return { year: base.getFullYear(), month: base.getMonth() };
-  });
+  const [pos, setPos] = useState<Pos | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const resolvedAnchor = (anchorRef as RefObject<HTMLElement | null> | undefined) ?? triggerRef;
-  const { popoverRef, pos } = useFixedPopover(open, `${view.year}-${view.month}`, resolvedAnchor);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  function getAnchor(): HTMLElement | null {
+    return anchorRef?.current ?? triggerRef.current;
+  }
 
   useEffect(() => {
     setMounted(true);
@@ -82,11 +77,10 @@ export function DateField({
 
   function close() {
     setOpenState(false);
+    setPos(null);
   }
 
   function openCalendar() {
-    const base = selected ?? startOfToday();
-    setView({ year: base.getFullYear(), month: base.getMonth() });
     setOpenState(true);
   }
 
@@ -95,20 +89,39 @@ export function DateField({
     close();
   }
 
-  const wasOpen = useRef(open);
-  useEffect(() => {
-    if (open && !wasOpen.current) {
-      const base = selected ?? startOfToday();
-      setView({ year: base.getFullYear(), month: base.getMonth() });
+  useLayoutEffect(() => {
+    if (!open) return;
+    function place() {
+      const trigger = getAnchor();
+      const popover = popoverRef.current;
+      if (!trigger || !popover) return;
+      const rect = trigger.getBoundingClientRect();
+      const pop = popover.getBoundingClientRect();
+      const gap = 6;
+      const margin = 8;
+      let left = rect.left;
+      if (left + pop.width > window.innerWidth - margin) left = window.innerWidth - pop.width - margin;
+      if (left < margin) left = margin;
+      const below = rect.bottom + gap;
+      const above = rect.top - gap - pop.height;
+      const fitsBelow = below + pop.height <= window.innerHeight - margin;
+      const top = fitsBelow || above < margin ? below : above;
+      setPos({ top, left });
     }
-    wasOpen.current = open;
-  }, [open, selected]);
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, iso]);
 
   useEffect(() => {
     if (!open) return;
     function onPointerDown(e: PointerEvent) {
       const target = e.target as Node;
-      if (resolvedAnchor.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      if (getAnchor()?.contains(target) || popoverRef.current?.contains(target)) return;
       close();
     }
     function onKey(e: KeyboardEvent) {
@@ -132,36 +145,35 @@ export function DateField({
     popover.focus();
   }, [open, pos]);
 
-  const today = startOfToday();
-  const todayIso = toISODate(today);
-  const todayDisabled = minDate ? today < minDate : false;
-
   const calendar =
     open && mounted
       ? createPortal(
-          <CalendarPopoverShell popoverRef={popoverRef} popoverId={popoverId} label="Välj datum" pos={pos}>
-            <CalendarPanel view={view} onViewChange={setView} selected={selected} minDate={minDate} onPick={pick} />
-            <div className="mt-2 flex items-center justify-between border-t border-line pt-2">
-              <button
-                type="button"
-                className="rounded-lg px-3 py-2 text-[13px] font-medium text-soft transition-colors hover:bg-ink/5 hover:text-ink"
-                onClick={() => setIso("")}
-              >
-                Rensa
-              </button>
-              <button
-                type="button"
-                disabled={todayDisabled}
-                className="rounded-lg px-3 py-2 text-[13px] font-medium text-accent transition-colors hover:bg-accent-soft disabled:pointer-events-none disabled:opacity-40"
-                onClick={() => {
-                  setView({ year: today.getFullYear(), month: today.getMonth() });
-                  pick(todayIso);
-                }}
-              >
-                Idag
-              </button>
-            </div>
-          </CalendarPopoverShell>,
+          <div
+            ref={popoverRef}
+            id={popoverId}
+            role="dialog"
+            aria-label="Välj datum"
+            lang="sv"
+            tabIndex={-1}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="fixed z-[80] rounded-2xl border border-line bg-card p-3 shadow-pop animate-fade-in"
+            style={{
+              top: pos?.top ?? 0,
+              left: pos?.left ?? 0,
+              visibility: pos ? "visible" : "hidden",
+              pointerEvents: pos ? "auto" : "none",
+            }}
+          >
+            <DateTimePicker
+              mode="date"
+              date={iso || undefined}
+              min={min}
+              onDateChange={pick}
+              showClear
+              showToday
+              onClear={() => setIso("")}
+            />
+          </div>,
           document.body
         )
       : null;
@@ -178,7 +190,7 @@ export function DateField({
       aria-controls={open ? popoverId : undefined}
     >
       <span className={cx("min-w-0 truncate", !selected && "text-muted")}>
-        {selected ? formatDisplay(selected) : placeholder}
+        {selected ? formatDateDisplay(selected) : placeholder}
       </span>
       <CalendarDays className="size-4 shrink-0 text-muted" />
     </button>

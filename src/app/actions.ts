@@ -34,7 +34,8 @@ import {
   snoozeReminderBy,
   unsnoozeReminder,
 } from "@/lib/services/reminders";
-import { snoozeAttention } from "@/lib/services/attention-state";
+import { clearAttentionSnooze, snoozeAttention } from "@/lib/services/attention-state";
+import { snoozeDoneText } from "@/lib/reminders/when";
 import type { AttentionSnoozeChoice } from "@/lib/services/action-issue";
 import {
   createTaxReductionUnderlag,
@@ -657,23 +658,33 @@ export async function undoCompleteReminderAction(reminderId: string) {
   );
 }
 
-export async function snoozeReminderAction(reminderId: string, choice: "1h" | "imorgon" | { date: string }) {
+export async function snoozeReminderAction(
+  reminderId: string,
+  choice: "1h" | "imorgon" | { date: string; time?: string }
+) {
   return withBusiness(
     async () => {
       const { reminder, previousSnoozedUntil } = snoozeReminderBy(reminderId, choice);
+      refresh();
       const until = reminder.snoozedUntil;
       if (!until) throw new Error("Påminnelsen saknar snoozetid.");
       return {
         ok: true as const,
+        until,
         untilText: describeSnoozeUntil(until, reminder.timezone),
+        toast: snoozeDoneText(until, new Date(), reminder.timezone),
         previousSnoozedUntil: previousSnoozedUntil ?? null,
-      };
+      } as const;
     },
     { retry: false }
   );
 }
 
 export async function undoSnoozeReminderAction(reminderId: string, previousSnoozedUntil?: string | null) {
+  return unsnoozeReminderAction(reminderId, previousSnoozedUntil);
+}
+
+export async function unsnoozeReminderAction(reminderId: string, previousSnoozedUntil?: string | null) {
   await withBusiness(
     async () => {
       unsnoozeReminder(reminderId, previousSnoozedUntil);
@@ -703,9 +714,21 @@ export async function dismissReminderAction(reminderId: string) {
  * försenad, registren visar fortfarande fakta.
  */
 export async function snoozeAttentionAction(actionId: string, choice: AttentionSnoozeChoice) {
+  return withBusiness(
+    async () => {
+      const state = snoozeAttention(actionId, choice);
+      refresh();
+      const until = state.snoozedUntil!;
+      return { until, toast: snoozeDoneText(until) } as const;
+    },
+    { retry: false }
+  );
+}
+
+export async function unsnoozeAttentionAction(actionId: string) {
   await withBusiness(
     async () => {
-      snoozeAttention(actionId, choice);
+      clearAttentionSnooze(actionId);
       refresh();
     },
     { retry: false }

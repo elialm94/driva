@@ -49,7 +49,6 @@ import {
 } from "@/lib/command-bar";
 import {
   formatResolvedCommandCta,
-  prettyReminderTitle,
   resolveUtteranceCorrections,
 } from "@/lib/ai/corrections";
 import { isInternalReminderIntent } from "@/lib/ai/utterance";
@@ -66,7 +65,7 @@ import {
   reminderNeedsReview,
 } from "@/lib/reminders/parse";
 import { DEFAULT_TIMEZONE } from "@/lib/reminders/when";
-import { DateTimePicker } from "./date-time-picker";
+import { DateTimePopover as DateTimePicker } from "./date-time-picker";
 import type {
   CommandBarPrefetch,
   CommandEntityHit,

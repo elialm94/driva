@@ -144,7 +144,7 @@ export function reopenReminder(id: string): Reminder {
   return reminder;
 }
 
-export type SnoozeChoice = "1h" | "imorgon" | { date: string };
+export type SnoozeChoice = "1h" | "imorgon" | { date: string; time?: string };
 
 export type SnoozeResult = {
   reminder: Reminder;
@@ -153,7 +153,8 @@ export type SnoozeResult = {
 
 /**
  * Snabbval för Snooza-knappen: 1 timme (exakt), imorgon (morgon-dagsdelen)
- * eller valfritt datum (behåller påminnelsens ursprungliga klockslag).
+ * eller valfritt datum. Utan time behålls påminnelsens klockslag (äldre
+ * anrop). Med time används det valda klockslaget.
  */
 export function snoozeReminderBy(id: string, choice: SnoozeChoice, now = new Date()): SnoozeResult {
   const reminder = requireOwned(id);
@@ -173,12 +174,24 @@ export function snoozeReminderBy(id: string, choice: SnoozeChoice, now = new Dat
   } else {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(choice.date);
     if (!m) throw new Error("Ogiltigt datum.");
-    const due = localParts(new Date(reminder.dueAt), tz);
+    let hour: number;
+    let minute: number;
+    if (choice.time) {
+      const clock = /^(\d{1,2}):(\d{2})$/.exec(choice.time);
+      if (!clock) throw new Error("Ogiltigt klockslag.");
+      hour = Number(clock[1]);
+      minute = Number(clock[2]);
+    } else {
+      const due = localParts(new Date(reminder.dueAt), tz);
+      hour = due.hour;
+      minute = due.minute;
+    }
     until = instantFromLocal(
-      { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]), hour: due.hour, minute: due.minute },
+      { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]), hour, minute },
       tz
     );
   }
+  if (until.getTime() <= now.getTime()) throw new Error("Snooze-tidpunkten måste vara framåt.");
   const updated = snoozeReminder(id, until.toISOString());
   return previousSnoozedUntil ? { reminder: updated, previousSnoozedUntil } : { reminder: updated };
 }
@@ -192,8 +205,8 @@ export function snoozeReminder(id: string, untilIso: string): Reminder {
 }
 
 /**
- * Ångra Snooza: återställ föregående snooze, eller ta bort den så förra
- * schemat (dueAt) gäller igen.
+ * Ångra Snooza: återställ föregående snooze, eller ta bort den så dueAt
+ * gäller igen.
  */
 export function unsnoozeReminder(id: string, previousSnoozedUntil?: string | null): Reminder {
   const reminder = requireOwned(id);
