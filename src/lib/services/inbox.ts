@@ -72,6 +72,14 @@ export function countOpenInboxMail(): number {
   return n;
 }
 
+/**
+ * Inbox-räknaren (sidomeny + samma tal överallt där ett Inbox-antal visas).
+ *
+ * Väntar på användaren nu – se countsTowardInboxBadge. Inte hela "Öppna"-filtret
+ * (isInboxItemOpen inkluderar t.ex. bokförda räkningar som förfaller senare).
+ * Itererar inbox-raderna; bygger inte listInbox-vyn.
+ * 0 = ingen badge.
+ */
 export function countInboxBadge(): number {
   let n = 0;
   for (const item of inboxItems()) {
@@ -90,7 +98,7 @@ export function countInboxBadge(): number {
   return n;
 }
 
-/** Nav-badge: nya + behöver granskas + väntar på betalningsgodkännande. */
+/** Alias för countInboxBadge – nav och tester. */
 export function countOpenInbox(): number {
   return countInboxBadge();
 }

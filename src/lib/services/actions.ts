@@ -302,25 +302,91 @@ export function getBusinessActions(
   collectJobs(ranked, watching, now);
   collectReminders(ranked, watching, now);
   collectTaxReduction(ranked, watching, now);
-  collectAccounting(ranked);
-  collectClientRequests(ranked);
+  collectBookkeepingSources(ranked, watching, now);
   collectSuppliers(ranked, watching, now);
-  collectInboxMail(ranked);
-  collectVat(ranked, watching, now);
 
-  ranked.sort((a, b) => a.rank - b.rank || a.order - b.order);
-  let attention = ranked.map((r) => r.action);
-  // Snooze/HIDE: dolda tills tidpunkten passerat – sedan automatiskt synliga
-  // igen OM raden fortfarande härleds. Löst under tiden → naturligt borta.
-  if (!opts.includeSnoozed) {
-    const suppressed = suppressedActionIds(now);
-    if (suppressed.size > 0) attention = attention.filter((a) => !suppressed.has(a.id));
-  }
+  const attention = applyAttentionPolicy(ranked, now, opts.includeSnoozed);
   const attentionIds = new Set(attention.map((a) => a.id));
   watching.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const unique = watching.filter((item) => !attentionIds.has(item.id));
 
   return { attention, watching: unique.slice(0, WATCHING.maxItems) };
+}
+
+/**
+ * Bokföringskällor som delas av Hem-motorn, Bokföring-sidan och nav-badgen.
+ * Inga kundfakturor/offerter/uppdrag – de hör till andra ytor.
+ */
+function collectBookkeepingSources(ranked: Ranked[], watching: WatchingItem[], now: Date) {
+  collectAccounting(ranked);
+  collectClientRequests(ranked);
+  collectInboxMail(ranked);
+  collectVat(ranked, watching, now);
+}
+
+/** Snooze/HIDE: dolda tills tidpunkten passerat – sedan synliga igen om saken kvarstår. */
+function applyAttentionPolicy(ranked: Ranked[], now: Date, includeSnoozed?: boolean): BusinessAction[] {
+  ranked.sort((a, b) => a.rank - b.rank || a.order - b.order);
+  let attention = ranked.map((r) => r.action);
+  if (!includeSnoozed) {
+    const suppressed = suppressedActionIds(now);
+    if (suppressed.size > 0) attention = attention.filter((a) => !suppressed.has(a.id));
+  }
+  return attention;
+}
+
+/**
+ * Nav-badge + Bokföring-sidan: aktiva bokföringsfrågor som väntar på användaren.
+ *
+ * Räknas (priority `urgent`|`action`, kategori `accounting`|`vat`):
+ *   – saknat kvitto (`receipt-*`)
+ *   – kategori att välja (`question-*`)
+ *   – belopp/dokument att kontrollera (`inbox-mail-*`)
+ *   – oklar banktransaktion eller oförklarad differens (`bank-*`)
+ *   – väntande klientunderlag (`client-request-*`)
+ *   – moms att deklarera när deadline är inom VAT_ATTENTION_DAYS eller passerad (`vat-*`)
+ *
+ * Räknas inte:
+ *   – bokförda/redan lösta poster (motorn härleder dem inte)
+ *   – informational- eller upcoming-priority
+ *   – framtida deadlines som bara ligger i På gång (moms längre bort än VAT_ATTENTION_DAYS)
+ *   – snoozade rader innan snooze går ut (återvänder automatiskt om saken kvarstår)
+ *   – kundfakturor, offerter, uppdrag, leverantörsbetalningar (Inbox/Ekonomi/Hem)
+ */
+export function countsTowardBookkeepingBadge(
+  action: Pick<BusinessAction, "category" | "priority">
+): boolean {
+  if (action.priority === "info" || action.priority === "upcoming") return false;
+  return action.category === "accounting" || action.category === "vat";
+}
+
+/**
+ * Samma mängd som Bokföring visar som "bokföringsfrågor att lösa".
+ * Kör bara bokföringskällor – inte hela Hem-kön.
+ */
+export function listBookkeepingAttention(
+  now = new Date(),
+  opts: { includeSnoozed?: boolean } = {}
+): BusinessAction[] {
+  const ranked: Ranked[] = [];
+  collectBookkeepingSources(ranked, [], now);
+  return applyAttentionPolicy(ranked, now, opts.includeSnoozed).filter(countsTowardBookkeepingBadge);
+}
+
+/**
+ * Nav-badge: antal aktiva olösta bokföringsfrågor. 0 = ingen badge.
+ * Billigare än getBusinessActions() – ingen faktura-/offert-/uppdragskö.
+ */
+export function countBookkeepingBadge(now = new Date()): number {
+  const ranked: Ranked[] = [];
+  collectBookkeepingSources(ranked, [], now);
+  const suppressed = suppressedActionIds(now);
+  let n = 0;
+  for (const { action } of ranked) {
+    if (suppressed.has(action.id)) continue;
+    if (countsTowardBookkeepingBadge(action)) n += 1;
+  }
+  return n;
 }
 
 /* ---------------------------------- Fakturor --------------------------------- */

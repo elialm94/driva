@@ -5,7 +5,13 @@ import assert from "node:assert/strict";
 import { db, replaceDb } from "./store";
 import { buildSeed } from "./seed";
 import { emptyTestDb, labor } from "./invoices/test-db";
-import { getBusinessActions, QUOTE_FOLLOW_UP_DAYS } from "./services/actions";
+import {
+  countBookkeepingBadge,
+  countsTowardBookkeepingBadge,
+  getBusinessActions,
+  listBookkeepingAttention,
+  QUOTE_FOLLOW_UP_DAYS,
+} from "./services/actions";
 import { controlsForAction, FALLBACK_ISSUE_LABEL, issueForAction } from "./services/action-issue";
 import { snoozeAttention } from "./services/attention-state";
 import { createJob, setJobStatus } from "./services/jobs";
@@ -483,6 +489,143 @@ describe("åtgärdsmotorn: bokföring och bank", () => {
     if (late.cta?.type === "paySupplier") assert.equal(late.cta.label, "Skicka till bank");
     assert.ok(!actions.attention.some((a) => a.id === "supplier-sup-future"));
     assert.ok(!actions.watching.some((u) => u.id === "supplier-due-sup-future"));
+  });
+});
+
+describe("bokföringsbadge: samma mängd som Bokföring-sidan", () => {
+  function isoAt(date: string): Date {
+    return new Date(`${date}T10:00:00Z`);
+  }
+
+  function shiftDays(date: string, days: number): string {
+    const d = new Date(`${date}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function currentQuarter() {
+    const today = todayDate();
+    const year = Number(today.slice(0, 4));
+    const period = quartersOf(calendarFiscalYear(year)).find((p) => p.start <= today && today <= p.end)!;
+    return { period, due: vatDueDate(period) };
+  }
+
+  function addReceiptAndQuestion() {
+    db().expenses.push(
+      {
+        id: "exp-receipt",
+        supplier: "Clas Ohlson",
+        date: isoDaysFromNow(-3),
+        amount: 875,
+        vatAmount: 175,
+        status: "saknar_kvitto",
+        createdAt: isoDaysFromNow(-3),
+      },
+      {
+        id: "exp-question",
+        supplier: "Grand Hôtel",
+        date: isoDaysFromNow(-2),
+        amount: 1_240,
+        vatAmount: 133,
+        status: "behover_svar",
+        question: { text: "Vad gällde middagen?", options: ["Kundmöte", "Privat"] },
+        createdAt: isoDaysFromNow(-2),
+      }
+    );
+  }
+
+  it("räknaren matchar listan och Hem-motorns accounting+vat-filter", () => {
+    replaceDb(emptyTestDb());
+    addReceiptAndQuestion();
+    const fromEngine = getBusinessActions().attention.filter(countsTowardBookkeepingBadge);
+    const listed = listBookkeepingAttention();
+    assert.equal(countBookkeepingBadge(), 2);
+    assert.equal(listed.length, 2);
+    assert.deepEqual(
+      listed.map((a) => a.id).sort(),
+      fromEngine.map((a) => a.id).sort()
+    );
+    assert.ok(listed.every((a) => a.category === "accounting" || a.category === "vat"));
+  });
+
+  it("kundfaktura och leverantörsbetalning räknas inte; 0 = ingen badge", () => {
+    replaceDb(emptyTestDb());
+    const inv = issueAndDeliver(
+      createInvoice({ customerId: "cust-1", type: "faktura", lines: [labor({ unitPrice: 2_000 })], rot: null })
+    );
+    inv.dueDate = isoDaysFromNow(-7);
+    db().supplierInvoices.push({
+      id: "sup-late",
+      supplier: "Beijer Bygg",
+      invoiceNumber: "F-1",
+      date: isoDaysFromNow(-30),
+      dueDate: isoDaysFromNow(-2),
+      amount: 4_000,
+      vatAmount: 800,
+      description: "Material",
+      category: "material",
+      status: "obetald",
+      accountingStatus: "bokford",
+      bankgiro: "5123-4567",
+      recipientAccount: "5123-4567",
+      createdAt: isoDaysFromNow(-30),
+    });
+    assert.ok(getBusinessActions().attention.some((a) => a.category === "invoice"));
+    assert.ok(getBusinessActions().attention.some((a) => a.id === "supplier-sup-late"));
+    assert.equal(countBookkeepingBadge(), 0);
+    assert.equal(listBookkeepingAttention().length, 0);
+  });
+
+  it("bokförd utgift och info/upcoming räknas inte", () => {
+    replaceDb(emptyTestDb());
+    db().expenses.push({
+      id: "exp-done",
+      supplier: "Ica",
+      date: isoDaysFromNow(-1),
+      amount: 100,
+      vatAmount: 20,
+      status: "bokford",
+      createdAt: isoDaysFromNow(-1),
+    });
+    assert.equal(countBookkeepingBadge(), 0);
+    assert.equal(countsTowardBookkeepingBadge({ category: "accounting", priority: "info" }), false);
+    assert.equal(countsTowardBookkeepingBadge({ category: "vat", priority: "upcoming" }), false);
+    assert.equal(countsTowardBookkeepingBadge({ category: "accounting", priority: "action" }), true);
+  });
+
+  it("löst kvitto sänker räknaren direkt; snooze döljer tills tiden gått ut", () => {
+    replaceDb(emptyTestDb());
+    addReceiptAndQuestion();
+    assert.equal(countBookkeepingBadge(), 2);
+
+    const clas = db().expenses.find((e) => e.id === "exp-receipt")!;
+    clas.status = "bokford";
+    assert.equal(countBookkeepingBadge(), 1, "löst Clas Ohlson → 2→1 utan omladdning av kön");
+    assert.ok(!listBookkeepingAttention().some((a) => a.id === "receipt-exp-receipt"));
+
+    const now = new Date();
+    snoozeAttention("question-exp-question", "imorgon", now);
+    assert.equal(countBookkeepingBadge(now), 0, "snoozad fråga räknas inte");
+    assert.equal(listBookkeepingAttention(now).length, 0);
+    assert.ok(
+      listBookkeepingAttention(now, { includeSnoozed: true }).some((a) => a.id === "question-exp-question")
+    );
+
+    const later = new Date(now.getTime() + 3 * 86_400_000);
+    assert.equal(countBookkeepingBadge(later), 1, "utgången snooze räknar igen om saken kvarstår");
+    assert.ok(listBookkeepingAttention(later).some((a) => a.id === "question-exp-question"));
+  });
+
+  it("moms långt bort räknas inte; nära/försenad räknas", () => {
+    replaceDb(emptyTestDb());
+    issueAndDeliver(
+      createInvoice({ customerId: "cust-1", type: "faktura", lines: [labor({ unitPrice: 10_000 })], rot: null })
+    );
+    const { due } = currentQuarter();
+
+    assert.equal(countBookkeepingBadge(isoAt(shiftDays(due, -20))), 0, "deadline 20 dagar bort är På gång, inte badge");
+    assert.ok(countBookkeepingBadge(isoAt(shiftDays(due, -10))) >= 1, "inom 14 dagar är en bokföringsfråga");
+    assert.ok(countBookkeepingBadge(isoAt(shiftDays(due, 5))) >= 1, "försenad moms räknas");
   });
 });
 

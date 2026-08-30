@@ -11,7 +11,8 @@ import {
   verifyInboundSignature,
   inboundSlugFromTo,
 } from "./inbox/inbound-mail";
-import { ingestInboundMail, inboundSlugMatches, listInbox } from "./services/inbox";
+import { countInboxBadge, ingestInboundMail, inboundSlugMatches, listInbox } from "./services/inbox";
+import { countsTowardInboxBadge } from "./inbox/workflow";
 
 describe("inbound signature", () => {
   it("rejects unsigned and invalid in live mode", () => {
@@ -159,6 +160,32 @@ describe("ingest inbound mail", () => {
     assert.ok(!page.rows.some((r) => r.id === "req-karin"));
     assert.ok(page.rows.some((r) => r.id === "inbox-mail-byggmax"));
     assert.ok(!page.rows.some((r) => r.id === "inbox-mail-okq8"));
+  });
+});
+
+describe("Inbox-räknaren: väntar på användaren", () => {
+  beforeEach(() => {
+    resetDemoData();
+  });
+
+  it("badge = countInboxBadge = countsTowardInboxBadge, inte hela historiken", () => {
+    const badge = countInboxBadge();
+    const alla = listInbox({ filter: "alla" });
+    assert.ok(alla.total >= badge);
+    assert.ok(badge >= 0);
+
+    const ny = (db().inboxItems ?? []).find((item) => item.status === "ny");
+    assert.ok(ny, "demo har minst en ny inbox-post");
+    assert.equal(
+      countsTowardInboxBadge({ item: ny }),
+      true,
+      "ny post som inte är bokförd räknas mot badgen"
+    );
+    assert.equal(
+      countsTowardInboxBadge({ item: { ...ny, status: "bokford" } }),
+      false,
+      "bokförd historik räknas inte"
+    );
   });
 });
 

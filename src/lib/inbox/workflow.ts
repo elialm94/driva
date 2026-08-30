@@ -162,7 +162,18 @@ export function isInboxItemOpen(input: {
   return false;
 }
 
-/** Nav-badge: ny, behöver granskas, eller väntar på godkännande att skicka till bank. */
+/**
+ * Inbox-badge och Inbox-listans "väntar på dig" – samma definition överallt.
+ *
+ * Räknas: saker som väntar på ANVÄNDAREN nu.
+ *   – ny post som inte är bokförd, eller belopp som måste granskas
+ *   – saknade/ändrade betalningsuppgifter (inte när vi väntar på leverantören)
+ *   – misslyckad betalning
+ *   – redo att godkännas för bank nu (förfallen eller inom 2 dagar)
+ *
+ * Räknas inte: betald, bankfil skapad, skickad/schemalagd, väntan på
+ * leverantören, framtida förfallodatum mer än 2 dagar bort.
+ */
 export function countsTowardInboxBadge(input: {
   item: InboxItem;
   invoice?: SupplierInvoice;
