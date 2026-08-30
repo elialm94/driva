@@ -1,17 +1,24 @@
 "use server";
 
 /**
- * Kundens "Hjälp & support": skapar ett supportärende till Driva Admin.
- * Teknisk kontext (användare, företag, rutt, enhet, version) bifogas
- * automatiskt på SERVERN – kunden skriver aldrig tekniska uppgifter, och
- * klienten kan inte ljuga om vem den är (identiteten tas från sessionen).
+ * Kundens "Hjälp & support": skapar ett supportärende i Driva Admin.
+ * Identitet och företag tas från sessionen – aldrig från klientpåståenden.
+ * Mejl är inte ett krav; databasen är källan till sanning.
  */
 import { headers } from "next/headers";
 import { getSessionUser, listMemberships, preferredBusinessFromCookie } from "@/lib/auth/session";
 import { createSupportTicket, SupportTicketError, TICKET_ATTACHMENT_MAX_BYTES } from "@/lib/platform/tickets";
+import { isAllowedTicketAttachmentMime } from "@/lib/platform/ticket-attachments";
 import { businessNameById } from "@/lib/platform/store";
 
-export type SupportFormState = { error?: string; notice?: string };
+export type SupportFormState = {
+  error?: string;
+  notice?: string;
+  warning?: string;
+  field?: "message" | "attachment";
+};
+
+const GENERIC_ERROR = "Kunde inte skicka ärendet. Försök igen.";
 
 export async function createSupportTicketAction(
   _prev: SupportFormState,
@@ -20,11 +27,13 @@ export async function createSupportTicketAction(
   const user = await getSessionUser();
   if (!user) return { error: "Logga in för att kontakta supporten." };
 
-  const message = String(formData.get("message") ?? "");
-  const route = String(formData.get("route") ?? "");
+  const message = String(formData.get("message") ?? "").trim();
+  if (!message) {
+    return { error: "Beskriv vad du behöver hjälp med.", field: "message" };
+  }
 
-  // Aktivt företag härleds ur sessionen (cookie → medlemskap), aldrig ur
-  // formulärdata – en användare kan inte skapa ärenden i andras namn.
+  const route = String(formData.get("route") ?? "").trim();
+
   let businessId: string | undefined;
   let businessName = "";
   try {
@@ -35,24 +44,35 @@ export async function createSupportTicketAction(
         ? preferred
         : memberships[0]?.businessId;
     if (businessId) businessName = (await businessNameById(businessId)) ?? "";
-  } catch {
-    // Ärendet är värdefullt även utan företagskontext.
+  } catch (err) {
+    console.error("[driva:support] kunde inte läsa företagskontext", err);
   }
 
-  let attachment: { name: string; dataUrl: string } | undefined;
+  let attachment: { name: string; bytes: Buffer; mime: string } | undefined;
+  let attachmentFailed = false;
   const file = formData.get("attachment");
   if (file instanceof File && file.size > 0) {
     if (file.size > TICKET_ATTACHMENT_MAX_BYTES) {
-      return { error: "Bilagan är för stor (max ca 1,5 MB)." };
+      return { error: "Bilagan är för stor (max 5 MB).", field: "attachment" };
     }
-    const buf = Buffer.from(await file.arrayBuffer());
-    attachment = {
-      name: file.name,
-      dataUrl: `data:${file.type || "application/octet-stream"};base64,${buf.toString("base64")}`,
-    };
+    const mime = file.type || "application/octet-stream";
+    if (!isAllowedTicketAttachmentMime(mime)) {
+      return { error: "Bilagan måste vara en bild eller PDF.", field: "attachment" };
+    }
+    try {
+      attachment = {
+        name: file.name,
+        bytes: Buffer.from(await file.arrayBuffer()),
+        mime,
+      };
+    } catch (err) {
+      console.error("[driva:support] kunde inte läsa bilagan", err);
+      attachmentFailed = true;
+    }
   }
 
   const h = await headers().catch(() => null);
+  const pageUrl = route || refererPath(h?.get("referer"));
   try {
     await createSupportTicket({
       businessId,
@@ -61,16 +81,35 @@ export async function createSupportTicketAction(
       userEmail: user.email,
       userName: user.name,
       message,
-      route,
+      route: pageUrl,
       userAgent: h?.get("user-agent") ?? "",
       appVersion: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12) ?? "dev",
+      environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "",
       attachment,
     });
   } catch (e) {
-    if (e instanceof SupportTicketError) return { error: e.message };
-    return { error: "Något gick fel – försök igen om en stund." };
+    if (e instanceof SupportTicketError) {
+      return { error: e.message, field: /beskriv/i.test(e.message) ? "message" : undefined };
+    }
+    console.error("[driva:support] kunde inte skapa ärende", e);
+    return { error: GENERIC_ERROR };
   }
-  return {
-    notice: "Tack! Ditt ärende är mottaget – vi återkommer via mejl så snart vi kan.",
-  };
+
+  if (attachmentFailed) {
+    return {
+      notice: "Tack! Ditt ärende är skickat.",
+      warning: "Bilagan gick inte att bifoga. Skicka ett nytt ärende om du vill komplettera med filen.",
+    };
+  }
+  return { notice: "Tack! Ditt ärende är skickat." };
+}
+
+function refererPath(referer: string | null | undefined): string {
+  if (!referer) return "";
+  try {
+    const url = new URL(referer);
+    return `${url.pathname}${url.search}`.slice(0, 300);
+  } catch {
+    return referer.slice(0, 300);
+  }
 }

@@ -4,7 +4,7 @@
  * tenantdata – adminflödet har ingen tenantkontext.
  */
 import { absoluteAppUrl, mailFromAddress, sendMail, type MailResult } from "../mail";
-import type { PlatformAdminInvitation } from "./types";
+import type { PlatformAdminInvitation, SupportTicket } from "./types";
 
 export function adminInviteAcceptPath(token: string): string {
   return `/admin/inbjudan/${encodeURIComponent(token)}`;
@@ -48,4 +48,42 @@ export async function sendPlatformAdminInvite(input: {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Intern avisering – ALDRIG krav för att ärendet ska skapas. */
+export function supportNotifyEmail(): string | undefined {
+  const v = process.env.SUPPORT_NOTIFY_EMAIL?.trim() || process.env.DRIVA_SUPPORT_EMAIL?.trim();
+  return v || undefined;
+}
+
+/**
+ * Valfri intern notis när ett ärende skapats. Misslyckad mejl får ALDRIG
+ * kasta – databasen är källan till sanning.
+ */
+export async function notifyNewSupportTicket(ticket: SupportTicket): Promise<void> {
+  const to = supportNotifyEmail();
+  if (!to) return;
+  const url = absoluteAppUrl(`/admin/support/${ticket.id}`);
+  const subject = `Nytt supportärende: ${ticket.subject || ticket.businessName || ticket.userEmail}`;
+  const text = [
+    ticket.message,
+    ``,
+    `Företag: ${ticket.businessName || "–"}`,
+    `Användare: ${ticket.userName || ticket.userEmail}`,
+    `Öppna i Driva Admin: ${url}`,
+  ].join("\n");
+  try {
+    await sendMail(
+      {
+        to,
+        from: mailFromAddress(),
+        subject,
+        text,
+        html: `<p>${escapeHtml(ticket.message)}</p><p><a href="${url}">Öppna ärendet</a></p>`,
+      },
+      { kind: "support_ticket", documentId: ticket.id, businessId: ticket.businessId }
+    );
+  } catch (err) {
+    console.error("[driva:support] intern avisering misslyckades", err);
+  }
 }

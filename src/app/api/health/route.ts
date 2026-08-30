@@ -51,6 +51,7 @@ const PAGE_LOAD_TABLES = [
   "inbox_items",
   "supplier_payments",
   "payment_files",
+  "support_tickets",
 ] as const;
 
 async function probeDatabase(dbUrl: string): Promise<DbProbe> {
