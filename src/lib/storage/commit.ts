@@ -20,6 +20,7 @@
  */
 import type { DB, DocLine, Invoice, Payment, Verification } from "@/lib/types";
 import { docTotals } from "@/lib/calc";
+import { ocrForInvoice } from "@/lib/ids";
 import type { SqlExecutor } from "./executor";
 import {
   accrualsSpec,
@@ -419,7 +420,30 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
 
   const runIssueRpc = async (inv: Invoice, verification: Verification | null): Promise<void> => {
     const base = baselineInvoices.get(inv.id);
-    const allocate = inv.number != null && (base == null || base.number == null);
+    // Utkast har number = null. Domänen ska ha allokerat före commit; om
+    // numret ändå saknas (NaN/undef som JSON-null) tar vi nästa lediga här
+    // så RPC:n aldrig får issue_invalid. CAS + unikt index fångar kappkörning.
+    if (!inv.id) {
+      throw new Error("Fakturan kunde inte utfärdas. Försök igen.");
+    }
+    if (inv.number == null || !Number.isFinite(inv.number)) {
+      const number = state.sequences.invoice;
+      if (!Number.isInteger(number) || number < 1) {
+        throw new Error("Fakturanummer kunde inte tilldelas. Ladda om sidan och försök igen.");
+      }
+      state.sequences.invoice = number + 1;
+      inv.number = number;
+      inv.ocr = ocrForInvoice(number);
+      if (inv.issuedSnapshot) {
+        inv.issuedSnapshot = { ...inv.issuedSnapshot, number, ocr: inv.ocr };
+      }
+    } else if (!inv.ocr) {
+      inv.ocr = ocrForInvoice(inv.number);
+      if (inv.issuedSnapshot) {
+        inv.issuedSnapshot = { ...inv.issuedSnapshot, ocr: inv.ocr };
+      }
+    }
+    const allocate = base == null || base.number == null;
     await tx.query(`select app.issue_invoice($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6)`, [
       businessId,
       JSON.stringify(invoiceRpcPayload(inv, businessId)),
