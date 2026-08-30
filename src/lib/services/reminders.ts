@@ -5,6 +5,7 @@ import type { Reminder, ReminderRelatedType } from "../types";
 import {
   DAYPART_TIMES,
   DEFAULT_TIMEZONE,
+  formatReminderWhenChip,
   instantFromLocal,
   localParts,
   resolveWhen,
@@ -45,7 +46,8 @@ export function ownedReminders(): Reminder[] {
 export type CreateReminderInput = {
   title: string;
   description?: string;
-  when: WhenExpression;
+  /** Saknas eller kind "none" → odaterad påminnelse. */
+  when?: WhenExpression | { kind: "none" };
   source?: Reminder["source"];
   related?: { type: ReminderRelatedType; id: string };
 };
@@ -56,17 +58,23 @@ export function createReminder(input: CreateReminderInput, now = new Date()): Re
   const title = input.title.trim();
   if (!title) return { ok: false, error: "Påminnelsen behöver en beskrivning av vad som ska göras." };
   const timezone = businessTimezone();
-  const resolved = resolveWhen(input.when, now, timezone);
-  if (!resolved.ok) return { ok: false, error: resolved.error };
+  let dueAt: string | undefined;
+  let hasExplicitTime = false;
+  if (input.when && input.when.kind !== "none") {
+    const resolved = resolveWhen(input.when, now, timezone);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    dueAt = resolved.value.dueAt;
+    hasExplicitTime = resolved.value.hasExplicitTime;
+  }
 
   const reminder: Reminder = {
     id: uid(),
     userId: currentUserId(),
     title,
     ...(input.description?.trim() ? { description: input.description.trim() } : {}),
-    dueAt: resolved.value.dueAt,
-    timezone: resolved.value.timezone,
-    hasExplicitTime: resolved.value.hasExplicitTime,
+    ...(dueAt ? { dueAt } : {}),
+    timezone,
+    hasExplicitTime,
     status: "PENDING",
     source: input.source ?? "assistant",
     ...(input.related ? { relatedEntityType: input.related.type, relatedEntityId: input.related.id } : {}),
@@ -80,7 +88,12 @@ export function createReminder(input: CreateReminderInput, now = new Date()): Re
 export function listReminders(opts: { includeDone?: boolean } = {}): Reminder[] {
   return ownedReminders()
     .filter((r) => (opts.includeDone ? r.status !== "DISMISSED" : r.status === "PENDING"))
-    .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+    .sort((a, b) => {
+      if (!a.dueAt && !b.dueAt) return a.createdAt.localeCompare(b.createdAt);
+      if (!a.dueAt) return 1;
+      if (!b.dueAt) return -1;
+      return a.dueAt.localeCompare(b.dueAt);
+    });
 }
 
 /** Fritextsökning bland aktiva påminnelser (för "flytta påminnelsen om Göran"). */
@@ -101,7 +114,7 @@ function requireOwned(id: string): Reminder {
 
 export function updateReminder(
   id: string,
-  patch: { title?: string; description?: string; when?: WhenExpression },
+  patch: { title?: string; description?: string; when?: WhenExpression | { kind: "none" } | null },
   now = new Date()
 ): ReminderResult {
   const reminder = requireOwned(id);
@@ -115,12 +128,18 @@ export function updateReminder(
     if (patch.description.trim()) reminder.description = patch.description.trim();
     else delete reminder.description;
   }
-  if (patch.when) {
-    const resolved = resolveWhen(patch.when, now, reminder.timezone);
-    if (!resolved.ok) return { ok: false, error: resolved.error };
-    reminder.dueAt = resolved.value.dueAt;
-    reminder.hasExplicitTime = resolved.value.hasExplicitTime;
-    delete reminder.snoozedUntil;
+  if (patch.when !== undefined) {
+    if (!patch.when || patch.when.kind === "none") {
+      delete reminder.dueAt;
+      reminder.hasExplicitTime = false;
+      delete reminder.snoozedUntil;
+    } else {
+      const resolved = resolveWhen(patch.when, now, reminder.timezone);
+      if (!resolved.ok) return { ok: false, error: resolved.error };
+      reminder.dueAt = resolved.value.dueAt;
+      reminder.hasExplicitTime = resolved.value.hasExplicitTime;
+      delete reminder.snoozedUntil;
+    }
   }
   save();
   return { ok: true, reminder };
@@ -181,10 +200,14 @@ export function snoozeReminderBy(id: string, choice: SnoozeChoice, now = new Dat
       if (!clock) throw new Error("Ogiltigt klockslag.");
       hour = Number(clock[1]);
       minute = Number(clock[2]);
-    } else {
+    } else if (reminder.dueAt && reminder.hasExplicitTime) {
       const due = localParts(new Date(reminder.dueAt), tz);
       hour = due.hour;
       minute = due.minute;
+    } else {
+      const clock = DAYPART_TIMES.morgon.split(":").map(Number);
+      hour = clock[0];
+      minute = clock[1];
     }
     until = instantFromLocal(
       { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]), hour, minute },
@@ -236,11 +259,13 @@ export function dismissReminder(id: string): Reminder {
 
 /**
  * När blir påminnelsen synlig i "Behöver din uppmärksamhet"?
+ *  - Ingen deadline → aldrig automatiskt (null).
  *  - Klockslag/dagsdel angiven → från dueAt.
  *  - Dagsnivå (ingen tid angiven) → från den lokala dagens start.
  *  - Uppskjuten → tidigast snoozedUntil.
  */
-export function reminderVisibleFrom(reminder: Reminder): Date {
+export function reminderVisibleFrom(reminder: Reminder): Date | null {
+  if (!reminder.dueAt) return null;
   const due = new Date(reminder.dueAt);
   const base = reminder.hasExplicitTime ? due : startOfLocalDay(due, reminder.timezone);
   if (reminder.snoozedUntil) {
@@ -251,7 +276,8 @@ export function reminderVisibleFrom(reminder: Reminder): Date {
 }
 
 /** Lokal kalenderdag (YYYY-MM-DD) för en tidpunkt i påminnelsens tidszon. */
-export function reminderLocalDate(reminder: Reminder): string {
+export function reminderLocalDate(reminder: Reminder): string | undefined {
+  if (!reminder.dueAt) return undefined;
   return new Intl.DateTimeFormat("sv-SE", {
     timeZone: reminder.timezone,
     year: "numeric",
@@ -265,12 +291,13 @@ export function reminderLocalDate(reminder: Reminder): string {
  * försening: "Skulle gjorts igår kl 10:00" / "Idag kl 14:00" / "onsdag 2 september kl 10:00".
  */
 export function describeReminderDue(reminder: Reminder, now = new Date()): { overdue: boolean; text: string } {
+  if (!reminder.dueAt) return { overdue: false, text: "Ingen tid" };
   const due = new Date(reminder.dueAt);
   const tz = reminder.timezone;
-  const overdue = due.getTime() < now.getTime();
   const dayDiff = Math.round(
     (startOfLocalDay(due, tz).getTime() - startOfLocalDay(now, tz).getTime()) / 86_400_000
   );
+  const overdue = reminder.hasExplicitTime ? due.getTime() < now.getTime() : dayDiff < 0;
   const time = new Intl.DateTimeFormat("sv-SE", {
     timeZone: tz,
     hour: "2-digit",
@@ -293,10 +320,18 @@ export function describeReminderDue(reminder: Reminder, now = new Date()): { ove
                 month: "long",
               }).format(due);
   if (overdue) {
-    return { overdue, text: `Försenad – skulle gjorts ${day} kl ${time}` };
+    return {
+      overdue,
+      text: reminder.hasExplicitTime
+        ? `Försenad – skulle gjorts ${day} kl ${time}`
+        : `Försenad – skulle gjorts ${day}`,
+    };
   }
   const capitalized = day.charAt(0).toUpperCase() + day.slice(1);
-  return { overdue, text: `${capitalized} kl ${time}` };
+  return {
+    overdue,
+    text: reminder.hasExplicitTime ? `${capitalized} kl ${time}` : capitalized,
+  };
 }
 
 /**
@@ -342,4 +377,68 @@ export function reminderTargetHref(reminder: Reminder): string {
     default:
       return "/";
   }
+}
+
+/* ------------------------- Hem: grupperade påminnelser ------------------------- */
+
+export type HomeReminderGroup = "overdue" | "today" | "upcoming" | "undated";
+
+export interface HomeReminderItem {
+  id: string;
+  title: string;
+  whenLabel: string;
+  group: HomeReminderGroup;
+  hasDate: boolean;
+  hasExplicitTime: boolean;
+  dueAt?: string;
+  timezone: string;
+}
+
+export function homeReminderGroup(reminder: Reminder, now = new Date()): HomeReminderGroup {
+  if (!reminder.dueAt) return "undated";
+  const dayDiff = Math.round(
+    (startOfLocalDay(new Date(reminder.dueAt), reminder.timezone).getTime() -
+      startOfLocalDay(now, reminder.timezone).getTime()) /
+      86_400_000
+  );
+  if (dayDiff < 0) return "overdue";
+  if (dayDiff === 0) return "today";
+  return "upcoming";
+}
+
+export function toHomeReminderItem(reminder: Reminder, now = new Date()): HomeReminderItem {
+  return {
+    id: reminder.id,
+    title: reminder.title,
+    whenLabel: formatReminderWhenChip(reminder.dueAt, reminder.timezone, reminder.hasExplicitTime, now),
+    group: homeReminderGroup(reminder, now),
+    hasDate: Boolean(reminder.dueAt),
+    hasExplicitTime: reminder.hasExplicitTime,
+    ...(reminder.dueAt ? { dueAt: reminder.dueAt } : {}),
+    timezone: reminder.timezone,
+  };
+}
+
+/** Aktiva påminnelser för Hem – samma källa som uppmärksamhet, ingen extra query. */
+export function listHomeReminders(now = new Date()): HomeReminderItem[] {
+  return listReminders().map((r) => toHomeReminderItem(r, now));
+}
+
+export function groupHomeReminders(items: HomeReminderItem[]): {
+  overdue: HomeReminderItem[];
+  today: HomeReminderItem[];
+  upcoming: HomeReminderItem[];
+  undated: HomeReminderItem[];
+} {
+  const overdue: HomeReminderItem[] = [];
+  const today: HomeReminderItem[] = [];
+  const upcoming: HomeReminderItem[] = [];
+  const undated: HomeReminderItem[] = [];
+  for (const item of items) {
+    if (item.group === "overdue") overdue.push(item);
+    else if (item.group === "today") today.push(item);
+    else if (item.group === "upcoming") upcoming.push(item);
+    else undated.push(item);
+  }
+  return { overdue, today, upcoming, undated };
 }

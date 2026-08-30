@@ -33,6 +33,8 @@ export function DateTimePopover({
   anchorRef,
   className,
   id,
+  timeOptional = false,
+  allowEmpty = false,
 }: {
   date: string;
   time: string;
@@ -43,6 +45,10 @@ export function DateTimePopover({
   anchorRef?: RefObject<HTMLElement | null>;
   className?: string;
   id?: string;
+  /** Tillåt datum utan klockslag – tom tid betyder datum-only. */
+  timeOptional?: boolean;
+  /** Visa Rensa så användaren kan ta bort datum/tid helt. */
+  allowEmpty?: boolean;
 }) {
   const autoId = useId();
   const triggerId = id ?? autoId;
@@ -133,16 +139,19 @@ export function DateTimePopover({
               onViewChange={setView}
               selected={selected}
               minDate={minDate}
-              onPick={(iso) => onChange({ date: iso, time: clock })}
+              onPick={(iso) => onChange({ date: iso, time: timeOptional && !time ? "" : clock })}
             />
             <div className="mt-2 flex items-center gap-2 border-t border-line pt-2">
               <label className="min-w-0 flex-1 text-[12px] font-medium text-soft">
-                Tid
+                Tid{timeOptional ? " (valfritt)" : ""}
                 <input
                   type="time"
-                  value={clock}
+                  value={time ? clock : timeOptional ? "" : clock}
                   onChange={(e) => {
-                    if (!e.target.value) return;
+                    if (!e.target.value) {
+                      if (timeOptional) onChange({ date: date || todayIso, time: "" });
+                      return;
+                    }
                     onChange({ date: date || todayIso, time: padClock(e.target.value) });
                   }}
                   className="mt-1 h-10 w-full rounded-lg border border-line bg-card px-2.5 text-[14px] tabular text-ink"
@@ -150,17 +159,30 @@ export function DateTimePopover({
               </label>
             </div>
             <div className="mt-2 flex items-center justify-between">
-              <button
-                type="button"
-                disabled={todayDisabled}
-                className="rounded-lg px-3 py-2 text-[13px] font-medium text-accent transition-colors hover:bg-accent-soft disabled:pointer-events-none disabled:opacity-40"
-                onClick={() => {
-                  setView({ year: today.getFullYear(), month: today.getMonth() });
-                  onChange({ date: todayIso, time: clock });
-                }}
-              >
-                Idag
-              </button>
+              {allowEmpty ? (
+                <button
+                  type="button"
+                  className="rounded-lg px-3 py-2 text-[13px] font-medium text-soft transition-colors hover:bg-ink/5 hover:text-ink"
+                  onClick={() => {
+                    onChange({ date: "", time: "" });
+                    close();
+                  }}
+                >
+                  Ingen tid
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={todayDisabled}
+                  className="rounded-lg px-3 py-2 text-[13px] font-medium text-accent transition-colors hover:bg-accent-soft disabled:pointer-events-none disabled:opacity-40"
+                  onClick={() => {
+                    setView({ year: today.getFullYear(), month: today.getMonth() });
+                    onChange({ date: todayIso, time: timeOptional && !time ? "" : clock });
+                  }}
+                >
+                  Idag
+                </button>
+              )}
               <button
                 type="button"
                 className="rounded-lg px-3 py-2 text-[13px] font-medium text-ink transition-colors hover:bg-ink/5"
@@ -191,7 +213,13 @@ export function DateTimePopover({
         aria-controls={open ? popoverId : undefined}
       >
         <span className={cx("min-w-0 truncate", !selected && "text-muted")}>
-          {selected ? `${formatDisplay(selected)} kl ${clock}` : "Välj dag och tid"}
+          {selected
+            ? time
+              ? `${formatDisplay(selected)} kl ${clock}`
+              : formatDisplay(selected)
+            : timeOptional
+              ? "Ingen tid"
+              : "Välj dag och tid"}
         </span>
         <CalendarDays className="size-4 shrink-0 text-muted" />
       </button>
