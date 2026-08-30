@@ -24,7 +24,7 @@ import {
   swedishPhoneInputProps,
 } from "@/lib/validation";
 import { labelForHref, withReturnTo } from "@/lib/nav";
-import { collectSellerBlockers, type IssueBlocker } from "@/lib/invoices/validate";
+import { collectSellerBlockers, type IssueBlocker } from "@/lib/invoices/seller-blockers";
 import { settingsBillingGaps } from "@/lib/settings-billing-gaps";
 import { settingsFieldErrors, type SettingsFieldError, type SettingsTab } from "@/lib/settings-validation";
 import { FieldError, FormValidationSummary, focusField, invalidFieldCls } from "./form-validation";
