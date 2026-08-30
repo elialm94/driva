@@ -120,6 +120,7 @@ async function main() {
 
   /* 3. Demodata via samma commit-väg som appen (RPC:er, immutabilitet, RLS). */
   if (!args.empty) {
+    await assertSeedIdsUnused(await sqlClient(), businessId, seed);
     try {
       await importStateIntoBusiness(businessId, userId, seed);
     } catch (e) {
@@ -163,6 +164,42 @@ function parseArgs(argv: string[]): { email?: string; password?: string; empty: 
     else if (argv[i] === "--demo") out.demo = true;
   }
   return out;
+}
+
+/**
+ * Exempeldatats id:n är fasta (cust-anna, …). Om ett ANNAT företag i samma
+ * databas redan seedats skulle importens upsert försöka ta över dess rader –
+ * appens RLS stoppar det i drift, men seedskriptet kör ofta med ägarrollen
+ * där RLS inte gäller. Tripwire på de bärande samlingarna: vägra hellre än
+ * att korrumpera. (Gäller båda hållen: dev-seed efter demon stoppas också.)
+ */
+async function assertSeedIdsUnused(
+  client: import("../src/lib/storage/executor").SqlClient,
+  businessId: string,
+  seed: import("../src/lib/types").DB
+): Promise<void> {
+  const collections: Array<[string, string[]]> = [
+    ["customers", seed.customers.map((c) => c.id)],
+    ["quotes", seed.quotes.map((q) => q.id)],
+    ["invoices", seed.invoices.map((i) => i.id)],
+    ["verifications", seed.verifications.map((v) => v.id)],
+  ];
+  for (const [table, ids] of collections) {
+    if (ids.length === 0) continue;
+    const rows = await client.query(
+      `select business_id::text as business_id from public.${table}
+        where id = any(string_to_array($1, ',')) and business_id <> $2::uuid
+        limit 1`,
+      [ids.join(","), businessId]
+    );
+    if (rows.length > 0) {
+      console.error(
+        `Avbryter: exempeldatats id:n (${table}) finns redan i företaget ${String(rows[0].business_id)}. ` +
+          `Databasen har redan ett seedat företag – ta bort det, eller seeda i en egen databas.`
+      );
+      process.exit(1);
+    }
+  }
 }
 
 async function findUserByEmail(

@@ -33,10 +33,15 @@ export function nextDay(date: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Ren fabrik för ett kalenderår – används av både motorn och migreringen. */
+/**
+ * Ren fabrik för ett kalenderår – används av både motorn och migreringen.
+ * Id:t bär en slumpdel: id-kolumnen är en global text-PK i Postgres, så ett
+ * deterministiskt `fy-2026` skulle kollidera mellan företag så fort två
+ * tenants bokför samma år. Alla uppslag sker via datum/label – aldrig id-form.
+ */
 export function calendarFiscalYear(year: number): FiscalYear {
   return {
-    id: `fy-${year}`,
+    id: `fy-${year}-${Math.random().toString(36).slice(2, 10)}`,
     label: String(year),
     startDate: `${year}-01-01`,
     endDate: `${year}-12-31`,
