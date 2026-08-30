@@ -2,9 +2,11 @@ import { datumKort, kr } from "../format";
 import { CONFIDENCE_THRESHOLDS } from "../autopilot";
 import type { PaymentDetailsCause } from "../services/payment-details";
 import type {
+  Expense,
   ExtractedField,
   InboxDocumentType,
   InboxItem,
+  PaymentFile,
   SupplierInvoice,
   SupplierPayment,
   SupplierPaymentStatus,
@@ -250,4 +252,120 @@ function daysFrom(now: Date, iso: string): number {
 
 export function normalizeRecipientAccount(value: string): string {
   return value.replace(/[\s-]/g, "").toLowerCase();
+}
+
+/* ------------------------ Arbetsflödets statuschecklista ---------------------- */
+
+export interface WorkflowStep {
+  key: string;
+  label: string;
+  /** done = ✓, todo = ○ (nästa/väntande), na = gäller inte dokumenttypen. */
+  state: "done" | "todo" | "na";
+  detail?: string;
+}
+
+/**
+ * Statuschecklistan i inboxdetaljen: livscykeln som lista, aldrig ett
+ * generiskt "Behandlad". Kvitton och leverantörsfakturor har OLIKA flöden –
+ * kvitton har inget utbetalningssteg.
+ */
+export function inboxWorkflowSteps(input: {
+  item: InboxItem;
+  invoice?: SupplierInvoice;
+  payment?: SupplierPayment;
+  expense?: Expense;
+  paymentFile?: PaymentFile;
+  detailsCause?: PaymentDetailsCause;
+}): WorkflowStep[] {
+  const { item, invoice, payment, expense, paymentFile, detailsCause } = input;
+  const steps: WorkflowStep[] = [];
+
+  const parsed = item.parsedAmount != null || item.extraction != null || Boolean(invoice) || Boolean(expense);
+  steps.push({
+    key: "tolkat",
+    label: "Dokument tolkat",
+    state: parsed ? "done" : "todo",
+    ...(parsed ? {} : { detail: "Driva kunde inte läsa dokumentet." }),
+  });
+
+  const certain = Boolean(invoice) || Boolean(expense) || amountIsCertain(item);
+  steps.push({
+    key: "belopp",
+    label: "Belopp kontrollerat",
+    state: certain ? "done" : "todo",
+    detail: certain
+      ? item.reviewedAt
+        ? `Kontrollerat av dig ${datumKort(item.reviewedAt)}`
+        : "Säker läsning"
+      : "Behöver kontroll mot dokumentet.",
+  });
+
+  if (item.documentType === "kvitto") {
+    const matched = Boolean(expense?.bankTransactionId);
+    steps.push({
+      key: "matchad",
+      label: "Matchad mot bankköp",
+      state: matched ? "done" : "todo",
+      ...(matched ? {} : { detail: "Väntar på kortköpet bland banktransaktionerna." }),
+    });
+    const booked = expense?.status === "bokford";
+    steps.push({ key: "bokford", label: "Bokförd", state: booked ? "done" : "todo" });
+    steps.push({
+      key: "betalning",
+      label: "Betalning",
+      state: "na",
+      detail: "Ingen utbetalning – kvittot är redan betalt.",
+    });
+    return steps;
+  }
+
+  const booked = invoice?.accountingStatus === "bokford";
+  steps.push({
+    key: "bokford",
+    label: "Bokförd",
+    state: booked ? "done" : "todo",
+    ...(booked && invoice ? {} : { detail: "Bokförs när uppgifterna är säkra." }),
+  });
+
+  const paid = payment?.status === "PAID" || invoice?.status === "betald";
+  let paymentDetail: string | undefined;
+  if (paid) {
+    paymentDetail = payment?.paidAt ? `Betald ${datumKort(payment.paidAt)}` : "Betald";
+  } else if (payment?.status === "PAYMENT_FILE_CREATED") {
+    paymentDetail = `Bankfil skapad${paymentFile ? ` (${paymentFile.filename})` : ""} – ${PAYMENT_FILE_HELP_TEXT}`;
+  } else if (payment && isPaymentInFlight(payment.status)) {
+    paymentDetail = supplierPaymentUiLabel(payment.status, payment.scheduledDate);
+  } else if (payment?.status === "FAILED") {
+    paymentDetail = "Betalningen misslyckades – försök igen.";
+  } else if (detailsCause === "CHANGED" || payment?.destinationChanged) {
+    paymentDetail = "Nya betalningsuppgifter behöver kontrolleras först.";
+  } else if (detailsCause === "MISSING") {
+    paymentDetail = "Väntar på betalningsuppgifter.";
+  } else if (detailsCause === "EXTRACTION_UNCERTAIN") {
+    paymentDetail = "Betalningsuppgifterna behöver kontrolleras.";
+  } else if (detailsCause === "AWAITING_SUPPLIER") {
+    paymentDetail = "Leverantören är tillfrågad om betalningsuppgifter.";
+  } else if (booked && invoice) {
+    paymentDetail = `Redo att betala – förfaller ${datumKort(invoice.dueDate)}.`;
+  }
+  steps.push({
+    key: "betalning",
+    label: "Betalning",
+    state: paid ? "done" : "todo",
+    ...(paymentDetail ? { detail: paymentDetail } : {}),
+  });
+
+  const reconciled = Boolean(
+    (payment?.status === "PAID" && payment.bankTransactionId) ||
+      (invoice?.status === "betald" && invoice.bankTransactionId)
+  );
+  steps.push({
+    key: "avstamd",
+    label: "Avstämd",
+    state: reconciled ? "done" : "todo",
+    detail: reconciled
+      ? "Matchad mot banktransaktionen."
+      : "Stäms av när betalningen syns på kontot.",
+  });
+  return steps;
 }
