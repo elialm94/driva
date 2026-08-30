@@ -48,3 +48,6 @@ next-env.d.ts
 
 # Skärmdumpar från verifieringsskript
 .shots/
+
+# Lokal Cursor-konfiguration
+.cursor/
