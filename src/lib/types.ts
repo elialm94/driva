@@ -1359,6 +1359,8 @@ export type PendingAssistantAction =
   | { id: ID; type: "skicka_leverantorsbetalning"; paymentId: ID }
   | { id: ID; type: "avbryt_leverantorsbetalning"; paymentId: ID }
   | { id: ID; type: "anvand_leverantorsuppgifter"; supplierInvoiceId: ID }
+  /** Skapa pain.001-bankfil för fakturorna – utförs först efter bekräftelse. */
+  | { id: ID; type: "skapa_bankfil"; supplierInvoiceIds: ID[] }
   | { id: ID; type: "ta_bort_uppdrag"; jobId: ID };
 
 /* --------------------------------- Påminnelser -------------------------------- */

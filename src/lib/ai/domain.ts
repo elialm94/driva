@@ -47,6 +47,16 @@ import {
   supplierPayments,
 } from "../services/supplier-payments";
 import { paymentDetailsInfo, provenanceLabel } from "../services/payment-details";
+import {
+  activePaymentFileForInvoice,
+  getPaymentFile,
+  payerAccountLabel,
+  paymentFileBlockers,
+  paymentFileBlockersForInvoice,
+} from "../services/payment-files";
+import { updateSupplierInvoiceField } from "../services/suppliers";
+import { extractionReviewForItem } from "../services/inbox";
+import { supplierPaymentUiLabel } from "../inbox/workflow";
 
 export type DomainResult = {
   text: string;
@@ -1581,5 +1591,158 @@ export function requestCancelSupplierPayment(paymentId: string): DomainResult {
       state: "vantar",
     },
     forModel: { pendingConfirmation: true, paymentId: payment.id, cancelled: false },
+  };
+}
+
+/**
+ * Vad Driva LÄST ur ett inkommande dokument – fält för fält med mänskliga
+ * lägen ("saker"/"kontrollera"), aldrig råa sannolikheter som beslut.
+ * Samma läsmodell som Kontrollera-vyn (services/inbox.ts).
+ */
+export function reviewDocumentExtractionResult(itemId: string): DomainResult {
+  try {
+    const review = extractionReviewForItem(itemId);
+    const uncertain = review.fields.filter((f) => f.state === "kontrollera");
+    const summary =
+      uncertain.length === 0
+        ? "Alla lästa fält är säkra."
+        : `${uncertain.length} fält behöver kontrolleras: ${uncertain.map((f) => f.label).join(", ")}.`;
+    return {
+      ok: true,
+      text: `${review.documentType === "kvitto" ? "Kvitto" : "Leverantörsfaktura"} – ${summary}${review.editable ? " Uppgifterna godkänns i Kontrollera-vyn." : review.blockedReason ? ` ${review.blockedReason}` : ""}`,
+      forModel: {
+        itemId: review.itemId,
+        documentType: review.documentType,
+        editable: review.editable,
+        blockedReason: review.blockedReason,
+        fields: review.fields.map((f) => ({ key: f.key, label: f.label, value: f.value, state: f.state })),
+      },
+      card: {
+        kind: "list",
+        title: "Det här har Driva läst",
+        rows: review.fields.map((f) => ({
+          label: f.label,
+          value: `${f.value == null ? "—" : typeof f.value === "number" ? kr(f.value) : f.value} · ${f.state === "saker" ? "Säker" : "Kontrollera"}`,
+        })),
+        links: [{ label: review.editable ? "Öppna Kontrollera-vyn" : "Öppna dokumentet", href: review.editable ? `/inbox/${review.itemId}/kontrollera` : `/inbox/${review.itemId}` }],
+      },
+    };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Kunde inte läsa dokumentet.");
+  }
+}
+
+/** Säker fältändring på leverantörsfaktura – aldrig belopp eller betalningsuppgifter. */
+export function updateSupplierInvoiceFieldResult(
+  invoiceId: string,
+  field: string,
+  value: string
+): DomainResult {
+  if (field !== "description" && field !== "dueDate" && field !== "invoiceNumber") {
+    return fail(
+      "Bara description (beskrivning), dueDate (förfallodatum) och invoiceNumber (fakturanummer) kan ändras här. Belopp rättas via bokföringen och betalningsuppgifter via kontrollflödet – AI:n anger aldrig konton."
+    );
+  }
+  try {
+    const sup = updateSupplierInvoiceField({ invoiceId, field, value, by: "assistent" });
+    return {
+      ok: true,
+      text: `Klart – ${sup.supplier} ${sup.invoiceNumber} är uppdaterad.`,
+      forModel: {
+        id: sup.id,
+        supplier: sup.supplier,
+        invoiceNumber: sup.invoiceNumber,
+        dueDate: sup.dueDate,
+        description: sup.description,
+      },
+    };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Kunde inte uppdatera fakturan.");
+  }
+}
+
+/**
+ * Bekräftelsekort för [Skapa bankfil] (pain.001). Validerar ALLT innan kortet
+ * visas (exakta hinder i klartext) och skapar INGEN fil förrän användaren
+ * bekräftar. Filen laddas upp manuellt i internetbanken – Driva påstår aldrig
+ * att banken tagit emot något.
+ */
+export function requestGeneratePaymentFile(invoiceIds: string[]): DomainResult {
+  const ids = [...new Set(invoiceIds.filter(Boolean))];
+  if (ids.length === 0) return fail("Ange vilka leverantörsfakturor som ska betalas.");
+  const problems = paymentFileBlockers(ids);
+  if (problems.length > 0) return fail(problems.join(" "));
+
+  const invoices = ids.map((id) => getSupplierInvoice(id)!);
+  const total = invoices.reduce((sum, s) => sum + s.amount, 0);
+  const payer = payerAccountLabel();
+  const action: PendingAssistantAction = { id: uid(), type: "skapa_bankfil", supplierInvoiceIds: ids };
+  addPending(action);
+  const who = invoices.length === 1 ? invoices[0].supplier : `${invoices.length} leverantörer`;
+  return {
+    ok: true,
+    text: `Ska jag skapa en bankfil (pain.001) för ${who} på totalt ${kr(total)}? Filen laddar du själv upp i internetbanken – inget betalas förrän du godkänner det där.`,
+    card: {
+      kind: "confirm",
+      actionId: action.id,
+      summary: "Bankfilen skapas och laddas ned – den skickas inte till banken och inget är betalt förrän du godkänner betalningen i internetbanken.",
+      rows: [
+        ...invoices.map((s) => ({
+          label: `${s.supplier} · ${s.invoiceNumber}`,
+          value: `${kr(s.amount)} · förfaller ${s.dueDate.slice(0, 10)}`,
+        })),
+        ...(invoices.length > 1 ? [{ label: "Totalt", value: kr(total) }] : []),
+        ...(payer ? [{ label: "Från", value: `${db().settings.name}, ${payer}` }] : []),
+      ],
+      confirmLabel: "Skapa bankfil",
+      state: "vantar",
+    },
+    forModel: { pendingConfirmation: true, supplierInvoiceIds: ids, totalAmount: total, fileCreated: false },
+  };
+}
+
+/** Betalningsstatus för en leverantörsfaktura: bokföring, betalning, bankfil, avstämning – separata spår. */
+export function getPaymentStatusResult(invoiceId: string): DomainResult {
+  const invoice = db().supplierInvoices.find((s) => s.id === invoiceId);
+  if (!invoice) return fail("Leverantörsfakturan finns inte.");
+  const payment = supplierPayments()
+    .filter((p) => p.supplierInvoiceId === invoice.id && p.status !== "CANCELLED")
+    .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))[0];
+  const file = payment?.paymentFileId ? getPaymentFile(payment.paymentFileId) : activePaymentFileForInvoice(invoice.id);
+  const paid = invoice.status === "betald" || payment?.status === "PAID";
+  const reconciled = paid && Boolean(invoice.bankTransactionId ?? payment?.bankTransactionId);
+  const blockers = paid ? [] : paymentFileBlockersForInvoice(invoice.id);
+
+  const paymentLabel = paid
+    ? reconciled
+      ? "Betald och avstämd mot banktransaktionen"
+      : "Betald"
+    : payment?.status === "PAYMENT_FILE_CREATED"
+      ? "Bankfil skapad – väntar på uppladdning/godkännande i internetbanken"
+      : payment
+        ? supplierPaymentUiLabel(payment.status)
+        : blockers.length === 0
+          ? "Redo att betala"
+          : "Inte redo";
+  return {
+    ok: true,
+    text: `${invoice.supplier} ${invoice.invoiceNumber}: bokföring ${invoice.accountingStatus === "bokford" ? "bokförd" : "ej bokförd"} · betalning ${paymentLabel}${blockers.length ? ` · hinder: ${blockers.join(" ")}` : ""}`,
+    forModel: {
+      invoiceId: invoice.id,
+      supplier: invoice.supplier,
+      invoiceNumber: invoice.invoiceNumber,
+      amount: invoice.amount,
+      accountingStatus: invoice.accountingStatus,
+      verificationId: invoice.verificationId,
+      paymentStatus: payment?.status ?? (blockers.length === 0 ? "READY_TO_PAY" : "BLOCKED"),
+      paymentBlockers: blockers,
+      paymentFile: file
+        ? { id: file.id, filename: file.filename, status: file.status, createdAt: file.createdAt }
+        : undefined,
+      paid,
+      reconciled,
+      bankTransactionId: invoice.bankTransactionId ?? payment?.bankTransactionId,
+      paymentVerificationId: invoice.paymentVerificationId,
+    },
   };
 }

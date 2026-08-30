@@ -862,6 +862,37 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
       }
       break;
     }
+    case "skapa_bankfil": {
+      // Bekräftad bankfil: samma tjänst och samma vakter som [Skapa bankfil]
+      // i UI:t. Filen skapas och länkas för nedladdning – Driva påstår aldrig
+      // att den är skickad till banken eller betald.
+      try {
+        const { createPaymentFile } = await import("./payment-files");
+        const result = createPaymentFile({ supplierInvoiceIds: action.supplierInvoiceIds, by: "assistent" });
+        if (!result.ok) {
+          const message = result.problems.join(" ");
+          updateConfirmCard(actionId, "avbruten", message);
+          reply(message);
+          break;
+        }
+        updateConfirmCard(actionId, "utford", `Bankfilen ${result.file.filename} är skapad.`);
+        reply(
+          `Klart – bankfilen ${result.file.filename} är skapad. Ladda ned den och ladda upp den i din internetbank; betalningen godkänner du där. Inget är betalt förrän banken genomfört den.`,
+          {
+            kind: "links",
+            links: [
+              { label: "Ladda ned bankfilen", href: `/api/betalfil/${result.file.id}` },
+              { label: "Öppna Ekonomi", href: "/ekonomi?flik=utgifter" },
+            ],
+          }
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Kunde inte skapa bankfilen.";
+        updateConfirmCard(actionId, "avbruten", message);
+        reply(message);
+      }
+      break;
+    }
     case "anvand_leverantorsuppgifter": {
       // Återanvänder leverantörens VERIFIERADE uppgifter via samma tjänst som
       // UI:t – proveniens supplier_history, aldrig något AI:n angett själv.

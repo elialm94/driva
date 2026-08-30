@@ -55,6 +55,10 @@ import {
   requestSubmitSupplierPayment,
   requestCancelSupplierPayment,
   requestUseVerifiedSupplierDetails,
+  reviewDocumentExtractionResult,
+  updateSupplierInvoiceFieldResult,
+  requestGeneratePaymentFile,
+  getPaymentStatusResult,
   missingReceiptsResult,
   momsResult,
   offerCreateCustomer,
@@ -583,6 +587,97 @@ const specs: ToolSpec[] = [
       const id = str(args, "invoiceId");
       if (!id) return { ok: false, forModel: {}, error: "invoiceId krävs" };
       return fromDomain(requestUseVerifiedSupplierDetails(id), true);
+    },
+  },
+  {
+    requiresConfirmation: false,
+    risk: "READ_ONLY",
+    def: {
+      type: "function",
+      function: {
+        name: "review_document_extraction",
+        description:
+          "Visa vad Driva läst ur ett inkommande dokument (review document extraction): fält för fält med läge Säker/Kontrollera. Godkännandet görs av användaren i Kontrollera-vyn – verktyget ändrar inget.",
+        parameters: obj({ itemId: { type: "string", description: "Inboxpostens id" } }, ["itemId"]),
+      },
+    },
+    handler: (args) => {
+      const id = str(args, "itemId");
+      if (!id) return { ok: false, forModel: {}, error: "itemId krävs" };
+      return fromDomain(reviewDocumentExtractionResult(id));
+    },
+  },
+  {
+    requiresConfirmation: false,
+    risk: "SAFE_WRITE",
+    def: {
+      type: "function",
+      function: {
+        name: "update_supplier_invoice_field",
+        description:
+          "Uppdatera ETT säkert fält på en leverantörsfaktura (update supplier invoice field): description, dueDate (YYYY-MM-DD) eller invoiceNumber. Belopp rättas via bokföringen och betalningsuppgifter via kontrollflödet – hitta ALDRIG på bankgiro/konto.",
+        parameters: obj(
+          {
+            invoiceId: { type: "string" },
+            field: { type: "string", enum: ["description", "dueDate", "invoiceNumber"] },
+            value: { type: "string" },
+          },
+          ["invoiceId", "field", "value"]
+        ),
+      },
+    },
+    handler: (args) => {
+      const id = str(args, "invoiceId");
+      const field = str(args, "field");
+      const value = str(args, "value");
+      if (!id || !field || value == null) return { ok: false, forModel: {}, error: "invoiceId, field och value krävs" };
+      return fromDomain(updateSupplierInvoiceFieldResult(id, field, value));
+    },
+  },
+  {
+    requiresConfirmation: true,
+    risk: "CONFIRM_REQUIRED",
+    def: {
+      type: "function",
+      function: {
+        name: "generate_payment_file",
+        description:
+          "Be om bekräftelse att skapa en bankfil (pain.001) för en eller flera BOKFÖRDA leverantörsfakturor med verifierade betalningsuppgifter. Skapar INTE filen själv – visar bekräftelsekort. Filen laddas upp manuellt i internetbanken; skapad fil betyder varken skickad eller betald.",
+        parameters: obj(
+          {
+            invoiceIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Leverantörsfakturornas id:n (en fil kan bära flera betalningar)",
+            },
+          },
+          ["invoiceIds"]
+        ),
+      },
+    },
+    handler: (args) => {
+      const raw = args.invoiceIds;
+      const ids = Array.isArray(raw) ? raw.map((v) => String(v)).filter(Boolean) : [];
+      if (ids.length === 0) return { ok: false, forModel: {}, error: "invoiceIds krävs" };
+      return fromDomain(requestGeneratePaymentFile(ids), true);
+    },
+  },
+  {
+    requiresConfirmation: false,
+    risk: "READ_ONLY",
+    def: {
+      type: "function",
+      function: {
+        name: "get_payment_status",
+        description:
+          "Betalningsstatus för en leverantörsfaktura (get payment status): bokförd/ej, redo att betala, bankfil skapad, betald, avstämd – och exakta hinder om något blockerar.",
+        parameters: obj({ invoiceId: { type: "string" } }, ["invoiceId"]),
+      },
+    },
+    handler: (args) => {
+      const id = str(args, "invoiceId");
+      if (!id) return { ok: false, forModel: {}, error: "invoiceId krävs" };
+      return fromDomain(getPaymentStatusResult(id));
     },
   },
   {
