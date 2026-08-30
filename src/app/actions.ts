@@ -26,7 +26,7 @@ import {
 import { issueInvoice } from "@/lib/services/invoices";
 import { InvoiceNotReadyError } from "@/lib/invoices/validate";
 import { getInvoice, getQuoteByToken } from "@/lib/services/data";
-import { clearReminderSnooze, completeReminder, dismissReminder, snoozeReminderBy } from "@/lib/services/reminders";
+import { completeReminder, dismissReminder, snoozeReminderBy, unsnoozeReminder } from "@/lib/services/reminders";
 import { clearAttentionSnooze, snoozeAttention } from "@/lib/services/attention-state";
 import { snoozeDoneText } from "@/lib/reminders/when";
 import type { AttentionSnoozeChoice } from "@/lib/services/action-issue";
@@ -647,19 +647,23 @@ export async function snoozeReminderAction(
 ) {
   return withBusiness(
     async () => {
-      const reminder = snoozeReminderBy(reminderId, choice);
+      const { reminder, previousSnoozedUntil } = snoozeReminderBy(reminderId, choice);
       refresh();
       const until = reminder.snoozedUntil!;
-      return { until, toast: snoozeDoneText(until, new Date(), reminder.timezone) } as const;
+      return {
+        until,
+        toast: snoozeDoneText(until, new Date(), reminder.timezone),
+        previousSnoozedUntil: previousSnoozedUntil ?? null,
+      } as const;
     },
     { retry: false }
   );
 }
 
-export async function unsnoozeReminderAction(reminderId: string) {
+export async function unsnoozeReminderAction(reminderId: string, previousSnoozedUntil?: string | null) {
   await withBusiness(
     async () => {
-      clearReminderSnooze(reminderId);
+      unsnoozeReminder(reminderId, previousSnoozedUntil);
       refresh();
     },
     { retry: false }

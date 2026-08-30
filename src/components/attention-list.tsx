@@ -154,9 +154,12 @@ function ConfirmDialog({
 
 /* ----------------------------------- Overflow ----------------------------------- */
 
-type RowUndo = () => Promise<void>;
+type RowUndo = (previousSnoozedUntil?: string | null) => Promise<void>;
 type RowRun = (fn: () => Promise<unknown>, doneText: string, undo?: RowUndo) => void;
-type SnoozeRun = (fn: () => Promise<{ toast: string }>, undo: RowUndo) => void;
+type SnoozeRun = (
+  fn: () => Promise<{ toast: string; previousSnoozedUntil?: string | null }>,
+  undo: RowUndo
+) => void;
 
 /**
  * ⋯-menyn per rad: Visa X, Snooza (presets + Välj datum) och typspecifik
@@ -460,9 +463,17 @@ function ReminderCtas({
           { key: "imorgon" as const, label: "Imorgon" },
         ]}
         disabled={isPending}
-        onPreset={(key) => onSnooze(() => snoozeReminderAction(reminderId, key), () => unsnoozeReminderAction(reminderId))}
+        onPreset={(key) =>
+          onSnooze(
+            () => snoozeReminderAction(reminderId, key),
+            (previous) => unsnoozeReminderAction(reminderId, previous)
+          )
+        }
         onCustom={(value) =>
-          onSnooze(() => snoozeReminderAction(reminderId, value), () => unsnoozeReminderAction(reminderId))
+          onSnooze(
+            () => snoozeReminderAction(reminderId, value),
+            (previous) => unsnoozeReminderAction(reminderId, previous)
+          )
         }
       />
     </>
@@ -516,10 +527,13 @@ function AttentionRow({
     });
   }
 
-  function runSnooze(fn: () => Promise<{ toast: string }>, nextUndo: RowUndo) {
+  function runSnooze(
+    fn: () => Promise<{ toast: string; previousSnoozedUntil?: string | null }>,
+    nextUndo: RowUndo
+  ) {
     startTransition(async () => {
       const result = await fn();
-      onToast(result.toast, nextUndo);
+      onToast(result.toast, () => nextUndo(result.previousSnoozedUntil));
       onResolved(item.id);
       router.refresh();
     });

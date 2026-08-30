@@ -35,9 +35,9 @@ import {
   dismissReminder,
   listReminders,
   reminderVisibleFrom,
-  clearReminderSnooze,
   snoozeReminder,
   snoozeReminderBy,
+  unsnoozeReminder,
   updateReminder,
 } from "./services/reminders";
 import { getBusinessActions } from "./services/actions";
@@ -458,10 +458,10 @@ describe("påminnelser i åtgärdsmotorn", () => {
 
   it("snoozeReminderBy med tid: 2 september 14:30, ångra tar bort snoozen", () => {
     const rem = create({ kind: "date", date: "2026-08-29", time: "08:00" });
-    snoozeReminderBy(rem.id, { date: "2026-09-02", time: "14:30" }, NOW);
+    const first = snoozeReminderBy(rem.id, { date: "2026-09-02", time: "14:30" }, NOW);
     assert.equal(db().reminders.find((r) => r.id === rem.id)?.snoozedUntil, "2026-09-02T12:30:00.000Z");
     assert.ok(!attentionIds(NOW).includes(`reminder-${rem.id}`));
-    clearReminderSnooze(rem.id);
+    unsnoozeReminder(rem.id, first.previousSnoozedUntil);
     assert.equal(db().reminders.find((r) => r.id === rem.id)?.snoozedUntil, undefined);
     assert.ok(attentionIds(NOW).includes(`reminder-${rem.id}`));
   });

@@ -136,13 +136,19 @@ export function completeReminder(id: string, now = new Date()): Reminder {
 
 export type SnoozeChoice = "1h" | "imorgon" | { date: string; time?: string };
 
+export type SnoozeResult = {
+  reminder: Reminder;
+  previousSnoozedUntil?: string;
+};
+
 /**
  * Snabbval för Snooza-knappen: 1 timme (exakt), imorgon (morgon-dagsdelen)
  * eller valfritt datum. Utan time behålls påminnelsens klockslag (äldre
  * anrop). Med time används det valda klockslaget.
  */
-export function snoozeReminderBy(id: string, choice: SnoozeChoice, now = new Date()): Reminder {
+export function snoozeReminderBy(id: string, choice: SnoozeChoice, now = new Date()): SnoozeResult {
   const reminder = requireOwned(id);
+  const previousSnoozedUntil = reminder.snoozedUntil;
   const tz = reminder.timezone;
   let until: Date;
   if (choice === "1h") {
@@ -176,7 +182,8 @@ export function snoozeReminderBy(id: string, choice: SnoozeChoice, now = new Dat
     );
   }
   if (until.getTime() <= now.getTime()) throw new Error("Snooze-tidpunkten måste vara framåt.");
-  return snoozeReminder(id, until.toISOString());
+  const updated = snoozeReminder(id, until.toISOString());
+  return previousSnoozedUntil ? { reminder: updated, previousSnoozedUntil } : { reminder: updated };
 }
 
 export function snoozeReminder(id: string, untilIso: string): Reminder {
@@ -187,10 +194,18 @@ export function snoozeReminder(id: string, untilIso: string): Reminder {
   return reminder;
 }
 
-/** Ångra snooze – raden syns igen om den fortfarande är aktuell. */
-export function clearReminderSnooze(id: string): Reminder {
+/**
+ * Ångra snooze: återställ föregående tidpunkt, eller ta bort den så dueAt
+ * gäller igen. Samma semantik som reminder-klar – underlättar merge.
+ */
+export function unsnoozeReminder(id: string, previousSnoozedUntil?: string | null): Reminder {
   const reminder = requireOwned(id);
-  delete reminder.snoozedUntil;
+  if (previousSnoozedUntil) {
+    if (Number.isNaN(Date.parse(previousSnoozedUntil))) throw new Error("Ogiltig tidpunkt att återställa.");
+    reminder.snoozedUntil = new Date(previousSnoozedUntil).toISOString();
+  } else {
+    delete reminder.snoozedUntil;
+  }
   save();
   return reminder;
 }
