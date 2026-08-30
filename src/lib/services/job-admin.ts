@@ -1,4 +1,5 @@
 import { kr } from "../format";
+import { QUOTE_STATUS } from "../status-labels";
 import type { Job, Quote } from "../types";
 import { jobMoneySummary, nextPaymentPlanPartForJob } from "./attention";
 import { quoteSignature } from "./data";
@@ -92,7 +93,7 @@ export function jobAdminState(job: Job): JobAdminState {
     lifecycle === "klart" && remaining > 0 && approved ? "skapa_slutfaktura" : "skapa_faktura";
 
   if (quote?.status === "skickad") {
-    waitingLabel = "Väntar på BankID";
+    waitingLabel = QUOTE_STATUS.skickad.label;
   } else if (lifecycle === "klart") {
     if (!hasBillable && unpaid) waitingLabel = "Väntar på betalning";
     else if (fullyPaid) doneLabel = "Klart och betalt ✓";
@@ -108,7 +109,7 @@ export function jobAdminState(job: Job): JobAdminState {
   if (!quote && hasUninvoicedActuals) {
     nextStep = `${kr(money.registeredUninvoiced)} registrerat, inte fakturerat än.`;
   } else if (quote?.status === "skickad") {
-    nextStep = "Väntar på att kunden godkänner med BankID.";
+    nextStep = "Väntar på att kunden ska signera offerten.";
   } else if (quote?.status === "utkast") {
     nextStep = "Offerten är ett utkast – skicka den när den är klar.";
   } else if (quote?.status === "avbojd") {

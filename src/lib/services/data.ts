@@ -9,6 +9,7 @@ import type {
 } from "../types";
 import { docTotals, type DocTotals } from "../calc";
 import { dagarSedan, dagarTill } from "../format";
+import { QUOTE_STATUS } from "../status-labels";
 
 /* Små, väl använda uppslag och joins. */
 
@@ -241,20 +242,9 @@ export function effectiveQuoteStatus(quote: Quote): Quote["status"] {
   return quote.status;
 }
 
-/** Status-etikett för offerter – speglar flödet Utkast → Skickad → Väntar på BankID → Godkänd/Avböjd. */
+/** Status-etikett för offerter – central vokabulär (status-labels.ts), samma ord överallt. */
 export function quoteStatusLabel(quote: Quote): string {
-  switch (effectiveQuoteStatus(quote)) {
-    case "utkast":
-      return "Utkast";
-    case "skickad":
-      return "Väntar på BankID";
-    case "godkand":
-      return "Godkänd med BankID";
-    case "avbojd":
-      return "Avböjd";
-    case "utgangen":
-      return "Utgången";
-  }
+  return QUOTE_STATUS[effectiveQuoteStatus(quote)].label;
 }
 
 export function quoteWaitingDays(quote: Quote): number {

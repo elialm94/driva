@@ -6,6 +6,7 @@ import { normalizePersonnummer } from "../personnummer";
 import { invoiceOutstanding, isOpenReceivable, isOverdue } from "./data";
 import { CustomerValidationError, customerContactFieldErrors, personnummerFieldError, sanitizePropertyDesignations } from "../customer-validation";
 import { addWorkLocation } from "./work-locations";
+import { QUOTE_STATUS } from "../status-labels";
 
 /**
  * Namn är det enda som krävs för att skapa en kund. E-post, telefon, adress,
@@ -144,7 +145,7 @@ export function findCustomersByName(name: string): Customer[] {
 
 export const CUSTOMER_PAGE_SIZE = 50;
 
-export type CustomerStatusKey = "bankid" | "uppdrag" | "ingen";
+export type CustomerStatusKey = "signering" | "uppdrag" | "ingen";
 export type CustomerSort = "namn" | "aktivitet" | "attBetala";
 export type CustomerKindFilter = "alla" | "privat" | "foretag";
 export type CustomerActivityFilter = "alla" | "uppdrag" | "ingen";
@@ -240,7 +241,8 @@ function customerStatsById(): Map<string, CustomerStats> {
 }
 
 function customerStatus(s: CustomerStats): { key: CustomerStatusKey; label: string } {
-  if (s.waitingQuotes > 0) return { key: "bankid", label: "Väntar på BankID" };
+  // Central vokabulär: kunden har en skickad offert → vi väntar på signering.
+  if (s.waitingQuotes > 0) return { key: "signering", label: QUOTE_STATUS.skickad.label };
   if (s.activeJobs > 0) return { key: "uppdrag", label: "Aktivt uppdrag" };
   return { key: "ingen", label: "—" };
 }

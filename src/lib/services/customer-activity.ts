@@ -3,6 +3,7 @@ import type { Invoice, Job, Quote } from "../types";
 import { countsTowardInvoiced, invoiceTotals, isOpenReceivable, quoteTotals } from "./data";
 import { invoiceHref, quoteHref } from "../nav";
 import { invoiceNumberLabel } from "../invoices/display";
+import { INVOICE_CREDIT_NOTE, INVOICE_STATUS, JOB_STATUS, QUOTE_STATUS } from "../status-labels";
 import type { CustomerActivityRow, CustomerMoneyLine } from "../customer-activity-model";
 
 export type { CustomerActivityKind, CustomerActivityRow, CustomerMoneyLine } from "../customer-activity-model";
@@ -18,32 +19,18 @@ function quoteTitle(quote: Quote): string {
 }
 
 function quoteStatusLabel(quote: Quote): string {
-  switch (quote.status) {
-    case "utkast":
-      return "Utkast";
-    case "skickad":
-      return "Väntar på BankID";
-    case "godkand":
-      return "Godkänd";
-    case "avbojd":
-      return "Avböjd";
-    case "utgangen":
-      return "Utgången";
-  }
+  return QUOTE_STATUS[quote.status].label;
 }
 
 function invoiceStatusLabel(invoice: Invoice): string {
-  if (invoice.type === "kredit") return "Kreditfaktura";
-  if (invoice.status === "utkast") return "Utkast";
-  if (invoice.status === "betald") return "Betald";
-  if (invoice.status === "krediterad") return "Krediterad";
-  return "Skickad";
+  if (invoice.type === "kredit") return INVOICE_CREDIT_NOTE.label;
+  return INVOICE_STATUS[invoice.status].label;
 }
 
 function jobStatusLabel(job: Job): string {
-  if (job.status === "klart") return "Klart";
-  if (job.status === "pagar") return "Pågår";
-  return "Kommande";
+  if (job.status === "klart") return JOB_STATUS.klart.label;
+  if (job.status === "pagar") return JOB_STATUS.pagar.label;
+  return JOB_STATUS.planerat.label;
 }
 
 /** Kronologisk kundaktivitet, nyast först. Byggs från objekten – inte från fritextloggen. */

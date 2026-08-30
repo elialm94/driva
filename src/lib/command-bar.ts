@@ -270,9 +270,9 @@ export const COMMANDS: CommandDef[] = [
   {
     id: "show_open_quotes",
     label: "Visa öppna offerter",
-    hint: "Skickade offerter som väntar på BankID",
-    aliases: ["visa öppna offerter", "öppna offerter", "offerter som väntar", "väntar på bankid", "skickade offerter"],
-    keywords: ["offerter", "bankid", "väntar", "svar"],
+    hint: "Skickade offerter som väntar på signering",
+    aliases: ["visa öppna offerter", "öppna offerter", "offerter som väntar", "väntar på signering", "väntar på bankid", "skickade offerter"],
+    keywords: ["offerter", "signering", "bankid", "väntar", "svar"],
     icon: "clock",
     risk: "READ_ONLY",
     requiredContext: null,
