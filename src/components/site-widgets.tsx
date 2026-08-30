@@ -843,7 +843,13 @@ function SectionEditor({
   const [igError, setIgError] = useState<string | null>(null);
   const [ctaDest, setCtaDest] = useState<WebsiteCtaDestination>(ctaConfig?.destination ?? "kontakt");
   const [ctaBtn, setCtaBtn] = useState(ctaConfig?.label ?? defaultCtaLabel(ctaConfig?.destination ?? "kontakt"));
-  const [quoteDraft, setQuoteDraft] = useState<{ index: number | "new"; title: string; text: string; rating?: number } | null>(null);
+  const [quoteDraft, setQuoteDraft] = useState<{
+    index: number | "new";
+    title: string;
+    text: string;
+    rating?: number;
+    location?: string;
+  } | null>(null);
   const [image, setImage] = useState<string | undefined>(undefined);
   // Sparad bild på servern – jämförelsepunkt så att oförändrade bilder inte skickas om vid spara.
   const [baselineImage, setBaselineImage] = useState<string | undefined>(undefined);
@@ -1066,9 +1072,15 @@ function SectionEditor({
               busy={itemsPending}
               onEdit={(index) => {
                 const item = list[index];
-                setQuoteDraft({ index, title: item.title, text: item.text, rating: item.rating });
+                setQuoteDraft({
+                  index,
+                  title: item.title,
+                  text: item.text,
+                  rating: item.rating,
+                  location: item.location,
+                });
               }}
-              onAdd={() => setQuoteDraft({ index: "new", title: "", text: "" })}
+              onAdd={() => setQuoteDraft({ index: "new", title: "", text: "", location: "" })}
               onRemove={(index) => {
                 startItems(async () => {
                   const result = await removeTestimonialItemAction(sectionId, index);
@@ -1205,6 +1217,24 @@ function SectionEditor({
             router.refresh();
           }}
           sectionId={sectionId}
+        />
+      ) : null}
+
+      {isTestimonials ? (
+        <TestimonialItemModal
+          draft={quoteDraft}
+          sectionId={sectionId}
+          onClose={() => setQuoteDraft(null)}
+          onSaved={(saved) => {
+            setList((prev) =>
+              saved.index === "new"
+                ? [...prev, saved.item]
+                : prev.map((it, i) => (i === saved.index ? saved.item : it)),
+            );
+            setQuoteDraft(null);
+            setListError(null);
+            router.refresh();
+          }}
         />
       ) : null}
       {isTestimonials && quoteDraft ? (

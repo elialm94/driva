@@ -131,11 +131,26 @@ describe("sektionsbyggaren", () => {
 
   it("omdömen är manuella och redo för Google senare", () => {
     const section = addWebsiteSection("omdomen");
-    addTestimonialItem(section.id, { title: "Anna", text: "Superjobb.", rating: 5 });
+    addTestimonialItem(section.id, { title: "Anna", text: "Superjobb.", rating: 5, location: "Stockholm" });
     const item = db().website!.sections.find((s) => s.id === section.id)!.items![0];
     assert.equal(item.source, "manual");
     assert.equal(item.rating, 5);
+    assert.equal(item.location, "Stockholm");
     assert.throws(() => addTestimonialItem(section.id, { title: "Bo", text: "Ok", rating: 9 }), /1–5/);
+  });
+
+  it("sektionsändringar rör inte temautkastet", () => {
+    const site = db().website!;
+    site.draftDesign = { themeId: "modern", accent: "bla" };
+    addWebsiteSection("cta");
+    assert.deepEqual(db().website!.draftDesign, { themeId: "modern", accent: "bla" });
+  });
+
+  it("nya sektioner läggs in före kontaktformuläret", () => {
+    const quotes = addWebsiteSection("omdomen");
+    const types = db().website!.sections.map((s) => s.type);
+    assert.equal(types.at(-1), "kontakt");
+    assert.ok(types.indexOf(quotes.type) < types.lastIndexOf("kontakt"));
   });
 
   it("kontaktuppgifter kommer från företagets kontakt, inte om-skrivning", () => {

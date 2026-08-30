@@ -1,571 +1,425 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { Plus, Star, Trash2 } from "lucide-react";
-import { buttonClasses, cx } from "./ui";
-import { Modal } from "./modal";
+import { useMemo, useState, useTransition } from "react";
 import {
-  addWebsiteSectionAction,
-  addTestimonialItemAction,
-  beginInstagramConnectAction,
-  disconnectInstagramAction,
-  instagramStatusAction,
-  removeWebsiteSectionAction,
-  removeTestimonialItemAction,
-  updateTestimonialItemAction,
+  addTestimonialItem,
+  addWebsiteSection,
+  beginInstagramConnect,
+  disconnectInstagram,
+  refreshInstagramPosts,
+  removeTestimonialItem,
+  removeWebsiteSection,
+  reorderTestimonialItems,
+  updateSection,
+  updateTestimonialItem,
 } from "@/app/actions";
-import type { WebsiteCtaDestination, WebsiteSection, WebsiteSectionItem } from "@/lib/types";
-import { addableTypesFor, canDeleteSection } from "@/lib/website-sections";
-import type { InstagramProviderState } from "@/lib/instagram";
-import { SETTINGS_HREF } from "@/lib/settings-routes";
-import { FieldError, focusField, invalidFieldCls } from "./form-validation";
+import { Button, Input, Label, Textarea } from "@/components/ui";
+import { ADDABLE_SECTION_TYPES, SECTION_LABELS, type AddableSectionType } from "@/lib/website-sections";
+import type { WebsiteSection } from "@/lib/types";
 
-const DESTINATIONS: { id: WebsiteCtaDestination; label: string }[] = [
-  { id: "kontakt", label: "Kontaktformuläret" },
-  { id: "phone", label: "Telefon" },
-  { id: "email", label: "E-post" },
-];
-
-export function AddSectionButton({ sections }: { sections: Pick<WebsiteSection, "type">[] }) {
-  const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const router = useRouter();
-  const options = addableTypesFor(sections);
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex w-full items-center justify-center gap-1.5 border-t border-line/70 px-4 py-3 text-[13px] font-medium text-soft transition-colors hover:bg-ink/4 hover:text-ink"
-      >
-        <Plus className="size-4" />
-        Lägg till sektion
-      </button>
-      <Modal open={open} onClose={() => setOpen(false)} title="Lägg till sektion" size="md">
-        <div className="space-y-1 px-2 py-3">
-          {options.length === 0 ? (
-            <p className="px-4 py-6 text-center text-[14px] text-soft">Alla sektionstyper finns redan på hemsidan.</p>
-          ) : (
-            options.map((option) => (
-              <button
-                key={option.type}
-                type="button"
-                disabled={pending}
-                onClick={() => {
-                  startTransition(async () => {
-                    const result = await addWebsiteSectionAction(option.type);
-                    if (result.ok === false) {
-                      setError(result.error);
-                      return;
-                    }
-                    setOpen(false);
-                    router.refresh();
-                  });
-                }}
-                className="flex w-full flex-col items-start rounded-xl px-4 py-3 text-left hover:bg-ink/5 disabled:opacity-50"
-              >
-                <span className="text-[14px] font-medium">{option.label}</span>
-                <span className="mt-0.5 text-[13px] text-soft">{option.description}</span>
-              </button>
-            ))
-          )}
-          {error ? <p className="px-4 pb-2 text-[13px] text-danger">{error}</p> : null}
-        </div>
-      </Modal>
-    </>
-  );
-}
-
-export function DeleteSectionButton({
-  sectionId,
-  typeLabel,
-  type,
+export function AddSectionButton({
+  addableTypes,
+  onAdded,
 }: {
-  sectionId: string;
-  typeLabel: string;
-  type: WebsiteSection["type"];
+  addableTypes: AddableSectionType[];
+  onAdded: (sectionId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const router = useRouter();
-  if (!canDeleteSection({ type })) return null;
+  const [pending, start] = useTransition();
+
+  if (addableTypes.length === 0) {
+    return (
+      <p className="mt-3 text-xs text-muted">
+        Alla extra sektioner är redan tillagda. Text och call to action kan läggas till flera gånger.
+      </p>
+    );
+  }
 
   return (
-    <>
+    <div className="relative mt-3">
       <button
         type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen(true);
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-        className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-soft hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-        aria-label={`Ta bort ${typeLabel.toLowerCase()}`}
+        onClick={() => setOpen((v) => !v)}
+        className="w-full rounded-2xl border border-dashed border-ink/20 px-3 py-2.5 text-sm font-medium text-ink hover:bg-paper"
       >
-        <Trash2 className="size-4" />
+        + Lägg till sektion
       </button>
-      <Modal open={open} onClose={() => setOpen(false)} title="Ta bort sektionen?" size="sm">
-        <div className="px-6 py-5">
-          <p className="text-[14px] leading-relaxed text-soft">
-            {typeLabel} tas bort från hemsidan. Det här går inte att ångra.
+      {open ? (
+        <div className="absolute left-0 right-0 z-20 mt-2 rounded-2xl border border-line bg-white p-2 shadow-lg">
+          <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
+            Välj sektion
           </p>
-          {error ? <p className="mt-3 text-[13px] text-danger">{error}</p> : null}
-          <div className="mt-5 flex justify-end gap-2">
-            <button type="button" className={buttonClasses("ghost")} onClick={() => setOpen(false)}>
-              Avbryt
-            </button>
+          {addableTypes.map((type) => (
             <button
+              key={type}
               type="button"
-              className={buttonClasses("danger")}
               disabled={pending}
-              onClick={() => {
-                startTransition(async () => {
-                  const result = await removeWebsiteSectionAction(sectionId);
-                  if (result.ok === false) {
-                    setError(result.error);
-                    return;
-                  }
+              onClick={() =>
+                start(async () => {
+                  const added = await addWebsiteSection(type);
                   setOpen(false);
-                  router.refresh();
-                });
-              }}
+                  onAdded(added.id);
+                })
+              }
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm hover:bg-paper disabled:opacity-50"
             >
-              {pending ? "Tar bort …" : "Ta bort"}
-            </button>
-          </div>
-        </div>
-      </Modal>
-    </>
-  );
-}
-
-export function ImagePositionField({
-  value,
-  onChange,
-}: {
-  value: "left" | "right";
-  onChange: (next: "left" | "right") => void;
-}) {
-  return (
-    <div>
-      <p className="mb-1.5 text-[13px] font-medium text-soft">Bildens plats</p>
-      <div className="grid grid-cols-2 gap-2">
-        {(
-          [
-            ["left", "Till vänster"],
-            ["right", "Till höger"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => onChange(id)}
-            className={cx(
-              "rounded-xl border px-3 py-2 text-[13px] font-medium",
-              value === id ? "border-accent bg-accent-soft text-ink" : "border-line-strong text-soft hover:bg-ink/4",
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export function ContactDetailsFields({
-  hours,
-  onHours,
-  phone,
-  email,
-  address,
-}: {
-  hours: string;
-  onHours: (next: string) => void;
-  phone: string;
-  email: string;
-  address: string;
-}) {
-  return (
-    <div className="space-y-3">
-      <div className="rounded-xl border border-line bg-canvas/50 px-3.5 py-3 text-[13px] leading-relaxed text-soft">
-        <p className="font-medium text-ink">Från Inställningar → Kontakt</p>
-        <p className="mt-1">{phone || "Ingen telefon"} · {email || "Ingen e-post"}</p>
-        {address ? <p className="mt-0.5">{address}</p> : null}
-        <a href={SETTINGS_HREF.foretag} className="mt-2 inline-block font-medium text-accent hover:underline">
-          Ändra i Inställningar →
-        </a>
-      </div>
-      <div>
-        <label className="mb-1.5 block text-[13px] font-medium text-soft">Öppettider (valfritt)</label>
-        <input
-          value={hours}
-          onChange={(e) => onHours(e.target.value)}
-          placeholder="T.ex. Vardagar 8–16"
-          className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
-        />
-      </div>
-    </div>
-  );
-}
-
-export function CtaFields({
-  destination,
-  label,
-  onDestination,
-  onLabel,
-}: {
-  destination: WebsiteCtaDestination;
-  label: string;
-  onDestination: (next: WebsiteCtaDestination) => void;
-  onLabel: (next: string) => void;
-}) {
-  return (
-    <div className="space-y-3">
-      <div>
-        <label className="mb-1.5 block text-[13px] font-medium text-soft">Knappen leder till</label>
-        <div className="grid gap-2">
-          {DESTINATIONS.map((d) => (
-            <button
-              key={d.id}
-              type="button"
-              onClick={() => onDestination(d.id)}
-              className={cx(
-                "rounded-xl border px-3 py-2 text-left text-[13px] font-medium",
-                destination === d.id ? "border-accent bg-accent-soft text-ink" : "border-line-strong text-soft hover:bg-ink/4",
-              )}
-            >
-              {d.label}
+              <span>{SECTION_LABELS[type]}</span>
+              {ADDABLE_SECTION_TYPES.find((item) => item.type === type)?.hint ? (
+                <span className="max-w-[55%] text-right text-[11px] text-muted">
+                  {ADDABLE_SECTION_TYPES.find((item) => item.type === type)?.hint}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
-      </div>
-      <div>
-        <label className="mb-1.5 block text-[13px] font-medium text-soft">Knapptext</label>
-        <input
-          value={label}
-          onChange={(e) => onLabel(e.target.value)}
-          maxLength={40}
-          className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
-        />
-      </div>
-    </div>
-  );
-}
-
-export function InstagramFields({
-  sectionId,
-  handle,
-  limit,
-  onHandle,
-  onLimit,
-}: {
-  sectionId: string;
-  handle: string;
-  limit: number;
-  onHandle: (next: string) => void;
-  onLimit: (next: number) => void;
-}) {
-  const [status, setStatus] = useState<InstagramProviderState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const router = useRouter();
-
-  useEffect(() => {
-    let cancelled = false;
-    instagramStatusAction(sectionId).then((s) => {
-      if (!cancelled && s) setStatus(s);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [sectionId]);
-
-  return (
-    <div className="space-y-3">
-      <div>
-        <label className="mb-1.5 block text-[13px] font-medium text-soft">Instagram-konto</label>
-        <input
-          value={handle.startsWith("@") || !handle ? handle && `@${handle.replace(/^@/, "")}` : `@${handle}`}
-          onChange={(e) => onHandle(e.target.value.replace(/^@/, ""))}
-          placeholder="@dittforetag"
-          className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
-        />
-      </div>
-      <div>
-        <label className="mb-1.5 block text-[13px] font-medium text-soft">Visa senaste</label>
-        <select
-          value={limit}
-          onChange={(e) => onLimit(Number(e.target.value))}
-          className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
-        >
-          <option value={3}>3</option>
-          <option value={6}>6</option>
-          <option value={9}>9</option>
-        </select>
-      </div>
-      {status?.connected ? (
-        <p className="text-[13px] text-ok">Anslutet{status.handle ? ` som @${status.handle}` : ""}.</p>
-      ) : (
-        <p className="text-[13px] leading-relaxed text-soft">
-          Inte anslutet. Driva skrapar inte Instagram – en Meta-app med INSTAGRAM_APP_ID och
-          INSTAGRAM_APP_SECRET krävs innan Anslut Instagram fungerar.
-        </p>
-      )}
-      {error ? <p className="text-[13px] text-danger">{error}</p> : null}
-      <div className="flex flex-wrap gap-2">
-        {status?.connected ? (
-          <button
-            type="button"
-            className={buttonClasses("secondary", "sm")}
-            disabled={pending}
-            onClick={() =>
-              startTransition(async () => {
-                const result = await disconnectInstagramAction(sectionId);
-                if (result && result.ok === false) setError(result.error);
-                else router.refresh();
-              })
-            }
-          >
-            Koppla från
-          </button>
-        ) : (
-          <button
-            type="button"
-            className={buttonClasses("secondary", "sm")}
-            disabled={pending}
-            onClick={() =>
-              startTransition(async () => {
-                const result = await beginInstagramConnectAction(sectionId, handle);
-                if (result.ok === false) {
-                  setError(result.error);
-                  return;
-                }
-                window.location.href = result.url;
-              })
-            }
-          >
-            Anslut Instagram
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function TestimonialsEditor({
-  sectionId,
-  items,
-  onItems,
-}: {
-  sectionId: string;
-  items: WebsiteSectionItem[];
-  onItems: (next: WebsiteSectionItem[]) => void;
-}) {
-  const [draft, setDraft] = useState<{ index: number | "new"; title: string; text: string; location: string; rating?: number } | null>(
-    null,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const router = useRouter();
-
-  return (
-    <div>
-      <label className="mb-1.5 block text-[13px] font-medium text-soft">Omdömen</label>
-      <div className="space-y-1.5">
-        {items.map((item, index) => (
-          <div key={`${item.title}-${index}`} className="flex items-center gap-2 rounded-xl border border-line bg-canvas/40 px-3 py-2">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[14px] font-medium">{item.title}</p>
-              <p className="truncate text-[12px] text-muted">{item.text}</p>
-            </div>
-            <button
-              type="button"
-              className="rounded-lg p-1.5 text-[12px] font-medium text-muted hover:bg-ink/5 hover:text-ink"
-              onClick={() =>
-                setDraft({
-                  index,
-                  title: item.title,
-                  text: item.text,
-                  location: item.location ?? "",
-                  rating: item.rating,
-                })
-              }
-            >
-              Redigera
-            </button>
-            <button
-              type="button"
-              className="rounded-lg p-1.5 text-muted hover:bg-danger-soft hover:text-danger"
-              disabled={pending}
-              onClick={() =>
-                startTransition(async () => {
-                  const result = await removeTestimonialItemAction(sectionId, index);
-                  if (result.error) {
-                    setError(result.error);
-                    return;
-                  }
-                  onItems(items.filter((_, i) => i !== index));
-                  router.refresh();
-                })
-              }
-              aria-label="Ta bort omdöme"
-            >
-              <Trash2 className="size-3.5" />
-            </button>
-          </div>
-        ))}
-      </div>
-      {error ? <p className="mt-2 text-[13px] text-danger">{error}</p> : null}
-      <button
-        type="button"
-        onClick={() => setDraft({ index: "new", title: "", text: "", location: "", rating: 5 })}
-        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-line-strong py-2.5 text-[13px] font-medium text-soft hover:border-accent hover:text-ink"
-      >
-        <Plus className="size-4" />
-        Lägg till omdöme
-      </button>
-      {draft ? (
-        <TestimonialForm
-          draft={draft}
-          sectionId={sectionId}
-          onClose={() => setDraft(null)}
-          onSaved={(saved) => {
-            onItems(
-              saved.index === "new"
-                ? [...items, saved.item]
-                : items.map((it, i) => (i === saved.index ? saved.item : it)),
-            );
-            setDraft(null);
-            setError(null);
-            router.refresh();
-          }}
-        />
       ) : null}
     </div>
   );
 }
 
-function TestimonialForm({
-  draft,
-  sectionId,
-  onClose,
-  onSaved,
-}: {
-  draft: { index: number | "new"; title: string; text: string; location: string; rating?: number };
-  sectionId: string;
-  onClose: () => void;
-  onSaved: (saved: { index: number | "new"; item: WebsiteSectionItem }) => void;
-}) {
-  const [title, setTitle] = useState(draft.title);
-  const [text, setText] = useState(draft.text);
-  const [location, setLocation] = useState(draft.location);
-  const [rating, setRating] = useState<number | undefined>(draft.rating);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+export const AddSectionPicker = AddSectionButton;
 
-  function save() {
-    if (!title.trim()) {
-      setError("Ange namnet på personen.");
-      focusField("omdome-namn");
-      return;
-    }
-    if (!text.trim()) {
-      setError("Skriv omdömet.");
-      return;
-    }
-    const item: WebsiteSectionItem = { title: title.trim(), text: text.trim(), source: "manual" };
-    if (location.trim()) item.location = location.trim();
-    if (rating) item.rating = rating;
-    startTransition(async () => {
-      if (draft.index === "new") {
-        const result = await addTestimonialItemAction(sectionId, item);
-        if (result.ok === false) {
-          setError(result.error);
-          return;
-        }
-        onSaved({ index: "new", item });
-      } else {
-        const result = await updateTestimonialItemAction(sectionId, draft.index, {
-          title: item.title,
-          text: item.text,
-          location: item.location ?? null,
-          rating: item.rating ?? null,
-        });
-        if (result.ok === false) {
-          setError(result.error);
-          return;
-        }
-        onSaved({ index: draft.index, item });
-      }
-    });
+export function DeleteSectionButton({
+  section,
+  onDeleted,
+}: {
+  section: WebsiteSection;
+  onDeleted: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [pending, start] = useTransition();
+
+  if (section.type === "hero") return null;
+
+  if (!confirming) {
+    return (
+      <button type="button" onClick={() => setConfirming(true)} className="text-[11px] text-red-700 hover:underline">
+        Ta bort
+      </button>
+    );
   }
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title={draft.index === "new" ? "Lägg till omdöme" : "Redigera omdöme"}
-      size="md"
-      footer={
-        <div className="flex justify-end gap-2">
-          <button type="button" className={buttonClasses("ghost")} onClick={onClose}>
-            Avbryt
-          </button>
-          <button type="button" className={buttonClasses("primary")} disabled={pending} onClick={save}>
-            {pending ? "Sparar …" : "Spara omdöme"}
-          </button>
-        </div>
-      }
-    >
-      <div className="space-y-4 px-6 py-5">
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="omdome-namn">
-            Namn
-          </label>
-          <input
-            id="omdome-namn"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Anna"
-            className={cx("w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent", error && !title.trim() && invalidFieldCls)}
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-soft">Omdöme</label>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={3}
-            placeholder="Otroligt nöjda med vårt nya kök."
-            className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] leading-relaxed focus:border-accent"
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-[13px] font-medium text-soft">Ort (valfritt)</label>
-          <input
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            placeholder="Stockholm"
-            className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
-          />
-        </div>
-        <div>
-          <p className="mb-1.5 text-[13px] font-medium text-soft">Betyg (valfritt)</p>
-          <div className="flex gap-1">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button key={n} type="button" onClick={() => setRating(rating === n ? undefined : n)} className="rounded-lg p-1 text-muted hover:text-ink" aria-label={`${n} stjärnor`}>
-                <Star className={cx("size-5", rating && n <= rating ? "fill-current text-accent" : "")} />
-              </button>
-            ))}
-          </div>
-        </div>
-        {error ? <FieldError>{error}</FieldError> : null}
-      </div>
-    </Modal>
+    <span className="inline-flex items-center gap-2 text-[11px]">
+      <span className="text-red-700">Ta bort sektionen?</span>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() =>
+          start(async () => {
+            await removeWebsiteSection(section.id);
+            onDeleted();
+          })
+        }
+        className="font-semibold text-red-700 hover:underline disabled:opacity-50"
+      >
+        Ja, ta bort
+      </button>
+      <button type="button" onClick={() => setConfirming(false)} className="text-muted hover:underline">
+        Avbryt
+      </button>
+    </span>
   );
 }
+
+export const DeleteSectionDialog = DeleteSectionButton;
+
+export function ImagePositionField({
+  section,
+}: {
+  section: WebsiteSection;
+}) {
+  if (section.type !== "text" && section.type !== "om") return null;
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-medium text-muted">Bildplacering</span>
+      <select
+        defaultValue={section.imagePosition ?? "right"}
+        onChange={(event) => void updateSection(section.id, { imagePosition: event.target.value as "left" | "right" })}
+        className="w-full rounded-2xl border border-line bg-paper px-4 py-3 text-sm"
+      >
+        <option value="right">Bild till höger</option>
+        <option value="left">Bild till vänster</option>
+      </select>
+    </label>
+  );
+}
+
+export function ContactDetailsFields({
+  section,
+  fallbackPhone,
+  fallbackEmail,
+  fallbackAddress,
+  fallbackCity,
+}: {
+  section: WebsiteSection;
+  fallbackPhone?: string;
+  fallbackEmail?: string;
+  fallbackAddress?: string;
+  fallbackCity?: string;
+}) {
+  if (section.type !== "kontaktuppgifter") return null;
+  return (
+    <div className="space-y-3 rounded-2xl border border-line bg-paper/70 p-3 text-sm">
+      <p className="text-xs text-muted">
+        Telefon, e-post och adress hämtas från Inställningar → Kontakt. Ändra där så uppdateras hemsidan.
+      </p>
+      <p>
+        <span className="text-muted">Telefon:</span> {fallbackPhone || "Saknas"}
+      </p>
+      <p>
+        <span className="text-muted">E-post:</span> {fallbackEmail || "Saknas"}
+      </p>
+      <p>
+        <span className="text-muted">Adress:</span> {[fallbackAddress, fallbackCity].filter(Boolean).join(", ") || "Saknas"}
+      </p>
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-medium text-muted">Öppettider (valfritt)</span>
+        <Input defaultValue={section.hours ?? ""} onBlur={(event) => void updateSection(section.id, { hours: event.target.value })} />
+      </label>
+    </div>
+  );
+}
+
+export const ContactDetailsEditor = ContactDetailsFields;
+
+export function CtaFields({ section }: { section: WebsiteSection }) {
+  if (section.type !== "cta") return null;
+  const cta = section.cta ?? { label: "Kontakta oss", destination: "contact" as const };
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-medium text-muted">Knapptext</span>
+        <Input defaultValue={cta.label} onBlur={(event) => void updateSection(section.id, { cta: { ...cta, label: event.target.value } })} />
+      </label>
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-medium text-muted">Knappen går till</span>
+        <select
+          defaultValue={cta.destination}
+          onChange={(event) =>
+            void updateSection(section.id, {
+              cta: { ...cta, destination: event.target.value as "contact" | "phone" | "email" },
+            })
+          }
+          className="w-full rounded-2xl border border-line bg-paper px-4 py-3 text-sm"
+        >
+          <option value="contact">Kontaktformulär</option>
+          <option value="phone">Telefon</option>
+          <option value="email">E-post</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
+export function InstagramFields({
+  section,
+  status,
+}: {
+  section: WebsiteSection;
+  status?: { status: string; setupSteps?: string[] };
+}) {
+  const [pending, start] = useTransition();
+  if (section.type !== "instagram") return null;
+  const ig = section.instagram;
+  const connected = ig?.connected;
+  const needsCredentials = status?.status === "needs_credentials";
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-line bg-paper/70 p-3">
+      <p className="text-xs text-muted">
+        Visar senaste inlägg via Instagrams officiella API. Driva skrapar inte Instagram.
+      </p>
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-medium text-muted">Konto</span>
+        <Input
+          defaultValue={ig?.handle ?? ""}
+          placeholder="@dittforetag"
+          onBlur={(event) =>
+            void updateSection(section.id, {
+              instagram: { ...(ig ?? { connected: false, postCount: 6, posts: [] }), handle: event.target.value },
+            })
+          }
+        />
+      </label>
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-medium text-muted">Antal inlägg</span>
+        <Input
+          type="number"
+          min={3}
+          max={12}
+          defaultValue={ig?.postCount ?? 6}
+          onBlur={(event) =>
+            void updateSection(section.id, {
+              instagram: { ...(ig ?? { connected: false, postCount: 6, posts: [] }), postCount: Number(event.target.value) || 6 },
+            })
+          }
+        />
+      </label>
+      {needsCredentials && status?.setupSteps?.length ? (
+        <ol className="list-decimal space-y-1 pl-5 text-xs text-muted">
+          {status.setupSteps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={pending || needsCredentials}
+          onClick={() =>
+            start(async () => {
+              const result = await beginInstagramConnect(section.id);
+              if (result.ok && result.url) window.location.href = result.url;
+            })
+          }
+        >
+          {connected ? "Anslut igen" : "Anslut Instagram"}
+        </Button>
+        {connected ? (
+          <>
+            <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => start(() => refreshInstagramPosts(section.id))}>
+              Uppdatera
+            </Button>
+            <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => start(() => disconnectInstagram(section.id))}>
+              Koppla från
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {connected && ig?.posts?.length ? (
+        <p className="text-xs text-muted">{ig.posts.length} inlägg hämtade. De syns på sajten efter publicering.</p>
+      ) : connected ? (
+        <p className="text-xs text-muted">Kontot är anslutet men inga inlägg hämtades. Kontrollera att kontot är ett professionellt Instagram-konto.</p>
+      ) : (
+        <p className="text-xs text-muted">Sektionen är redo. Inga inlägg visas publikt förrän Instagram är anslutet.</p>
+      )}
+    </div>
+  );
+}
+
+export const InstagramEditor = InstagramFields;
+
+function TestimonialForm({
+  sectionId,
+  initial,
+  onClose,
+}: {
+  sectionId: string;
+  initial?: { id?: string; title?: string; body?: string; rating?: number };
+  onClose: () => void;
+}) {
+  const [pending, start] = useTransition();
+  return (
+    <form
+      className="space-y-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        const payload = {
+          title: String(form.get("title") ?? ""),
+          body: String(form.get("body") ?? ""),
+          rating: Number(form.get("rating") || 0) || undefined,
+        };
+        start(async () => {
+          if (initial?.id) await updateTestimonialItem(sectionId, initial.id, payload);
+          else await addTestimonialItem(sectionId, payload);
+          onClose();
+        });
+      }}
+    >
+      <label className="block">
+        <Label>Namn</Label>
+        <Input name="title" required defaultValue={initial?.title} />
+      </label>
+      <label className="block">
+        <Label>Omdöme</Label>
+        <Textarea name="body" required rows={4} defaultValue={initial?.body} />
+      </label>
+      <label className="block">
+        <Label>Betyg (1–5, valfritt)</Label>
+        <Input name="rating" type="number" min={1} max={5} defaultValue={initial?.rating ?? ""} />
+      </label>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="ghost" onClick={onClose}>Avbryt</Button>
+        <Button type="submit" disabled={pending}>{pending ? "Sparar…" : "Spara"}</Button>
+      </div>
+    </form>
+  );
+}
+
+export const TestimonialItemModal = TestimonialForm;
+
+export function TestimonialsEditor({
+  section,
+  onItemsChange,
+}: {
+  section: WebsiteSection;
+  onItemsChange: (items: WebsiteSection["items"]) => void;
+}) {
+  const [editing, setEditing] = useState<WebsiteSection["items"][number] | "new" | null>(null);
+  const [pending, start] = useTransition();
+  const items = useMemo(() => section.items ?? [], [section.items]);
+  if (section.type !== "omdomen") return null;
+
+  return (
+    <div className="space-y-3">
+      {items.map((item, index) => (
+        <div key={item.id} className="rounded-2xl border border-line bg-white p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">{item.title}</p>
+              {item.rating ? <p className="text-xs text-muted">{"★".repeat(item.rating)}</p> : null}
+              <p className="mt-1 text-sm text-ink/80">{item.body}</p>
+            </div>
+            <div className="flex shrink-0 flex-col gap-1 text-right">
+              <button type="button" className="text-xs text-accent hover:underline" onClick={() => setEditing(item)}>Redigera</button>
+              <button
+                type="button"
+                className="text-xs text-muted hover:underline"
+                disabled={index === 0 || pending}
+                onClick={() =>
+                  start(async () => {
+                    const next = [...items];
+                    [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                    await reorderTestimonialItems(section.id, next.map((entry) => entry.id));
+                    onItemsChange(next);
+                  })
+                }
+              >
+                Upp
+              </button>
+              <button
+                type="button"
+                className="text-xs text-red-700 hover:underline"
+                onClick={() =>
+                  start(async () => {
+                    await removeTestimonialItem(section.id, item.id);
+                    onItemsChange(items.filter((entry) => entry.id !== item.id));
+                  })
+                }
+              >
+                Ta bort
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+      <Button type="button" size="sm" variant="secondary" onClick={() => setEditing("new")}>
+        + Lägg till omdöme
+      </Button>
+      {editing ? (
+        <div className="rounded-2xl border border-line bg-paper p-3">
+          <TestimonialForm
+            sectionId={section.id}
+            initial={editing === "new" ? undefined : editing}
+            onClose={() => setEditing(null)}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export const TestimonialItemsEditor = TestimonialsEditor;

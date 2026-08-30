@@ -308,7 +308,9 @@ export function addWebsiteSection(type: AddableSectionType): WebsiteSection {
     throw new Error("Den sektionstypen finns redan, eller kan inte läggas till.");
   }
   const section = createSectionDraft(type, uid());
-  site.sections.push(section);
+  const kontaktIndex = site.sections.findIndex((s) => s.type === "kontakt");
+  if (kontaktIndex >= 0) site.sections.splice(kontaktIndex, 0, section);
+  else site.sections.push(section);
   touchSite(site);
   return section;
 }
@@ -433,6 +435,7 @@ function normalizeItem(item: WebsiteSectionItem): WebsiteSectionItem {
   }
   const rating = clampRating(item.rating);
   if (rating !== undefined) next.rating = rating;
+  if (item.location?.trim()) next.location = item.location.trim().slice(0, 80);
   if (item.source === "google" || item.source === "manual") next.source = item.source;
   return next;
 }
@@ -529,7 +532,7 @@ export function addTestimonialItem(sectionId: string, item: WebsiteSectionItem):
 export function updateTestimonialItem(
   sectionId: string,
   index: number,
-  fields: { title?: string; text?: string; rating?: number | null },
+  fields: { title?: string; text?: string; location?: string | null; rating?: number | null },
 ): void {
   const { site, section } = requireListSection(sectionId, "omdomen", "Omdömessektionen hittades inte");
   const item = section.items![index];
@@ -543,6 +546,13 @@ export function updateTestimonialItem(
     const text = fields.text.trim();
     if (!text) throw new Error("Skriv omdömet.");
     item.text = text;
+  }
+  if (fields.location === null) {
+    delete item.location;
+  } else if (fields.location !== undefined) {
+    const location = fields.location.trim();
+    if (location) item.location = location.slice(0, 80);
+    else delete item.location;
   }
   if (fields.rating === null) {
     delete item.rating;

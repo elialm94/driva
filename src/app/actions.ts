@@ -1247,7 +1247,7 @@ export async function addTestimonialItemAction(
 export async function updateTestimonialItemAction(
   sectionId: string,
   index: number,
-  fields: { title?: string; text?: string; rating?: number | null },
+  fields: { title?: string; text?: string; location?: string | null; rating?: number | null },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return withBusiness(() => {
     try {
