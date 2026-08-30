@@ -40,6 +40,7 @@ import {
   FREE_TEXT_FALLBACK_MESSAGE,
   commandWorkspace,
   getCommand,
+  leftoverAfterIntent,
   matchCommands,
   parseCommand,
   parseFreeText,
@@ -324,7 +325,10 @@ export function CommandBar({
     // påminnelse" är bara intent – resten får aldrig kastas.
     if (command.id === "create_reminder") {
       const source = (sourceQuery ?? query).trim();
-      const parsed = source ? parseReminderCommandInput(source, new Date(), DEFAULT_TIMEZONE) : null;
+      // Bara aliaset ("Skapa påminnelse") → tom guide. Leftover bevaras.
+      const leftover = source ? leftoverAfterIntent(source, "create_reminder") : "";
+      const parsed =
+        source && leftover ? parseReminderCommandInput(source, new Date(), DEFAULT_TIMEZONE) : null;
       if (parsed?.complete) {
         startTransition(async () => {
           applyResult(await runCommandAction("create_reminder", { text: source }));

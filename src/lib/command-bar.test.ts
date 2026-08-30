@@ -252,6 +252,12 @@ describe("parseCommand (hela originalfrasen → intent + argument)", () => {
     assert.match(quote.source, /altanen/);
   });
 
+  it("exakt alias utan leftover är tom sträng – inte en titel", () => {
+    assert.equal(leftoverAfterIntent("Skapa påminnelse", "create_reminder"), "");
+    assert.equal(leftoverAfterIntent("påminnelse", "create_reminder"), "");
+    assert.ok(leftoverAfterIntent("Skapa en påminnelse att ringa Göran", "create_reminder").length > 0);
+  });
+
   it("skicka påminnelse är INTE intern create_reminder", () => {
     const p = parseCommand("skicka påminnelse till Johan om fakturan");
     assert.equal(p.confidence, "high");
