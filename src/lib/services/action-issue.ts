@@ -42,7 +42,7 @@ const CTA_ISSUE: Partial<Record<ActionCta["type"], string>> = {
   // Skickar en påminnelse via e-post – etiketten säger vad som händer.
   followUpQuote: "Skicka påminnelse",
   createJobInvoice: "Fakturera",
-  paySupplier: "Skicka till bank",
+  createPaymentFile: "Skapa bankfil",
   confirmRotPayout: "Bekräfta utbetalning",
   registerCreditRefund: "Återbetala",
   reminderActions: "Påminnelse",
@@ -66,8 +66,8 @@ export function issueForAction(action: BusinessAction): string {
   if (action.id.startsWith("supplier-verify-")) return "Kontrollera uppgifter";
   if (action.id.startsWith("supplier-reuse-")) return "Använd tidigare uppgifter";
   if (action.id.startsWith("supplier-dest-")) return "Kontrollera bankuppgifter";
-  if (action.id.startsWith("supplier-fail-")) return "Försök igen";
-  if (action.id.startsWith("supplier-")) return "Skicka till bank";
+  if (action.id.startsWith("supplier-fail-")) return "Skapa ny bankfil";
+  if (action.id.startsWith("supplier-")) return "Redo att betala";
   if (action.id.startsWith("invoice-late-")) return "Försenad";
   if (action.id.startsWith("invoice-refund-")) return "Återbetala";
   if (action.id.startsWith("quote-expired-")) return "Utgången offert";
@@ -87,7 +87,7 @@ export function sourceForAction(action: BusinessAction): ActionSource | null {
   if (cta?.type === "registerCreditRefund") return { kind: "invoice", id: cta.invoiceId };
   if (cta?.type === "followUpQuote") return { kind: "quote", id: cta.quoteId };
   if (cta?.type === "createJobInvoice") return { kind: "job", id: cta.jobId };
-  if (cta?.type === "paySupplier") return { kind: "supplier", id: cta.supplierInvoiceId };
+  if (cta?.type === "createPaymentFile") return { kind: "supplier", id: cta.supplierInvoiceId };
   if (
     cta?.type === "verifyPaymentDetails" ||
     cta?.type === "useVerifiedSupplierDetails" ||
@@ -314,7 +314,7 @@ const CONTROLS: Record<AttentionKind, Omit<ActionControls, "kind">> = {
     canSnooze: true,
     canDismiss: false,
     dismissBehavior: "none",
-    requiresConfirmation: true, // skickar betalning till banken
+    requiresConfirmation: true, // skapar en bankfil för betalningen
   },
   newJob: {
     viewLabel: "Öppna uppdrag",

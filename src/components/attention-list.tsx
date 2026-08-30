@@ -15,6 +15,7 @@ import {
   Percent,
   Bell,
   Check,
+  Download,
   Upload,
   Send,
   MoreHorizontal,
@@ -31,11 +32,11 @@ import {
   answerExpenseQuestionAction,
   completeReminderAction,
   createNextInvoiceForJobAction,
+  createPaymentFileAction,
   deliverInvoiceAction,
   dismissReminderAction,
   followUpQuoteAction,
   markQuoteNotRelevantAction,
-  submitSupplierPaymentAction,
   sendReminderAction,
   snoozeAttentionAction,
   snoozeReminderAction,
@@ -522,6 +523,8 @@ function AttentionRow({
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Skapad bankfil: raden är löst men nedladdningen ska vara ett klick bort.
+  const [createdFile, setCreatedFile] = useState<{ fileId: string; filename: string } | null>(null);
   const router = useRouter();
   const { icon: Icon, cls } = ICONS[item.icon];
   const cta = item.cta;
@@ -565,14 +568,15 @@ function AttentionRow({
         router.refresh();
       });
     }
-    if (cta.type === "paySupplier") {
+    if (cta.type === "createPaymentFile") {
       startTransition(async () => {
-        const result = await submitSupplierPaymentAction({
-          supplierInvoiceId: cta.supplierInvoiceId,
-          paymentId: cta.paymentId,
-        });
-        if (result.ok === false) setError(result.error);
-        else finish(result.ok ? "Skickad till bank" : "");
+        const result = await createPaymentFileAction({ supplierInvoiceIds: [cta.supplierInvoiceId] });
+        if (result.ok === false) {
+          setError(result.problems.join(" "));
+        } else {
+          setCreatedFile({ fileId: result.fileId, filename: result.filename });
+          finish("Bankfil skapad – ladda upp den i internetbanken och godkänn betalningen där");
+        }
         router.refresh();
       });
     }
@@ -630,8 +634,15 @@ function AttentionRow({
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2 pl-13 sm:justify-end sm:pl-0">
         {done ? (
-          <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
-            <Check className="size-4" /> {done}
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
+              <Check className="size-4" /> {done}
+            </span>
+            {createdFile ? (
+              <a href={`/api/betalfil/${createdFile.fileId}`} download className={buttonClasses("secondary", "sm")}>
+                <Download className="size-3.5" /> Ladda ned bankfilen
+              </a>
+            ) : null}
           </span>
         ) : (
           <>
@@ -678,7 +689,9 @@ function AttentionRow({
                 {isPending ? "Skickar …" : cta.label}
               </button>
             ) : null}
-            {cta?.type === "paySupplier" && surface === "accountant" ? (
+            {cta?.type === "createPaymentFile" && surface === "accountant" ? (
+              // Konsulten FÖRBEREDER betalningen – bankfilen skapas av ägaren
+              // (kräver submit_bank_payment, se collaboration/permissions.ts).
               <button
                 className={cx(buttonClasses("secondary", "sm"), "max-lg:min-h-11")}
                 disabled={isPending}
@@ -689,7 +702,7 @@ function AttentionRow({
                       supplierInvoiceId: cta.supplierInvoiceId,
                     });
                     if (result.ok === false) setError(result.error);
-                    else finish("Förberedd – ägaren skickar");
+                    else finish("Förberedd – ägaren skapar bankfilen");
                     router.refresh();
                   })
                 }
@@ -697,14 +710,14 @@ function AttentionRow({
                 {isPending ? "Förbereder …" : "Förbered betalning"}
               </button>
             ) : null}
-            {cta?.type === "paySupplier" && surface !== "accountant" ? (
+            {cta?.type === "createPaymentFile" && surface !== "accountant" ? (
               <button
                 className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
                 disabled={isPending}
                 aria-label={`${cta.label} – ${item.title}`}
                 onClick={() => confirmable(executePrimary)}
               >
-                {isPending ? "Skickar …" : cta.label}
+                {isPending ? "Skapar …" : cta.label}
               </button>
             ) : null}
             {cta?.type === "registerCreditRefund" ? (

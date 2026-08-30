@@ -440,7 +440,7 @@ describe("åtgärdsmotorn: bokföring och bank", () => {
     assert.ok(attention.some((a) => a.id === "question-exp-tx"));
   });
 
-  it("förfallen komplett faktura → Skicka till bank; förfaller om 6 dagar → bara Inbox", () => {
+  it("förfallen komplett faktura → Skapa bankfil; förfaller om 6 dagar → bara Inbox", () => {
     replaceDb(emptyTestDb());
     db().supplierInvoices.push(
       {
@@ -479,8 +479,8 @@ describe("åtgärdsmotorn: bokföring och bank", () => {
     const actions = getBusinessActions();
     const late = actions.attention.find((a) => a.id === "supplier-sup-late");
     assert.ok(late);
-    assert.equal(late.cta?.type, "paySupplier");
-    if (late.cta?.type === "paySupplier") assert.equal(late.cta.label, "Skicka till bank");
+    assert.equal(late.cta?.type, "createPaymentFile");
+    if (late.cta?.type === "createPaymentFile") assert.equal(late.cta.label, "Skapa bankfil");
     assert.ok(!actions.attention.some((a) => a.id === "supplier-sup-future"));
     assert.ok(!actions.watching.some((u) => u.id === "supplier-due-sup-future"));
   });

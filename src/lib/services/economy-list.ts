@@ -1,5 +1,5 @@
 import { db } from "../store";
-import type { Invoice, Quote } from "../types";
+import type { Invoice, Quote, SupplierInvoice, SupplierPayment } from "../types";
 import { currentVersion, effectiveQuoteStatus, invoiceTotals, isOpenReceivable, isOverdue, daysOverdue, quoteTotals } from "./data";
 import type { PagedResult } from "./customers";
 import { categoryByKey } from "../bas";
@@ -7,6 +7,7 @@ import { dagarTill, datumKort } from "../format";
 import { getBusinessActions, type BusinessAction } from "./actions";
 import { indexActionsBySource, issueForAction } from "./action-issue";
 import { paymentDetailsInfo } from "./payment-details";
+import { invoicesReadyForPaymentFile, paymentFileBlockersForInvoice } from "./payment-files";
 
 /**
  * Läsmodeller för Ekonomi-registret: en genomläsning av lagret per flik,
@@ -232,13 +233,17 @@ export function listInvoicesForTable(
 
 /* ------------------------------ Utgifter & kvitton ---------------------------- */
 
-export type ExpenseStatusFilter = "alla" | "atgard" | "klar";
+export type ExpenseStatusFilter = "alla" | "atgard" | "redo" | "klar";
 
 export const EXPENSE_STATUS_OPTIONS: [ExpenseStatusFilter, string][] = [
   ["alla", "Alla"],
   ["atgard", "Behöver åtgärd"],
+  ["redo", "Redo att betala"],
   ["klar", "Klara"],
 ];
+
+/** Vilken filterflik raden hör hemma under – aldrig ett generiskt "Behandlad". */
+type ExpenseBucket = Exclude<ExpenseStatusFilter, "alla">;
 
 export interface ExpenseTableRow {
   id: string;
@@ -256,6 +261,67 @@ export interface ExpenseTableRow {
   hasReceipt: boolean;
 }
 
+/**
+ * Leverantörsfakturans livscykelstatus för registret: bokföring och betalning
+ * är SEPARATA spår och etiketten visar var i flödet fakturan faktiskt är
+ * ("Bokförd · Redo att betala", "Bankfil skapad", "Betald · Avstämd" …).
+ * Samma härledningar som betalningsspärrarna och åtgärdsmotorn.
+ */
+function supplierInvoiceLifecycle(
+  s: SupplierInvoice,
+  payment: SupplierPayment | undefined,
+  attention: Map<string, BusinessAction>
+): { label: string; tone: StatusTone; bucket: ExpenseBucket } {
+  const booked = s.accountingStatus === "bokford" || Boolean(s.verificationId);
+
+  if (s.status === "betald" || payment?.status === "PAID") {
+    const reconciled = Boolean(s.bankTransactionId ?? payment?.bankTransactionId);
+    return { label: reconciled ? "Betald · Avstämd" : "Betald", tone: "ok", bucket: "klar" };
+  }
+  if (payment?.status === "FAILED") {
+    return { label: "Betalningen misslyckades", tone: "danger", bucket: "atgard" };
+  }
+  if (payment?.status === "SUBMITTED_TO_BANK" || payment?.status === "AWAITING_APPROVAL") {
+    return { label: "Skickad till bank", tone: "info", bucket: "klar" };
+  }
+  if (payment?.status === "SCHEDULED") {
+    return {
+      label: `Bokförd · Betalas ${dagarTill(payment.scheduledDate) === 0 ? "idag" : datumKort(payment.scheduledDate)}`,
+      tone: "info",
+      bucket: "klar",
+    };
+  }
+  if (payment?.status === "PAYMENT_FILE_CREATED") {
+    return { label: "Bankfil skapad", tone: "info", bucket: "klar" };
+  }
+
+  // Betalningsuppgifternas orsak i klartext – samma härledning som
+  // åtgärdsmotorn och betalningsspärrarna (payment-details.ts).
+  const cause = paymentDetailsInfo(s).cause;
+  if (cause === "CHANGED" || payment?.destinationChanged) {
+    return { label: "Kontrollera bankuppgifter", tone: "danger", bucket: "atgard" };
+  }
+  if (booked && cause === "AWAITING_SUPPLIER") {
+    return { label: "Väntar på leverantören", tone: "info", bucket: "klar" };
+  }
+  if (booked && cause === "EXTRACTION_UNCERTAIN") {
+    return { label: "Kontrollera betalningsuppgifter", tone: "warn", bucket: "atgard" };
+  }
+  if (booked && cause === "MISSING") {
+    return { label: "Betalningsuppgifter saknas", tone: "warn", bucket: "atgard" };
+  }
+  if (booked) {
+    // Samma vakt som [Skapa bankfil]: tom hinderlista = redo att betala.
+    if (paymentFileBlockersForInvoice(s.id).length === 0) {
+      return { label: "Bokförd · Redo att betala", tone: "info", bucket: "redo" };
+    }
+    return { label: "Bokförd", tone: "info", bucket: "klar" };
+  }
+  const action = attention.get(`supplier:${s.id}`);
+  if (action) return { label: issueForAction(action), tone: "warn", bucket: "atgard" };
+  return { label: "Väntar på bokföring", tone: "warn", bucket: "atgard" };
+}
+
 export function listExpensesForTable(
   input: { q?: string; status?: ExpenseStatusFilter; page?: number; pageSize?: number } = {}
 ): PagedResult<ExpenseTableRow> {
@@ -265,19 +331,18 @@ export function listExpensesForTable(
   const attention = attentionBySource();
 
   for (const e of db().expenses) {
-    const needsAction = e.status !== "bokford";
-    if (status === "atgard" && !needsAction) continue;
-    if (status === "klar" && needsAction) continue;
+    const bucket: ExpenseBucket = e.status === "bokford" ? "klar" : "atgard";
+    if (status !== "alla" && bucket !== status) continue;
     const categoryLabel = e.category ? categoryByKey(e.category).label : "—";
     if (q) {
       const hay = `${e.supplier} ${e.description ?? ""} ${categoryLabel}`.toLowerCase();
       if (!hay.includes(q)) continue;
     }
     // Konkret åtgärdsetikett från motorn ("Saknar kvitto", "Välj kategori").
-    const action = needsAction ? attention.get(`expense:${e.id}`) : undefined;
+    const action = bucket === "atgard" ? attention.get(`expense:${e.id}`) : undefined;
     const meta: { label: string; tone: StatusTone } =
       e.status === "bokford"
-        ? { label: "Bokförd", tone: "ok" }
+        ? { label: e.receiptId ? "Kvitto · Bokfört" : "Bokförd", tone: "ok" }
         : action
           ? { label: issueForAction(action), tone: "warn" }
           : e.status === "saknar_kvitto"
@@ -303,48 +368,8 @@ export function listExpensesForTable(
       if (!hay.includes(q)) continue;
     }
     const payment = (db().supplierPayments ?? []).find((p) => p.supplierInvoiceId === s.id && p.status !== "CANCELLED");
-    const booked = s.accountingStatus === "bokford" || Boolean(s.verificationId);
-    let statusLabel = "Obetald";
-    let statusTone: StatusTone = "warn";
-    if (s.status === "betald" || payment?.status === "PAID") {
-      statusLabel = "Betald";
-      statusTone = "ok";
-    } else if (payment?.status === "FAILED") {
-      statusLabel = "Betalningen misslyckades";
-      statusTone = "danger";
-    } else if (payment?.status === "SUBMITTED_TO_BANK" || payment?.status === "AWAITING_APPROVAL") {
-      statusLabel = "Skickad till bank";
-      statusTone = "info";
-    } else if (payment?.status === "SCHEDULED") {
-      statusLabel = `Bokförd · Betalas ${dagarTill(payment.scheduledDate) === 0 ? "idag" : datumKort(payment.scheduledDate)}`;
-      statusTone = "info";
-    } else {
-      // Betalningsuppgifternas orsak i klartext – samma härledning som
-      // åtgärdsmotorn och betalningsspärrarna (payment-details.ts).
-      const cause = paymentDetailsInfo(s).cause;
-      if (cause === "CHANGED" || payment?.destinationChanged) {
-        statusLabel = "Kontrollera bankuppgifter";
-        statusTone = "danger";
-      } else if (booked && cause === "AWAITING_SUPPLIER") {
-        statusLabel = "Väntar på leverantören";
-        statusTone = "info";
-      } else if (booked && cause === "EXTRACTION_UNCERTAIN") {
-        statusLabel = "Kontrollera betalningsuppgifter";
-        statusTone = "warn";
-      } else if (booked && cause === "MISSING") {
-        statusLabel = "Betalningsuppgifter saknas";
-        statusTone = "warn";
-      } else if (booked && (payment?.status === "READY" || payment?.status === "DRAFT")) {
-        statusLabel = "Redo att betalas";
-        statusTone = "warn";
-      } else if (booked) {
-        statusLabel = "Bokförd";
-        statusTone = "info";
-      }
-    }
-    const needsAction = s.status !== "betald" && payment?.status !== "PAID" && payment?.status !== "SCHEDULED" && payment?.status !== "SUBMITTED_TO_BANK";
-    if (status === "atgard" && !needsAction) continue;
-    if (status === "klar" && needsAction) continue;
+    const lifecycle = supplierInvoiceLifecycle(s, payment, attention);
+    if (status !== "alla" && lifecycle.bucket !== status) continue;
     rows.push({
       id: s.id,
       kind: "leverantorsfaktura",
@@ -353,14 +378,35 @@ export function listExpensesForTable(
       reference: s.invoiceNumber,
       categoryLabel,
       amount: s.amount,
-      statusLabel,
-      statusTone,
+      statusLabel: lifecycle.label,
+      statusTone: lifecycle.tone,
       hasReceipt: true,
     });
   }
 
   rows.sort((a, b) => b.date.localeCompare(a.date));
   return paginate(rows, input.page ?? 1, input.pageSize ?? ECONOMY_PAGE_SIZE);
+}
+
+/**
+ * Batchunderlag för [Skapa bankfil] på Ekonomi: fakturor som passerar exakt
+ * samma vakter som filskaparen. En fil kan bära flera betalningar (krav 17).
+ */
+export interface ReadyToPayBatch {
+  invoiceIds: string[];
+  count: number;
+  total: number;
+  rows: { supplier: string; invoiceNumber: string; amount: number; dueDate: string }[];
+}
+
+export function readyToPayBatch(): ReadyToPayBatch {
+  const ready = invoicesReadyForPaymentFile();
+  return {
+    invoiceIds: ready.map((s) => s.id),
+    count: ready.length,
+    total: ready.reduce((sum, s) => sum + s.amount, 0),
+    rows: ready.map((s) => ({ supplier: s.supplier, invoiceNumber: s.invoiceNumber, amount: s.amount, dueDate: s.dueDate })),
+  };
 }
 
 /* ---------------------------------- Bank -------------------------------------- */

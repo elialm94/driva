@@ -38,11 +38,14 @@ import {
   supplierPaymentConfirmRows,
 } from "./supplier-payments";
 import {
+  guessPaymentMethod,
   paymentDetailsInfo,
+  paymentMethodLabel,
   provenanceLabel,
   supplierDetailsRequestInfo,
   type PaymentDetailsInfo,
 } from "./payment-details";
+import { payerAccountLabel } from "./payment-files";
 import { amountIsCertain, isPaymentInFlight, isReadyToApproveNow, needsAmountReview } from "../inbox/workflow";
 
 /**
@@ -103,7 +106,8 @@ export type ActionCta =
   | { type: "uploadReceipt"; label: string; expenseId: string }
   | { type: "answerQuestion"; expenseId: string; options: string[] }
   | { type: "createJobInvoice"; label: string; jobId: string }
-  | { type: "paySupplier"; label: string; supplierInvoiceId: string; paymentId?: string }
+  /** Skapa pain.001-bankfil för fakturan (V1: fil + manuell uppladdning i internetbanken). */
+  | { type: "createPaymentFile"; label: string; supplierInvoiceId: string }
   | { type: "confirmPaymentMatch"; label: string; txId: string; invoiceId: string }
   | { type: "pickPaymentMatch"; txId: string }
   | { type: "confirmRotPayout"; label: string; txId: string }
@@ -1162,12 +1166,12 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
           title: `Betalningen till ${s.supplier} misslyckades`,
           subtitle: `${kr(remaining || payment.amount)}${payment.failureReason ? ` · ${payment.failureReason}` : ""}`,
           href,
-          cta: { type: "paySupplier", label: "Försök igen", supplierInvoiceId: s.id, paymentId: payment.id },
+          cta: { type: "createPaymentFile", label: "Skapa ny bankfil", supplierInvoiceId: s.id },
           amount: remaining || payment.amount,
           confirm: {
-            title: "Skicka till bank igen?",
+            title: "Skapa ny bankfil?",
             rows: supplierPaymentConfirmRows(payment, s),
-            confirmLabel: "Skicka till bank",
+            confirmLabel: "Skapa bankfil",
           },
         },
       });
@@ -1251,6 +1255,12 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
     }
 
     if (isReadyToApproveNow({ invoice: s, payment, now })) {
+      // V1: primäråtgärden är [Skapa bankfil] (pain.001) – aldrig ett påstått
+      // "skickat till bank". Bekräftelsen visar exakt vad som betalas varifrån.
+      const amount = payment?.amount ?? (remainingAmountForInvoice(s) || s.amount);
+      const account = payment?.recipientAccount ?? details?.account;
+      const ocr = payment?.ocr ?? s.ocr;
+      const payer = payerAccountLabel();
       ranked.push({
         rank: RANK.supplierOverdue,
         order: -s.amount,
@@ -1259,23 +1269,21 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
           priority: "action",
           category: "supplier",
           icon: "invoice",
-          title: `Skicka betalning till ${s.supplier}`,
-          subtitle: `${kr(payment?.amount ?? s.amount)} · förfaller ${datumKort(s.dueDate)}`,
+          title: `${s.supplier} är redo att betalas`,
+          subtitle: `${kr(amount)} · förfaller ${datumKort(s.dueDate)} · bokförd`,
           href,
-          cta: { type: "paySupplier", label: "Skicka till bank", supplierInvoiceId: s.id, paymentId: payment?.id },
-          amount: payment?.amount ?? s.amount,
+          cta: { type: "createPaymentFile", label: "Skapa bankfil", supplierInvoiceId: s.id },
+          amount,
           confirm: {
-            title: "Skicka till bank?",
-            rows: payment
-              ? supplierPaymentConfirmRows(payment, s)
-              : [
-                  { label: "Leverantör", value: s.supplier },
-                  { label: "Belopp", value: kr(s.amount) },
-                  { label: "Förfaller", value: datumKort(s.dueDate) },
-                  { label: "OCR", value: s.ocr ?? "—" },
-                  { label: "Bankgiro", value: s.bankgiro ?? s.recipientAccount ?? "—" },
-                ],
-            confirmLabel: "Skicka till bank",
+            title: `Betala ${s.supplier}?`,
+            rows: [
+              { label: "Belopp", value: kr(amount) },
+              { label: "Förfallodatum", value: datumKort(s.dueDate) },
+              ...(account ? [{ label: paymentMethodLabel(guessPaymentMethod(account)), value: account }] : []),
+              ...(ocr ? [{ label: "OCR", value: ocr }] : []),
+              ...(payer ? [{ label: "Från", value: `${db().settings.name}, ${payer}` }] : []),
+            ],
+            confirmLabel: "Skapa bankfil",
           },
         },
       });
