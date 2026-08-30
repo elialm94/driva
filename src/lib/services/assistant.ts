@@ -20,6 +20,7 @@ import { markVatReportDeclared } from "../accounting/vat";
 import { isAiConfigured, chatWithTools, type AiChatMessage } from "../ai/provider";
 import { assistantToolDefs, executeTool } from "../ai/tools";
 import { historyToAiMessages, systemPrompt } from "../ai/prompt";
+import { resolveCustomerNameArg } from "../ai/corrections";
 import { isBankIdApprovalRequest, parseAmountInclVat, parseAppliedTaxReduction, parseFlexibleDate, cap, resolveCustomerName } from "../ai/resolve";
 import {
   ambiguousCustomers,
@@ -124,6 +125,8 @@ function withCustomer(
 }
 
 function extractCustomerName(text: string): string | null {
+  const corrected = resolveCustomerNameArg(text);
+  if (corrected) return corrected;
   const m = text.match(/(?:till|för|hos|at)\s+([A-Za-zÅÄÖåäö]+(?:\s+[A-ZÅÄÖ][a-zåäö]+)?)/i);
   return m ? m[1].trim() : null;
 }

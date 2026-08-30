@@ -1,24 +1,24 @@
 /**
  * Deterministisk snabbväg för de vanligaste påminnelsefraserna – noll LLM,
- * noll kostnad. Fångar mönster som kan tolkas säkert, ur HELA originalfrasen:
+ * noll kostnad. Fångar bara mönster som kan tolkas säkert:
  *
- *   "påminn mig [imorgon|på onsdag|nästa onsdag|om 2 timmar|om 30 minuter|
- *    på fredag eftermiddag|imorgon kl 14|i övermorgon|ikväll] att X"
- *   "skapa (en) påminnelse att X kl 12 nästa onsdag"
+ *   "påminn mig [imorgon|på onsdag|om 2 timmar|på fredag eftermiddag|imorgon kl 14] att X"
  *
  * Allt annat (eller tvetydiga fraser) returnerar null och går LLM-vägen.
  * Resultatet är SAMMA platta verktygsargument som create_reminder tar –
  * policyn bor kvar i resolvern och verktygshanteraren (en källa till sanning
  * för länkning, veckodagsregel och standardtider).
- *
- * Viktigt: prefixet ("skapa påminnelse" / "påminn mig") konsumeras – resten
- * av meningen slängs ALDRIG. Slot-filling frågar bara efter det som saknas.
  */
+import {
+  collapseCorrectedUtterance,
+  prettyReminderTitle,
+  resolveUtteranceCorrections,
+} from "../ai/corrections";
+import { isInternalReminderIntent, isPaymentReminderUtterance } from "../ai/utterance";
 import {
   DAYPARTS,
   WEEKDAYS_SV,
-  formatDueAtCompact,
-  formatDueAtDisplay,
+  formatDueAt,
   localParts,
   resolveWhen,
   type Daypart,
@@ -76,8 +76,8 @@ export function relatedFromTitle(title: string): { relatedType: string; relatedQ
 }
 
 /**
- * Inledningar som markerar intern påminnelse – INTE betalningspåminnelse
- * ("skicka påminnelse"). Hela resten av meningen är argument, aldrig skräp.
+ * Inledningar som markerar intern påminnelse. Resten av meningen slängs
+ * ALDRIG – rättelselagret får hela kroppen.
  */
 const REMINDER_LEAD_RE =
   /^\s*(?:skapa(?:\s+en)?\s+påminnelse|påminn(?:a)?(?:\s+mig)?)(?:\s+gärna)?(?:\s+om(?=\s+att\b))?(?:\s+|$)/i;
@@ -85,39 +85,48 @@ const REMINDER_LEAD_RE =
 const PAYMENT_REMINDER_RE = /^\s*skicka\s+(?:en\s+)?påminnelse/i;
 
 export function isPaymentReminderQuery(text: string): boolean {
-  return PAYMENT_REMINDER_RE.test(text.trim());
+  return PAYMENT_REMINDER_RE.test(text.trim()) || isPaymentReminderUtterance(text);
 }
 
 /** Deterministisk intern påminnelse-intent (prefix), inte bara ämnesordet. */
 export function isReminderIntentQuery(text: string): boolean {
   const t = text.trim();
   if (!t || isPaymentReminderQuery(t)) return false;
-  return REMINDER_LEAD_RE.test(t + " ") || REMINDER_LEAD_RE.test(t);
+  return isInternalReminderIntent(t) || REMINDER_LEAD_RE.test(t + " ") || REMINDER_LEAD_RE.test(t);
 }
 
-function hasReminderLead(text: string): boolean {
-  return REMINDER_LEAD_RE.test(text.trim() + " ") || REMINDER_LEAD_RE.test(text.trim());
+function stripReminderLeadPrefix(text: string): string {
+  return text
+    .replace(REMINDER_LEAD_RE, "")
+    .replace(/^\s*att\s+/i, "")
+    .replace(/\s+/g, " ")
+    .replace(/[\s,.!?…]+$/g, "")
+    .trim();
 }
 
-/** Första bokstaven versal – visning och persisterad titel ("Ring Göran"). */
-export function prettyReminderTitle(title: string): string {
-  const t = title.replace(/\s+/g, " ").trim();
-  if (!t) return t;
-  return t.charAt(0).toUpperCase() + t.slice(1);
+function prepareReminderBody(body: string): { rest: string; prettyTitle: boolean } | null {
+  const collapsed = body.replace(/\s+/g, " ").trim();
+  if (!collapsed) return null;
+  const resolution = resolveUtteranceCorrections(collapsed);
+  if (resolution.confidence === "ambiguous" || resolution.needsStructuredExtraction) return null;
+  if (resolution.hasCorrectionLanguage && resolution.confidence === "high") {
+    return { rest: collapseCorrectedUtterance(collapsed, resolution), prettyTitle: true };
+  }
+  return { rest: collapsed, prettyTitle: false };
 }
 
-interface ReminderSlots {
-  title: string;
-  args: Record<string, string | number | boolean>;
-  hasWhen: boolean;
-}
+export function parseReminderText(text: string, now: Date, timezone: string): ParsedReminder | null {
+  const trimmed = text.trim();
+  if (!trimmed || isPaymentReminderUtterance(trimmed)) return null;
+  // Prefix krävs för den fria NL-snabbvägen; nakna meningar går via
+  // parseReminderCommandInput som sätter prefixet.
+  if (!isInternalReminderIntent(trimmed) && !REMINDER_LEAD_RE.test(trimmed + " ")) return null;
+  const body = stripReminderLeadPrefix(trimmed);
+  if (!body) return null;
+  const prepared = prepareReminderBody(body);
+  if (!prepared) return null;
+  let rest = ` ${prepared.rest} `;
 
-/**
- * Plockar ut NÄR och VAD ur en mening (redan utan intent-prefix).
- * Tidfraser tas bort; det som blir kvar är titeln. Inget fält gissas.
- */
-function extractReminderSlots(body: string, now: Date, timezone: string): ReminderSlots {
-  let rest = ` ${body.trim()} `;
   const args: Record<string, string | number | boolean> = {};
   let matched = false;
 
@@ -145,16 +154,6 @@ function extractReminderSlots(body: string, now: Date, timezone: string): Remind
     }
   }
 
-  // "i övermorgon" före "imorgon" så inte "morgon"-delen stjäls.
-  if (!matched) {
-    const over = /\bi\s+övermorgon\b/i.exec(rest);
-    if (over) {
-      args.whenDate = localDatePlusDays(now, timezone, 2);
-      rest = rest.replace(over[0], " ");
-      matched = true;
-    }
-  }
-
   // "imorgon" / "i morgon"
   if (!matched) {
     const tm = /\bi\s?morgon\b/i.exec(rest);
@@ -165,7 +164,7 @@ function extractReminderSlots(body: string, now: Date, timezone: string): Remind
     }
   }
 
-  // Klockslag: "kl 14" / "klockan 14:30" / "kl. 12" (kombineras med dag ovan)
+  // Klockslag: "kl 14" / "klockan 14:30" (kombineras med dag ovan; kräver dag)
   const clock = /\bkl(?:ockan)?\.?\s*(\d{1,2})(?:[:.](\d{2}))?\b/i.exec(rest);
   if (clock) {
     args.time = `${clock[1]}:${clock[2] ?? "00"}`;
@@ -178,16 +177,6 @@ function extractReminderSlots(body: string, now: Date, timezone: string): Remind
     }
   }
 
-  // "idag" utan klockslag → dagsnivå (standardtid 10:00 i resolvern).
-  if (!matched) {
-    const today = /\bidag\b/i.exec(rest);
-    if (today) {
-      args.whenDate = localDatePlusDays(now, timezone, 0);
-      rest = rest.replace(today[0], " ");
-      matched = true;
-    }
-  }
-
   // Dagsdel: "på eftermiddagen" / "eftermiddag" / "ikväll"
   if (!args.time) {
     for (const [word, daypart] of Object.entries(DAYPART_WORDS)) {
@@ -195,34 +184,44 @@ function extractReminderSlots(body: string, now: Date, timezone: string): Remind
       if (re.test(rest)) {
         args.daypart = daypart;
         rest = rest.replace(re, " ");
-        if (!matched) matched = DAYPARTS.includes(daypart);
+        if (!matched) matched = DAYPARTS.includes(daypart); // enbart dagsdel → idag/imorgon-policy i resolvern
         break;
       }
     }
   }
 
-  const title = rest
+  if (!matched) return null;
+
+  // Titeln: det som blir kvar, utan inledande "att" och skiljetecken.
+  let title = rest
     .replace(/^\s*att\s+/i, "")
     .replace(/\s+att\s*$/i, "")
     .replace(/\s+/g, " ")
     .replace(/[\s,.!?…]+$/g, "")
     .trim();
+  if (!title) return null;
+  if (prepared.prettyTitle) {
+    title = prettyReminderTitle(title);
+    const resolution = resolveUtteranceCorrections(body);
+    if (typeof resolution.final.time === "string") args.time = resolution.final.time;
+    if (typeof resolution.final.weekday === "string") {
+      args.weekday = resolution.final.weekday;
+      delete args.whenDate;
+      if (resolution.finalNextWeek) args.nextWeek = true;
+      else delete args.nextWeek;
+    }
+    if (typeof resolution.final.date === "string" && !args.weekday) {
+      const days = resolution.final.date === "övermorgon" ? 2 : resolution.final.date === "imorgon" ? 1 : 0;
+      args.whenDate = localDatePlusDays(now, timezone, days);
+    }
+    if (typeof resolution.final.name === "string") {
+      const verb = /^(ringa?|kolla|skicka|beställa|fakturera|kontakta|maila|mejla|boka)\b/i.exec(title);
+      title = prettyReminderTitle(verb ? `${verb[0]} ${resolution.final.name}` : String(resolution.final.name));
+    }
+  }
 
-  return { title, args, hasWhen: matched };
-}
-
-function slotsToParsed(slots: ReminderSlots): ParsedReminder | null {
-  if (!slots.hasWhen || !slots.title) return null;
-  const related = relatedFromTitle(slots.title);
-  return { title: slots.title, args: { title: slots.title, ...slots.args, ...(related ?? {}) } };
-}
-
-export function parseReminderText(text: string, now: Date, timezone: string): ParsedReminder | null {
-  const trimmed = text.trim();
-  if (!trimmed || isPaymentReminderQuery(trimmed) || !hasReminderLead(trimmed)) return null;
-  const body = stripReminderLead(trimmed);
-  if (!body) return null;
-  return slotsToParsed(extractReminderSlots(body, now, timezone));
+  const related = relatedFromTitle(title);
+  return { title, args: { title, ...args, ...(related ?? {}) } };
 }
 
 /** Sätter ihop titel + tid till den fras parseReminderText redan förstår. */
@@ -270,58 +269,35 @@ export function whenFromReminderArgs(args: Record<string, string | number | bool
 /**
  * Resultat för påminnelseflödets inmatning: den TOLKADE påminnelsen är källan
  * till sanning för vilka fält som saknas – aldrig brödsmule-/chiptillståndet.
- *
- * Fråga ALDRIG efter ett fält som redan fanns i originalmeningen.
  */
 export type ReminderCommandParse =
-  /** Både VAD och NÄR fanns i meningen → one-shot skapa / förhandsvisning. */
+  /** Både VAD och NÄR fanns i meningen → direkt till förhandsvisning/skapa. */
   | { complete: true; title: string; args: Record<string, string | number | boolean> }
   /** Bara VAD → fråga enbart efter NÄR. */
-  | { complete: false; missing: "when"; title: string }
-  /** Bara NÄR → fråga enbart efter VAD. */
-  | { complete: false; missing: "title"; args: Record<string, string | number | boolean> }
-  /** Varken VAD eller NÄR ("skapa påminnelse") → guidat flöde från början. */
-  | { complete: false; missing: "both" };
+  | { complete: false; title: string };
 
 /** Inledningar som inte hör till titeln: "skapa en påminnelse" / "påminn mig att …". */
 function stripReminderLead(text: string): string {
-  return text
-    .replace(REMINDER_LEAD_RE, "")
-    .replace(/^\s*att\s+/i, "")
-    .replace(/\s+/g, " ")
-    .replace(/[\s,.!?…]+$/g, "")
-    .trim();
-}
-
-function parsedArgsFromSlots(slots: ReminderSlots): Record<string, string | number | boolean> {
-  const related = slots.title ? relatedFromTitle(slots.title) : undefined;
-  return { ...(slots.title ? { title: slots.title } : {}), ...slots.args, ...(related ?? {}) };
+  return stripReminderLeadPrefix(text);
 }
 
 /**
- * Tolkning av HELA originalfrasen: extraherar intent + argument först,
- * därefter vilka fält som faktiskt saknas. En naken mening ("Ring Göran
- * klockan 8 imorgon") ÄR en påminnelse när vi redan är i kommandot.
+ * Tolkning INUTI påminnelsekommandot: en naken mening ("Ring Göran klockan 8
+ * imorgon") ÄR en påminnelse. Försöker alltid extrahera både titel och tid
+ * med samma deterministiska parser; hittas ingen tid returneras enbart titeln
+ * så att flödet bara frågar efter det som faktiskt saknas.
  */
 export function parseReminderCommandInput(text: string, now: Date, timezone: string): ReminderCommandParse | null {
   const trimmed = text.replace(/\s+/g, " ").trim();
-  if (!trimmed || isPaymentReminderQuery(trimmed)) return null;
-
-  const body = hasReminderLead(trimmed) ? stripReminderLead(trimmed) : trimmed;
-  const slots = extractReminderSlots(body, now, timezone);
-
-  if (slots.hasWhen && slots.title) {
-    return { complete: true, title: slots.title, args: parsedArgsFromSlots(slots) };
-  }
-  if (slots.title && !slots.hasWhen) {
-    return { complete: false, missing: "when", title: slots.title };
-  }
-  if (slots.hasWhen && !slots.title) {
-    return { complete: false, missing: "title", args: parsedArgsFromSlots(slots) };
-  }
-  // Tomt efter prefix ("skapa påminnelse") eller tom inmatning efter strip.
-  if (hasReminderLead(trimmed) && !body) return { complete: false, missing: "both" };
-  return body || hasReminderLead(trimmed) ? { complete: false, missing: "both" } : null;
+  if (!trimmed) return null;
+  // Redan en "påminn …"-fras? Tolka som den är; annars sätt prefixet så att
+  // samma parser förstår den nakna meningen.
+  const parsed =
+    parseReminderText(trimmed, now, timezone) ??
+    (/^påminn/i.test(trimmed) ? null : parseReminderText(`påminn mig ${trimmed}`, now, timezone));
+  if (parsed) return { complete: true, title: parsed.title, args: parsed.args };
+  const title = stripReminderLead(trimmed);
+  return title ? { complete: false, title } : null;
 }
 
 /* ------------------------------ Ren tidfras (NÄR-steget) ----------------------------- */
@@ -353,7 +329,7 @@ export function parseWhenText(
 
 /* ------------------------------- Förhandsvisning ------------------------------ */
 
-/** Tolkade verktygsargument → "Onsdag 2 september kl. 12:00" (eller null). */
+/** Tolkade verktygsargument → "Onsdag 2 september kl 10:00" (eller null). */
 export function previewReminderDueFromArgs(
   args: Record<string, string | number | boolean>,
   now: Date,
@@ -363,23 +339,8 @@ export function previewReminderDueFromArgs(
   if (!expr) return null;
   const resolved = resolveWhen(expr, now, timezone);
   if (!resolved.ok) return null;
-  return formatDueAtDisplay(resolved.value.dueAt, timezone) || null;
-}
-
-/** Kompakt sekundärrad: "Ring Göran · onsdag 2 sep. kl. 12:00". */
-export function reminderSuggestionPreview(
-  title: string,
-  args: Record<string, string | number | boolean>,
-  now: Date,
-  timezone: string
-): string | null {
-  const expr = whenFromReminderArgs(args);
-  if (!expr) return prettyReminderTitle(title) || null;
-  const resolved = resolveWhen(expr, now, timezone);
-  if (!resolved.ok) return prettyReminderTitle(title) || null;
-  const due = formatDueAtCompact(resolved.value.dueAt, timezone);
-  const pretty = prettyReminderTitle(title);
-  return pretty ? `${pretty} · ${due}` : due;
+  const text = formatDueAt(resolved.value.dueAt, timezone);
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : null;
 }
 
 /** Tolkat förhandsdatum för en ren tidfras i det guidade flödet. */

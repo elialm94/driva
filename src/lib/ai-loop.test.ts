@@ -654,6 +654,58 @@ describe("påminnelser via verktygsloopen", () => {
     assert.equal(db().reminders.length, before);
   });
 
+  test("rättelse i samma mening: 'klockan 12 nej förresten klockan 10' skapar 10:00 utan LLM", async () => {
+    createCustomer({ kind: "privat", name: "Göran Svensson", email: "goran@example.com", phone: "070" });
+    let called = 0;
+    __setAiTransportForTests(async () => {
+      called += 1;
+      throw new Error("LLM-anrop från deterministisk rättelseväg!");
+    });
+    const phrase =
+      "skapa en påminnelse att ringa Göran klockan 12 Nej förresten att ringa Göran klockan 10";
+    const result = await interpretFreeTextViaAi(phrase);
+    assert.equal(called, 0, "noll LLM-anrop för tydlig rättelse");
+    assert.equal(result.ok, true);
+    const rem = db().reminders.find((r) => /göran/i.test(r.title));
+    assert.ok(rem, "påminnelsen skapades med slutligt tillstånd");
+    const svTime = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: rem.timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(rem.dueAt));
+    assert.equal(svTime, "10:00");
+    assert.notEqual(svTime, "12:00");
+    assert.equal(rem.title, "Ring Göran");
+  });
+
+  test("utan OPENROUTER-nyckel: stubbad extraktion med time=10 används, ingen påhittad LLM-replik", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    process.env.AI_PROVIDER = "none";
+    const { reminderArgsFromStructuredExtraction } = await import("./ai/corrections");
+    const args = reminderArgsFromStructuredExtraction({
+      title: "Ring Göran",
+      time: "10:00",
+      whenDate: "2026-08-30",
+    });
+    const result = await executeTool("create_reminder", args, { origin: "user" });
+    assert.equal(result.ok, true);
+    const rem = db().reminders.find((r) => r.title === "Ring Göran");
+    assert.ok(rem);
+    const svTime = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: rem.timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(rem.dueAt));
+    assert.equal(svTime, "10:00");
+    const viaAi = await interpretFreeTextViaAi("påminn mig att ringa klockan 12 klockan 10");
+    assert.equal(viaAi.ok, false);
+    assert.equal(viaAi.notConfigured, true);
+    assert.equal(viaAi.text, FREE_TEXT_FALLBACK_MESSAGE);
+    assert.doesNotMatch(viaAi.text, /12:00/);
+  });
+
   test("skicka påminnelse till Johan om faktura skapar inte intern påminnelse", async () => {
     const before = db().reminders.length;
     process.env.AI_PROVIDER = "none";

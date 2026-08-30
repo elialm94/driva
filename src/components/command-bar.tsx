@@ -40,9 +40,7 @@ import {
   FREE_TEXT_FALLBACK_MESSAGE,
   commandWorkspace,
   getCommand,
-  leftoverAfterIntent,
   matchCommands,
-  parseCommand,
   parseFreeText,
   type CommandDef,
   type CommandIcon,
@@ -50,12 +48,16 @@ import {
   type CommandWorkspace,
 } from "@/lib/command-bar";
 import {
-  isReminderIntentQuery,
-  parseReminderCommandInput,
+  formatResolvedCommandCta,
   prettyReminderTitle,
+  resolveUtteranceCorrections,
+} from "@/lib/ai/corrections";
+import { isInternalReminderIntent } from "@/lib/ai/utterance";
+import {
+  parseReminderCommandInput,
+  parseReminderText,
   previewReminderDue,
   previewReminderDueFromArgs,
-  reminderSuggestionPreview,
 } from "@/lib/reminders/parse";
 import { DEFAULT_TIMEZONE } from "@/lib/reminders/when";
 import type {
@@ -71,7 +73,6 @@ import {
   commandQuoteTopicsAction,
   interpretFreeTextAction,
   runCommandAction,
-  undoCreatedReminderAction,
 } from "@/app/command-actions";
 import { cancelAssistantActionAction, confirmAssistantActionAction } from "@/app/actions";
 import { AppLink, useAppNavigate } from "./app-link";
@@ -81,9 +82,10 @@ import { buttonClasses, cx } from "./ui";
 import type { VoiceUiState } from "./voice-input-button";
 
 /**
- * Röstinmatning: kort kommando via mikrofon. Efter auto-stopp (eller manuellt
- * stopp) skickas det SLUTLIGA transkriptet till samma Enter-väg som skriven
- * text. Laddas dynamiskt utan SSR; döljer sig när taligenkänning saknas.
+ * Röstinmatning: enbart ett alternativt sätt att fylla i fältet – transkriptet
+ * granskas och skickas som vanlig text (aldrig autosänd). Laddas dynamiskt
+ * utan SSR så Hems initiala bundle inte växer; döljer sig själv när
+ * webbläsaren saknar taligenkänning.
  */
 const VoiceInputButton = dynamic(() => import("./voice-input-button").then((m) => m.VoiceInputButton), {
   ssr: false,
@@ -140,26 +142,17 @@ interface FlowState {
 }
 
 type BarItem =
-  | {
-      key: string;
-      kind: "command";
-      command: CommandDef;
-      entityQuery?: string;
-      /** Hela originalfrågan – autocomplete får ALDRIG kasta den. */
-      sourceQuery?: string;
-      /** Sekundärrad när parsern redan lyckats, t.ex. "Ring Göran · onsdag 2 sep. kl. 12:00". */
-      preview?: string;
-    }
+  | { key: string; kind: "command"; command: CommandDef; entityQuery?: string }
   | { key: string; kind: "entity"; hit: CommandEntityHit }
   | { key: string; kind: "createCustomer"; name: string }
   | { key: string; kind: "invoiceTarget"; option: InvoiceTargetOption }
   | { key: string; kind: "quoteTopic"; option: QuoteTopicOption }
   | { key: string; kind: "customTitle" }
-  | { key: string; kind: "titleSubmit"; title: string; actionLabel?: string; sublabel?: string; icon?: CommandIcon }
+  | { key: string; kind: "titleSubmit"; title: string; submitText?: string; actionLabel?: string; sublabel?: string; icon?: CommandIcon }
   | { key: string; kind: "link"; label: string; sublabel?: string; href: string; icon: CommandIcon }
   /** Skicka frågan som fri text till LLM:n – visas bara med konfigurerad nyckel. */
   | { key: string; kind: "aiInterpret"; text: string }
-  /** Deterministisk påminnelse – noll LLM, kör hela originalfrasen. */
+  /** Deterministisk påminnelse ("påminn mig imorgon att …") – noll LLM. */
   | { key: string; kind: "reminderCreate"; text: string; title: string; due?: string };
 
 interface Section {
@@ -187,18 +180,8 @@ function idleCommandItems(workspace: CommandWorkspace): BarItem[] {
     .map((command) => ({ key: `cmd-${command.id}`, kind: "command" as const, command }));
 }
 
-function commandItem(
-  command: CommandDef,
-  opts?: { entityQuery?: string; sourceQuery?: string; preview?: string }
-): BarItem {
-  return {
-    key: `cmd-${command.id}`,
-    kind: "command",
-    command,
-    entityQuery: opts?.entityQuery,
-    sourceQuery: opts?.sourceQuery,
-    preview: opts?.preview,
-  };
+function commandItem(command: CommandDef, entityQuery?: string): BarItem {
+  return { key: `cmd-${command.id}`, kind: "command", command, entityQuery };
 }
 
 /* ------------------------------- Huvudkomponent ------------------------------- */
@@ -240,8 +223,6 @@ export function CommandBar({
   const listRef = useRef<HTMLDivElement>(null);
   const searchSeq = useRef(0);
   const listboxId = useId();
-  /** Slutligt rösttranskript som ska köras som Enter när panelmodellen hunnit ikapp. */
-  const pendingVoiceCommitRef = useRef<string | null>(null);
 
   /* ------------------------------ Miljödetektering ---------------------------- */
 
@@ -306,7 +287,7 @@ export function CommandBar({
     });
   }
 
-  function startCommand(command: CommandDef, entityQuery?: string, sourceQuery?: string) {
+  function startCommand(command: CommandDef, entityQuery?: string) {
     setResult(null);
     setAiTurns([]);
     if (command.run.kind === "navigate") {
@@ -321,49 +302,8 @@ export function CommandBar({
       runTool(command);
       return;
     }
-
-    // Påminnelse: tolka HELA originalfrasen först. Autocomplete "Skapa
-    // påminnelse" är bara intent – resten får aldrig kastas.
-    if (command.id === "create_reminder") {
-      const source = (sourceQuery ?? query).trim();
-      // Bara aliaset ("Skapa påminnelse") → tom guide. Leftover bevaras.
-      const leftover = source ? leftoverAfterIntent(source, "create_reminder") : "";
-      const parsed =
-        source && leftover ? parseReminderCommandInput(source, new Date(), DEFAULT_TIMEZONE) : null;
-      if (parsed?.complete) {
-        startTransition(async () => {
-          applyResult(await runCommandAction("create_reminder", { text: source }));
-        });
-        return;
-      }
-      if (parsed && !parsed.complete && parsed.missing === "when") {
-        setFlow({ command, step: "when", reminderTitle: prettyReminderTitle(parsed.title) });
-        setQuery("");
-        setHits(null);
-        focusInput();
-        return;
-      }
-      if (parsed && !parsed.complete && parsed.missing === "title") {
-        setFlow({ command, step: "title", reminderArgs: parsed.args, reminderSource: source });
-        setQuery("");
-        setHits(null);
-        focusInput();
-        return;
-      }
-      setFlow({ command, step: "title" });
-      setQuery("");
-      setHits(null);
-      focusInput();
-      return;
-    }
-
-    // Övriga flöden: förifyll ur hela frasen (kundnamn m.m.) – släng aldrig leftover.
-    const fromSource = sourceQuery?.trim() ? parseFreeText(sourceQuery, workspace) : null;
-    const eq =
-      entityQuery ??
-      (fromSource?.confidence === "high" ? fromSource.entityQuery : undefined);
     setFlow({ command, step: command.run.steps[0]?.kind ?? "customer" });
-    setQuery(eq ?? "");
+    setQuery(entityQuery ?? "");
     setHits(null);
     focusInput();
   }
@@ -429,45 +369,21 @@ export function CommandBar({
     const f = flow;
     if (!title.trim() || pending) return;
     if (f?.command.id === "create_reminder") {
-      // Ingen stel guide: tolka HELA meningen först. Hög konfidens (VAD+NÄR
-      // i samma yttrande) → skapa direkt. Saknad tid → fråga bara När.
+      // Ingen stel guide: tolka HELA meningen först. Fanns både VAD och NÄR
+      // ("Ring Göran klockan 8 imorgon") → direkt till förhandsvisningen;
+      // annars fråga enbart efter tiden som faktiskt saknas.
       const parsed = parseReminderCommandInput(title, new Date(), DEFAULT_TIMEZONE);
-      if (parsed?.complete && !f.reminderArgs) {
-        startTransition(async () => {
-          applyResult(await runCommandAction("create_reminder", { text: title.trim() }));
-        });
-        return;
-      }
-      if (parsed?.complete && f.reminderArgs) {
-        // Titelsteget var uppföljning (när redan känt) – visa förhandsvisning.
-        setFlow({
-          command: f.command,
-          step: "when",
-          reminderTitle: prettyReminderTitle(parsed.title),
-          reminderArgs: parsed.args,
-          reminderSource: title.trim(),
-        });
-        setQuery("");
-        focusInput();
-        return;
-      }
-      const knownTitle =
-        parsed && !parsed.complete && parsed.missing === "when"
-          ? parsed.title
-          : title.trim();
-      if (f.reminderArgs) {
-        setFlow({
-          command: f.command,
-          step: "when",
-          reminderTitle: prettyReminderTitle(knownTitle),
-          reminderArgs: f.reminderArgs,
-          reminderSource: f.reminderSource,
-        });
-        setQuery("");
-        focusInput();
-        return;
-      }
-      setFlow({ command: f.command, step: "when", reminderTitle: prettyReminderTitle(knownTitle) });
+      setFlow(
+        parsed?.complete
+          ? {
+              command: f.command,
+              step: "when",
+              reminderTitle: parsed.title,
+              reminderArgs: parsed.args,
+              reminderSource: title.trim(),
+            }
+          : { command: f.command, step: "when", reminderTitle: parsed?.title || title.trim() }
+      );
       setQuery("");
       focusInput();
       return;
@@ -488,21 +404,14 @@ export function CommandBar({
     if (!f || f.command.id !== "create_reminder" || !f.reminderTitle || pending) return;
     const whenText = query.trim();
     const title = f.reminderTitle;
-    // Skriven tidfras ("kl 9 istället") vinner – men HELA uppföljningen
-    // parsas: "nästa onsdag kl 12" är både datum och tid, inte bara dag.
+    // Skriven tidfras ("kl 9 istället") vinner alltid – titeln (VAD) behålls.
     if (whenText) {
-      const asFull = parseReminderCommandInput(whenText, new Date(), DEFAULT_TIMEZONE);
-      if (asFull?.complete) {
-        startTransition(async () => {
-          applyResult(await runCommandAction("create_reminder", { text: whenText }));
-        });
-        return;
-      }
       startTransition(async () => {
         applyResult(await runCommandAction("create_reminder", { title, whenText }));
       });
       return;
     }
+    // Ett-yttrande-vägen: servern tolkar om hela råtexten med samma parser.
     const source = f.reminderSource;
     if (!source || !f.reminderArgs) return;
     startTransition(async () => {
@@ -552,7 +461,7 @@ export function CommandBar({
     if (pending) return;
     switch (item.kind) {
       case "command":
-        startCommand(item.command, item.entityQuery, item.sourceQuery);
+        startCommand(item.command, item.entityQuery);
         break;
       case "entity":
         pickCustomer(item.hit);
@@ -573,7 +482,7 @@ export function CommandBar({
         focusInput();
         break;
       case "titleSubmit":
-        finishTitle(item.title);
+        finishTitle(item.submitText ?? item.title);
         break;
       case "link":
         navigateTo(item.href);
@@ -678,12 +587,16 @@ export function CommandBar({
       if (flow.step === "title") {
         const title = query.trim();
         const isReminder = flow.command.id === "create_reminder";
+        // Tolka hela meningen redan här: bär den både VAD och NÄR visas den
+        // tolkade tiden direkt – tidssteget hoppas över vid Enter.
         const parsedReminder = isReminder && title ? parseReminderCommandInput(title, new Date(), DEFAULT_TIMEZONE) : null;
         const parsedDue =
           parsedReminder?.complete === true
             ? previewReminderDueFromArgs(parsedReminder.args, new Date(), DEFAULT_TIMEZONE)
             : null;
-        const oneshot = isReminder && parsedReminder?.complete === true && !flow.reminderArgs;
+        const resolvedTitle =
+          parsedReminder?.complete === true ? prettyReminderTitle(parsedReminder.title) : title;
+        const clarify = isReminder ? resolveUtteranceCorrections(title).clarify : undefined;
         return {
           sections: [
             {
@@ -692,14 +605,15 @@ export function CommandBar({
                     {
                       key: "title-submit",
                       kind: "titleSubmit" as const,
-                      title,
-                      actionLabel: oneshot ? "Skapa påminnelse" : isReminder ? "Fortsätt med" : "Skapa",
+                      title: resolvedTitle,
+                      submitText: title,
+                      actionLabel: parsedDue ? "Skapa påminnelse" : isReminder ? "Fortsätt med" : "Skapa",
                       sublabel: isReminder
-                        ? parsedDue
-                          ? oneshot
-                            ? `${parsedDue} – skapas direkt`
-                            : `${parsedDue} – granska och skapa`
-                          : "Nästa: när ska du bli påmind?"
+                        ? clarify
+                          ? clarify
+                          : parsedDue
+                            ? formatResolvedCommandCta({ command: "Skapa påminnelse", detail: resolvedTitle, when: parsedDue })
+                            : "Nästa: när ska du bli påmind?"
                         : "Enter för att skapa",
                       icon: isReminder ? ("clock" as const) : ("job" as const),
                     },
@@ -707,7 +621,7 @@ export function CommandBar({
                 : [],
             },
           ],
-          preselect: Boolean(title),
+          preselect: Boolean(title) && !clarify,
           honest: false,
         };
       }
@@ -767,28 +681,27 @@ export function CommandBar({
     }
 
     const parsed = parseFreeText(q, workspace);
-    const parsedCmd = parseCommand(q, workspace);
     const matches = matchCommands(q, IDLE_COMMAND_COUNT, workspace);
-    const now = new Date();
     // Deterministiska förslag leder alltid; med nyckel finns en explicit rad
     // för att skicka frågan till LLM:n när förslagen inte är det man menade.
     const aiRow: BarItem[] =
-      prefetch.aiConfigured && parsed.confidence !== "high" && parsedCmd.confidence !== "high"
-        ? [{ key: "ai-interpret", kind: "aiInterpret", text: q }]
-        : [];
+      prefetch.aiConfigured && parsed.confidence !== "high" ? [{ key: "ai-interpret", kind: "aiInterpret", text: q }] : [];
 
-    const withSource = (command: CommandDef, extra?: { entityQuery?: string; preview?: string }): BarItem =>
-      commandItem(command, { entityQuery: extra?.entityQuery, sourceQuery: q, preview: extra?.preview });
-
-    // Intern påminnelse: hela originalfrasen parsas FÖRST. Complett → one-shot.
-    // Autocomplete "Skapa påminnelse" är bara intent, aldrig en tom guide.
-    const reminderParsed =
-      isReminderIntentQuery(q) || parsedCmd.confidence === "high" && parsedCmd.commandId === "create_reminder"
-        ? parseReminderCommandInput(q, now, DEFAULT_TIMEZONE)
-        : /^påminn/i.test(q)
-          ? parseReminderCommandInput(q, now, DEFAULT_TIMEZONE)
-          : null;
-    if (reminderParsed?.complete) {
+    // "Påminn mig … att …" med tydligt tidsuttryck → deterministisk påminnelse
+    // (noll LLM). Samma rena tolk som servern använder; raden leder så att
+    // Enter inte fastnar i luddiga kommandoträffar ("Påminn om sena fakturor").
+    const reminderClarify = isInternalReminderIntent(q) ? resolveUtteranceCorrections(q) : null;
+    if (reminderClarify?.confidence === "ambiguous" && reminderClarify.clarify) {
+      return {
+        sections: [{ items: [...matches.slice(0, 3).map((m) => commandItem(m.command)), ...aiRow] }],
+        preselect: false,
+        honest: false,
+        emptyText: reminderClarify.clarify,
+      };
+    }
+    const reminderParsed = isInternalReminderIntent(q) ? parseReminderText(q, new Date(), DEFAULT_TIMEZONE) : null;
+    if (reminderParsed) {
+      const resolvedTitle = prettyReminderTitle(reminderParsed.title);
       return {
         sections: [
           {
@@ -797,31 +710,11 @@ export function CommandBar({
                 key: "reminder-create",
                 kind: "reminderCreate",
                 text: q,
-                title: prettyReminderTitle(reminderParsed.title),
-                due: previewReminderDueFromArgs(reminderParsed.args, now, DEFAULT_TIMEZONE) ?? undefined,
+                title: resolvedTitle,
+                // Tolkningen visas INNAN något skapas – aldrig en dold gissning.
+                due: previewReminderDueFromArgs(reminderParsed.args, new Date(), DEFAULT_TIMEZONE) ?? undefined,
               },
-              ...matches.slice(0, 3).map((m) => withSource(m.command)),
-            ],
-          },
-        ],
-        preselect: true,
-        honest: false,
-      };
-    }
-    if (reminderParsed && !reminderParsed.complete && reminderParsed.missing !== "both") {
-      const preview =
-        reminderParsed.missing === "when"
-          ? prettyReminderTitle(reminderParsed.title)
-          : reminderParsed.missing === "title"
-            ? previewReminderDueFromArgs(reminderParsed.args, now, DEFAULT_TIMEZONE) ?? undefined
-            : undefined;
-      return {
-        sections: [
-          {
-            items: [
-              withSource(getCommand("create_reminder"), { preview }),
-              ...matches.filter((m) => m.command.id !== "create_reminder").slice(0, 3).map((m) => withSource(m.command)),
-              ...aiRow,
+              ...matches.slice(0, 3).map((m) => commandItem(m.command)),
             ],
           },
         ],
@@ -835,34 +728,16 @@ export function CommandBar({
       const rest = matches
         .filter((m) => m.command.id !== parsed.commandId)
         .slice(0, 3)
-        .map((m) => withSource(m.command));
+        .map((m) => commandItem(m.command));
       return {
-        sections: [{ items: [withSource(primary, { entityQuery: parsed.entityQuery }), ...rest] }],
+        sections: [{ items: [commandItem(primary, parsed.entityQuery), ...rest] }],
         preselect: true,
         honest: false,
       };
     }
     if (matches.length > 0) {
-      const reminderPreview =
-        matches[0]?.command.id === "create_reminder"
-          ? (() => {
-              const p = parseReminderCommandInput(q, now, DEFAULT_TIMEZONE);
-              return p?.complete ? reminderSuggestionPreview(p.title, p.args, now, DEFAULT_TIMEZONE) ?? undefined : undefined;
-            })()
-          : undefined;
       return {
-        sections: [
-          {
-            items: [
-              ...matches.map((m) =>
-                withSource(m.command, {
-                  preview: m.command.id === "create_reminder" ? reminderPreview : undefined,
-                })
-              ),
-              ...aiRow,
-            ],
-          },
-        ],
+        sections: [{ items: [...matches.map((m) => commandItem(m.command)), ...aiRow] }],
         preselect: true,
         honest: false,
       };
@@ -870,10 +745,7 @@ export function CommandBar({
     if (parsed.confidence === "low") {
       return {
         sections: [
-          {
-            title: "Menade du?",
-            items: [...parsed.suggestions.map((id) => withSource(getCommand(id))), ...aiRow],
-          },
+          { title: "Menade du?", items: [...parsed.suggestions.map((id) => commandItem(getCommand(id))), ...aiRow] },
         ],
         preselect: true,
         honest: false,
@@ -885,7 +757,7 @@ export function CommandBar({
           items: [
             ...aiRow,
             ...(workspace === "accountant" ? ACCOUNTANT_FALLBACK_COMMAND_IDS : FALLBACK_COMMAND_IDS).map((id) =>
-              commandItem(getCommand(id), { sourceQuery: q })
+              commandItem(getCommand(id))
             ),
           ],
         },
@@ -913,19 +785,6 @@ export function CommandBar({
     const el = listRef.current?.querySelector(`[data-bar-index="${highlight}"]`);
     el?.scrollIntoView({ block: "nearest" });
   }, [highlight]);
-
-  // Röstens slutliga transkript: vänta tills query + panelmodell stämmer, sen
-  // samma Enter-väg. Kundsteget väntar på sökresultat. preferFirst undviker
-  // kapplöpning med highlight-effekten.
-  useEffect(() => {
-    const pending = pendingVoiceCommitRef.current;
-    if (pending === null || pending !== query) return;
-    if (flow?.step === "customer" && searching) return;
-    pendingVoiceCommitRef.current = null;
-    submitLikeEnter(true);
-    // submitLikeEnter läser aktuell render – deps täcker det som påverkar valet.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, flow, searching, flatKey, model.preselect, model.honest]);
 
   /* ------------------------------- Tangentbord -------------------------------- */
 
@@ -972,14 +831,6 @@ export function CommandBar({
     }
     if (e.key !== "Enter") return;
     e.preventDefault();
-    submitLikeEnter();
-  }
-
-  /**
-   * Samma väg som Enter: förvald rad, pågående flödessteg eller fri-text.
-   * Röstens slutliga transkript landar här – ingen separat röstguide.
-   */
-  function submitLikeEnter(preferFirst = false) {
     if (flow?.step === "confirm") {
       finishInvoice();
       return;
@@ -992,9 +843,8 @@ export function CommandBar({
       finishTitle(query);
       return;
     }
-    const item = preferFirst && model.preselect ? flatItems[0] : highlight >= 0 ? flatItems[highlight] : undefined;
-    if (item) {
-      activateItem(item);
+    if (highlight >= 0 && flatItems[highlight]) {
+      activateItem(flatItems[highlight]);
       return;
     }
     // Fri text till LLM: i ärligt läge (deterministisk tolkning gav inget)
@@ -1002,10 +852,9 @@ export function CommandBar({
     // fallbacktexten redan i panelen och inget nätverksanrop görs.
     // Undantag: "påminn …"-fraser har en deterministisk snabbväg på servern
     // (noll LLM) och skickas alltid.
-    const typed = query.trim();
-    const reminderPhrase = isReminderIntentQuery(typed) || /^påminn/i.test(typed);
-    if (!flow && !result && typed && (prefetch.aiConfigured || reminderPhrase) && (model.honest || inAiConversation || reminderPhrase)) {
-      runFreeTextViaAi(typed);
+    const reminderPhrase = isInternalReminderIntent(query.trim());
+    if (!flow && !result && query.trim() && (prefetch.aiConfigured || reminderPhrase) && (model.honest || inAiConversation || reminderPhrase)) {
+      runFreeTextViaAi(query.trim());
     }
   }
 
@@ -1283,21 +1132,9 @@ export function CommandBar({
             setQuery(next);
             setResult(null);
           }}
-          onCommit={(text) => {
-            pendingVoiceCommitRef.current = text;
-            setQuery(text);
-            setResult(null);
-            setOpen(true);
-          }}
           onActive={() => {
             setOpen(true);
-            if (isMobile) {
-              // Röstläge: stäng tangentbordet – arket visar Lyssnar/Tolkar ovanför nav.
-              sheetInputRef.current?.blur();
-              desktopInputRef.current?.blur();
-            } else {
-              focusInput();
-            }
+            focusInput();
           }}
           onUiState={setVoiceUi}
           onHint={setVoiceHint}
@@ -1382,7 +1219,7 @@ function rowVisual(item: BarItem): { icon: CommandIcon; label: ReactNode; sublab
             {item.entityQuery ? <span className="ml-1.5 text-soft">”{item.entityQuery}”</span> : null}
           </>
         ),
-        sublabel: item.preview ?? item.command.hint,
+        sublabel: item.command.hint,
       };
     case "entity":
       return { icon: "customer", label: item.hit.label, sublabel: item.hit.sublabel };
@@ -1415,8 +1252,12 @@ function rowVisual(item: BarItem): { icon: CommandIcon; label: ReactNode; sublab
     case "reminderCreate":
       return {
         icon: "clock",
-        label: "Skapa påminnelse",
-        sublabel: `${item.title.length > 60 ? `${item.title.slice(0, 57)}…` : item.title}${item.due ? ` · ${item.due}` : ""}`,
+        label: formatResolvedCommandCta({
+          command: "Skapa påminnelse",
+          detail: item.title.length > 40 ? `${item.title.slice(0, 37)}…` : item.title,
+          when: item.due,
+        }),
+        sublabel: "Enter för att skapa",
       };
   }
 }
@@ -1562,16 +1403,12 @@ function ReminderConfirm({
 /* -------------------------------- Resultatpanel ------------------------------- */
 
 function ResultView({ result, onClose }: { result: CommandRunResult; onClose: () => void }) {
-  const [undoState, setUndoState] = useState<"idle" | "pending" | "done">("idle");
-  const [undoText, setUndoText] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
   return (
     <div className="p-4">
       <div className="flex items-start justify-between gap-3">
         <p className={cx("text-[14px] leading-relaxed", result.ok ? "text-ink" : "text-soft")}>
           {result.ok ? <Check className="mr-1.5 inline size-4 -translate-y-px text-ok" aria-hidden /> : null}
-          {undoState === "done" ? undoText ?? "Påminnelsen togs bort." : result.text}
+          {result.text}
         </p>
         <button
           type="button"
@@ -1582,25 +1419,7 @@ function ResultView({ result, onClose }: { result: CommandRunResult; onClose: ()
           <X className="size-4" />
         </button>
       </div>
-      {undoState !== "done" && result.undo?.kind === "dismiss_reminder" ? (
-        <div className="mt-2">
-          <button
-            type="button"
-            className={buttonClasses("ghost", "sm")}
-            disabled={pending}
-            onClick={() =>
-              startTransition(async () => {
-                const res = await undoCreatedReminderAction(result.undo!.id);
-                setUndoText(res.text);
-                setUndoState(res.ok ? "done" : "idle");
-              })
-            }
-          >
-            Ångra
-          </button>
-        </div>
-      ) : null}
-      {undoState !== "done" && result.card ? (
+      {result.card ? (
         result.card.kind === "confirm" ? (
           <BarConfirmCard card={result.card} />
         ) : (
