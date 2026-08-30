@@ -231,6 +231,11 @@ export async function createBusinessWithOwner(input: {
   orgNumber: string;
   email: string;
   phone: string;
+  /**
+   * Endast seed-skriptets demoprovisionering. is_demo fryses av en trigger
+   * vid insert – appens onboarding skapar aldrig demoföretag.
+   */
+  isDemo?: boolean;
 }): Promise<string> {
   const client = await sqlClient();
   return client.transaction(async (tx) => {
@@ -238,9 +243,9 @@ export async function createBusinessWithOwner(input: {
     const businessId = String(idRows[0].id);
     await bindTransaction(tx, businessId);
     await tx.query(
-      `insert into public.businesses (id, name, org_number, meta)
-       values ($1, $2, $3, jsonb_build_object('seededAt', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))`,
-      [businessId, input.name, input.orgNumber]
+      `insert into public.businesses (id, name, org_number, is_demo, meta)
+       values ($1, $2, $3, $4, jsonb_build_object('seededAt', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))`,
+      [businessId, input.name, input.orgNumber, input.isDemo === true]
     );
     await tx.query(
       `insert into public.business_memberships (business_id, user_id, role) values ($1, $2, 'owner')`,
