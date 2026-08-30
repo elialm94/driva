@@ -133,7 +133,9 @@ async function emailInvoiceOnce(invoiceId: string, createdBy: Actor): Promise<{ 
   const invoice = getInvoice(invoiceId);
   if (!invoice) throw new Error("Fakturan finns inte");
   if (invoice.status === "utkast") throw new Error("Utkast kan inte skickas innan fakturan är utfärdad.");
-  if (invoice.number == null) throw new Error("Fakturan saknar nummer.");
+  if (invoice.number == null || !invoice.ocr) {
+    throw new Error("Fakturan kunde inte skickas – nummer och OCR saknas. Försök igen.");
+  }
   const customer = requireCustomer(invoice.customerId);
   const to = requireRecipient(customer.email);
   if (typeof to !== "string") return { outcome: { mode: "live", ok: false, error: to.error } };
