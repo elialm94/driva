@@ -669,7 +669,7 @@ export function requestSendQuote(quoteId: string): DomainResult {
     card: {
       kind: "confirm",
       actionId: action.id,
-      summary: "Offerten skickas till kunden med länk för BankID-godkännande.",
+      summary: "Offerten skickas till kunden med en länk där den kan signeras med BankID.",
       rows: [
         { label: `Offert #${quote.number}`, value: kr(t.toPay) },
         { label: "Till", value: customer.name },
@@ -757,7 +757,7 @@ export function requestFollowUpQuotes(minDays = 7): DomainResult {
   if (waiting.length === 0) {
     return {
       ok: true,
-      text: `Ingen offert har väntat på BankID i mer än ${minDays} dagar.`,
+      text: `Ingen offert har väntat på signering i mer än ${minDays} dagar.`,
       forModel: { count: 0 },
     };
   }
@@ -765,7 +765,7 @@ export function requestFollowUpQuotes(minDays = 7): DomainResult {
   addPending(action);
   return {
     ok: true,
-    text: "Dessa offerter väntar fortfarande på BankID-godkännande. Ska jag skicka en vänlig påminnelse?",
+    text: "Dessa offerter väntar fortfarande på signering. Ska jag skicka en vänlig påminnelse?",
     card: {
       kind: "confirm",
       actionId: action.id,

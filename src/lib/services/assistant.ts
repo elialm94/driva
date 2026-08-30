@@ -656,7 +656,7 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
       updateConfirmCard(actionId, mailed ? "utford" : "avbruten", mailed ? "Påminnelserna har skickats." : "Påminnelsen kunde inte skickas.");
       reply(
         mailed
-          ? `Klart – jag har påmint ${action.quoteIds.length === 1 ? "kunden" : `${action.quoteIds.length} kunder`} med e-post om att offerten väntar på BankID-godkännande.`
+          ? `Klart – jag har påmint ${action.quoteIds.length === 1 ? "kunden" : `${action.quoteIds.length} kunder`} med e-post om att offerten väntar på signering.`
           : "Påminnelsen kunde inte skickas. Försök igen."
       );
       break;
@@ -689,7 +689,7 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
           break;
         }
         updateConfirmCard(actionId, "utford", "Offerten har skickats.");
-        reply("Klart – offerten är skickad med e-post. Kunden godkänner med BankID när hen är redo.");
+        reply("Klart – offerten är skickad med e-post. Kunden signerar med BankID när hen är redo.");
       } catch (e) {
         const message = e instanceof Error ? e.message : "Kunde inte skicka offerten.";
         updateConfirmCard(actionId, "avbruten", message);
