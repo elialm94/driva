@@ -25,11 +25,8 @@ import {
 } from "@/lib/services/document-mail";
 import { issueInvoice } from "@/lib/services/invoices";
 import { InvoiceNotReadyError } from "@/lib/invoices/validate";
-<<<<<<< HEAD
 import { userFacingInvoiceSendError, userFacingIssueError } from "@/lib/invoices/issue-errors";
-=======
 import { QuoteNotReadyError } from "@/lib/services/quotes";
->>>>>>> origin/cursor/fix-skicka-offert-f020
 import { getInvoice, getQuoteByToken } from "@/lib/services/data";
 import {
   completeReminder,
