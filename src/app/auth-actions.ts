@@ -18,7 +18,11 @@ import {
   validateSignupFields,
 } from "@/lib/auth/signup-flow";
 import { isSupabaseMode } from "@/lib/storage/config";
-import { validateOnboardingFields } from "@/lib/validation";
+import {
+  readOnboardingFormData,
+  validateOnboardingFields,
+  type OnboardingField,
+} from "@/lib/onboarding";
 
 export interface AuthFormState {
   error?: string;
@@ -135,7 +139,7 @@ export async function logoutAction(): Promise<void> {
 
 export interface OnboardingFormState {
   error?: string;
-  fieldErrors?: Partial<Record<"name" | "orgNumber" | "email" | "phone", string>>;
+  fieldErrors?: Partial<Record<OnboardingField, string>>;
 }
 
 export async function onboardingAction(
@@ -143,22 +147,24 @@ export async function onboardingAction(
   formData: FormData
 ): Promise<OnboardingFormState> {
   if (!isSupabaseMode()) return { error: "Onboarding kräver Supabase-miljön." };
-  const result = validateOnboardingFields({
-    name: String(formData.get("name") ?? ""),
-    orgNumber: String(formData.get("orgNumber") ?? ""),
-    email: String(formData.get("email") ?? ""),
-    phone: String(formData.get("phone") ?? ""),
-  });
+  const result = validateOnboardingFields(readOnboardingFormData(formData));
   if (Object.keys(result.fieldErrors).length > 0) {
-    const first = result.fieldErrors.name ?? result.fieldErrors.orgNumber ?? result.fieldErrors.email ?? result.fieldErrors.phone;
+    const first =
+      result.fieldErrors.name ??
+      result.fieldErrors.orgNumber ??
+      result.fieldErrors.vatNumber ??
+      result.fieldErrors.address ??
+      result.fieldErrors.postalCode ??
+      result.fieldErrors.city ??
+      result.fieldErrors.paymentMethod ??
+      result.fieldErrors.bankgiro ??
+      result.fieldErrors.plusgiro ??
+      result.fieldErrors.bankAccount ??
+      result.fieldErrors.email ??
+      result.fieldErrors.phone;
     return { error: first, fieldErrors: result.fieldErrors };
   }
 
-  await createBusinessForCurrentUser({
-    name: result.values.name,
-    orgNumber: result.values.orgNumber,
-    email: result.values.email,
-    phone: result.values.phone,
-  });
+  await createBusinessForCurrentUser(result.values);
   redirect("/");
 }

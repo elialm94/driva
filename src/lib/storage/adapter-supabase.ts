@@ -264,6 +264,13 @@ export async function createBusinessWithOwner(input: {
   orgNumber: string;
   email: string;
   phone: string;
+  vatNumber?: string;
+  address?: string;
+  postalCode?: string;
+  city?: string;
+  bankgiro?: string;
+  plusgiro?: string;
+  bankAccount?: string;
 }): Promise<string> {
   const client = await sqlClient();
   return client.transaction(async (tx) => {
@@ -280,9 +287,29 @@ export async function createBusinessWithOwner(input: {
       [businessId, input.userId]
     );
     await tx.query(
-      `insert into public.business_settings (business_id, name, org_number, email, phone, logo_initials, inbound_mail_slug)
-       values ($1, $2, $3, $4, $5, $6, $7)`,
-      [businessId, input.name, input.orgNumber, input.email, input.phone, initialsFor(input.name), inboundSlugFor(businessId)]
+      `insert into public.business_settings (
+         business_id, name, org_number, vat_number, email, phone,
+         address, postal_code, city, country,
+         bankgiro, plusgiro, bank_account,
+         logo_initials, inbound_mail_slug
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+      [
+        businessId,
+        input.name,
+        input.orgNumber,
+        input.vatNumber ?? "",
+        input.email,
+        input.phone,
+        input.address ?? "",
+        input.postalCode ?? "",
+        input.city ?? "",
+        "Sverige",
+        input.bankgiro ?? "",
+        input.plusgiro ?? null,
+        input.bankAccount ?? null,
+        initialsFor(input.name),
+        inboundSlugFor(businessId),
+      ]
     );
     await tx.query(`insert into public.business_sequences (business_id) values ($1)`, [businessId]);
     return businessId;

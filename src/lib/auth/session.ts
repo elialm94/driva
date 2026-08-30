@@ -399,6 +399,13 @@ export async function createBusinessForCurrentUser(input: {
   orgNumber: string;
   email: string;
   phone: string;
+  vatNumber?: string;
+  address?: string;
+  postalCode?: string;
+  city?: string;
+  bankgiro?: string;
+  plusgiro?: string;
+  bankAccount?: string;
 }): Promise<string> {
   const user = await requireUser();
   const memberships = await listMemberships(user.id);

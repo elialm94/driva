@@ -65,6 +65,23 @@ export function formatVatNumber(orgNumber: string): string {
   return `SE${org}01`;
 }
 
+/** Progressiv visning: 11624 → 116 24. */
+export function formatPostalCode(value: string): string {
+  const d = digitsOnly(value).slice(0, 5);
+  if (d.length <= 3) return d;
+  return `${d.slice(0, 3)} ${d.slice(3)}`;
+}
+
+export function normalizePostalCode(value: string): string {
+  const d = digitsOnly(value);
+  if (d.length === 5) return formatPostalCode(d);
+  return value.trim();
+}
+
+export function isPostalCodeFormat(value: string): boolean {
+  return digitsOnly(value).length === 5;
+}
+
 const PLUSGIRO = /^\d{2,8}-\d$/;
 const IBAN_SE = /^SE\d{22}$/;
 const BIC = /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/;

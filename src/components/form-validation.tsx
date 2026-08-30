@@ -83,14 +83,13 @@ export function FormField({
   const errorId = `${id}-fel`;
   const helperId = `${id}-hjalp`;
   const describedBy = [error ? errorId : null, helper && !error ? helperId : null].filter(Boolean).join(" ") || undefined;
-  const control =
-    isValidElement(children)
-      ? cloneElement(children as ReactElement<Record<string, unknown>>, {
-          id,
-          "aria-invalid": error ? true : (children.props as { "aria-invalid"?: boolean })["aria-invalid"],
-          "aria-describedby": describedBy ?? (children.props as { "aria-describedby"?: string })["aria-describedby"],
-        })
-      : children;
+  const control = isValidElement(children)
+    ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+        id,
+        "aria-invalid": error ? true : (children.props as { "aria-invalid"?: boolean })["aria-invalid"],
+        "aria-describedby": describedBy ?? (children.props as { "aria-describedby"?: string })["aria-describedby"],
+      })
+    : children;
   return (
     <div>
       <label htmlFor={id} className={labelClassName}>
