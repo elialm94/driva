@@ -485,15 +485,16 @@ export async function interpretFreeTextViaAi(
     if (resolution.confidence === "ambiguous" && resolution.clarify) {
       return { ok: true, text: resolution.clarify };
     }
-    // Tydlig deterministisk rättelse eller vanlig fras – skapa med SLUTLIGT tillstånd.
+    // Deterministisk parser först – wrappers som "Gör en påminnelse" ska inte
+    // tvingas till OpenRouter bara för att "Gör" ser ut som ett namn.
+    const parsed = parseReminderText(text, new Date(), businessTimezone());
+    if (parsed) {
+      const result = await executeTool("create_reminder", parsed.args, { origin: "user", ...toolOptions });
+      save();
+      return toRunResult(result);
+    }
     // Låg konfidens + rättelsespråk/konflikt → OpenRouter med HELA originalfrasen.
     if (!shouldFallbackToStructuredExtraction(resolution)) {
-      const parsed = parseReminderText(text, new Date(), businessTimezone());
-      if (parsed) {
-        const result = await executeTool("create_reminder", parsed.args, { origin: "user", ...toolOptions });
-        save();
-        return toRunResult(result);
-      }
       // Ofullständig men tydlig påminnelse: fråga efter saknat fält – noll LLM.
       // Bara intern påminnelse-intent – inte godtycklig fritext eller "skicka påminnelse".
       const slots = isReminderIntentQuery(text)

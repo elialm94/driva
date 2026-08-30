@@ -618,6 +618,28 @@ describe("påminnelser via verktygsloopen", () => {
     assert.equal(result.undo?.id, rem.id);
   });
 
+  test("one-shot: 'Gör en påminnelse att ringa Göran kl 12 idag' utan OpenRouter", async () => {
+    let called = 0;
+    __setAiTransportForTests(async () => {
+      called += 1;
+      throw new Error("LLM-anrop från deterministisk väg!");
+    });
+    const phrase = "Gör en påminnelse att ringa Göran kl 12 idag";
+    const result = await interpretFreeTextViaAi(phrase);
+    assert.equal(called, 0, "noll LLM-anrop");
+    assert.equal(result.ok, true);
+    assert.match(result.text, /påminnelse skapad/i);
+    const rem = db().reminders.find((r) => /göran/i.test(r.title));
+    assert.ok(rem);
+    const local = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: rem.timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(rem.dueAt));
+    assert.equal(local, "12:00");
+  });
+
   test("one-shot screenshot: 'Skapa en påminnelse att ringa Göran kl 12 nästa onsdag' utan guide", async () => {
     let called = 0;
     __setAiTransportForTests(async () => {
