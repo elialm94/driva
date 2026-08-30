@@ -34,17 +34,25 @@ import {
 } from "lucide-react";
 import type { AssistantCard } from "@/lib/types";
 import {
+  ACCOUNTANT_FALLBACK_COMMAND_IDS,
   COMMANDS,
   FALLBACK_COMMAND_IDS,
   FREE_TEXT_FALLBACK_MESSAGE,
+  commandWorkspace,
   getCommand,
   matchCommands,
   parseFreeText,
   type CommandDef,
   type CommandIcon,
   type CommandStep,
+  type CommandWorkspace,
 } from "@/lib/command-bar";
-import { parseReminderText } from "@/lib/reminders/parse";
+import {
+  parseReminderCommandInput,
+  parseReminderText,
+  previewReminderDue,
+  previewReminderDueFromArgs,
+} from "@/lib/reminders/parse";
 import { DEFAULT_TIMEZONE } from "@/lib/reminders/when";
 import type {
   CommandBarPrefetch,
@@ -116,6 +124,15 @@ interface FlowState {
   invoiceOptions?: InvoiceTargetOption[];
   quoteOptions?: QuoteTopicOption[];
   optionsLoading?: boolean;
+  /**
+   * Påminnelseflödet: den TOLKADE påminnelsen är källan till sanning – inte
+   * brödsmulorna. reminderTitle är alltid VAD; när en enda mening även bar
+   * NÄR ligger den tolkade tiden i reminderArgs och råtexten i
+   * reminderSource (skickas till servern som tolkar om med samma parser).
+   */
+  reminderTitle?: string;
+  reminderArgs?: Record<string, string | number | boolean>;
+  reminderSource?: string;
 }
 
 type BarItem =
@@ -125,12 +142,12 @@ type BarItem =
   | { key: string; kind: "invoiceTarget"; option: InvoiceTargetOption }
   | { key: string; kind: "quoteTopic"; option: QuoteTopicOption }
   | { key: string; kind: "customTitle" }
-  | { key: string; kind: "titleSubmit"; title: string }
+  | { key: string; kind: "titleSubmit"; title: string; actionLabel?: string; sublabel?: string; icon?: CommandIcon }
   | { key: string; kind: "link"; label: string; sublabel?: string; href: string; icon: CommandIcon }
   /** Skicka frågan som fri text till LLM:n – visas bara med konfigurerad nyckel. */
   | { key: string; kind: "aiInterpret"; text: string }
   /** Deterministisk påminnelse ("påminn mig imorgon att …") – noll LLM. */
-  | { key: string; kind: "reminderCreate"; text: string; title: string };
+  | { key: string; kind: "reminderCreate"; text: string; title: string; due?: string };
 
 interface Section {
   title?: string;
@@ -149,8 +166,9 @@ interface PanelModel {
 const IDLE_COMMAND_COUNT = 6;
 const RECENT_PER_GROUP = 3;
 
-function idleCommandItems(): BarItem[] {
+function idleCommandItems(workspace: CommandWorkspace): BarItem[] {
   return [...COMMANDS]
+    .filter((c) => commandWorkspace(c) === workspace)
     .sort((a, b) => b.priority - a.priority || a.label.localeCompare(b.label, "sv"))
     .slice(0, IDLE_COMMAND_COUNT)
     .map((command) => ({ key: `cmd-${command.id}`, kind: "command" as const, command }));
@@ -162,7 +180,14 @@ function commandItem(command: CommandDef, entityQuery?: string): BarItem {
 
 /* ------------------------------- Huvudkomponent ------------------------------- */
 
-export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch; variant: "hem" | "full" }) {
+export function CommandBar({
+  prefetch,
+  variant,
+}: {
+  prefetch: CommandBarPrefetch;
+  variant: "hem" | "full" | "accountant";
+}) {
+  const workspace: CommandWorkspace = variant === "accountant" ? "accountant" : "owner";
   const navigate = useAppNavigate();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -239,9 +264,13 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
       navigateTo(res.href);
       return;
     }
-    setFlow(null);
-    setQuery("");
-    setHits(null);
+    // Lyckat: nollställ flödet helt. Misslyckat: behåll användarens text och
+    // flödessteg så inget skrivet går förlorat – felet visas ovanpå.
+    if (res.ok) {
+      setFlow(null);
+      setQuery("");
+      setHits(null);
+    }
     setResult(res);
   }
 
@@ -303,7 +332,7 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
         const options = await commandQuoteTopicsAction(hit.id);
         setFlow((prev) => {
           if (!prev || prev.customer?.id !== hit.id || prev.step !== "quoteTopic") return prev;
-          // Inga öppna förfrågningar → hoppa direkt till titelsteget.
+          // Inga inkommande uppdrag utan offert → hoppa direkt till titelsteget.
           if (options.length === 0) return { ...prev, quoteOptions: [], optionsLoading: false, step: "title" };
           return { ...prev, quoteOptions: options, optionsLoading: false };
         });
@@ -321,18 +350,39 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
     });
   }
 
-  function finishQuote(input: { requestId?: string; title: string }) {
+  function finishQuote(input: { jobId?: string; title: string }) {
     const f = flow;
     if (!f?.customer || pending) return;
     const customerId = f.customer.id;
     startTransition(async () => {
-      applyResult(await runCommandAction("create_quote", { customerId, requestId: input.requestId, title: input.title }));
+      applyResult(await runCommandAction("create_quote", { customerId, jobId: input.jobId, title: input.title }));
     });
   }
 
   function finishTitle(title: string) {
     const f = flow;
-    if (!f?.customer || !title.trim() || pending) return;
+    if (!title.trim() || pending) return;
+    if (f?.command.id === "create_reminder") {
+      // Ingen stel guide: tolka HELA meningen först. Fanns både VAD och NÄR
+      // ("Ring Göran klockan 8 imorgon") → direkt till förhandsvisningen;
+      // annars fråga enbart efter tiden som faktiskt saknas.
+      const parsed = parseReminderCommandInput(title, new Date(), DEFAULT_TIMEZONE);
+      setFlow(
+        parsed?.complete
+          ? {
+              command: f.command,
+              step: "when",
+              reminderTitle: parsed.title,
+              reminderArgs: parsed.args,
+              reminderSource: title.trim(),
+            }
+          : { command: f.command, step: "when", reminderTitle: parsed?.title || title.trim() }
+      );
+      setQuery("");
+      focusInput();
+      return;
+    }
+    if (!f?.customer) return;
     if (f.command.id === "create_quote") {
       finishQuote({ title: title.trim() });
       return;
@@ -340,6 +390,26 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
     const customerId = f.customer.id;
     startTransition(async () => {
       applyResult(await runCommandAction("create_assignment", { customerId, title: title.trim() }));
+    });
+  }
+
+  function finishReminder() {
+    const f = flow;
+    if (!f || f.command.id !== "create_reminder" || !f.reminderTitle || pending) return;
+    const whenText = query.trim();
+    const title = f.reminderTitle;
+    // Skriven tidfras ("kl 9 istället") vinner alltid – titeln (VAD) behålls.
+    if (whenText) {
+      startTransition(async () => {
+        applyResult(await runCommandAction("create_reminder", { title, whenText }));
+      });
+      return;
+    }
+    // Ett-yttrande-vägen: servern tolkar om hela råtexten med samma parser.
+    const source = f.reminderSource;
+    if (!source || !f.reminderArgs) return;
+    startTransition(async () => {
+      applyResult(await runCommandAction("create_reminder", { text: source }));
     });
   }
 
@@ -354,8 +424,20 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
 
   function stepBack() {
     setResult(null);
-    setQuery("");
     setHits(null);
+    const current = flow;
+    if (current?.command.id === "create_reminder") {
+      if (current.step === "when") {
+        // Tillbaka till titelsteget med hela råtexten (ingen information tappas).
+        setQuery(current.reminderSource ?? current.reminderTitle ?? "");
+        setFlow({ command: current.command, step: "title" });
+        return;
+      }
+      setQuery("");
+      setFlow(null);
+      return;
+    }
+    setQuery("");
     setFlow((f) => {
       if (!f) return null;
       if (f.step === "confirm") return { ...f, step: "invoiceTarget", invoiceTarget: undefined };
@@ -386,7 +468,7 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
         setQuery("");
         break;
       case "quoteTopic":
-        finishQuote({ requestId: item.option.requestId, title: item.option.label });
+        finishQuote({ jobId: item.option.jobId, title: item.option.label });
         break;
       case "customTitle":
         setFlow((f) => (f ? { ...f, step: "title" } : f));
@@ -485,23 +567,63 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
       }
       if (flow.step === "quoteTopic") {
         const items: BarItem[] = (flow.quoteOptions ?? []).map((option) => ({
-          key: `req-${option.requestId}`,
+          key: `job-${option.jobId}`,
           kind: "quoteTopic" as const,
           option,
         }));
         items.push({ key: "custom-title", kind: "customTitle" });
         return {
-          sections: [{ title: "Öppna förfrågningar", items }],
+          sections: [{ title: "Inkommande uppdrag", items }],
           preselect: true,
           honest: false,
         };
       }
       if (flow.step === "title") {
         const title = query.trim();
+        const isReminder = flow.command.id === "create_reminder";
+        // Tolka hela meningen redan här: bär den både VAD och NÄR visas den
+        // tolkade tiden direkt – tidssteget hoppas över vid Enter.
+        const parsedReminder = isReminder && title ? parseReminderCommandInput(title, new Date(), DEFAULT_TIMEZONE) : null;
+        const parsedDue =
+          parsedReminder?.complete === true
+            ? previewReminderDueFromArgs(parsedReminder.args, new Date(), DEFAULT_TIMEZONE)
+            : null;
         return {
-          sections: [{ items: title ? [{ key: "title-submit", kind: "titleSubmit", title }] : [] }],
+          sections: [
+            {
+              items: title
+                ? [
+                    {
+                      key: "title-submit",
+                      kind: "titleSubmit" as const,
+                      title,
+                      actionLabel: isReminder ? "Fortsätt med" : "Skapa",
+                      sublabel: isReminder
+                        ? parsedDue
+                          ? `${parsedDue} – granska och skapa`
+                          : "Nästa: när ska du bli påmind?"
+                        : "Enter för att skapa",
+                      icon: isReminder ? ("clock" as const) : ("job" as const),
+                    },
+                  ]
+                : [],
+            },
+          ],
           preselect: Boolean(title),
           honest: false,
+        };
+      }
+      if (flow.step === "when") {
+        const whenText = query.trim();
+        const preview = whenText ? previewReminderDue(whenText, new Date(), DEFAULT_TIMEZONE) : null;
+        return {
+          sections: [],
+          preselect: false,
+          honest: false,
+          emptyText:
+            whenText && !preview
+              ? "Jag förstod inte tidpunkten. Prova imorgon, onsdag eller om 2 timmar."
+              : undefined,
         };
       }
       return { sections: [], preselect: false, honest: false }; // confirm-steget renderas separat
@@ -509,7 +631,7 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
 
     const q = query.trim();
     if (!q) {
-      const vanliga: Section = { title: "Vanliga åtgärder", items: idleCommandItems() };
+      const vanliga: Section = { title: "Vanliga åtgärder", items: idleCommandItems(workspace) };
       const senaste: Section = {
         title: "Senaste",
         items: [
@@ -539,12 +661,15 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
           })),
         ],
       };
+      if (workspace === "accountant") {
+        return { sections: [vanliga], preselect: false, honest: false };
+      }
       // Mobil följer "Senaste/Vanliga", desktop leder med åtgärderna.
       return { sections: isMobile ? [senaste, vanliga] : [vanliga, senaste], preselect: false, honest: false };
     }
 
-    const parsed = parseFreeText(q);
-    const matches = matchCommands(q, IDLE_COMMAND_COUNT);
+    const parsed = parseFreeText(q, workspace);
+    const matches = matchCommands(q, IDLE_COMMAND_COUNT, workspace);
     // Deterministiska förslag leder alltid; med nyckel finns en explicit rad
     // för att skicka frågan till LLM:n när förslagen inte är det man menade.
     const aiRow: BarItem[] =
@@ -559,7 +684,14 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
         sections: [
           {
             items: [
-              { key: "reminder-create", kind: "reminderCreate", text: q, title: reminderParsed.title },
+              {
+                key: "reminder-create",
+                kind: "reminderCreate",
+                text: q,
+                title: reminderParsed.title,
+                // Tolkningen visas INNAN något skapas – aldrig en dold gissning.
+                due: previewReminderDueFromArgs(reminderParsed.args, new Date(), DEFAULT_TIMEZONE) ?? undefined,
+              },
               ...matches.slice(0, 3).map((m) => commandItem(m.command)),
             ],
           },
@@ -598,11 +730,20 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
       };
     }
     return {
-      sections: [{ items: [...aiRow, ...FALLBACK_COMMAND_IDS.map((id) => commandItem(getCommand(id)))] }],
+      sections: [
+        {
+          items: [
+            ...aiRow,
+            ...(workspace === "accountant" ? ACCOUNTANT_FALLBACK_COMMAND_IDS : FALLBACK_COMMAND_IDS).map((id) =>
+              commandItem(getCommand(id))
+            ),
+          ],
+        },
+      ],
       preselect: false,
       honest: true,
     };
-  }, [flow, hits, isMobile, prefetch, query, result, searching]);
+  }, [flow, hits, isMobile, prefetch, query, result, searching, workspace]);
 
   const flatItems = useMemo(() => model.sections.flatMap((s) => s.items), [model]);
   const flatKey = useMemo(() => flatItems.map((i) => i.key).join("|"), [flatItems]);
@@ -672,6 +813,10 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
       finishInvoice();
       return;
     }
+    if (flow?.step === "when") {
+      finishReminder();
+      return;
+    }
     if (flow?.step === "title") {
       finishTitle(query);
       return;
@@ -737,11 +882,24 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
   const placeholder =
     flow?.step === "confirm"
       ? "Bekräfta nedan"
-      : activeStep
-        ? activeStep.kind === "title"
-          ? activeStep.placeholder
-          : activeStep.prompt
-        : "Vad vill du göra?";
+      : flow?.step === "when" && flow.reminderArgs
+        ? "Ändra tid? Skriv t.ex. imorgon kl 9"
+        : activeStep
+          ? activeStep.kind === "title" || activeStep.kind === "when"
+            ? activeStep.placeholder
+            : activeStep.prompt
+          : prefetch.placeholder ?? (workspace === "accountant" ? "Fråga om bokföringen…" : "Vad vill du göra?");
+
+  // Förhandsvisningen speglar alltid det som faktiskt skulle skapas: en
+  // skriven tidfras vinner; annars tiden som tolkades ur den första meningen.
+  const reminderPreview =
+    flow?.command.id === "create_reminder" && flow.step === "when" && flow.reminderTitle
+      ? query.trim()
+        ? previewReminderDue(query.trim(), new Date(), DEFAULT_TIMEZONE)
+        : flow.reminderArgs
+          ? previewReminderDueFromArgs(flow.reminderArgs, new Date(), DEFAULT_TIMEZONE)
+          : null
+      : null;
 
   const inputValueDisabled = flow?.step === "confirm" || flow?.step === "invoiceTarget" || flow?.step === "quoteTopic";
 
@@ -757,6 +915,14 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
           <ChevronRight className="size-3 text-muted" aria-hidden />
           <span className="inline-flex items-center rounded-full bg-ink/6 px-2.5 py-1 text-[12px] font-medium text-ink">
             {flow.customer.label}
+          </span>
+        </>
+      ) : null}
+      {flow.reminderTitle ? (
+        <>
+          <ChevronRight className="size-3 text-muted" aria-hidden />
+          <span className="inline-flex items-center rounded-full bg-ink/6 px-2.5 py-1 text-[12px] font-medium text-ink">
+            {flow.reminderTitle}
           </span>
         </>
       ) : null}
@@ -783,6 +949,15 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
           cta={flow.command.run.kind === "flow" ? flow.command.run.cta : "Skapa"}
           pending={pending}
           onConfirm={finishInvoice}
+          onBack={stepBack}
+        />
+      ) : flow?.step === "when" && flow.reminderTitle && reminderPreview ? (
+        <ReminderConfirm
+          title={flow.reminderTitle}
+          preview={reminderPreview}
+          cta={flow.command.run.kind === "flow" ? flow.command.run.cta : "Skapa påminnelse"}
+          pending={pending}
+          onConfirm={finishReminder}
           onBack={stepBack}
         />
       ) : (
@@ -947,7 +1122,7 @@ export function CommandBar({ prefetch, variant }: { prefetch: CommandBarPrefetch
   );
 
   return (
-    <div ref={containerRef} className={variant === "hem" ? "relative mt-8" : "relative"}>
+    <div ref={containerRef} className={variant === "full" ? "relative" : "relative mt-8"}>
       {inputField(false)}
       {quickActionChips}
 
@@ -1039,7 +1214,11 @@ function rowVisual(item: BarItem): { icon: CommandIcon; label: ReactNode; sublab
     case "customTitle":
       return { icon: "quote", label: "Egen titel …", sublabel: "Skriv en kort rubrik för offerten" };
     case "titleSubmit":
-      return { icon: "job", label: `Skapa ”${item.title}”`, sublabel: "Enter för att skapa" };
+      return {
+        icon: item.icon ?? "job",
+        label: `${item.actionLabel ?? "Skapa"} ”${item.title}”`,
+        sublabel: item.sublabel ?? "Enter för att skapa",
+      };
     case "link":
       return { icon: item.icon, label: item.label, sublabel: item.sublabel };
     case "aiInterpret":
@@ -1052,7 +1231,7 @@ function rowVisual(item: BarItem): { icon: CommandIcon; label: ReactNode; sublab
       return {
         icon: "clock",
         label: "Skapa påminnelse",
-        sublabel: `”${item.title.length > 60 ? `${item.title.slice(0, 57)}…` : item.title}”`,
+        sublabel: `”${item.title.length > 60 ? `${item.title.slice(0, 57)}…` : item.title}”${item.due ? ` · ${item.due}` : ""}`,
       };
   }
 }
@@ -1160,13 +1339,51 @@ function InvoiceConfirm({
   );
 }
 
+function ReminderConfirm({
+  title,
+  preview,
+  cta,
+  pending,
+  onConfirm,
+  onBack,
+}: {
+  title: string;
+  preview: string;
+  cta: string;
+  pending: boolean;
+  onConfirm: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className="p-4">
+      <div className="rounded-xl border border-accent/25 bg-accent-soft/40 px-4 py-3.5">
+        <p className="text-[14.5px] font-medium leading-relaxed text-ink">{title}</p>
+        <p className="mt-1 text-[13px] text-soft">{preview}</p>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button type="button" className={buttonClasses("accent", "md")} disabled={pending} onClick={onConfirm}>
+          {pending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+          {cta}
+        </button>
+        <button type="button" className={buttonClasses("ghost", "md")} disabled={pending} onClick={onBack}>
+          Tillbaka
+        </button>
+      </div>
+      <p className="mt-2.5 text-[12px] text-muted">Intern påminnelse – skickas inte till kunden.</p>
+    </div>
+  );
+}
+
 /* -------------------------------- Resultatpanel ------------------------------- */
 
 function ResultView({ result, onClose }: { result: CommandRunResult; onClose: () => void }) {
   return (
     <div className="p-4">
       <div className="flex items-start justify-between gap-3">
-        <p className={cx("text-[14px] leading-relaxed", result.ok ? "text-ink" : "text-soft")}>{result.text}</p>
+        <p className={cx("text-[14px] leading-relaxed", result.ok ? "text-ink" : "text-soft")}>
+          {result.ok ? <Check className="mr-1.5 inline size-4 -translate-y-px text-ok" aria-hidden /> : null}
+          {result.text}
+        </p>
         <button
           type="button"
           onClick={onClose}

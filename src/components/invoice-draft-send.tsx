@@ -7,6 +7,9 @@ import { Modal } from "./modal";
 import { buttonClasses } from "./ui";
 import { kr } from "@/lib/format";
 import { QUOTE_EXCESS_WARN_AMOUNT, QUOTE_EXCESS_WARN_PERCENT } from "@/lib/quote-excess";
+import { CustomerEmailPrompt } from "./customer-email-prompt";
+import { useBlockedAction } from "./blocked-action";
+import type { PendingAction } from "@/lib/missing-requirements";
 
 function withFlag(href: string, key: string, value: string) {
   const url = new URL(href, "https://driva.local");
@@ -15,25 +18,27 @@ function withFlag(href: string, key: string, value: string) {
 }
 
 export function InvoiceDraftSend({
+  documentId,
+  customerId,
   customerName,
   amount,
   dueDateLabel,
   sendAction,
   detailHref,
   recipientEmail,
-  addEmailHref,
   hasIssuanceBlockers = false,
-  mailConfigured = true,
+  mailConfigured: _mailConfigured = true,
   excessAmount,
   tillaggHref,
 }: {
+  documentId: string;
+  customerId: string;
   customerName: string;
   amount: number;
   dueDateLabel: string;
   sendAction: () => Promise<void | { ok: boolean; errors?: string[]; issued?: boolean; mailed?: boolean }>;
   detailHref: string;
   recipientEmail?: string;
-  addEmailHref: string;
   hasIssuanceBlockers?: boolean;
   /** Om e-postutskick är konfigurerat på servern – styr ärlig text i dialogen. */
   mailConfigured?: boolean;
@@ -43,12 +48,11 @@ export function InvoiceDraftSend({
 }) {
   const router = useRouter();
   const [warnOpen, setWarnOpen] = useState(false);
-  const [emailOpen, setEmailOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [isSending, startSending] = useTransition();
   const needsWarning = (excessAmount ?? 0) > 0 && !!tillaggHref;
-  const email = recipientEmail?.trim() ?? "";
+  const pendingAction: PendingAction = { kind: "SEND_INVOICE", documentId, customerId };
 
   function openConfirm() {
     setSendError(null);
@@ -60,17 +64,24 @@ export function InvoiceDraftSend({
     openConfirm();
   }
 
+  /** Nästa steg efter att kraven är uppfyllda: ev. beloppsvarning, sedan bekräftelse. */
+  function continueSendFlow() {
+    if (needsWarning) setWarnOpen(true);
+    else openConfirm();
+  }
+
+  const { email, collecting, requestAction, resumeAfterResolve, cancelCollect } = useBlockedAction({
+    action: pendingAction,
+    customerEmail: recipientEmail,
+    onResume: continueSendFlow,
+  });
+
   function requestSend() {
     if (hasIssuanceBlockers) {
       document.getElementById("invoice-send-blockers")?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    if (!email) {
-      setEmailOpen(true);
-      return;
-    }
-    if (needsWarning) setWarnOpen(true);
-    else openConfirm();
+    requestAction();
   }
 
   function finish(flag: "skickad" | "leveransfel", value = "1") {
@@ -79,16 +90,16 @@ export function InvoiceDraftSend({
   }
 
   function confirmSend() {
+    if (isSending) return;
     startSending(async () => {
       setSendError(null);
       const result = await sendAction();
       if (result && result.ok === false) {
-        setSendError((result.errors ?? []).join(" "));
+        setSendError((result.errors ?? []).join(" ") || "Fakturan kunde inte skickas. Försök igen.");
         if (result.issued) finish("leveransfel");
         return;
       }
-      // "1" = e-post skickades, "manuell" = markerad som skickad utan e-post.
-      finish("skickad", result && result.mailed ? "1" : "manuell");
+      finish("skickad", "1");
     });
   }
 
@@ -104,16 +115,9 @@ export function InvoiceDraftSend({
           <p className="text-[17px] font-semibold tracking-tight text-ink">{customerName}</p>
           <p className="mt-1 text-[15px] text-soft">{kr(amount)}</p>
           <p className="mt-1 text-[14px] text-muted">Förfaller {dueDateLabel}</p>
-          {mailConfigured ? (
-            <p className="mt-4 text-[14px] leading-relaxed text-soft">
-              Fakturan skickas till: <span className="font-semibold text-ink">{email}</span>
-            </p>
-          ) : (
-            <p className="mt-4 text-[14px] leading-relaxed text-soft">
-              E-postutskick är inte konfigurerat ännu. Fakturan får nummer, bokförs och markeras som skickad – dela
-              sedan kundlänken med <span className="font-semibold text-ink">{customerName}</span> själv.
-            </p>
-          )}
+          <p className="mt-4 text-[14px] leading-relaxed text-soft">
+            Fakturan skickas till: <span className="font-semibold text-ink">{email}</span>
+          </p>
           {sendError ? <p className="mt-3 text-[13px] font-medium text-danger">{sendError}</p> : null}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button className={buttonClasses("secondary")} disabled={isSending} onClick={() => setConfirmOpen(false)}>
@@ -121,27 +125,18 @@ export function InvoiceDraftSend({
             </button>
             <button className={buttonClasses("primary")} disabled={isSending} onClick={confirmSend}>
               <Send className="size-4" />
-              {isSending ? "Skickar …" : "Skicka faktura"}
+              {isSending ? "Skickar …" : sendError ? "Försök igen" : "Skicka faktura"}
             </button>
           </div>
         </div>
       </Modal>
 
-      <Modal open={emailOpen} onClose={() => setEmailOpen(false)} size="sm" title="Kunden saknar e-postadress">
-        <div className="px-6 py-5">
-          <p className="text-[15px] leading-relaxed text-soft">
-            Kunden saknar e-postadress. Utkastet sparas – lägg till e-post och skicka sedan.
-          </p>
-          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <button className={buttonClasses("secondary")} onClick={() => setEmailOpen(false)}>
-              Avbryt
-            </button>
-            <a href={addEmailHref} className={buttonClasses("primary")}>
-              Lägg till e-post
-            </a>
-          </div>
-        </div>
-      </Modal>
+      <CustomerEmailPrompt
+        open={collecting === "buyer_email"}
+        onClose={cancelCollect}
+        pendingAction={pendingAction}
+        onResolved={resumeAfterResolve}
+      />
 
       <Modal open={warnOpen} onClose={() => setWarnOpen(false)} size="sm" title="Högre än den godkända offerten">
         <div className="px-6 py-5">

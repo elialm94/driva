@@ -40,6 +40,7 @@ const LIFECYCLE_CHIPS: [JobLifecycleFilter, string][] = [
   ["planerade", "Planerade"],
   ["klart", "Klart"],
   ["alla", "Alla"],
+  ["arkiverade", "Arkiverade"],
 ];
 
 const ECONOMY_CHIPS: [JobEconomyFilter, string][] = [

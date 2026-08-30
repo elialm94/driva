@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { cx } from "./ui";
@@ -64,6 +64,10 @@ export function DateField({
   className,
   id,
   placeholder = "Välj datum",
+  open: openProp,
+  onOpenChange,
+  min,
+  anchorRef,
 }: {
   name?: string;
   value?: string;
@@ -72,6 +76,13 @@ export function DateField({
   className?: string;
   id?: string;
   placeholder?: string;
+  /** Controlled calendar visibility. Omit for the default trigger-toggle. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** ISO date (YYYY-MM-DD). Days before this are disabled. */
+  min?: string;
+  /** External anchor for positioning; when set, the built-in trigger is omitted. */
+  anchorRef?: RefObject<HTMLElement | null>;
 }) {
   const autoId = useId();
   const triggerId = id ?? autoId;
@@ -80,8 +91,11 @@ export function DateField({
   const [internal, setInternal] = useState(defaultValue);
   const iso = isControlled ? value : internal;
   const selected = iso ? parseISODate(iso) : null;
+  const minDate = min ? parseISODate(min) : null;
 
-  const [open, setOpen] = useState(false);
+  const isOpenControlled = openProp !== undefined;
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = isOpenControlled ? openProp : uncontrolledOpen;
   const [mounted, setMounted] = useState(false);
   const [view, setView] = useState(() => {
     const base = selected ?? startOfToday();
@@ -90,6 +104,10 @@ export function DateField({
   const [pos, setPos] = useState<Pos | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+
+  function getAnchor(): HTMLElement | null {
+    return anchorRef?.current ?? triggerRef.current;
+  }
 
   useEffect(() => {
     setMounted(true);
@@ -100,15 +118,20 @@ export function DateField({
     onChange?.(next);
   }
 
+  function setOpenState(next: boolean) {
+    if (!isOpenControlled) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  }
+
   function close() {
-    setOpen(false);
+    setOpenState(false);
     setPos(null);
   }
 
   function openCalendar() {
     const base = selected ?? startOfToday();
     setView({ year: base.getFullYear(), month: base.getMonth() });
-    setOpen(true);
+    setOpenState(true);
   }
 
   function pick(next: string) {
@@ -116,10 +139,19 @@ export function DateField({
     close();
   }
 
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      const base = selected ?? startOfToday();
+      setView({ year: base.getFullYear(), month: base.getMonth() });
+    }
+    wasOpen.current = open;
+  }, [open, selected]);
+
   useLayoutEffect(() => {
     if (!open) return;
     function place() {
-      const trigger = triggerRef.current;
+      const trigger = getAnchor();
       const popover = popoverRef.current;
       if (!trigger || !popover) return;
       const rect = trigger.getBoundingClientRect();
@@ -148,7 +180,7 @@ export function DateField({
     if (!open) return;
     function onPointerDown(e: PointerEvent) {
       const target = e.target as Node;
-      if (triggerRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      if (getAnchor()?.contains(target) || popoverRef.current?.contains(target)) return;
       close();
     }
     function onKey(e: KeyboardEvent) {
@@ -165,9 +197,17 @@ export function DateField({
     };
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!open || !pos) return;
+    const popover = popoverRef.current;
+    if (!popover || popover.contains(document.activeElement)) return;
+    popover.focus();
+  }, [open, pos]);
+
   const cells = useMemo(() => monthCells(view.year, view.month), [view.year, view.month]);
   const today = startOfToday();
   const todayIso = toISODate(today);
+  const todayDisabled = minDate ? today < minDate : false;
 
   const calendar =
     open && mounted
@@ -179,6 +219,7 @@ export function DateField({
             aria-label="Välj datum"
             lang="sv"
             tabIndex={-1}
+            onPointerDown={(e) => e.stopPropagation()}
             className="fixed z-[80] w-[18.5rem] rounded-2xl border border-line bg-card p-3 shadow-pop animate-fade-in"
             style={{
               top: pos?.top ?? 0,
@@ -221,19 +262,22 @@ export function DateField({
               {cells.map((cell) => {
                 const isSelected = selected ? sameDay(cell.date, selected) : false;
                 const isToday = sameDay(cell.date, today);
+                const isDisabled = minDate ? cell.date < minDate : false;
                 return (
                   <button
                     key={cell.iso}
                     type="button"
+                    disabled={isDisabled}
                     onClick={() => pick(cell.iso)}
                     aria-pressed={isSelected}
                     aria-current={isToday ? "date" : undefined}
                     className={cx(
                       "flex h-10 w-full items-center justify-center rounded-lg text-[13px] tabular transition-colors sm:h-9",
                       cell.outside && "text-muted/70",
-                      !isSelected && !cell.outside && "text-ink hover:bg-canvas",
-                      !isSelected && cell.outside && "hover:bg-canvas",
-                      isToday && !isSelected && "font-semibold text-accent",
+                      isDisabled && "pointer-events-none opacity-40",
+                      !isDisabled && !isSelected && !cell.outside && "text-ink hover:bg-canvas",
+                      !isDisabled && !isSelected && cell.outside && "hover:bg-canvas",
+                      isToday && !isSelected && !isDisabled && "font-semibold text-accent",
                       isSelected && "bg-accent font-semibold text-white hover:bg-accent-deep"
                     )}
                   >
@@ -252,7 +296,8 @@ export function DateField({
               </button>
               <button
                 type="button"
-                className="rounded-lg px-3 py-2 text-[13px] font-medium text-accent transition-colors hover:bg-accent-soft"
+                disabled={todayDisabled}
+                className="rounded-lg px-3 py-2 text-[13px] font-medium text-accent transition-colors hover:bg-accent-soft disabled:pointer-events-none disabled:opacity-40"
                 onClick={() => {
                   setView({ year: today.getFullYear(), month: today.getMonth() });
                   pick(todayIso);
@@ -266,24 +311,37 @@ export function DateField({
         )
       : null;
 
+  const trigger = (
+    <button
+      ref={triggerRef}
+      id={triggerId}
+      type="button"
+      onClick={() => (open ? close() : openCalendar())}
+      className={cx(className, "flex items-center justify-between gap-2 text-left")}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-controls={open ? popoverId : undefined}
+    >
+      <span className={cx("min-w-0 truncate", !selected && "text-muted")}>
+        {selected ? formatDisplay(selected) : placeholder}
+      </span>
+      <CalendarDays className="size-4 shrink-0 text-muted" />
+    </button>
+  );
+
+  if (anchorRef) {
+    return (
+      <>
+        {name ? <input type="hidden" name={name} value={iso} /> : null}
+        {calendar}
+      </>
+    );
+  }
+
   return (
     <div className="relative">
       {name ? <input type="hidden" name={name} value={iso} /> : null}
-      <button
-        ref={triggerRef}
-        id={triggerId}
-        type="button"
-        onClick={() => (open ? close() : openCalendar())}
-        className={cx(className, "flex items-center justify-between gap-2 text-left")}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={open ? popoverId : undefined}
-      >
-        <span className={cx("min-w-0 truncate", !selected && "text-muted")}>
-          {selected ? formatDisplay(selected) : placeholder}
-        </span>
-        <CalendarDays className="size-4 shrink-0 text-muted" />
-      </button>
+      {trigger}
       {calendar}
     </div>
   );

@@ -9,7 +9,7 @@ import { GenerateWebsiteForm, PublishWebsiteButton, SectionList } from "@/compon
 import { CopyLinkButton } from "@/components/copy-button";
 import { DomainSidebarCard } from "@/components/domain-widgets";
 import { isMockDomainMode, primaryDomain } from "@/lib/domains";
-import { getInquiryNotificationEmail } from "@/lib/services/settings";
+import { getWebsiteNotificationEmail } from "@/lib/services/settings";
 import { isLiveMailConfigured } from "@/lib/mail";
 import { SETTINGS_HREF } from "@/lib/settings-routes";
 import { ensurePageBusiness } from "@/lib/auth/session";
@@ -21,7 +21,7 @@ const SECTION_LABELS: Record<string, string> = {
   tjanster: "Tjänster",
   om: "Om oss",
   galleri: "Galleri",
-  kontakt: "Kontakt & offertförfrågan",
+  kontakt: "Kontakt",
 };
 
 export default async function WebsitePage() {
@@ -40,7 +40,7 @@ export default async function WebsitePage() {
             </div>
             <h2 className="mt-5 text-[22px] font-semibold tracking-tight">Vad gör ditt företag?</h2>
             <p className="mx-auto mt-2 max-w-md text-[14px] leading-relaxed text-soft">
-              AI:n skapar startsida, tjänster, om oss, galleri och ett kontaktformulär som skickar förfrågningar rakt
+              AI:n skapar startsida, tjänster, om oss, galleri och ett kontaktformulär som skapar uppdrag rakt
               in i Driva. Du kan ändra allt efteråt.
             </p>
           </div>
@@ -55,7 +55,7 @@ export default async function WebsitePage() {
   const published = site.status === "publicerad";
   const domain = primaryDomain();
   const liveHost = domain?.status === "active" ? domain.hostname : null;
-  const inquiryEmail = getInquiryNotificationEmail(data.settings);
+  const websiteEmail = getWebsiteNotificationEmail(data.settings);
   const mailLive = isLiveMailConfigured();
 
   // Redigeringslistan behöver inte bilddatan (tunga data-URL:er) – bara vetskap om att bild finns.
@@ -72,7 +72,7 @@ export default async function WebsitePage() {
         title="Hemsida"
         subtitle={
           published
-            ? `Publicerad ${site.publishedAt ? datumTid(site.publishedAt) : ""} · formuläret skapar förfrågningar automatiskt`
+            ? `Publicerad ${site.publishedAt ? datumTid(site.publishedAt) : ""} · formuläret skapar uppdrag automatiskt`
             : "Utkast – granska och publicera när du är nöjd"
         }
         actions={
@@ -137,7 +137,7 @@ export default async function WebsitePage() {
           </div>
 
           <div>
-            <SectionTitle>Förfrågningar</SectionTitle>
+            <SectionTitle>Webbformulär</SectionTitle>
             <Card className="px-5 py-4">
               <div className="flex items-start gap-3">
                 <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-info-soft">
@@ -145,15 +145,15 @@ export default async function WebsitePage() {
                 </div>
                 <div className="min-w-0">
                   <p className="text-[14px] font-medium text-ink">
-                    {mailLive ? `Skickas till ${inquiryEmail || "din e-post"}` : "Sparas i Driva"}
+                    {mailLive ? `Skickas till ${websiteEmail || "din e-post"}` : "Sparas i Driva"}
                   </p>
                   <p className="mt-1 text-[13px] leading-relaxed text-soft">
                     {mailLive
-                      ? "Förfrågningar skickas till din e-post och sparas automatiskt i Driva."
-                      : "Förfrågningar sparas automatiskt under Kunder → Förfrågningar. E-postavisering kräver att utskick konfigureras (Resend)."}
+                      ? "Meddelanden från formuläret skapar uppdrag och mejlas till dig."
+                      : "Meddelanden från formuläret sparas som uppdrag. E-postavisering kräver att utskick konfigureras (Resend)."}
                   </p>
                   <Link
-                    href={`${SETTINGS_HREF.foretag}#forfragningar` as never}
+                    href={`${SETTINGS_HREF.foretag}#webbformulär` as never}
                     className="mt-2 inline-block text-[13px] font-medium text-accent hover:underline"
                   >
                     Ändra →

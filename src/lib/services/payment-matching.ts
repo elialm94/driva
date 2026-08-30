@@ -16,6 +16,9 @@ import {
 } from "../autopilot";
 import { kr } from "../format";
 import { logActivity } from "./activity";
+import { merchantRuleKey } from "./expenses";
+import { bookSupplierPaymentFromBank, supplierPayments } from "./supplier-payments";
+import { normalizeRecipientAccount } from "../inbox/workflow";
 import {
   expectedTaxReductionPayouts,
   registerTaxReductionPayout,
@@ -185,6 +188,7 @@ export type PaymentSuggestionKind =
   | "duplicate" // OCR pekar på redan betald faktura
   | "tax_reduction_payout" // Skatteverket-utbetalning mot ROT/RUT-fordran
   | "credit_refund" // utgående betalning som ser ut som återbetalning av kredit
+  | "supplier_payment" // utgående betalning mot leverantörsinstruktion
   | "none";
 
 export interface PaymentSuggestion {
@@ -195,10 +199,67 @@ export interface PaymentSuggestion {
   invoiceId?: string;
   invoiceNumber?: number | null;
   customerName?: string;
+  supplierPaymentId?: string;
   /** För ROT-utbetalningar. */
   payout?: ExpectedTaxReductionPayout;
   amount: number;
   diff?: number;
+}
+
+function scoreOutgoingSupplierPayments(tx: BankTransaction): PaymentSuggestion | null {
+  const open = supplierPayments().filter(
+    (p) => p.status === "SUBMITTED_TO_BANK" || p.status === "AWAITING_APPROVAL" || p.status === "SCHEDULED"
+  );
+  if (open.length === 0) return null;
+  const amount = Math.abs(tx.amount);
+  const tokens = new Set(referenceTokens(tx));
+  const txAccount = normalizeRecipientAccount(`${tx.counterpart} ${tx.description} ${tx.reference ?? ""}`);
+
+  let best: { paymentId: string; confidence: number; reasons: string[] } | null = null;
+  for (const payment of open) {
+    const invoice = db().supplierInvoices.find((s) => s.id === payment.supplierInvoiceId);
+    if (!invoice) continue;
+    const reasons: string[] = [];
+    let confidence = 0;
+    if (payment.providerPaymentId && (tx.reference === payment.providerPaymentId || tx.description.includes(payment.providerPaymentId))) {
+      reasons.push("Provider-id");
+      confidence = 1;
+    }
+    const amountExact = amount === payment.amount;
+    if (amountExact) {
+      reasons.push("Exakt belopp");
+      confidence = Math.max(confidence, 0.7);
+    }
+    const ocr = payment.ocr ?? invoice.ocr;
+    if (ocr && tokens.has(ocr)) {
+      reasons.push("Exakt OCR");
+      confidence = Math.max(confidence, amountExact ? 0.99 : 0.9);
+    }
+    const recipient = normalizeRecipientAccount(payment.recipientAccount);
+    const name = merchantRuleKey(payment.recipientName);
+    if (recipient && txAccount.includes(recipient)) {
+      reasons.push("Mottagarkonto");
+      confidence = Math.max(confidence, amountExact ? 0.98 : 0.75);
+    } else if (name && (merchantRuleKey(tx.counterpart).includes(name) || name.includes(merchantRuleKey(tx.counterpart)))) {
+      reasons.push("Mottagarnamn");
+      confidence = Math.max(confidence, amountExact ? 0.95 : 0.65);
+    }
+    const days = Math.abs(Math.round((Date.parse(tx.date) - Date.parse(payment.scheduledDate)) / 86_400_000));
+    if (days <= 5) {
+      reasons.push("Nära betaldatum");
+      if (confidence >= 0.7) confidence = Math.min(1, confidence + 0.02);
+    }
+    if (confidence > (best?.confidence ?? 0)) best = { paymentId: payment.id, confidence, reasons };
+  }
+  if (!best || best.confidence < 0.7) return null;
+  const outcome = decideFromConfidence(best.confidence);
+  return {
+    kind: "supplier_payment",
+    outcome,
+    reason: `Matchad leverantörsbetalning på ${best.reasons.join(" + ").toLowerCase()}`,
+    supplierPaymentId: best.paymentId,
+    amount: tx.amount,
+  };
 }
 
 function skvCounterpart(tx: BankTransaction): boolean {
@@ -296,6 +357,11 @@ export function paymentSuggestionForTransaction(tx: BankTransaction): PaymentSug
     };
   }
 
+  if (tx.amount < 0) {
+    const outgoing = scoreOutgoingSupplierPayments(tx);
+    if (outgoing) return outgoing;
+  }
+
   // Utgående betalning: återbetalning av krediterad faktura?
   const refundCandidates = db().invoices.filter((i) => creditRefundDue(i) > 0);
   const refundHit = refundCandidates.find(
@@ -340,6 +406,18 @@ export function processIncomingTransaction(txId: string): ProcessTransactionResu
   }
 
   const suggestion = paymentSuggestionForTransaction(tx);
+
+  if (suggestion.outcome === "AUTO_EXECUTE" && suggestion.kind === "supplier_payment" && suggestion.supplierPaymentId) {
+    const payment = supplierPayments().find((p) => p.id === suggestion.supplierPaymentId);
+    if (payment) {
+      bookSupplierPaymentFromBank({
+        payment,
+        bankTransactionId: tx.id,
+        matchReason: suggestion.reason,
+      });
+      return { outcome: "booked", suggestion };
+    }
+  }
 
   if (suggestion.outcome === "AUTO_EXECUTE") {
     if (suggestion.kind === "match" && suggestion.invoiceId) {

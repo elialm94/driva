@@ -147,7 +147,7 @@ describe("inställningar", () => {
     orgNumber: "559123-4567",
     vatNumber: "SE559123456701",
     email: "hej@snickeri.se",
-    inquiryNotificationEmail: "hej@snickeri.se",
+    websiteNotificationEmail: "hej@snickeri.se",
     bankgiro: "5678-1234",
     plusgiro: "",
     iban: "",

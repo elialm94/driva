@@ -216,16 +216,20 @@ function KnownRow({ children }: { children: ReactNode }) {
   return <p className="text-[13px] leading-relaxed text-soft">{children}</p>;
 }
 
+export type InvoicePropertyOption = { id: string; designation: string; label: string };
+
 export function TaxReductionFields({
   type,
   value,
   onChange,
   amountSlot,
+  properties,
 }: {
   type: "rot" | "rut";
   value: TaxReductionFormValue;
   onChange: (next: TaxReductionFormValue) => void;
   amountSlot?: ReactNode;
+  properties?: InvoicePropertyOption[];
 }) {
   const pnKnown = isPersonnummerFormat(value.personalIdentityNumber);
   const periodKnown = Boolean(value.workPeriodStart || value.workPeriodEnd);
@@ -347,6 +351,39 @@ export function TaxReductionFields({
           <ChangeButton onClick={() => setPeriodEditing(true)} />
         </KnownRow>
       )}
+
+      {type === "rot" && properties && properties.length > 1 ? (
+        <div>
+          <label className={labelCls} htmlFor={`${type}-fastighet`}>
+            Fastighet
+          </label>
+          <select
+            id={`${type}-fastighet`}
+            value={
+              properties.find(
+                (property) =>
+                  property.designation.trim().toLowerCase() ===
+                  (value.housing.propertyDesignation ?? "").trim().toLowerCase()
+              )?.id ?? ""
+            }
+            onChange={(e) => {
+              const selected = properties.find((property) => property.id === e.target.value);
+              if (!selected) return;
+              patch({ housing: { dwellingType: "smahus", propertyDesignation: selected.designation } });
+              setDwellingEditing(false);
+              setPropertyEditing(!selected.designation.trim());
+            }}
+            className={inputCls}
+          >
+            <option value="">Välj fastighet</option>
+            {properties.map((property) => (
+              <option key={property.id} value={property.id}>
+                {property.label || property.designation}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
 
       {type === "rot" ? (
         showDwellingPicker ? (

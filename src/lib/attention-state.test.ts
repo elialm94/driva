@@ -125,7 +125,7 @@ describe("attention-state: upsert och filter", () => {
     // Oförklarad bankdifferens ska aldrig kunna döljas.
     assert.throws(() => snoozeAttention("bank-unexplained", "imorgon"), /aldrig tystas/);
     // Ingen nuvarande typ deklarerar HIDE – domänavfärdan går via tjänsterna.
-    assert.throws(() => hideAttention("inquiry-req-1"), /kan inte döljas permanent/);
+    assert.throws(() => hideAttention("job-new-job-1"), /kan inte döljas permanent/);
     assert.throws(() => hideAttention("invoice-late-inv-1"), /kan inte döljas permanent/);
     assert.equal(db().attentionStates.length, 0);
   });

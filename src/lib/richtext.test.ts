@@ -1,7 +1,7 @@
 process.env.DRIVA_TEST = "1";
 
 /**
- * Rik text ("Övrig information"):
+ * Rik text (dokumentens beskrivning):
  *
  *   * Vitlistesaneraren: okända noder/marks/attribut kastas, rubriknivåer
  *     klampas, farliga länkar avvisas, storleks-/djuptak upprätthålls.
@@ -16,6 +16,10 @@ process.env.DRIVA_TEST = "1";
 
 import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { getSchema } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
+import type { Node as PMNode } from "@tiptap/pm/model";
+import { EditorState, TextSelection } from "@tiptap/pm/state";
 import {
   isRichTextEmpty,
   markdownToRichText,
@@ -34,7 +38,8 @@ import { createInvoice, issueInvoice, updateInvoice } from "./services/invoices"
 import { createQuote, updateQuote } from "./services/quotes";
 import { currentVersion } from "./services/data";
 import { resolveInvoiceView } from "./invoices/snapshot";
-import { shortcutFromEvent } from "./richtext-shortcuts";
+import { markRangeFromDomFallback, shortcutFromEvent } from "./richtext-shortcuts";
+import { applyInsertDividerAtRoot, rootHorizontalRule } from "./richtext-divider";
 import { __setAiTransportForTests } from "./ai/provider";
 import {
   improveRichText,
@@ -509,6 +514,231 @@ describe("richtext-shortcuts", () => {
     assert.equal(shortcutFromEvent({ ...win, key: "Z", shiftKey: true }), "redo");
     assert.equal(shortcutFromEvent({ ...mac, key: "z", shiftKey: false, altKey: true }), null);
     assert.equal(shortcutFromEvent({ key: "z", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false }), null);
+  });
+
+  it("använder synlig DOM-markering när ProseMirror-selection fortfarande är tom", () => {
+    const start = { nodeType: 3 } as Node;
+    const end = start;
+    assert.deepEqual(
+      markRangeFromDomFallback({
+        empty: false,
+        from: 2,
+        to: 6,
+        posAtDOM: () => 0,
+        contains: () => true,
+        domSelection: null,
+      }),
+      { from: 2, to: 6 }
+    );
+    assert.deepEqual(
+      markRangeFromDomFallback({
+        empty: true,
+        from: 8,
+        to: 8,
+        posAtDOM: (_node, offset) => 1 + offset,
+        contains: () => true,
+        domSelection: {
+          isCollapsed: false,
+          rangeCount: 1,
+          getRangeAt: () => ({ startContainer: start, startOffset: 0, endContainer: end, endOffset: 7 }),
+        },
+      }),
+      { from: 1, to: 8 }
+    );
+    assert.equal(
+      markRangeFromDomFallback({
+        empty: true,
+        from: 8,
+        to: 8,
+        posAtDOM: () => 8,
+        contains: () => true,
+        domSelection: { isCollapsed: true, rangeCount: 1, getRangeAt: () => ({ startContainer: start, startOffset: 0, endContainer: end, endOffset: 0 }) },
+      }),
+      null
+    );
+  });
+});
+
+/* -------------------- Avdelare lämnar listor på toppnivå ------------------- */
+
+const dividerSchema = getSchema([
+  StarterKit.configure({
+    blockquote: false,
+    code: false,
+    codeBlock: false,
+    strike: false,
+    heading: { levels: [1, 2, 3] },
+    horizontalRule: false,
+  }),
+  rootHorizontalRule,
+]);
+
+function listItems(...texts: string[]) {
+  return texts.map((text) => ({
+    type: "listItem",
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  }));
+}
+
+function findTextEnd(doc: PMNode, text: string): number {
+  let found = -1;
+  doc.descendants((node, pos) => {
+    if (node.isText && node.text?.includes(text)) {
+      found = pos + (node.text.indexOf(text) + text.length);
+      return false;
+    }
+  });
+  if (found < 0) throw new Error(`Saknar text: ${text}`);
+  return found;
+}
+
+function runDivider(docJson: object, cursor: number | { text: string } | { afterList: true }) {
+  const doc = dividerSchema.nodeFromJSON(docJson);
+  const pos =
+    typeof cursor === "number"
+      ? cursor
+      : "text" in cursor
+        ? findTextEnd(doc, cursor.text)
+        : (() => {
+            let after = -1;
+            doc.forEach((node, offset) => {
+              if (after < 0 && (node.type.name === "bulletList" || node.type.name === "orderedList")) {
+                after = offset + node.nodeSize;
+              }
+            });
+            if (after < 0) throw new Error("Saknar lista");
+            return after + 1; // in i följande toppnivåstycke
+          })();
+  const state = EditorState.create({
+    schema: dividerSchema,
+    doc,
+    selection: TextSelection.create(doc, pos),
+  });
+  let next = state;
+  const ok = applyInsertDividerAtRoot(state, (tr) => {
+    next = state.apply(tr);
+  });
+  assert.equal(ok, true, "avdelarkommandot ska lyckas");
+  return next;
+}
+
+function topTypes(json: { content?: { type: string }[] }): string[] {
+  return (json.content ?? []).map((n) => n.type);
+}
+
+function assertRootDividerThenParagraph(
+  state: EditorState,
+  listType: "bulletList" | "orderedList" | "paragraph" | "heading"
+) {
+  const json = state.doc.toJSON() as { content: { type: string }[] };
+  const types = topTypes(json);
+  assert.equal(types[0], listType);
+  assert.ok(types.includes("horizontalRule"), `förväntade hr bland ${types.join(",")}`);
+  const hrAt = types.indexOf("horizontalRule");
+  assert.equal(types[hrAt + 1], "paragraph", "stycket efter avdelaren ska vara syskon på toppnivå");
+  assert.equal(state.selection.$from.parent.type.name, "paragraph");
+  assert.equal(state.selection.$from.depth, 1, "markören ska stå i ett toppnivåstycke, inte i en lista");
+
+  const typed = state.apply(state.tr.insertText("Vanlig text börjar här"));
+  const saved = sanitizeRichText(typed.doc.toJSON())!;
+  const savedTypes = saved.content.map((b) => b.type);
+  const savedHr = savedTypes.indexOf("horizontalRule");
+  assert.ok(savedHr >= 0, "hr ska överleva sanering (inte ligga inuti listItem där den kastas)");
+  assert.equal(savedTypes[savedHr + 1], "paragraph");
+  const after = saved.content[savedHr + 1];
+  assert.ok(after.type === "paragraph" && after.content?.some((n) => n.type === "text" && n.text === "Vanlig text börjar här"));
+
+  const reloaded = sanitizeRichText(markdownToRichText(richTextToMarkdown(saved)));
+  assert.ok(reloaded);
+  const reloadTypes = reloaded.content.map((b) => b.type);
+  const reloadHr = reloadTypes.indexOf("horizontalRule");
+  assert.equal(reloadTypes[reloadHr + 1], "paragraph");
+  assert.notEqual(reloadTypes[0], "horizontalRule");
+}
+
+describe("avdelare lämnar listkontext (dokumentstruktur)", () => {
+  const bullets = {
+    type: "doc",
+    content: [{ type: "bulletList", content: listItems("Arbete", "Städning", "Iordningställande efteråt") }],
+  };
+  const numbered = {
+    type: "doc",
+    content: [{ type: "orderedList", content: listItems("Ett", "Två", "Tre") }],
+  };
+
+  it("punktlista → avdelare → följande stycke är toppnivå (syskon till lista och hr)", () => {
+    const next = runDivider(bullets, { text: "Iordningställande efteråt" });
+    assertRootDividerThenParagraph(next, "bulletList");
+    const list = next.doc.firstChild!;
+    assert.equal(list.type.name, "bulletList");
+    assert.equal(list.childCount, 3, "listpunkterna ska vara kvar – inte lyftas ut");
+    list.descendants((node) => {
+      assert.notEqual(node.type.name, "horizontalRule", "hr får inte nästlas i listan");
+    });
+  });
+
+  it("numrerad lista → avdelare → följande stycke är toppnivå", () => {
+    const next = runDivider(numbered, { text: "Tre" });
+    assertRootDividerThenParagraph(next, "orderedList");
+    const list = next.doc.firstChild!;
+    assert.equal(list.childCount, 3);
+    list.descendants((node) => {
+      assert.notEqual(node.type.name, "horizontalRule");
+    });
+  });
+
+  it("stycke → avdelare → text är fortfarande korrekt (ingen regression)", () => {
+    const next = runDivider(
+      { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Ingress" }] }] },
+      { text: "Ingress" }
+    );
+    assertRootDividerThenParagraph(next, "paragraph");
+  });
+
+  it("H1/H2/H3 → avdelare → text är fortfarande korrekt", () => {
+    for (const level of [1, 2, 3] as const) {
+      const next = runDivider(
+        {
+          type: "doc",
+          content: [{ type: "heading", attrs: { level }, content: [{ type: "text", text: `Rubrik ${level}` }] }],
+        },
+        { text: `Rubrik ${level}` }
+      );
+      assertRootDividerThenParagraph(next, "heading");
+    }
+  });
+
+  it("avdelare från sista listpunkten (verktygsraden) lämnar listan helt", () => {
+    const next = runDivider(bullets, { text: "Iordningställande efteråt" });
+    assert.deepEqual(topTypes(next.doc.toJSON()), ["bulletList", "horizontalRule", "paragraph"]);
+    assert.equal(next.selection.$from.depth, 1);
+  });
+
+  it("avdelare precis efter sista listpunkten ger toppnivå-hr och -stycke", () => {
+    const afterList = {
+      type: "doc",
+      content: [
+        { type: "bulletList", content: listItems("Arbete", "Städning", "Iordningställande efteråt") },
+        { type: "paragraph" },
+      ],
+    };
+    const next = runDivider(afterList, { afterList: true });
+    const types = topTypes(next.doc.toJSON());
+    assert.equal(types[0], "bulletList");
+    assert.ok(types.includes("horizontalRule"));
+    const hrAt = types.indexOf("horizontalRule");
+    assert.equal(types[hrAt + 1], "paragraph");
+    assert.equal(next.selection.$from.depth, 1);
+    assert.equal(next.selection.$from.parent.type.name, "paragraph");
+
+    const typed = next.apply(next.tr.insertText("Vanlig text börjar här"));
+    const saved = sanitizeRichText(typed.doc.toJSON())!;
+    const savedTypes = saved.content.map((b) => b.type);
+    const savedHr = savedTypes.indexOf("horizontalRule");
+    assert.equal(savedTypes[savedHr + 1], "paragraph");
+    const reloaded = sanitizeRichText(markdownToRichText(richTextToMarkdown(saved)))!;
+    const reloadTypes = reloaded.content.map((b) => b.type);
+    assert.equal(reloadTypes[reloadTypes.indexOf("horizontalRule") + 1], "paragraph");
   });
 });
 

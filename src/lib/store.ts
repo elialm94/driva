@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import type { DB } from "./types";
+import type { CompanySettings, DB, Job, JobSource } from "./types";
 import { buildSeed } from "./seed";
 import { hydrateIssuedInvoices, hydrateQuoteSellerSnapshots } from "./invoices/snapshot";
 import { taxReductionFields } from "./tax-reduction-terms";
@@ -9,6 +9,7 @@ import { normalizeDomains } from "./domains/normalize";
 import { storageMode } from "./storage/config";
 import { tenantContext } from "./storage/context";
 import { requestTenantState } from "./storage/request-scope";
+import { hydrateQuotedBaselines } from "./services/job-work-baseline";
 
 /**
  * Lagringsfasad: all domänkod läser/skriver via db() + save().
@@ -74,6 +75,110 @@ function hydrateTaxReductionDemo(data: DB): boolean {
  * Supabase-läget behöver den inte: laddade rader är alltid kompletta, och
  * migreringsskriptet kör normalize() på källdatat FÖRE insättning.
  */
+type LegacyRequest = {
+  id: string;
+  customerId: string;
+  title: string;
+  message: string;
+  source: string;
+  quoteId?: string;
+  createdAt: string;
+  idempotencyKey?: string;
+  notification?: Job["notification"];
+};
+
+function mapLegacyRequestSource(source: string): JobSource {
+  switch (source) {
+    case "hemsida":
+      return "web_form";
+    case "telefon":
+      return "phone";
+    case "manuell":
+      return "manual";
+    case "assistent":
+      return "import";
+    case "email":
+      return "email";
+    default:
+      return "other";
+  }
+}
+
+/** Äldre JSON-filer hade en requests-tabell. Flytta till uppdrag, en gång. */
+function migrateRequestsToJobs(data: DB): boolean {
+  const bag = data as DB & { requests?: LegacyRequest[] };
+  const leftover = bag.requests;
+  let changed = false;
+
+  if (leftover?.length) {
+    for (const r of leftover) {
+      const quote = data.quotes.find(
+        (q) => q.id === r.quoteId || (q as QuoteWithLegacyRequest).requestId === r.id
+      );
+      const existing =
+        data.jobs.find((j) => j.id === r.id) ??
+        (quote?.jobId ? data.jobs.find((j) => j.id === quote.jobId) : undefined) ??
+        (r.idempotencyKey ? data.jobs.find((j) => j.idempotencyKey === r.idempotencyKey) : undefined);
+      const source = mapLegacyRequestSource(r.source);
+      if (existing) {
+        if (!existing.source || existing.source === "manual") existing.source = source;
+        existing.originalMessage ??= r.message;
+        existing.idempotencyKey ??= r.idempotencyKey;
+        existing.notification ??= r.notification;
+        if (quote && !quote.jobId) quote.jobId = existing.id;
+        changed = true;
+        continue;
+      }
+      const job: Job = {
+        id: r.id,
+        customerId: r.customerId,
+        quoteId: r.quoteId ?? quote?.id,
+        title: r.title || r.message.replace(/\s+/g, " ").trim().slice(0, 60),
+        description: r.message,
+        status: "kommande",
+        checklist: [],
+        notes: "",
+        createdAt: r.createdAt,
+        source,
+        originalMessage: r.message,
+      };
+      if (r.idempotencyKey) job.idempotencyKey = r.idempotencyKey;
+      if (r.notification) job.notification = r.notification;
+      data.jobs.push(job);
+      if (quote) quote.jobId = job.id;
+      changed = true;
+    }
+  }
+
+  for (const q of data.quotes) {
+    const legacy = q as QuoteWithLegacyRequest;
+    if (legacy.requestId) {
+      if (!q.jobId) {
+        const byId = data.jobs.find((j) => j.id === legacy.requestId);
+        if (byId) q.jobId = byId.id;
+      }
+      delete legacy.requestId;
+      changed = true;
+    }
+  }
+
+  if ("requests" in bag) {
+    delete bag.requests;
+    changed = true;
+  }
+
+  const settings = data.settings as CompanySettings & { inquiryNotificationEmail?: string };
+  if (settings.inquiryNotificationEmail != null) {
+    if (!settings.websiteNotificationEmail) settings.websiteNotificationEmail = settings.inquiryNotificationEmail;
+    delete settings.inquiryNotificationEmail;
+    changed = true;
+  }
+
+  return changed;
+}
+
+type QuoteWithLegacyRequest = { requestId?: string };
+
 export function normalize(loaded: DB): DB {
   // Fält tillagda efter att filen skapades får sina standardvärden här.
   loaded.settings.lateInterestRate ??= 10;
@@ -86,15 +191,28 @@ export function normalize(loaded: DB): DB {
   loaded.reminders ??= [];
   loaded.attentionStates ??= [];
   loaded.inboxItems ??= [];
+  loaded.supplierPayments ??= [];
+  loaded.jobWorkEntries ??= [];
+  loaded.collaborationInvitations ??= [];
+  loaded.clientInformationRequests ??= [];
   loaded.settings.inboundMailSlug ??= "demo";
+  for (const sup of loaded.supplierInvoices ?? []) {
+    sup.accountingStatus ??= sup.verificationId ? "bokford" : "obokford";
+  }
+  for (const item of loaded.inboxItems) {
+    item.documentType ??=
+      item.expenseId || /kvitto/i.test(item.subject) ? "kvitto" : "ekonomiskt_dokument";
+  }
   const domainsChanged = normalizeDomains(loaded);
   // Bokföringsmotorn: räkenskapsår, IB och verifikationsfält (idempotent).
   const migrated = migrateAccounting(loaded);
   const dirty =
+    migrateRequestsToJobs(loaded) ||
     hydrateIssuedInvoices(loaded) ||
     hydrateQuoteSellerSnapshots(loaded) ||
     hydrateTaxReductionTerms(loaded) ||
-    hydrateTaxReductionDemo(loaded);
+    hydrateTaxReductionDemo(loaded) ||
+    hydrateQuotedBaselines(loaded);
   // Persist snapshots so later settings changes cannot rewrite seed/historical docs.
   if (dirty || migrated || domainsChanged) persist(loaded);
   return loaded;
@@ -108,6 +226,11 @@ function schemaNeedsNormalize(data: DB | undefined): boolean {
   if (!data) return true;
   if (!Array.isArray(data.domains) || !Array.isArray(data.domainAudit)) return true;
   if (!Array.isArray(data.inboxItems)) return true;
+  if (!Array.isArray(data.supplierPayments)) return true;
+  if (!Array.isArray(data.jobWorkEntries)) return true;
+  if (!Array.isArray(data.collaborationInvitations)) return true;
+  if (!Array.isArray(data.clientInformationRequests)) return true;
+  if ("requests" in (data as object)) return true;
   if (!data.meta.taxReductionDemoHydrated) return true;
   return false;
 }
@@ -204,12 +327,12 @@ export function resetToEmptyCompany(): void {
     settings,
     sequences: { quote: 1, invoice: 1, verification: 1 },
     customers: [],
-    requests: [],
     quotes: [],
     quoteVersions: [],
     signatures: [],
     bankidOrders: [],
     jobs: [],
+    jobWorkEntries: [],
     invoices: [],
     payments: [],
     bankAccounts: [],
@@ -235,6 +358,9 @@ export function resetToEmptyCompany(): void {
     reminders: [],
     attentionStates: [],
     inboxItems: [],
+    supplierPayments: [],
+    collaborationInvitations: [],
+    clientInformationRequests: [],
     meta: { seededAt: seeded, taxReductionDemoHydrated: true },
   };
   g.__drivaDb = normalize(empty);

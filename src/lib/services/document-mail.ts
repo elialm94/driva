@@ -1,83 +1,119 @@
-import { db } from "../store";
-import { absoluteAppUrl, isLiveMailConfigured, mailFromAddress, sendMail, type MailMessage, type MailResult } from "../mail";
-import { getInvoice, getQuote, currentVersion, invoiceOutstanding, invoiceTotals, quoteTotals, requireCustomer } from "./data";
+import { save } from "../store";
+import { MAIL_NOT_CONFIGURED, type MailResult } from "../mail";
+import { missingEmailForSend } from "../customer-validation";
+import {
+  INVOICE_SEND_FAILED,
+  QUOTE_SEND_FAILED,
+  REMINDER_SEND_FAILED,
+  sendInvoice as sendInvoiceEmail,
+  sendPaymentReminder,
+  sendQuote as sendQuoteEmail,
+  sendQuoteFollowUp,
+  userFacingSendError,
+} from "../email/service";
+import { currentVersion, getInvoice, getQuote, invoiceOutstanding, invoiceTotals, quoteTotals, requireCustomer } from "./data";
 import { deliverInvoice, issueInvoice, sendReminder, type Actor } from "./invoices";
-import { followUpQuote, sendQuote } from "./quotes";
-import { kr, datumLang } from "../format";
+import { followUpQuote, quoteSendBlockers, sendQuote } from "./quotes";
 
 /**
  * E-postleverans av offerter, fakturor och påminnelser.
  *
- * Domäntjänsterna (sendQuote/deliverInvoice/…) äger tillståndet och är synkrona.
- * Det här lagret bygger mejlet, skickar via mail.ts (Resend när RESEND_API_KEY +
- * MAIL_FROM finns, annars mock som bara loggar) och rapporterar ärligt läge
- * tillbaka: "skickad med e-post" ≠ "markerad som skickad utan e-post".
- *
- * Vid misslyckad live-leverans rullas ingenting tillbaka: en utfärdad faktura
- * behåller nummer, snapshot och bokföring – bara leveransen får göras om.
+ * Ordning: validera → Resend → provider-succé/messageId → persist sent.
+ * Misslyckad leverans markerar aldrig dokumentet som skickat.
  */
 
-export type DeliveryOutcome = { mode: MailResult["mode"]; ok: boolean; error?: string };
+export type DeliveryOutcome = {
+  mode: MailResult["mode"] | "live";
+  ok: boolean;
+  error?: string;
+  messageId?: string;
+  sentTo?: string;
+};
 
-function fromAddress(): string {
-  const s = db().settings;
-  return mailFromAddress() || s.email || s.name;
+const documentLocks = new Map<string, Promise<{ outcome: DeliveryOutcome }>>();
+
+function withDocumentLock(key: string, fn: () => Promise<{ outcome: DeliveryOutcome }>): Promise<{ outcome: DeliveryOutcome }> {
+  const existing = documentLocks.get(key);
+  if (existing) return existing;
+  const pending = fn().finally(() => documentLocks.delete(key));
+  documentLocks.set(key, pending);
+  return pending;
 }
 
-function footer(): string {
-  const s = db().settings;
-  return [s.name, s.phone, s.email].filter(Boolean).join(" · ");
-}
-
-function textToHtml(text: string): string {
-  const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `<div style="font-family:sans-serif;line-height:1.5;white-space:pre-wrap">${esc}</div>`;
-}
-
-function buildMessage(input: { to: string; subject: string; lines: string[] }): MailMessage {
-  const text = [...input.lines, "", footer()].join("\n");
-  return {
-    to: input.to,
-    from: fromAddress(),
-    replyTo: db().settings.email || undefined,
-    subject: input.subject,
-    text,
-    html: textToHtml(text),
-  };
-}
-
-/** Skicka mejl till kund. Live-läge kräver mottagaradress; mock loggar bara. */
-async function deliverToCustomer(email: string, message: () => MailMessage): Promise<DeliveryOutcome> {
-  if (isLiveMailConfigured() && !email.trim()) {
-    return { mode: "live", ok: false, error: "Kunden saknar e-postadress. Lägg till den på kundkortet eller dela länken manuellt." };
+function requireRecipient(email: string | undefined): string | { error: string } {
+  const to = email?.trim() ?? "";
+  if (missingEmailForSend({ email: to })) {
+    return { error: "Kunden saknar e-postadress. Lägg till den innan du skickar." };
   }
-  const result = await sendMail(message());
-  return result.ok ? { mode: result.mode, ok: true } : { mode: result.mode, ok: false, error: result.error };
+  return to;
 }
 
-/** Skicka offerten: markera skickad + e-posta kundlänken. */
+function recordAttempt(kind: "quote" | "invoice", id: string): void {
+  if (kind === "quote") {
+    const quote = getQuote(id);
+    if (quote) quote.lastSendAttemptAt = new Date().toISOString();
+  } else {
+    const invoice = getInvoice(id);
+    if (invoice) invoice.lastSendAttemptAt = new Date().toISOString();
+  }
+  save();
+}
+
+function toOutcome(result: MailResult, to: string, fallback: string): DeliveryOutcome {
+  if (result.ok) {
+    return { mode: result.mode, ok: true, messageId: result.messageId, sentTo: to };
+  }
+  return { mode: result.mode, ok: false, error: userFacingSendError(result, fallback) };
+}
+
+/** Skicka offerten: Resend först, därefter status skickad. */
 export async function sendQuoteWithEmail(quoteId: string): Promise<{ outcome: DeliveryOutcome }> {
+  return withDocumentLock(`quote:${quoteId}`, () => sendQuoteWithEmailOnce(quoteId));
+}
+
+async function sendQuoteWithEmailOnce(quoteId: string): Promise<{ outcome: DeliveryOutcome }> {
   const quote = getQuote(quoteId);
   if (!quote) throw new Error("Offerten finns inte");
+  if (quote.status === "skickad" && quote.sentAt) {
+    return {
+      outcome: {
+        mode: "live",
+        ok: true,
+        messageId: quote.lastEmail?.messageId,
+        sentTo: quote.lastEmail?.sentTo,
+      },
+    };
+  }
+  const blockers = quoteSendBlockers(quoteId).filter((b) => b.code !== "buyer_email");
+  if (blockers.length > 0) {
+    return { outcome: { mode: "live", ok: false, error: blockers[0].message } };
+  }
   const customer = requireCustomer(quote.customerId);
+  const to = requireRecipient(customer.email);
+  if (typeof to !== "string") return { outcome: { mode: "live", ok: false, error: to.error } };
+
   const version = currentVersion(quote);
   const t = quoteTotals(quote);
-
-  const outcome = await deliverToCustomer(customer.email, () =>
-    buildMessage({
-      to: customer.email,
-      subject: `Offert #${quote.number} från ${db().settings.name}`,
-      lines: [
-        `Hej ${customer.name},`,
-        "",
-        `Här är vår offert för ${version.title} på ${kr(t.toPay)}.`,
-        `Du kan läsa och godkänna den här (giltig till ${datumLang(version.validUntil)}):`,
-        absoluteAppUrl(`/offert/${quote.token}`),
-      ],
-    })
-  );
+  recordAttempt("quote", quoteId);
+  const result = await sendQuoteEmail({
+    to,
+    quoteId,
+    quoteNumber: quote.number,
+    title: version.title,
+    customerName: customer.name,
+    amount: t.toPay,
+    validUntil: version.validUntil,
+    token: quote.token,
+    bankidEnabled: true,
+  });
+  const outcome = toOutcome(result, to, QUOTE_SEND_FAILED);
   if (outcome.ok) {
-    sendQuote(quoteId, outcome);
+    sendQuote(quoteId, {
+      mode: result.ok ? result.mode : "live",
+      ok: true,
+      messageId: outcome.messageId,
+      sentTo: to,
+    });
   }
   return { outcome };
 }
@@ -90,32 +126,41 @@ export async function issueAndEmailInvoice(invoiceId: string, createdBy: Actor =
 
 /** E-posta en utfärdad faktura (första gången eller igen). */
 export async function emailInvoice(invoiceId: string, createdBy: Actor = "anvandare"): Promise<{ outcome: DeliveryOutcome }> {
+  return withDocumentLock(`invoice:${invoiceId}`, () => emailInvoiceOnce(invoiceId, createdBy));
+}
+
+async function emailInvoiceOnce(invoiceId: string, createdBy: Actor): Promise<{ outcome: DeliveryOutcome }> {
   const invoice = getInvoice(invoiceId);
   if (!invoice) throw new Error("Fakturan finns inte");
   if (invoice.status === "utkast") throw new Error("Utkast kan inte skickas innan fakturan är utfärdad.");
+  if (invoice.number == null) throw new Error("Fakturan saknar nummer.");
   const customer = requireCustomer(invoice.customerId);
+  const to = requireRecipient(customer.email);
+  if (typeof to !== "string") return { outcome: { mode: "live", ok: false, error: to.error } };
   const t = invoiceTotals(invoice);
 
-  const outcome = await deliverToCustomer(customer.email, () =>
-    buildMessage({
-      to: customer.email,
-      subject: `Faktura #${invoice.number} från ${db().settings.name}`,
-      lines: [
-        `Hej ${customer.name},`,
-        "",
-        `Här kommer faktura #${invoice.number} på ${kr(t.toPay)}.`,
-        `Förfallodatum: ${datumLang(invoice.dueDate)}. OCR: ${invoice.ocr}.`,
-        `Du hittar fakturan här:`,
-        absoluteAppUrl(`/faktura/${invoice.token}`),
-      ],
-    })
-  );
+  recordAttempt("invoice", invoiceId);
+  const result = await sendInvoiceEmail({
+    to,
+    invoiceId,
+    invoiceNumber: invoice.number,
+    customerName: customer.name,
+    amount: t.toPay,
+    dueDate: invoice.dueDate,
+    token: invoice.token,
+    ocr: invoice.ocr,
+  });
+  const outcome = toOutcome(result, to, INVOICE_SEND_FAILED);
   if (outcome.ok) {
-    deliverInvoice(invoiceId, createdBy, outcome);
+    deliverInvoice(invoiceId, createdBy, {
+      mode: result.ok ? result.mode : "live",
+      ok: true,
+      messageId: outcome.messageId,
+      sentTo: to,
+    });
   } else {
-    // Ärlig logg – utfärdandet står kvar, bara leveransen misslyckades.
     const { logActivity } = await import("./activity");
-    logActivity(`Faktura #${invoice.number} kunde inte e-postas till ${customer.name}: ${outcome.error}`, {
+    logActivity(`Faktura #${invoice.number} kunde inte e-postas till ${customer.name}.`, {
       customerId: customer.id,
       entity: { type: "faktura", id: invoice.id },
       createdBy,
@@ -126,28 +171,45 @@ export async function emailInvoice(invoiceId: string, createdBy: Actor = "anvand
 
 /** E-posta betalningspåminnelse för en försenad faktura. */
 export async function remindInvoiceByEmail(invoiceId: string, by: Actor = "anvandare"): Promise<{ outcome: DeliveryOutcome }> {
+  return withDocumentLock(`invoice-reminder:${invoiceId}`, () => remindInvoiceByEmailOnce(invoiceId, by));
+}
+
+async function remindInvoiceByEmailOnce(invoiceId: string, by: Actor): Promise<{ outcome: DeliveryOutcome }> {
   const invoice = getInvoice(invoiceId);
   if (!invoice || !(invoice.status === "skickad" || invoice.status === "delbetald") || invoice.type === "kredit") {
-    return { outcome: { mode: "mock", ok: false, error: "Fakturan kan inte påminnas." } };
+    return { outcome: { mode: "live", ok: false, error: "Fakturan kan inte påminnas." } };
+  }
+  if (!invoice.sentAt || invoice.number == null) {
+    return { outcome: { mode: "live", ok: false, error: "Fakturan måste ha skickats innan en påminnelse kan gå ut." } };
   }
   const customer = requireCustomer(invoice.customerId);
+  const to = requireRecipient(customer.email);
+  if (typeof to !== "string") return { outcome: { mode: "live", ok: false, error: to.error } };
   const due = invoiceOutstanding(invoice);
-  const outcome = await deliverToCustomer(customer.email, () =>
-    buildMessage({
-      to: customer.email,
-      subject: `Påminnelse: faktura #${invoice.number} från ${db().settings.name}`,
-      lines: [
-        `Hej ${customer.name},`,
-        "",
-        invoice.status === "delbetald"
-          ? `En vänlig påminnelse om faktura #${invoice.number}: ${kr(due)} återstår att betala (förföll ${datumLang(invoice.dueDate)}).`
-          : `En vänlig påminnelse om faktura #${invoice.number} på ${kr(due)} som förföll ${datumLang(invoice.dueDate)}.`,
-        `OCR: ${invoice.ocr}.`,
-        absoluteAppUrl(`/faktura/${invoice.token}`),
-      ],
-    })
-  );
-  if (outcome.ok) sendReminder(invoiceId, by, outcome);
+  const t = invoiceTotals(invoice);
+
+  recordAttempt("invoice", invoiceId);
+  const result = await sendPaymentReminder({
+    to,
+    invoiceId,
+    invoiceNumber: invoice.number,
+    customerName: customer.name,
+    amount: t.toPay,
+    outstanding: due,
+    dueDate: invoice.dueDate,
+    token: invoice.token,
+    ocr: invoice.ocr,
+    partial: invoice.status === "delbetald",
+  });
+  const outcome = toOutcome(result, to, REMINDER_SEND_FAILED);
+  if (outcome.ok) {
+    sendReminder(invoiceId, by, {
+      mode: result.ok ? result.mode : "live",
+      ok: true,
+      messageId: outcome.messageId,
+      sentTo: to,
+    });
+  }
   return { outcome };
 }
 
@@ -155,23 +217,26 @@ export async function remindInvoiceByEmail(invoiceId: string, by: Actor = "anvan
 export async function followUpQuoteByEmail(quoteId: string, by: "anvandare" | "assistent" = "anvandare"): Promise<{ outcome: DeliveryOutcome }> {
   const quote = getQuote(quoteId);
   if (!quote || quote.status !== "skickad") {
-    return { outcome: { mode: "mock", ok: false, error: "Offerten väntar inte på svar." } };
+    return { outcome: { mode: "live", ok: false, error: "Offerten väntar inte på svar." } };
   }
   const customer = requireCustomer(quote.customerId);
+  const to = requireRecipient(customer.email);
+  if (typeof to !== "string") return { outcome: { mode: "live", ok: false, error: to.error } };
   const version = currentVersion(quote);
-  const outcome = await deliverToCustomer(customer.email, () =>
-    buildMessage({
-      to: customer.email,
-      subject: `Påminnelse: offert #${quote.number} från ${db().settings.name}`,
-      lines: [
-        `Hej ${customer.name},`,
-        "",
-        `Har du hunnit titta på vår offert för ${version.title}?`,
-        `Du kan läsa och godkänna den här (giltig till ${datumLang(version.validUntil)}):`,
-        absoluteAppUrl(`/offert/${quote.token}`),
-      ],
-    })
-  );
-  if (outcome.ok) followUpQuote(quoteId, by, outcome);
+
+  recordAttempt("quote", quoteId);
+  const result = await sendQuoteFollowUp({
+    to,
+    quoteId,
+    quoteNumber: quote.number,
+    title: version.title,
+    customerName: customer.name,
+    validUntil: version.validUntil,
+    token: quote.token,
+  });
+  const outcome = toOutcome(result, to, REMINDER_SEND_FAILED);
+  if (outcome.ok) followUpQuote(quoteId, by, { mode: result.ok ? result.mode : "live", ok: true });
   return { outcome };
 }
+
+export { MAIL_NOT_CONFIGURED };

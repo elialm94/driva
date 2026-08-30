@@ -1,5 +1,5 @@
 /**
- * Rik text för dokumentens "Övrig information" (offerter + fakturor).
+ * Rik text för dokumentens beskrivning (offerter + fakturor).
  *
  * Lagringsformatet är en STRIKT delmängd av TipTap/ProseMirror-dokument-JSON –
  * aldrig HTML. Vitlistan är avsiktligt liten för konsekventa, professionella

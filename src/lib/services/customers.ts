@@ -1,30 +1,74 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
-import type { Customer, CustomerRequest, RequestSource } from "../types";
+import type { Customer } from "../types";
 import { logActivity } from "./activity";
 import { normalizePersonnummer } from "../personnummer";
 import { invoiceOutstanding, isOpenReceivable, isOverdue } from "./data";
-import { CustomerValidationError, customerContactFieldErrors, personnummerFieldError } from "../customer-validation";
+import { CustomerValidationError, customerContactFieldErrors, personnummerFieldError, sanitizePropertyDesignations } from "../customer-validation";
+import { addWorkLocation } from "./work-locations";
 
+/**
+ * Namn är det enda som krävs för att skapa en kund. E-post, telefon, adress,
+ * personnummer och fastigheter är frivilliga – flöden som behöver dem
+ * (skicka via e-post, fakturera, ROT/RUT) frågar efter exakt det som saknas
+ * när det behövs.
+ */
 export function createCustomer(input: {
   kind: Customer["kind"];
   name: string;
   contactPerson?: string;
   orgNumber?: string;
-  email: string;
-  phone: string;
+  email?: string;
+  phone?: string;
   address?: string;
   postalCode?: string;
   city?: string;
+  personalIdentityNumber?: string;
+  propertyDesignations?: string[];
 }): Customer {
+  const { personalIdentityNumber, propertyDesignations, ...rest } = input;
+  const fieldErrors = customerContactFieldErrors({
+    name: rest.name,
+    email: rest.email,
+    phone: rest.phone,
+    orgNumber: rest.orgNumber,
+    contactPerson: rest.contactPerson,
+  });
+  if (fieldErrors.length) throw new CustomerValidationError(fieldErrors);
+
+  let storedPn: string | undefined;
+  if (rest.kind === "privat" && personalIdentityNumber !== undefined) {
+    const pnError = personnummerFieldError(personalIdentityNumber);
+    if (pnError) throw new CustomerValidationError([{ field: "personalIdentityNumber", message: pnError }]);
+    const trimmed = personalIdentityNumber.trim();
+    storedPn = trimmed ? normalizePersonnummer(trimmed) : undefined;
+  }
+
+  const designations = sanitizePropertyDesignations(propertyDesignations ?? []);
+
   const customer: Customer = {
     id: uid(),
     notes: "",
     createdAt: new Date().toISOString(),
-    ...input,
+    ...rest,
+    name: rest.name.trim(),
+    email: rest.email?.trim() ?? "",
+    phone: rest.phone?.trim() ?? "",
+    ...(storedPn ? { personalIdentityNumber: storedPn } : {}),
   };
   db().customers.push(customer);
   save();
+
+  designations.forEach((designation, index) => {
+    addWorkLocation(customer.id, {
+      label: designation,
+      address: "",
+      propertyType: "smahus",
+      propertyDesignation: designation,
+      asDefault: index === 0,
+    });
+  });
+
   return customer;
 }
 
@@ -96,70 +140,15 @@ export function findCustomersByName(name: string): Customer[] {
   });
 }
 
-/** Enkel "AI-tolkning" av en förfrågningstext (regelbaserad i demon). */
-export function interpretRequest(message: string): CustomerRequest["ai"] {
-  const ai: NonNullable<CustomerRequest["ai"]> = {};
-  const m = message.toLowerCase();
-  if (/(kök|luckor|bänkskiva)/.test(m)) ai.workType = "Köksrenovering";
-  else if (/garderob/.test(m)) ai.workType = "Platsbyggd garderob";
-  else if (/(altan|trall|uteplats)/.test(m)) ai.workType = "Altan/uteplats";
-  else if (/(bokhylla|hylla|platsbygg)/.test(m)) ai.workType = "Platsbyggd möbel";
-  else if (/(fönster)/.test(m)) ai.workType = "Fönsterarbete";
-  const monthMatch = m.match(
-    /(januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)/
-  );
-  if (monthMatch) ai.desiredStart = monthMatch[1].charAt(0).toUpperCase() + monthMatch[1].slice(1);
-  const budgetMatch = m.match(/(\d[\d\s]{2,})\s*(?:kr|:-|kronor)/);
-  if (budgetMatch) ai.budget = `${budgetMatch[1].trim()} kr`;
-  return Object.keys(ai).length ? ai : undefined;
-}
-
-export function createRequest(input: {
-  customerId: string;
-  title: string;
-  message: string;
-  source: RequestSource;
-  idempotencyKey?: string;
-}): CustomerRequest {
-  const data = db();
-  const customer = data.customers.find((c) => c.id === input.customerId);
-  const request: CustomerRequest = {
-    id: uid(),
-    customerId: input.customerId,
-    title: input.title,
-    message: input.message,
-    source: input.source,
-    status: "ny",
-    createdAt: new Date().toISOString(),
-    ai: interpretRequest(`${input.title}. ${input.message}`),
-  };
-  if (input.idempotencyKey) request.idempotencyKey = input.idempotencyKey;
-  data.requests.push(request);
-  const sourceText: Record<RequestSource, string> = {
-    hemsida: "via hemsidan",
-    email: "via e-post",
-    telefon: "via telefon",
-    manuell: "",
-    assistent: "via assistenten",
-  };
-  logActivity(
-    `Ny förfrågan ${sourceText[input.source]} från ${customer?.name ?? "okänd"}: ${input.title}.`.replace("  ", " "),
-    { customerId: input.customerId, entity: { type: "forfragan", id: request.id } }
-  );
-  save();
-  return request;
-}
-
-/* ---------------------------- Register / inbox ----------------------------- */
+/* ---------------------------- Register ----------------------------- */
 
 export const CUSTOMER_PAGE_SIZE = 50;
 
-export type CustomerStatusKey = "bankid" | "uppdrag" | "forfragan" | "ingen";
+export type CustomerStatusKey = "bankid" | "uppdrag" | "ingen";
 export type CustomerSort = "namn" | "aktivitet" | "attBetala";
 export type CustomerKindFilter = "alla" | "privat" | "foretag";
 export type CustomerActivityFilter = "alla" | "uppdrag" | "ingen";
 export type CustomerPaymentFilter = "alla" | "obetalt" | "forsenad";
-export type InquiryInboxFilter = "oppna" | "alla";
 
 export interface CustomerTableRow {
   id: string;
@@ -177,22 +166,6 @@ export interface CustomerTableRow {
   lastActivityAt: string;
 }
 
-export interface InquiryInboxRow {
-  id: string;
-  customerId: string;
-  customerName: string;
-  customerKind: Customer["kind"];
-  contactPerson?: string;
-  email: string;
-  phone: string;
-  title: string;
-  summary: string;
-  createdAt: string;
-  status: "ny" | "hanterad";
-  source: RequestSource;
-  quoteId?: string;
-}
-
 export interface PagedResult<T> {
   rows: T[];
   page: number;
@@ -204,7 +177,6 @@ export interface PagedResult<T> {
 interface CustomerStats {
   waitingQuotes: number;
   activeJobs: number;
-  newRequests: number;
   outstanding: number;
   overdue: boolean;
   lastActivityAt: string;
@@ -223,7 +195,6 @@ function customerStatsById(): Map<string, CustomerStats> {
     stats.set(c.id, {
       waitingQuotes: 0,
       activeJobs: 0,
-      newRequests: 0,
       outstanding: 0,
       overdue: false,
       lastActivityAt: c.createdAt,
@@ -259,13 +230,6 @@ function customerStatsById(): Map<string, CustomerStats> {
     if (isOverdue(inv)) s.overdue = true;
   }
 
-  for (const r of data.requests) {
-    const s = stats.get(r.customerId);
-    if (!s) continue;
-    if (r.status === "ny") s.newRequests += 1;
-    bumpActivity(s, r.createdAt);
-  }
-
   for (const a of data.activity) {
     if (!a.customerId) continue;
     const s = stats.get(a.customerId);
@@ -278,7 +242,6 @@ function customerStatsById(): Map<string, CustomerStats> {
 function customerStatus(s: CustomerStats): { key: CustomerStatusKey; label: string } {
   if (s.waitingQuotes > 0) return { key: "bankid", label: "Väntar på BankID" };
   if (s.activeJobs > 0) return { key: "uppdrag", label: "Aktivt uppdrag" };
-  if (s.newRequests > 0) return { key: "forfragan", label: "Ny förfrågan" };
   return { key: "ingen", label: "—" };
 }
 
@@ -292,7 +255,8 @@ function phoneDigits(value: string): string {
 
 function customerMatchesQuery(c: Customer, q: string): boolean {
   if (!q) return true;
-  const hay = [c.name, c.contactPerson, c.email, c.phone, c.orgNumber, c.city]
+  const designations = (c.workLocations ?? []).map((location) => location.propertyDesignation);
+  const hay = [c.name, c.contactPerson, c.email, c.phone, c.orgNumber, c.city, ...designations]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -371,124 +335,4 @@ export function listCustomersForTable(input: {
   });
 
   return paginate(rows, input.page ?? 1, input.pageSize ?? CUSTOMER_PAGE_SIZE);
-}
-
-export function inquiryDisplayStatus(status: CustomerRequest["status"]): "ny" | "hanterad" {
-  return status === "ny" ? "ny" : "hanterad";
-}
-
-function inquirySummary(message: string): string {
-  const compact = message.replace(/\s+/g, " ").trim();
-  return compact.length > 90 ? `${compact.slice(0, 87)}…` : compact;
-}
-
-function inquiryMatchesQuery(
-  request: CustomerRequest,
-  customer: Customer | undefined,
-  q: string
-): boolean {
-  if (!q) return true;
-  const hay = [customer?.name, customer?.contactPerson, customer?.email, customer?.phone, customer?.orgNumber, request.title, request.message]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  if (hay.includes(q)) return true;
-  const qDigits = phoneDigits(q);
-  return Boolean(customer && qDigits.length >= 3 && phoneDigits(customer.phone).includes(qDigits));
-}
-
-function toInboxRow(request: CustomerRequest, customer: Customer | undefined): InquiryInboxRow {
-  return {
-    id: request.id,
-    customerId: request.customerId,
-    customerName: customer?.name ?? "Okänd kund",
-    customerKind: customer?.kind ?? "privat",
-    contactPerson: customer?.contactPerson,
-    email: customer?.email ?? "",
-    phone: customer?.phone ?? "",
-    title: request.title,
-    summary: inquirySummary(request.message),
-    createdAt: request.createdAt,
-    status: inquiryDisplayStatus(request.status),
-    source: request.source,
-    quoteId: request.quoteId,
-  };
-}
-
-export function listInquiriesInbox(input: {
-  q?: string;
-  filter?: InquiryInboxFilter;
-  page?: number;
-  pageSize?: number;
-} = {}): PagedResult<InquiryInboxRow> {
-  const data = db();
-  const customers = new Map(data.customers.map((c) => [c.id, c]));
-  const q = normalizeSearch(input.q ?? "");
-  const filter = input.filter ?? "oppna";
-
-  const matched: InquiryInboxRow[] = [];
-  for (const r of data.requests) {
-    if (filter === "oppna" && r.status !== "ny") continue;
-    const customer = customers.get(r.customerId);
-    if (!inquiryMatchesQuery(r, customer, q)) continue;
-    matched.push(toInboxRow(r, customer));
-  }
-
-  matched.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.customerName.localeCompare(b.customerName, "sv"));
-  return paginate(matched, input.page ?? 1, input.pageSize ?? CUSTOMER_PAGE_SIZE);
-}
-
-export function countOpenInquiries(): number {
-  let n = 0;
-  for (const r of db().requests) if (r.status === "ny") n += 1;
-  return n;
-}
-
-export function getInquiryView(id: string): { request: CustomerRequest; customer: Customer } | undefined {
-  const request = db().requests.find((r) => r.id === id);
-  if (!request) return undefined;
-  const customer = db().customers.find((c) => c.id === request.customerId);
-  if (!customer) return undefined;
-  return { request, customer };
-}
-
-/**
- * "Markera hanterad": riktig domänövergång (ny → besvarad) – t.ex. när
- * företagaren redan pratat med kunden och ingen offert ska skapas.
- * Förfrågan lämnar "Behöver din uppmärksamhet" men ligger kvar i
- * inboxen/kundhistoriken som hanterad. Idempotent för redan hanterade.
- */
-export function markInquiryHandled(requestId: string): CustomerRequest {
-  const request = db().requests.find((r) => r.id === requestId);
-  if (!request) throw new Error("Förfrågan finns inte.");
-  if (request.status !== "ny") return request;
-  request.status = "besvarad";
-  logActivity(`Förfrågan ”${request.title}” markerades som hanterad.`, {
-    customerId: request.customerId,
-    entity: { type: "forfragan", id: request.id },
-  });
-  save();
-  return request;
-}
-
-/** Hitta öppen förfrågan att koppla till en offert – samma objekt som inboxen. */
-export function findMatchingOpenInquiry(customerId: string, hint?: string): CustomerRequest | undefined {
-  const open = db().requests.filter((r) => r.customerId === customerId && r.status === "ny");
-  if (open.length === 0) return undefined;
-  if (open.length === 1) return open[0];
-  const q = normalizeSearch(hint ?? "");
-  if (!q) return undefined;
-  const tokens = q.split(/\s+/).filter((t) => t.length >= 3);
-  const scored = open
-    .map((r) => {
-      const hay = `${r.title} ${r.message} ${r.ai?.workType ?? ""}`.toLowerCase();
-      const hits = tokens.filter((t) => hay.includes(t)).length;
-      const titleHit = hay.includes(q) ? 2 : 0;
-      return { r, score: hits + titleHit };
-    })
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score || b.r.createdAt.localeCompare(a.r.createdAt));
-  if (scored.length === 0) return undefined;
-  if (scored.length > 1 && scored[0].score === scored[1].score) return undefined;
-  return scored[0].r;
 }

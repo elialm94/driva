@@ -8,7 +8,6 @@ import { emptyTestDb, labor } from "./invoices/test-db";
 import { getBusinessActions, QUOTE_FOLLOW_UP_DAYS } from "./services/actions";
 import { controlsForAction, FALLBACK_ISSUE_LABEL, issueForAction } from "./services/action-issue";
 import { snoozeAttention } from "./services/attention-state";
-import { markInquiryHandled } from "./services/customers";
 import { createJob, setJobStatus } from "./services/jobs";
 import { createQuote, markQuoteNotRelevant, quoteDefaults } from "./services/quotes";
 import {
@@ -441,7 +440,7 @@ describe("åtgärdsmotorn: bokföring och bank", () => {
     assert.ok(attention.some((a) => a.id === "question-exp-tx"));
   });
 
-  it("förfallen leverantörsfaktura → Betala & bokför; nära förfall → På gång", () => {
+  it("förfallen komplett faktura → Skicka till bank; förfaller om 6 dagar → bara Inbox", () => {
     replaceDb(emptyTestDb());
     db().supplierInvoices.push(
       {
@@ -455,6 +454,9 @@ describe("åtgärdsmotorn: bokföring och bank", () => {
         description: "Material",
         category: "material",
         status: "obetald",
+        accountingStatus: "bokford",
+        bankgiro: "5123-4567",
+        recipientAccount: "5123-4567",
         createdAt: isoDaysFromNow(-30),
       },
       {
@@ -468,15 +470,19 @@ describe("åtgärdsmotorn: bokföring och bank", () => {
         description: "Mobil",
         category: "telefon",
         status: "obetald",
+        accountingStatus: "bokford",
+        bankgiro: "991-2345",
+        recipientAccount: "991-2345",
         createdAt: isoDaysFromNow(-5),
       }
     );
     const actions = getBusinessActions();
     const late = actions.attention.find((a) => a.id === "supplier-sup-late");
     assert.ok(late);
-    assert.deepEqual(late.cta, { type: "paySupplier", label: "Betala & bokför", supplierInvoiceId: "sup-late" });
+    assert.equal(late.cta?.type, "paySupplier");
+    if (late.cta?.type === "paySupplier") assert.equal(late.cta.label, "Skicka till bank");
     assert.ok(!actions.attention.some((a) => a.id === "supplier-sup-future"));
-    assert.ok(actions.watching.some((u) => u.id === "supplier-due-sup-future"));
+    assert.ok(!actions.watching.some((u) => u.id === "supplier-due-sup-future"));
   });
 });
 
@@ -595,13 +601,12 @@ describe("åtgärdsmotorn: helhet", () => {
       );
     }
 
-    // Frågor före förfrågningar före kvitton (gamla prioritetsregeln bevaras).
     const idx = (prefix: string) => actions.attention.findIndex((a) => a.id.startsWith(prefix));
     const question = idx("question-");
-    const inquiry = idx("inquiry-");
+    const newJob = idx("job-new-");
     const receipt = idx("receipt-");
-    assert.ok(question >= 0 && inquiry >= 0 && receipt >= 0);
-    assert.ok(question < inquiry && inquiry < receipt);
+    assert.ok(question >= 0 && newJob >= 0 && receipt >= 0);
+    assert.ok(question < newJob && newJob < receipt);
 
     // Alla djuplänkar pekar någonstans och id:n är unika.
     for (const a of actions.attention) assert.ok(a.href.startsWith("/"), `${a.id} saknar djuplänk`);
@@ -694,26 +699,32 @@ describe("åtgärdsmotorn: rankning, snooze och kontrolldeklaration", () => {
     assert.ok(!getBusinessActions(later).attention.some((a) => a.id === actionId));
   });
 
-  it("Markera hanterad är en domänövergång: förfrågan lämnar listan men ligger kvar i registret", () => {
+  it("inkommande uppdrag utan offert syns på Hem och försvinner när offert kopplas", () => {
     replaceDb(emptyTestDb());
-    db().requests.push({
-      id: "req-1",
+    const job = createJob({
       customerId: "cust-1",
       title: "Måla staket",
-      message: "Hej, kan ni måla vårt staket?",
-      status: "ny",
-      source: "hemsida",
-      createdAt: isoDaysFromNow(-1),
+      description: "Hej, kan ni måla vårt staket?",
+      source: "web_form",
+      originalMessage: "Hej, kan ni måla vårt staket?",
     });
-    assert.ok(getBusinessActions().attention.some((a) => a.id === "inquiry-req-1"));
+    assert.ok(getBusinessActions().attention.some((a) => a.id === `job-new-${job.id}`));
 
-    const handled = markInquiryHandled("req-1");
-    assert.equal(handled.status, "besvarad");
-    assert.ok(!getBusinessActions().attention.some((a) => a.id === "inquiry-req-1"));
-    assert.ok(db().requests.some((r) => r.id === "req-1"), "förfrågan raderas aldrig");
-
-    // Idempotent – redan hanterad förblir hanterad.
-    assert.equal(markInquiryHandled("req-1").status, "besvarad");
+    const defaults = quoteDefaults();
+    createQuote({
+      customerId: "cust-1",
+      jobId: job.id,
+      title: job.title,
+      intro: job.description,
+      lines: [labor({ unitPrice: 8000 })],
+      rot: null,
+      paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
+      paymentTermsDays: defaults.paymentTermsDays,
+      validUntil: defaults.validUntil,
+      terms: defaults.terms,
+    });
+    assert.ok(!getBusinessActions().attention.some((a) => a.id === `job-new-${job.id}`));
+    assert.ok(db().jobs.some((j) => j.id === job.id), "uppdraget ligger kvar");
   });
 
   it("Inte aktuell är en domänövergång: offerten blir avböjd med skäl och lämnar listan", () => {
@@ -753,9 +764,9 @@ describe("åtgärdsmotorn: rankning, snooze och kontrolldeklaration", () => {
     assert.equal(controlsForAction({ id: "receipt-exp-1" }).canDismiss, false, "saknat kvitto: ingen dölj-flagga");
     assert.equal(controlsForAction({ id: "bank-unexplained" }).canSnooze, false, "bankdifferens ska aldrig tystas");
 
-    const inquiry = controlsForAction({ id: "inquiry-req-1" });
-    assert.equal(inquiry.dismissBehavior, "MARK_HANDLED");
-    assert.equal(inquiry.dismissLabel, "Markera hanterad");
+    const newJob = controlsForAction({ id: "job-new-job-1" });
+    assert.equal(newJob.canDismiss, false);
+    assert.equal(newJob.dismissBehavior, "none");
     const quote = controlsForAction({ id: "quote-wait-q-1" });
     assert.equal(quote.dismissBehavior, "MARK_NOT_RELEVANT");
     assert.equal(quote.dismissLabel, "Inte aktuell");

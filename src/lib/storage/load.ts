@@ -28,9 +28,12 @@ import {
   fiscalYearsSpec,
   invoiceLineFromRow,
   attentionStatesSpec,
+  clientInformationRequestsSpec,
+  collaborationInvitationsSpec,
   inboxItemsSpec,
   invoicesSpec,
   jobsSpec,
+  jobWorkEntriesSpec,
   metaFromBusinessRow,
   num,
   paymentsSpec,
@@ -39,10 +42,10 @@ import {
   quoteFromRow,
   quoteVersionsSpec,
   receiptsSpec,
-  requestsSpec,
   settingsFromRow,
   signaturesSpec,
   supplierInvoicesSpec,
+  supplierPaymentsSpec,
   verificationFromRows,
   vatReportsSpec,
   websitesSpec,
@@ -82,12 +85,12 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
   const [
     customerRows,
     workLocationRows,
-    requestRows,
     quoteRows,
     quoteVersionRows,
     signatureRows,
     bankidOrderRows,
     jobRows,
+    jobWorkEntryRows,
     invoiceRows,
     invoiceLineRows,
     snapshotRows,
@@ -95,12 +98,12 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
   ] = await Promise.all([
     tx.query(`select * from public.customers where business_id = $1 order by created_at, id`, b),
     tx.query(`select * from public.work_locations where business_id = $1 order by customer_id, position, id`, b),
-    tx.query(`select * from public.requests where business_id = $1 order by created_at, id`, b),
     tx.query(`select * from public.quotes where business_id = $1 order by created_at, id`, b),
     tx.query(`select * from public.quote_versions where business_id = $1 order by created_at, version, id`, b),
     tx.query(`select * from public.signatures where business_id = $1 order by signed_at, id`, b),
     tx.query(`select * from public.bankid_orders where business_id = $1 order by created_at, order_ref`, b),
     tx.query(`select * from public.jobs where business_id = $1 order by created_at, id`, b),
+    tx.query(`select * from public.job_work_entries where business_id = $1 order by created_at, id`, b),
     tx.query(`select * from public.invoices where business_id = $1 order by created_at, id`, b),
     tx.query(`select * from public.invoice_line_items where business_id = $1 order by invoice_id, position`, b),
     tx.query(`select * from public.invoice_issued_snapshots where business_id = $1`, b),
@@ -135,7 +138,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     tx.query(`select * from public.annual_reports where business_id = $1 order by generated_at, id`, b),
   ]);
 
-  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, activityRows, auditRows] =
+  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, invitationRows, clientRequestRows, activityRows, auditRows] =
     await Promise.all([
       tx.query(`select * from public.websites where business_id = $1`, b),
       tx.query(`select * from public.domains where business_id = $1 order by created_at, id`, b),
@@ -144,6 +147,9 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
       tx.query(`select * from public.reminders where business_id = $1 order by due_at, created_at, id`, b),
       tx.query(`select * from public.attention_states where business_id = $1 order by created_at, id`, b),
       tx.query(`select * from public.inbox_items where business_id = $1 order by created_at, id`, b),
+      tx.query(`select * from public.supplier_payments where business_id = $1 order by created_at, id`, b),
+      tx.query(`select * from public.collaboration_invitations where business_id = $1 order by created_at, id`, b),
+      tx.query(`select * from public.client_information_requests where business_id = $1 order by created_at, id`, b),
       tx.query(
         `select * from public.audit_log where business_id = $1 and channel = 'activity'
          order by created_at desc, id desc limit ${ACTIVITY_LOAD_LIMIT}`,
@@ -219,12 +225,12 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
       verification: num(sequences.verification),
     },
     customers,
-    requests: requestRows.map(requestsSpec.fromRow),
     quotes: quoteRows.map(quoteFromRow),
     quoteVersions: quoteVersionRows.map(quoteVersionsSpec.fromRow),
     signatures: signatureRows.map(signaturesSpec.fromRow),
     bankidOrders: bankidOrderRows.map(bankidOrdersSpec.fromRow),
     jobs: jobRows.map(jobsSpec.fromRow),
+    jobWorkEntries: jobWorkEntryRows.map(jobWorkEntriesSpec.fromRow),
     invoices,
     payments: paymentRows.map(paymentsSpec.fromRow),
     bankAccounts: bankAccountRows.map(bankAccountsSpec.fromRow),
@@ -232,6 +238,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     expenses: expenseRows.map(expensesSpec.fromRow),
     receipts: receiptRows.map(receiptsSpec.fromRow),
     supplierInvoices: supplierRows.map(supplierInvoicesSpec.fromRow),
+    supplierPayments: supplierPaymentRows.map(supplierPaymentsSpec.fromRow),
     verifications,
     fiscalYears: fiscalYearRows.map(fiscalYearsSpec.fromRow),
     accounting: lockedThrough == null ? {} : { lockedThrough: dateOnly(lockedThrough) },
@@ -250,6 +257,8 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     reminders: reminderRows.map(remindersSpec.fromRow),
     attentionStates: attentionStateRows.map(attentionStatesSpec.fromRow),
     inboxItems: inboxItemRows.map(inboxItemsSpec.fromRow),
+    collaborationInvitations: invitationRows.map(collaborationInvitationsSpec.fromRow),
+    clientInformationRequests: clientRequestRows.map(clientInformationRequestsSpec.fromRow),
     meta: metaFromBusinessRow(business),
   };
 

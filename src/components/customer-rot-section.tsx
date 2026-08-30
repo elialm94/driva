@@ -3,15 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
-import {
-  revealCustomerPersonnummerAction,
-  updateCustomerPersonnummerAction,
-  upsertCustomerWorkLocationAction,
-} from "@/app/actions";
-import { formatPersonnummer, isPersonnummerFormat } from "@/lib/personnummer";
+import { upsertCustomerWorkLocationAction } from "@/app/actions";
 import type { DwellingType, WorkLocation } from "@/lib/types";
 import { AddressFields } from "./address-input";
-import { SaveHint } from "./customer-details-form";
+import { SaveHint } from "./save-status";
 import { buttonClasses, cx } from "./ui";
 
 const inputCls =
@@ -25,18 +20,14 @@ export type WorkLocationView = Pick<
 
 export function CustomerRotSection({
   customerId,
-  personalIdentityNumberMasked,
-  hasPersonnummer,
   workLocations,
   defaultWorkLocationId,
 }: {
   customerId: string;
-  personalIdentityNumberMasked: string;
-  hasPersonnummer: boolean;
   workLocations: WorkLocationView[];
   defaultWorkLocationId?: string;
 }) {
-  const hasData = hasPersonnummer || workLocations.length > 0;
+  const hasData = workLocations.length > 0;
   const [open, setOpen] = useState(hasData);
   const [adding, setAdding] = useState(false);
 
@@ -57,7 +48,6 @@ export function CustomerRotSection({
 
   return (
     <div className="space-y-4">
-      <PersonnummerRow customerId={customerId} masked={personalIdentityNumberMasked} hasValue={hasPersonnummer} />
       {workLocations.length > 0 ? (
         <ul className="space-y-2">
           {workLocations.map((loc) => (
@@ -93,98 +83,6 @@ export function CustomerRotSection({
           Lägg till bostad
         </button>
       )}
-    </div>
-  );
-}
-
-function PersonnummerRow({
-  customerId,
-  masked,
-  hasValue,
-}: {
-  customerId: string;
-  masked: string;
-  hasValue: boolean;
-}) {
-  const router = useRouter();
-  const [editing, setEditing] = useState(!hasValue);
-  const [revealed, setRevealed] = useState<string | null>(null);
-  const [value, setValue] = useState("");
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [error, setError] = useState<string | null>(null);
-
-  async function reveal() {
-    const result = await revealCustomerPersonnummerAction(customerId);
-    if (result.ok) setRevealed(result.value);
-  }
-
-  async function save() {
-    setStatus("saving");
-    setError(null);
-    const result = await updateCustomerPersonnummerAction(customerId, value);
-    if (!result.ok) {
-      setStatus("error");
-      setError(result.error);
-      return;
-    }
-    setStatus("saved");
-    setEditing(false);
-    setRevealed(null);
-    setValue("");
-    router.refresh();
-  }
-
-  if (!editing && hasValue) {
-    return (
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[14px]">
-        <span className="text-soft">Personnummer</span>
-        <span className="font-medium tabular text-ink">{revealed ?? masked}</span>
-        <button type="button" className="text-[13px] font-medium text-accent hover:text-accent-deep" onClick={() => (revealed ? setRevealed(null) : void reveal())}>
-          {revealed ? "Dölj" : "Visa"}
-        </button>
-        <button
-          type="button"
-          className="text-[13px] text-muted hover:text-ink"
-          onClick={() => {
-            setEditing(true);
-            setValue("");
-          }}
-        >
-          Ändra
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <label className={labelCls} htmlFor="kund-pn">
-        Personnummer
-      </label>
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          id="kund-pn"
-          value={value}
-          onChange={(e) => setValue(formatPersonnummer(e.target.value))}
-          placeholder="ÅÅÅÅMMDD-NNNN"
-          autoComplete="off"
-          className={cx(inputCls, "max-w-xs")}
-        />
-        <button
-          type="button"
-          className={buttonClasses("secondary", "sm")}
-          disabled={!isPersonnummerFormat(value) && value.trim() !== ""}
-          onClick={() => void save()}
-        >
-          Spara
-        </button>
-        {hasValue ? (
-          <button type="button" className="text-[13px] text-muted hover:text-ink" onClick={() => setEditing(false)}>
-            Avbryt
-          </button>
-        ) : null}
-      </div>
-      <SaveHint status={status} error={error} onRetry={() => void save()} />
     </div>
   );
 }

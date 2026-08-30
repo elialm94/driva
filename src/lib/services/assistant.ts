@@ -2,7 +2,9 @@ import { db, save } from "../store";
 import { uid } from "../ids";
 import type { AssistantCard, AssistantMessage } from "../types";
 import { findCustomersByName } from "./customers";
+import { deleteOrArchiveJob, isIncomingUnquotedJob } from "./jobs";
 import { bookExpenseToJob, undoExpenseBooking } from "./expenses";
+import { postVerificationCorrection } from "./verification-correction";
 import {
   followUpQuoteByEmail,
   issueAndEmailInvoice,
@@ -26,7 +28,6 @@ import {
   createQuoteDraft,
   createJobDraft,
   createInvoiceDraft,
-  listOpenInquiriesResult,
   missingReceiptsResult,
   momsResult,
   offerCreateCustomer,
@@ -194,11 +195,37 @@ function intentCreateQuote(text: string): boolean {
   );
 }
 
-function intentListInquiries(text: string): boolean {
-  if (!/förfråg/i.test(text)) return false;
-  if (!/(vilka|öppna|nya|lista|visa|inbox)/i.test(text) && !/förfrågningar/i.test(text)) return false;
+function intentListIncomingJobs(text: string): boolean {
+  if (!/(nytt uppdrag|nya uppdrag|inkommande uppdrag|webbformulär)/i.test(text)) return false;
   if (/(skapa|offert)/i.test(text)) return false;
-  return apply(listOpenInquiriesResult());
+  const jobs = db().jobs.filter(isIncomingUnquotedJob);
+  if (jobs.length === 0) {
+    return apply({
+      ok: true,
+      text: "Inga inkommande uppdrag utan offert just nu.",
+      forModel: { count: 0, jobs: [] },
+    });
+  }
+  return apply({
+    ok: true,
+    text: jobs.length === 1 ? "1 nytt uppdrag utan offert." : `${jobs.length} nya uppdrag utan offert.`,
+    card: {
+      kind: "list",
+      title: "Nya uppdrag",
+      rows: jobs.slice(0, 20).map((j) => {
+        const customer = db().customers.find((c) => c.id === j.customerId);
+        return {
+          label: `${customer?.name ?? "Kund"} · ${j.title}`,
+          value: (j.originalMessage || j.description).replace(/\s+/g, " ").trim().slice(0, 80),
+          href: `/uppdrag/${j.id}`,
+        };
+      }),
+    },
+    forModel: {
+      count: jobs.length,
+      jobs: jobs.slice(0, 20).map((j) => ({ id: j.id, title: j.title, customerId: j.customerId })),
+    },
+  });
 }
 
 function intentCreateJob(text: string): boolean {
@@ -462,7 +489,7 @@ export function dispatchRules(text: string): boolean {
     intentGreetingOrHelp(text) ||
     intentCreateJob(text) ||
     intentCreateQuote(text) ||
-    intentListInquiries(text) ||
+    intentListIncomingJobs(text) ||
     intentExtraFromNotes(text) ||
     intentRotInvoice(text) ||
     intentInvoiceCustomer(text) ||
@@ -604,13 +631,19 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
         const { outcome } = await remindInvoiceByEmail(id, "assistent");
         if (outcome.ok && outcome.mode === "live") mailed = true;
       }
-      updateConfirmCard(actionId, "utford", `${action.invoiceIds.length === 1 ? "Påminnelsen" : "Påminnelserna"} har ${mailed ? "skickats" : "noterats"}.`);
+      updateConfirmCard(
+        actionId,
+        mailed ? "utford" : "avbruten",
+        mailed
+          ? `${action.invoiceIds.length === 1 ? "Påminnelsen" : "Påminnelserna"} har skickats.`
+          : "Påminnelsen kunde inte skickas."
+      );
       reply(
         mailed
           ? action.invoiceIds.length === 1
             ? "Klart – påminnelsen är skickad med e-post. Jag säger till om betalningen inte dyker upp inom några dagar."
             : `Klart – ${action.invoiceIds.length} påminnelser är skickade med e-post. Jag säger till om betalningarna inte dyker upp inom några dagar.`
-          : "Klart – påminnelserna är noterade. Ingen e-post är konfigurerad, så kontakta kunderna direkt eller dela fakturalänkarna."
+          : "Påminnelsen kunde inte skickas. Försök igen."
       );
       break;
     }
@@ -620,11 +653,11 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
         const { outcome } = await followUpQuoteByEmail(id, "assistent");
         if (outcome.ok && outcome.mode === "live") mailed = true;
       }
-      updateConfirmCard(actionId, "utford", `Påminnelserna har ${mailed ? "skickats" : "noterats"}.`);
+      updateConfirmCard(actionId, mailed ? "utford" : "avbruten", mailed ? "Påminnelserna har skickats." : "Påminnelsen kunde inte skickas.");
       reply(
         mailed
           ? `Klart – jag har påmint ${action.quoteIds.length === 1 ? "kunden" : `${action.quoteIds.length} kunder`} med e-post om att offerten väntar på BankID-godkännande.`
-          : "Klart – påminnelserna är noterade. Ingen e-post är konfigurerad, så kontakta kunderna direkt eller dela offertlänkarna."
+          : "Påminnelsen kunde inte skickas. Försök igen."
       );
       break;
     }
@@ -656,11 +689,7 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
           break;
         }
         updateConfirmCard(actionId, "utford", "Offerten har skickats.");
-        reply(
-          outcome.mode === "live"
-            ? "Klart – offerten är skickad med e-post. Kunden godkänner med BankID när hen är redo."
-            : "Klart – offerten är markerad som skickad. Ingen e-post är konfigurerad, så dela offertlänken med kunden. Hen godkänner med BankID."
-        );
+        reply("Klart – offerten är skickad med e-post. Kunden godkänner med BankID när hen är redo.");
       } catch (e) {
         const message = e instanceof Error ? e.message : "Kunde inte skicka offerten.";
         updateConfirmCard(actionId, "avbruten", message);
@@ -671,14 +700,15 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
     case "skicka_faktura": {
       try {
         const { outcome } = await issueAndEmailInvoice(action.invoiceId, "assistent");
+        if (!outcome.ok) {
+          updateConfirmCard(actionId, "avbruten", outcome.error ?? "Fakturan kunde inte skickas.");
+          reply(
+            `Fakturan är utfärdad och bokförd, men e-posten misslyckades: ${outcome.error ?? "okänt fel"}. Försök skicka igen.`
+          );
+          break;
+        }
         updateConfirmCard(actionId, "utford", "Fakturan har skickats.");
-        reply(
-          outcome.ok && outcome.mode === "live"
-            ? "Klart – fakturan är utfärdad, skickad med e-post och bokförd."
-            : outcome.ok
-              ? "Klart – fakturan är utfärdad och bokförd. Ingen e-post är konfigurerad, så dela fakturalänken med kunden."
-              : `Fakturan är utfärdad och bokförd, men e-posten misslyckades: ${outcome.error ?? "okänt fel"}. Skicka igen eller dela fakturalänken.`
-        );
+        reply("Klart – fakturan är utfärdad, skickad med e-post och bokförd.");
       } catch (e) {
         const message = e instanceof Error ? e.message : "Kunde inte skicka fakturan.";
         updateConfirmCard(actionId, "avbruten", message);
@@ -755,6 +785,21 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
       }
       break;
     }
+    case "ratta_bokforing": {
+      try {
+        const posted = postVerificationCorrection(action.verificationId, action.intent, "assistent");
+        updateConfirmCard(actionId, "utford", `Rättelse ${posted.reversalLabel} bokförd.`);
+        reply(
+          `Klart – ${posted.originalLabel} rättades genom ${posted.reversalLabel}${posted.replacementLabel ? `. Ny bokning: ${posted.replacementLabel}` : ""}. Originalet ändrades inte.`,
+          { kind: "links", links: [{ label: "Öppna verifikationerna", href: `/bokforing/verifikationer?v=${posted.reversal.id}` }] }
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Kunde inte rätta bokföringen.";
+        updateConfirmCard(actionId, "avbruten", message);
+        reply(message);
+      }
+      break;
+    }
     case "markera_moms_deklarerad": {
       try {
         const report = markVatReportDeclared(action.reportId, "assistent");
@@ -778,6 +823,88 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
       });
       updateConfirmCard(actionId, "utford", "Tilläggsofferten är skapad som utkast.");
       reply(result.text, result.card);
+      break;
+    }
+    case "skicka_leverantorsbetalning": {
+      try {
+        const { submitSupplierPayment } = await import("./supplier-payments");
+        const result = submitSupplierPayment(action.paymentId);
+        if (!result.ok) {
+          updateConfirmCard(actionId, "avbruten", result.error);
+          reply(result.error);
+          break;
+        }
+        const invoice = db().supplierInvoices.find((s) => s.id === result.payment.supplierInvoiceId);
+        updateConfirmCard(actionId, "utford", "Instruktionen är skickad till banken.");
+        reply(
+          result.alreadySubmitted
+            ? `Betalningen till ${invoice?.supplier ?? "leverantören"} var redan skickad.`
+            : `Klart – betalningen till ${invoice?.supplier ?? "leverantören"} är skickad till banken. Den är inte betald förrän banken bekräftar.`,
+          { kind: "links", links: [{ label: "Öppna Inbox", href: invoice?.inboxItemId ? `/inbox/${invoice.inboxItemId}` : "/inbox" }] }
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Kunde inte skicka betalningen.";
+        updateConfirmCard(actionId, "avbruten", message);
+        reply(message);
+      }
+      break;
+    }
+    case "avbryt_leverantorsbetalning": {
+      try {
+        const { cancelSupplierPayment } = await import("./supplier-payments");
+        const payment = cancelSupplierPayment(action.paymentId);
+        updateConfirmCard(actionId, "utford", "Betalningen är avbruten.");
+        reply(`Klart – betalningen på ${payment.amount} kr är avbruten.`);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Kunde inte avbryta betalningen.";
+        updateConfirmCard(actionId, "avbruten", message);
+        reply(message);
+      }
+      break;
+    }
+    case "anvand_leverantorsuppgifter": {
+      // Återanvänder leverantörens VERIFIERADE uppgifter via samma tjänst som
+      // UI:t – proveniens supplier_history, aldrig något AI:n angett själv.
+      try {
+        const { useVerifiedSupplierDetails } = await import("./supplier-payments");
+        const { invoice, details } = useVerifiedSupplierDetails(action.supplierInvoiceId);
+        updateConfirmCard(actionId, "utford", "Betalningsuppgifterna är kompletterade.");
+        reply(
+          `Klart – ${invoice.supplier} ${invoice.invoiceNumber} använder nu de tidigare verifierade uppgifterna (${details.account}). Betalningen skickas inte förrän du godkänner den.`,
+          {
+            kind: "links",
+            links: [{ label: "Öppna dokumentet", href: invoice.inboxItemId ? `/inbox/${invoice.inboxItemId}` : "/ekonomi?flik=utgifter" }],
+          }
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Kunde inte återanvända uppgifterna.";
+        updateConfirmCard(actionId, "avbruten", message);
+        reply(message);
+      }
+      break;
+    }
+    case "ta_bort_uppdrag": {
+      try {
+        const result = deleteOrArchiveJob(action.jobId);
+        const jobGone = result.kind === "deleted";
+        updateConfirmCard(
+          actionId,
+          "utford",
+          jobGone ? "Uppdraget är borttaget." : "Uppdraget är arkiverat."
+        );
+        reply(
+          jobGone
+            ? "Klart – uppdraget är borttaget. Det fanns ingen godkänd offert, utfärdad faktura eller bokföring."
+            : "Klart – uppdraget är arkiverat. Fakturor, offerter och bokföring är oförändrade.",
+          jobGone
+            ? { kind: "links", links: [{ label: "Öppna Uppdrag", href: "/kunder?flik=uppdrag" }] }
+            : { kind: "links", links: [{ label: "Öppna uppdrag", href: `/uppdrag/${result.jobId}` }] }
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Kunde inte ta bort uppdraget.";
+        updateConfirmCard(actionId, "avbruten", message);
+        reply(message);
+      }
       break;
     }
     case "kop_doman": {

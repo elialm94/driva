@@ -23,6 +23,7 @@ export interface IntentContext {
   locale: "sv";
   /** Senaste utbytet i fältet (kompakt) – lättviktig fleragskontext, ingen historik. */
   turns?: LoopTurn[];
+  executeOptions?: import("./tools").ExecuteToolOptions;
 }
 
 export type IntentResult =
@@ -102,7 +103,11 @@ export class OpenRouterAiIntentProvider implements AiIntentProvider {
   readonly name = "openrouter";
 
   async interpret(input: string, availableTools: AiToolDef[], context: IntentContext): Promise<IntentResult> {
-    const result = await runAiCommandLoop(input, availableTools, { today: context.today, turns: context.turns });
+    const result = await runAiCommandLoop(input, availableTools, {
+      today: context.today,
+      turns: context.turns,
+      executeOptions: context.executeOptions,
+    });
     if (result.unavailable) return { kind: "unavailable", text: result.text };
     return {
       kind: "final",

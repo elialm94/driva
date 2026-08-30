@@ -7,7 +7,6 @@ import { resolveInvoiceView } from "@/lib/invoices/snapshot";
 import { invoiceNumberLabel, invoiceTypeLabel, sameCalendarDay } from "@/lib/invoices/display";
 import { TaxReductionInvoiceDisclaimer } from "./tax-reduction-terms";
 import { RichTextView } from "./rich-text";
-import { isRichTextEmpty } from "@/lib/richtext";
 
 const LINE_KIND_LABEL: Record<string, string> = {
   arbete: "Arbete",
@@ -137,6 +136,8 @@ export function InvoiceDocument({
       ) : null}
 
       <div className="mt-8">
+        {/* Beskrivning före rader. Utfärdad faktura: frusen kopia via resolveInvoiceView. */}
+        <RichTextView doc={doc.richText} className="mb-7" />
         <InvoiceLinesTable lines={doc.lines} />
       </div>
 
@@ -147,14 +148,6 @@ export function InvoiceDocument({
           toPayLabel={isCredit ? "Att kreditera" : "Att betala nu"}
         />
       </div>
-
-      {/* "Övrig information" via resolveInvoiceView: utfärdade fakturor visar den frusna kopian. */}
-      {!isRichTextEmpty(doc.richText) ? (
-        <div className="mt-8">
-          <p className="text-[13px] font-semibold uppercase tracking-wide text-muted">Övrig information</p>
-          <RichTextView doc={doc.richText} className="mt-1.5" />
-        </div>
-      ) : null}
 
       {doc.rot ? <TaxReductionInvoiceDisclaimer version={doc.taxReductionTerms?.version} /> : null}
 

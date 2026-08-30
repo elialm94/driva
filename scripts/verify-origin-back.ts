@@ -51,17 +51,17 @@ async function main() {
   }
 
   async function runSuite(label: string) {
-    // A. Home → enquiry → back Hem
+    // A. Hem → uppdrag → tillbaka Hem
     await page.goto(`${BASE}/`, { waitUntil: "networkidle0" });
     await page.evaluate(() => window.scrollTo(0, 240));
-    const enquiryLinkVisible = await page.evaluate((sel) => {
+    const jobLinkVisible = await page.evaluate((sel) => {
       const nodes = [...document.querySelectorAll(sel)] as HTMLElement[];
       return nodes.some((n) => n.getBoundingClientRect().width > 0);
-    }, 'a[href*="/kunder/forfragningar/req-karin"]');
-    await ok(`${label} A enquiry link on Hem`, enquiryLinkVisible);
+    }, 'a[href*="/uppdrag/job-karin"]');
+    await ok(`${label} A job link on Hem`, jobLinkVisible);
     await Promise.all([
-      page.waitForFunction(() => location.pathname.includes("/kunder/forfragningar/")),
-      clickVisible(page, 'a[href*="/kunder/forfragningar/req-karin"]'),
+      page.waitForFunction(() => location.pathname.includes("/uppdrag/job-karin")),
+      clickVisible(page, 'a[href*="/uppdrag/job-karin"]'),
     ]);
     await page.waitForSelector("a[data-nav=back]");
     const backA = await backText(page);
@@ -69,34 +69,33 @@ async function main() {
     await page.click("a[data-nav=back]");
     await page.waitForFunction(() => location.pathname === "/");
     await ok(`${label} A lands on Hem`, page.url().replace(/\/$/, "").endsWith(":3123") || new URL(page.url()).pathname === "/");
-    const crumbsA = await page.$("nav[aria-label='Brödsmulor']");
-    await page.goto(`${BASE}/kunder/forfragningar/req-karin`, { waitUntil: "networkidle0" });
+    await page.goto(`${BASE}/uppdrag/job-karin`, { waitUntil: "networkidle0" });
     const crumbText = await page.evaluate(() => {
       const nav = document.querySelector("nav[aria-label='Brödsmulor']");
       return (nav?.textContent ?? "").replace(/\s+/g, " ").trim();
     });
     await ok(
       `${label} A crumbs structural`,
-      crumbText.includes("Kunder") && crumbText.includes("Förfrågningar"),
+      crumbText.includes("Kunder") && crumbText.includes("Uppdrag"),
       crumbText
     );
 
-    // B. Inbox → Karin → Förfrågningar
-    await page.goto(`${BASE}/kunder?flik=forfragningar`, { waitUntil: "networkidle0" });
-    await ok(`${label} B Karin in inbox`, true);
+    // B. Uppdragslista → Karin → tillbaka till listan
+    await page.goto(`${BASE}/kunder?flik=uppdrag`, { waitUntil: "networkidle0" });
+    await ok(`${label} B uppdragslista`, true);
     await Promise.all([
-      page.waitForFunction(() => location.pathname.includes("/kunder/forfragningar/req-karin")),
-      clickVisible(page, 'a[href*="/kunder/forfragningar/req-karin"]'),
+      page.waitForFunction(() => location.pathname.includes("/uppdrag/job-karin")),
+      clickVisible(page, 'a[href*="/uppdrag/job-karin"]'),
     ]);
     await page.waitForSelector("a[data-nav=back]");
     const backB = await backText(page);
-    await ok(`${label} B back says Förfrågningar`, (backB ?? "").includes("Förfrågningar"), backB ?? "");
+    await ok(`${label} B back says Uppdrag`, (backB ?? "").includes("Uppdrag"), backB ?? "");
     await page.click("a[data-nav=back]");
-    await page.waitForFunction(() => location.pathname === "/kunder" && location.search.includes("flik=forfragningar"));
-    await ok(`${label} B lands on inbox`, page.url().includes("flik=forfragningar"));
+    await page.waitForFunction(() => location.pathname === "/kunder" && location.search.includes("flik=uppdrag"));
+    await ok(`${label} B lands on uppdragslistan`, page.url().includes("flik=uppdrag"));
 
-    // C. Search → open → back keeps q
-    await page.goto(`${BASE}/kunder?flik=forfragningar`, { waitUntil: "networkidle0" });
+    // C. Sök → öppna → tillbaka behåller q
+    await page.goto(`${BASE}/kunder?flik=uppdrag`, { waitUntil: "networkidle0" });
     const search = await page.$('input[placeholder*="Sök"]');
     if (search) {
       await search.click({ clickCount: 3 });
@@ -105,8 +104,8 @@ async function main() {
     }
     await ok(`${label} C search hit`, true);
     await Promise.all([
-      page.waitForFunction(() => location.pathname.includes("/kunder/forfragningar/req-karin")),
-      clickVisible(page, 'a[href*="/kunder/forfragningar/req-karin"]'),
+      page.waitForFunction(() => location.pathname.includes("/uppdrag/job-karin")),
+      clickVisible(page, 'a[href*="/uppdrag/job-karin"]'),
     ]);
     await page.click("a[data-nav=back]");
     await page.waitForFunction(() => location.pathname === "/kunder");
@@ -116,18 +115,18 @@ async function main() {
       page.url()
     );
 
-    // D. Direct URL → fallback Förfrågningar
-    await page.goto(`${BASE}/kunder/forfragningar/req-karin`, { waitUntil: "networkidle0" });
+    // D. Direkt-URL → fallback Uppdrag
+    await page.goto(`${BASE}/uppdrag/job-karin`, { waitUntil: "networkidle0" });
     const backD = await backText(page);
-    await ok(`${label} D fallback Förfrågningar`, (backD ?? "").includes("Förfrågningar"), backD ?? "");
+    await ok(`${label} D fallback Uppdrag`, (backD ?? "").includes("Uppdrag"), backD ?? "");
     const hrefD = await page.$eval("a[data-nav=back]", (a) => (a as HTMLAnchorElement).getAttribute("href") ?? "");
     await ok(`${label} D href internal`, hrefD.startsWith("/kunder") && !hrefD.startsWith("//"), hrefD);
 
-    // E. Home → enquiry → customer → enquiry → Home
+    // E. Hem → uppdrag → kund → uppdrag → Hem
     await page.goto(`${BASE}/`, { waitUntil: "networkidle0" });
     await Promise.all([
-      page.waitForFunction(() => location.pathname.includes("/kunder/forfragningar/")),
-      clickVisible(page, 'a[href*="/kunder/forfragningar/req-karin"]'),
+      page.waitForFunction(() => location.pathname.includes("/uppdrag/job-karin")),
+      clickVisible(page, 'a[href*="/uppdrag/job-karin"]'),
     ]);
     await page.waitForSelector("a[href*='/kunder/cust-']");
     await Promise.all([
@@ -135,11 +134,11 @@ async function main() {
       clickVisible(page, 'a[href*="/kunder/cust-"]'),
     ]);
     const backE1 = await backText(page);
-    await ok(`${label} E customer back is enquiry`, /bokhylla|Förfrågan/i.test(backE1 ?? ""), backE1 ?? "");
+    await ok(`${label} E customer back is uppdrag`, /bokhylla|Uppdrag/i.test(backE1 ?? ""), backE1 ?? "");
     await page.click("a[data-nav=back]");
-    await page.waitForFunction(() => location.pathname.includes("/kunder/forfragningar/"));
+    await page.waitForFunction(() => location.pathname.includes("/uppdrag/"));
     const backE2 = await backText(page);
-    await ok(`${label} E enquiry back is Hem`, (backE2 ?? "").includes("Hem"), backE2 ?? "");
+    await ok(`${label} E uppdrag back is Hem`, (backE2 ?? "").includes("Hem"), backE2 ?? "");
     await page.click("a[data-nav=back]");
     await page.waitForFunction(() => location.pathname === "/");
     await ok(`${label} E lands Home`, new URL(page.url()).pathname === "/");
@@ -147,21 +146,21 @@ async function main() {
     // F. Browser back/forward
     await page.goto(`${BASE}/`, { waitUntil: "networkidle0" });
     await Promise.all([
-      page.waitForFunction(() => location.pathname.includes("/kunder/forfragningar/")),
-      clickVisible(page, 'a[href*="/kunder/forfragningar/req-karin"]'),
+      page.waitForFunction(() => location.pathname.includes("/uppdrag/job-karin")),
+      clickVisible(page, 'a[href*="/uppdrag/job-karin"]'),
     ]);
     await page.goBack();
     await page.waitForFunction(() => location.pathname === "/");
     await ok(`${label} F browser back to Hem`, new URL(page.url()).pathname === "/");
     await page.goForward();
-    await page.waitForFunction(() => location.pathname.includes("/kunder/forfragningar/"));
-    await ok(`${label} F browser forward to enquiry`, page.url().includes("/kunder/forfragningar/"));
+    await page.waitForFunction(() => location.pathname.includes("/uppdrag/job-karin"));
+    await ok(`${label} F browser forward to uppdrag`, page.url().includes("/uppdrag/job-karin"));
 
     // G. Refresh keeps origin
     await page.goto(`${BASE}/`, { waitUntil: "networkidle0" });
     await Promise.all([
-      page.waitForFunction(() => location.pathname.includes("/kunder/forfragningar/")),
-      clickVisible(page, 'a[href*="/kunder/forfragningar/req-karin"]'),
+      page.waitForFunction(() => location.pathname.includes("/uppdrag/job-karin")),
+      clickVisible(page, 'a[href*="/uppdrag/job-karin"]'),
     ]);
     await page.reload({ waitUntil: "networkidle0" });
     const backG = await backText(page);

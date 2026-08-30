@@ -6,6 +6,7 @@ import { resetDemoData } from "@/lib/store";
 import {
   createFinalInvoiceForJob,
   createInvoice,
+  createInvoiceForJob,
   createNextInvoiceForJob,
   createPartInvoiceForQuote,
   createDeniedReductionInvoice,
@@ -14,6 +15,7 @@ import {
   updateInvoice,
   type InvoiceInput,
   type InvoiceUpdateInput,
+  type JobInvoiceBasis,
 } from "@/lib/services/invoices";
 import {
   emailInvoice,
@@ -32,16 +34,33 @@ import {
   patchTaxReductionFields,
   setTaxReductionDecision,
 } from "@/lib/services/tax-reduction";
-import type { DwellingType, TaxReductionDetails } from "@/lib/types";
+import type { DwellingType, PaymentDetailsMethod, TaxReductionDetails } from "@/lib/types";
 import { applyBusinessProfilePatch, updateCompanySettings, type CompanySettingsInput } from "@/lib/services/settings";
-import { createCustomer, createRequest, markInquiryHandled, updateCustomer, updateCustomerNotes } from "@/lib/services/customers";
-import { createExpenseFromInboxItem, markInboxMailProcessed } from "@/lib/services/inbox";
+import { createCustomer, updateCustomer, updateCustomerNotes } from "@/lib/services/customers";
+import {
+  createExpenseFromInboxItem,
+  ingestUploadedDocument,
+  markInboxMailProcessed,
+} from "@/lib/services/inbox";
+import {
+  confirmChangedPaymentDetails,
+  prepareSupplierPayment,
+  submitSupplierPayment,
+  useVerifiedSupplierDetails,
+  verifySupplierPaymentDetails,
+} from "@/lib/services/supplier-payments";
+import { requestPaymentDetailsFromSupplier } from "@/lib/services/payment-details";
 import { CustomerValidationError } from "@/lib/customer-validation";
+import { resolveCustomerEmail } from "@/lib/resolve-missing-requirements";
 import {
   addWorkLocation,
+  removeWorkLocation,
   revealCustomerPersonnummer,
   setCustomerPersonnummer,
+  isDesignationOnlyLocation,
+  syncCustomerProperties,
   updateWorkLocation,
+  type PropertyDesignationRow,
   type WorkLocationInput,
 } from "@/lib/services/work-locations";
 import { maskPersonnummer } from "@/lib/personnummer";
@@ -57,10 +76,21 @@ import {
 import {
   appendJobNote,
   createJob,
+  deleteOrArchiveJob,
+  reopenJob,
   setJobStatus,
   updateJob,
   updateJobNotes,
 } from "@/lib/services/jobs";
+import {
+  addJobMaterial,
+  deleteJobWorkEntry,
+  registerJobTime,
+  updateJobWorkEntry,
+  type JobMaterialInput,
+  type JobTimeInput,
+  type JobWorkEntryPatch,
+} from "@/lib/services/job-work";
 import { paySupplierInvoice, simulateIncomingPayment } from "@/lib/services/banking";
 import {
   answerExpenseQuestion,
@@ -86,7 +116,7 @@ import {
   completeCreateCustomerAndResume,
   confirmPendingAction,
 } from "@/lib/services/assistant";
-import type { Customer, RequestSource, WebsiteSectionItem } from "@/lib/types";
+import type { Customer, WebsiteSectionItem } from "@/lib/types";
 import { hrefWithNav, type ReturnNav } from "@/lib/nav";
 import { headers } from "next/headers";
 import { isSupabaseMode } from "@/lib/storage/config";
@@ -111,16 +141,26 @@ export async function createCustomerAction(input: {
   name: string;
   contactPerson?: string;
   orgNumber?: string;
-  email: string;
-  phone: string;
+  /** Frivillig vid skapande – skickaflöden ber om adressen när den behövs. */
+  email?: string;
+  phone?: string;
   address?: string;
   postalCode?: string;
   city?: string;
-}): Promise<string> {
+  personalIdentityNumber?: string;
+  propertyDesignations?: string[];
+}): Promise<{ ok: true; id: string } | { ok: false; error: string; field?: string }> {
   return withBusiness(() => {
-    const c = createCustomer(input);
-    refresh();
-    return c.id;
+    try {
+      const c = createCustomer(input);
+      refresh();
+      return { ok: true, id: c.id } as const;
+    } catch (e) {
+      if (e instanceof CustomerValidationError) {
+        return { ok: false, error: e.message, field: e.errors[0]?.field } as const;
+      }
+      return { ok: false, error: "Kunde inte skapa kunden" } as const;
+    }
   });
 }
 
@@ -159,6 +199,17 @@ export async function updateCustomerDetailsAction(
   });
 }
 
+export async function resolveCustomerEmailAction(
+  customerId: string,
+  email: string
+): Promise<{ ok: true; email: string; customerId: string } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    const result = resolveCustomerEmail(customerId, email);
+    if (result.ok) refresh();
+    return result;
+  });
+}
+
 export async function updateCustomerPersonnummerAction(
   customerId: string,
   value: string
@@ -185,7 +236,7 @@ export async function revealCustomerPersonnummerAction(
     const value = revealCustomerPersonnummer(customerId);
     if (!value) return { ok: false } as const;
     return { ok: true, value } as const;
-  });
+  }, { capability: "reveal_personnummer" });
 }
 
 export async function upsertCustomerWorkLocationAction(
@@ -208,17 +259,43 @@ export async function upsertCustomerWorkLocationAction(
   });
 }
 
-/* ------------------------------ Förfrågningar ------------------------------ */
+export async function syncCustomerPropertiesAction(
+  customerId: string,
+  rows: PropertyDesignationRow[]
+): Promise<
+  { ok: true; properties: { id: string; designation: string }[] } | { ok: false; error: string; field?: string }
+> {
+  return withBusiness(() => {
+    try {
+      const locations = syncCustomerProperties(customerId, rows);
+      refresh();
+      return {
+        ok: true,
+        properties: locations
+          .filter((location) => location.propertyDesignation?.trim() || isDesignationOnlyLocation(location))
+          .map((location) => ({ id: location.id, designation: location.propertyDesignation ?? "" })),
+      } as const;
+    } catch (e) {
+      if (e instanceof CustomerValidationError) {
+        return { ok: false, error: e.message, field: e.errors[0]?.field } as const;
+      }
+      return { ok: false, error: "Kunde inte spara fastigheterna" } as const;
+    }
+  });
+}
 
-export async function createRequestAction(input: {
-  customerId: string;
-  title: string;
-  message: string;
-  source: RequestSource;
-}) {
-  await withBusiness(() => {
-    createRequest(input);
-    refresh();
+export async function removeCustomerWorkLocationAction(
+  customerId: string,
+  locationId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      removeWorkLocation(customerId, locationId);
+      refresh();
+      return { ok: true } as const;
+    } catch {
+      return { ok: false, error: "Kunde inte ta bort bostaden" } as const;
+    }
   });
 }
 
@@ -227,11 +304,14 @@ export async function createRequestAction(input: {
 export async function createQuoteAction(input: QuoteInput, nav?: ReturnNav): Promise<never> {
   // redirect() kastar kontrollflödesfel – adaptern committar innan den släpper
   // vidare felet, så mutationen går aldrig förlorad.
-  return withBusiness((): never => {
-    const quote = createQuote(input);
-    refresh();
-    redirect(hrefWithNav(`/ekonomi/offerter/${quote.id}`, nav));
-  });
+  return withBusiness(
+    (): never => {
+      const quote = createQuote(input);
+      refresh();
+      redirect(hrefWithNav(`/ekonomi/offerter/${quote.id}`, nav));
+    },
+    { capability: "create_quote" }
+  );
 }
 
 export async function updateQuoteAction(quoteId: string, input: QuoteVersionInput) {
@@ -264,11 +344,24 @@ export async function sendQuoteAction(
   );
 }
 
-export async function followUpQuoteAction(quoteId: string) {
-  await withBusiness(
+export async function followUpQuoteAction(
+  quoteId: string
+): Promise<{ ok: true } | { ok: false; errors: string[] }> {
+  return withBusiness(
     async () => {
-      await followUpQuoteByEmail(quoteId);
-      refresh();
+      try {
+        const { outcome } = await followUpQuoteByEmail(quoteId);
+        if (!outcome.ok) {
+          return { ok: false, errors: [outcome.error ?? "Påminnelsen kunde inte skickas. Försök igen."] } as const;
+        }
+        refresh();
+        return { ok: true } as const;
+      } catch (e) {
+        return {
+          ok: false,
+          errors: [e instanceof Error ? e.message : "Påminnelsen kunde inte skickas. Försök igen."],
+        } as const;
+      }
     },
     { retry: false }
   );
@@ -320,6 +413,21 @@ export async function setJobStatusAction(jobId: string, status: "kommande" | "pa
   await withBusiness(() => {
     setJobStatus(jobId, status);
     refresh();
+  }, { capability: "change_jobs" });
+}
+
+export async function reopenJobAction(jobId: string) {
+  await withBusiness(() => {
+    reopenJob(jobId);
+    refresh();
+  });
+}
+
+export async function deleteOrArchiveJobAction(jobId: string): Promise<"deleted" | "archived"> {
+  return withBusiness(() => {
+    const result = deleteOrArchiveJob(jobId);
+    refresh();
+    return result.kind;
   });
 }
 
@@ -344,6 +452,42 @@ export async function appendJobNoteAction(jobId: string, text: string) {
   await withBusiness(() => {
     appendJobNote(jobId, text);
     refresh();
+  });
+}
+
+export async function registerJobTimeAction(jobId: string, input: JobTimeInput) {
+  await withBusiness(() => {
+    registerJobTime(jobId, input);
+    refresh();
+  });
+}
+
+export async function addJobMaterialAction(jobId: string, input: JobMaterialInput) {
+  await withBusiness(() => {
+    addJobMaterial(jobId, input);
+    refresh();
+  });
+}
+
+export async function updateJobWorkEntryAction(entryId: string, patch: JobWorkEntryPatch) {
+  await withBusiness(() => {
+    updateJobWorkEntry(entryId, patch);
+    refresh();
+  });
+}
+
+export async function deleteJobWorkEntryAction(entryId: string) {
+  await withBusiness(() => {
+    deleteJobWorkEntry(entryId);
+    refresh();
+  });
+}
+
+export async function createInvoiceForJobAction(jobId: string, basis: JobInvoiceBasis): Promise<string> {
+  return withBusiness(() => {
+    const inv = createInvoiceForJob(jobId, basis);
+    refresh();
+    return inv.id;
   });
 }
 
@@ -401,7 +545,7 @@ export async function sendInvoiceAction(
   try {
     await withBusiness(() => {
       issueInvoice(invoiceId);
-    });
+    }, { capability: "send_invoice" });
   } catch (e) {
     refresh();
     if (e instanceof InvoiceNotReadyError) {
@@ -463,11 +607,24 @@ export async function discardInvoiceAction(invoiceId: string): Promise<never> {
   });
 }
 
-export async function sendReminderAction(invoiceId: string) {
-  await withBusiness(
+export async function sendReminderAction(
+  invoiceId: string
+): Promise<{ ok: true } | { ok: false; errors: string[] }> {
+  return withBusiness(
     async () => {
-      await remindInvoiceByEmail(invoiceId);
-      refresh();
+      try {
+        const { outcome } = await remindInvoiceByEmail(invoiceId);
+        if (!outcome.ok) {
+          return { ok: false, errors: [outcome.error ?? "Påminnelsen kunde inte skickas. Försök igen."] } as const;
+        }
+        refresh();
+        return { ok: true } as const;
+      } catch (e) {
+        return {
+          ok: false,
+          errors: [e instanceof Error ? e.message : "Påminnelsen kunde inte skickas. Försök igen."],
+        } as const;
+      }
     },
     { retry: false }
   );
@@ -519,17 +676,6 @@ export async function snoozeAttentionAction(actionId: string, choice: AttentionS
   );
 }
 
-/** "Markera hanterad" på en förfrågan – domänövergång ny → besvarad. */
-export async function markInquiryHandledAction(requestId: string) {
-  await withBusiness(
-    async () => {
-      markInquiryHandled(requestId);
-      refresh();
-    },
-    { retry: false }
-  );
-}
-
 export async function markInboxMailProcessedAction(itemId: string) {
   await withBusiness(
     async () => {
@@ -551,7 +697,7 @@ export async function createExpenseFromInboxAction(
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte skapa utgift." };
     }
-  });
+  }, { capability: "write_accounting" });
 }
 
 /** "Inte aktuell" på en väntande offert – domänövergång till avböjd med skäl. */
@@ -662,7 +808,43 @@ export async function paySupplierInvoiceAction(supplierInvoiceId: string) {
   await withBusiness(() => {
     paySupplierInvoice(supplierInvoiceId);
     refresh();
-  });
+  }, { capability: "submit_bank_payment" });
+}
+
+export async function uploadInboxDocumentAction(input: {
+  filename: string;
+  contentType?: string;
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    const result = ingestUploadedDocument({
+      filename: input.filename,
+      contentType: input.contentType,
+    });
+    if (!result.ok) return { ok: false as const, error: result.error };
+    refresh();
+    return { ok: true as const, id: result.item.id };
+  }, { capability: "write_accounting" });
+}
+
+export async function submitSupplierPaymentAction(input: {
+  supplierInvoiceId: string;
+  paymentId?: string;
+  scheduledDate?: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const payment = prepareSupplierPayment({
+        supplierInvoiceId: input.supplierInvoiceId,
+        scheduledDate: input.scheduledDate,
+      });
+      const result = submitSupplierPayment(payment.id, input.scheduledDate);
+      if (!result.ok) return { ok: false as const, error: result.error };
+      refresh();
+      return { ok: true as const };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte skicka betalningen." };
+    }
+  }, { capability: "submit_bank_payment" });
 }
 
 /* ------------------------------ Utgifter/kvitton ---------------------------- */
@@ -671,21 +853,104 @@ export async function uploadReceiptAction(expenseId: string, filename: string) {
   await withBusiness(() => {
     uploadReceiptForExpense(expenseId, filename, "uppladdning");
     refresh();
-  });
+  }, { capability: "categorize" });
 }
 
 export async function uploadStandaloneReceiptAction(filename: string) {
   await withBusiness(() => {
     uploadStandaloneReceipt(filename);
     refresh();
-  });
+  }, { capability: "categorize" });
 }
 
 export async function answerExpenseQuestionAction(expenseId: string, answer: string) {
   await withBusiness(() => {
     answerExpenseQuestion(expenseId, answer);
     refresh();
-  });
+  }, { capability: "categorize" });
+}
+
+export async function prepareSupplierPaymentAction(input: {
+  supplierInvoiceId: string;
+  scheduledDate?: string;
+}): Promise<{ ok: true; paymentId: string } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const payment = prepareSupplierPayment({
+        supplierInvoiceId: input.supplierInvoiceId,
+        scheduledDate: input.scheduledDate,
+      });
+      refresh();
+      return { ok: true as const, paymentId: payment.id };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte förbereda betalningen." };
+    }
+  }, { capability: "prepare_supplier_payment" });
+}
+
+/* ----------------------- Betalningsuppgifter (leverantör) ------------------- */
+
+/** Människan har kontrollerat/angett uppgifterna → verifiera med proveniens. */
+export async function verifySupplierPaymentDetailsAction(input: {
+  supplierInvoiceId: string;
+  method: PaymentDetailsMethod;
+  account: string;
+  ocr?: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      verifySupplierPaymentDetails(input);
+      refresh();
+      return { ok: true as const };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte spara uppgifterna." };
+    }
+  }, { capability: "prepare_supplier_payment" });
+}
+
+/** Återanvänd tidigare VERIFIERADE uppgifter för samma leverantör. */
+export async function useVerifiedSupplierDetailsAction(
+  supplierInvoiceId: string
+): Promise<{ ok: true; account: string } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const { details } = useVerifiedSupplierDetails(supplierInvoiceId);
+      refresh();
+      return { ok: true as const, account: details.account };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte återanvända uppgifterna." };
+    }
+  }, { capability: "prepare_supplier_payment" });
+}
+
+/**
+ * Godkänn ÄNDRAD betaldestination efter mänsklig kontroll. Samma behörighet
+ * som att skicka pengar – det är i praktiken ett betalningsgodkännande.
+ */
+export async function confirmChangedSupplierDetailsAction(
+  supplierInvoiceId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      confirmChangedPaymentDetails(supplierInvoiceId);
+      refresh();
+      return { ok: true as const };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte godkänna uppgifterna." };
+    }
+  }, { capability: "submit_bank_payment" });
+}
+
+/** Skicka mejlförfrågan om betalningsuppgifter till leverantören (bekräftad i UI:t). */
+export async function requestSupplierDetailsAction(
+  supplierInvoiceId: string
+): Promise<{ ok: true; to: string } | { ok: false; error: string }> {
+  return withBusiness(async () => {
+    const result = await requestPaymentDetailsFromSupplier(supplierInvoiceId);
+    if (!result.ok) return { ok: false as const, error: result.error };
+    refresh();
+    return { ok: true as const, to: result.to };
+  }, { capability: "prepare_supplier_payment" });
 }
 
 /* ---------------------------------- Hemsida --------------------------------- */
@@ -694,7 +959,7 @@ export async function generateWebsiteAction(description: string) {
   await withBusiness(() => {
     generateWebsite(description);
     refresh();
-  });
+  }, { capability: "change_website" });
 }
 
 export async function updateSectionAction(
@@ -811,7 +1076,7 @@ export async function submitContactFormAction(input: {
       refresh();
       return { ok: true } as const;
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte skicka förfrågan." } as const;
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte skicka meddelandet." } as const;
     }
   };
   // Publik sajt: företaget löses från värdnamnet (kundens domän). I appens

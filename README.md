@@ -53,7 +53,7 @@ npm run test:assistant
 
 ## Kärnflödet
 
-**Förfrågan → Offert → BankID-godkännande → Jobb → Faktura → Betalning → Bokföring**
+**Kund → Uppdrag → Offert → BankID-godkännande → Faktura → Betalning → Bokföring**
 
 - Offert- och fakturautkast visas som dokumentet på detaljsidan. Skicka bekräftas i en liten dialog – ingen extra förhandsgranskning.
 - Kundens offertsida (`/offert/[token]`) är mobil-först med **Godkänn med BankID** som primär handling.
@@ -189,7 +189,11 @@ Driva utfärdar **vanliga svenska småföretagsfakturor**: svensk säljare → s
 
 **Stöds sedan autopiloten:** delbetalningar (status `delbetald`), delkredit, kredit av betald/delbetald faktura (skapar återbetalningsskyldighet som bokförs 2420/1510 → 1930), över-/underbetalningshantering och ROT/RUT-utbetalningar från Skatteverket inklusive delvis godkännande.
 
-**Nummer:** nya utkast får `number: null` och visas som ”Utkast”. Löpnummer och OCR tilldelas först i `issueInvoice` på servern. Äldre utkast som redan har nummer behåller det. Misslyckad e-post (i demon: mock-logg) rullar inte tillbaka numret; **Skicka igen** återanvänder samma nummer.
+**Nummer:** nya utkast får `number: null` och visas som ”Utkast”. Löpnummer och OCR tilldelas först i `issueInvoice` på servern. Äldre utkast som redan har nummer behåller det. Misslyckad e-post rullar inte tillbaka numret och markerar inte fakturan som skickad; **Skicka igen** återanvänder samma nummer.
+
+### E-post (Resend)
+
+Offerter, fakturor, betalningspåminnelser och samarbetsinbjudningar skickas via Resend (`RESEND_API_KEY`, serverside). Avsändare: `RESEND_FROM_EMAIL` / `RESEND_FROM_NAME` (lokal testdefault: `beth.t@example.com`). Utan nyckel: ärligt fel, aldrig fejkad ”skickad”.
 
 **Rabatt:** inget eget radfält. Negativt à-pris på en rad räknas i samma VAT-motor.
 

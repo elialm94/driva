@@ -9,14 +9,16 @@ import type {
   PendingAssistantAction,
   Quote,
   ResumeAfterCustomer,
+  SupplierInvoice,
 } from "../types";
-import { createCustomer, findMatchingOpenInquiry, listInquiriesInbox } from "../services/customers";
+import { createCustomer } from "../services/customers";
 import { createQuote, quoteDefaults } from "../services/quotes";
-import { createJob } from "../services/jobs";
+import { createJob, deleteOrArchiveJob, findMatchingUnquotedJob, jobRemovalPolicy, reopenJob, setJobStatus } from "../services/jobs";
 import { findWorkLocationByHint, formatLocationAddress, workLocationToHousing, workLocationsForModel } from "../services/work-locations";
-import { createFinalInvoiceForJob, createInvoice, createNextInvoiceForJob, discardInvoice, updateInvoice, type InvoiceInput } from "../services/invoices";
+import { createFinalInvoiceForJob, createInvoice, createInvoiceForJob, createNextInvoiceForJob, discardInvoice, updateInvoice, type InvoiceInput, type JobInvoiceBasis } from "../services/invoices";
+import { addJobMaterial, actualEntries, jobInvoiceChoice, registerJobTime } from "../services/job-work";
 import { rotWithAmounts } from "../tax-reduction-amount";
-import { currentVersion, daysOverdue, getCustomer, getInvoice, getJob, getQuote, getRequest, invoiceTotals, isOpenReceivable, isOverdue, quoteStatusLabel, quoteTotals, quoteWaitingDays, requireCustomer } from "../services/data";
+import { currentVersion, daysOverdue, getCustomer, getInvoice, getJob, getQuote, invoiceTotals, isOpenReceivable, isOverdue, quoteStatusLabel, quoteTotals, quoteWaitingDays, requireCustomer } from "../services/data";
 import { remainingToInvoiceForJob } from "../services/attention";
 import { getBusinessActions } from "../services/actions";
 import { derivedJobStatus } from "../services/job-lifecycle";
@@ -37,6 +39,14 @@ import {
 } from "../services/settings";
 import { domainCardView, primaryDomain } from "../domains";
 import { searchDomain } from "../domains/availability";
+import {
+  getSupplierInvoice,
+  paymentDetailsBlockedReason,
+  prepareSupplierPayment,
+  supplierPaymentConfirmRows,
+  supplierPayments,
+} from "../services/supplier-payments";
+import { paymentDetailsInfo, provenanceLabel } from "../services/payment-details";
 
 export type DomainResult = {
   text: string;
@@ -122,17 +132,20 @@ export function createQuoteDraft(input: {
   intro?: string;
   percentAtStart?: number;
   rot?: "rot" | "rut" | null;
-  requestId?: string;
+  jobId?: string;
   appliedTaxReduction?: number;
 }): DomainResult {
   const customer = requireCustomer(input.customerId);
   const defaults = quoteDefaults();
-  const request =
-    (input.requestId ? getRequest(input.requestId) : undefined) ??
-    findMatchingOpenInquiry(input.customerId, input.title);
-  const title = input.title.trim() || request?.ai?.workType || request?.title || "Offererat arbete";
+  const job =
+    (input.jobId ? getJob(input.jobId) : undefined) ??
+    findMatchingUnquotedJob(input.customerId, input.title);
+  const title = input.title.trim() || job?.title || "Offererat arbete";
   const genericIntro = !input.intro || /enligt överenskommelse/i.test(input.intro);
-  const intro = request && genericIntro ? request.message : (input.intro ?? `${title} enligt överenskommelse.`);
+  const intro =
+    job && genericIntro
+      ? job.originalMessage || job.description || `${title} enligt överenskommelse.`
+      : (input.intro ?? `${title} enligt överenskommelse.`);
   const percent = input.percentAtStart && input.percentAtStart > 0 && input.percentAtStart < 100 ? input.percentAtStart : undefined;
   const rot =
     input.rot === "rot" || input.rot === "rut"
@@ -145,7 +158,7 @@ export function createQuoteDraft(input: {
     quote = createQuote(
       {
         customerId: customer.id,
-        requestId: request?.id,
+        jobId: job?.id,
         title,
         intro,
         lines: [laborLine(title, input.amountInclVat ?? 0)],
@@ -178,7 +191,7 @@ export function createQuoteDraft(input: {
     ok: true,
     text: `Klart – utkast till offert #${quote.number} för ${customer.name} på ${kr(t.total)} inkl. moms.${appliedNote}${
       percent ? ` Delbetalning ${percent} % vid start.` : ""
-    }${request ? " Utifrån förfrågan." : ""} Den är inte skickad.`,
+    }${job ? " Utifrån uppdraget." : ""} Den är inte skickad.`,
     card: entityCard(
       "offert",
       `Offert #${quote.number} · ${title}`,
@@ -194,7 +207,7 @@ export function createQuoteDraft(input: {
       rot: rot?.type ?? null,
       appliedTaxReduction: version.rot?.appliedTaxReduction ?? null,
       calculatedEligibleTaxReduction: version.rot?.calculatedEligibleTaxReduction ?? null,
-      requestId: request?.id ?? null,
+      jobId: job?.id ?? null,
     },
   };
 }
@@ -480,11 +493,21 @@ export function createFinalInvoiceDraft(jobId: string): DomainResult {
  * resterande som slutfaktura. Samma tjänst (createNextInvoiceForJob) som
  * åtgärdsmotorns "Skapa faktura"-knapp på Hem – pengalogiken räknas aldrig om.
  */
-export function createJobInvoiceDraft(jobId: string): DomainResult {
+export function createJobInvoiceDraft(jobId: string, basis?: JobInvoiceBasis): DomainResult {
   const job = getJob(jobId);
   if (!job) return fail("Uppdraget finns inte.");
+  const choice = jobInvoiceChoice(jobId);
   const remaining = remainingToInvoiceForJob(jobId);
-  if (remaining <= 0) {
+  const resolved: JobInvoiceBasis =
+    basis ??
+    (choice.pricingKind === "lopande" && choice.options.some((o) => o.basis === "actuals")
+      ? "actuals"
+      : remaining > 0 && choice.options.some((o) => o.basis === "quote")
+        ? "quote"
+        : choice.options.some((o) => o.basis === "actuals")
+          ? "actuals"
+          : "empty");
+  if (resolved !== "empty" && !choice.options.some((o) => o.basis === resolved) && remaining <= 0) {
     return {
       ok: false,
       text: "Det finns inget kvar att fakturera på uppdraget.",
@@ -493,23 +516,35 @@ export function createJobInvoiceDraft(jobId: string): DomainResult {
   }
   let invoice;
   try {
-    invoice = createNextInvoiceForJob(jobId, "assistent");
+    invoice = createInvoiceForJob(jobId, resolved, "assistent");
   } catch (e) {
     return fail(e instanceof Error ? e.message : "Kunde inte skapa fakturan. Inget sparades.");
   }
   const customer = requireCustomer(job.customerId);
   const t = invoiceTotals(invoice);
   const typeLabel = invoice.type === "delbetalning" ? "Delbetalning (utkast)" : "Slutfaktura (utkast)";
+  const warn = choice.warning
+    ? ` Varning: ${kr(choice.warning.excess)} över offerten. Du kan skapa en tilläggsoffert från uppdraget.`
+    : "";
   return {
     ok: true,
-    text: `Klart – utkast till ${invoice.type === "delbetalning" ? "delbetalning" : "slutfaktura"} för ${job.title} på ${kr(t.toPay)}. Den har inget löpnummer än och är inte skickad.`,
+    text: `Klart – utkast till ${invoice.type === "delbetalning" ? "delbetalning" : "slutfaktura"} för ${job.title} på ${kr(t.toPay)}. Den har inget löpnummer än och är inte skickad.${warn}`,
     card: entityCard(
       "faktura",
       typeLabel,
       `/ekonomi/fakturor/${invoice.id}`,
       `${customer.name} · ${kr(t.toPay)} · utkast`
     ),
-    forModel: { invoiceId: invoice.id, jobId, number: null, status: invoice.status, type: invoice.type, sent: false },
+    forModel: {
+      invoiceId: invoice.id,
+      jobId,
+      number: null,
+      status: invoice.status,
+      type: invoice.type,
+      sent: false,
+      basis: resolved,
+      excess: choice.warning?.excess ?? 0,
+    },
   };
 }
 
@@ -885,41 +920,6 @@ export function watchingResult(): DomainResult {
   };
 }
 
-export function listOpenInquiriesResult(q?: string): DomainResult {
-  const page = listInquiriesInbox({ q, filter: "oppna", pageSize: 20 });
-  if (page.total === 0) {
-    return {
-      ok: true,
-      text: q ? `Inga öppna förfrågningar matchar ”${q}”.` : "Inga öppna förfrågningar just nu.",
-      forModel: { count: 0, inquiries: [] },
-    };
-  }
-  return {
-    ok: true,
-    text: page.total === 1 ? "1 öppen förfrågan." : `${page.total} öppna förfrågningar.`,
-    card: {
-      kind: "list",
-      title: "Öppna förfrågningar",
-      rows: page.rows.map((r) => ({
-        label: `${r.customerName} · ${r.title}`,
-        value: r.summary,
-        href: `/inbox/${r.id}`,
-      })),
-      links: [{ label: "Öppna inboxen", href: "/inbox" }],
-    },
-    forModel: {
-      count: page.total,
-      inquiries: page.rows.map((r) => ({
-        id: r.id,
-        customerId: r.customerId,
-        customerName: r.customerName,
-        title: r.title,
-        createdAt: r.createdAt,
-      })),
-    },
-  };
-}
-
 export function requestGenerateWebsite(description: string): DomainResult {
   const action: PendingAssistantAction = { id: uid(), type: "generera_hemsida", description };
   addPending(action);
@@ -932,7 +932,7 @@ export function requestGenerateWebsite(description: string): DomainResult {
     card: {
       kind: "confirm",
       actionId: action.id,
-      summary: "Startsida, tjänster, om oss, galleri och kontaktformulär med offertförfrågan genereras.",
+      summary: "Startsida, tjänster, om oss, galleri och kontaktformulär genereras.",
       confirmLabel: "Skapa utkast",
       state: "vantar",
     },
@@ -1028,6 +1028,7 @@ export function compactCustomer(c: Customer) {
 
 export function compactJob(j: Job) {
   const customer = getCustomer(j.customerId);
+  const actuals = actualEntries(j.id);
   return {
     id: j.id,
     title: j.title,
@@ -1039,9 +1040,149 @@ export function compactJob(j: Job) {
     address: j.address ?? null,
     workLocationId: j.workLocationId ?? null,
     remainingToInvoice: remainingToInvoiceForJob(j.id),
+    archived: Boolean(j.archivedAt),
+    registeredHours: actuals.filter((e) => e.type === "labor").reduce((s, e) => s + e.qty, 0),
+    uninvoicedActuals: actuals.filter((e) => !e.invoiceId).length,
     notes: j.notes.trim() || null,
     dwellingType: j.housing?.dwellingType ?? null,
     hasPropertyDesignation: Boolean(j.housing?.propertyDesignation),
+  };
+}
+
+export function completeJobDraft(jobId: string): DomainResult {
+  const job = getJob(jobId);
+  if (!job) return fail("Uppdraget finns inte.");
+  try {
+    const updated = setJobStatus(jobId, "klart");
+    return {
+      ok: true,
+      text: `Uppdraget ${updated.title} är markerat som klart. Fakturor och offerter påverkas inte.`,
+      card: entityCard("uppdrag", updated.title, `/uppdrag/${updated.id}`),
+      forModel: compactJob(updated),
+    };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Kunde inte markera uppdraget som klart.");
+  }
+}
+
+export function reopenJobDraft(jobId: string): DomainResult {
+  const job = getJob(jobId);
+  if (!job) return fail("Uppdraget finns inte.");
+  try {
+    const updated = reopenJob(jobId);
+    return {
+      ok: true,
+      text: `Uppdrag återöppnades. Fakturor, offerter och betalningar är oförändrade.`,
+      card: entityCard("uppdrag", updated.title, `/uppdrag/${updated.id}`),
+      forModel: compactJob(updated),
+    };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Kunde inte återöppna uppdraget.");
+  }
+}
+
+export function requestDeleteOrArchiveJob(jobId: string): DomainResult {
+  const job = getJob(jobId);
+  if (!job) return fail("Uppdraget finns inte.");
+  const policy = jobRemovalPolicy(jobId);
+  const customer = requireCustomer(job.customerId);
+  const action: PendingAssistantAction = { id: uid(), type: "ta_bort_uppdrag", jobId };
+  addPending(action);
+  if (policy.kind === "delete") {
+    return {
+      ok: true,
+      text: `Ska jag ta bort uppdraget ${job.title}? Det är tomt – ingen godkänd offert, utfärdad faktura eller bokföring. Det går inte förrän du bekräftar.`,
+      card: {
+        kind: "confirm",
+        actionId: action.id,
+        summary: "Uppdraget tas bort. Inga fakturor eller offerter påverkas.",
+        rows: [
+          { label: job.title, value: customer.name },
+          { label: "Åtgärd", value: "Tas bort" },
+        ],
+        confirmLabel: "Ta bort uppdrag",
+        state: "vantar",
+      },
+      forModel: { pendingConfirmation: true, jobId, kind: "delete" },
+    };
+  }
+  return {
+    ok: true,
+    text: `Ska jag arkivera uppdraget ${job.title}? ${policy.reasons.join(", ")} raderas inte. Det går inte förrän du bekräftar.`,
+    card: {
+      kind: "confirm",
+      actionId: action.id,
+      summary: "Uppdraget arkiveras. Fakturor, offerter, betalningar och bokföring påverkas inte.",
+      rows: [
+        { label: job.title, value: customer.name },
+        { label: "Behålls", value: policy.reasons.join(", ") },
+      ],
+      confirmLabel: "Arkivera uppdrag",
+      state: "vantar",
+    },
+    forModel: { pendingConfirmation: true, jobId, kind: "archive", reasons: policy.reasons },
+  };
+}
+
+export function registerJobTimeDraft(input: {
+  jobId: string;
+  hours: number;
+  description?: string;
+  date?: string;
+  unitPrice?: number;
+}): DomainResult {
+  const job = getJob(input.jobId);
+  if (!job) return fail("Uppdraget finns inte.");
+  let entry;
+  try {
+    entry = registerJobTime(job.id, {
+      hours: input.hours,
+      description: input.description,
+      date: input.date,
+      unitPrice: input.unitPrice,
+      source: "ai",
+    });
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Kunde inte registrera tiden.");
+  }
+  const extra = entry.isExtra ? " Markerat som tillägg (ej i ursprunglig offert)." : "";
+  return {
+    ok: true,
+    text: `Registrerade ${entry.qty} timmar på ${job.title}.${extra}`,
+    card: entityCard("uppdrag", job.title, `/uppdrag/${job.id}`, `${entry.description} · ${entry.qty} tim · ${entry.date}`),
+    forModel: { entryId: entry.id, jobId: job.id, hours: entry.qty, isExtra: entry.isExtra, source: entry.source },
+  };
+}
+
+export function addJobMaterialDraft(input: {
+  jobId: string;
+  description: string;
+  qty: number;
+  unitPrice: number;
+  unit?: string;
+  date?: string;
+}): DomainResult {
+  const job = getJob(input.jobId);
+  if (!job) return fail("Uppdraget finns inte.");
+  let entry;
+  try {
+    entry = addJobMaterial(job.id, {
+      description: input.description,
+      qty: input.qty,
+      unitPrice: input.unitPrice,
+      unit: input.unit,
+      date: input.date,
+      source: "ai",
+    });
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Kunde inte lägga till material.");
+  }
+  const extra = entry.isExtra ? " Markerat som tillägg." : "";
+  return {
+    ok: true,
+    text: `Lade till ${entry.description} på ${job.title}.${extra}`,
+    card: entityCard("uppdrag", job.title, `/uppdrag/${job.id}`, `${entry.qty} ${entry.unit} · ${kr(entry.unitPrice)}`),
+    forModel: { entryId: entry.id, jobId: job.id, isExtra: entry.isExtra, source: entry.source },
   };
 }
 
@@ -1242,5 +1383,203 @@ export function requestPurchaseDomain(hostname: string): DomainResult {
       state: "vantar",
     },
     forModel: { pendingConfirmation: true, hostname, purchased: false },
+  };
+}
+
+/**
+ * Sanningsenlig beskrivning av betalningsuppgifternas tillstånd för AI:n:
+ * orsak + klartext + eventuellt tidigare verifierade uppgifter. AI:n läser
+ * ENDAST härifrån – den hittar aldrig på betalningsuppgifter.
+ */
+function paymentDetailsForModel(invoice: SupplierInvoice) {
+  if (invoice.status === "betald") return { state: "VERIFIED" as const, blockedReason: null };
+  const info = paymentDetailsInfo(invoice);
+  return {
+    state: info.cause,
+    blockedReason: paymentDetailsBlockedReason(info.cause, invoice.supplier),
+    verifiedAccount: info.cause === "VERIFIED" || info.cause === "CHANGED" ? info.account : undefined,
+    candidateAccount: info.candidate?.account,
+    awaitingSupplierSince: info.request?.sentAt,
+    previousVerified: info.previous
+      ? {
+          account: info.previous.account,
+          verifiedVia: `${provenanceLabel(info.previous.source)} ${info.previous.verifiedAt.slice(0, 10)}`,
+        }
+      : undefined,
+    /** Kan kompletteras med use_verified_supplier_details (kräver bekräftelse). */
+    reusable: info.reusable,
+  };
+}
+
+export function listSupplierInvoicesResult(q?: string): DomainResult {
+  const query = (q ?? "").trim().toLowerCase();
+  const rows = db().supplierInvoices.filter((s) => {
+    if (!query) return true;
+    const hay = `${s.supplier} ${s.invoiceNumber} ${s.ocr ?? ""} ${s.bankgiro ?? ""} ${s.amount}`.toLowerCase();
+    return hay.includes(query);
+  });
+  if (rows.length === 0) {
+    return { ok: true, text: query ? `Inga leverantörsfakturor matchar ”${query}”.` : "Inga leverantörsfakturor.", forModel: { count: 0, invoices: [] } };
+  }
+  return {
+    ok: true,
+    text: `${rows.length} leverantörsfakturor.`,
+    card: {
+      kind: "list",
+      title: "Leverantörsfakturor",
+      rows: rows.slice(0, 20).map((s) => ({
+        label: `${s.supplier} · ${s.invoiceNumber}`,
+        value: kr(s.amount),
+        href: s.inboxItemId ? `/inbox/${s.inboxItemId}` : "/ekonomi?flik=utgifter",
+      })),
+      links: [{ label: "Öppna Ekonomi", href: "/ekonomi?flik=utgifter" }],
+    },
+    forModel: {
+      count: rows.length,
+      invoices: rows.slice(0, 20).map((s) => ({
+        id: s.id,
+        supplier: s.supplier,
+        invoiceNumber: s.invoiceNumber,
+        amount: s.amount,
+        dueDate: s.dueDate,
+        accountingStatus: s.accountingStatus,
+        paymentStatus: s.status,
+        ocr: s.ocr,
+        bankgiro: s.bankgiro,
+        paymentDetails: paymentDetailsForModel(s),
+      })),
+    },
+  };
+}
+
+export function getSupplierInvoiceResult(id: string): DomainResult {
+  const invoice = db().supplierInvoices.find((s) => s.id === id);
+  if (!invoice) return fail("Leverantörsfakturan finns inte.");
+  const details = paymentDetailsForModel(invoice);
+  return {
+    ok: true,
+    text: `${invoice.supplier} ${invoice.invoiceNumber} · ${kr(invoice.amount)} · förfaller ${invoice.dueDate.slice(0, 10)}.${details.blockedReason ? ` ${details.blockedReason}` : ""}`,
+    forModel: {
+      id: invoice.id,
+      supplier: invoice.supplier,
+      invoiceNumber: invoice.invoiceNumber,
+      amount: invoice.amount,
+      vatAmount: invoice.vatAmount,
+      dueDate: invoice.dueDate,
+      accountingStatus: invoice.accountingStatus,
+      status: invoice.status,
+      ocr: invoice.ocr,
+      bankgiro: invoice.bankgiro,
+      inboxItemId: invoice.inboxItemId,
+      paymentDetails: details,
+    },
+  };
+}
+
+/**
+ * "Använd samma bankgiro som förra fakturan" – bygger bekräftelsekort ur
+ * leverantörens VERIFIERADE historik. Utför inget själv; människan bekräftar
+ * (samma mönster som skicka_leverantorsbetalning). AI:n kan aldrig ange ett
+ * eget konto här – uppgifterna hämtas ur domänen.
+ */
+export function requestUseVerifiedSupplierDetails(invoiceId: string): DomainResult {
+  const invoice = db().supplierInvoices.find((s) => s.id === invoiceId);
+  if (!invoice) return fail("Leverantörsfakturan finns inte.");
+  if (invoice.status === "betald") return fail("Fakturan är redan betald.");
+  const info = paymentDetailsInfo(invoice);
+  if (info.cause === "VERIFIED") return fail("Fakturan har redan verifierade betalningsuppgifter.");
+  if (info.cause === "CHANGED") {
+    return fail(
+      "Fakturan visar nya betalningsuppgifter jämfört med tidigare – ändringen måste kontrolleras mot dokumentet i stället för att gamla uppgifter återanvänds."
+    );
+  }
+  if (!info.previous) {
+    return fail(`Det finns inga tidigare verifierade betalningsuppgifter för ${invoice.supplier}.`);
+  }
+  const prev = info.previous;
+  const action: PendingAssistantAction = { id: uid(), type: "anvand_leverantorsuppgifter", supplierInvoiceId: invoice.id };
+  addPending(action);
+  return {
+    ok: true,
+    text: `${invoice.supplier} har tidigare verifierade uppgifter: ${prev.account}. Ska jag använda dem för ${invoice.invoiceNumber}? Inget sparas förrän du bekräftar.`,
+    card: {
+      kind: "confirm",
+      actionId: action.id,
+      summary: "Uppgifterna hämtas från leverantörens tidigare verifierade betalning – aldrig från en gissning.",
+      rows: [
+        { label: "Leverantör", value: invoice.supplier },
+        { label: "Konto", value: prev.account },
+        { label: "Verifierat via", value: `${provenanceLabel(prev.source)} ${prev.verifiedAt.slice(0, 10)}` },
+        { label: "Faktura", value: `${invoice.invoiceNumber} · ${kr(invoice.amount)}` },
+      ],
+      confirmLabel: "Använd tidigare uppgifter",
+      state: "vantar",
+    },
+    forModel: { pendingConfirmation: true, invoiceId: invoice.id, account: prev.account, attached: false },
+  };
+}
+
+export function prepareSupplierPaymentResult(invoiceId: string, scheduledDate?: string): DomainResult {
+  try {
+    const payment = prepareSupplierPayment({ supplierInvoiceId: invoiceId, scheduledDate });
+    const invoice = db().supplierInvoices.find((s) => s.id === invoiceId);
+    return {
+      ok: true,
+      text: `Betalning till ${invoice?.supplier ?? "leverantören"} på ${kr(payment.amount)} är förberedd. Den skickas inte förrän du bekräftar.`,
+      forModel: {
+        paymentId: payment.id,
+        status: payment.status,
+        amount: payment.amount,
+        scheduledDate: payment.scheduledDate,
+        recipientAccount: payment.recipientAccount,
+        destinationChanged: payment.destinationChanged ?? false,
+        submitted: false,
+      },
+    };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Kunde inte förbereda betalningen.");
+  }
+}
+
+export function requestSubmitSupplierPayment(paymentId: string): DomainResult {
+  const payment = supplierPayments().find((p) => p.id === paymentId);
+  if (!payment) return fail("Betalningen finns inte.");
+  const invoice = getSupplierInvoice(payment.supplierInvoiceId);
+  if (!invoice) return fail("Leverantörsfakturan finns inte.");
+  const action: PendingAssistantAction = { id: uid(), type: "skicka_leverantorsbetalning", paymentId: payment.id };
+  addPending(action);
+  return {
+    ok: true,
+    text: `Ska jag skicka ${kr(payment.amount)} till ${invoice.supplier}? Pengarna går inte iväg förrän du bekräftar.`,
+    card: {
+      kind: "confirm",
+      actionId: action.id,
+      summary: "Betalningen skickas till banken. Driva hittar aldrig på att den är betald.",
+      rows: supplierPaymentConfirmRows(payment, invoice),
+      confirmLabel: "Skicka till bank",
+      state: "vantar",
+    },
+    forModel: { pendingConfirmation: true, paymentId: payment.id, submitted: false },
+  };
+}
+
+export function requestCancelSupplierPayment(paymentId: string): DomainResult {
+  const payment = supplierPayments().find((p) => p.id === paymentId);
+  if (!payment) return fail("Betalningen finns inte.");
+  const invoice = getSupplierInvoice(payment.supplierInvoiceId);
+  const action: PendingAssistantAction = { id: uid(), type: "avbryt_leverantorsbetalning", paymentId: payment.id };
+  addPending(action);
+  return {
+    ok: true,
+    text: `Ska jag avbryta betalningen till ${invoice?.supplier ?? "leverantören"}?`,
+    card: {
+      kind: "confirm",
+      actionId: action.id,
+      summary: "Instruktionen avbryts. En redan genomförd betalning kan inte avbrytas.",
+      rows: [{ label: invoice?.supplier ?? "Leverantör", value: kr(payment.amount) }],
+      confirmLabel: "Avbryt betalning",
+      state: "vantar",
+    },
+    forModel: { pendingConfirmation: true, paymentId: payment.id, cancelled: false },
   };
 }

@@ -33,9 +33,11 @@ export type CommandStep =
   | { kind: "customer"; prompt: string }
   /** Riktiga fakturerbara uppdrag (kvar enligt offert) + fristående faktura. */
   | { kind: "invoiceTarget"; prompt: string }
-  /** Öppna förfrågningar att utgå ifrån, annars kort titel. */
+  /** Inkommande uppdrag utan offert att utgå ifrån, annars kort titel. */
   | { kind: "quoteTopic"; prompt: string }
-  | { kind: "title"; prompt: string; placeholder: string };
+  | { kind: "title"; prompt: string; placeholder: string }
+  /** Tidpunkt för intern påminnelse – parsas med parseReminderText. */
+  | { kind: "when"; prompt: string; placeholder: string };
 
 export type CommandRun =
   /** Körs direkt via verktygslagret (ai/tools), med ev. fasta argument. */
@@ -47,10 +49,13 @@ export type CommandRun =
   /** Öppnar befintlig kundmodal (NewCustomerModal). */
   | { kind: "newCustomer" };
 
+export type CommandWorkspace = "owner" | "accountant";
+
 export type CommandId =
   | "create_invoice"
   | "create_quote"
   | "create_assignment"
+  | "create_reminder"
   | "create_customer"
   | "find_customer"
   | "show_unpaid_invoices"
@@ -60,7 +65,15 @@ export type CommandId =
   | "show_watching"
   | "show_invoices"
   | "upload_receipt"
-  | "remind_late_invoices";
+  | "remind_late_invoices"
+  | "review_vat"
+  | "accountant_who_needs_help"
+  | "accountant_vat_week"
+  | "accountant_missing_docs"
+  | "accountant_bank_diff"
+  | "accountant_whats_open"
+  | "accountant_unusual"
+  | "accountant_reconcile";
 
 export interface CommandDef {
   id: CommandId;
@@ -81,6 +94,8 @@ export interface CommandDef {
   run: CommandRun;
   /** Ordningsvikt vid lika poäng (högre först). */
   priority: number;
+  /** Default owner – redovisningsfältet ser bara accountant. */
+  workspace?: CommandWorkspace;
 }
 
 /**
@@ -92,6 +107,17 @@ export const FREE_TEXT_FALLBACK_MESSAGE =
 
 /** Kommandon som visas som förslag när inget matchar. */
 export const FALLBACK_COMMAND_IDS: CommandId[] = ["create_quote", "create_invoice", "create_customer"];
+
+export const ACCOUNTANT_FALLBACK_COMMAND_IDS: CommandId[] = [
+  "accountant_who_needs_help",
+  "accountant_vat_week",
+  "accountant_missing_docs",
+  "accountant_bank_diff",
+];
+
+export function commandWorkspace(cmd: CommandDef): CommandWorkspace {
+  return cmd.workspace ?? "owner";
+}
 
 export const COMMANDS: CommandDef[] = [
   {
@@ -153,6 +179,26 @@ export const COMMANDS: CommandDef[] = [
       finishTool: "create_assignment",
     },
     priority: 7,
+  },
+  {
+    id: "create_reminder",
+    label: "Skapa påminnelse",
+    hint: "Intern påminnelse till dig – skickas inte till kunden",
+    aliases: ["skapa påminnelse", "påminnelse", "ny påminnelse", "påminn mig", "påminn", "reminder"],
+    keywords: ["påminnelse", "påminn", "komma ihåg", "reminder"],
+    icon: "clock",
+    risk: "SAFE_WRITE",
+    requiredContext: null,
+    run: {
+      kind: "flow",
+      steps: [
+        { kind: "title", prompt: "Vad vill du bli påmind om?", placeholder: "T.ex. Ring Göran" },
+        { kind: "when", prompt: "När?", placeholder: "imorgon / onsdag / om 2 timmar" },
+      ],
+      cta: "Skapa påminnelse",
+      finishTool: "create_reminder",
+    },
+    priority: 8,
   },
   {
     id: "create_customer",
@@ -290,15 +336,131 @@ export const COMMANDS: CommandDef[] = [
   },
   {
     id: "remind_late_invoices",
-    label: "Påminn om sena fakturor",
-    hint: "Kräver bekräftelse innan något skickas",
-    aliases: ["påminn om sena fakturor", "skicka påminnelse", "skicka påminnelser", "påminn kunder"],
-    keywords: ["påminnelse", "påminn", "sena", "fakturor"],
+    label: "Skicka betalningspåminnelse",
+    hint: "E-post till kunder med sena fakturor – kräver bekräftelse",
+    aliases: [
+      "skicka betalningspåminnelse",
+      "påminn om sena fakturor",
+      "skicka påminnelse",
+      "skicka påminnelser",
+      "påminn kunder",
+    ],
+    keywords: ["betalningspåminnelse", "sena", "fakturor"],
     icon: "send",
     risk: "CONFIRM_REQUIRED",
     requiredContext: null,
     run: { kind: "tool", tool: "send_reminders" },
     priority: 2,
+  },
+  {
+    id: "review_vat",
+    label: "Granska inför moms",
+    hint: "Undantag som blockerar deklarationen – samma åtgärdsmotor",
+    aliases: [
+      "granska inför moms",
+      "granska x inför moms",
+      "granska moms",
+      "momsgranskning",
+      "vad behövs inför moms",
+    ],
+    keywords: ["moms", "granska", "deklaration"],
+    icon: "alert",
+    risk: "READ_ONLY",
+    requiredContext: null,
+    run: { kind: "tool", tool: "list_accountant_exceptions" },
+    priority: 5,
+    workspace: "accountant",
+  },
+  {
+    id: "accountant_who_needs_help",
+    label: "Vilka klienter behöver min hjälp?",
+    hint: "Undantag över klienterna – samma åtgärdsmotor",
+    aliases: ["vilka klienter behöver min hjälp", "vilka klienter behöver hjälp", "klienter som behöver hjälp"],
+    keywords: ["klienter", "hjälp", "undantag"],
+    icon: "alert",
+    risk: "READ_ONLY",
+    requiredContext: null,
+    run: { kind: "tool", tool: "list_accountant_exceptions" },
+    priority: 8,
+    workspace: "accountant",
+  },
+  {
+    id: "accountant_vat_week",
+    label: "Moms denna vecka",
+    hint: "Momsundantag i aktuellt läge",
+    aliases: ["moms denna vecka", "moms den här veckan"],
+    keywords: ["moms", "vecka"],
+    icon: "alert",
+    risk: "READ_ONLY",
+    requiredContext: null,
+    run: { kind: "tool", tool: "list_accountant_exceptions" },
+    priority: 7,
+    workspace: "accountant",
+  },
+  {
+    id: "accountant_missing_docs",
+    label: "Saknade underlag",
+    hint: "Kvitton och underlag som saknas",
+    aliases: ["saknade underlag", "saknade kvitton", "underlag saknas"],
+    keywords: ["underlag", "kvitto"],
+    icon: "receipt",
+    risk: "READ_ONLY",
+    requiredContext: null,
+    run: { kind: "tool", tool: "list_accountant_exceptions" },
+    priority: 7,
+    workspace: "accountant",
+  },
+  {
+    id: "accountant_bank_diff",
+    label: "Bankavvikelser",
+    hint: "Differenser och omatchade betalningar",
+    aliases: ["bankavvikelser", "bankavvikelse", "stäm av banken", "stam av banken"],
+    keywords: ["bank", "differens", "avstämning"],
+    icon: "alert",
+    risk: "READ_ONLY",
+    requiredContext: null,
+    run: { kind: "tool", tool: "list_accountant_exceptions" },
+    priority: 6,
+    workspace: "accountant",
+  },
+  {
+    id: "accountant_whats_open",
+    label: "Vad behöver hanteras?",
+    hint: "Öppna undantag i aktuellt läge",
+    aliases: ["vad behöver hanteras", "vad behöver jag göra", "vad behöver min bedömning"],
+    keywords: ["hanteras", "göra", "undantag"],
+    icon: "today",
+    risk: "READ_ONLY",
+    requiredContext: null,
+    run: { kind: "tool", tool: "list_accountant_exceptions" },
+    priority: 8,
+    workspace: "accountant",
+  },
+  {
+    id: "accountant_unusual",
+    label: "Visa ovanliga transaktioner",
+    hint: "Bank- och bokföringsundantag",
+    aliases: ["visa ovanliga transaktioner", "ovanliga transaktioner"],
+    keywords: ["ovanliga", "transaktioner"],
+    icon: "list",
+    risk: "READ_ONLY",
+    requiredContext: null,
+    run: { kind: "tool", tool: "list_accountant_exceptions" },
+    priority: 4,
+    workspace: "accountant",
+  },
+  {
+    id: "accountant_reconcile",
+    label: "Stäm av banken",
+    hint: "Samma avstämning som i Driva",
+    aliases: ["stäm av banken", "avstäm banken"],
+    keywords: ["stäm", "avstäm", "bank"],
+    icon: "alert",
+    risk: "READ_ONLY",
+    requiredContext: null,
+    run: { kind: "tool", tool: "list_accountant_exceptions" },
+    priority: 5,
+    workspace: "accountant",
   },
 ];
 
@@ -402,10 +564,11 @@ const SUGGEST_MIN_SCORE = 40;
  * Klientmatchning för autocomplete: prefix/alias/nyckelord + enkel fuzzy.
  * Ren funktion, noll nätverk.
  */
-export function matchCommands(query: string, limit = 6): CommandMatch[] {
+export function matchCommands(query: string, limit = 6, workspace: CommandWorkspace = "owner"): CommandMatch[] {
   const q = normalize(query);
   if (!q) return [];
-  return COMMANDS.map((command) => ({ command, score: commandScore(command, q) }))
+  return COMMANDS.filter((command) => commandWorkspace(command) === workspace)
+    .map((command) => ({ command, score: commandScore(command, q) }))
     .filter((m) => m.score >= MATCH_MIN_SCORE)
     .sort((a, b) => b.score - a.score || a.command.label.localeCompare(b.command.label, "sv"))
     .slice(0, limit);
@@ -462,6 +625,11 @@ const HIGH_PATTERNS: HighPattern[] = [
   { commandId: "show_today_actions", re: /^vad\s+(?:behöver|ska|måste)\s+jag\s+göra(?:\s+idag)?$/ },
   { commandId: "show_watching", re: /^vad\s+(?:är\s+)?på\s+gång(?:\s+just\s+nu)?$/ },
   { commandId: "show_watching", re: /^vad\s+händer(?:\s+just\s+nu)?$/ },
+  { commandId: "create_reminder", re: /^påminnelse$/ },
+  { commandId: "create_reminder", re: /^påminn(a)?( mig)?$/ },
+  { commandId: "create_reminder", re: /^skapa påminnelse$/ },
+  // Extern kund-e-post – inte intern påminnelse. "påminnelse" ensamt ska inte träffa här.
+  { commandId: "remind_late_invoices", re: /^skicka\s+(?:en\s+)?påminnelse(?:r)?(?:\s+till\s+.+)?$/ },
 ];
 
 /**
@@ -469,12 +637,13 @@ const HIGH_PATTERNS: HighPattern[] = [
  * Hög konfidens kör kommandoflödet, låg ger "Menade du?", ingen ger den
  * ärliga fallbacktexten (FREE_TEXT_FALLBACK_MESSAGE).
  */
-export function parseFreeText(text: string): ParsedInput {
+export function parseFreeText(text: string, workspace: CommandWorkspace = "owner"): ParsedInput {
   const t = normalize(text);
   if (!t) return { confidence: "none" };
 
   // 1. Exakt alias/etikett → hög konfidens utan kundnamn.
   for (const cmd of COMMANDS) {
+    if (commandWorkspace(cmd) !== workspace) continue;
     if (normalize(cmd.label) === t || cmd.aliases.some((a) => normalize(a) === t)) {
       return { confidence: "high", commandId: cmd.id };
     }
@@ -482,6 +651,8 @@ export function parseFreeText(text: string): ParsedInput {
 
   // 2. Verbmönster → hög konfidens, ev. med kundnamn till kundsteget.
   for (const p of HIGH_PATTERNS) {
+    const cmd = COMMANDS.find((c) => c.id === p.commandId);
+    if (cmd && commandWorkspace(cmd) !== workspace) continue;
     const m = t.match(p.re);
     if (!m) continue;
     const entityQuery = p.entityGroup ? cleanEntityQuery(m[p.entityGroup]) : undefined;
@@ -489,7 +660,7 @@ export function parseFreeText(text: string): ParsedInput {
   }
 
   // 3. Delträffar → låg konfidens med förslag.
-  const suggestions = matchCommands(t, 3).filter((m) => m.score >= SUGGEST_MIN_SCORE);
+  const suggestions = matchCommands(t, 3, workspace).filter((m) => m.score >= SUGGEST_MIN_SCORE);
   if (suggestions.length > 0) {
     return { confidence: "low", suggestions: suggestions.map((m) => m.command.id) };
   }

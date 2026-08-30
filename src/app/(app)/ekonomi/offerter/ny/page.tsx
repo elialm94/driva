@@ -1,7 +1,8 @@
 import { db } from "@/lib/store";
 import { quoteDefaults } from "@/lib/services/quotes";
-import { getJob, getRequest } from "@/lib/services/data";
+import { getJob } from "@/lib/services/data";
 import { tillaggQuoteFromInvoice } from "@/lib/services/invoice-quote-deviation";
+import { quotePrefillFromJob } from "@/lib/services/job-work";
 import { PageHeader } from "@/components/ui";
 import { QuoteForm, type QuoteFormInitial } from "@/components/doc-form";
 import { SmartBack } from "@/components/back-link";
@@ -15,15 +16,14 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
   await ensurePageBusiness();
   const searchParams = await props.searchParams;
   const kund = typeof searchParams.kund === "string" ? searchParams.kund : undefined;
-  const forfraganId = typeof searchParams.forfragan === "string" ? searchParams.forfragan : undefined;
   const tillaggFran = typeof searchParams.tillaggFran === "string" ? searchParams.tillaggFran : undefined;
-  const jobId =
-    typeof searchParams.job === "string"
-      ? searchParams.job
+  const legacyJob =
+    typeof searchParams.forfragan === "string"
+      ? searchParams.forfragan
       : typeof searchParams.uppdrag === "string"
         ? searchParams.uppdrag
         : undefined;
-  const request = forfraganId ? getRequest(forfraganId) : undefined;
+  const jobId = typeof searchParams.job === "string" ? searchParams.job : legacyJob;
   const job = jobId ? getJob(jobId) : undefined;
   const tillagg = tillaggFran ? tillaggQuoteFromInvoice(tillaggFran) : null;
 
@@ -33,11 +33,12 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
 
   const defaults = quoteDefaults();
 
+  const jobPrefill = job ? quotePrefillFromJob(job.id) : null;
   const jobInitial: QuoteFormInitial | undefined = job
     ? {
-        title: job.title,
-        intro: job.description,
-        lines: [],
+        title: jobPrefill?.title ?? job.title,
+        intro: jobPrefill?.intro || job.originalMessage || job.description,
+        lines: jobPrefill?.lines ?? [],
         rot: null,
         paymentPlan: [{ label: "Betalning när arbetet är klart", percent: 100 }],
         paymentTermsDays: defaults.paymentTermsDays,
@@ -59,20 +60,7 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
         validUntil: defaults.validUntil,
         terms: defaults.terms,
       }
-    : jobInitial
-      ? jobInitial
-        : request
-        ? {
-            title: request.ai?.workType ?? request.title,
-            intro: request.message,
-            lines: [],
-            rot: null,
-            paymentPlan: [{ label: "Betalning när arbetet är klart", percent: 100 }],
-            paymentTermsDays: defaults.paymentTermsDays,
-            validUntil: defaults.validUntil,
-            terms: defaults.terms,
-          }
-        : undefined;
+    : jobInitial;
 
   const tillbaka = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : null;
   const tillbakaNamn =
@@ -95,11 +83,6 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
   } else if (tillbaka) {
     cancelHref = tillbaka;
     cancelLabel = tillbakaNamn ?? labelForHref(tillbaka);
-  } else if (request) {
-    cancelHref = `/inbox/${request.id}`;
-    cancelLabel = "Förfrågan";
-    returnTo = `/inbox/${request.id}`;
-    returnLabel = request.title;
   }
 
   return (
@@ -112,9 +95,7 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
             ? `Tillägg till offert #${tillagg.quoteNumber} – kunden godkänner med BankID.`
             : job
               ? `Till uppdraget ”${job.title}”`
-              : request
-                ? `Utifrån förfrågan: ”${request.title}”`
-                : "Skapa, granska och skicka – kunden godkänner med BankID."
+              : "Skapa, granska och skicka – kunden godkänner med BankID."
         }
       />
       {tillagg ? (
@@ -126,16 +107,11 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
           <span className="font-medium text-info">Från uppdrag:</span> {job.title}
           {job.address ? ` · ${job.address}` : ""}
         </div>
-      ) : request ? (
-        <div className="mb-6 rounded-2xl border border-info/15 bg-info-soft/50 px-5 py-4 text-[14px] leading-relaxed text-soft">
-          <span className="font-medium text-info">Från förfrågan:</span> ”{request.message}”
-        </div>
       ) : null}
       <QuoteForm
         customers={customers}
-        defaultCustomerId={kund ?? tillagg?.customerId ?? job?.customerId ?? request?.customerId}
-        lockCustomer={Boolean(kund || job || request || tillagg)}
-        requestId={forfraganId}
+        defaultCustomerId={kund ?? tillagg?.customerId ?? job?.customerId}
+        lockCustomer={Boolean(kund || job || tillagg)}
         jobId={job?.id}
         initial={initial}
         defaults={defaults}

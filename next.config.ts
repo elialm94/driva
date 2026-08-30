@@ -14,7 +14,6 @@ const nextConfig: NextConfig = {
       { source: "/pengar/:path*", destination: "/ekonomi/:path*", permanent: true },
       { source: "/uppdrag", destination: "/kunder?flik=uppdrag", permanent: true },
       { source: "/assistent", destination: "/", permanent: true },
-      { source: "/kunder/forfragningar/:id", destination: "/inbox/:id", permanent: true },
     ];
   },
 };

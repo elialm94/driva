@@ -1,7 +1,7 @@
 import { db } from "../store";
 import type { Invoice, Job, Quote } from "../types";
 import { countsTowardInvoiced, invoiceTotals, isOpenReceivable, quoteTotals } from "./data";
-import { invoiceHref, inquiryHref, quoteHref } from "../nav";
+import { invoiceHref, quoteHref } from "../nav";
 import { invoiceNumberLabel } from "../invoices/display";
 import type { CustomerActivityRow, CustomerMoneyLine } from "../customer-activity-model";
 
@@ -46,13 +46,6 @@ function jobStatusLabel(job: Job): string {
   return "Kommande";
 }
 
-function requestStatusLabel(status: string): string {
-  if (status === "ny") return "Ny";
-  if (status === "offert_skapad") return "Offert skapad";
-  if (status === "besvarad") return "Besvarad";
-  return "Avslutad";
-}
-
 /** Kronologisk kundaktivitet, nyast först. Byggs från objekten – inte från fritextloggen. */
 export function customerActivityFeed(customerId: string): CustomerActivityRow[] {
   const data = db();
@@ -94,17 +87,6 @@ export function customerActivityFeed(customerId: string): CustomerActivityRow[] 
       amount: amount || undefined,
       statusLabel: jobStatusLabel(job),
       href: `/uppdrag/${job.id}`,
-    });
-  }
-
-  for (const r of data.requests.filter((r) => r.customerId === customerId)) {
-    rows.push({
-      id: `forfragan-${r.id}`,
-      at: eventTime(r.createdAt),
-      kind: "forfragan",
-      title: r.title,
-      statusLabel: requestStatusLabel(r.status),
-      href: inquiryHref(r.id, from),
     });
   }
 

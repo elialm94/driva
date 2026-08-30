@@ -7,7 +7,6 @@ import { TaxReductionQuoteClause, TaxReductionCalcHint } from "./tax-reduction-t
 import { CompanyLogo } from "./company-logo";
 import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
 import { RichTextView } from "./rich-text";
-import { isRichTextEmpty } from "@/lib/richtext";
 
 const LINE_KIND_LABEL: Record<string, string> = {
   arbete: "Arbete",
@@ -210,6 +209,7 @@ export function QuoteDocument({
       <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-soft">{version.intro}</p>
 
       <div className="mt-7">
+        <RichTextView doc={version.richText} className="mb-7" />
         <DocLinesTable lines={version.lines} />
       </div>
 
@@ -238,13 +238,6 @@ export function QuoteDocument({
             Betalningsvillkor: {version.paymentTermsDays} dagar per faktura.
             {version.lateInterestRate ? ` Vid försenad betalning debiteras dröjsmålsränta med ${version.lateInterestRate} % per år.` : ""}
           </p>
-        </div>
-      ) : null}
-
-      {!isRichTextEmpty(version.richText) ? (
-        <div className="mt-8">
-          <p className="text-[13px] font-semibold uppercase tracking-wide text-muted">Övrig information</p>
-          <RichTextView doc={version.richText} className="mt-1.5" />
         </div>
       ) : null}
 

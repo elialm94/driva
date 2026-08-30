@@ -2,7 +2,6 @@ import { db } from "../store";
 import type {
   BankIDSignature,
   Customer,
-  CustomerRequest,
   Invoice,
   Job,
   Quote,
@@ -132,13 +131,31 @@ export function countsTowardInvoiced(inv: Invoice): boolean {
 const paidSumsCache = new WeakMap<object, { len: number; sums: Map<string, number> }>();
 const creditsCache = new WeakMap<object, { len: number; byOriginal: Map<string, Invoice[]> }>();
 
+function reversedPaymentIds(): Set<string> {
+  const ids = new Set<string>();
+  for (const v of db().verifications) {
+    const src = v.source;
+    if (src.type === "betalning" && v.correctedByVerificationId) ids.add(src.id);
+  }
+  return ids;
+}
+
 function paidSums(): Map<string, number> {
   const payments = db().payments;
+  const vers = db().verifications;
+  const reversed = reversedPaymentIds();
+  const corrN = reversed.size;
   let cached = paidSumsCache.get(payments);
-  if (!cached || cached.len !== payments.length) {
+  // Rättelsestämpel på en betalningsverifikation ändrar inte payments.length –
+  // cachen måste också se verifikationerna.
+  const verLen = vers.length;
+  if (!cached || cached.len !== payments.length + verLen * 1_000 + corrN) {
     const sums = new Map<string, number>();
-    for (const p of payments) sums.set(p.invoiceId, (sums.get(p.invoiceId) ?? 0) + p.amount);
-    cached = { len: payments.length, sums };
+    for (const p of payments) {
+      if (reversed.has(p.id)) continue;
+      sums.set(p.invoiceId, (sums.get(p.invoiceId) ?? 0) + p.amount);
+    }
+    cached = { len: payments.length + verLen * 1_000 + corrN, sums };
     paidSumsCache.set(payments, cached);
   }
   return cached.sums;
@@ -215,10 +232,6 @@ export function daysOverdue(inv: Invoice): number {
   return -dagarTill(inv.dueDate);
 }
 
-export function getRequest(id: string): CustomerRequest | undefined {
-  return db().requests.find((r) => r.id === id);
-}
-
 /**
  * Effektiv offertstatus: en skickad offert vars giltighetsdatum passerat är
  * utgången (kan inte signeras) – lagret sätter aldrig "utgangen" explicit.
@@ -252,9 +265,6 @@ export function quoteWaitingDays(quote: Quote): number {
 export function customerBundle(customerId: string) {
   const data = db();
   return {
-    requests: data.requests
-      .filter((r) => r.customerId === customerId)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     quotes: data.quotes
       .filter((q) => q.customerId === customerId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
@@ -276,6 +286,5 @@ export function customerSummary(customerId: string) {
   const openQuotes = b.quotes.filter((q) => q.status === "skickad").length;
   const activeJobs = b.jobs.filter((j) => j.status !== "klart").length;
   const unpaid = b.invoices.reduce((s, i) => s + invoiceOutstanding(i), 0);
-  const newRequests = b.requests.filter((r) => r.status === "ny").length;
-  return { openQuotes, activeJobs, unpaid, newRequests };
+  return { openQuotes, activeJobs, unpaid };
 }

@@ -103,10 +103,10 @@ export function PaySupplierButton({ supplierInvoiceId }: { supplierInvoiceId: st
       className={buttonClasses("secondary", "sm")}
       disabled={isPending}
       onClick={() => startTransition(async () => paySupplierInvoiceAction(supplierInvoiceId))}
-      title="Simulerar en utbetalning från banken – matchas och bokförs automatiskt"
+      title="Demoläge: simulerar att banken redan har dragit pengarna"
     >
       <Banknote className="size-3.5" />
-      {isPending ? "Betalar …" : "Betala"}
+      {isPending ? "Betalar …" : "Simulera betald"}
       <DemoTag />
     </button>
   );
@@ -152,6 +152,7 @@ export function FollowUpButton({ quoteId }: { quoteId: string }) {
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   if (done) {
     return (
       <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
@@ -161,13 +162,20 @@ export function FollowUpButton({ quoteId }: { quoteId: string }) {
   }
   return (
     <>
-      <button className={buttonClasses("secondary", "sm")} disabled={isPending} onClick={() => setConfirmOpen(true)}>
+      <button
+        className={buttonClasses("secondary", "sm")}
+        disabled={isPending}
+        onClick={() => {
+          setError(null);
+          setConfirmOpen(true);
+        }}
+      >
         <Send className="size-3.5" />
         {isPending ? "Skickar …" : "Skicka påminnelse"}
       </button>
       <Modal
         open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
+        onClose={() => !isPending && setConfirmOpen(false)}
         title="Skicka påminnelse?"
         size="sm"
         footer={
@@ -175,6 +183,7 @@ export function FollowUpButton({ quoteId }: { quoteId: string }) {
             <button
               type="button"
               className={cx(buttonClasses("ghost", "sm"), "max-lg:min-h-11")}
+              disabled={isPending}
               onClick={() => setConfirmOpen(false)}
             >
               Avbryt
@@ -182,15 +191,20 @@ export function FollowUpButton({ quoteId }: { quoteId: string }) {
             <button
               type="button"
               className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
+              disabled={isPending}
               onClick={() => {
-                setConfirmOpen(false);
                 startTransition(async () => {
-                  await followUpQuoteAction(quoteId);
+                  const result = await followUpQuoteAction(quoteId);
+                  if (result && result.ok === false) {
+                    setError(result.errors.join(" ") || "Påminnelsen kunde inte skickas. Försök igen.");
+                    return;
+                  }
+                  setConfirmOpen(false);
                   setDone(true);
                 });
               }}
             >
-              <Send className="size-3.5" /> Skicka påminnelse
+              <Send className="size-3.5" /> {isPending ? "Skickar …" : error ? "Försök igen" : "Skicka påminnelse"}
             </button>
           </div>
         }
@@ -198,6 +212,7 @@ export function FollowUpButton({ quoteId }: { quoteId: string }) {
         <p className="px-6 py-4 text-[14px] leading-relaxed text-soft">
           Kunden får ett mejl med en påminnelse om offerten och länken för att svara med BankID.
         </p>
+        {error ? <p className="px-6 pb-4 text-[13px] font-medium text-danger">{error}</p> : null}
       </Modal>
     </>
   );
@@ -460,6 +475,8 @@ export function SendReminderButton({
 }) {
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   if (done) {
     return (
       <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
@@ -468,18 +485,54 @@ export function SendReminderButton({
     );
   }
   return (
-    <button
-      type="button"
-      className={buttonClasses(variant, size)}
-      disabled={isPending}
-      onClick={() =>
-        startTransition(async () => {
-          await sendReminderAction(invoiceId);
-          setDone(true);
-        })
-      }
-    >
-      {isPending ? "Skickar …" : "Skicka påminnelse"}
-    </button>
+    <>
+      <button
+        type="button"
+        className={buttonClasses(variant, size)}
+        disabled={isPending}
+        onClick={() => {
+          setError(null);
+          setConfirmOpen(true);
+        }}
+      >
+        {isPending ? "Skickar …" : "Skicka påminnelse"}
+      </button>
+      <Modal
+        open={confirmOpen}
+        onClose={() => !isPending && setConfirmOpen(false)}
+        title="Skicka betalningspåminnelse?"
+        size="sm"
+      >
+        <div className="px-6 py-5">
+          <p className="text-[14px] leading-relaxed text-soft">
+            Kunden får ett mejl med en påminnelse om den förfallna fakturan och länken för att betala.
+          </p>
+          {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button className={buttonClasses("secondary")} disabled={isPending} onClick={() => setConfirmOpen(false)}>
+              Avbryt
+            </button>
+            <button
+              className={buttonClasses("primary")}
+              disabled={isPending}
+              onClick={() => {
+                startTransition(async () => {
+                  const result = await sendReminderAction(invoiceId);
+                  if (result && result.ok === false) {
+                    setError(result.errors.join(" ") || "Påminnelsen kunde inte skickas. Försök igen.");
+                    return;
+                  }
+                  setConfirmOpen(false);
+                  setDone(true);
+                });
+              }}
+            >
+              <Send className="size-3.5" />
+              {isPending ? "Skickar …" : error ? "Försök igen" : "Skicka påminnelse"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }

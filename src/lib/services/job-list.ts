@@ -118,6 +118,9 @@ export function listJobsForTable(input: {
     if (!customer) continue;
     const jm = money.get(job.id);
     if (!jm) continue; // jobMoneyForAll täcker alla jobb – saknas den är datat trasigt
+    const archived = Boolean(job.archivedAt);
+    if (lifecycleFilter === "arkiverade" && !archived) continue;
+    if (lifecycleFilter !== "arkiverade" && lifecycleFilter !== "alla" && archived) continue;
     const row = toRow(job, jm, customer);
     if (lifecycleFilter === "aktiva" && row.lifecycle === "klart") continue;
     if (lifecycleFilter === "planerade" && row.lifecycle !== "planerat") continue;

@@ -34,7 +34,7 @@ import { isLiveMailConfigured } from "@/lib/mail";
 import { docTotals } from "@/lib/calc";
 import { SmartBack } from "@/components/back-link";
 import { AppLink } from "@/components/app-link";
-import { hrefWithNav, invoiceHref, sanitizeReturnLabel, sanitizeReturnTo, withReturnTo } from "@/lib/nav";
+import { hrefWithNav, invoiceHref, sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Offert" };
@@ -64,22 +64,11 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   const sentParam = typeof searchParams.skickad === "string" ? searchParams.skickad : null;
   const justSent = sentParam === "1" && !isDraft;
   const justSentManual = sentParam === "manuell" && !isDraft;
-  const addEmailHref = withReturnTo(`/kunder/${customer.id}`, fromHere.href, fromHere.label);
-  // Affärsblockerare (t.ex. passerat giltig till-datum) + saknad e-post visas i checklistan.
-  const businessBlockers = isDraft
+  // EN källa (quoteSendBlockers). buyer_email kompletteras inline – ingen länk till Kunden.
+  const sendBlockers = isDraft
     ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefWithNav(b.href, nav) } : b))
     : [];
-  const sendBlockers = !customer.email.trim()
-    ? [
-        ...businessBlockers,
-        {
-          code: "buyer_email",
-          message: "Kunden saknar e-postadress.",
-          href: addEmailHref,
-          actionLabel: "Lägg till e-post",
-        },
-      ]
-    : businessBlockers;
+  const businessBlockers = sendBlockers.filter((b) => b.code !== "buyer_email");
 
   const invoicedTotal = relatedInvoices
     .filter(countsTowardInvoiced)
@@ -125,6 +114,8 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                 <Pencil className="size-4" /> Redigera
               </ButtonLink>
               <QuoteDraftSend
+                documentId={quote.id}
+                customerId={customer.id}
                 customerName={customer.name}
                 amount={totals.toPay}
                 validUntilLabel={datumLang(version.validUntil)}
@@ -132,7 +123,6 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                 detailHref={fromHere.href}
                 mailConfigured={isLiveMailConfigured()}
                 recipientEmail={customer.email}
-                addEmailHref={addEmailHref}
                 hasSendBlockers={businessBlockers.length > 0}
               />
             </PageActions>

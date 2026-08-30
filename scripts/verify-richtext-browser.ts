@@ -2,7 +2,7 @@ import puppeteer, { type Page } from "puppeteer-core";
 import { mkdirSync } from "node:fs";
 
 /**
- * Browserverifiering av rik text ("Övrig information") mot dev-servern :3123.
+ * Browserverifiering av rik text (beskrivning på offerter/fakturor) mot :3123.
  *
  * Desktop (1360px):
  *   1. Seedad offert (quote-dorrar): sektionen renderas på appens detaljsida,
@@ -94,21 +94,42 @@ async function pickFirstCustomer(page: Page) {
 
 /* ------------------------- 1–2: seedade dokument -------------------------- */
 
+async function assertDescriptionBeforeLines(page: Page, description: string, line: string, label: string) {
+  const order = await page.evaluate(
+    (desc, row) => {
+      const text = document.body.innerText;
+      return {
+        desc: text.indexOf(desc),
+        line: text.indexOf(row),
+        heading: text.indexOf("Övrig information"),
+        hasDoc: Boolean(document.querySelector(".richtext-doc")),
+      };
+    },
+    description,
+    line
+  );
+  await ok(
+    page,
+    `${label}: beskrivning före rader, ingen generisk rubrik`,
+    order.hasDoc && order.desc !== -1 && order.line !== -1 && order.desc < order.line && order.heading === -1
+  );
+}
+
 async function verifySeededQuote(page: Page) {
   await page.goto(`${BASE}/ekonomi/offerter/quote-dorrar`, { waitUntil: "networkidle0" });
-  await waitVisibleText(page, "Övrig information");
+  await waitVisibleText(page, "Detta ingår");
   const text = await bodyText(page);
-  await ok(page, "offertdetalj: Övrig information-sektionen", has(text, "Övrig information"));
   await ok(page, "offertdetalj: H2 ur rik text", has(text, "Detta ingår"));
   await ok(page, "offertdetalj: punktlista", has(text, "Bortforsling av gamla dörrar"));
+  await ok(page, "offertdetalj: ingen generisk Övrig information-rubrik", !has(text, "Övrig information"));
   const bold = await page.$$eval("strong", (els) => els.some((e) => (e.textContent ?? "").includes("fri tillgång till källargången")));
   await ok(page, "offertdetalj: fetstil renderas som <strong>", bold);
+  await assertDescriptionBeforeLines(page, "Detta ingår", "Demontering och montering av dörrar", "offertdetalj");
   await shot(page, "01-offert-detalj-desktop");
 
   await page.goto(`${BASE}/offert/demo-brf-dorrar`, { waitUntil: "networkidle0" });
-  await waitVisibleText(page, "Övrig information");
   await waitVisibleText(page, "Detta ingår");
-  await ok(page, "kundvy /offert/[token]: sektion + innehåll", true);
+  await assertDescriptionBeforeLines(page, "Detta ingår", "Demontering och montering av dörrar", "kundvy /offert/[token]");
   await shot(page, "02-offert-kundvy-desktop");
 
   // Underlagssidan är SIGNERINGSBEVIS (inte dokumentvy): den kräver signatur
@@ -131,9 +152,13 @@ async function verifySeededQuote(page: Page) {
 
 async function verifySeededInvoice(page: Page) {
   await page.goto(`${BASE}/ekonomi/fakturor/inv-1042`, { waitUntil: "networkidle0" });
-  await waitVisibleText(page, "Övrig information");
   await waitVisibleText(page, "Om fakturan");
-  await ok(page, "fakturadetalj: Övrig information (frusen snapshot)", true);
+  await assertDescriptionBeforeLines(
+    page,
+    "Om fakturan",
+    "Fönsterbyte gårdshus: demontering och montering",
+    "fakturadetalj"
+  );
   await shot(page, "04-faktura-detalj-desktop");
 
   for (const [name, path] of [
@@ -141,9 +166,8 @@ async function verifySeededInvoice(page: Page) {
     ["PDF-sidan /faktura/[token]/pdf", "/faktura/demo-f1042/pdf"],
   ] as const) {
     await page.goto(`${BASE}${path}`, { waitUntil: "networkidle0" });
-    await waitVisibleText(page, "Övrig information");
     await waitVisibleText(page, "Om fakturan");
-    await ok(page, `${name}: sektion + innehåll`, true);
+    await assertDescriptionBeforeLines(page, "Om fakturan", "Fönsterbyte gårdshus: demontering och montering", name);
     const mailto = await page.$$eval("a", (els) => els.some((a) => a.getAttribute("href")?.startsWith("mailto:")));
     await ok(page, `${name}: mailto-länk renderas`, mailto);
     await shot(page, path.includes("pdf") ? "06-faktura-pdf-desktop" : "05-faktura-kundvy-desktop");
@@ -308,7 +332,6 @@ async function createQuoteWithRichText(page: Page): Promise<{ ai: string }> {
   // ---- Spara → detaljsidan renderar allt ----
   await ok(page, "ny offert: spara utkast", await clickByText(page, "button", "Spara utkast"));
   await page.waitForFunction(() => /\/ekonomi\/offerter\/[a-z0-9-]+$/.test(location.pathname) && !location.pathname.endsWith("/ny"));
-  await waitVisibleText(page, "Övrig information");
   await waitVisibleText(page, "Detta ingår i priset");
   const text = await bodyText(page);
   await ok(
@@ -346,7 +369,6 @@ async function createInvoiceWithRichText(page: Page) {
 
   await ok(page, "ny faktura: spara utkast", await clickByText(page, "button", "Spara utkast"));
   await page.waitForFunction(() => /\/ekonomi\/fakturor\/[a-z0-9-]+$/.test(location.pathname) && !location.pathname.endsWith("/ny"));
-  await waitVisibleText(page, "Övrig information");
   await waitVisibleText(page, "Betalningsvillkor");
   await waitVisibleText(page, "betalas inom 30 dagar");
   await ok(page, "sparad faktura: H2 + text renderas", true);
@@ -360,9 +382,8 @@ async function verifyMobile(page: Page) {
 
   // Kundvyn i mobilbredd (offerten är nu godkänd – utkast döljs via token).
   await page.goto(`${BASE}/offert/demo-brf-dorrar`, { waitUntil: "networkidle0" });
-  await waitVisibleText(page, "Övrig information");
   await waitVisibleText(page, "Detta ingår");
-  await ok(page, "mobil kundvy: rik text renderas i 390px", true);
+  await assertDescriptionBeforeLines(page, "Detta ingår", "Demontering och montering av dörrar", "mobil kundvy");
   await shot(page, "11-offert-kundvy-mobil");
 
   // Redigera den BankID-låsta offerten → sparas som NY version (rätt flöde).
@@ -395,7 +416,6 @@ async function verifyMobile(page: Page) {
   await page.keyboard.type("Uppdaterat från mobilen.");
   await ok(page, "mobil: spara ändringar (ny version efter BankID-lås)", await clickByText(page, "button", "Spara ändringar"));
   await page.waitForFunction(() => location.pathname === "/ekonomi/offerter/quote-dorrar");
-  await waitVisibleText(page, "Övrig information");
   await waitVisibleText(page, "Uppdaterat från mobilen.");
   await waitVisibleText(page, "Version 2");
   await ok(page, "mobil: ny version renderas på detaljsidan (v1 förblev låst)", true);

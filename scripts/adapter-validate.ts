@@ -558,6 +558,28 @@ async function main() {
     assert.equal(resolved, null);
   });
 
+  console.log("\nUppdragsposter genom adaptern:");
+  await check("tidregistrering rundresas och isoleras per tenant", async () => {
+    const { createJob } = await import("../src/lib/services/jobs");
+    const { registerJobTime, actualEntries } = await import("../src/lib/services/job-work");
+    let jobId = "";
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      const customer = db().customers[0];
+      assert.ok(customer, "företag A har en kund efter tidigare steg");
+      const job = createJob({ customerId: customer.id, title: "Adapter-tid" });
+      jobId = job.id;
+      registerJobTime(job.id, { hours: 2, unitPrice: 500, description: "Adapter" });
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const entries = actualEntries(jobId);
+      assert.equal(entries.length, 1);
+      assert.equal(entries[0].qty, 2);
+    });
+    await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {
+      assert.equal((db().jobWorkEntries ?? []).length, 0, "B ser inga av A:s uppdragsposter");
+    });
+  });
+
   console.log("\nTenantisolering genom adaptern:");
   await check("företag B ser ingenting av företag A", async () => {
     await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {

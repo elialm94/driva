@@ -26,12 +26,10 @@ export function customerContactFieldErrors(input: {
   if (input.name !== undefined && !input.name.trim()) {
     errors.push({ field: "name", message: "Namn saknas." });
   }
-  if (input.email !== undefined) {
-    const email = input.email.trim();
-    if (!email) errors.push({ field: "email", message: "E-postadress saknas." });
-    else if (!isEmailFormat(email)) {
-      errors.push({ field: "email", message: "Ange e-postadressen som namn@exempel.se." });
-    }
+  // E-post är frivillig vid skapande – flöden som faktiskt skickar e-post
+  // (offert/faktura) ber om adressen när den behövs. Bara formatet valideras.
+  if (input.email !== undefined && input.email.trim() && !isEmailFormat(input.email.trim())) {
+    errors.push({ field: "email", message: "Ange e-postadressen som namn@exempel.se." });
   }
   if (input.orgNumber !== undefined && input.orgNumber.trim() && !isOrgnrFormat(input.orgNumber)) {
     errors.push({
@@ -40,6 +38,31 @@ export function customerContactFieldErrors(input: {
     });
   }
   return errors;
+}
+
+/* ------------------- Saknade kunduppgifter för en åtgärd -------------------- */
+
+/**
+ * Centralt svar på "vad saknas på kunden för att skicka via e-post?".
+ * Samma post driver skicka-checklistorna (offert/faktura), inline-
+ * kompletteringen i skickaflödena och tester. Fältet namnges explicit –
+ * användaren ska aldrig gissa varför en åtgärd stoppas.
+ *
+ * Systrarna för andra åtgärder bor där datat bor: fakturering kräver
+ * kundadress via collectBuyerBlockers (invoices/validate.ts) och ROT/RUT
+ * kräver personnummer + bostadsuppgifter via taxReductionMissingFields
+ * (tax-reduction-gaps.ts) – alla med samma mönster: exakta fält, mänsklig
+ * etikett och en väg att komplettera och fortsätta.
+ */
+export interface CustomerEmailBlocker {
+  code: "buyer_email";
+  message: string;
+  actionLabel: string;
+}
+
+export function missingEmailForSend(customer: { email?: string | null }): CustomerEmailBlocker | null {
+  if (customer.email?.trim()) return null;
+  return { code: "buyer_email", message: "Kunden saknar e-postadress.", actionLabel: "Lägg till e-post" };
 }
 
 /** Feltext utan att upprepa värdet – personnummer ska inte hamna i loggar eller felpayload. */
@@ -58,16 +81,37 @@ export function workLocationFieldErrors(input: {
   postalCode?: string;
   city?: string;
   propertyType?: DwellingType | "";
+  propertyDesignation?: string;
 }): CustomerFieldError[] {
   const errors: CustomerFieldError[] = [];
-  if (input.label !== undefined && !input.label.trim()) {
+  const designationOnly = Boolean(input.propertyDesignation?.trim());
+  if (!designationOnly && input.label !== undefined && !input.label.trim()) {
     errors.push({ field: "label", message: "Ange vad bostaden heter, t.ex. Hem eller Fritidshus." });
   }
-  if (input.address !== undefined && !input.address.trim()) {
+  if (!designationOnly && input.address !== undefined && !input.address.trim()) {
     errors.push({ field: "address", message: "Adress saknas." });
   }
   if (input.propertyType !== undefined && input.propertyType && input.propertyType !== "smahus" && input.propertyType !== "bostadsratt") {
     errors.push({ field: "propertyType", message: "Välj bostadstyp." });
   }
   return errors;
+}
+
+/** Trimma, hoppa över tomma, avvisa dubbletter utan att upprepa värdet. */
+export function sanitizePropertyDesignations(raw: string[]): string[] {
+  const trimmed = raw.map((value) => value.trim()).filter(Boolean);
+  const seen = new Set<string>();
+  for (const designation of trimmed) {
+    const key = designation.toLowerCase();
+    if (seen.has(key)) {
+      throw new CustomerValidationError([
+        {
+          field: "propertyDesignation",
+          message: "Samma fastighetsbeteckning kan inte användas två gånger.",
+        },
+      ]);
+    }
+    seen.add(key);
+  }
+  return trimmed;
 }

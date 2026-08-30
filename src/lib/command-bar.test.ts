@@ -7,6 +7,7 @@ import {
   COMMANDS,
   FALLBACK_COMMAND_IDS,
   FREE_TEXT_FALLBACK_MESSAGE,
+  commandWorkspace,
   getCommand,
   matchCommands,
   parseFreeText,
@@ -23,6 +24,7 @@ describe("kommandoregistret", () => {
       "create_invoice",
       "create_quote",
       "create_assignment",
+      "create_reminder",
       "create_customer",
       "find_customer",
       "show_unpaid_invoices",
@@ -51,8 +53,11 @@ describe("kommandoregistret", () => {
     }
   });
 
-  it("påminnelser kräver bekräftelse – läskommandon är READ_ONLY", () => {
+  it("intern påminnelse är SAFE_WRITE – betalningspåminnelse kräver bekräftelse", () => {
+    assert.equal(getCommand("create_reminder").risk, "SAFE_WRITE");
+    assert.equal(getCommand("create_reminder").label, "Skapa påminnelse");
     assert.equal(getCommand("remind_late_invoices").risk, "CONFIRM_REQUIRED");
+    assert.equal(getCommand("remind_late_invoices").label, "Skicka betalningspåminnelse");
     assert.equal(getCommand("show_unpaid_invoices").risk, "READ_ONLY");
     assert.equal(getCommand("show_today_actions").risk, "READ_ONLY");
     assert.equal(getCommand("find_customer").risk, "READ_ONLY");
@@ -84,6 +89,29 @@ describe("matchCommands (autocomplete utan nätverk)", () => {
 
   it("skräptext ger inga förslag", () => {
     assert.equal(matchCommands("zzzq").length, 0);
+  });
+
+  it("”påm” och ”påminnelse” ger Skapa påminnelse först – inte kund-e-post", () => {
+    assert.equal(matchCommands("påm")[0]?.command.id, "create_reminder");
+    assert.equal(matchCommands("påminnelse")[0]?.command.id, "create_reminder");
+    assert.equal(matchCommands("påminn")[0]?.command.id, "create_reminder");
+  });
+
+  it("Skapa påminnelse ryms bland Vanliga åtgärder (idle)", () => {
+    const idle = [...COMMANDS]
+      .filter((c) => commandWorkspace(c) === "owner")
+      .sort((a, b) => b.priority - a.priority || a.label.localeCompare(b.label, "sv"))
+      .slice(0, 6)
+      .map((c) => c.id);
+    assert.ok(idle.includes("create_reminder"), idle.join(","));
+  });
+
+  it("redovisningsytan föreslår inte offert/uppdrag", () => {
+    const ids = matchCommands("offert", 8, "accountant").map((m) => m.command.id);
+    assert.equal(ids.includes("create_quote"), false);
+    assert.ok(matchCommands("vilka klienter", 6, "accountant").some((m) => m.command.id === "accountant_who_needs_help"));
+    const offert = parseFreeText("skapa offert", "accountant");
+    assert.equal(offert.confidence === "high" && "commandId" in offert && offert.commandId === "create_quote", false);
   });
 });
 
@@ -132,6 +160,27 @@ describe("parseFreeText (regler, ingen modell)", () => {
   it("fallbacktexten är ärlig och fallback-kommandona finns i registret", () => {
     assert.match(FREE_TEXT_FALLBACK_MESSAGE, /kan ännu inte tolka helt fri text/i);
     for (const id of FALLBACK_COMMAND_IDS) assert.ok(getCommand(id));
+  });
+
+  it("”påminnelse” / ”påminn mig” → intern create_reminder, inte kund-e-post", () => {
+    assert.deepEqual(parseFreeText("påminnelse"), { confidence: "high", commandId: "create_reminder" });
+    assert.deepEqual(parseFreeText("påminn mig"), { confidence: "high", commandId: "create_reminder" });
+    assert.deepEqual(parseFreeText("skapa påminnelse"), { confidence: "high", commandId: "create_reminder" });
+  });
+
+  it("”skicka påminnelse …” → extern betalningspåminnelse, CONFIRM_REQUIRED", () => {
+    assert.deepEqual(parseFreeText("skicka påminnelse"), { confidence: "high", commandId: "remind_late_invoices" });
+    const p = parseFreeText("skicka påminnelse till Johan om fakturan");
+    assert.equal(p.confidence, "high");
+    assert.equal(p.confidence === "high" && p.commandId, "remind_late_invoices");
+    assert.notEqual(p.confidence === "high" && p.commandId, "create_reminder");
+  });
+
+  it("”påminn Johan” e-postar inte Johan – HIGH_PATTERNS stjäl inte NL-frasen", () => {
+    const johan = parseFreeText("påminn Johan");
+    assert.ok(!(johan.confidence === "high" && johan.commandId === "remind_late_invoices"));
+    const nl = parseFreeText("påminn mig imorgon att ringa Göran");
+    assert.ok(!(nl.confidence === "high" && nl.commandId === "create_reminder"));
   });
 });
 

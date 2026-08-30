@@ -17,13 +17,15 @@
  */
 import { cache } from "react";
 import type { DB } from "../types";
+import type { CollaborationActor } from "../collaboration/actor";
 
 interface RequestSlot {
   state: DB | null;
   businessId: string | null;
+  actor: CollaborationActor | null;
 }
 
-export const requestSlot = cache((): RequestSlot => ({ state: null, businessId: null }));
+export const requestSlot = cache((): RequestSlot => ({ state: null, businessId: null, actor: null }));
 
 /** Synkron läsning av sidans tenantstate, eller null utanför en laddad sida. */
 export function requestTenantState(): DB | null {

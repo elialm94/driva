@@ -9,7 +9,16 @@
  * policyn bor kvar i resolvern och verktygshanteraren (en källa till sanning
  * för länkning, veckodagsregel och standardtider).
  */
-import { DAYPARTS, WEEKDAYS_SV, localParts, type Daypart, type WeekdaySv } from "./when";
+import {
+  DAYPARTS,
+  WEEKDAYS_SV,
+  formatDueAt,
+  localParts,
+  resolveWhen,
+  type Daypart,
+  type WeekdaySv,
+  type WhenExpression,
+} from "./when";
 
 export interface ParsedReminder {
   title: string;
@@ -45,12 +54,17 @@ function localDatePlusDays(now: Date, timezone: string, days: number): string {
 }
 
 /** Första sammanhängande följden av versalinledda ord ("Göran Svensson") → kundfråga. */
-function relatedFromTitle(title: string): { relatedType: string; relatedQuery: string } | undefined {
+export function relatedFromTitle(title: string): { relatedType: string; relatedQuery: string } | undefined {
   const quote = /\boffert(?:en)?\s*(?:nr\s*)?#?(\d+)/i.exec(title);
   if (quote) return { relatedType: "quote", relatedQuery: quote[1] };
   const invoice = /\bfaktura(?:n)?\s*(?:nr\s*)?#?(\d+)/i.exec(title);
   if (invoice) return { relatedType: "invoice", relatedQuery: invoice[1] };
-  const capRun = /(?:^|\s)((?:[A-ZÅÄÖ][a-zåäöé]+)(?:\s+[A-ZÅÄÖ][a-zåäöé]+)*)/.exec(title);
+  // Guidat flöde: "Ring Göran" – hoppa över inledande verb så inte "Ring" blir namnet.
+  const forName = title.replace(
+    /^(ringa?|kolla|skicka|beställa|fakturera|kontakta|maila|mejla|boka|följa|prata(?:\s+med)?)\s+/i,
+    ""
+  );
+  const capRun = /(?:^|\s)((?:[A-ZÅÄÖ][a-zåäöé]+)(?:\s+[A-ZÅÄÖ][a-zåäöé]+)*)/.exec(forName);
   if (capRun) return { relatedType: "customer", relatedQuery: capRun[1].trim() };
   return undefined;
 }
@@ -131,10 +145,140 @@ export function parseReminderText(text: string, now: Date, timezone: string): Pa
     .replace(/^\s*att\s+/i, "")
     .replace(/\s+att\s*$/i, "")
     .replace(/\s+/g, " ")
-    .replace(/[\s,.!]+$/g, "")
+    .replace(/[\s,.!?…]+$/g, "")
     .trim();
   if (!title) return null;
 
   const related = relatedFromTitle(title);
   return { title, args: { title, ...args, ...(related ?? {}) } };
+}
+
+/** Sätter ihop titel + tid till den fras parseReminderText redan förstår. */
+export function reminderTextFromParts(title: string, whenText: string): string {
+  return `påminn mig ${whenText.trim()} att ${title.trim()}`;
+}
+
+/** Platta parser-/verktygsargument → samma tidsuttryck som resolvern tar. */
+export function whenFromReminderArgs(args: Record<string, string | number | boolean>): WhenExpression | null {
+  if (
+    typeof args.relativeMinutes === "number" ||
+    typeof args.relativeHours === "number" ||
+    typeof args.relativeDays === "number"
+  ) {
+    return {
+      kind: "relative",
+      minutes: typeof args.relativeMinutes === "number" ? args.relativeMinutes : undefined,
+      hours: typeof args.relativeHours === "number" ? args.relativeHours : undefined,
+      days: typeof args.relativeDays === "number" ? args.relativeDays : undefined,
+    };
+  }
+  if (typeof args.weekday === "string") {
+    return {
+      kind: "weekday",
+      weekday: args.weekday as WeekdaySv,
+      nextWeek: args.nextWeek === true,
+      time: typeof args.time === "string" ? args.time : undefined,
+      daypart: typeof args.daypart === "string" ? (args.daypart as Daypart) : undefined,
+    };
+  }
+  if (typeof args.whenDate === "string") {
+    return {
+      kind: "date",
+      date: args.whenDate,
+      time: typeof args.time === "string" ? args.time : undefined,
+      daypart: typeof args.daypart === "string" ? (args.daypart as Daypart) : undefined,
+    };
+  }
+  if (typeof args.daypart === "string") return { kind: "daypart", daypart: args.daypart as Daypart };
+  return null;
+}
+
+/* --------------------- Kommandokontext: tolka ALLT ur EN mening --------------------- */
+
+/**
+ * Resultat för påminnelseflödets inmatning: den TOLKADE påminnelsen är källan
+ * till sanning för vilka fält som saknas – aldrig brödsmule-/chiptillståndet.
+ */
+export type ReminderCommandParse =
+  /** Både VAD och NÄR fanns i meningen → direkt till förhandsvisning/skapa. */
+  | { complete: true; title: string; args: Record<string, string | number | boolean> }
+  /** Bara VAD → fråga enbart efter NÄR. */
+  | { complete: false; title: string };
+
+/** Inledningar som inte hör till titeln: "påminn mig (gärna) (om) att …". */
+function stripReminderLead(text: string): string {
+  return text
+    .replace(/^\s*påminn(?:a)?(?:\s+mig)?(?:\s+gärna)?(?:\s+om(?=\s+att\b))?\s+/i, "")
+    .replace(/^\s*att\s+/i, "")
+    .replace(/\s+/g, " ")
+    .replace(/[\s,.!?…]+$/g, "")
+    .trim();
+}
+
+/**
+ * Tolkning INUTI påminnelsekommandot: en naken mening ("Ring Göran klockan 8
+ * imorgon") ÄR en påminnelse. Försöker alltid extrahera både titel och tid
+ * med samma deterministiska parser; hittas ingen tid returneras enbart titeln
+ * så att flödet bara frågar efter det som faktiskt saknas.
+ */
+export function parseReminderCommandInput(text: string, now: Date, timezone: string): ReminderCommandParse | null {
+  const trimmed = text.replace(/\s+/g, " ").trim();
+  if (!trimmed) return null;
+  // Redan en "påminn …"-fras? Tolka som den är; annars sätt prefixet så att
+  // samma parser förstår den nakna meningen.
+  const parsed =
+    parseReminderText(trimmed, now, timezone) ??
+    (/^påminn/i.test(trimmed) ? null : parseReminderText(`påminn mig ${trimmed}`, now, timezone));
+  if (parsed) return { complete: true, title: parsed.title, args: parsed.args };
+  const title = stripReminderLead(trimmed);
+  return title ? { complete: false, title } : null;
+}
+
+/* ------------------------------ Ren tidfras (NÄR-steget) ----------------------------- */
+
+/** Sentinel-titel: gemen så att relatedFromTitle aldrig träffar den. */
+const WHEN_SENTINEL_TITLE = "x";
+
+/** Utfyllnadsord i tidsfraser som inte bär betydelse: "kl 9 istället". */
+const WHEN_FILLER = /\b(?:i\s?stället|istället|gärna|tack)\b/gi;
+
+/**
+ * Tolkar en REN tidfras ("imorgon kl 8", "onsdag", "kl 9 istället") till samma
+ * platta verktygsargument som create_reminder tar. Hela frasen måste vara tid –
+ * blir det ord över är frasen inte förstådd (ärligt null, ingen gissning) och
+ * titeln förblir orörd data som aldrig tolkas om.
+ */
+export function parseWhenText(
+  whenText: string,
+  now: Date,
+  timezone: string
+): Record<string, string | number | boolean> | null {
+  const cleaned = whenText.replace(WHEN_FILLER, " ").replace(/\s+/g, " ").replace(/[\s,.!?…]+$/g, "").trim();
+  if (!cleaned) return null;
+  const parsed = parseReminderText(reminderTextFromParts(WHEN_SENTINEL_TITLE, cleaned), now, timezone);
+  if (!parsed || parsed.title !== WHEN_SENTINEL_TITLE) return null;
+  const { title: _title, relatedType: _rt, relatedQuery: _rq, ...whenArgs } = parsed.args;
+  return whenArgs;
+}
+
+/* ------------------------------- Förhandsvisning ------------------------------ */
+
+/** Tolkade verktygsargument → "Onsdag 2 september kl 10:00" (eller null). */
+export function previewReminderDueFromArgs(
+  args: Record<string, string | number | boolean>,
+  now: Date,
+  timezone: string
+): string | null {
+  const expr = whenFromReminderArgs(args);
+  if (!expr) return null;
+  const resolved = resolveWhen(expr, now, timezone);
+  if (!resolved.ok) return null;
+  const text = formatDueAt(resolved.value.dueAt, timezone);
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : null;
+}
+
+/** Tolkat förhandsdatum för en ren tidfras i det guidade flödet. */
+export function previewReminderDue(whenText: string, now: Date, timezone: string): string | null {
+  const whenArgs = parseWhenText(whenText, now, timezone);
+  return whenArgs ? previewReminderDueFromArgs(whenArgs, now, timezone) : null;
 }

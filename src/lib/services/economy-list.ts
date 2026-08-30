@@ -3,9 +3,10 @@ import type { Invoice, Quote } from "../types";
 import { currentVersion, effectiveQuoteStatus, invoiceTotals, isOpenReceivable, isOverdue, daysOverdue, quoteTotals } from "./data";
 import type { PagedResult } from "./customers";
 import { categoryByKey } from "../bas";
-import { dagarTill } from "../format";
+import { dagarTill, datumKort } from "../format";
 import { getBusinessActions, type BusinessAction } from "./actions";
 import { indexActionsBySource, issueForAction } from "./action-issue";
+import { paymentDetailsInfo } from "./payment-details";
 
 /**
  * Läsmodeller för Ekonomi-registret: en genomläsning av lagret per flik,
@@ -296,15 +297,54 @@ export function listExpensesForTable(
   }
 
   for (const s of db().supplierInvoices) {
-    const needsAction = s.status === "obetald";
-    if (status === "atgard" && !needsAction) continue;
-    if (status === "klar" && needsAction) continue;
     const categoryLabel = categoryByKey(s.category).label;
     if (q) {
       const hay = `${s.supplier} ${s.description} ${categoryLabel} ${s.invoiceNumber}`.toLowerCase();
       if (!hay.includes(q)) continue;
     }
-    const overdue = s.status === "obetald" && dagarTill(s.dueDate) < 0;
+    const payment = (db().supplierPayments ?? []).find((p) => p.supplierInvoiceId === s.id && p.status !== "CANCELLED");
+    const booked = s.accountingStatus === "bokford" || Boolean(s.verificationId);
+    let statusLabel = "Obetald";
+    let statusTone: StatusTone = "warn";
+    if (s.status === "betald" || payment?.status === "PAID") {
+      statusLabel = "Betald";
+      statusTone = "ok";
+    } else if (payment?.status === "FAILED") {
+      statusLabel = "Betalningen misslyckades";
+      statusTone = "danger";
+    } else if (payment?.status === "SUBMITTED_TO_BANK" || payment?.status === "AWAITING_APPROVAL") {
+      statusLabel = "Skickad till bank";
+      statusTone = "info";
+    } else if (payment?.status === "SCHEDULED") {
+      statusLabel = `Bokförd · Betalas ${dagarTill(payment.scheduledDate) === 0 ? "idag" : datumKort(payment.scheduledDate)}`;
+      statusTone = "info";
+    } else {
+      // Betalningsuppgifternas orsak i klartext – samma härledning som
+      // åtgärdsmotorn och betalningsspärrarna (payment-details.ts).
+      const cause = paymentDetailsInfo(s).cause;
+      if (cause === "CHANGED" || payment?.destinationChanged) {
+        statusLabel = "Kontrollera bankuppgifter";
+        statusTone = "danger";
+      } else if (booked && cause === "AWAITING_SUPPLIER") {
+        statusLabel = "Väntar på leverantören";
+        statusTone = "info";
+      } else if (booked && cause === "EXTRACTION_UNCERTAIN") {
+        statusLabel = "Kontrollera betalningsuppgifter";
+        statusTone = "warn";
+      } else if (booked && cause === "MISSING") {
+        statusLabel = "Betalningsuppgifter saknas";
+        statusTone = "warn";
+      } else if (booked && (payment?.status === "READY" || payment?.status === "DRAFT")) {
+        statusLabel = "Redo att betalas";
+        statusTone = "warn";
+      } else if (booked) {
+        statusLabel = "Bokförd";
+        statusTone = "info";
+      }
+    }
+    const needsAction = s.status !== "betald" && payment?.status !== "PAID" && payment?.status !== "SCHEDULED" && payment?.status !== "SUBMITTED_TO_BANK";
+    if (status === "atgard" && !needsAction) continue;
+    if (status === "klar" && needsAction) continue;
     rows.push({
       id: s.id,
       kind: "leverantorsfaktura",
@@ -313,8 +353,8 @@ export function listExpensesForTable(
       reference: s.invoiceNumber,
       categoryLabel,
       amount: s.amount,
-      statusLabel: s.status === "betald" ? "Betald & bokförd" : overdue ? "Förfallen" : "Obetald",
-      statusTone: s.status === "betald" ? "ok" : overdue ? "danger" : "warn",
+      statusLabel,
+      statusTone,
       hasReceipt: true,
     });
   }

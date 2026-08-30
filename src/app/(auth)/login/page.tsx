@@ -16,7 +16,11 @@ export default async function LoginPage({
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
           <div className="text-2xl font-semibold tracking-tight text-stone-900">Driva</div>
-          <p className="mt-1 text-sm text-stone-500">Logga in för att fortsätta till ditt företag.</p>
+          <p className="mt-1 text-sm text-stone-500">
+            {next.startsWith("/inbjudan")
+              ? "Logga in eller skapa konto för att acceptera inbjudan."
+              : "Logga in för att fortsätta till ditt företag."}
+          </p>
         </div>
         <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
           <LoginForm next={next} />

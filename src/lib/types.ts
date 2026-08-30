@@ -21,10 +21,10 @@ export interface CompanySettings {
   vatNumber: string;
   email: string;
   /**
-   * Vart nya förfrågningar från hemsidan mejlas.
+   * Vart nya uppdrag från hemsidans formulär mejlas.
    * Tomt = samma som `email`. Ändras inte när den publika kontaktadressen ändras.
    */
-  inquiryNotificationEmail?: string;
+  websiteNotificationEmail?: string;
   phone: string;
   /** Företagets webbplats (URL). Inte densamma som Driva-hemsidan. */
   websiteUrl?: string;
@@ -107,37 +107,6 @@ export interface WorkLocation {
   propertyDesignation?: string;
   brfOrgNumber?: string;
   apartmentNumber?: string;
-}
-
-/* -------------------------------- Förfrågningar ------------------------------ */
-
-export type RequestSource = "hemsida" | "email" | "telefon" | "manuell" | "assistent";
-
-export interface CustomerRequest {
-  id: ID;
-  customerId: ID;
-  title: string;
-  message: string;
-  source: RequestSource;
-  status: "ny" | "offert_skapad" | "besvarad" | "avslutad";
-  quoteId?: ID;
-  createdAt: string;
-  /** Klientnyckel så att refresh/retry inte skapar dubletter. */
-  idempotencyKey?: string;
-  /** Avisering till företagaren – sparas före utskick, kan retrys utan ny förfrågan. */
-  notification?: {
-    status: "pending" | "sent" | "failed";
-    sentAt?: string;
-    lastError?: string;
-    attempts: number;
-  };
-  /** AI-tolkning av förfrågan. */
-  ai?: {
-    workType?: string;
-    desiredStart?: string;
-    budget?: string;
-    address?: string;
-  };
 }
 
 /* ---------------------------------- Dokumentrader ---------------------------- */
@@ -258,7 +227,7 @@ export interface QuoteVersion {
   /** Användarens egna villkor. ROT/RUT-villkor ligger i taxReductionTerms, inte här. */
   terms: string;
   /**
-   * "Övrig information" – rik text (strikt vitlistad delmängd, se lib/richtext).
+   * Beskrivning – rik text (strikt vitlistad delmängd, se lib/richtext).
    * Saneras vid varje servergräns. Ligger på versionen → BankID-låsning fryser
    * den, och den ingår villkorligt i contentHash (endast när den finns).
    */
@@ -284,7 +253,6 @@ export interface Quote {
   id: ID;
   number: number;
   customerId: ID;
-  requestId?: ID;
   jobId?: ID;
   status: QuoteStatus;
   currentVersionId: ID;
@@ -294,9 +262,19 @@ export interface Quote {
   viewedAt?: string;
   decidedAt?: string;
   declineReason?: string;
+  /** Senaste lyckade e-postleveransen. Sätts bara efter provider-succé. */
+  lastEmail?: DocumentEmailDelivery;
+  lastSendAttemptAt?: string;
   /** Tidpunkter då påminnelser/uppföljningar skickats. */
   followUps: string[];
   createdAt: string;
+}
+
+/** Senaste lyckade utskicket via e-postleverantören. */
+export interface DocumentEmailDelivery {
+  provider: "resend";
+  messageId: string;
+  sentTo: string;
 }
 
 /* ---------------------------------- BankID ----------------------------------- */
@@ -340,6 +318,15 @@ export interface BankIDOrder {
 /* ---------------------------------- Uppdrag (Job) ------------------------------------- */
 
 export type JobStatus = "kommande" | "pagar" | "klart";
+/** Varifrån uppdraget kom. Källa för analys – inte en egen entitet. */
+export type JobSource = "manual" | "web_form" | "email" | "import" | "phone" | "other";
+
+export interface JobNotification {
+  status: "pending" | "sent" | "failed";
+  sentAt?: string;
+  lastError?: string;
+  attempts: number;
+}
 
 export interface ChecklistItem {
   id: ID;
@@ -367,7 +354,57 @@ export interface Job {
   housing?: HousingDetails;
   /** ROT/RUT-ansökan för uppdraget (delas av alla fakturor på jobbet). */
   taxReductionApplication?: TaxReductionApplication;
+  /** Ursprung: manuellt, webbformulär, e-post, import, telefon. Default manual. */
+  source?: JobSource;
+  /** Inkommande meddelande som det skickades – behålls om beskrivningen redigeras. */
+  originalMessage?: string;
+  /** Klientnyckel så att refresh/retry på webbformuläret inte skapar dubletter. */
+  idempotencyKey?: string;
+  /** Avisering till företagaren vid webbformulär – kan retrys utan nytt uppdrag. */
+  notification?: JobNotification;
+  /**
+   * Arkiverat (mjuk borttagning). Döljs från Aktiva/Planerade. Fakturor,
+   * offerter och bokföring rörs inte.
+   */
+  archivedAt?: string;
 }
+
+/**
+ * Registrerat arbete/material på ett uppdrag – inte offertrader och inte
+ * fakturarader. Offertrad = avtalat. Work entry (actual) = utfört.
+ * Fakturarad = det som faktureras (eget liv, skapas från offert eller actuals).
+ */
+export type JobWorkEntryType = "labor" | "material" | "other";
+export type JobWorkEntryRole = "planned" | "actual";
+export type JobWorkEntrySource = "manual" | "quote" | "ai" | "import";
+
+export interface JobWorkEntry {
+  id: ID;
+  jobId: ID;
+  /** planned = avtalad offertbaseline. actual = registrerat arbete/material. */
+  role: JobWorkEntryRole;
+  type: JobWorkEntryType;
+  description: string;
+  /** Utförandedatum (YYYY-MM-DD). */
+  date: string;
+  qty: number;
+  unit: string;
+  /** Pris per enhet, exkl. moms, hela kronor. */
+  unitPrice: number;
+  vatRate: VatRate;
+  source: JobWorkEntrySource;
+  /** Offertrad som baseline/matchning – muterar aldrig offerten. */
+  quotedLineItemId?: ID;
+  /** true när posten inte ingår i ursprunglig offert. */
+  isExtra: boolean;
+  /** Kopplad faktura (utkast eller utfärdad). Saknas = ej fakturerad. */
+  invoiceId?: ID;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Hur uppdraget faktureras – härlett, inte en användarväljare. */
+export type JobPricingKind = "fast_pris" | "lopande" | "hybrid";
 
 /* ---------------------------------- Fakturor --------------------------------- */
 
@@ -434,7 +471,7 @@ export interface InvoiceIssuedSnapshot {
   buyer: InvoiceBuyerSnapshot;
   lines: DocLine[];
   rot: RotRut | null;
-  /** Frusen kopia av "Övrig information" vid utfärdandet. */
+  /** Frusen kopia av beskrivningen vid utfärdandet. */
   richText?: RichTextDoc;
   taxReductionTerms?: TaxReductionTermsSnapshot | null;
   taxReductionDetails?: TaxReductionDetails | null;
@@ -466,7 +503,7 @@ export interface Invoice {
   lines: DocLine[];
   rot: RotRut | null;
   /**
-   * "Övrig information" – rik text (strikt vitlistad delmängd, se lib/richtext).
+   * Beskrivning – rik text (strikt vitlistad delmängd, se lib/richtext).
    * Saneras vid varje servergräns. Fryses i issuedSnapshot vid utfärdandet –
    * utfärdade fakturor renderar alltid den frusna kopian.
    */
@@ -486,10 +523,12 @@ export interface Invoice {
   lateInterestRate?: number;
   /** När fakturan blev juridiskt utfärdad (nummer + snapshot). */
   issuedAt?: string;
-  /** Första e-postleveransen (i demon: mock-logg). Misslyckad leverans rullar inte tillbaka numret. */
+  /** Första lyckade e-postleveransen. Sätts bara efter provider-succé. */
   sentAt?: string;
   /** Senaste leveransförsöket (skicka igen). */
   lastSentAt?: string;
+  lastEmail?: DocumentEmailDelivery;
+  lastSendAttemptAt?: string;
   paidAt?: string;
   reminders: string[];
   token: string;
@@ -604,6 +643,70 @@ export interface Receipt {
   };
 }
 
+export type AccountingStatus = "obokford" | "bokford";
+
+/**
+ * Leverantörsbetalningens livscykel. Bokförd ≠ skickad ≠ betald.
+ * UI visar svenska etiketter – aldrig dessa enum-namn.
+ */
+export type SupplierPaymentStatus =
+  | "DRAFT"
+  | "READY"
+  | "SUBMITTED_TO_BANK"
+  | "AWAITING_APPROVAL"
+  | "SCHEDULED"
+  | "PAID"
+  | "FAILED"
+  | "CANCELLED";
+
+/* --------------------- Betalningsuppgifter (leverantör) ---------------------- */
+
+export type PaymentDetailsMethod = "bankgiro" | "plusgiro" | "iban";
+
+/**
+ * Proveniens för verifierade betalningsuppgifter – lagras alltid ihop med
+ * uppgifterna. En LLM-gissning kan aldrig bli verifierad: "document" sätts
+ * endast vid högkonfident extraktion ur dokumentet, övriga kräver människa.
+ */
+export type PaymentDetailsProvenance =
+  | "document" // högkonfident läsning ur dokumentet (autopiloten, ≥ AUTO-tröskeln)
+  | "document_confirmed" // dokument + mänsklig kontroll (Kontrollera/Godkänn-flödet)
+  | "manual" // människa angav uppgifterna själv
+  | "supplier_history"; // återanvänt från tidigare verifierade uppgifter + bekräftelse
+
+export interface VerifiedPaymentDetails {
+  method: PaymentDetailsMethod;
+  account: string;
+  ocr?: string;
+  source: PaymentDetailsProvenance;
+  verifiedAt: string;
+  verifiedBy: "anvandare" | "assistent" | "system";
+  /** Faktura vars verifierade uppgifter återanvändes (source = supplier_history). */
+  reusedFromInvoiceId?: ID;
+}
+
+/**
+ * Lagrat tillstånd för fakturans betalningsuppgifter. "Ändrade uppgifter" och
+ * "verifierade uppgifter finns hos leverantören" HÄRLEDS vid läsning
+ * (services/payment-details.ts) och lagras aldrig. Saknat fält på äldre data
+ * härleds: konto finns = VERIFIED (legacy), annars MISSING.
+ */
+export type StoredPaymentDetailsState =
+  | "VERIFIED"
+  | "EXTRACTION_UNCERTAIN"
+  | "MISSING"
+  | "AWAITING_SUPPLIER";
+
+export interface SupplierInvoicePaymentDetails {
+  state: StoredPaymentDetailsState;
+  /** Verifierad destination med proveniens – endast när state = VERIFIED. */
+  verified?: VerifiedPaymentDetails;
+  /** Osäker kandidat ur dokumentet – används ALDRIG för betalning utan bekräftelse. */
+  candidate?: { account?: string; ocr?: string };
+  /** Begäran om komplettering skickad till leverantören (state = AWAITING_SUPPLIER). */
+  request?: { to: string; sentAt: string };
+}
+
 export interface SupplierInvoice {
   id: ID;
   supplier: string;
@@ -614,13 +717,56 @@ export interface SupplierInvoice {
   vatAmount: number;
   description: string;
   category: string;
+  /**
+   * Betalningsutfall på fakturan (kompatibilitet): betald endast när
+   * pengarna faktiskt kommit tillbaka från banken. Inte samma sak som bokförd.
+   */
   status: "obetald" | "betald";
+  /** Bokföring av mottagen faktura – separat från betalning. */
+  accountingStatus: AccountingStatus;
+  ocr?: string;
+  bankgiro?: string;
+  recipientAccount?: string;
+  /**
+   * Betalningsuppgifternas tillstånd + proveniens. En faktura utan VERIFIED
+   * destination kan aldrig bli redo att betalas eller skickas till bank
+   * (vakter i supplier-payments.ts). Osäkra kandidater hamnar i
+   * paymentDetails.candidate – aldrig i bankgiro/recipientAccount.
+   */
+  paymentDetails?: SupplierInvoicePaymentDetails;
+  inboxItemId?: ID;
   bankTransactionId?: ID;
   /** Verifikation när fakturan togs emot (kostnad + leverantörsskuld). */
   verificationId?: ID;
   /** Verifikation när fakturan betalades. */
   paymentVerificationId?: ID;
   createdAt: string;
+}
+
+/** Utbetalningsinstruktion mot banken – en aktiv (icke-avslutad) per faktura. */
+export interface SupplierPayment {
+  id: ID;
+  supplierInvoiceId: ID;
+  amount: number;
+  currency: "SEK";
+  dueDate: string;
+  /** Önskat betaldatum. Default = förfallodatum. */
+  scheduledDate: string;
+  ocr?: string;
+  reference?: string;
+  recipientAccount: string;
+  recipientName: string;
+  providerPaymentId?: string;
+  idempotencyKey: string;
+  status: SupplierPaymentStatus;
+  failureReason?: string;
+  /** Mottagarkonto skiljer sig från tidigare verifierad betalning till samma leverantör. */
+  destinationChanged?: boolean;
+  bankTransactionId?: ID;
+  createdAt: string;
+  submittedAt?: string;
+  updatedAt: string;
+  paidAt?: string;
 }
 
 /* ---------------------------------- Bokföring -------------------------------- */
@@ -819,12 +965,24 @@ export type AuditAction =
   | "rot_underlag_skapat"
   | "rot_beslut"
   | "rot_utbetalning_mottagen"
-  | "taxreduktion_uppgift_andrad";
+  | "taxreduktion_uppgift_andrad"
+  | "samarbete_bjuden"
+  | "samarbete_accepterad"
+  | "samarbete_aterkallad"
+  | "samarbete_skrivning"
+  | "kundunderlag_begart"
+  | "kundunderlag_lost";
+
+export type BusinessRole = "owner" | "admin" | "member" | "accounting_consultant" | "auditor";
+export type CollaborationRole = "accounting_consultant" | "auditor";
 
 export interface AuditEvent {
   id: ID;
   at: string;
   actor: "anvandare" | "assistent" | "system";
+  /** Verifierad användare när skrivningen gjordes av en människa (ägare/konsult/revisor). */
+  actorUserId?: string;
+  actorRole?: BusinessRole;
   action: AuditAction;
   targetType?: string;
   targetId?: ID;
@@ -881,7 +1039,7 @@ export interface ActivityEvent {
   customerId?: ID;
   createdBy?: "anvandare" | "assistent";
   entity?: {
-    type: "offert" | "faktura" | "jobb" | "forfragan" | "utgift" | "verifikation" | "hemsida" | "doman";
+    type: "offert" | "faktura" | "jobb" | "utgift" | "verifikation" | "hemsida" | "doman";
     id: ID;
   };
 }
@@ -1132,9 +1290,19 @@ export type PendingAssistantAction =
   | { id: ID; type: "kor_bokslut_automatik"; fiscalYearId: ID }
   | { id: ID; type: "slutfor_bokslut"; fiscalYearId: ID }
   | { id: ID; type: "angra_utgift"; expenseId: ID }
+  | {
+      id: ID;
+      type: "ratta_bokforing";
+      verificationId: ID;
+      intent: { kind: "konto"; category: string; reason?: string } | { kind: "omatcha"; reason?: string };
+    }
   | { id: ID; type: "markera_moms_deklarerad"; reportId: ID }
   | { id: ID; type: "skapa_tillaggsoffert"; customerId: ID; jobId: ID; title: string; amountInclVat: number }
-  | { id: ID; type: "kop_doman"; hostname: string };
+  | { id: ID; type: "kop_doman"; hostname: string }
+  | { id: ID; type: "skicka_leverantorsbetalning"; paymentId: ID }
+  | { id: ID; type: "avbryt_leverantorsbetalning"; paymentId: ID }
+  | { id: ID; type: "anvand_leverantorsuppgifter"; supplierInvoiceId: ID }
+  | { id: ID; type: "ta_bort_uppdrag"; jobId: ID };
 
 /* --------------------------------- Påminnelser -------------------------------- */
 
@@ -1199,10 +1367,57 @@ export interface AttentionState {
   updatedAt: string;
 }
 
+/* ------------------------------ Samarbete --------------------------------- */
+
+export type CollaborationInviteStatus = "pending" | "accepted" | "revoked" | "expired";
+
+export interface CollaborationInvitation {
+  id: ID;
+  businessId: ID;
+  email: string;
+  role: CollaborationRole;
+  invitedByUserId: ID;
+  invitedByName: string;
+  /** SHA-256 av engångstoken – klartext lagras aldrig. */
+  tokenHash: string;
+  expiresAt: string;
+  acceptedAt?: string;
+  acceptedByUserId?: ID;
+  revokedAt?: string;
+  revokedByUserId?: ID;
+  status: CollaborationInviteStatus;
+  createdAt: string;
+}
+
+/**
+ * Begäran från redovisningskonsult till ägaren (samma åtgärdsmotor).
+ * När underlaget kommer in löses både Hem-raden och konsultkön.
+ */
+export type ClientInformationKind = "receipt" | "clarification" | "other";
+
+export interface ClientInformationRequest {
+  id: ID;
+  kind: ClientInformationKind;
+  /** Stabil åtgärdsid: `client-request-<id>`. */
+  title: string;
+  /** T.ex. "Anna behöver kvittot från Bauhaus, 875 kr." */
+  message: string;
+  expenseId?: ID;
+  supplierInvoiceId?: ID;
+  requestedByUserId: ID;
+  requestedByName: string;
+  requestedByRole: CollaborationRole;
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedByUserId?: ID;
+}
+
 /* ---------------------------------- Inbox --------------------------------- */
 
-export type InboxItemKind = "mail";
+export type InboxItemKind = "mail" | "uppladdning";
 export type InboxItemStatus = "ny" | "behandlad" | "bokford";
+export type InboxDocumentType = "leverantorsfaktura" | "kvitto" | "ekonomiskt_dokument";
+export type InboxItemSource = "email" | "uppladdning" | "vidarebefordrad";
 
 /** Privat bilaga – lagras i bucket `inbox_attachments`, aldrig som publik URL. */
 export interface InboxAttachment {
@@ -1214,14 +1429,16 @@ export interface InboxAttachment {
 }
 
 /**
- * Inkommande leverantörsmejl/kvitto. Förfrågningar från hemsidan är
- * `CustomerRequest` och listas tillsammans med dessa i Inbox-UI:t.
+ * Inkommande ekonomiskt underlag (leverantörsfaktura, kvitto, vidarebefordran,
+ * manuell uppladdning). Webbformulär skapar uppdrag, inte inboxposter.
  * Ingen hård radering – statusmaskin (ny → behandlad/bokford).
  */
 export interface InboxItem {
   id: ID;
   kind: InboxItemKind;
   status: InboxItemStatus;
+  documentType: InboxDocumentType;
+  source?: InboxItemSource;
   /** Leverantörens meddelande-id – unique per företag när det finns. */
   externalId?: string;
   fromAddress: string;
@@ -1235,9 +1452,20 @@ export interface InboxItem {
   parsedVatAmount?: number;
   parsedSupplier?: string;
   parsedDate?: string;
+  parsedInvoiceNumber?: string;
+  parsedDueDate?: string;
+  parsedOcr?: string;
+  parsedBankgiro?: string;
+  /**
+   * 0–1: konfidens specifikt för betalningsuppgifterna (bankgiro/OCR).
+   * Saknas = samma som dokumentets confidence. Under AUTO-tröskeln blir
+   * uppgifterna en kandidat (EXTRACTION_UNCERTAIN) – aldrig betalbara.
+   */
+  parsedDetailsConfidence?: number;
   /** 0–1. Autopilot bokar bara vid ≥ 0,98 och känt belopp. */
   confidence?: number;
   expenseId?: ID;
+  supplierInvoiceId?: ID;
   createdAt: string;
   processedAt?: string;
 }
@@ -1259,12 +1487,13 @@ export interface DB {
   settings: CompanySettings;
   sequences: { quote: number; invoice: number; verification: number };
   customers: Customer[];
-  requests: CustomerRequest[];
   quotes: Quote[];
   quoteVersions: QuoteVersion[];
   signatures: BankIDSignature[];
   bankidOrders: BankIDOrder[];
   jobs: Job[];
+  /** Registrerat/avtalat arbete på uppdrag – skilt från offert- och fakturarader. */
+  jobWorkEntries: JobWorkEntry[];
   invoices: Invoice[];
   payments: Payment[];
   bankAccounts: BankAccount[];
@@ -1272,6 +1501,7 @@ export interface DB {
   expenses: Expense[];
   receipts: Receipt[];
   supplierInvoices: SupplierInvoice[];
+  supplierPayments: SupplierPayment[];
   verifications: Verification[];
   /** Räkenskapsår. Skapas automatiskt (kalenderår) av bokföringsmotorn. */
   fiscalYears: FiscalYear[];
@@ -1294,6 +1524,10 @@ export interface DB {
   attentionStates: AttentionState[];
   /** Inkommande leverantörsmejl. Äldre JSON-filer saknar fältet – guardera med ?? []. */
   inboxItems: InboxItem[];
+  /** Inbjudningar till redovisningskonsult/revisor för DETTA företag. */
+  collaborationInvitations?: CollaborationInvitation[];
+  /** Konsultens begäran om underlag – matar samma åtgärdsmotor som Hem. */
+  clientInformationRequests?: ClientInformationRequest[];
   meta: {
     seededAt: string;
     /** Engångshydrering av ROT-demodata (personnummer m.m.) – får inte återuppstå om användaren tagit bort det. */

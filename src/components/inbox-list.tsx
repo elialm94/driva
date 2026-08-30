@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 import { Inbox, Search } from "lucide-react";
 import { Avatar, Badge, Card, EmptyState, cx } from "./ui";
 import { Pagination } from "./customer-list";
-import { relativ } from "@/lib/format";
-import { inquiryHref } from "@/lib/nav";
+import { datumKort, relativ } from "@/lib/format";
 import type { InboxListFilter, InboxListRow, PagedResult } from "@/lib/services/inbox";
 
 export interface InboxListQuery {
@@ -23,6 +22,10 @@ export function inboxListHref(query: Partial<InboxListQuery> = {}): string {
   if (query.page && query.page > 1) sp.set("sida", String(query.page));
   const qs = sp.toString();
   return qs ? `/inbox?${qs}` : "/inbox";
+}
+
+function statusTone(tone: InboxListRow["statusTone"]): "neutral" | "info" | "ok" | "warn" | "danger" {
+  return tone;
 }
 
 export function InboxList({
@@ -60,7 +63,7 @@ export function InboxList({
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Sök förfrågan, avsändare eller ämne..."
+            placeholder="Sök leverantör, faktura eller dokument..."
             className="w-full rounded-2xl border border-line bg-card py-2.5 pl-10 pr-4 text-[15px] shadow-card placeholder:text-muted focus:border-accent"
           />
         </div>
@@ -89,13 +92,13 @@ export function InboxList({
       {result.total === 0 ? (
         <EmptyState
           icon={Inbox}
-          title={query.q ? "Inget matchar" : query.filter === "oppna" ? "Inget nytt i inboxen" : "Inboxen är tom"}
+          title={query.q ? "Inget matchar" : query.filter === "oppna" ? "Inget öppet i inboxen" : "Inboxen är tom"}
           text={
             query.q
-              ? "Prova ett annat sökord."
+              ? "Prova leverantör, fakturanummer, belopp eller OCR."
               : query.filter === "oppna"
-                ? "Nya förfrågningar från hemsidan och inkommande kvitton landar här."
-                : "När någon skriver via hemsidan eller skickar kvitto till er inkommande adress syns det här."
+                ? "Leverantörsfakturor och kvitton som behöver kompletteras eller godkännas landar här."
+                : "När någon skickar eller vidarebefordrar fakturor och kvitton till er inkommande adress syns det här."
           }
         />
       ) : (
@@ -106,17 +109,16 @@ export function InboxList({
                 <thead>
                   <tr className="border-b border-line/80 text-[12px] font-medium uppercase tracking-wide text-muted">
                     <th className="px-3 py-2.5 font-medium">Från</th>
-                    <th className="px-3 py-2.5 font-medium">Ämne</th>
-                    <th className="px-3 py-2.5 font-medium">Inkommen</th>
-                    <th className="px-3 py-2.5 font-medium">Typ</th>
+                    <th className="px-3 py-2.5 font-medium">Dokument</th>
+                    <th className="px-3 py-2.5 font-medium">Förfaller</th>
                     <th className="px-3 py-2.5 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {result.rows.map((r) => (
-                    <tr key={`${r.kind}-${r.id}`} className="relative border-b border-line/60 last:border-0 hover:bg-canvas/70">
+                    <tr key={r.id} className="relative border-b border-line/60 last:border-0 hover:bg-canvas/70">
                       <td className="px-3 py-2.5">
-                        <AppLink href={inquiryHref(r.id)} className="absolute inset-0 z-10" aria-label={r.title}>
+                        <AppLink href={`/inbox/${r.id}`} className="absolute inset-0 z-10" aria-label={r.documentLabel}>
                           <span className="sr-only">{r.fromLabel}</span>
                         </AppLink>
                         <div className="pointer-events-none flex items-center gap-3">
@@ -125,17 +127,13 @@ export function InboxList({
                         </div>
                       </td>
                       <td className="pointer-events-none px-3 py-2.5">
-                        <span className="block truncate font-medium text-ink">{r.title}</span>
-                        <span className="block truncate text-[13px] text-muted">{r.summary}</span>
+                        <span className="block truncate font-medium text-ink">{r.documentLabel}</span>
                       </td>
-                      <td className="pointer-events-none px-3 py-2.5 text-soft">{relativ(r.createdAt)}</td>
                       <td className="pointer-events-none px-3 py-2.5 text-soft">
-                        {r.kind === "inquiry" ? "Förfrågan" : "Mejl"}
+                        {r.dueDate ? datumKort(r.dueDate) : relativ(r.createdAt)}
                       </td>
                       <td className="pointer-events-none px-3 py-2.5">
-                        <Badge tone={r.status === "ny" ? "info" : "neutral"}>
-                          {r.status === "ny" ? "Ny" : "Hanterad"}
-                        </Badge>
+                        <Badge tone={statusTone(r.statusTone)}>{r.statusLabel}</Badge>
                       </td>
                     </tr>
                   ))}
@@ -146,19 +144,17 @@ export function InboxList({
 
           <div className="space-y-2 md:hidden">
             {result.rows.map((r) => (
-              <AppLink key={`${r.kind}-${r.id}`} href={inquiryHref(r.id)} className="card flex items-start gap-3 px-4 py-3">
+              <AppLink key={r.id} href={`/inbox/${r.id}`} className="card flex items-start gap-3 px-4 py-3">
                 <Avatar name={r.fromLabel} size="sm" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
                     <p className="truncate text-[15px] font-medium">{r.fromLabel}</p>
-                    <Badge tone={r.status === "ny" ? "info" : "neutral"} className="shrink-0">
-                      {r.status === "ny" ? "Ny" : "Hanterad"}
+                    <Badge tone={statusTone(r.statusTone)} className="shrink-0">
+                      {r.statusLabel}
                     </Badge>
                   </div>
-                  <p className="mt-0.5 truncate text-[13px] text-ink">{r.title}</p>
-                  <p className="mt-0.5 text-[12px] text-muted">
-                    {r.kind === "inquiry" ? "Förfrågan" : "Mejl"} · {relativ(r.createdAt)}
-                  </p>
+                  <p className="mt-0.5 truncate text-[13px] text-ink">{r.documentLabel}</p>
+                  <p className="mt-0.5 text-[12px] text-muted">{r.dueDate ? `Förfaller ${datumKort(r.dueDate)}` : relativ(r.createdAt)}</p>
                 </div>
               </AppLink>
             ))}

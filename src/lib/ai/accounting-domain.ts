@@ -12,6 +12,13 @@ import { pendingAccruals } from "../accounting/accruals";
 import { fiscalYears, lockedThrough } from "../accounting/fiscal";
 import { getVerification, verificationLabel } from "../accounting/engine";
 import { computeTaxCalculation } from "../accounting/tax";
+import {
+  findVerificationQuery,
+  inspectCorrectionFlow,
+  previewCorrection,
+  CONFIDENCE_LABEL,
+} from "../services/verification-correction";
+import { categoryByKey, EXPENSE_CATEGORIES } from "../bas";
 
 /**
  * Assistentens bokföringsverktyg. AI:n är ett GRÄNSSNITT över motorn:
@@ -202,7 +209,7 @@ export function forklaraVerifikationResult(query: string): DomainResult {
         label: `${e.account} ${e.accountName}`,
         value: e.debit ? `Debet ${kr(e.debit)}` : `Kredit ${kr(e.credit)}`,
       })),
-      links: [{ label: "Öppna verifikationerna", href: "/bokforing/verifikationer" }],
+      links: [{ label: "Öppna verifikationen", href: `/bokforing/verifikationer?v=${ver.id}` }],
     },
     forModel: {
       verification: verificationLabel(ver),
@@ -210,7 +217,134 @@ export function forklaraVerifikationResult(query: string): DomainResult {
       explanation,
       entries: ver.entries,
       corrected: Boolean(ver.correctedByVerificationId),
+      confidence: CONFIDENCE_LABEL[ver.confidence],
     },
+  };
+}
+
+/**
+ * Föreslå rättelse via samma domäntjänst som UI:t. AI:n får aldrig skicka
+ * debet/kredit-rader – bara kategori eller omatchning, med bekräftelse.
+ */
+export function requestCorrectVerification(query: string, category?: string): DomainResult {
+  const ver = findVerificationQuery(query);
+  if (!ver) return fail(`Jag hittar ingen verifikation som matchar ”${query}”. Ange nummer (t.ex. A12) eller en del av beskrivningen.`);
+  const flow = inspectCorrectionFlow(ver.id);
+
+  if (flow.kind === "kreditfaktura") {
+    return {
+      ok: true,
+      text: `${verificationLabel(ver)} är en kundfaktura. Om belopp, moms eller kund är fel krediterar du fakturan – konteringen ska inte ändras för hand.`,
+      card: {
+        kind: "list",
+        title: "Fakturan är fel",
+        rows: [{ label: "Nästa steg", value: "Öppna fakturan och kreditera" }],
+        links: [{ label: flow.hrefLabel ?? "Öppna fakturan", href: flow.href ?? "/ekonomi" }],
+      },
+      forModel: { flow: flow.kind, verificationId: ver.id, href: flow.href },
+    };
+  }
+  if (flow.kind === "moms") {
+    return {
+      ok: true,
+      text: `${verificationLabel(ver)} är en momsredovisning. Rättelser går via momsrapporten så huvudbok och deklaration hålls ihop.`,
+      card: {
+        kind: "list",
+        title: "Momsrättelse",
+        rows: [{ label: "Nästa steg", value: "Öppna momsöversikten" }],
+        links: [{ label: "Öppna momsöversikten", href: "/bokforing/moms" }],
+      },
+      forModel: { flow: flow.kind, verificationId: ver.id },
+    };
+  }
+  if (flow.kind === "redan_rattad" || flow.kind === "rattelse") {
+    return fail(flow.hint);
+  }
+  if (flow.kind === "omatcha") {
+    const action: PendingAssistantAction = {
+      id: uid(),
+      type: "ratta_bokforing",
+      verificationId: ver.id,
+      intent: { kind: "omatcha", reason: "Felaktig betalningsmatchning" },
+    };
+    addPending(action);
+    return {
+      ok: true,
+      text: `Matchningen bakom ${verificationLabel(ver)} ser fel ut. Jag återför bokningen och öppnar matchningen igen – originalet ändras inte.`,
+      card: {
+        kind: "confirm",
+        actionId: action.id,
+        summary: "Driva skapar en rättelse. Originalverifikationen ändras inte.",
+        rows: [
+          { label: verificationLabel(ver), value: ver.description },
+          { label: "Åtgärd", value: "Koppla om betalningen" },
+        ],
+        confirmLabel: "Återför matchningen",
+        state: "vantar",
+      },
+      forModel: { pendingConfirmation: true, flow: "omatcha", verificationId: ver.id },
+    };
+  }
+  if (flow.kind !== "konto") {
+    return {
+      ok: true,
+      text: `${verificationLabel(ver)} har ingen enkel kategori att byta. Öppna verifikationen och använd avancerad rättelse om du måste.`,
+      card: {
+        kind: "list",
+        title: verificationLabel(ver),
+        rows: [{ label: "Nästa steg", value: "Öppna verifikationen" }],
+        links: [{ label: "Öppna verifikationen", href: `/bokforing/verifikationer?v=${ver.id}` }],
+      },
+      forModel: { flow: flow.kind, verificationId: ver.id },
+    };
+  }
+
+  const key =
+    category &&
+    (EXPENSE_CATEGORIES.find((c) => c.key === category || c.label.toLowerCase() === category.toLowerCase())?.key ??
+      EXPENSE_CATEGORIES.find((c) => String(c.account) === category)?.key);
+  if (!key) {
+    return {
+      ok: true,
+      text: `${verificationLabel(ver)} kan rättas genom att byta kostnadskonto. Vilken kategori ska det vara?`,
+      card: {
+        kind: "list",
+        title: `Rätta ${verificationLabel(ver)}`,
+        rows: EXPENSE_CATEGORIES.filter((c) => c.key !== "ovrigt" || c.account === 6991).map((c) => ({
+          label: `${c.account} ${c.label}`,
+          value: flow.currentCategory === c.key ? "Nuvarande" : "",
+        })),
+        links: [{ label: "Öppna verifikationen", href: `/bokforing/verifikationer?v=${ver.id}` }],
+      },
+      forModel: { needsCategory: true, verificationId: ver.id, options: EXPENSE_CATEGORIES.map((c) => c.key) },
+    };
+  }
+
+  const preview = previewCorrection(ver.id, { kind: "konto", category: key });
+  const cat = categoryByKey(key);
+  const action: PendingAssistantAction = {
+    id: uid(),
+    type: "ratta_bokforing",
+    verificationId: ver.id,
+    intent: { kind: "konto", category: key, reason: "Fel kostnadskonto" },
+  };
+  addPending(action);
+  return {
+    ok: true,
+    text: `Jag rättar ${verificationLabel(ver)} till ${cat.account} (${cat.label}). Originalet står kvar – en rättelseverifikation skapas. Bekräfta innan något bokförs.`,
+    card: {
+      kind: "confirm",
+      actionId: action.id,
+      summary: "Driva kommer skapa en rättelse. Originalverifikationen ändras inte.",
+      rows: [
+        { label: "Nuvarande", value: preview.current.map((e) => `${e.account} ${e.debit ? `D ${kr(e.debit)}` : `K ${kr(e.credit)}`}`).join(" · ") },
+        { label: "Ny", value: (preview.next ?? []).map((e) => `${e.account} ${e.debit ? `D ${kr(e.debit)}` : `K ${kr(e.credit)}`}`).join(" · ") },
+        ...(preview.flow.periodLockMessage ? [{ label: "Period", value: preview.flow.periodLockMessage }] : []),
+      ],
+      confirmLabel: "Bokför rättelse",
+      state: "vantar",
+    },
+    forModel: { pendingConfirmation: true, verificationId: ver.id, category: key },
   };
 }
 

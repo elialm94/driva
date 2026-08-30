@@ -1,7 +1,7 @@
 import { db } from "@/lib/store";
 import { getInvoiceDefaults } from "@/lib/services/settings";
 import { currentVersion, getJob, jobQuote } from "@/lib/services/data";
-import { formatWorkAddress, resolveTaxReductionPrefill } from "@/lib/services/tax-reduction";
+import { customerInvoiceRotPrefill, resolveTaxReductionPrefill } from "@/lib/services/tax-reduction";
 import { suggestedServiceDate } from "@/lib/tax-reduction-gaps";
 import { PageHeader } from "@/components/ui";
 import { InvoiceForm } from "@/components/doc-form";
@@ -36,15 +36,7 @@ export default async function NewInvoicePage(props: PageProps<"/ekonomi/fakturor
     .sort((a, b) => a.name.localeCompare(b.name, "sv"))
     .map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
   const defaultCustomerId = job?.customerId ?? kund ?? customers[0]?.id;
-  const rotByCustomer = Object.fromEntries(
-    data.customers.map((c) => [
-      c.id,
-      {
-        personalIdentityNumber: c.personalIdentityNumber,
-        addressLine: formatWorkAddress(c),
-      },
-    ])
-  );
+  const rotByCustomer = Object.fromEntries(data.customers.map((c) => [c.id, customerInvoiceRotPrefill(c)]));
   const prefill = defaultCustomerId
     ? resolveTaxReductionPrefill({ customerId: defaultCustomerId, jobId: job?.id })
     : null;

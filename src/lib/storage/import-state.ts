@@ -17,12 +17,12 @@ export class ImportPreconditionError extends Error {}
 /** Samlingar som räknas vid validering (nyckel i DB → etikett i rapporten). */
 const COUNTED: Array<[keyof DB, string]> = [
   ["customers", "kunder"],
-  ["requests", "förfrågningar"],
   ["quotes", "offerter"],
   ["quoteVersions", "offertversioner"],
   ["signatures", "signaturer"],
   ["bankidOrders", "BankID-ordrar"],
   ["jobs", "uppdrag"],
+  ["jobWorkEntries", "uppdragsposter"],
   ["invoices", "fakturor"],
   ["payments", "betalningar"],
   ["bankAccounts", "bankkonton"],
@@ -30,6 +30,7 @@ const COUNTED: Array<[keyof DB, string]> = [
   ["expenses", "utgifter"],
   ["receipts", "kvitton"],
   ["supplierInvoices", "leverantörsfakturor"],
+  ["supplierPayments", "leverantörsbetalningar"],
   ["verifications", "verifikationer"],
   ["fiscalYears", "räkenskapsår"],
   ["vatReports", "momsrapporter"],

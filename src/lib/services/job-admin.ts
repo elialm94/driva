@@ -4,12 +4,17 @@ import { jobMoneySummary, nextPaymentPlanPartForJob } from "./attention";
 import { quoteSignature } from "./data";
 import { derivedJobStatus, isPaymentPlanPartDue } from "./job-lifecycle";
 import { taxReductionCaseForJob } from "./tax-reduction";
+import { uninvoicedActuals } from "./job-work";
+import {
+  jobCompleteWarning,
+  jobRemovalPolicy,
+  type JobCompleteWarning,
+  type JobRemovalPolicy,
+} from "./jobs";
+import { getBusinessActions } from "./actions";
 
-export type JobPrimaryKind =
-  | "skapa_offert"
-  | "visa_offert"
-  | "skapa_faktura"
-  | "skapa_slutfaktura";
+export type { JobInvoiceAction, JobPrimaryKind, JobQuoteAction, JobSecondaryKind } from "../job-ui-types";
+import type { JobInvoiceAction, JobPrimaryKind, JobQuoteAction, JobSecondaryKind } from "../job-ui-types";
 
 export interface JobAdminState {
   money: ReturnType<typeof jobMoneySummary>;
@@ -20,12 +25,20 @@ export interface JobAdminState {
   remaining: number;
   unpaid: boolean;
   fullyPaid: boolean;
+  /** Alltid satt – offert är aldrig ett krav för faktura. */
+  quoteAction: JobQuoteAction;
+  invoiceAction: JobInvoiceAction;
+  /** Rekommenderad knapp när ingen offert finns: offert. Annars faktura om något är fakturerbart. */
   primary: JobPrimaryKind | null;
-  secondary: "visa_offert" | null;
+  secondary: JobSecondaryKind | null;
   waitingLabel: string | null;
   doneLabel: string | null;
   nextStep: string | null;
   canMarkDone: boolean;
+  canReopen: boolean;
+  hasBillable: boolean;
+  completeWarning: JobCompleteWarning;
+  removal: JobRemovalPolicy;
   lifecycle: ReturnType<typeof derivedJobStatus>;
 }
 
@@ -34,6 +47,16 @@ function installmentDue(
   lifecycle: ReturnType<typeof derivedJobStatus>
 ): boolean {
   return Boolean(nextPart && isPaymentPlanPartDue(nextPart, lifecycle));
+}
+
+function unresolvedActionCountForJob(jobId: string): number {
+  const href = `/uppdrag/${jobId}`;
+  return getBusinessActions().attention.filter(
+    (a) =>
+      a.href === href ||
+      a.href.startsWith(`${href}?`) ||
+      (a.cta?.type === "createJobInvoice" && a.cta.jobId === jobId)
+  ).length;
 }
 
 export function jobAdminState(job: Job): JobAdminState {
@@ -51,52 +74,46 @@ export function jobAdminState(job: Job): JobAdminState {
   const lifecycle = derivedJobStatus(job);
   const dueNow = installmentDue(nextPart, lifecycle);
 
-  let primary: JobPrimaryKind | null = null;
-  let secondary: "visa_offert" | null = null;
   let waitingLabel: string | null = null;
   let doneLabel: string | null = null;
 
-  if (!quote) {
-    primary = "skapa_offert";
-  } else if (quote.status === "skickad") {
-    primary = "visa_offert";
+  const hasUninvoicedActuals = uninvoicedActuals(job.id).length > 0;
+  const hasBillable = remaining > 0 || hasUninvoicedActuals;
+
+  const quoteAction: JobQuoteAction = !quote
+    ? "skapa_offert"
+    : quote.status === "utkast"
+      ? "fortsatt_offert"
+      : quote.status === "avbojd" || quote.status === "utgangen"
+        ? "skapa_offert"
+        : "visa_offert";
+
+  const invoiceAction: JobInvoiceAction =
+    lifecycle === "klart" && remaining > 0 && approved ? "skapa_slutfaktura" : "skapa_faktura";
+
+  if (quote?.status === "skickad") {
     waitingLabel = "Väntar på BankID";
-  } else if (quote.status === "utkast") {
-    primary = "visa_offert";
-  } else if (quote.status === "avbojd" || quote.status === "utgangen") {
-    primary = "skapa_offert";
-    secondary = "visa_offert";
-  } else if (lifecycle === "planerat") {
-    secondary = "visa_offert";
-    if (dueNow && remaining > 0) primary = "skapa_faktura";
-    else if (unpaid) waitingLabel = "Väntar på betalning";
-  } else if (lifecycle === "pagar") {
-    secondary = "visa_offert";
-    if (dueNow && remaining > 0) primary = "skapa_faktura";
-    else if (unpaid) waitingLabel = "Väntar på betalning";
   } else if (lifecycle === "klart") {
-    if (remaining > 0) {
-      primary = "skapa_slutfaktura";
-      secondary = quote ? "visa_offert" : null;
-    } else if (unpaid) {
-      waitingLabel = "Väntar på betalning";
-    } else if (fullyPaid) {
-      doneLabel = "Klart och betalt ✓";
-    } else {
-      doneLabel = "Klart";
-    }
+    if (!hasBillable && unpaid) waitingLabel = "Väntar på betalning";
+    else if (fullyPaid) doneLabel = "Klart och betalt ✓";
+    else if (!hasBillable) doneLabel = "Klart";
+  } else if (!hasBillable && unpaid) {
+    waitingLabel = "Väntar på betalning";
   }
 
+  const primary: JobPrimaryKind | null = !quote && !hasUninvoicedActuals ? quoteAction : invoiceAction;
+  const secondary: JobSecondaryKind | null = primary === quoteAction ? invoiceAction : quoteAction;
+
   let nextStep: string | null = null;
-  if (!quote) {
-    nextStep = "Nästa steg: skapa en offert.";
-  } else if (quote.status === "skickad") {
+  if (!quote && hasUninvoicedActuals) {
+    nextStep = `${kr(money.registeredUninvoiced)} registrerat, inte fakturerat än.`;
+  } else if (quote?.status === "skickad") {
     nextStep = "Väntar på att kunden godkänner med BankID.";
-  } else if (quote.status === "utkast") {
+  } else if (quote?.status === "utkast") {
     nextStep = "Offerten är ett utkast – skicka den när den är klar.";
-  } else if (quote.status === "avbojd") {
+  } else if (quote?.status === "avbojd") {
     nextStep = "Offerten avböjdes. Skapa en ny om ni går vidare.";
-  } else if (quote.status === "utgangen") {
+  } else if (quote?.status === "utgangen") {
     nextStep = "Offerten har gått ut. Skapa en ny om ni går vidare.";
   } else if (lifecycle === "planerat" && nextPart && !dueNow) {
     nextStep = `När startdatumet infaller: fakturera ${nextPart.percent} % ${nextPart.label.toLowerCase()} (${kr(nextPart.amount)}).`;
@@ -129,12 +146,22 @@ export function jobAdminState(job: Job): JobAdminState {
     remaining,
     unpaid,
     fullyPaid,
+    quoteAction,
+    invoiceAction,
     primary,
     secondary,
     waitingLabel,
     doneLabel,
     nextStep,
     canMarkDone: lifecycle === "pagar",
+    canReopen: lifecycle === "klart",
+    hasBillable,
+    completeWarning: jobCompleteWarning(job.id, {
+      remaining,
+      registeredUninvoiced: money.registeredUninvoiced,
+      unresolvedActionCount: unresolvedActionCountForJob(job.id),
+    }),
+    removal: jobRemovalPolicy(job.id),
     lifecycle,
   };
 }

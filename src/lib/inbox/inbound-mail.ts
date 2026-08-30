@@ -24,6 +24,17 @@ export interface InboundParsedHint {
   supplier?: string;
   date?: string;
   confidence?: number;
+  invoiceNumber?: string;
+  dueDate?: string;
+  ocr?: string;
+  bankgiro?: string;
+  /**
+   * 0–1: konfidens specifikt för betalningsuppgifterna (bankgiro/OCR).
+   * Saknas = samma som confidence. Under AUTO-tröskeln blir uppgifterna en
+   * kontrollkandidat i stället för betalbara fält.
+   */
+  detailsConfidence?: number;
+  documentType?: "leverantorsfaktura" | "kvitto" | "ekonomiskt_dokument";
 }
 
 export interface InboundMailPayload {
@@ -103,6 +114,14 @@ export function parseInboundPayload(body: unknown): InboundMailPayload | { error
       ...(typeof p.supplier === "string" ? { supplier: p.supplier } : {}),
       ...(typeof p.date === "string" ? { date: p.date } : {}),
       ...(typeof p.confidence === "number" ? { confidence: p.confidence } : {}),
+      ...(typeof p.invoiceNumber === "string" ? { invoiceNumber: p.invoiceNumber } : {}),
+      ...(typeof p.dueDate === "string" ? { dueDate: p.dueDate } : {}),
+      ...(typeof p.ocr === "string" ? { ocr: p.ocr } : {}),
+      ...(typeof p.bankgiro === "string" ? { bankgiro: p.bankgiro } : {}),
+      ...(typeof p.detailsConfidence === "number" ? { detailsConfidence: p.detailsConfidence } : {}),
+      ...(p.documentType === "leverantorsfaktura" || p.documentType === "kvitto" || p.documentType === "ekonomiskt_dokument"
+        ? { documentType: p.documentType }
+        : {}),
     };
   }
 

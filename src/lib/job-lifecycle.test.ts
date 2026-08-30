@@ -10,6 +10,7 @@ import { jobAdminState } from "./services/job-admin";
 import { listJobsForTable, reconcileJobListFilters } from "./services/job-list";
 import { jobsThisWeek } from "./services/attention";
 import { getJob } from "./services/data";
+import { createJob, deleteOrArchiveJob } from "./services/jobs";
 import type { Job } from "./types";
 
 function job(over: Partial<Job>): Job {
@@ -92,23 +93,34 @@ describe("jobWhenLabel och ekonomi", () => {
 describe("seedade uppdrag", () => {
   beforeEach(() => replaceDb(buildSeed()));
 
-  it("Altanrenovering är Planerat utan start-CTA", () => {
+  it("Altanrenovering är Planerat och kan faktureras när något är kvar", () => {
     const altan = getJob("job-altan");
     assert.ok(altan);
     assert.equal(derivedJobStatus(altan), "planerat");
     const admin = jobAdminState(altan);
     assert.equal(admin.lifecycle, "planerat");
-    assert.notEqual(admin.primary, "skapa_faktura");
+    assert.equal(admin.primary, "skapa_faktura");
+    assert.equal(admin.secondary, "visa_offert");
     assert.equal(admin.canMarkDone, false);
   });
 
-  it("Köksrenovering är Pågår, kan markeras klart, ingen startfaktura-CTA för sista delen", () => {
+  it("nytt uppdrag utan offert kan både offereras och faktureras – offert är inte ett krav", () => {
+    replaceDb(emptyTestDb({ customers: [testCustomer({ id: "cust-1" })] }));
+    const job = createJob({ customerId: "cust-1", title: "Jour" });
+    const admin = jobAdminState(job);
+    assert.equal(admin.quoteAction, "skapa_offert");
+    assert.equal(admin.invoiceAction, "skapa_faktura");
+    assert.notEqual(admin.nextStep, "Nästa steg: skapa en offert.");
+    assert.equal(admin.primary, "skapa_offert");
+  });
+
+  it("Köksrenovering är Pågår, kan markeras klart, Skapa faktura när något är kvar", () => {
     const kok = getJob("job-kok");
     assert.ok(kok);
     assert.equal(derivedJobStatus(kok), "pagar");
     const admin = jobAdminState(kok);
     assert.equal(admin.canMarkDone, true);
-    assert.equal(admin.primary, null);
+    assert.equal(admin.primary, "skapa_faktura");
     assert.equal(admin.secondary, "visa_offert");
   });
 
@@ -133,6 +145,18 @@ describe("seedade uppdrag", () => {
       reconcileJobListFilters({ lifecycle: "aktiva", economy: "alla", patch: { economy: "kvar" } }),
       { lifecycle: "aktiva", economy: "kvar" },
     );
+  });
+
+  it("arkiverade uppdrag döljs från Aktiva och Planerade", () => {
+    deleteOrArchiveJob("job-altan");
+    const aktiva = listJobsForTable({ lifecycle: "aktiva" });
+    assert.equal(aktiva.rows.some((r) => r.id === "job-altan"), false);
+    const planerade = listJobsForTable({ lifecycle: "planerade" });
+    assert.equal(planerade.rows.some((r) => r.id === "job-altan"), false);
+    const alla = listJobsForTable({ lifecycle: "alla" });
+    assert.equal(alla.rows.some((r) => r.id === "job-altan"), true);
+    const arkiv = listJobsForTable({ lifecycle: "arkiverade" });
+    assert.equal(arkiv.rows.some((r) => r.id === "job-altan"), true);
   });
 
   it("listan är en tabellmodell: aktiva default, sök och paginering", () => {

@@ -205,13 +205,13 @@ export async function runAssistantChecks(): Promise<Check[]> {
   reset();
   {
     const handled = dispatchRules("Skapa offert för Karins bokhylla, 28000 kr");
-    const req = db().requests.find((r) => r.id === "req-karin");
-    const quote = db().quotes.find((q) => q.requestId === "req-karin" && q.status === "utkast");
+    const job = db().jobs.find((j) => j.id === "job-karin");
+    const quote = db().quotes.find((q) => q.jobId === "job-karin" && q.status === "utkast");
     checks.push(
       assert(
-        "Offert för Karins bokhylla kopplar förfrågan",
-        Boolean(handled && quote && req?.status === "offert_skapad" && req.quoteId === quote?.id),
-        `handled=${handled} status=${req?.status} quote=${quote?.id}`
+        "Offert för Karins bokhylla kopplar uppdraget",
+        Boolean(handled && quote && job && quote.jobId === job.id),
+        `handled=${handled} job=${job?.id} quote=${quote?.id}`
       )
     );
   }

@@ -9,6 +9,8 @@ import { postVerification, createCorrection } from "../accounting/engine";
 import { clampToOpenDate } from "../accounting/fiscal";
 import { assetSuggestionForExpense, registerAssetFromExpense, INVENTARIE_GRANS } from "../accounting/assets";
 import { assertDemoMode } from "../demo";
+import { resolveClientRequestsForExpense } from "../collaboration/requests";
+import { currentActor } from "../collaboration/actor";
 
 /**
  * Kvittotolkning ("AI-extraktion") är mockad i demon: när ett kvitto laddas upp
@@ -203,6 +205,7 @@ export function uploadReceiptForExpense(
   };
   data.receipts.push(receipt);
   expense.receiptId = receipt.id;
+  resolveClientRequestsForExpense(expenseId, currentActor()?.userId);
 
   let autoBooked = false;
   if (assetSuggestionForExpense({ ...expense, category: guess?.key ?? expense.category })) {

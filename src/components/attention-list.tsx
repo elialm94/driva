@@ -34,14 +34,16 @@ import {
   deliverInvoiceAction,
   dismissReminderAction,
   followUpQuoteAction,
-  markInquiryHandledAction,
   markQuoteNotRelevantAction,
-  paySupplierInvoiceAction,
+  submitSupplierPaymentAction,
   sendReminderAction,
   snoozeAttentionAction,
   snoozeReminderAction,
   uploadReceiptAction,
+  prepareSupplierPaymentAction,
 } from "@/app/actions";
+import { requestClientInformationAction } from "@/app/collaboration-actions";
+import { isPaymentDetailsCta, PaymentDetailsCta } from "./payment-details-actions";
 import {
   confirmPaymentMatchAction,
   confirmRotPayoutAction,
@@ -69,7 +71,7 @@ import {
  *     bekräftelseinnehåll (action.confirm) och dialogen visas FÖRE utförandet.
  *   * Snooze är ren presentation: raden döljs ur listan och räknaren tills
  *     tidpunkten passerat – domänstatus ändras aldrig (fakturan förblir sen).
- *   * Avfärdan är typspecifik domänövergång ("Markera hanterad" på förfrågan,
+ *   * Avfärdan är typspecifik domänövergång (t.ex. "Inte aktuell" på offert,
  *     "Inte aktuell" på offert, "Ta bort" på påminnelse) – aldrig ett
  *     universellt "dölj för alltid".
  */
@@ -90,6 +92,17 @@ const ICONS = {
 /** Snooza-etikett → klar-text ("Uppskjuten – imorgon"). */
 function snoozeDoneText(label: string): string {
   return `Uppskjuten – ${label.toLowerCase()}`;
+}
+
+/** Första giltiga snooze-dagen: valt datum blir 00:00, så idag är redan passerat. */
+function minSnoozeIso(): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /* --------------------------------- Bekräftelse --------------------------------- */
@@ -173,9 +186,10 @@ function RowMenu({
   const [open, setOpen] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [view, setView] = useState<"menu" | "snooze">("menu");
-  const [pickDate, setPickDate] = useState(false);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [confirmDismiss, setConfirmDismiss] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const dateAnchorRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
 
   const isReminder = controls.kind === "reminder";
@@ -186,20 +200,24 @@ function RowMenu({
   function close() {
     setOpen(false);
     setView("menu");
-    setPickDate(false);
+    setDatePickerOpen(false);
   }
 
   function openMenu() {
     setSheet(typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches);
     setView("menu");
-    setPickDate(false);
+    setDatePickerOpen(false);
     setOpen(true);
   }
 
   useEffect(() => {
     if (!open || sheet) return;
     function onPointer(e: PointerEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) close();
+      const target = e.target;
+      const el = target instanceof Element ? target : (target as Node | null)?.parentElement;
+      if (rootRef.current?.contains(target as Node)) return;
+      if (el?.closest('[role="dialog"][aria-label="Välj datum"]')) return;
+      close();
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") close();
@@ -219,9 +237,7 @@ function RowMenu({
 
   function dismiss() {
     close();
-    if (controls.dismissBehavior === "MARK_HANDLED" && source?.kind === "inquiry") {
-      run(() => markInquiryHandledAction(source.id), "Hanterad");
-    } else if (controls.dismissBehavior === "MARK_NOT_RELEVANT" && source?.kind === "quote") {
+    if (controls.dismissBehavior === "MARK_NOT_RELEVANT" && source?.kind === "quote") {
       run(() => markQuoteNotRelevantAction(source.id), "Markerad som inte aktuell");
     } else if (controls.dismissBehavior === "DISMISS_REMINDER" && source?.kind === "reminder") {
       run(() => dismissReminderAction(source.id), "Borttagen");
@@ -266,7 +282,7 @@ function RowMenu({
                 }
               }}
             >
-              {controls.dismissBehavior === "MARK_HANDLED" ? <Check className="size-3.5 shrink-0" /> : null}
+              {controls.dismissBehavior === "HIDE" ? <Check className="size-3.5 shrink-0" /> : null}
               {controls.dismissBehavior === "MARK_NOT_RELEVANT" ? <XCircle className="size-3.5 shrink-0" /> : null}
               {controls.dismissBehavior === "DISMISS_REMINDER" ? <Trash2 className="size-3.5 shrink-0" /> : null}
               {controls.dismissLabel}
@@ -287,22 +303,35 @@ function RowMenu({
               {preset.label}
             </button>
           ))}
-          {pickDate ? (
-            <div className={sheet ? "px-6 py-3" : "px-2.5 py-2"}>
-              <DateField
-                className="w-full"
-                placeholder="Välj dag"
-                onChange={(iso) => {
-                  if (iso) snooze({ date: iso }, "Uppskjuten");
-                }}
-              />
-            </div>
-          ) : (
-            <button type="button" role="menuitem" className={itemCls()} onClick={() => setPickDate(true)}>
-              Välj datum …
-            </button>
-          )}
-          <button type="button" role="menuitem" className={cx(itemCls(), "text-soft")} onClick={() => setView("menu")}>
+          <button
+            ref={dateAnchorRef}
+            type="button"
+            role="menuitem"
+            className={itemCls()}
+            aria-haspopup="dialog"
+            aria-expanded={datePickerOpen}
+            onClick={() => setDatePickerOpen((v) => !v)}
+          >
+            Välj datum …
+          </button>
+          <DateField
+            open={datePickerOpen}
+            onOpenChange={setDatePickerOpen}
+            anchorRef={dateAnchorRef}
+            min={minSnoozeIso()}
+            onChange={(iso) => {
+              if (iso) snooze({ date: iso }, "Uppskjuten");
+            }}
+          />
+          <button
+            type="button"
+            role="menuitem"
+            className={cx(itemCls(), "text-soft")}
+            onClick={() => {
+              setDatePickerOpen(false);
+              setView("menu");
+            }}
+          >
             Tillbaka
           </button>
         </>
@@ -480,7 +509,15 @@ function ReminderCtas({ reminderId, onDone }: { reminderId: string; onDone: (don
   );
 }
 
-function AttentionRow({ item, onResolved }: { item: BusinessAction; onResolved: (id: string) => void }) {
+function AttentionRow({
+  item,
+  onResolved,
+  surface = "owner",
+}: {
+  item: BusinessAction;
+  onResolved: (id: string) => void;
+  surface?: "owner" | "accountant";
+}) {
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -512,9 +549,33 @@ function AttentionRow({ item, onResolved }: { item: BusinessAction; onResolved: 
   // Vad bekräftelseknappen faktiskt utför – per CTA-typ.
   function executePrimary() {
     if (!cta) return;
-    if (cta.type === "remindInvoice") run(() => sendReminderAction(cta.invoiceId), "Påminnelse skickad");
-    if (cta.type === "followUpQuote") run(() => followUpQuoteAction(cta.quoteId), "Påminnelse skickad");
-    if (cta.type === "paySupplier") run(() => paySupplierInvoiceAction(cta.supplierInvoiceId), "Betald och bokförd");
+    if (cta.type === "remindInvoice") {
+      startTransition(async () => {
+        const result = await sendReminderAction(cta.invoiceId);
+        if (result && result.ok === false) setError(result.errors.join(" "));
+        else finish("Påminnelse skickad");
+        router.refresh();
+      });
+    }
+    if (cta.type === "followUpQuote") {
+      startTransition(async () => {
+        const result = await followUpQuoteAction(cta.quoteId);
+        if (result && result.ok === false) setError(result.errors.join(" "));
+        else finish("Påminnelse skickad");
+        router.refresh();
+      });
+    }
+    if (cta.type === "paySupplier") {
+      startTransition(async () => {
+        const result = await submitSupplierPaymentAction({
+          supplierInvoiceId: cta.supplierInvoiceId,
+          paymentId: cta.paymentId,
+        });
+        if (result.ok === false) setError(result.error);
+        else finish(result.ok ? "Skickad till bank" : "");
+        router.refresh();
+      });
+    }
     if (cta.type === "retryInvoiceEmail") {
       startTransition(async () => {
         const result = await deliverInvoiceAction(cta.invoiceId);
@@ -533,20 +594,34 @@ function AttentionRow({ item, onResolved }: { item: BusinessAction; onResolved: 
     }
   }
 
+  const compact = surface === "accountant";
   const body = (
     <div className="min-w-0 flex-1">
-      {/* Mobil: låt titeln bryta till två rader i stället för att trunkeras. */}
-      <p className="text-[15px] font-medium text-ink max-sm:line-clamp-2 sm:truncate">{item.title}</p>
-      <p className="mt-0.5 text-sm leading-relaxed text-soft">{item.subtitle}</p>
+      {item.clientName ? (
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{item.clientName}</p>
+      ) : null}
+      <p className={cx("font-medium text-ink max-sm:line-clamp-2 sm:truncate", compact ? "text-[14px]" : "text-[15px]")}>
+        {item.title}
+      </p>
+      <p className={cx("text-soft", compact ? "mt-0.5 text-[12px] leading-snug" : "mt-0.5 text-sm leading-relaxed")}>
+        {item.subtitle}
+      </p>
     </div>
   );
 
   const sendIcon = <Send className="size-3.5" />;
 
   return (
-    <div className="flex flex-col gap-3 px-5 py-4 transition-colors first:rounded-t-[calc(1.25rem-1px)] last:rounded-b-[calc(1.25rem-1px)] hover:bg-canvas/60 sm:flex-row sm:items-start sm:gap-4">
-      <div className="flex min-w-0 flex-1 items-start gap-4">
-        <div className={cx("mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl", cls)}>
+    <div
+      data-action-id={item.id}
+      tabIndex={-1}
+      className={cx(
+        "flex flex-col outline-none transition-colors first:rounded-t-[calc(1.25rem-1px)] last:rounded-b-[calc(1.25rem-1px)] hover:bg-canvas/60 focus:bg-canvas/80 sm:flex-row sm:items-start",
+        compact ? "gap-2 px-3.5 py-2.5 sm:gap-3" : "gap-3 px-5 py-4 sm:gap-4"
+      )}
+    >
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <div className={cx("mt-0.5 flex shrink-0 items-center justify-center rounded-xl", compact ? "size-7" : "size-9", cls)}>
           <Icon className="size-4.5" />
         </div>
         <AppLink href={item.href} className="min-w-0 flex-1">
@@ -570,7 +645,7 @@ function AttentionRow({ item, onResolved }: { item: BusinessAction; onResolved: 
                 Matcha betalning
               </AppLink>
             ) : null}
-            {cta?.type === "followUpQuote" ? (
+            {cta?.type === "followUpQuote" && surface !== "accountant" ? (
               <button
                 className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
                 disabled={isPending}
@@ -581,7 +656,7 @@ function AttentionRow({ item, onResolved }: { item: BusinessAction; onResolved: 
                 {isPending ? "Skickar …" : cta.label}
               </button>
             ) : null}
-            {cta?.type === "remindInvoice" ? (
+            {cta?.type === "remindInvoice" && surface !== "accountant" ? (
               <button
                 className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
                 disabled={isPending}
@@ -592,7 +667,7 @@ function AttentionRow({ item, onResolved }: { item: BusinessAction; onResolved: 
                 {isPending ? "Skickar …" : cta.label}
               </button>
             ) : null}
-            {cta?.type === "retryInvoiceEmail" ? (
+            {cta?.type === "retryInvoiceEmail" && surface !== "accountant" ? (
               <button
                 className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
                 disabled={isPending}
@@ -603,14 +678,33 @@ function AttentionRow({ item, onResolved }: { item: BusinessAction; onResolved: 
                 {isPending ? "Skickar …" : cta.label}
               </button>
             ) : null}
-            {cta?.type === "paySupplier" ? (
+            {cta?.type === "paySupplier" && surface === "accountant" ? (
+              <button
+                className={cx(buttonClasses("secondary", "sm"), "max-lg:min-h-11")}
+                disabled={isPending}
+                aria-label={`Förbered betalning – ${item.title}`}
+                onClick={() =>
+                  startTransition(async () => {
+                    const result = await prepareSupplierPaymentAction({
+                      supplierInvoiceId: cta.supplierInvoiceId,
+                    });
+                    if (result.ok === false) setError(result.error);
+                    else finish("Förberedd – ägaren skickar");
+                    router.refresh();
+                  })
+                }
+              >
+                {isPending ? "Förbereder …" : "Förbered betalning"}
+              </button>
+            ) : null}
+            {cta?.type === "paySupplier" && surface !== "accountant" ? (
               <button
                 className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
                 disabled={isPending}
                 aria-label={`${cta.label} – ${item.title}`}
                 onClick={() => confirmable(executePrimary)}
               >
-                {isPending ? "Betalar …" : cta.label}
+                {isPending ? "Skickar …" : cta.label}
               </button>
             ) : null}
             {cta?.type === "registerCreditRefund" ? (
@@ -639,11 +733,29 @@ function AttentionRow({ item, onResolved }: { item: BusinessAction; onResolved: 
                 />
               </label>
             ) : null}
+            {surface === "accountant" && cta?.type === "uploadReceipt" ? (
+              <button
+                type="button"
+                className={cx(buttonClasses("secondary", "sm"), "max-lg:min-h-11")}
+                disabled={isPending}
+                onClick={() =>
+                  startTransition(async () => {
+                    const result = await requestClientInformationAction({ expenseId: cta.expenseId });
+                    if (result.ok === false) setError(result.error);
+                    else finish("Kunden ombeds lägga till kvitto");
+                    router.refresh();
+                  })
+                }
+              >
+                Be kunden
+              </button>
+            ) : null}
             {cta?.type === "answerQuestion"
-              ? cta.options.map((opt) => (
+              ? cta.options.map((opt, oi) => (
                   <button
                     key={opt}
-                    className={cx(buttonClasses("secondary", "sm"), "max-lg:min-h-11")}
+                    data-choice-index={oi + 1}
+                    className={cx(buttonClasses("secondary", "sm"), compact ? "h-8 text-[12px]" : "max-lg:min-h-11")}
                     disabled={isPending}
                     onClick={() => run(() => answerExpenseQuestionAction(cta.expenseId, opt), "Bokfört")}
                   >
@@ -685,8 +797,14 @@ function AttentionRow({ item, onResolved }: { item: BusinessAction; onResolved: 
                 {isPending ? "Bokför …" : cta.label}
               </button>
             ) : null}
+            {cta && isPaymentDetailsCta(cta) ? (
+              // Betalningsuppgifter: egna dialoger (formulär/bekräftelse/kö) –
+              // motorns confirm-innehåll återanvänds, inga externa effekter
+              // utan explicit godkännande.
+              <PaymentDetailsCta cta={cta} title={item.title} confirm={item.confirm} surface={surface} onDone={finish} />
+            ) : null}
             {cta?.type === "reminderActions" ? <ReminderCtas reminderId={cta.reminderId} onDone={finish} /> : null}
-            {cta?.type === "createJobInvoice" ? (
+            {cta?.type === "createJobInvoice" && surface !== "accountant" ? (
               <button
                 className={cx(buttonClasses("accent", "sm"), "max-lg:min-h-11")}
                 disabled={isPending}
@@ -739,11 +857,13 @@ export function AttentionSection({
   items,
   initialVisible,
   empty,
+  surface = "owner",
 }: {
   title: string;
   items: BusinessAction[];
   initialVisible?: number;
   empty?: ReactNode;
+  surface?: "owner" | "accountant";
 }) {
   const [stage, setStage] = useState<0 | 1 | 2>(0);
   const [resolvedIds, setResolvedIds] = useState<readonly string[]>([]);
@@ -803,7 +923,12 @@ export function AttentionSection({
       ) : (
         <div className="card divide-y divide-line/70">
           {visible.map((item) => (
-            <AttentionRow key={item.id} item={item} onResolved={(id) => setResolvedIds((prev) => [...prev, id])} />
+            <AttentionRow
+              key={item.id}
+              item={item}
+              surface={surface}
+              onResolved={(id) => setResolvedIds((prev) => [...prev, id])}
+            />
           ))}
           {footer}
         </div>

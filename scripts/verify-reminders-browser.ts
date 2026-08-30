@@ -61,6 +61,13 @@ async function sendPhrase(page: Page, phrase: string): Promise<string> {
 
 async function attentionSection(page: Page): Promise<string> {
   await page.goto(`${BASE}/`, { waitUntil: "networkidle0" });
+  // Listan fäller ihop sig bakom "Visa N till" när seedet har många rader –
+  // expandera först så kontrollen ser hela innehållet.
+  await page.evaluate(() => {
+    for (const b of Array.from(document.querySelectorAll("button"))) {
+      if ((b.textContent ?? "").trim().startsWith("Visa ")) (b as HTMLButtonElement).click();
+    }
+  });
   return page.evaluate(() => {
     const titles = Array.from(document.querySelectorAll("h2, h3"));
     const t = titles.find((el) => (el.textContent ?? "").includes("Behöver din uppmärksamhet"));
@@ -166,6 +173,12 @@ async function main() {
     await sendPhrase(page, "Påminn mig idag kl 06:45 att tanka bilen"); // skapas på desktop-vy
     await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
     await page.goto(`${BASE}/`, { waitUntil: "networkidle0" });
+    // Expandera hopfällda rader även här (samma skäl som i attentionSection).
+    await page.evaluate(() => {
+      for (const b of Array.from(document.querySelectorAll("button"))) {
+        if ((b.textContent ?? "").trim().startsWith("Visa ")) (b as HTMLButtonElement).click();
+      }
+    });
     const btnBox = await page.evaluate(() => {
       let found: Element | null = null;
       for (const b of Array.from(document.querySelectorAll("button"))) {

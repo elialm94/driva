@@ -66,7 +66,7 @@ export function sellerAsCompany(seller: InvoiceSellerSnapshot, fallback?: Compan
     bic: seller.bic,
     logoInitials: seller.logoInitials,
     logoDataUrl: seller.logoDataUrl,
-    inquiryNotificationEmail: fallback?.inquiryNotificationEmail,
+    websiteNotificationEmail: fallback?.websiteNotificationEmail,
     fSkattPerMonth: fallback?.fSkattPerMonth ?? 0,
     payrollReservePerMonth: fallback?.payrollReservePerMonth ?? 0,
     paymentTermsDays: fallback?.paymentTermsDays ?? 30,

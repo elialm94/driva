@@ -4,7 +4,7 @@ process.env.DRIVA_TEST = "1";
  * Integrationstester för de kritiska affärsflödena, hela vägen genom
  * domäntjänsterna (aldrig direkta store-mutationer där tjänster finns):
  *
- *   Förfrågan → Offert → BankID → Uppdrag → Faktura → Betalning → Bokföring
+ *   Webbformulär → Uppdrag → Offert → BankID → Faktura → Betalning → Bokföring
  *   ROT-faktura → nekat avdrag → restfaktura (omflytt 1513→1510, ingen ny moms)
  *   Delbetalningar ärver offertens momssats (inte alltid 25 %)
  *
@@ -80,37 +80,39 @@ function approveQuoteViaBankID(quoteId: string) {
   return order;
 }
 
-describe("Golden path: förfrågan → offert → BankID → uppdrag → faktura → betalning", () => {
+describe("Golden path: webbformulär → uppdrag → offert → BankID → faktura → betalning", () => {
   beforeEach(() => reset());
 
   it("hela kedjan går igenom och böckerna stämmer i varje steg", async () => {
-    // 1. Kunden skickar en förfrågan via publika hemsidan.
+    // 1. Kunden skickar ett meddelande via publika hemsidan → uppdrag.
     const submitted = await submitContactForm({
       name: "Nya Kunden AB",
       email: "kontakt@nyakunden.se",
       phone: "070-111 22 33",
       message: "Vi behöver hjälp med en altan på 30 kvm.",
     });
-    assert.ok(!("skipped" in submitted), "honeypot ska inte trigga för riktiga förfrågningar");
-    const inquiry = submitted;
-    assert.ok(inquiry.created);
-    const request = db().requests.find((r) => r.id === inquiry.requestId);
-    assert.ok(request, "förfrågan sparades");
-    assert.equal(request.customerId, inquiry.customerId);
+    assert.ok(!("skipped" in submitted), "honeypot ska inte trigga för riktiga meddelanden");
+    const incoming = submitted;
+    assert.ok(incoming.created);
+    const job = db().jobs.find((j) => j.id === incoming.jobId);
+    assert.ok(job, "uppdraget sparades");
+    assert.equal(job.customerId, incoming.customerId);
+    assert.equal(job.source, "web_form");
+    assert.equal(job.originalMessage, "Vi behöver hjälp med en altan på 30 kvm.");
 
-    // Kunden från förfrågan saknar adress – fakturering kräver den (spärr med
+    // Kunden från formuläret saknar adress – fakturering kräver den (spärr med
     // vägledning i UI). Företagaren kompletterar kundkortet.
-    updateCustomer(inquiry.customerId, {
+    updateCustomer(incoming.customerId, {
       address: "Nybyggarvägen 1",
       postalCode: "123 45",
       city: "Stockholm",
     });
 
-    // 2. Företagaren skapar och skickar en offert.
+    // 2. Företagaren skapar och skickar en offert mot uppdraget.
     const defaults = quoteDefaults();
     const quote = createQuote({
-      customerId: inquiry.customerId,
-      requestId: inquiry.requestId,
+      customerId: incoming.customerId,
+      jobId: incoming.jobId,
       title: "Altanbygge",
       intro: "Enligt vårt samtal.",
       lines: [labor({ unitPrice: 40_000 })],
@@ -131,14 +133,14 @@ describe("Golden path: förfrågan → offert → BankID → uppdrag → faktura
     const approved = getQuote(quote.id)!;
     assert.equal(approved.status, "godkand");
     assert.ok(currentVersion(approved).lockedAt, "versionen låstes vid signering");
-    const job = db().jobs.find((j) => j.quoteId === quote.id);
-    assert.ok(job, "uppdrag skapades av godkännandet");
+    const approvedJob = db().jobs.find((j) => j.quoteId === quote.id);
+    assert.ok(approvedJob, "uppdrag skapades av godkännandet");
     const total = quoteTotals(approved).total; // 40 000 + 25 % moms = 50 000
     assert.equal(total, 50_000);
-    assert.equal(remainingToInvoiceForJob(job.id), total);
+    assert.equal(remainingToInvoiceForJob(approvedJob.id), total);
 
     // 4. Delbetalning 1 (40 %) → utfärda → kunden betalar (simulerad bankhändelse).
-    const part1 = createNextInvoiceForJob(job.id);
+    const part1 = createNextInvoiceForJob(approvedJob.id);
     assert.equal(part1.type, "delbetalning");
     assert.equal(part1.number, null, "utkast har inget nummer");
     issueInvoice(part1.id);
@@ -153,17 +155,17 @@ describe("Golden path: förfrågan → offert → BankID → uppdrag → faktura
     assertBooksConsistent();
 
     // 5. Slutfaktura (resterande 60 %) → betala → allt klart.
-    const final = createNextInvoiceForJob(job.id);
+    const final = createNextInvoiceForJob(approvedJob.id);
     assert.equal(final.type, "slutfaktura");
     issueInvoice(final.id);
     assert.equal(invoiceTotals(getInvoice(final.id)!).total, 30_000);
     simulateIncomingPayment(final.id);
 
-    assert.equal(remainingToInvoiceForJob(job.id), 0);
-    const money = jobMoneySummary(job.id);
+    assert.equal(remainingToInvoiceForJob(approvedJob.id), 0);
+    const money = jobMoneySummary(approvedJob.id);
     assert.equal(money.invoiced, total);
     assert.equal(money.paid, total);
-    assert.equal(customerSummary(inquiry.customerId).unpaid, 0);
+    assert.equal(customerSummary(incoming.customerId).unpaid, 0);
     assertBooksConsistent();
 
     // Intäkten är bokförd exakt en gång: 3001 kredit 40 000.

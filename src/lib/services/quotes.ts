@@ -10,10 +10,10 @@ import { logActivity } from "./activity";
 import { taxReductionFields } from "../tax-reduction-terms";
 import { rotWithAmounts } from "../tax-reduction-amount";
 import { sellerSnapshot } from "../invoices/snapshot";
+import { missingEmailForSend } from "../customer-validation";
 
 export interface QuoteInput {
   customerId: string;
-  requestId?: string;
   jobId?: string;
   title: string;
   intro: string;
@@ -24,7 +24,7 @@ export interface QuoteInput {
   lateInterestRate?: number;
   validUntil: string;
   terms: string;
-  /** "Övrig information" – saneras alltid serverside (vitlista, se lib/richtext). */
+  /** Beskrivning – saneras alltid serverside (vitlista, se lib/richtext). */
   richText?: RichTextDoc;
 }
 
@@ -60,7 +60,6 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
     id: quoteId,
     number,
     customerId: input.customerId,
-    requestId: input.requestId,
     jobId: input.jobId,
     status: "utkast",
     currentVersionId: versionId,
@@ -71,14 +70,6 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
 
   data.quoteVersions.push(version);
   data.quotes.push(quote);
-
-  if (input.requestId) {
-    const req = data.requests.find((r) => r.id === input.requestId);
-    if (req) {
-      req.status = "offert_skapad";
-      req.quoteId = quoteId;
-    }
-  }
 
   if (input.jobId) {
     const job = data.jobs.find((j) => j.id === input.jobId);
@@ -95,7 +86,7 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
   return quote;
 }
 
-export type QuoteVersionInput = Omit<QuoteInput, "customerId" | "requestId" | "jobId">;
+export type QuoteVersionInput = Omit<QuoteInput, "customerId" | "jobId">;
 
 /**
  * Uppdatera en offert. Låsta (BankID-signerade) versioner ändras aldrig –
@@ -149,7 +140,11 @@ export interface QuoteSendBlocker {
   actionLabel?: string;
 }
 
-/** Affärsregler som hindrar att offerten skickas — UI:t visar dem i checklistan på offertsidan. */
+/**
+ * Vad som saknas innan offerten kan skickas — EN källa för checklistan på
+ * offertsidan och skickaflödet. Saknad kund-e-post (code "buyer_email")
+ * namnges explicit och kompletteras inline i skickaflödet utan att avbryta.
+ */
 export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
   const quote = getQuote(quoteId);
   if (!quote) return [];
@@ -163,13 +158,20 @@ export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
       actionLabel: "Ändra datum",
     });
   }
+  const emailBlocker = missingEmailForSend(requireCustomer(quote.customerId));
+  if (emailBlocker) {
+    // Namnges i checklistan; kompletteras inline i skickaflödet – ingen länk till Kunden.
+    blockers.push(emailBlocker);
+  }
   return blockers;
 }
 
-/** Leveransutfall från e-postlagret. Utan uppgift antas mock (ingen e-post konfigurerad). */
+/** Leveransutfall från e-postlagret. Produktionsvägen anropar bara hit efter provider-succé. */
 export interface QuoteDeliveryInfo {
   mode: "mock" | "live" | "test";
   ok: boolean;
+  messageId?: string;
+  sentTo?: string;
 }
 
 const MOCK_DELIVERY: QuoteDeliveryInfo = { mode: "mock", ok: true };
@@ -193,11 +195,15 @@ export function sendQuote(quoteId: string, delivery: QuoteDeliveryInfo = MOCK_DE
   const t = docTotals(version.lines, version.rot);
   quote.status = "skickad";
   quote.sentAt = new Date().toISOString();
+  quote.lastSendAttemptAt = quote.sentAt;
+  if (delivery.messageId && delivery.sentTo) {
+    quote.lastEmail = { provider: "resend", messageId: delivery.messageId, sentTo: delivery.sentTo };
+  }
   const emailed = delivery.mode !== "mock" && delivery.ok;
   logActivity(
     emailed
-      ? `Offert #${quote.number} skickades med e-post till ${customer.name} (${kr(t.toPay)}).`
-      : `Offert #${quote.number} markerades som skickad (${kr(t.toPay)}) – ingen e-post är konfigurerad, dela offertlänken med ${customer.name}.`,
+      ? `Offert #${quote.number} skickades med e-post till ${delivery.sentTo ?? customer.email} (${kr(t.toPay)}).`
+      : `Offert #${quote.number} markerades som skickad (${kr(t.toPay)}).`,
     {
       customerId: customer.id,
       entity: { type: "offert", id: quoteId },
@@ -271,7 +277,7 @@ export function followUpQuote(
   logActivity(
     emailed
       ? `${who} skickade en påminnelse med e-post till ${customer.name} om offert #${quote.number}.`
-      : `${who} noterade en påminnelse om offert #${quote.number} – ingen e-post är konfigurerad, kontakta ${customer.name} direkt.`,
+      : `${who} noterade en påminnelse om offert #${quote.number}.`,
     { customerId: customer.id, entity: { type: "offert", id: quoteId } }
   );
   save();

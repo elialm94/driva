@@ -10,7 +10,7 @@ process.env.DRIVA_TEST = "1";
  */
 
 import { buildScaleData } from "../src/lib/dev/scale-data";
-import { listCustomersForTable, listInquiriesInbox } from "../src/lib/services/customers";
+import { listCustomersForTable } from "../src/lib/services/customers";
 import { customerBundle } from "../src/lib/services/data";
 import { listJobsForTable } from "../src/lib/services/job-list";
 import { getBusinessActions } from "../src/lib/services/actions";
@@ -35,7 +35,6 @@ console.log("");
 time("Kunder: listCustomersForTable sida 1", () => listCustomersForTable({}));
 time("Kunder: sökning 'Andersson 42'", () => listCustomersForTable({ q: "Andersson 42" }));
 time("Kunder: filter obetalt + sortering belopp", () => listCustomersForTable({ payment: "obetalt", sort: "attBetala" }));
-time("Förfrågningar: listInquiriesInbox", () => listInquiriesInbox({}));
 time("Uppdrag: listJobsForTable sida 1", () => listJobsForTable({}));
 time("Hem: getBusinessActions", () => getBusinessActions());
 time("Ekonomi: listInvoicesForTable sida 1", () => listInvoicesForTable({}));

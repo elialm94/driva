@@ -3,7 +3,7 @@
  * Ligger i egen modul (utan store-/fs-beroenden) eftersom klientkomponenten
  * uppdrag-list.tsx behöver funktionen – resten av job-list är serverkod.
  */
-export type JobLifecycleFilter = "aktiva" | "planerade" | "klart" | "alla";
+export type JobLifecycleFilter = "aktiva" | "planerade" | "klart" | "alla" | "arkiverade";
 export type JobEconomyFilter = "alla" | "kvar" | "vantar" | "betalt";
 export type JobSort = "standard" | "datum" | "kund" | "belopp";
 

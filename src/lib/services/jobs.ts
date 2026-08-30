@@ -1,7 +1,7 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
-import type { Job, Quote, WorkLocation } from "../types";
-import { currentVersion, requireCustomer } from "./data";
+import type { Job, JobSource, Quote, WorkLocation } from "../types";
+import { currentVersion, invoicePaidAmount, invoiceTotals, jobQuote, requireCustomer } from "./data";
 import { logActivity } from "./activity";
 import {
   addWorkLocation,
@@ -10,6 +10,11 @@ import {
   getWorkLocation,
   type WorkLocationInput,
 } from "./work-locations";
+import { importQuotedBaseline, isIssuedLinked, jobWorkEntries } from "./job-work";
+import { invoicesForJob } from "./job-economy";
+import { discardInvoice } from "./invoices";
+import type { JobCompleteWarning, JobRemovalKind, JobRemovalPolicy } from "../job-ui-types";
+export type { JobCompleteWarning, JobRemovalKind, JobRemovalPolicy } from "../job-ui-types";
 
 export function createJobFromQuote(quote: Quote): Job {
   const data = db();
@@ -17,8 +22,11 @@ export function createJobFromQuote(quote: Quote): Job {
     (quote.jobId ? data.jobs.find((j) => j.id === quote.jobId) : undefined) ??
     data.jobs.find((j) => j.quoteId === quote.id);
   if (existing) {
-    existing.quoteId = quote.id;
+    // Behåll ursprunglig godkänd offert som kommersiell bas. En tilläggsoffert
+    // kopplas via quote.jobId och importeras som extra avtalade rader.
+    if (!existing.quoteId) existing.quoteId = quote.id;
     quote.jobId = existing.id;
+    importQuotedBaseline(existing, quote);
     save();
     return existing;
   }
@@ -41,8 +49,91 @@ export function createJobFromQuote(quote: Quote): Job {
   if (location) applyWorkLocationToJob(job, location);
   data.jobs.push(job);
   quote.jobId = job.id;
+  importQuotedBaseline(job, quote, false);
   save();
   return job;
+}
+
+export const INCOMING_JOB_SOURCES: readonly JobSource[] = ["web_form", "email", "phone", "import"];
+
+export function jobSourceLabel(source?: JobSource): string | undefined {
+  switch (source) {
+    case "web_form":
+      return "Via webbformulär";
+    case "email":
+      return "Via e-post";
+    case "phone":
+      return "Via telefon";
+    case "import":
+      return "Via import";
+    default:
+      return undefined;
+  }
+}
+
+export function jobHasLinkedQuote(job: Job): boolean {
+  if (job.quoteId) return true;
+  return db().quotes.some((q) => q.jobId === job.id);
+}
+
+/** Inkommande uppdrag utan offert – samma yta som Hem "Nytt uppdrag". */
+export function isIncomingUnquotedJob(job: Job): boolean {
+  const source = job.source ?? "manual";
+  if (!INCOMING_JOB_SOURCES.includes(source)) return false;
+  if (job.status === "klart") return false;
+  if (job.archivedAt) return false;
+  return !jobHasLinkedQuote(job);
+}
+
+export function isJobArchived(job: Pick<Job, "archivedAt">): boolean {
+  return Boolean(job.archivedAt);
+}
+
+export function titleFromIncomingMessage(message: string): string {
+  const compact = message.replace(/\s+/g, " ").trim();
+  if (!compact) return "Nytt uppdrag via webbformuläret";
+  return compact.length > 60 ? `${compact.slice(0, 57).trimEnd()}…` : compact;
+}
+
+function normalizeSearch(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/** Hitta inkommande uppdrag utan offert att koppla till en ny offert. */
+export function findMatchingUnquotedJob(customerId: string, hint?: string): Job | undefined {
+  const open = db().jobs.filter((j) => j.customerId === customerId && isIncomingUnquotedJob(j));
+  if (open.length === 0) return undefined;
+  if (open.length === 1) return open[0];
+  const q = normalizeSearch(hint ?? "");
+  if (!q) return undefined;
+  const tokens = q.split(/\s+/).filter((t) => t.length >= 3);
+  const scored = open
+    .map((j) => {
+      const hay = `${j.title} ${j.description} ${j.originalMessage ?? ""}`.toLowerCase();
+      const hits = tokens.filter((t) => hay.includes(t)).length;
+      const titleHit = hay.includes(q) ? 2 : 0;
+      return { j, score: hits + titleHit };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || b.j.createdAt.localeCompare(a.j.createdAt));
+  if (scored.length === 0) return undefined;
+  if (scored.length > 1 && scored[0].score === scored[1].score) return undefined;
+  return scored[0].j;
+}
+
+function activityForCreatedJob(job: Job, customerName: string): string {
+  switch (job.source) {
+    case "web_form":
+      return `Nytt uppdrag via webbformuläret från ${customerName}: ${job.title}.`;
+    case "email":
+      return `Nytt uppdrag via e-post från ${customerName}: ${job.title}.`;
+    case "phone":
+      return `Nytt uppdrag via telefon från ${customerName}: ${job.title}.`;
+    case "import":
+      return `Nytt uppdrag via import från ${customerName}: ${job.title}.`;
+    default:
+      return `Uppdraget ${job.title} skapades för ${customerName}.`;
+  }
 }
 
 export function createJob(input: {
@@ -52,6 +143,9 @@ export function createJob(input: {
   startDate?: string;
   workLocationId?: string;
   newWorkLocation?: WorkLocationInput;
+  source?: JobSource;
+  originalMessage?: string;
+  idempotencyKey?: string;
 }): Job {
   const data = db();
   const customer = requireCustomer(input.customerId);
@@ -76,10 +170,13 @@ export function createJob(input: {
     checklist: [],
     notes: "",
     createdAt: new Date().toISOString(),
+    source: input.source ?? "manual",
   };
+  if (input.originalMessage?.trim()) job.originalMessage = input.originalMessage.trim();
+  if (input.idempotencyKey) job.idempotencyKey = input.idempotencyKey;
   if (location) applyWorkLocationToJob(job, location);
   data.jobs.push(job);
-  logActivity(`Uppdraget ${job.title} skapades för ${customer.name}.`, {
+  logActivity(activityForCreatedJob(job, customer.name), {
     customerId: customer.id,
     entity: { type: "jobb", id: job.id },
   });
@@ -192,4 +289,134 @@ export function updateJob(
   });
   save();
   return job;
+}
+
+export function completeJob(jobId: string): Job {
+  return setJobStatus(jobId, "klart");
+}
+
+/** Återställer bara arbetsstatus. Fakturor, offerter, betalningar och böcker rörs inte. */
+export function reopenJob(jobId: string): Job {
+  const job = db().jobs.find((j) => j.id === jobId);
+  if (!job) throw new Error("Uppdraget finns inte");
+  if (job.status !== "klart" && !job.completedAt) {
+    throw new Error("Uppdraget är inte markerat som klart");
+  }
+  const customer = requireCustomer(job.customerId);
+  job.status = job.startDate ? "pagar" : "kommande";
+  job.completedAt = undefined;
+  logActivity("Uppdrag återöppnades.", {
+    customerId: customer.id,
+    entity: { type: "jobb", id: jobId },
+  });
+  save();
+  return job;
+}
+
+export function jobCompleteWarning(
+  jobId: string,
+  input: { remaining: number; registeredUninvoiced: number; unresolvedActionCount?: number }
+): JobCompleteWarning {
+  const drafts = invoicesForJob(jobId).filter((i) => i.status === "utkast" && i.type !== "kredit");
+  const openDraftAmount = drafts.reduce((s, i) => s + invoiceTotals(i).toPay, 0);
+  const unresolvedActionCount = input.unresolvedActionCount ?? 0;
+  const shouldWarn =
+    input.remaining > 0 ||
+    input.registeredUninvoiced > 0 ||
+    drafts.length > 0 ||
+    unresolvedActionCount > 0;
+  return {
+    remaining: input.remaining,
+    registeredUninvoiced: input.registeredUninvoiced,
+    openDraftCount: drafts.length,
+    openDraftAmount,
+    unresolvedActionCount,
+    shouldWarn,
+  };
+}
+
+function jobHasApprovedQuote(job: Job): boolean {
+  const linked = jobQuote(job);
+  if (linked?.status === "godkand") return true;
+  return db().quotes.some((q) => q.jobId === job.id && q.status === "godkand");
+}
+
+function jobHasIssuedInvoice(jobId: string): boolean {
+  return invoicesForJob(jobId).some((i) => i.status !== "utkast" && i.type !== "kredit");
+}
+
+function jobHasPayments(jobId: string): boolean {
+  const ids = new Set(invoicesForJob(jobId).map((i) => i.id));
+  if (ids.size === 0) return false;
+  return db().payments.some((p) => ids.has(p.invoiceId) && invoicePaidAmount(p.invoiceId) > 0);
+}
+
+function jobHasAccountingRefs(jobId: string): boolean {
+  const invoiceIds = new Set(invoicesForJob(jobId).map((i) => i.id));
+  const paymentIds = new Set(db().payments.filter((p) => invoiceIds.has(p.invoiceId)).map((p) => p.id));
+  return db().verifications.some((v) => {
+    const src = v.source;
+    if (src.type === "kundfaktura" && invoiceIds.has(src.id)) return true;
+    if (src.type === "betalning" && paymentIds.has(src.id)) return true;
+    return false;
+  });
+}
+
+function jobHasInvoicedWork(jobId: string): boolean {
+  return jobWorkEntries(jobId).some((e) => e.role === "actual" && isIssuedLinked(e));
+}
+
+export function jobRemovalPolicy(jobId: string): JobRemovalPolicy {
+  const job = db().jobs.find((j) => j.id === jobId);
+  if (!job) throw new Error("Uppdraget finns inte");
+  const reasons: string[] = [];
+  if (jobHasApprovedQuote(job)) reasons.push("Godkänd offert");
+  if (jobHasIssuedInvoice(jobId)) reasons.push("Utfärdad faktura");
+  if (jobHasPayments(jobId)) reasons.push("Betalningar");
+  if (jobHasAccountingRefs(jobId)) reasons.push("Bokföring");
+  if (jobHasInvoicedWork(jobId)) reasons.push("Fakturerat arbete");
+  return { kind: reasons.length === 0 ? "delete" : "archive", reasons };
+}
+
+function archiveJob(job: Job): { kind: "archived"; jobId: string } {
+  const customer = requireCustomer(job.customerId);
+  job.archivedAt = new Date().toISOString();
+  logActivity(`Uppdraget ${job.title} hos ${customer.name} arkiverades.`, {
+    customerId: customer.id,
+    entity: { type: "jobb", id: job.id },
+  });
+  save();
+  return { kind: "archived", jobId: job.id };
+}
+
+function hardDeleteJob(job: Job): { kind: "deleted"; jobId: string } {
+  const data = db();
+  const customer = requireCustomer(job.customerId);
+  const drafts = invoicesForJob(job.id).filter((i) => i.status === "utkast");
+  for (const inv of drafts) {
+    discardInvoice(inv.id);
+  }
+  data.jobWorkEntries = (data.jobWorkEntries ?? []).filter((e) => e.jobId !== job.id);
+  for (const quote of data.quotes) {
+    if (quote.jobId === job.id) quote.jobId = undefined;
+  }
+  data.jobs = data.jobs.filter((j) => j.id !== job.id);
+  logActivity(`Uppdraget ${job.title} hos ${customer.name} togs bort.`, {
+    customerId: customer.id,
+    entity: { type: "jobb", id: job.id },
+  });
+  save();
+  return { kind: "deleted", jobId: job.id };
+}
+
+/**
+ * Hård radering bara om uppdraget är tomt (ingen godkänd offert, utfärdad
+ * faktura, betalning, bokföring eller fakturerat arbete). Annars arkiv.
+ * Utfärdade fakturor, signerade offerter och verifikationer raderas aldrig.
+ */
+export function deleteOrArchiveJob(jobId: string): { kind: "deleted" | "archived"; jobId: string } {
+  const job = db().jobs.find((j) => j.id === jobId);
+  if (!job) throw new Error("Uppdraget finns inte");
+  const policy = jobRemovalPolicy(jobId);
+  return policy.kind === "delete" ? hardDeleteJob(job) : archiveJob(job);
 }

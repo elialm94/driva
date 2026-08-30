@@ -1,5 +1,5 @@
 import { db } from "../store";
-import type { Invoice, Job } from "../types";
+import type { Invoice, Job, SupplierInvoice } from "../types";
 import {
   daysOverdue,
   effectiveQuoteStatus,
@@ -30,7 +30,20 @@ import { bankReconciliation } from "../accounting/reconciliation";
 import { bokforingsdatum, calendarFiscalYear, quartersOf, vatDueDate, type Period } from "../accounting/dates";
 import { computeVatPosition } from "../accounting/vat";
 import { datumKort, kr, relativ } from "../format";
-import { inquiryHref, invoiceHref, jobHref, newQuoteHref, quoteHref } from "../nav";
+import { invoiceHref, jobHref, newQuoteHref, quoteHref } from "../nav";
+import { isIncomingUnquotedJob, jobSourceLabel } from "./jobs";
+import {
+  latestPaymentForInvoice,
+  remainingAmountForInvoice,
+  supplierPaymentConfirmRows,
+} from "./supplier-payments";
+import {
+  paymentDetailsInfo,
+  provenanceLabel,
+  supplierDetailsRequestInfo,
+  type PaymentDetailsInfo,
+} from "./payment-details";
+import { isPaymentInFlight, isReadyToApproveNow } from "../inbox/workflow";
 
 /**
  * Central åtgärdsmotor: EN härledning av "vad behöver jag göra?" ur riktig
@@ -49,7 +62,6 @@ export type ActionCategory =
   | "accounting"
   | "vat"
   | "supplier"
-  | "inquiry"
   | "reminder";
 
 /** Ikonnyckel för UI:t – hålls som data så att motorn förblir ren serverkod. */
@@ -65,6 +77,23 @@ export type ActionIcon =
   | "percent"
   | "bell";
 
+/**
+ * Radunderlag för den fokuserade betalningsuppgiftskön ("N leverantörsfakturor
+ * behöver betalningsuppgifter" → Hantera). Varje rad bär SAMMA underliggande
+ * åtgärd som en enskild uppmärksamhetsrad – ingen parallell modell.
+ */
+export interface PaymentDetailsQueueItem {
+  supplierInvoiceId: string;
+  supplier: string;
+  amount: number;
+  dueDate: string;
+  href: string;
+  action:
+    | { kind: "verify"; candidateAccount?: string; candidateOcr?: string }
+    | { kind: "reuse"; account: string; verifiedVia: string }
+    | { kind: "request"; to: string; subject: string; message: string };
+}
+
 /** Knappen som utför åtgärden direkt i listan. Diskriminerad så UI:t kan koppla server actions. */
 export type ActionCta =
   | { type: "link"; label: string; href: string }
@@ -74,12 +103,45 @@ export type ActionCta =
   | { type: "uploadReceipt"; label: string; expenseId: string }
   | { type: "answerQuestion"; expenseId: string; options: string[] }
   | { type: "createJobInvoice"; label: string; jobId: string }
-  | { type: "paySupplier"; label: string; supplierInvoiceId: string }
+  | { type: "paySupplier"; label: string; supplierInvoiceId: string; paymentId?: string }
   | { type: "confirmPaymentMatch"; label: string; txId: string; invoiceId: string }
   | { type: "pickPaymentMatch"; txId: string }
   | { type: "confirmRotPayout"; label: string; txId: string }
   | { type: "registerCreditRefund"; label: string; invoiceId: string; txId?: string }
-  | { type: "reminderActions"; reminderId: string; dueAt: string; timezone: string };
+  | { type: "reminderActions"; reminderId: string; dueAt: string; timezone: string }
+  // Betalningsuppgifter för leverantörsfakturor – konkreta lösningsflöden,
+  // aldrig ett generiskt "öppna dokumentet" som låtsas vara en åtgärd.
+  | {
+      /** Kontrollera/ange uppgifter i en fokuserad vy (dokumentkandidat förifylls). */
+      type: "verifyPaymentDetails";
+      label: string;
+      supplierInvoiceId: string;
+      candidateAccount?: string;
+      candidateOcr?: string;
+    }
+  | {
+      /** Återanvänd tidigare VERIFIERADE leverantörsuppgifter (bekräftelse krävs). */
+      type: "useVerifiedSupplierDetails";
+      label: string;
+      supplierInvoiceId: string;
+      account: string;
+    }
+  | {
+      /** Explicit verifiering av ÄNDRAD destination – godkänns aldrig automatiskt. */
+      type: "confirmChangedSupplierDetails";
+      label: string;
+      supplierInvoiceId: string;
+      previousAccount: string;
+      newAccount: string;
+    }
+  | {
+      /** Be leverantören komplettera via e-post (extern sändning – bekräftelse krävs). */
+      type: "requestSupplierDetails";
+      label: string;
+      supplierInvoiceId: string;
+      to: string;
+    }
+  | { type: "paymentDetailsQueue"; label: string; items: PaymentDetailsQueueItem[] };
 
 /**
  * Bekräftelseinnehåll för åtgärder som skickar externt (e-post) eller bokför
@@ -105,6 +167,8 @@ export interface BusinessAction {
   title: string;
   /** T.ex. "Brf Eken · 23 000 kr". */
   subtitle: string;
+  /** Endast visning i redovisningskön – motorn sätter aldrig detta. */
+  clientName?: string;
   /** Djuplänk rakt till platsen där felet fixas – aldrig en generisk lista. */
   href: string;
   cta?: ActionCta;
@@ -201,13 +265,14 @@ const RANK = {
   supplierOverdue: 6,
   accountingQuestion: 7,
   reminder: 8,
-  inquiry: 9,
+  newJob: 9,
   jobInvoice: 10,
   rot: 11,
   vatSoon: 12,
   quoteFollowUp: 13,
   quoteExpired: 14,
   missingReceipt: 15,
+  clientRequest: 6,
 } as const;
 
 interface Ranked {
@@ -238,8 +303,8 @@ export function getBusinessActions(
   collectReminders(ranked, watching, now);
   collectTaxReduction(ranked, watching, now);
   collectAccounting(ranked);
+  collectClientRequests(ranked);
   collectSuppliers(ranked, watching, now);
-  collectInquiries(ranked);
   collectInboxMail(ranked);
   collectVat(ranked, watching, now);
 
@@ -460,6 +525,30 @@ function collectQuotes(ranked: Ranked[], watching: WatchingItem[]) {
 
 function collectJobs(ranked: Ranked[], watching: WatchingItem[], now: Date) {
   for (const job of db().jobs) {
+    if (isIncomingUnquotedJob(job)) {
+      const customer = requireCustomer(job.customerId);
+      const href = jobHref(job.id);
+      const via = jobSourceLabel(job.source);
+      ranked.push({
+        rank: RANK.newJob,
+        order: -(Date.parse(job.createdAt) || 0),
+        action: {
+          id: `job-new-${job.id}`,
+          priority: "action",
+          category: "job",
+          icon: "inbox",
+          title: `Nytt uppdrag: ${job.title}`,
+          subtitle: via ? `${customer.name} · ${via}` : customer.name,
+          href,
+          cta: { type: "link", label: "Öppna uppdrag", href },
+          secondary: {
+            label: "Skapa offert",
+            href: newQuoteHref({ kund: job.customerId, job: job.id, from: { href, label: job.title } }),
+          },
+        },
+      });
+    }
+
     const derived = derivedJobStatus(job, now);
 
     if (
@@ -761,21 +850,24 @@ function collectAccounting(ranked: Ranked[]) {
         },
       });
     } else if (e.status === "saknar_kvitto") {
-      ranked.push({
-        rank: RANK.missingReceipt,
-        order: Date.parse(e.date) || 0,
-        action: {
-          id: `receipt-${e.id}`,
-          priority: "action",
-          category: "accounting",
-          icon: "receipt",
-          title: `Kvitto saknas – ${e.supplier}, ${kr(e.amount)}`,
-          subtitle: `Köp ${datumKort(e.date)} · fota eller ladda upp kvittot så bokförs det`,
-          href: `/ekonomi?flik=utgifter&atgard=receipt-${e.id}`,
-          cta: { type: "uploadReceipt", label: "Lägg till kvitto", expenseId: e.id },
-          amount: e.amount,
-        },
-      });
+      const asked = (data.clientInformationRequests ?? []).some((r) => r.expenseId === e.id && !r.resolvedAt);
+      if (!asked) {
+        ranked.push({
+          rank: RANK.missingReceipt,
+          order: Date.parse(e.date) || 0,
+          action: {
+            id: `receipt-${e.id}`,
+            priority: "action",
+            category: "accounting",
+            icon: "receipt",
+            title: `Kvitto saknas – ${e.supplier}, ${kr(e.amount)}`,
+            subtitle: `Köp ${datumKort(e.date)} · fota eller ladda upp kvittot så bokförs det`,
+            href: `/ekonomi?flik=utgifter&atgard=receipt-${e.id}`,
+            cta: { type: "uploadReceipt", label: "Lägg till kvitto", expenseId: e.id },
+            amount: e.amount,
+          },
+        });
+      }
     }
   }
 
@@ -876,13 +968,289 @@ function collectAccounting(ranked: Ranked[]) {
   }
 }
 
+function collectClientRequests(ranked: Ranked[]) {
+  for (const req of db().clientInformationRequests ?? []) {
+    if (req.resolvedAt) continue;
+    const expense = req.expenseId ? db().expenses.find((e) => e.id === req.expenseId) : undefined;
+    ranked.push({
+      rank: RANK.clientRequest,
+      order: Date.parse(req.createdAt) || 0,
+      action: {
+        id: `client-request-${req.id}`,
+        priority: "action",
+        category: "accounting",
+        icon: "receipt",
+        title: req.title,
+        subtitle: expense
+          ? `${expense.supplier} · ${kr(expense.amount)}`
+          : `${req.requestedByName} väntar på underlag`,
+        href: expense
+          ? `/ekonomi?flik=utgifter&atgard=receipt-${expense.id}`
+          : "/ekonomi?flik=utgifter",
+        cta: expense
+          ? { type: "uploadReceipt", label: "Lägg till kvitto", expenseId: expense.id }
+          : { type: "link", label: "Öppna utgifter", href: "/ekonomi?flik=utgifter" },
+        amount: expense?.amount,
+      },
+    });
+  }
+}
+
 /* ------------------------------ Leverantörsfakturor --------------------------- */
 
+/** Gruppera betalningsuppgiftsrader på Hem när de är så här många. */
+export const PAYMENT_DETAILS_GROUP_THRESHOLD = 3;
+
+interface DetailCase {
+  order: number;
+  action: BusinessAction;
+  queueItem: PaymentDetailsQueueItem;
+}
+
+/**
+ * En bokförd, obetald faktura utan betalbara uppgifter → rad med KONKRET
+ * lösning per orsak. Osäker läsning: kontrollera mot dokumentet. Verifierad
+ * historik finns: föreslå återanvändning. Saknas helt: be leverantören via
+ * mejl om avsändare + e-postleverantör finns – annars ingen Hem-rad alls
+ * (status bor i Inbox/Ekonomi där manuell komplettering finns).
+ */
+function detailCaseFor(s: SupplierInvoice, details: PaymentDetailsInfo, href: string): DetailCase | null {
+  const uncertain = details.cause === "EXTRACTION_UNCERTAIN";
+  const due = `förfaller ${datumKort(s.dueDate)}`;
+  const base = { supplierInvoiceId: s.id, supplier: s.supplier, amount: s.amount, dueDate: s.dueDate, href };
+
+  if (details.reusable && details.previous) {
+    const prev = details.previous;
+    const verifiedVia = `${provenanceLabel(prev.source)} ${datumKort(prev.verifiedAt)}`;
+    return {
+      order: -s.amount,
+      action: {
+        id: `supplier-reuse-${s.id}`,
+        priority: "action",
+        category: "supplier",
+        icon: "bank",
+        title: `${s.supplier} · ${kr(s.amount)} – ${uncertain ? "bankgirot kunde inte läsas på fakturan" : "betalningsuppgifter saknas på fakturan"}`,
+        subtitle: `Tidigare verifierat: ${prev.account} (${verifiedVia}) · ${due}`,
+        href,
+        cta: {
+          type: "useVerifiedSupplierDetails",
+          label: "Använd tidigare uppgifter",
+          supplierInvoiceId: s.id,
+          account: prev.account,
+        },
+        secondary: { label: "Kontrollera dokument", href },
+        amount: s.amount,
+        confirm: {
+          title: "Använd tidigare verifierade uppgifter?",
+          rows: [
+            { label: "Leverantör", value: s.supplier },
+            { label: "Konto", value: prev.account },
+            { label: "Verifierat via", value: verifiedVia },
+            { label: "Belopp", value: kr(s.amount) },
+          ],
+          confirmLabel: "Använd tidigare uppgifter",
+        },
+      },
+      queueItem: { ...base, action: { kind: "reuse", account: prev.account, verifiedVia } },
+    };
+  }
+
+  if (uncertain) {
+    const candidate = details.candidate ?? {};
+    return {
+      order: -s.amount,
+      action: {
+        id: `supplier-verify-${s.id}`,
+        priority: "action",
+        category: "supplier",
+        icon: "bank",
+        title: `Kontrollera betalningsuppgifter för ${s.supplier}`,
+        subtitle: `${kr(s.amount)} · ${due}${candidate.account ? ` · läst ur dokumentet: ${candidate.account}` : ""}`,
+        href,
+        cta: {
+          type: "verifyPaymentDetails",
+          label: "Kontrollera",
+          supplierInvoiceId: s.id,
+          ...(candidate.account ? { candidateAccount: candidate.account } : {}),
+          ...(candidate.ocr ? { candidateOcr: candidate.ocr } : {}),
+        },
+        secondary: { label: "Visa dokumentet", href },
+        amount: s.amount,
+      },
+      queueItem: {
+        ...base,
+        action: {
+          kind: "verify",
+          ...(candidate.account ? { candidateAccount: candidate.account } : {}),
+          ...(candidate.ocr ? { candidateOcr: candidate.ocr } : {}),
+        },
+      },
+    };
+  }
+
+  const request = supplierDetailsRequestInfo(s);
+  if (!request.possible || !request.to || !request.subject || !request.message) return null;
+  return {
+    order: -s.amount,
+    action: {
+      id: `supplier-bank-${s.id}`,
+      priority: "action",
+      category: "supplier",
+      icon: "bank",
+      title: `Betalningsuppgifter saknas – ${s.supplier}`,
+      subtitle: `${kr(s.amount)} · ${s.invoiceNumber} · Driva kan be leverantören komplettera`,
+      href,
+      cta: { type: "requestSupplierDetails", label: "Be leverantören", supplierInvoiceId: s.id, to: request.to },
+      secondary: { label: "Lägg till själv", href },
+      amount: s.amount,
+      confirm: {
+        title: "Be leverantören om betalningsuppgifter?",
+        rows: [
+          { label: "Till", value: request.to },
+          { label: "Faktura", value: `${s.invoiceNumber} · ${kr(s.amount)}` },
+          { label: "Meddelande", value: request.message.split("\n\n")[1] ?? request.subject },
+        ],
+        confirmLabel: "Skicka",
+      },
+    },
+    queueItem: { ...base, action: { kind: "request", to: request.to, subject: request.subject, message: request.message } },
+  };
+}
+
+/** Få rader: visa var för sig. Många likadana: EN grupprad med fokuserad kö. */
+function emitDetailCases(ranked: Ranked[], cases: DetailCase[]) {
+  if (cases.length < PAYMENT_DETAILS_GROUP_THRESHOLD) {
+    for (const c of cases) ranked.push({ rank: RANK.supplierOverdue, order: c.order, action: c.action });
+    return;
+  }
+  const items = [...cases].sort((a, b) => b.queueItem.amount - a.queueItem.amount).map((c) => c.queueItem);
+  const total = items.reduce((sum, i) => sum + i.amount, 0);
+  ranked.push({
+    rank: RANK.supplierOverdue,
+    order: -total,
+    action: {
+      id: "supplier-details-group",
+      priority: "action",
+      category: "supplier",
+      icon: "bank",
+      title: `${items.length} leverantörsfakturor behöver betalningsuppgifter`,
+      subtitle: `${items.map((i) => i.supplier).join(" · ")} · totalt ${kr(total)}`,
+      href: "/ekonomi?flik=utgifter",
+      cta: { type: "paymentDetailsQueue", label: "Hantera", items },
+      amount: total,
+    },
+  });
+}
+
 function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date) {
+  const detailCases: DetailCase[] = [];
+
   for (const s of db().supplierInvoices) {
-    if (s.status !== "obetald") continue;
-    const days = daysFrom(now, s.dueDate);
-    if (days < 0) {
+    const payment = latestPaymentForInvoice(s.id);
+    const href = s.inboxItemId ? `/inbox/${s.inboxItemId}` : `/ekonomi?flik=utgifter&atgard=${encodeURIComponent(`supplier-${s.id}`)}`;
+
+    if (payment?.status === "FAILED") {
+      const remaining = remainingAmountForInvoice(s);
+      ranked.push({
+        rank: RANK.supplierOverdue,
+        order: -s.amount,
+        action: {
+          id: `supplier-fail-${s.id}`,
+          priority: "urgent",
+          category: "supplier",
+          icon: "alert",
+          title: `Betalningen till ${s.supplier} misslyckades`,
+          subtitle: `${kr(remaining || payment.amount)}${payment.failureReason ? ` · ${payment.failureReason}` : ""}`,
+          href,
+          cta: { type: "paySupplier", label: "Försök igen", supplierInvoiceId: s.id, paymentId: payment.id },
+          amount: remaining || payment.amount,
+          confirm: {
+            title: "Skicka till bank igen?",
+            rows: supplierPaymentConfirmRows(payment, s),
+            confirmLabel: "Skicka till bank",
+          },
+        },
+      });
+      continue;
+    }
+
+    const details = s.status === "betald" ? undefined : paymentDetailsInfo(s);
+
+    // D. Ändrad destination – högriskundantag som ALDRIG godkänns automatiskt.
+    if (details && (details.cause === "CHANGED" || payment?.destinationChanged)) {
+      const previousAccount = details.previous?.account ?? "tidigare verifierat konto";
+      const newAccount = details.account ?? payment?.recipientAccount ?? "—";
+      ranked.push({
+        rank: RANK.supplierOverdue,
+        order: -s.amount,
+        action: {
+          id: `supplier-dest-${s.id}`,
+          priority: "urgent",
+          category: "supplier",
+          icon: "alert",
+          title: `${s.supplier} har nya betalningsuppgifter`,
+          subtitle: `Tidigare: ${previousAccount} · Ny faktura: ${newAccount} · kontrollera uppgifterna innan betalning`,
+          href,
+          cta: {
+            type: "confirmChangedSupplierDetails",
+            label: "Kontrollera uppgifterna",
+            supplierInvoiceId: s.id,
+            previousAccount,
+            newAccount,
+          },
+          secondary: { label: "Visa dokumentet", href },
+          amount: s.amount,
+          confirm: {
+            title: "Godkänn nya betalningsuppgifter?",
+            rows: [
+              { label: "Leverantör", value: s.supplier },
+              { label: "Tidigare verifierat", value: previousAccount },
+              { label: "Ny faktura", value: newAccount },
+              { label: "Belopp", value: kr(s.amount) },
+            ],
+            confirmLabel: "Uppgifterna stämmer – godkänn",
+          },
+        },
+      });
+      continue;
+    }
+
+    if (details && s.accountingStatus === "bokford") {
+      // Förfrågan skickad → inte en aktiv åtgärd; Driva bevakar tills svar kommer.
+      if (details.cause === "AWAITING_SUPPLIER") {
+        const sentAt = details.request?.sentAt ?? s.createdAt;
+        watching.push({
+          id: `supplier-await-${s.id}`,
+          category: "supplier",
+          title: `Väntar på betalningsuppgifter från ${s.supplier}`,
+          subtitle: `${kr(s.amount)} · ${s.invoiceNumber} · frågan skickades ${datumKort(sentAt)}`,
+          href,
+          date: sentAt.slice(0, 10),
+          amount: s.amount,
+        });
+        continue;
+      }
+      if (details.cause === "EXTRACTION_UNCERTAIN" || details.cause === "MISSING") {
+        const kase = detailCaseFor(s, details, href);
+        if (kase) detailCases.push(kase);
+        continue;
+      }
+    }
+
+    if (payment && isPaymentInFlight(payment.status)) {
+      watching.push({
+        id: `supplier-pay-${s.id}`,
+        category: "supplier",
+        title: `${s.supplier} · ${kr(payment.amount)}`,
+        subtitle: `Betalas ${datumKort(payment.scheduledDate)}`,
+        href,
+        date: payment.scheduledDate.slice(0, 10),
+        amount: payment.amount,
+      });
+      continue;
+    }
+
+    if (isReadyToApproveNow({ invoice: s, payment, now })) {
       ranked.push({
         rank: RANK.supplierOverdue,
         order: -s.amount,
@@ -891,80 +1259,64 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
           priority: "action",
           category: "supplier",
           icon: "invoice",
-          title: `Räkningen från ${s.supplier} är förfallen`,
-          subtitle: `${kr(s.amount)} · skulle betalats ${datumKort(s.dueDate)}`,
-          href: `/ekonomi?flik=utgifter&atgard=${encodeURIComponent(`supplier-${s.id}`)}`,
-          cta: { type: "paySupplier", label: "Betala & bokför", supplierInvoiceId: s.id },
-          amount: s.amount,
+          title: `Skicka betalning till ${s.supplier}`,
+          subtitle: `${kr(payment?.amount ?? s.amount)} · förfaller ${datumKort(s.dueDate)}`,
+          href,
+          cta: { type: "paySupplier", label: "Skicka till bank", supplierInvoiceId: s.id, paymentId: payment?.id },
+          amount: payment?.amount ?? s.amount,
           confirm: {
-            title: "Betala och bokför?",
-            rows: [
-              { label: "Leverantör", value: `${s.supplier} · ${s.invoiceNumber}` },
-              { label: "Belopp", value: kr(s.amount) },
-              { label: "Förföll", value: datumKort(s.dueDate) },
-              { label: "Bokförs som", value: "betald från företagskontot" },
-            ],
-            confirmLabel: "Betala & bokför",
+            title: "Skicka till bank?",
+            rows: payment
+              ? supplierPaymentConfirmRows(payment, s)
+              : [
+                  { label: "Leverantör", value: s.supplier },
+                  { label: "Belopp", value: kr(s.amount) },
+                  { label: "Förfaller", value: datumKort(s.dueDate) },
+                  { label: "OCR", value: s.ocr ?? "—" },
+                  { label: "Bankgiro", value: s.bankgiro ?? s.recipientAccount ?? "—" },
+                ],
+            confirmLabel: "Skicka till bank",
           },
         },
       });
-    } else if (days <= WATCHING.supplierDays) {
-      watching.push({
-        id: `supplier-due-${s.id}`,
-        category: "supplier",
-        title: `${s.supplier} · ${kr(s.amount)}`,
-        subtitle: `Förfaller ${relativ(s.dueDate)} · betalas från Ekonomi`,
-        href: "/ekonomi?flik=utgifter",
-        date: s.dueDate.slice(0, 10),
-        amount: s.amount,
-      });
     }
   }
-}
 
-/* ---------------------------------- Förfrågningar ----------------------------- */
-
-function collectInquiries(ranked: Ranked[]) {
-  for (const r of db().requests) {
-    if (r.status !== "ny") continue;
-    const customer = requireCustomer(r.customerId);
-    const href = inquiryHref(r.id);
-    ranked.push({
-      rank: RANK.inquiry,
-      order: -(Date.parse(r.createdAt) || 0),
-      action: {
-        id: `inquiry-${r.id}`,
-        priority: "action",
-        category: "inquiry",
-        icon: "inbox",
-        title: `Ny förfrågan: ${r.title}`,
-        subtitle: `${customer.name} · ${excerpt(r.message)}`,
-        href,
-        cta: {
-          type: "link",
-          label: "Skapa offert",
-          href: newQuoteHref({ kund: r.customerId, forfragan: r.id, from: { href, label: r.title } }),
-        },
-        secondary: { label: "Visa förfrågan", href },
-      },
-    });
-  }
+  emitDetailCases(ranked, detailCases);
 }
 
 function collectInboxMail(ranked: Ranked[]) {
   for (const item of db().inboxItems ?? []) {
-    if (item.status !== "ny") continue;
+    const invoice = item.supplierInvoiceId
+      ? db().supplierInvoices.find((s) => s.id === item.supplierInvoiceId)
+      : undefined;
+    const payment = item.supplierInvoiceId ? latestPaymentForInvoice(item.supplierInvoiceId) : undefined;
+    if (payment?.status === "FAILED" || payment?.destinationChanged) continue;
+    // Ändrad destination har redan en egen högprioriterad rad (supplier-dest-).
+    if (invoice && invoice.status !== "betald" && paymentDetailsInfo(invoice).cause === "CHANGED") continue;
+    if (invoice && isReadyToApproveNow({ invoice, payment })) continue;
+
+    const needsReview =
+      item.status === "ny" &&
+      (item.parsedAmount == null ||
+        (item.documentType !== "kvitto" && !item.supplierInvoiceId) ||
+        (invoice && invoice.accountingStatus !== "bokford"));
+    if (!needsReview) continue;
+
     const href = `/inbox/${item.id}`;
     ranked.push({
-      rank: RANK.inquiry,
+      rank: RANK.newJob,
       order: -(Date.parse(item.createdAt) || 0),
       action: {
         id: `inbox-mail-${item.id}`,
         priority: "action",
         category: "accounting",
         icon: "inbox",
-        title: `Inkommande: ${item.subject || "Mejl utan ämne"}`,
-        subtitle: `${item.fromAddress} · ${excerpt(item.textBody)}`,
+        title:
+          item.parsedAmount == null
+            ? `Kontrollera belopp – ${item.parsedSupplier ?? (item.subject || "dokument")}`
+            : `Granska ${item.documentType === "kvitto" ? "kvitto" : "faktura"} från ${item.parsedSupplier ?? item.fromAddress}`,
+        subtitle: item.parsedAmount != null ? `${kr(item.parsedAmount)} · ${excerpt(item.textBody)}` : excerpt(item.textBody),
         href,
         cta: { type: "link", label: "Öppna i inboxen", href },
         secondary: { label: "Visa posten", href },

@@ -78,7 +78,7 @@ export function SiteContactForm({
     return (
       <div className="rounded-2xl p-6 text-center" style={{ background: bg, border: `1px solid ${line}` }}>
         <CheckCircle2 className="mx-auto size-8" style={{ color: accent }} />
-        <p className="mt-2 text-[16px] font-semibold">Tack för din förfrågan!</p>
+        <p className="mt-2 text-[16px] font-semibold">Tack för ditt meddelande!</p>
         <p className="mt-1 text-[14px] opacity-70">Vi återkommer till dig så snart vi kan, oftast samma dag.</p>
       </div>
     );
@@ -181,7 +181,7 @@ export function SiteContactForm({
         className="w-full rounded-xl py-3 text-[14px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-60"
         style={{ background: accent, color: accentInk }}
       >
-        {pending ? "Skickar …" : "Skicka förfrågan"}
+        {pending ? "Skickar …" : "Skicka meddelande"}
       </button>
     </form>
   );
@@ -645,7 +645,7 @@ function SectionRow({
         </div>
         {section.type === "kontakt" && !visible ? (
           <p className="px-3 pb-3 text-[12px] leading-relaxed text-warn sm:pl-11 sm:pr-4">
-            Besökare kan inte skicka förfrågningar när den här sektionen är dold.
+            Besökare kan inte skicka meddelanden när den här sektionen är dold.
           </p>
         ) : null}
       </div>
@@ -1273,7 +1273,7 @@ export function PublishWebsiteButton({ published }: { published: boolean }) {
             <CheckCircle2 className="size-10 text-ok" />
             <p className="mt-3 text-[18px] font-semibold">Hemsidan är publicerad</p>
             <p className="mt-1 text-[14px] text-soft">
-              Nya förfrågningar från formuläret dyker upp direkt på din Hem-sida.
+              Nya uppdrag från formuläret dyker upp direkt på din Hem-sida.
             </p>
             <a href="/sajt" target="_blank" rel="noreferrer" className={cx(buttonClasses("primary"), "mt-5")}>
               Öppna sajten
@@ -1282,7 +1282,7 @@ export function PublishWebsiteButton({ published }: { published: boolean }) {
         ) : (
           <div className="px-6 py-5">
             <p className="text-[14px] leading-relaxed text-soft">
-              Sajten blir tillgänglig för besökare och kontaktformuläret börjar skapa förfrågningar i Driva. En egen
+              Sajten blir tillgänglig för besökare och kontaktformuläret börjar skapa uppdrag i Driva. En egen
               .se-adress skaffar du under Domän när du vill.
             </p>
             <div className="mt-5 flex justify-end gap-2">

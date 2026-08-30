@@ -6,6 +6,7 @@ import { Plus } from "lucide-react";
 import { DateField } from "./date-field";
 import { Modal } from "./modal";
 import { buttonClasses, cx } from "./ui";
+import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
 import { createJobAction, updateJobAction } from "@/app/actions";
 import { addCustomerOption, CustomerPicker, type CustomerOption } from "./customer-picker";
 import { FieldError, focusField, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
@@ -24,6 +25,7 @@ export function NewUppdragButton({
   defaultWorkLocationId,
   size = "md",
   variant = "primary",
+  appearance = "button",
 }: {
   customers: CustomerOption[];
   defaultCustomerId?: string;
@@ -33,6 +35,7 @@ export function NewUppdragButton({
   defaultWorkLocationId?: string;
   size?: "sm" | "md";
   variant?: "primary" | "secondary";
+  appearance?: ActionAppearance;
 }) {
   const [open, setOpen] = useState(false);
   const [customerOptions, setCustomerOptions] = useState(customers);
@@ -44,6 +47,8 @@ export function NewUppdragButton({
   const [newAddress, setNewAddress] = useState(false);
   const [isPending, startTransition] = useTransition();
   const navigate = useAppNavigate();
+  const menu = useActionMenu();
+  const inMenu = appearance === "menu";
   const lockedCustomer = Boolean(defaultCustomerId);
   const { errors, formProps, fieldProps, reset } = useNativeFieldErrors({
     title: "Ange vad uppdraget gäller.",
@@ -85,14 +90,17 @@ export function NewUppdragButton({
   return (
     <>
       <button
-        className={buttonClasses(variant, size)}
+        type="button"
+        role={inMenu ? "menuitem" : undefined}
+        className={inMenu ? actionMenuItemClassName() : buttonClasses(variant, size)}
         onClick={() => {
+          menu?.close();
           setCustomerError(null);
           reset();
           setOpen(true);
         }}
       >
-        <Plus className={size === "sm" ? "size-3.5" : "size-4"} />
+        <Plus className={cx("shrink-0", inMenu || size !== "sm" ? "size-4" : "size-3.5")} />
         Skapa uppdrag
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title="Nytt uppdrag" size="md">

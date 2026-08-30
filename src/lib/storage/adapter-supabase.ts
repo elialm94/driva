@@ -150,20 +150,75 @@ export async function resolvePublicToken(
 
 export interface MembershipInfo {
   businessId: string;
-  role: "owner" | "admin" | "member";
+  role: import("../types").BusinessRole;
+  lastActiveAt?: string;
+  invitedByUserId?: string;
 }
 
 /**
  * Medlemskap för en VERIFIERAD användare (id från Supabase Auth-sessionen).
- * Körs som anslutningsrollen (postgres/driva_app-login) – före tenantkontext.
+ * Återkallade rader filtreras bort – gamla sessioner får ingen åtkomst.
  */
 export async function membershipsForUser(userId: string): Promise<MembershipInfo[]> {
   const client = await sqlClient();
   const rows = await client.query(
-    `select business_id, role from public.business_memberships where user_id = $1 order by created_at, business_id`,
+    `select business_id, role, last_active_at, invited_by_user_id
+       from public.business_memberships
+      where user_id = $1 and revoked_at is null
+      order by created_at, business_id`,
     [userId]
   );
-  return rows.map((r) => ({ businessId: String(r.business_id), role: r.role as MembershipInfo["role"] }));
+  return rows.map((r) => ({
+    businessId: String(r.business_id),
+    role: r.role as MembershipInfo["role"],
+    lastActiveAt: r.last_active_at ? String(r.last_active_at) : undefined,
+    invitedByUserId: r.invited_by_user_id ? String(r.invited_by_user_id) : undefined,
+  }));
+}
+
+export async function insertMembership(input: {
+  businessId: string;
+  userId: string;
+  role: MembershipInfo["role"];
+  invitedByUserId?: string;
+}): Promise<void> {
+  const client = await sqlClient();
+  await client.query(
+    `insert into public.business_memberships (business_id, user_id, role, invited_by_user_id, accepted_at)
+     values ($1, $2, $3, $4, now())
+     on conflict (business_id, user_id) do update
+       set role = excluded.role,
+           revoked_at = null,
+           invited_by_user_id = coalesce(excluded.invited_by_user_id, public.business_memberships.invited_by_user_id),
+           accepted_at = coalesce(public.business_memberships.accepted_at, now())`,
+    [input.businessId, input.userId, input.role, input.invitedByUserId ?? null]
+  );
+}
+
+export async function revokeMembershipRow(businessId: string, userId: string): Promise<void> {
+  const client = await sqlClient();
+  await client.query(
+    `update public.business_memberships
+        set revoked_at = now()
+      where business_id = $1 and user_id = $2 and revoked_at is null`,
+    [businessId, userId]
+  );
+}
+
+export async function touchMembershipActive(businessId: string, userId: string): Promise<void> {
+  const client = await sqlClient();
+  await client.query(
+    `update public.business_memberships
+        set last_active_at = now()
+      where business_id = $1 and user_id = $2 and revoked_at is null`,
+    [businessId, userId]
+  );
+}
+
+export async function businessNameById(businessId: string): Promise<string> {
+  const client = await sqlClient();
+  const rows = await client.query(`select name from public.business_settings where business_id = $1`, [businessId]);
+  return rows[0]?.name ? String(rows[0].name) : "";
 }
 
 /**
@@ -213,4 +268,69 @@ function initialsFor(name: string): string {
 function inboundSlugFor(businessId: string): string {
   const compact = businessId.replace(/-/g, "");
   return compact.slice(0, 12) || "inbox";
+}
+
+/* ------------------------- samarbete utanför tenantkontext ------------------------- */
+
+export async function upsertInvitationRow(inv: import("../types").CollaborationInvitation): Promise<void> {
+  const client = await sqlClient();
+  await client.query(
+    `insert into public.collaboration_invitations (
+       id, business_id, email, role, invited_by_user_id, invited_by_name, token_hash,
+       expires_at, accepted_at, accepted_by_user_id, revoked_at, revoked_by_user_id, status, created_at
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+     on conflict (id) do update set
+       email = excluded.email,
+       role = excluded.role,
+       expires_at = excluded.expires_at,
+       accepted_at = excluded.accepted_at,
+       accepted_by_user_id = excluded.accepted_by_user_id,
+       revoked_at = excluded.revoked_at,
+       revoked_by_user_id = excluded.revoked_by_user_id,
+       status = excluded.status`,
+    [
+      inv.id,
+      inv.businessId,
+      inv.email,
+      inv.role,
+      inv.invitedByUserId,
+      inv.invitedByName,
+      inv.tokenHash,
+      inv.expiresAt,
+      inv.acceptedAt ?? null,
+      inv.acceptedByUserId ?? null,
+      inv.revokedAt ?? null,
+      inv.revokedByUserId ?? null,
+      inv.status,
+      inv.createdAt,
+    ]
+  );
+}
+
+export async function invitationRowByTokenHash(
+  tokenHash: string
+): Promise<import("../types").CollaborationInvitation | null> {
+  const client = await sqlClient();
+  const rows = await client.query(
+    `select * from public.collaboration_invitations where token_hash = $1`,
+    [tokenHash]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    id: String(r.id),
+    businessId: String(r.business_id),
+    email: String(r.email),
+    role: r.role as import("../types").CollaborationRole,
+    invitedByUserId: String(r.invited_by_user_id),
+    invitedByName: String(r.invited_by_name ?? ""),
+    tokenHash: String(r.token_hash),
+    expiresAt: new Date(r.expires_at as string).toISOString(),
+    acceptedAt: r.accepted_at ? new Date(r.accepted_at as string).toISOString() : undefined,
+    acceptedByUserId: r.accepted_by_user_id ? String(r.accepted_by_user_id) : undefined,
+    revokedAt: r.revoked_at ? new Date(r.revoked_at as string).toISOString() : undefined,
+    revokedByUserId: r.revoked_by_user_id ? String(r.revoked_by_user_id) : undefined,
+    status: r.status as import("../types").CollaborationInviteStatus,
+    createdAt: new Date(r.created_at as string).toISOString(),
+  };
 }

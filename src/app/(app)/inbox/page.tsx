@@ -1,5 +1,7 @@
 import { PageHeader } from "@/components/ui";
 import { InboxList } from "@/components/inbox-list";
+import { InboxAddressCard } from "@/components/inbox-address";
+import { InboxUploadButton } from "@/components/inbox-upload";
 import { inboundAddressForBusiness, listInbox } from "@/lib/services/inbox";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
@@ -20,11 +22,10 @@ export default async function InboxPage(props: {
     <div className="animate-fade-up">
       <PageHeader
         title="Inbox"
-        subtitle={`Förfrågningar från hemsidan och inkommande kvitton till ${address}. Inte samma lista som Hem.`}
+        subtitle="Leverantörsfakturor, kvitton och andra ekonomiska dokument samlas här."
+        actions={<InboxUploadButton />}
       />
-      <p className="mb-4 rounded-2xl border border-line bg-card px-4 py-3 text-[14px] text-soft">
-        Inkommande adress: <span className="font-medium text-ink">{address}</span>
-      </p>
+      <InboxAddressCard address={address} />
       <InboxList
         result={listInbox({
           q: str(searchParams.q),

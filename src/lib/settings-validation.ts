@@ -38,7 +38,7 @@ export interface SettingsProfileFields {
   orgNumber: string;
   vatNumber: string;
   email?: string;
-  inquiryNotificationEmail?: string;
+  websiteNotificationEmail?: string;
   bankgiro: string;
   plusgiro?: string;
   iban?: string;
@@ -82,12 +82,12 @@ export function settingsProfileFieldErrors(input: SettingsProfileFields): Settin
       tab: "foretag",
     });
   }
-  const notify = input.inquiryNotificationEmail?.trim();
+  const notify = input.websiteNotificationEmail?.trim();
   if (notify && !isEmailFormat(notify)) {
     errors.push({
-      field: "inquiryNotificationEmail",
-      label: "E-post för förfrågningar",
-      message: "Ange en giltig e-postadress för förfrågningar.",
+      field: "websiteNotificationEmail",
+      label: "E-post för uppdrag från hemsidan",
+      message: "Ange en giltig e-postadress för nya uppdrag från hemsidan.",
       tab: "foretag",
     });
   }

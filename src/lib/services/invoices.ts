@@ -41,6 +41,12 @@ import {
   persistTaxReductionOwnership,
   resolveTaxReductionPrefill,
 } from "./tax-reduction";
+import {
+  associateEntriesWithInvoice,
+  entryToDocLine,
+  unlinkJobWorkEntriesFromInvoice,
+  uninvoicedActuals,
+} from "./job-work";
 
 export type Actor = "anvandare" | "assistent";
 
@@ -290,7 +296,7 @@ export function createFinalInvoiceForJob(jobId: string, createdBy: Actor = "anva
   const data = db();
   const serviceDate = serviceDateFromJob(jobId);
 
-  if (quote) {
+  if (quote?.status === "godkand") {
     const version = currentVersion(quote);
     const alreadyInvoiced = data.invoices.some(
       (i) => i.jobId === jobId && i.status !== "krediterad" && i.type !== "kredit"
@@ -331,7 +337,124 @@ export function createFinalInvoiceForJob(jobId: string, createdBy: Actor = "anva
     );
   }
 
-  throw new Error("Uppdraget saknar godkänd offert att fakturera från");
+  return createInvoiceFromJobActuals(jobId, createdBy);
+}
+
+export type { JobInvoiceBasis } from "../job-ui-types";
+import type { JobInvoiceBasis } from "../job-ui-types";
+
+/** Tomt utkast: kund, uppdrag och ROT/RUT ifyllt. Inga rader. */
+export function createEmptyInvoiceForJob(jobId: string, createdBy: Actor = "anvandare"): Invoice {
+  const job = getJob(jobId);
+  if (!job) throw new Error("Uppdraget finns inte");
+  const quote = jobQuote(job);
+  const approved = quote?.status === "godkand" ? quote : undefined;
+  const version = approved ? currentVersion(approved) : undefined;
+  return createInvoice(
+    {
+      customerId: job.customerId,
+      jobId,
+      quoteId: approved?.id,
+      type: "faktura",
+      lines: [],
+      rot: rotFromJob(jobId),
+      dueInDays: version?.paymentTermsDays,
+      lateInterestRate: version?.lateInterestRate,
+      serviceDate: serviceDateFromJob(jobId),
+    },
+    createdBy
+  );
+}
+
+/** Utkast från ofakturerade actuals. Aldrig autoutskick. */
+export function createInvoiceFromJobActuals(
+  jobId: string,
+  createdBy: Actor = "anvandare",
+  entryIds?: string[]
+): Invoice {
+  const job = getJob(jobId);
+  if (!job) throw new Error("Uppdraget finns inte");
+  const quote = jobQuote(job);
+  const approved = quote?.status === "godkand" ? quote : undefined;
+  const available = uninvoicedActuals(jobId);
+  const selected = entryIds?.length ? available.filter((e) => entryIds.includes(e.id)) : available;
+  if (selected.length === 0) throw new Error("Det finns inget ofakturerat arbete att fakturera");
+  const version = approved ? currentVersion(approved) : undefined;
+  const invoice = createInvoice(
+    {
+      customerId: job.customerId,
+      jobId,
+      quoteId: approved?.id,
+      type: "faktura",
+      lines: selected.map(entryToDocLine),
+      rot: rotFromJob(jobId),
+      dueInDays: version?.paymentTermsDays,
+      lateInterestRate: version?.lateInterestRate,
+      serviceDate: serviceDateFromJob(jobId),
+    },
+    createdBy
+  );
+  associateEntriesWithInvoice(
+    selected.map((e) => e.id),
+    invoice.id
+  );
+  return invoice;
+}
+
+/** Avtalad offert (nästa del/rest) plus ofakturerade tillägg. */
+export function createInvoiceFromQuotePlusExtras(jobId: string, createdBy: Actor = "anvandare"): Invoice {
+  const job = getJob(jobId);
+  if (!job) throw new Error("Uppdraget finns inte");
+  const extras = uninvoicedActuals(jobId).filter((e) => e.isExtra);
+  const remaining = remainingToInvoiceForJob(jobId);
+  const quote = jobQuote(job);
+
+  if (quote?.status === "godkand" && remaining > 0) {
+    const invoice = createNextInvoiceForJob(jobId, createdBy);
+    if (extras.length > 0) {
+      invoice.lines = [...invoice.lines, ...extras.map(entryToDocLine)];
+      Object.assign(
+        invoice,
+        invoiceTaxReductionFields(invoice.rot, invoice.lines, invoice.quoteId, invoice.rot)
+      );
+      associateEntriesWithInvoice(
+        extras.map((e) => e.id),
+        invoice.id
+      );
+      save();
+    }
+    return invoice;
+  }
+  if (extras.length === 0) {
+    const all = uninvoicedActuals(jobId);
+    if (all.length === 0) throw new Error("Det finns inget att fakturera");
+    return createInvoiceFromJobActuals(jobId, createdBy);
+  }
+  return createInvoiceFromJobActuals(
+    jobId,
+    createdBy,
+    extras.map((e) => e.id)
+  );
+}
+
+export function createInvoiceForJob(
+  jobId: string,
+  basis: JobInvoiceBasis,
+  createdBy: Actor = "anvandare"
+): Invoice {
+  if (basis === "quote") {
+    const job = getJob(jobId);
+    const quote = job ? jobQuote(job) : undefined;
+    if (!quote || quote.status !== "godkand") {
+      throw new Error(
+        "Offerten är inte godkänd. Fakturera registrerat arbete eller skapa en tom faktura."
+      );
+    }
+    return createNextInvoiceForJob(jobId, createdBy);
+  }
+  if (basis === "quote_plus_extras") return createInvoiceFromQuotePlusExtras(jobId, createdBy);
+  if (basis === "empty") return createEmptyInvoiceForJob(jobId, createdBy);
+  return createInvoiceFromJobActuals(jobId, createdBy);
 }
 
 /**
@@ -388,7 +511,7 @@ export function createNextInvoiceForJob(jobId: string, createdBy: Actor = "anvan
   if (job.status !== "klart") {
     const quote = jobQuote(job);
     const next = nextPaymentPlanPartForJob(jobId);
-    if (quote && next && !next.isLast) {
+    if (quote?.status === "godkand" && next && !next.isLast) {
       return createPartInvoiceForQuote(quote.id, next.index, createdBy);
     }
   }
@@ -500,10 +623,12 @@ export function issueInvoice(invoiceId: string, createdBy: Actor = "anvandare"):
   return invoice;
 }
 
-/** Leveransutfall från e-postlagret (document-mail.ts). Utan uppgift antas mock (ingen e-post konfigurerad). */
+/** Leveransutfall från e-postlagret. Produktionsvägen anropar bara hit efter provider-succé. */
 export interface InvoiceDeliveryInfo {
   mode: "mock" | "live" | "test";
   ok: boolean;
+  messageId?: string;
+  sentTo?: string;
 }
 
 const MOCK_DELIVERY: InvoiceDeliveryInfo = { mode: "mock", ok: true };
@@ -529,17 +654,15 @@ export function deliverInvoice(
   const resend = Boolean(invoice.sentAt);
   if (!invoice.sentAt) invoice.sentAt = now;
   invoice.lastSentAt = now;
-
-  const number = invoice.number;
-  if (delivery.mode === "mock") {
-    console.info(
-      `[driva:email] Faktura #${number} markerades som skickad. Ingen e-post är konfigurerad (RESEND_API_KEY + MAIL_FROM saknas) – dela kundlänken manuellt.`
-    );
+  invoice.lastSendAttemptAt = now;
+  if (delivery.messageId && delivery.sentTo) {
+    invoice.lastEmail = { provider: "resend", messageId: delivery.messageId, sentTo: delivery.sentTo };
   }
 
+  const number = invoice.number;
   const emailed = delivery.mode !== "mock" && delivery.ok;
   if (!resend) {
-    logAudit(createdBy, "faktura_skickad", `Faktura #${number} ${emailed ? "skickades med e-post" : "markerades som skickad (ingen e-post konfigurerad)"}.`, {
+    logAudit(createdBy, "faktura_skickad", `Faktura #${number} ${emailed ? "skickades med e-post" : "markerades som skickad"}.`, {
       targetType: "faktura",
       targetId: invoice.id,
     });
@@ -547,11 +670,11 @@ export function deliverInvoice(
   logActivity(
     resend
       ? emailed
-        ? `Faktura #${number} skickades igen med e-post till ${customer.name}.`
-        : `Faktura #${number} markerades som skickad igen – ingen e-post är konfigurerad, dela kundlänken.`
+        ? `Faktura #${number} skickades igen med e-post till ${delivery.sentTo ?? customer.email}.`
+        : `Faktura #${number} markerades som skickad igen.`
       : emailed
-        ? `Faktura #${number} skickades med e-post till ${customer.name} (${kr(invoiceTotals(invoice).toPay)}).`
-        : `Faktura #${number} markerades som skickad (${kr(invoiceTotals(invoice).toPay)}) – ingen e-post är konfigurerad, dela kundlänken med ${customer.name}.`,
+        ? `Faktura #${number} skickades med e-post till ${delivery.sentTo ?? customer.email} (${kr(invoiceTotals(invoice).toPay)}).`
+        : `Faktura #${number} markerades som skickad (${kr(invoiceTotals(invoice).toPay)}).`,
     {
       customerId: customer.id,
       entity: { type: "faktura", id: invoice.id },
@@ -581,8 +704,8 @@ export function sendReminder(
   const who = by === "assistent" ? "Assistenten" : "Du";
   logActivity(
     emailed
-      ? `${who} skickade en betalningspåminnelse med e-post för faktura #${invoice.number} till ${customer.name}.`
-      : `${who} noterade en betalningspåminnelse för faktura #${invoice.number} – ingen e-post är konfigurerad, kontakta ${customer.name} direkt.`,
+      ? `${who} skickade en betalningspåminnelse med e-post för faktura #${invoice.number} till ${delivery.sentTo ?? customer.email}.`
+      : `${who} noterade en betalningspåminnelse för faktura #${invoice.number}.`,
     { customerId: customer.id, entity: { type: "faktura", id: invoice.id }, createdBy: by }
   );
   save();
@@ -999,6 +1122,7 @@ export function discardInvoice(invoiceId: string, createdBy: Actor = "anvandare"
     throw new Error("Utfärdade fakturor kan inte tas bort. Kreditera dem i stället.");
   }
   const customer = requireCustomer(invoice.customerId);
+  unlinkJobWorkEntriesFromInvoice(invoiceId);
   data.invoices = data.invoices.filter((i) => i.id !== invoiceId);
   logActivity(`Fakturautkast ${invoiceNumberLabel(invoice)} kastades.`, {
     customerId: customer.id,

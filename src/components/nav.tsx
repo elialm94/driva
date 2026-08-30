@@ -9,6 +9,7 @@ import {
   Wallet,
   Inbox,
   BookOpenCheck,
+  Handshake,
   Globe,
   MoreHorizontal,
   Settings,
@@ -16,6 +17,8 @@ import {
 } from "lucide-react";
 import { cx } from "./ui";
 import { LogoutRow } from "./logout-button";
+import { WorkspaceSwitcher } from "./workspace-switcher";
+import { enterLocalAccountantDemoAction } from "@/app/collaboration-actions";
 import { isSectionActive, NAV_ITEMS, type NavSection } from "@/lib/nav";
 
 const NAV_ICONS: Record<NavSection, typeof Home> = {
@@ -24,6 +27,7 @@ const NAV_ICONS: Record<NavSection, typeof Home> = {
   ekonomi: Wallet,
   inbox: Inbox,
   bokforing: BookOpenCheck,
+  samarbeta: Handshake,
   hemsida: Globe,
 };
 
@@ -36,11 +40,16 @@ export function Sidebar({
   companyName,
   inboxCount = 0,
   canLogout = false,
+  accountingClientCount = 0,
+  localAccountantDemo = false,
 }: {
   companyName: string;
   inboxCount?: number;
   /** Logga ut visas bara i Supabase-läge – JSON-/demoläget har inga sessioner. */
   canLogout?: boolean;
+  /** Visas när samma användare också är konsult på andra företag. */
+  accountingClientCount?: number;
+  localAccountantDemo?: boolean;
 }) {
   const pathname = usePathname();
   const settingsActive = pathname.startsWith("/installningar") || pathname.startsWith("/foretag");
@@ -92,6 +101,13 @@ export function Sidebar({
           riktig nav-rad och Logga ut en dämpad rad (endast Supabase-läge). */}
       <div className="flex flex-col gap-1 border-t border-line px-3 py-4">
         <p className="truncate px-3 pb-1 text-[13px] font-medium text-soft">{companyName}</p>
+        {accountingClientCount > 0 ? (
+          <WorkspaceSwitcher
+            variant="to-redovisning"
+            clientCount={accountingClientCount}
+            localDemo={localAccountantDemo}
+          />
+        ) : null}
         <Link
           href="/installningar"
           aria-current={settingsActive ? "page" : undefined}
@@ -111,7 +127,15 @@ export function Sidebar({
   );
 }
 
-export function BottomNav({ canLogout = false, inboxCount = 0 }: { canLogout?: boolean; inboxCount?: number }) {
+export function BottomNav({
+  canLogout = false,
+  inboxCount = 0,
+  localAccountantDemo = false,
+}: {
+  canLogout?: boolean;
+  inboxCount?: number;
+  localAccountantDemo?: boolean;
+}) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const primary = NAV.slice(0, 4);
@@ -158,6 +182,19 @@ export function BottomNav({ canLogout = false, inboxCount = 0 }: { canLogout?: b
               );
             })}
             <div className="mx-4 my-1 h-px bg-line" />
+            {localAccountantDemo ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setMoreOpen(false);
+                  void enterLocalAccountantDemoAction();
+                }}
+                className="flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left text-[15px] text-ink hover:bg-canvas"
+              >
+                <BookOpenCheck className="size-5 text-muted" />
+                Redovisning
+              </button>
+            ) : null}
             <Link
               href="/installningar"
               onClick={() => setMoreOpen(false)}

@@ -9,6 +9,7 @@ import { bankReconciliation } from "@/lib/accounting/reconciliation";
 import { vatChecklist, vatPeriods } from "@/lib/accounting/vat";
 import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
 import { resultatrapport } from "@/lib/accounting/ledger";
+import { verificationLabel } from "@/lib/accounting/engine";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Bokföring" };
@@ -182,11 +183,18 @@ export default async function BookkeepingPage() {
             {recent.map((v) => {
               const total = v.entries.reduce((s, e) => s + e.debit, 0);
               return (
-                <li key={v.id} className="flex items-baseline justify-between gap-3 text-[13px]">
-                  <span className="min-w-0 truncate text-soft">{v.description}</span>
-                  <span className="shrink-0 tabular text-muted">
-                    {datumKort(v.date)} · {kr(total)}
-                  </span>
+                <li key={v.id}>
+                  <Link
+                    href={`/bokforing/verifikationer?v=${v.id}`}
+                    className="flex items-baseline justify-between gap-3 text-[13px] hover:text-ink"
+                  >
+                    <span className="min-w-0 truncate text-soft">
+                      <span className="font-mono text-muted">{verificationLabel(v)}</span> {v.description}
+                    </span>
+                    <span className="shrink-0 tabular text-muted">
+                      {datumKort(v.date)} · {kr(total)}
+                    </span>
+                  </Link>
                 </li>
               );
             })}

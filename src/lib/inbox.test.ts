@@ -154,10 +154,10 @@ describe("ingest inbound mail", () => {
     assert.equal(db().expenses.length, expensesBefore);
   });
 
-  it("lists inquiries and mail together", () => {
+  it("lists economic documents, not inquiries", () => {
     const page = listInbox({ filter: "oppna" });
-    assert.ok(page.rows.some((r) => r.kind === "inquiry" && r.id === "req-karin"));
-    assert.ok(page.rows.some((r) => r.kind === "mail" && r.id === "inbox-mail-byggmax"));
+    assert.ok(!page.rows.some((r) => r.id === "req-karin"));
+    assert.ok(page.rows.some((r) => r.id === "inbox-mail-byggmax"));
     assert.ok(!page.rows.some((r) => r.id === "inbox-mail-okq8"));
   });
 });

@@ -1,19 +1,15 @@
 process.env.DRIVA_TEST = "1";
 
-import { describe, it, beforeEach } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { replaceDb } from "./store";
+import { replaceDb, db } from "./store";
 import { buildSeed } from "./seed";
 import { emptyTestDb, testCustomer, labor } from "./invoices/test-db";
-import {
-  countOpenInquiries,
-  findMatchingOpenInquiry,
-  listCustomersForTable,
-  listInquiriesInbox,
-} from "./services/customers";
-import { createQuote, quoteDefaults } from "./services/quotes";
+import { createCustomer, listCustomersForTable, updateCustomer } from "./services/customers";
+import { createQuote, quoteDefaults, quoteSendBlockers, sendQuote } from "./services/quotes";
 import { createInvoice } from "./services/invoices";
-import { createJob } from "./services/jobs";
+import { createJob, findMatchingUnquotedJob, isIncomingUnquotedJob } from "./services/jobs";
+import { CustomerValidationError } from "./customer-validation";
 import type { Customer } from "./types";
 
 function manyCustomers(n: number): Customer[] {
@@ -41,7 +37,6 @@ describe("listCustomersForTable", () => {
     assert.equal(page.page, 3);
     assert.equal(page.rows[0].name, "Kund 0100");
     assert.ok(!("notes" in page.rows[0]));
-    assert.ok(!("requests" in page.rows[0]));
   });
 
   it("söker på namn, företag, e-post, telefon och org.nr", () => {
@@ -87,36 +82,113 @@ describe("listCustomersForTable", () => {
   });
 });
 
-describe("listInquiriesInbox", () => {
-  beforeEach(() => {
+/**
+ * Kärnprincipen: Driva frågar efter uppgifter NÄR de behövs – inte före.
+ * "Erik" → Skapa kund → klart. Flöden som skickar e-post, fakturerar eller
+ * ansöker om ROT ber om sina uppgifter först när de faktiskt behövs.
+ */
+describe("skapa kund med bara namn", () => {
+  it("privatperson: namnet räcker – e-post, telefon, adress, personnummer och fastighet är frivilliga", () => {
+    replaceDb(emptyTestDb({ customers: [] }));
+    const c = createCustomer({ kind: "privat", name: "Erik" });
+    assert.equal(c.name, "Erik");
+    assert.equal(c.email, "");
+    assert.equal(c.phone, "");
+    assert.equal(c.address, undefined);
+    assert.equal(c.personalIdentityNumber, undefined);
+    assert.equal(c.workLocations, undefined);
+    assert.equal(listCustomersForTable({ q: "Erik" }).total, 1);
+  });
+
+  it("företag: samma minimiprincip – bara namnet krävs", () => {
+    replaceDb(emptyTestDb({ customers: [] }));
+    const c = createCustomer({ kind: "foretag", name: "Bygg AB" });
+    assert.equal(c.kind, "foretag");
+    assert.equal(c.email, "");
+    assert.equal(c.orgNumber, undefined);
+    assert.equal(c.contactPerson, undefined);
+  });
+
+  it("namn krävs fortfarande", () => {
+    replaceDb(emptyTestDb({ customers: [] }));
+    assert.throws(
+      () => createCustomer({ kind: "privat", name: "   " }),
+      (e: unknown) => e instanceof CustomerValidationError && e.errors[0]?.field === "name"
+    );
+  });
+
+  it("ifylld e-post formatvalideras fortfarande – vid skapande och uppdatering", () => {
+    replaceDb(emptyTestDb({ customers: [] }));
+    assert.throws(
+      () => createCustomer({ kind: "privat", name: "Erik", email: "inte en adress" }),
+      (e: unknown) => e instanceof CustomerValidationError && e.errors[0]?.field === "email"
+    );
+    const c = createCustomer({ kind: "privat", name: "Erik" });
+    assert.throws(
+      () => updateCustomer(c.id, { email: "fel@" }),
+      (e: unknown) => e instanceof CustomerValidationError && e.errors[0]?.field === "email"
+    );
+  });
+
+  it("en befintlig e-post kan tömmas utan att autospar stoppas", () => {
+    replaceDb(emptyTestDb({ customers: [] }));
+    const c = createCustomer({ kind: "privat", name: "Erik", email: "erik@example.se" });
+    updateCustomer(c.id, { email: "" });
+    assert.equal(db().customers.find((x) => x.id === c.id)?.email, "");
+  });
+});
+
+describe("skicka offert till kund utan e-post", () => {
+  it("blockeraren namnger e-postadressen; efter komplettering fortsätter sändningen", () => {
+    replaceDb(emptyTestDb({ customers: [] }));
+    const erik = createCustomer({ kind: "privat", name: "Erik" });
+    const defaults = quoteDefaults();
+    const quote = createQuote({
+      customerId: erik.id,
+      title: "Altanbygge",
+      intro: "",
+      lines: [labor({ unitPrice: 50_000_00 })],
+      rot: null,
+      paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
+      paymentTermsDays: defaults.paymentTermsDays,
+      validUntil: defaults.validUntil,
+      terms: defaults.terms,
+    });
+
+    // Exakt fält namnges – aldrig ett vagt "kan inte skicka".
+    const blockers = quoteSendBlockers(quote.id);
+    assert.deepEqual(
+      blockers.map((b) => b.code),
+      ["buyer_email"]
+    );
+    assert.match(blockers[0].message, /e-postadress/i);
+    assert.equal(blockers[0].actionLabel, "Lägg till e-post");
+
+    // Inline-kompletteringen sparar adressen på kundkortet …
+    updateCustomer(erik.id, { email: "erik@example.se" });
+
+    // … och det ursprungliga flödet fortsätter utan omstart.
+    assert.deepEqual(quoteSendBlockers(quote.id), []);
+    const sent = sendQuote(quote.id);
+    assert.equal(sent.status, "skickad");
+  });
+});
+
+describe("inkommande uppdrag utan offert", () => {
+  it("seedade webb-/telefonuppdrag syns som inkommande tills offert kopplas", () => {
     replaceDb(buildSeed());
-  });
+    const karin = db().jobs.find((j) => j.id === "job-karin");
+    const sara = db().jobs.find((j) => j.id === "job-sara");
+    assert.ok(karin && isIncomingUnquotedJob(karin));
+    assert.ok(sara && isIncomingUnquotedJob(sara));
+    assert.equal(findMatchingUnquotedJob("cust-karin", "bokhylla")?.id, "job-karin");
 
-  it("visar bara öppna förfrågningar som standard", () => {
-    const open = listInquiriesInbox();
-    assert.ok(open.rows.every((r) => r.status === "ny"));
-    assert.ok(open.rows.some((r) => /karin/i.test(r.customerName)));
-    assert.ok(open.rows.some((r) => /sara/i.test(r.customerName)));
-    assert.equal(countOpenInquiries(), open.total);
-  });
-
-  it("söker i kund, företag och meddelandetext", () => {
-    const byBody = listInquiriesInbox({ q: "bokhylla" });
-    assert.equal(byBody.total, 1);
-    assert.match(byBody.rows[0].customerName, /Karin/i);
-    const all = listInquiriesInbox({ filter: "alla", q: "köksrenovering" });
-    assert.ok(all.total >= 1);
-  });
-
-  it("lämnar inboxen när offert skapas mot samma förfrågan", () => {
-    const karin = findMatchingOpenInquiry("cust-karin", "bokhylla");
-    assert.ok(karin);
     const defaults = quoteDefaults();
     createQuote({
       customerId: "cust-karin",
-      requestId: karin.id,
+      jobId: "job-karin",
       title: karin.title,
-      intro: karin.message,
+      intro: karin.originalMessage ?? karin.description,
       lines: [],
       rot: null,
       paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
@@ -124,9 +196,6 @@ describe("listInquiriesInbox", () => {
       validUntil: defaults.validUntil,
       terms: defaults.terms,
     });
-    const open = listInquiriesInbox();
-    assert.ok(!open.rows.some((r) => r.id === karin.id));
-    const history = listInquiriesInbox({ filter: "alla", q: "karin" });
-    assert.ok(history.rows.some((r) => r.id === karin.id && r.status === "hanterad"));
+    assert.ok(!isIncomingUnquotedJob(db().jobs.find((j) => j.id === "job-karin")!));
   });
 });

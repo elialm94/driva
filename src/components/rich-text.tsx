@@ -10,14 +10,17 @@ import { cx } from "./ui";
 import type { ReactNode } from "react";
 
 /**
- * Delad, ren renderare för "Övrig information" (rik text) – används av BÅDE
- * offert- och fakturadokumentet och därmed på alla ytor: appens detaljsidor,
- * kundvyerna (/offert/[token], /faktura/[token]) och print/PDF-sidorna.
+ * Delad, ren renderare för dokumentens beskrivning (rik text) – används av
+ * BÅDE offert- och fakturadokumentet och därmed på alla ytor: appens
+ * detaljsidor, kundvyerna (/offert/[token], /faktura/[token]) och print/PDF.
  *
  * Inga hooks, ingen dangerouslySetInnerHTML – sanerad JSON renderas till
  * React-element. Typografin styrs av .richtext-doc i globals.css
  * (H1 24px / H2 20px / H3 17px / brödtext 14px) så Tailwind Preflight
  * inte kan göra rubrikerna identiska.
+ *
+ * Ingen generisk "Övrig information"-rubrik: dokumentets egna H1/H2/H3
+ * (eller bara brödtext) är strukturen. Tomt dokument → rendera ingenting.
  */
 
 function markWrap(node: ReactNode, marks: RichTextMark[] | undefined, key: number): ReactNode {
@@ -116,7 +119,7 @@ function Block({ block }: { block: RichTextBlock }) {
         </ol>
       );
     case "horizontalRule":
-      return <hr className="my-4 border-line" />;
+      return <hr />;
   }
 }
 

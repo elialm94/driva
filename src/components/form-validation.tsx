@@ -190,6 +190,10 @@ export function useNativeFieldErrors(labels?: Record<string, string>) {
 
   const reset = useCallback(() => setErrors({}), []);
 
+  function setFieldError(name: string, message: string) {
+    setErrors((prev) => (prev[name] === message ? prev : { ...prev, [name]: message }));
+  }
+
   /** aria-attribut + felklass för ett fält. */
   function fieldProps(name: string, errorId: string) {
     const invalid = Boolean(errors[name]);
@@ -199,5 +203,5 @@ export function useNativeFieldErrors(labels?: Record<string, string>) {
     };
   }
 
-  return { errors, formProps, fieldProps, reset };
+  return { errors, formProps, fieldProps, reset, setFieldError };
 }

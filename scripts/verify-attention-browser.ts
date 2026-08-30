@@ -12,7 +12,7 @@ import puppeteer, { type Page } from "puppeteer-core";
  *   5. ⋯-meny → Snooza → preset ("Imorgon") → raden försvinner + räknaren
  *      uppdateras utan omladdning; kvarstår efter omladdning (persistens).
  *   6. ⋯-meny → Snooza → "Välj datum …" → kalender → raden försvinner.
- *   7. Förfrågan: ⋯ → "Markera hanterad" → domänövergång; kunden kvar i registret.
+ *   7. Nytt uppdrag: ⋯ → "Öppna uppdrag"; uppdraget finns under Kunder → Uppdrag.
  *   8. Offert: ⋯ → "Inte aktuell" → lätt bekräftelse → status avböjd.
  *   9. Påminnelse: ⋯ → "Ta bort" (befintlig dismiss-tjänst).
  *  10. Mobil 390: fot fullbredd ≥44px, ⋯ ≥44px, bottensheet med stora träffytor.
@@ -253,13 +253,13 @@ async function main() {
     if (!(await openOverflow(page, "Kvitto saknas"))) fail("kunde inte öppna ⋯ för kvittoraden");
     if (!(await clickMenuItem(page, "Snooza"))) fail("kvittorad: Snooza saknas");
     if (!(await clickMenuItem(page, "Välj datum"))) fail("kvittorad: Välj datum saknas");
-    await page.evaluate(() => {
-      const trigger = Array.from(document.querySelectorAll('[role="menu"] button')).find((b) =>
-        (b.textContent ?? "").includes("Välj dag")
-      );
-      (trigger as HTMLButtonElement | undefined)?.click();
-    });
     await page.waitForSelector('[role="dialog"][aria-label="Välj datum"]');
+    const extraPick = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[role="menu"] button')).some((b) =>
+        (b.textContent ?? "").includes("Välj dag")
+      )
+    );
+    if (extraPick) fail("extra Välj dag-rad efter Välj datum – kalendern ska öppnas direkt");
     await page.evaluate(() => {
       (document.querySelector('button[aria-label="Nästa månad"]') as HTMLButtonElement).click();
     });
@@ -276,12 +276,11 @@ async function main() {
     if (count !== total - 2) fail(`datumsnooze persisterade inte: ${count} (förväntade ${total - 2})`);
     ok("5 snooza Välj datum via kalendern", `räknare ${total - 1} → ${total - 2}`);
 
-    /* 7: förfrågan → Markera hanterad (domänövergång, kunden kvar i registret). */
+    /* 7: nytt uppdrag → Öppna uppdrag (finns kvar under Uppdrag). */
     await clickFooter(page);
-    const inquiryRow = (await cardState(page)).rows.find((r) => r.startsWith("Ny förfrågan"));
-    if (!inquiryRow) fail("ingen förfråganrad i seedet");
-    // Kundnamnet står i undertexten ("Karin Lindqvist · …").
-    const inquiryName = await page.evaluate((rowTitle) => {
+    const newJobRow = (await cardState(page)).rows.find((r) => r.startsWith("Nytt uppdrag"));
+    if (!newJobRow) fail("ingen Nytt uppdrag-rad i seedet");
+    const jobCustomer = await page.evaluate((rowTitle) => {
       const h = Array.from(document.querySelectorAll("h2, h3")).find((el) =>
         (el.textContent ?? "").includes("Behöver din uppmärksamhet")
       );
@@ -289,20 +288,16 @@ async function main() {
       const row = Array.from(card?.children ?? []).find((c) => (c.textContent ?? "").includes(rowTitle));
       const sub = row?.querySelectorAll("p")[1]?.textContent ?? "";
       return sub.split("·")[0]?.trim() ?? "";
-    }, inquiryRow);
-    if (!inquiryName) fail("kunde inte läsa kundnamnet ur förfrågans undertext");
-    if (!(await openOverflow(page, inquiryRow))) fail("kunde inte öppna ⋯ för förfrågan");
+    }, newJobRow);
+    if (!jobCustomer) fail("kunde inte läsa kundnamnet ur uppdragets undertext");
+    if (!(await openOverflow(page, newJobRow))) fail("kunde inte öppna ⋯ för nytt uppdrag");
     labels = await menuItemLabels(page);
-    if (!labels.includes("Visa förfrågan")) fail(`"Visa förfrågan" saknas: ${labels.join(", ")}`);
-    if (!(await clickMenuItem(page, "Markera hanterad"))) fail("Markera hanterad saknas i menyn");
-    await waitForBody(page, "Hanterad");
-    count = await headingCount(page);
-    if (count !== total - 3) fail(`räknaren efter Markera hanterad: ${count} (förväntade ${total - 3})`);
-    await page.goto(`${BASE}/kunder?flik=forfragningar&visning=alla`, { waitUntil: "networkidle0" });
-    const kunderBody = await page.evaluate(() => document.body.textContent ?? "");
-    if (!kunderBody.includes(inquiryName)) fail(`förfrågan (${inquiryName}) försvann ur registret`);
-    if (!kunderBody.includes("Hanterad")) fail("förfrågan saknar Hanterad-märkning i registret");
-    ok("6 Markera hanterad på förfrågan", `${inquiryName} kvar i registret som Hanterad, borta ur uppmärksamhet`);
+    if (!labels.includes("Öppna uppdrag")) fail(`"Öppna uppdrag" saknas: ${labels.join(", ")}`);
+    await page.keyboard.press("Escape");
+    await page.goto(`${BASE}/kunder?flik=uppdrag`, { waitUntil: "networkidle0" });
+    const uppdragBody = await page.evaluate(() => document.body.textContent ?? "");
+    if (!uppdragBody.includes(jobCustomer)) fail(`uppdraget (${jobCustomer}) saknas under Uppdrag`);
+    ok("6 Nytt uppdrag finns kvar under Uppdrag", `${jobCustomer} syns som uppdrag, inte i Inbox`);
 
     /* 8: offert → Inte aktuell (lätt bekräftelse → status avböjd). */
     await gotoHome(page);
@@ -320,8 +315,8 @@ async function main() {
     });
     await waitForBody(page, "Markerad som inte aktuell");
     count = await headingCount(page);
-    if (count !== total - 4) fail(`räknaren efter Inte aktuell: ${count}`);
-    ok("7 Inte aktuell på offert med lätt bekräftelse", `räknare → ${total - 4}`);
+    if (count !== total - 3) fail(`räknaren efter Inte aktuell: ${count}`);
+    ok("7 Inte aktuell på offert med lätt bekräftelse", `räknare → ${total - 3}`);
 
     /* 9: påminnelse → ⋯ → Ta bort (befintlig dismiss-tjänst). */
     const INPUT = 'input[placeholder="Vad vill du göra?"]';

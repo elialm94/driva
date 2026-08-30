@@ -196,18 +196,18 @@ async function main() {
 
   await page.goto(`${BASE}/inbox`, { waitUntil: "networkidle0" });
   const inboxText = await page.evaluate(() => document.body.innerText);
-  await ok("IA Inbox lists inquiries", inboxText.includes("Karin") || inboxText.includes("bokhylla") || inboxText.includes("Förfrågan"));
+  await ok("IA Inbox is economic docs only", !/Förfrågan|bokhylla/i.test(inboxText));
   await ok("IA Inbox lists seed mail", inboxText.includes("Byggmax") || inboxText.includes("Kvitto"));
   await ok("IA Inbox shows inbound address", inboxText.includes("demo@in.driva.se"));
   await page.screenshot({ path: ".shots/ia-desktop-inbox.png" });
 
-  await page.goto(`${BASE}/kunder/forfragningar/req-karin`, { waitUntil: "networkidle0" });
-  await ok("IA old forfragningar URL redirects", page.url().includes("/inbox/req-karin"));
-  const inquiryTitle = await textOf(page, "h1");
-  await ok("IA inquiry detail at new path", (inquiryTitle ?? "").includes("bokhylla") || (inquiryTitle ?? "").length > 0);
+  await page.goto(`${BASE}/kunder/forfragningar/job-karin`, { waitUntil: "networkidle0" });
+  await ok("IA old forfragningar URL redirects to uppdrag", page.url().includes("/uppdrag/job-karin"));
+  const jobTitle = await textOf(page, "h1");
+  await ok("IA migrated job at new path", (jobTitle ?? "").includes("bokhylla") || (jobTitle ?? "").length > 0);
 
   await page.goto(`${BASE}/kunder?flik=forfragningar`, { waitUntil: "networkidle0" });
-  await ok("IA forfragningar flik redirects to /inbox", new URL(page.url()).pathname === "/inbox");
+  await ok("IA forfragningar flik redirects to uppdrag", new URL(page.url()).search.includes("flik=uppdrag"));
 
   // 9. Mobile header/back
   await page.setViewport({ width: 390, height: 844 });

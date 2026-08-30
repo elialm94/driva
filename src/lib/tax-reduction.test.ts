@@ -111,6 +111,29 @@ describe("ROT/RUT fält och prefill", () => {
     assert.ok(applicationMissing.some((m) => m.code === "workAddress"));
   });
 
+  it("kund skapad med bara namn: ROT kräver exakt personnummer + fastighetsuppgift", () => {
+    // Personnummer samlas inte in vid Ny kund (känsligt, behövs först här) –
+    // ROT-flödet ska då fråga efter exakt det som saknas, inget mer.
+    const missing = taxReductionMissingFields({
+      type: "rot",
+      personalIdentityNumber: undefined,
+      details: {
+        workPeriodStart: "2026-08-12",
+        workPeriodEnd: "2026-08-19",
+        housing: { dwellingType: "smahus" },
+      },
+      scope: "invoice",
+    });
+    assert.deepEqual(
+      missing.map((m) => m.code),
+      ["personnummer", "propertyDesignation"]
+    );
+    assert.deepEqual(
+      missing.map((m) => m.label),
+      ["Personnummer", "Fastighetsbeteckning"]
+    );
+  });
+
   it("bostadstyp bostadsrätt kräver BRF+lgh, inte fastighetsbeteckning", () => {
     const missing = taxReductionMissingFields({
       type: "rot",

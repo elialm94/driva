@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { withBusiness, withBusinessRead } from "@/lib/auth/session";
+import { getSessionUser, readWorkspaceCookie, resolveAccountantScope, withBusiness, withBusinessRead } from "@/lib/auth/session";
 import type { CommandId } from "@/lib/command-bar";
 import {
   interpretFreeTextViaAi,
@@ -33,14 +33,26 @@ export async function commandInvoiceTargetsAction(customerId: string): Promise<I
   return withBusinessRead(() => invoiceTargetOptionsFor(customerId));
 }
 
-/** Alternativ till "Vad gäller offerten?" – kundens öppna förfrågningar. */
+/** Alternativ till "Vad gäller offerten?" – kundens inkommande uppdrag. */
 export async function commandQuoteTopicsAction(customerId: string): Promise<QuoteTopicOption[]> {
   return withBusinessRead(() => quoteTopicOptionsFor(customerId));
 }
 
 /** Kör ett kommando via verktygslagret (samma väg som assistenten). */
+async function commandToolOptions() {
+  const workspace = await readWorkspaceCookie();
+  const scope = await resolveAccountantScope();
+  const user = await getSessionUser();
+  return {
+    workspace,
+    opts: workspace === "redovisning" ? { retry: false as const, capability: "read_accounting" as const } : { retry: false as const },
+    tool: { accountantScope: scope, actorUserId: user?.id },
+  };
+}
+
 export async function runCommandAction(commandId: CommandId, params: CommandRunParams = {}): Promise<CommandRunResult> {
-  const result = await withBusiness(() => runBarCommand(commandId, params), { retry: false });
+  const { opts, tool } = await commandToolOptions();
+  const result = await withBusiness(() => runBarCommand(commandId, params, tool), opts);
   if (result.ok) revalidatePath("/", "layout");
   return result;
 }
@@ -57,9 +69,8 @@ export async function interpretFreeTextAction(
   text: string,
   turns: { role: "user" | "assistant"; text: string }[] = []
 ): Promise<CommandRunResult> {
-  const result = await withBusiness(() => interpretFreeTextViaAi(text.slice(0, 2000), sanitizeTurns(turns)), {
-    retry: false,
-  });
+  const { opts, tool } = await commandToolOptions();
+  const result = await withBusiness(() => interpretFreeTextViaAi(text.slice(0, 2000), sanitizeTurns(turns), tool), opts);
   if (result.ok) revalidatePath("/", "layout");
   return result;
 }

@@ -20,6 +20,7 @@ const PUBLIC_PREFIXES = [
   "/offert",
   "/faktura",
   "/sajt",
+  "/inbjudan",
   "/api/bankid",
   "/api/inbox",
   "/api/dev", // vaktas internt: endast utveckling

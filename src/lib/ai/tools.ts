@@ -25,7 +25,6 @@ import {
 import { getBusinessActions, type BusinessAction } from "../services/actions";
 import { controlsForAction } from "../services/action-issue";
 import { snoozeAttentionUntil } from "../services/attention-state";
-import { markInquiryHandled } from "../services/customers";
 import { listInbox } from "../services/inbox";
 import type { AiToolDef } from "./provider";
 import { validateToolArgs } from "./validate";
@@ -43,9 +42,19 @@ import {
   createFinalInvoiceDraft,
   createInvoiceDraft,
   createJobDraft,
+  completeJobDraft,
   createJobInvoiceDraft,
   createQuoteDraft,
-  listOpenInquiriesResult,
+  reopenJobDraft,
+  requestDeleteOrArchiveJob,
+  registerJobTimeDraft,
+  addJobMaterialDraft,
+  listSupplierInvoicesResult,
+  getSupplierInvoiceResult,
+  prepareSupplierPaymentResult,
+  requestSubmitSupplierPayment,
+  requestCancelSupplierPayment,
+  requestUseVerifiedSupplierDetails,
   missingReceiptsResult,
   momsResult,
   offerCreateCustomer,
@@ -79,6 +88,7 @@ import {
   requestCloseFiscalYear,
   requestMarkVatDeclared,
   requestRunBokslutAutomation,
+  requestCorrectVerification,
   requestUndoExpense,
   resultatRapportResult,
 } from "./accounting-domain";
@@ -92,7 +102,18 @@ export type ToolResult = {
   requiresConfirmation?: boolean;
 };
 
-type ToolHandler = (args: Record<string, unknown>) => ToolResult | Promise<ToolResult>;
+export type AccountantToolScope = "current" | "all_clients";
+
+export type ExecuteToolOptions = {
+  origin?: "user" | "ai";
+  actorUserId?: string;
+  actorRole?: import("../types").BusinessRole;
+  businessId?: string;
+  /** Server-satt – aldrig från modellens argument. */
+  accountantScope?: AccountantToolScope;
+};
+
+type ToolHandler = (args: Record<string, unknown>, options?: ExecuteToolOptions) => ToolResult | Promise<ToolResult>;
 
 /**
  * Riskklass per verktyg – deklarerad och SERVERSIDIGT upprätthållen:
@@ -428,23 +449,9 @@ const specs: ToolSpec[] = [
     def: {
       type: "function",
       function: {
-        name: "list_open_inquiries",
-        description:
-          "Lista öppna förfrågningar (list open inquiries). Samma inbox som Inbox. Använd före create_quote när användaren nämner en förfrågan, t.ex. Karins bokhylla.",
-        parameters: obj({ q: { type: "string", description: "Valfritt sökord: kund, företag, text" } }),
-      },
-    },
-    handler: (args) => fromDomain(listOpenInquiriesResult(str(args, "q"))),
-  },
-  {
-    requiresConfirmation: false,
-    risk: "READ_ONLY",
-    def: {
-      type: "function",
-      function: {
         name: "list_inbox",
         description:
-          "Lista inboxen: öppna hemsideförfrågningar och inkommande leverantörsmejl. Inte samma lista som Behöver din uppmärksamhet på Hem.",
+          "Lista inboxen: inkommande leverantörsfakturor, kvitton och ekonomiska dokument. Inte samma lista som Behöver din uppmärksamhet på Hem.",
         parameters: obj({ q: { type: "string", description: "Valfritt sökord" } }),
       },
     },
@@ -462,13 +469,120 @@ const specs: ToolSpec[] = [
                 kind: "list" as const,
                 title: "Inbox",
                 rows: page.rows.map((r) => ({
-                  label: r.title,
+                  label: r.documentLabel,
                   value: r.fromLabel,
                   href: `/inbox/${r.id}`,
                 })),
                 links: [{ label: "Öppna inboxen", href: "/inbox" }],
               },
       };
+    },
+  },
+  {
+    requiresConfirmation: false,
+    risk: "READ_ONLY",
+    def: {
+      type: "function",
+      function: {
+        name: "list_supplier_invoices",
+        description: "Lista leverantörsfakturor (list supplier invoices). Samma objekt som i Inbox och Ekonomi.",
+        parameters: obj({ q: { type: "string", description: "Valfritt sökord: leverantör, fakturanummer, OCR" } }),
+      },
+    },
+    handler: (args) => fromDomain(listSupplierInvoicesResult(str(args, "q"))),
+  },
+  {
+    requiresConfirmation: false,
+    risk: "READ_ONLY",
+    def: {
+      type: "function",
+      function: {
+        name: "get_supplier_invoice",
+        description: "Hämta en leverantörsfaktura (get supplier invoice).",
+        parameters: obj({ invoiceId: { type: "string" } }, ["invoiceId"]),
+      },
+    },
+    handler: (args) => {
+      const id = str(args, "invoiceId");
+      if (!id) return { ok: false, forModel: {}, error: "invoiceId krävs" };
+      return fromDomain(getSupplierInvoiceResult(id));
+    },
+  },
+  {
+    requiresConfirmation: false,
+    risk: "SAFE_WRITE",
+    def: {
+      type: "function",
+      function: {
+        name: "prepare_supplier_payment",
+        description:
+          "Förbered leverantörsbetalning (prepare supplier payment). Skapar instruktion, skickar ALDRIG till bank.",
+        parameters: obj(
+          {
+            invoiceId: { type: "string" },
+            scheduledDate: { type: "string", description: "YYYY-MM-DD, default förfallodatum" },
+          },
+          ["invoiceId"]
+        ),
+      },
+    },
+    handler: (args) => {
+      const id = str(args, "invoiceId");
+      if (!id) return { ok: false, forModel: {}, error: "invoiceId krävs" };
+      return fromDomain(prepareSupplierPaymentResult(id, str(args, "scheduledDate")));
+    },
+  },
+  {
+    requiresConfirmation: true,
+    risk: "CONFIRM_REQUIRED",
+    def: {
+      type: "function",
+      function: {
+        name: "submit_supplier_payment",
+        description:
+          "Be om bekräftelse att skicka leverantörsbetalning till banken. Skickar INTE själv – visar bekräftelsekort med mottagare och konto.",
+        parameters: obj({ paymentId: { type: "string" } }, ["paymentId"]),
+      },
+    },
+    handler: (args) => {
+      const id = str(args, "paymentId");
+      if (!id) return { ok: false, forModel: {}, error: "paymentId krävs" };
+      return fromDomain(requestSubmitSupplierPayment(id), true);
+    },
+  },
+  {
+    requiresConfirmation: true,
+    risk: "CONFIRM_REQUIRED",
+    def: {
+      type: "function",
+      function: {
+        name: "cancel_supplier_payment",
+        description: "Be om bekräftelse att avbryta en förberedd eller skickad leverantörsbetalning. Avbryter inte själv.",
+        parameters: obj({ paymentId: { type: "string" } }, ["paymentId"]),
+      },
+    },
+    handler: (args) => {
+      const id = str(args, "paymentId");
+      if (!id) return { ok: false, forModel: {}, error: "paymentId krävs" };
+      return fromDomain(requestCancelSupplierPayment(id), true);
+    },
+  },
+  {
+    requiresConfirmation: true,
+    risk: "CONFIRM_REQUIRED",
+    def: {
+      type: "function",
+      function: {
+        name: "use_verified_supplier_details",
+        description:
+          "Komplettera en leverantörsfaktura som saknar betalningsuppgifter med leverantörens TIDIGARE VERIFIERADE uppgifter (use previously verified supplier payment details). Uppgifterna hämtas ur domänen – ange aldrig konto själv. Visar bekräftelsekort; utför inget utan användarens godkännande.",
+        parameters: obj({ invoiceId: { type: "string", description: "Leverantörsfakturans id" } }, ["invoiceId"]),
+      },
+    },
+    handler: (args) => {
+      const id = str(args, "invoiceId");
+      if (!id) return { ok: false, forModel: {}, error: "invoiceId krävs" };
+      return fromDomain(requestUseVerifiedSupplierDetails(id), true);
     },
   },
   {
@@ -909,7 +1023,7 @@ const specs: ToolSpec[] = [
       type: "function",
       function: {
         name: "update_assignment_status",
-        description: "Markera uppdrag som klart (mark job done). Pågår räknas från startdatum – använd inte pagar för att starta arbete.",
+        description: "Markera uppdrag som klart (mark job done). Pågår räknas från startdatum – använd inte pagar för att starta arbete. Återöppna med status kommande/pagar – rör inte fakturor.",
         parameters: obj(
           {
             jobId: { type: "string" },
@@ -923,6 +1037,11 @@ const specs: ToolSpec[] = [
       const jobId = str(args, "jobId");
       const status = str(args, "status") as Job["status"] | undefined;
       if (!jobId || !status) return { ok: false, forModel: {}, error: "jobId och status krävs" };
+      if (status === "klart") return fromDomain(completeJobDraft(jobId));
+      const current = getJob(jobId);
+      if (current && (current.status === "klart" || current.completedAt)) {
+        return fromDomain(reopenJobDraft(jobId));
+      }
       try {
         const job = setJobStatus(jobId, status);
         return { ok: true, forModel: compactJob(job), text: `Uppdraget ${job.title} är nu ${status}.` };
@@ -937,9 +1056,61 @@ const specs: ToolSpec[] = [
     def: {
       type: "function",
       function: {
+        name: "complete_job",
+        description: "Markera uppdrag som klart. Ändrar bara arbetsstatus – fakturor, offerter och betalningar påverkas inte.",
+        parameters: obj({ jobId: { type: "string" } }, ["jobId"]),
+      },
+    },
+    handler: (args) => {
+      const jobId = str(args, "jobId");
+      if (!jobId) return { ok: false, forModel: {}, error: "jobId krävs" };
+      return fromDomain(completeJobDraft(jobId));
+    },
+  },
+  {
+    requiresConfirmation: false,
+    risk: "SAFE_WRITE",
+    def: {
+      type: "function",
+      function: {
+        name: "reopen_job",
+        description: "Återöppna ett klart uppdrag. Återställer bara arbetsstatus. Fakturor, offerter, betalningar och bokföring rörs inte.",
+        parameters: obj({ jobId: { type: "string" } }, ["jobId"]),
+      },
+    },
+    handler: (args) => {
+      const jobId = str(args, "jobId");
+      if (!jobId) return { ok: false, forModel: {}, error: "jobId krävs" };
+      return fromDomain(reopenJobDraft(jobId));
+    },
+  },
+  {
+    requiresConfirmation: true,
+    risk: "CONFIRM_REQUIRED",
+    def: {
+      type: "function",
+      function: {
+        name: "delete_or_archive_job",
+        description:
+          "Be om bekräftelse att ta bort eller arkivera ett uppdrag. Tar inte bort själv. Tomt uppdrag raderas, annars arkiveras det. Utfärdade fakturor, signerade offerter och bokföring raderas aldrig.",
+        parameters: obj({ jobId: { type: "string" } }, ["jobId"]),
+      },
+    },
+    handler: (args) => {
+      const jobId = str(args, "jobId");
+      if (!jobId) return { ok: false, forModel: {}, error: "jobId krävs" };
+      return fromDomain(requestDeleteOrArchiveJob(jobId), true);
+    },
+  },
+  {
+    requiresConfirmation: false,
+    risk: "SAFE_WRITE",
+    def: {
+      type: "function",
+      function: {
         name: "create_quote",
         description:
-          "Skapa offertutkast (create quote draft). Skickas inte. amountInclVat i kronor inkl. moms. ROT/RUT-villkor läggs till av offerttjänsten – skriv inte egna villkor. Om kunden har en öppen förfrågan (t.ex. Karins bokhylla) kopplas den automatiskt och markeras som hanterad – samma objekt som i inboxen.",
+          "Skapa offertutkast (create quote draft). Skickas inte. amountInclVat i kronor inkl. moms. ROT/RUT-villkor läggs till av offerttjänsten – skriv inte egna villkor. Om kunden har ett inkommande uppdrag utan offert (t.ex. Karins bokhylla) kopplas det automatiskt via jobId.",
         parameters: obj(
           {
             customerName: { type: "string" },
@@ -953,7 +1124,7 @@ const specs: ToolSpec[] = [
               description:
                 "Avdrag att använda i kronor. Får inte överstiga maximalt avdrag utifrån den här offerten. Inte kundens saldo hos Skatteverket.",
             },
-            requestId: { type: "string", description: "Förfrågan att koppla. Lämna tomt för att hitta öppen förfrågan automatiskt." },
+            jobId: { type: "string", description: "Uppdrag att koppla. Lämna tomt för att hitta inkommande uppdrag utan offert automatiskt." },
           },
           ["title"]
         ),
@@ -973,7 +1144,7 @@ const specs: ToolSpec[] = [
         customerId = resolved.customer.id;
       }
       if (!customerId) return { ok: false, forModel: {}, error: "customerName eller customerId krävs" };
-      return fromDomain(createQuoteDraft({ customerId, title, amountInclVat: amount, percentAtStart: num(args, "percentAtStart"), rot, requestId: str(args, "requestId"), appliedTaxReduction }));
+      return fromDomain(createQuoteDraft({ customerId, title, amountInclVat: amount, percentAtStart: num(args, "percentAtStart"), rot, jobId: str(args, "jobId"), appliedTaxReduction }));
     },
   },
   {
@@ -1058,14 +1229,97 @@ const specs: ToolSpec[] = [
       function: {
         name: "create_job_invoice",
         description:
-          "Skapa nästa fakturautkast för ett uppdrag (createNextInvoiceForJob): del enligt betalningsplanen, annars resterande som slutfaktura. Samma pengalogik som Hem-åtgärden – räkna inte om beloppet. Skickas inte.",
-        parameters: obj({ jobId: { type: "string" } }, ["jobId"]),
+          "Skapa fakturautkast för ett uppdrag. basis=quote: enligt godkänd offert (betalningsplan). basis=actuals: ofakturerat registrerat arbete. Utan basis: offert om den finns, annars actuals. Skickas inte.",
+        parameters: obj({
+          jobId: { type: "string" },
+          basis: { type: "string", enum: ["quote", "actuals", "empty"] },
+        }, ["jobId"]),
       },
     },
     handler: (args) => {
       const jobId = str(args, "jobId");
       if (!jobId) return { ok: false, forModel: {}, error: "jobId krävs" };
-      return fromDomain(createJobInvoiceDraft(jobId));
+      const basis = str(args, "basis");
+      const resolved = basis === "quote" || basis === "actuals" || basis === "empty" ? basis : undefined;
+      return fromDomain(createJobInvoiceDraft(jobId, resolved));
+    },
+  },
+  {
+    requiresConfirmation: false,
+    risk: "SAFE_WRITE",
+    def: {
+      type: "function",
+      function: {
+        name: "register_job_time",
+        description:
+          "Registrera arbetstid på ett uppdrag idag (eller angivet datum). Timpris hämtas från offerten om det finns. Skapar inte dagsverken – bara en actual-post. Offerten ändras inte.",
+        parameters: obj(
+          {
+            jobId: { type: "string" },
+            hours: { type: "number" },
+            description: { type: "string" },
+            date: { type: "string", description: "YYYY-MM-DD. Tomt = idag." },
+            unitPrice: { type: "number", description: "Timpris exkl. moms. Tomt = från offerten." },
+          },
+          ["jobId", "hours"]
+        ),
+      },
+    },
+    handler: (args) => {
+      const jobId = str(args, "jobId");
+      const hours = num(args, "hours");
+      if (!jobId || hours == null) return { ok: false, forModel: {}, error: "jobId och hours krävs" };
+      return fromDomain(
+        registerJobTimeDraft({
+          jobId,
+          hours,
+          description: str(args, "description"),
+          date: str(args, "date"),
+          unitPrice: num(args, "unitPrice"),
+        })
+      );
+    },
+  },
+  {
+    requiresConfirmation: false,
+    risk: "SAFE_WRITE",
+    def: {
+      type: "function",
+      function: {
+        name: "add_job_material",
+        description:
+          "Lägg till material på ett uppdrag. qty och unitPrice (exkl. moms) krävs. Inte lager – bara en actual-post. Offerten ändras inte.",
+        parameters: obj(
+          {
+            jobId: { type: "string" },
+            description: { type: "string" },
+            qty: { type: "number" },
+            unitPrice: { type: "number" },
+            unit: { type: "string" },
+            date: { type: "string", description: "YYYY-MM-DD. Tomt = idag." },
+          },
+          ["jobId", "description", "qty", "unitPrice"]
+        ),
+      },
+    },
+    handler: (args) => {
+      const jobId = str(args, "jobId");
+      const description = str(args, "description");
+      const qty = num(args, "qty");
+      const unitPrice = num(args, "unitPrice");
+      if (!jobId || !description || qty == null || unitPrice == null) {
+        return { ok: false, forModel: {}, error: "jobId, description, qty och unitPrice krävs" };
+      }
+      return fromDomain(
+        addJobMaterialDraft({
+          jobId,
+          description,
+          qty,
+          unitPrice,
+          unit: str(args, "unit"),
+          date: str(args, "date"),
+        })
+      );
     },
   },
   {
@@ -1399,6 +1653,27 @@ const specs: ToolSpec[] = [
     def: {
       type: "function",
       function: {
+        name: "ratta_bokforing",
+        description:
+          "Be om bekräftelse att rätta en bokförd verifikation (correct booking). query = A12, leverantör eller id. category = utgiftskategori (material, forsakring, …) när kostnadskontot är fel. Aldrig debet/kredit-rader – Driva skapar rättelsen. Kundfaktura → kreditflöde. Betalning → omatcha.",
+        parameters: obj({
+          query: { type: "string", description: "Verifikationsnummer (A12), leverantör eller id." },
+          category: { type: "string", description: "Ny utgiftskategori, t.ex. material eller forsakring." },
+        }, ["query"]),
+      },
+    },
+    handler: (args) => {
+      const query = str(args, "query");
+      if (!query) return { ok: false, forModel: {}, error: "query krävs" };
+      return fromDomain(requestCorrectVerification(query, str(args, "category")), true);
+    },
+  },
+  {
+    requiresConfirmation: true,
+    risk: "CONFIRM_REQUIRED",
+    def: {
+      type: "function",
+      function: {
         name: "markera_moms_deklarerad",
         description:
           "Be om bekräftelse att markera en momsperiod som deklarerad (mark VAT declared). Skickar INGET till Skatteverket – låser perioden och för om momsen.",
@@ -1718,51 +1993,104 @@ const specs: ToolSpec[] = [
     def: {
       type: "function",
       function: {
-        name: "mark_inquiry_handled",
+        name: "request_client_information",
         description:
-          "Markera en kundförfrågan som hanterad (status ny → besvarad) när användaren redan haft kontakt och ingen offert ska skapas ('jag har pratat med Karin, ta bort förfrågan från att göra'). Förfrågan lämnar Behöver din uppmärksamhet men ligger kvar i inboxen/historiken. query = kundnamn eller ord ur förfrågan. Flera träffar → fråga, gissa aldrig.",
-        parameters: obj({ query: { type: "string" } }, ["query"]),
+          "Be ägaren om underlag (kvitto). Syns på Hem hos kunden. expenseId = utgiften som saknar kvitto.",
+        parameters: obj({ expenseId: { type: "string" }, message: { type: "string" } }, ["expenseId"]),
       },
     },
     handler: (args) => {
-      const query = str(args, "query") ?? "";
-      if (!query) return { ok: false, forModel: {}, error: "query krävs" };
-      const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-      const customers = new Map(db().customers.map((c) => [c.id, c]));
-      const matches = db()
-        .requests.filter((r) => r.status === "ny")
-        .filter((r) => {
-          const hay = `${customers.get(r.customerId)?.name ?? ""} ${r.title} ${r.message}`.toLowerCase();
-          return tokens.every((t) => hay.includes(t));
-        });
-      if (matches.length === 0) {
-        return { ok: false, forModel: { count: 0 }, error: `Ingen öppen förfrågan matchar "${query}".` };
+      const { currentActor } = require("../collaboration/actor") as typeof import("../collaboration/actor");
+      const { requestClientInformation } = require("../collaboration/requests") as typeof import("../collaboration/requests");
+      const actor = currentActor();
+      if (!actor || (actor.role !== "accounting_consultant" && actor.role !== "owner" && actor.role !== "admin")) {
+        return { ok: false, forModel: {}, error: "Bara redovisningskonsulten kan be kunden om underlag." };
       }
-      if (matches.length > 1) {
-        return {
-          ok: true,
-          forModel: {
-            inquiries: matches.slice(0, 8).map((r) => ({ id: r.id, title: r.title, customer: customers.get(r.customerId)?.name })),
-            count: matches.length,
-          },
-          text: `${matches.length} öppna förfrågningar matchar "${query}" – vilken menar du?`,
-          card: {
-            kind: "list",
-            title: "Vilken förfrågan?",
-            rows: matches.slice(0, 8).map((r) => ({
-              label: r.title,
-              value: customers.get(r.customerId)?.name ?? "",
-              href: `/inbox/${r.id}`,
-            })),
-          },
-        };
-      }
-      const request = markInquiryHandled(matches[0].id);
-      const name = customers.get(request.customerId)?.name ?? "kunden";
+      const expenseId = str(args, "expenseId") ?? "";
+      const req = requestClientInformation({
+        expenseId,
+        message: str(args, "message"),
+        requestedByUserId: actor.userId,
+        requestedByName: actor.name || "Redovisningskonsulten",
+        requestedByRole: actor.role === "accounting_consultant" ? "accounting_consultant" : "accounting_consultant",
+      });
       return {
         ok: true,
-        forModel: { requestId: request.id, status: request.status },
-        text: `Klart – förfrågan ”${request.title}” från ${name} är markerad som hanterad. Den ligger kvar bland förfrågningarna.`,
+        forModel: { requestId: req.id, message: req.message },
+        text: `Klart – kunden ser: ${req.message}`,
+      };
+    },
+  },
+  {
+    requiresConfirmation: false,
+    risk: "READ_ONLY",
+    def: {
+      type: "function",
+      function: {
+        name: "list_accountant_exceptions",
+        description:
+          "Sammanfatta bokföringsundantag (samma åtgärdsmotor). Omfattning (detta företag eller alla klienter) sätts av servern – skicka inte scope. Aldrig rå huvudbok.",
+        parameters: obj({}),
+      },
+    },
+    handler: async (_args, options) => {
+      const { accountantQueue, ACCOUNTANT_ISSUE_LABEL, accountantIssueType } = require("../collaboration/issues") as typeof import("../collaboration/issues");
+      const { listAccountantClients } = require("../collaboration/clients") as typeof import("../collaboration/clients");
+      const { attentionForBusiness } = require("../collaboration/portfolio") as typeof import("../collaboration/portfolio");
+      const { currentActor } = require("../collaboration/actor") as typeof import("../collaboration/actor");
+      const scope = options?.accountantScope === "all_clients" ? "all_clients" : "current";
+
+      if (scope === "all_clients") {
+        const userId = options?.actorUserId ?? currentActor()?.userId;
+        if (!userId) {
+          return { ok: false, forModel: { scope }, error: "Ingen användare i kontexten." };
+        }
+        const clients = listAccountantClients(userId);
+        const items: { id: string; type: string | null; title: string; businessId: string; businessName: string }[] = [];
+        for (const c of clients) {
+          const attention = await attentionForBusiness(c.businessId);
+          for (const a of accountantQueue(attention)) {
+            items.push({
+              id: a.id,
+              type: accountantIssueType(a),
+              title: a.title,
+              businessId: c.businessId,
+              businessName: c.businessName,
+            });
+          }
+        }
+        return {
+          ok: true,
+          forModel: { scope: "all_clients", count: items.length, clients: clients.length, items: items.slice(0, 30) },
+          text:
+            items.length === 0
+              ? "Alla klienter: redo – inga undantag."
+              : `Alla klienter: ${items.length} saker hos ${new Set(items.map((i) => i.businessId)).size} klienter. ${items
+                  .slice(0, 8)
+                  .map((a) => `${a.businessName}: ${ACCOUNTANT_ISSUE_LABEL[(a.type as keyof typeof ACCOUNTANT_ISSUE_LABEL) ?? "UNCLEAR_CATEGORY"]}`)
+                  .join("; ")}.`,
+        };
+      }
+
+      const queue = accountantQueue(getBusinessActions().attention);
+      return {
+        ok: true,
+        forModel: {
+          scope: "current",
+          count: queue.length,
+          items: queue.slice(0, 20).map((a) => ({
+            id: a.id,
+            type: accountantIssueType(a),
+            title: a.title,
+          })),
+        },
+        text:
+          queue.length === 0
+            ? "Detta företag: redo – inga undantag."
+            : `Detta företag: ${queue.length} saker: ${queue
+                .slice(0, 8)
+                .map((a) => ACCOUNTANT_ISSUE_LABEL[accountantIssueType(a) ?? "UNCLEAR_CATEGORY"])
+                .join(", ")}.`,
       };
     },
   },
@@ -1794,19 +2122,29 @@ export function toolRegistrySummary(): { name: string; risk: ToolRisk }[] {
   return specs.map((s) => ({ name: s.def.function.name, risk: s.risk }));
 }
 
-export type ExecuteToolOptions = {
-  /**
-   * "user" (standard): deterministiska flöden – kommandofältet, regeltolken,
-   * bekräftelseknappar. "ai": modellgenererade anrop – FORBIDDEN_FOR_AI
-   * blockeras och argumenten valideras strikt mot verktygets schema.
-   */
-  origin?: "user" | "ai";
-};
+/** Se ExecuteToolOptions ovan – exporterad typ ägs av registret. */
 
 export async function executeTool(name: string, rawArgs: unknown, options: ExecuteToolOptions = {}): Promise<ToolResult> {
   const origin = options.origin ?? "user";
   const spec = specs.find((s) => s.def.function.name === name);
   if (!spec) return { ok: false, forModel: {}, error: `Okänt verktyg: ${name}` };
+
+  const { currentActor } = await import("../collaboration/actor");
+  const { toolAllowedForRole } = await import("../collaboration/permissions");
+  const actor = currentActor();
+  const role = options.actorRole ?? actor?.role;
+  if (role && !toolAllowedForRole(name, role)) {
+    logAudit(name, { blocked: "ROLE" }, false, 0, "Saknar behörighet");
+    return { ok: false, forModel: {}, error: "Du har inte behörighet att göra det i det här företaget. Inget utfördes." };
+  }
+  if (rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
+    const claimed = (rawArgs as Record<string, unknown>).businessId;
+    const allowed = options.businessId ?? actor?.businessId;
+    if (typeof claimed === "string" && allowed && claimed !== allowed) {
+      logAudit(name, { blocked: "IDOR" }, false, 0, "Fel företag");
+      return { ok: false, forModel: {}, error: "Verktyget får bara användas i det öppna företaget. Inget utfördes." };
+    }
+  }
 
   if (origin === "ai" && spec.risk === "FORBIDDEN_FOR_AI") {
     logAudit(name, { blocked: "FORBIDDEN_FOR_AI" }, false, 0, "Blockerat för AI");
@@ -1815,7 +2153,9 @@ export async function executeTool(name: string, rawArgs: unknown, options: Execu
 
   let args = (rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs) ? rawArgs : {}) as Record<string, unknown>;
   if (origin === "ai") {
-    const validated = validateToolArgs(spec.def.function.parameters, rawArgs);
+    const { scope: _scopeIgnored, accountantScope: _acctScopeIgnored, ...safeRaw } = args;
+    args = safeRaw;
+    const validated = validateToolArgs(spec.def.function.parameters, safeRaw);
     if (!validated.ok) {
       logAudit(name, rawArgs, false, 0, validated.error);
       return { ok: false, forModel: {}, error: validated.error };
@@ -1825,7 +2165,7 @@ export async function executeTool(name: string, rawArgs: unknown, options: Execu
 
   const started = Date.now();
   try {
-    const result = await spec.handler(args);
+    const result = await spec.handler(args, options);
     logAudit(name, args, result.ok, Date.now() - started, result.error);
     if (!result.ok && !result.error) {
       return { ...result, error: "Verktyget misslyckades. Inget sparades." };

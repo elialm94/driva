@@ -28,12 +28,22 @@ export interface JobMoney {
   quoteAmount: number;
   /** Fakturerat inkl. moms (utkast inräknade, krediter avdragna). */
   invoiced: number;
+  /**
+   * Utfärdat fakturerat (utkast räknas inte). Används i sammanfattningen
+   * "Fakturerat" – utkast reservar kvar-att-fakturera men syns inte här.
+   */
+  invoicedIssued: number;
   /** Kvar att fakturera enligt godkänd offert. Aldrig negativt. */
   remaining: number;
   /** Utestående fordran (skickade/delbetalda fakturor). */
   unpaid: number;
   /** Faktiskt inbetalt. */
   paid: number;
+  /**
+   * Registrerat men inte fakturerat (actuals utan utfärdad/utkast-faktura).
+   * Inte samma sak som remaining (kvar enligt offert).
+   */
+  registeredUninvoiced: number;
   invoices: Invoice[];
 }
 
@@ -90,16 +100,32 @@ export function invoicesForJobOrQuote(jobId: string, quoteId?: string): Invoice[
   return [...byJob, ...byQuote.filter((i) => !seen.has(i.id))];
 }
 
-function moneyFor(quote: Quote | undefined, invoices: Invoice[]): JobMoney {
+function registeredUninvoicedFor(jobId: string, invoices: Invoice[]): number {
+  const live = new Set(
+    invoices.filter((i) => i.status !== "krediterad" && i.type !== "kredit").map((i) => i.id)
+  );
+  let sum = 0;
+  for (const e of db().jobWorkEntries ?? []) {
+    if (e.jobId !== jobId || e.role !== "actual") continue;
+    if (e.invoiceId && live.has(e.invoiceId)) continue;
+    sum += Math.round(e.qty * e.unitPrice * (1 + e.vatRate / 100));
+  }
+  return sum;
+}
+
+function moneyFor(jobId: string, quote: Quote | undefined, invoices: Invoice[]): JobMoney {
   const data = db();
   const version = quote ? data.quoteVersions.find((v) => v.id === quote.currentVersionId) : undefined;
   const quoteTotals = version ? docTotals(version.lines, version.rot) : undefined;
 
   let invoiced = 0;
+  let invoicedIssued = 0;
   let unpaid = 0;
   let paid = 0;
   for (const inv of invoices) {
-    invoiced += invoicedTotalContribution(inv);
+    const contribution = invoicedTotalContribution(inv);
+    invoiced += contribution;
+    if (inv.status !== "utkast") invoicedIssued += contribution;
     if (inv.type === "kredit") continue;
     paid += invoicePaidAmount(inv.id);
     if (inv.status === "skickad" || inv.status === "delbetald") {
@@ -114,9 +140,11 @@ function moneyFor(quote: Quote | undefined, invoices: Invoice[]): JobMoney {
     quote,
     quoteAmount: quoteTotals?.toPay ?? 0,
     invoiced,
+    invoicedIssued,
     remaining,
     unpaid,
     paid,
+    registeredUninvoiced: registeredUninvoicedFor(jobId, invoices),
     // Samma lista som tidigare jobMoneySummary: original som räknas – inte
     // kreditfakturor eller fullkrediterade par.
     invoices: invoices.filter(countsTowardInvoiced),
@@ -130,7 +158,7 @@ export function jobMoney(jobId: string): JobMoney {
   const quote = job
     ? data.quotes.find((q) => q.id === job.quoteId) ?? data.quotes.find((q) => q.jobId === job.id)
     : undefined;
-  return moneyFor(quote, invoicesForJob(jobId));
+  return moneyFor(jobId, quote, invoicesForJob(jobId));
 }
 
 /** Ekonomi för ALLA uppdrag i en genomläsning (listor – ingen N+1). */
@@ -144,7 +172,7 @@ export function jobMoneyForAll(): Map<string, JobMoney> {
   const out = new Map<string, JobMoney>();
   for (const job of data.jobs) {
     const quote = (job.quoteId ? quoteById.get(job.quoteId) : undefined) ?? quoteByJobId.get(job.id);
-    out.set(job.id, moneyFor(quote, invoicesForJob(job.id)));
+    out.set(job.id, moneyFor(job.id, quote, invoicesForJob(job.id)));
   }
   return out;
 }

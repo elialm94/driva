@@ -18,6 +18,7 @@ import {
   TaxReductionFields,
   TaxReductionAmountPanel,
   taxReductionDetailsFromForm,
+  type InvoicePropertyOption,
   type TaxReductionFormValue,
 } from "./tax-reduction-fields";
 import { suggestedServiceDate } from "@/lib/tax-reduction-gaps";
@@ -524,7 +525,6 @@ export interface QuoteFormInitial {
 export function QuoteForm({
   customers,
   defaultCustomerId,
-  requestId,
   jobId,
   quoteId,
   lockCustomer,
@@ -537,7 +537,6 @@ export function QuoteForm({
 }: {
   customers: CustomerOption[];
   defaultCustomerId?: string;
-  requestId?: string;
   jobId?: string;
   /** Lås kundväljaren när offerten öppnas från en kund. */
   lockCustomer?: boolean;
@@ -633,7 +632,7 @@ export function QuoteForm({
         await updateQuoteAction(quoteId, payload);
         router.push(hrefWithNav(`/ekonomi/offerter/${quoteId}`, nav) as never);
       } else {
-        await createQuoteAction({ ...payload, customerId, requestId, jobId }, nav);
+        await createQuoteAction({ ...payload, customerId, jobId }, nav);
       }
     });
   }
@@ -838,11 +837,11 @@ export function QuoteForm({
           </div>
 
           <div>
-            <label className={labelCls}>Övrig information</label>
-            <RichTextEditor value={initial?.richText} onChange={setRichText} aiEnabled={aiEnabled} />
+            <label className={labelCls}>Beskrivning</label>
+            <RichTextEditor value={initial?.richText} onChange={setRichText} aiEnabled={aiEnabled} ariaLabel="Beskrivning" />
             <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
-              Valfritt avsnitt som visas på offerten – t.ex. vad som ingår, förutsättningar eller praktisk
-              information. Sparas med utkastet.
+              Valfritt. Visas på offerten före prisraderna – t.ex. vad som ingår, förutsättningar eller
+              praktisk information. Rubriker och listor i texten ger strukturen. Sparas med utkastet.
             </p>
           </div>
 
@@ -946,7 +945,10 @@ export function InvoiceForm({
   quoteId?: string;
   /** Lås kundväljaren när fakturan öppnas från en kund. */
   lockCustomer?: boolean;
-  rotByCustomer?: Record<string, { personalIdentityNumber?: string; addressLine?: string }>;
+  rotByCustomer?: Record<
+    string,
+    { personalIdentityNumber?: string; addressLine?: string; properties?: InvoicePropertyOption[] }
+  >;
   initial?: InvoiceFormInitial;
   cancelHref: string;
   returnTo?: string;
@@ -985,13 +987,20 @@ export function InvoiceForm({
   const missingIds = useMemo(() => new Set(showErrors ? missing.map((m) => m.id) : []), [missing, showErrors]);
   const nav = { returnTo, returnLabel };
 
-  function applyCustomerRot(id: string) {
+  function applyCustomerRot(id: string, applyHousing = false) {
     const row = rotByCustomer?.[id];
-    setTaxFields((prev) => ({
-      ...prev,
-      personalIdentityNumber: row?.personalIdentityNumber ?? prev.personalIdentityNumber,
-      workAddress: prev.workAddress || row?.addressLine || "",
-    }));
+    const properties = row?.properties ?? [];
+    setTaxFields((prev) => {
+      const next = {
+        ...prev,
+        personalIdentityNumber: row?.personalIdentityNumber ?? prev.personalIdentityNumber,
+        workAddress: prev.workAddress || row?.addressLine || "",
+      };
+      if (applyHousing && properties.length === 1) {
+        next.housing = { dwellingType: "smahus", propertyDesignation: properties[0].designation };
+      }
+      return next;
+    });
   }
 
   function syncServiceFromPeriod(fields: TaxReductionFormValue) {
@@ -1086,7 +1095,7 @@ export function InvoiceForm({
                   value={customerId}
                   onChange={(id) => {
                     setCustomerId(id);
-                    if (!jobId) applyCustomerRot(id);
+                    if (!jobId) applyCustomerRot(id, Boolean(rot));
                   }}
                   onCreated={(customer) => setCustomerOptions((prev) => addCustomerOption(prev, customer))}
                 />
@@ -1150,7 +1159,7 @@ export function InvoiceForm({
                     const next = value ? rotForEditor(value, lines, rot, "faktura") : null;
                     setRot(next);
                     setClampNotice(null);
-                    if (value && customerId) applyCustomerRot(customerId);
+                    if (value && customerId) applyCustomerRot(customerId, true);
                     if (value) syncServiceFromPeriod(taxFields);
                   }}
                   className={cx(
@@ -1168,6 +1177,7 @@ export function InvoiceForm({
                 type={rot.type}
                 value={taxFields}
                 onChange={setTaxFieldsAndDates}
+                properties={rotByCustomer?.[customerId]?.properties}
                 amountSlot={
                   rotLiveTotals ? (
                     <>
@@ -1204,11 +1214,11 @@ export function InvoiceForm({
           </div>
         </Card>
         <Card className="p-6">
-          <label className={labelCls}>Övrig information</label>
-          <RichTextEditor value={initial?.richText} onChange={setRichText} aiEnabled={aiEnabled} />
+          <label className={labelCls}>Beskrivning</label>
+          <RichTextEditor value={initial?.richText} onChange={setRichText} aiEnabled={aiEnabled} ariaLabel="Beskrivning" />
           <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
-            Valfritt avsnitt som visas på fakturan – t.ex. vad som ingår eller praktisk information. Sparas med
-            utkastet och fryses när fakturan skickas.
+            Valfritt. Visas på fakturan före raderna – t.ex. vad som ingår eller praktisk information.
+            Rubriker och listor i texten ger strukturen. Sparas med utkastet och fryses när fakturan skickas.
           </p>
         </Card>
       </div>

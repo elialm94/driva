@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageHeader, cx } from "@/components/ui";
-import { CustomerRegister, NewCustomerButton } from "@/components/customer-list";
-import { NewUppdragButton } from "@/components/uppdrag-form";
+import { CustomerRegister } from "@/components/customer-list";
+import { KunderHeaderActions } from "@/components/kunder-header-actions";
 import { UppdragList, type UppdragListQuery } from "@/components/uppdrag-list";
 import {
   listCustomersForTable,
@@ -28,7 +28,7 @@ export default async function CustomersPage(props: {
   await ensurePageBusiness();
   const searchParams = await props.searchParams;
   const flik = str(searchParams.flik);
-  if (flik === "forfragningar") redirect("/inbox");
+  if (flik === "forfragningar") redirect("/kunder?flik=uppdrag");
   const tab: KunderTab = flik === "uppdrag" ? "uppdrag" : "kunder";
   const customers = [...db().customers]
     .sort((a, b) => a.name.localeCompare(b.name, "sv"))
@@ -51,13 +51,7 @@ export default async function CustomersPage(props: {
             ? "Vad som är beställt, när det sker, vad som är fakturerat och vad som är kvar."
             : "Alla du jobbar med eller pratar med – allt kopplas ihop automatiskt."
         }
-        actions={
-          tab === "uppdrag" ? (
-            customers.length > 0 ? <NewUppdragButton customers={customers} /> : undefined
-          ) : (
-            <NewCustomerButton />
-          )
-        }
+        actions={<KunderHeaderActions customers={customers} />}
       />
 
       <div className="mb-5 flex gap-1 overflow-x-auto rounded-2xl bg-ink/4 p-1">
@@ -127,7 +121,9 @@ function parseSort(value: string): CustomerSort {
 }
 
 function parseLifecycle(value: string): JobLifecycleFilter {
-  return value === "planerade" || value === "klart" || value === "alla" ? value : "aktiva";
+  return value === "planerade" || value === "klart" || value === "alla" || value === "arkiverade"
+    ? value
+    : "aktiva";
 }
 
 function parseEconomy(value: string): JobEconomyFilter {

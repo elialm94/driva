@@ -5,11 +5,8 @@ import assert from "node:assert/strict";
 import { replaceDb, db } from "./store";
 import { emptyTestDb, testCustomer } from "./invoices/test-db";
 import { setMailTransportForTests, type MailMessage } from "./mail";
-import {
-  inquiryQuoteCtaHref,
-  submitContactForm,
-} from "./services/website";
-import { getBusinessProfile, getInquiryNotificationEmail, updateCompanySettings } from "./services/settings";
+import { submitContactForm, websiteJobQuoteCtaHref } from "./services/website";
+import { getBusinessProfile, getWebsiteNotificationEmail, updateCompanySettings } from "./services/settings";
 import type { CompanySettingsInput } from "./services/settings";
 
 const visitor = {
@@ -26,7 +23,7 @@ function settingsInput(over: Partial<CompanySettingsInput> = {}): CompanySetting
     orgNumber: s.orgNumber,
     vatNumber: s.vatNumber,
     email: s.email,
-    inquiryNotificationEmail: s.inquiryNotificationEmail,
+    websiteNotificationEmail: s.websiteNotificationEmail,
     phone: s.phone,
     websiteUrl: s.websiteUrl,
     address: s.address,
@@ -49,7 +46,7 @@ function settingsInput(over: Partial<CompanySettingsInput> = {}): CompanySetting
   };
 }
 
-describe("sajtförfrågan", () => {
+describe("webbformulär → uppdrag", () => {
   const sent: MailMessage[] = [];
 
   beforeEach(() => {
@@ -68,7 +65,7 @@ describe("sajtförfrågan", () => {
     setMailTransportForTests(undefined);
   });
 
-  it("skapar kund och förfrågan och mejlar företagaren", async () => {
+  it("skapar kund och uppdrag och mejlar företagaren", async () => {
     const result = await submitContactForm({ ...visitor, idempotencyKey: "k1" });
     assert.equal("skipped" in result, false);
     if ("skipped" in result) return;
@@ -77,22 +74,24 @@ describe("sajtförfrågan", () => {
 
     const data = db();
     const customer = data.customers.find((c) => c.id === result.customerId);
-    const request = data.requests.find((r) => r.id === result.requestId);
+    const job = data.jobs.find((j) => j.id === result.jobId);
     assert.ok(customer);
     assert.equal(customer.email, visitor.email);
     assert.equal(customer.name, visitor.name);
-    assert.ok(request);
-    assert.equal(request.customerId, customer.id);
-    assert.equal(request.source, "hemsida");
-    assert.equal(request.status, "ny");
-    assert.equal(request.notification?.status, "sent");
+    assert.ok(job);
+    assert.equal(job.customerId, customer.id);
+    assert.equal(job.source, "web_form");
+    assert.equal(job.originalMessage, visitor.message);
+    assert.equal(job.description, visitor.message);
+    assert.equal(job.notification?.status, "sent");
+    assert.equal(data.inboxItems?.length ?? 0, 0);
 
     assert.equal(sent.length, 1);
-    assert.equal(sent[0].to, getInquiryNotificationEmail());
+    assert.equal(sent[0].to, getWebsiteNotificationEmail());
     assert.equal(sent[0].replyTo, visitor.email);
-    assert.match(sent[0].subject, /Karin Testsson/);
-    const cta = inquiryQuoteCtaHref(customer.id, request.id);
-    assert.equal(cta, `/ekonomi/offerter/ny?kund=${customer.id}&forfragan=${request.id}`);
+    assert.match(sent[0].subject, /Nytt uppdrag från webbformuläret/);
+    const cta = websiteJobQuoteCtaHref(customer.id, job.id);
+    assert.equal(cta, `/ekonomi/offerter/ny?kund=${customer.id}&job=${job.id}`);
     assert.ok(sent[0].text.includes(cta));
     assert.ok(sent[0].html.includes("Skapa offert"));
   });
@@ -106,11 +105,11 @@ describe("sajtförfrågan", () => {
     });
     const withEmail = db().customers.filter((c) => c.email.toLowerCase() === visitor.email);
     assert.equal(withEmail.length, 1);
-    const inquiries = db().requests.filter((r) => r.customerId === withEmail[0].id);
-    assert.equal(inquiries.length, 2);
+    const jobs = db().jobs.filter((j) => j.customerId === withEmail[0].id && j.source === "web_form");
+    assert.equal(jobs.length, 2);
   });
 
-  it("behåller förfrågan om mejlet misslyckas", async () => {
+  it("behåller uppdraget om mejlet misslyckas", async () => {
     setMailTransportForTests(async () => {
       throw new Error("smtp nere");
     });
@@ -119,13 +118,13 @@ describe("sajtförfrågan", () => {
     if ("skipped" in result) return;
     assert.equal(result.created, true);
     assert.equal(result.mailed, false);
-    const request = db().requests.find((r) => r.id === result.requestId);
-    assert.ok(request);
-    assert.equal(request.notification?.status, "failed");
+    const job = db().jobs.find((j) => j.id === result.jobId);
+    assert.ok(job);
+    assert.equal(job.notification?.status, "failed");
     assert.equal(db().customers.filter((c) => c.email === visitor.email).length, 1);
   });
 
-  it("retry skickar mejl utan ny kund eller förfrågan", async () => {
+  it("retry skickar mejl utan ny kund eller uppdrag", async () => {
     setMailTransportForTests(async () => {
       throw new Error("smtp nere");
     });
@@ -140,7 +139,7 @@ describe("sajtförfrågan", () => {
     assert.equal("skipped" in second, false);
     if ("skipped" in second) return;
     assert.equal(second.created, false);
-    assert.equal(second.requestId, first.requestId);
+    assert.equal(second.jobId, first.jobId);
     assert.equal(second.customerId, first.customerId);
     assert.equal(second.mailed, true);
     assert.equal(sent.length, 1);
@@ -151,22 +150,22 @@ describe("sajtförfrågan", () => {
     assert.equal(third.created, false);
     assert.equal(sent.length, 1);
 
-    assert.equal(db().requests.filter((r) => r.customerId === first.customerId).length, 1);
+    assert.equal(db().jobs.filter((j) => j.customerId === first.customerId).length, 1);
     assert.equal(db().customers.filter((c) => c.email === visitor.email).length, 1);
   });
 
   it("använder aviseringsadressen från inställningarna, inte den publika e-posten", async () => {
     const publicEmail = getBusinessProfile().email;
-    updateCompanySettings(settingsInput({ inquiryNotificationEmail: "chef@test.se" }));
+    updateCompanySettings(settingsInput({ websiteNotificationEmail: "chef@test.se" }));
     assert.equal(getBusinessProfile().email, publicEmail);
-    assert.equal(getInquiryNotificationEmail(), "chef@test.se");
+    assert.equal(getWebsiteNotificationEmail(), "chef@test.se");
 
     await submitContactForm({ ...visitor, idempotencyKey: "notify-1" });
     assert.equal(sent[0].to, "chef@test.se");
     assert.notEqual(sent[0].to, publicEmail);
   });
 
-  it("honeypot skapar varken kund, förfrågan eller mejl", async () => {
+  it("honeypot skapar varken kund, uppdrag eller mejl", async () => {
     const result = await submitContactForm({
       ...visitor,
       website: "https://spam.example",
@@ -174,7 +173,7 @@ describe("sajtförfrågan", () => {
     });
     assert.deepEqual(result, { skipped: true });
     assert.equal(db().customers.filter((c) => c.email === visitor.email).length, 0);
-    assert.equal(db().requests.length, 0);
+    assert.equal(db().jobs.length, 0);
     assert.equal(sent.length, 0);
   });
 });

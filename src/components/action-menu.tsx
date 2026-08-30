@@ -10,8 +10,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { MoreHorizontal } from "lucide-react";
-import { cx } from "./ui";
+import { ChevronDown, MoreHorizontal, Plus } from "lucide-react";
+import { buttonClasses, cx } from "./ui";
 
 export type ActionAppearance = "button" | "menu";
 
@@ -77,6 +77,66 @@ export function ActionMenu({ children, label = "Fler åtgärder" }: { children: 
           onClick={() => setOpen((v) => !v)}
         >
           <MoreHorizontal className="size-5" />
+        </button>
+        <div
+          id={id}
+          role="menu"
+          aria-hidden={!open}
+          className={cx(
+            "absolute right-0 top-full z-30 mt-1.5 min-w-[15.5rem] overflow-hidden rounded-xl border border-line bg-card p-1 shadow-pop",
+            !open && "hidden"
+          )}
+        >
+          {children}
+        </div>
+      </div>
+    </ActionMenuContext.Provider>
+  );
+}
+
+/** Compact create control when two header actions do not fit. */
+export function CreateMenu({ children, label = "Skapa" }: { children: ReactNode; label?: string }) {
+  const visible = Children.toArray(children);
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  function close() {
+    setOpen(false);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointer(e: PointerEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) close();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") close();
+    }
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (visible.length === 0) return null;
+
+  return (
+    <ActionMenuContext.Provider value={{ close }}>
+      <div ref={rootRef} className="relative shrink-0">
+        <button
+          type="button"
+          className={buttonClasses("primary")}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <Plus className="size-4" />
+          {label}
+          <ChevronDown className={cx("size-4 transition-transform", open && "rotate-180")} />
         </button>
         <div
           id={id}

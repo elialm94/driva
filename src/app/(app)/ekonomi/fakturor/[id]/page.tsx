@@ -5,6 +5,7 @@ import { db } from "@/lib/store";
 import { getInvoice, invoiceTotals, requireCustomer, isOverdue } from "@/lib/services/data";
 import { invoiceQuoteDeviation } from "@/lib/services/invoice-quote-deviation";
 import { validateInvoiceForIssue } from "@/lib/invoices/validate";
+import { missingEmailForSend } from "@/lib/customer-validation";
 import { invoiceHeading } from "@/lib/invoices/display";
 import { kr, datumTid, datumLang, relativ } from "@/lib/format";
 import { ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
@@ -65,20 +66,11 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   const linkedBlockers = blockers.map((b) =>
     b.href ? { ...b, href: withReturnTo(b.href, settingsReturn, invoiceHeading(invoice)) } : b
   );
-  const missingEmail = !customer.email.trim();
-  const sendBlockers = missingEmail
-    ? [
-        ...linkedBlockers,
-        {
-          code: "buyer_email",
-          message: "Kunden saknar e-postadress.",
-          href: withReturnTo(`/kunder/${customer.id}`, settingsReturn, invoiceHeading(invoice)),
-          actionLabel: "Lägg till e-post",
-        },
-      ]
-    : linkedBlockers;
+  // Saknad e-post namnges i checklistan men kompletteras inline i skickaflödet
+  // (pendingAction SEND_INVOICE → resolveMissingRequirements → resume).
+  const emailBlocker = isDraft ? missingEmailForSend(customer) : null;
+  const sendBlockers = emailBlocker ? [...linkedBlockers, emailBlocker] : linkedBlockers;
   const editHref = hrefWithNav(`/ekonomi/fakturor/${invoice.id}/redigera`, nav);
-  const addEmailHref = withReturnTo(`/kunder/${customer.id}`, settingsReturn, invoiceHeading(invoice));
   const tillaggHref = deviation?.largeExcess
     ? newQuoteHref({
         kund: invoice.customerId,
@@ -129,6 +121,8 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         <Pencil className="size-4" /> Redigera faktura
       </ButtonLink>
       <InvoiceDraftSend
+        documentId={invoice.id}
+        customerId={customer.id}
         customerName={customer.name}
         amount={totals.toPay}
         dueDateLabel={datumLang(invoice.dueDate)}
@@ -136,7 +130,6 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         detailHref={fromHere.href}
         mailConfigured={isLiveMailConfigured()}
         recipientEmail={customer.email}
-        addEmailHref={addEmailHref}
         hasIssuanceBlockers={linkedBlockers.length > 0}
         excessAmount={deviation?.largeExcess ? deviation.delta : undefined}
         tillaggHref={tillaggHref}

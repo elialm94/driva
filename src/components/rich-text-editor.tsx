@@ -19,11 +19,12 @@ import {
 } from "lucide-react";
 import { buttonClasses, cx } from "./ui";
 import { sanitizeLinkHref, sanitizeRichText, type RichTextDoc } from "@/lib/richtext";
-import { shortcutFromEvent } from "@/lib/richtext-shortcuts";
+import { rootHorizontalRule } from "@/lib/richtext-divider";
+import { markRangeFromDomFallback, shortcutFromEvent } from "@/lib/richtext-shortcuts";
 import { improveRichTextAction } from "@/app/richtext-actions";
 
 /**
- * Rik text-editor för "Övrig information" på offerter och fakturor.
+ * Rik text-editor för beskrivningen på offerter och fakturor.
  *
  *   * TipTap med en MEDVETET liten verktygsrad: Normal text/H1–H3, fet,
  *     kursiv, understruken, punktlista, numrerad lista, länk, avdelare,
@@ -116,18 +117,27 @@ function handleEditorShortcut(editor: Editor, event: KeyboardEvent): boolean {
   const which = shortcutFromEvent(event);
   if (!which) return false;
   event.preventDefault();
-  if (which === "bold") return editor.commands.toggleBold();
-  if (which === "italic") return editor.commands.toggleItalic();
-  if (which === "underline") return editor.commands.toggleUnderline();
   if (which === "undo") return editor.commands.undo();
-  return editor.commands.redo();
+  if (which === "redo") return editor.commands.redo();
+  const range = markRangeFromDomFallback({
+    empty: editor.state.selection.empty,
+    from: editor.state.selection.from,
+    to: editor.state.selection.to,
+    posAtDOM: (node, offset) => editor.view.posAtDOM(node, offset),
+    contains: (node) => editor.view.dom.contains(node),
+    domSelection: typeof window === "undefined" ? null : window.getSelection(),
+  });
+  const chain = range ? editor.chain().setTextSelection(range) : editor.chain();
+  if (which === "bold") return chain.toggleBold().run();
+  if (which === "italic") return chain.toggleItalic().run();
+  return chain.toggleUnderline().run();
 }
 
 export function RichTextEditor({
   value,
   onChange,
   placeholder = "Skriv vad som ingår, villkor eller annan information kunden behöver se…",
-  ariaLabel = "Övrig information",
+  ariaLabel = "Beskrivning",
   aiEnabled = false,
 }: {
   /** Initialt dokument. Editorn äger tillståndet efter montering. */
@@ -158,6 +168,7 @@ export function RichTextEditor({
         codeBlock: false,
         strike: false,
         heading: { levels: [1, 2, 3] },
+        horizontalRule: false,
         link: {
           openOnClick: false,
           autolink: true,
@@ -166,6 +177,7 @@ export function RichTextEditor({
           protocols: ["http", "https", "mailto"],
         },
       }),
+      rootHorizontalRule,
       Placeholder.configure({ placeholder }),
     ],
     content: value && value.content.length > 0 ? value : EMPTY_DOC,

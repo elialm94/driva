@@ -1,7 +1,7 @@
 /**
  * Central navigation config for the Driva app.
  *
- * Back = origin ("← Hem"). Breadcrumbs = structure ("Kunder / Förfrågningar / …").
+ * Back = origin ("← Hem"). Breadcrumbs = structure ("Kunder / Uppdrag / …").
  * Origin lives on the navigation event (`tillbaka` query + optional label), never on
  * the domain object. AppLink / resolveAppHref stamp origin; SmartBack reads it.
  * Canonical parent in ROUTES is the fallback when origin is missing or invalid.
@@ -10,7 +10,7 @@
 export const RETURN_TO_PARAM = "tillbaka";
 export const RETURN_LABEL_PARAM = "tillbakaNamn";
 
-export type NavSection = "hem" | "kunder" | "ekonomi" | "inbox" | "bokforing" | "hemsida";
+export type NavSection = "hem" | "kunder" | "ekonomi" | "inbox" | "bokforing" | "hemsida" | "samarbeta";
 
 export const NAV_ITEMS: { href: string; section: NavSection; label: string }[] = [
   { href: "/", section: "hem", label: "Hem" },
@@ -18,6 +18,7 @@ export const NAV_ITEMS: { href: string; section: NavSection; label: string }[] =
   { href: "/ekonomi", section: "ekonomi", label: "Ekonomi" },
   { href: "/inbox", section: "inbox", label: "Inbox" },
   { href: "/bokforing", section: "bokforing", label: "Bokföring" },
+  { href: "/samarbeta", section: "samarbeta", label: "Samarbeta" },
   { href: "/hemsida", section: "hemsida", label: "Hemsida" },
 ];
 
@@ -104,7 +105,7 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/ekonomi", section: "ekonomi", label: "Ekonomi" },
   { pattern: "/inbox/:id", section: "inbox", parent: "/inbox", label: "Inkorgspost", backLabel: "Inbox", showBack: true },
   { pattern: "/inbox", section: "inbox", label: "Inbox" },
-  { pattern: "/kunder/forfragningar/:id", section: "inbox", parent: "/inbox", label: "Förfrågan", backLabel: "Inbox", showBack: true },
+  { pattern: "/kunder/forfragningar/:id", section: "kunder", parent: "/kunder?flik=uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
   { pattern: "/kunder/:id", section: "kunder", parent: "/kunder?flik=kunder", label: "Kund", backLabel: "Kunder", showBack: true },
   { pattern: "/kunder", section: "kunder", label: "Kunder" },
   { pattern: "/uppdrag/:id", section: "kunder", parent: "/kunder?flik=uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
@@ -118,6 +119,17 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/bokforing/bokslut", section: "bokforing", parent: "/bokforing", label: "Bokslut", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/detaljer", section: "bokforing", parent: "/bokforing", label: "Bokföringsdetaljer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing", section: "bokforing", label: "Bokföring" },
+  { pattern: "/samarbeta", section: "samarbeta", label: "Samarbeta" },
+  { pattern: "/redovisning/k/:businessId/verifikationer", section: null, parent: "/redovisning/k/:businessId", label: "Verifikationer", backLabel: "Arbeta", showBack: true },
+  { pattern: "/redovisning/k/:businessId/bank", section: null, parent: "/redovisning/k/:businessId", label: "Bank", backLabel: "Arbeta", showBack: true },
+  { pattern: "/redovisning/k/:businessId/moms", section: null, parent: "/redovisning/k/:businessId", label: "Moms", backLabel: "Arbeta", showBack: true },
+  { pattern: "/redovisning/k/:businessId/rapporter", section: null, parent: "/redovisning/k/:businessId", label: "Rapporter", backLabel: "Arbeta", showBack: true },
+  { pattern: "/redovisning/k/:businessId/bokslut", section: null, parent: "/redovisning/k/:businessId", label: "Bokslut", backLabel: "Arbeta", showBack: true },
+  { pattern: "/redovisning/k/:businessId", section: null, parent: "/redovisning", label: "Arbeta", backLabel: "Arbeta", showBack: true },
+  { pattern: "/redovisning/att-gora", section: null, parent: "/redovisning", label: "Arbeta" },
+  { pattern: "/redovisning/klienter", section: null, parent: "/redovisning", label: "Klienter" },
+  { pattern: "/redovisning", section: null, label: "Redovisning" },
+  { pattern: "/inbjudan/:token", section: null, label: "Inbjudan" },
   { pattern: "/installningar", section: null, label: "Inställningar" },
   { pattern: "/foretag", section: null, parent: "/installningar", label: "Företagsuppgifter" },
   { pattern: "/hemsida/doman", section: "hemsida", parent: "/hemsida", label: "Domän", backLabel: "Hemsida", showBack: true },
@@ -138,6 +150,9 @@ const APP_PATH_PREFIXES = [
   "/bokforing",
   "/hemsida",
   "/inbox",
+  "/samarbeta",
+  "/redovisning",
+  "/inbjudan",
   "/assistent",
   "/installningar",
   "/foretag",
@@ -288,8 +303,13 @@ export function structuralCrumbs(
   const title = currentLabel ?? matched.meta.label;
   switch (matched.meta.pattern) {
     case "/inbox/:id":
-    case "/kunder/forfragningar/:id":
       return [{ href: "/inbox", label: "Inbox" }, { label: title }];
+    case "/kunder/forfragningar/:id":
+      return [
+        { href: "/kunder?flik=kunder", label: "Kunder" },
+        { href: "/kunder?flik=uppdrag", label: "Uppdrag" },
+        { label: title },
+      ];
     case "/kunder/:id":
       return [{ href: "/kunder?flik=kunder", label: "Kunder" }, { label: title }];
     case "/uppdrag/:id":
@@ -405,8 +425,8 @@ export function invoiceHref(id: string, from?: { href: string; label?: string })
   return from ? withReturnTo(path, from.href, from.label) : path;
 }
 
-export function inquiryHref(id: string, from?: { href: string; label?: string }): string {
-  const path = `/inbox/${id}`;
+export function invoiceEditHref(id: string, from?: { href: string; label?: string }): string {
+  const path = `/ekonomi/fakturor/${id}/redigera`;
   return from ? withReturnTo(path, from.href, from.label) : path;
 }
 
@@ -427,14 +447,12 @@ export function kunderInboxHref(): string {
 export function newQuoteHref(params: {
   kund?: string;
   job?: string;
-  forfragan?: string;
   tillaggFran?: string;
   from?: { href: string; label?: string };
 }): string {
   const search = new URLSearchParams();
   if (params.kund) search.set("kund", params.kund);
   if (params.job) search.set("job", params.job);
-  if (params.forfragan) search.set("forfragan", params.forfragan);
   if (params.tillaggFran) search.set("tillaggFran", params.tillaggFran);
   const qs = search.toString();
   const path = qs ? `/ekonomi/offerter/ny?${qs}` : "/ekonomi/offerter/ny";
@@ -472,7 +490,8 @@ export function sanitizeReturnTo(raw: string | null | undefined, depth = 0): str
   const sourcePath = rewritePengarPath(rewriteJobPath(normalizePathname(pathname)));
   let path = rewriteInquiryPath(rewriteAssistentPath(rewriteUppdragListPath(sourcePath)));
   if (sourcePath === "/kunder" && searchParams.get("flik") === "forfragningar") {
-    path = "/inbox";
+    path = "/kunder";
+    searchParams.set("flik", "uppdrag");
   }
   if (!isInternalAppPath(path)) return null;
 
@@ -531,7 +550,7 @@ function rewriteAssistentPath(pathname: string): string {
 
 function rewriteInquiryPath(pathname: string): string {
   if (pathname.startsWith("/kunder/forfragningar/")) {
-    return `/inbox/${pathname.slice("/kunder/forfragningar/".length)}`;
+    return `/uppdrag/${pathname.slice("/kunder/forfragningar/".length)}`;
   }
   return pathname;
 }
@@ -555,8 +574,8 @@ export function rewriteLegacyHref(href: string): string {
   let path = rewriteInquiryPath(rewriteAssistentPath(rewriteUppdragListPath(sourcePath)));
   const params = new URLSearchParams(searchParams);
   if (sourcePath === "/kunder" && params.get("flik") === "forfragningar") {
-    path = "/inbox";
-    params.delete("flik");
+    path = "/kunder";
+    params.set("flik", "uppdrag");
   }
   if (sourcePath === "/uppdrag" && path === "/kunder" && !params.has("flik")) {
     params.set("flik", "uppdrag");

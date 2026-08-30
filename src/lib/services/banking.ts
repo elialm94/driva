@@ -166,8 +166,36 @@ export function paySupplierInvoice(supplierInvoiceId: string): void {
   data.bankTransactions.unshift(tx);
   account.balance -= sup.amount;
   sup.status = "betald";
+  sup.accountingStatus = sup.accountingStatus ?? "bokford";
   sup.bankTransactionId = tx.id;
   sup.paymentVerificationId = ver.id;
+  data.supplierPayments ??= [];
+  const existingPay = data.supplierPayments.find((p) => p.supplierInvoiceId === sup.id && p.status !== "CANCELLED");
+  const nowPay = new Date().toISOString();
+  if (existingPay) {
+    existingPay.status = "PAID";
+    existingPay.bankTransactionId = tx.id;
+    existingPay.paidAt = nowPay;
+    existingPay.updatedAt = nowPay;
+  } else {
+    data.supplierPayments.push({
+      id: `spay-${uid()}`,
+      supplierInvoiceId: sup.id,
+      amount: sup.amount,
+      currency: "SEK",
+      dueDate: sup.dueDate,
+      scheduledDate: now.slice(0, 10),
+      ocr: sup.ocr,
+      recipientAccount: sup.recipientAccount ?? sup.bankgiro ?? "",
+      recipientName: sup.supplier,
+      idempotencyKey: `suppay:${sup.id}:${sup.amount}:demo`,
+      status: "PAID",
+      bankTransactionId: tx.id,
+      createdAt: nowPay,
+      updatedAt: nowPay,
+      paidAt: nowPay,
+    });
+  }
   logAudit("system", "banktransaktion_bokford", `Leverantörsbetalning ${kr(sup.amount)} till ${sup.supplier} bokfördes.`, {
     targetType: "leverantorsfaktura",
     targetId: sup.id,

@@ -39,22 +39,25 @@ import {
   expensesSpec,
   fiscalYearsSpec,
   attentionStatesSpec,
+  clientInformationRequestsSpec,
+  collaborationInvitationsSpec,
   inboxItemsSpec,
   invoiceLineColumns,
   invoiceLineToRow,
   invoicesSpec,
   jobsSpec,
+  jobWorkEntriesSpec,
   paymentsSpec,
   pendingActionsSpec,
   remindersSpec,
   quotesSpec,
   quoteVersionsSpec,
   receiptsSpec,
-  requestsSpec,
   settingsColumns,
   settingsToRow,
   signaturesSpec,
   supplierInvoicesSpec,
+  supplierPaymentsSpec,
   verificationRpcPayload,
   vatReportsSpec,
   websitesSpec,
@@ -296,8 +299,6 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
     );
   await applySpec(workLocationsSpec, diffCollection(flattenLocations(baseline), flattenLocations(state)));
 
-  await applySpec(requestsSpec, diffCollection(baseline.requests, state.requests));
-
   // Offerter: diffa på domänobjektet, komplettera med denormaliserat belopp.
   {
     const change = diffCollection(baseline.quotes, state.quotes);
@@ -334,6 +335,7 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
   await applySpec(expensesSpec, diffCollection(baseline.expenses, state.expenses));
   await applySpec(receiptsSpec, diffCollection(baseline.receipts, state.receipts));
   await applySpec(supplierInvoicesSpec, diffCollection(baseline.supplierInvoices, state.supplierInvoices));
+  await applySpec(supplierPaymentsSpec, diffCollection(baseline.supplierPayments ?? [], state.supplierPayments ?? []));
   await applySpec(fiscalYearsSpec, diffCollection(baseline.fiscalYears, state.fiscalYears));
   await applySpec(vatReportsSpec, diffCollection(baseline.vatReports, state.vatReports));
   await applySpec(assetsSpec, diffCollection(baseline.assets, state.assets));
@@ -357,6 +359,14 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
     inboxItemsSpec,
     diffCollection(baseline.inboxItems ?? [], state.inboxItems ?? []),
     { skipDeletes: true }
+  );
+  await applySpec(
+    collaborationInvitationsSpec,
+    diffCollection(baseline.collaborationInvitations ?? [], state.collaborationInvitations ?? [])
+  );
+  await applySpec(
+    clientInformationRequestsSpec,
+    diffCollection(baseline.clientInformationRequests ?? [], state.clientInformationRequests ?? [])
   );
 
   /* ----- 3. Fakturor: partitionera utfärdanden från vanliga ändringar ----- */
@@ -532,6 +542,12 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
       }
     }
   }
+
+  // Efter fakturor: invoice_id på actuals pekar på rader som nu finns.
+  await applySpec(
+    jobWorkEntriesSpec,
+    diffCollection(baseline.jobWorkEntries ?? [], state.jobWorkEntries ?? [])
+  );
 
   // Rättelsestämpel: enda tillåtna ändringen på en bokförd verifikation.
   {

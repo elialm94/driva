@@ -39,7 +39,7 @@ type FormState = {
   orgNumber: string;
   vatNumber: string;
   email: string;
-  inquiryNotificationEmail: string;
+  websiteNotificationEmail: string;
   phone: string;
   websiteUrl: string;
   address: string;
@@ -66,7 +66,7 @@ function fromInitial(initial: CompanySettings, defaults: InvoiceDefaults): FormS
     orgNumber: formatOrgnr(initial.orgNumber),
     vatNumber: initial.vatNumber,
     email: initial.email,
-    inquiryNotificationEmail: initial.inquiryNotificationEmail || initial.email,
+    websiteNotificationEmail: initial.websiteNotificationEmail || initial.email,
     phone: initial.phone,
     websiteUrl: initial.websiteUrl ?? "",
     address: initial.address,
@@ -115,7 +115,7 @@ export function SettingsForm({
   const [extraPay, setExtraPay] = useState(() =>
     Boolean(initial.plusgiro || initial.bankAccount || initial.iban || initial.bic)
   );
-  const [notifyTouched, setNotifyTouched] = useState(() => Boolean(initial.inquiryNotificationEmail));
+  const [notifyTouched, setNotifyTouched] = useState(() => Boolean(initial.websiteNotificationEmail));
   const [isPending, startTransition] = useTransition();
   const [logoSaving, startLogoSave] = useTransition();
   const baseline = useRef(JSON.stringify(fromInitial(initial, defaults)));
@@ -130,7 +130,7 @@ export function SettingsForm({
         next.vatNumber = formatVatNumber(String(value));
       }
       if (key === "email" && !notifyTouched) {
-        next.inquiryNotificationEmail = String(value);
+        next.websiteNotificationEmail = String(value);
       }
       return next;
     });
@@ -217,7 +217,7 @@ export function SettingsForm({
         orgNumber: form.orgNumber,
         vatNumber: form.vatNumber,
         email: form.email,
-        inquiryNotificationEmail: form.inquiryNotificationEmail,
+        websiteNotificationEmail: form.websiteNotificationEmail,
         phone: form.phone,
         websiteUrl: form.websiteUrl,
         address: form.address,
@@ -473,23 +473,23 @@ export function SettingsForm({
             </div>
           </Card>
 
-          <div id="forfragningar" className="scroll-mt-24">
+          <div id="webbformulär" className="scroll-mt-24">
           <Card className="space-y-4 p-6">
-            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Förfrågningar från hemsidan</p>
+            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Uppdrag från hemsidan</p>
             <div>
-              <label className={labelCls} htmlFor="installningar-inquiryNotificationEmail">
-                Skicka nya förfrågningar till
+              <label className={labelCls} htmlFor="installningar-websiteNotificationEmail">
+                Skicka nya uppdrag till
               </label>
               <input
                 type="email"
-                value={form.inquiryNotificationEmail}
+                value={form.websiteNotificationEmail}
                 onChange={(e) => {
                   setNotifyTouched(true);
-                  patch("inquiryNotificationEmail", e.target.value);
+                  patch("websiteNotificationEmail", e.target.value);
                 }}
-                {...fieldMarkProps("inquiryNotificationEmail", inputCls)}
+                {...fieldMarkProps("websiteNotificationEmail", inputCls)}
               />
-              <FieldError id="installningar-inquiryNotificationEmail-fel">{errorFor("inquiryNotificationEmail")}</FieldError>
+              <FieldError id="installningar-websiteNotificationEmail-fel">{errorFor("websiteNotificationEmail")}</FieldError>
               <p className={hintCls}>
                 Standard är företagets e-post. En annan adress här ändrar inte den publika kontaktadressen på hemsidan.
               </p>

@@ -53,6 +53,7 @@ export function nextPaymentPlanPartForJob(jobId: string): {
 export function jobsThisWeek(now = new Date()) {
   return db()
     .jobs.filter((j) => {
+      if (j.archivedAt) return false;
       const lifecycle = derivedJobStatus(j, now);
       if (lifecycle === "klart") return false;
       if (lifecycle === "pagar") return true;

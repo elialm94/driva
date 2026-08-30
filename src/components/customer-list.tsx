@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AppLink, useAppNavigate } from "./app-link";
 import { ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ListFilter, Plus, Search, UserRound } from "lucide-react";
 import { Avatar, Badge, buttonClasses, Card, EmptyState, cx } from "./ui";
+import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
 import { NewCustomerModal } from "./new-customer-modal";
 import { kr } from "@/lib/format";
 import type {
@@ -16,14 +17,32 @@ import type {
   PagedResult,
 } from "@/lib/services/customers";
 
-export function NewCustomerButton({ full = false }: { full?: boolean }) {
+export function NewCustomerButton({
+  full = false,
+  variant = "primary",
+  appearance = "button",
+}: {
+  full?: boolean;
+  variant?: "primary" | "secondary";
+  appearance?: ActionAppearance;
+}) {
   const [open, setOpen] = useState(false);
   const navigate = useAppNavigate();
+  const menu = useActionMenu();
+  const inMenu = appearance === "menu";
 
   return (
     <>
-      <button className={buttonClasses("primary", full ? "md" : "md")} onClick={() => setOpen(true)}>
-        <Plus className="size-4" /> Ny kund
+      <button
+        type="button"
+        role={inMenu ? "menuitem" : undefined}
+        className={inMenu ? actionMenuItemClassName() : buttonClasses(variant, full ? "md" : "md")}
+        onClick={() => {
+          menu?.close();
+          setOpen(true);
+        }}
+      >
+        <Plus className="size-4 shrink-0" /> Ny kund
       </button>
       <NewCustomerModal
         open={open}

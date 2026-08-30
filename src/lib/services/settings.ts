@@ -18,9 +18,9 @@ export function getBusinessProfile(): CompanySettings {
 
 export { isEmailFormat } from "../settings-validation";
 
-/** Vart nya sajtförfrågningar mejlas. Följer företagets e-post tills en annan adress sparas. */
-export function getInquiryNotificationEmail(profile: CompanySettings = db().settings): string {
-  return (profile.inquiryNotificationEmail?.trim() || profile.email).trim();
+/** Vart nya uppdrag från hemsidans formulär mejlas. Följer företagets e-post tills en annan adress sparas. */
+export function getWebsiteNotificationEmail(profile: CompanySettings = db().settings): string {
+  return (profile.websiteNotificationEmail?.trim() || profile.email).trim();
 }
 
 export type BusinessProfileInput = Pick<
@@ -29,7 +29,7 @@ export type BusinessProfileInput = Pick<
   | "orgNumber"
   | "vatNumber"
   | "email"
-  | "inquiryNotificationEmail"
+  | "websiteNotificationEmail"
   | "phone"
   | "websiteUrl"
   | "address"
@@ -91,8 +91,8 @@ function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
   s.orgNumber = input.orgNumber.trim() ? normalizeOrgnr(input.orgNumber) : "";
   s.vatNumber = input.vatNumber.trim().toUpperCase().replace(/\s/g, "");
   s.email = input.email.trim();
-  const notify = optional(input.inquiryNotificationEmail);
-  s.inquiryNotificationEmail =
+  const notify = optional(input.websiteNotificationEmail);
+  s.websiteNotificationEmail =
     notify && notify.toLowerCase() !== s.email.toLowerCase() ? notify : undefined;
   s.phone = input.phone.trim();
   s.websiteUrl = optional(input.websiteUrl);
@@ -200,7 +200,7 @@ export const SETTINGS_FIELD_LABELS: Record<string, string> = {
   orgNumber: "Organisationsnummer",
   vatNumber: "Momsregistreringsnummer",
   email: "E-post",
-  inquiryNotificationEmail: "Skicka nya förfrågningar till",
+  websiteNotificationEmail: "Skicka nya uppdrag från hemsidan till",
   phone: "Telefon",
   websiteUrl: "Webbplats",
   address: "Adress",
@@ -226,7 +226,7 @@ export function applyBusinessProfilePatch(patch: Record<string, string | number 
     orgNumber: s.orgNumber,
     vatNumber: s.vatNumber,
     email: s.email,
-    inquiryNotificationEmail: s.inquiryNotificationEmail,
+    websiteNotificationEmail: s.websiteNotificationEmail,
     phone: s.phone,
     websiteUrl: s.websiteUrl,
     address: s.address,

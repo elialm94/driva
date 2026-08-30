@@ -10,7 +10,14 @@ import assert from "node:assert/strict";
 import { replaceDb, db } from "./store";
 import { emptyTestDb, testCustomer } from "./invoices/test-db";
 import { DAYPART_TIMES, formatDueAt, resolveWhen, type WhenExpression } from "./reminders/when";
-import { parseReminderText } from "./reminders/parse";
+import {
+  parseReminderCommandInput,
+  parseReminderText,
+  parseWhenText,
+  previewReminderDue,
+  previewReminderDueFromArgs,
+  reminderTextFromParts,
+} from "./reminders/parse";
 import {
   completeReminder,
   createReminder,
@@ -193,6 +200,134 @@ describe("parseReminderText: snabbvägen utan LLM", () => {
     assert.equal(parseReminderText("påminn mig att ringa Göran", NOW, TZ), null);
     assert.equal(parseReminderText("vad behöver jag göra idag?", NOW, TZ), null);
     assert.equal(parseReminderText("fakturera Johan imorgon", NOW, TZ), null);
+    assert.equal(parseReminderText("skicka påminnelse till Johan om faktura", NOW, TZ), null);
+  });
+
+  it("guidat flöde: titel + onsdag använder samma parser och ger förhandsdatum", () => {
+    const phrase = reminderTextFromParts("Ring Göran", "onsdag");
+    assert.equal(phrase, "påminn mig onsdag att Ring Göran");
+    const p = parseReminderText(phrase, NOW, TZ);
+    assert.ok(p);
+    assert.equal(p.title, "Ring Göran");
+    assert.equal(p.args.weekday, "onsdag");
+    assert.equal(p.args.relatedQuery, "Göran");
+    const preview = previewReminderDue("onsdag", NOW, TZ);
+    assert.equal(preview, "Onsdag 2 september kl 10:00");
+  });
+});
+
+/* --------------- Kommandokontext: tolka VAD + NÄR ur EN mening --------------- */
+
+describe("parseReminderCommandInput: ingen stel guide – bara det som saknas efterfrågas", () => {
+  const NOW = new Date("2026-08-29T10:00:00Z"); // lördag 29 aug 2026, 12:00 lokal tid
+
+  function complete(text: string) {
+    const p = parseReminderCommandInput(text, NOW, TZ);
+    assert.ok(p, `"${text}" gav null`);
+    assert.ok(p.complete, `"${text}" hittade ingen tid – flödet skulle fråga "När?" i onödan`);
+    if (!p.complete) throw new Error("unreachable");
+    return p;
+  }
+
+  it("'Ring Göran imorgon kl 8' → VAD + NÄR ur en mening", () => {
+    const p = complete("Ring Göran imorgon kl 8");
+    assert.equal(p.title, "Ring Göran");
+    assert.equal(p.args.whenDate, "2026-08-30");
+    assert.equal(p.args.time, "8:00");
+    assert.equal(p.args.relatedType, "customer");
+    assert.equal(p.args.relatedQuery, "Göran");
+  });
+
+  it("'Ring Göran klockan 8 imorgon' → samma resultat med omvänd ordföljd (buggens repro)", () => {
+    const p = complete("Ring Göran klockan 8 imorgon");
+    assert.equal(p.title, "Ring Göran");
+    assert.equal(p.args.whenDate, "2026-08-30");
+    assert.equal(p.args.time, "8:00");
+    // 08:00 svensk lokal tid (Europe/Stockholm) – aldrig rå UTC.
+    assert.equal(previewReminderDueFromArgs(p.args, NOW, TZ), "Söndag 30 augusti kl 08:00");
+  });
+
+  it("'Påminn mig att ringa Göran imorgon' → prefixet konsumeras", () => {
+    const p = complete("Påminn mig att ringa Göran imorgon");
+    assert.equal(p.title, "ringa Göran");
+    assert.equal(p.args.whenDate, "2026-08-30");
+  });
+
+  it("'Påminn mig imorgon kl 08 att ringa Göran' → tid före titel", () => {
+    const p = complete("Påminn mig imorgon kl 08 att ringa Göran");
+    assert.equal(p.title, "ringa Göran");
+    assert.equal(p.args.whenDate, "2026-08-30");
+    assert.equal(p.args.time, "08:00");
+  });
+
+  it("'Ring Göran på onsdag' → veckodag", () => {
+    const p = complete("Ring Göran på onsdag");
+    assert.equal(p.title, "Ring Göran");
+    assert.equal(p.args.weekday, "onsdag");
+  });
+
+  it("'Ring Göran nästa onsdag kl 14' → nästa vecka + klockslag", () => {
+    const p = complete("Ring Göran nästa onsdag kl 14");
+    assert.equal(p.args.weekday, "onsdag");
+    assert.equal(p.args.nextWeek, true);
+    assert.equal(p.args.time, "14:00");
+  });
+
+  it("'om två timmar' och 'om 30 minuter' → relativ tid", () => {
+    assert.equal(complete("Ring Göran om två timmar").args.relativeHours, 2);
+    assert.equal(complete("Ring Göran om 30 minuter").args.relativeMinutes, 30);
+  });
+
+  it("'Ring Göran ikväll' → dagsdel", () => {
+    assert.equal(complete("Ring Göran ikväll").args.daypart, "kväll");
+  });
+
+  it("'Ring Göran fredag eftermiddag' → veckodag + dagsdel", () => {
+    const p = complete("Ring Göran fredag eftermiddag");
+    assert.equal(p.args.weekday, "fredag");
+    assert.equal(p.args.daypart, "eftermiddag");
+  });
+
+  it("'Ring Göran' utan tid → complete:false – ENDAST 'När?' efterfrågas", () => {
+    const p = parseReminderCommandInput("Ring Göran", NOW, TZ);
+    assert.ok(p);
+    assert.equal(p.complete, false);
+    assert.equal(p.title, "Ring Göran");
+  });
+
+  it("'påminn mig att ringa Göran' utan tid → titel utan prefix, complete:false", () => {
+    const p = parseReminderCommandInput("påminn mig att ringa Göran", NOW, TZ);
+    assert.ok(p);
+    assert.equal(p.complete, false);
+    assert.equal(p.title, "ringa Göran");
+  });
+
+  it("tom inmatning → null", () => {
+    assert.equal(parseReminderCommandInput("   ", NOW, TZ), null);
+  });
+});
+
+describe("parseWhenText: NÄR-steget tolkar rena tidfraser strikt", () => {
+  const NOW = new Date("2026-08-29T10:00:00Z");
+
+  it("'imorgon kl 8' → morgondagens datum + klockslag", () => {
+    assert.deepEqual(parseWhenText("imorgon kl 8", NOW, TZ), { whenDate: "2026-08-30", time: "8:00" });
+  });
+
+  it("'kl 9 istället' → utfyllnadsord ignoreras; titeln (VAD) tolkas aldrig om", () => {
+    assert.deepEqual(parseWhenText("kl 9 istället", NOW, TZ), { time: "9:00", whenDate: "2026-08-29" });
+  });
+
+  it("'på onsdag', 'om 2 timmar' och 'ikväll' fungerar som i NL-vägen", () => {
+    assert.deepEqual(parseWhenText("på onsdag", NOW, TZ), { weekday: "onsdag" });
+    assert.deepEqual(parseWhenText("om 2 timmar", NOW, TZ), { relativeHours: 2 });
+    assert.deepEqual(parseWhenText("ikväll", NOW, TZ), { daypart: "kväll" });
+  });
+
+  it("ord över eller ingen tid → ärligt null, aldrig en hoptrasslad titel", () => {
+    assert.equal(parseWhenText("imorgon kanske vid nio", NOW, TZ), null);
+    assert.equal(parseWhenText("hejsan", NOW, TZ), null);
+    assert.equal(parseWhenText("   ", NOW, TZ), null);
   });
 });
 

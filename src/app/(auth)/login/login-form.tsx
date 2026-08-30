@@ -6,7 +6,7 @@ import { loginAction, signupAction, type AuthFormState } from "@/app/auth-action
 const initialState: AuthFormState = {};
 
 export function LoginForm({ next }: { next: string }) {
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup">(next.startsWith("/inbjudan") ? "signup" : "login");
   const [loginState, submitLogin, loginPending] = useActionState(loginAction, initialState);
   const [signupState, submitSignup, signupPending] = useActionState(signupAction, initialState);
 

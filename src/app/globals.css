@@ -152,6 +152,8 @@ html:has([data-public-site]) {
   font-size: 14px;
   line-height: 1.625;
   color: var(--color-ink);
+  overflow-wrap: break-word;
+  max-width: 100%;
 }
 .richtext-editor .ProseMirror {
   min-height: 8.5rem;
@@ -173,6 +175,8 @@ html:has([data-public-site]) {
   line-height: 1.3;
   letter-spacing: -0.015em;
   color: var(--color-ink);
+  break-after: avoid;
+  page-break-after: avoid;
 }
 .richtext-editor .ProseMirror h2,
 .richtext-doc h2 {
@@ -182,6 +186,8 @@ html:has([data-public-site]) {
   line-height: 1.35;
   letter-spacing: -0.01em;
   color: var(--color-ink);
+  break-after: avoid;
+  page-break-after: avoid;
 }
 .richtext-editor .ProseMirror h3,
 .richtext-doc h3 {
@@ -190,10 +196,16 @@ html:has([data-public-site]) {
   font-weight: 600;
   line-height: 1.4;
   color: var(--color-ink);
+  break-after: avoid;
+  page-break-after: avoid;
 }
 .richtext-editor .ProseMirror :is(h1, h2, h3, p):first-child,
 .richtext-doc :is(h1, h2, h3, p):first-child {
   margin-top: 0;
+}
+.richtext-doc :is(h1, h2, h3) + :is(p, ul, ol) {
+  break-before: avoid;
+  page-break-before: avoid;
 }
 .richtext-editor .ProseMirror u,
 .richtext-doc u {
@@ -216,7 +228,8 @@ html:has([data-public-site]) {
 .richtext-doc li p {
   margin: 0.15em 0;
 }
-.richtext-editor .ProseMirror hr {
+.richtext-editor .ProseMirror hr,
+.richtext-doc hr {
   margin: 1em 0;
   border: 0;
   border-top: 1px solid var(--color-line);

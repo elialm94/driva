@@ -6,17 +6,18 @@ import {
   getCommand,
   type CommandId,
 } from "../command-bar";
-import { aiCallableToolDefs, executeTool, type ToolResult } from "../ai/tools";
+import { aiCallableToolDefs, executeTool, type ExecuteToolOptions, type ToolResult } from "../ai/tools";
 import { getAiIntentProvider } from "../ai/intent";
 import type { LoopTurn } from "../ai/loop";
 import { isAiConfigured } from "../ai/provider";
-import { parseReminderText } from "../reminders/parse";
+import { parseReminderCommandInput, parseReminderText, parseWhenText, relatedFromTitle } from "../reminders/parse";
 import { businessTimezone } from "./reminders";
 import { getBusinessActions } from "./actions";
 import { listCustomersForTable } from "./customers";
 import { listJobsForTable } from "./job-list";
 import { listInvoicesForTable } from "./economy-list";
 import { nextPaymentPlanPartForJob, remainingToInvoiceForJob } from "./attention";
+import { isIncomingUnquotedJob } from "./jobs";
 import { customerHref, invoiceHref, jobHref } from "../nav";
 
 /**
@@ -54,6 +55,7 @@ export interface CommandBarPrefetch {
   recentCustomers: CommandEntityHit[];
   activeJobs: CommandEntityHit[];
   recentInvoices: CommandEntityHit[];
+  placeholder?: string;
 }
 
 const PREFETCH_COUNT = 5;
@@ -87,8 +89,8 @@ function quickActionsFromEngine(): QuickAction[] {
       chips.push({ id: a.id, label: `${kind} redo · ${kr(a.amount ?? 0)}`, run: { kind: "link", href: a.href } });
     } else if (a.category === "job" && a.cta?.type === "createJobInvoice") {
       chips.push({ id: a.id, label: `Fakturera ${kr(a.amount ?? 0)}`, run: { kind: "link", href: a.href } });
-    } else if (a.category === "inquiry") {
-      chips.push({ id: a.id, label: "Ny förfrågan", run: { kind: "link", href: a.href } });
+    } else if (a.id.startsWith("job-new-")) {
+      chips.push({ id: a.id, label: "Nytt uppdrag", run: { kind: "link", href: a.href } });
     } else if (a.category === "vat" && a.priority === "urgent") {
       chips.push({ id: a.id, label: "Moms ska deklareras", run: { kind: "link", href: a.href } });
     }
@@ -99,6 +101,41 @@ function quickActionsFromEngine(): QuickAction[] {
     chips.push(fallback);
   }
   return chips.slice(0, QUICK_ACTION_COUNT);
+}
+
+function accountantClientPossessive(name?: string): string {
+  const raw = (name ?? "").replace(/\s+AB$/i, "").trim();
+  if (!raw) return "klientens";
+  return /s$/i.test(raw) ? raw : `${raw}s`;
+}
+
+export function accountantCommandBarPrefetch(
+  scope: "all_clients" | "current",
+  clientName?: string
+): CommandBarPrefetch {
+  const all: QuickAction[] = [
+    { id: "qa-who", label: "Vilka klienter behöver min hjälp?", run: { kind: "command", commandId: "accountant_who_needs_help" } },
+    { id: "qa-vat", label: "Moms denna vecka", run: { kind: "command", commandId: "accountant_vat_week" } },
+    { id: "qa-docs", label: "Saknade underlag", run: { kind: "command", commandId: "accountant_missing_docs" } },
+    { id: "qa-bank", label: "Bankavvikelser", run: { kind: "command", commandId: "accountant_bank_diff" } },
+  ];
+  const one: QuickAction[] = [
+    { id: "qa-open", label: "Vad behöver hanteras?", run: { kind: "command", commandId: "accountant_whats_open" } },
+    { id: "qa-vat2", label: "Granska moms", run: { kind: "command", commandId: "review_vat" } },
+    { id: "qa-unusual", label: "Visa ovanliga transaktioner", run: { kind: "command", commandId: "accountant_unusual" } },
+    { id: "qa-rec", label: "Stäm av banken", run: { kind: "command", commandId: "accountant_reconcile" } },
+  ];
+  return {
+    aiConfigured: isAiConfigured(),
+    quickActions: scope === "all_clients" ? all : one,
+    recentCustomers: [],
+    activeJobs: [],
+    recentInvoices: [],
+    placeholder:
+      scope === "all_clients"
+        ? "Fråga om dina klienter eller be Driva hantera bokföring…"
+        : `Fråga om ${accountantClientPossessive(clientName)} bokföring…`,
+  };
 }
 
 export function commandBarPrefetch(): CommandBarPrefetch {
@@ -191,22 +228,22 @@ export function invoiceTargetOptionsFor(customerId: string): InvoiceTargetOption
 }
 
 export interface QuoteTopicOption {
-  requestId: string;
+  jobId: string;
   label: string;
   sublabel: string;
 }
 
-/** "Vad gäller offerten?" – öppna förfrågningar för kunden (samma inbox som Kunder). */
+/** "Vad gäller offerten?" – inkommande uppdrag utan offert för kunden. */
 export function quoteTopicOptionsFor(customerId: string): QuoteTopicOption[] {
   return db()
-    .requests.filter((r) => r.customerId === customerId && r.status === "ny")
+    .jobs.filter((j) => j.customerId === customerId && isIncomingUnquotedJob(j))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 5)
-    .map((r) => {
-      const compact = r.message.replace(/\s+/g, " ").trim();
+    .map((j) => {
+      const compact = (j.originalMessage || j.description).replace(/\s+/g, " ").trim();
       return {
-        requestId: r.id,
-        label: r.title,
+        jobId: j.id,
+        label: j.title,
         sublabel: compact.length > 80 ? `${compact.slice(0, 77)}…` : compact,
       };
     });
@@ -228,8 +265,15 @@ export interface CommandRunResult {
 export interface CommandRunParams {
   customerId?: string;
   jobId?: string;
-  requestId?: string;
   title?: string;
+  /** Tidfras för create_reminder, t.ex. "onsdag" eller "om 2 timmar". */
+  whenText?: string;
+  /**
+   * Hel påminnelsefras för create_reminder ("Ring Göran imorgon kl 8") –
+   * tolkas om serverside med SAMMA deterministiska parser som klientens
+   * förhandsvisning. Används när ett enda yttrande innehöll både VAD och NÄR.
+   */
+  text?: string;
 }
 
 function missingParam(what: string): ToolResult {
@@ -250,28 +294,33 @@ function toRunResult(result: ToolResult): CommandRunResult {
 
 /**
  * Kör ett kommando via verktygslagret. Stegflödenas parametrar (kund, uppdrag,
- * förfrågan, titel) kommer från klientens val – aldrig fri text hit.
+ * titel, tidfras) kommer från klientens val. Tidfrasen för
+ * create_reminder tolkas om här med samma parser som NL-snabbvägen.
  */
-export async function runBarCommand(commandId: CommandId, params: CommandRunParams = {}): Promise<CommandRunResult> {
+export async function runBarCommand(
+  commandId: CommandId,
+  params: CommandRunParams = {},
+  toolOptions: ExecuteToolOptions = {}
+): Promise<CommandRunResult> {
   const def = getCommand(commandId);
   let result: ToolResult;
 
   if (def.run.kind === "tool") {
-    result = await executeTool(def.run.tool, def.run.args ?? {});
+    result = await executeTool(def.run.tool, def.run.args ?? {}, { origin: "user", ...toolOptions });
   } else if (def.run.kind === "flow") {
     switch (def.id) {
       case "create_invoice":
         result = params.jobId
-          ? await executeTool("create_job_invoice", { jobId: params.jobId })
-          : params.customerId
-            ? await executeTool("create_invoice", { customerId: params.customerId })
+            ? await executeTool("create_job_invoice", { jobId: params.jobId }, toolOptions)
+            : params.customerId
+            ? await executeTool("create_invoice", { customerId: params.customerId }, toolOptions)
             : missingParam("Kund");
         break;
       case "create_quote":
         result = params.customerId
           ? await executeTool("create_quote", {
               customerId: params.customerId,
-              requestId: params.requestId,
+              jobId: params.jobId,
               title: params.title ?? "",
             })
           : missingParam("Kund");
@@ -282,6 +331,35 @@ export async function runBarCommand(commandId: CommandId, params: CommandRunPara
             ? await executeTool("create_assignment", { customerId: params.customerId, title: params.title.trim() })
             : missingParam(params.customerId ? "Titel" : "Kund");
         break;
+      case "create_reminder": {
+        const now = new Date();
+        const timezone = businessTimezone();
+        const cannotParse: ToolResult = {
+          ok: false,
+          forModel: {},
+          error: "Jag förstod inte tidpunkten. Prova t.ex. imorgon, onsdag eller om 2 timmar.",
+        };
+        // Ett-yttrande-vägen: hela frasen bär både VAD och NÄR.
+        const text = params.text?.trim() ?? "";
+        if (text) {
+          const parsed = parseReminderCommandInput(text, now, timezone);
+          result = parsed?.complete ? await executeTool("create_reminder", parsed.args, toolOptions) : cannotParse;
+          break;
+        }
+        const title = params.title?.trim() ?? "";
+        const whenText = params.whenText?.trim() ?? "";
+        if (!title || !whenText) {
+          result = missingParam(title ? "När" : "Titel");
+          break;
+        }
+        // Guidade steget: titeln är DATA och tolkas aldrig om – bara tidfrasen
+        // parsas (strikt: ord över ⇒ ärligt fel, ingen hoptrasslad titel).
+        const whenArgs = parseWhenText(whenText, now, timezone);
+        result = whenArgs
+          ? await executeTool("create_reminder", { title, ...whenArgs, ...(relatedFromTitle(title) ?? {}) }, toolOptions)
+          : cannotParse;
+        break;
+      }
       default:
         // find_customer avslutas i klienten (ren navigering till kundkortet).
         result = { ok: false, forModel: {}, error: "Kommandot körs i klienten." };
@@ -325,7 +403,11 @@ export function sanitizeTurns(turns: unknown): LoopTurn[] {
  * `turns` är det senaste utbytet i fältet så uppföljningsfrågor fungerar
  * ("Fakturera Johan" → "Altanen eller köket?" → "Altanen").
  */
-export async function interpretFreeTextViaAi(text: string, turns: LoopTurn[] = []): Promise<CommandRunResult> {
+export async function interpretFreeTextViaAi(
+  text: string,
+  turns: LoopTurn[] = [],
+  toolOptions: ExecuteToolOptions = {}
+): Promise<CommandRunResult> {
   // Deterministisk snabbväg: vanliga påminnelsefraser ("påminn mig imorgon
   // att …") skapas utan LLM – noll kostnad, samma verktygshanterare (samma
   // länknings- och tidspolicy). Bara första meddelandet – uppföljningar i en
@@ -333,7 +415,7 @@ export async function interpretFreeTextViaAi(text: string, turns: LoopTurn[] = [
   if (turns.length === 0) {
     const parsed = parseReminderText(text, new Date(), businessTimezone());
     if (parsed) {
-      const result = await executeTool("create_reminder", parsed.args, { origin: "user" });
+      const result = await executeTool("create_reminder", parsed.args, { origin: "user", ...toolOptions });
       save();
       return toRunResult(result);
     }
@@ -344,6 +426,7 @@ export async function interpretFreeTextViaAi(text: string, turns: LoopTurn[] = [
     today: new Date().toISOString().slice(0, 10),
     locale: "sv",
     turns,
+    executeOptions: { origin: "ai", ...toolOptions },
   });
 
   switch (intent.kind) {
@@ -371,7 +454,7 @@ export async function interpretFreeTextViaAi(text: string, turns: LoopTurn[] = [
     }
     case "tool_call": {
       // Äldre ett-stegs-leverantör (openai-compatible): kör verktyget här.
-      const result = await executeTool(intent.tool, intent.args, { origin: "ai" });
+      const result = await executeTool(intent.tool, intent.args, { origin: "ai", ...toolOptions });
       if (result.ok) save();
       return toRunResult(result);
     }

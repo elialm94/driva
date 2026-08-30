@@ -1,5 +1,6 @@
 import { db, save } from "../store";
 import type {
+  Customer,
   DwellingType,
   HousingDetails,
   Invoice,
@@ -10,10 +11,12 @@ import type {
 import { currentVersion, getInvoice, getJob, invoiceTotals, jobQuote, requireCustomer } from "./data";
 import { invoicesForJob } from "./job-economy";
 import {
+  defaultWorkLocation,
   formatLocationAddress,
   resolveJobWorkLocation,
   syncWorkLocationHousing,
   workLocationToHousing,
+  workLocationsOf,
 } from "./work-locations";
 import { kr, datumKort } from "../format";
 import { maskPersonnummer, normalizePersonnummer } from "../personnummer";
@@ -90,7 +93,7 @@ export function resolveTaxReductionPrefill(input: {
   const customer = requireCustomer(input.customerId);
   const job = input.jobId ? getJob(input.jobId) : undefined;
   const details = input.details;
-  const location = resolveJobWorkLocation(customer, job);
+  const location = resolveJobWorkLocation(customer, job) ?? defaultWorkLocation(customer);
   const pn = customer.personalIdentityNumber ?? "";
   const workAddress =
     details?.workAddress?.trim() ||
@@ -110,6 +113,23 @@ export function resolveTaxReductionPrefill(input: {
   };
 }
 
+export type CustomerInvoiceRotPrefill = {
+  personalIdentityNumber?: string;
+  addressLine: string;
+  properties: { id: string; designation: string; label: string }[];
+};
+
+export function customerInvoiceRotPrefill(customer: Customer): CustomerInvoiceRotPrefill {
+  return {
+    personalIdentityNumber: customer.personalIdentityNumber,
+    addressLine: formatWorkAddress(customer),
+    properties: workLocationsOf(customer).map((location) => ({
+      id: location.id,
+      designation: location.propertyDesignation ?? "",
+      label: location.label,
+    })),
+  };
+}
 
 export function detailsFromPrefill(prefill: TaxReductionPrefill): TaxReductionDetails {
   return {

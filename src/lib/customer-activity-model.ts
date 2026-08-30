@@ -1,6 +1,6 @@
 export const ACTIVITY_FILTER_MIN = 8;
 
-export type CustomerActivityKind = "offert" | "faktura" | "uppdrag" | "forfragan" | "betalning";
+export type CustomerActivityKind = "offert" | "faktura" | "uppdrag" | "betalning";
 
 export interface CustomerActivityRow {
   id: string;

@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   defaultBack,
-  inquiryHref,
+  jobHref,
   isBackAwarePath,
   isInternalAppPath,
   isSectionActive,
@@ -31,14 +31,14 @@ describe("sanitizeReturnTo allowlist", () => {
 
   it("accepts app prefixes and rewrites legacy paths", () => {
     assert.equal(sanitizeReturnTo("/"), "/");
-    assert.equal(sanitizeReturnTo("/kunder?flik=forfragningar&q=karin&sida=3"), "/inbox?q=karin&sida=3");
+    assert.equal(sanitizeReturnTo("/kunder?flik=forfragningar&q=karin&sida=3"), "/kunder?flik=uppdrag&q=karin&sida=3");
     assert.equal(sanitizeReturnTo("/ekonomi?flik=fakturor"), "/ekonomi?flik=fakturor");
     assert.equal(sanitizeReturnTo("/pengar?flik=fakturor"), "/ekonomi?flik=fakturor");
     assert.equal(sanitizeReturnTo("/jobb/job-kok"), "/uppdrag/job-kok");
     assert.equal(sanitizeReturnTo("/uppdrag"), "/kunder?flik=uppdrag");
     assert.equal(sanitizeReturnTo("/uppdrag?q=kok"), "/kunder?q=kok&flik=uppdrag");
     assert.equal(sanitizeReturnTo("/assistent"), "/");
-    assert.equal(sanitizeReturnTo("/kunder/forfragningar/req-karin"), "/inbox/req-karin");
+    assert.equal(sanitizeReturnTo("/kunder/forfragningar/req-karin"), "/uppdrag/req-karin");
     assert.equal(sanitizeReturnTo("/hemsida/doman"), "/hemsida/doman");
     assert.equal(sanitizeReturnTo("/installningar"), "/installningar");
     assert.equal(sanitizeReturnTo("/inbox"), "/inbox");
@@ -60,8 +60,8 @@ describe("canonical fallback", () => {
       label: "Inbox",
     });
     assert.deepEqual(defaultBack("/kunder/forfragningar/req-karin"), {
-      href: "/inbox",
-      label: "Inbox",
+      href: "/kunder?flik=uppdrag",
+      label: "Uppdrag",
     });
     assert.deepEqual(defaultBack("/kunder/cust-karin"), {
       href: "/kunder?flik=kunder",
@@ -78,6 +78,8 @@ describe("canonical fallback", () => {
     });
     assert.deepEqual(defaultBack("/bokforing/moms"), { href: "/bokforing", label: "Bokföring" });
     assert.deepEqual(defaultBack("/hemsida/doman"), { href: "/hemsida", label: "Hemsida" });
+    assert.deepEqual(defaultBack("/redovisning/k/biz-a"), { href: "/redovisning", label: "Arbeta" });
+    assert.deepEqual(defaultBack("/redovisning/k/biz-a/bank"), { href: "/redovisning/k/biz-a", label: "Arbeta" });
     assert.equal(defaultBack("/"), null);
     assert.equal(defaultBack("/kunder"), null);
   });
@@ -96,7 +98,7 @@ describe("section active", () => {
 describe("origin labels", () => {
   it("uses tab labels for list origins", () => {
     assert.equal(labelForHref("/"), "Hem");
-    assert.equal(labelForHref("/kunder?flik=forfragningar"), "Inbox");
+    assert.equal(labelForHref("/kunder?flik=forfragningar"), "Uppdrag");
     assert.equal(labelForHref("/kunder?flik=kunder"), "Kunder");
     assert.equal(labelForHref("/kunder?flik=uppdrag"), "Uppdrag");
     assert.equal(labelForHref("/ekonomi?flik=offerter"), "Offerter");
@@ -122,9 +124,9 @@ describe("stamp origin", () => {
     const href = resolveAppHref("/kunder/forfragningar/req-karin", "/");
     assert.equal(shouldStampOrigin("/", "/kunder/forfragningar/req-karin"), true);
     const back = resolveBack(
-      "/inbox/req-karin",
+      "/uppdrag/req-karin",
       new URLSearchParams(href.slice(href.indexOf("?") + 1)),
-      defaultBack("/inbox/req-karin")!
+      defaultBack("/uppdrag/req-karin")!
     );
     assert.equal(back?.href, "/");
   });
@@ -150,7 +152,7 @@ describe("stamp origin", () => {
       new URLSearchParams(href.slice(href.indexOf("?") + 1)),
       defaultBack("/inbox/req-karin")!
     );
-    assert.equal(back?.href, "/inbox?q=karin&sida=2");
+    assert.equal(back?.href, "/kunder?flik=uppdrag&q=karin&sida=2");
   });
 
   it("does not stamp list destinations or already-stamped hrefs", () => {
@@ -170,7 +172,7 @@ describe("stamp origin", () => {
 
   it("breaks A→B→A by reusing the chain node", () => {
     const enquiryFromHome = resolveAppHref("/inbox/req-karin", "/");
-    const customerFromEnquiry = resolveAppHref("/kunder/cust-karin", enquiryFromHome, "Förfrågan");
+    const customerFromEnquiry = resolveAppHref("/kunder/cust-karin", enquiryFromHome, "Inkorgspost");
     const backToEnquiry = resolveAppHref("/inbox/req-karin", customerFromEnquiry);
     assert.match(backToEnquiry, /^\/inbox\/req-karin\?tillbaka=/);
     const back = resolveBack(
@@ -186,7 +188,7 @@ describe("stamp origin", () => {
 describe("scroll keys", () => {
   it("keys to path+list query, not origin params", () => {
     assert.equal(scrollKeyForHref("/inbox?q=karin"), "driva:scroll:/inbox?q=karin");
-    assert.equal(scrollKeyForHref("/kunder?flik=forfragningar&q=karin"), "driva:scroll:/inbox?q=karin");
+    assert.equal(scrollKeyForHref("/kunder?flik=forfragningar&q=karin"), "driva:scroll:/kunder?flik=uppdrag&q=karin");
     assert.equal(scrollKeyForHref("/inbox?q=karin&tillbaka=/&tillbakaNamn=Hem"), "driva:scroll:/inbox?q=karin");
     assert.equal(scrollKeyForHref(locationHref("/", "")), "driva:scroll:/");
   });
@@ -204,6 +206,6 @@ describe("structural crumbs stay hierarchical", () => {
       { label: "Köksrenovering" },
     ]);
     assert.equal(isBackAwarePath("/inbox/req-karin"), true);
-    assert.equal(inquiryHref("req-karin"), "/inbox/req-karin");
+    assert.equal(jobHref("job-karin"), "/uppdrag/job-karin");
   });
 });

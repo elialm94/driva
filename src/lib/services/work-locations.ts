@@ -1,7 +1,12 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
 import type { Customer, DwellingType, HousingDetails, Job, WorkLocation } from "../types";
-import { CustomerValidationError, personnummerFieldError, workLocationFieldErrors } from "../customer-validation";
+import {
+  CustomerValidationError,
+  personnummerFieldError,
+  sanitizePropertyDesignations,
+  workLocationFieldErrors,
+} from "../customer-validation";
 import { normalizePersonnummer } from "../personnummer";
 import { requireCustomer } from "./data";
 
@@ -36,7 +41,7 @@ export function findWorkLocationByHint(customer: Customer, hint?: string): WorkL
   const q = hint?.trim().toLowerCase();
   if (!q) return defaultWorkLocation(customer);
   const matched = locs.filter((l) => {
-    const hay = [l.label, l.address, l.city].join(" ").toLowerCase();
+    const hay = [l.label, l.address, l.city, l.propertyDesignation].filter(Boolean).join(" ").toLowerCase();
     return hay.includes(q) || q.includes(l.label.toLowerCase());
   });
   if (matched.length === 1) return matched[0];
@@ -101,18 +106,40 @@ export type WorkLocationInput = {
 };
 
 function sanitizeLocationInput(input: WorkLocationInput): WorkLocationInput {
+  const propertyDesignation = input.propertyDesignation?.trim() || undefined;
   return {
-    label: input.label.trim(),
+    label: input.label.trim() || propertyDesignation || "",
     address: input.address.trim(),
     postalCode: input.postalCode?.trim() || undefined,
     city: input.city?.trim() || undefined,
     placeId: input.placeId?.trim() || undefined,
     propertyType: input.propertyType,
-    propertyDesignation: input.propertyDesignation?.trim() || undefined,
+    propertyDesignation,
     brfOrgNumber: input.brfOrgNumber?.trim() || undefined,
     apartmentNumber: input.apartmentNumber?.trim() || undefined,
     asDefault: input.asDefault,
   };
+}
+
+/** Enkel fastighet från Ny kund / redigera – beteckning utan adress eller BRF. */
+export function isDesignationOnlyLocation(location: WorkLocation): boolean {
+  const hasAddress = Boolean(location.address?.trim() || location.postalCode?.trim() || location.city?.trim());
+  const hasBrf = Boolean(location.brfOrgNumber?.trim() || location.apartmentNumber?.trim());
+  return !hasAddress && !hasBrf;
+}
+
+function assertUniqueDesignation(customer: Customer, designation: string | undefined, exceptId?: string) {
+  if (!designation) return;
+  const key = designation.trim().toLowerCase();
+  if (!key) return;
+  const clash = workLocationsOf(customer).some(
+    (location) => location.id !== exceptId && location.propertyDesignation?.trim().toLowerCase() === key
+  );
+  if (clash) {
+    throw new CustomerValidationError([
+      { field: "propertyDesignation", message: "Fastighetsbeteckningen används redan för den här kunden." },
+    ]);
+  }
 }
 
 function toLocation(id: string, input: WorkLocationInput): WorkLocation {
@@ -136,6 +163,7 @@ export function addWorkLocation(customerId: string, input: WorkLocationInput): W
   if (errors.length) throw new CustomerValidationError(errors);
   const customer = requireCustomer(customerId);
   const location = toLocation(uid(), input);
+  assertUniqueDesignation(customer, location.propertyDesignation);
   customer.workLocations = [...workLocationsOf(customer), location];
   if (input.asDefault || customer.workLocations.length === 1) {
     customer.defaultWorkLocationId = location.id;
@@ -151,6 +179,7 @@ export function updateWorkLocation(customerId: string, locationId: string, input
     postalCode: input.postalCode,
     city: input.city,
     propertyType: input.propertyType,
+    propertyDesignation: input.propertyDesignation,
   });
   if (errors.length) throw new CustomerValidationError(errors);
   const customer = requireCustomer(customerId);
@@ -167,6 +196,7 @@ export function updateWorkLocation(customerId: string, locationId: string, input
     brfOrgNumber: input.brfOrgNumber ?? existing.brfOrgNumber,
     apartmentNumber: input.apartmentNumber ?? existing.apartmentNumber,
   });
+  assertUniqueDesignation(customer, next.propertyDesignation, existing.id);
   customer.workLocations = workLocationsOf(customer).map((l) => (l.id === locationId ? next : l));
   if (input.asDefault) customer.defaultWorkLocationId = next.id;
   save();
@@ -187,6 +217,77 @@ export function removeWorkLocation(customerId: string, locationId: string): void
     customer.defaultWorkLocationId = customer.workLocations[0]?.id;
   }
   save();
+}
+
+export type PropertyDesignationRow = { id?: string; designation: string };
+
+function editorOwnsLocation(location: WorkLocation): boolean {
+  return Boolean(location.propertyDesignation?.trim()) || isDesignationOnlyLocation(location);
+}
+
+/** Synka den enkla fastighetslistan. Rika bostäder behåller adress/BRF. */
+export function syncCustomerProperties(customerId: string, rows: PropertyDesignationRow[]): WorkLocation[] {
+  const customer = requireCustomer(customerId);
+  const existing = workLocationsOf(customer);
+  const normalized = rows.map((row) => ({
+    id: row.id,
+    designation: row.designation.trim(),
+  }));
+  sanitizePropertyDesignations(normalized.map((row) => row.designation));
+
+  const incomingIds = new Set(normalized.map((row) => row.id).filter((id): id is string => Boolean(id)));
+  const toRemove: string[] = [];
+  const toClear: string[] = [];
+  const toUpdate: { id: string; designation: string; updateLabel: boolean }[] = [];
+  const toCreate: string[] = [];
+
+  for (const location of existing) {
+    if (editorOwnsLocation(location) && !incomingIds.has(location.id)) {
+      if (isDesignationOnlyLocation(location)) toRemove.push(location.id);
+      else toClear.push(location.id);
+    }
+  }
+
+  for (const row of normalized) {
+    if (!row.id) {
+      if (row.designation) toCreate.push(row.designation);
+      continue;
+    }
+    const location = getWorkLocation(customer, row.id);
+    if (!location) continue;
+    if (!row.designation) {
+      if (isDesignationOnlyLocation(location)) toRemove.push(row.id);
+      else toClear.push(row.id);
+      continue;
+    }
+    toUpdate.push({
+      id: row.id,
+      designation: row.designation,
+      updateLabel: isDesignationOnlyLocation(location),
+    });
+  }
+
+  for (const id of new Set(toRemove)) removeWorkLocation(customerId, id);
+  for (const id of new Set(toClear)) {
+    updateWorkLocation(customerId, id, { propertyDesignation: "" });
+  }
+  for (const row of toUpdate) {
+    updateWorkLocation(customerId, row.id, {
+      propertyDesignation: row.designation,
+      ...(row.updateLabel ? { label: row.designation } : {}),
+    });
+  }
+  for (const designation of toCreate) {
+    addWorkLocation(customerId, {
+      label: designation,
+      address: "",
+      propertyType: "smahus",
+      propertyDesignation: designation,
+      asDefault: workLocationsOf(requireCustomer(customerId)).length === 0,
+    });
+  }
+
+  return workLocationsOf(requireCustomer(customerId));
 }
 
 export function setCustomerPersonnummer(customerId: string, value: string): string | undefined {

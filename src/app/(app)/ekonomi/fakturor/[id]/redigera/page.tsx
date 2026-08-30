@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/store";
 import { getInvoice, requireCustomer } from "@/lib/services/data";
-import { formatWorkAddress, resolveTaxReductionPrefill } from "@/lib/services/tax-reduction";
+import { customerInvoiceRotPrefill, resolveTaxReductionPrefill } from "@/lib/services/tax-reduction";
 import { suggestedServiceDate } from "@/lib/tax-reduction-gaps";
 import { dagarTill } from "@/lib/format";
 import { invoiceHeading, invoiceNumberLabel } from "@/lib/invoices/display";
@@ -26,15 +26,7 @@ export default async function EditInvoicePage(props: { params: Promise<{ id: str
   const customers = [...db().customers]
     .sort((a, b) => a.name.localeCompare(b.name, "sv"))
     .map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
-  const rotByCustomer = Object.fromEntries(
-    db().customers.map((c) => [
-      c.id,
-      {
-        personalIdentityNumber: c.personalIdentityNumber,
-        addressLine: formatWorkAddress(c),
-      },
-    ])
-  );
+  const rotByCustomer = Object.fromEntries(db().customers.map((c) => [c.id, customerInvoiceRotPrefill(c)]));
   const prefill = resolveTaxReductionPrefill({
     customerId: invoice.customerId,
     jobId: invoice.jobId,

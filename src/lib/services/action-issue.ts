@@ -25,8 +25,7 @@ export type ActionSourceKind =
   | "quote"
   | "job"
   | "supplier"
-  | "reminder"
-  | "inquiry";
+  | "reminder";
 
 export interface ActionSource {
   kind: ActionSourceKind;
@@ -43,10 +42,15 @@ const CTA_ISSUE: Partial<Record<ActionCta["type"], string>> = {
   // Skickar en påminnelse via e-post – etiketten säger vad som händer.
   followUpQuote: "Skicka påminnelse",
   createJobInvoice: "Fakturera",
-  paySupplier: "Betala",
+  paySupplier: "Skicka till bank",
   confirmRotPayout: "Bekräfta utbetalning",
   registerCreditRefund: "Återbetala",
   reminderActions: "Påminnelse",
+  verifyPaymentDetails: "Kontrollera uppgifter",
+  useVerifiedSupplierDetails: "Använd tidigare uppgifter",
+  confirmChangedSupplierDetails: "Kontrollera bankuppgifter",
+  requestSupplierDetails: "Fråga leverantören",
+  paymentDetailsQueue: "Behöver betalningsuppgifter",
 };
 
 /** Kort label för en action – aldrig en generisk badge om vi vet mer. */
@@ -56,8 +60,14 @@ export function issueForAction(action: BusinessAction): string {
   if (action.id.startsWith("rot-ready-")) return "Ansök ROT";
   if (action.id.startsWith("rot-denied-")) return "Fakturera resten";
   if (action.id.startsWith("vat-")) return "Kontrollera moms";
-  if (action.id.startsWith("inquiry-")) return "Ny förfrågan";
+  if (action.id.startsWith("job-new-")) return "Nytt uppdrag";
   if (action.id.startsWith("inbox-mail-")) return "Inkommande mejl";
+  if (action.id.startsWith("supplier-bank-")) return "Betalningsuppgifter saknas";
+  if (action.id.startsWith("supplier-verify-")) return "Kontrollera uppgifter";
+  if (action.id.startsWith("supplier-reuse-")) return "Använd tidigare uppgifter";
+  if (action.id.startsWith("supplier-dest-")) return "Kontrollera bankuppgifter";
+  if (action.id.startsWith("supplier-fail-")) return "Försök igen";
+  if (action.id.startsWith("supplier-")) return "Skicka till bank";
   if (action.id.startsWith("invoice-late-")) return "Försenad";
   if (action.id.startsWith("invoice-refund-")) return "Återbetala";
   if (action.id.startsWith("quote-expired-")) return "Utgången offert";
@@ -78,6 +88,16 @@ export function sourceForAction(action: BusinessAction): ActionSource | null {
   if (cta?.type === "followUpQuote") return { kind: "quote", id: cta.quoteId };
   if (cta?.type === "createJobInvoice") return { kind: "job", id: cta.jobId };
   if (cta?.type === "paySupplier") return { kind: "supplier", id: cta.supplierInvoiceId };
+  if (
+    cta?.type === "verifyPaymentDetails" ||
+    cta?.type === "useVerifiedSupplierDetails" ||
+    cta?.type === "confirmChangedSupplierDetails" ||
+    cta?.type === "requestSupplierDetails"
+  ) {
+    return { kind: "supplier", id: cta.supplierInvoiceId };
+  }
+  // Gruppraden pekar på flera fakturor – ingen enskild källa att indexera.
+  if (cta?.type === "paymentDetailsQueue") return null;
   if (cta?.type === "reminderActions") return { kind: "reminder", id: cta.reminderId };
 
   if (action.id.startsWith("receipt-")) return { kind: "expense", id: action.id.slice("receipt-".length) };
@@ -87,9 +107,12 @@ export function sourceForAction(action: BusinessAction): ActionSource | null {
   }
   if (action.id.startsWith("invoice-delivery-")) return { kind: "invoice", id: action.id.slice("invoice-delivery-".length) };
   if (action.id.startsWith("invoice-late-")) return { kind: "invoice", id: action.id.slice("invoice-late-".length) };
-  if (action.id.startsWith("inquiry-")) return { kind: "inquiry", id: action.id.slice("inquiry-".length) };
-  if (action.id.startsWith("inbox-mail-")) return { kind: "inquiry", id: action.id.slice("inbox-mail-".length) };
+  if (action.id.startsWith("job-new-")) return { kind: "job", id: action.id.slice("job-new-".length) };
   if (action.id.startsWith("quote-expired-")) return { kind: "quote", id: action.id.slice("quote-expired-".length) };
+  if (action.id.startsWith("supplier-bank-")) return { kind: "supplier", id: action.id.slice("supplier-bank-".length) };
+  if (action.id.startsWith("supplier-dest-")) return { kind: "supplier", id: action.id.slice("supplier-dest-".length) };
+  if (action.id.startsWith("supplier-fail-")) return { kind: "supplier", id: action.id.slice("supplier-fail-".length) };
+  if (action.id.startsWith("supplier-")) return { kind: "supplier", id: action.id.slice("supplier-".length) };
   return null;
 }
 
@@ -130,9 +153,10 @@ export type AttentionKind =
   | "bankMatch"
   | "bankUnexplained"
   | "supplierOverdue"
-  | "inquiry"
+  | "newJob"
   | "inboxMail"
-  | "vat";
+  | "vat"
+  | "clientRequest";
 
 export function attentionKind(action: Pick<BusinessAction, "id">): AttentionKind | null {
   const id = action.id;
@@ -149,22 +173,22 @@ export function attentionKind(action: Pick<BusinessAction, "id">): AttentionKind
   if (id === "bank-unexplained") return "bankUnexplained";
   if (id.startsWith("bank-")) return "bankMatch";
   if (id.startsWith("supplier-")) return "supplierOverdue";
-  if (id.startsWith("inquiry-")) return "inquiry";
+  if (id.startsWith("job-new-")) return "newJob";
   if (id.startsWith("inbox-mail-")) return "inboxMail";
   if (id.startsWith("vat-")) return "vat";
+  if (id.startsWith("client-request-")) return "clientRequest";
   return null;
 }
 
 /**
  * Vad avfärdan GÖR per typ – aldrig ett universellt "ta bort för alltid":
- *   MARK_HANDLED      förfrågan → status "besvarad" (kvar i registret/historiken)
  *   MARK_NOT_RELEVANT offert → status "avbojd" med skäl (riktig domänövergång)
  *   DISMISS_REMINDER  påminnelse → mjuk borttagning via påminnelsetjänsten
  *   HIDE              rent ignorerbara info-rader (ingen nuvarande typ) –
  *                     lagras i attention_states.dismissed_at
  *   none              ingen avfärdanväg (finansiella sanningar snoozas bara)
  */
-export type DismissBehavior = "MARK_HANDLED" | "MARK_NOT_RELEVANT" | "DISMISS_REMINDER" | "HIDE" | "none";
+export type DismissBehavior = "MARK_NOT_RELEVANT" | "DISMISS_REMINDER" | "HIDE" | "none";
 
 export interface ActionControls {
   kind: AttentionKind | "unknown";
@@ -290,15 +314,14 @@ const CONTROLS: Record<AttentionKind, Omit<ActionControls, "kind">> = {
     canSnooze: true,
     canDismiss: false,
     dismissBehavior: "none",
-    requiresConfirmation: true, // bokför en betalning
+    requiresConfirmation: true, // skickar betalning till banken
   },
-  inquiry: {
-    viewLabel: "Visa förfrågan",
+  newJob: {
+    viewLabel: "Öppna uppdrag",
     canSnooze: true,
-    canDismiss: true,
-    dismissBehavior: "MARK_HANDLED",
-    dismissLabel: "Markera hanterad",
-    requiresConfirmation: false, // primär skapar ett offertutkast
+    canDismiss: false,
+    dismissBehavior: "none",
+    requiresConfirmation: false,
   },
   inboxMail: {
     viewLabel: "Visa i inboxen",
@@ -309,6 +332,13 @@ const CONTROLS: Record<AttentionKind, Omit<ActionControls, "kind">> = {
   },
   vat: {
     viewLabel: "Öppna momsöversikten",
+    canSnooze: true,
+    canDismiss: false,
+    dismissBehavior: "none",
+    requiresConfirmation: false,
+  },
+  clientRequest: {
+    viewLabel: "Visa utgift",
     canSnooze: true,
     canDismiss: false,
     dismissBehavior: "none",
@@ -329,7 +359,18 @@ export const FALLBACK_CONTROLS: ActionControls = {
 export function controlsForAction(action: Pick<BusinessAction, "id">): ActionControls {
   const kind = attentionKind(action);
   if (!kind) return FALLBACK_CONTROLS;
-  return { kind, ...CONTROLS[kind] };
+  const base = { kind, ...CONTROLS[kind] };
+  // Betalningsuppgifter: "Kontrollera" och kön öppnar en fokuserad vy – själva
+  // klicket har ingen extern effekt (godkännandet bekräftas i vyn). Övriga i
+  // familjen (mejlförfrågan, återanvändning, ändrad destination) behåller
+  // requiresConfirmation via motorns confirm-innehåll.
+  if (action.id.startsWith("supplier-verify-")) {
+    return { ...base, requiresConfirmation: false };
+  }
+  if (action.id === "supplier-details-group") {
+    return { ...base, viewLabel: "Visa leverantörsfakturor", requiresConfirmation: false };
+  }
+  return base;
 }
 
 /* ------------------------------- Snooze-presets -------------------------------- */
