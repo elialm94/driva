@@ -3,11 +3,20 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AppLink } from "./app-link";
-import { FileText, Landmark, ReceiptText, Search, ShoppingBag } from "lucide-react";
+import { ArrowUpDown, ChevronDown, ChevronUp, FileText, Landmark, ReceiptText, Search, ShoppingBag } from "lucide-react";
 import { Badge, Card, EmptyState, cx, type BadgeTone } from "./ui";
 import { Pagination } from "./customer-list";
 import { kr, datumKort } from "@/lib/format";
 import type { EkonomiTab } from "@/lib/nav";
+import {
+  ekonomiRegisterHref,
+  economyMobileSortOptions,
+  economySortValue,
+  nextEconomySort,
+  parseEconomySortValue,
+  type EconomySortKey,
+  type EconomySortState,
+} from "@/lib/economy-sort";
 import type {
   BankStatusFilter,
   BankTableRow,
@@ -20,6 +29,8 @@ import type {
 } from "@/lib/services/economy-list";
 import type { PagedResult } from "@/lib/services/customers";
 
+export { ekonomiRegisterHref };
+
 /**
  * Registerflikarna på Ekonomi: riktiga tabeller med sök, statusfilter och
  * serversidig paginering. Registret är för att HITTA dokument – åtgärds-
@@ -30,15 +41,7 @@ export interface EconomyQuery<S extends string> {
   q: string;
   status: S;
   page: number;
-}
-
-export function ekonomiRegisterHref(tab: EkonomiTab, query: { q?: string; status?: string; page?: number }): string {
-  const sp = new URLSearchParams();
-  sp.set("flik", tab);
-  if (query.q) sp.set("q", query.q);
-  if (query.status && query.status !== "alla") sp.set("status", query.status);
-  if (query.page && query.page > 1) sp.set("sida", String(query.page));
-  return `/ekonomi?${sp.toString()}`;
+  sort: EconomySortState | null;
 }
 
 function useRegisterNav<S extends string>(tab: EkonomiTab, query: EconomyQuery<S>) {
@@ -74,6 +77,9 @@ function Toolbar<S extends string>({
   status,
   options,
   onStatus,
+  sort,
+  partyLabel,
+  onSort,
 }: {
   placeholder: string;
   q: string;
@@ -81,6 +87,9 @@ function Toolbar<S extends string>({
   status: S;
   options: readonly [S, string][];
   onStatus: (s: S) => void;
+  sort: EconomySortState | null;
+  partyLabel: string;
+  onSort: (sort: EconomySortState | null) => void;
 }) {
   return (
     <div className="mb-4 flex flex-col gap-2.5 lg:flex-row lg:items-center">
@@ -93,7 +102,7 @@ function Toolbar<S extends string>({
           className="w-full rounded-2xl border border-line bg-card py-2.5 pl-10 pr-4 text-[15px] shadow-card placeholder:text-muted focus:border-accent"
         />
       </div>
-      <div className="flex shrink-0 flex-wrap gap-1">
+      <div className="flex shrink-0 flex-wrap items-center gap-1">
         {options.map(([key, label]) => (
           <button
             key={key}
@@ -107,8 +116,74 @@ function Toolbar<S extends string>({
             {label}
           </button>
         ))}
+        <MobileSort sort={sort} partyLabel={partyLabel} onSort={onSort} />
       </div>
     </div>
+  );
+}
+
+function MobileSort({
+  sort,
+  partyLabel,
+  onSort,
+}: {
+  sort: EconomySortState | null;
+  partyLabel: string;
+  onSort: (sort: EconomySortState | null) => void;
+}) {
+  const options = economyMobileSortOptions(partyLabel);
+  return (
+    <label className="ml-auto flex items-center gap-1.5 text-[12px] font-medium text-muted md:hidden">
+      Sortera
+      <select
+        value={economySortValue(sort)}
+        onChange={(e) => onSort(parseEconomySortValue(e.target.value))}
+        className="rounded-full border border-line-strong bg-card px-2.5 py-1 text-[12px] font-medium text-soft"
+      >
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SortTh({
+  label,
+  sortKey,
+  current,
+  onSort,
+  align,
+}: {
+  label: string;
+  sortKey: EconomySortKey;
+  current: EconomySortState | null;
+  onSort: (sort: EconomySortState) => void;
+  align?: "right";
+}) {
+  const active = current?.key === sortKey;
+  const direction = active ? current.direction : undefined;
+  const Icon = active ? (direction === "asc" ? ChevronUp : ChevronDown) : ArrowUpDown;
+  return (
+    <th
+      className="p-0"
+      aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(nextEconomySort(sortKey, current))}
+        className={cx(
+          "flex w-full cursor-pointer items-center gap-1 px-3 py-2.5 font-medium transition-colors hover:text-ink",
+          align === "right" && "justify-end",
+          active ? "text-ink" : "text-muted"
+        )}
+      >
+        {label}
+        <Icon className="size-3 shrink-0 opacity-60" aria-hidden />
+      </button>
+    </th>
   );
 }
 
@@ -162,6 +237,9 @@ export function QuoteRegister({
         status={query.status}
         options={options}
         onStatus={(status) => go({ status, page: 1 })}
+        sort={query.sort}
+        partyLabel="Kund"
+        onSort={(sort) => go({ sort, page: 1 })}
       />
       {result.total === 0 ? (
         <NoMatches
@@ -177,10 +255,16 @@ export function QuoteRegister({
               <table className="w-full text-left text-[14px]">
                 <thead>
                   <tr className={headRowCls}>
-                    <th className={thCls}>Offert</th>
-                    <th className={thCls}>Kund</th>
-                    <th className={thCls}>Datum</th>
-                    <th className={cx(thCls, "text-right")}>Belopp</th>
+                    <SortTh label="Offert" sortKey="document" current={query.sort} onSort={(sort) => go({ sort, page: 1 })} />
+                    <SortTh label="Kund" sortKey="customer" current={query.sort} onSort={(sort) => go({ sort, page: 1 })} />
+                    <SortTh label="Datum" sortKey="date" current={query.sort} onSort={(sort) => go({ sort, page: 1 })} />
+                    <SortTh
+                      label="Belopp"
+                      sortKey="amount"
+                      current={query.sort}
+                      align="right"
+                      onSort={(sort) => go({ sort, page: 1 })}
+                    />
                     <th className={thCls}>Status</th>
                   </tr>
                 </thead>
@@ -255,6 +339,9 @@ export function InvoiceRegister({
         status={query.status}
         options={options}
         onStatus={(status) => go({ status, page: 1 })}
+        sort={query.sort}
+        partyLabel="Kund"
+        onSort={(sort) => go({ sort, page: 1 })}
       />
       {result.total === 0 ? (
         <NoMatches
@@ -270,10 +357,21 @@ export function InvoiceRegister({
               <table className="w-full text-left text-[14px]">
                 <thead>
                   <tr className={headRowCls}>
-                    <th className={thCls}>Faktura</th>
-                    <th className={thCls}>Kund</th>
-                    <th className={thCls}>Förfallodatum</th>
-                    <th className={cx(thCls, "text-right")}>Belopp</th>
+                    <SortTh label="Faktura" sortKey="document" current={query.sort} onSort={(sort) => go({ sort, page: 1 })} />
+                    <SortTh label="Kund" sortKey="customer" current={query.sort} onSort={(sort) => go({ sort, page: 1 })} />
+                    <SortTh
+                      label="Förfallodatum"
+                      sortKey="date"
+                      current={query.sort}
+                      onSort={(sort) => go({ sort, page: 1 })}
+                    />
+                    <SortTh
+                      label="Belopp"
+                      sortKey="amount"
+                      current={query.sort}
+                      align="right"
+                      onSort={(sort) => go({ sort, page: 1 })}
+                    />
                     <th className={thCls}>Status</th>
                   </tr>
                 </thead>
@@ -350,6 +448,9 @@ export function ExpenseRegister({
         status={query.status}
         options={options}
         onStatus={(status) => go({ status, page: 1 })}
+        sort={query.sort}
+        partyLabel="Leverantör"
+        onSort={(sort) => go({ sort, page: 1 })}
       />
       {result.total === 0 ? (
         <NoMatches
@@ -365,10 +466,21 @@ export function ExpenseRegister({
               <table className="w-full text-left text-[14px]">
                 <thead>
                   <tr className={headRowCls}>
-                    <th className={thCls}>Datum</th>
-                    <th className={thCls}>Leverantör</th>
+                    <SortTh label="Datum" sortKey="date" current={query.sort} onSort={(sort) => go({ sort, page: 1 })} />
+                    <SortTh
+                      label="Leverantör"
+                      sortKey="customer"
+                      current={query.sort}
+                      onSort={(sort) => go({ sort, page: 1 })}
+                    />
                     <th className={thCls}>Kategori</th>
-                    <th className={cx(thCls, "text-right")}>Belopp</th>
+                    <SortTh
+                      label="Belopp"
+                      sortKey="amount"
+                      current={query.sort}
+                      align="right"
+                      onSort={(sort) => go({ sort, page: 1 })}
+                    />
                     <th className={thCls}>Underlag / status</th>
                   </tr>
                 </thead>
@@ -438,6 +550,9 @@ export function BankRegister({
         status={query.status}
         options={options}
         onStatus={(status) => go({ status, page: 1 })}
+        sort={query.sort}
+        partyLabel="Motpart"
+        onSort={(sort) => go({ sort, page: 1 })}
       />
       {result.total === 0 ? (
         <NoMatches
@@ -453,10 +568,16 @@ export function BankRegister({
               <table className="w-full text-left text-[14px]">
                 <thead>
                   <tr className={headRowCls}>
-                    <th className={thCls}>Datum</th>
-                    <th className={thCls}>Motpart</th>
+                    <SortTh label="Datum" sortKey="date" current={query.sort} onSort={(sort) => go({ sort, page: 1 })} />
+                    <SortTh label="Motpart" sortKey="customer" current={query.sort} onSort={(sort) => go({ sort, page: 1 })} />
                     <th className={thCls}>Beskrivning</th>
-                    <th className={cx(thCls, "text-right")}>Belopp</th>
+                    <SortTh
+                      label="Belopp"
+                      sortKey="amount"
+                      current={query.sort}
+                      align="right"
+                      onSort={(sort) => go({ sort, page: 1 })}
+                    />
                     <th className={thCls}>Status</th>
                   </tr>
                 </thead>

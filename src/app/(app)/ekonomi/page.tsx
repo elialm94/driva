@@ -29,6 +29,7 @@ import {
 } from "@/lib/services/economy-list";
 import { EKONOMI_TABS, type EkonomiTab } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { parseEconomySort } from "@/lib/economy-sort";
 
 export const metadata = { title: "Ekonomi" };
 
@@ -91,6 +92,7 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
 
   const q = param(searchParams.q);
   const page = pageParam(searchParams.sida);
+  const sort = parseEconomySort(searchParams.sort, searchParams.direction);
   const account = db().bankAccounts[0];
 
   return (
@@ -131,8 +133,9 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
             q,
             status: statusParam<QuoteStatusFilter>(searchParams.status, QUOTE_STATUS_OPTIONS),
             page,
+            sort,
           })}
-          query={{ q, status: statusParam<QuoteStatusFilter>(searchParams.status, QUOTE_STATUS_OPTIONS), page }}
+          query={{ q, status: statusParam<QuoteStatusFilter>(searchParams.status, QUOTE_STATUS_OPTIONS), page, sort }}
           options={QUOTE_STATUS_OPTIONS}
         />
       ) : null}
@@ -143,8 +146,9 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
             q,
             status: statusParam<InvoiceStatusFilter>(searchParams.status, INVOICE_STATUS_OPTIONS),
             page,
+            sort,
           })}
-          query={{ q, status: statusParam<InvoiceStatusFilter>(searchParams.status, INVOICE_STATUS_OPTIONS), page }}
+          query={{ q, status: statusParam<InvoiceStatusFilter>(searchParams.status, INVOICE_STATUS_OPTIONS), page, sort }}
           options={INVOICE_STATUS_OPTIONS}
         />
       ) : null}
@@ -163,8 +167,9 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
               q,
               status: statusParam<ExpenseStatusFilter>(searchParams.status, EXPENSE_STATUS_OPTIONS),
               page,
+              sort,
             })}
-            query={{ q, status: statusParam<ExpenseStatusFilter>(searchParams.status, EXPENSE_STATUS_OPTIONS), page }}
+            query={{ q, status: statusParam<ExpenseStatusFilter>(searchParams.status, EXPENSE_STATUS_OPTIONS), page, sort }}
             options={EXPENSE_STATUS_OPTIONS}
           />
         </div>
@@ -206,8 +211,9 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
                 q,
                 status: statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS),
                 page,
+                sort,
               })}
-              query={{ q, status: statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS), page }}
+              query={{ q, status: statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS), page, sort }}
               options={BANK_STATUS_OPTIONS}
             />
           </div>
