@@ -15,11 +15,24 @@
  *  8. Starta om Driva, fyll i @konto och klicka Anslut Instagram.
  */
 
-import { absoluteAppUrl } from "./mail";
 import type { WebsiteInstagram, WebsiteInstagramPost } from "./types";
 import { DEFAULT_INSTAGRAM_LIMIT, normalizeInstagramHandle } from "./website-sections";
 
 export { instagramProfileUrl } from "./website-sections";
+
+function appOrigin(): string {
+  const raw = process.env.DRIVA_APP_URL?.trim() || process.env.APP_URL?.trim();
+  if (raw) return raw.replace(/\/$/, "");
+  const vercelHost =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.VERCEL_URL?.trim();
+  if (vercelHost) return `https://${vercelHost.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
+  return "http://localhost:3123";
+}
+
+function absoluteAppUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${appOrigin()}${path.startsWith("/") ? path : `/${path}`}`;
+}
 
 export const INSTAGRAM_SETUP_STEPS = [
   "Skapa en app på https://developers.facebook.com/apps",
