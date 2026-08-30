@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { parseLoginAuthSearch } from "@/lib/auth/signup-flow";
 import { LoginForm } from "./login-form";
+import { SignupSuccessBanner } from "./signup-success-banner";
 
 export const metadata: Metadata = { title: "Logga in – Driva" };
 export const dynamic = "force-dynamic";
@@ -7,10 +9,10 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; signup?: string; email?: string }>;
 }) {
   const params = await searchParams;
-  const next = typeof params.next === "string" ? params.next : "/";
+  const { signupSuccess, email, next } = parseLoginAuthSearch(params);
   return (
     <main className="flex min-h-dvh items-center justify-center bg-stone-100 px-4 py-10">
       <div className="w-full max-w-sm">
@@ -23,7 +25,8 @@ export default async function LoginPage({
           </p>
         </div>
         <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-          <LoginForm next={next} />
+          {signupSuccess ? <SignupSuccessBanner email={email} /> : null}
+          <LoginForm next={next} defaultEmail={email ?? ""} signupSuccess={signupSuccess} />
         </div>
       </div>
     </main>
