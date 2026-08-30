@@ -27,7 +27,7 @@ function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
           <tr key={line.id} className="break-inside-avoid border-b border-line/60 last:border-0">
             <td className="py-2 pr-3">
               <p className="font-medium text-ink">{line.description}</p>
-              <p className="text-[11.5px] text-muted">
+              <p className="text-[11.5px] text-soft">
                 {lineKindLabel(line.kind)}
                 <span className="sm:hidden">
                   {" "}
@@ -81,7 +81,7 @@ export function InvoiceDocument({
         docNumber={invoiceNumberLabel(doc)}
       />
 
-      <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-[12.5px] sm:grid-cols-4">
+      <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-[12.5px] print:mt-4 sm:grid-cols-4">
         <div>
           <p className="text-muted">Fakturadatum</p>
           <p className="font-medium">{datumNumeriskt(doc.issueDate)}</p>
@@ -181,7 +181,7 @@ export function InvoiceDocument({
               <p className="font-semibold tabular">{kr(t.toPay)}</p>
             </div>
           </div>
-          <p className="mt-2 max-w-[46rem] text-[11.5px] leading-[1.5] text-muted">
+          <p className="mt-2 max-w-[46rem] text-[11.5px] leading-[1.5] text-soft">
             Betala senast {datumLang(doc.dueDate)}. Ange OCR-numret som referens.
             {doc.lateInterestRate
               ? ` Efter förfallodagen debiteras dröjsmålsränta med ${doc.lateInterestRate} % per år.`
@@ -196,7 +196,7 @@ export function InvoiceDocument({
             <BadgeCheck className="size-4 shrink-0" />
             Betalningen mottogs {datumLang(invoice.paidAt)}
           </p>
-          <p className="mt-0.5 text-[11.5px] text-muted">Tack!</p>
+          <p className="mt-0.5 text-[11.5px] text-soft">Tack!</p>
         </DocSection>
       ) : null}
 

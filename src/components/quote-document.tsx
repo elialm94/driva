@@ -20,14 +20,27 @@ import { cx } from "./ui";
  * Dokumentsektion: hårfin linje + versal rubrik bär hierarkin, i stället för
  * ett kort med egen ram. break-inside-avoid håller sektionen ihop i utskrift.
  */
-export function DocSection({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
+export function DocSection({
+  title,
+  children,
+  className,
+  id,
+}: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+  id?: string;
+}) {
   return (
-    <section className={cx("mt-5 break-inside-avoid border-t border-line pt-4", className)}>
+    <section id={id} className={cx("mt-5 break-inside-avoid border-t border-line pt-4 print:mt-3 print:pt-2.5", className)}>
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">{title}</h2>
       {children}
     </section>
   );
 }
+
+/** Ankare för dokumentets godkännande-sektion – signeringsraden lyssnar på det. */
+export const QUOTE_ACCEPTANCE_ID = "offert-godkann";
 
 export function DocCompanyHeader({ company, docType, docNumber }: { company: CompanySettings; docType: string; docNumber: string }) {
   return (
@@ -63,7 +76,7 @@ export function DocFooter({ company }: { company: CompanySettings }) {
   const sate = company.sate?.trim() || company.city;
   const pay = paymentBits(company).join(" · ");
   return (
-    <div className="mt-7 break-inside-avoid border-t border-line pt-3 text-center text-[11px] leading-relaxed text-muted">
+    <div className="mt-6 break-inside-avoid border-t border-line pt-3 text-center text-[11px] leading-relaxed text-soft print:mt-3 print:pt-2">
       {company.name} · Org.nr {company.orgNumber} · Momsreg.nr {company.vatNumber}
       {sate ? ` · Säte ${sate}` : ""}
       <br />
@@ -92,9 +105,9 @@ export function DocLinesTable({
       <tbody>
         {lines.map((line) => (
           <tr key={line.id} className="break-inside-avoid border-b border-line/60 last:border-0">
-            <td className="py-2 pr-3">
+            <td className="py-2 pr-3 print:py-1.5">
               <p className="font-medium text-ink">{line.description}</p>
-              <p className="text-[11.5px] text-muted">
+              <p className="text-[11.5px] text-soft">
                 {lineKindLabel(line.kind)}
                 <span className="sm:hidden">
                   {" "}
@@ -102,11 +115,11 @@ export function DocLinesTable({
                 </span>
               </p>
             </td>
-            <td className="hidden py-2 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">
+            <td className="hidden py-2 pr-3 text-right text-soft tabular whitespace-nowrap print:py-1.5 sm:table-cell">
               {line.qty} {line.unit}
             </td>
-            <td className="hidden py-2 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">{kr(line.unitPrice)}</td>
-            <td className="py-2 text-right font-medium text-ink tabular whitespace-nowrap">{kr(lineTotal(line))}</td>
+            <td className="hidden py-2 pr-3 text-right text-soft tabular whitespace-nowrap print:py-1.5 sm:table-cell">{kr(line.unitPrice)}</td>
+            <td className="py-2 text-right font-medium text-ink tabular whitespace-nowrap print:py-1.5">{kr(lineTotal(line))}</td>
           </tr>
         ))}
       </tbody>
@@ -176,7 +189,7 @@ export function DocTotalsBlock({
         </div>
       </div>
       {rot && showCalcHint ? (
-        <p className="mt-2.5 max-w-[46rem] text-[11px] leading-[1.5] text-muted">
+        <p className="mt-2.5 max-w-[46rem] text-[11.5px] leading-[1.5] text-soft">
           {taxReductionCalcHintText(rot.type, t.laborInclVat)}
         </p>
       ) : null}
@@ -222,7 +235,7 @@ export function QuoteDocument({
     <article className="bg-white px-6 py-7 text-ink sm:px-9 sm:py-8 print:px-0 print:py-0">
       <DocCompanyHeader company={seller} docType="Offert" docNumber={`#${quote.number}`} />
 
-      <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-[12.5px] sm:grid-cols-4">
+      <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-[12.5px] print:mt-4 sm:grid-cols-4">
         <div>
           <p className="text-muted">Datum</p>
           <p className="font-medium">{datumNumeriskt(version.createdAt)}</p>
@@ -248,7 +261,7 @@ export function QuoteDocument({
         </div>
       </div>
 
-      <h1 className="mt-6 text-[21px] font-semibold tracking-tight">{version.title}</h1>
+      <h1 className="mt-6 text-[21px] font-semibold tracking-tight print:mt-4">{version.title}</h1>
       {version.intro ? <p className="mt-1.5 max-w-2xl text-[13.5px] leading-relaxed text-soft">{version.intro}</p> : null}
 
       <div className="mt-5">
@@ -278,7 +291,7 @@ export function QuoteDocument({
             </div>
           ))}
         </div>
-        <p className="mt-2 text-[11.5px] leading-[1.5] text-muted">
+        <p className="mt-2 max-w-[46rem] text-[11.5px] leading-[1.5] text-soft">
           Betalningsvillkor: {version.paymentTermsDays} dagar per faktura.
           {version.lateInterestRate
             ? ` Vid försenad betalning debiteras dröjsmålsränta med ${version.lateInterestRate} % per år.`
@@ -291,20 +304,20 @@ export function QuoteDocument({
       </DocSection>
 
       {signature ? (
-        <DocSection title="Godkänd">
+        <DocSection title="Godkänd" id={QUOTE_ACCEPTANCE_ID}>
           <p className="mt-1.5 flex items-center gap-1.5 text-[13.5px] font-semibold text-ok">
             <BadgeCheck className="size-4 shrink-0" />
             {signedWithBankIdBy(signature.signerName)}
           </p>
-          <p className="mt-0.5 text-[11.5px] text-muted">{datumTid(signature.signedAt)}</p>
+          <p className="mt-0.5 text-[11.5px] text-soft">{datumTid(signature.signedAt)}</p>
         </DocSection>
       ) : (
-        <DocSection title="Godkänn offerten">
+        <DocSection title="Godkänn offerten" id={QUOTE_ACCEPTANCE_ID}>
           <p className="mt-1.5 max-w-[46rem] text-[13px] leading-relaxed text-soft">
             Signera tryggt och juridiskt bindande med BankID. Offerten är giltig till {datumLang(version.validUntil)}.
           </p>
           {approval ? <div className="mt-3 print:hidden">{approval}</div> : null}
-          <p className={cx("mt-1.5 text-[11.5px] leading-[1.5] text-muted", Boolean(approval) && "hidden print:block")}>
+          <p className={cx("mt-1.5 text-[11.5px] leading-[1.5] text-soft", Boolean(approval) && "hidden print:block")}>
             Offerten godkänns genom BankID-signering via den digitala offertlänken.
           </p>
         </DocSection>

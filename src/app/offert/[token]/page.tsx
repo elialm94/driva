@@ -4,7 +4,8 @@ import { db } from "@/lib/store";
 import { getQuoteByToken, currentVersion, quoteSignature, quoteTotals, requireCustomer } from "@/lib/services/data";
 import { markQuoteViewed } from "@/lib/services/quotes";
 import { kr, datumTid, datumLang, dagarTill } from "@/lib/format";
-import { QuoteDocument } from "@/components/quote-document";
+import { QUOTE_ACCEPTANCE_ID, QuoteDocument } from "@/components/quote-document";
+import { QuoteSignBar } from "@/components/quote-sign-bar";
 import { CompanyLogo } from "@/components/company-logo";
 import { signedWithBankIdBy } from "@/lib/status-labels";
 import { BankIDApproval, DeclineQuoteButton, QuoteQuestionButton } from "@/components/bankid-flow";
@@ -144,7 +145,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
       </main>
 
       {canSign ? (
-        <div className="fixed inset-x-0 bottom-0 border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl print:hidden">
+        <QuoteSignBar watchElementId={QUOTE_ACCEPTANCE_ID}>
           <div className="mx-auto flex max-w-3xl flex-col gap-2.5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div className="flex items-center justify-between gap-3 sm:block">
               <p className="text-[14px] font-medium">
@@ -162,7 +163,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
               />
             </div>
           </div>
-        </div>
+        </QuoteSignBar>
       ) : null}
     </div>
   );

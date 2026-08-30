@@ -15,15 +15,15 @@ export function TaxReductionQuoteClause({
 }) {
   if (!terms) return null;
   return (
-    <p className="mt-2 max-w-[46rem] text-[11px] leading-[1.5] text-muted">
-      <span className="font-semibold text-soft">{terms.heading}:</span> {terms.body}
+    <p className="mt-2 max-w-[46rem] text-[11.5px] leading-[1.5] text-soft">
+      <span className="font-semibold text-ink">{terms.heading}:</span> {terms.body}
     </p>
   );
 }
 
 export function TaxReductionInvoiceDisclaimer({ version }: { version?: string }) {
   return (
-    <p className="mt-2 max-w-[46rem] text-[11px] leading-[1.5] text-muted">
+    <p className="mt-2 max-w-[46rem] text-[11.5px] leading-[1.5] text-soft">
       {getInvoiceTaxReductionDisclaimer(version)}
     </p>
   );
