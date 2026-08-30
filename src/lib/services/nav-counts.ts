@@ -21,7 +21,18 @@ import { countBookkeepingBadge, listBookkeepingAttention } from "./actions";
  */
 export const getBookkeepingAttention = cache(() => listBookkeepingAttention());
 
-export const getNavAttentionCounts = cache(() => ({
-  inbox: countInboxBadge(),
-  bokforing: countBookkeepingBadge(),
-}));
+export const getNavAttentionCounts = cache(() => {
+  let inbox = 0;
+  let bokforing = 0;
+  try {
+    inbox = countInboxBadge();
+  } catch (err) {
+    console.error("[nav-counts] inbox:", err instanceof Error ? err.message : err);
+  }
+  try {
+    bokforing = countBookkeepingBadge();
+  } catch (err) {
+    console.error("[nav-counts] bokforing:", err instanceof Error ? err.message : err);
+  }
+  return { inbox, bokforing };
+});

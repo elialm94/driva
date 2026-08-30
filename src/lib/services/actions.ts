@@ -11,7 +11,8 @@ import {
   jobQuote,
   quoteTotals,
   quoteWaitingDays,
-  requireCustomer,
+  getCurrentVersion,
+  getCustomer,
 } from "./data";
 import { creditRefundDue } from "./invoices";
 import { derivedJobStatus, isPaymentPlanPartDue } from "./job-lifecycle";
@@ -290,6 +291,25 @@ interface Ranked {
   action: BusinessAction;
 }
 
+function isNextControlFlow(err: unknown): boolean {
+  const digest = (err as { digest?: string } | null)?.digest;
+  return typeof digest === "string" && (digest.startsWith("NEXT_REDIRECT") || digest.startsWith("NEXT_HTTP"));
+}
+
+/** En trasig rad får inte fälla hela Hem/layouten. */
+function runCollect(label: string, fn: () => void): void {
+  try {
+    fn();
+  } catch (err) {
+    if (isNextControlFlow(err)) throw err;
+    console.error(`[actions] hoppade ${label}:`, err instanceof Error ? err.message : err);
+  }
+}
+
+function customerLabel(id: string): string {
+  return getCustomer(id)?.name ?? "Okänd kund";
+}
+
 export function getBusinessActions(
   now = new Date(),
   opts: {
@@ -305,13 +325,13 @@ export function getBusinessActions(
   const ranked: Ranked[] = [];
   const watching: WatchingItem[] = [];
 
-  collectInvoices(ranked, watching, now);
-  collectQuotes(ranked, watching);
-  collectJobs(ranked, watching, now);
-  collectReminders(ranked, watching, now);
-  collectTaxReduction(ranked, watching, now);
-  collectBookkeepingSources(ranked, watching, now);
-  collectSuppliers(ranked, watching, now);
+  runCollect("invoices", () => collectInvoices(ranked, watching, now));
+  runCollect("quotes", () => collectQuotes(ranked, watching));
+  runCollect("jobs", () => collectJobs(ranked, watching, now));
+  runCollect("reminders", () => collectReminders(ranked, watching, now));
+  runCollect("tax", () => collectTaxReduction(ranked, watching, now));
+  runCollect("bookkeeping", () => collectBookkeepingSources(ranked, watching, now));
+  runCollect("suppliers", () => collectSuppliers(ranked, watching, now));
 
   const attention = applyAttentionPolicy(ranked, now, opts.includeSnoozed);
   const attentionIds = new Set(attention.map((a) => a.id));
@@ -326,10 +346,10 @@ export function getBusinessActions(
  * Inga kundfakturor/offerter/uppdrag – de hör till andra ytor.
  */
 function collectBookkeepingSources(ranked: Ranked[], watching: WatchingItem[], now: Date) {
-  collectAccounting(ranked);
-  collectClientRequests(ranked);
-  collectInboxMail(ranked);
-  collectVat(ranked, watching, now);
+  runCollect("accounting", () => collectAccounting(ranked));
+  runCollect("client-requests", () => collectClientRequests(ranked));
+  runCollect("inbox-mail", () => collectInboxMail(ranked));
+  runCollect("vat", () => collectVat(ranked, watching, now));
 }
 
 /** Snooze/HIDE: dolda tills tidpunkten passerat – sedan synliga igen om saken kvarstår. */
@@ -405,6 +425,8 @@ function invoiceLabel(inv: Invoice): string {
 
 function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) {
   for (const inv of db().invoices) {
+    const customer = getCustomer(inv.customerId);
+    if (!customer) continue;
     // Kreditfakturor är inga fordringar. Krediterade original kan dock ha en
     // återbetalningsskuld (kunden hann betala) – den fångas nedan.
     if (inv.type === "kredit") continue;
@@ -413,7 +435,6 @@ function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) 
     // överbetalning (bokad som skuld på 2420) eller kreditering av betald faktura.
     const refundDue = creditRefundDue(inv);
     if (refundDue > 0) {
-      const customer = requireCustomer(inv.customerId).name;
       ranked.push({
         rank: RANK.paymentMismatch,
         order: -refundDue,
@@ -425,15 +446,15 @@ function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) 
           title:
             inv.status === "krediterad"
               ? `Återbetala ${kr(refundDue)} – faktura #${inv.number} krediterades efter betalning`
-              : `${customer} betalade ${kr(refundDue)} för mycket på faktura #${inv.number}`,
-          subtitle: `${customer} · pengarna ligger som skuld i bokföringen tills de betalas tillbaka eller kvittas`,
+              : `${customer.name} betalade ${kr(refundDue)} för mycket på faktura #${inv.number}`,
+          subtitle: `${customer.name} · pengarna ligger som skuld i bokföringen tills de betalas tillbaka eller kvittas`,
           href: invoiceHref(inv.id),
           cta: { type: "registerCreditRefund", label: "Markera återbetald", invoiceId: inv.id },
           amount: refundDue,
           confirm: {
             title: "Bokför återbetalning?",
             rows: [
-              { label: "Kund", value: customer },
+              { label: "Kund", value: customer.name },
               { label: "Faktura", value: `#${inv.number}` },
               { label: "Belopp", value: kr(refundDue) },
               { label: "Bokförs som", value: "återbetald kundskuld" },
@@ -450,7 +471,6 @@ function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) 
       (inv.status === "skickad" || inv.status === "delbetald") && Boolean(inv.issuedAt) && !inv.sentAt;
     if (deliveryFailed) {
       const toPay = invoiceTotals(inv).toPay;
-      const customer = requireCustomer(inv.customerId);
       ranked.push({
         rank: RANK.invoiceDeliveryFailed,
         order: -toPay,
@@ -486,7 +506,6 @@ function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) 
 
     if (isOverdue(inv)) {
       const days = daysOverdue(inv);
-      const customer = requireCustomer(inv.customerId);
       ranked.push({
         rank: RANK.invoiceOverdue,
         order: -(days * 1_000_000 + Math.min(outstanding, 999_999)),
@@ -517,7 +536,7 @@ function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) 
         id: `invoice-open-${inv.id}`,
         category: "invoice",
         title: `${invoiceLabel(inv)} · ${kr(outstanding)}${partial ? " återstår" : ""}`,
-        subtitle: `${requireCustomer(inv.customerId).name} · ${partial ? "delbetald · " : ""}förfaller ${relativ(inv.dueDate)}`,
+        subtitle: `${customer.name} · ${partial ? "delbetald · " : ""}förfaller ${relativ(inv.dueDate)}`,
         href: invoiceHref(inv.id),
         amount: outstanding,
         date: inv.dueDate.slice(0, 10),
@@ -530,12 +549,14 @@ function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) 
 
 function collectQuotes(ranked: Ranked[], watching: WatchingItem[]) {
   for (const q of db().quotes) {
+    const customer = getCustomer(q.customerId);
+    if (!customer) continue;
+    if (!getCurrentVersion(q)) continue;
     if (q.status === "godkand") {
       const hasJob =
         Boolean(q.jobId && db().jobs.some((j) => j.id === q.jobId)) || db().jobs.some((j) => j.quoteId === q.id);
       if (hasJob) continue;
       const toPay = quoteTotals(q).toPay;
-      const customer = requireCustomer(q.customerId);
       ranked.push({
         rank: RANK.jobInvoice,
         order: -toPay,
@@ -555,7 +576,6 @@ function collectQuotes(ranked: Ranked[], watching: WatchingItem[]) {
     }
     if (q.status !== "skickad") continue; // utkast/avböjd kräver inget globalt
     const toPay = quoteTotals(q).toPay;
-    const customer = requireCustomer(q.customerId);
 
     if (effectiveQuoteStatus(q) === "utgangen") {
       ranked.push({
@@ -624,8 +644,9 @@ function collectQuotes(ranked: Ranked[], watching: WatchingItem[]) {
 
 function collectJobs(ranked: Ranked[], watching: WatchingItem[], now: Date) {
   for (const job of db().jobs) {
+    const customer = getCustomer(job.customerId);
+    if (!customer) continue;
     if (isIncomingUnquotedJob(job)) {
-      const customer = requireCustomer(job.customerId);
       const href = jobHref(job.id);
       const via = jobSourceLabel(job.source);
       ranked.push({
@@ -659,7 +680,7 @@ function collectJobs(ranked: Ranked[], watching: WatchingItem[], now: Date) {
         id: `job-start-${job.id}`,
         category: "job",
         title: `${job.title} startar ${relativ(job.startDate)}`,
-        subtitle: requireCustomer(job.customerId).name,
+        subtitle: customer.name,
         href: jobHref(job.id),
         date: job.startDate.slice(0, 10),
       });
@@ -680,7 +701,7 @@ function collectJobs(ranked: Ranked[], watching: WatchingItem[], now: Date) {
           category: "job",
           icon: "invoice",
           title: `${job.title} är klart – ${kr(remaining)} kvar att fakturera`,
-          subtitle: `${requireCustomer(job.customerId).name} · enligt godkänd offert`,
+          subtitle: `${customer.name} · enligt godkänd offert`,
           href: jobHref(job.id),
           cta: { type: "createJobInvoice", label: "Skapa slutfaktura", jobId: job.id },
           amount: remaining,
@@ -701,7 +722,7 @@ function collectJobs(ranked: Ranked[], watching: WatchingItem[], now: Date) {
         category: "job",
         icon: "invoice",
         title: `${kr(next.amount)} kan faktureras för ${job.title}`,
-        subtitle: `${requireCustomer(job.customerId).name} · ${next.percent} % ${next.label.toLowerCase()}${
+        subtitle: `${customer.name} · ${next.percent} % ${next.label.toLowerCase()}${
           money.invoiced > 0 ? " · enligt betalplanen" : " · enligt godkänd offert"
         }`,
         href: jobHref(job.id),
@@ -803,7 +824,7 @@ function collectTaxReduction(ranked: Ranked[], watching: WatchingItem[], now: Da
   for (const { cse, href, context, customerId } of cases) {
     const invoices = caseInvoices(cse);
     const deduction = invoices.reduce((s, i) => s + invoiceTotals(i).deduction, 0);
-    const customer = requireCustomer(customerId).name;
+    const customer = customerLabel(customerId);
     const label = cse.label; // "ROT" | "RUT"
 
     switch (cse.phase) {

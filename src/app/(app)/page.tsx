@@ -13,9 +13,27 @@ export const metadata = { title: "Hem" };
 /** Så många åtgärder visas direkt – resten bakom "Visa fler". */
 const HOME_ATTENTION_VISIBLE = 5;
 
+function safeHomeActions() {
+  try {
+    return getBusinessActions();
+  } catch (err) {
+    console.error("[hem] åtgärdsmotorn:", err instanceof Error ? err.message : err);
+    return { attention: [], watching: [] };
+  }
+}
+
+function safeCommandPrefetch() {
+  try {
+    return commandBarPrefetch();
+  } catch (err) {
+    console.error("[hem] kommandofält:", err instanceof Error ? err.message : err);
+    return { aiConfigured: false, quickActions: [], recentCustomers: [], activeJobs: [], recentInvoices: [] };
+  }
+}
+
 export default async function HomePage() {
   await ensurePageBusiness();
-  const actions = getBusinessActions();
+  const actions = safeHomeActions();
   // Prioriterad vy – samma åtgärds-id:n som Bokföring, inte en komplett kö.
   const attention = projectHomeAttention(actions.attention);
   const now = isoNow();
@@ -27,7 +45,7 @@ export default async function HomePage() {
       </p>
       <h1 className="mt-1 text-[28px] font-semibold tracking-tight">{halsning()}</h1>
 
-      <CommandBar prefetch={commandBarPrefetch()} variant="hem" />
+      <CommandBar prefetch={safeCommandPrefetch()} variant="hem" />
 
       <div className="mt-10">
         <AttentionSection

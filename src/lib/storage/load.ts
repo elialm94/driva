@@ -8,7 +8,8 @@
  * INTE i databasen), verifikationer i nummerordning.
  */
 import type { DB, Verification } from "@/lib/types";
-import type { SqlExecutor, SqlRow } from "./executor";
+import type { SqlExecutor, SqlParam, SqlRow } from "./executor";
+import { isUndefinedRelation } from "./sql-errors";
 import {
   accrualsSpec,
   activityFromAuditRow,
@@ -61,6 +62,16 @@ export interface LoadedTenantState {
   stateVersion: number;
 }
 
+/** Nyare tabeller: tom lista om migrationen inte körts – sidan ska ändå kunna öppnas. */
+async function queryMaybe(tx: SqlExecutor, text: string, params: SqlParam[]): Promise<SqlRow[]> {
+  try {
+    return await tx.query(text, params);
+  } catch (err) {
+    if (isUndefinedRelation(err)) return [];
+    throw err;
+  }
+}
+
 /** Sätt transaktionens tenantkontext. Måste anropas först i varje tx. */
 export async function bindTransaction(tx: SqlExecutor, businessId: string): Promise<void> {
   // UTC är obligatoriskt: date-semantiska strängar ('2026-08-28') kastas till
@@ -98,13 +109,13 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     paymentRows,
   ] = await Promise.all([
     tx.query(`select * from public.customers where business_id = $1 order by created_at, id`, b),
-    tx.query(`select * from public.work_locations where business_id = $1 order by customer_id, position, id`, b),
+    queryMaybe(tx, `select * from public.work_locations where business_id = $1 order by customer_id, position, id`, b),
     tx.query(`select * from public.quotes where business_id = $1 order by created_at, id`, b),
     tx.query(`select * from public.quote_versions where business_id = $1 order by created_at, version, id`, b),
     tx.query(`select * from public.signatures where business_id = $1 order by signed_at, id`, b),
     tx.query(`select * from public.bankid_orders where business_id = $1 order by created_at, order_ref`, b),
     tx.query(`select * from public.jobs where business_id = $1 order by created_at, id`, b),
-    tx.query(`select * from public.job_work_entries where business_id = $1 order by created_at, id`, b),
+    queryMaybe(tx, `select * from public.job_work_entries where business_id = $1 order by created_at, id`, b),
     tx.query(`select * from public.invoices where business_id = $1 order by created_at, id`, b),
     tx.query(`select * from public.invoice_line_items where business_id = $1 order by invoice_id, position`, b),
     tx.query(`select * from public.invoice_issued_snapshots where business_id = $1`, b),
@@ -145,13 +156,13 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
       tx.query(`select * from public.domains where business_id = $1 order by created_at, id`, b),
       tx.query(`select * from public.assistant_messages where business_id = $1 order by at, id`, b),
       tx.query(`select * from public.pending_actions where business_id = $1 order by created_at, id`, b),
-      tx.query(`select * from public.reminders where business_id = $1 order by due_at, created_at, id`, b),
-      tx.query(`select * from public.attention_states where business_id = $1 order by created_at, id`, b),
-      tx.query(`select * from public.inbox_items where business_id = $1 order by created_at, id`, b),
-      tx.query(`select * from public.supplier_payments where business_id = $1 order by created_at, id`, b),
-      tx.query(`select * from public.payment_files where business_id = $1 order by created_at, id`, b),
-      tx.query(`select * from public.collaboration_invitations where business_id = $1 order by created_at, id`, b),
-      tx.query(`select * from public.client_information_requests where business_id = $1 order by created_at, id`, b),
+      queryMaybe(tx, `select * from public.reminders where business_id = $1 order by due_at, created_at, id`, b),
+      queryMaybe(tx, `select * from public.attention_states where business_id = $1 order by created_at, id`, b),
+      queryMaybe(tx, `select * from public.inbox_items where business_id = $1 order by created_at, id`, b),
+      queryMaybe(tx, `select * from public.supplier_payments where business_id = $1 order by created_at, id`, b),
+      queryMaybe(tx, `select * from public.payment_files where business_id = $1 order by created_at, id`, b),
+      queryMaybe(tx, `select * from public.collaboration_invitations where business_id = $1 order by created_at, id`, b),
+      queryMaybe(tx, `select * from public.client_information_requests where business_id = $1 order by created_at, id`, b),
       tx.query(
         `select * from public.audit_log where business_id = $1 and channel = 'activity'
          order by created_at desc, id desc limit ${ACTIVITY_LOAD_LIMIT}`,

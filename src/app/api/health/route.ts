@@ -26,8 +26,29 @@ interface DbProbe {
   canConnect: boolean;
   hasAppRole: boolean;
   hasCoreTables: boolean;
+  /** Tabeller som inloggade sidor läser – saknade = migrationer inte körda. */
+  pageLoadTables?: Record<string, boolean>;
+  hasDisabledAt?: boolean;
   error?: string;
 }
+
+const PAGE_LOAD_TABLES = [
+  "businesses",
+  "business_memberships",
+  "business_settings",
+  "customers",
+  "quotes",
+  "quote_versions",
+  "invoices",
+  "jobs",
+  "work_locations",
+  "job_work_entries",
+  "reminders",
+  "attention_states",
+  "inbox_items",
+  "supplier_payments",
+  "payment_files",
+] as const;
 
 async function probeDatabase(dbUrl: string): Promise<DbProbe> {
   const probe: DbProbe = { canConnect: false, hasAppRole: false, hasCoreTables: false };
@@ -43,6 +64,19 @@ async function probeDatabase(dbUrl: string): Promise<DbProbe> {
       "select to_regclass('public.businesses') is not null as present"
     );
     probe.hasCoreTables = Boolean(tableRows[0]?.present);
+    const pageLoadTables: Record<string, boolean> = {};
+    for (const name of PAGE_LOAD_TABLES) {
+      const rows = await client.query(`select to_regclass($1) is not null as present`, [`public.${name}`]);
+      pageLoadTables[name] = Boolean(rows[0]?.present);
+    }
+    probe.pageLoadTables = pageLoadTables;
+    const colRows = await client.query(
+      `select exists (
+         select 1 from information_schema.columns
+          where table_schema = 'public' and table_name = 'businesses' and column_name = 'disabled_at'
+       ) as present`
+    );
+    probe.hasDisabledAt = Boolean(colRows[0]?.present);
   } catch (err) {
     // Aldrig kasta – health-endpointen ska alltid svara med JSON.
     probe.error = err instanceof Error ? err.message : String(err);

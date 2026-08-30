@@ -8,7 +8,7 @@ import type {
   TaxReductionApplication,
   TaxReductionDetails,
 } from "../types";
-import { currentVersion, getInvoice, getJob, invoiceTotals, jobQuote, requireCustomer } from "./data";
+import { getCurrentVersion, getCustomer, getInvoice, getJob, invoiceTotals, jobQuote, requireCustomer } from "./data";
 import { invoicesForJob } from "./job-economy";
 import {
   defaultWorkLocation,
@@ -256,7 +256,19 @@ export function taxReductionCaseForInvoice(invoice: Invoice): TaxReductionCase {
   }
   const type = invoice.rot.type;
   const job = invoice.jobId ? getJob(invoice.jobId) : undefined;
-  const customer = requireCustomer(invoice.customerId);
+  const customer = getCustomer(invoice.customerId);
+  if (!customer) {
+    return {
+      type: null,
+      phase: "none",
+      nextStep: null,
+      missing: [],
+      jobId: invoice.jobId,
+      invoiceId: invoice.id,
+      label: "",
+      prefill: null,
+    };
+  }
   const prefill = resolveTaxReductionPrefill({
     customerId: invoice.customerId,
     jobId: invoice.jobId,
@@ -290,7 +302,7 @@ export function taxReductionCaseForInvoice(invoice: Invoice): TaxReductionCase {
 
 export function taxReductionCaseForJob(job: Job): TaxReductionCase {
   const quote = jobQuote(job);
-  const quoteRot = quote ? currentVersion(quote).rot : null;
+  const quoteRot = quote ? getCurrentVersion(quote)?.rot : null;
   const invoices = rotInvoicesForJob(job.id);
   const type = invoices[0]?.rot?.type ?? quoteRot?.type ?? null;
   if (!type) {
@@ -305,7 +317,18 @@ export function taxReductionCaseForJob(job: Job): TaxReductionCase {
     };
   }
   const invoice = invoices[0];
-  const customer = requireCustomer(job.customerId);
+  const customer = getCustomer(job.customerId);
+  if (!customer) {
+    return {
+      type: null,
+      phase: "none",
+      nextStep: null,
+      missing: [],
+      jobId: job.id,
+      label: "",
+      prefill: null,
+    };
+  }
   const prefill = resolveTaxReductionPrefill({
     customerId: job.customerId,
     jobId: job.id,

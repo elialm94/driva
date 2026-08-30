@@ -20,6 +20,7 @@ import { getSqlClient, type SqlClient } from "./executor";
 import { bindTransaction, loadTenantState, type LoadedTenantState } from "./load";
 import { cachedStateIfFresh, clearSnapshotCache, invalidateSnapshot, putSnapshot } from "./snapshot-cache";
 import { markCacheHit, withPerfSpan } from "../perf/telemetry";
+import { isUndefinedColumn } from "./sql-errors";
 
 const MAX_ATTEMPTS = 3;
 
@@ -196,14 +197,27 @@ export interface MembershipInfo {
  */
 export async function membershipsForUser(userId: string): Promise<MembershipInfo[]> {
   const client = await sqlClient();
-  const rows = await client.query(
-    `select m.business_id, m.role, m.last_active_at, m.invited_by_user_id
-       from public.business_memberships m
-       join public.businesses b on b.id = m.business_id
-      where m.user_id = $1 and m.revoked_at is null and b.disabled_at is null
-      order by m.created_at, m.business_id`,
-    [userId]
-  );
+  let rows;
+  try {
+    rows = await client.query(
+      `select m.business_id, m.role, m.last_active_at, m.invited_by_user_id
+         from public.business_memberships m
+         join public.businesses b on b.id = m.business_id
+        where m.user_id = $1 and m.revoked_at is null and b.disabled_at is null
+        order by m.created_at, m.business_id`,
+      [userId]
+    );
+  } catch (err) {
+    if (!isUndefinedColumn(err)) throw err;
+    // Äldre schema utan businesses.disabled_at (admin-migrationen inte körd).
+    rows = await client.query(
+      `select m.business_id, m.role, m.last_active_at, m.invited_by_user_id
+         from public.business_memberships m
+        where m.user_id = $1 and m.revoked_at is null
+        order by m.created_at, m.business_id`,
+      [userId]
+    );
+  }
   return rows.map((r) => ({
     businessId: String(r.business_id),
     role: r.role as MembershipInfo["role"],

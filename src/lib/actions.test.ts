@@ -937,4 +937,18 @@ describe("åtgärdsmotorn: rankning, snooze och kontrolldeklaration", () => {
       }
     }
   });
+
+  it("trasig kund- eller offertkoppling fäller inte hela åtgärdsmotorn", () => {
+    replaceDb(emptyTestDb());
+    const inv = issueAndDeliver(
+      createInvoice({ customerId: "cust-1", type: "faktura", lines: [labor({ unitPrice: 2_000 })], rot: null })
+    );
+    inv.dueDate = isoDaysFromNow(-3);
+    inv.customerId = "saknas-helt";
+    const quote = db().quotes[0];
+    if (quote) quote.currentVersionId = "version-finns-inte";
+    assert.doesNotThrow(() => getBusinessActions());
+    const actions = getBusinessActions();
+    assert.equal(actions.attention.some((a) => a.id === `invoice-late-${inv.id}`), false);
+  });
 });

@@ -49,8 +49,12 @@ export function getQuoteByToken(token: string): Quote | undefined {
   return db().quotes.find((q) => q.token === token);
 }
 
+export function getCurrentVersion(quote: Quote): QuoteVersion | undefined {
+  return db().quoteVersions.find((v) => v.id === quote.currentVersionId);
+}
+
 export function currentVersion(quote: Quote): QuoteVersion {
-  const v = db().quoteVersions.find((v) => v.id === quote.currentVersionId);
+  const v = getCurrentVersion(quote);
   if (!v) throw new Error(`Offertversion saknas för ${quote.id}`);
   return v;
 }
