@@ -25,6 +25,7 @@ import {
 } from "@/lib/services/document-mail";
 import { issueInvoice } from "@/lib/services/invoices";
 import { InvoiceNotReadyError } from "@/lib/invoices/validate";
+import { userFacingInvoiceSendError, userFacingIssueError } from "@/lib/invoices/issue-errors";
 import { getInvoice, getQuoteByToken } from "@/lib/services/data";
 import {
   completeReminder,
@@ -559,7 +560,7 @@ export async function sendInvoiceAction(
     if (e instanceof InvoiceNotReadyError) {
       return { ok: false, errors: e.blockers.map((b) => b.message) } as const;
     }
-    return { ok: false, errors: [e instanceof Error ? e.message : "Kunde inte utfärda fakturan."] } as const;
+    return { ok: false, errors: [userFacingIssueError(e)] } as const;
   }
 
   // Steg 2: e-posta i EGEN transaktion (retry: false – ett mejl får aldrig
@@ -578,7 +579,7 @@ export async function sendInvoiceAction(
         refresh();
         return {
           ok: false,
-          errors: [e instanceof Error ? e.message : "Kunde inte skicka fakturan."],
+          errors: [userFacingInvoiceSendError(e)],
           issued: true,
         } as const;
       }
@@ -600,7 +601,7 @@ export async function deliverInvoiceAction(
         }
         return { ok: true, mailed: outcome.mode === "live" } as const;
       } catch (e) {
-        return { ok: false, errors: [e instanceof Error ? e.message : "Kunde inte skicka fakturan igen."] } as const;
+        return { ok: false, errors: [userFacingInvoiceSendError(e)] } as const;
       }
     },
     { retry: false }

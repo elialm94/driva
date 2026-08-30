@@ -73,13 +73,27 @@ function addVerification(
 /**
  * Allokera nästa fakturanummer. En enda funktion – synkron read-modify-write
  * så att två sekventiella (och i Node även parallella Promise.all av synk kod)
- * anrop aldrig får samma nummer.
+ * anrop aldrig får samma nummer. I Supabase-läget CAS:as samma nummer sedan
+ * mot business_sequences i app.issue_invoice (radlås); förloraren retrys.
  */
 function allocateNextInvoiceNumber(): number {
   const data = db();
   const number = data.sequences.invoice;
+  if (!Number.isInteger(number) || number < 1) {
+    throw new Error("Fakturanummer kunde inte tilldelas. Ladda om sidan och försök igen.");
+  }
   data.sequences.invoice = number + 1;
   return number;
+}
+
+function assignInvoiceNumberAndOcr(invoice: Invoice): { number: number; ocr: string; allocatedNew: boolean } {
+  const allocatedNew = invoice.number == null || !Number.isFinite(invoice.number);
+  const number = allocatedNew ? allocateNextInvoiceNumber() : invoice.number!;
+  const ocr = !allocatedNew && invoice.ocr ? invoice.ocr : ocrForInvoice(number);
+  if (!Number.isInteger(number) || number < 1 || !ocr) {
+    throw new Error("Fakturan kunde inte utfärdas utan nummer och OCR. Försök igen.");
+  }
+  return { number, ocr, allocatedNew };
 }
 
 function cloneLines(lines: DocLine[]): DocLine[] {
@@ -580,12 +594,13 @@ export function issueInvoice(invoiceId: string, createdBy: Actor = "anvandare"):
 
   const customer = requireCustomer(invoice.customerId);
   const now = new Date().toISOString();
-  const allocatedNew = invoice.number == null;
-  const number = invoice.number ?? allocateNextInvoiceNumber();
-  const ocr = invoice.ocr && invoice.number != null ? invoice.ocr : ocrForInvoice(number);
+  const { number, ocr, allocatedNew } = assignInvoiceNumberAndOcr(invoice);
 
   freezeIssue(invoice, { number, ocr, issuedAt: now });
   invoice.status = "skickad";
+  if (invoice.number == null || !invoice.ocr) {
+    throw new Error("Fakturan kunde inte utfärdas utan nummer och OCR. Försök igen.");
+  }
 
   addVerification({
     date: now,

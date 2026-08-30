@@ -105,10 +105,17 @@ export function InvoiceDraftSend({
 
   return (
     <>
-      <button className={buttonClasses("primary")} onClick={requestSend}>
-        <Send className="size-4" />
-        Skicka faktura
-      </button>
+      {hasIssuanceBlockers ? null : (
+        <button
+          type="button"
+          className={buttonClasses("primary")}
+          onClick={requestSend}
+          disabled={isSending}
+        >
+          <Send className="size-4" />
+          Skicka faktura
+        </button>
+      )}
 
       <Modal open={confirmOpen} onClose={() => !isSending && setConfirmOpen(false)} size="sm" title="Skicka faktura?">
         <div className="px-6 py-5">

@@ -16,6 +16,8 @@ import { resolveInvoiceView } from "./snapshot";
 import { emptyTestDb, labor, testCompany, testCustomer } from "./test-db";
 import { getInvoice } from "../services/data";
 import { db } from "../store";
+import { ocrForInvoice } from "../ids";
+import { userFacingIssueError } from "./issue-errors";
 
 function reset(over: Parameters<typeof emptyTestDb>[0] = {}) {
   replaceDb(emptyTestDb(over));
@@ -69,6 +71,22 @@ describe("Fakturanummer och utkast", () => {
     assert.equal(issued.number, 77);
     assert.equal(issued.ocr, "legacy");
   });
+
+  it("allokerar nummer och OCR om utkastet bär ogiltigt nummer", () => {
+    const inv = draft();
+    inv.number = Number.NaN;
+    const issued = issueInvoice(inv.id);
+    assert.ok(issued.number != null && Number.isInteger(issued.number));
+    assert.equal(issued.ocr, ocrForInvoice(issued.number as number));
+  });
+
+  it("vägrar utfärda om nummerserien är trasig", () => {
+    db().sequences.invoice = 0;
+    const inv = draft();
+    assert.throws(() => issueInvoice(inv.id), /Fakturanummer kunde inte tilldelas/);
+    assert.equal(getInvoice(inv.id)?.status, "utkast");
+    assert.equal(getInvoice(inv.id)?.number, null);
+  });
 });
 
 describe("Validering före utfärdande", () => {
@@ -96,6 +114,14 @@ describe("Validering före utfärdande", () => {
     });
     assert.ok(blockers.some((b) => b.code === "buyer_address"));
     assert.throws(() => issueInvoice(inv.id), InvoiceNotReadyError);
+    try {
+      issueInvoice(inv.id);
+      assert.fail("skulle ha stoppats");
+    } catch (e) {
+      const text = userFacingIssueError(e);
+      assert.match(text, /adress/i);
+      assert.equal(text.includes("issue_invalid"), false);
+    }
   });
 });
 
@@ -143,6 +169,28 @@ describe("Kredit, omutskick och betalning", () => {
     assert.equal(credit.issuedSnapshot?.creditsInvoiceNumber, issued.number);
     assert.equal(credit.issuedSnapshot?.totals.toPay, issued.issuedSnapshot?.totals.toPay);
     assert.equal(getInvoice(issued.id)?.status, "krediterad");
+  });
+
+  it("skicka tilldelar nummer och OCR, sätter skickad och bokför en verifikation", () => {
+    const before = db().sequences.invoice;
+    const inv = draft();
+    assert.equal(inv.number, null);
+    assert.equal(inv.ocr, "");
+    const sent = sendInvoice(inv.id);
+    assert.equal(sent.status, "skickad");
+    assert.equal(sent.number, before);
+    assert.equal(sent.ocr, ocrForInvoice(before));
+    assert.ok(sent.issuedAt);
+    assert.ok(sent.sentAt);
+    assert.ok(sent.issuedSnapshot);
+    assert.equal(sent.issuedSnapshot?.number, sent.number);
+    assert.equal(sent.issuedSnapshot?.ocr, sent.ocr);
+    const ver = db().verifications.find(
+      (v) => v.source.type === "kundfaktura" && "id" in v.source && v.source.id === sent.id
+    );
+    assert.ok(ver, "utfärdandet ska skapa en verifikation");
+    assert.match(ver.description, new RegExp(`Faktura #${sent.number}`));
+    assert.ok(ver.entries.some((e) => e.account === 1510 && e.debit > 0));
   });
 
   it("skicka igen allokerar inte nytt nummer", () => {
