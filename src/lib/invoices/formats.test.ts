@@ -1,6 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { formatOrgnr, formatVatNumber, isOrgnrFormat, normalizeOrgnr } from "./formats";
+import {
+  formatOrgnr,
+  formatPostalCode,
+  formatVatNumber,
+  isOrgnrFormat,
+  isPostalCodeFormat,
+  normalizeOrgnr,
+  normalizePostalCode,
+} from "./formats";
 
 describe("orgnr-format", () => {
   it("visar progressivt NNNNNN-NNNN och tar bara siffror", () => {
@@ -30,5 +38,17 @@ describe("orgnr-format", () => {
     assert.equal(formatVatNumber("559123-4567"), "SE559123456701");
     assert.equal(formatVatNumber("SE 559123-4567 abc"), "SE559123456701");
     assert.equal(formatVatNumber("559123"), "");
+  });
+});
+
+describe("postnummer-format", () => {
+  it("accepterar 11624 och 116 24 och normaliserar till 116 24", () => {
+    assert.equal(formatPostalCode("11624"), "116 24");
+    assert.equal(formatPostalCode("116 24"), "116 24");
+    assert.equal(normalizePostalCode("11624"), "116 24");
+    assert.equal(normalizePostalCode("116 24"), "116 24");
+    assert.equal(isPostalCodeFormat("11624"), true);
+    assert.equal(isPostalCodeFormat("116 24"), true);
+    assert.equal(isPostalCodeFormat("1162"), false);
   });
 });

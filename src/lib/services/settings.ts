@@ -9,6 +9,7 @@ import {
   normalizeIban,
   normalizeOrgnr,
   normalizePlusgiro,
+  normalizePostalCode,
 } from "../invoices/formats";
 import { settingsDefaultsFieldErrors, settingsProfileFieldErrors } from "../settings-validation";
 
@@ -97,7 +98,7 @@ function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
   s.phone = input.phone.trim();
   s.websiteUrl = optional(input.websiteUrl);
   s.address = input.address.trim();
-  s.postalCode = input.postalCode.trim();
+  s.postalCode = input.postalCode.trim() ? normalizePostalCode(input.postalCode) : "";
   s.city = input.city.trim();
   s.sate = optional(input.sate);
   s.country = optional(input.country) || "Sverige";
