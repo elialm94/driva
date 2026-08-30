@@ -1,8 +1,9 @@
-import { getBusinessActions } from "@/lib/services/actions";
+import { getBusinessActions, type BusinessActions } from "@/lib/services/actions";
 import { projectHomeAttention } from "@/lib/services/action-views";
 import { halsning, datumUtanAr, veckodag, isoNow } from "@/lib/format";
 import { SectionTitle } from "@/components/ui";
 import { AttentionEmptyCard, AttentionSection } from "@/components/attention-list";
+import { HomeReminders } from "@/components/home-reminders";
 import { WatchingList } from "@/components/watching-list";
 import { CommandBar } from "@/components/command-bar";
 import { commandBarPrefetch } from "@/lib/services/command-bar";
@@ -18,7 +19,7 @@ function safeHomeActions() {
     return getBusinessActions();
   } catch (err) {
     console.error("[hem] åtgärdsmotorn:", err instanceof Error ? err.message : err);
-    return { attention: [], watching: [] };
+    return { attention: [], watching: [], reminders: [] } satisfies BusinessActions;
   }
 }
 
@@ -62,6 +63,8 @@ export default async function HomePage() {
           <WatchingList items={actions.watching} />
         </div>
       ) : null}
+
+      {actions.reminders.length > 0 ? <HomeReminders items={actions.reminders} /> : null}
     </div>
   );
 }

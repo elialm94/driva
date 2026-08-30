@@ -67,7 +67,14 @@ export interface SupportTicket {
   userAgent: string;
   appVersion: string;
   attachmentName?: string;
+  /** Data-URL-fallback (JSON-läge / saknad Storage). Aldrig publikt. */
   attachmentDataUrl?: string;
+  /** Privat Storage-sökväg i bucketen support_attachments. */
+  attachmentPath?: string;
+  environment?: string;
+  adminNotes?: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -116,10 +123,10 @@ export function platformRoleLabel(role: PlatformRole | string): string {
 }
 
 export const SUPPORT_TICKET_STATUS_LABEL: Record<SupportTicketStatus, string> = {
-  open: "Ny",
-  in_progress: "Pågående",
+  open: "Öppen",
+  in_progress: "Pågår",
   waiting_for_customer: "Väntar på kund",
-  resolved: "Klart",
+  resolved: "Löst",
 };
 
 export const SUPPORT_TICKET_PRIORITY_LABEL: Record<SupportTicketPriority, string> = {

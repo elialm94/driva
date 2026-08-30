@@ -318,9 +318,32 @@ function ticketFromRow(r: SqlRow): SupportTicket {
     appVersion: str(r.app_version),
     attachmentName: strOrUndef(r.attachment_name),
     attachmentDataUrl: strOrUndef(r.attachment_data_url),
+    attachmentPath: strOrUndef(r.attachment_path),
+    environment: str(r.environment),
+    adminNotes: str(r.admin_notes),
+    resolvedAt: isoOrUndef(r.resolved_at),
+    resolvedBy: strOrUndef(r.resolved_by),
     createdAt: iso(r.created_at),
     updatedAt: iso(r.updated_at),
   };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function asUuidOrNull(value?: string): string | null {
+  if (!value) return null;
+  return UUID_RE.test(value) ? value : null;
+}
+
+function isUndefinedTableOrColumn(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code;
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return (
+    code === "42P01" ||
+    code === "42703" ||
+    /relation .*support_tickets.* does not exist/i.test(msg) ||
+    /column .* does not exist/i.test(msg)
+  );
 }
 
 export async function insertSupportTicket(t: SupportTicket): Promise<void> {
@@ -330,39 +353,60 @@ export async function insertSupportTicket(t: SupportTicket): Promise<void> {
     return;
   }
   const client = await sqlClient();
-  await client.query(
-    `insert into public.support_tickets (
-       id, business_id, user_id, user_email, user_name, business_name, subject, message,
-       status, priority, assigned_admin_id, route, user_agent, app_version,
-       attachment_name, attachment_data_url, created_at, updated_at
-     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
-    [
-      t.id,
-      t.businessId ?? null,
-      t.userId ?? null,
-      t.userEmail,
-      t.userName,
-      t.businessName,
-      t.subject,
-      t.message,
-      t.status,
-      t.priority,
-      t.assignedAdminId ?? null,
-      t.route,
-      t.userAgent,
-      t.appVersion,
-      t.attachmentName ?? null,
-      t.attachmentDataUrl ?? null,
-      t.createdAt,
-      t.updatedAt,
-    ]
-  );
+  const write = () =>
+    client.query(
+      `insert into public.support_tickets (
+         id, business_id, user_id, user_email, user_name, business_name, subject, message,
+         status, priority, assigned_admin_id, route, user_agent, app_version,
+         attachment_name, attachment_data_url, attachment_path, environment, admin_notes,
+         resolved_at, resolved_by, created_at, updated_at
+       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+      [
+        t.id,
+        asUuidOrNull(t.businessId),
+        asUuidOrNull(t.userId),
+        t.userEmail,
+        t.userName,
+        t.businessName,
+        t.subject,
+        t.message,
+        t.status,
+        t.priority,
+        asUuidOrNull(t.assignedAdminId),
+        t.route,
+        t.userAgent,
+        t.appVersion,
+        t.attachmentName ?? null,
+        t.attachmentDataUrl ?? null,
+        t.attachmentPath ?? null,
+        t.environment ?? "",
+        t.adminNotes ?? "",
+        t.resolvedAt ?? null,
+        asUuidOrNull(t.resolvedBy),
+        t.createdAt,
+        t.updatedAt,
+      ]
+    );
+  try {
+    await write();
+  } catch (err) {
+    if (!isUndefinedTableOrColumn(err)) throw err;
+    const { ensurePlatformSupportSchema } = await import("../storage/apply-pending-schema");
+    await ensurePlatformSupportSchema(client);
+    await write();
+  }
 }
 
 export interface SupportTicketPatch {
   status?: SupportTicket["status"];
   priority?: SupportTicket["priority"];
   assignedAdminId?: string | null;
+  adminNotes?: string;
+  attachmentName?: string | null;
+  attachmentPath?: string | null;
+  attachmentDataUrl?: string | null;
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
   updatedAt: string;
 }
 
@@ -373,6 +417,12 @@ export async function updateSupportTicketRow(id: string, patch: SupportTicketPat
     if (patch.status !== undefined) t.status = patch.status;
     if (patch.priority !== undefined) t.priority = patch.priority;
     if (patch.assignedAdminId !== undefined) t.assignedAdminId = patch.assignedAdminId ?? undefined;
+    if (patch.adminNotes !== undefined) t.adminNotes = patch.adminNotes;
+    if (patch.attachmentName !== undefined) t.attachmentName = patch.attachmentName ?? undefined;
+    if (patch.attachmentPath !== undefined) t.attachmentPath = patch.attachmentPath ?? undefined;
+    if (patch.attachmentDataUrl !== undefined) t.attachmentDataUrl = patch.attachmentDataUrl ?? undefined;
+    if (patch.resolvedAt !== undefined) t.resolvedAt = patch.resolvedAt ?? undefined;
+    if (patch.resolvedBy !== undefined) t.resolvedBy = patch.resolvedBy ?? undefined;
     t.updatedAt = patch.updatedAt;
     commitPlatformRegistry();
     return;
@@ -385,7 +435,13 @@ export async function updateSupportTicketRow(id: string, patch: SupportTicketPat
   };
   if (patch.status !== undefined) push("status", patch.status);
   if (patch.priority !== undefined) push("priority", patch.priority);
-  if (patch.assignedAdminId !== undefined) push("assigned_admin_id", patch.assignedAdminId);
+  if (patch.assignedAdminId !== undefined) push("assigned_admin_id", asUuidOrNull(patch.assignedAdminId ?? undefined));
+  if (patch.adminNotes !== undefined) push("admin_notes", patch.adminNotes);
+  if (patch.attachmentName !== undefined) push("attachment_name", patch.attachmentName);
+  if (patch.attachmentPath !== undefined) push("attachment_path", patch.attachmentPath);
+  if (patch.attachmentDataUrl !== undefined) push("attachment_data_url", patch.attachmentDataUrl);
+  if (patch.resolvedAt !== undefined) push("resolved_at", patch.resolvedAt);
+  if (patch.resolvedBy !== undefined) push("resolved_by", asUuidOrNull(patch.resolvedBy ?? undefined));
   push("updated_at", patch.updatedAt);
   params.push(id);
   const client = await sqlClient();

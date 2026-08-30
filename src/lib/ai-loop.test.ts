@@ -298,18 +298,23 @@ describe("deterministiskt först: noll LLM-anrop", () => {
     assert.equal(called, 0);
   });
 
-  test("ofullständig påminnelse ('påminn mig att ringa Göran') → slot-fill, noll LLM", async () => {
+  test("titel utan tid ('påminn mig att ringa Göran') → odaterad påminnelse, noll LLM", async () => {
     let called = 0;
     __setAiTransportForTests(async () => {
       called += 1;
-      throw new Error("LLM-anrop från slot-fill-väg!");
+      throw new Error("LLM-anrop från deterministisk väg!");
     });
     const result = await interpretFreeTextViaAi("Påminn mig att ringa Göran");
     assert.equal(called, 0, "noll LLM-anrop");
     assert.equal(result.ok, true);
-    assert.match(result.text, /när/i);
-    assert.match(result.text, /göran/i);
-    assert.equal(db().reminders.length, 0);
+    assert.match(result.text, /påminnelse skapad/i);
+    assert.match(result.text, /ingen tid/i);
+    const rem = db().reminders.find((r) => /göran/i.test(r.title));
+    assert.ok(rem, "skapades utan deadline");
+    assert.equal(rem.dueAt, undefined);
+    assert.equal(rem.hasExplicitTime, false);
+    assert.ok(!getBusinessActions().attention.some((a) => a.id === `reminder-${rem.id}`));
+    assert.equal(getBusinessActions().reminders.some((r) => r.id === rem.id), true);
   });
 });
 
@@ -344,6 +349,7 @@ describe("påminnelser via verktygsloopen", () => {
     assert.equal(rem.relatedEntityType, "customer");
     assert.equal(rem.relatedEntityId, db().customers.find((c) => c.name === "Göran Svensson")?.id);
     // dueAt är nästa onsdag kl 10:00 lokal tid – och alltid framåt.
+    assert.ok(rem.dueAt);
     const due = new Date(rem.dueAt);
     assert.ok(due.getTime() > Date.now());
     assert.equal(t.count(), 2);
@@ -430,9 +436,11 @@ describe("påminnelser via verktygsloopen", () => {
     const extra = await executeTool("create_reminder", { title: "x", weekday: "onsdag", hax: 1 }, { origin: "ai" });
     assert.equal(extra.ok, false);
     const noTime = await executeTool("create_reminder", { title: "x" }, { origin: "ai" });
-    assert.equal(noTime.ok, false);
-    assert.match(noTime.error ?? "", /när/i);
-    assert.equal(db().reminders.length, 0);
+    assert.equal(noTime.ok, true);
+    const undated = db().reminders.find((r) => r.title === "x");
+    assert.ok(undated);
+    assert.equal(undated.dueAt, undefined);
+    assert.equal(undated.hasExplicitTime, false);
   });
 
   test("deterministisk snabbväg: 'påminn mig imorgon att …' skapar utan LLM-anrop", async () => {
@@ -460,6 +468,7 @@ describe("påminnelser via verktygsloopen", () => {
     const rem = db().reminders.find((r) => r.title === "Ring Göran");
     assert.ok(rem, "påminnelsen persisterades");
     assert.equal(rem.hasExplicitTime, false);
+    assert.ok(rem.dueAt);
     assert.match(rem.dueAt, /T/);
     const due = new Date(rem.dueAt);
     assert.ok(due.getTime() > Date.now());
@@ -521,15 +530,15 @@ describe("påminnelser via verktygsloopen", () => {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
-    }).format(new Date(rem.dueAt));
-    assert.equal(svDate(new Date(rem.dueAt)), svDate(new Date(Date.now() + 86_400_000)));
+    }).format(new Date(rem.dueAt!));
+    assert.equal(svDate(new Date(rem.dueAt!)), svDate(new Date(Date.now() + 86_400_000)));
     assert.equal(svTime, "08:00");
 
     // Uppmärksamhetsläsmodellen (samma motor som Hem): inte synlig före
     // förfall, synlig direkt efter – hela kedjan kommando → tolk →
     // verktygslager → persistens → läsmodell.
     assert.ok(!getBusinessActions().attention.some((a) => a.id === `reminder-${rem.id}`));
-    const atDue = new Date(Date.parse(rem.dueAt) + 60_000);
+    const atDue = new Date(Date.parse(rem.dueAt!) + 60_000);
     assert.ok(
       getBusinessActions(atDue).attention.some((a) => a.id === `reminder-${rem.id}`),
       "dyker upp under Behöver din uppmärksamhet vid förfallotid"
@@ -551,14 +560,14 @@ describe("påminnelser via verktygsloopen", () => {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
-    }).format(new Date(rem.dueAt));
+    }).format(new Date(rem.dueAt!));
     assert.equal(local, "10:00");
     const svDate = new Intl.DateTimeFormat("sv-SE", {
       timeZone: rem.timezone,
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
-    }).format(new Date(rem.dueAt));
+    }).format(new Date(rem.dueAt!));
     assert.equal(svDate, "2026-08-30");
   });
 
@@ -572,7 +581,7 @@ describe("påminnelser via verktygsloopen", () => {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
-    }).format(new Date(rem.dueAt));
+    }).format(new Date(rem.dueAt!));
     assert.equal(local, "09:00");
   });
 
@@ -581,10 +590,25 @@ describe("påminnelser via verktygsloopen", () => {
     const junk = await runBarCommand("create_reminder", { title: "Ring Göran", whenText: "imorgon kanske vid nio" });
     assert.equal(junk.ok, false);
     assert.match(junk.text, /förstod inte tidpunkten/i);
-    const badText = await runBarCommand("create_reminder", { text: "Ring Göran" });
-    assert.equal(badText.ok, false);
-    assert.match(badText.text, /förstod inte tidpunkten/i);
     assert.equal(db().reminders.length, before);
+  });
+
+  test("guidat kommando: titel utan tid → odaterad påminnelse", async () => {
+    const result = await runBarCommand("create_reminder", { title: "Beställ virke" });
+    assert.equal(result.ok, true);
+    assert.match(result.text, /ingen tid/i);
+    const rem = db().reminders.find((r) => r.title === "Beställ virke");
+    assert.ok(rem);
+    assert.equal(rem.dueAt, undefined);
+    assert.equal(rem.hasExplicitTime, false);
+  });
+
+  test("one-shot text utan deadline: 'Ring Göran' skapar odaterad påminnelse", async () => {
+    const result = await runBarCommand("create_reminder", { text: "Ring Göran" });
+    assert.equal(result.ok, true);
+    const rem = db().reminders.find((r) => r.title === "Ring Göran");
+    assert.ok(rem);
+    assert.equal(rem.dueAt, undefined);
   });
 
   test("OpenRouter-reserven via kommandofältets fritextväg: samma create_reminder-verktyg, persisteras", async () => {
@@ -664,7 +688,7 @@ describe("påminnelser via verktygsloopen", () => {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
-    }).format(new Date(rem.dueAt));
+    }).format(new Date(rem.dueAt!));
     assert.equal(local, "12:00");
   });
 
@@ -720,7 +744,7 @@ describe("påminnelser via verktygsloopen", () => {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
-    }).format(new Date(rem.dueAt));
+    }).format(new Date(rem.dueAt!));
     assert.equal(svTime, "10:00");
     assert.notEqual(svTime, "12:00");
     assert.equal(rem.title, "Ring Göran");
@@ -744,7 +768,7 @@ describe("påminnelser via verktygsloopen", () => {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
-    }).format(new Date(rem.dueAt));
+    }).format(new Date(rem.dueAt!));
     assert.equal(svTime, "10:00");
     const viaAi = await interpretFreeTextViaAi("påminn mig att ringa klockan 12 klockan 10");
     assert.equal(viaAi.ok, false);

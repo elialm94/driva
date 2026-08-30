@@ -19,6 +19,7 @@ import {
   WEEKDAYS_SV,
   formatDueAt,
   localParts,
+  NO_REMINDER_TIME_LABEL,
   resolveWhen,
   type Daypart,
   type WeekdaySv,
@@ -79,7 +80,7 @@ export function relatedFromTitle(title: string): { relatedType: string; relatedQ
  * ALDRIG – rättelselagret får hela kroppen.
  */
 const REMINDER_LEAD_RE =
-  /^\s*(?:skapa(?:\s+en)?\s+påminnelse|påminn(?:a)?(?:\s+mig)?)(?:\s+gärna)?(?:\s+om(?=\s+att\b))?(?:\s+|$)/i;
+  /^\s*(?:skapa(?:\s+en)?\s+påminnelse|påminn(?:a)?(?:\s+mig)?|kom(?:\s+ihåg))(?:\s+gärna)?(?:\s+om(?=\s+att\b))?(?:\s+|$)/i;
 
 const PAYMENT_REMINDER_RE = /^\s*skicka\s+(?:en\s+)?påminnelse/i;
 
@@ -189,7 +190,7 @@ export function parseReminderText(text: string, now: Date, timezone: string): Pa
     }
   }
 
-  if (!matched) return null;
+  // Ingen tid alls är giltigt – odaterad påminnelse. Prefixet krävs redan ovan.
 
   // Titeln: det som blir kvar, utan inledande "att" och skiljetecken.
   let title = rest
@@ -279,8 +280,9 @@ function pad2(n: number): string {
 
 export interface ReminderLocalWhen {
   date: string;
-  time: string;
+  time?: string;
   whenIso: string;
+  hasExplicitTime: boolean;
 }
 
 /** Tolkade argument → lokal väggtid som förhandsvisningen visar och skapa skickar. */
@@ -295,11 +297,21 @@ export function reminderLocalFromArgs(
   if (!resolved.ok) return null;
   const p = localParts(new Date(resolved.value.dueAt), timezone);
   const date = `${p.year}-${pad2(p.month)}-${pad2(p.day)}`;
-  const time = `${pad2(p.hour)}:${pad2(p.minute)}`;
-  return { date, time, whenIso: `${date}T${time}` };
+  const time = resolved.value.hasExplicitTime ? `${pad2(p.hour)}:${pad2(p.minute)}` : undefined;
+  return {
+    date,
+    time,
+    whenIso: time ? `${date}T${time}` : date,
+    hasExplicitTime: resolved.value.hasExplicitTime,
+  };
 }
 
-export function reminderArgsFromLocal(date: string, time: string): Record<string, string | number | boolean> {
+export function reminderArgsFromLocal(
+  date: string,
+  time?: string | null
+): Record<string, string | number | boolean> {
+  if (!date) return {};
+  if (!time) return { whenDate: date };
   return { whenDate: date, time: padClock(time), whenIso: `${date}T${padClock(time)}` };
 }
 
@@ -399,7 +411,7 @@ export function applyReminderFollowUp(
 
   const whenArgs = parseWhenText(cleaned, now, timezone);
   if (whenArgs) {
-    if (!HAS_CLOCK.test(cleaned) && local && !whenArgs.time && !whenArgs.daypart) {
+    if (!HAS_CLOCK.test(cleaned) && local && !whenArgs.time && !whenArgs.daypart && local.time) {
       return { args: { ...whenArgs, time: local.time } };
     }
     return { args: whenArgs };
@@ -436,10 +448,8 @@ export function reminderNeedsReview(input: {
  * till sanning för vilka fält som saknas – aldrig brödsmule-/chiptillståndet.
  */
 export type ReminderCommandParse =
-  /** Både VAD och NÄR fanns i meningen → direkt till förhandsvisning/skapa. */
+  /** VAD fanns – NÄR är valfritt. args kan sakna tidsfält (odaterad). */
   | { complete: true; title: string; args: Record<string, string | number | boolean> }
-  /** Bara VAD → fråga enbart efter NÄR. */
-  | { complete: false; missing: "when"; title: string }
   /** Bara NÄR → fråga enbart efter VAD. */
   | { complete: false; missing: "title"; args: Record<string, string | number | boolean> }
   /** Varken VAD eller NÄR ("skapa påminnelse") → guidat flöde från början. */
@@ -454,7 +464,8 @@ function hasReminderLead(text: string): boolean {
  * Tolkning INUTI påminnelsekommandot: en naken mening ("Ring Göran klockan 8
  * imorgon") ÄR en påminnelse. Prefixet stripas först så att
  * "Skapa påminnelse imorgon kl 8" blir saknad titel, inte en titel som
- * heter "Skapa påminnelse". Hittas ingen tid returneras enbart titeln.
+ * heter "Skapa påminnelse". Hittas ingen tid är titeln ändå komplett
+ * (odaterad påminnelse) – NÄR är aldrig obligatoriskt.
  */
 export function parseReminderCommandInput(text: string, now: Date, timezone: string): ReminderCommandParse | null {
   const trimmed = text.replace(/\s+/g, " ").trim();
@@ -471,7 +482,8 @@ export function parseReminderCommandInput(text: string, now: Date, timezone: str
   const whenArgs = parseWhenText(body, now, timezone);
   if (whenArgs) return { complete: false, missing: "title", args: whenArgs };
 
-  return { complete: false, missing: "when", title: body };
+  const related = relatedFromTitle(body);
+  return { complete: true, title: body, args: { title: body, ...(related ?? {}) } };
 }
 
 /* ------------------------------ Ren tidfras (NÄR-steget) ----------------------------- */
@@ -514,17 +526,18 @@ export function formatReminderDateChip(date: string): string {
   return text.charAt(0).toLocaleUpperCase("sv") + text.slice(1);
 }
 
-/** Tolkade verktygsargument → "Onsdag 2 september kl 10:00" (eller null). */
+/** Tolkade verktygsargument → "Onsdag 2 september" / "… kl 10:00" / "Ingen tid". */
 export function previewReminderDueFromArgs(
-  args: Record<string, string | number | boolean>,
+  args: Record<string, string | number | boolean> | undefined,
   now: Date,
   timezone: string
 ): string | null {
+  if (!args) return NO_REMINDER_TIME_LABEL;
   const expr = whenFromReminderArgs(args);
-  if (!expr) return null;
+  if (!expr) return NO_REMINDER_TIME_LABEL;
   const resolved = resolveWhen(expr, now, timezone);
   if (!resolved.ok) return null;
-  const text = formatDueAt(resolved.value.dueAt, timezone);
+  const text = formatDueAt(resolved.value.dueAt, timezone, resolved.value.hasExplicitTime);
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : null;
 }
 
