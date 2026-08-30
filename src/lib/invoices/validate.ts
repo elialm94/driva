@@ -41,7 +41,7 @@ export function collectSellerBlockers(seller: CompanySettings): IssueBlocker[] {
   } else if (!isOrgnrFormat(seller.orgNumber)) {
     blockers.push({
       code: "seller_orgnr_format",
-      message: "Organisationsnumret ska anges som NNNNNN-NNNN (10 siffror). Vi kontrollerar inte mot Skatteverket.",
+      message: "Ange ett giltigt organisationsnummer med 10 siffror.",
       href,
       actionLabel: complete,
     });
@@ -86,7 +86,7 @@ export function collectSellerBlockers(seller: CompanySettings): IssueBlocker[] {
     if (hasBankgiro && !isBankgiroFormat(seller.bankgiro)) {
       blockers.push({
         code: "seller_bankgiro_format",
-        message: "Bankgiro ska anges som NNN-NNNN eller NNNN-NNNN. Vi kontrollerar inte mot Bankgirot.",
+        message: "Ange ett giltigt Bankgiro med 7–8 siffror.",
         href: payHref,
         actionLabel: completePay,
       });

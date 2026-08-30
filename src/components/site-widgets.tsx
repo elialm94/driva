@@ -34,8 +34,7 @@ import {
 } from "@/app/actions";
 import type { WebsiteSection, WebsiteSectionItem } from "@/lib/types";
 import { DEFAULT_PRIMARY_CTA_LABEL, PRIMARY_CTA_LABEL_MAX } from "@/lib/types";
-import { swedishFormProps } from "@/lib/swedish-validity";
-import { FieldError, focusField, invalidFieldCls } from "./form-validation";
+import { FieldError, focusField, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
 
 /**
  * Sektionsdata för redigeringslistan – utan tunga bild-data-URL:er.
@@ -71,6 +70,11 @@ export function SiteContactForm({
   const [idempotencyKey] = useState(() =>
     typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
   );
+  const { errors, formProps, fieldProps } = useNativeFieldErrors({
+    name: "Ange ditt namn.",
+    email: "Ange en giltig e-postadress.",
+    message: "Berätta kort vad du behöver hjälp med.",
+  });
 
   const inputStyle = { background: bg, border: `1px solid ${line}`, color: ink } as const;
 
@@ -89,7 +93,7 @@ export function SiteContactForm({
       className="relative space-y-3"
       method="post"
       action="#kontakt"
-      {...swedishFormProps()}
+      {...formProps()}
       onSubmit={(e) => {
         e.preventDefault();
         if (!interactive || !form.name.trim() || !form.email.trim() || !form.message.trim()) return;
@@ -137,6 +141,7 @@ export function SiteContactForm({
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
           style={inputStyle}
+          {...fieldProps("name", "sajtkontakt-namn-fel")}
         />
         <input
           required
@@ -150,6 +155,7 @@ export function SiteContactForm({
           onChange={(e) => setForm({ ...form, email: e.target.value })}
           className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
           style={inputStyle}
+          {...fieldProps("email", "sajtkontakt-epost-fel")}
         />
       </div>
       <input
@@ -173,7 +179,11 @@ export function SiteContactForm({
         onChange={(e) => setForm({ ...form, message: e.target.value })}
         className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
         style={inputStyle}
+        {...fieldProps("message", "sajtkontakt-meddelande-fel")}
       />
+      <FieldError id="sajtkontakt-namn-fel">{errors.name}</FieldError>
+      <FieldError id="sajtkontakt-epost-fel">{errors.email}</FieldError>
+      <FieldError id="sajtkontakt-meddelande-fel">{errors.message}</FieldError>
       {error ? <p className="text-[13px] font-medium" style={{ color: "#b42318" }}>{error}</p> : null}
       <button
         type="submit"

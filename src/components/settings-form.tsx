@@ -14,6 +14,15 @@ import type { CompanySettings, VatRate } from "@/lib/types";
 import type { InvoiceDefaults } from "@/lib/services/settings";
 import { SETTINGS_HREF, type SettingsFlik } from "@/lib/settings-routes";
 import { formatOrgnr, formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "@/lib/invoices/formats";
+import {
+  formatSwedishPostalCode,
+  isSwedishPostalCode,
+  normalizeSwedishBankgiro,
+  normalizeSwedishPhone,
+  normalizeSwedishPlusgiro,
+  swedishBankgiroInputProps,
+  swedishPhoneInputProps,
+} from "@/lib/validation";
 import { labelForHref, withReturnTo } from "@/lib/nav";
 import type { IssueBlocker } from "@/lib/invoices/validate";
 import { settingsFieldErrors, type SettingsFieldError, type SettingsTab } from "@/lib/settings-validation";
@@ -354,16 +363,12 @@ export function SettingsForm({
                 </label>
                 <input
                   value={form.orgNumber}
-                  onChange={(e) => {
+                  onChange={(e) => patch("orgNumber", e.target.value)}
+                  onBlur={(e) => {
                     const formatted = formatOrgnr(e.target.value);
-                    e.target.value = formatted;
-                    patch("orgNumber", formatted);
+                    if (formatted && isOrgnrFormat(formatted)) patch("orgNumber", formatted);
                   }}
-                  onKeyDown={(e) => {
-                    if (e.ctrlKey || e.metaKey || e.altKey) return;
-                    if (e.key.length === 1 && !/\d/.test(e.key)) e.preventDefault();
-                  }}
-                  placeholder="559123-4567"
+                  placeholder="555555-5555"
                   inputMode="numeric"
                   autoComplete="off"
                   spellCheck={false}
@@ -373,9 +378,7 @@ export function SettingsForm({
                 {orgnrOk ? (
                   <p className={cx(hintCls, "text-ok")}>Format OK. Inte kontrollerat mot Skatteverket.</p>
                 ) : errorFor("orgNumber") ? null : (
-                  <p className={hintCls}>
-                    Format NNNNNN-NNNN. Senare kan Driva hämta namn och adress härifrån – idag kontrolleras bara formatet.
-                  </p>
+                  <p className={hintCls}>10 siffror, med eller utan bindestreck.</p>
                 )}
               </div>
               <div>
@@ -409,8 +412,24 @@ export function SettingsForm({
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
-                <label className={labelCls}>Postnummer</label>
-                <input value={form.postalCode} onChange={(e) => patch("postalCode", e.target.value)} className={inputCls} />
+                <label className={labelCls} htmlFor="installningar-postalCode">
+                  Postnummer
+                </label>
+                <input
+                  value={form.postalCode}
+                  onChange={(e) => patch("postalCode", e.target.value)}
+                  onBlur={(e) => {
+                    if (isSwedishPostalCode(e.target.value)) patch("postalCode", formatSwedishPostalCode(e.target.value));
+                  }}
+                  inputMode="numeric"
+                  autoComplete="postal-code"
+                  placeholder="116 24"
+                  className={cx(inputCls, errorFor("postalCode") && invalidFieldCls)}
+                  aria-invalid={errorFor("postalCode") ? true : undefined}
+                  aria-describedby={errorFor("postalCode") ? "installningar-postalCode-fel" : undefined}
+                  id="installningar-postalCode"
+                />
+                <FieldError id="installningar-postalCode-fel">{errorFor("postalCode")}</FieldError>
               </div>
               <div>
                 <label className={labelCls}>Ort</label>
@@ -449,14 +468,26 @@ export function SettingsForm({
                 <FieldError id="installningar-email-fel">{errorFor("email")}</FieldError>
               </div>
               <div>
-                <label className={labelCls}>Telefon</label>
+                <label className={labelCls} htmlFor="installningar-phone">
+                  Telefon
+                </label>
                 <input
                   type="tel"
                   autoComplete="tel"
+                  inputMode="tel"
                   value={form.phone}
                   onChange={(e) => patch("phone", e.target.value)}
-                  className={inputCls}
+                  onBlur={(e) => {
+                    const next = normalizeSwedishPhone(e.target.value);
+                    if (next) patch("phone", next);
+                  }}
+                  placeholder={swedishPhoneInputProps.placeholder}
+                  className={cx(inputCls, errorFor("phone") && invalidFieldCls)}
+                  aria-invalid={errorFor("phone") ? true : undefined}
+                  aria-describedby={errorFor("phone") ? "installningar-phone-fel" : undefined}
+                  id="installningar-phone"
                 />
+                <FieldError id="installningar-phone-fel">{errorFor("phone")}</FieldError>
               </div>
             </div>
             <div>
@@ -513,12 +544,16 @@ export function SettingsForm({
               <input
                 value={form.bankgiro}
                 onChange={(e) => patch("bankgiro", e.target.value)}
-                placeholder="5678-1234"
+                onBlur={(e) => {
+                  const next = normalizeSwedishBankgiro(e.target.value);
+                  if (next) patch("bankgiro", next);
+                }}
+                {...swedishBankgiroInputProps}
                 {...fieldMarkProps("bankgiro", inputCls)}
               />
               <FieldError id="installningar-bankgiro-fel">{errorFor("bankgiro")}</FieldError>
               {errorFor("bankgiro") ? null : (
-                <p className={hintCls}>Format NNN-NNNN eller NNNN-NNNN. Vi kontrollerar inte mot Bankgirot.</p>
+                <p className={hintCls}>7–8 siffror, med eller utan bindestreck. Vi kontrollerar inte mot Bankgirot.</p>
               )}
             </div>
             {extraPay ? (
@@ -530,6 +565,11 @@ export function SettingsForm({
                   <input
                     value={form.plusgiro}
                     onChange={(e) => patch("plusgiro", e.target.value)}
+                    onBlur={(e) => {
+                      const next = normalizeSwedishPlusgiro(e.target.value);
+                      if (next) patch("plusgiro", next);
+                    }}
+                    inputMode="numeric"
                     placeholder="123456-1"
                     {...fieldMarkProps("plusgiro", inputCls)}
                   />

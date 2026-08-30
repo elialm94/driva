@@ -1,6 +1,10 @@
-import { isEmailFormat } from "./settings-validation";
-import { isOrgnrFormat } from "./invoices/formats";
-import { isPersonnummerFormat } from "./personnummer";
+import {
+  validateSwedishEmail,
+  validateSwedishOrganizationNumber,
+  validateSwedishPersonalIdentityNumber,
+  validateSwedishPhone,
+  validateSwedishPostalCode,
+} from "./validation";
 import type { DwellingType } from "./types";
 
 export interface CustomerFieldError {
@@ -28,14 +32,16 @@ export function customerContactFieldErrors(input: {
   }
   // E-post är frivillig vid skapande – flöden som faktiskt skickar e-post
   // (offert/faktura) ber om adressen när den behövs. Bara formatet valideras.
-  if (input.email !== undefined && input.email.trim() && !isEmailFormat(input.email.trim())) {
-    errors.push({ field: "email", message: "Ange e-postadressen som namn@exempel.se." });
+  if (input.email !== undefined && input.email.trim()) {
+    const email = validateSwedishEmail(input.email);
+    if (!email.ok) errors.push({ field: "email", message: email.message });
   }
-  if (input.orgNumber !== undefined && input.orgNumber.trim() && !isOrgnrFormat(input.orgNumber)) {
-    errors.push({
-      field: "orgNumber",
-      message: "Organisationsnumret ska anges som NNNNNN-NNNN (10 siffror).",
-    });
+  if (input.phone !== undefined && input.phone.trim() && /[a-zA-ZåäöÅÄÖ]/.test(input.phone)) {
+    errors.push({ field: "phone", message: "Ange ett giltigt telefonnummer." });
+  }
+  if (input.orgNumber !== undefined && input.orgNumber.trim()) {
+    const org = validateSwedishOrganizationNumber(input.orgNumber);
+    if (!org.ok) errors.push({ field: "orgNumber", message: org.message });
   }
   return errors;
 }
@@ -69,10 +75,8 @@ export function missingEmailForSend(customer: { email?: string | null }): Custom
 export function personnummerFieldError(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (!isPersonnummerFormat(trimmed)) {
-    return "Ange personnummer med 10 eller 12 siffror.";
-  }
-  return null;
+  const result = validateSwedishPersonalIdentityNumber(trimmed);
+  return result.ok ? null : result.message;
 }
 
 export function workLocationFieldErrors(input: {
@@ -90,6 +94,10 @@ export function workLocationFieldErrors(input: {
   }
   if (!designationOnly && input.address !== undefined && !input.address.trim()) {
     errors.push({ field: "address", message: "Adress saknas." });
+  }
+  if (input.postalCode !== undefined && input.postalCode.trim()) {
+    const postal = validateSwedishPostalCode(input.postalCode);
+    if (!postal.ok) errors.push({ field: "postalCode", message: postal.message });
   }
   if (input.propertyType !== undefined && input.propertyType && input.propertyType !== "smahus" && input.propertyType !== "bostadsratt") {
     errors.push({ field: "propertyType", message: "Välj bostadstyp." });

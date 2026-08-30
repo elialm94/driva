@@ -213,6 +213,7 @@ export function SamarbetaView({
       >
         <form
           id="invite-form"
+          noValidate
           action={inviteAction}
           className="space-y-5 px-6 py-5"
           onSubmit={(e) => {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MapPin } from "lucide-react";
 import { cx, DemoTag } from "./ui";
+import { formatSwedishPostalCode, isSwedishPostalCode } from "@/lib/validation";
 
 /**
  * Adressfält med autocomplete.
@@ -344,10 +345,17 @@ export function AddressFields({
               setPostalCode(e.target.value);
               emit({ address, postalCode: e.target.value, city });
             }}
-            onBlur={onBlur}
+            onBlur={() => {
+              if (isSwedishPostalCode(postalCode)) {
+                const formatted = formatSwedishPostalCode(postalCode);
+                setPostalCode(formatted);
+                emit({ address, postalCode: formatted, city });
+              }
+              onBlur?.();
+            }}
             className={inputCls}
             placeholder="116 24"
-            autoComplete="off"
+            autoComplete="postal-code"
             inputMode="numeric"
           />
         </div>

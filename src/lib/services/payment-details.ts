@@ -1,6 +1,7 @@
 import { db, save } from "../store";
 import { kr } from "../format";
 import { normalizeRecipientAccount } from "../inbox/workflow";
+import { validateSwedishBankgiro, validateSwedishPlusgiro } from "../validation";
 import { inboundMailAddress } from "../inbox/inbound-mail";
 import { mailFromAddress, mailProviderAvailable, sendMail } from "../mail";
 import { merchantRuleKey } from "./expenses";
@@ -211,11 +212,13 @@ export function paymentDetailsInfo(invoice: SupplierInvoice): PaymentDetailsInfo
 export function validatePaymentAccount(method: PaymentDetailsMethod, account: string): string | null {
   const compact = normalizeRecipientAccount(account);
   if (!compact) return "Ange ett kontonummer.";
-  if (method === "bankgiro" && !/^\d{7,8}$/.test(compact)) {
-    return "Bankgiro har 7–8 siffror (t.ex. 123-4567).";
+  if (method === "bankgiro") {
+    const result = validateSwedishBankgiro(account);
+    return result.ok ? null : result.message;
   }
-  if (method === "plusgiro" && !/^\d{2,8}$/.test(compact)) {
-    return "Plusgiro har 2–8 siffror (t.ex. 12 34 56-7).";
+  if (method === "plusgiro") {
+    const result = validateSwedishPlusgiro(account);
+    return result.ok ? null : result.message;
   }
   if (method === "iban" && !/^[a-z]{2}\d{2}[a-z0-9]{10,30}$/.test(compact)) {
     return "Ange ett giltigt IBAN (t.ex. SE12 3000 0000 0301 2345 6789).";

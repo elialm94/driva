@@ -302,14 +302,17 @@ export function TaxReductionFields({
         <div id={`${type}-personnummer`}>
           <label className={labelCls}>Personnummer</label>
           <input
-            value={formatPersonnummer(value.personalIdentityNumber)}
-            onChange={(e) => patch({ personalIdentityNumber: formatPersonnummer(e.target.value) })}
+            value={value.personalIdentityNumber}
+            onChange={(e) => patch({ personalIdentityNumber: e.target.value })}
             onBlur={() => {
-              if (isPersonnummerFormat(value.personalIdentityNumber)) setPnEditing(false);
+              if (isPersonnummerFormat(value.personalIdentityNumber)) {
+                patch({ personalIdentityNumber: formatPersonnummer(value.personalIdentityNumber) });
+                setPnEditing(false);
+              }
             }}
             inputMode="numeric"
             autoComplete="off"
-            placeholder="ÅÅÅÅMMDD-NNNN"
+            placeholder="YYYYMMDD-XXXX"
             className={inputCls}
           />
         </div>
@@ -441,21 +444,30 @@ export function TaxReductionFields({
         <div id={`${type}-brf-orgnr`}>
           <label className={labelCls}>BRF organisationsnummer</label>
           <input
-            value={formatOrgnr(value.housing.brfOrgNumber ?? "")}
+            value={value.housing.brfOrgNumber ?? ""}
             onChange={(e) =>
               patch({
                 housing: {
                   dwellingType: "bostadsratt",
-                  brfOrgNumber: formatOrgnr(e.target.value),
+                  brfOrgNumber: e.target.value,
                   apartmentNumber: value.housing.apartmentNumber,
                 },
               })
             }
             onBlur={() => {
-              if (value.housing.brfOrgNumber?.trim()) setBrfEditing(false);
+              const raw = value.housing.brfOrgNumber ?? "";
+              if (!raw.trim()) return;
+              patch({
+                housing: {
+                  dwellingType: "bostadsratt",
+                  brfOrgNumber: formatOrgnr(raw),
+                  apartmentNumber: value.housing.apartmentNumber,
+                },
+              });
+              setBrfEditing(false);
             }}
             inputMode="numeric"
-            placeholder="NNNNNN-NNNN"
+            placeholder="555555-5555"
             className={inputCls}
           />
         </div>

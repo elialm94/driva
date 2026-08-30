@@ -3,6 +3,12 @@ import { uid } from "../ids";
 import type { Customer } from "../types";
 import { logActivity } from "./activity";
 import { normalizePersonnummer } from "../personnummer";
+import {
+  normalizeSwedishOrganizationNumber,
+  normalizeSwedishPhone,
+  normalizeSwedishPostalCode,
+  validateSwedishPhone,
+} from "../validation";
 import { invoiceOutstanding, isOpenReceivable, isOverdue } from "./data";
 import { CustomerValidationError, customerContactFieldErrors, personnummerFieldError, sanitizePropertyDesignations } from "../customer-validation";
 import { addWorkLocation } from "./work-locations";
@@ -53,7 +59,13 @@ export function createCustomer(input: {
     ...rest,
     name: rest.name.trim(),
     email: rest.email?.trim() ?? "",
-    phone: rest.phone?.trim() ?? "",
+    phone: rest.phone?.trim()
+      ? validateSwedishPhone(rest.phone).ok
+        ? normalizeSwedishPhone(rest.phone)
+        : rest.phone.trim()
+      : "",
+    ...(rest.orgNumber?.trim() ? { orgNumber: normalizeSwedishOrganizationNumber(rest.orgNumber) } : {}),
+    ...(rest.postalCode?.trim() ? { postalCode: normalizeSwedishPostalCode(rest.postalCode) } : {}),
     ...(storedPn ? { personalIdentityNumber: storedPn } : {}),
   };
   db().customers.push(customer);
@@ -89,11 +101,18 @@ export function updateCustomer(
   if (fieldErrors.length) throw new CustomerValidationError(fieldErrors);
   if (patch.name !== undefined) c.name = patch.name.trim();
   if (patch.email !== undefined) c.email = patch.email.trim();
-  if (patch.phone !== undefined) c.phone = patch.phone.trim();
+  if (patch.phone !== undefined) {
+    const trimmed = patch.phone.trim();
+    c.phone = trimmed && validateSwedishPhone(trimmed).ok ? normalizeSwedishPhone(trimmed) : trimmed;
+  }
   if (patch.address !== undefined) c.address = patch.address.trim() || undefined;
-  if (patch.postalCode !== undefined) c.postalCode = patch.postalCode.trim() || undefined;
+  if (patch.postalCode !== undefined) {
+    c.postalCode = patch.postalCode.trim() ? normalizeSwedishPostalCode(patch.postalCode) : undefined;
+  }
   if (patch.city !== undefined) c.city = patch.city.trim() || undefined;
-  if (patch.orgNumber !== undefined) c.orgNumber = patch.orgNumber.trim() || undefined;
+  if (patch.orgNumber !== undefined) {
+    c.orgNumber = patch.orgNumber.trim() ? normalizeSwedishOrganizationNumber(patch.orgNumber) : undefined;
+  }
   if (patch.contactPerson !== undefined) c.contactPerson = patch.contactPerson.trim() || undefined;
   if (patch.notes !== undefined) c.notes = patch.notes;
   if (patch.personalIdentityNumber !== undefined) {

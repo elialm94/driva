@@ -1,12 +1,16 @@
 import type { VatRate } from "./types";
 import {
-  isBankgiroFormat,
   isBicFormat,
   isIbanFormat,
-  isOrgnrFormat,
-  isPlusgiroFormat,
   isVatNumberFormat,
 } from "./invoices/formats";
+import {
+  validateSwedishBankgiro,
+  validateSwedishOrganizationNumber,
+  validateSwedishPhone,
+  validateSwedishPlusgiro,
+  validateSwedishPostalCode,
+} from "./validation";
 
 /**
  * Ren fältvalidering för inställningarna. Samma källa används av
@@ -39,6 +43,8 @@ export interface SettingsProfileFields {
   vatNumber: string;
   email?: string;
   websiteNotificationEmail?: string;
+  phone?: string;
+  postalCode?: string;
   bankgiro: string;
   plusgiro?: string;
   iban?: string;
@@ -58,13 +64,16 @@ export function settingsProfileFieldErrors(input: SettingsProfileFields): Settin
   if (!input.name.trim()) {
     errors.push({ field: "name", label: "Företagsnamn", message: "Företagsnamn saknas.", tab: "foretag" });
   }
-  if (input.orgNumber.trim() && !isOrgnrFormat(input.orgNumber)) {
-    errors.push({
-      field: "orgNumber",
-      label: "Organisationsnummer",
-      message: "Organisationsnumret ska anges som NNNNNN-NNNN (10 siffror). Vi kontrollerar inte mot Skatteverket.",
-      tab: "foretag",
-    });
+  if (input.orgNumber.trim()) {
+    const org = validateSwedishOrganizationNumber(input.orgNumber);
+    if (!org.ok) {
+      errors.push({
+        field: "orgNumber",
+        label: "Organisationsnummer",
+        message: org.message,
+        tab: "foretag",
+      });
+    }
   }
   if (input.vatNumber.trim() && !isVatNumberFormat(input.vatNumber)) {
     errors.push({
@@ -78,9 +87,21 @@ export function settingsProfileFieldErrors(input: SettingsProfileFields): Settin
     errors.push({
       field: "email",
       label: "E-post",
-      message: "Ange e-postadressen som namn@företag.se.",
+      message: "Ange en giltig e-postadress.",
       tab: "foretag",
     });
+  }
+  if (input.phone?.trim()) {
+    const phone = validateSwedishPhone(input.phone);
+    if (!phone.ok) {
+      errors.push({ field: "phone", label: "Telefon", message: phone.message, tab: "foretag" });
+    }
+  }
+  if (input.postalCode?.trim()) {
+    const postal = validateSwedishPostalCode(input.postalCode);
+    if (!postal.ok) {
+      errors.push({ field: "postalCode", label: "Postnummer", message: postal.message, tab: "foretag" });
+    }
   }
   const notify = input.websiteNotificationEmail?.trim();
   if (notify && !isEmailFormat(notify)) {
@@ -94,21 +115,17 @@ export function settingsProfileFieldErrors(input: SettingsProfileFields): Settin
   if (input.logoDataUrl && !input.logoDataUrl.startsWith("data:image/")) {
     errors.push({ field: "logoDataUrl", label: "Logotyp", message: "Logotypen måste vara en bild.", tab: "foretag" });
   }
-  if (input.bankgiro.trim() && !isBankgiroFormat(input.bankgiro)) {
-    errors.push({
-      field: "bankgiro",
-      label: "Bankgiro",
-      message: "Bankgiro ska anges som NNN-NNNN eller NNNN-NNNN.",
-      tab: "fakturering",
-    });
+  if (input.bankgiro.trim()) {
+    const bg = validateSwedishBankgiro(input.bankgiro);
+    if (!bg.ok) {
+      errors.push({ field: "bankgiro", label: "Bankgiro", message: bg.message, tab: "fakturering" });
+    }
   }
-  if (input.plusgiro?.trim() && !isPlusgiroFormat(input.plusgiro)) {
-    errors.push({
-      field: "plusgiro",
-      label: "PlusGiro",
-      message: "PlusGiro ska anges med 2–8 siffror, t.ex. 123456-1.",
-      tab: "fakturering",
-    });
+  if (input.plusgiro?.trim()) {
+    const pg = validateSwedishPlusgiro(input.plusgiro);
+    if (!pg.ok) {
+      errors.push({ field: "plusgiro", label: "PlusGiro", message: pg.message, tab: "fakturering" });
+    }
   }
   if (input.iban?.trim() && !isIbanFormat(input.iban)) {
     errors.push({
