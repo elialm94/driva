@@ -148,6 +148,8 @@ export interface InvoiceTableRow {
   amount: number;
   statusLabel: string;
   statusTone: StatusTone;
+  /** Sant bara för status utkast – listan visar då redigera/kasta. */
+  draft: boolean;
 }
 
 function invoiceStatusMeta(inv: Invoice): { label: string; tone: StatusTone } {
@@ -210,6 +212,7 @@ export function listInvoicesForTable(
         amount: invoiceTotals(inv).toPay,
         statusLabel: meta.label,
         statusTone: meta.tone,
+        draft: inv.status === "utkast",
       },
     });
   }

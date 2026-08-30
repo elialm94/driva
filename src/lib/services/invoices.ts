@@ -1220,8 +1220,13 @@ export function registerCreditRefund(
   return invoice;
 }
 
+export type DiscardedInvoiceSnapshot = {
+  invoice: Invoice;
+  workEntryIds: string[];
+};
+
 /** Kasta ett utkast. Utfärdade fakturor får inte tas bort. */
-export function discardInvoice(invoiceId: string, createdBy: Actor = "anvandare"): void {
+export function discardInvoice(invoiceId: string, createdBy: Actor = "anvandare"): DiscardedInvoiceSnapshot {
   const data = db();
   const invoice = getInvoice(invoiceId);
   if (!invoice) throw new Error("Fakturan finns inte");
@@ -1229,6 +1234,13 @@ export function discardInvoice(invoiceId: string, createdBy: Actor = "anvandare"
     throw new Error("Utfärdade fakturor kan inte tas bort. Kreditera dem i stället.");
   }
   const customer = requireCustomer(invoice.customerId);
+  const workEntryIds = (data.jobWorkEntries ?? [])
+    .filter((entry) => entry.invoiceId === invoiceId)
+    .map((entry) => entry.id);
+  const snapshot: DiscardedInvoiceSnapshot = {
+    invoice: structuredClone(invoice),
+    workEntryIds,
+  };
   unlinkJobWorkEntriesFromInvoice(invoiceId);
   data.invoices = data.invoices.filter((i) => i.id !== invoiceId);
   logActivity(`Fakturautkast ${invoiceNumberLabel(invoice)} kastades.`, {
@@ -1237,6 +1249,27 @@ export function discardInvoice(invoiceId: string, createdBy: Actor = "anvandare"
     createdBy,
   });
   save();
+  return snapshot;
+}
+
+/** Återställ ett nyss kastat fakturautkast (Ångra). */
+export function restoreInvoice(snapshot: DiscardedInvoiceSnapshot): Invoice {
+  const data = db();
+  if (!snapshot?.invoice || snapshot.invoice.status !== "utkast") {
+    throw new Error("Bara fakturautkast kan återställas.");
+  }
+  if (getInvoice(snapshot.invoice.id)) {
+    throw new Error("Fakturan finns redan.");
+  }
+  const customer = requireCustomer(snapshot.invoice.customerId);
+  data.invoices.push(structuredClone(snapshot.invoice));
+  associateEntriesWithInvoice(snapshot.workEntryIds ?? [], snapshot.invoice.id);
+  logActivity(`Fakturautkast ${invoiceNumberLabel(snapshot.invoice)} återställdes.`, {
+    customerId: customer.id,
+    entity: { type: "faktura", id: snapshot.invoice.id },
+  });
+  save();
+  return getInvoice(snapshot.invoice.id)!;
 }
 
 /**

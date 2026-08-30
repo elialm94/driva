@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AppLink } from "./app-link";
+import { DraftDiscardToastHost, DraftRowActions } from "./draft-actions";
 import { FileText, Landmark, ReceiptText, Search, ShoppingBag } from "lucide-react";
 import { Badge, Card, EmptyState, cx, type BadgeTone } from "./ui";
 import { Pagination } from "./customer-list";
@@ -21,9 +22,8 @@ import type {
 import type { PagedResult } from "@/lib/services/customers";
 
 /**
- * Registerflikarna på Ekonomi: riktiga tabeller med sök, statusfilter och
- * serversidig paginering. Registret är för att HITTA dokument – åtgärds-
- * knapparna bor på Hem/Bokföring och på respektive detaljsida.
+ * Registerflikarna på Ekonomi: sök, statusfilter och serversidig paginering.
+ * Utkast visar redigera/kasta direkt på raden; övriga åtgärder bor på detaljen.
  */
 
 export interface EconomyQuery<S extends string> {
@@ -182,11 +182,14 @@ export function QuoteRegister({
                     <th className={thCls}>Datum</th>
                     <th className={cx(thCls, "text-right")}>Belopp</th>
                     <th className={thCls}>Status</th>
+                    <th className={cx(thCls, "w-0 text-right")}>
+                      <span className="sr-only">Åtgärder</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {result.rows.map((r) => (
-                    <tr key={r.id} className={bodyRowCls}>
+                    <tr key={r.id} className={cx(bodyRowCls, "group")}>
                       <td className="px-3 py-2.5">
                         <AppLink href={`/ekonomi/offerter/${r.id}`} className="absolute inset-0 z-10">
                           <span className="sr-only">Offert #{r.number}</span>
@@ -201,6 +204,9 @@ export function QuoteRegister({
                       <td className="pointer-events-none px-3 py-2.5">
                         <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
                       </td>
+                      <td className="px-2 py-1.5 text-right">
+                        {r.statusKey === "utkast" ? <DraftRowActions kind="quote" id={r.id} /> : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -209,25 +215,32 @@ export function QuoteRegister({
           </div>
           <div className="space-y-2 md:hidden">
             {result.rows.map((r) => (
-              <AppLink key={r.id} href={`/ekonomi/offerter/${r.id}`} className="card block px-4 py-3">
+              <div key={r.id} className="card relative px-4 py-3">
+                <AppLink href={`/ekonomi/offerter/${r.id}`} className="absolute inset-0 z-10">
+                  <span className="sr-only">Offert #{r.number}</span>
+                </AppLink>
                 <div className="flex items-start justify-between gap-3">
-                  <p className="min-w-0 truncate text-[15px] font-medium">
+                  <p className="pointer-events-none min-w-0 truncate text-[15px] font-medium">
                     #{r.number} · {r.title}
                   </p>
-                  <p className="shrink-0 text-[14px] font-semibold tabular">{kr(r.amount)}</p>
+                  <p className="pointer-events-none shrink-0 text-[14px] font-semibold tabular">{kr(r.amount)}</p>
                 </div>
-                <p className="mt-0.5 truncate text-[13px] text-muted">
+                <p className="pointer-events-none mt-0.5 truncate text-[13px] text-muted">
                   {r.customerName} · {datumKort(r.date)}
                 </p>
-                <div className="mt-1.5">
-                  <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
+                <div className="mt-1.5 flex items-center justify-between gap-3">
+                  <span className="pointer-events-none">
+                    <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
+                  </span>
+                  {r.statusKey === "utkast" ? <DraftRowActions kind="quote" id={r.id} alwaysVisible /> : null}
                 </div>
-              </AppLink>
+              </div>
             ))}
           </div>
           <Pagination result={result} onPage={(page) => go({ page })} />
         </>
       )}
+      <DraftDiscardToastHost kind="quote" />
     </div>
   );
 }
@@ -275,11 +288,14 @@ export function InvoiceRegister({
                     <th className={thCls}>Förfallodatum</th>
                     <th className={cx(thCls, "text-right")}>Belopp</th>
                     <th className={thCls}>Status</th>
+                    <th className={cx(thCls, "w-0 text-right")}>
+                      <span className="sr-only">Åtgärder</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {result.rows.map((r) => (
-                    <tr key={r.id} className={bodyRowCls}>
+                    <tr key={r.id} className={cx(bodyRowCls, "group")}>
                       <td className="px-3 py-2.5">
                         <AppLink href={`/ekonomi/fakturor/${r.id}`} className="absolute inset-0 z-10">
                           <span className="sr-only">Faktura {r.label}</span>
@@ -295,6 +311,9 @@ export function InvoiceRegister({
                       <td className="pointer-events-none px-3 py-2.5">
                         <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
                       </td>
+                      <td className="px-2 py-1.5 text-right">
+                        {r.draft ? <DraftRowActions kind="invoice" id={r.id} /> : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -303,26 +322,33 @@ export function InvoiceRegister({
           </div>
           <div className="space-y-2 md:hidden">
             {result.rows.map((r) => (
-              <AppLink key={r.id} href={`/ekonomi/fakturor/${r.id}`} className="card block px-4 py-3">
+              <div key={r.id} className="card relative px-4 py-3">
+                <AppLink href={`/ekonomi/fakturor/${r.id}`} className="absolute inset-0 z-10">
+                  <span className="sr-only">Faktura {r.label}</span>
+                </AppLink>
                 <div className="flex items-start justify-between gap-3">
-                  <p className="min-w-0 truncate text-[15px] font-medium">
+                  <p className="pointer-events-none min-w-0 truncate text-[15px] font-medium">
                     {r.label}
                     {r.typeLabel ? <span className="ml-2 text-[12px] font-normal text-muted">{r.typeLabel}</span> : null}
                   </p>
-                  <p className="shrink-0 text-[14px] font-semibold tabular">{kr(r.amount)}</p>
+                  <p className="pointer-events-none shrink-0 text-[14px] font-semibold tabular">{kr(r.amount)}</p>
                 </div>
-                <p className="mt-0.5 truncate text-[13px] text-muted">
+                <p className="pointer-events-none mt-0.5 truncate text-[13px] text-muted">
                   {r.customerName} · förfaller {datumKort(r.dueDate)}
                 </p>
-                <div className="mt-1.5">
-                  <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
+                <div className="mt-1.5 flex items-center justify-between gap-3">
+                  <span className="pointer-events-none">
+                    <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
+                  </span>
+                  {r.draft ? <DraftRowActions kind="invoice" id={r.id} alwaysVisible /> : null}
                 </div>
-              </AppLink>
+              </div>
             ))}
           </div>
           <Pagination result={result} onPage={(page) => go({ page })} />
         </>
       )}
+      <DraftDiscardToastHost kind="invoice" />
     </div>
   );
 }

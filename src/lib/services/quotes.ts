@@ -1,6 +1,14 @@
 import { db, save } from "../store";
 import { uid, publicToken } from "../ids";
-import type { DocLine, PaymentPlanPart, Quote, QuoteVersion, RotRut } from "../types";
+import type {
+  BankIDOrder,
+  BankIDSignature,
+  DocLine,
+  PaymentPlanPart,
+  Quote,
+  QuoteVersion,
+  RotRut,
+} from "../types";
 import type { RichTextDoc } from "../richtext";
 import { sanitizeRichText } from "../richtext";
 import { currentVersion, getQuote, requireCustomer } from "./data";
@@ -165,6 +173,95 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
   }
   save();
   return quote;
+}
+
+export type DiscardedQuoteSnapshot = {
+  quote: Quote;
+  versions: QuoteVersion[];
+  signatures: BankIDSignature[];
+  bankidOrders: BankIDOrder[];
+  jobIds: string[];
+};
+
+function cloneJson<T>(value: T): T {
+  return structuredClone(value);
+}
+
+/** Kasta ett offertutkast. Skickade, signerade och avböjda offerter får inte tas bort. */
+export function discardQuote(quoteId: string, createdBy: "anvandare" | "assistent" = "anvandare"): DiscardedQuoteSnapshot {
+  const data = db();
+  const quote = getQuote(quoteId);
+  if (!quote) throw new Error("Offerten finns inte");
+  if (quote.status !== "utkast") {
+    throw new Error("Bara offertutkast kan kastas.");
+  }
+  const customer = requireCustomer(quote.customerId);
+  const versions = data.quoteVersions.filter((v) => v.quoteId === quote.id);
+  const signatures = data.signatures.filter((s) => s.quoteId === quote.id);
+  const bankidOrders = data.bankidOrders.filter((o) => o.quoteId === quote.id);
+  const jobIds = data.jobs.filter((j) => j.quoteId === quote.id).map((j) => j.id);
+
+  const snapshot: DiscardedQuoteSnapshot = {
+    quote: cloneJson(quote),
+    versions: cloneJson(versions),
+    signatures: cloneJson(signatures),
+    bankidOrders: cloneJson(bankidOrders),
+    jobIds,
+  };
+
+  data.quoteVersions = data.quoteVersions.filter((v) => v.quoteId !== quote.id);
+  data.signatures = data.signatures.filter((s) => s.quoteId !== quote.id);
+  data.bankidOrders = data.bankidOrders.filter((o) => o.quoteId !== quote.id);
+  data.quotes = data.quotes.filter((q) => q.id !== quote.id);
+  for (const job of data.jobs) {
+    if (job.quoteId === quote.id) delete job.quoteId;
+  }
+
+  logActivity(`Offertutkast #${quote.number} kastades.`, {
+    customerId: customer.id,
+    entity: { type: "offert", id: quote.id },
+    createdBy,
+  });
+  save();
+  return snapshot;
+}
+
+/** Återställ ett nyss kastat offertutkast (Ångra). */
+export function restoreQuote(snapshot: DiscardedQuoteSnapshot): Quote {
+  const data = db();
+  if (!snapshot?.quote || snapshot.quote.status !== "utkast") {
+    throw new Error("Bara offertutkast kan återställas.");
+  }
+  if (getQuote(snapshot.quote.id)) {
+    throw new Error("Offerten finns redan.");
+  }
+  const customer = requireCustomer(snapshot.quote.customerId);
+  data.quotes.push(cloneJson(snapshot.quote));
+  for (const version of snapshot.versions ?? []) {
+    if (!data.quoteVersions.some((v) => v.id === version.id)) {
+      data.quoteVersions.push(cloneJson(version));
+    }
+  }
+  for (const signature of snapshot.signatures ?? []) {
+    if (!data.signatures.some((s) => s.id === signature.id)) {
+      data.signatures.push(cloneJson(signature));
+    }
+  }
+  for (const order of snapshot.bankidOrders ?? []) {
+    if (!data.bankidOrders.some((o) => o.orderRef === order.orderRef)) {
+      data.bankidOrders.push(cloneJson(order));
+    }
+  }
+  for (const jobId of snapshot.jobIds ?? []) {
+    const job = data.jobs.find((j) => j.id === jobId);
+    if (job && !job.quoteId) job.quoteId = snapshot.quote.id;
+  }
+  logActivity(`Offertutkast #${snapshot.quote.number} återställdes.`, {
+    customerId: customer.id,
+    entity: { type: "offert", id: snapshot.quote.id },
+  });
+  save();
+  return getQuote(snapshot.quote.id)!;
 }
 
 export interface QuoteSendBlocker {

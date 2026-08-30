@@ -16,11 +16,11 @@ import { ActionMenu, PageActions } from "@/components/action-menu";
 import { CopyLinkButton } from "@/components/copy-button";
 import {
   CreditInvoiceButton,
-  DiscardInvoiceButton,
   ResendInvoiceButton,
   SendReminderButton,
   SimulatePaymentButton,
 } from "@/components/money-widgets";
+import { DiscardDraftButton } from "@/components/draft-actions";
 import { QuoteDeviationCard } from "@/components/quote-deviation-card";
 import { InvoiceDraftSend } from "@/components/invoice-draft-send";
 import { InvoiceIssueChecklist } from "@/components/invoice-issue-checklist";
@@ -113,7 +113,6 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
       ) : null}
       {canResend ? <ResendInvoiceButton invoiceId={invoice.id} retry={!invoice.sentAt} appearance="menu" /> : null}
       {canSimulate ? <SimulatePaymentButton invoiceId={invoice.id} appearance="menu" /> : null}
-      {isDraft ? <DiscardInvoiceButton invoiceId={invoice.id} appearance="menu" /> : null}
     </ActionMenu>
   );
 
@@ -122,6 +121,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
       <ButtonLink href={editHref} variant="secondary">
         <Pencil className="size-4" /> Redigera faktura
       </ButtonLink>
+      <DiscardDraftButton kind="invoice" id={invoice.id} />
       <InvoiceDraftSend
         documentId={invoice.id}
         customerId={customer.id}
@@ -136,7 +136,6 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         excessAmount={deviation?.largeExcess ? deviation.delta : undefined}
         tillaggHref={tillaggHref}
       />
-      {moreMenu}
     </PageActions>
   ) : (
     <PageActions>

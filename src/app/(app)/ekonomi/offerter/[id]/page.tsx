@@ -27,6 +27,7 @@ import { ActionMenu, PageActions } from "@/components/action-menu";
 import { CopyLinkButton } from "@/components/copy-button";
 import { CreatePartInvoiceButton, FollowUpButton } from "@/components/money-widgets";
 import { QuoteDraftSend } from "@/components/quote-draft-send";
+import { DiscardDraftButton } from "@/components/draft-actions";
 import { SendChecklist } from "@/components/send-checklist";
 import { quoteSendBlockers } from "@/lib/services/quotes";
 import { sendQuoteAction } from "@/app/actions";
@@ -115,8 +116,9 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
           {isDraft ? (
             <PageActions>
               <ButtonLink href={editHref} variant="secondary">
-                <Pencil className="size-4" /> Redigera
+                <Pencil className="size-4" /> Redigera offert
               </ButtonLink>
+              <DiscardDraftButton kind="quote" id={quote.id} />
               <QuoteDraftSend
                 documentId={quote.id}
                 customerId={customer.id}

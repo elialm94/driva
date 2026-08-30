@@ -13,7 +13,9 @@ import {
   createDeniedReductionInvoice,
   creditInvoice,
   discardInvoice,
+  restoreInvoice,
   updateInvoice,
+  type DiscardedInvoiceSnapshot,
   type InvoiceInput,
   type InvoiceUpdateInput,
   type JobInvoiceBasis,
@@ -82,8 +84,11 @@ import {
   askQuoteQuestion,
   createQuote,
   declineQuote,
+  discardQuote,
   markQuoteNotRelevant,
+  restoreQuote,
   updateQuote,
+  type DiscardedQuoteSnapshot,
   type QuoteInput,
   type QuoteVersionInput,
 } from "@/lib/services/quotes";
@@ -635,11 +640,59 @@ export async function deliverInvoiceAction(
   );
 }
 
-export async function discardInvoiceAction(invoiceId: string): Promise<never> {
-  return withBusiness((): never => {
-    discardInvoice(invoiceId);
-    refresh();
-    redirect("/ekonomi?flik=fakturor");
+export async function discardQuoteAction(
+  quoteId: string
+): Promise<{ ok: true; snapshot: DiscardedQuoteSnapshot } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const snapshot = discardQuote(quoteId);
+      refresh();
+      return { ok: true, snapshot } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Offertutkastet kunde inte kastas." } as const;
+    }
+  });
+}
+
+export async function restoreQuoteDraftAction(
+  snapshot: DiscardedQuoteSnapshot
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      restoreQuote(snapshot);
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Offertutkastet kunde inte återställas." } as const;
+    }
+  });
+}
+
+export async function discardInvoiceAction(
+  invoiceId: string
+): Promise<{ ok: true; snapshot: DiscardedInvoiceSnapshot } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const snapshot = discardInvoice(invoiceId);
+      refresh();
+      return { ok: true, snapshot } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Fakturautkastet kunde inte kastas." } as const;
+    }
+  });
+}
+
+export async function restoreInvoiceDraftAction(
+  snapshot: DiscardedInvoiceSnapshot
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      restoreInvoice(snapshot);
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Fakturautkastet kunde inte återställas." } as const;
+    }
   });
 }
 
