@@ -168,7 +168,7 @@ describe("inställningar", () => {
     assert.equal(errors.length, 1);
     assert.equal(errors[0].field, "orgNumber");
     assert.equal(errors[0].tab, "foretag");
-    assert.match(errors[0].message, /NNNNNN-NNNN/);
+    assert.match(errors[0].message, /10 siffror/);
   });
 
   it("tomma valfria fält validerar inte format", () => {

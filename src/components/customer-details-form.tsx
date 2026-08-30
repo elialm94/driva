@@ -8,7 +8,12 @@ import {
   updateCustomerDetailsAction,
   updateCustomerPersonnummerAction,
 } from "@/app/actions";
-import { formatPersonnummer, isPersonnummerFormat } from "@/lib/personnummer";
+import { formatPersonnummer } from "@/lib/personnummer";
+import {
+  formatSwedishOrganizationNumber,
+  validateSwedishOrganizationNumber,
+  validateSwedishPersonalIdentityNumber,
+} from "@/lib/validation";
 import { IDLE_AUTOSAVE, mergeAutosaveStates, type AutosaveState } from "@/lib/autosave";
 import { AddressFields } from "./address-input";
 import { FieldError, invalidFieldCls } from "./form-validation";
@@ -208,9 +213,14 @@ export function CustomerAutosaveFields({
             <input
               inputMode="numeric"
               autoComplete="off"
+              placeholder="555555-5555"
               value={values.orgNumber ?? ""}
               onChange={(e) => patch({ orgNumber: e.target.value })}
-              onBlur={flush}
+              onBlur={() => {
+                const r = validateSwedishOrganizationNumber(values.orgNumber ?? "");
+                if (r.ok && r.normalized) patch({ orgNumber: formatSwedishOrganizationNumber(r.normalized) });
+                flush();
+              }}
               className={inputCls}
             />
           </div>
@@ -237,6 +247,7 @@ export function CustomerAutosaveFields({
           <label className={labelCls}>Telefon</label>
           <input
             type="tel"
+            inputMode="tel"
             autoComplete="tel"
             value={values.phone}
             onChange={(e) => patch({ phone: e.target.value })}
@@ -341,10 +352,13 @@ function PersonnummerAutosaveField({
       if (hasValue) setEditing(false);
       return;
     }
-    if (value.trim() && !isPersonnummerFormat(value)) {
-      setError("Ange personnummer med 10 eller 12 siffror.");
-      report({ status: "error", error: "Ange personnummer med 10 eller 12 siffror.", field: "personnummer" });
-      return;
+    if (value.trim()) {
+      const pn = validateSwedishPersonalIdentityNumber(value);
+      if (!pn.ok) {
+        setError(pn.message);
+        report({ status: "error", error: pn.message, field: "personnummer" });
+        return;
+      }
     }
     setError(null);
     report({ status: "saving", error: null });
@@ -399,11 +413,14 @@ function PersonnummerAutosaveField({
       <input
         id="kund-personnummer"
         value={value}
-        onChange={(e) => setValue(formatPersonnummer(e.target.value))}
-        onBlur={() => void persist()}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => {
+          if (value.trim()) setValue(formatPersonnummer(value));
+          void persist();
+        }}
         inputMode="numeric"
         autoComplete="off"
-        placeholder="ÅÅÅÅMMDD-XXXX"
+        placeholder="YYYYMMDD-XXXX"
         aria-invalid={Boolean(error)}
         aria-describedby={error ? "kund-personnummer-fel" : undefined}
         className={cx(inputCls, error && invalidFieldCls)}

@@ -8,6 +8,12 @@ import { AddressFields } from "./address-input";
 import { createCustomerAction } from "@/app/actions";
 import { FieldError, focusField, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
 import { formatPersonnummer } from "@/lib/personnummer";
+import {
+  formatSwedishOrganizationNumber,
+  swedishOrgnrInputProps,
+  swedishPersonnummerInputProps,
+  validateSwedishOrganizationNumber,
+} from "@/lib/validation";
 import { PropertyDesignationFields, type PropertyDesignationDraft } from "./property-designation-fields";
 
 const inputCls =
@@ -67,6 +73,11 @@ export function NewCustomerModal({
 
   function submit(formData: FormData) {
     const name = String(formData.get("name") ?? "");
+    if (!name.trim()) {
+      setFieldError("name", kind === "privat" ? "Ange kundens namn." : "Ange företagsnamnet.");
+      focusField("ny-kund-namn");
+      return;
+    }
     const createdKind = kind;
     startTransition(async () => {
       const result = await createCustomerAction({
@@ -104,7 +115,7 @@ export function NewCustomerModal({
 
   return (
     <Modal open={open} onClose={onClose} title="Ny kund" size="md">
-      <form action={submit} className="space-y-4 px-6 py-5" {...formProps()}>
+      <form action={submit} noValidate className="space-y-4 px-6 py-5" {...formProps()}>
         <div className="flex rounded-xl bg-canvas p-1">
           {(["privat", "foretag"] as const).map((k) => (
             <button
@@ -160,7 +171,17 @@ export function NewCustomerModal({
             <label className={labelCls} htmlFor="ny-kund-telefon">
               Telefon
             </label>
-            <input id="ny-kund-telefon" name="phone" type="tel" autoComplete="tel" className={inputCls} placeholder="070-123 45 67" />
+            <input
+              id="ny-kund-telefon"
+              name="phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              className={cx(inputCls, errors.phone && invalidFieldCls)}
+              placeholder="070-123 45 67"
+              {...fieldProps("phone", "ny-kund-telefon-fel")}
+            />
+            <FieldError id="ny-kund-telefon-fel">{errors.phone}</FieldError>
           </div>
         </div>
         <AddressFields />
@@ -196,10 +217,11 @@ export function NewCustomerModal({
                 id="ny-kund-personnummer"
                 name="personalIdentityNumber"
                 value={personnummer}
-                onChange={(e) => setPersonnummer(formatPersonnummer(e.target.value))}
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="ÅÅÅÅMMDD-XXXX"
+                onChange={(e) => setPersonnummer(e.target.value)}
+                onBlur={() => {
+                  if (personnummer.trim()) setPersonnummer(formatPersonnummer(personnummer));
+                }}
+                {...swedishPersonnummerInputProps}
                 className={cx(inputCls, errors.personalIdentityNumber && invalidFieldCls)}
                 {...fieldProps("personalIdentityNumber", "ny-kund-personnummer-fel")}
               />
@@ -221,10 +243,12 @@ export function NewCustomerModal({
                 <input
                   id="ny-kund-orgnr"
                   name="orgNumber"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="556000-0000"
+                  {...swedishOrgnrInputProps}
                   className={cx(inputCls, errors.orgNumber && invalidFieldCls)}
+                  onBlur={(e) => {
+                    const r = validateSwedishOrganizationNumber(e.target.value);
+                    if (r.ok && r.normalized) e.target.value = formatSwedishOrganizationNumber(r.normalized);
+                  }}
                   {...fieldProps("orgNumber", "ny-kund-orgnr-fel")}
                 />
                 <FieldError id="ny-kund-orgnr-fel">{errors.orgNumber}</FieldError>

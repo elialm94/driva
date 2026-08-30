@@ -18,6 +18,7 @@ import {
   validateSignupFields,
 } from "@/lib/auth/signup-flow";
 import { isSupabaseMode } from "@/lib/storage/config";
+import { validateOnboardingFields } from "@/lib/validation";
 
 export interface AuthFormState {
   error?: string;
@@ -134,6 +135,7 @@ export async function logoutAction(): Promise<void> {
 
 export interface OnboardingFormState {
   error?: string;
+  fieldErrors?: Partial<Record<"name" | "orgNumber" | "email" | "phone", string>>;
 }
 
 export async function onboardingAction(
@@ -141,14 +143,22 @@ export async function onboardingAction(
   formData: FormData
 ): Promise<OnboardingFormState> {
   if (!isSupabaseMode()) return { error: "Onboarding kräver Supabase-miljön." };
-  const name = String(formData.get("name") ?? "").trim();
-  const orgNumber = String(formData.get("orgNumber") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim();
-  if (name.length < 2) return { error: "Ange företagets namn." };
-  if (!/^\d{6}-?\d{4}$/.test(orgNumber)) return { error: "Organisationsnummer anges som NNNNNN-NNNN." };
-  if (!email.includes("@")) return { error: "Ange en giltig e-postadress." };
+  const result = validateOnboardingFields({
+    name: String(formData.get("name") ?? ""),
+    orgNumber: String(formData.get("orgNumber") ?? ""),
+    email: String(formData.get("email") ?? ""),
+    phone: String(formData.get("phone") ?? ""),
+  });
+  if (Object.keys(result.fieldErrors).length > 0) {
+    const first = result.fieldErrors.name ?? result.fieldErrors.orgNumber ?? result.fieldErrors.email ?? result.fieldErrors.phone;
+    return { error: first, fieldErrors: result.fieldErrors };
+  }
 
-  await createBusinessForCurrentUser({ name, orgNumber, email, phone });
+  await createBusinessForCurrentUser({
+    name: result.values.name,
+    orgNumber: result.values.orgNumber,
+    email: result.values.email,
+    phone: result.values.phone,
+  });
   redirect("/");
 }

@@ -4,11 +4,16 @@ import { useActionState, useEffect } from "react";
 import Link from "next/link";
 import { signupAction, type AuthFormState } from "@/app/auth-actions";
 import { loginHrefWithNext } from "@/lib/auth/signup-flow";
+import { FieldError, useNativeFieldErrors } from "@/components/form-validation";
 
 const initialState: AuthFormState = {};
 
 export function SignupForm({ next }: { next: string }) {
   const [signupState, submitSignup, signupPending] = useActionState(signupAction, initialState);
+  const { errors, formProps, fieldProps } = useNativeFieldErrors({
+    email: "Ange en giltig e-postadress.",
+    password: "Lösenordet behöver minst 8 tecken.",
+  });
 
   // Tillbaka-navigering / pageshow: rensa transient pending-känsla. Success
   // redirectar med history replace, så den här sidan ska aldrig se "klart".
@@ -21,7 +26,7 @@ export function SignupForm({ next }: { next: string }) {
   }, []);
 
   return (
-    <form action={submitSignup} className="space-y-4">
+    <form action={submitSignup} className="space-y-4" {...formProps()}>
       <input type="hidden" name="next" value={next} />
       <div>
         <label htmlFor="signup-email" className="block text-sm font-medium text-stone-700">
@@ -35,7 +40,9 @@ export function SignupForm({ next }: { next: string }) {
           autoComplete="email"
           className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-500"
           placeholder="du@foretaget.se"
+          {...fieldProps("email", "signup-email-fel")}
         />
+        <FieldError id="signup-email-fel">{errors.email}</FieldError>
       </div>
       <div>
         <label htmlFor="signup-password" className="block text-sm font-medium text-stone-700">
@@ -50,7 +57,9 @@ export function SignupForm({ next }: { next: string }) {
           autoComplete="new-password"
           className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-500"
           placeholder="Minst 8 tecken"
+          {...fieldProps("password", "signup-password-fel")}
         />
+        <FieldError id="signup-password-fel">{errors.password}</FieldError>
       </div>
 
       {signupState.error ? (

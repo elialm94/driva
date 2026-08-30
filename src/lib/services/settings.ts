@@ -10,6 +10,7 @@ import {
   normalizeOrgnr,
   normalizePlusgiro,
 } from "../invoices/formats";
+import { normalizeSwedishPhone, normalizeSwedishPostalCode } from "../validation";
 import { settingsDefaultsFieldErrors, settingsProfileFieldErrors } from "../settings-validation";
 
 export function getBusinessProfile(): CompanySettings {
@@ -94,10 +95,10 @@ function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
   const notify = optional(input.websiteNotificationEmail);
   s.websiteNotificationEmail =
     notify && notify.toLowerCase() !== s.email.toLowerCase() ? notify : undefined;
-  s.phone = input.phone.trim();
+  s.phone = input.phone.trim() ? normalizeSwedishPhone(input.phone) : "";
   s.websiteUrl = optional(input.websiteUrl);
   s.address = input.address.trim();
-  s.postalCode = input.postalCode.trim();
+  s.postalCode = input.postalCode.trim() ? normalizeSwedishPostalCode(input.postalCode) : "";
   s.city = input.city.trim();
   s.sate = optional(input.sate);
   s.country = optional(input.country) || "Sverige";

@@ -73,6 +73,7 @@ export function CustomerEmailPrompt({
     <Modal open={open} onClose={() => !isSaving && onClose()} size="sm" title={copy.title}>
       <form
         className="px-6 py-5"
+        noValidate
         onSubmit={(e) => {
           e.preventDefault();
           save();

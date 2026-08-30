@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import Link from "next/link";
 import { loginAction, type AuthFormState } from "@/app/auth-actions";
 import { signupHrefWithNext } from "@/lib/auth/signup-flow";
+import { FieldError, useNativeFieldErrors } from "@/components/form-validation";
 import { ResendVerification } from "./resend-verification";
 
 const initialState: AuthFormState = {};
@@ -18,9 +19,13 @@ export function LoginForm({
   signupSuccess?: boolean;
 }) {
   const [loginState, submitLogin, loginPending] = useActionState(loginAction, initialState);
+  const { errors, formProps, fieldProps } = useNativeFieldErrors({
+    email: "Ange en giltig e-postadress.",
+    password: "Ange ditt lösenord.",
+  });
 
   return (
-    <form action={submitLogin} className="space-y-4">
+    <form action={submitLogin} className="space-y-4" {...formProps()}>
       <input type="hidden" name="next" value={next} />
       <div>
         <label htmlFor="auth-email" className="block text-sm font-medium text-stone-700">
@@ -35,7 +40,9 @@ export function LoginForm({
           defaultValue={defaultEmail}
           className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-500"
           placeholder="du@foretaget.se"
+          {...fieldProps("email", "auth-email-fel")}
         />
+        <FieldError id="auth-email-fel">{errors.email}</FieldError>
       </div>
       <div>
         <label htmlFor="auth-password" className="block text-sm font-medium text-stone-700">
@@ -49,7 +56,9 @@ export function LoginForm({
           autoComplete="current-password"
           className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-500"
           placeholder="Ditt lösenord"
+          {...fieldProps("password", "auth-password-fel")}
         />
+        <FieldError id="auth-password-fel">{errors.password}</FieldError>
       </div>
 
       {loginState.error ? (
