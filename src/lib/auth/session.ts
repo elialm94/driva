@@ -45,6 +45,9 @@ import {
   upsertUser,
   userById,
 } from "@/lib/collaboration/registry";
+import { activeSupportContext, type ActiveSupportContext } from "@/lib/platform/auth";
+import { writeAdminAudit } from "@/lib/platform/audit";
+import { platformRegistry } from "@/lib/platform/registry";
 
 export interface SessionUser {
   id: string;
@@ -148,15 +151,29 @@ export async function isDemoSession(): Promise<boolean> {
  * memoiserad läsning kan aldrig ge inaktuell auktorisering inom en request.
  */
 export const listMemberships = cache(async (userId: string): Promise<MembershipInfo[]> => {
-  if (isSupabaseMode()) {
-    return applyDemoAccountantView(userId, await membershipsForUser(userId));
+  const base = isSupabaseMode()
+    ? await applyDemoAccountantView(userId, await membershipsForUser(userId))
+    : activeMembershipsForUser(userId)
+        // Företag som inaktiverats av Driva Admin nekas (Supabase-läget
+        // filtrerar samma sak i SQL:en; supportsessionen nedan går förbi).
+        .filter((m) => !platformRegistry().disabledBusinesses.some((d) => d.businessId === m.businessId))
+        .map((m) => ({
+          businessId: m.businessId,
+          role: m.role,
+          lastActiveAt: m.lastActiveAt,
+          invitedByUserId: m.invitedByUserId,
+        }));
+
+  // SUPPORTLÄGE (Driva Admin): en aktiv, tidsbegränsad supportsession ger
+  // adminen ett syntetiskt ägar-medlemskap i EXAKT sessionens företag.
+  const support = await activeSupportContext().catch(() => null);
+  if (support && support.admin.userId === userId) {
+    return [
+      { businessId: support.session.businessId, role: "owner" as BusinessRole },
+      ...base.filter((m) => m.businessId !== support.session.businessId),
+    ];
   }
-  return activeMembershipsForUser(userId).map((m) => ({
-    businessId: m.businessId,
-    role: m.role,
-    lastActiveAt: m.lastActiveAt,
-    invitedByUserId: m.invitedByUserId,
-  }));
+  return base;
 });
 
 function pickMembership(
@@ -304,6 +321,30 @@ function actorFrom(user: SessionUser, businessId: string, role: BusinessRole): C
   };
 }
 
+/** Supportläge: aktören märks tydligt som Driva-support i aktivitetsflödet. */
+function labelSupportActor(actor: CollaborationActor, support: ActiveSupportContext | null): CollaborationActor {
+  if (!support || support.session.businessId !== actor.businessId) return actor;
+  const base = support.admin.name || support.admin.email || actor.name;
+  return { ...actor, name: `${base} (Driva-support)` };
+}
+
+/** Alla skrivningar under supportläge auditeras med adminen som aktör. */
+async function auditSupportWrite(support: ActiveSupportContext | null, businessId: string): Promise<void> {
+  if (!support || support.session.businessId !== businessId) return;
+  try {
+    await writeAdminAudit(support.admin, {
+      action: "support_write",
+      targetType: "support_session",
+      targetId: support.session.id,
+      businessId,
+      metadata: { reason: support.session.reason },
+    });
+  } catch {
+    // Auditfel får inte stoppa kundflödet – huvudauditen (tenantens
+    // audit_log med actor_user_id = adminens uuid) skrivs ändå i commiten.
+  }
+}
+
 async function authorizeWrite(
   user: SessionUser,
   businessId: string,
@@ -343,6 +384,7 @@ export async function withBusiness<T>(
   fn: () => T | Promise<T>,
   opts: { retry?: boolean; businessId?: string; capability?: CollaborationCapability } = {}
 ): Promise<T> {
+  const support = await activeSupportContext().catch(() => null);
   if (!isSupabaseMode()) {
     const user = (await getSessionUser()) ?? {
       id: LOCAL_JSON_USER_ID,
@@ -351,14 +393,23 @@ export async function withBusiness<T>(
     };
     const businessId = opts.businessId ?? LOCAL_JSON_BUSINESS_ID;
     const role = await authorizeWrite(user, businessId, opts.capability);
-    return runAsActor(actorFrom(user, businessId, role), () => fn());
+    try {
+      return await runAsActor(labelSupportActor(actorFrom(user, businessId, role), support), () => fn());
+    } finally {
+      // finally: även flöden som avslutas med redirect() auditeras.
+      await auditSupportWrite(support, businessId);
+    }
   }
   const user = await requireUser();
   const businessId = await resolveActiveBusiness(user.id, opts.businessId);
   const role = await authorizeWrite(user, businessId, opts.capability);
-  return runAsActor(actorFrom(user, businessId, role), () =>
-    runWithTenant({ businessId, userId: user.id, access: "write", retry: opts.retry }, fn)
-  );
+  try {
+    return await runAsActor(labelSupportActor(actorFrom(user, businessId, role), support), () =>
+      runWithTenant({ businessId, userId: user.id, access: "write", retry: opts.retry }, fn)
+    );
+  } finally {
+    await auditSupportWrite(support, businessId);
+  }
 }
 
 /** Läsande flöde (sidorendering) i tenantkontext. save() kastar. */
@@ -413,7 +464,7 @@ const loadPageBusiness = cache(async (businessId?: string): Promise<void> => {
   const slot = requestSlot();
   slot.state = state;
   slot.businessId = id;
-  slot.actor = actorFrom(user, id, role);
+  slot.actor = labelSupportActor(actorFrom(user, id, role), await activeSupportContext().catch(() => null));
   if (isAccountingRole(role)) {
     // Debouncad aktivitetsstämpel: "aktiv idag"-indikatorn behöver inte en
     // databas-write per navigering.

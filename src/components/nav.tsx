@@ -11,6 +11,7 @@ import {
   BookOpenCheck,
   Handshake,
   Globe,
+  LifeBuoy,
   MoreHorizontal,
   Settings,
   X,
@@ -171,6 +172,13 @@ export function Sidebar({
           <Settings className={cx("size-[18px]", settingsActive ? "text-white" : "text-muted")} strokeWidth={2} />
           Inställningar
         </Link>
+        <Link
+          href={(`/support?fran=${encodeURIComponent(pathname)}`) as never}
+          className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] text-soft transition-colors hover:bg-ink/5 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          <LifeBuoy className="size-[18px] text-muted" strokeWidth={2} />
+          Hjälp & support
+        </Link>
         {demoSession ? (
           <>
             <CreateAccountRow variant="sidebar" />
@@ -279,6 +287,14 @@ export function BottomNav({
             >
               <Settings className="size-5 text-muted" />
               Inställningar
+            </Link>
+            <Link
+              href={(`/support?fran=${encodeURIComponent(pathname)}`) as never}
+              onClick={() => setMoreOpen(false)}
+              className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-[15px] text-ink hover:bg-canvas"
+            >
+              <LifeBuoy className="size-5 text-muted" />
+              Hjälp & support
             </Link>
             {demoSession ? (
               <>

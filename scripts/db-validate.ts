@@ -867,6 +867,193 @@ async function main() {
   await asSuperuser();
 
   // ------------------------------------------------------------------
+  // 9. Driva Admin: plattformstabeller, vakter och RLS
+  // ------------------------------------------------------------------
+  console.log("\nDriva Admin – plattformsbehörighet:");
+
+  const asPlatform = async (adminUserId: string | null) => {
+    await db.exec(`reset role; set role driva_app;`);
+    await db.query(`select set_config('app.business_id', '', false)`);
+    await db.query(`select set_config('request.jwt.claim.sub', '', false)`);
+    await db.query(`select set_config('app.platform_admin_user_id', $1, false)`, [adminUserId ?? ""]);
+  };
+  const clearPlatformCtx = async () => {
+    await db.query(`select set_config('app.platform_admin_user_id', '', false)`);
+  };
+
+  await asSuperuser();
+  await clearPlatformCtx();
+  await expectOk(db, "super_admin-rad kan skapas", () =>
+    db.query(
+      `insert into public.platform_admins (id, user_id, role, email) values ('pa-1', $1, 'super_admin', 'super@driva.se')`,
+      [USER_A]
+    )
+  );
+
+  // Sista aktiva super_admin skyddas av databastriggern – oavsett appkod.
+  await expectError(db, "sista super_admin kan inte raderas", "sista aktiva super_admin", () =>
+    db.query(`delete from public.platform_admins where id = 'pa-1'`)
+  );
+  await expectError(db, "sista super_admin kan inte inaktiveras", "sista aktiva super_admin", () =>
+    db.query(`update public.platform_admins set disabled_at = now() where id = 'pa-1'`)
+  );
+  await expectError(db, "sista super_admin kan inte nedgraderas", "sista aktiva super_admin", () =>
+    db.query(`update public.platform_admins set role = 'admin' where id = 'pa-1'`)
+  );
+  await expectOk(db, "med en andra aktiv super_admin kan den första tas bort", async () => {
+    await db.query(
+      `insert into public.platform_admins (id, user_id, role, email) values ('pa-2', $1, 'super_admin', 'super2@driva.se')`,
+      [USER_B]
+    );
+    await db.query(`delete from public.platform_admins where id = 'pa-1'`);
+  });
+  await expectError(db, "ogiltig plattformsroll avvisas av checken", "check", () =>
+    db.query(
+      `insert into public.platform_admins (id, user_id, role) values ('pa-x', $1, 'godmode')`,
+      [USER_A]
+    )
+  );
+  await expectError(db, "en användare kan bara ha en platform_admins-rad", "duplicate key", () =>
+    db.query(
+      `insert into public.platform_admins (id, user_id, role) values ('pa-dup', $1, 'admin')`,
+      [USER_B]
+    )
+  );
+
+  // Admin-audit är oföränderlig även för superuser-vägen (trigger).
+  await asSuperuser();
+  await db.query(
+    `insert into public.admin_audit_log (id, admin_user_id, admin_role, action) values ('aud-1', $1, 'super_admin', 'admin_bootstrap')`,
+    [USER_B]
+  );
+  await expectError(db, "admin_audit_log kan inte uppdateras", "immutability", () =>
+    db.query(`update public.admin_audit_log set action = 'omskriven' where id = 'aud-1'`)
+  );
+  await expectError(db, "admin_audit_log kan inte raderas", "immutability", () =>
+    db.query(`delete from public.admin_audit_log where id = 'aud-1'`)
+  );
+
+  // RLS: Data API-rollerna ser INGENTING av plattformsdatat.
+  {
+    await asAuthenticated(USER_B); // USER_B ÄR super_admin – men Data API:t är ändå stängt.
+    const r = await rows(db, `select id from public.platform_admins`);
+    if (r.length === 0) ok("authenticated ser inga platform_admins (även som admin-användare)");
+    else fail("authenticated ser inga platform_admins (även som admin-användare)", JSON.stringify(r));
+    const t = await rows(db, `select id from public.admin_audit_log`);
+    if (t.length === 0) ok("authenticated ser ingen admin-audit");
+    else fail("authenticated ser ingen admin-audit", JSON.stringify(t));
+  }
+  {
+    await db.exec(`reset role; set role anon;`);
+    const r = await rows(db, `select id from public.platform_admins`);
+    if (r.length === 0) ok("anon ser inga platform_admins");
+    else fail("anon ser inga platform_admins", JSON.stringify(r));
+    await asSuperuser();
+  }
+
+  // driva_app utan plattformskontext: inga rader, inga skrivningar.
+  {
+    await asApp(null);
+    await clearPlatformCtx();
+    const r = await rows(db, `select id from public.platform_admins`);
+    if (r.length === 0) ok("driva_app utan plattformskontext ser inga platform_admins");
+    else fail("driva_app utan plattformskontext ser inga platform_admins", JSON.stringify(r));
+  }
+  await expectError(db, "driva_app utan plattformskontext kan inte skriva audit", "row-level security", () =>
+    db.query(
+      `insert into public.admin_audit_log (id, admin_user_id, admin_role, action) values ('aud-2', $1, 'admin', 'test')`,
+      [USER_B]
+    )
+  );
+
+  // driva_app MED plattformskontext: läsning + audit fungerar; rolluppslaget
+  // (security definer) svarar utan direkta tabellrättigheter.
+  {
+    await asPlatform(USER_B);
+    const r = await rows(db, `select id from public.platform_admins`);
+    if (r.length === 1) ok("driva_app med plattformskontext ser platform_admins");
+    else fail("driva_app med plattformskontext ser platform_admins", JSON.stringify(r));
+    const role = await rows<{ role: string }>(db, `select app.platform_role_for($1) as role`, [USER_B]);
+    if (role[0]?.role === "super_admin") ok("app.platform_role_for svarar för driva_app");
+    else fail("app.platform_role_for svarar för driva_app", JSON.stringify(role));
+  }
+  await expectOk(db, "driva_app med plattformskontext kan skriva audit", () =>
+    db.query(
+      `insert into public.admin_audit_log (id, admin_user_id, admin_role, action) values ('aud-3', $1, 'super_admin', 'test')`,
+      [USER_B]
+    )
+  );
+
+  // Supportärenden: tenantkontext får skapa ärende för SITT företag, inte andras.
+  {
+    await asApp(A);
+    await clearPlatformCtx();
+    await expectOk(db, "tenantkontext kan skapa supportärende för sitt företag", () =>
+      db.query(
+        `insert into public.support_tickets (id, business_id, user_email, subject, message)
+         values ('tick-a', $1, 'kund@a.se', 'Hjälp', 'Behöver hjälp')`,
+        [A]
+      )
+    );
+    await expectError(db, "tenantkontext kan inte skapa ärende för annat företag", "row-level security", () =>
+      db.query(
+        `insert into public.support_tickets (id, business_id, user_email, subject, message)
+         values ('tick-b', $1, 'kund@a.se', 'Intrång', 'x')`,
+        [B]
+      )
+    );
+    await expectError(db, "tenantkontext kan inte ändra ärendestatus", "row-level security", async () => {
+      const updated = await db.query(`update public.support_tickets set status = 'resolved' where id = 'tick-a'`);
+      if ((updated.affectedRows ?? 0) === 0) throw new Error("row-level security: 0 rader uppdaterade");
+    });
+    const visible = await rows(db, `select id from public.support_tickets`);
+    if (visible.length === 1) ok("tenantkontext ser sitt eget ärende");
+    else fail("tenantkontext ser sitt eget ärende", JSON.stringify(visible));
+  }
+  {
+    await asPlatform(USER_B);
+    const r = await rows(db, `select id from public.support_tickets`);
+    if (r.length === 1) ok("plattformskontext ser alla supportärenden");
+    else fail("plattformskontext ser alla supportärenden", JSON.stringify(r));
+  }
+
+  // email_events: tenantkontext loggar bara för sitt eget företag.
+  {
+    await asApp(A);
+    await clearPlatformCtx();
+    await expectOk(db, "tenantkontext kan logga mejlhändelse för sitt företag", () =>
+      db.query(
+        `insert into public.email_events (id, business_id, kind, to_email, status, mode)
+         values ('em-a', $1, 'quote', 'k@a.se', 'sent', 'test')`,
+        [A]
+      )
+    );
+    await expectError(db, "tenantkontext kan inte logga mejl på annat företag", "row-level security", () =>
+      db.query(
+        `insert into public.email_events (id, business_id, kind, to_email, status, mode)
+         values ('em-b', $1, 'quote', 'k@a.se', 'sent', 'test')`,
+        [B]
+      )
+    );
+  }
+
+  // Inaktiverat företag: kolumnen finns och medlemsuppslaget filtrerar i appen.
+  await asSuperuser();
+  await expectOk(db, "businesses.disabled_at och is_demo rundresar", async () => {
+    await db.query(`update public.businesses set disabled_at = now(), is_demo = true where id = $1`, [B]);
+    const r = await rows<{ disabled_at: string | null; is_demo: boolean }>(
+      db,
+      `select disabled_at, is_demo from public.businesses where id = $1`,
+      [B]
+    );
+    if (!r[0]?.disabled_at || !r[0]?.is_demo) throw new Error("kolumnerna sparades inte");
+    await db.query(`update public.businesses set disabled_at = null, is_demo = false where id = $1`, [B]);
+  });
+
+  await asSuperuser();
+  await clearPlatformCtx();
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");

@@ -191,14 +191,17 @@ export interface MembershipInfo {
 /**
  * Medlemskap för en VERIFIERAD användare (id från Supabase Auth-sessionen).
  * Återkallade rader filtreras bort – gamla sessioner får ingen åtkomst.
+ * Företag som inaktiverats av Driva Admin (businesses.disabled_at) räknas
+ * inte heller – medlemmarna stängs ute tills företaget återaktiveras.
  */
 export async function membershipsForUser(userId: string): Promise<MembershipInfo[]> {
   const client = await sqlClient();
   const rows = await client.query(
-    `select business_id, role, last_active_at, invited_by_user_id
-       from public.business_memberships
-      where user_id = $1 and revoked_at is null
-      order by created_at, business_id`,
+    `select m.business_id, m.role, m.last_active_at, m.invited_by_user_id
+       from public.business_memberships m
+       join public.businesses b on b.id = m.business_id
+      where m.user_id = $1 and m.revoked_at is null and b.disabled_at is null
+      order by m.created_at, m.business_id`,
     [userId]
   );
   return rows.map((r) => ({
@@ -384,7 +387,21 @@ export async function invitationRowByTokenHash(
     `select * from public.collaboration_invitations where token_hash = $1`,
     [tokenHash]
   );
-  const r = rows[0];
+  return mapInvitationRow(rows[0]);
+}
+
+/** Uppslag per id – används av Driva Admin ("skicka om inbjudan"). */
+export async function invitationRowById(
+  id: string
+): Promise<import("../types").CollaborationInvitation | null> {
+  const client = await sqlClient();
+  const rows = await client.query(`select * from public.collaboration_invitations where id = $1`, [id]);
+  return mapInvitationRow(rows[0]);
+}
+
+function mapInvitationRow(
+  r: import("./executor").SqlRow | undefined
+): import("../types").CollaborationInvitation | null {
   if (!r) return null;
   return {
     id: String(r.id),

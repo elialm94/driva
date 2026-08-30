@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Suspense } from "react";
 import { Sidebar, BottomNav } from "@/components/nav";
 import { NavOriginProvider } from "@/components/nav-origin";
+import { SupportModeBanner } from "@/components/support-mode-banner";
 import { db } from "@/lib/store";
 import { getNavAttentionCounts } from "@/lib/services/nav-counts";
 import { ensurePageBusiness, getSessionUser, isDemoSession, listMemberships } from "@/lib/auth/session";
@@ -28,6 +29,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const accountantDemoSwitch = !isSupabaseMode() || demoSession;
   return (
     <div className="min-h-dvh">
+      <SupportModeBanner companyName={settings.name} />
       <Sidebar
         companyName={settings.name}
         inboxCount={navCounts.inbox}

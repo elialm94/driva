@@ -30,6 +30,7 @@ const PUBLIC_PREFIXES = [
   "/sajt",
   "/inbjudan",
   "/api/health", // driftdiagnostik: måste nås utan inloggning när appen är trasig
+  "/admin/inbjudan", // admin-invitationens acceptsida: mottagaren saknar ofta konto ännu
   "/api/bankid",
   "/api/inbox",
   "/api/dev", // vaktas internt: endast utveckling
