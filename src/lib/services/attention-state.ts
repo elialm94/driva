@@ -88,7 +88,21 @@ export function resolveSnoozeUntil(choice: AttentionSnoozeChoice, now = new Date
 
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(choice.date);
   if (!m) throw new Error("Ogiltigt datum att skjuta upp till.");
-  // Valt datum → synlig igen från den lokala dagens start.
+  if (choice.time) {
+    const clock = /^(\d{1,2}):(\d{2})$/.exec(choice.time);
+    if (!clock) throw new Error("Ogiltigt klockslag att skjuta upp till.");
+    return instantFromLocal(
+      {
+        year: Number(m[1]),
+        month: Number(m[2]),
+        day: Number(m[3]),
+        hour: Number(clock[1]),
+        minute: Number(clock[2]),
+      },
+      tz
+    );
+  }
+  // Valt datum utan tid → synlig igen från den lokala dagens start.
   return instantFromLocal(
     { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]), hour: 0, minute: 0 },
     tz
@@ -144,6 +158,17 @@ export function snoozeAttentionUntil(actionId: string, untilIso: string, now = n
  * (rent ignorerbara info-rader). Domänavfärdanden ("Markera hanterad",
  * "Inte aktuell") går via sina tjänster och lagras aldrig här.
  */
+/** Ångra snooze – raden syns igen om motorn fortfarande härleder den. */
+export function clearAttentionSnooze(actionId: string): void {
+  const data = db();
+  const userId = currentUserId();
+  const state = (data.attentionStates ?? []).find((s) => s.actionId === actionId && s.userId === userId);
+  if (!state) return;
+  delete state.snoozedUntil;
+  state.updatedAt = new Date().toISOString();
+  save();
+}
+
 export function hideAttention(actionId: string, reason?: string, now = new Date()): AttentionState {
   const controls = controlsForAction({ id: actionId });
   if (controls.dismissBehavior !== "HIDE") {

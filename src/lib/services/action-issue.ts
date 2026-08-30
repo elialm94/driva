@@ -385,9 +385,12 @@ export type AttentionSnoozeChoice =
   | "imorgon"
   | "om_3_dagar"
   | "nasta_vecka"
-  | { date: string };
+  | { date: string; time?: string };
 
-export const ATTENTION_SNOOZE_PRESETS: { key: Exclude<AttentionSnoozeChoice, { date: string }>; label: string }[] = [
+export const ATTENTION_SNOOZE_PRESETS: {
+  key: Exclude<AttentionSnoozeChoice, { date: string; time?: string }>;
+  label: string;
+}[] = [
   { key: "senare_idag", label: "Senare idag" },
   { key: "imorgon", label: "Imorgon" },
   { key: "om_3_dagar", label: "Om 3 dagar" },

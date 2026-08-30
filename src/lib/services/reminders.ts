@@ -134,11 +134,12 @@ export function completeReminder(id: string, now = new Date()): Reminder {
   return reminder;
 }
 
-export type SnoozeChoice = "1h" | "imorgon" | { date: string };
+export type SnoozeChoice = "1h" | "imorgon" | { date: string; time?: string };
 
 /**
  * Snabbval för Snooza-knappen: 1 timme (exakt), imorgon (morgon-dagsdelen)
- * eller valfritt datum (behåller påminnelsens ursprungliga klockslag).
+ * eller valfritt datum. Utan time behålls påminnelsens klockslag (äldre
+ * anrop). Med time används det valda klockslaget.
  */
 export function snoozeReminderBy(id: string, choice: SnoozeChoice, now = new Date()): Reminder {
   const reminder = requireOwned(id);
@@ -157,12 +158,24 @@ export function snoozeReminderBy(id: string, choice: SnoozeChoice, now = new Dat
   } else {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(choice.date);
     if (!m) throw new Error("Ogiltigt datum.");
-    const due = localParts(new Date(reminder.dueAt), tz);
+    let hour: number;
+    let minute: number;
+    if (choice.time) {
+      const clock = /^(\d{1,2}):(\d{2})$/.exec(choice.time);
+      if (!clock) throw new Error("Ogiltigt klockslag.");
+      hour = Number(clock[1]);
+      minute = Number(clock[2]);
+    } else {
+      const due = localParts(new Date(reminder.dueAt), tz);
+      hour = due.hour;
+      minute = due.minute;
+    }
     until = instantFromLocal(
-      { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]), hour: due.hour, minute: due.minute },
+      { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]), hour, minute },
       tz
     );
   }
+  if (until.getTime() <= now.getTime()) throw new Error("Snooze-tidpunkten måste vara framåt.");
   return snoozeReminder(id, until.toISOString());
 }
 
@@ -170,6 +183,14 @@ export function snoozeReminder(id: string, untilIso: string): Reminder {
   const reminder = requireOwned(id);
   if (Number.isNaN(Date.parse(untilIso))) throw new Error("Ogiltig tidpunkt att skjuta upp till.");
   reminder.snoozedUntil = new Date(untilIso).toISOString();
+  save();
+  return reminder;
+}
+
+/** Ångra snooze – raden syns igen om den fortfarande är aktuell. */
+export function clearReminderSnooze(id: string): Reminder {
+  const reminder = requireOwned(id);
+  delete reminder.snoozedUntil;
   save();
   return reminder;
 }

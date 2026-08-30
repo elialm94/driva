@@ -23,10 +23,13 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { DateField } from "./date-field";
+import { DateTimePicker, DateTimePickerActions } from "./date-time-picker";
+import { SnoozeMenu } from "./snooze-menu";
 import { Modal } from "./modal";
 import { actionMenuItemClassName } from "./action-menu";
 import { buttonClasses, Card, cx, SectionTitle } from "./ui";
+import { startOfToday, toISODate } from "@/lib/dates/iso-date";
+import { initialSnoozeDateTime, isFutureLocalDateTime } from "@/lib/reminders/when";
 import {
   answerExpenseQuestionAction,
   completeReminderAction,
@@ -39,6 +42,8 @@ import {
   sendReminderAction,
   snoozeAttentionAction,
   snoozeReminderAction,
+  unsnoozeAttentionAction,
+  unsnoozeReminderAction,
   uploadReceiptAction,
   prepareSupplierPaymentAction,
 } from "@/app/actions";
@@ -88,22 +93,6 @@ const ICONS = {
   percent: { icon: Percent, cls: "bg-ok-soft text-ok" },
   bell: { icon: Bell, cls: "bg-accent-soft text-accent-deep" },
 } as const;
-
-/** Snooza-etikett → klar-text ("Uppskjuten – imorgon"). */
-function snoozeDoneText(label: string): string {
-  return `Uppskjuten – ${label.toLowerCase()}`;
-}
-
-/** Första giltiga snooze-dagen: valt datum blir 00:00, så idag är redan passerat. */
-function minSnoozeIso(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + 1);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 /* --------------------------------- Bekräftelse --------------------------------- */
 
@@ -165,7 +154,9 @@ function ConfirmDialog({
 
 /* ----------------------------------- Overflow ----------------------------------- */
 
-type RowRun = (fn: () => Promise<unknown>, doneText: string) => void;
+type RowUndo = () => Promise<void>;
+type RowRun = (fn: () => Promise<unknown>, doneText: string, undo?: RowUndo) => void;
+type SnoozeRun = (fn: () => Promise<{ toast: string }>, undo: RowUndo) => void;
 
 /**
  * ⋯-menyn per rad: Visa X, Snooza (presets + Välj datum) och typspecifik
@@ -177,19 +168,20 @@ function RowMenu({
   controls,
   disabled,
   run,
+  runSnooze,
 }: {
   item: BusinessAction;
   controls: ActionControls;
   disabled: boolean;
   run: RowRun;
+  runSnooze: SnoozeRun;
 }) {
   const [open, setOpen] = useState(false);
   const [sheet, setSheet] = useState(false);
-  const [view, setView] = useState<"menu" | "snooze">("menu");
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [view, setView] = useState<"menu" | "snooze" | "picker">("menu");
+  const [customWhen, setCustomWhen] = useState(() => initialSnoozeDateTime());
   const [confirmDismiss, setConfirmDismiss] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const dateAnchorRef = useRef<HTMLButtonElement>(null);
   const menuId = useId();
 
   const isReminder = controls.kind === "reminder";
@@ -200,23 +192,18 @@ function RowMenu({
   function close() {
     setOpen(false);
     setView("menu");
-    setDatePickerOpen(false);
   }
 
   function openMenu() {
     setSheet(typeof window !== "undefined" && window.matchMedia("(max-width: 639px)").matches);
     setView("menu");
-    setDatePickerOpen(false);
     setOpen(true);
   }
 
   useEffect(() => {
     if (!open || sheet) return;
     function onPointer(e: PointerEvent) {
-      const target = e.target;
-      const el = target instanceof Element ? target : (target as Node | null)?.parentElement;
-      if (rootRef.current?.contains(target as Node)) return;
-      if (el?.closest('[role="dialog"][aria-label="Välj datum"]')) return;
+      if (rootRef.current?.contains(e.target as Node)) return;
       close();
     }
     function onKey(e: KeyboardEvent) {
@@ -230,9 +217,12 @@ function RowMenu({
     };
   }, [open, sheet]);
 
-  function snooze(choice: AttentionSnoozeChoice, doneText: string) {
+  function snooze(choice: AttentionSnoozeChoice) {
     close();
-    run(() => snoozeAttentionAction(item.id, choice), doneText);
+    runSnooze(
+      () => snoozeAttentionAction(item.id, choice),
+      () => unsnoozeAttentionAction(item.id)
+    );
   }
 
   function dismiss() {
@@ -291,49 +281,63 @@ function RowMenu({
         </>
       ) : (
         <>
-          {ATTENTION_SNOOZE_PRESETS.map((preset) => (
-            <button
-              key={preset.key}
-              type="button"
-              role="menuitem"
-              className={itemCls()}
-              disabled={disabled}
-              onClick={() => snooze(preset.key, snoozeDoneText(preset.label))}
-            >
-              {preset.label}
-            </button>
-          ))}
-          <button
-            ref={dateAnchorRef}
-            type="button"
-            role="menuitem"
-            className={itemCls()}
-            aria-haspopup="dialog"
-            aria-expanded={datePickerOpen}
-            onClick={() => setDatePickerOpen((v) => !v)}
-          >
-            Välj datum …
-          </button>
-          <DateField
-            open={datePickerOpen}
-            onOpenChange={setDatePickerOpen}
-            anchorRef={dateAnchorRef}
-            min={minSnoozeIso()}
-            onChange={(iso) => {
-              if (iso) snooze({ date: iso }, "Uppskjuten");
-            }}
-          />
-          <button
-            type="button"
-            role="menuitem"
-            className={cx(itemCls(), "text-soft")}
-            onClick={() => {
-              setDatePickerOpen(false);
-              setView("menu");
-            }}
-          >
-            Tillbaka
-          </button>
+          {view === "snooze" ? (
+            <>
+              {ATTENTION_SNOOZE_PRESETS.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  role="menuitem"
+                  className={itemCls()}
+                  disabled={disabled}
+                  onClick={() => snooze(preset.key)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                role="menuitem"
+                className={itemCls()}
+                onClick={() => {
+                  setCustomWhen(initialSnoozeDateTime());
+                  setView("picker");
+                }}
+              >
+                Välj datum & tid…
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className={cx(itemCls(), "text-soft")}
+                onClick={() => setView("menu")}
+              >
+                Tillbaka
+              </button>
+            </>
+          ) : (
+            <div className={sheet ? "px-4 pb-4 pt-1" : "p-2"}>
+              <DateTimePicker
+                mode="datetime"
+                className={sheet ? "w-full" : undefined}
+                date={customWhen.date}
+                time={customWhen.time}
+                min={toISODate(startOfToday())}
+                onDateChange={(next) => setCustomWhen((prev) => ({ ...prev, date: next }))}
+                onTimeChange={(next) => setCustomWhen((prev) => ({ ...prev, time: next }))}
+                footer={
+                  <DateTimePickerActions
+                    confirmLabel="Snooza"
+                    confirmDisabled={
+                      disabled || !customWhen.date || !isFutureLocalDateTime(customWhen.date, customWhen.time)
+                    }
+                    onCancel={() => setView("snooze")}
+                    onConfirm={() => snooze({ date: customWhen.date, time: customWhen.time })}
+                  />
+                }
+              />
+            </div>
+          )}
         </>
       )}
     </>
@@ -362,11 +366,19 @@ function RowMenu({
           id={menuId}
           role="menu"
           aria-label={`Alternativ för ${item.title}`}
-          className="absolute right-0 top-full z-30 mt-1.5 min-w-[13rem] overflow-hidden rounded-xl border border-line bg-card p-1 shadow-pop"
+          className={cx(
+            "absolute right-0 top-full z-30 mt-1.5 overflow-hidden rounded-xl border border-line bg-card shadow-pop",
+            view === "picker" ? "p-0" : "min-w-[13rem] p-1"
+          )}
         >
           {view === "snooze" ? (
             <p className="px-2.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
-              Visa igen …
+              Snooza till
+            </p>
+          ) : null}
+          {view === "picker" ? (
+            <p className="px-3 pt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+              Välj datum & tid
             </p>
           ) : null}
           {menuItems}
@@ -375,7 +387,11 @@ function RowMenu({
 
       {/* Mobil bottensheet */}
       {sheet ? (
-        <Modal open={open} onClose={close} title={view === "snooze" ? "Snooza – visa igen …" : item.title}>
+        <Modal
+          open={open}
+          onClose={close}
+          title={view === "picker" ? "Välj datum & tid" : view === "snooze" ? "Snooza till" : item.title}
+        >
           <div className="py-2" role="menu" aria-label={`Alternativ för ${item.title}`}>
             {menuItems}
           </div>
@@ -405,87 +421,22 @@ function RowMenu({
 /* ------------------------------------ Rader ------------------------------------ */
 
 /**
- * Klar/Snooza för påminnelser. Textknappar (aldrig bara ikoner) och ≥44px
- * träffyta på mobil. Snooza: 1 timme / Imorgon / Välj tid (samma datumväljare
- * som resten av appen; valt datum behåller påminnelsens klockslag).
- * "Ta bort" ligger i radens ⋯-meny. Snoozen här är påminnelsens EGEN
- * domänsnooze (reminders-tjänsten) – inte attention_states.
+ * Klar/Snooza för påminnelser. Raden byts ALDRIG ut – Snooza öppnar en
+ * förankrad popover (desktop) eller bottensheet (mobil) med 1 timme /
+ * Imorgon / Välj datum & tid…. Anpassat val visar kalender + klockslag
+ * i samma yta. Snoozen är påminnelsens egen domänsnooze.
  */
-function ReminderCtas({ reminderId, onDone }: { reminderId: string; onDone: (doneText: string) => void }) {
+function ReminderCtas({
+  reminderId,
+  onDone,
+  onSnooze,
+}: {
+  reminderId: string;
+  onDone: (doneText: string) => void;
+  onSnooze: SnoozeRun;
+}) {
   const [isPending, startTransition] = useTransition();
-  const [snoozeOpen, setSnoozeOpen] = useState(false);
-  const [pickDate, setPickDate] = useState(false);
   const router = useRouter();
-
-  function run(fn: () => Promise<unknown>, doneText: string) {
-    startTransition(async () => {
-      await fn();
-      onDone(doneText);
-      router.refresh();
-    });
-  }
-
-  if (pickDate) {
-    return (
-      <div className="flex items-center gap-2">
-        <DateField
-          className="w-40"
-          placeholder="Välj dag"
-          onChange={(iso) => {
-            if (iso) run(() => snoozeReminderAction(reminderId, { date: iso }), "Uppskjuten");
-          }}
-        />
-        <button
-          type="button"
-          className={cx(buttonClasses("ghost", "sm"), "max-lg:min-h-11")}
-          onClick={() => {
-            setPickDate(false);
-            setSnoozeOpen(false);
-          }}
-        >
-          Avbryt
-        </button>
-      </div>
-    );
-  }
-
-  if (snoozeOpen) {
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          className={cx(buttonClasses("secondary", "sm"), "max-lg:min-h-11")}
-          disabled={isPending}
-          onClick={() => run(() => snoozeReminderAction(reminderId, "1h"), "Uppskjuten 1 timme")}
-        >
-          1 timme
-        </button>
-        <button
-          type="button"
-          className={cx(buttonClasses("secondary", "sm"), "max-lg:min-h-11")}
-          disabled={isPending}
-          onClick={() => run(() => snoozeReminderAction(reminderId, "imorgon"), "Uppskjuten till imorgon")}
-        >
-          Imorgon
-        </button>
-        <button
-          type="button"
-          className={cx(buttonClasses("secondary", "sm"), "max-lg:min-h-11")}
-          disabled={isPending}
-          onClick={() => setPickDate(true)}
-        >
-          Välj tid
-        </button>
-        <button
-          type="button"
-          className={cx(buttonClasses("ghost", "sm"), "max-lg:min-h-11")}
-          onClick={() => setSnoozeOpen(false)}
-        >
-          Avbryt
-        </button>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -493,51 +444,97 @@ function ReminderCtas({ reminderId, onDone }: { reminderId: string; onDone: (don
         type="button"
         className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
         disabled={isPending}
-        onClick={() => run(() => completeReminderAction(reminderId), "Klar")}
+        onClick={() =>
+          startTransition(async () => {
+            await completeReminderAction(reminderId);
+            onDone("Klar");
+            router.refresh();
+          })
+        }
       >
         {isPending ? "Sparar …" : "Klar"}
       </button>
-      <button
-        type="button"
-        className={cx(buttonClasses("secondary", "sm"), "max-lg:min-h-11")}
+      <SnoozeMenu
+        presets={[
+          { key: "1h" as const, label: "1 timme" },
+          { key: "imorgon" as const, label: "Imorgon" },
+        ]}
         disabled={isPending}
-        onClick={() => setSnoozeOpen(true)}
-      >
-        Snooza
-      </button>
+        onPreset={(key) => onSnooze(() => snoozeReminderAction(reminderId, key), () => unsnoozeReminderAction(reminderId))}
+        onCustom={(value) =>
+          onSnooze(() => snoozeReminderAction(reminderId, value), () => unsnoozeReminderAction(reminderId))
+        }
+      />
     </>
   );
 }
 
+type AttentionToast = {
+  id: string;
+  item: BusinessAction;
+  text: string;
+  undo?: RowUndo;
+};
+
 function AttentionRow({
   item,
   onResolved,
+  toast,
+  onToast,
+  onClearToast,
   surface = "owner",
 }: {
   item: BusinessAction;
   onResolved: (id: string) => void;
+  toast?: AttentionToast;
+  onToast: (text: string, undo?: RowUndo) => void;
+  onClearToast: () => void;
   surface?: "owner" | "accountant";
 }) {
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [undoing, setUndoing] = useState(false);
   const router = useRouter();
   const { icon: Icon, cls } = ICONS[item.icon];
   const cta = item.cta;
   const controls = controlsForAction(item);
+  const doneText = toast?.text ?? done;
+  const undo = toast?.undo;
 
-  function finish(doneText: string) {
-    setDone(doneText);
+  function finish(nextDone: string) {
+    setDone(nextDone);
     onResolved(item.id);
   }
 
-  function run(fn: () => Promise<unknown>, doneText: string) {
+  function run(fn: () => Promise<unknown>, nextDone: string) {
     startTransition(async () => {
       await fn();
-      finish(doneText);
+      finish(nextDone);
       router.refresh();
     });
+  }
+
+  function runSnooze(fn: () => Promise<{ toast: string }>, nextUndo: RowUndo) {
+    startTransition(async () => {
+      const result = await fn();
+      onToast(result.toast, nextUndo);
+      onResolved(item.id);
+      router.refresh();
+    });
+  }
+
+  async function undoToast() {
+    if (!undo || undoing) return;
+    setUndoing(true);
+    try {
+      await undo();
+      onClearToast();
+      router.refresh();
+    } finally {
+      setUndoing(false);
+    }
   }
 
   /** Primärknapp som kräver bekräftelse öppnar dialogen; utan confirm körs direkt. */
@@ -629,9 +626,21 @@ function AttentionRow({
         </AppLink>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2 pl-13 sm:justify-end sm:pl-0">
-        {done ? (
-          <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
-            <Check className="size-4" /> {done}
+        {doneText ? (
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-ok">
+            <span className="inline-flex items-center gap-1.5">
+              <Check className="size-4" /> {doneText}
+            </span>
+            {undo ? (
+              <button
+                type="button"
+                className={cx(buttonClasses("ghost", "sm"), "max-lg:min-h-11 text-soft")}
+                disabled={undoing}
+                onClick={() => void undoToast()}
+              >
+                {undoing ? "Ångrar …" : "Ångra"}
+              </button>
+            ) : null}
           </span>
         ) : (
           <>
@@ -803,7 +812,9 @@ function AttentionRow({
               // utan explicit godkännande.
               <PaymentDetailsCta cta={cta} title={item.title} confirm={item.confirm} surface={surface} onDone={finish} />
             ) : null}
-            {cta?.type === "reminderActions" ? <ReminderCtas reminderId={cta.reminderId} onDone={finish} /> : null}
+            {cta?.type === "reminderActions" ? (
+              <ReminderCtas reminderId={cta.reminderId} onDone={finish} onSnooze={runSnooze} />
+            ) : null}
             {cta?.type === "createJobInvoice" && surface !== "accountant" ? (
               <button
                 className={cx(buttonClasses("accent", "sm"), "max-lg:min-h-11")}
@@ -820,7 +831,7 @@ function AttentionRow({
               </button>
             ) : null}
             {error ? <span className="text-[13px] font-medium text-danger">{error}</span> : null}
-            <RowMenu item={item} controls={controls} disabled={isPending} run={run} />
+            <RowMenu item={item} controls={controls} disabled={isPending} run={run} runSnooze={runSnooze} />
           </>
         )}
       </div>
@@ -867,6 +878,7 @@ export function AttentionSection({
 }) {
   const [stage, setStage] = useState<0 | 1 | 2>(0);
   const [resolvedIds, setResolvedIds] = useState<readonly string[]>([]);
+  const [toasts, setToasts] = useState<AttentionToast[]>([]);
   const sectionRef = useRef<HTMLDivElement>(null);
 
   const activeCount = items.filter((i) => !resolvedIds.includes(i.id)).length;
@@ -874,6 +886,12 @@ export function AttentionSection({
   const initial = Math.min(initialVisible ?? items.length, items.length);
   const cap = stage === 0 ? initial : stage === 1 ? EXPAND_CAP : items.length;
   const visible = items.slice(0, cap);
+  const toastById = new Map(toasts.map((t) => [t.id, t]));
+  const visibleIds = new Set(visible.map((i) => i.id));
+  const rows = [
+    ...visible.map((item) => ({ item, toast: toastById.get(item.id) })),
+    ...toasts.filter((t) => !visibleIds.has(t.id)).map((t) => ({ item: t.item, toast: t })),
+  ];
 
   function collapse() {
     setStage(0);
@@ -922,12 +940,20 @@ export function AttentionSection({
         (empty ?? null)
       ) : (
         <div className="card divide-y divide-line/70">
-          {visible.map((item) => (
+          {rows.map(({ item, toast }) => (
             <AttentionRow
               key={item.id}
               item={item}
               surface={surface}
-              onResolved={(id) => setResolvedIds((prev) => [...prev, id])}
+              toast={toast}
+              onResolved={(id) => setResolvedIds((prev) => (prev.includes(id) ? prev : [...prev, id]))}
+              onToast={(text, undo) =>
+                setToasts((prev) => [...prev.filter((t) => t.id !== item.id), { id: item.id, item, text, undo }])
+              }
+              onClearToast={() => {
+                setToasts((prev) => prev.filter((t) => t.id !== item.id));
+                setResolvedIds((prev) => prev.filter((id) => id !== item.id));
+              }}
             />
           ))}
           {footer}

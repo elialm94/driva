@@ -9,7 +9,17 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { replaceDb, db } from "./store";
 import { emptyTestDb, testCustomer } from "./invoices/test-db";
-import { DAYPART_TIMES, formatDueAt, resolveWhen, type WhenExpression } from "./reminders/when";
+import {
+  DAYPART_TIMES,
+  defaultSnoozeClock,
+  formatDueAt,
+  formatSnoozeUntil,
+  initialSnoozeDateTime,
+  isFutureLocalDateTime,
+  resolveWhen,
+  snoozeDoneText,
+  type WhenExpression,
+} from "./reminders/when";
 import {
   parseReminderCommandInput,
   parseReminderText,
@@ -25,6 +35,7 @@ import {
   dismissReminder,
   listReminders,
   reminderVisibleFrom,
+  clearReminderSnooze,
   snoozeReminder,
   snoozeReminderBy,
   updateReminder,
@@ -40,6 +51,32 @@ function resolved(expr: WhenExpression, nowIso: string, tz = TZ) {
 }
 
 /* -------------------------- Tidsupplösning (resolver) -------------------------- */
+
+describe("snooze-policy: standardtid och toast-text", () => {
+  it("defaultSnoozeClock: framtida dag är 09:00; idag efter 09:00 är nästa timme", () => {
+    const morning = new Date("2026-08-29T06:00:00.000Z"); // 08:00 CEST
+    assert.equal(defaultSnoozeClock("2026-08-29", morning, TZ), "09:00");
+    assert.equal(defaultSnoozeClock("2026-09-02", morning, TZ), "09:00");
+    const afternoon = new Date("2026-08-29T10:30:00.000Z"); // 12:30 CEST
+    assert.equal(defaultSnoozeClock("2026-08-29", afternoon, TZ), "13:00");
+    assert.equal(defaultSnoozeClock("2026-09-02", afternoon, TZ), "09:00");
+  });
+
+  it("initialSnoozeDateTime förifyller idag med giltig framtidstid", () => {
+    const now = new Date("2026-08-29T10:30:00.000Z");
+    assert.deepEqual(initialSnoozeDateTime(now, TZ), { date: "2026-08-29", time: "13:00" });
+    assert.equal(isFutureLocalDateTime("2026-08-29", "13:00", now, TZ), true);
+    assert.equal(isFutureLocalDateTime("2026-08-29", "12:00", now, TZ), false);
+  });
+
+  it("formatSnoozeUntil: idag / imorgon / namngiven dag", () => {
+    const now = new Date("2026-08-29T06:00:00.000Z"); // lördag 08:00
+    assert.equal(formatSnoozeUntil("2026-08-29T09:05:00.000Z", now, TZ), "kl. 11:05");
+    assert.equal(formatSnoozeUntil("2026-08-30T07:00:00.000Z", now, TZ), "imorgon kl. 09:00");
+    assert.equal(formatSnoozeUntil("2026-09-02T12:30:00.000Z", now, TZ), "onsdag 2 sep kl. 14:30");
+    assert.equal(snoozeDoneText("2026-09-02T12:30:00.000Z", now, TZ), "Snoozad till onsdag 2 sep kl. 14:30");
+  });
+});
 
 describe("resolveWhen: veckodagsregeln", () => {
   // 2026-08-24 = måndag, 2026-08-26 = onsdag, 2026-08-29 = lördag.
@@ -417,6 +454,21 @@ describe("påminnelser i åtgärdsmotorn", () => {
     assert.equal(db().reminders.find((r) => r.id === rem.id)?.snoozedUntil, "2026-08-30T07:00:00.000Z"); // 09:00 CEST
     snoozeReminderBy(rem.id, { date: "2026-09-01" }, NOW);
     assert.equal(db().reminders.find((r) => r.id === rem.id)?.snoozedUntil, "2026-09-01T12:00:00.000Z"); // 14:00 kvar
+  });
+
+  it("snoozeReminderBy med tid: 2 september 14:30, ångra tar bort snoozen", () => {
+    const rem = create({ kind: "date", date: "2026-08-29", time: "08:00" });
+    snoozeReminderBy(rem.id, { date: "2026-09-02", time: "14:30" }, NOW);
+    assert.equal(db().reminders.find((r) => r.id === rem.id)?.snoozedUntil, "2026-09-02T12:30:00.000Z");
+    assert.ok(!attentionIds(NOW).includes(`reminder-${rem.id}`));
+    clearReminderSnooze(rem.id);
+    assert.equal(db().reminders.find((r) => r.id === rem.id)?.snoozedUntil, undefined);
+    assert.ok(attentionIds(NOW).includes(`reminder-${rem.id}`));
+  });
+
+  it("anpassat datum i det förflutna nekas", () => {
+    const rem = create({ kind: "date", date: "2026-08-29", time: "14:00" });
+    assert.throws(() => snoozeReminderBy(rem.id, { date: "2026-08-28", time: "14:00" }, NOW), /framåt/);
   });
 
   it("uppdatering flyttar tiden och nollställer snooze", () => {

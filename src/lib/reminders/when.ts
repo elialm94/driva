@@ -33,6 +33,9 @@ export const DAYPART_TIMES = {
   kväll: "18:00",
 } as const;
 
+/** Standardtid för snooze/anpassat datum – samma morgon som "Imorgon". */
+export const DEFAULT_SNOOZE_TIME = DAYPART_TIMES.morgon;
+
 export type Daypart = keyof typeof DAYPART_TIMES;
 export const DAYPARTS = Object.keys(DAYPART_TIMES) as Daypart[];
 
@@ -224,4 +227,88 @@ export function formatDueAt(dueAtIso: string, timezone: string): string {
     hour12: false,
   }).format(instant);
   return `${day} kl ${time}`;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function parseDateIso(iso: string): { year: number; month: number; day: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return null;
+  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+}
+
+/**
+ * Standardklockslag när användaren valt ett datum i snooze-väljaren.
+ * Framtida dag → 09:00. Idag och 09:00 redan passerat → nästa hela timme
+ * (sista slottet i dag om midnatt är nära). Aldrig en tid som redan passerat.
+ */
+export function defaultSnoozeClock(dateIso: string, now = new Date(), timezone = DEFAULT_TIMEZONE): string {
+  const date = parseDateIso(dateIso);
+  if (!date) return DEFAULT_SNOOZE_TIME;
+  const [hour, minute] = DEFAULT_SNOOZE_TIME.split(":").map(Number);
+  const morning = instantFromLocal({ ...date, hour, minute }, timezone);
+  if (morning.getTime() > now.getTime()) return DEFAULT_SNOOZE_TIME;
+
+  const nowLocal = localParts(now, timezone);
+  const isToday = nowLocal.year === date.year && nowLocal.month === date.month && nowLocal.day === date.day;
+  if (!isToday) return DEFAULT_SNOOZE_TIME;
+
+  let nextHour = nowLocal.hour + 1;
+  let nextMinute = 0;
+  if (nextHour > 23) {
+    nextHour = 23;
+    nextMinute = Math.min(55, Math.ceil((nowLocal.minute + 1) / 5) * 5);
+    if (nextMinute >= 60) nextMinute = 59;
+    const last = instantFromLocal({ ...date, hour: nextHour, minute: nextMinute }, timezone);
+    if (last.getTime() <= now.getTime()) {
+      nextMinute = Math.min(59, nowLocal.minute + 1);
+    }
+  }
+  return `${pad2(nextHour)}:${pad2(nextMinute)}`;
+}
+
+/** Förifyllt datum+tid när anpassad snooze-väljare öppnas. */
+export function initialSnoozeDateTime(now = new Date(), timezone = DEFAULT_TIMEZONE): { date: string; time: string } {
+  const p = localParts(now, timezone);
+  const date = `${p.year}-${pad2(p.month)}-${pad2(p.day)}`;
+  return { date, time: defaultSnoozeClock(date, now, timezone) };
+}
+
+/**
+ * Kort toast-text utan prefix: "kl. 11:05" / "imorgon kl. 09:00" /
+ * "onsdag 2 sep kl. 14:30".
+ */
+export function formatSnoozeUntil(untilIso: string, now = new Date(), timezone = DEFAULT_TIMEZONE): string {
+  const until = new Date(untilIso);
+  const time = `${pad2(localParts(until, timezone).hour)}:${pad2(localParts(until, timezone).minute)}`;
+  const dayDiff = Math.round(
+    (startOfLocalDay(until, timezone).getTime() - startOfLocalDay(now, timezone).getTime()) / 86_400_000
+  );
+  if (dayDiff === 0) return `kl. ${time}`;
+  if (dayDiff === 1) return `imorgon kl. ${time}`;
+  const weekday = new Intl.DateTimeFormat("sv-SE", { timeZone: timezone, weekday: "long" }).format(until);
+  const day = localParts(until, timezone).day;
+  const month = new Intl.DateTimeFormat("sv-SE", { timeZone: timezone, month: "short" })
+    .format(until)
+    .replace(/\.$/, "");
+  return `${weekday} ${day} ${month} kl. ${time}`;
+}
+
+export function snoozeDoneText(untilIso: string, now = new Date(), timezone = DEFAULT_TIMEZONE): string {
+  return `Snoozad till ${formatSnoozeUntil(untilIso, now, timezone)}`;
+}
+
+/** Sant när valt datum+klockslag är strikt framåt i tidszonen. */
+export function isFutureLocalDateTime(
+  dateIso: string,
+  time: string,
+  now = new Date(),
+  timezone = DEFAULT_TIMEZONE
+): boolean {
+  const date = parseDateIso(dateIso);
+  const clock = parseClock(time);
+  if (!date || !clock) return false;
+  return instantFromLocal({ ...date, ...clock }, timezone).getTime() > now.getTime();
 }

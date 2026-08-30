@@ -6,6 +6,7 @@ import { db, replaceDb } from "./store";
 import { emptyTestDb } from "./invoices/test-db";
 import { cloneState, runInTenantContext, type TenantContext } from "./storage/context";
 import {
+  clearAttentionSnooze,
   hideAttention,
   resolveSnoozeUntil,
   snoozeAttention,
@@ -109,6 +110,16 @@ describe("attention-state: upsert och filter", () => {
       snoozeAttention("invoice-late-inv-1", "imorgon", now);
     });
     assert.equal(db().attentionStates.filter((s) => s.actionId === "invoice-late-inv-1").length, 2);
+  });
+
+  it("anpassat datum+tid syns igen vid vald tidpunkt; ångra tar bort snoozen", () => {
+    replaceDb(emptyTestDb());
+    const now = new Date("2026-08-28T10:00:00.000Z");
+    snoozeAttention("receipt-exp-1", { date: "2026-09-02", time: "14:30" }, now);
+    assert.ok(suppressedActionIds(now).has("receipt-exp-1"));
+    assert.equal(resolveSnoozeUntil({ date: "2026-09-02", time: "14:30" }, now).toISOString(), "2026-09-02T12:30:00.000Z");
+    clearAttentionSnooze("receipt-exp-1");
+    assert.ok(!suppressedActionIds(now).has("receipt-exp-1"));
   });
 
   it("snoozeAttentionUntil validerar tidpunkten; framtidskrav upprätthålls", () => {
