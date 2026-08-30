@@ -80,6 +80,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
     : undefined;
   const sentParam = typeof searchParams.skickad === "string" ? searchParams.skickad : null;
   const justSent = sentParam === "1" && !isDraft;
+  const justSentDemo = sentParam === "demo" && !isDraft;
   const justSentManual = sentParam === "manuell" && !isDraft;
   const deliveryFailed =
     (typeof searchParams.leveransfel === "string" && searchParams.leveransfel === "1") ||
@@ -178,6 +179,15 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
           <span className="font-medium text-ok">
             Faktura {invoice.number != null ? `#${invoice.number}` : ""} skickades till {customer.name}.
           </span>
+        </Card>
+      ) : null}
+
+      {justSentDemo ? (
+        <Card className="mb-6 border-ok/20 bg-ok-soft/50 px-5 py-4 text-[14px] text-soft">
+          <span className="font-medium text-ok">
+            Faktura {invoice.number != null ? `#${invoice.number}` : ""} skickades till {customer.name}.
+          </span>{" "}
+          Demo: mejlet simulerades och skickades inte externt.
         </Card>
       ) : null}
 

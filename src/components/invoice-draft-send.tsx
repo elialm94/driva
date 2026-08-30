@@ -36,7 +36,7 @@ export function InvoiceDraftSend({
   customerName: string;
   amount: number;
   dueDateLabel: string;
-  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; issued?: boolean; mailed?: boolean }>;
+  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; issued?: boolean; mailed?: boolean; demo?: boolean }>;
   detailHref: string;
   recipientEmail?: string;
   hasIssuanceBlockers?: boolean;
@@ -99,7 +99,8 @@ export function InvoiceDraftSend({
         if (result.issued) finish("leveransfel");
         return;
       }
-      finish("skickad", "1");
+      // "demo": demoföretaget – notisen berättar att mejlet simulerades.
+      finish("skickad", result && result.demo ? "demo" : "1");
     });
   }
 

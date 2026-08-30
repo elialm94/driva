@@ -324,7 +324,7 @@ export async function updateQuoteAction(quoteId: string, input: QuoteVersionInpu
 
 export async function sendQuoteAction(
   quoteId: string
-): Promise<{ ok: true; mailed: boolean } | { ok: false; errors: string[] }> {
+): Promise<{ ok: true; mailed: boolean; demo?: boolean } | { ok: false; errors: string[] }> {
   return withBusiness(
     async () => {
       try {
@@ -333,7 +333,7 @@ export async function sendQuoteAction(
           return { ok: false, errors: [outcome.error ?? "Kunde inte skicka offerten."] } as const;
         }
         refresh();
-        return { ok: true, mailed: outcome.mode === "live" } as const;
+        return { ok: true, mailed: outcome.mode === "live", demo: outcome.mode === "demo" } as const;
       } catch (e) {
         return {
           ok: false,
@@ -540,7 +540,7 @@ export async function updateInvoiceAction(
 
 export async function sendInvoiceAction(
   invoiceId: string
-): Promise<{ ok: true; mailed: boolean } | { ok: false; errors: string[]; issued?: boolean }> {
+): Promise<{ ok: true; mailed: boolean; demo?: boolean } | { ok: false; errors: string[]; issued?: boolean }> {
   // Steg 1: utfärda + committa ATOMÄRT – ingen e-post i den här transaktionen.
   // issueInvoice är idempotent, så dubbelklick/CAS-retry kan aldrig ge två nummer.
   try {
@@ -566,7 +566,7 @@ export async function sendInvoiceAction(
         if (!outcome.ok) {
           return { ok: false, errors: [outcome.error ?? "E-posten kunde inte skickas."], issued: true } as const;
         }
-        return { ok: true, mailed: outcome.mode === "live" } as const;
+        return { ok: true, mailed: outcome.mode === "live", demo: outcome.mode === "demo" } as const;
       } catch (e) {
         refresh();
         return {
@@ -582,7 +582,7 @@ export async function sendInvoiceAction(
 
 export async function deliverInvoiceAction(
   invoiceId: string
-): Promise<{ ok: true; mailed: boolean } | { ok: false; errors: string[] }> {
+): Promise<{ ok: true; mailed: boolean; demo?: boolean } | { ok: false; errors: string[] }> {
   return withBusiness(
     async () => {
       try {
@@ -591,7 +591,7 @@ export async function deliverInvoiceAction(
         if (!outcome.ok) {
           return { ok: false, errors: [outcome.error ?? "E-posten kunde inte skickas."] } as const;
         }
-        return { ok: true, mailed: outcome.mode === "live" } as const;
+        return { ok: true, mailed: outcome.mode === "live", demo: outcome.mode === "demo" } as const;
       } catch (e) {
         return { ok: false, errors: [e instanceof Error ? e.message : "Kunde inte skicka fakturan igen."] } as const;
       }

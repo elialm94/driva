@@ -168,7 +168,8 @@ export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
 
 /** Leveransutfall från e-postlagret. Produktionsvägen anropar bara hit efter provider-succé. */
 export interface QuoteDeliveryInfo {
-  mode: "mock" | "live" | "test";
+  /** "demo": demoföretagets utskick – simulerat eller till DEMO_EMAIL_SINK. */
+  mode: "mock" | "live" | "test" | "demo";
   ok: boolean;
   messageId?: string;
   sentTo?: string;

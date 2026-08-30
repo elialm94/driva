@@ -17,7 +17,7 @@ import { purchaseDomain } from "../domains/purchase";
 import { isDomainError } from "../domains/errors";
 import { runBokslutAutomation, closeFiscalYear } from "../accounting/close";
 import { markVatReportDeclared } from "../accounting/vat";
-import { isAiConfigured, chatWithTools, type AiChatMessage } from "../ai/provider";
+import { AiDemoLimitError, isAiConfigured, chatWithTools, type AiChatMessage } from "../ai/provider";
 import { assistantToolDefs, executeTool } from "../ai/tools";
 import { historyToAiMessages, systemPrompt } from "../ai/prompt";
 import { isBankIdApprovalRequest, parseAmountInclVat, parseAppliedTaxReduction, parseFlexibleDate, cap, resolveCustomerName } from "../ai/resolve";
@@ -584,6 +584,12 @@ export async function sendUserMessage(text: string): Promise<void> {
       save();
       return;
     } catch (e) {
+      // Demons AI-budget är slut: ärligt besked i stället för teknisk reserv.
+      if (e instanceof AiDemoLimitError) {
+        reply(e.message, helpCard());
+        save();
+        return;
+      }
       // Teknisk detalj till loggen; användaren får ett mänskligt besked nedan.
       console.error("[driva:assistent] LLM-anropet misslyckades, faller tillbaka på regler.", e);
       if (!dispatchRules(trimmed)) {
@@ -629,7 +635,8 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
       let mailed = false;
       for (const id of action.invoiceIds) {
         const { outcome } = await remindInvoiceByEmail(id, "assistent");
-        if (outcome.ok && outcome.mode === "live") mailed = true;
+        // "demo": demoföretagets simulerade utskick räknas som skickat i UX:et.
+        if (outcome.ok && (outcome.mode === "live" || outcome.mode === "demo")) mailed = true;
       }
       updateConfirmCard(
         actionId,
@@ -651,7 +658,7 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
       let mailed = false;
       for (const id of action.quoteIds) {
         const { outcome } = await followUpQuoteByEmail(id, "assistent");
-        if (outcome.ok && outcome.mode === "live") mailed = true;
+        if (outcome.ok && (outcome.mode === "live" || outcome.mode === "demo")) mailed = true;
       }
       updateConfirmCard(actionId, mailed ? "utford" : "avbruten", mailed ? "Påminnelserna har skickats." : "Påminnelsen kunde inte skickas.");
       reply(

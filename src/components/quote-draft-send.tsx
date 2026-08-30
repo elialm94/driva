@@ -33,7 +33,7 @@ export function QuoteDraftSend({
   customerName: string;
   amount: number;
   validUntilLabel: string;
-  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; mailed?: boolean }>;
+  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; mailed?: boolean; demo?: boolean }>;
   detailHref: string;
   recipientEmail?: string;
   hasSendBlockers?: boolean;
@@ -65,8 +65,8 @@ export function QuoteDraftSend({
     requestAction();
   }
 
-  function finish() {
-    router.replace(withFlag(detailHref, "skickad", "1"));
+  function finish(value = "1") {
+    router.replace(withFlag(detailHref, "skickad", value));
     router.refresh();
   }
 
@@ -79,7 +79,8 @@ export function QuoteDraftSend({
         setSendError((result.errors ?? []).join(" ") || "Offerten kunde inte skickas. Försök igen.");
         return;
       }
-      finish();
+      // "demo": demoföretaget – notisen berättar att mejlet simulerades.
+      finish(result && result.demo ? "demo" : "1");
     });
   }
 

@@ -1,9 +1,13 @@
 /**
  * Serverside e-posttransport (Resend). Utan RESEND_API_KEY eller
  * testtransport: ärligt fel – aldrig fejkad succé.
+ *
+ * Undantaget är det publika demoföretaget: därifrån lämnar aldrig ett mejl
+ * appen mot en godtycklig extern adress (spam-relä). Se sendMail.
  */
 
 import { Resend } from "resend";
+import { isDemoBusiness } from "./demo";
 
 export const MAIL_NOT_CONFIGURED = "E-posttjänsten är inte konfigurerad i den här miljön.";
 
@@ -23,7 +27,7 @@ export interface MailMessage {
   html: string;
 }
 
-export type MailMode = "live" | "test";
+export type MailMode = "live" | "test" | "demo";
 
 export type MailResult =
   | { ok: true; mode: MailMode; messageId?: string }
@@ -60,6 +64,16 @@ export function mailFromAddress(): string {
 
 export function isLiveMailConfigured(): boolean {
   return Boolean(resendApiKey());
+}
+
+/**
+ * Valfri sink-adress för demoutskick (t.ex. en intern testbrevlåda). Med sink
+ * skickas demoföretagets mejl DIT – aldrig till mottagaren i meddelandet.
+ * Utan sink simuleras leveransen helt.
+ */
+export function demoEmailSink(): string | undefined {
+  const v = process.env.DEMO_EMAIL_SINK?.trim();
+  return v || undefined;
 }
 
 /** Riktig utskicksväg: live-nyckel eller testtransport. Mock-succé finns inte. */
@@ -108,6 +122,12 @@ function classifyProviderError(raw: string): { error: string; code: NonNullable<
 }
 
 export async function sendMail(message: MailMessage, meta?: MailSendMeta): Promise<MailResult> {
+  // Demoföretaget är publikt och delat – dess utskick får aldrig nå
+  // godtyckliga externa adresser. Grinden sitter centralt så att ALLA
+  // utskicksvägar (offert, faktura, påminnelse, inbjudan) täcks.
+  if (isDemoBusiness()) {
+    return sendDemoMail(message, meta);
+  }
   const mode = activeMode();
   try {
     if (testTransport) {
@@ -128,6 +148,35 @@ export async function sendMail(message: MailMessage, meta?: MailSendMeta): Promi
     const classified = classifyProviderError(raw);
     logSend("failed", meta);
     return { ok: false, error: classified.error, mode, code: classified.code };
+  }
+}
+
+/**
+ * Demoutskick: simuleras (standard) eller omdirigeras till DEMO_EMAIL_SINK.
+ * Returnerar alltid ok med mode "demo" – UI:t visar den ärliga demonoten
+ * ("mejlet simulerades") och dokumentflödet fortsätter som i riktiga Driva.
+ */
+async function sendDemoMail(message: MailMessage, meta?: MailSendMeta): Promise<MailResult> {
+  const sink = demoEmailSink();
+  if (!sink || !mailProviderAvailable()) {
+    logSend("demo_simulated", meta);
+    return { ok: true, mode: "demo" };
+  }
+  const redirected: MailMessage = { ...message, to: sink, subject: `[Demo] ${message.subject}` };
+  try {
+    if (testTransport) {
+      const extra = await testTransport(redirected);
+      const messageId = extra && typeof extra === "object" ? extra.messageId : undefined;
+      logSend("demo_sink", meta, messageId);
+      return { ok: true, mode: "demo", messageId };
+    }
+    const messageId = await sendViaResend(redirected);
+    logSend("demo_sink", meta, messageId);
+    return { ok: true, mode: "demo", messageId };
+  } catch {
+    // Sinken är bäst-ansträngning: demon får aldrig blockeras av mejlfel.
+    logSend("demo_sink_failed", meta);
+    return { ok: true, mode: "demo" };
   }
 }
 
