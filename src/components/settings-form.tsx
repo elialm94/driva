@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check, Landmark, Plus } from "lucide-react";
@@ -24,7 +24,8 @@ import {
   swedishPhoneInputProps,
 } from "@/lib/validation";
 import { labelForHref, withReturnTo } from "@/lib/nav";
-import type { IssueBlocker } from "@/lib/invoices/validate";
+import { collectSellerBlockers, type IssueBlocker } from "@/lib/invoices/validate";
+import { settingsBillingGaps } from "@/lib/settings-billing-gaps";
 import { settingsFieldErrors, type SettingsFieldError, type SettingsTab } from "@/lib/settings-validation";
 import { FieldError, FormValidationSummary, focusField, invalidFieldCls } from "./form-validation";
 import type { MissingRequirement } from "@/lib/form-requirements";
@@ -265,7 +266,59 @@ export function SettingsForm({
     });
   }
 
-  const firstMissingHref = readiness.blockers.find((b) => b.href)?.href;
+  const liveBlockers = useMemo(
+    () =>
+      collectSellerBlockers({
+        ...initial,
+        name: form.name,
+        orgNumber: form.orgNumber,
+        vatNumber: form.vatNumber,
+        address: form.address,
+        postalCode: form.postalCode,
+        city: form.city,
+        bankgiro: form.bankgiro,
+        plusgiro: form.plusgiro,
+        bankAccount: form.bankAccount,
+        iban: form.iban,
+      }),
+    [initial, form]
+  );
+  const billingGaps = useMemo(
+    () => settingsBillingGaps(liveBlockers, flik, form, tabHref),
+    [liveBlockers, flik, form, returnTo, returnLabel]
+  );
+
+  function revealPayFields(fieldId?: string) {
+    if (
+      fieldId === "installningar-plusgiro" ||
+      fieldId === "installningar-iban" ||
+      fieldId === "installningar-bic" ||
+      fieldId === "installningar-bankAccount"
+    ) {
+      setExtraPay(true);
+    }
+  }
+
+  function goToFirstBillingGap() {
+    const first = billingGaps[0];
+    if (!first) return;
+    revealPayFields(first.fieldId);
+    if (first.href) {
+      router.push(first.href);
+      return;
+    }
+    focusField(first.fieldId);
+  }
+
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash.startsWith("installningar-")) return;
+    revealPayFields(hash);
+    const t = window.setTimeout(() => focusField(hash), 50);
+    return () => window.clearTimeout(t);
+    // flik: hash-länk från en annan flik landar här när innehållet monterats.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flik]);
 
   const subtitle = useMemo(() => {
     if (flik === "fakturering") return "Uppgifter som hamnar på nya fakturor. Utfärdade fakturor ändras inte.";
@@ -286,21 +339,35 @@ export function SettingsForm({
         <PageHeader title="Inställningar" subtitle={subtitle} />
       )}
 
-      <Card className="mb-6 flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-        <div>
-          <p className="text-[13px] font-medium text-muted">Fakturering</p>
-          {readiness.ready ? (
-            <p className="mt-0.5 text-[15px] font-medium text-ok">✓ Redo att fakturera</p>
-          ) : (
-            <p className="mt-0.5 text-[15px] font-medium text-warn">
-              ⚠ {readiness.missingCount} {readiness.missingCount === 1 ? "uppgift saknas" : "uppgifter saknas"}
-            </p>
-          )}
+      <Card className="mb-6 px-5 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[13px] font-medium text-muted">Fakturering</p>
+            {billingGaps.length === 0 ? (
+              <p className="mt-0.5 text-[15px] font-medium text-ok">✓ Redo att fakturera</p>
+            ) : (
+              <p className="mt-0.5 text-[15px] font-medium text-warn">
+                ⚠ {billingGaps.length} {billingGaps.length === 1 ? "uppgift saknas" : "uppgifter saknas"}
+              </p>
+            )}
+          </div>
+          {billingGaps.length > 0 ? (
+            <button type="button" className={buttonClasses("secondary", "sm")} onClick={goToFirstBillingGap}>
+              Komplettera
+            </button>
+          ) : null}
         </div>
-        {!readiness.ready && firstMissingHref ? (
-          <Link href={tabHref(firstMissingHref) as never} className={buttonClasses("secondary", "sm")}>
-            Komplettera
-          </Link>
+        {billingGaps.length > 0 ? (
+          <FormValidationSummary
+            id="installningar-fakturering-saknas"
+            className="mt-3"
+            missing={billingGaps}
+            heading="Det här behövs för att kunna fakturera"
+            onFocus={(item) => {
+              revealPayFields(item.fieldId);
+              if (item.fieldId && !item.href) focusField(item.fieldId);
+            }}
+          />
         ) : null}
       </Card>
 
@@ -416,8 +483,15 @@ export function SettingsForm({
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Adress</p>
             <p className={hintCls}>Samma adress används på offerter, fakturor och hemsidan. Du behöver inte ange den igen under fakturering.</p>
             <div>
-              <label className={labelCls}>Gatuadress</label>
-              <input value={form.address} onChange={(e) => patch("address", e.target.value)} className={inputCls} />
+              <label className={labelCls} htmlFor="installningar-address">
+                Gatuadress
+              </label>
+              <input
+                id="installningar-address"
+                value={form.address}
+                onChange={(e) => patch("address", e.target.value)}
+                className={inputCls}
+              />
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
@@ -441,8 +515,15 @@ export function SettingsForm({
                 <FieldError id="installningar-postalCode-fel">{errorFor("postalCode")}</FieldError>
               </div>
               <div>
-                <label className={labelCls}>Ort</label>
-                <input value={form.city} onChange={(e) => patch("city", e.target.value)} className={inputCls} />
+                <label className={labelCls} htmlFor="installningar-city">
+                  Ort
+                </label>
+                <input
+                  id="installningar-city"
+                  value={form.city}
+                  onChange={(e) => patch("city", e.target.value)}
+                  className={inputCls}
+                />
               </div>
               <div>
                 <label className={labelCls}>Land</label>
