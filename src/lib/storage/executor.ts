@@ -4,6 +4,8 @@
  * adapterkod pratar ENBART med detta gränssnitt.
  */
 
+import { recordQuery } from "../perf/telemetry";
+
 export type SqlParam = string | number | boolean | null;
 
 export interface SqlRow {
@@ -38,8 +40,13 @@ type PostgresSql = {
 class PostgresExecutor implements SqlExecutor {
   constructor(private readonly sql: PostgresSql) {}
   async query(text: string, params: SqlParam[] = []): Promise<SqlRow[]> {
-    const rows = await this.sql.unsafe(text, params as unknown[]);
-    return rows as unknown as SqlRow[];
+    const t0 = performance.now();
+    try {
+      const rows = await this.sql.unsafe(text, params as unknown[]);
+      return rows as unknown as SqlRow[];
+    } finally {
+      recordQuery(text, performance.now() - t0);
+    }
   }
 }
 
@@ -102,8 +109,13 @@ type PgliteDb = {
 export function pgliteClient(db: PgliteDb): SqlClient {
   const wrap = (q: PgliteDb["query"]): SqlExecutor => ({
     async query(text, params = []) {
-      const res = await q(text, params as unknown[]);
-      return res.rows as SqlRow[];
+      const t0 = performance.now();
+      try {
+        const res = await q(text, params as unknown[]);
+        return res.rows as SqlRow[];
+      } finally {
+        recordQuery(text, performance.now() - t0);
+      }
     },
   });
   return {

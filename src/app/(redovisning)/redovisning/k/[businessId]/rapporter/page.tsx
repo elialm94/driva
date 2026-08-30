@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AccountantClientTabs, accountantStatusText } from "@/components/accountant-workspace";
 import { Card, PageHeader } from "@/components/ui";
 import { loadAccountantClientPage } from "@/lib/collaboration/client-page";
@@ -57,9 +58,9 @@ export default async function AccountantRapporterPage({
         <a href="/api/bokforing/export?typ=sie" className="font-medium text-accent hover:underline">
           Exportera SIE
         </a>
-        <a href={`/redovisning/k/${businessId}/verifikationer`} className="text-soft hover:text-ink">
+        <Link href={`/redovisning/k/${businessId}/verifikationer`} className="text-soft hover:text-ink">
           Huvudbok / verifikationer
-        </a>
+        </Link>
       </div>
     </div>
   );

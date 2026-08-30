@@ -36,18 +36,22 @@ export function useUnsavedLeave(dirty: boolean) {
     setOpen(false);
   }, []);
 
-  const proceed = useCallback((href: string) => {
-    leavingRef.current = true;
-    dirtyRef.current = false;
-    pendingHref.current = null;
-    setOpen(false);
-    const next = canonicalHref(href);
-    // Defer so the confirming click cannot fall through onto a Link after the
-    // modal unmounts, and so beforeunload sees leavingRef first.
-    window.setTimeout(() => {
-      window.location.assign(next);
-    }, 0);
-  }, []);
+  const proceed = useCallback(
+    (href: string) => {
+      leavingRef.current = true;
+      dirtyRef.current = false;
+      pendingHref.current = null;
+      setOpen(false);
+      const next = canonicalHref(href);
+      // Defer so the confirming click cannot fall through onto a Link after the
+      // modal unmounts, and so beforeunload sees leavingRef first.
+      // Klientnavigering (router.push) – ingen helsidesomladdning.
+      window.setTimeout(() => {
+        router.push(next as never);
+      }, 0);
+    },
+    [router]
+  );
 
   useEffect(() => {
     if (!dirty) return;
