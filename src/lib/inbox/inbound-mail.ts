@@ -18,6 +18,17 @@ export interface InboundAttachmentPayload {
   contentBase64?: string;
 }
 
+/** Fält som kan bära egen konfidens från tolken. */
+export type ParsedFieldKey =
+  | "amount"
+  | "vatAmount"
+  | "supplier"
+  | "date"
+  | "invoiceNumber"
+  | "dueDate"
+  | "ocr"
+  | "bankgiro";
+
 export interface InboundParsedHint {
   amount?: number;
   vatAmount?: number;
@@ -34,6 +45,11 @@ export interface InboundParsedHint {
    * kontrollkandidat i stället för betalbara fält.
    */
   detailsConfidence?: number;
+  /**
+   * 0–1 per fält när tolken kan skilja på dem (t.ex. säkert leverantörsnamn
+   * men osäkert totalbelopp). Saknas ett fält gäller confidence.
+   */
+  fieldConfidence?: Partial<Record<ParsedFieldKey, number>>;
   documentType?: "leverantorsfaktura" | "kvitto" | "ekonomiskt_dokument";
 }
 
@@ -123,6 +139,14 @@ export function parseInboundPayload(body: unknown): InboundMailPayload | { error
         ? { documentType: p.documentType }
         : {}),
     };
+    if (p.fieldConfidence && typeof p.fieldConfidence === "object") {
+      const fc: Partial<Record<ParsedFieldKey, number>> = {};
+      for (const key of ["amount", "vatAmount", "supplier", "date", "invoiceNumber", "dueDate", "ocr", "bankgiro"] as const) {
+        const v = (p.fieldConfidence as Record<string, unknown>)[key];
+        if (typeof v === "number") fc[key] = v;
+      }
+      if (Object.keys(fc).length > 0) parsed.fieldConfidence = fc;
+    }
   }
 
   const attachments: InboundAttachmentPayload[] = [];

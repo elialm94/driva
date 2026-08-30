@@ -43,7 +43,7 @@ import {
   supplierDetailsRequestInfo,
   type PaymentDetailsInfo,
 } from "./payment-details";
-import { isPaymentInFlight, isReadyToApproveNow } from "../inbox/workflow";
+import { amountIsCertain, isPaymentInFlight, isReadyToApproveNow, needsAmountReview } from "../inbox/workflow";
 
 /**
  * Central åtgärdsmotor: EN härledning av "vad behöver jag göra?" ur riktig
@@ -1298,12 +1298,15 @@ function collectInboxMail(ranked: Ranked[]) {
 
     const needsReview =
       item.status === "ny" &&
-      (item.parsedAmount == null ||
+      (!amountIsCertain(item) ||
         (item.documentType !== "kvitto" && !item.supplierInvoiceId) ||
         (invoice && invoice.accountingStatus !== "bokford"));
     if (!needsReview) continue;
 
     const href = `/inbox/${item.id}`;
+    const amountReview = needsAmountReview(item);
+    const who = item.parsedSupplier ?? (item.subject || "dokument");
+    const docWord = item.documentType === "kvitto" ? "kvittot" : "fakturan";
     ranked.push({
       rank: RANK.newJob,
       order: -(Date.parse(item.createdAt) || 0),
@@ -1312,13 +1315,19 @@ function collectInboxMail(ranked: Ranked[]) {
         priority: "action",
         category: "accounting",
         icon: "inbox",
-        title:
-          item.parsedAmount == null
-            ? `Kontrollera belopp – ${item.parsedSupplier ?? (item.subject || "dokument")}`
-            : `Granska ${item.documentType === "kvitto" ? "kvitto" : "faktura"} från ${item.parsedSupplier ?? item.fromAddress}`,
-        subtitle: item.parsedAmount != null ? `${kr(item.parsedAmount)} · ${excerpt(item.textBody)}` : excerpt(item.textBody),
+        title: amountReview
+          ? `Kontrollera belopp för ${who}-${docWord}`
+          : `Granska ${item.documentType === "kvitto" ? "kvitto" : "faktura"} från ${item.parsedSupplier ?? item.fromAddress}`,
+        subtitle:
+          amountReview && item.parsedAmount != null
+            ? `Läst ${kr(item.parsedAmount)} – behöver kontroll mot dokumentet.`
+            : item.parsedAmount != null
+              ? `${kr(item.parsedAmount)} · ${excerpt(item.textBody)}`
+              : excerpt(item.textBody),
         href,
-        cta: { type: "link", label: "Öppna i inboxen", href },
+        cta: amountReview
+          ? { type: "link", label: "Kontrollera", href: `/inbox/${item.id}/kontrollera` }
+          : { type: "link", label: "Öppna i inboxen", href },
         secondary: { label: "Visa posten", href },
       },
     });

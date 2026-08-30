@@ -155,7 +155,7 @@ export function inboxDisplayStatus(input: {
   if (invoice && invoice.accountingStatus === "bokford" && !hasRecipientAccount(invoice, payment)) {
     return { label: "Saknar bankuppgifter", tone: "warn" };
   }
-  if (item.parsedAmount == null && item.status === "ny" && !invoice) {
+  if (needsAmountReview(item) && !invoice) {
     return { label: "Kontrollera belopp", tone: "warn" };
   }
   if (invoice?.accountingStatus === "bokford" && (payment?.status === "READY" || payment?.status === "DRAFT")) {
@@ -213,7 +213,7 @@ export function countsTowardInboxBadge(input: {
 }): boolean {
   const { item, invoice, payment, detailsCause } = input;
   if (payment?.status === "FAILED" || payment?.destinationChanged || detailsCause === "CHANGED") return true;
-  if (item.status === "ny" && (!invoice || invoice.accountingStatus !== "bokford" || item.parsedAmount == null)) {
+  if (item.status === "ny" && (!invoice || invoice.accountingStatus !== "bokford" || !amountIsCertain(item))) {
     return true;
   }
   // Väntar på leverantören = extern part, inget för användaren att göra nu.
