@@ -4,6 +4,10 @@ import { kr } from "@/lib/format";
 import { taxReductionCalcHintText } from "@/lib/tax-reduction-terms";
 import { Info } from "lucide-react";
 
+/**
+ * ROT/RUT-villkoret på offertdokumentet. Hör ihop med summeringen, så det står
+ * som en not direkt under den – alltid fullt läsbart, aldrig bakom en expand.
+ */
 export function TaxReductionQuoteClause({
   terms,
 }: {
@@ -11,16 +15,17 @@ export function TaxReductionQuoteClause({
 }) {
   if (!terms) return null;
   return (
-    <div className="mt-4 rounded-xl border border-line bg-canvas/50 px-4 py-3">
-      <p className="text-[13px] font-semibold text-ink">{terms.heading}</p>
-      <p className="mt-1 text-[12px] leading-relaxed text-soft">{terms.body}</p>
-    </div>
+    <p className="mt-2 max-w-[46rem] text-[11px] leading-[1.5] text-muted">
+      <span className="font-semibold text-soft">{terms.heading}:</span> {terms.body}
+    </p>
   );
 }
 
 export function TaxReductionInvoiceDisclaimer({ version }: { version?: string }) {
   return (
-    <p className="mt-3 text-[12px] leading-relaxed text-muted">{getInvoiceTaxReductionDisclaimer(version)}</p>
+    <p className="mt-2 max-w-[46rem] text-[11px] leading-[1.5] text-muted">
+      {getInvoiceTaxReductionDisclaimer(version)}
+    </p>
   );
 }
 

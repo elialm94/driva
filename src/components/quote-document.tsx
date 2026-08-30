@@ -1,15 +1,33 @@
+import type { ReactNode } from "react";
 import type { BankIDSignature, CompanySettings, Customer, Quote, QuoteVersion } from "@/lib/types";
 import { docTotals, lineTotal, vatBreakdown } from "@/lib/calc";
 import { kr, datumLang, datumTid, datumNumeriskt } from "@/lib/format";
-import { ShieldCheck, BadgeCheck } from "lucide-react";
-import { taxReductionDeductionLabel, getTaxReductionTerms } from "@/lib/tax-reduction-terms";
-import { TaxReductionQuoteClause, TaxReductionCalcHint } from "./tax-reduction-terms";
+import { BadgeCheck } from "lucide-react";
+import {
+  taxReductionCalcHintText,
+  taxReductionDeductionLabel,
+  getTaxReductionTerms,
+} from "@/lib/tax-reduction-terms";
+import { TaxReductionQuoteClause } from "./tax-reduction-terms";
 import { lineKindLabel } from "@/lib/economic-line-type";
 import { CompanyLogo } from "./company-logo";
 import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
 import { RichTextView } from "./rich-text";
 import { signedWithBankIdBy } from "@/lib/status-labels";
+import { cx } from "./ui";
 
+/**
+ * Dokumentsektion: hårfin linje + versal rubrik bär hierarkin, i stället för
+ * ett kort med egen ram. break-inside-avoid håller sektionen ihop i utskrift.
+ */
+export function DocSection({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
+  return (
+    <section className={cx("mt-5 break-inside-avoid border-t border-line pt-4", className)}>
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">{title}</h2>
+      {children}
+    </section>
+  );
+}
 
 export function DocCompanyHeader({ company, docType, docNumber }: { company: CompanySettings; docType: string; docNumber: string }) {
   return (
@@ -45,7 +63,7 @@ export function DocFooter({ company }: { company: CompanySettings }) {
   const sate = company.sate?.trim() || company.city;
   const pay = paymentBits(company).join(" · ");
   return (
-    <div className="mt-10 border-t border-line pt-4 text-center text-[12px] leading-relaxed text-muted">
+    <div className="mt-7 break-inside-avoid border-t border-line pt-3 text-center text-[11px] leading-relaxed text-muted">
       {company.name} · Org.nr {company.orgNumber} · Momsreg.nr {company.vatNumber}
       {sate ? ` · Säte ${sate}` : ""}
       <br />
@@ -62,21 +80,21 @@ export function DocLinesTable({
 }) {
   return (
     // Smal skärm: Antal/À-pris flyttar in som underrad så tabellen aldrig kläms.
-    <table className="w-full text-left text-[14px]">
+    <table className="w-full text-left text-[13.5px]">
       <thead>
-        <tr className="border-b border-line text-[12px] font-semibold uppercase tracking-wide text-muted">
-          <th className="pb-2 pr-3 font-semibold">Beskrivning</th>
-          <th className="hidden pb-2 pr-3 text-right font-semibold sm:table-cell">Antal</th>
-          <th className="hidden pb-2 pr-3 text-right font-semibold sm:table-cell">À-pris</th>
-          <th className="pb-2 text-right font-semibold">Summa</th>
+        <tr className="border-b border-line text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
+          <th className="pb-1.5 pr-3 font-semibold">Beskrivning</th>
+          <th className="hidden pb-1.5 pr-3 text-right font-semibold sm:table-cell">Antal</th>
+          <th className="hidden pb-1.5 pr-3 text-right font-semibold sm:table-cell">À-pris</th>
+          <th className="pb-1.5 text-right font-semibold">Summa</th>
         </tr>
       </thead>
       <tbody>
         {lines.map((line) => (
-          <tr key={line.id} className="border-b border-line/60 last:border-0">
-            <td className="py-3 pr-3">
+          <tr key={line.id} className="break-inside-avoid border-b border-line/60 last:border-0">
+            <td className="py-2 pr-3">
               <p className="font-medium text-ink">{line.description}</p>
-              <p className="text-[12px] text-muted">
+              <p className="text-[11.5px] text-muted">
                 {lineKindLabel(line.kind)}
                 <span className="sm:hidden">
                   {" "}
@@ -84,11 +102,11 @@ export function DocLinesTable({
                 </span>
               </p>
             </td>
-            <td className="hidden py-3 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">
+            <td className="hidden py-2 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">
               {line.qty} {line.unit}
             </td>
-            <td className="hidden py-3 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">{kr(line.unitPrice)}</td>
-            <td className="py-3 text-right font-medium text-ink tabular whitespace-nowrap">{kr(lineTotal(line))}</td>
+            <td className="hidden py-2 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">{kr(line.unitPrice)}</td>
+            <td className="py-2 text-right font-medium text-ink tabular whitespace-nowrap">{kr(lineTotal(line))}</td>
           </tr>
         ))}
       </tbody>
@@ -96,65 +114,81 @@ export function DocLinesTable({
   );
 }
 
+/**
+ * Ekonomisammanställningen. ROT/RUT ligger i samma uppställning som summorna –
+ * inget separat kort – och förklaringen står som fullt läsbar not under den.
+ */
 export function DocTotalsBlock({
   lines,
   rot,
   toPayLabel = "Att betala",
+  note,
 }: {
   lines: QuoteVersion["lines"];
   rot: QuoteVersion["rot"];
   toPayLabel?: string;
+  /** Villkorstext som hör till summeringen. Alltid synlig – aldrig bakom en expand. */
+  note?: ReactNode;
 }) {
   const t = docTotals(lines, rot);
   const vat = vatBreakdown(lines);
+  // Manuellt sänkt avdrag: procentsatsen i räkneexemplet skulle inte stämma.
+  const showCalcHint =
+    Boolean(rot) && !(rot!.appliedTaxReduction != null && rot!.appliedTaxReduction !== t.calculatedEligibleTaxReduction);
   return (
-    <div className="ml-auto w-full max-w-[280px] space-y-1.5 text-[14px]">
-      <div className="flex justify-between text-soft">
-        <span>Summa exkl. moms</span>
-        <span className="tabular">{kr(t.subtotal)}</span>
-      </div>
-      {vat.map((v) => (
-        <div key={v.rate} className="flex justify-between text-soft">
-          <span>Moms {v.rate} %</span>
-          <span className="tabular">{kr(v.vat)}</span>
-        </div>
-      ))}
-      {vat.length > 1 ? (
+    <div className="break-inside-avoid">
+      <div className="ml-auto w-full max-w-[300px] space-y-1 text-[13.5px]">
         <div className="flex justify-between text-soft">
-          <span>Moms totalt</span>
-          <span className="tabular">{kr(t.vat)}</span>
+          <span>Summa exkl. moms</span>
+          <span className="tabular">{kr(t.subtotal)}</span>
         </div>
-      ) : null}
-      <div className="flex justify-between font-medium text-ink">
-        <span>Totalt inkl. moms</span>
-        <span className="tabular">{kr(t.total)}</span>
-      </div>
-      {rot ? (
-        <>
+        {vat.map((v) => (
+          <div key={v.rate} className="flex justify-between text-soft">
+            <span>Moms {v.rate} %</span>
+            <span className="tabular">{kr(v.vat)}</span>
+          </div>
+        ))}
+        {vat.length > 1 ? (
           <div className="flex justify-between text-soft">
-            <span>Arbetskostnad inkl. moms</span>
-            <span className="tabular">{kr(t.laborInclVat)}</span>
+            <span>Moms totalt</span>
+            <span className="tabular">{kr(t.vat)}</span>
           </div>
-          <div className="flex justify-between text-accent-deep">
-            <span>{taxReductionDeductionLabel(rot.type)}</span>
-            <span className="tabular">−{kr(t.deduction)}</span>
-          </div>
-        </>
-      ) : null}
-      <div className="mt-2 flex items-baseline justify-between border-t border-line pt-2.5">
-        <span className="text-[15px] font-semibold text-ink">{toPayLabel}</span>
-        <span className="text-[20px] font-semibold tracking-tight text-ink tabular">{kr(t.toPay)}</span>
+        ) : null}
+        <div className="flex justify-between font-medium text-ink">
+          <span>Summa inkl. moms</span>
+          <span className="tabular">{kr(t.total)}</span>
+        </div>
+        {rot ? (
+          <>
+            <div className="flex justify-between text-soft">
+              <span>Arbetskostnad inkl. moms</span>
+              <span className="tabular">{kr(t.laborInclVat)}</span>
+            </div>
+            <div className="flex justify-between text-accent-deep">
+              <span>{taxReductionDeductionLabel(rot.type)}</span>
+              <span className="tabular">−{kr(t.deduction)}</span>
+            </div>
+          </>
+        ) : null}
+        <div className="mt-1.5 flex items-baseline justify-between border-t border-line pt-2">
+          <span className="text-[14px] font-semibold text-ink">{toPayLabel}</span>
+          <span className="text-[19px] font-semibold tracking-tight text-ink tabular">{kr(t.toPay)}</span>
+        </div>
       </div>
-      {rot && rot.appliedTaxReduction != null && rot.appliedTaxReduction !== t.calculatedEligibleTaxReduction ? null : rot ? (
-        <TaxReductionCalcHint type={rot.type} laborInclVat={t.laborInclVat} />
+      {rot && showCalcHint ? (
+        <p className="mt-2.5 max-w-[46rem] text-[11px] leading-[1.5] text-muted">
+          {taxReductionCalcHintText(rot.type, t.laborInclVat)}
+        </p>
       ) : null}
+      {note}
     </div>
   );
 }
 
 /**
  * Offertdokumentet exakt som kunden ser det.
- * Används på offertdetaljen, på den publika offertsidan och i PDF-vyn.
+ * Används på offertdetaljen, på den publika offertsidan och i utskrift/PDF.
+ * Allt kunden accepterar är synligt direkt – ingen avtalstext bakom expand.
  */
 export function QuoteDocument({
   company,
@@ -162,21 +196,33 @@ export function QuoteDocument({
   quote,
   version,
   signature,
+  approval,
 }: {
   company: CompanySettings;
   customer: Customer;
   quote: Quote;
   version: QuoteVersion;
   signature?: BankIDSignature;
+  /** Signeringsknappen på den publika sidan. I utskrift ersätts den av statisk text. */
+  approval?: ReactNode;
 }) {
   const seller = resolveQuoteCompany(version, company);
   const t = docTotals(version.lines, version.rot);
+  const plan = version.paymentPlan;
+  const paymentRows =
+    plan.length > 0
+      ? plan.map((p, i) => ({
+          key: `${i}-${p.label}`,
+          label: `${p.label} (${p.percent} %)`,
+          amount: Math.round((t.toPay * p.percent) / 100),
+        }))
+      : [{ key: "hela", label: "Hela beloppet (100 %)", amount: t.toPay }];
 
   return (
-    <div className="bg-white px-7 py-8 text-ink sm:px-10 sm:py-10">
+    <article className="bg-white px-6 py-7 text-ink sm:px-9 sm:py-8 print:px-0 print:py-0">
       <DocCompanyHeader company={seller} docType="Offert" docNumber={`#${quote.number}`} />
 
-      <div className="mt-8 grid grid-cols-2 gap-x-6 gap-y-4 text-[13px] sm:grid-cols-4">
+      <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-[12.5px] sm:grid-cols-4">
         <div>
           <p className="text-muted">Datum</p>
           <p className="font-medium">{datumNumeriskt(version.createdAt)}</p>
@@ -202,69 +248,69 @@ export function QuoteDocument({
         </div>
       </div>
 
-      <h1 className="mt-9 text-[24px] font-semibold tracking-tight">{version.title}</h1>
-      <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-soft">{version.intro}</p>
+      <h1 className="mt-6 text-[21px] font-semibold tracking-tight">{version.title}</h1>
+      {version.intro ? <p className="mt-1.5 max-w-2xl text-[13.5px] leading-relaxed text-soft">{version.intro}</p> : null}
 
-      <div className="mt-7">
-        <RichTextView doc={version.richText} className="mb-7" />
+      <div className="mt-5">
+        <RichTextView doc={version.richText} className="mb-5" />
         <DocLinesTable lines={version.lines} />
       </div>
 
-      <div className="mt-5">
-        <DocTotalsBlock lines={version.lines} rot={version.rot} toPayLabel="Att betala" />
+      <div className="mt-4">
+        <DocTotalsBlock
+          lines={version.lines}
+          rot={version.rot}
+          toPayLabel="Att betala"
+          note={
+            version.rot ? (
+              <TaxReductionQuoteClause terms={version.taxReductionTerms ?? getTaxReductionTerms(version.rot.type)} />
+            ) : null
+          }
+        />
       </div>
 
-      {version.rot ? (
-        <TaxReductionQuoteClause terms={version.taxReductionTerms ?? getTaxReductionTerms(version.rot.type)} />
-      ) : null}
-
-      {version.paymentPlan.length > 0 ? (
-        <div className="mt-8">
-          <p className="text-[13px] font-semibold uppercase tracking-wide text-muted">Betalningsplan</p>
-          <div className="mt-2 space-y-1.5">
-            {version.paymentPlan.map((p, i) => (
-              <div key={i} className="flex items-baseline justify-between text-[14px]">
-                <span className="text-soft">
-                  {p.label} ({p.percent} %)
-                </span>
-                <span className="font-medium tabular">{kr(Math.round((t.toPay * p.percent) / 100))}</span>
-              </div>
-            ))}
-          </div>
-          <p className="mt-2 text-[12px] text-muted">
-            Betalningsvillkor: {version.paymentTermsDays} dagar per faktura.
-            {version.lateInterestRate ? ` Vid försenad betalning debiteras dröjsmålsränta med ${version.lateInterestRate} % per år.` : ""}
-          </p>
+      <DocSection title="Betalning">
+        <div className="mt-2 space-y-1 text-[13.5px]">
+          {paymentRows.map((row) => (
+            <div key={row.key} className="flex items-baseline justify-between gap-4">
+              <span className="text-soft">{row.label}</span>
+              <span className="font-medium tabular whitespace-nowrap">{kr(row.amount)}</span>
+            </div>
+          ))}
         </div>
-      ) : null}
+        <p className="mt-2 text-[11.5px] leading-[1.5] text-muted">
+          Betalningsvillkor: {version.paymentTermsDays} dagar per faktura.
+          {version.lateInterestRate
+            ? ` Vid försenad betalning debiteras dröjsmålsränta med ${version.lateInterestRate} % per år.`
+            : ""}
+        </p>
+      </DocSection>
 
-      <div className="mt-8">
-        <p className="text-[13px] font-semibold uppercase tracking-wide text-muted">Villkor</p>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-soft">{version.terms}</p>
-      </div>
+      <DocSection title="Villkor">
+        <p className="mt-1.5 max-w-[46rem] whitespace-pre-line text-[12px] leading-[1.55] text-soft">{version.terms}</p>
+      </DocSection>
 
       {signature ? (
-        <div className="mt-8 flex items-start gap-3 rounded-2xl border border-ok/20 bg-ok-soft/60 p-4">
-          <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
-          <div>
-            <p className="text-[14px] font-semibold text-ok">{signedWithBankIdBy(signature.signerName)}</p>
-            <p className="text-[13px] text-soft">{datumTid(signature.signedAt)}</p>
-          </div>
-        </div>
+        <DocSection title="Godkänd">
+          <p className="mt-1.5 flex items-center gap-1.5 text-[13.5px] font-semibold text-ok">
+            <BadgeCheck className="size-4 shrink-0" />
+            {signedWithBankIdBy(signature.signerName)}
+          </p>
+          <p className="mt-0.5 text-[11.5px] text-muted">{datumTid(signature.signedAt)}</p>
+        </DocSection>
       ) : (
-        <div className="mt-8 flex items-start gap-3 rounded-2xl border border-bankid/15 bg-bankid-soft/60 p-4">
-          <ShieldCheck className="mt-0.5 size-5 shrink-0 text-bankid" />
-          <div>
-            <p className="text-[14px] font-semibold text-bankid">Signeras med BankID</p>
-            <p className="text-[13px] leading-relaxed text-soft">
-              Offerten signeras tryggt och juridiskt bindande med BankID via länken i e-postmeddelandet. Giltig till{" "}
-              {datumLang(version.validUntil)}.
-            </p>
-          </div>
-        </div>
+        <DocSection title="Godkänn offerten">
+          <p className="mt-1.5 max-w-[46rem] text-[13px] leading-relaxed text-soft">
+            Signera tryggt och juridiskt bindande med BankID. Offerten är giltig till {datumLang(version.validUntil)}.
+          </p>
+          {approval ? <div className="mt-3 print:hidden">{approval}</div> : null}
+          <p className={cx("mt-1.5 text-[11.5px] leading-[1.5] text-muted", Boolean(approval) && "hidden print:block")}>
+            Offerten godkänns genom BankID-signering via den digitala offertlänken.
+          </p>
+        </DocSection>
       )}
 
       <DocFooter company={seller} />
-    </div>
+    </article>
   );
 }

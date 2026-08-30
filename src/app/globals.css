@@ -134,6 +134,15 @@ html:has([data-public-site]) {
 }
 
 @media print {
+  /*
+   * Kundfacing dokument (offert/faktura) ska bli en snygg A4 utan att något
+   * döljs: marginalerna ligger på sidan, dokumentet självt tar bort sin
+   * skärmpadding, och sektioner bryts inte mitt itu (break-inside-avoid).
+   */
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
   body {
     background: #fff;
   }

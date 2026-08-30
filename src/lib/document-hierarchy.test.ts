@@ -193,3 +193,88 @@ describe("QuoteDocument: beskrivning före rader", () => {
     assert.ok(html.includes(LINE_TEXT));
   });
 });
+
+/**
+ * Kunden ska kunna läsa hela avtalet den accepterar utan att undra om något
+ * låg bakom "Visa mer": inga <details>, inga modaler, inga accordions i de
+ * kundfacing dokumenten. Kompakteringen sker i typografi och spacing.
+ */
+describe("Kundfacing dokument: allt avtalsinnehåll är synligt direkt", () => {
+  beforeEach(() => replaceDb(emptyTestDb()));
+
+  const TERMS = "Egna villkor gäller.\nGaranti lämnas enligt konsumenttjänstlagen.";
+
+  function rotQuote(over: { paymentPlan?: { label: string; percent: number }[] } = {}) {
+    return createQuote({
+      customerId: "cust-1",
+      title: "Badrum",
+      intro: "Kort ingress.",
+      lines: [labor({ description: LINE_TEXT, unitPrice: 20000 })],
+      rot: { type: "rot" },
+      paymentPlan: over.paymentPlan ?? [{ label: "När arbetet är klart", percent: 100 }],
+      paymentTermsDays: 30,
+      lateInterestRate: 10,
+      validUntil: "2099-01-01",
+      terms: TERMS,
+    });
+  }
+
+  function quoteHtml(quote: ReturnType<typeof createQuote>) {
+    return renderToStaticMarkup(
+      createElement(QuoteDocument, {
+        company: db().settings,
+        customer: db().customers[0],
+        quote,
+        version: currentVersion(quote),
+      })
+    );
+  }
+
+  it("offert: villkor, ROT-klausul, betalning och signering står i klartext", () => {
+    const html = quoteHtml(rotQuote());
+    assert.ok(html.includes("Garanti lämnas enligt konsumenttjänstlagen"), "villkorstexten ska stå på dokumentet");
+    assert.ok(html.includes("preliminärt och förutsätter att Skatteverket"), "ROT-klausulen ska stå på dokumentet");
+    assert.ok(html.includes("Preliminärt ROT-avdrag"));
+    assert.ok(html.includes("Betalningsvillkor: 30 dagar"));
+    assert.ok(html.includes("dröjsmålsränta med 10 % per år"));
+    assert.ok(html.includes("Godkänn offerten"));
+    assert.ok(html.includes("BankID"));
+  });
+
+  it("offert: ingen avtalstext bakom expand, modal eller accordion", () => {
+    const html = quoteHtml(rotQuote());
+    assert.ok(!html.includes("<details"), "dokumentet får inte ha kollapsat innehåll");
+    assert.ok(!html.includes("<summary"));
+    assert.ok(!html.toLowerCase().includes("visa fullständiga villkor"));
+    assert.ok(!html.toLowerCase().includes("visa mer"));
+    assert.ok(!html.includes("Hur räknas detta?"), "räkneexemplet ska stå som synlig not, inte bakom en expand");
+  });
+
+  it("offert utan betalningsplan visar ändå betalning och betalningsvillkor", () => {
+    const html = quoteHtml(rotQuote({ paymentPlan: [] }));
+    assert.ok(html.includes("Betalning"));
+    assert.ok(html.includes("Hela beloppet (100 %)"));
+    assert.ok(html.includes("Betalningsvillkor: 30 dagar"));
+  });
+
+  it("faktura: ROT-disclaimer syns och inget ligger bakom expand", () => {
+    const invoice = createInvoice({
+      customerId: "cust-1",
+      type: "faktura",
+      lines: [labor({ description: LINE_TEXT, unitPrice: 20000 })],
+      rot: { type: "rot" },
+    });
+    const html = renderToStaticMarkup(
+      createElement(InvoiceDocument, {
+        company: db().settings,
+        customer: db().customers[0],
+        invoice,
+      })
+    );
+    assert.ok(html.includes("ROT/RUT är preliminärt"));
+    assert.ok(html.includes("Att betala nu"));
+    assert.ok(html.includes("Betalning"));
+    assert.ok(!html.includes("<details"));
+    assert.ok(!html.includes("<summary"));
+  });
+});

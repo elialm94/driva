@@ -8,6 +8,7 @@ import { QuoteDocument } from "@/components/quote-document";
 import { CompanyLogo } from "@/components/company-logo";
 import { signedWithBankIdBy } from "@/lib/status-labels";
 import { BankIDApproval, DeclineQuoteButton, QuoteQuestionButton } from "@/components/bankid-flow";
+import { PrintButton } from "@/components/print-button";
 import { DemoTag } from "@/components/ui";
 import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
 import { ensurePublicPage, withPublicBusiness } from "@/lib/auth/session";
@@ -49,22 +50,34 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
 
   const seller = resolveQuoteCompany(version, data.settings);
 
+  const approval = canSign ? (
+    <BankIDApproval
+      token={quote.token}
+      quoteNumber={quote.number}
+      toPay={kr(totals.toPay)}
+      companyName={seller.name}
+    />
+  ) : undefined;
+
   return (
-    <div className="min-h-dvh bg-canvas">
-      <header className="border-b border-line bg-card/80 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-3">
+    <div className="min-h-dvh bg-canvas print:bg-white">
+      <header className="border-b border-line bg-card/80 backdrop-blur print:hidden">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-5 py-4">
+          <div className="flex min-w-0 items-center gap-3">
             <CompanyLogo company={seller} size="sm" />
-            <div>
-              <p className="text-[14px] font-semibold leading-tight">{seller.name}</p>
-              <p className="text-[12px] text-muted">Offert #{quote.number} till {customer.name}</p>
+            <div className="min-w-0">
+              <p className="truncate text-[14px] font-semibold leading-tight">{seller.name}</p>
+              <p className="truncate text-[12px] text-muted">Offert #{quote.number} till {customer.name}</p>
             </div>
           </div>
-          <p className="text-[15px] font-semibold tabular">{kr(totals.toPay)}</p>
+          <div className="flex shrink-0 items-center gap-3">
+            <p className="text-[15px] font-semibold tabular">{kr(totals.toPay)}</p>
+            <PrintButton />
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-5">
+      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-5 print:max-w-none print:px-0 print:py-0">
         {quote.status === "godkand" && signature ? (
           <div className="mb-6 rounded-2xl border border-ok/25 bg-ok-soft/70 px-5 py-4 animate-fade-up">
             <div className="flex items-start gap-3">
@@ -79,7 +92,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
                 </p>
                 <a
                   href={`/offert/${quote.token}/underlag`}
-                  className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-bankid hover:underline"
+                  className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-bankid hover:underline print:hidden"
                 >
                   <FileLock2 className="size-3.5" /> Visa signeringsunderlag
                 </a>
@@ -113,18 +126,25 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
           </div>
         ) : null}
 
-        <div className="overflow-hidden rounded-3xl border border-line bg-white shadow-card">
-          <QuoteDocument company={data.settings} customer={customer} quote={quote} version={version} signature={signature} />
+        <div className="overflow-hidden rounded-3xl border border-line bg-white shadow-card print:overflow-visible print:rounded-none print:border-0 print:shadow-none">
+          <QuoteDocument
+            company={data.settings}
+            customer={customer}
+            quote={quote}
+            version={version}
+            signature={signature}
+            approval={approval}
+          />
         </div>
 
-        <p className="mt-6 text-center text-[12px] text-muted">
+        <p className="mt-6 text-center text-[12px] text-muted print:hidden">
           Skickad med Driva · Frågor? Kontakta {seller.name} på {seller.email}
         </p>
-        <div className="h-28" />
+        <div className="h-28 print:hidden" />
       </main>
 
       {canSign ? (
-        <div className="fixed inset-x-0 bottom-0 border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
+        <div className="fixed inset-x-0 bottom-0 border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl print:hidden">
           <div className="mx-auto flex max-w-3xl flex-col gap-2.5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div className="flex items-center justify-between gap-3 sm:block">
               <p className="text-[14px] font-medium">

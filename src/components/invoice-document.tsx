@@ -2,7 +2,7 @@ import type { CompanySettings, Customer, Invoice } from "@/lib/types";
 import { docTotals, lineTotal } from "@/lib/calc";
 import { kr, datumNumeriskt, datumLang } from "@/lib/format";
 import { BadgeCheck } from "lucide-react";
-import { DocCompanyHeader, DocFooter, DocTotalsBlock } from "./quote-document";
+import { DocCompanyHeader, DocFooter, DocSection, DocTotalsBlock } from "./quote-document";
 import { resolveInvoiceView } from "@/lib/invoices/snapshot";
 import { invoiceNumberLabel, invoiceTypeLabel, sameCalendarDay } from "@/lib/invoices/display";
 import { TaxReductionInvoiceDisclaimer } from "./tax-reduction-terms";
@@ -12,22 +12,22 @@ import { RichTextView } from "./rich-text";
 function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
   return (
     // Smal skärm: Antal/À-pris/Moms flyttar in som underrad så tabellen aldrig kläms.
-    <table className="w-full text-left text-[14px]">
+    <table className="w-full text-left text-[13.5px]">
       <thead>
-        <tr className="border-b border-line text-[12px] font-semibold uppercase tracking-wide text-muted">
-          <th className="pb-2 pr-3 font-semibold">Beskrivning</th>
-          <th className="hidden pb-2 pr-3 text-right font-semibold sm:table-cell">Antal</th>
-          <th className="hidden pb-2 pr-3 text-right font-semibold sm:table-cell">À-pris exkl.</th>
-          <th className="hidden pb-2 pr-3 text-right font-semibold sm:table-cell">Moms</th>
-          <th className="pb-2 text-right font-semibold">Underlag</th>
+        <tr className="border-b border-line text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
+          <th className="pb-1.5 pr-3 font-semibold">Beskrivning</th>
+          <th className="hidden pb-1.5 pr-3 text-right font-semibold sm:table-cell">Antal</th>
+          <th className="hidden pb-1.5 pr-3 text-right font-semibold sm:table-cell">À-pris exkl.</th>
+          <th className="hidden pb-1.5 pr-3 text-right font-semibold sm:table-cell">Moms</th>
+          <th className="pb-1.5 text-right font-semibold">Underlag</th>
         </tr>
       </thead>
       <tbody>
         {lines.map((line) => (
-          <tr key={line.id} className="border-b border-line/60 last:border-0">
-            <td className="py-3 pr-3">
+          <tr key={line.id} className="break-inside-avoid border-b border-line/60 last:border-0">
+            <td className="py-2 pr-3">
               <p className="font-medium text-ink">{line.description}</p>
-              <p className="text-[12px] text-muted">
+              <p className="text-[11.5px] text-muted">
                 {lineKindLabel(line.kind)}
                 <span className="sm:hidden">
                   {" "}
@@ -35,12 +35,12 @@ function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
                 </span>
               </p>
             </td>
-            <td className="hidden py-3 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">
+            <td className="hidden py-2 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">
               {line.qty} {line.unit}
             </td>
-            <td className="hidden py-3 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">{kr(line.unitPrice)}</td>
-            <td className="hidden py-3 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">{line.vatRate} %</td>
-            <td className="py-3 text-right font-medium text-ink tabular whitespace-nowrap">{kr(lineTotal(line))}</td>
+            <td className="hidden py-2 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">{kr(line.unitPrice)}</td>
+            <td className="hidden py-2 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">{line.vatRate} %</td>
+            <td className="py-2 text-right font-medium text-ink tabular whitespace-nowrap">{kr(lineTotal(line))}</td>
           </tr>
         ))}
       </tbody>
@@ -68,7 +68,7 @@ export function InvoiceDocument({
   const originalNumber = doc.issuedSnapshot?.creditsInvoiceNumber ?? invoice.issuedSnapshot?.creditsInvoiceNumber;
 
   return (
-    <div className="relative bg-white px-7 py-8 text-ink sm:px-10 sm:py-10">
+    <article className="relative bg-white px-6 py-7 text-ink sm:px-9 sm:py-8 print:px-0 print:py-0">
       {invoice.status === "betald" ? (
         <div className="absolute right-8 top-24 rotate-[-8deg] rounded-lg border-2 border-ok/50 px-3 py-1 text-[15px] font-bold uppercase tracking-widest text-ok/70">
           Betald
@@ -81,7 +81,7 @@ export function InvoiceDocument({
         docNumber={invoiceNumberLabel(doc)}
       />
 
-      <div className="mt-8 grid grid-cols-2 gap-x-6 gap-y-4 text-[13px] sm:grid-cols-4">
+      <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 text-[12.5px] sm:grid-cols-4">
         <div>
           <p className="text-muted">Fakturadatum</p>
           <p className="font-medium">{datumNumeriskt(doc.issueDate)}</p>
@@ -123,33 +123,31 @@ export function InvoiceDocument({
       </div>
 
       {isCredit ? (
-        <p className="mt-6 rounded-xl bg-canvas px-4 py-3 text-[13px] text-soft">
+        <p className="mt-5 border-l-2 border-line pl-3 text-[12.5px] leading-relaxed text-soft">
           Denna kreditfaktura krediterar
           {originalNumber != null ? ` faktura #${originalNumber}` : " tidigare skickad faktura"} i sin helhet.
           Delkredit stöds inte.
         </p>
       ) : null}
 
-      <div className="mt-8">
+      <div className="mt-6">
         {/* Beskrivning före rader. Utfärdad faktura: frusen kopia via resolveInvoiceView. */}
-        <RichTextView doc={doc.richText} className="mb-7" />
+        <RichTextView doc={doc.richText} className="mb-5" />
         <InvoiceLinesTable lines={doc.lines} />
       </div>
 
-      <div className="mt-5">
+      <div className="mt-4">
         <DocTotalsBlock
           lines={doc.lines}
           rot={doc.rot}
           toPayLabel={isCredit ? "Att kreditera" : "Att betala nu"}
+          note={doc.rot ? <TaxReductionInvoiceDisclaimer version={doc.taxReductionTerms?.version} /> : null}
         />
       </div>
 
-      {doc.rot ? <TaxReductionInvoiceDisclaimer version={doc.taxReductionTerms?.version} /> : null}
-
       {!isCredit && invoice.status !== "betald" ? (
-        <div className="mt-8 rounded-2xl border border-line bg-canvas/70 p-5">
-          <p className="text-[13px] font-semibold uppercase tracking-wide text-muted">Betalning</p>
-          <div className="mt-3 grid grid-cols-1 gap-3 text-[14px] sm:grid-cols-3">
+        <DocSection title="Betalning">
+          <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 text-[13.5px] sm:grid-cols-3">
             {seller.bankgiro ? (
               <div>
                 <p className="text-muted">Bankgiro</p>
@@ -183,26 +181,26 @@ export function InvoiceDocument({
               <p className="font-semibold tabular">{kr(t.toPay)}</p>
             </div>
           </div>
-          <p className="mt-3 text-[12px] text-muted">
+          <p className="mt-2 max-w-[46rem] text-[11.5px] leading-[1.5] text-muted">
             Betala senast {datumLang(doc.dueDate)}. Ange OCR-numret som referens.
             {doc.lateInterestRate
               ? ` Efter förfallodagen debiteras dröjsmålsränta med ${doc.lateInterestRate} % per år.`
               : ""}
           </p>
-        </div>
+        </DocSection>
       ) : null}
 
       {invoice.status === "betald" && invoice.paidAt ? (
-        <div className="mt-8 flex items-start gap-3 rounded-2xl border border-ok/20 bg-ok-soft/60 p-4">
-          <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
-          <div>
-            <p className="text-[14px] font-semibold text-ok">Betald</p>
-            <p className="text-[13px] text-soft">Betalningen mottogs {datumLang(invoice.paidAt)}. Tack!</p>
-          </div>
-        </div>
+        <DocSection title="Betald">
+          <p className="mt-1.5 flex items-center gap-1.5 text-[13.5px] font-semibold text-ok">
+            <BadgeCheck className="size-4 shrink-0" />
+            Betalningen mottogs {datumLang(invoice.paidAt)}
+          </p>
+          <p className="mt-0.5 text-[11.5px] text-muted">Tack!</p>
+        </DocSection>
       ) : null}
 
       <DocFooter company={seller} />
-    </div>
+    </article>
   );
 }

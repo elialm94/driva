@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, FileCheck2, Landmark, Lock, Play, Printer, Undo2, CalendarClock } from "lucide-react";
+import { Check, FileCheck2, Landmark, Lock, Play, Undo2, CalendarClock } from "lucide-react";
 import { buttonClasses, cx } from "./ui";
 import {
   advanceAnnualReportStatusAction,
@@ -310,11 +310,4 @@ export function PlanAccrualForm({
   );
 }
 
-export function PrintButton({ className }: { className?: string }) {
-  return (
-    <button className={cx(buttonClasses("secondary", "sm"), "print:hidden", className)} onClick={() => window.print()}>
-      <Printer className="size-3.5" />
-      Skriv ut / PDF
-    </button>
-  );
-}
+export { PrintButton } from "./print-button";
