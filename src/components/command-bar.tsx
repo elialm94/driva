@@ -48,12 +48,19 @@ import {
   type CommandWorkspace,
 } from "@/lib/command-bar";
 import {
+  applyReminderFollowUp,
+  formatReminderDateChip,
   parseReminderCommandInput,
   parseReminderText,
+  prettyReminderTitle,
   previewReminderDue,
   previewReminderDueFromArgs,
+  reminderArgsFromLocal,
+  reminderLocalFromArgs,
+  reminderNeedsReview,
 } from "@/lib/reminders/parse";
 import { DEFAULT_TIMEZONE } from "@/lib/reminders/when";
+import { DateTimePicker } from "./date-time-picker";
 import type {
   CommandBarPrefetch,
   CommandEntityHit,
@@ -367,16 +374,19 @@ export function CommandBar({
       // ("Ring Göran klockan 8 imorgon") → direkt till förhandsvisningen;
       // annars fråga enbart efter tiden som faktiskt saknas.
       const parsed = parseReminderCommandInput(title, new Date(), DEFAULT_TIMEZONE);
+      // Guidat/slot-fill: alltid redigerbar preview när VAD+NÄR finns.
+      // HIGH+SAFE utanför guidat läge one-shotas av NL-vägen (påminn mig …).
+      const pretty = prettyReminderTitle(parsed?.title || title.trim());
       setFlow(
         parsed?.complete
           ? {
               command: f.command,
               step: "when",
-              reminderTitle: parsed.title,
+              reminderTitle: pretty,
               reminderArgs: parsed.args,
               reminderSource: title.trim(),
             }
-          : { command: f.command, step: "when", reminderTitle: parsed?.title || title.trim() }
+          : { command: f.command, step: "when", reminderTitle: pretty }
       );
       setQuery("");
       focusInput();
@@ -396,20 +406,47 @@ export function CommandBar({
   function finishReminder() {
     const f = flow;
     if (!f || f.command.id !== "create_reminder" || !f.reminderTitle || pending) return;
-    const whenText = query.trim();
-    const title = f.reminderTitle;
-    // Skriven tidfras ("kl 9 istället") vinner alltid – titeln (VAD) behålls.
-    if (whenText) {
-      startTransition(async () => {
-        applyResult(await runCommandAction("create_reminder", { title, whenText }));
-      });
-      return;
+    const now = new Date();
+    const q = query.trim();
+    let title = f.reminderTitle;
+    let args = f.reminderArgs;
+    if (q) {
+      const follow = applyReminderFollowUp(args ?? {}, q, now, DEFAULT_TIMEZONE);
+      if (follow) {
+        title = follow.title ?? title;
+        args = follow.args;
+      }
     }
-    // Ett-yttrande-vägen: servern tolkar om hela råtexten med samma parser.
-    const source = f.reminderSource;
-    if (!source || !f.reminderArgs) return;
+    const local = args ? reminderLocalFromArgs(args, now, DEFAULT_TIMEZONE) : null;
+    if (!local) return;
+    // Exakt det som visas – aldrig den ursprungliga parsade frasen bakom UI:t.
     startTransition(async () => {
-      applyResult(await runCommandAction("create_reminder", { text: source }));
+      applyResult(
+        await runCommandAction("create_reminder", {
+          title,
+          whenIso: local.whenIso,
+          whenDate: local.date,
+          time: local.time,
+        })
+      );
+    });
+  }
+
+  function updateReminderTitle(nextTitle: string) {
+    setFlow((f) =>
+      f?.command.id === "create_reminder" ? { ...f, reminderTitle: nextTitle, reminderSource: undefined } : f
+    );
+  }
+
+  function updateReminderWhen(date: string, time: string) {
+    setQuery("");
+    setFlow((f) => {
+      if (!f || f.command.id !== "create_reminder") return f;
+      return {
+        ...f,
+        reminderArgs: { ...reminderArgsFromLocal(date, time), title: f.reminderTitle ?? "" },
+        reminderSource: undefined,
+      };
     });
   }
 
@@ -615,7 +652,14 @@ export function CommandBar({
       }
       if (flow.step === "when") {
         const whenText = query.trim();
-        const preview = whenText ? previewReminderDue(whenText, new Date(), DEFAULT_TIMEZONE) : null;
+        const follow = whenText
+          ? applyReminderFollowUp(flow.reminderArgs ?? {}, whenText, new Date(), DEFAULT_TIMEZONE)
+          : null;
+        const preview = follow
+          ? previewReminderDueFromArgs(follow.args, new Date(), DEFAULT_TIMEZONE)
+          : whenText
+            ? previewReminderDue(whenText, new Date(), DEFAULT_TIMEZONE)
+            : null;
         return {
           sections: [],
           preselect: false,
@@ -856,7 +900,10 @@ export function CommandBar({
   useEffect(() => {
     if (!open || isMobile || variant === "full" || customerModal) return;
     function onPointerDown(e: PointerEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) closeAll();
+      const target = e.target as HTMLElement;
+      if (containerRef.current?.contains(target)) return;
+      if (target.closest?.("[data-datetime-picker]")) return;
+      closeAll();
     }
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
@@ -890,16 +937,36 @@ export function CommandBar({
             : activeStep.prompt
           : prefetch.placeholder ?? (workspace === "accountant" ? "Fråga om bokföringen…" : "Vad vill du göra?");
 
-  // Förhandsvisningen speglar alltid det som faktiskt skulle skapas: en
-  // skriven tidfras vinner; annars tiden som tolkades ur den första meningen.
-  const reminderPreview =
-    flow?.command.id === "create_reminder" && flow.step === "when" && flow.reminderTitle
-      ? query.trim()
-        ? previewReminderDue(query.trim(), new Date(), DEFAULT_TIMEZONE)
-        : flow.reminderArgs
-          ? previewReminderDueFromArgs(flow.reminderArgs, new Date(), DEFAULT_TIMEZONE)
-          : null
-      : null;
+  // Förhandsvisningen = det som skulle skapas. Skriven NL-rättelse slås ihop
+  // med redan visade fält; picker och inline-titel skriver samma tillstånd.
+  const reminderDraft = (() => {
+    if (flow?.command.id !== "create_reminder" || flow.step !== "when" || !flow.reminderTitle) return null;
+    const now = new Date();
+    const q = query.trim();
+    let title = flow.reminderTitle;
+    let args = flow.reminderArgs;
+    let followUpError = false;
+    if (q) {
+      const follow = applyReminderFollowUp(args ?? {}, q, now, DEFAULT_TIMEZONE);
+      if (!follow) followUpError = true;
+      else {
+        title = follow.title ?? title;
+        args = follow.args;
+      }
+    }
+    const local = args ? reminderLocalFromArgs(args, now, DEFAULT_TIMEZONE) : null;
+    const preview = local
+      ? previewReminderDueFromArgs(args ?? reminderArgsFromLocal(local.date, local.time), now, DEFAULT_TIMEZONE)
+      : q
+        ? previewReminderDue(q, now, DEFAULT_TIMEZONE)
+        : null;
+    return { title, args, local, preview, followUpError };
+  })();
+
+  const reminderPreview = reminderDraft?.preview ?? null;
+  const showReminderReview =
+    Boolean(reminderDraft?.local) &&
+    reminderNeedsReview({ complete: true, confidence: "high", inGuidedFlow: true });
 
   const inputValueDisabled = flow?.step === "confirm" || flow?.step === "invoiceTarget" || flow?.step === "quoteTopic";
 
@@ -918,7 +985,7 @@ export function CommandBar({
           </span>
         </>
       ) : null}
-      {flow.reminderTitle ? (
+      {flow.reminderTitle && !showReminderReview ? (
         <>
           <ChevronRight className="size-3 text-muted" aria-hidden />
           <span className="inline-flex items-center rounded-full bg-ink/6 px-2.5 py-1 text-[12px] font-medium text-ink">
@@ -951,14 +1018,18 @@ export function CommandBar({
           onConfirm={finishInvoice}
           onBack={stepBack}
         />
-      ) : flow?.step === "when" && flow.reminderTitle && reminderPreview ? (
+      ) : flow?.step === "when" && flow.reminderTitle && showReminderReview && reminderDraft?.local ? (
         <ReminderConfirm
-          title={flow.reminderTitle}
+          title={reminderDraft.title}
+          date={reminderDraft.local.date}
+          time={reminderDraft.local.time}
           preview={reminderPreview}
+          followUpError={reminderDraft.followUpError}
           cta={flow.command.run.kind === "flow" ? flow.command.run.cta : "Skapa påminnelse"}
           pending={pending}
           onConfirm={finishReminder}
-          onBack={stepBack}
+          onTitleChange={updateReminderTitle}
+          onWhenChange={updateReminderWhen}
         />
       ) : (
         <div ref={listRef} id={listboxId} role="listbox" aria-label="Förslag" className="py-1.5">
@@ -1339,34 +1410,132 @@ function InvoiceConfirm({
   );
 }
 
+/**
+ * Redigerbar förhandsvisning före create_reminder.
+ *
+ * Andra AI-utkast (audit, samma princip – rätta i preview, inte starta om):
+ *  - Påminnelse: IMPLEMENTERAT här (titel + dag/tid).
+ *  - Faktura: InvoiceConfirm är valt kund/mål, inte NL-parse. Utkastet
+ *    öppnas och redigeras i dokumentet. Följ-upp: inte bygga om produktflödet.
+ *  - Offert / uppdrag: skapas och navigerar till befintlig editor. Följ-upp.
+ *  - Kund: NewCustomerModal är redan ett redigerbart formulär.
+ */
 function ReminderConfirm({
   title,
+  date,
+  time,
   preview,
+  followUpError,
   cta,
   pending,
   onConfirm,
-  onBack,
+  onTitleChange,
+  onWhenChange,
 }: {
   title: string;
-  preview: string;
+  date: string;
+  time: string;
+  preview: string | null;
+  followUpError: boolean;
   cta: string;
   pending: boolean;
   onConfirm: () => void;
-  onBack: () => void;
+  onTitleChange: (title: string) => void;
+  onWhenChange: (date: string, time: string) => void;
 }) {
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(title);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const whenAnchorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setTitleDraft(title);
+  }, [title]);
+
+  useEffect(() => {
+    if (editingTitle) titleRef.current?.focus();
+  }, [editingTitle]);
+
+  function commitTitle() {
+    const next = prettyReminderTitle(titleDraft);
+    setTitleDraft(next);
+    if (next) onTitleChange(next);
+    setEditingTitle(false);
+  }
+
   return (
     <div className="p-4">
       <div className="rounded-xl border border-accent/25 bg-accent-soft/40 px-4 py-3.5">
-        <p className="text-[14.5px] font-medium leading-relaxed text-ink">{title}</p>
-        <p className="mt-1 text-[13px] text-soft">{preview}</p>
+        <p className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-muted">Påminnelse</p>
+        {editingTitle ? (
+          <input
+            ref={titleRef}
+            value={titleDraft}
+            onChange={(e) => {
+              setTitleDraft(e.target.value);
+              onTitleChange(e.target.value);
+            }}
+            onBlur={commitTitle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitTitle();
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setTitleDraft(title);
+                setEditingTitle(false);
+              }
+            }}
+            className="mt-1 h-11 w-full rounded-lg border border-accent/30 bg-card px-2.5 text-[14.5px] font-medium text-ink"
+            aria-label="Påminnelsetext"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditingTitle(true)}
+            className="mt-1 min-h-11 w-full rounded-lg px-2.5 py-1.5 text-left text-[14.5px] font-medium leading-relaxed text-ink transition-colors hover:bg-card/70"
+          >
+            {title}
+          </button>
+        )}
+        <p className="mt-3 text-[11.5px] font-semibold uppercase tracking-[0.08em] text-muted">När</p>
+        <div ref={whenAnchorRef} className="mt-1 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="min-h-11 rounded-lg bg-card px-2.5 py-1.5 text-[13.5px] font-medium text-ink ring-1 ring-line transition-colors hover:ring-accent"
+          >
+            {formatReminderDateChip(date)}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="min-h-11 rounded-lg bg-card px-2.5 py-1.5 text-[13.5px] font-medium tabular text-ink ring-1 ring-line transition-colors hover:ring-accent"
+          >
+            {time}
+          </button>
+        </div>
+        {preview ? <p className="sr-only">{preview}</p> : null}
+        {followUpError ? (
+          <p role="status" className="mt-2 text-[12.5px] text-danger">
+            Jag förstod inte tidpunkten. Prova imorgon, onsdag eller om 2 timmar.
+          </p>
+        ) : null}
       </div>
+      <DateTimePicker
+        date={date}
+        time={time}
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        anchorRef={whenAnchorRef}
+        onChange={(next) => onWhenChange(next.date, next.time)}
+      />
       <div className="mt-3 flex items-center gap-2">
         <button type="button" className={buttonClasses("accent", "md")} disabled={pending} onClick={onConfirm}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
           {cta}
-        </button>
-        <button type="button" className={buttonClasses("ghost", "md")} disabled={pending} onClick={onBack}>
-          Tillbaka
         </button>
       </div>
       <p className="mt-2.5 text-[12px] text-muted">Intern påminnelse – skickas inte till kunden.</p>
