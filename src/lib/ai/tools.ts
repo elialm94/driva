@@ -928,7 +928,7 @@ const specs: ToolSpec[] = [
       function: {
         name: "list_actions",
         description:
-          "Att göra-listan – samma åtgärdsmotor som Hem (”Vad behöver jag göra idag?”). Förfallna fakturor, offertuppföljning, ROT/RUT, kvitton, bokföringsfrågor och moms.",
+          "Att göra-listan – samma prioriterade Hem-vy (”Vad behöver jag göra idag?”). Förfallna fakturor, offertuppföljning, ROT/RUT, bokföringsgrupp, moms. Enskilda bokföringsundantag finns kompletta under Bokföring.",
         parameters: obj({}),
       },
     },

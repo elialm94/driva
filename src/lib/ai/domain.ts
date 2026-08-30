@@ -21,6 +21,7 @@ import { rotWithAmounts } from "../tax-reduction-amount";
 import { currentVersion, daysOverdue, getCustomer, getInvoice, getJob, getQuote, invoiceTotals, isOpenReceivable, isOverdue, quoteStatusLabel, quoteTotals, quoteWaitingDays, requireCustomer } from "../services/data";
 import { remainingToInvoiceForJob } from "../services/attention";
 import { getBusinessActions } from "../services/actions";
+import { projectHomeAttention } from "../services/action-views";
 import { derivedJobStatus } from "../services/job-lifecycle";
 import {
   findJobsForTaxReduction,
@@ -873,7 +874,7 @@ export function momsResult(): DomainResult {
 }
 
 export function todayAttentionResult(): DomainResult {
-  const items = getBusinessActions().attention;
+  const items = projectHomeAttention(getBusinessActions().attention);
   if (items.length === 0) {
     return { ok: true, text: "Inget särskilt just nu – allt är omhändertaget.", forModel: { count: 0 } };
   }

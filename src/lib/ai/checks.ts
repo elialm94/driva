@@ -8,6 +8,7 @@ import { isAiConfigured } from "./provider";
 import { isBankIdApprovalRequest } from "./resolve";
 import { financeOverview } from "../services/finance";
 import { getBusinessActions } from "../services/actions";
+import { projectHomeAttention } from "../services/action-views";
 import { invoiceTotals, currentVersion, isOpenReceivable } from "../services/data";
 import { remainingToInvoiceForJob } from "../services/attention";
 import { FREE_TEXT_FALLBACK_MESSAGE, parseFreeText } from "../command-bar";
@@ -233,7 +234,7 @@ export async function runAssistantChecks(): Promise<Check[]> {
 
   reset();
   {
-    const engine = getBusinessActions().attention;
+    const engine = projectHomeAttention(getBusinessActions().attention);
     const result = await executeTool("list_actions", {});
     const forModel = result.forModel as { count?: number };
     const ok = result.ok && engine.length > 0 && forModel.count === engine.length;
@@ -248,7 +249,7 @@ export async function runAssistantChecks(): Promise<Check[]> {
 
   reset();
   {
-    const engine = getBusinessActions().attention;
+    const engine = projectHomeAttention(getBusinessActions().attention);
     const handled = dispatchRules("Vad behöver jag göra idag?");
     const reply = lastAssistant();
     const rows = reply.card?.kind === "list" ? reply.card.rows : [];
@@ -341,7 +342,7 @@ export async function runAssistantChecks(): Promise<Check[]> {
 
   reset();
   {
-    const engine = getBusinessActions().attention;
+    const engine = projectHomeAttention(getBusinessActions().attention);
     const run = await runBarCommand("show_today_actions");
     const rows = run.card?.kind === "list" ? run.card.rows : [];
     const ok =

@@ -19,6 +19,7 @@ import {
   CONFIDENCE_LABEL,
 } from "../services/verification-correction";
 import { categoryByKey, EXPENSE_CATEGORIES } from "../bas";
+import { BOOKKEEPING_UNRESOLVED_HREF } from "../services/action-views";
 
 /**
  * Assistentens bokföringsverktyg. AI:n är ett GRÄNSSNITT över motorn:
@@ -64,7 +65,7 @@ export function bokforingStatusResult(): DomainResult {
         { label: `Moms ${moms.period.label}`, value: `${kr(Math.abs(moms.attBetala))} ${moms.attBetala >= 0 ? "att betala" : "tillbaka"}` },
         ...(lock ? [{ label: "Låst till och med", value: datumLang(lock) }] : []),
       ],
-      links: [{ label: "Öppna Bokföring", href: "/bokforing" }],
+      links: [{ label: "Öppna Bokföring", href: todo.length > 0 ? BOOKKEEPING_UNRESOLVED_HREF : "/bokforing" }],
     },
     forModel: {
       openQuestions: questions.length,

@@ -1,8 +1,10 @@
 /**
- * Redovisningskön – SAMMA åtgärdsmotor som Hem, filtrerad och märkt
- * med konsultens ärendetyper. Ingen parallell issue-tabell.
+ * Redovisningskön – SAMMA åtgärdsmotor som Hem/Bokföring, filtrerad och
+ * märkt med konsultens ärendetyper. Ingen parallell issue-tabell och
+ * ingen tredje kopia av Clas Ohlson-kvittot.
  */
 import { attentionKind, type AttentionKind } from "../services/action-issue";
+import { isBookkeepingAction } from "../services/action-views";
 import type { BusinessAction } from "../services/actions";
 
 export type AccountantIssueType =
@@ -56,7 +58,7 @@ export function accountantIssueType(action: Pick<BusinessAction, "id" | "categor
   if (action.id.startsWith("year-end-") || action.id.startsWith("bokslut-")) return "YEAR_END_REVIEW";
   const kind = attentionKind(action);
   if (kind && KIND_TO_ISSUE[kind]) return KIND_TO_ISSUE[kind]!;
-  if (action.category === "accounting" || action.category === "vat") {
+  if (isBookkeepingAction(action)) {
     if (action.id.startsWith("vat-")) return "VAT_REVIEW";
     return "UNCLEAR_CATEGORY";
   }

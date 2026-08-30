@@ -48,8 +48,9 @@ import { isPaymentInFlight, isReadyToApproveNow } from "../inbox/workflow";
 /**
  * Central åtgärdsmotor: EN härledning av "vad behöver jag göra?" ur riktig
  * domändata (fakturor, offerter, uppdrag, ROT/RUT, kvitton, bank, moms).
- * Hem visar allt, Bokföring filtrerar på kategori, AI:n svarar ur samma modell.
- * Ingen task-tabell – försvinner ur listan när verkligheten är åtgärdad.
+ * Hem, Bokföring och redovisningskön projicerar samma åtgärds-id:n
+ * (action-views.ts) – aldrig parallella todo-tabeller. Ingen task-tabell:
+ * raden försvinner när verkligheten är åtgärdad.
  */
 
 export type ActionPriority = "urgent" | "action" | "upcoming" | "info";

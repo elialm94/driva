@@ -1,4 +1,5 @@
 import type { ActionCta, BusinessAction } from "./actions";
+import { ACCOUNTING_EXCEPTIONS_GROUP_ID } from "./action-views";
 
 /**
  * Central deklaration av hur åtgärdsrader FÅR hanteras – EN källa för Hem,
@@ -55,6 +56,7 @@ const CTA_ISSUE: Partial<Record<ActionCta["type"], string>> = {
 
 /** Kort label för en action – aldrig en generisk badge om vi vet mer. */
 export function issueForAction(action: BusinessAction): string {
+  if (action.id === ACCOUNTING_EXCEPTIONS_GROUP_ID) return "Bokföringsfrågor";
   if (action.cta?.type && CTA_ISSUE[action.cta.type]) return CTA_ISSUE[action.cta.type]!;
   if (action.id.startsWith("rot-missing-")) return "Komplettera ROT";
   if (action.id.startsWith("rot-ready-")) return "Ansök ROT";
@@ -96,8 +98,9 @@ export function sourceForAction(action: BusinessAction): ActionSource | null {
   ) {
     return { kind: "supplier", id: cta.supplierInvoiceId };
   }
-  // Gruppraden pekar på flera fakturor – ingen enskild källa att indexera.
+  // Grupprader pekar på flera underliggande åtgärder – ingen enskild källa.
   if (cta?.type === "paymentDetailsQueue") return null;
+  if (action.id === ACCOUNTING_EXCEPTIONS_GROUP_ID) return null;
   if (cta?.type === "reminderActions") return { kind: "reminder", id: cta.reminderId };
 
   if (action.id.startsWith("receipt-")) return { kind: "expense", id: action.id.slice("receipt-".length) };
@@ -117,6 +120,7 @@ export function sourceForAction(action: BusinessAction): ActionSource | null {
 }
 
 export function actionResolveHref(action: BusinessAction): string {
+  if (action.id === ACCOUNTING_EXCEPTIONS_GROUP_ID) return action.href;
   const source = sourceForAction(action);
   if (source?.kind === "expense") return `/ekonomi?flik=utgifter&atgard=${encodeURIComponent(action.id)}`;
   if (source?.kind === "bank") return `/ekonomi?flik=bank&atgard=${encodeURIComponent(action.id)}`;
@@ -357,6 +361,18 @@ export const FALLBACK_CONTROLS: ActionControls = {
 };
 
 export function controlsForAction(action: Pick<BusinessAction, "id">): ActionControls {
+  // Hem-projektion: länken öppnar Bokföring. Snooze/Klar sker på de
+  // underliggande åtgärds-id:na (samma tillstånd som på Bokföring).
+  if (action.id === ACCOUNTING_EXCEPTIONS_GROUP_ID) {
+    return {
+      kind: "unknown",
+      viewLabel: "Öppna bokföring",
+      canSnooze: false,
+      canDismiss: false,
+      dismissBehavior: "none",
+      requiresConfirmation: false,
+    };
+  }
   const kind = attentionKind(action);
   if (!kind) return FALLBACK_CONTROLS;
   const base = { kind, ...CONTROLS[kind] };
