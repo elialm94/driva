@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { Plus, Trash2 } from "lucide-react";
 import { buttonClasses, Card, cx } from "./ui";
 import { docTotals } from "@/lib/calc";
@@ -33,8 +34,22 @@ import {
 } from "@/lib/form-requirements";
 import { FieldError, FormValidationSummary, focusField, invalidFieldCls } from "./form-validation";
 import { StickyMobileActions } from "./sticky-actions";
-import { RichTextEditor } from "./rich-text-editor";
 import type { RichTextDoc } from "@/lib/richtext";
+
+/**
+ * TipTap är formulärets tyngsta klientberoende. Ladda det först när
+ * editorpartiet faktiskt renderas – resten av formuläret blir interaktivt
+ * snabbare och TipTap-chunken hamnar utanför sidans kritiska JS.
+ */
+const RichTextEditor = dynamic(
+  () => import("./rich-text-editor").then((m) => m.RichTextEditor),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="min-h-[7.5rem] animate-pulse rounded-xl border border-line-strong bg-card" aria-hidden />
+    ),
+  }
+);
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
