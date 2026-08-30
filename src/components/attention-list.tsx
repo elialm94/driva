@@ -20,7 +20,6 @@ import {
   MoreHorizontal,
   ChevronDown,
   ChevronUp,
-  Trash2,
   XCircle,
 } from "lucide-react";
 import { DateField } from "./date-field";
@@ -32,13 +31,14 @@ import {
   completeReminderAction,
   createNextInvoiceForJobAction,
   deliverInvoiceAction,
-  dismissReminderAction,
   followUpQuoteAction,
   markQuoteNotRelevantAction,
   submitSupplierPaymentAction,
   sendReminderAction,
   snoozeAttentionAction,
   snoozeReminderAction,
+  undoCompleteReminderAction,
+  undoSnoozeReminderAction,
   uploadReceiptAction,
   prepareSupplierPaymentAction,
 } from "@/app/actions";
@@ -54,6 +54,7 @@ import type { ActionConfirm, BusinessAction } from "@/lib/services/actions";
 import {
   actionResolveHref,
   ATTENTION_SNOOZE_PRESETS,
+  attentionRowHasOverflow,
   controlsForAction,
   sourceForAction,
   type ActionControls,
@@ -71,9 +72,9 @@ import {
  *     bekräftelseinnehåll (action.confirm) och dialogen visas FÖRE utförandet.
  *   * Snooze är ren presentation: raden döljs ur listan och räknaren tills
  *     tidpunkten passerat – domänstatus ändras aldrig (fakturan förblir sen).
- *   * Avfärdan är typspecifik domänövergång (t.ex. "Inte aktuell" på offert,
- *     "Inte aktuell" på offert, "Ta bort" på påminnelse) – aldrig ett
- *     universellt "dölj för alltid".
+ *   * Avfärdan är typspecifik domänövergång (t.ex. "Inte aktuell" på offert)
+ *     – aldrig ett universellt "dölj för alltid". Påminnelser har ingen
+ *     avfärdan: Klar avslutar, Snooza skjuter upp.
  */
 
 const ICONS = {
@@ -239,8 +240,6 @@ function RowMenu({
     close();
     if (controls.dismissBehavior === "MARK_NOT_RELEVANT" && source?.kind === "quote") {
       run(() => markQuoteNotRelevantAction(source.id), "Markerad som inte aktuell");
-    } else if (controls.dismissBehavior === "DISMISS_REMINDER" && source?.kind === "reminder") {
-      run(() => dismissReminderAction(source.id), "Borttagen");
     }
   }
 
@@ -271,7 +270,7 @@ function RowMenu({
             <button
               type="button"
               role="menuitem"
-              className={itemCls({ danger: controls.dismissBehavior === "DISMISS_REMINDER" })}
+              className={itemCls()}
               disabled={disabled}
               onClick={() => {
                 if (controls.dismissNeedsConfirm) {
@@ -284,7 +283,6 @@ function RowMenu({
             >
               {controls.dismissBehavior === "HIDE" ? <Check className="size-3.5 shrink-0" /> : null}
               {controls.dismissBehavior === "MARK_NOT_RELEVANT" ? <XCircle className="size-3.5 shrink-0" /> : null}
-              {controls.dismissBehavior === "DISMISS_REMINDER" ? <Trash2 className="size-3.5 shrink-0" /> : null}
               {controls.dismissLabel}
             </button>
           ) : null}
@@ -404,25 +402,77 @@ function RowMenu({
 
 /* ------------------------------------ Rader ------------------------------------ */
 
+type ReminderUndo =
+  | { kind: "complete" }
+  | { kind: "snooze"; previousSnoozedUntil: string | null };
+
 /**
  * Klar/Snooza för påminnelser. Textknappar (aldrig bara ikoner) och ≥44px
  * träffyta på mobil. Snooza: 1 timme / Imorgon / Välj tid (samma datumväljare
  * som resten av appen; valt datum behåller påminnelsens klockslag).
- * "Ta bort" ligger i radens ⋯-meny. Snoozen här är påminnelsens EGEN
- * domänsnooze (reminders-tjänsten) – inte attention_states.
+ * Ingen ⋯-meny – Klar avslutar, Snooza skjuter upp. Ångra bor på raden
+ * (inte kommandofältets one-shot). Snoozen är påminnelsens EGEN
+ * domänsnooze – inte attention_states.
  */
-function ReminderCtas({ reminderId, onDone }: { reminderId: string; onDone: (doneText: string) => void }) {
+function ReminderCtas({
+  reminderId,
+  onSettled,
+  onRestored,
+}: {
+  reminderId: string;
+  onSettled: () => void;
+  onRestored: () => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [pickDate, setPickDate] = useState(false);
+  const [feedback, setFeedback] = useState<{ message: string; undo: ReminderUndo } | null>(null);
   const router = useRouter();
 
-  function run(fn: () => Promise<unknown>, doneText: string) {
+  function settle(message: string, undo: ReminderUndo) {
+    setFeedback({ message, undo });
+    setSnoozeOpen(false);
+    setPickDate(false);
+    onSettled();
+  }
+
+  function snooze(choice: "1h" | "imorgon" | { date: string }) {
     startTransition(async () => {
-      await fn();
-      onDone(doneText);
+      const result = await snoozeReminderAction(reminderId, choice);
+      settle(`Snoozad till ${result.untilText}`, {
+        kind: "snooze",
+        previousSnoozedUntil: result.previousSnoozedUntil,
+      });
+    });
+  }
+
+  function undo() {
+    if (!feedback) return;
+    const payload = feedback.undo;
+    startTransition(async () => {
+      if (payload.kind === "complete") await undoCompleteReminderAction(reminderId);
+      else await undoSnoozeReminderAction(reminderId, payload.previousSnoozedUntil);
+      setFeedback(null);
+      onRestored();
       router.refresh();
     });
+  }
+
+  if (feedback) {
+    return (
+      <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-ok">
+        <Check className="size-4 shrink-0" />
+        <span>{feedback.message}</span>
+        <button
+          type="button"
+          className={cx(buttonClasses("ghost", "sm"), "max-lg:min-h-11 text-ink")}
+          disabled={isPending}
+          onClick={undo}
+        >
+          {isPending ? "Ångrar …" : "Ångra"}
+        </button>
+      </span>
+    );
   }
 
   if (pickDate) {
@@ -432,7 +482,7 @@ function ReminderCtas({ reminderId, onDone }: { reminderId: string; onDone: (don
           className="w-40"
           placeholder="Välj dag"
           onChange={(iso) => {
-            if (iso) run(() => snoozeReminderAction(reminderId, { date: iso }), "Uppskjuten");
+            if (iso) snooze({ date: iso });
           }}
         />
         <button
@@ -456,7 +506,7 @@ function ReminderCtas({ reminderId, onDone }: { reminderId: string; onDone: (don
           type="button"
           className={cx(buttonClasses("secondary", "sm"), "max-lg:min-h-11")}
           disabled={isPending}
-          onClick={() => run(() => snoozeReminderAction(reminderId, "1h"), "Uppskjuten 1 timme")}
+          onClick={() => snooze("1h")}
         >
           1 timme
         </button>
@@ -464,7 +514,7 @@ function ReminderCtas({ reminderId, onDone }: { reminderId: string; onDone: (don
           type="button"
           className={cx(buttonClasses("secondary", "sm"), "max-lg:min-h-11")}
           disabled={isPending}
-          onClick={() => run(() => snoozeReminderAction(reminderId, "imorgon"), "Uppskjuten till imorgon")}
+          onClick={() => snooze("imorgon")}
         >
           Imorgon
         </button>
@@ -493,7 +543,12 @@ function ReminderCtas({ reminderId, onDone }: { reminderId: string; onDone: (don
         type="button"
         className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
         disabled={isPending}
-        onClick={() => run(() => completeReminderAction(reminderId), "Klar")}
+        onClick={() =>
+          startTransition(async () => {
+            await completeReminderAction(reminderId);
+            settle("Markerad som klar", { kind: "complete" });
+          })
+        }
       >
         {isPending ? "Sparar …" : "Klar"}
       </button>
@@ -512,10 +567,12 @@ function ReminderCtas({ reminderId, onDone }: { reminderId: string; onDone: (don
 function AttentionRow({
   item,
   onResolved,
+  onUnresolved,
   surface = "owner",
 }: {
   item: BusinessAction;
   onResolved: (id: string) => void;
+  onUnresolved: (id: string) => void;
   surface?: "owner" | "accountant";
 }) {
   const [isPending, startTransition] = useTransition();
@@ -803,7 +860,13 @@ function AttentionRow({
               // utan explicit godkännande.
               <PaymentDetailsCta cta={cta} title={item.title} confirm={item.confirm} surface={surface} onDone={finish} />
             ) : null}
-            {cta?.type === "reminderActions" ? <ReminderCtas reminderId={cta.reminderId} onDone={finish} /> : null}
+            {cta?.type === "reminderActions" ? (
+              <ReminderCtas
+                reminderId={cta.reminderId}
+                onSettled={() => onResolved(item.id)}
+                onRestored={() => onUnresolved(item.id)}
+              />
+            ) : null}
             {cta?.type === "createJobInvoice" && surface !== "accountant" ? (
               <button
                 className={cx(buttonClasses("accent", "sm"), "max-lg:min-h-11")}
@@ -820,7 +883,9 @@ function AttentionRow({
               </button>
             ) : null}
             {error ? <span className="text-[13px] font-medium text-danger">{error}</span> : null}
-            <RowMenu item={item} controls={controls} disabled={isPending} run={run} />
+            {attentionRowHasOverflow(item) ? (
+              <RowMenu item={item} controls={controls} disabled={isPending} run={run} />
+            ) : null}
           </>
         )}
       </div>
@@ -927,7 +992,8 @@ export function AttentionSection({
               key={item.id}
               item={item}
               surface={surface}
-              onResolved={(id) => setResolvedIds((prev) => [...prev, id])}
+              onResolved={(id) => setResolvedIds((prev) => (prev.includes(id) ? prev : [...prev, id]))}
+              onUnresolved={(id) => setResolvedIds((prev) => prev.filter((x) => x !== id))}
             />
           ))}
           {footer}

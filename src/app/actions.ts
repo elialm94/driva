@@ -26,7 +26,14 @@ import {
 import { issueInvoice } from "@/lib/services/invoices";
 import { InvoiceNotReadyError } from "@/lib/invoices/validate";
 import { getInvoice, getQuoteByToken } from "@/lib/services/data";
-import { completeReminder, dismissReminder, snoozeReminderBy } from "@/lib/services/reminders";
+import {
+  completeReminder,
+  describeSnoozeUntil,
+  dismissReminder,
+  reopenReminder,
+  snoozeReminderBy,
+  unsnoozeReminder,
+} from "@/lib/services/reminders";
 import { snoozeAttention } from "@/lib/services/attention-state";
 import type { AttentionSnoozeChoice } from "@/lib/services/action-issue";
 import {
@@ -634,6 +641,16 @@ export async function completeReminderAction(reminderId: string) {
   await withBusiness(
     async () => {
       completeReminder(reminderId);
+      // Ingen revalidatePath här – raden stannar så Ångra kan visas.
+    },
+    { retry: false }
+  );
+}
+
+export async function undoCompleteReminderAction(reminderId: string) {
+  await withBusiness(
+    async () => {
+      reopenReminder(reminderId);
       refresh();
     },
     { retry: false }
@@ -641,16 +658,35 @@ export async function completeReminderAction(reminderId: string) {
 }
 
 export async function snoozeReminderAction(reminderId: string, choice: "1h" | "imorgon" | { date: string }) {
+  return withBusiness(
+    async () => {
+      const { reminder, previousSnoozedUntil } = snoozeReminderBy(reminderId, choice);
+      const until = reminder.snoozedUntil;
+      if (!until) throw new Error("Påminnelsen saknar snoozetid.");
+      return {
+        ok: true as const,
+        untilText: describeSnoozeUntil(until, reminder.timezone),
+        previousSnoozedUntil: previousSnoozedUntil ?? null,
+      };
+    },
+    { retry: false }
+  );
+}
+
+export async function undoSnoozeReminderAction(reminderId: string, previousSnoozedUntil?: string | null) {
   await withBusiness(
     async () => {
-      snoozeReminderBy(reminderId, choice);
+      unsnoozeReminder(reminderId, previousSnoozedUntil);
       refresh();
     },
     { retry: false }
   );
 }
 
-/** Mjuk borttagning av påminnelse (status DISMISSED – historiken kvar). */
+/**
+ * Mjuk borttagning (status DISMISSED). Inte en kundåtgärd på påminnelseraden –
+ * Klar är enda sättet att avsluta i UI. Behålls för admin/API.
+ */
 export async function dismissReminderAction(reminderId: string) {
   await withBusiness(
     async () => {
