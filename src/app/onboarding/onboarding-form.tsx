@@ -210,10 +210,8 @@ export function OnboardingForm({
 
       <section className={groupCls}>
         <p className={groupTitle}>Betalning</p>
-        <fieldset>
-          <legend className={labelCls} id={ONBOARDING_FIELD_IDS.paymentMethod}>
-            Betalningssätt
-          </legend>
+        <fieldset id={ONBOARDING_FIELD_IDS.paymentMethod}>
+          <legend className={labelCls}>Betalningssätt</legend>
           <p className={helperCls}>Minst ett sätt krävs för att kunna skicka faktura.</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {PAYMENT_METHODS.map((method) => (
