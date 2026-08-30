@@ -5,6 +5,8 @@ const sizes = {
   sm: "size-9 text-[12px]",
   md: "size-11 text-[15px]",
   lg: "size-16 text-[18px]",
+  /** Inställningar Identitet – ~72×72. */
+  xl: "size-[4.5rem] text-[20px]",
 } as const;
 
 export function CompanyLogo({

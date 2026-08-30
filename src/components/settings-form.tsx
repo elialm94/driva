@@ -334,15 +334,14 @@ export function SettingsForm({
           <DomainSettingsCard summary={domainSummary} />
           <Card className="space-y-4 p-6">
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Identitet</p>
-            <div>
-              {/* En kompakt rad: förhandsvisning (logga/initialer) + klick-/släppyta. Sparas direkt. */}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+              {/* Logotypen är själv klick-/släppzon – ingen separat dropzone. */}
               <ImageDropzone
-                label="Logotyp"
-                variant="compact"
+                variant="logo"
                 previewSlot={
                   <CompanyLogo
                     company={{ name: form.name, logoInitials: form.logoInitials || "FÖ", logoDataUrl: form.logoDataUrl || undefined }}
-                    size="lg"
+                    size="xl"
                   />
                 }
                 value={form.logoDataUrl || undefined}
@@ -350,20 +349,18 @@ export function SettingsForm({
                 saving={logoSaving}
                 onChange={saveLogo}
                 onError={setLogoError}
-                emptyLabel="Klicka eller släpp logotyp här"
-                hint="JPG, PNG eller WebP · Valfritt"
-                addLabel="Ladda upp logotyp"
+                addLabel="Ladda upp"
                 replaceLabel="Byt logotyp"
                 removeLabel="Ta bort"
                 compress={{ maxEdge: 800, quality: 0.88, maxChars: 400_000 }}
               />
-            </div>
-            <div>
-              <label className={labelCls} htmlFor="installningar-name">
-                Företagsnamn
-              </label>
-              <input value={form.name} onChange={(e) => patch("name", e.target.value)} {...fieldMarkProps("name", inputCls)} />
-              <FieldError id="installningar-name-fel">{errorFor("name")}</FieldError>
+              <div className="min-w-0 flex-1">
+                <label className={labelCls} htmlFor="installningar-name">
+                  Företagsnamn
+                </label>
+                <input value={form.name} onChange={(e) => patch("name", e.target.value)} {...fieldMarkProps("name", inputCls)} />
+                <FieldError id="installningar-name-fel">{errorFor("name")}</FieldError>
+              </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>

@@ -2,9 +2,15 @@ process.env.DRIVA_TEST = "1";
 
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { replaceDb, db } from "./store";
 import { emptyTestDb } from "./invoices/test-db";
 import { applyBusinessProfilePatch } from "./services/settings";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(here, "../..");
 
 /**
  * Logotypens autospar (Inställningar → Företag) går via applyBusinessProfilePatch
@@ -56,5 +62,15 @@ describe("logotyp via applyBusinessProfilePatch", () => {
     const s = applyBusinessProfilePatch({ phone: "070-123 45 67" });
     assert.equal(s.logoDataUrl, PNG_URL);
     assert.equal(s.phone, "070-123 45 67");
+  });
+});
+
+describe("Identitet-layout", () => {
+  it("logotypen är dropzonen – ingen separat släppyta bredvid", () => {
+    const src = readFileSync(join(repoRoot, "src/components/settings-form.tsx"), "utf8");
+    assert.match(src, /variant="logo"/);
+    assert.match(src, /Företagsnamn/);
+    assert.doesNotMatch(src, /Klicka eller släpp logotyp här/);
+    assert.doesNotMatch(src, /Ladda upp logotyp/);
   });
 });

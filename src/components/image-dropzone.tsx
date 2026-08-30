@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState, type DragEvent, type KeyboardEvent, type ClipboardEvent, type ReactNode } from "react";
-import { ImagePlus } from "lucide-react";
+import { Camera, ImagePlus } from "lucide-react";
 import { buttonClasses, cx } from "./ui";
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -31,9 +31,10 @@ export type ImageDropzoneProps = {
   /**
    * banner: tall drop area + button row (modals). thumb: short row preview once an image exists.
    * compact: one low full-width clickable zone next to the preview – no separate pick button.
+   * logo: the preview tile itself is the click/drop target (settings identity).
    */
-  variant?: "banner" | "thumb" | "compact";
-  /** Compact only: custom preview to the left of the zone (e.g. CompanyLogo initials/image). */
+  variant?: "banner" | "thumb" | "compact" | "logo";
+  /** Compact/logo: custom preview (e.g. CompanyLogo initials/image). */
   previewSlot?: ReactNode;
   /** Compact only: zone copy when no image exists yet (desktop). */
   emptyLabel?: string;
@@ -356,7 +357,70 @@ export function ImageDropzone({
       ) : null}
       {fileInput}
 
-      {variant === "compact" ? (
+      {variant === "logo" ? (
+        <div className="flex flex-col items-start gap-1">
+          <div
+            role="button"
+            tabIndex={busy ? -1 : 0}
+            aria-label={hasImage ? replaceLabel : addLabel}
+            aria-disabled={busy || undefined}
+            className={cx(
+              "group relative size-[4.5rem] shrink-0 overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+              dragging ? "ring-2 ring-accent" : "",
+              busy ? "pointer-events-none opacity-70" : "cursor-pointer"
+            )}
+            onClick={openPicker}
+            onKeyDown={onKeyDown}
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            onPaste={onPaste}
+          >
+            {previewSlot ?? (
+              hasImage && value ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={value} alt="" className="size-full object-contain bg-white" />
+              ) : loading ? (
+                <div className="size-full animate-pulse bg-ink/10" aria-hidden />
+              ) : (
+                <div className="flex size-full items-center justify-center rounded-xl bg-accent font-bold text-white">
+                  <ImagePlus className="size-5" />
+                </div>
+              )
+            )}
+            <span
+              className={cx(
+                "absolute inset-0 flex flex-col items-center justify-center gap-0.5 bg-ink/60 text-white transition-opacity",
+                dragging || reading || saving ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+              )}
+            >
+              <Camera className="size-4" />
+              <span className="px-1 text-center text-[10px] font-medium leading-tight">
+                {reading || saving ? "Laddar upp …" : dropLabel ? dropLabel : hasImage ? replaceLabel : addLabel}
+              </span>
+            </span>
+            {dragging || reading || saving ? null : (
+              <span className="pointer-events-none absolute bottom-0.5 right-0.5 flex size-5 items-center justify-center rounded-md bg-ink/70 text-white sm:hidden">
+                <Camera className="size-3" />
+              </span>
+            )}
+          </div>
+          {hasImage ? (
+            <button
+              type="button"
+              className={buttonClasses("ghost", "sm", "h-auto px-0 py-0 text-[12px] text-muted hover:text-ink")}
+              disabled={busy}
+              onClick={() => {
+                onChange(undefined);
+                onError?.(null);
+              }}
+            >
+              {removeLabel}
+            </button>
+          ) : null}
+        </div>
+      ) : variant === "compact" ? (
         <>
           <div className="flex items-center gap-3">
             {compactPreview}
