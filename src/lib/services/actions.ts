@@ -387,7 +387,7 @@ function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) 
           category: "invoice",
           icon: "alert",
           title: `${invoiceLabel(inv)} kunde inte skickas`,
-          subtitle: `${customer.name} · ${kr(toPay)} · utfärdad men aldrig levererad`,
+          subtitle: `${customer.name} · ${kr(toPay)} · mejlet nådde aldrig kunden`,
           href: invoiceHref(inv.id),
           cta: { type: "retryInvoiceEmail", label: "Skicka igen", invoiceId: inv.id },
           amount: toPay,
@@ -1168,7 +1168,7 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
           cta: { type: "paySupplier", label: "Försök igen", supplierInvoiceId: s.id, paymentId: payment.id },
           amount: remaining || payment.amount,
           confirm: {
-            title: "Skicka till bank igen?",
+            title: "Skicka till banken igen?",
             rows: supplierPaymentConfirmRows(payment, s),
             confirmLabel: "Skicka till banken",
           },
@@ -1268,7 +1268,7 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
           cta: { type: "paySupplier", label: "Skicka till banken", supplierInvoiceId: s.id, paymentId: payment?.id },
           amount: payment?.amount ?? s.amount,
           confirm: {
-            title: "Skicka till bank?",
+            title: "Skicka till banken?",
             rows: payment
               ? supplierPaymentConfirmRows(payment, s)
               : [

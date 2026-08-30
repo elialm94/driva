@@ -24,8 +24,9 @@ import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Bokslut" };
 
+// Mänskliga ord: rapporten är "skapad" – inte "genererad" (systemperspektiv).
 const AR_STATUS_LABEL: Record<string, string> = {
-  genererad: "Genererad",
+  genererad: "Skapad",
   granskad: "Granskad",
   signerad: "Signerad",
   inlamnad_markerad: "Markerad som inlämnad",

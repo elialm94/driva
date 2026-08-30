@@ -58,7 +58,7 @@ function invoiceBadge(entry: JobWorkViewEntry, from: { href: string; label: stri
     );
   }
   if (entry.invoiceStatus === "invoiced") return <Badge tone="ok">Fakturerad</Badge>;
-  if (entry.invoiceStatus === "draft") return <Badge tone="info">På utkast</Badge>;
+  if (entry.invoiceStatus === "draft") return <Badge tone="info">På fakturautkast</Badge>;
   return <Badge>Ej fakturerad</Badge>;
 }
 

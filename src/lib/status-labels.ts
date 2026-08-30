@@ -263,8 +263,9 @@ export const ACCOUNTING_STATE = {
   momsDeklarerad: { label: "Moms deklarerad", tone: "ok" },
 } as const satisfies Record<string, StatusLabel>;
 
-/** Momsperiodens läge (accounting/vat.ts): pågående → att deklarera → deklarerad. */
+/** Momsperiodens läge (accounting/vat.ts): kommande → pågår → att deklarera → deklarerad. */
 export const VAT_PERIOD_STATE = {
+  kommande: { label: "Kommande", tone: "neutral" },
   pagaende: { label: "Pågår", tone: "info" },
   att_deklarera: { label: "Att deklarera", tone: "warn" },
   deklarerad: { label: "Deklarerad", tone: "ok" },

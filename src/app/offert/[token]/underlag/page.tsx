@@ -73,7 +73,7 @@ export default async function SigningEvidencePage(props: PageProps<"/offert/[tok
                   <ShieldCheck className="size-3.5" /> Dokumentet är oförändrat sedan signeringen
                 </Badge>
               ) : (
-                <Badge tone="danger">Varning: dokumentet matchar inte signerad version</Badge>
+                <Badge tone="danger">Dokumentet matchar inte den signerade versionen</Badge>
               )}
               {signature.environment === "mock" ? <DemoTag>Demo-signatur</DemoTag> : null}
             </div>

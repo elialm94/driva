@@ -13,6 +13,7 @@ import {
   type InviteState,
 } from "@/app/collaboration-actions";
 import type { SamarbetaPerson } from "@/lib/collaboration/service";
+import { COLLABORATION_STATUS } from "@/lib/status-labels";
 
 function looksLikeEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -125,7 +126,7 @@ export function SamarbetaView({
                 <div className="flex flex-wrap items-center justify-end gap-1">
                   {p.status === "pending" ? (
                     <>
-                      <Badge tone="warn">Inbjudan skickad</Badge>
+                      <Badge tone={COLLABORATION_STATUS.pending.tone}>{COLLABORATION_STATUS.pending.label}</Badge>
                       <form
                         action={async (fd) => {
                           setResendPendingId(p.invitationId);
@@ -153,7 +154,7 @@ export function SamarbetaView({
                     </>
                   ) : (
                     <>
-                      <Badge tone="ok">Kopplad</Badge>
+                      <Badge tone={COLLABORATION_STATUS.accepted.tone}>{COLLABORATION_STATUS.accepted.label}</Badge>
                       <button
                         type="button"
                         className="inline-flex min-h-11 items-center rounded-xl px-3 text-[13px] font-medium text-soft hover:bg-danger-soft hover:text-danger"

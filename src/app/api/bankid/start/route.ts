@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       return { status: 409, error: "Offerten kan inte signeras i nuvarande status" } as const;
     }
     if (dagarTill(currentVersion(quote).validUntil) < 0) {
-      return { status: 409, error: "Offerten har gått ut och kan inte längre godkännas." } as const;
+      return { status: 409, error: "Offerten har gått ut och kan inte längre signeras." } as const;
     }
 
     const order = bankidProvider.startSign({
