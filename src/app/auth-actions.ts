@@ -4,21 +4,26 @@
  * Autentisering: e-post + lösenord via Supabase Auth.
  * Medvetet minimalt: ingen social inloggning, ingen MFA, ingen SSO.
  */
-import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { redirect, RedirectType } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createBusinessForCurrentUser } from "@/lib/auth/session";
+import {
+  decideSignupResult,
+  isSilentExistingUser,
+  mapLoginAuthError,
+  safeAuthNext,
+  sanitizeAuthEmail,
+  validateLoginFields,
+  validateSignupFields,
+} from "@/lib/auth/signup-flow";
 import { isSupabaseMode } from "@/lib/storage/config";
 
 export interface AuthFormState {
   error?: string;
   notice?: string;
-}
-
-/** Endast interna sökvägar – aldrig öppna redirects. */
-function safeNext(raw: unknown): string {
-  const value = typeof raw === "string" ? raw : "";
-  if (value.startsWith("/") && !value.startsWith("//") && !value.startsWith("/login")) return value;
-  return "/";
+  needsVerification?: boolean;
+  email?: string;
 }
 
 function authUnavailable(): AuthFormState {
@@ -28,42 +33,95 @@ function authUnavailable(): AuthFormState {
   };
 }
 
+/** Vart bekräftelselänken ska landa efter klick i mejlet. */
+async function confirmationRedirectUrl(): Promise<string | undefined> {
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (fromEnv) {
+    try {
+      const url = new URL(fromEnv.includes("://") ? fromEnv : `https://${fromEnv}`);
+      return `${url.origin}/login`;
+    } catch {
+      /* fall through */
+    }
+  }
+  try {
+    const h = await headers();
+    const host = h.get("x-forwarded-host") || h.get("host");
+    if (!host) return undefined;
+    const proto = h.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
+    return `${proto}://${host}/login`;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function loginAction(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
   if (!isSupabaseMode()) return authUnavailable();
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
-  if (!email || !password) return { error: "Fyll i e-post och lösenord." };
+  const fieldError = validateLoginFields(email, password);
+  if (fieldError) return { error: fieldError };
 
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
-    if (error.code === "invalid_credentials") return { error: "Fel e-post eller lösenord." };
-    if (error.code === "email_not_confirmed")
-      return { error: "E-postadressen är inte bekräftad ännu – klicka på länken i mejlet från Driva." };
-    return { error: `Inloggningen misslyckades: ${error.message}` };
+    const mapped = mapLoginAuthError(error.code, error.message);
+    return {
+      error: mapped.error,
+      needsVerification: mapped.needsVerification,
+      email: mapped.needsVerification ? (sanitizeAuthEmail(email) ?? undefined) : undefined,
+    };
   }
-  redirect(safeNext(formData.get("next")));
+  redirect(safeAuthNext(formData.get("next")));
 }
 
 export async function signupAction(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
   if (!isSupabaseMode()) return authUnavailable();
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
-  if (!email || !password) return { error: "Fyll i e-post och lösenord." };
-  if (password.length < 8) return { error: "Lösenordet behöver minst 8 tecken." };
+  const next = typeof formData.get("next") === "string" ? String(formData.get("next")) : undefined;
+  const fieldError = validateSignupFields(email, password);
+  const stay = (error: string): AuthFormState => ({ error });
+  if (fieldError) return stay(fieldError);
 
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const emailRedirectTo = await confirmationRedirectUrl();
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: emailRedirectTo ? { emailRedirectTo } : undefined,
+  });
+  const decision = decideSignupResult({
+    authError: error ? { code: error.code, message: error.message } : null,
+    silentExistingUser: !error && isSilentExistingUser(data),
+    hasSession: Boolean(data.session),
+    email,
+    next,
+  });
+  if (decision.kind === "stay") return stay(decision.error);
+  // replace: tillbaka-knappen ska inte återöppna ett inskickat /signup.
+  redirect(decision.href, RedirectType.replace);
+}
+
+export async function resendVerificationAction(
+  _prev: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
+  if (!isSupabaseMode()) return authUnavailable();
+  const email = sanitizeAuthEmail(formData.get("email"));
+  if (!email) return { error: "Ange en giltig e-postadress." };
+
+  const supabase = await createSupabaseServerClient();
+  const emailRedirectTo = await confirmationRedirectUrl();
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email,
+    options: emailRedirectTo ? { emailRedirectTo } : undefined,
+  });
   if (error) {
-    if (error.code === "user_already_exists") return { error: "Det finns redan ett konto med den e-posten. Logga in i stället." };
-    if (error.code === "weak_password") return { error: "Lösenordet är för svagt – välj ett längre." };
-    return { error: `Kontot kunde inte skapas: ${error.message}` };
+    return { error: `Bekräftelsemejlet kunde inte skickas: ${error.message}`, email };
   }
-  // Med e-postbekräftelse på finns ingen session förrän länken klickats.
-  if (!data.session) {
-    return { notice: "Konto skapat. Bekräfta din e-postadress via länken i mejlet och logga sedan in." };
-  }
-  redirect("/onboarding");
+  return { notice: "Ett nytt bekräftelsemejl är skickat.", email };
 }
 
 export async function logoutAction(): Promise<void> {

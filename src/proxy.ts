@@ -17,6 +17,7 @@ import { createServerClient } from "@supabase/ssr";
 
 const PUBLIC_PREFIXES = [
   "/login",
+  "/signup",
   "/offert",
   "/faktura",
   "/sajt",
@@ -61,11 +62,13 @@ export async function proxy(request: NextRequest) {
     loginUrl.pathname = "/login";
     loginUrl.search = "";
     const next = `${pathname}${search}`;
-    if (next !== "/" && !next.startsWith("/login")) loginUrl.searchParams.set("next", next);
+    if (next !== "/" && !next.startsWith("/login") && !next.startsWith("/signup")) {
+      loginUrl.searchParams.set("next", next);
+    }
     return NextResponse.redirect(loginUrl);
   }
 
-  if (isAuthenticated && pathname === "/login") {
+  if (isAuthenticated && (pathname === "/login" || pathname === "/signup")) {
     const homeUrl = request.nextUrl.clone();
     homeUrl.pathname = "/";
     homeUrl.search = "";
