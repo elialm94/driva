@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { db } from "@/lib/store";
 import { SiteRenderer } from "@/components/site-renderer";
 import { draftWebsiteDesign, publishedWebsiteDesign, sameDesign } from "@/lib/website-design";
+import { stripWebsiteSecrets } from "@/lib/website-sections";
 import { isMockDomainMode, resolvePublicSite } from "@/lib/domains";
 import { ensurePageBusiness, ensurePublicPage } from "@/lib/auth/session";
 import { isSupabaseMode } from "@/lib/storage/config";
@@ -77,7 +78,7 @@ export default async function PublicSitePage(props: PageProps<"/sajt">) {
           Förhandsvisning av nytt utseende – publicera ändringar för att uppdatera sajten
         </div>
       ) : null}
-      <SiteRenderer website={site} company={company} design={design} />
+      <SiteRenderer website={stripWebsiteSecrets(site)} company={company} design={design} />
     </div>
   );
 }

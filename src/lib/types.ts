@@ -1166,22 +1166,89 @@ export interface WebsiteDesign {
   accent: WebsiteAccentId;
 }
 
+/**
+ * Sektionstyper i hemsidesbyggaren. `om` är äldre namn för en textsektion
+ * (Om oss) och behandlas som `text` – nya sajter skapas med `text`.
+ */
+export type WebsiteSectionType =
+  | "hero"
+  | "text"
+  | "om"
+  | "tjanster"
+  | "galleri"
+  | "instagram"
+  | "omdomen"
+  | "kontaktuppgifter"
+  | "cta"
+  | "kontakt";
+
+/** Vart en CTA-sektion ska leda. Inga fria URL:er – bara kontaktvägar. */
+export type WebsiteCtaDestination = "kontakt" | "phone" | "email";
+
+export type WebsiteImagePosition = "left" | "right";
+
 export interface WebsiteSectionItem {
   title: string;
   text: string;
   /** Data-URL eller relativ sökväg. Valfri – kortet fungerar utan bild. */
   image?: string;
+  /**
+   * Betyg 1–5. Används av omdömen. Redo för Google Reviews senare
+   * (`source` skiljer manuella från importerade).
+   */
+  rating?: number;
+  /** Omdömen: t.ex. stad. */
+  location?: string;
+  /** Ursprung. Saknas eller "manual" = inskrivet i Driva. */
+  source?: "manual" | "google";
+}
+
+export interface WebsiteInstagramPost {
+  id: string;
+  permalink: string;
+  mediaUrl: string;
+  thumbnailUrl?: string;
+  caption?: string;
+}
+
+/**
+ * Instagram-sektionens publika data + ev. anslutning.
+ * Access token lagras här (samma JSON som sektionerna) men STRIPPAS innan
+ * objektet skickas till klienten. Aldrig skrapning – bara Meta Graph API.
+ */
+export interface WebsiteInstagram {
+  handle: string;
+  /** Antal inlägg att visa. Default 6. */
+  limit?: number;
+  connected?: boolean;
+  userId?: string;
+  accessToken?: string;
+  tokenExpiresAt?: string;
+  posts?: WebsiteInstagramPost[];
+  postsFetchedAt?: string;
+}
+
+export interface WebsiteCta {
+  destination: WebsiteCtaDestination;
+  /** Knapptext. Saknas = standard per destination. */
+  label?: string;
 }
 
 export interface WebsiteSection {
   id: ID;
-  type: "hero" | "tjanster" | "om" | "galleri" | "kontakt";
+  type: WebsiteSectionType;
   heading: string;
   body: string;
-  /** Valfri bild (data-URL). Hero och om oss: saknas = endast text, ingen platshållare. */
+  /** Valfri bild (data-URL). Hero och text: saknas = endast text, ingen platshållare. */
   image?: string;
-  /** Tjänster-kort. Arrayordning = visningsordning. */
+  /** Bildens sida i textsektioner. Saknas = höger. */
+  imagePosition?: WebsiteImagePosition;
+  /** Tjänster, omdömen. Arrayordning = visningsordning. */
   items?: WebsiteSectionItem[];
+  instagram?: WebsiteInstagram;
+  cta?: WebsiteCta;
+  /** Öppettider – bara kontaktuppgifter. */
+  hours?: string;
   /** false = dold på sajten. Saknas eller true = synlig. Innehållet sparas. */
   visible?: boolean;
 }

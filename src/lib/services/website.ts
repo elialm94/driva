@@ -5,7 +5,9 @@ import {
   type Customer,
   type Job,
   type Website,
+  type WebsiteCtaDestination,
   type WebsiteDesign,
+  type WebsiteImagePosition,
   type WebsiteSection,
   type WebsiteSectionItem,
   type WebsiteTheme,
@@ -17,6 +19,25 @@ import {
   publishedWebsiteDesign,
   sameDesign,
 } from "../website-design";
+import {
+  addableTypesFor,
+  assertCtaDestination,
+  canDeleteSection,
+  clampRating,
+  createSectionDraft,
+  defaultCtaLabel,
+  isHeroSection,
+  isTextSectionType,
+  normalizeInstagramHandle,
+  type AddableSectionType,
+} from "../website-sections";
+import {
+  exchangeInstagramCode,
+  fetchInstagramMedia,
+  instagramAuthorizeUrl,
+  instagramHasCredentials,
+  instagramState,
+} from "../instagram";
 import { logActivity } from "./activity";
 import { findOrCreateCustomerByEmail } from "./customers";
 import { createJob, titleFromIncomingMessage } from "./jobs";
@@ -142,7 +163,14 @@ export function generateWebsite(description: string): Website {
   const sections: WebsiteSection[] = [
     { id: uid(), type: "hero", heading: tagline, body: branch.heroBody(city), visible: true },
     { id: uid(), type: "tjanster", heading: "Det här hjälper vi dig med", body: "", items: branch.services, visible: true },
-    { id: uid(), type: "om", heading: "Om oss", body: `${name} – ${branch.about}`, visible: true },
+    {
+      id: uid(),
+      type: "text",
+      heading: "Om oss",
+      body: `${name} – ${branch.about}`,
+      visible: true,
+      imagePosition: "right",
+    },
     { id: uid(), type: "galleri", heading: "Utvalda projekt", body: "Ett urval av uppdrag vi genomfört det senaste året.", visible: true },
     {
       id: uid(),
@@ -199,10 +227,20 @@ export function rewriteSectionHeading(sectionId: string): void {
   save();
 }
 
-export function updateSection(
-  sectionId: string,
-  fields: { heading?: string; body?: string; image?: string | null; primaryCtaLabel?: string },
-): void {
+export interface UpdateSectionFields {
+  heading?: string;
+  body?: string;
+  image?: string | null;
+  imagePosition?: WebsiteImagePosition | null;
+  primaryCtaLabel?: string;
+  hours?: string | null;
+  instagramHandle?: string;
+  instagramLimit?: number;
+  ctaDestination?: WebsiteCtaDestination;
+  ctaLabel?: string;
+}
+
+export function updateSection(sectionId: string, fields: UpdateSectionFields): void {
   const site = db().website;
   if (!site) return;
   const section = site.sections.find((s) => s.id === sectionId);
@@ -215,14 +253,155 @@ export function updateSection(
     assertItemImage(fields.image);
     section.image = fields.image;
   }
+  if (fields.imagePosition === null) {
+    delete section.imagePosition;
+  } else if (fields.imagePosition === "left" || fields.imagePosition === "right") {
+    if (!isTextSectionType(section.type) && section.type !== "hero") {
+      throw new Error("Bildläge kan bara ändras i textsektioner.");
+    }
+    section.imagePosition = fields.imagePosition;
+  }
   if (fields.primaryCtaLabel !== undefined) {
     if (section.type !== "hero") {
       throw new Error("Knapptext kan bara ändras i startsektionen.");
     }
     site.primaryCta = { label: normalizePrimaryCtaLabel(fields.primaryCtaLabel) };
   }
+  if (fields.hours !== undefined) {
+    if (section.type !== "kontaktuppgifter") {
+      throw new Error("Öppettider hör till kontaktuppgifter.");
+    }
+    const hours = (fields.hours ?? "").trim();
+    if (hours) section.hours = hours;
+    else delete section.hours;
+  }
+  if (fields.instagramHandle !== undefined || fields.instagramLimit !== undefined) {
+    if (section.type !== "instagram") throw new Error("Instagram-fält hör till Instagram-sektionen.");
+    const prev = section.instagram ?? { handle: "" };
+    if (fields.instagramHandle !== undefined) {
+      prev.handle = normalizeInstagramHandle(fields.instagramHandle);
+    }
+    if (fields.instagramLimit !== undefined) {
+      const n = Math.round(fields.instagramLimit);
+      if (!Number.isFinite(n) || n < 1 || n > 12) throw new Error("Välj 1–12 inlägg.");
+      prev.limit = n;
+    }
+    section.instagram = prev;
+  }
+  if (fields.ctaDestination !== undefined || fields.ctaLabel !== undefined) {
+    if (section.type !== "cta") throw new Error("Knappens mål hör till call to action-sektionen.");
+    const destination = assertCtaDestination(fields.ctaDestination ?? section.cta?.destination ?? "kontakt");
+    const label = (fields.ctaLabel ?? section.cta?.label ?? defaultCtaLabel(destination)).trim();
+    if (!label) throw new Error("Fyll i knapptexten.");
+    if (label.length > PRIMARY_CTA_LABEL_MAX) throw new Error("Knapptexten är för lång.");
+    section.cta = { destination, label };
+  }
   site.status = site.status === "publicerad" ? "publicerad" : "utkast";
   save();
+}
+
+export function addWebsiteSection(type: AddableSectionType): WebsiteSection {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att uppdatera");
+  const allowed = addableTypesFor(site.sections);
+  if (!allowed.some((o) => o.type === type)) {
+    throw new Error("Den sektionstypen finns redan, eller kan inte läggas till.");
+  }
+  const section = createSectionDraft(type, uid());
+  site.sections.push(section);
+  touchSite(site);
+  return section;
+}
+
+export function removeWebsiteSection(sectionId: string): void {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att uppdatera");
+  const index = site.sections.findIndex((s) => s.id === sectionId);
+  if (index < 0) throw new Error("Sektionen hittades inte");
+  const section = site.sections[index];
+  if (!canDeleteSection(section) || isHeroSection(section)) {
+    throw new Error("Startsektionen kan inte tas bort");
+  }
+  site.sections.splice(index, 1);
+  touchSite(site);
+}
+
+export function instagramConnectStatus(sectionId: string) {
+  const site = db().website;
+  const section = site?.sections.find((s) => s.id === sectionId);
+  if (!section || section.type !== "instagram") throw new Error("Instagram-sektionen hittades inte");
+  return instagramState(section);
+}
+
+export function beginInstagramConnect(sectionId: string, handle: string): { url: string } {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att uppdatera");
+  const section = site.sections.find((s) => s.id === sectionId);
+  if (!section || section.type !== "instagram") throw new Error("Instagram-sektionen hittades inte");
+  const normalized = normalizeInstagramHandle(handle);
+  section.instagram = { ...(section.instagram ?? { handle: "" }), handle: normalized };
+  touchSite(site);
+  const state = Buffer.from(JSON.stringify({ sectionId, handle: normalized, siteId: site.id }), "utf8").toString(
+    "base64url",
+  );
+  return { url: instagramAuthorizeUrl({ handle: normalized, state }) };
+}
+
+export async function completeInstagramConnect(input: { state: string; code: string }): Promise<void> {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att uppdatera");
+  let parsed: { sectionId?: string; handle?: string; siteId?: string };
+  try {
+    parsed = JSON.parse(Buffer.from(input.state, "base64url").toString("utf8")) as {
+      sectionId?: string;
+      handle?: string;
+      siteId?: string;
+    };
+  } catch {
+    throw new Error("Ogiltig Instagram-anslutning. Försök igen.");
+  }
+  if (parsed.siteId && parsed.siteId !== site.id) throw new Error("Ogiltig Instagram-anslutning. Försök igen.");
+  const section = site.sections.find((s) => s.id === parsed.sectionId && s.type === "instagram");
+  if (!section) throw new Error("Instagram-sektionen hittades inte");
+  const token = await exchangeInstagramCode(input.code);
+  const limit = section.instagram?.limit ?? 6;
+  const posts = await fetchInstagramMedia(token.accessToken, limit);
+  section.instagram = {
+    handle: parsed.handle ?? section.instagram?.handle ?? "",
+    limit,
+    connected: true,
+    userId: token.userId,
+    accessToken: token.accessToken,
+    tokenExpiresAt: token.expiresAt,
+    posts,
+    postsFetchedAt: new Date().toISOString(),
+  };
+  touchSite(site);
+}
+
+export function disconnectInstagram(sectionId: string): void {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att uppdatera");
+  const section = site.sections.find((s) => s.id === sectionId);
+  if (!section || section.type !== "instagram") throw new Error("Instagram-sektionen hittades inte");
+  const handle = section.instagram?.handle ?? "";
+  const limit = section.instagram?.limit;
+  section.instagram = { handle, limit, connected: false };
+  touchSite(site);
+}
+
+export async function refreshInstagramPosts(sectionId: string): Promise<void> {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att uppdatera");
+  const section = site.sections.find((s) => s.id === sectionId);
+  if (!section || section.type !== "instagram") throw new Error("Instagram-sektionen hittades inte");
+  const token = section.instagram?.accessToken;
+  if (!token || !section.instagram?.connected) {
+    throw new Error("Instagram är inte anslutet.");
+  }
+  section.instagram.posts = await fetchInstagramMedia(token, section.instagram.limit);
+  section.instagram.postsFetchedAt = new Date().toISOString();
+  touchSite(site);
 }
 
 function normalizePrimaryCtaLabel(raw: string): string {
@@ -252,6 +431,9 @@ function normalizeItem(item: WebsiteSectionItem): WebsiteSectionItem {
     assertItemImage(item.image);
     next.image = item.image;
   }
+  const rating = clampRating(item.rating);
+  if (rating !== undefined) next.rating = rating;
+  if (item.source === "google" || item.source === "manual") next.source = item.source;
   return next;
 }
 
@@ -270,10 +452,18 @@ export function sectionImages(sectionId: string): { image?: string; itemImages: 
 }
 
 function requireTjansterSection(sectionId: string): { site: Website; section: WebsiteSection } {
+  return requireListSection(sectionId, "tjanster", "Tjänstesektionen hittades inte");
+}
+
+function requireListSection(
+  sectionId: string,
+  type: "tjanster" | "omdomen",
+  missing: string,
+): { site: Website; section: WebsiteSection } {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
   const section = site.sections.find((s) => s.id === sectionId);
-  if (!section || section.type !== "tjanster") throw new Error("Tjänstesektionen hittades inte");
+  if (!section || section.type !== type) throw new Error(missing);
   if (!section.items) section.items = [];
   return { site, section };
 }
@@ -325,7 +515,66 @@ export function removeServiceItem(sectionId: string, index: number): { error?: s
 }
 
 export function reorderServiceItems(sectionId: string, fromIndex: number, toIndex: number): void {
-  const { site, section } = requireTjansterSection(sectionId);
+  reorderListItems(sectionId, "tjanster", "Tjänstesektionen hittades inte", fromIndex, toIndex);
+}
+
+export function addTestimonialItem(sectionId: string, item: WebsiteSectionItem): void {
+  if (!item.title.trim()) throw new Error("Ange namnet på personen.");
+  if (!item.text.trim()) throw new Error("Skriv omdömet.");
+  const { site, section } = requireListSection(sectionId, "omdomen", "Omdömessektionen hittades inte");
+  section.items!.push({ ...normalizeItem(item), source: item.source ?? "manual" });
+  touchSite(site);
+}
+
+export function updateTestimonialItem(
+  sectionId: string,
+  index: number,
+  fields: { title?: string; text?: string; rating?: number | null },
+): void {
+  const { site, section } = requireListSection(sectionId, "omdomen", "Omdömessektionen hittades inte");
+  const item = section.items![index];
+  if (!item) throw new Error("Omdömet hittades inte");
+  if (fields.title !== undefined) {
+    const title = fields.title.trim();
+    if (!title) throw new Error("Ange namnet på personen.");
+    item.title = title;
+  }
+  if (fields.text !== undefined) {
+    const text = fields.text.trim();
+    if (!text) throw new Error("Skriv omdömet.");
+    item.text = text;
+  }
+  if (fields.rating === null) {
+    delete item.rating;
+  } else if (fields.rating !== undefined) {
+    const rating = clampRating(fields.rating);
+    if (rating === undefined) delete item.rating;
+    else item.rating = rating;
+  }
+  item.source = item.source ?? "manual";
+  touchSite(site);
+}
+
+export function removeTestimonialItem(sectionId: string, index: number): { error?: string } {
+  const { site, section } = requireListSection(sectionId, "omdomen", "Omdömessektionen hittades inte");
+  if (!section.items![index]) return { error: "Omdömet hittades inte" };
+  section.items!.splice(index, 1);
+  touchSite(site);
+  return {};
+}
+
+export function reorderTestimonialItems(sectionId: string, fromIndex: number, toIndex: number): void {
+  reorderListItems(sectionId, "omdomen", "Omdömessektionen hittades inte", fromIndex, toIndex);
+}
+
+function reorderListItems(
+  sectionId: string,
+  type: "tjanster" | "omdomen",
+  missing: string,
+  fromIndex: number,
+  toIndex: number,
+): void {
+  const { site, section } = requireListSection(sectionId, type, missing);
   const items = section.items!;
   if (
     fromIndex === toIndex ||
