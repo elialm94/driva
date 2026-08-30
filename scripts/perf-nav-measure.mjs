@@ -74,6 +74,19 @@ const TRANSITIONS = [
   ],
 ];
 
+/** Räkna server-requests (dokument + RSC/data) under övergången – INTE statiska chunkar. */
+function trackServerRequests(page) {
+  const counter = { n: 0 };
+  const onReq = (req) => {
+    const url = req.url();
+    if (!url.startsWith(BASE)) return;
+    if (url.includes("/_next/static") || url.includes("/_next/image") || url.includes("favicon")) return;
+    counter.n += 1;
+  };
+  page.on("request", onReq);
+  return { counter, stop: () => page.off("request", onReq) };
+}
+
 async function measureTransition(page, name, startPath, clickSel, doneExpr) {
   if (startPath) {
     await page.goto(`${BASE}${startPath}`, { waitUntil: "networkidle2" });
@@ -85,24 +98,30 @@ async function measureTransition(page, name, startPath, clickSel, doneExpr) {
     window.__navToken = "alive";
   });
 
+  const tracker = trackServerRequests(page);
   const t0 = Date.now();
   if (clickSel === "BACK") {
     await page.goBack({ waitUntil: "commit", timeout: 5000 }).catch(() => {});
   } else {
     const el = await page.$(clickSel);
-    if (!el) return { name, error: `hittade inte ${clickSel}` };
+    if (!el) {
+      tracker.stop();
+      return { name, error: `hittade inte ${clickSel}` };
+    }
     await el.click();
   }
 
   try {
     await page.waitForFunction(doneExpr, { polling: 16, timeout: 15000 });
   } catch {
+    tracker.stop();
     return { name, error: "timeout (15 s)" };
   }
   const ms = Date.now() - t0;
+  tracker.stop();
   const token = await page.evaluate(() => window.__navToken);
   const fullReload = token !== "alive";
-  return { name, ms, fullReload };
+  return { name, ms, fullReload, serverRequests: tracker.counter.n };
 }
 
 async function main() {
@@ -119,7 +138,10 @@ async function main() {
   for (const [name, startPath, clickSel, doneExpr] of TRANSITIONS) {
     const r = await measureTransition(page, name, startPath, clickSel, doneExpr);
     if (r.error) console.log(`  ${name}: FEL – ${r.error}`);
-    else console.log(`  ${name}: ${r.ms} ms${r.fullReload ? "  ⚠ HELSIDESOMLADDNING" : ""}`);
+    else
+      console.log(
+        `  ${name}: ${r.ms} ms, ${r.serverRequests} serverhämtning(ar)${r.fullReload ? "  ⚠ HELSIDESOMLADDNING" : ""}`
+      );
   }
 
   // Varm upprepning: Hem→Kunder→Hem→Kunder (andra besöket bör vara cachat).
@@ -128,7 +150,7 @@ async function main() {
   await new Promise((r) => setTimeout(r, 1200));
   for (let i = 1; i <= 2; i++) {
     let r = await measureTransition(page, `Hem → Kunder (besök ${i})`, null, 'aside a[href="/kunder"]', TRANSITIONS[0][3]);
-    console.log(`  ${r.name}: ${r.error ?? r.ms + " ms"}`);
+    console.log(`  ${r.name}: ${r.error ?? `${r.ms} ms, ${r.serverRequests} serverhämtning(ar)`}`);
     r = await measureTransition(
       page,
       `Kunder → Hem (besök ${i})`,
@@ -136,7 +158,7 @@ async function main() {
       'aside a[href="/"]',
       TRANSITIONS[7][3]
     );
-    console.log(`  ${r.name}: ${r.error ?? r.ms + " ms"}`);
+    console.log(`  ${r.name}: ${r.error ?? `${r.ms} ms, ${r.serverRequests} serverhämtning(ar)`}`);
     await new Promise((r2) => setTimeout(r2, 400));
   }
 
