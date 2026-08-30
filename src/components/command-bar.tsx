@@ -58,6 +58,7 @@ import {
   parseReminderCommandInput,
   parseReminderText,
   prettyReminderTitle,
+  type ReminderCommandParse,
   previewReminderDue,
   previewReminderDueFromArgs,
   reminderArgsFromLocal,
@@ -159,7 +160,15 @@ type BarItem =
   /** Skicka frågan som fri text till LLM:n – visas bara med konfigurerad nyckel. */
   | { key: string; kind: "aiInterpret"; text: string }
   /** Deterministisk påminnelse ("påminn mig imorgon att …") – noll LLM. */
-  | { key: string; kind: "reminderCreate"; text: string; title: string; due?: string };
+  | { key: string; kind: "reminderCreate"; text: string; title: string; due?: string }
+  /** Ofullständig påminnelse → guidat När/Vad, aldrig LLM. */
+  | {
+      key: string;
+      kind: "reminderSlotFill";
+      missing: "when" | "title" | "both";
+      title?: string;
+      args?: Record<string, string | number | boolean>;
+    };
 
 interface Section {
   title?: string;
@@ -314,6 +323,22 @@ export function CommandBar({
     focusInput();
   }
 
+  function startReminderSlotFill(parsed: Extract<ReminderCommandParse, { complete: false }>) {
+    const command = getCommand("create_reminder");
+    setResult(null);
+    setAiTurns([]);
+    setQuery("");
+    setHits(null);
+    if (parsed.missing === "when") {
+      setFlow({ command, step: "when", reminderTitle: prettyReminderTitle(parsed.title) });
+    } else if (parsed.missing === "title") {
+      setFlow({ command, step: "title", reminderArgs: parsed.args });
+    } else {
+      setFlow({ command, step: "title" });
+    }
+    focusInput();
+  }
+
   /** Kundsteget klart → nästa steg (eller navigera för Hitta kund). */
   function pickCustomer(hit: CommandEntityHit) {
     const current = flow;
@@ -383,6 +408,11 @@ export function CommandBar({
       // HIGH+SAFE utanför guidat läge one-shotas av NL-vägen (påminn mig …).
       const parsedTitle = parsed && "title" in parsed ? parsed.title : undefined;
       const pretty = prettyReminderTitle(parsedTitle || title.trim());
+      const nextArgs = parsed?.complete
+        ? parsed.args
+        : parsed && "args" in parsed
+          ? parsed.args
+          : f.reminderArgs;
       setFlow(
         parsed?.complete
           ? {
@@ -392,7 +422,7 @@ export function CommandBar({
               reminderArgs: parsed.args,
               reminderSource: title.trim(),
             }
-          : { command: f.command, step: "when", reminderTitle: pretty }
+          : { command: f.command, step: "when", reminderTitle: pretty, reminderArgs: nextArgs }
       );
       setQuery("");
       focusInput();
@@ -530,6 +560,15 @@ export function CommandBar({
       case "reminderCreate":
         // Servern kör samma deterministiska tolkning och skapar utan LLM.
         runFreeTextViaAi(item.text);
+        break;
+      case "reminderSlotFill":
+        startReminderSlotFill(
+          item.missing === "when"
+            ? { complete: false, missing: "when", title: item.title ?? "" }
+            : item.missing === "title"
+              ? { complete: false, missing: "title", args: item.args ?? {} }
+              : { complete: false, missing: "both" }
+        );
         break;
     }
   }
@@ -726,25 +765,40 @@ export function CommandBar({
 
     const parsed = parseFreeText(q, workspace);
     const matches = matchCommands(q, IDLE_COMMAND_COUNT, workspace);
+    const reminderIntent = isInternalReminderIntent(q);
     // Deterministiska förslag leder alltid; med nyckel finns en explicit rad
     // för att skicka frågan till LLM:n när förslagen inte är det man menade.
+    // Påminnelsefraser som parsern redan förstår (komplett eller slot-fill)
+    // ska inte locka till LLM.
+    const reminderSlots = reminderIntent ? parseReminderCommandInput(q, new Date(), DEFAULT_TIMEZONE) : null;
+    const reminderHandled = Boolean(reminderSlots);
     const aiRow: BarItem[] =
-      prefetch.aiConfigured && parsed.confidence !== "high" ? [{ key: "ai-interpret", kind: "aiInterpret", text: q }] : [];
+      prefetch.aiConfigured && parsed.confidence !== "high" && !reminderHandled
+        ? [{ key: "ai-interpret", kind: "aiInterpret", text: q }]
+        : [];
 
     // "Påminn mig … att …" med tydligt tidsuttryck → deterministisk påminnelse
     // (noll LLM). Samma rena tolk som servern använder; raden leder så att
     // Enter inte fastnar i luddiga kommandoträffar ("Påminn om sena fakturor").
-    const reminderClarify = isInternalReminderIntent(q) ? resolveUtteranceCorrections(q) : null;
+    const reminderClarify = reminderIntent ? resolveUtteranceCorrections(q) : null;
     if (reminderClarify?.confidence === "ambiguous" && reminderClarify.clarify) {
+      const escapeAi: BarItem[] =
+        prefetch.aiConfigured && parsed.confidence !== "high"
+          ? [{ key: "ai-interpret", kind: "aiInterpret", text: q }]
+          : [];
       return {
-        sections: [{ items: [...matches.slice(0, 3).map((m) => commandItem(m.command)), ...aiRow] }],
+        sections: [{ items: [...matches.slice(0, 3).map((m) => commandItem(m.command)), ...escapeAi] }],
         preselect: false,
         honest: false,
         emptyText: reminderClarify.clarify,
       };
     }
-    const reminderParsed = isInternalReminderIntent(q) ? parseReminderText(q, new Date(), DEFAULT_TIMEZONE) : null;
-    if (reminderParsed) {
+    const reminderParsed = reminderSlots?.complete
+      ? reminderSlots
+      : reminderIntent
+        ? parseReminderText(q, new Date(), DEFAULT_TIMEZONE)
+        : null;
+    if (reminderParsed && "args" in reminderParsed && reminderParsed.title) {
       const resolvedTitle = prettyReminderTitle(reminderParsed.title);
       return {
         sections: [
@@ -757,6 +811,27 @@ export function CommandBar({
                 title: resolvedTitle,
                 // Tolkningen visas INNAN något skapas – aldrig en dold gissning.
                 due: previewReminderDueFromArgs(reminderParsed.args, new Date(), DEFAULT_TIMEZONE) ?? undefined,
+              },
+              ...matches.slice(0, 3).map((m) => commandItem(m.command)),
+            ],
+          },
+        ],
+        preselect: true,
+        honest: false,
+      };
+    }
+    if (reminderSlots && !reminderSlots.complete) {
+      const slotTitle = "title" in reminderSlots ? prettyReminderTitle(reminderSlots.title) : undefined;
+      return {
+        sections: [
+          {
+            items: [
+              {
+                key: "reminder-slot",
+                kind: "reminderSlotFill",
+                missing: reminderSlots.missing,
+                title: slotTitle,
+                args: "args" in reminderSlots ? reminderSlots.args : undefined,
               },
               ...matches.slice(0, 3).map((m) => commandItem(m.command)),
             ],
@@ -894,11 +969,17 @@ export function CommandBar({
     // Fri text till LLM: i ärligt läge (deterministisk tolkning gav inget)
     // eller som uppföljningssvar i pågående AI-utbyte. Utan nyckel står
     // fallbacktexten redan i panelen och inget nätverksanrop görs.
-    // Undantag: "påminn …"-fraser har en deterministisk snabbväg på servern
-    // (noll LLM) och skickas alltid.
-    const reminderPhrase = isInternalReminderIntent(query.trim());
-    if (!flow && !result && query.trim() && (prefetch.aiConfigured || reminderPhrase) && (model.honest || inAiConversation || reminderPhrase)) {
-      runFreeTextViaAi(query.trim());
+    // Ofullständig påminnelse → guidat När/Vad, aldrig OpenRouter.
+    const entered = query.trim();
+    if (!flow && !result && entered && isInternalReminderIntent(entered)) {
+      const slots = parseReminderCommandInput(entered, new Date(), DEFAULT_TIMEZONE);
+      if (slots && !slots.complete) {
+        startReminderSlotFill(slots);
+        return;
+      }
+    }
+    if (!flow && !result && entered && prefetch.aiConfigured && (model.honest || inAiConversation)) {
+      runFreeTextViaAi(entered);
     }
   }
 
@@ -1329,6 +1410,22 @@ function rowVisual(item: BarItem): { icon: CommandIcon; label: ReactNode; sublab
           when: item.due,
         }),
         sublabel: "Enter för att skapa",
+      };
+    case "reminderSlotFill":
+      return {
+        icon: "clock",
+        label:
+          item.missing === "when"
+            ? `När ska jag påminna dig om ${item.title ?? "det"}?`
+            : item.missing === "title"
+              ? "Vad ska jag påminna dig om?"
+              : "Skapa påminnelse",
+        sublabel:
+          item.missing === "when"
+            ? "Nästa: tidpunkt"
+            : item.missing === "title"
+              ? "Nästa: vad"
+              : "Vad och när?",
       };
   }
 }

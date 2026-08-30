@@ -136,7 +136,13 @@ knapptryck (server action) utför åtgärden. Modellen kan inte bekräfta.
 
 - Deterministiska kommandon gör noll LLM-anrop (testat).
 - Fri text går till LLM först när deterministisk tolkning ger `none`.
-- FAST-modell som standard; SMART bara via enkel heuristik.
+- Ofullständig påminnelse (`"påminn mig att …"` utan tid) går till slot-fill
+  (När/Vad) – aldrig OpenRouter. Samma parser i kommandofältet och på servern.
+- Intern påminnelse-intent skickar ett litet verktygspaket (påminnelser +
+  `find_customers` + `snooze_attention`), inte hela registret. Övrig fritext
+  får den fulla listan. Ingen extra klassificeringsrunda.
+- FAST-modell som standard; SMART bara vid ≥4 turer eller första meddelandet
+  ≥400 tecken – aldrig för intern påminnelse-intent.
 - `AI_MAX_TOOL_STEPS` (6) och `AI_MAX_OUTPUT_TOKENS` (700) begränsar varje fråga.
 - Timeout 25 s per anrop.
 - Varje anrop loggas i `assistantAudit` (`tool: "llm_request"`) med modell,

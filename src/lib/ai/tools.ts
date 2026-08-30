@@ -28,6 +28,7 @@ import { controlsForAction } from "../services/action-issue";
 import { snoozeAttentionUntil } from "../services/attention-state";
 import { listInbox } from "../services/inbox";
 import type { AiToolDef } from "./provider";
+import { isInternalReminderIntent } from "./utterance";
 import { validateToolArgs } from "./validate";
 import { resolveCustomerName } from "./resolve";
 import {
@@ -2207,6 +2208,32 @@ export function assistantToolDefs(): AiToolDef[] {
  */
 export function aiCallableToolDefs(): AiToolDef[] {
   return specs.filter((s) => s.risk !== "FORBIDDEN_FOR_AI").map((s) => s.def);
+}
+
+/**
+ * Påminnelse-intent: bara de verktyg som behövs för att skapa/ändra
+ * påminnelser och länka kund – inte hela registret. Samma modell, färre
+ * inputtokens, ingen extra HTTP-runda.
+ */
+export const REMINDER_AI_TOOL_NAMES = [
+  "create_reminder",
+  "list_reminders",
+  "update_reminder",
+  "complete_reminder",
+  "snooze_reminder",
+  "dismiss_reminder",
+  "find_customers",
+  "snooze_attention",
+] as const;
+
+/** Verktygspaket utifrån känd intent. Okänd fritext → hela anropsbara listan. */
+export function aiCallableToolDefsFor(text: string, priorUserTexts: string[] = []): AiToolDef[] {
+  const all = aiCallableToolDefs();
+  const reminder =
+    isInternalReminderIntent(text) || priorUserTexts.some((t) => isInternalReminderIntent(t));
+  if (!reminder) return all;
+  const allow = new Set<string>(REMINDER_AI_TOOL_NAMES);
+  return all.filter((t) => allow.has(t.function.name));
 }
 
 export function toolRequiresConfirmation(name: string): boolean {

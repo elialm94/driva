@@ -6,12 +6,19 @@ import {
   getCommand,
   type CommandId,
 } from "../command-bar";
-import { aiCallableToolDefs, executeTool, type ExecuteToolOptions, type ToolResult } from "../ai/tools";
+import { aiCallableToolDefsFor, executeTool, type ExecuteToolOptions, type ToolResult } from "../ai/tools";
 import { getAiIntentProvider } from "../ai/intent";
 import type { LoopTurn } from "../ai/loop";
 import { isAiConfigured } from "../ai/provider";
 import { resolveUtteranceCorrections, shouldFallbackToStructuredExtraction } from "../ai/corrections";
-import { parseReminderCommandInput, parseReminderText, parseWhenText, relatedFromTitle } from "../reminders/parse";
+import {
+  isReminderIntentQuery,
+  parseReminderCommandInput,
+  parseReminderText,
+  parseWhenText,
+  prettyReminderTitle,
+  relatedFromTitle,
+} from "../reminders/parse";
 import { businessTimezone, dismissReminder } from "./reminders";
 import { getBusinessActions } from "./actions";
 import { listCustomersForTable } from "./customers";
@@ -487,11 +494,29 @@ export async function interpretFreeTextViaAi(
         save();
         return toRunResult(result);
       }
+      // Ofullständig men tydlig påminnelse: fråga efter saknat fält – noll LLM.
+      // Bara intern påminnelse-intent – inte godtycklig fritext eller "skicka påminnelse".
+      const slots = isReminderIntentQuery(text)
+        ? parseReminderCommandInput(text, new Date(), businessTimezone())
+        : null;
+      if (slots && !slots.complete) {
+        if (slots.missing === "when") {
+          return {
+            ok: true,
+            text: `När ska jag påminna dig om ${prettyReminderTitle(slots.title)}?`,
+          };
+        }
+        if (slots.missing === "title") {
+          return { ok: true, text: "Vad ska jag påminna dig om?" };
+        }
+        return { ok: true, text: "Vad ska jag påminna dig om, och när?" };
+      }
     }
   }
 
   const provider = getAiIntentProvider();
-  const intent = await provider.interpret(text, aiCallableToolDefs(), {
+  const priorUser = turns.filter((t) => t.role === "user").map((t) => t.text);
+  const intent = await provider.interpret(text, aiCallableToolDefsFor(text, priorUser), {
     today: new Date().toISOString().slice(0, 10),
     locale: "sv",
     turns,

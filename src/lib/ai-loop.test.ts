@@ -15,8 +15,15 @@ import {
   __setAiTransportForTests,
   type AiToolCall,
 } from "./ai/provider";
-import { runAiCommandLoop, AI_UNAVAILABLE_MESSAGE } from "./ai/loop";
-import { aiCallableToolDefs, executeTool, toolRegistrySummary, toolRisk } from "./ai/tools";
+import { runAiCommandLoop, AI_UNAVAILABLE_MESSAGE, pickModel } from "./ai/loop";
+import {
+  aiCallableToolDefs,
+  aiCallableToolDefsFor,
+  executeTool,
+  REMINDER_AI_TOOL_NAMES,
+  toolRegistrySummary,
+  toolRisk,
+} from "./ai/tools";
 import { getBusinessActions } from "./services/actions";
 import { validateToolArgs } from "./ai/validate";
 import { getAiIntentProvider, NoopAiIntentProvider } from "./ai/intent";
@@ -289,6 +296,20 @@ describe("deterministiskt först: noll LLM-anrop", () => {
     await runBarCommand("show_today_actions");
     await runBarCommand("create_invoice", { customerId: "cust-johan", jobId: "job-altan" });
     assert.equal(called, 0);
+  });
+
+  test("ofullständig påminnelse ('påminn mig att ringa Göran') → slot-fill, noll LLM", async () => {
+    let called = 0;
+    __setAiTransportForTests(async () => {
+      called += 1;
+      throw new Error("LLM-anrop från slot-fill-väg!");
+    });
+    const result = await interpretFreeTextViaAi("Påminn mig att ringa Göran");
+    assert.equal(called, 0, "noll LLM-anrop");
+    assert.equal(result.ok, true);
+    assert.match(result.text, /när/i);
+    assert.match(result.text, /göran/i);
+    assert.equal(db().reminders.length, 0);
   });
 });
 
@@ -822,5 +843,50 @@ describe("registret", () => {
     assert.equal(validateToolArgs(schema, {}).ok, false);
     assert.equal(validateToolArgs(schema, { name: "J", extra: 1 }).ok, false);
     assert.equal(validateToolArgs(schema, "sträng").ok, false);
+  });
+
+  test("påminnelsefras exponerar inte send_invoice eller leverantörsverktyg", () => {
+    const names = aiCallableToolDefsFor("Påminn mig att ringa Göran imorgon").map((t) => t.function.name);
+    assert.ok(names.includes("create_reminder"));
+    assert.ok(names.includes("find_customers"));
+    assert.ok(!names.includes("send_invoice"));
+    assert.ok(!names.includes("list_supplier_invoices"));
+    assert.ok(!names.includes("create_invoice"));
+    for (const name of REMINDER_AI_TOOL_NAMES) {
+      assert.ok(names.includes(name), `paketet saknar ${name}`);
+    }
+    const full = aiCallableToolDefs().map((t) => t.function.name);
+    const other = aiCallableToolDefsFor("vilka fakturor är sena?").map((t) => t.function.name);
+    assert.deepEqual(other, full);
+  });
+});
+
+describe("pickModel: FAST för påminnelser och korta första turer", () => {
+  const prevFast = process.env.AI_MODEL_FAST;
+  const prevSmart = process.env.AI_MODEL_SMART;
+
+  test("påminnelse och kort första tur stannar på FAST även över 220 tecken", () => {
+    process.env.AI_MODEL_FAST = "test/fast";
+    process.env.AI_MODEL_SMART = "test/smart";
+    try {
+      const longReminder = `påminn mig ${"imorgon ".repeat(40)}att ringa Göran`;
+      assert.ok(longReminder.length > 220);
+      assert.equal(pickModel(longReminder, []), "test/fast");
+      assert.equal(pickModel("hej", []), "test/fast");
+      assert.equal(pickModel("x".repeat(400), []), "test/smart");
+      assert.equal(pickModel("kort uppföljning", [{ role: "user", text: "a" }, { role: "assistant", text: "b" }]), "test/fast");
+      assert.equal(
+        pickModel("fortsätt", [
+          { role: "user", text: "1" },
+          { role: "assistant", text: "2" },
+          { role: "user", text: "3" },
+          { role: "assistant", text: "4" },
+        ]),
+        "test/smart"
+      );
+    } finally {
+      process.env.AI_MODEL_FAST = prevFast;
+      process.env.AI_MODEL_SMART = prevSmart;
+    }
   });
 });

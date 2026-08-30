@@ -233,6 +233,11 @@ describe("parseCommand (hela originalfrasen → intent + argument)", () => {
     assert.equal(titleMissing.confidence, "high");
     if (titleMissing.confidence !== "high") throw new Error("unreachable");
     assert.equal(titleMissing.reminder && !titleMissing.reminder.complete && titleMissing.reminder.missing, "title");
+
+    const both = parseCommand("Skapa påminnelse", "owner", SUNDAY, TZ);
+    assert.equal(both.confidence, "high");
+    if (both.confidence !== "high") throw new Error("unreachable");
+    assert.equal(both.reminder && !both.reminder.complete && both.reminder.missing, "both");
   });
 
   it("faktura/offert: leftover (kund + belopp/kontext) kastas inte", () => {

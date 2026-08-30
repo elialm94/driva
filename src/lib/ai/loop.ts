@@ -31,6 +31,7 @@ import {
   type AiToolDef,
 } from "./provider";
 import { executeTool, type ExecuteToolOptions } from "./tools";
+import { isInternalReminderIntent } from "./utterance";
 
 export interface LoopTurn {
   role: "user" | "assistant";
@@ -93,8 +94,12 @@ function systemPrompt(today: string): string {
 export function pickModel(input: string, turns: LoopTurn[]): string {
   const cfg = aiConfig();
   if (cfg.modelSmart === cfg.modelFast) return cfg.modelFast;
-  const complex = input.length > 220 || turns.length >= 4;
-  return complex ? cfg.modelSmart : cfg.modelFast;
+  // Påminnelser och korta första turer stannar på FAST. SMART bara när
+  // dialogen redan är lång (≥4 turer) eller första meddelandet är mycket långt.
+  if (isInternalReminderIntent(input)) return cfg.modelFast;
+  if (turns.length >= 4) return cfg.modelSmart;
+  if (turns.length === 0 && input.length >= 400) return cfg.modelSmart;
+  return cfg.modelFast;
 }
 
 /** Komprimerat, avgränsat verktygsresultat – data, aldrig instruktioner. */
