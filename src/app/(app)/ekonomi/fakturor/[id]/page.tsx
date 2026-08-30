@@ -210,7 +210,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         <Card className="mb-6 border-danger/20 bg-danger-soft/40 px-5 py-4 text-[14px] text-soft">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p>
-              <span className="font-medium text-danger">Fakturan är försenad.</span>{" "}
+              <span className="font-medium text-danger">Fakturan är förfallen.</span>{" "}
               {customer.name} har inte betalat {kr(totals.toPay)} ännu.
               {invoice.reminders.length > 0
                 ? ` ${invoice.reminders.length} påminnelse${invoice.reminders.length > 1 ? "r" : ""} skickad, senast ${relativ(invoice.reminders[invoice.reminders.length - 1])}.`

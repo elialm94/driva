@@ -455,7 +455,7 @@ describe("kö-tillstånd och filter", () => {
     assert.equal(clientSwitchDestination("/redovisning/k/biz-sod", null), "/redovisning");
     assert.equal(clientRowStatus({ health: "klart", openCount: 0, urgentCount: 0 }), "Klart ✓");
     assert.equal(clientRowStatus({ health: "saker", openCount: 3, urgentCount: 0 }), "3 saker");
-    assert.match(clientRowStatus({ health: "forsenat", openCount: 4, urgentCount: 1 }), /försenad/);
+    assert.match(clientRowStatus({ health: "forsenat", openCount: 4, urgentCount: 1 }), /brådskande/);
   });
 
   it("revisor får inte rätta eller kategorisera", async () => {

@@ -323,7 +323,7 @@ function FilterMenu({
             options={[
               ["alla", "Alla"],
               ["obetalt", "Att betala"],
-              ["forsenad", "Försenad"],
+              ["forsenad", "Förfallen faktura"],
             ]}
             onChange={(payment) => onChange({ payment: payment as CustomerPaymentFilter, page: 1 })}
           />

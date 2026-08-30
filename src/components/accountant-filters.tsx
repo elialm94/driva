@@ -4,7 +4,7 @@ import { cx } from "./ui";
 
 export const ACCOUNTANT_FILTERS: { key: AccountantFilter; label: string }[] = [
   { key: "alla", label: "Alla" },
-  { key: "forsenat", label: "Försenat" },
+  { key: "forsenat", label: "Brådskande" },
   { key: "moms", label: "Moms" },
   { key: "bank", label: "Bank" },
   { key: "underlag", label: "Underlag" },

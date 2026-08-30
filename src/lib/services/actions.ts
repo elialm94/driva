@@ -1170,7 +1170,7 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
           confirm: {
             title: "Skicka till bank igen?",
             rows: supplierPaymentConfirmRows(payment, s),
-            confirmLabel: "Skicka till bank",
+            confirmLabel: "Skicka till banken",
           },
         },
       });
@@ -1265,7 +1265,7 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
           title: `Skicka betalning till ${s.supplier}`,
           subtitle: `${kr(payment?.amount ?? s.amount)} · förfaller ${datumKort(s.dueDate)}`,
           href,
-          cta: { type: "paySupplier", label: "Skicka till bank", supplierInvoiceId: s.id, paymentId: payment?.id },
+          cta: { type: "paySupplier", label: "Skicka till banken", supplierInvoiceId: s.id, paymentId: payment?.id },
           amount: payment?.amount ?? s.amount,
           confirm: {
             title: "Skicka till bank?",
@@ -1278,7 +1278,7 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
                   { label: "OCR", value: s.ocr ?? "—" },
                   { label: "Bankgiro", value: s.bankgiro ?? s.recipientAccount ?? "—" },
                 ],
-            confirmLabel: "Skicka till bank",
+            confirmLabel: "Skicka till banken",
           },
         },
       });

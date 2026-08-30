@@ -480,7 +480,7 @@ describe("åtgärdsmotorn: bokföring och bank", () => {
     const late = actions.attention.find((a) => a.id === "supplier-sup-late");
     assert.ok(late);
     assert.equal(late.cta?.type, "paySupplier");
-    if (late.cta?.type === "paySupplier") assert.equal(late.cta.label, "Skicka till bank");
+    if (late.cta?.type === "paySupplier") assert.equal(late.cta.label, "Skicka till banken");
     assert.ok(!actions.attention.some((a) => a.id === "supplier-sup-future"));
     assert.ok(!actions.watching.some((u) => u.id === "supplier-due-sup-future"));
   });

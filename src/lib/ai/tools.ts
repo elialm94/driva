@@ -790,16 +790,16 @@ const specs: ToolSpec[] = [
         return {
           ok: true,
           forModel: { invoices: [], count: 0 },
-          text: "Inga fakturor är försenade just nu – allt ser bra ut.",
+          text: "Inga fakturor är förfallna just nu – allt ser bra ut.",
         };
       }
       return {
         ok: true,
         forModel: { invoices: late.map(compactInvoice), count: late.length },
-        text: `${late.length === 1 ? "1 faktura är försenad" : `${late.length} fakturor är försenade`}:`,
+        text: `${late.length === 1 ? "1 faktura är förfallen" : `${late.length} fakturor är förfallna`}:`,
         card: {
           kind: "list",
-          title: "Försenade fakturor",
+          title: "Förfallna fakturor",
           rows: late.map((i) => {
             const days = daysOverdue(i);
             return {

@@ -572,7 +572,7 @@ function AttentionRow({
           paymentId: cta.paymentId,
         });
         if (result.ok === false) setError(result.error);
-        else finish(result.ok ? "Skickad till bank" : "");
+        else finish(result.ok ? "Skickad till banken" : "");
         router.refresh();
       });
     }

@@ -63,8 +63,9 @@ export function clientRowStatus(
   extra?: { vatDueDays?: number | null; bankOk?: boolean }
 ): string {
   if (s.health === "forsenat") {
+    // "Brådskande" är sanningen (urgent kan vara moms idag – inte försenad).
     const n = s.urgentCount || 1;
-    const fors = n === 1 ? "1 försenad" : `${n} försenade`;
+    const fors = n === 1 ? "1 brådskande" : `${n} brådskande`;
     return s.openCount > n ? `${s.openCount} saker · ${fors}` : fors;
   }
   const vatDays = extra?.vatDueDays;

@@ -43,9 +43,10 @@ const LIFECYCLE_CHIPS: [JobLifecycleFilter, string][] = [
   ["arkiverade", "Arkiverade"],
 ];
 
+// Samma ordförråd som ekonomiraden: kvar att fakturera / väntar på betalning / betalt.
 const ECONOMY_CHIPS: [JobEconomyFilter, string][] = [
-  ["kvar", "Kvar"],
-  ["vantar", "Väntar"],
+  ["kvar", "Kvar att fakturera"],
+  ["vantar", "Väntar på betalning"],
   ["betalt", "Betalt"],
 ];
 

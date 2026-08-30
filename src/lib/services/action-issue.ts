@@ -42,7 +42,7 @@ const CTA_ISSUE: Partial<Record<ActionCta["type"], string>> = {
   // Skickar en påminnelse via e-post – etiketten säger vad som händer.
   followUpQuote: "Skicka påminnelse",
   createJobInvoice: "Fakturera",
-  paySupplier: "Skicka till bank",
+  paySupplier: "Skicka till banken",
   confirmRotPayout: "Bekräfta utbetalning",
   registerCreditRefund: "Återbetala",
   reminderActions: "Påminnelse",
@@ -67,8 +67,8 @@ export function issueForAction(action: BusinessAction): string {
   if (action.id.startsWith("supplier-reuse-")) return "Använd tidigare uppgifter";
   if (action.id.startsWith("supplier-dest-")) return "Kontrollera bankuppgifter";
   if (action.id.startsWith("supplier-fail-")) return "Försök igen";
-  if (action.id.startsWith("supplier-")) return "Skicka till bank";
-  if (action.id.startsWith("invoice-late-")) return "Försenad";
+  if (action.id.startsWith("supplier-")) return "Skicka till banken";
+  if (action.id.startsWith("invoice-late-")) return "Förfallen";
   if (action.id.startsWith("invoice-refund-")) return "Återbetala";
   if (action.id.startsWith("quote-expired-")) return "Utgången offert";
   if (action.id.startsWith("bank-unexplained")) return "Stäm av banken";

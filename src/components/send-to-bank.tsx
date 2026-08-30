@@ -10,7 +10,7 @@ export function SendToBankButton({
   paymentId,
   confirmRows,
   scheduledDate: defaultDate,
-  label = "Skicka till bank",
+  label = "Skicka till banken",
 }: {
   supplierInvoiceId: string;
   paymentId?: string;
@@ -39,7 +39,7 @@ export function SendToBankButton({
       </button>
       {open ? (
         <div className="w-full max-w-sm rounded-2xl border border-line bg-card p-4 text-left shadow-card">
-          <p className="text-[15px] font-semibold">Skicka till bank?</p>
+          <p className="text-[15px] font-semibold">Skicka till banken?</p>
           <ul className="mt-3 space-y-1.5 text-[14px]">
             {confirmRows.map((row) => (
               <li key={row.label} className="flex justify-between gap-3">
@@ -80,7 +80,7 @@ export function SendToBankButton({
                 });
               }}
             >
-              {pending ? "Skickar …" : "Skicka till bank"}
+              {pending ? "Skickar …" : "Skicka till banken"}
             </button>
           </div>
           {error ? <p className="mt-2 text-[13px] text-danger">{error}</p> : null}

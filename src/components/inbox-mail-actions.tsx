@@ -48,7 +48,7 @@ export function InboxMailActions({
             });
           }}
         >
-          Markera behandlad
+          Markera som hanterad
         </button>
       </div>
       {error ? <p className="text-[13px] text-danger">{error}</p> : null}
