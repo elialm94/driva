@@ -17,7 +17,9 @@ import { supabaseEnv } from "./config";
 import { cloneState, runInTenantContext, type TenantContext } from "./context";
 import { commitTenantState, isRetryableStorageError } from "./commit";
 import { getSqlClient, type SqlClient } from "./executor";
-import { bindTransaction, loadTenantState } from "./load";
+import { bindTransaction, loadTenantState, type LoadedTenantState } from "./load";
+import { cachedStateIfFresh, clearSnapshotCache, invalidateSnapshot, putSnapshot } from "./snapshot-cache";
+import { markCacheHit, withPerfSpan } from "../perf/telemetry";
 
 const MAX_ATTEMPTS = 3;
 
@@ -25,6 +27,27 @@ const MAX_ATTEMPTS = 3;
 let clientOverride: SqlClient | null = null;
 export function setSqlClientForTests(client: SqlClient | null): void {
   clientOverride = client;
+  // Klientbyte kan peka på en HELT annan databas där samma businessId/version
+  // råkar existera – gamla snapshots får aldrig återanvändas.
+  clearSnapshotCache();
+}
+
+/**
+ * Ladda tenanttillstånd med snapshot-cachen framför den fulla laddningen.
+ * Cacheträff = 1 versionsfråga. Miss = full laddning i EN transaktion.
+ */
+async function loadTenantStateCached(client: SqlClient, businessId: string): Promise<LoadedTenantState> {
+  const cached = await cachedStateIfFresh(client, businessId);
+  if (cached) {
+    markCacheHit();
+    return { state: cached.state, stateVersion: cached.stateVersion };
+  }
+  const loaded = await client.transaction(async (tx) => {
+    await bindTransaction(tx, businessId);
+    return loadTenantState(tx, businessId);
+  });
+  putSnapshot(businessId, loaded.state, loaded.stateVersion);
+  return loaded;
 }
 
 export async function sqlClient(): Promise<SqlClient> {
@@ -51,10 +74,9 @@ export async function runWithTenant<T>(opts: RunWithTenantOptions, fn: () => T |
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    const loaded = await client.transaction(async (tx) => {
-      await bindTransaction(tx, opts.businessId);
-      return loadTenantState(tx, opts.businessId);
-    });
+    const loaded = await withPerfSpan(`load business=${opts.businessId}`, () =>
+      loadTenantStateCached(client, opts.businessId)
+    );
 
     const ctx: TenantContext = {
       businessId: opts.businessId,
@@ -66,19 +88,30 @@ export async function runWithTenant<T>(opts: RunWithTenantOptions, fn: () => T |
       dirty: false,
     };
 
-    try {
-      const result = await runInTenantContext(ctx, () => fn());
-      if (ctx.dirty && opts.access === "write") {
-        await client.transaction(async (tx) => {
+    // Efter en commit KASTAS cacheposten i stället för att uppdateras med
+    // minnestillståndet: databasen normaliserar (radordning, tal, tidsstämplar),
+    // så cachen får bara innehålla tillstånd som kommer från en riktig
+    // laddning. Nästa läsning läser färskt och fyller cachen igen.
+    const commit = async () => {
+      await withPerfSpan(`commit business=${opts.businessId}`, () =>
+        client.transaction(async (tx) => {
           await bindTransaction(tx, opts.businessId);
-          await commitTenantState(tx, {
+          return commitTenantState(tx, {
             businessId: opts.businessId,
             userId: opts.userId,
             baseline: ctx.baseline,
             state: ctx.state,
             stateVersion: ctx.stateVersion,
           });
-        });
+        })
+      );
+      invalidateSnapshot(opts.businessId);
+    };
+
+    try {
+      const result = await runInTenantContext(ctx, () => fn());
+      if (ctx.dirty && opts.access === "write") {
+        await commit();
       }
       return result;
     } catch (err) {
@@ -86,20 +119,14 @@ export async function runWithTenant<T>(opts: RunWithTenantOptions, fn: () => T |
       // så att åtgärden inte tappas när actionen avslutas med redirect.
       if (isNextControlFlowError(err)) {
         if (ctx.dirty && opts.access === "write") {
-          await client.transaction(async (tx) => {
-            await bindTransaction(tx, opts.businessId);
-            await commitTenantState(tx, {
-              businessId: opts.businessId,
-              userId: opts.userId,
-              baseline: ctx.baseline,
-              state: ctx.state,
-              stateVersion: ctx.stateVersion,
-            });
-          });
+          await commit();
         }
         throw err;
       }
       if (isRetryableStorageError(err) && attempt < attempts) {
+        // Konflikt = vår baslinje var inaktuell. Kasta cacheposten så nästa
+        // varv garanterat läser färskt från databasen.
+        invalidateSnapshot(opts.businessId);
         lastError = err;
         continue;
       }
@@ -118,13 +145,14 @@ function isNextControlFlowError(err: unknown): boolean {
 /**
  * Läs in ett företags hela state utan att öppna en skrivkontext – används av
  * sidorenderingar (request-scope-cellen). Ingen commit sker någonsin här.
+ * Snapshot-cachen gör varma sidladdningar till EN versionsfråga i stället
+ * för full tillståndsladdning.
  */
 export async function loadStateSnapshot(businessId: string): Promise<DB> {
   const client = await sqlClient();
-  const loaded = await client.transaction(async (tx) => {
-    await bindTransaction(tx, businessId);
-    return loadTenantState(tx, businessId);
-  });
+  const loaded = await withPerfSpan(`load business=${businessId}`, () =>
+    loadTenantStateCached(client, businessId)
+  );
   return loaded.state;
 }
 
