@@ -339,7 +339,7 @@ describe("parseWhenText: NÄR-steget tolkar rena tidfraser strikt", () => {
 describe("prettyReminderTitle: visningsversalisering utan verbbyte", () => {
   it("'skicka till göran' → 'Skicka till Göran' – skicka byts inte mot ring", () => {
     assert.equal(prettyReminderTitle("skicka till göran"), "Skicka till Göran");
-    assert.equal(prettyReminderTitle("ringa Göran"), "Ringa Göran");
+    assert.equal(prettyReminderTitle("ringa göran"), "Ringa Göran");
   });
 
   it("behåller redan versaliserad titel", () => {

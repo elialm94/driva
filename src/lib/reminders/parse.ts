@@ -241,6 +241,9 @@ const TITLE_STOP = new Set([
 ]);
 
 const NAME_AFTER = new Set(["till", "med", "hos", "åt", "och"]);
+const LEAD_VERBS = new Set([
+  "ring", "ringa", "skicka", "beställa", "kolla", "kontakta", "maila", "mejla", "boka", "följa", "prata",
+]);
 
 /**
  * Rimlig visningsversalisering: "skicka till göran" → "Skicka till Göran".
@@ -257,6 +260,9 @@ export function prettyReminderTitle(title: string): string {
       if (TITLE_STOP.has(lower)) return lower;
       const prev = words[i - 1]?.toLocaleLowerCase("sv");
       if (prev && NAME_AFTER.has(prev)) {
+        return raw.charAt(0).toLocaleUpperCase("sv") + raw.slice(1);
+      }
+      if (i === 1 && LEAD_VERBS.has(words[0]?.toLocaleLowerCase("sv") ?? "") && !TITLE_STOP.has(lower)) {
         return raw.charAt(0).toLocaleUpperCase("sv") + raw.slice(1);
       }
       return raw;
