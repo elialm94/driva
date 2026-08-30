@@ -1,5 +1,6 @@
 import { findCustomersByName } from "../services/customers";
 import type { Customer } from "../types";
+import { resolveAmount, resolveQuantityHours } from "./corrections";
 
 export type CustomerMatch =
   | { kind: "one"; customer: Customer }
@@ -98,10 +99,17 @@ function nextWeekday(now: Date, target: number): Date {
 }
 
 export function parseAmountInclVat(text: string): number | null {
+  const corrected = resolveAmount(text);
+  if (corrected != null) return corrected;
   const m = text.match(/(\d{1,3}(?:[ .\u00a0]\d{3})+|\d{3,})\s*(?:kr|:-|kronor)?/i);
   if (!m) return null;
   const n = parseInt(m[1].replace(/[ .\u00a0]/g, ""), 10);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Senaste tydliga timantal ("5 timmar, ändra till 7"). */
+export function parseQuantityHours(text: string): number | null {
+  return resolveQuantityHours(text);
 }
 
 /** "använd bara 30 000 kr i avdrag" – inte kundens saldo hos Skatteverket. */

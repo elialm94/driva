@@ -10,6 +10,12 @@
  * för länkning, veckodagsregel och standardtider).
  */
 import {
+  collapseCorrectedUtterance,
+  prettyReminderTitle,
+  resolveUtteranceCorrections,
+} from "../ai/corrections";
+import { isInternalReminderIntent, isPaymentReminderUtterance } from "../ai/utterance";
+import {
   DAYPARTS,
   WEEKDAYS_SV,
   formatDueAt,
@@ -69,11 +75,44 @@ export function relatedFromTitle(title: string): { relatedType: string; relatedQ
   return undefined;
 }
 
+/**
+ * Inledningar som markerar intern påminnelse. Resten av meningen slängs
+ * ALDRIG – rättelselagret får hela kroppen.
+ */
+const REMINDER_LEAD_RE =
+  /^\s*(?:skapa(?:\s+en)?\s+påminnelse|påminn(?:a)?(?:\s+mig)?)(?:\s+gärna)?(?:\s+om(?=\s+att\b))?(?:\s+|$)/i;
+
+function stripReminderLeadPrefix(text: string): string {
+  return text
+    .replace(REMINDER_LEAD_RE, "")
+    .replace(/^\s*att\s+/i, "")
+    .replace(/\s+/g, " ")
+    .replace(/[\s,.!?…]+$/g, "")
+    .trim();
+}
+
+function prepareReminderBody(body: string): { rest: string; prettyTitle: boolean } | null {
+  const collapsed = body.replace(/\s+/g, " ").trim();
+  if (!collapsed) return null;
+  const resolution = resolveUtteranceCorrections(collapsed);
+  if (resolution.confidence === "ambiguous" || resolution.needsStructuredExtraction) return null;
+  if (resolution.hasCorrectionLanguage && resolution.confidence === "high") {
+    return { rest: collapseCorrectedUtterance(collapsed, resolution), prettyTitle: true };
+  }
+  return { rest: collapsed, prettyTitle: false };
+}
+
 export function parseReminderText(text: string, now: Date, timezone: string): ParsedReminder | null {
-  // "om" konsumeras bara i "påminn mig om att …" – aldrig i "om två timmar".
-  const m = /^\s*påminn(?:a)?(?:\s+mig)?(?:\s+gärna)?(?:\s+om(?=\s+att\b))?\s+(.+)$/i.exec(text.trim());
-  if (!m) return null;
-  let rest = ` ${m[1].trim()} `;
+  const trimmed = text.trim();
+  if (!trimmed || isPaymentReminderUtterance(trimmed)) return null;
+  // Prefix krävs för den fria NL-snabbvägen; nakna meningar går via
+  // parseReminderCommandInput som sätter prefixet.
+  if (!isInternalReminderIntent(trimmed) && !REMINDER_LEAD_RE.test(trimmed + " ")) return null;
+  const body = stripReminderLeadPrefix(trimmed);
+  if (!body) return null;
+  const prepared = prepareReminderBody(body);
+  if (!prepared) return null;
+  let rest = ` ${prepared.rest} `;
 
   const args: Record<string, string | number | boolean> = {};
   let matched = false;
@@ -141,13 +180,32 @@ export function parseReminderText(text: string, now: Date, timezone: string): Pa
   if (!matched) return null;
 
   // Titeln: det som blir kvar, utan inledande "att" och skiljetecken.
-  const title = rest
+  let title = rest
     .replace(/^\s*att\s+/i, "")
     .replace(/\s+att\s*$/i, "")
     .replace(/\s+/g, " ")
     .replace(/[\s,.!?…]+$/g, "")
     .trim();
   if (!title) return null;
+  if (prepared.prettyTitle) {
+    title = prettyReminderTitle(title);
+    const resolution = resolveUtteranceCorrections(body);
+    if (typeof resolution.final.time === "string") args.time = resolution.final.time;
+    if (typeof resolution.final.weekday === "string") {
+      args.weekday = resolution.final.weekday;
+      delete args.whenDate;
+      if (resolution.finalNextWeek) args.nextWeek = true;
+      else delete args.nextWeek;
+    }
+    if (typeof resolution.final.date === "string" && !args.weekday) {
+      const days = resolution.final.date === "övermorgon" ? 2 : resolution.final.date === "imorgon" ? 1 : 0;
+      args.whenDate = localDatePlusDays(now, timezone, days);
+    }
+    if (typeof resolution.final.name === "string") {
+      const verb = /^(ringa?|kolla|skicka|beställa|fakturera|kontakta|maila|mejla|boka)\b/i.exec(title);
+      title = prettyReminderTitle(verb ? `${verb[0]} ${resolution.final.name}` : String(resolution.final.name));
+    }
+  }
 
   const related = relatedFromTitle(title);
   return { title, args: { title, ...args, ...(related ?? {}) } };
@@ -205,14 +263,9 @@ export type ReminderCommandParse =
   /** Bara VAD → fråga enbart efter NÄR. */
   | { complete: false; title: string };
 
-/** Inledningar som inte hör till titeln: "påminn mig (gärna) (om) att …". */
+/** Inledningar som inte hör till titeln: "skapa en påminnelse" / "påminn mig att …". */
 function stripReminderLead(text: string): string {
-  return text
-    .replace(/^\s*påminn(?:a)?(?:\s+mig)?(?:\s+gärna)?(?:\s+om(?=\s+att\b))?\s+/i, "")
-    .replace(/^\s*att\s+/i, "")
-    .replace(/\s+/g, " ")
-    .replace(/[\s,.!?…]+$/g, "")
-    .trim();
+  return stripReminderLeadPrefix(text);
 }
 
 /**

@@ -10,6 +10,7 @@ import { aiCallableToolDefs, executeTool, type ExecuteToolOptions, type ToolResu
 import { getAiIntentProvider } from "../ai/intent";
 import type { LoopTurn } from "../ai/loop";
 import { isAiConfigured } from "../ai/provider";
+import { resolveUtteranceCorrections, shouldFallbackToStructuredExtraction } from "../ai/corrections";
 import { parseReminderCommandInput, parseReminderText, parseWhenText, relatedFromTitle } from "../reminders/parse";
 import { businessTimezone } from "./reminders";
 import { getBusinessActions } from "./actions";
@@ -342,6 +343,11 @@ export async function runBarCommand(
         // Ett-yttrande-vägen: hela frasen bär både VAD och NÄR.
         const text = params.text?.trim() ?? "";
         if (text) {
+          const resolution = resolveUtteranceCorrections(text);
+          if (resolution.confidence === "ambiguous" && resolution.clarify) {
+            result = { ok: true, forModel: {}, text: resolution.clarify };
+            break;
+          }
           const parsed = parseReminderCommandInput(text, now, timezone);
           result = parsed?.complete ? await executeTool("create_reminder", parsed.args, toolOptions) : cannotParse;
           break;
@@ -413,11 +419,20 @@ export async function interpretFreeTextViaAi(
   // länknings- och tidspolicy). Bara första meddelandet – uppföljningar i en
   // pågående AI-konversation ska förbli hos modellen.
   if (turns.length === 0) {
-    const parsed = parseReminderText(text, new Date(), businessTimezone());
-    if (parsed) {
-      const result = await executeTool("create_reminder", parsed.args, { origin: "user", ...toolOptions });
-      save();
-      return toRunResult(result);
+    const resolution = resolveUtteranceCorrections(text);
+    // Tvetydigt alternativ ("12 eller 10") – fråga, skapa inte, gissa inte.
+    if (resolution.confidence === "ambiguous" && resolution.clarify) {
+      return { ok: true, text: resolution.clarify };
+    }
+    // Tydlig deterministisk rättelse eller vanlig fras – skapa med SLUTLIGT tillstånd.
+    // Låg konfidens + rättelsespråk/konflikt → OpenRouter med HELA originalfrasen.
+    if (!shouldFallbackToStructuredExtraction(resolution)) {
+      const parsed = parseReminderText(text, new Date(), businessTimezone());
+      if (parsed) {
+        const result = await executeTool("create_reminder", parsed.args, { origin: "user", ...toolOptions });
+        save();
+        return toRunResult(result);
+      }
     }
   }
 

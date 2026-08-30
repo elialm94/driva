@@ -93,6 +93,15 @@ klargörande fråga (inget skapas), noll → ren textpåminnelse – aldrig
 gissningar. Snabbvägen "påminn mig [imorgon|på onsdag|om N timmar] att X"
 skapar helt utan LLM-anrop.
 
+Självrättelser i samma yttrande ("kl 12, nej förresten kl 10") löses i
+`src/lib/ai/utterance.ts` + `src/lib/ai/corrections.ts` INNAN verktyget
+anropas: hela originalfrasen skannas, senaste tydliga rättelsen vinner,
+negerade värden släcks, tvetydiga alternativ ("12 eller 10") ger en
+klargörandefråga. Deterministisk parser först; vid motstridiga kandidater
+eller rättelsespråk med låg konfidens går HELA frasen till samma
+OpenRouter-verktygsloop – aldrig en avhuggen mening, aldrig en separat
+LLM-påminnelseväg.
+
 ## Bekräftelsepolicy
 
 Naturligt språk skapar UTKAST. Skicka faktura/offert, påminnelser, kreditering,

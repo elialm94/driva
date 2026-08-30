@@ -48,6 +48,12 @@ import {
   type CommandWorkspace,
 } from "@/lib/command-bar";
 import {
+  formatResolvedCommandCta,
+  prettyReminderTitle,
+  resolveUtteranceCorrections,
+} from "@/lib/ai/corrections";
+import { isInternalReminderIntent } from "@/lib/ai/utterance";
+import {
   parseReminderCommandInput,
   parseReminderText,
   previewReminderDue,
@@ -142,7 +148,7 @@ type BarItem =
   | { key: string; kind: "invoiceTarget"; option: InvoiceTargetOption }
   | { key: string; kind: "quoteTopic"; option: QuoteTopicOption }
   | { key: string; kind: "customTitle" }
-  | { key: string; kind: "titleSubmit"; title: string; actionLabel?: string; sublabel?: string; icon?: CommandIcon }
+  | { key: string; kind: "titleSubmit"; title: string; submitText?: string; actionLabel?: string; sublabel?: string; icon?: CommandIcon }
   | { key: string; kind: "link"; label: string; sublabel?: string; href: string; icon: CommandIcon }
   /** Skicka frågan som fri text till LLM:n – visas bara med konfigurerad nyckel. */
   | { key: string; kind: "aiInterpret"; text: string }
@@ -476,7 +482,7 @@ export function CommandBar({
         focusInput();
         break;
       case "titleSubmit":
-        finishTitle(item.title);
+        finishTitle(item.submitText ?? item.title);
         break;
       case "link":
         navigateTo(item.href);
@@ -588,6 +594,9 @@ export function CommandBar({
           parsedReminder?.complete === true
             ? previewReminderDueFromArgs(parsedReminder.args, new Date(), DEFAULT_TIMEZONE)
             : null;
+        const resolvedTitle =
+          parsedReminder?.complete === true ? prettyReminderTitle(parsedReminder.title) : title;
+        const clarify = isReminder ? resolveUtteranceCorrections(title).clarify : undefined;
         return {
           sections: [
             {
@@ -596,12 +605,15 @@ export function CommandBar({
                     {
                       key: "title-submit",
                       kind: "titleSubmit" as const,
-                      title,
-                      actionLabel: isReminder ? "Fortsätt med" : "Skapa",
+                      title: resolvedTitle,
+                      submitText: title,
+                      actionLabel: parsedDue ? "Skapa påminnelse" : isReminder ? "Fortsätt med" : "Skapa",
                       sublabel: isReminder
-                        ? parsedDue
-                          ? `${parsedDue} – granska och skapa`
-                          : "Nästa: när ska du bli påmind?"
+                        ? clarify
+                          ? clarify
+                          : parsedDue
+                            ? formatResolvedCommandCta({ command: "Skapa påminnelse", detail: resolvedTitle, when: parsedDue })
+                            : "Nästa: när ska du bli påmind?"
                         : "Enter för att skapa",
                       icon: isReminder ? ("clock" as const) : ("job" as const),
                     },
@@ -609,7 +621,7 @@ export function CommandBar({
                 : [],
             },
           ],
-          preselect: Boolean(title),
+          preselect: Boolean(title) && !clarify,
           honest: false,
         };
       }
@@ -678,8 +690,18 @@ export function CommandBar({
     // "Påminn mig … att …" med tydligt tidsuttryck → deterministisk påminnelse
     // (noll LLM). Samma rena tolk som servern använder; raden leder så att
     // Enter inte fastnar i luddiga kommandoträffar ("Påminn om sena fakturor").
-    const reminderParsed = /^påminn/i.test(q) ? parseReminderText(q, new Date(), DEFAULT_TIMEZONE) : null;
+    const reminderClarify = isInternalReminderIntent(q) ? resolveUtteranceCorrections(q) : null;
+    if (reminderClarify?.confidence === "ambiguous" && reminderClarify.clarify) {
+      return {
+        sections: [{ items: [...matches.slice(0, 3).map((m) => commandItem(m.command)), ...aiRow] }],
+        preselect: false,
+        honest: false,
+        emptyText: reminderClarify.clarify,
+      };
+    }
+    const reminderParsed = isInternalReminderIntent(q) ? parseReminderText(q, new Date(), DEFAULT_TIMEZONE) : null;
     if (reminderParsed) {
+      const resolvedTitle = prettyReminderTitle(reminderParsed.title);
       return {
         sections: [
           {
@@ -688,7 +710,7 @@ export function CommandBar({
                 key: "reminder-create",
                 kind: "reminderCreate",
                 text: q,
-                title: reminderParsed.title,
+                title: resolvedTitle,
                 // Tolkningen visas INNAN något skapas – aldrig en dold gissning.
                 due: previewReminderDueFromArgs(reminderParsed.args, new Date(), DEFAULT_TIMEZONE) ?? undefined,
               },
@@ -830,7 +852,7 @@ export function CommandBar({
     // fallbacktexten redan i panelen och inget nätverksanrop görs.
     // Undantag: "påminn …"-fraser har en deterministisk snabbväg på servern
     // (noll LLM) och skickas alltid.
-    const reminderPhrase = /^påminn/i.test(query.trim());
+    const reminderPhrase = isInternalReminderIntent(query.trim());
     if (!flow && !result && query.trim() && (prefetch.aiConfigured || reminderPhrase) && (model.honest || inAiConversation || reminderPhrase)) {
       runFreeTextViaAi(query.trim());
     }
@@ -1230,8 +1252,12 @@ function rowVisual(item: BarItem): { icon: CommandIcon; label: ReactNode; sublab
     case "reminderCreate":
       return {
         icon: "clock",
-        label: "Skapa påminnelse",
-        sublabel: `”${item.title.length > 60 ? `${item.title.slice(0, 57)}…` : item.title}”${item.due ? ` · ${item.due}` : ""}`,
+        label: formatResolvedCommandCta({
+          command: "Skapa påminnelse",
+          detail: item.title.length > 40 ? `${item.title.slice(0, 37)}…` : item.title,
+          when: item.due,
+        }),
+        sublabel: "Enter för att skapa",
       };
   }
 }
