@@ -245,7 +245,6 @@ begin
   delete from public.bankid_orders where business_id = p_business_id;
   delete from public.quote_versions where business_id = p_business_id;
   delete from public.quotes where business_id = p_business_id;
-  delete from public.requests where business_id = p_business_id;
   delete from public.job_work_entries where business_id = p_business_id;
   delete from public.jobs where business_id = p_business_id;
   delete from public.work_locations where business_id = p_business_id;
