@@ -13,7 +13,8 @@ import {
 } from "../email/service";
 import { currentVersion, getInvoice, getQuote, invoiceOutstanding, invoiceTotals, quoteTotals, requireCustomer } from "./data";
 import { deliverInvoice, issueInvoice, sendReminder, type Actor } from "./invoices";
-import { followUpQuote, quoteSendBlockers, sendQuote } from "./quotes";
+import { publicToken } from "../ids";
+import { followUpQuote, assertQuoteReadyToSend, sendQuote } from "./quotes";
 
 /**
  * E-postleverans av offerter, fakturor och påminnelser.
@@ -84,13 +85,14 @@ async function sendQuoteWithEmailOnce(quoteId: string): Promise<{ outcome: Deliv
       },
     };
   }
-  const blockers = quoteSendBlockers(quoteId).filter((b) => b.code !== "buyer_email");
-  if (blockers.length > 0) {
-    return { outcome: { mode: "live", ok: false, error: blockers[0].message } };
-  }
+  assertQuoteReadyToSend(quoteId);
   const customer = requireCustomer(quote.customerId);
   const to = requireRecipient(customer.email);
   if (typeof to !== "string") return { outcome: { mode: "live", ok: false, error: to.error } };
+  if (!quote.token) {
+    quote.token = publicToken();
+    save();
+  }
 
   const version = currentVersion(quote);
   const t = quoteTotals(quote);

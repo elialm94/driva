@@ -172,6 +172,32 @@ describe("skicka offert till kund utan e-post", () => {
     const sent = sendQuote(quote.id);
     assert.equal(sent.status, "skickad");
   });
+
+  it("saknade företagsuppgifter ger samma checklista-mönster som fakturan", () => {
+    replaceDb(emptyTestDb({ settings: { ...emptyTestDb().settings, name: "", orgNumber: "", address: "" } }));
+    const defaults = quoteDefaults();
+    const quote = createQuote({
+      customerId: "cust-1",
+      title: "",
+      intro: "",
+      lines: [],
+      rot: null,
+      paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
+      paymentTermsDays: defaults.paymentTermsDays,
+      validUntil: defaults.validUntil,
+      terms: defaults.terms,
+    });
+    const blockers = quoteSendBlockers(quote.id);
+    const codes = blockers.map((b) => b.code);
+    assert.ok(codes.includes("seller_name"));
+    assert.ok(codes.includes("seller_orgnr"));
+    assert.ok(codes.includes("seller_address"));
+    assert.ok(codes.includes("quote_title"));
+    assert.ok(codes.includes("lines_empty"));
+    assert.equal(blockers.find((b) => b.code === "seller_name")?.href, "/installningar?flik=foretag");
+    assert.equal(blockers.find((b) => b.code === "quote_title")?.href, `/ekonomi/offerter/${quote.id}/redigera`);
+    assert.ok(!codes.includes("seller_bankgiro"));
+  });
 });
 
 describe("inkommande uppdrag utan offert", () => {

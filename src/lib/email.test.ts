@@ -4,9 +4,14 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { replaceDb, db } from "./store";
 import { emptyTestDb, labor, testCustomer } from "./invoices/test-db";
-import { MAIL_NOT_CONFIGURED, setMailTransportForTests, type MailMessage } from "./mail";
+import {
+  configuredFromAddress,
+  isLiveMailConfigured,
+  setMailTransportForTests,
+  type MailMessage,
+} from "./mail";
 import { sendQuoteWithEmail, emailInvoice, remindInvoiceByEmail } from "./services/document-mail";
-import { createQuote, quoteDefaults } from "./services/quotes";
+import { createQuote, quoteDefaults, QuoteNotReadyError } from "./services/quotes";
 import { createInvoice, issueInvoice } from "./services/invoices";
 import { createCustomer, updateCustomer } from "./services/customers";
 import { resolveCustomerEmail } from "./resolve-missing-requirements";
@@ -46,6 +51,10 @@ beforeEach(() => {
   failNext = false;
   sendCount = 0;
   delete process.env.RESEND_API_KEY;
+  delete process.env.RESEND_FROM_EMAIL;
+  delete process.env.RESEND_FROM_NAME;
+  delete process.env.MAIL_FROM;
+  delete process.env.RESEND_FROM;
   setMailTransportForTests(async (msg) => {
     sendCount += 1;
     if (failNext) {
@@ -71,6 +80,10 @@ beforeEach(() => {
 afterEach(() => {
   setMailTransportForTests(undefined);
   delete process.env.RESEND_API_KEY;
+  delete process.env.RESEND_FROM_EMAIL;
+  delete process.env.RESEND_FROM_NAME;
+  delete process.env.MAIL_FROM;
+  delete process.env.RESEND_FROM;
 });
 
 describe("offert via Resend", () => {
@@ -146,15 +159,61 @@ describe("offert via Resend", () => {
     assert.equal(db().activity.filter((e) => e.text.includes("skickades med e-post")).length, 1);
   });
 
-  it("saknad API-nyckel ger ingen fejkad succé", async () => {
+  it("utan nyckel markeras offerten som skickad utan att låtsas att mejl gick iväg", async () => {
     setMailTransportForTests(undefined);
     delete process.env.RESEND_API_KEY;
     const quote = draftQuote("cust-1");
     const { outcome } = await sendQuoteWithEmail(quote.id);
-    assert.equal(outcome.ok, false);
-    assert.equal(outcome.error, MAIL_NOT_CONFIGURED);
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.mode, "mock");
+    const stored = db().quotes.find((q) => q.id === quote.id)!;
+    assert.equal(stored.status, "skickad");
+    assert.ok(stored.sentAt);
+    assert.equal(stored.lastEmail, undefined);
+    assert.equal(sent.length, 0);
+    assert.match(db().activity.map((e) => e.text).join("\n"), /ingen e-post är konfigurerad/);
+  });
+
+  it("nyckel utan avsändare är inte live – samma ärliga mock", async () => {
+    setMailTransportForTests(undefined);
+    process.env.RESEND_API_KEY = "re_test";
+    const quote = draftQuote("cust-1");
+    assert.equal(isLiveMailConfigured(), false);
+    const { outcome } = await sendQuoteWithEmail(quote.id);
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.mode, "mock");
+    assert.equal(db().quotes.find((q) => q.id === quote.id)?.status, "skickad");
+    assert.equal(sent.length, 0);
+  });
+
+  it("saknat företagsnamn stoppar utskick med länk till inställningar", async () => {
+    replaceDb(
+      emptyTestDb({
+        settings: { ...emptyTestDb().settings, name: "" },
+        customers: [testCustomer({ email: "anna@test.se" })],
+      })
+    );
+    const quote = draftQuote("cust-1");
+    await assert.rejects(
+      () => sendQuoteWithEmail(quote.id),
+      (e: unknown) => {
+        assert.ok(e instanceof QuoteNotReadyError);
+        assert.ok(e.blockers.some((b) => b.code === "seller_name" && b.href === "/installningar?flik=foretag"));
+        return true;
+      }
+    );
+    assert.equal(sent.length, 0);
     assert.equal(db().quotes.find((q) => q.id === quote.id)?.status, "utkast");
-    assert.equal(db().quotes.find((q) => q.id === quote.id)?.sentAt, undefined);
+  });
+
+  it("offert utan token får en innan utskick så kundlänken fungerar", async () => {
+    const quote = draftQuote("cust-1");
+    quote.token = "";
+    const { outcome } = await sendQuoteWithEmail(quote.id);
+    assert.equal(outcome.ok, true);
+    const stored = db().quotes.find((q) => q.id === quote.id)!;
+    assert.ok(stored.token);
+    assert.match(sent[0].html, new RegExp(`/offert/${stored.token}`));
   });
 
   it("okänd offert (annan tenant / påhittat id) blockeras", async () => {
@@ -247,5 +306,30 @@ describe("komplettering på kunden", () => {
     const { outcome } = await sendQuoteWithEmail(quote.id);
     assert.equal(outcome.ok, true);
     assert.equal(sent[0].to, "erik@example.se");
+  });
+});
+
+describe("live-post kräver nyckel och avsändare", () => {
+  it("testdefault-From räknas inte som konfigurerad avsändare", () => {
+    delete process.env.RESEND_FROM_EMAIL;
+    delete process.env.MAIL_FROM;
+    delete process.env.RESEND_FROM;
+    process.env.RESEND_API_KEY = "re_test";
+    assert.equal(configuredFromAddress(), undefined);
+    assert.equal(isLiveMailConfigured(), false);
+  });
+
+  it("nyckel + From är live", () => {
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.RESEND_FROM_EMAIL = "offerter@driva.se";
+    process.env.RESEND_FROM_NAME = "Driva";
+    assert.equal(configuredFromAddress(), "Driva <offerter@driva.se>");
+    assert.equal(isLiveMailConfigured(), true);
+  });
+
+  it("From som redan innehåller namn wrappas inte igen", () => {
+    process.env.RESEND_FROM_EMAIL = "Driva <offerter@driva.se>";
+    process.env.RESEND_FROM_NAME = "Driva";
+    assert.equal(configuredFromAddress(), "Driva <offerter@driva.se>");
   });
 });

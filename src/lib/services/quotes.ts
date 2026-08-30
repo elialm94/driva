@@ -11,6 +11,7 @@ import { taxReductionFields } from "../tax-reduction-terms";
 import { rotWithAmounts } from "../tax-reduction-amount";
 import { sellerSnapshot } from "../invoices/snapshot";
 import { missingEmailForSend } from "../customer-validation";
+import { collectSellerBlockers } from "../invoices/validate";
 
 export interface QuoteInput {
   customerId: string;
@@ -140,6 +141,18 @@ export interface QuoteSendBlocker {
   actionLabel?: string;
 }
 
+export class QuoteNotReadyError extends Error {
+  readonly blockers: QuoteSendBlocker[];
+  constructor(blockers: QuoteSendBlocker[]) {
+    super(blockers.map((b) => b.message).join(" "));
+    this.name = "QuoteNotReadyError";
+    this.blockers = blockers;
+  }
+}
+
+/** Företagsidentitet på offerten – samma fält och länkar som fakturan, utan betalning. */
+const QUOTE_SELLER_CODES = new Set(["seller_name", "seller_orgnr", "seller_orgnr_format", "seller_address"]);
+
 /**
  * Vad som saknas innan offerten kan skickas — EN källa för checklistan på
  * offertsidan och skickaflödet. Saknad kund-e-post (code "buyer_email")
@@ -149,21 +162,50 @@ export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
   const quote = getQuote(quoteId);
   if (!quote) return [];
   const version = currentVersion(quote);
+  const customer = requireCustomer(quote.customerId);
   const blockers: QuoteSendBlocker[] = [];
+  const editHref = `/ekonomi/offerter/${quote.id}/redigera`;
+
+  for (const blocker of collectSellerBlockers(db().settings)) {
+    if (QUOTE_SELLER_CODES.has(blocker.code)) blockers.push(blocker);
+  }
+
+  if (!version.title?.trim()) {
+    blockers.push({
+      code: "quote_title",
+      message: "Offerten saknar rubrik.",
+      href: editHref,
+      actionLabel: "Lägg till rubrik",
+    });
+  }
+  if (version.lines.length === 0) {
+    blockers.push({
+      code: "lines_empty",
+      message: "Offerten har inga rader.",
+      href: editHref,
+      actionLabel: "Lägg till rader",
+    });
+  }
   if (dagarTill(version.validUntil) < 0) {
     blockers.push({
       code: "valid_until_passed",
       message: `Giltig till-datumet (${datumKort(version.validUntil)}) har passerat – kunden skulle inte kunna godkänna offerten.`,
-      href: `/ekonomi/offerter/${quote.id}/redigera`,
+      href: editHref,
       actionLabel: "Ändra datum",
     });
   }
-  const emailBlocker = missingEmailForSend(requireCustomer(quote.customerId));
+  const emailBlocker = missingEmailForSend(customer);
   if (emailBlocker) {
     // Namnges i checklistan; kompletteras inline i skickaflödet – ingen länk till Kunden.
     blockers.push(emailBlocker);
   }
   return blockers;
+}
+
+/** Servergräns: affärsblockers (inte kund-e-post, den kompletteras inline). */
+export function assertQuoteReadyToSend(quoteId: string): void {
+  const blockers = quoteSendBlockers(quoteId).filter((b) => b.code !== "buyer_email");
+  if (blockers.length) throw new QuoteNotReadyError(blockers);
 }
 
 /** Leveransutfall från e-postlagret. Produktionsvägen anropar bara hit efter provider-succé. */
@@ -203,7 +245,7 @@ export function sendQuote(quoteId: string, delivery: QuoteDeliveryInfo = MOCK_DE
   logActivity(
     emailed
       ? `Offert #${quote.number} skickades med e-post till ${delivery.sentTo ?? customer.email} (${kr(t.toPay)}).`
-      : `Offert #${quote.number} markerades som skickad (${kr(t.toPay)}).`,
+      : `Offert #${quote.number} markerades som skickad (${kr(t.toPay)}) – ingen e-post är konfigurerad, dela offertlänken med ${customer.name}.`,
     {
       customerId: customer.id,
       entity: { type: "offert", id: quoteId },

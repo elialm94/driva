@@ -14,6 +14,7 @@ import {
   type MailResult,
   type MailSendMeta,
 } from "../mail";
+import { isEmailFormat } from "../settings-validation";
 import { tenantContext } from "../storage/context";
 import {
   collaborationInviteEmail,
@@ -23,7 +24,8 @@ import {
   quoteFollowUpEmail,
 } from "./templates";
 
-export const QUOTE_SEND_FAILED = "Offerten kunde inte skickas. Försök igen.";
+export const QUOTE_SEND_FAILED =
+  "E-posttjänsten kunde inte ta emot offerten just nu. Kontrollera avsändaren och försök igen.";
 export const INVOICE_SEND_FAILED = "Fakturan kunde inte skickas. Försök igen.";
 export const REMINDER_SEND_FAILED = "Påminnelsen kunde inte skickas. Försök igen.";
 
@@ -33,7 +35,7 @@ export function userFacingSendError(
   result: Extract<MailResult, { ok: false }>,
   fallback: string
 ): string {
-  if (result.code === "not_configured") return MAIL_NOT_CONFIGURED;
+  if (result.code === "not_configured") return result.error || MAIL_NOT_CONFIGURED;
   if (result.code === "unverified_domain") return result.error;
   return fallback;
 }
@@ -47,11 +49,16 @@ function businessId(): string | undefined {
   return tenantContext()?.businessId;
 }
 
+function replyToAddress(): string | undefined {
+  const email = db().settings.email?.trim();
+  return email && isEmailFormat(email) ? email : undefined;
+}
+
 function envelope(to: string, built: { subject: string; text: string; html: string }): MailMessage {
   return {
     to,
     from: mailFromAddress(),
-    replyTo: db().settings.email?.trim() || undefined,
+    replyTo: replyToAddress(),
     subject: built.subject,
     text: built.text,
     html: built.html,

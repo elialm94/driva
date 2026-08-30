@@ -1,18 +1,26 @@
 /**
- * Serverside e-posttransport (Resend). Utan RESEND_API_KEY eller
- * testtransport: ärligt fel – aldrig fejkad succé.
+ * Serverside e-posttransport (Resend).
+ *
+ * Live: RESEND_API_KEY + explicit avsändare (RESEND_FROM_EMAIL / MAIL_FROM).
+ * Utan det: ärlig mock i demon – logga, markera skickad, låtsas aldrig att
+ * ett mejl gick till en riktig mottagare. Testdefault-From (beth.t@example.com)
+ * används aldrig som tyst live-avsändare: Resend avvisar då kundens adress
+ * och UI:t visade bara "Försök igen".
  */
 
 import { Resend } from "resend";
 
 export const MAIL_NOT_CONFIGURED = "E-posttjänsten är inte konfigurerad i den här miljön.";
 
-/** Resends dokumenterade testavsändare – används bara när ingen egen From är satt. */
+/** Resends dokumenterade testavsändare – bara fallback när ingen egen From är satt. */
 export const RESEND_TEST_FROM_EMAIL = "beth.t@example.com";
 export const RESEND_TEST_FROM_NAME = "Driva";
 
 export const UNVERIFIED_DOMAIN_ERROR =
   "Avsändardomänen är inte verifierad i Resend. Verifiera domänen i Resend-dashboarden, eller använd beth.t@example.com för tester.";
+
+export const MAIL_SENDER_NOT_CONFIGURED =
+  "Avsändaradressen för e-post saknas. Sätt RESEND_FROM_EMAIL till en verifierad adress.";
 
 export interface MailMessage {
   to: string;
@@ -23,7 +31,7 @@ export interface MailMessage {
   html: string;
 }
 
-export type MailMode = "live" | "test";
+export type MailMode = "mock" | "live" | "test";
 
 export type MailResult =
   | { ok: true; mode: MailMode; messageId?: string }
@@ -48,21 +56,31 @@ export function resendApiKey(): string | undefined {
   return key || undefined;
 }
 
-/** Avsändare från env. Aldrig kundens eller företagets adress som From (spoof). */
-export function mailFromAddress(): string {
+/** Explicit From från miljön. Tomt = inte live – aldrig testdefault. */
+export function configuredFromAddress(): string | undefined {
   const email = process.env.RESEND_FROM_EMAIL?.trim();
   const name = process.env.RESEND_FROM_NAME?.trim();
-  if (email) return name ? `${name} <${email}>` : email;
+  if (email) return formatFromAddress(email, name);
   const legacy = process.env.MAIL_FROM?.trim() || process.env.RESEND_FROM?.trim();
-  if (legacy) return legacy;
-  return `${RESEND_TEST_FROM_NAME} <${RESEND_TEST_FROM_EMAIL}>`;
+  return legacy || undefined;
 }
 
+function formatFromAddress(email: string, name?: string): string {
+  if (email.includes("<")) return email;
+  return name ? `${name} <${email}>` : email;
+}
+
+/** Avsändare för kuvertet. Live-sändning kräver configuredFromAddress(). */
+export function mailFromAddress(): string {
+  return configuredFromAddress() ?? `${RESEND_TEST_FROM_NAME} <${RESEND_TEST_FROM_EMAIL}>`;
+}
+
+/** Riktig Resend-väg: nyckel OCH uttalad From. Testdefault räcker inte. */
 export function isLiveMailConfigured(): boolean {
-  return Boolean(resendApiKey());
+  return Boolean(resendApiKey() && configuredFromAddress());
 }
 
-/** Riktig utskicksväg: live-nyckel eller testtransport. Mock-succé finns inte. */
+/** Riktig utskicksväg: live-nyckel+From eller testtransport. */
 export function mailProviderAvailable(): boolean {
   return Boolean(testTransport) || isLiveMailConfigured();
 }
@@ -85,7 +103,8 @@ export function absoluteAppUrl(path: string): string {
 }
 
 function activeMode(): MailMode {
-  return testTransport ? "test" : "live";
+  if (testTransport) return "test";
+  return isLiveMailConfigured() ? "live" : "mock";
 }
 
 function logSend(status: string, meta: MailSendMeta | undefined, messageId?: string): void {
@@ -100,7 +119,19 @@ function logSend(status: string, meta: MailSendMeta | undefined, messageId?: str
   console.info(parts.join(" "));
 }
 
-function classifyProviderError(raw: string): { error: string; code: NonNullable<Extract<MailResult, { ok: false }>["code"]> } {
+function logMock(message: MailMessage): void {
+  const reply = message.replyTo ? ` (svara till ${message.replyTo})` : "";
+  console.info(
+    `[driva:email] Från ${message.from}: ${message.subject} till ${message.to}${reply}. Ingen riktig e-post skickas i den här miljön.`
+  );
+  const cta = message.text.split("\n").find((line) => /^https?:\/\//.test(line.trim()));
+  if (cta) console.info(`[driva:email] CTA ${cta}`);
+}
+
+function classifyProviderError(raw: string): {
+  error: string;
+  code: NonNullable<Extract<MailResult, { ok: false }>["code"]>;
+} {
   const text = raw.toLowerCase();
   if (
     text.includes("not verified") ||
@@ -109,6 +140,14 @@ function classifyProviderError(raw: string): { error: string; code: NonNullable<
     text.includes("only send testing emails")
   ) {
     return { error: UNVERIFIED_DOMAIN_ERROR, code: "unverified_domain" };
+  }
+  if (
+    text.includes("invalid api key") ||
+    text.includes("api key is invalid") ||
+    text.includes("unauthorized") ||
+    text.includes("missing api key")
+  ) {
+    return { error: MAIL_NOT_CONFIGURED, code: "not_configured" };
   }
   return { error: raw, code: "provider" };
 }
@@ -123,8 +162,9 @@ export async function sendMail(message: MailMessage, meta?: MailSendMeta): Promi
       return { ok: true, mode: "test", messageId };
     }
     if (!isLiveMailConfigured()) {
-      logSend("not_configured", meta);
-      return { ok: false, error: MAIL_NOT_CONFIGURED, mode: "live", code: "not_configured" };
+      logMock(message);
+      logSend("mock", meta);
+      return { ok: true, mode: "mock" };
     }
     const messageId = await sendViaResend(message);
     logSend("sent", meta, messageId);
@@ -137,12 +177,23 @@ export async function sendMail(message: MailMessage, meta?: MailSendMeta): Promi
   }
 }
 
+function resendErrorMessage(error: unknown): string {
+  if (!error || typeof error !== "object") return "Resend avvisade utskicket.";
+  const rec = error as { message?: unknown; name?: unknown; error?: unknown };
+  if (typeof rec.message === "string" && rec.message.trim()) return rec.message;
+  if (typeof rec.error === "string" && rec.error.trim()) return rec.error;
+  if (typeof rec.name === "string" && rec.name.trim()) return rec.name;
+  return "Resend avvisade utskicket.";
+}
+
 async function sendViaResend(message: MailMessage): Promise<string | undefined> {
   const key = resendApiKey();
   if (!key) throw new Error(MAIL_NOT_CONFIGURED);
+  const from = configuredFromAddress();
+  if (!from) throw new Error(MAIL_SENDER_NOT_CONFIGURED);
   const resend = new Resend(key);
   const { data, error } = await resend.emails.send({
-    from: message.from,
+    from,
     to: [message.to],
     replyTo: message.replyTo || undefined,
     subject: message.subject,
@@ -150,7 +201,7 @@ async function sendViaResend(message: MailMessage): Promise<string | undefined> 
     text: message.text,
   });
   if (error) {
-    throw new Error(error.message || "Resend avvisade utskicket.");
+    throw new Error(resendErrorMessage(error));
   }
   return data?.id;
 }
