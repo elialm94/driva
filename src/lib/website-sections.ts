@@ -223,3 +223,8 @@ export function clampRating(value: unknown): number | undefined {
 export function normalizeInstagramHandle(raw: string): string {
   return raw.trim().replace(/^@+/, "").replace(/\s+/g, "").toLowerCase();
 }
+
+export function instagramProfileUrl(handle: string): string {
+  const h = normalizeInstagramHandle(handle);
+  return h ? `https://www.instagram.com/${encodeURIComponent(h)}/` : "https://www.instagram.com/";
+}

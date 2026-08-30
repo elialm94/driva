@@ -19,6 +19,8 @@ import { absoluteAppUrl } from "./mail";
 import type { WebsiteInstagram, WebsiteInstagramPost } from "./types";
 import { DEFAULT_INSTAGRAM_LIMIT, normalizeInstagramHandle } from "./website-sections";
 
+export { instagramProfileUrl } from "./website-sections";
+
 export const INSTAGRAM_SETUP_STEPS = [
   "Skapa en app på https://developers.facebook.com/apps",
   "Lägg till produkten Instagram och välj Instagram API with Instagram Login (inte Basic Display – den är avvecklad).",
@@ -189,7 +191,3 @@ async function getJson<T>(url: string): Promise<T> {
   return json;
 }
 
-export function instagramProfileUrl(handle: string): string {
-  const h = normalizeInstagramHandle(handle);
-  return h ? `https://www.instagram.com/${encodeURIComponent(h)}/` : "https://www.instagram.com/";
-}

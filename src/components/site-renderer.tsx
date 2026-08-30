@@ -17,8 +17,7 @@ import {
 import { SiteContactForm, type SiteFormTokens } from "./site-widgets";
 import { SmoothSectionLink } from "./smooth-section-link";
 import { formatAddressLine, mailHref, resolveSiteContact, telHref } from "@/lib/website-contact";
-import { defaultCtaLabel, sectionAnchorId } from "@/lib/website-sections";
-import { instagramProfileUrl } from "@/lib/instagram";
+import { defaultCtaLabel, instagramProfileUrl, sectionAnchorId } from "@/lib/website-sections";
 
 /**
  * Ren renderare för den publika hemsidan. Används i tre lägen: publika sajten
