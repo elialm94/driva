@@ -94,6 +94,38 @@ function logSend(status: string, meta: MailSendMeta | undefined, messageId?: str
   console.info(parts.join(" "));
 }
 
+/**
+ * Operativ mejllogg (email_events) för Driva Admin: svarar på "varför fick
+ * kunden aldrig offerten?". Loggar mottagare/typ/status – ALDRIG mejlkroppen.
+ * Får aldrig påverka själva utskicket: fel sväljs medvetet.
+ */
+async function recordEmailEvent(
+  message: MailMessage,
+  meta: MailSendMeta | undefined,
+  status: "sent" | "failed" | "not_configured",
+  mode: MailMode,
+  detail?: { error?: string; messageId?: string }
+): Promise<void> {
+  try {
+    const { insertEmailEvent } = await import("./platform/store");
+    const { uid } = await import("./ids");
+    await insertEmailEvent({
+      id: uid(),
+      businessId: meta?.businessId,
+      kind: meta?.kind ?? "",
+      documentId: meta?.documentId,
+      toEmail: message.to,
+      status,
+      error: detail?.error,
+      providerMessageId: detail?.messageId,
+      mode,
+      createdAt: new Date().toISOString(),
+    });
+  } catch {
+    // Loggen är sekundär – utskicksresultatet får aldrig påverkas.
+  }
+}
+
 function classifyProviderError(raw: string): { error: string; code: NonNullable<Extract<MailResult, { ok: false }>["code"]> } {
   const text = raw.toLowerCase();
   if (
@@ -114,19 +146,23 @@ export async function sendMail(message: MailMessage, meta?: MailSendMeta): Promi
       const extra = await testTransport(message);
       const messageId = extra && typeof extra === "object" ? extra.messageId : undefined;
       logSend("sent", meta, messageId);
+      await recordEmailEvent(message, meta, "sent", "test", { messageId });
       return { ok: true, mode: "test", messageId };
     }
     if (!isLiveMailConfigured()) {
       logSend("not_configured", meta);
+      await recordEmailEvent(message, meta, "not_configured", "live", { error: MAIL_NOT_CONFIGURED });
       return { ok: false, error: MAIL_NOT_CONFIGURED, mode: "live", code: "not_configured" };
     }
     const messageId = await sendViaResend(message);
     logSend("sent", meta, messageId);
+    await recordEmailEvent(message, meta, "sent", "live", { messageId });
     return { ok: true, mode: "live", messageId };
   } catch (e) {
     const raw = e instanceof Error ? e.message : "Kunde inte skicka e-post.";
     const classified = classifyProviderError(raw);
     logSend("failed", meta);
+    await recordEmailEvent(message, meta, "failed", mode, { error: classified.error });
     return { ok: false, error: classified.error, mode, code: classified.code };
   }
 }
