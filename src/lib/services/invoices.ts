@@ -41,6 +41,8 @@ import {
   persistTaxReductionOwnership,
   resolveTaxReductionPrefill,
 } from "./tax-reduction";
+import { resolvePersistedWorkLocationId } from "../tax-reduction-send";
+import { workLocationsOf } from "./work-locations";
 import {
   associateEntriesWithInvoice,
   entryToDocLine,
@@ -161,6 +163,7 @@ function applyTaxReductionContext(
     housing: input.taxReductionDetails?.housing ?? prefill.housing,
   });
   invoice.taxReductionDetails = details;
+  persistInvoiceWorkLocation(invoice, requireCustomer(invoice.customerId), invoice.workLocationId);
   persistTaxReductionOwnership({
     customerId: invoice.customerId,
     jobId: invoice.jobId,
@@ -172,10 +175,31 @@ function applyTaxReductionContext(
   }
 }
 
+function persistInvoiceWorkLocation(
+  invoice: Invoice,
+  customer: ReturnType<typeof requireCustomer>,
+  requested?: string | null
+): void {
+  const workLocationId = resolvePersistedWorkLocationId({
+    taxReduction: invoice.rot,
+    workLocationId: requested,
+    customerWorkLocationIds: workLocationsOf(customer).map((location) => location.id),
+  });
+  if (workLocationId) invoice.workLocationId = workLocationId;
+  else delete invoice.workLocationId;
+}
+
+function inheritedQuoteWorkLocationId(quoteId?: string): string | undefined {
+  if (!quoteId) return undefined;
+  return getQuote(quoteId)?.workLocationId;
+}
+
 export interface InvoiceInput {
   customerId: string;
   jobId?: string;
   quoteId?: string;
+  /** Bostad som ROT/RUT på fakturan gäller. Ärvs från offerten om den redan är sparad där. */
+  workLocationId?: string;
   type: Invoice["type"];
   lines: DocLine[];
   rot: RotRut | null;
@@ -199,6 +223,7 @@ export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare
     customerId: input.customerId,
     jobId: input.jobId,
     quoteId: input.quoteId,
+    workLocationId: input.workLocationId ?? inheritedQuoteWorkLocationId(input.quoteId),
     type: input.type,
     status: "utkast",
     lines: cloneLines(input.lines),
@@ -230,6 +255,7 @@ export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare
 export interface InvoiceUpdateInput {
   lines: DocLine[];
   rot: RotRut | null;
+  workLocationId?: string | null;
   dueInDays?: number;
   lateInterestRate?: number;
   serviceDate?: string | null;
@@ -249,6 +275,9 @@ export function updateInvoice(invoiceId: string, input: InvoiceUpdateInput, crea
 
   invoice.lines = cloneLines(input.lines);
   invoice.richText = sanitizeRichText(input.richText);
+  if (input.workLocationId !== undefined) {
+    invoice.workLocationId = input.workLocationId || undefined;
+  }
   Object.assign(
     invoice,
     invoiceTaxReductionFields(

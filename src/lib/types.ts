@@ -254,6 +254,13 @@ export interface Quote {
   number: number;
   customerId: ID;
   jobId?: ID;
+  /**
+   * Bostad som ROT/RUT på den här offerten gäller. Måste vara explicit
+   * sparad här – kundens fastigheter räcker inte vid utskick.
+   * Samma relation som Job.workLocationId, så kedjan offert → uppdrag →
+   * faktura kan ärva fältet utan ny modell.
+   */
+  workLocationId?: ID;
   status: QuoteStatus;
   currentVersionId: ID;
   /** Publik token för kundlänken. */
@@ -498,6 +505,11 @@ export interface Invoice {
   customerId: ID;
   jobId?: ID;
   quoteId?: ID;
+  /**
+   * Bostad som ROT/RUT på den här fakturan gäller. Explicit sparad relation
+   * (samma fält som offert/uppdrag). Ärvs från offerten när den finns.
+   */
+  workLocationId?: ID;
   type: InvoiceType;
   status: InvoiceStatus;
   lines: DocLine[];

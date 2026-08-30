@@ -379,7 +379,7 @@ function PersonnummerAutosaveField({
 
   if (!editing && hasValue) {
     return (
-      <div>
+      <div id="kund-personnummer">
         <label className={labelCls}>Personnummer</label>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[14px]">
           <span className="font-medium tabular text-ink">{revealed ?? masked}</span>
@@ -401,6 +401,7 @@ function PersonnummerAutosaveField({
             Ändra
           </button>
         </div>
+        <p className="mt-1 text-[12px] text-muted">Behövs för ROT/RUT</p>
       </div>
     );
   }
@@ -426,6 +427,7 @@ function PersonnummerAutosaveField({
         className={cx(inputCls, error && invalidFieldCls)}
       />
       <FieldError id="kund-personnummer-fel">{error}</FieldError>
+      <p className="mt-1 text-[12px] text-muted">Behövs för ROT/RUT</p>
       {hasValue ? (
         <button type="button" className="mt-1 text-[13px] text-muted hover:text-ink" onClick={() => setEditing(false)}>
           Avbryt

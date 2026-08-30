@@ -13,7 +13,7 @@ import {
 } from "../services/invoices";
 import { collectIssueErrors, InvoiceNotReadyError } from "./validate";
 import { resolveInvoiceView } from "./snapshot";
-import { emptyTestDb, labor, testCompany, testCustomer } from "./test-db";
+import { emptyTestDb, labor, rotReadyCustomer, testCompany, testCustomer, testWorkLocation } from "./test-db";
 import { getInvoice } from "../services/data";
 import { db } from "../store";
 import { ocrForInvoice } from "../ids";
@@ -122,6 +122,52 @@ describe("Validering före utfärdande", () => {
       assert.match(text, /adress/i);
       assert.equal(text.includes("issue_invalid"), false);
     }
+  });
+
+  it("stoppar ROT-faktura utan personnummer", () => {
+    reset({
+      customers: [
+        testCustomer({
+          workLocations: [testWorkLocation()],
+          defaultWorkLocationId: "loc-1",
+        }),
+      ],
+    });
+    const inv = createInvoice({
+      customerId: "cust-1",
+      type: "faktura",
+      lines: [labor()],
+      rot: { type: "rot" },
+      workLocationId: "loc-1",
+    });
+    const blockers = collectIssueErrors({
+      invoice: inv,
+      seller: db().settings,
+      buyer: db().customers[0],
+    });
+    assert.ok(blockers.some((b) => b.code === "personnummer"));
+    assert.match(blockers.find((b) => b.code === "personnummer")!.message, /personnummer/i);
+    assert.throws(() => issueInvoice(inv.id), InvoiceNotReadyError);
+  });
+
+  it("släpper igenom ROT-faktura med personnummer och vald bostad", () => {
+    reset({ customers: [rotReadyCustomer()] });
+    const inv = createInvoice({
+      customerId: "cust-1",
+      type: "faktura",
+      lines: [labor()],
+      rot: { type: "rot" },
+      workLocationId: "loc-1",
+    });
+    const blockers = collectIssueErrors({
+      invoice: inv,
+      seller: db().settings,
+      buyer: db().customers[0],
+    });
+    assert.ok(!blockers.some((b) => b.code === "personnummer" || b.code === "property"));
+    const issued = issueInvoice(inv.id);
+    assert.equal(issued.status, "skickad");
+    assert.equal(issued.workLocationId, "loc-1");
   });
 });
 

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/store";
 import { getQuote, currentVersion, requireCustomer } from "@/lib/services/data";
 import { quoteDefaults } from "@/lib/services/quotes";
+import { customerInvoiceRotPrefill } from "@/lib/services/tax-reduction";
 import { PageHeader } from "@/components/ui";
 import { QuoteForm } from "@/components/doc-form";
 import { SmartBack } from "@/components/back-link";
@@ -28,6 +29,7 @@ export default async function EditQuotePage(props: PageProps<"/ekonomi/offerter/
   const customers = [...db().customers]
     .sort((a, b) => a.name.localeCompare(b.name, "sv"))
     .map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
+  const rotByCustomer = Object.fromEntries(db().customers.map((c) => [c.id, customerInvoiceRotPrefill(c)]));
 
   return (
     <div className="animate-fade-up">
@@ -50,11 +52,13 @@ export default async function EditQuotePage(props: PageProps<"/ekonomi/offerter/
         customers={customers}
         defaultCustomerId={quote.customerId}
         quoteId={quote.id}
+        rotByCustomer={rotByCustomer}
         initial={{
           title: version.title,
           intro: version.intro,
           lines: version.lines,
           rot: version.rot,
+          workLocationId: quote.workLocationId,
           paymentPlan: version.paymentPlan,
           paymentTermsDays: version.paymentTermsDays,
           lateInterestRate: version.lateInterestRate,

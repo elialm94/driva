@@ -18,7 +18,7 @@ process.env.DRIVA_TEST = "1";
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { db, replaceDb } from "./store";
-import { emptyTestDb, labor } from "./invoices/test-db";
+import { emptyTestDb, labor, rotReadyCustomer } from "./invoices/test-db";
 import { submitContactForm } from "./services/website";
 import { updateCustomer } from "./services/customers";
 import { createQuote, quoteDefaults, sendQuote } from "./services/quotes";
@@ -39,6 +39,7 @@ import type { BankAccount, DocLine, Verification } from "./types";
 function reset() {
   replaceDb(
     emptyTestDb({
+      customers: [rotReadyCustomer()],
       bankAccounts: [
         {
           id: "acc-1",

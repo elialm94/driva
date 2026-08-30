@@ -23,6 +23,9 @@ import {
   type TaxReductionFormValue,
 } from "./tax-reduction-fields";
 import { suggestedServiceDate } from "@/lib/tax-reduction-gaps";
+import { autoSelectWorkLocationId, TaxReductionDocumentProperty } from "./tax-reduction-document-property";
+import { maskPersonnummer } from "@/lib/personnummer";
+import { AppLink } from "./app-link";
 import { rotWithAmounts, syncRotWithLines } from "@/lib/tax-reduction-amount";
 import {
   invoiceMissingRequirements,
@@ -529,6 +532,7 @@ export interface QuoteFormInitial {
   intro: string;
   lines: DocLine[];
   rot: RotRut | null;
+  workLocationId?: string;
   paymentPlan: PaymentPlanPart[];
   paymentTermsDays: number;
   lateInterestRate?: number;
@@ -543,6 +547,7 @@ export function QuoteForm({
   jobId,
   quoteId,
   lockCustomer,
+  rotByCustomer,
   initial,
   defaults,
   cancelHref,
@@ -557,6 +562,10 @@ export function QuoteForm({
   lockCustomer?: boolean;
   /** Sätt vid redigering av befintlig offert. */
   quoteId?: string;
+  rotByCustomer?: Record<
+    string,
+    { personalIdentityNumber?: string; addressLine?: string; properties?: InvoicePropertyOption[] }
+  >;
   initial?: QuoteFormInitial;
   defaults: { paymentTermsDays: number; lateInterestRate: number; validUntil: string; terms: string; defaultVatRate?: VatRate };
   cancelHref: string;
@@ -577,6 +586,13 @@ export function QuoteForm({
   const [rot, setRot] = useState<RotRut | null>(() =>
     initial?.rot ? rotForEditor(initial.rot.type, initial.lines?.length ? initial.lines : [], initial.rot, "offert") : null
   );
+  const [propertiesByCustomer, setPropertiesByCustomer] = useState<Record<string, InvoicePropertyOption[]>>(() =>
+    Object.fromEntries(Object.entries(rotByCustomer ?? {}).map(([id, row]) => [id, row.properties ?? []]))
+  );
+  const [workLocationId, setWorkLocationId] = useState(() => {
+    const properties = rotByCustomer?.[defaultCustomerId ?? customers[0]?.id ?? ""]?.properties ?? [];
+    return autoSelectWorkLocationId(properties, initial?.workLocationId);
+  });
   const [clampNotice, setClampNotice] = useState<string | null>(null);
   const [plan, setPlan] = useState<PaymentPlanPart[]>(initial?.paymentPlan ?? PLAN_PRESETS[0].plan);
   const [termsDays, setTermsDays] = useState(initial?.paymentTermsDays ?? defaults.paymentTermsDays);
@@ -587,7 +603,20 @@ export function QuoteForm({
   const [isPending, startTransition] = useTransition();
   const [saving, setSaving] = useState(false);
 
-  const snapshot = JSON.stringify({ customerId, title, intro, lines, rot, plan, termsDays, lateInterest, validUntil, terms, richText: richText ?? null });
+  const snapshot = JSON.stringify({
+    customerId,
+    title,
+    intro,
+    lines,
+    rot,
+    workLocationId,
+    plan,
+    termsDays,
+    lateInterest,
+    validUntil,
+    terms,
+    richText: richText ?? null,
+  });
   const initialSnapshot = useRef(snapshot);
   const dirty = snapshot !== initialSnapshot.current;
   const { confirmLeave, dialog } = useUnsavedLeave(dirty && !saving);
@@ -634,6 +663,7 @@ export function QuoteForm({
       intro: intro.trim(),
       lines: prunedLines(lines),
       rot,
+      workLocationId: workLocationId || undefined,
       paymentPlan: plan,
       paymentTermsDays: termsDays,
       lateInterestRate: lateInterest,
@@ -669,7 +699,11 @@ export function QuoteForm({
                 <CustomerPicker
                   customers={customerOptions}
                   value={customerId}
-                  onChange={setCustomerId}
+                  onChange={(id) => {
+                    setCustomerId(id);
+                    const properties = propertiesByCustomer[id] ?? [];
+                    setWorkLocationId(rot ? autoSelectWorkLocationId(properties) : "");
+                  }}
                   onCreated={(customer) => setCustomerOptions((prev) => addCustomerOption(prev, customer))}
                 />
               )}
@@ -725,6 +759,10 @@ export function QuoteForm({
                   onClick={() => {
                     setClampNotice(null);
                     setRot(value ? rotForEditor(value, lines, null, "offert") : null);
+                    if (value) {
+                      const properties = propertiesByCustomer[customerId] ?? [];
+                      setWorkLocationId((current) => autoSelectWorkLocationId(properties, current));
+                    }
                   }}
                   className={cx(
                     "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors max-lg:py-2",
@@ -762,7 +800,39 @@ export function QuoteForm({
                 />
               </div>
             ) : null}
-            {rot ? <TaxReductionFormPreview type={rot.type} /> : null}
+            {rot ? (
+              <div id="offert-rot-rut" className="mt-3 space-y-3">
+                <TaxReductionFormPreview type={rot.type} />
+                {rotByCustomer?.[customerId]?.personalIdentityNumber ? (
+                  <p className="text-[13px] text-soft">
+                    Personnummer {maskPersonnummer(rotByCustomer[customerId].personalIdentityNumber!)}
+                    <span className="ml-1 text-muted">Behövs för ROT/RUT</span>
+                  </p>
+                ) : (
+                  <p className="text-[13px] text-soft">
+                    Personnummer saknas.{" "}
+                    <AppLink
+                      href={`/kunder/${customerId}#kund-personnummer`}
+                      className="font-medium text-ink underline-offset-2 hover:underline"
+                    >
+                      Lägg till personnummer
+                    </AppLink>
+                    <span className="ml-1 text-muted">Behövs för ROT/RUT</span>
+                  </p>
+                )}
+                <TaxReductionDocumentProperty
+                  customerId={customerId}
+                  properties={propertiesByCustomer[customerId] ?? []}
+                  value={workLocationId}
+                  onChange={setWorkLocationId}
+                  onPropertiesChange={(next) =>
+                    setPropertiesByCustomer((prev) => ({ ...prev, [customerId]: next }))
+                  }
+                  fieldId="offert-fastighet"
+                  documentKind="offert"
+                />
+              </div>
+            ) : null}
           </div>
 
           <div id="offert-betalplan">
@@ -918,6 +988,7 @@ export function QuoteForm({
 export interface InvoiceFormInitial {
   lines: DocLine[];
   rot: RotRut | null;
+  workLocationId?: string;
   dueInDays: number;
   lateInterestRate?: number;
   serviceDate?: string;
@@ -979,6 +1050,13 @@ export function InvoiceForm({
   const [rot, setRot] = useState<RotRut | null>(() =>
     initial?.rot ? rotForEditor(initial.rot.type, initial.lines?.length ? initial.lines : [], initial.rot, "faktura") : null
   );
+  const [propertiesByCustomer, setPropertiesByCustomer] = useState<Record<string, InvoicePropertyOption[]>>(() =>
+    Object.fromEntries(Object.entries(rotByCustomer ?? {}).map(([id, row]) => [id, row.properties ?? []]))
+  );
+  const [workLocationId, setWorkLocationId] = useState(() => {
+    const properties = rotByCustomer?.[defaultCustomerId ?? customers[0]?.id ?? ""]?.properties ?? [];
+    return autoSelectWorkLocationId(properties, initial?.workLocationId);
+  });
   const [clampNotice, setClampNotice] = useState<string | null>(null);
   const [dueDays, setDueDays] = useState(initial?.dueInDays ?? defaultPaymentTermsDays);
   const [lateInterest, setLateInterest] = useState(initial?.lateInterestRate ?? defaultLateInterestRate);
@@ -988,7 +1066,17 @@ export function InvoiceForm({
   const [isPending, startTransition] = useTransition();
   const [saving, setSaving] = useState(false);
 
-  const snapshot = JSON.stringify({ customerId, lines, rot, dueDays, lateInterest, serviceDate, taxFields, richText: richText ?? null });
+  const snapshot = JSON.stringify({
+    customerId,
+    lines,
+    rot,
+    workLocationId,
+    dueDays,
+    lateInterest,
+    serviceDate,
+    taxFields,
+    richText: richText ?? null,
+  });
   const initialSnapshot = useRef(snapshot);
   const dirty = snapshot !== initialSnapshot.current;
   const { confirmLeave, dialog } = useUnsavedLeave(dirty && !saving);
@@ -1013,6 +1101,9 @@ export function InvoiceForm({
       };
       if (applyHousing && properties.length === 1) {
         next.housing = { dwellingType: "smahus", propertyDesignation: properties[0].designation };
+        setWorkLocationId(properties[0].id);
+      } else if (applyHousing && properties.length !== 1) {
+        setWorkLocationId((current) => (properties.some((property) => property.id === current) ? current : ""));
       }
       return next;
     });
@@ -1054,8 +1145,9 @@ export function InvoiceForm({
       ? {
           taxReductionDetails: taxReductionDetailsFromForm(taxFields),
           personalIdentityNumber: taxFields.personalIdentityNumber || undefined,
+          workLocationId: workLocationId || undefined,
         }
-      : { taxReductionDetails: null as null, personalIdentityNumber: undefined };
+      : { taxReductionDetails: null as null, personalIdentityNumber: undefined, workLocationId: workLocationId || undefined };
     startTransition(async () => {
       if (invoiceId) {
         await updateInvoiceAction(
@@ -1187,12 +1279,33 @@ export function InvoiceForm({
               ))}
             </div>
             {rot ? (
+              <div id="faktura-rot-rut">
+              <TaxReductionDocumentProperty
+                customerId={customerId}
+                properties={propertiesByCustomer[customerId] ?? []}
+                value={workLocationId}
+                onChange={(id) => {
+                  setWorkLocationId(id);
+                  const selected = (propertiesByCustomer[customerId] ?? []).find((property) => property.id === id);
+                  if (selected?.designation) {
+                    setTaxFieldsAndDates({
+                      ...taxFields,
+                      housing: { dwellingType: "smahus", propertyDesignation: selected.designation },
+                    });
+                  }
+                }}
+                onPropertiesChange={(next) =>
+                  setPropertiesByCustomer((prev) => ({ ...prev, [customerId]: next }))
+                }
+                fieldId="faktura-fastighet"
+                documentKind="faktura"
+              />
               <TaxReductionFields
                 key={rot.type}
                 type={rot.type}
                 value={taxFields}
                 onChange={setTaxFieldsAndDates}
-                properties={rotByCustomer?.[customerId]?.properties}
+                properties={propertiesByCustomer[customerId]}
                 amountSlot={
                   rotLiveTotals ? (
                     <>
@@ -1225,6 +1338,7 @@ export function InvoiceForm({
                   ) : null
                 }
               />
+              </div>
             ) : null}
           </div>
         </Card>
