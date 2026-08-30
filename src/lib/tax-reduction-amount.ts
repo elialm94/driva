@@ -3,6 +3,7 @@ import type { DocLine, RotRut } from "./types";
 import {
   taxReductionAmountHelp,
   taxReductionAppliedLabel,
+  taxReductionCalcHintText,
   taxReductionClampedMessage,
   taxReductionDocumentMaxLabel,
   taxReductionExceedsMaxError,
@@ -178,5 +179,7 @@ export function taxReductionAmountCopyCorpus(kind: TaxReductionDocumentKind = "f
     taxReductionDocumentMaxLabel(kind, 40_000),
     "Preliminärt ROT-avdrag",
     "Preliminärt RUT-avdrag",
+    taxReductionCalcHintText("rot", 15_600),
+    taxReductionCalcHintText("rut", 15_600),
   ].join("\n");
 }

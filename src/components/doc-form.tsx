@@ -6,6 +6,19 @@ import { buttonClasses, Card, cx } from "./ui";
 import { docTotals } from "@/lib/calc";
 import { kr } from "@/lib/format";
 import type { DocLine, LineKind, PaymentPlanPart, RotRut, VatRate } from "@/lib/types";
+import {
+  ECONOMIC_LINE_TYPES,
+  TRAVEL_RECLASSIFY_ACTION,
+  TRAVEL_RECLASSIFY_PROMPT,
+  defaultUnitForLineType,
+  lineKindFromType,
+  lineTypeHint,
+  lineTypeLabel,
+  lineTypeOf,
+  shouldSuggestTravelType,
+  syncDocLineClassification,
+  type EconomicLineType,
+} from "@/lib/economic-line-type";
 import { createQuoteAction, updateQuoteAction, createInvoiceAction, updateInvoiceAction } from "@/app/actions";
 import { useRouter } from "next/navigation";
 import { DateField } from "./date-field";
@@ -143,15 +156,17 @@ export type { CustomerOption };
  * (rad-…-beskrivning) → hydration mismatch som React inte lappar ihop.
  */
 function newLine(kind: LineKind = "arbete", vatRate: VatRate = 25, stableId?: string): DocLine {
-  return {
+  const type = lineTypeOf({ kind });
+  return syncDocLineClassification({
     id: stableId ?? crypto.randomUUID(),
     kind,
+    type,
     description: "",
     qty: 1,
-    unit: kind === "arbete" ? "tim" : "st",
+    unit: defaultUnitForLineType(type),
     unitPrice: 0,
     vatRate,
-  };
+  });
 }
 
 function finiteLines(lines: DocLine[]): DocLine[] {
@@ -200,12 +215,14 @@ function LinesEditor({
   onChange,
   defaultVatRate = 25,
   showErrors = false,
+  rotActive = false,
 }: {
   lines: DocLine[];
   onChange: (lines: DocLine[]) => void;
   defaultVatRate?: VatRate;
   /** Efter ett sparförsök: markera ofullständiga rader tills de är ifyllda. */
   showErrors?: boolean;
+  rotActive?: boolean;
 }) {
   function update(id: string, patch: Partial<DocLine>) {
     onChange(lines.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -243,17 +260,29 @@ function LinesEditor({
             </label>
             <select
               id={`rad-${line.id}-typ`}
-              value={line.kind}
+              value={lineKindFromType(lineTypeOf(line))}
               onChange={(e) => {
                 const kind = e.target.value as LineKind;
-                update(line.id, { kind, unit: kind === "arbete" ? "tim" : line.unit === "tim" ? "st" : line.unit });
+                const type = lineTypeOf({ kind });
+                const unit =
+                  type === "LABOR" || type === "TRAVEL"
+                    ? line.unit === "st"
+                      ? defaultUnitForLineType(type)
+                      : line.unit
+                    : line.unit === "tim"
+                      ? "st"
+                      : line.unit;
+                update(line.id, { kind, type, unit });
               }}
               aria-label="Typ"
+              title={lineTypeHint(lineTypeOf(line))}
               className={inputCls}
             >
-              <option value="arbete">Arbete</option>
-              <option value="material">Material</option>
-              <option value="ovrigt">Övrigt</option>
+              {ECONOMIC_LINE_TYPES.map((type) => (
+                <option key={type} value={lineKindFromType(type)}>
+                  {lineTypeLabel(type)}
+                </option>
+              ))}
             </select>
           </div>
           <div className="col-span-2 sm:contents">
@@ -352,25 +381,40 @@ function LinesEditor({
               {parts.description ? "Beskrivning saknas på raden." : "Pris saknas på raden."}
             </FieldError>
           ) : null}
+          {rotActive && shouldSuggestTravelType(line) ? (
+            <p className="col-span-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-soft sm:col-span-full">
+              <span>{TRAVEL_RECLASSIFY_PROMPT}</span>
+              <button
+                type="button"
+                className="font-medium text-accent-deep underline-offset-2 hover:underline"
+                onClick={() =>
+                  update(line.id, {
+                    kind: "resor",
+                    type: "TRAVEL",
+                    unit: line.unit === "st" ? "tim" : line.unit,
+                  })
+                }
+              >
+                {TRAVEL_RECLASSIFY_ACTION}
+              </button>
+            </p>
+          ) : null}
         </div>
         );
       })}
       {allBlank ? <FieldError>Minst en rad med beskrivning och pris behövs.</FieldError> : null}
-      <div className="flex gap-2 pt-1">
-        <button
-          type="button"
-          className={buttonClasses("secondary", "sm", "max-sm:h-11 flex-1 sm:flex-none")}
-          onClick={() => onChange([...lines, newLine("arbete", defaultVatRate)])}
-        >
-          <Plus className="size-3.5" /> Arbete
-        </button>
-        <button
-          type="button"
-          className={buttonClasses("secondary", "sm", "max-sm:h-11 flex-1 sm:flex-none")}
-          onClick={() => onChange([...lines, newLine("material", defaultVatRate)])}
-        >
-          <Plus className="size-3.5" /> Material
-        </button>
+      <div className="flex flex-wrap gap-2 pt-1">
+        {(["LABOR", "MATERIAL", "TRAVEL", "OTHER"] as EconomicLineType[]).map((type) => (
+          <button
+            key={type}
+            type="button"
+            className={buttonClasses("secondary", "sm", "max-sm:h-11 flex-1 sm:flex-none")}
+            title={lineTypeHint(type)}
+            onClick={() => onChange([...lines, newLine(lineKindFromType(type), defaultVatRate)])}
+          >
+            <Plus className="size-3.5" /> {lineTypeLabel(type)}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -690,7 +734,13 @@ export function QuoteForm({
 
         <Card className="p-6">
           <p className="mb-4 text-[15px] font-semibold">Prisrader</p>
-          <LinesEditor lines={lines} onChange={changeQuoteLines} defaultVatRate={vat} showErrors={attempted} />
+          <LinesEditor
+            lines={lines}
+            onChange={changeQuoteLines}
+            defaultVatRate={vat}
+            showErrors={attempted}
+            rotActive={Boolean(rot)}
+          />
         </Card>
 
         <Card className="space-y-5 p-6">
@@ -1141,7 +1191,13 @@ export function InvoiceForm({
         </Card>
         <Card className="p-6">
           <p className="mb-4 text-[15px] font-semibold">Fakturarader</p>
-          <LinesEditor lines={lines} onChange={changeInvoiceLines} defaultVatRate={defaultVatRate} showErrors={attempted} />
+          <LinesEditor
+            lines={lines}
+            onChange={changeInvoiceLines}
+            defaultVatRate={defaultVatRate}
+            showErrors={attempted}
+            rotActive={Boolean(rot)}
+          />
           <div className="mt-5">
             <label className={labelCls}>Skattereduktion</label>
             <div className="flex flex-wrap gap-1.5">

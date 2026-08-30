@@ -222,7 +222,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         comparison={comparison}
         labor={actuals.filter((e) => e.type === "labor").map(toView)}
         material={actuals.filter((e) => e.type === "material").map(toView)}
-        other={actuals.filter((e) => e.type === "other").map(toView)}
+        other={actuals.filter((e) => e.type === "other" || e.type === "travel").map(toView)}
         laborPrefill={laborPrefill}
         invoiceChoice={invoiceChoice}
       />

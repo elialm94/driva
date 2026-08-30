@@ -1,7 +1,7 @@
 import type { TaxReductionTermsSnapshot } from "@/lib/types";
 import { getInvoiceTaxReductionDisclaimer, getTaxReductionTerms } from "@/lib/tax-reduction-terms";
 import { kr } from "@/lib/format";
-import { AVDRAG_TAK, taxReductionRate } from "@/lib/calc";
+import { taxReductionCalcHintText } from "@/lib/tax-reduction-terms";
 import { Info } from "lucide-react";
 
 export function TaxReductionQuoteClause({
@@ -54,15 +54,10 @@ export function TaxReductionFormPreview({ type }: { type: "rot" | "rut" }) {
 }
 
 export function TaxReductionCalcHint({ type, laborInclVat }: { type: "rot" | "rut"; laborInclVat: number }) {
-  const percent = Math.round(taxReductionRate(type) * 100);
   return (
     <details className="mt-2">
       <summary className="cursor-pointer text-[12px] text-muted">Hur räknas detta?</summary>
-      <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
-        Avdraget är {percent} % av arbetskostnaden inkl. moms ({kr(laborInclVat)}). Bara rader markerade som arbete
-        räknas – material och övrigt ingår inte. Högst {kr(AVDRAG_TAK)} per person och år. Beloppet räknas av
-        systemet och är inte en rabatt.
-      </p>
+      <p className="mt-1.5 text-[12px] leading-relaxed text-muted">{taxReductionCalcHintText(type, laborInclVat)}</p>
     </details>
   );
 }
