@@ -173,11 +173,10 @@ const iconBtn =
 export function DraftRowActions({
   kind,
   id,
-  alwaysVisible = false,
 }: {
   kind: DraftDocumentKind;
   id: string;
-  /** Mobilkort: alltid synliga. Desktoptabell: hover/focus. */
+  /** Kvar för anropare; ikonerna är alltid synliga så de inte göms av hover/overflow. */
   alwaysVisible?: boolean;
 }) {
   const copy = DRAFT_COPY[kind];
@@ -185,10 +184,7 @@ export function DraftRowActions({
 
   return (
     <div
-      className={cx(
-        "relative z-20 flex shrink-0 items-center justify-end gap-0.5",
-        !alwaysVisible && "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-      )}
+      className="relative z-20 flex shrink-0 items-center justify-end gap-0.5"
       onClick={stopRowNav}
       onPointerDown={(e) => e.stopPropagation()}
     >

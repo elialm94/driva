@@ -182,7 +182,7 @@ export function QuoteRegister({
                     <th className={thCls}>Datum</th>
                     <th className={cx(thCls, "text-right")}>Belopp</th>
                     <th className={thCls}>Status</th>
-                    <th className={cx(thCls, "w-0 text-right")}>
+                    <th className={cx(thCls, "w-[4.75rem] text-right")}>
                       <span className="sr-only">Åtgärder</span>
                     </th>
                   </tr>
@@ -191,7 +191,7 @@ export function QuoteRegister({
                   {result.rows.map((r) => (
                     <tr key={r.id} className={cx(bodyRowCls, "group")}>
                       <td className="px-3 py-2.5">
-                        <AppLink href={`/ekonomi/offerter/${r.id}`} className="absolute inset-0 z-10">
+                        <AppLink href={`/ekonomi/offerter/${r.id}`} className="absolute inset-0 right-[4.75rem] z-10">
                           <span className="sr-only">Offert #{r.number}</span>
                         </AppLink>
                         <span className="pointer-events-none block truncate font-medium text-ink">
@@ -288,7 +288,7 @@ export function InvoiceRegister({
                     <th className={thCls}>Förfallodatum</th>
                     <th className={cx(thCls, "text-right")}>Belopp</th>
                     <th className={thCls}>Status</th>
-                    <th className={cx(thCls, "w-0 text-right")}>
+                    <th className={cx(thCls, "w-[4.75rem] text-right")}>
                       <span className="sr-only">Åtgärder</span>
                     </th>
                   </tr>
@@ -297,7 +297,7 @@ export function InvoiceRegister({
                   {result.rows.map((r) => (
                     <tr key={r.id} className={cx(bodyRowCls, "group")}>
                       <td className="px-3 py-2.5">
-                        <AppLink href={`/ekonomi/fakturor/${r.id}`} className="absolute inset-0 z-10">
+                        <AppLink href={`/ekonomi/fakturor/${r.id}`} className="absolute inset-0 right-[4.75rem] z-10">
                           <span className="sr-only">Faktura {r.label}</span>
                         </AppLink>
                         <span className="pointer-events-none font-medium text-ink">
