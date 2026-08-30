@@ -65,6 +65,17 @@ describe("resolveWhen: veckodagsregeln", () => {
     const v = resolved({ kind: "weekday", weekday: "onsdag", nextWeek: true }, "2026-08-24T10:00:00Z");
     assert.equal(v.dueAt, "2026-09-02T08:00:00.000Z");
   });
+
+  it("'nästa onsdag kl 12' från söndag 30 augusti 2026 → onsdag 2 september kl. 12:00", () => {
+    // Söndag (weekday 6): onsdag har redan passerat denna vecka → +3 dagar,
+    // nextWeek lägger INTE på extra vecka (dagen är inte framför oss).
+    const v = resolved(
+      { kind: "weekday", weekday: "onsdag", nextWeek: true, time: "12:00" },
+      "2026-08-30T08:00:00.000Z"
+    );
+    assert.equal(v.dueAt, "2026-09-02T10:00:00.000Z"); // 12:00 CEST
+    assert.equal(v.hasExplicitTime, true);
+  });
 });
 
 describe("resolveWhen: klockslag, dagsdelar och relativ tid", () => {
@@ -212,7 +223,31 @@ describe("parseReminderText: snabbvägen utan LLM", () => {
     assert.equal(p.args.weekday, "onsdag");
     assert.equal(p.args.relatedQuery, "Göran");
     const preview = previewReminderDue("onsdag", NOW, TZ);
-    assert.equal(preview, "Onsdag 2 september kl 10:00");
+    assert.equal(preview, "Onsdag 2 september kl. 10:00");
+  });
+
+  it("'skapa en påminnelse att ringa Göran kl 12 nästa onsdag' (screenshot) → VAD+NÄR", () => {
+    const p = parseReminderText(
+      "Skapa en påminnelse att ringa Göran kl 12 nästa onsdag",
+      new Date("2026-08-30T08:00:00.000Z"),
+      TZ
+    );
+    assert.ok(p);
+    assert.equal(p.title, "ringa Göran");
+    assert.equal(p.args.weekday, "onsdag");
+    assert.equal(p.args.nextWeek, true);
+    assert.equal(p.args.time, "12:00");
+  });
+
+  it("'påminn mig om 30 minuter att kolla banken' och 'i övermorgon'", () => {
+    const mins = parseReminderText("Påminn mig om 30 minuter att kolla banken", NOW, TZ);
+    assert.ok(mins);
+    assert.equal(mins.args.relativeMinutes, 30);
+    assert.equal(mins.title, "kolla banken");
+    const over = parseReminderText("påminn mig i övermorgon att ringa Anna", NOW, TZ);
+    assert.ok(over);
+    assert.equal(over.args.whenDate, "2026-08-31");
+    assert.equal(over.title, "ringa Anna");
   });
 });
 
@@ -244,7 +279,7 @@ describe("parseReminderCommandInput: ingen stel guide – bara det som saknas ef
     assert.equal(p.args.whenDate, "2026-08-30");
     assert.equal(p.args.time, "8:00");
     // 08:00 svensk lokal tid (Europe/Stockholm) – aldrig rå UTC.
-    assert.equal(previewReminderDueFromArgs(p.args, NOW, TZ), "Söndag 30 augusti kl 08:00");
+    assert.equal(previewReminderDueFromArgs(p.args, NOW, TZ), "Söndag 30 augusti kl. 08:00");
   });
 
   it("'Påminn mig att ringa Göran imorgon' → prefixet konsumeras", () => {
@@ -292,14 +327,63 @@ describe("parseReminderCommandInput: ingen stel guide – bara det som saknas ef
     const p = parseReminderCommandInput("Ring Göran", NOW, TZ);
     assert.ok(p);
     assert.equal(p.complete, false);
-    assert.equal(p.title, "Ring Göran");
+    if (p.complete) throw new Error("unreachable");
+    assert.equal(p.missing, "when");
+    if (p.missing === "when") assert.equal(p.title, "Ring Göran");
   });
 
   it("'påminn mig att ringa Göran' utan tid → titel utan prefix, complete:false", () => {
     const p = parseReminderCommandInput("påminn mig att ringa Göran", NOW, TZ);
     assert.ok(p);
     assert.equal(p.complete, false);
+    if (p.complete) throw new Error("unreachable");
+    assert.equal(p.missing, "when");
+    if (p.missing === "when") assert.equal(p.title, "ringa Göran");
+  });
+
+  it("'Skapa påminnelse imorgon kl 8' → bara NÄR, fråga VAD", () => {
+    const p = parseReminderCommandInput("Skapa påminnelse imorgon kl 8", NOW, TZ);
+    assert.ok(p);
+    assert.equal(p.complete, false);
+    if (p.complete) throw new Error("unreachable");
+    assert.equal(p.missing, "title");
+    if (p.missing === "title") {
+      assert.equal(p.args.whenDate, "2026-08-30");
+      assert.equal(p.args.time, "8:00");
+    }
+  });
+
+  it("'Påminn mig att ringa Göran nästa onsdag' → defaulttid 10:00 visas", () => {
+    const p = complete("Påminn mig att ringa Göran nästa onsdag");
     assert.equal(p.title, "ringa Göran");
+    assert.equal(p.args.weekday, "onsdag");
+    assert.equal(p.args.nextWeek, true);
+    assert.equal(p.args.time, undefined);
+    assert.equal(previewReminderDueFromArgs(p.args, NOW, TZ), "Onsdag 2 september kl. 10:00");
+  });
+
+  it("screenshot 30 aug 2026: 'Skapa en påminnelse att ringa Göran kl 12 nästa onsdag'", () => {
+    const sunday = new Date("2026-08-30T08:00:00.000Z");
+    const p = parseReminderCommandInput(
+      "Skapa en påminnelse att ringa Göran kl 12 nästa onsdag",
+      sunday,
+      TZ
+    );
+    assert.ok(p?.complete);
+    if (!p || !p.complete) throw new Error("unreachable");
+    assert.equal(p.title, "ringa Göran");
+    assert.equal(p.args.time, "12:00");
+    assert.equal(p.args.weekday, "onsdag");
+    assert.equal(p.args.nextWeek, true);
+    assert.equal(previewReminderDueFromArgs(p.args, sunday, TZ), "Onsdag 2 september kl. 12:00");
+  });
+
+  it("'Påminn mig nästa fredag kl 14 att skicka fakturan'", () => {
+    const p = complete("Påminn mig nästa fredag kl 14 att skicka fakturan");
+    assert.equal(p.title, "skicka fakturan");
+    assert.equal(p.args.weekday, "fredag");
+    assert.equal(p.args.nextWeek, true);
+    assert.equal(p.args.time, "14:00");
   });
 
   it("tom inmatning → null", () => {

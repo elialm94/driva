@@ -225,3 +225,27 @@ export function formatDueAt(dueAtIso: string, timezone: string): string {
   }).format(instant);
   return `${day} kl ${time}`;
 }
+
+/** "Onsdag 2 september kl. 12:00" – visning tillbaka till användaren. */
+export function formatDueAtDisplay(dueAtIso: string, timezone: string): string {
+  const raw = formatDueAt(dueAtIso, timezone).replace(" kl ", " kl. ");
+  return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : raw;
+}
+
+/** "onsdag 2 sep. kl. 12:00" – kompakt sekundärrad i autocomplete. */
+export function formatDueAtCompact(dueAtIso: string, timezone: string): string {
+  const instant = new Date(dueAtIso);
+  const day = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: timezone,
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+  }).format(instant);
+  const time = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(instant);
+  return `${day} kl. ${time}`;
+}
