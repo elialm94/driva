@@ -411,7 +411,7 @@ export function applyReminderFollowUp(
 
   const whenArgs = parseWhenText(cleaned, now, timezone);
   if (whenArgs) {
-    if (!HAS_CLOCK.test(cleaned) && local && !whenArgs.time && !whenArgs.daypart) {
+    if (!HAS_CLOCK.test(cleaned) && local && !whenArgs.time && !whenArgs.daypart && local.time) {
       return { args: { ...whenArgs, time: local.time } };
     }
     return { args: whenArgs };

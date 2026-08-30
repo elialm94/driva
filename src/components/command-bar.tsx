@@ -822,7 +822,6 @@ export function CommandBar({
       };
     }
     if (reminderSlots && !reminderSlots.complete) {
-      const slotTitle = "title" in reminderSlots ? prettyReminderTitle(reminderSlots.title) : undefined;
       return {
         sections: [
           {
@@ -831,7 +830,6 @@ export function CommandBar({
                 key: "reminder-slot",
                 kind: "reminderSlotFill",
                 missing: reminderSlots.missing,
-                title: slotTitle,
                 args: "args" in reminderSlots ? reminderSlots.args : undefined,
               },
               ...matches.slice(0, 3).map((m) => commandItem(m.command)),
