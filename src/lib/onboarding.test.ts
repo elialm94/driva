@@ -6,15 +6,14 @@ import { replaceDb, db } from "./store";
 import { emptyTestDb, labor, testCompany } from "./invoices/test-db";
 import { createCustomer } from "./services/customers";
 import { createInvoice, issueInvoice } from "./services/invoices";
-import { collectIssueErrors, InvoiceNotReadyError } from "./invoices/validate";
+import { collectIssueErrors, collectSellerBlockers, InvoiceNotReadyError } from "./invoices/validate";
 import { billingReadiness, getBusinessProfile } from "./services/settings";
 import { settingsFromRow, settingsToRow } from "./storage/mappers";
+import { applyOnboardingProfile } from "./onboarding-persist";
 import {
-  applyOnboardingProfile,
   companySettingsFromOnboarding,
   firstOnboardingFieldId,
   needsCompanyOnboarding,
-  onboardingClearsSellerBlockers,
   readOnboardingFormData,
   suggestedOnboardingVatNumber,
   validateOnboardingFields,
@@ -154,7 +153,7 @@ describe("Kom igång – befintliga konton", () => {
     assert.equal(needsCompanyOnboarding(1), false);
     assert.equal(needsCompanyOnboarding(3), false);
     const incomplete = testCompany({ vatNumber: "", address: "", postalCode: "", city: "", bankgiro: "" });
-    assert.equal(onboardingClearsSellerBlockers(incomplete), false);
+    assert.ok(collectSellerBlockers(incomplete).length > 0);
     assert.ok(billingReadiness(incomplete).blockers.some((b) => b.code === "seller_vat"));
   });
 });
@@ -178,7 +177,7 @@ describe("Nytt konto: Kom igång → kund → faktura", () => {
     assert.equal(settings.email, "info@soders.se");
     assert.equal(settings.phone, "");
     assert.equal(billingReadiness(settings).ready, true);
-    assert.equal(onboardingClearsSellerBlockers(settings), true);
+    assert.equal(collectSellerBlockers(settings).length, 0);
 
     const customer = createCustomer({ kind: "privat", name: "Anna Andersson", email: "anna@test.se" });
     assert.equal(customer.address, undefined);

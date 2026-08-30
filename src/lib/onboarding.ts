@@ -6,7 +6,6 @@
 import type { CompanySettings } from "./types";
 import {
   formatVatNumber,
-  hasAnyPaymentMethod,
   isBankgiroFormat,
   isOrgnrFormat,
   isPlusgiroFormat,
@@ -18,9 +17,7 @@ import {
   normalizePostalCode,
   vatMatchesOrgnr,
 } from "./invoices/formats";
-import { collectSellerBlockers } from "./invoices/validate";
 import { isEmailFormat } from "./settings-validation";
-import { updateBusinessProfile, type BusinessProfileInput } from "./services/settings";
 
 export const ONBOARDING_FIELD_IDS = {
   name: "ob-name",
@@ -248,7 +245,7 @@ function initialsFromName(name: string): string {
   return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
 }
 
-export function onboardingToBusinessProfile(input: OnboardingPersistInput): BusinessProfileInput {
+export function onboardingToBusinessProfile(input: OnboardingPersistInput) {
   return {
     name: input.name,
     orgNumber: input.orgNumber,
@@ -292,11 +289,3 @@ export function companySettingsFromOnboarding(input: OnboardingPersistInput): Co
   };
 }
 
-/** JSON-läge / tester: sparar mot samma settings-tjänst som Inställningar. */
-export function applyOnboardingProfile(input: OnboardingPersistInput): CompanySettings {
-  return updateBusinessProfile(onboardingToBusinessProfile(input));
-}
-
-export function onboardingClearsSellerBlockers(settings: CompanySettings): boolean {
-  return collectSellerBlockers(settings).length === 0 && hasAnyPaymentMethod(settings);
-}
