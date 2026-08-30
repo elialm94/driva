@@ -17,6 +17,7 @@ import {
   scrollKeyForHref,
   shouldStampOrigin,
   structuralCrumbs,
+  visibleNavItems,
   withReturnTo,
 } from "./nav";
 
@@ -182,6 +183,18 @@ describe("stamp origin", () => {
     );
     assert.equal(back?.href, "/");
     assert.equal(originNodeMatching(customerFromEnquiry, "/inbox/req-karin"), backToEnquiry);
+  });
+});
+
+describe("optional Hemsida in sidebar", () => {
+  it("hides Hemsida when the website module is not visible", () => {
+    const labels = visibleNavItems({ websiteNavVisible: false }).map((item) => item.label);
+    assert.deepEqual(labels, ["Hem", "Kunder", "Ekonomi", "Inbox", "Bokföring", "Samarbeta"]);
+  });
+
+  it("keeps Hemsida after the module is activated", () => {
+    const labels = visibleNavItems({ websiteNavVisible: true }).map((item) => item.label);
+    assert.deepEqual(labels, ["Hem", "Kunder", "Ekonomi", "Inbox", "Bokföring", "Samarbeta", "Hemsida"]);
   });
 });
 

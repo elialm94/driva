@@ -71,6 +71,13 @@ export interface CompanySettings {
   payerIban?: string;
   /** Debiteringsbankens BIC, t.ex. ESSESESS. */
   payerBic?: string;
+  /**
+   * Visas Hemsida i sidomenyn? Saknas = härled från om företaget redan har
+   * hemsidedata (record, utkast, publicerad sajt eller domän). `true`/`false`
+   * är ett explicit val: aktivera visar menyn, dölj tar bort den utan att
+   * radera eller avpublicera något.
+   */
+  websiteNavVisible?: boolean;
 }
 
 /* ---------------------------------- Kunder ---------------------------------- */
@@ -1412,6 +1419,7 @@ export type PendingAssistantAction =
   | { id: ID; type: "folj_upp_offerter"; quoteIds: ID[] }
   | { id: ID; type: "bokfor_utgift"; expenseId: ID; category: string; jobId?: ID }
   | { id: ID; type: "generera_hemsida"; description: string }
+  | { id: ID; type: "aktivera_hemsida"; description?: string }
   | { id: ID; type: "skicka_offert"; quoteId: ID }
   | { id: ID; type: "skicka_faktura"; invoiceId: ID }
   | { id: ID; type: "publicera_hemsida" }

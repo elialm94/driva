@@ -12,6 +12,7 @@ import {
   sendQuoteWithEmail,
 } from "./document-mail";
 import { generateWebsite, publishWebsite } from "./website";
+import { activateWebsiteModule } from "./modules";
 import { applyBusinessProfilePatch } from "./settings";
 import { purchaseDomain } from "../domains/purchase";
 import { isDomainError } from "../domains/errors";
@@ -678,6 +679,15 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
       reply(`Klart – köpet hos ${expense?.supplier ?? ""} är bokfört${action.jobId ? " och kopplat till uppdraget" : ""}. Verifikationen ligger under Bokföring.`, {
         kind: "links",
         links: [{ label: "Öppna Bokföring", href: "/bokforing" }],
+      });
+      break;
+    }
+    case "aktivera_hemsida": {
+      activateWebsiteModule();
+      updateConfirmCard(actionId, "utford", "Hemsida är aktiverad.");
+      reply("Klart – Hemsida är aktiverad och syns i menyn. Öppna buildern när du vill skapa eller redigera sajten.", {
+        kind: "links",
+        links: [{ label: "Öppna Hemsida", href: "/hemsida" }],
       });
       break;
     }

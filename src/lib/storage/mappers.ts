@@ -79,6 +79,11 @@ function strOrU(v: unknown): string | undefined {
   return v == null ? undefined : String(v);
 }
 
+function boolOrU(v: unknown): boolean | undefined {
+  if (v === true || v === false) return v;
+  return undefined;
+}
+
 /** timestamptz → domänens ISO-form (ms-precision, "Z"). */
 export function tsIso(v: unknown): string {
   if (v instanceof Date) return v.toISOString();
@@ -1693,7 +1698,7 @@ export const settingsColumns = [
   "sate", "country", "bankgiro", "plusgiro", "bank_account", "iban", "bic", "logo_initials",
   "logo_data_url", "f_skatt_per_month", "payroll_reserve_per_month", "payment_terms_days",
   "late_interest_rate", "quote_validity_days", "default_vat_rate", "inbound_mail_slug",
-  "payer_bank_name", "payer_iban", "payer_bic",
+  "payer_bank_name", "payer_iban", "payer_bic", "website_nav_visible",
 ];
 
 export function settingsToRow(s: CompanySettings, businessId: string): Record<string, unknown> {
@@ -1729,6 +1734,7 @@ export function settingsToRow(s: CompanySettings, businessId: string): Record<st
     payer_bank_name: s.payerBankName ?? null,
     payer_iban: s.payerIban ?? null,
     payer_bic: s.payerBic ?? null,
+    website_nav_visible: s.websiteNavVisible ?? null,
   };
 }
 
@@ -1764,6 +1770,7 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
     ...opt("payerBankName", strOrU(r.payer_bank_name)),
     ...opt("payerIban", strOrU(r.payer_iban)),
     ...opt("payerBic", strOrU(r.payer_bic)),
+    ...opt("websiteNavVisible", boolOrU(r.website_nav_visible)),
   };
 }
 

@@ -29,6 +29,7 @@ import { settingsFieldErrors, type SettingsFieldError, type SettingsTab } from "
 import { FieldError, FormValidationSummary, focusField, invalidFieldCls } from "./form-validation";
 import type { MissingRequirement } from "@/lib/form-requirements";
 import { DomainSettingsCard } from "./domain-widgets";
+import { SettingsFeaturesCard } from "./settings-features";
 import { StickyMobileActions } from "./sticky-actions";
 
 const inputCls =
@@ -40,6 +41,7 @@ const TABS: { key: SettingsFlik; label: string; href: string }[] = [
   { key: "foretag", label: "Företag", href: SETTINGS_HREF.foretag },
   { key: "fakturering", label: "Fakturering & betalning", href: SETTINGS_HREF.fakturering },
   { key: "standardval", label: "Standardval", href: SETTINGS_HREF.standardval },
+  { key: "funktioner", label: "Funktioner", href: SETTINGS_HREF.funktioner },
   { key: "konto", label: "Konto", href: SETTINGS_HREF.konto },
 ];
 
@@ -112,6 +114,7 @@ export function SettingsForm({
   returnTo,
   returnLabel,
   domainSummary = null,
+  websiteModule,
 }: {
   initial: CompanySettings;
   defaults: InvoiceDefaults;
@@ -121,6 +124,7 @@ export function SettingsForm({
   returnTo?: string | null;
   returnLabel?: string | null;
   domainSummary?: { hostname: string; live: boolean } | null;
+  websiteModule: { navVisible: boolean; published: boolean };
 }) {
   const router = useRouter();
   const [form, setForm] = useState(() => fromInitial(initial, defaults));
@@ -270,6 +274,7 @@ export function SettingsForm({
   const subtitle = useMemo(() => {
     if (flik === "fakturering") return "Uppgifter som hamnar på nya fakturor. Utfärdade fakturor ändras inte.";
     if (flik === "standardval") return "Används när du skapar nya offerter och fakturor. Befintliga dokument ändras inte.";
+    if (flik === "funktioner") return "Valfria funktioner du slår på när du behöver dem.";
     if (flik === "konto") return "Personligt konto är skilt från företagsuppgifterna.";
     return "Uppgifterna används på offerter, fakturor, hemsidan och i mejl. Du fyller i dem en gång.";
   }, [flik]);
@@ -797,6 +802,10 @@ export function SettingsForm({
         </Card>
       ) : null}
 
+      {flik === "funktioner" ? (
+        <SettingsFeaturesCard navVisible={websiteModule.navVisible} published={websiteModule.published} />
+      ) : null}
+
       {flik === "konto" ? (
         <div className="space-y-5">
           <Card className="space-y-3 p-6">
@@ -811,10 +820,20 @@ export function SettingsForm({
               <span className="font-medium text-ink">{initial.email || "–"}</span>.
             </p>
           </Card>
+          <Card className="space-y-2 p-6">
+            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Funktioner</p>
+            <p className="text-[14px] leading-relaxed text-soft">
+              Valfria funktioner som Hemsida slår du på under{" "}
+              <Link href={tabHref(SETTINGS_HREF.funktioner) as never} className="font-medium text-accent hover:underline">
+                Funktioner
+              </Link>
+              .
+            </p>
+          </Card>
         </div>
       ) : null}
 
-      {flik !== "konto" ? (
+      {flik !== "konto" && flik !== "funktioner" ? (
         <div className="mt-6">
           {showErrors ? (
             <FormValidationSummary

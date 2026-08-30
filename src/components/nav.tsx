@@ -21,7 +21,7 @@ import { CreateAccountRow, DemoBadge, EndDemoRow } from "./demo-controls";
 import { LogoutRow } from "./logout-button";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { enterLocalAccountantDemoAction } from "@/app/collaboration-actions";
-import { isSectionActive, NAV_ITEMS, type NavSection } from "@/lib/nav";
+import { isSectionActive, visibleNavItems, type NavSection } from "@/lib/nav";
 
 const NAV_ICONS: Record<NavSection, typeof Home> = {
   hem: Home,
@@ -33,10 +33,12 @@ const NAV_ICONS: Record<NavSection, typeof Home> = {
   hemsida: Globe,
 };
 
-const NAV = NAV_ITEMS.map((item) => ({
-  ...item,
-  icon: NAV_ICONS[item.section],
-}));
+function navWithIcons(websiteNavVisible: boolean) {
+  return visibleNavItems({ websiteNavVisible }).map((item) => ({
+    ...item,
+    icon: NAV_ICONS[item.section],
+  }));
+}
 
 /** Tal i nav = något väntar på dig. Bara Inbox och Bokföring. 0 = ingen badge. */
 function navAttentionCount(href: string, inboxCount: number, bokforingCount: number): number {
@@ -93,6 +95,7 @@ export function Sidebar({
   localAccountantDemo = false,
   demoBadge = false,
   demoSession = false,
+  websiteNavVisible,
 }: {
   companyName: string;
   inboxCount?: number;
@@ -106,8 +109,11 @@ export function Sidebar({
   demoBadge?: boolean;
   /** Publika demosessionen: Avsluta demo/Skapa eget konto ersätter Logga ut. */
   demoSession?: boolean;
+  /** Hemsida i menyn – lättviktsflagga från business context, inte en website-query. */
+  websiteNavVisible: boolean;
 }) {
   const pathname = usePathname();
+  const NAV = navWithIcons(websiteNavVisible);
   const settingsActive = pathname.startsWith("/installningar") || pathname.startsWith("/foretag");
 
   return (
@@ -199,6 +205,7 @@ export function BottomNav({
   localAccountantDemo = false,
   demoBadge = false,
   demoSession = false,
+  websiteNavVisible,
 }: {
   canLogout?: boolean;
   inboxCount?: number;
@@ -206,9 +213,11 @@ export function BottomNav({
   localAccountantDemo?: boolean;
   demoBadge?: boolean;
   demoSession?: boolean;
+  websiteNavVisible: boolean;
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const NAV = navWithIcons(websiteNavVisible);
   const primary = NAV.slice(0, 4);
   const more = NAV.slice(4);
   const settingsActive = pathname.startsWith("/installningar") || pathname.startsWith("/foretag");

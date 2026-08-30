@@ -127,6 +127,7 @@ import {
   updateSection,
   updateServiceItem,
 } from "@/lib/services/website";
+import { activateWebsiteModule, hideWebsiteFromNav } from "@/lib/services/modules";
 import {
   cancelPendingAction,
   completeCreateCustomerAndResume,
@@ -1095,6 +1096,29 @@ export async function requestSupplierDetailsAction(
 }
 
 /* ---------------------------------- Hemsida --------------------------------- */
+
+/** Aktivera Hemsida-modulen, visa den i menyn och öppna buildern. */
+export async function activateWebsiteModuleAction(): Promise<never> {
+  return withBusiness(
+    (): never => {
+      activateWebsiteModule();
+      refresh();
+      redirect("/hemsida");
+    },
+    { capability: "change_website" }
+  );
+}
+
+/**
+ * Dölj Hemsida i menyn. Raderar inte sajt, avpublicerar inte, rör inte
+ * domän eller innehåll.
+ */
+export async function hideWebsiteFromNavAction() {
+  await withBusiness(() => {
+    hideWebsiteFromNav();
+    refresh();
+  }, { capability: "change_website" });
+}
 
 export async function generateWebsiteAction(description: string) {
   await withBusiness(() => {

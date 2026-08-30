@@ -35,7 +35,8 @@ export type CommandIcon =
   | "today"
   | "receipt"
   | "send"
-  | "list";
+  | "list"
+  | "globe";
 
 /** Steg i ett kontextflöde. Prompterna är det användaren ser i fältet. */
 export type CommandStep =
@@ -82,7 +83,8 @@ export type CommandId =
   | "accountant_bank_diff"
   | "accountant_whats_open"
   | "accountant_unusual"
-  | "accountant_reconcile";
+  | "accountant_reconcile"
+  | "activate_website";
 
 export interface CommandDef {
   id: CommandId;
@@ -342,6 +344,26 @@ export const COMMANDS: CommandDef[] = [
     requiredContext: null,
     run: { kind: "navigate", href: "/ekonomi?flik=utgifter" },
     priority: 3,
+  },
+  {
+    id: "activate_website",
+    label: "Aktivera Hemsida",
+    hint: "Skapa och publicera en enkel hemsida",
+    aliases: [
+      "aktivera hemsida",
+      "skapa en hemsida",
+      "skapa hemsida",
+      "bygg en hemsida",
+      "bygg hemsida",
+      "gör en hemsida",
+      "ny hemsida",
+    ],
+    keywords: ["hemsida", "webbplats", "sajt", "website"],
+    icon: "globe",
+    risk: "SAFE_WRITE",
+    requiredContext: null,
+    run: { kind: "tool", tool: "activate_website_module" },
+    priority: 4,
   },
   {
     id: "remind_late_invoices",
@@ -677,6 +699,7 @@ const HIGH_PATTERNS: HighPattern[] = [
   { commandId: "create_reminder", re: /^skapa påminnelse$/ },
   // Extern kund-e-post – inte intern påminnelse. "påminnelse" ensamt ska inte träffa här.
   { commandId: "remind_late_invoices", re: /^skicka\s+(?:en\s+)?påminnelse(?:r)?(?:\s+till\s+.+)?$/ },
+  { commandId: "activate_website", re: /^(?:skapa|bygg|gör|aktivera)\s+(?:en\s+)?hemsida(?:\s+för\s+.+)?$/ },
 ];
 
 /**

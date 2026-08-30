@@ -85,6 +85,7 @@ import {
 import { currentVersion, daysOverdue, getCustomer, getInvoice, getJob, getQuote, invoiceTotals, isOverdue, requireCustomer } from "../services/data";
 import { answerExpenseQuestion } from "../services/expenses";
 import { setJobStatus } from "../services/jobs";
+import { activateWebsiteModule } from "../services/modules";
 import {
   balansRapportResult,
   bokforingStatusResult,
@@ -108,6 +109,8 @@ export type ToolResult = {
   requiresConfirmation?: boolean;
   /** One-shot SAFE_WRITE: klienten kan ångra utan bekräftelsekort. */
   undo?: { kind: "dismiss_reminder"; id: string };
+  /** Primär djuplänk – kommandofältet navigerar hit efter en lyckad körning. */
+  href?: string;
 };
 
 export type AccountantToolScope = "current" | "all_clients";
@@ -1551,6 +1554,28 @@ const specs: ToolSpec[] = [
       },
     },
     handler: (args) => fromDomain(requestGenerateWebsite(str(args, "description") ?? ""), true),
+  },
+  {
+    requiresConfirmation: false,
+    risk: "SAFE_WRITE",
+    def: {
+      type: "function",
+      function: {
+        name: "activate_website_module",
+        description:
+          "Aktivera Hemsida-modulen och öppna byggaren. Publicerar inte. Raderar eller ändrar inte befintlig sajt.",
+        parameters: obj({}),
+      },
+    },
+    handler: () => {
+      activateWebsiteModule();
+      return {
+        ok: true,
+        text: "Hemsida är aktiverad och syns i menyn.",
+        href: "/hemsida",
+        forModel: { websiteNavVisible: true },
+      };
+    },
   },
   {
     requiresConfirmation: true,

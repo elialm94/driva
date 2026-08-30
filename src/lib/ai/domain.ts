@@ -64,6 +64,7 @@ import {
 import { updateSupplierInvoiceField } from "../services/suppliers";
 import { extractionReviewForItem } from "../services/inbox";
 import { supplierPaymentUiLabel } from "../inbox/workflow";
+import { isWebsiteNavVisible } from "../services/modules";
 
 export type DomainResult = {
   text: string;
@@ -948,7 +949,31 @@ export function watchingResult(): DomainResult {
   };
 }
 
+export function requestActivateWebsiteModule(description?: string): DomainResult {
+  const action: PendingAssistantAction = {
+    id: uid(),
+    type: "aktivera_hemsida",
+    ...(description?.trim() ? { description: description.trim() } : {}),
+  };
+  addPending(action);
+  return {
+    ok: true,
+    text: "Hemsida är inte aktiverad för företaget. Vill du aktivera den? Då läggs den i menyn och du kan skapa en hemsida.",
+    card: {
+      kind: "confirm",
+      actionId: action.id,
+      summary: "Hemsida visas i menyn. Inget publiceras och ingen befintlig sajt ändras.",
+      confirmLabel: "Aktivera Hemsida",
+      state: "vantar",
+    },
+    forModel: { pendingConfirmation: true },
+  };
+}
+
 export function requestGenerateWebsite(description: string): DomainResult {
+  if (!isWebsiteNavVisible(db().settings, db())) {
+    return requestActivateWebsiteModule(description);
+  }
   const action: PendingAssistantAction = { id: uid(), type: "generera_hemsida", description };
   addPending(action);
   const existing = db().website;
@@ -1294,8 +1319,9 @@ export function requestUpdateBusinessProfile(patch: Record<string, string | numb
   if (keys.length === 0) return fail("Inget att ändra. Säg vad som ska uppdateras, till exempel bankgiro.");
   const current = getBusinessProfile();
   const defaults = getInvoiceDefaults();
+  const { websiteNavVisible: _nav, ...profileFields } = current;
   const currentMap: Record<string, string | number | undefined> = {
-    ...current,
+    ...profileFields,
     ...defaults,
   };
   const rows = keys.map((key) => ({

@@ -141,6 +141,8 @@ describe("parseFreeText (regler, ingen modell)", () => {
     assert.deepEqual(parseFreeText("Vem har inte betalat?"), { confidence: "high", commandId: "show_unpaid_invoices" });
     assert.deepEqual(parseFreeText("Vad behöver jag göra idag?"), { confidence: "high", commandId: "show_today_actions" });
     assert.deepEqual(parseFreeText("Vad är på gång?"), { confidence: "high", commandId: "show_watching" });
+    assert.deepEqual(parseFreeText("Skapa en hemsida"), { confidence: "high", commandId: "activate_website" });
+    assert.deepEqual(parseFreeText("aktivera hemsida"), { confidence: "high", commandId: "activate_website" });
   });
 
   it("frågevarianter: ”vilka kunder har inte betalat än”", () => {

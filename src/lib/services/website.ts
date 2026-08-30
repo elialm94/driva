@@ -18,6 +18,7 @@ import {
   sameDesign,
 } from "../website-design";
 import { logActivity } from "./activity";
+import { markWebsiteModuleUsed } from "./modules";
 import { findOrCreateCustomerByEmail } from "./customers";
 import { createJob, titleFromIncomingMessage } from "./jobs";
 import { getBusinessProfile, getWebsiteNotificationEmail, isEmailFormat } from "./settings";
@@ -173,6 +174,7 @@ export function generateWebsite(description: string): Website {
     submissions: 0,
   };
   data.website = website;
+  markWebsiteModuleUsed(data);
   logActivity(`Assistenten genererade ett hemsideutkast för ${name}.`, { entity: { type: "hemsida", id: website.id } });
   save();
   return website;

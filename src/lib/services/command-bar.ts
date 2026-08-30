@@ -305,7 +305,13 @@ function toRunResult(result: ToolResult): CommandRunResult {
       : result.error ?? result.text ?? "Det gick inte. Inget sparades.",
     card: result.card,
     requiresConfirmation: result.requiresConfirmation,
-    href: result.card?.kind === "entity" ? result.card.href : undefined,
+    href:
+      result.href ??
+      (result.card?.kind === "entity"
+        ? result.card.href
+        : result.card?.kind === "links"
+          ? result.card.links[0]?.href
+          : undefined),
     undo: result.undo,
   };
 }

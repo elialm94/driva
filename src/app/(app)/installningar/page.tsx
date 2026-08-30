@@ -10,6 +10,8 @@ import {
 import { parseSettingsFlik } from "@/lib/settings-routes";
 import { sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
 import { primaryDomain } from "@/lib/domains";
+import { websiteModuleState } from "@/lib/services/modules";
+import { db } from "@/lib/store";
 import { ensurePageBusiness, isDemoSession } from "@/lib/auth/session";
 
 export const metadata = { title: "Inställningar" };
@@ -39,6 +41,7 @@ export default async function SettingsPage(props: {
           const d = primaryDomain();
           return d ? { hostname: d.hostname, live: d.status === "active" } : null;
         })()}
+        websiteModule={websiteModuleState(db())}
       />
       {/* Endast demon: JSON-läget lokalt eller den publika demosessionen.
           Servervägen (resetDemoAction) vaktar dessutom oberoende av UI:t. */}

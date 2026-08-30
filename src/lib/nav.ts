@@ -27,6 +27,16 @@ export const NAV_ITEMS: { href: string; section: NavSection; label: string }[] =
   { href: "/hemsida", section: "hemsida", label: "Hemsida" },
 ];
 
+/**
+ * Sidomenyn visar core-moduler alltid. Hemsida är optional och filtreras här
+ * utifrån en lättviktsflagga – inte via en extra website-query.
+ * ROUTES / NAV_ITEMS lämnas intakta så direktlänkar och tillbaka-kedjor funkar.
+ */
+export function visibleNavItems(opts: { websiteNavVisible: boolean }): typeof NAV_ITEMS {
+  if (opts.websiteNavVisible) return NAV_ITEMS;
+  return NAV_ITEMS.filter((item) => item.section !== "hemsida");
+}
+
 export const KUNDER_TABS = [
   { key: "kunder", href: "/kunder?flik=kunder", label: "Kunder" },
   { key: "uppdrag", href: "/kunder?flik=uppdrag", label: "Uppdrag" },

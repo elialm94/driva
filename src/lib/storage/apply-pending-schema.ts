@@ -86,6 +86,22 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
        add column if not exists payment_plan_index integer`
   );
 
+  await ensureColumn(
+    "business_settings",
+    "website_nav_visible",
+    `alter table public.business_settings add column if not exists website_nav_visible boolean`
+  );
+  await run(
+    client,
+    `update public.business_settings s
+        set website_nav_visible = true
+      where s.website_nav_visible is null
+        and (
+          exists (select 1 from public.websites w where w.business_id = s.business_id)
+          or exists (select 1 from public.domains d where d.business_id = s.business_id)
+        )`
+  );
+
   const files = await client.query(`select to_regclass('public.payment_files') is not null as present`);
   if (!files[0]?.present) {
     await run(

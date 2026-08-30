@@ -8,12 +8,15 @@ import { getNavAttentionCounts } from "@/lib/services/nav-counts";
 import { ensurePageBusiness, getSessionUser, isDemoSession, listMemberships } from "@/lib/auth/session";
 import { isAccountingRole } from "@/lib/collaboration/permissions";
 import { isSupabaseMode } from "@/lib/storage/config";
+import { isWebsiteNavVisible } from "@/lib/services/modules";
 
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   await ensurePageBusiness();
-  const settings = db().settings;
+  const data = db();
+  const settings = data.settings;
+  const websiteNavVisible = isWebsiteNavVisible(settings, data);
   // Logga ut visas bara när riktiga sessioner finns (Supabase-läge).
   const canLogout = isSupabaseMode();
   const user = await getSessionUser();
@@ -39,6 +42,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         localAccountantDemo={accountantDemoSwitch}
         demoBadge={demoBadge}
         demoSession={demoSession}
+        websiteNavVisible={websiteNavVisible}
       />
       <Suspense fallback={null}>
         <NavOriginProvider />
@@ -54,6 +58,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         localAccountantDemo={accountantDemoSwitch}
         demoBadge={demoBadge}
         demoSession={demoSession}
+        websiteNavVisible={websiteNavVisible}
       />
     </div>
   );
