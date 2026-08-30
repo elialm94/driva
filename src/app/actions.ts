@@ -25,6 +25,7 @@ import {
 } from "@/lib/services/document-mail";
 import { issueInvoice } from "@/lib/services/invoices";
 import { InvoiceNotReadyError } from "@/lib/invoices/validate";
+import { QuoteNotReadyError } from "@/lib/services/quotes";
 import { getInvoice, getQuoteByToken } from "@/lib/services/data";
 import { completeReminder, dismissReminder, snoozeReminderBy } from "@/lib/services/reminders";
 import { snoozeAttention } from "@/lib/services/attention-state";
@@ -334,9 +335,12 @@ export async function sendQuoteAction(
         refresh();
         return { ok: true, mailed: outcome.mode === "live" } as const;
       } catch (e) {
+        if (e instanceof QuoteNotReadyError) {
+          return { ok: false, errors: e.blockers.map((b) => b.message) } as const;
+        }
         return {
           ok: false,
-          errors: [e instanceof Error ? e.message : "Kunde inte skicka offerten."],
+          errors: ["Offerten kunde inte skickas just nu. Kontrollera uppgifterna och försök igen."],
         } as const;
       }
     },

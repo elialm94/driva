@@ -26,7 +26,7 @@ export function QuoteDraftSend({
   detailHref,
   recipientEmail,
   hasSendBlockers = false,
-  mailConfigured: _mailConfigured = true,
+  mailConfigured = true,
 }: {
   documentId: string;
   customerId: string;
@@ -65,8 +65,8 @@ export function QuoteDraftSend({
     requestAction();
   }
 
-  function finish() {
-    router.replace(withFlag(detailHref, "skickad", "1"));
+  function finish(flag: "1" | "manuell" = "1") {
+    router.replace(withFlag(detailHref, "skickad", flag));
     router.refresh();
   }
 
@@ -76,10 +76,11 @@ export function QuoteDraftSend({
       setSendError(null);
       const result = await sendAction();
       if (result && result.ok === false) {
-        setSendError((result.errors ?? []).join(" ") || "Offerten kunde inte skickas. Försök igen.");
+        setSendError((result.errors ?? []).join(" ") || "Offerten kunde inte skickas just nu.");
         return;
       }
-      finish();
+      const mailed = !result || result.mailed !== false;
+      finish(mailed ? "1" : "manuell");
     });
   }
 
@@ -96,7 +97,16 @@ export function QuoteDraftSend({
           <p className="mt-1 text-[15px] text-soft">{kr(amount)}</p>
           <p className="mt-1 text-[14px] text-muted">Giltig till {validUntilLabel}</p>
           <p className="mt-4 text-[14px] leading-relaxed text-soft">
-            Offerten skickas till: <span className="font-semibold text-ink">{email}</span>
+            {mailConfigured ? (
+              <>
+                Offerten skickas till: <span className="font-semibold text-ink">{email}</span>
+              </>
+            ) : (
+              <>
+                E-post är inte konfigurerad i den här miljön. Offerten markeras som skickad – dela
+                kundlänken med <span className="font-semibold text-ink">{email || customerName}</span>.
+              </>
+            )}
           </p>
           {sendError ? <p className="mt-3 text-[13px] font-medium text-danger">{sendError}</p> : null}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

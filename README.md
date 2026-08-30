@@ -193,7 +193,7 @@ Driva utfärdar **vanliga svenska småföretagsfakturor**: svensk säljare → s
 
 ### E-post (Resend)
 
-Offerter, fakturor, betalningspåminnelser och samarbetsinbjudningar skickas via Resend (`RESEND_API_KEY`, serverside). Avsändare: `RESEND_FROM_EMAIL` / `RESEND_FROM_NAME` (lokal testdefault: `beth.t@example.com`). Utan nyckel: ärligt fel, aldrig fejkad ”skickad”.
+Offerter, fakturor, betalningspåminnelser och samarbetsinbjudningar skickas via Resend när **både** `RESEND_API_KEY` och avsändare (`RESEND_FROM_EMAIL` / `MAIL_FROM`) är satta. Testdefault `beth.t@example.com` används aldrig som tyst live-From (Resend avvisar då kundens adress). Utan nyckel eller From: offerten markeras som skickad och kundlänken delas – vi låtsas inte att ett mejl gick iväg. Misslyckad Resend lämnar status utkast.
 
 **Rabatt:** inget eget radfält. Negativt à-pris på en rad räknas i samma VAT-motor.
 
