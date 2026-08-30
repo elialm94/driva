@@ -76,10 +76,9 @@ import { buttonClasses, cx } from "./ui";
 import type { VoiceUiState } from "./voice-input-button";
 
 /**
- * Röstinmatning: enbart ett alternativt sätt att fylla i fältet – transkriptet
- * granskas och skickas som vanlig text (aldrig autosänd). Laddas dynamiskt
- * utan SSR så Hems initiala bundle inte växer; döljer sig själv när
- * webbläsaren saknar taligenkänning.
+ * Röstinmatning: kort kommando via mikrofon. Efter auto-stopp (eller manuellt
+ * stopp) skickas det SLUTLIGA transkriptet till samma Enter-väg som skriven
+ * text. Laddas dynamiskt utan SSR; döljer sig när taligenkänning saknas.
  */
 const VoiceInputButton = dynamic(() => import("./voice-input-button").then((m) => m.VoiceInputButton), {
   ssr: false,
@@ -217,6 +216,8 @@ export function CommandBar({
   const listRef = useRef<HTMLDivElement>(null);
   const searchSeq = useRef(0);
   const listboxId = useId();
+  /** Slutligt rösttranskript som ska köras som Enter när panelmodellen hunnit ikapp. */
+  const pendingVoiceCommitRef = useRef<string | null>(null);
 
   /* ------------------------------ Miljödetektering ---------------------------- */
 
@@ -764,6 +765,19 @@ export function CommandBar({
     el?.scrollIntoView({ block: "nearest" });
   }, [highlight]);
 
+  // Röstens slutliga transkript: vänta tills query + panelmodell stämmer, sen
+  // samma Enter-väg. Kundsteget väntar på sökresultat. preferFirst undviker
+  // kapplöpning med highlight-effekten.
+  useEffect(() => {
+    const pending = pendingVoiceCommitRef.current;
+    if (pending === null || pending !== query) return;
+    if (flow?.step === "customer" && searching) return;
+    pendingVoiceCommitRef.current = null;
+    submitLikeEnter(true);
+    // submitLikeEnter läser aktuell render – deps täcker det som påverkar valet.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, flow, searching, flatKey, model.preselect, model.honest]);
+
   /* ------------------------------- Tangentbord -------------------------------- */
 
   function onEscape() {
@@ -809,6 +823,14 @@ export function CommandBar({
     }
     if (e.key !== "Enter") return;
     e.preventDefault();
+    submitLikeEnter();
+  }
+
+  /**
+   * Samma väg som Enter: förvald rad, pågående flödessteg eller fri-text.
+   * Röstens slutliga transkript landar här – ingen separat röstguide.
+   */
+  function submitLikeEnter(preferFirst = false) {
     if (flow?.step === "confirm") {
       finishInvoice();
       return;
@@ -821,8 +843,9 @@ export function CommandBar({
       finishTitle(query);
       return;
     }
-    if (highlight >= 0 && flatItems[highlight]) {
-      activateItem(flatItems[highlight]);
+    const item = preferFirst && model.preselect ? flatItems[0] : highlight >= 0 ? flatItems[highlight] : undefined;
+    if (item) {
+      activateItem(item);
       return;
     }
     // Fri text till LLM: i ärligt läge (deterministisk tolkning gav inget)
@@ -1110,9 +1133,21 @@ export function CommandBar({
             setQuery(next);
             setResult(null);
           }}
+          onCommit={(text) => {
+            pendingVoiceCommitRef.current = text;
+            setQuery(text);
+            setResult(null);
+            setOpen(true);
+          }}
           onActive={() => {
             setOpen(true);
-            focusInput();
+            if (isMobile) {
+              // Röstläge: stäng tangentbordet – arket visar Lyssnar/Tolkar ovanför nav.
+              sheetInputRef.current?.blur();
+              desktopInputRef.current?.blur();
+            } else {
+              focusInput();
+            }
           }}
           onUiState={setVoiceUi}
           onHint={setVoiceHint}

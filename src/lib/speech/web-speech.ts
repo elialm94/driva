@@ -38,6 +38,8 @@ interface SpeechRecognitionLike {
   onresult: ((event: RecognitionEventLike) => void) | null;
   onerror: ((event: RecognitionErrorEventLike) => void) | null;
   onend: (() => void) | null;
+  onspeechstart: (() => void) | null;
+  onspeechend: (() => void) | null;
   start(): void;
   stop(): void;
   abort(): void;
@@ -90,17 +92,46 @@ export function createWebSpeechProvider(host: unknown): SpeechToTextProvider | n
       const recognition = new Recognition();
       recognition.lang = options.lang;
       recognition.interimResults = true;
-      // Kontinuerligt läge: inga aggressiva klipp vid korta tankepauser.
-      // Manuellt stopp är primärflödet; avslutar motorn själv vid tystnad
-      // (t.ex. Safari) hanteras det som ett vanligt sessionsslut via onend.
+      // Kontinuerligt läge så motorns inbyggda klipp inte skär av en tankepaus
+      // ("till… Carina"). Auto-stopp sköts av speechstart/speechend + kontrollerns
+      // tystnadstimer – inte av continuous:false.
       recognition.continuous = true;
       recognition.maxAlternatives = 1;
 
       // Efter abort/fel får inga fler callbacks nå anroparen.
       let silenced = false;
 
+      function releaseRecognition() {
+        silenced = true;
+        try {
+          recognition.onstart = null;
+          recognition.onresult = null;
+          recognition.onerror = null;
+          recognition.onend = null;
+          recognition.onspeechstart = null;
+          recognition.onspeechend = null;
+        } catch {
+          /* vissa motorer är read-only på handlers */
+        }
+        try {
+          recognition.abort();
+        } catch {
+          try {
+            recognition.stop();
+          } catch {
+            /* redan avslutad – Web Speech släpper då sin interna MediaStream */
+          }
+        }
+      }
+
       recognition.onstart = () => {
         if (!silenced) handlers.onStart();
+      };
+      recognition.onspeechstart = () => {
+        if (!silenced) handlers.onSpeechStart?.();
+      };
+      recognition.onspeechend = () => {
+        if (!silenced) handlers.onSpeechEnd?.();
       };
       recognition.onresult = (event) => {
         if (silenced) return;
@@ -143,16 +174,11 @@ export function createWebSpeechProvider(host: unknown): SpeechToTextProvider | n
           try {
             recognition.stop();
           } catch {
-            /* redan stoppad */
+            /* redan stoppad – motorn släpper mikrofonspåret via onend */
           }
         },
         abort() {
-          silenced = true;
-          try {
-            recognition.abort();
-          } catch {
-            /* redan avslutad */
-          }
+          releaseRecognition();
         },
       };
     },
