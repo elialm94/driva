@@ -107,6 +107,7 @@ import {
   rewriteSectionHeading,
   sectionImages,
   setSectionVisible,
+  setWebsiteDesign,
   submitContactForm,
   updateSection,
   updateServiceItem,
@@ -1053,6 +1054,25 @@ export async function rewriteSectionAction(sectionId: string) {
     rewriteSectionHeading(sectionId);
     refresh();
   });
+}
+
+/**
+ * Tema/accent-val från Utseende-panelen. Sparas som utkast direkt (ingen
+ * spara-knapp) – den publika sajten ändras först vid "Publicera ändringar".
+ */
+export async function setWebsiteDesignAction(input: {
+  themeId: string;
+  accent: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      setWebsiteDesign(input);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte byta utseende." } as const;
+    }
+    refresh();
+    return { ok: true } as const;
+  }, { capability: "change_website" });
 }
 
 export async function publishWebsiteAction() {

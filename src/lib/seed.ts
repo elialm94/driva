@@ -1472,6 +1472,7 @@ export function buildSeed(): DB {
     city: "Stockholm",
     status: "publicerad" as const,
     theme: "tra" as const,
+    design: { themeId: "klassisk" as const, accent: "tegel" as const },
     publishedAt: d(90),
     createdAt: d(95),
     submissions: 1,
