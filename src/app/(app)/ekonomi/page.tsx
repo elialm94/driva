@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { Plus, Landmark } from "lucide-react";
 import { db } from "@/lib/store";
-import { kr } from "@/lib/format";
+import { kr, datumKort } from "@/lib/format";
 import { Badge, ButtonLink, Card, EmptyState, PageHeader, cx } from "@/components/ui";
 import { UploadReceiptButton } from "@/components/money-widgets";
+import { CreatePaymentFileButton } from "@/components/payment-file-actions";
+import { payerAccountLabel } from "@/lib/services/payment-files";
 import {
   BankRegister,
   ExpenseRegister,
@@ -19,6 +21,7 @@ import {
   listExpensesForTable,
   listInvoicesForTable,
   listQuotesForTable,
+  readyToPayBatch,
   type BankStatusFilter,
   type ExpenseStatusFilter,
   type InvoiceStatusFilter,
@@ -41,6 +44,42 @@ function statusParam<S extends string>(value: unknown, options: readonly [S, str
 function pageParam(value: unknown): number {
   const n = Number(param(value));
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+}
+
+/**
+ * Batchåtgärden på Utgifter & kvitton: alla fakturor som passerar bankfils-
+ * vakterna kan betalas med EN pain.001-fil (multi-payment, krav 17).
+ */
+function ReadyToPayBanner() {
+  const batch = readyToPayBatch();
+  if (batch.count === 0) return null;
+  const payer = payerAccountLabel();
+  const confirmRows = [
+    ...batch.rows.map((r) => ({
+      label: `${r.supplier} · ${r.invoiceNumber}`,
+      value: `${kr(r.amount)} · förfaller ${datumKort(r.dueDate)}`,
+    })),
+    ...(batch.count > 1 ? [{ label: "Totalt", value: kr(batch.total) }] : []),
+    ...(payer ? [{ label: "Från", value: `${db().settings.name}, ${payer}` }] : []),
+  ];
+  return (
+    <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+      <div className="min-w-0">
+        <p className="text-[14px] font-semibold text-ink">
+          {batch.count === 1 ? "1 faktura är redo att betalas" : `${batch.count} fakturor är redo att betalas`}
+          <span className="ml-2 font-normal text-muted">totalt {kr(batch.total)}</span>
+        </p>
+        <p className="mt-0.5 truncate text-[13px] text-muted">
+          {batch.rows.map((r) => `${r.supplier} ${kr(r.amount)}`).join(" · ")}
+        </p>
+      </div>
+      <CreatePaymentFileButton
+        supplierInvoiceIds={batch.invoiceIds}
+        title={batch.count === 1 ? `Betala ${batch.rows[0].supplier}?` : `Betala ${batch.count} fakturor?`}
+        confirmRows={confirmRows}
+      />
+    </Card>
+  );
 }
 
 export default async function MoneyPage(props: PageProps<"/ekonomi">) {
@@ -118,6 +157,7 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
             </p>
             <UploadReceiptButton label="Ladda upp kvitto" />
           </div>
+          <ReadyToPayBanner />
           <ExpenseRegister
             result={listExpensesForTable({
               q,

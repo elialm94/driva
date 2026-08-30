@@ -49,10 +49,13 @@ import type { DwellingType, PaymentDetailsMethod, TaxReductionDetails } from "@/
 import { applyBusinessProfilePatch, updateCompanySettings, type CompanySettingsInput } from "@/lib/services/settings";
 import { createCustomer, updateCustomer, updateCustomerNotes } from "@/lib/services/customers";
 import {
+  approveInboxExtraction,
   createExpenseFromInboxItem,
   ingestUploadedDocument,
   markInboxMailProcessed,
+  type ApproveExtractionInput,
 } from "@/lib/services/inbox";
+import { createPaymentFile, regeneratePaymentFile } from "@/lib/services/payment-files";
 import {
   confirmChangedPaymentDetails,
   prepareSupplierPayment,
@@ -766,6 +769,60 @@ export async function markInboxMailProcessedAction(itemId: string) {
     },
     { retry: false }
   );
+}
+
+/**
+ * Godkänn (ev. rättade) tolkade uppgifter från Kontrollera-vyn. Efter
+ * godkännandet körs dokumentpipelinen om med konfidens 1 – kvitton matchas
+ * och bokförs, fakturor skapas/bokförs och blir redo att betala.
+ */
+export async function approveInboxExtractionAction(
+  input: ApproveExtractionInput
+): Promise<
+  | { ok: true; autoBooked: boolean; expenseId?: string; invoiceId?: string }
+  | { ok: false; error: string }
+> {
+  return withBusiness(() => {
+    try {
+      const result = approveInboxExtraction({ ...input, by: "anvandare" });
+      refresh();
+      return {
+        ok: true as const,
+        autoBooked: result.autoBooked,
+        ...(result.expenseId ? { expenseId: result.expenseId } : {}),
+        ...(result.invoiceId ? { invoiceId: result.invoiceId } : {}),
+      };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Uppgifterna kunde inte godkännas." };
+    }
+  }, { capability: "write_accounting" });
+}
+
+/**
+ * Skapa bankfil (pain.001) för en eller flera bokförda fakturor. Kräver
+ * submit_bank_payment: konsulten förbereder, ägaren godkänner bankåtgärden.
+ */
+export async function createPaymentFileAction(input: {
+  supplierInvoiceIds: string[];
+}): Promise<{ ok: true; fileId: string; filename: string } | { ok: false; problems: string[] }> {
+  return withBusiness(() => {
+    const result = createPaymentFile({ supplierInvoiceIds: input.supplierInvoiceIds, by: "anvandare" });
+    if (!result.ok) return { ok: false as const, problems: result.problems };
+    refresh();
+    return { ok: true as const, fileId: result.file.id, filename: result.file.filename };
+  }, { capability: "submit_bank_payment" });
+}
+
+/** Ersätt en aktiv bankfil med en ny (gamla får status REPLACED – aldrig två aktiva). */
+export async function regeneratePaymentFileAction(
+  fileId: string
+): Promise<{ ok: true; fileId: string; filename: string } | { ok: false; problems: string[] }> {
+  return withBusiness(() => {
+    const result = regeneratePaymentFile(fileId, "anvandare");
+    if (!result.ok) return { ok: false as const, problems: result.problems };
+    refresh();
+    return { ok: true as const, fileId: result.file.id, filename: result.file.filename };
+  }, { capability: "submit_bank_payment" });
 }
 
 export async function createExpenseFromInboxAction(

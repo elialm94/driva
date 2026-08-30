@@ -424,6 +424,13 @@ export function createExpenseFromKnownReceipt(input: {
   };
   data.expenses.push(expense);
 
+  // Kvittoflödet (fall A): matcha mot ett obokat kortköp i banken när
+  // matchningen är entydig – bokföringen markerar då även transaktionen och
+  // kvittot lämnar aldrig ett omatchat bankköp efter sig. Ett kvitto skapar
+  // ALDRIG en utbetalning.
+  const txMatch = matchReceiptToTransaction({ supplier, amount: input.amount, date: expense.date });
+  if (txMatch) expense.bankTransactionId = txMatch.transactionId;
+
   const receipt: Receipt = {
     id: uid(),
     expenseId: expense.id,
@@ -449,7 +456,13 @@ export function createExpenseFromKnownReceipt(input: {
     if (!expense.description) expense.description = receipt.extracted.description;
     receipt.extracted.category = guess.key;
     receipt.extracted.confidence = "hog";
-    bookExpense(expense, guess.key, "hog", "auto", guess.reason);
+    bookExpense(
+      expense,
+      guess.key,
+      "hog",
+      "auto",
+      txMatch ? `${guess.reason}. Kvittot matchades mot bankköpet (${txMatch.reason})` : guess.reason
+    );
     autoBooked = true;
   } else if (guess) {
     expense.status = "behover_svar";

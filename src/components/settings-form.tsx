@@ -61,6 +61,9 @@ type FormState = {
   bankAccount: string;
   iban: string;
   bic: string;
+  payerBankName: string;
+  payerIban: string;
+  payerBic: string;
   logoInitials: string;
   logoDataUrl: string;
   paymentTermsDays: number;
@@ -88,6 +91,9 @@ function fromInitial(initial: CompanySettings, defaults: InvoiceDefaults): FormS
     bankAccount: initial.bankAccount ?? "",
     iban: initial.iban ?? "",
     bic: initial.bic ?? "",
+    payerBankName: initial.payerBankName ?? "",
+    payerIban: initial.payerIban ?? "",
+    payerBic: initial.payerBic ?? "",
     logoInitials: initial.logoInitials,
     logoDataUrl: initial.logoDataUrl ?? "",
     paymentTermsDays: defaults.paymentTermsDays,
@@ -239,6 +245,9 @@ export function SettingsForm({
         bankAccount: form.bankAccount,
         iban: form.iban,
         bic: form.bic,
+        payerBankName: form.payerBankName,
+        payerIban: form.payerIban,
+        payerBic: form.payerBic,
         logoInitials: form.logoInitials,
         logoDataUrl: form.logoDataUrl || undefined,
         paymentTermsDays: Number(form.paymentTermsDays),
@@ -614,6 +623,55 @@ export function SettingsForm({
                 <Plus className="size-3.5" /> Lägg till PlusGiro, bankkonto eller IBAN
               </button>
             )}
+          </Card>
+
+          <Card className="space-y-4 p-6">
+            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Bank &amp; betalkonto – utbetalningar</p>
+            <p className={hintCls}>
+              Kontot som dina leverantörsbetalningar dras från. Uppgifterna hamnar i bankfilen (pain.001) som du laddar
+              upp i internetbanken – Driva betalar aldrig något själv.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className={labelCls} htmlFor="installningar-payerBankName">
+                  Bank
+                </label>
+                <input
+                  id="installningar-payerBankName"
+                  value={form.payerBankName}
+                  onChange={(e) => patch("payerBankName", e.target.value)}
+                  placeholder="SEB"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className={labelCls} htmlFor="installningar-payerIban">
+                  IBAN
+                </label>
+                <input
+                  value={form.payerIban}
+                  onChange={(e) => patch("payerIban", e.target.value)}
+                  placeholder="SE00 0000 0000 0000 0000 0000"
+                  {...fieldMarkProps("payerIban", inputCls)}
+                />
+                <FieldError id="installningar-payerIban-fel">{errorFor("payerIban")}</FieldError>
+                {errorFor("payerIban") ? null : (
+                  <p className={hintCls}>Krävs för att kunna skapa bankfiler.</p>
+                )}
+              </div>
+              <div>
+                <label className={labelCls} htmlFor="installningar-payerBic">
+                  BIC/SWIFT <span className="font-normal text-muted">(valfritt)</span>
+                </label>
+                <input
+                  value={form.payerBic}
+                  onChange={(e) => patch("payerBic", e.target.value)}
+                  placeholder="ESSESESS"
+                  {...fieldMarkProps("payerBic", inputCls)}
+                />
+                <FieldError id="installningar-payerBic-fel">{errorFor("payerBic")}</FieldError>
+              </div>
+            </div>
           </Card>
 
           <Card className="space-y-4 p-6">

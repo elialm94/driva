@@ -38,12 +38,15 @@ import {
   supplierPaymentConfirmRows,
 } from "./supplier-payments";
 import {
+  guessPaymentMethod,
   paymentDetailsInfo,
+  paymentMethodLabel,
   provenanceLabel,
   supplierDetailsRequestInfo,
   type PaymentDetailsInfo,
 } from "./payment-details";
-import { isPaymentInFlight, isReadyToApproveNow } from "../inbox/workflow";
+import { payerAccountLabel } from "./payment-files";
+import { amountIsCertain, isPaymentInFlight, isReadyToApproveNow, needsAmountReview } from "../inbox/workflow";
 
 /**
  * Central åtgärdsmotor: EN härledning av "vad behöver jag göra?" ur riktig
@@ -106,6 +109,8 @@ export type ActionCta =
   | { type: "createJobInvoice"; label: string; jobId: string }
   | { type: "startJobFromQuote"; label: string; quoteId: string }
   | { type: "paySupplier"; label: string; supplierInvoiceId: string; paymentId?: string }
+  /** Skapa pain.001-bankfil för fakturan (V1: fil + manuell uppladdning i internetbanken). */
+  | { type: "createPaymentFile"; label: string; supplierInvoiceId: string }
   | { type: "confirmPaymentMatch"; label: string; txId: string; invoiceId: string }
   | { type: "pickPaymentMatch"; txId: string }
   | { type: "confirmRotPayout"; label: string; txId: string }
@@ -1253,12 +1258,12 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
           title: `Betalningen till ${s.supplier} misslyckades`,
           subtitle: `${kr(remaining || payment.amount)}${payment.failureReason ? ` · ${payment.failureReason}` : ""}`,
           href,
-          cta: { type: "paySupplier", label: "Försök igen", supplierInvoiceId: s.id, paymentId: payment.id },
+          cta: { type: "createPaymentFile", label: "Skapa ny bankfil", supplierInvoiceId: s.id },
           amount: remaining || payment.amount,
           confirm: {
-            title: "Skicka till bank igen?",
+            title: "Skapa ny bankfil?",
             rows: supplierPaymentConfirmRows(payment, s),
-            confirmLabel: "Skicka till bank",
+            confirmLabel: "Skapa bankfil",
           },
         },
       });
@@ -1342,6 +1347,12 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
     }
 
     if (isReadyToApproveNow({ invoice: s, payment, now })) {
+      // V1: primäråtgärden är [Skapa bankfil] (pain.001) – aldrig ett påstått
+      // "skickat till bank". Bekräftelsen visar exakt vad som betalas varifrån.
+      const amount = payment?.amount ?? (remainingAmountForInvoice(s) || s.amount);
+      const account = payment?.recipientAccount ?? details?.account;
+      const ocr = payment?.ocr ?? s.ocr;
+      const payer = payerAccountLabel();
       ranked.push({
         rank: RANK.supplierOverdue,
         order: -s.amount,
@@ -1350,23 +1361,21 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
           priority: "action",
           category: "supplier",
           icon: "invoice",
-          title: `Skicka betalning till ${s.supplier}`,
-          subtitle: `${kr(payment?.amount ?? s.amount)} · förfaller ${datumKort(s.dueDate)}`,
+          title: `${s.supplier} är redo att betalas`,
+          subtitle: `${kr(amount)} · förfaller ${datumKort(s.dueDate)} · bokförd`,
           href,
-          cta: { type: "paySupplier", label: "Skicka till bank", supplierInvoiceId: s.id, paymentId: payment?.id },
-          amount: payment?.amount ?? s.amount,
+          cta: { type: "createPaymentFile", label: "Skapa bankfil", supplierInvoiceId: s.id },
+          amount,
           confirm: {
-            title: "Skicka till bank?",
-            rows: payment
-              ? supplierPaymentConfirmRows(payment, s)
-              : [
-                  { label: "Leverantör", value: s.supplier },
-                  { label: "Belopp", value: kr(s.amount) },
-                  { label: "Förfaller", value: datumKort(s.dueDate) },
-                  { label: "OCR", value: s.ocr ?? "—" },
-                  { label: "Bankgiro", value: s.bankgiro ?? s.recipientAccount ?? "—" },
-                ],
-            confirmLabel: "Skicka till bank",
+            title: `Betala ${s.supplier}?`,
+            rows: [
+              { label: "Belopp", value: kr(amount) },
+              { label: "Förfallodatum", value: datumKort(s.dueDate) },
+              ...(account ? [{ label: paymentMethodLabel(guessPaymentMethod(account)), value: account }] : []),
+              ...(ocr ? [{ label: "OCR", value: ocr }] : []),
+              ...(payer ? [{ label: "Från", value: `${db().settings.name}, ${payer}` }] : []),
+            ],
+            confirmLabel: "Skapa bankfil",
           },
         },
       });
@@ -1389,12 +1398,15 @@ function collectInboxMail(ranked: Ranked[]) {
 
     const needsReview =
       item.status === "ny" &&
-      (item.parsedAmount == null ||
+      (!amountIsCertain(item) ||
         (item.documentType !== "kvitto" && !item.supplierInvoiceId) ||
         (invoice && invoice.accountingStatus !== "bokford"));
     if (!needsReview) continue;
 
     const href = `/inbox/${item.id}`;
+    const amountReview = needsAmountReview(item);
+    const who = item.parsedSupplier ?? (item.subject || "dokument");
+    const docWord = item.documentType === "kvitto" ? "kvittot" : "fakturan";
     ranked.push({
       rank: RANK.newJob,
       order: -(Date.parse(item.createdAt) || 0),
@@ -1403,13 +1415,19 @@ function collectInboxMail(ranked: Ranked[]) {
         priority: "action",
         category: "accounting",
         icon: "inbox",
-        title:
-          item.parsedAmount == null
-            ? `Kontrollera belopp – ${item.parsedSupplier ?? (item.subject || "dokument")}`
-            : `Granska ${item.documentType === "kvitto" ? "kvitto" : "faktura"} från ${item.parsedSupplier ?? item.fromAddress}`,
-        subtitle: item.parsedAmount != null ? `${kr(item.parsedAmount)} · ${excerpt(item.textBody)}` : excerpt(item.textBody),
+        title: amountReview
+          ? `Kontrollera belopp för ${who}-${docWord}`
+          : `Granska ${item.documentType === "kvitto" ? "kvitto" : "faktura"} från ${item.parsedSupplier ?? item.fromAddress}`,
+        subtitle:
+          amountReview && item.parsedAmount != null
+            ? `Läst ${kr(item.parsedAmount)} – behöver kontroll mot dokumentet.`
+            : item.parsedAmount != null
+              ? `${kr(item.parsedAmount)} · ${excerpt(item.textBody)}`
+              : excerpt(item.textBody),
         href,
-        cta: { type: "link", label: "Öppna i inboxen", href },
+        cta: amountReview
+          ? { type: "link", label: "Kontrollera", href: `/inbox/${item.id}/kontrollera` }
+          : { type: "link", label: "Öppna i inboxen", href },
         secondary: { label: "Visa posten", href },
       },
     });

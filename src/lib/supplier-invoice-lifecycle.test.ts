@@ -236,7 +236,8 @@ describe("bedrägeri, misslyckande och avstämning", () => {
     const row = actions.attention.find((a) => a.id === `supplier-fail-${invoice.id}`);
     assert.ok(row);
     assert.match(row!.title, /misslyckades/);
-    assert.equal(row!.cta?.type, "paySupplier");
+    // Nytt försök = ny bankfil (V1 utan bankintegration), aldrig "skicka igen".
+    assert.equal(row!.cta?.type, "createPaymentFile");
   });
 
   it("avstämning markerar betald och bokför betalningshändelsen", () => {

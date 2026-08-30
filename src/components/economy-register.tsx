@@ -383,12 +383,7 @@ export function ExpenseRegister({
                       <td className="max-w-44 truncate px-3 py-2.5 text-soft">{r.categoryLabel}</td>
                       <td className="px-3 py-2.5 text-right tabular text-ink">{kr(r.amount)}</td>
                       <td className="px-3 py-2.5">
-                        <span className="flex items-center gap-2">
-                          <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
-                          {r.hasReceipt && r.kind === "utgift" ? (
-                            <span className="text-[12px] text-muted">kvitto ✓</span>
-                          ) : null}
-                        </span>
+                        <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
                       </td>
                     </tr>
                   ))}

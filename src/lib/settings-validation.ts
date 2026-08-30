@@ -49,6 +49,10 @@ export interface SettingsProfileFields {
   plusgiro?: string;
   iban?: string;
   bic?: string;
+  /** Företagets BETALKONTO (utbetalningar/bankfiler) – skilt från mottagaruppgifterna ovan. */
+  payerBankName?: string;
+  payerIban?: string;
+  payerBic?: string;
   logoDataUrl?: string;
 }
 
@@ -137,6 +141,22 @@ export function settingsProfileFieldErrors(input: SettingsProfileFields): Settin
   }
   if (input.bic?.trim() && !isBicFormat(input.bic)) {
     errors.push({ field: "bic", label: "BIC/SWIFT", message: "BIC/SWIFT ska vara 8 eller 11 tecken.", tab: "fakturering" });
+  }
+  if (input.payerIban?.trim() && !isIbanFormat(input.payerIban)) {
+    errors.push({
+      field: "payerIban",
+      label: "Betalkonto (IBAN)",
+      message: "Betalkontots IBAN ska anges som landskod plus kontonummer, t.ex. SE följt av 22 tecken.",
+      tab: "fakturering",
+    });
+  }
+  if (input.payerBic?.trim() && !isBicFormat(input.payerBic)) {
+    errors.push({
+      field: "payerBic",
+      label: "Betalkonto (BIC)",
+      message: "Betalkontots BIC/SWIFT ska vara 8 eller 11 tecken.",
+      tab: "fakturering",
+    });
   }
   return errors;
 }

@@ -61,6 +61,16 @@ export interface CompanySettings {
    * Tenantuppslag sker på den här sluggen – aldrig på From-headern.
    */
   inboundMailSlug?: string;
+  /**
+   * Företagets BETALKONTO för utgående leverantörsbetalningar (pain.001-
+   * debitor). Skilt från bankgiro/iban ovan som är MOTTAGARUPPGIFTER på
+   * kundfakturor. Endast fälten som betalfilsprofilen kräver.
+   */
+  payerBankName?: string;
+  /** Debiteringskontots IBAN (kontrollsiffervaliderat vid sparande). */
+  payerIban?: string;
+  /** Debiteringsbankens BIC, t.ex. ESSESESS. */
+  payerBic?: string;
 }
 
 /* ---------------------------------- Kunder ---------------------------------- */
@@ -688,12 +698,20 @@ export interface Receipt {
 export type AccountingStatus = "obokford" | "bokford";
 
 /**
- * Leverantörsbetalningens livscykel. Bokförd ≠ skickad ≠ betald.
+ * Leverantörsbetalningens livscykel. Bokförd ≠ bankfil skapad ≠ betald.
  * UI visar svenska etiketter – aldrig dessa enum-namn.
+ *
+ * V1-flödet är filbaserat: READY → PAYMENT_FILE_CREATED (pain.001 genererad
+ * och nedladdad – användaren laddar upp den i internetbanken själv) → PAID
+ * (först när banktransaktionen matchats). En skapad/nedladdad fil betyder
+ * ALDRIG "skickad till bank" eller "betald". SUBMITTED_TO_BANK/AWAITING_
+ * APPROVAL/SCHEDULED är reserverade för en framtida direktintegration
+ * (BankPaymentProvider.submitPayment) och sätts aldrig av filflödet.
  */
 export type SupplierPaymentStatus =
   | "DRAFT"
   | "READY"
+  | "PAYMENT_FILE_CREATED"
   | "SUBMITTED_TO_BANK"
   | "AWAITING_APPROVAL"
   | "SCHEDULED"
@@ -805,10 +823,49 @@ export interface SupplierPayment {
   /** Mottagarkonto skiljer sig från tidigare verifierad betalning till samma leverantör. */
   destinationChanged?: boolean;
   bankTransactionId?: ID;
+  /**
+   * Aktiv bankfil (pain.001) som instruktionen ingår i. Dubbelbetalnings-
+   * skydd: en instruktion kan bara ingå i EN aktiv fil – regenerering
+   * ersätter (status REPLACED på gamla filen), skapar aldrig en parallell.
+   */
+  paymentFileId?: ID;
   createdAt: string;
   submittedAt?: string;
   updatedAt: string;
   paidAt?: string;
+}
+
+/* ------------------------------ Betalfiler ----------------------------------- */
+
+/** Exportformat för betalfiler. V1: ISO 20022 pain.001.001.03. */
+export type PaymentExportFormat = "ISO20022_PAIN001";
+
+/**
+ * Genererad betalfil (pain.001). Filen är en INSTRUKTION som användaren
+ * laddar upp i internetbanken – skapad fil ≠ skickad till bank ≠ betald.
+ * XML:en lagras som den genererades så att "Hämta bankfil igen" alltid ger
+ * exakt samma fil. REPLACED = ersatt av en ny version (aldrig två aktiva
+ * filer för samma betalning).
+ */
+export interface PaymentFile {
+  id: ID;
+  /** T.ex. driva-betalningar-2026-08-30.xml. */
+  filename: string;
+  /** pain.001 GrpHdr/MsgId – max 35 tecken. */
+  messageId: string;
+  format: PaymentExportFormat;
+  /** Instruktioner som ingår – en fil kan bära flera betalningar. */
+  paymentIds: ID[];
+  supplierInvoiceIds: ID[];
+  /** Summa i hela kronor (SEK). */
+  totalAmount: number;
+  currency: "SEK";
+  /** Genererad XML (UTF-8) – lagras för deterministisk återhämtning. */
+  xml: string;
+  status: "CREATED" | "REPLACED" | "CANCELLED";
+  replacedByFileId?: ID;
+  createdAt: string;
+  createdBy: "anvandare" | "assistent";
 }
 
 /* ---------------------------------- Bokföring -------------------------------- */
@@ -1344,6 +1401,8 @@ export type PendingAssistantAction =
   | { id: ID; type: "skicka_leverantorsbetalning"; paymentId: ID }
   | { id: ID; type: "avbryt_leverantorsbetalning"; paymentId: ID }
   | { id: ID; type: "anvand_leverantorsuppgifter"; supplierInvoiceId: ID }
+  /** Skapa pain.001-bankfil för fakturorna – utförs först efter bekräftelse. */
+  | { id: ID; type: "skapa_bankfil"; supplierInvoiceIds: ID[] }
   | { id: ID; type: "ta_bort_uppdrag"; jobId: ID };
 
 /* --------------------------------- Påminnelser -------------------------------- */
@@ -1461,13 +1520,59 @@ export type InboxItemStatus = "ny" | "behandlad" | "bokford";
 export type InboxDocumentType = "leverantorsfaktura" | "kvitto" | "ekonomiskt_dokument";
 export type InboxItemSource = "email" | "uppladdning" | "vidarebefordrad";
 
-/** Privat bilaga – lagras i bucket `inbox_attachments`, aldrig som publik URL. */
+/**
+ * Privat bilaga – hämtas alltid via den auktoriserade routen
+ * /api/inbox/bilaga/…, aldrig som publik URL.
+ */
 export interface InboxAttachment {
   id: ID;
   filename: string;
   contentType: string;
   size: number;
   storageKey: string;
+  /**
+   * Små dokument (≤ ~1,5 MB, pdf/bild) lagras inline så att båda
+   * lagringslägena kan servera innehållet. Demobilagor (storageKey "demo/…")
+   * genereras i stället deterministiskt och lagrar aldrig bytes.
+   */
+  contentBase64?: string;
+}
+
+/**
+ * Ett extraherat fält: värde + konfidens + källa. UI:t visar mänskliga
+ * tillstånd ("Säker"/"Kontrollera"), aldrig decimaler. Efter mänsklig
+ * kontroll sätts konfidensen till 1 och källan till "kontrollerad".
+ */
+export interface ExtractedField<T = string> {
+  value: T;
+  /** 0–1. ≥ AUTO-tröskeln = "Säker", annars "Kontrollera". */
+  confidence: number;
+  /** Var värdet lästes, t.ex. "sida 1" eller "kontrollerad". */
+  source?: string;
+}
+
+/**
+ * Per-fält-extraktion för ett inkommande dokument. Arbetsvärdena (det
+ * pipelinen använder) bor i InboxItem.parsed* – här bor proveniensen:
+ * konfidens och källa per fält, inklusive OSÄKRA kandidater som inte
+ * flyttats till parsed* (t.ex. ett belopp Driva inte vågar lita på).
+ */
+export interface InboxExtraction {
+  supplier?: ExtractedField;
+  invoiceNumber?: ExtractedField;
+  invoiceDate?: ExtractedField;
+  dueDate?: ExtractedField;
+  /** Totalbelopp inkl. moms, hela kronor. */
+  amount?: ExtractedField<number>;
+  vatAmount?: ExtractedField<number>;
+  /** Belopp exkl. moms där dokumentet anger det. */
+  netAmount?: ExtractedField<number>;
+  currency?: ExtractedField;
+  ocr?: ExtractedField;
+  bankgiro?: ExtractedField;
+  plusgiro?: ExtractedField;
+  iban?: ExtractedField;
+  bic?: ExtractedField;
 }
 
 /**
@@ -1506,6 +1611,14 @@ export interface InboxItem {
   parsedDetailsConfidence?: number;
   /** 0–1. Autopilot bokar bara vid ≥ 0,98 och känt belopp. */
   confidence?: number;
+  /**
+   * Per-fält-extraktion (värde + konfidens + källa). parsed*-fälten är
+   * arbetsvärdena; extraction bär proveniensen och osäkra kandidater som
+   * människan kontrollerar i Kontrollera-vyn.
+   */
+  extraction?: InboxExtraction;
+  /** När en människa granskade och godkände de extraherade uppgifterna. */
+  reviewedAt?: string;
   expenseId?: ID;
   supplierInvoiceId?: ID;
   createdAt: string;
@@ -1544,6 +1657,8 @@ export interface DB {
   receipts: Receipt[];
   supplierInvoices: SupplierInvoice[];
   supplierPayments: SupplierPayment[];
+  /** Genererade bankfiler (pain.001). Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  paymentFiles: PaymentFile[];
   verifications: Verification[];
   /** Räkenskapsår. Skapas automatiskt (kalenderår) av bokföringsmotorn. */
   fiscalYears: FiscalYear[];

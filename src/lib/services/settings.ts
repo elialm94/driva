@@ -43,6 +43,9 @@ export type BusinessProfileInput = Pick<
   | "bankAccount"
   | "iban"
   | "bic"
+  | "payerBankName"
+  | "payerIban"
+  | "payerBic"
   | "logoInitials"
   | "logoDataUrl"
 >;
@@ -107,6 +110,10 @@ function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
   s.bankAccount = optional(input.bankAccount);
   s.iban = input.iban?.trim() ? normalizeIban(input.iban) : undefined;
   s.bic = input.bic?.trim() ? normalizeBic(input.bic) : undefined;
+  // Betalkontot (utbetalningar/bankfiler) – skilt från mottagaruppgifterna ovan.
+  s.payerBankName = optional(input.payerBankName);
+  s.payerIban = input.payerIban?.trim() ? normalizeIban(input.payerIban) : undefined;
+  s.payerBic = input.payerBic?.trim() ? normalizeBic(input.payerBic) : undefined;
   s.logoDataUrl = optional(input.logoDataUrl);
   s.logoInitials = input.logoInitials.trim() || initialsFromName(s.name);
 }
@@ -189,6 +196,9 @@ const PATCHABLE: (keyof CompanySettingsInput)[] = [
   "bankAccount",
   "iban",
   "bic",
+  "payerBankName",
+  "payerIban",
+  "payerBic",
   "logoDataUrl",
   "paymentTermsDays",
   "lateInterestRate",
@@ -214,6 +224,9 @@ export const SETTINGS_FIELD_LABELS: Record<string, string> = {
   bankAccount: "Bankkonto",
   iban: "IBAN",
   bic: "BIC",
+  payerBankName: "Betalkonto – bank",
+  payerIban: "Betalkonto – IBAN",
+  payerBic: "Betalkonto – BIC",
   paymentTermsDays: "Betalningsvillkor (dagar)",
   lateInterestRate: "Dröjsmålsränta (%)",
   quoteValidityDays: "Offertens giltighetstid (dagar)",
@@ -240,6 +253,9 @@ export function applyBusinessProfilePatch(patch: Record<string, string | number 
     bankAccount: s.bankAccount,
     iban: s.iban,
     bic: s.bic,
+    payerBankName: s.payerBankName,
+    payerIban: s.payerIban,
+    payerBic: s.payerBic,
     logoInitials: s.logoInitials,
     logoDataUrl: s.logoDataUrl,
     paymentTermsDays: s.paymentTermsDays,
@@ -273,6 +289,9 @@ export function applyBusinessProfilePatch(patch: Record<string, string | number 
     else if (key === "bankAccount") next.bankAccount = String(value ?? "");
     else if (key === "iban") next.iban = String(value ?? "");
     else if (key === "bic") next.bic = String(value ?? "");
+    else if (key === "payerBankName") next.payerBankName = String(value ?? "");
+    else if (key === "payerIban") next.payerIban = String(value ?? "");
+    else if (key === "payerBic") next.payerBic = String(value ?? "");
     // Logotypens autospar går den här vägen: null/tom sträng tar bort logotypen.
     else if (key === "logoDataUrl") next.logoDataUrl = value === null ? undefined : String(value);
   }

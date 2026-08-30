@@ -38,10 +38,11 @@ export interface ReceiveSupplierInvoiceInput {
   /**
    * Varifrån betalningsuppgifterna kommer:
    *   "document" (default) – säker läsning ur dokumentet → VERIFIED med proveniens.
+   *   "document_confirmed" – dokument + mänsklig kontroll (Kontrollera/Godkänn).
    *   "document_uncertain" – osäker läsning → EXTRACTION_UNCERTAIN-kandidat som
    *   aldrig hamnar i betalbara fält förrän en människa godkänt den.
    */
-  detailsProvenance?: "document" | "document_uncertain";
+  detailsProvenance?: "document" | "document_confirmed" | "document_uncertain";
   inboxItemId?: string;
   book?: boolean;
   by?: "anvandare" | "assistent";
@@ -117,7 +118,7 @@ export function receiveSupplierInvoice(input: ReceiveSupplierInvoiceInput): Supp
         method,
         account,
         ...(sup.ocr ? { ocr: sup.ocr } : {}),
-        source: "document",
+        source: input.detailsProvenance === "document_confirmed" ? "document_confirmed" : "document",
         verifiedAt: now,
         verifiedBy: input.by === "assistent" ? "assistent" : "anvandare",
       },
@@ -184,7 +185,12 @@ function getSupplierInvoiceOrThrow(id: string): SupplierInvoice {
  */
 export function attachExtractedPaymentDetails(
   invoiceId: string,
-  input: { account: string; ocr?: string; provenance: "document" | "document_uncertain"; by?: "anvandare" | "assistent" }
+  input: {
+    account: string;
+    ocr?: string;
+    provenance: "document" | "document_confirmed" | "document_uncertain";
+    by?: "anvandare" | "assistent";
+  }
 ): SupplierInvoice | undefined {
   const sup = db().supplierInvoices.find((s) => s.id === invoiceId);
   if (!sup || sup.status === "betald") return undefined;
@@ -214,7 +220,7 @@ export function attachExtractedPaymentDetails(
       method,
       account,
       ...(sup.ocr ? { ocr: sup.ocr } : {}),
-      source: "document",
+      source: input.provenance === "document_confirmed" ? "document_confirmed" : "document",
       verifiedAt: new Date().toISOString(),
       verifiedBy: input.by === "assistent" ? "assistent" : "anvandare",
     },
@@ -232,4 +238,83 @@ export function attachExtractedPaymentDetails(
 
 export function listSupplierInvoices(): SupplierInvoice[] {
   return [...db().supplierInvoices].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/**
+ * Fält som får ändras i efterhand utan att röra bokförda belopp eller
+ * betalningsuppgifter. Belopp/moms rättas via rättelseflödet, konto/OCR via
+ * verifieringsflödena i payment-details – aldrig via en generisk fältändring.
+ */
+export type SupplierInvoiceEditableField = "description" | "dueDate" | "invoiceNumber";
+
+const EDITABLE_FIELD_LABELS: Record<SupplierInvoiceEditableField, string> = {
+  description: "beskrivningen",
+  dueDate: "förfallodatumet",
+  invoiceNumber: "fakturanumret",
+};
+
+export function updateSupplierInvoiceField(input: {
+  invoiceId: string;
+  field: SupplierInvoiceEditableField;
+  value: string;
+  by?: "anvandare" | "assistent";
+}): SupplierInvoice {
+  const sup = db().supplierInvoices.find((s) => s.id === input.invoiceId);
+  if (!sup) throw new Error("Leverantörsfakturan finns inte.");
+  if (sup.status === "betald") throw new Error("Fakturan är betald – uppgifterna kan inte ändras längre.");
+  if (!(input.field in EDITABLE_FIELD_LABELS)) {
+    throw new Error(
+      "Bara beskrivning, förfallodatum och fakturanummer kan ändras här. Belopp rättas via bokföringen och betalningsuppgifter via kontrollflödet."
+    );
+  }
+  const value = input.value.trim();
+
+  // Datum/nummer låses när fakturan ingår i en aktiv betalning/bankfil –
+  // annars glider fil och faktura isär.
+  if (input.field !== "description") {
+    const active = (db().supplierPayments ?? []).find(
+      (p) =>
+        p.supplierInvoiceId === sup.id &&
+        (p.status === "PAYMENT_FILE_CREATED" ||
+          p.status === "SUBMITTED_TO_BANK" ||
+          p.status === "AWAITING_APPROVAL" ||
+          p.status === "SCHEDULED")
+    );
+    if (active) {
+      throw new Error(
+        active.status === "PAYMENT_FILE_CREATED"
+          ? "Fakturan ingår i en skapad bankfil – ersätt eller makulera filen innan uppgifterna ändras."
+          : "Betalningen är redan hos banken – uppgifterna kan inte ändras."
+      );
+    }
+  }
+
+  if (input.field === "description") {
+    if (!value) throw new Error("Beskrivningen kan inte vara tom.");
+    sup.description = value;
+  } else if (input.field === "dueDate") {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Ange förfallodatumet som ÅÅÅÅ-MM-DD.");
+    sup.dueDate = `${value}T10:00:00.000Z`;
+    // Förberedd (ej skickad) betalning följer det nya förfallodatumet.
+    const prepared = (db().supplierPayments ?? []).find(
+      (p) => p.supplierInvoiceId === sup.id && (p.status === "READY" || p.status === "DRAFT")
+    );
+    if (prepared) {
+      prepared.scheduledDate = sup.dueDate;
+      prepared.updatedAt = new Date().toISOString();
+    }
+  } else {
+    if (!value) throw new Error("Fakturanumret kan inte vara tomt.");
+    const duplicate = findDuplicateSupplierInvoice(sup.supplier, value);
+    if (duplicate && duplicate.id !== sup.id) {
+      throw new Error(`Det finns redan en faktura från ${sup.supplier} med nummer ${value}.`);
+    }
+    sup.invoiceNumber = value;
+  }
+
+  logActivity(
+    `${sup.supplier} ${sup.invoiceNumber}: ${EDITABLE_FIELD_LABELS[input.field]} uppdaterades${input.by === "assistent" ? " av assistenten" : ""}.`
+  );
+  save();
+  return sup;
 }

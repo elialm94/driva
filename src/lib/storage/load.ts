@@ -36,6 +36,7 @@ import {
   jobWorkEntriesSpec,
   metaFromBusinessRow,
   num,
+  paymentFilesSpec,
   paymentsSpec,
   pendingActionsSpec,
   remindersSpec,
@@ -138,7 +139,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     tx.query(`select * from public.annual_reports where business_id = $1 order by generated_at, id`, b),
   ]);
 
-  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, invitationRows, clientRequestRows, activityRows, auditRows] =
+  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows] =
     await Promise.all([
       tx.query(`select * from public.websites where business_id = $1`, b),
       tx.query(`select * from public.domains where business_id = $1 order by created_at, id`, b),
@@ -148,6 +149,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
       tx.query(`select * from public.attention_states where business_id = $1 order by created_at, id`, b),
       tx.query(`select * from public.inbox_items where business_id = $1 order by created_at, id`, b),
       tx.query(`select * from public.supplier_payments where business_id = $1 order by created_at, id`, b),
+      tx.query(`select * from public.payment_files where business_id = $1 order by created_at, id`, b),
       tx.query(`select * from public.collaboration_invitations where business_id = $1 order by created_at, id`, b),
       tx.query(`select * from public.client_information_requests where business_id = $1 order by created_at, id`, b),
       tx.query(
@@ -239,6 +241,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     receipts: receiptRows.map(receiptsSpec.fromRow),
     supplierInvoices: supplierRows.map(supplierInvoicesSpec.fromRow),
     supplierPayments: supplierPaymentRows.map(supplierPaymentsSpec.fromRow),
+    paymentFiles: paymentFileRows.map(paymentFilesSpec.fromRow),
     verifications,
     fiscalYears: fiscalYearRows.map(fiscalYearsSpec.fromRow),
     accounting: lockedThrough == null ? {} : { lockedThrough: dateOnly(lockedThrough) },

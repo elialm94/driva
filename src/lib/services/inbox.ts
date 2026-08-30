@@ -7,15 +7,29 @@ import {
   type InboundMailPayload,
 } from "../inbox/inbound-mail";
 import {
+  amountIsCertain,
   classifyEconomicDocument,
   countsTowardInboxBadge,
+  extractedFieldState,
   inboxDisplayStatus,
   inboxDocumentTitle,
   isInboxItemOpen,
+  needsAmountReview,
+  type ExtractedFieldState,
   type InboxDisplayStatus,
   type InboxStatusTone,
 } from "../inbox/workflow";
-import type { InboxAttachment, InboxDocumentType, InboxItem, InboxItemSource, InboxItemStatus, SupplierInvoice } from "../types";
+import type {
+  ExtractedField,
+  InboxAttachment,
+  InboxDocumentType,
+  InboxExtraction,
+  InboxItem,
+  InboxItemSource,
+  InboxItemStatus,
+  SupplierInvoice,
+} from "../types";
+import { storableAttachmentContent } from "../inbox/attachment-content";
 import { createExpenseFromKnownReceipt, merchantRuleKey } from "./expenses";
 import { type PagedResult } from "./customers";
 import { attachExtractedPaymentDetails, bookSupplierInvoice, receiveSupplierInvoice } from "./suppliers";
@@ -234,6 +248,42 @@ function applyParsedFields(item: InboxItem, parsed: NonNullable<InboundMailPaylo
   if (parsed.bankgiro?.trim()) item.parsedBankgiro = parsed.bankgiro.trim();
   if (typeof parsed.detailsConfidence === "number") item.parsedDetailsConfidence = parsed.detailsConfidence;
   if (typeof parsed.confidence === "number") item.confidence = parsed.confidence;
+  item.extraction = extractionFromParsed(item, parsed);
+}
+
+const EXTRACTION_SOURCE_DOCUMENT = "dokument";
+const EXTRACTION_SOURCE_REVIEWED = "kontrollerad av dig";
+
+/**
+ * Per-fält-proveniens: vad Driva läst, med konfidens per fält.
+ * fieldConfidence från tolken vinner; annars gäller dokumentkonfidensen
+ * (och detaljkonfidensen för bankgiro/OCR).
+ */
+function extractionFromParsed(
+  item: InboxItem,
+  parsed: NonNullable<InboundMailPayload["parsed"]>
+): InboxExtraction | undefined {
+  const base = parsed.confidence ?? 0;
+  const details = parsed.detailsConfidence ?? base;
+  const fc = parsed.fieldConfidence ?? {};
+  const field = <T,>(value: T | undefined, confidence: number): { value: T; confidence: number; source: string } | undefined =>
+    value === undefined ? undefined : { value, confidence, source: EXTRACTION_SOURCE_DOCUMENT };
+
+  const extraction: InboxExtraction = {
+    ...(item.parsedSupplier ? { supplier: field(item.parsedSupplier, fc.supplier ?? base)! } : {}),
+    ...(item.parsedInvoiceNumber
+      ? { invoiceNumber: field(item.parsedInvoiceNumber, fc.invoiceNumber ?? base)! }
+      : {}),
+    ...(item.parsedDate ? { invoiceDate: field(item.parsedDate, fc.date ?? base)! } : {}),
+    ...(item.parsedDueDate ? { dueDate: field(item.parsedDueDate, fc.dueDate ?? base)! } : {}),
+    ...(item.parsedAmount !== undefined ? { amount: field(item.parsedAmount, fc.amount ?? base)! } : {}),
+    ...(item.parsedVatAmount !== undefined
+      ? { vatAmount: field(item.parsedVatAmount, fc.vatAmount ?? base)! }
+      : {}),
+    ...(item.parsedOcr ? { ocr: field(item.parsedOcr, fc.ocr ?? details)! } : {}),
+    ...(item.parsedBankgiro ? { bankgiro: field(item.parsedBankgiro, fc.bankgiro ?? details)! } : {}),
+  };
+  return Object.keys(extraction).length > 0 ? extraction : undefined;
 }
 
 /**
@@ -241,8 +291,10 @@ function applyParsedFields(item: InboxItem, parsed: NonNullable<InboundMailPaylo
  * AUTO-tröskeln blir betalbara ("document"); allt annat blir en kandidat
  * som människan kontrollerar ("document_uncertain"). Aldrig gissningar.
  */
-function detailsProvenanceForItem(item: InboxItem): "document" | "document_uncertain" | undefined {
+function detailsProvenanceForItem(item: InboxItem): "document" | "document_confirmed" | "document_uncertain" | undefined {
   if (!item.parsedBankgiro?.trim()) return undefined;
+  // Godkänd granskning = människan har sett bankgirot i Kontrollera-vyn.
+  if (item.reviewedAt) return "document_confirmed";
   const base = item.confidence ?? 0;
   const details = Math.min(base, item.parsedDetailsConfidence ?? base);
   return decideFromConfidence(details) === "AUTO_EXECUTE" ? "document" : "document_uncertain";
@@ -301,10 +353,11 @@ function tryCompleteAwaitingDetails(item: InboxItem): boolean {
 function runDocumentPipeline(item: InboxItem): { autoBooked: boolean } {
   let autoBooked = false;
   const conf = item.confidence ?? 0;
-  const auto = decideFromConfidence(conf) === "AUTO_EXECUTE";
+  // Mänskligt godkända uppgifter (reviewedAt) väger som säker läsning.
+  const auto = item.reviewedAt != null || decideFromConfidence(conf) === "AUTO_EXECUTE";
 
   if (item.documentType === "kvitto") {
-    if (auto && item.parsedAmount != null && item.parsedVatAmount != null && item.parsedSupplier) {
+    if (auto && amountIsCertain(item) && item.parsedAmount != null && item.parsedVatAmount != null && item.parsedSupplier) {
       const { expense, autoBooked: booked } = createExpenseFromKnownReceipt({
         supplier: item.parsedSupplier,
         amount: item.parsedAmount,
@@ -334,6 +387,13 @@ function runDocumentPipeline(item: InboxItem): { autoBooked: boolean } {
     // Ofullständigt dokument med betalningsuppgifter kan vara leverantörens
     // komplettering – matcha tillbaka mot fakturor som väntar på uppgifter.
     tryCompleteAwaitingDetails(item);
+    return { autoBooked };
+  }
+
+  // Osäkert belopp: skapa INGEN faktura på en siffra som kan vara felläst.
+  // Dokumentet stannar som "ny" tills en människa kontrollerat mot PDF:en
+  // (Kontrollera belopp) – därefter körs pipelinen om med godkända värden.
+  if (!amountIsCertain(item)) {
     return { autoBooked };
   }
 
@@ -383,13 +443,17 @@ export function ingestEconomicDocument(
   }
 
   const parsed = payload.parsed;
-  const attachments: InboxAttachment[] = (payload.attachments ?? []).map((a) => ({
-    id: uid(),
-    filename: a.filename,
-    contentType: a.contentType,
-    size: a.size ?? 0,
-    storageKey: `inbox/${payload.externalId}/${a.filename}`,
-  }));
+  const attachments: InboxAttachment[] = (payload.attachments ?? []).map((a) => {
+    const content = storableAttachmentContent(a.contentType, a.contentBase64);
+    return {
+      id: uid(),
+      filename: a.filename,
+      contentType: a.contentType,
+      size: a.size ?? (content ? Math.floor((content.length * 3) / 4) : 0),
+      storageKey: `inbox/${payload.externalId}/${a.filename}`,
+      ...(content ? { contentBase64: content } : {}),
+    };
+  });
 
   const documentType = classifyEconomicDocument({
     subject: payload.subject,
@@ -455,6 +519,217 @@ export function ingestUploadedDocument(input: {
     },
     { source: "uppladdning", kind: "uppladdning" }
   );
+}
+
+/* --------------------- Kontrollera & godkänn tolkningen --------------------- */
+
+export type ExtractionFieldKey =
+  | "supplier"
+  | "invoiceNumber"
+  | "invoiceDate"
+  | "dueDate"
+  | "amount"
+  | "vatAmount"
+  | "ocr"
+  | "bankgiro";
+
+export const EXTRACTION_FIELD_LABELS: Record<ExtractionFieldKey, string> = {
+  supplier: "Leverantör",
+  invoiceNumber: "Fakturanummer",
+  invoiceDate: "Fakturadatum",
+  dueDate: "Förfallodatum",
+  amount: "Belopp (inkl. moms)",
+  vatAmount: "Moms",
+  ocr: "OCR/referens",
+  bankgiro: "Bankgiro",
+};
+
+export interface ExtractionReviewField {
+  key: ExtractionFieldKey;
+  label: string;
+  /** Belopp som tal i kronor, övriga som text. null = Driva läste inget. */
+  value: string | number | null;
+  confidence: number;
+  /** "saker" eller "kontrollera" – aldrig råa decimaler i UI:t. */
+  state: ExtractedFieldState;
+}
+
+export interface ExtractionReview {
+  itemId: string;
+  documentType: InboxDocumentType;
+  fields: ExtractionReviewField[];
+  /** Kan uppgifterna godkännas här? */
+  editable: boolean;
+  blockedReason?: string;
+}
+
+/** Relevanta fält per dokumenttyp – kvitton har varken OCR eller förfallodatum. */
+function reviewFieldKeys(documentType: InboxDocumentType): ExtractionFieldKey[] {
+  if (documentType === "kvitto") return ["supplier", "invoiceDate", "amount", "vatAmount"];
+  return ["supplier", "invoiceNumber", "invoiceDate", "dueDate", "amount", "vatAmount", "ocr", "bankgiro"];
+}
+
+function reviewField(item: InboxItem, key: ExtractionFieldKey): ExtractionReviewField {
+  const extracted: ExtractedField<string> | ExtractedField<number> | undefined = item.extraction?.[key];
+  const fallback: string | number | undefined = {
+    supplier: item.parsedSupplier,
+    invoiceNumber: item.parsedInvoiceNumber,
+    invoiceDate: item.parsedDate,
+    dueDate: item.parsedDueDate,
+    amount: item.parsedAmount,
+    vatAmount: item.parsedVatAmount,
+    ocr: item.parsedOcr,
+    bankgiro: item.parsedBankgiro,
+  }[key];
+  const value = extracted?.value ?? fallback ?? null;
+  const confidence = item.reviewedAt ? 1 : extracted?.confidence ?? (value != null ? item.confidence ?? 0 : 0);
+  const state: ExtractedFieldState =
+    value == null ? "kontrollera" : extractedFieldState({ value, confidence }) ?? "kontrollera";
+  return { key, label: EXTRACTION_FIELD_LABELS[key], value, confidence, state };
+}
+
+/**
+ * Underlag för Kontrollera-vyn (PDF till vänster, Drivas läsning till höger)
+ * och AI-verktyget review_document_extraction. Samma sanning för båda.
+ */
+export function extractionReviewForItem(id: string): ExtractionReview {
+  const item = getInboxMail(id);
+  if (!item) throw new Error("Posten finns inte i inboxen.");
+  const fields = reviewFieldKeys(item.documentType).map((key) => reviewField(item, key));
+  if (item.expenseId || item.supplierInvoiceId) {
+    return {
+      itemId: item.id,
+      documentType: item.documentType,
+      fields,
+      editable: false,
+      blockedReason: item.supplierInvoiceId
+        ? "Dokumentet är redan kopplat till en leverantörsfaktura – ändra uppgifterna där."
+        : "Dokumentet är redan kopplat till en utgift – ändra uppgifterna där.",
+    };
+  }
+  return { itemId: item.id, documentType: item.documentType, fields, editable: true };
+}
+
+export interface ApproveExtractionInput {
+  itemId: string;
+  /** Rätta dokumenttypen om Driva klassificerat fel – typen styr livscykeln. */
+  documentType?: "kvitto" | "leverantorsfaktura";
+  supplier?: string;
+  invoiceNumber?: string;
+  /** Fakturadatum/kvittodatum YYYY-MM-DD. */
+  date?: string;
+  dueDate?: string;
+  /** Totalbelopp inkl. moms i hela kronor. */
+  amount?: number;
+  /** Moms i hela kronor (0 om moms saknas). */
+  vatAmount?: number;
+  ocr?: string;
+  bankgiro?: string;
+  by?: "anvandare" | "assistent";
+}
+
+export interface ApproveExtractionResult {
+  item: InboxItem;
+  autoBooked: boolean;
+  expenseId?: string;
+  invoiceId?: string;
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * "Godkänn uppgifter": persistera de kontrollerade/rättade värdena på
+ * dokumentet och kör om dokumentpipelinen. Dokumenttypen styr livscykeln –
+ * kvitto → utgift (aldrig utbetalning), leverantörsfaktura → bokförs och
+ * förbereder betalning. Människans godkännande väger som säker läsning.
+ */
+export function approveInboxExtraction(input: ApproveExtractionInput): ApproveExtractionResult {
+  const item = getInboxMail(input.itemId);
+  if (!item) throw new Error("Posten finns inte i inboxen.");
+  if (item.expenseId) {
+    throw new Error("Dokumentet är redan kopplat till en utgift – uppgifterna ändras där i stället.");
+  }
+  if (item.supplierInvoiceId) {
+    throw new Error("Dokumentet är redan kopplat till en leverantörsfaktura – uppgifterna ändras där i stället.");
+  }
+
+  const documentType = input.documentType ?? item.documentType;
+  if (documentType !== "kvitto" && documentType !== "leverantorsfaktura") {
+    throw new Error("Välj om dokumentet är ett kvitto eller en leverantörsfaktura.");
+  }
+
+  const supplier = (input.supplier ?? item.parsedSupplier ?? "").trim();
+  if (!supplier) throw new Error("Ange leverantör – Driva gissar aldrig.");
+  const amount = input.amount ?? item.parsedAmount;
+  if (amount == null || !Number.isInteger(amount) || amount < 1) {
+    throw new Error("Ange totalbeloppet i hela kronor (kontrollera mot dokumentet).");
+  }
+  const vatAmount = input.vatAmount ?? item.parsedVatAmount;
+  if (vatAmount == null || !Number.isInteger(vatAmount) || vatAmount < 0 || vatAmount > amount) {
+    throw new Error("Ange momsbeloppet i hela kronor (0 om moms saknas).");
+  }
+  if (documentType === "leverantorsfaktura" && vatAmount >= amount) {
+    throw new Error("Momsbeloppet måste vara mindre än totalbeloppet.");
+  }
+  const invoiceNumber = (input.invoiceNumber ?? item.parsedInvoiceNumber ?? "").trim();
+  if (documentType === "leverantorsfaktura" && !invoiceNumber) {
+    throw new Error("Ange fakturanumret från dokumentet.");
+  }
+  const date = (input.date ?? item.parsedDate ?? "").slice(0, 10);
+  if (date && !DATE_RE.test(date)) throw new Error("Fakturadatum måste vara YYYY-MM-DD.");
+  const dueDate = (input.dueDate ?? item.parsedDueDate ?? "").slice(0, 10);
+  if (dueDate && !DATE_RE.test(dueDate)) throw new Error("Förfallodatum måste vara YYYY-MM-DD.");
+  const ocr = (input.ocr ?? item.parsedOcr ?? "").trim();
+  if (ocr && !/^\d{2,25}$/.test(ocr.replace(/\s/g, ""))) {
+    throw new Error("OCR-numret innehåller annat än siffror – kontrollera mot dokumentet.");
+  }
+  const bankgiro = (input.bankgiro ?? item.parsedBankgiro ?? "").trim();
+  if (bankgiro && !/^\d{7,8}$/.test(bankgiro.replace(/[\s-]/g, ""))) {
+    throw new Error("Bankgiro har 7–8 siffror (t.ex. 123-4567).");
+  }
+
+  // Persistera godkända värden. Människans kontroll = full konfidens.
+  const now = new Date().toISOString();
+  item.documentType = documentType;
+  item.parsedSupplier = supplier;
+  item.parsedAmount = amount;
+  item.parsedVatAmount = vatAmount;
+  if (invoiceNumber) item.parsedInvoiceNumber = invoiceNumber;
+  if (date) item.parsedDate = date;
+  if (dueDate) item.parsedDueDate = dueDate;
+  if (ocr) item.parsedOcr = ocr;
+  else delete item.parsedOcr;
+  if (bankgiro) item.parsedBankgiro = bankgiro;
+  else delete item.parsedBankgiro;
+  item.confidence = 1;
+  item.parsedDetailsConfidence = 1;
+  item.reviewedAt = now;
+
+  const reviewed = <T,>(value: T): ExtractedField<T> => ({
+    value,
+    confidence: 1,
+    source: EXTRACTION_SOURCE_REVIEWED,
+  });
+  item.extraction = {
+    supplier: reviewed(supplier),
+    amount: reviewed(amount),
+    vatAmount: reviewed(vatAmount),
+    ...(invoiceNumber ? { invoiceNumber: reviewed(invoiceNumber) } : {}),
+    ...(date ? { invoiceDate: reviewed(date) } : {}),
+    ...(dueDate ? { dueDate: reviewed(dueDate) } : {}),
+    ...(ocr ? { ocr: reviewed(ocr) } : {}),
+    ...(bankgiro ? { bankgiro: reviewed(bankgiro) } : {}),
+  };
+
+  // Kör om pipelinen med godkända värden – dokumenttypen styr livscykeln.
+  const { autoBooked } = runDocumentPipeline(item);
+  save();
+  return {
+    item,
+    autoBooked,
+    ...(item.expenseId ? { expenseId: item.expenseId } : {}),
+    ...(item.supplierInvoiceId ? { invoiceId: item.supplierInvoiceId } : {}),
+  };
 }
 
 export function markInboxMailProcessed(id: string): InboxItem {
