@@ -23,7 +23,8 @@ export const ACCOUNTING_EXCEPTIONS_GROUP_ID = "accounting-exceptions-group";
 /** Olösta bokföringsfrågor – djuplänk från Hem-gruppen. */
 export const BOOKKEEPING_UNRESOLVED_VISA = "olosta";
 export const BOOKKEEPING_UNRESOLVED_ANCHOR = "behover-losas";
-export const BOOKKEEPING_UNRESOLVED_HREF = `/bokforing?visa=${BOOKKEEPING_UNRESOLVED_VISA}#${BOOKKEEPING_UNRESOLVED_ANCHOR}`;
+/** Bara query – AppLink/nav strippar hash och skulle annars koda `#` som `%23`. */
+export const BOOKKEEPING_UNRESOLVED_HREF = `/bokforing?visa=${BOOKKEEPING_UNRESOLVED_VISA}`;
 
 /** Sektionsrubrik på Bokföring (CSS gör den till BEHÖVER LÖSAS · N). */
 export const BOOKKEEPING_SECTION_TITLE = "Behöver lösas";

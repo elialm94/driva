@@ -65,7 +65,7 @@ describe("Hem- och Bokföringsvyer: samma åtgärdsmotor", () => {
     assert.equal(isBookkeepingUnresolvedVisa(BOOKKEEPING_UNRESOLVED_VISA), true);
     assert.equal(isBookkeepingUnresolvedVisa(undefined), false);
     assert.match(BOOKKEEPING_UNRESOLVED_HREF, /visa=olosta/);
-    assert.match(BOOKKEEPING_UNRESOLVED_HREF, /#behover-losas/);
+    assert.equal(BOOKKEEPING_UNRESOLVED_HREF.includes("#"), false, "hash kodas sönder av AppLink");
   });
 
   it("få bokföringsundantag syns med samma id på Hem och Bokföring", () => {
