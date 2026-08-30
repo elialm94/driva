@@ -8,6 +8,11 @@ import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createBusinessForCurrentUser } from "@/lib/auth/session";
 import { isSupabaseMode } from "@/lib/storage/config";
+import {
+  readOnboardingFormData,
+  validateOnboardingFields,
+  type OnboardingField,
+} from "@/lib/onboarding";
 
 export interface AuthFormState {
   error?: string;
@@ -76,6 +81,7 @@ export async function logoutAction(): Promise<void> {
 
 export interface OnboardingFormState {
   error?: string;
+  fieldErrors?: Partial<Record<OnboardingField, string>>;
 }
 
 export async function onboardingAction(
@@ -83,14 +89,24 @@ export async function onboardingAction(
   formData: FormData
 ): Promise<OnboardingFormState> {
   if (!isSupabaseMode()) return { error: "Onboarding kräver Supabase-miljön." };
-  const name = String(formData.get("name") ?? "").trim();
-  const orgNumber = String(formData.get("orgNumber") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim();
-  if (name.length < 2) return { error: "Ange företagets namn." };
-  if (!/^\d{6}-?\d{4}$/.test(orgNumber)) return { error: "Organisationsnummer anges som NNNNNN-NNNN." };
-  if (!email.includes("@")) return { error: "Ange en giltig e-postadress." };
+  const result = validateOnboardingFields(readOnboardingFormData(formData));
+  if (Object.keys(result.fieldErrors).length > 0) {
+    const first =
+      result.fieldErrors.name ??
+      result.fieldErrors.orgNumber ??
+      result.fieldErrors.vatNumber ??
+      result.fieldErrors.address ??
+      result.fieldErrors.postalCode ??
+      result.fieldErrors.city ??
+      result.fieldErrors.paymentMethod ??
+      result.fieldErrors.bankgiro ??
+      result.fieldErrors.plusgiro ??
+      result.fieldErrors.bankAccount ??
+      result.fieldErrors.email ??
+      result.fieldErrors.phone;
+    return { error: first, fieldErrors: result.fieldErrors };
+  }
 
-  await createBusinessForCurrentUser({ name, orgNumber, email, phone });
+  await createBusinessForCurrentUser(result.values);
   redirect("/");
 }

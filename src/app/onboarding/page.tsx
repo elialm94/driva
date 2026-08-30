@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth/session";
+import { needsCompanyOnboarding } from "@/lib/onboarding";
 import { membershipsForUser } from "@/lib/storage/adapter-supabase";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { OnboardingForm } from "./onboarding-form";
@@ -13,15 +14,15 @@ export default async function OnboardingPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
   const memberships = await membershipsForUser(user.id);
-  if (memberships.length > 0) redirect("/");
+  if (!needsCompanyOnboarding(memberships.length)) redirect("/");
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-stone-100 px-4 py-10">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-xl">
         <div className="mb-6 text-center">
           <div className="text-2xl font-semibold tracking-tight text-stone-900">Välkommen till Driva</div>
           <p className="mt-1 text-sm text-stone-500">
-            Berätta om ditt företag så sätter vi upp allt – bokföring, offerter och fakturor ingår.
+            Fyll i företagsuppgifterna så att du kan skapa kunder och skicka din första faktura.
           </p>
         </div>
         <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">

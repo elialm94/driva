@@ -1,7 +1,16 @@
 "use client";
 
 import { AppLink } from "./app-link";
-import { useCallback, useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useCallback,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { cx } from "./ui";
 import type { MissingRequirement } from "@/lib/form-requirements";
 import { swedishValidityMessage } from "@/lib/swedish-validity";
@@ -42,6 +51,59 @@ export function FieldError({ id, children, className }: { id?: string; children?
     <p id={id} className={cx("mt-1 text-[12px] font-medium text-danger", className)}>
       {children}
     </p>
+  );
+}
+
+const defaultLabelCls = "mb-1 block text-[13px] font-medium text-soft";
+const defaultHelperCls = "mt-1 text-[12px] text-muted";
+
+/**
+ * Delad fältmall: etikett, kontroll, hjälptext, fel.
+ * Återanvänds så onboarding, kunder och inställningar ser likadana ut.
+ */
+export function FormField({
+  id,
+  label,
+  error,
+  helper,
+  optional,
+  labelClassName = defaultLabelCls,
+  helperClassName = defaultHelperCls,
+  children,
+}: {
+  id: string;
+  label: ReactNode;
+  error?: ReactNode;
+  helper?: ReactNode;
+  optional?: boolean;
+  labelClassName?: string;
+  helperClassName?: string;
+  children: ReactElement;
+}) {
+  const errorId = `${id}-fel`;
+  const helperId = `${id}-hjalp`;
+  const describedBy = [error ? errorId : null, helper && !error ? helperId : null].filter(Boolean).join(" ") || undefined;
+  const control = isValidElement(children)
+    ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+        id,
+        "aria-invalid": error ? true : (children.props as { "aria-invalid"?: boolean })["aria-invalid"],
+        "aria-describedby": describedBy ?? (children.props as { "aria-describedby"?: string })["aria-describedby"],
+      })
+    : children;
+  return (
+    <div>
+      <label htmlFor={id} className={labelClassName}>
+        {label}
+        {optional ? <span className="font-normal text-muted"> (valfritt)</span> : null}
+      </label>
+      {control}
+      {helper && !error ? (
+        <p id={helperId} className={helperClassName}>
+          {helper}
+        </p>
+      ) : null}
+      <FieldError id={errorId}>{error}</FieldError>
+    </div>
   );
 }
 
