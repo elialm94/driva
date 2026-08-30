@@ -18,6 +18,12 @@ import { findWorkLocationByHint, formatLocationAddress, workLocationToHousing, w
 import { createFinalInvoiceForJob, createInvoice, createInvoiceForJob, createNextInvoiceForJob, discardInvoice, updateInvoice, type InvoiceInput, type JobInvoiceBasis } from "../services/invoices";
 import { addJobMaterial, actualEntries, jobInvoiceChoice, registerJobTime } from "../services/job-work";
 import { rotWithAmounts } from "../tax-reduction-amount";
+import {
+  classifyEconomicLineType,
+  defaultUnitForLineType,
+  lineKindFromType,
+  syncDocLineClassification,
+} from "../economic-line-type";
 import { currentVersion, daysOverdue, getCustomer, getInvoice, getJob, getQuote, invoiceTotals, isOpenReceivable, isOverdue, quoteStatusLabel, quoteTotals, quoteWaitingDays, requireCustomer } from "../services/data";
 import { remainingToInvoiceForJob } from "../services/attention";
 import { getBusinessActions } from "../services/actions";
@@ -113,17 +119,28 @@ export function ambiguousCustomers(query: string, customers: Customer[]): Domain
 }
 
 export function laborLine(description: string, amountInclVat: number) {
+  return classifiedLine(description, amountInclVat, "LABOR");
+}
+
+/** Samma klassning som kommandofältet – restid/mil/virke/snickeriarbete. */
+export function classifiedLine(
+  description: string,
+  amountInclVat: number,
+  forcedType?: ReturnType<typeof classifyEconomicLineType>
+) {
   const vat = (db().settings.defaultVatRate ?? 25) as 0 | 6 | 12 | 25;
   const exkl = Math.round(amountInclVat / (1 + vat / 100));
-  return {
+  const type = forcedType ?? classifyEconomicLineType(description);
+  return syncDocLineClassification({
     id: uid(),
-    kind: "arbete" as const,
+    kind: lineKindFromType(type),
+    type,
     description,
     qty: 1,
-    unit: "st",
+    unit: defaultUnitForLineType(type),
     unitPrice: exkl,
     vatRate: vat,
-  };
+  });
 }
 
 export function createQuoteDraft(input: {
@@ -162,7 +179,7 @@ export function createQuoteDraft(input: {
         jobId: job?.id,
         title,
         intro,
-        lines: [laborLine(title, input.amountInclVat ?? 0)],
+        lines: [classifiedLine(title, input.amountInclVat ?? 0)],
         rot,
         paymentPlan: percent
           ? [
@@ -275,7 +292,7 @@ export function createInvoiceDraft(input: {
     customerId: customer.id,
     jobId: input.jobId,
     type: "faktura",
-    lines: [laborLine(title, input.amountInclVat ?? 0)],
+    lines: [classifiedLine(title, input.amountInclVat ?? 0)],
     rot: null,
   };
   const invoice = createInvoice(payload, "assistent");

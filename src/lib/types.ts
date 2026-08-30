@@ -4,10 +4,11 @@
  */
 
 import type { RichTextDoc } from "./richtext";
+import type { EconomicLineType, LineKind } from "./economic-line-type";
+
+export type { EconomicLineType, LineKind } from "./economic-line-type";
 
 export type ID = string;
-
-export type LineKind = "arbete" | "material" | "ovrigt";
 /** V1: endast inhemsk svensk moms. Omvänd skattskyldighet, EU, export och byggmoms stöds inte. */
 export type VatRate = 0 | 6 | 12 | 25;
 
@@ -113,7 +114,13 @@ export interface WorkLocation {
 
 export interface DocLine {
   id: ID;
+  /** Lagrad typ (arbete/material/resor/ovrigt). */
   kind: LineKind;
+  /**
+   * Kanonisk typ (LABOR/MATERIAL/TRAVEL/OTHER). Samma klassning som `kind`.
+   * Kedjan Offert → Uppdrag → Faktura kopierar fältet oförändrat.
+   */
+  type?: EconomicLineType;
   description: string;
   qty: number;
   unit: string;
@@ -381,7 +388,7 @@ export interface Job {
  * fakturarader. Offertrad = avtalat. Work entry (actual) = utfört.
  * Fakturarad = det som faktureras (eget liv, skapas från offert eller actuals).
  */
-export type JobWorkEntryType = "labor" | "material" | "other";
+export type JobWorkEntryType = "labor" | "material" | "travel" | "other";
 export type JobWorkEntryRole = "planned" | "actual";
 export type JobWorkEntrySource = "manual" | "quote" | "ai" | "import";
 

@@ -19,6 +19,7 @@
  * trunkerar ALDRIG databasen.
  */
 import type { DB, DocLine, Invoice, Payment, Verification } from "@/lib/types";
+import { lineKindOf } from "@/lib/economic-line-type";
 import { docTotals } from "@/lib/calc";
 import { ocrForInvoice } from "@/lib/ids";
 import type { SqlExecutor } from "./executor";
@@ -189,7 +190,7 @@ function invoiceRpcPayload(inv: Invoice, businessId: string): Record<string, unk
 function linesRpcPayload(lines: DocLine[]): Record<string, unknown>[] {
   return lines.map((l) => ({
     id: l.id,
-    kind: l.kind,
+    kind: lineKindOf(l),
     description: l.description,
     qty: l.qty,
     unit: l.unit,

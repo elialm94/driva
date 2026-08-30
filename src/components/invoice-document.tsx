@@ -6,13 +6,8 @@ import { DocCompanyHeader, DocFooter, DocTotalsBlock } from "./quote-document";
 import { resolveInvoiceView } from "@/lib/invoices/snapshot";
 import { invoiceNumberLabel, invoiceTypeLabel, sameCalendarDay } from "@/lib/invoices/display";
 import { TaxReductionInvoiceDisclaimer } from "./tax-reduction-terms";
+import { lineKindLabel } from "@/lib/economic-line-type";
 import { RichTextView } from "./rich-text";
-
-const LINE_KIND_LABEL: Record<string, string> = {
-  arbete: "Arbete",
-  material: "Material",
-  ovrigt: "Övrigt",
-};
 
 function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
   return (
@@ -33,7 +28,7 @@ function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
             <td className="py-3 pr-3">
               <p className="font-medium text-ink">{line.description}</p>
               <p className="text-[12px] text-muted">
-                {LINE_KIND_LABEL[line.kind]}
+                {lineKindLabel(line.kind)}
                 <span className="sm:hidden">
                   {" "}
                   · {line.qty} {line.unit} × {kr(line.unitPrice)} · moms {line.vatRate} %

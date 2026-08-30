@@ -9,6 +9,7 @@ import { kr, isoDaysFromNow, dagarTill, datumKort } from "../format";
 import { logActivity } from "./activity";
 import { taxReductionFields } from "../tax-reduction-terms";
 import { rotWithAmounts } from "../tax-reduction-amount";
+import { syncDocLineClassification } from "../economic-line-type";
 import { sellerSnapshot } from "../invoices/snapshot";
 import { missingEmailForSend } from "../customer-validation";
 import { collectSellerBlockers } from "../invoices/validate";
@@ -55,7 +56,7 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
     version: 1,
     title: input.title,
     intro: input.intro,
-    lines: input.lines,
+    lines: input.lines.map((l) => syncDocLineClassification({ ...l })),
     paymentPlan: input.paymentPlan,
     paymentTermsDays: input.paymentTermsDays,
     lateInterestRate: input.lateInterestRate ?? data.settings.lateInterestRate,
@@ -123,7 +124,11 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
   const version = currentVersion(quote);
   // Servergräns: klientens rika text lita aldrig på rakt av.
   const { workLocationId: requestedLocation, ...versionFields } = input;
-  input = { ...versionFields, richText: sanitizeRichText(input.richText) };
+  input = {
+    ...versionFields,
+    richText: sanitizeRichText(input.richText),
+    lines: input.lines.map((l) => syncDocLineClassification({ ...l })),
+  };
   const customer = requireCustomer(quote.customerId);
   const persisted = persistQuoteWorkLocation(customer, input.rot, requestedLocation ?? quote.workLocationId);
   if (persisted.workLocationId) quote.workLocationId = persisted.workLocationId;

@@ -230,6 +230,21 @@ describe("ROT-beräkning och villkor", () => {
     assert.equal(t.deduction < t.total, true);
   });
 
+  it("MATERIAL, TRAVEL och OTHER ingår aldrig i ROT-underlaget – 24 h + restid", () => {
+    const t = docTotals(
+      [
+        labor({ kind: "arbete", type: "LABOR", qty: 24, unit: "tim", unitPrice: 650, vatRate: 0, description: "Snickeriarbete" }),
+        labor({ kind: "resor", type: "TRAVEL", qty: 2, unit: "tim", unitPrice: 400, vatRate: 0, description: "Restid" }),
+        labor({ kind: "material", type: "MATERIAL", qty: 1, unit: "st", unitPrice: 3_000, vatRate: 0, description: "Virke" }),
+        labor({ kind: "ovrigt", type: "OTHER", qty: 1, unit: "st", unitPrice: 200, vatRate: 0, description: "Övrigt" }),
+      ],
+      { type: "rot" }
+    );
+    assert.equal(t.total, 16_400 + 3_000 + 200);
+    assert.equal(t.laborInclVat, 15_600);
+    assert.equal(t.deduction, 4_680);
+  });
+
   it("RUT är 50 % med tak 75 000 – ROT 30 % med tak 50 000 (per person och år)", () => {
     const rut = docTotals([labor({ kind: "arbete", unitPrice: 200_000, qty: 1, vatRate: 25 })], { type: "rut" });
     assert.equal(rut.deduction, RUT_TAK);
@@ -524,5 +539,6 @@ describe("Manuellt sänkt ROT-avdrag", () => {
     assert.equal(/tillgängligt ROT-utrymme/i.test(corpus), false);
     assert.equal(/kunden har \d/i.test(corpus), false);
     assert.match(corpus, /maximala avdrag som fakturan medger/);
+    assert.match(corpus, /material, resor och övrigt ingår inte/);
   });
 });

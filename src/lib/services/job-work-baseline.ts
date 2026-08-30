@@ -3,12 +3,24 @@
  * store.normalize kan hydrera utan store ↔ job-work-importcykel.
  */
 import { uid } from "../ids";
-import type { DB, JobWorkEntryType, LineKind, Quote, QuoteVersion } from "../types";
+import { economicLineTypeFromKind, lineTypeOf } from "../economic-line-type";
+import type { DB, DocLine, JobWorkEntryType, LineKind, Quote, QuoteVersion } from "../types";
 
 export function lineKindToWorkType(kind: LineKind): JobWorkEntryType {
-  if (kind === "arbete") return "labor";
-  if (kind === "material") return "material";
+  return workTypeFromLineType(economicLineTypeFromKind(kind));
+}
+
+export function workTypeFromLineType(
+  type: ReturnType<typeof lineTypeOf>
+): JobWorkEntryType {
+  if (type === "LABOR") return "labor";
+  if (type === "MATERIAL") return "material";
+  if (type === "TRAVEL") return "travel";
   return "other";
+}
+
+export function workTypeFromLine(line: Pick<DocLine, "kind" | "type">): JobWorkEntryType {
+  return workTypeFromLineType(lineTypeOf(line));
 }
 
 export function syncQuotedBaselineFromVersion(
@@ -32,7 +44,7 @@ export function syncQuotedBaselineFromVersion(
       id: uid(),
       jobId,
       role: "planned",
-      type: lineKindToWorkType(line.kind),
+      type: workTypeFromLine(line),
       description: line.description,
       date,
       qty: line.qty,

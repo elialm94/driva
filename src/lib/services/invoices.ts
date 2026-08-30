@@ -35,6 +35,7 @@ import { assertInvoiceReadyToIssue, collectIssueErrors, InvoiceNotReadyError } f
 import { invoiceNumberLabel } from "../invoices/display";
 import { snapshotTaxReductionTerms } from "../tax-reduction-terms";
 import { rotWithAmounts } from "../tax-reduction-amount";
+import { syncDocLineClassification } from "../economic-line-type";
 import { postVerification } from "../accounting/engine";
 import {
   detailsFromPrefill,
@@ -99,7 +100,7 @@ function assignInvoiceNumberAndOcr(invoice: Invoice): { number: number; ocr: str
 }
 
 function cloneLines(lines: DocLine[]): DocLine[] {
-  return lines.map((l) => ({ ...l }));
+  return lines.map((l) => syncDocLineClassification({ ...l }));
 }
 
 function signedTaxReductionTerms(quoteId: string | undefined, type: RotRut["type"]): TaxReductionTermsSnapshot | null {
@@ -351,7 +352,7 @@ export function createFinalInvoiceForJob(jobId: string, createdBy: Actor = "anva
           jobId,
           quoteId: quote.id,
           type: "slutfaktura",
-          lines: version.lines.map((l) => ({ ...l, id: uid() })),
+          lines: version.lines.map((l) => syncDocLineClassification({ ...l, id: uid() })),
           rot: version.rot,
           dueInDays: version.paymentTermsDays,
           lateInterestRate: version.lateInterestRate,
@@ -517,7 +518,7 @@ function shareLines(
   if (rates.length <= 1) {
     const rate: VatRate = rates[0] ?? 25;
     return [
-      {
+      syncDocLineClassification({
         id: uid(),
         kind,
         description,
@@ -525,22 +526,24 @@ function shareLines(
         unit: "st",
         unitPrice: Math.round(amountInclVat / (1 + rate / 100)),
         vatRate: rate,
-      },
+      }),
     ];
   }
   const totals = docTotals(sourceLines, sourceRot);
   return vatBreakdown(sourceLines)
     .filter((row) => row.base + row.vat > 0)
-    .map((row) => ({
-      id: uid(),
-      kind,
-      description: `${description} – andel med ${row.rate} % moms`,
-      qty: 1,
-      unit: "st",
-      unitPrice: Math.round((row.base * amountInclVat) / totals.total),
-      // vatBreakdown grupperar på radernas momssatser, så raten är alltid en giltig VatRate.
-      vatRate: row.rate as VatRate,
-    }));
+    .map((row) =>
+      syncDocLineClassification({
+        id: uid(),
+        kind,
+        description: `${description} – andel med ${row.rate} % moms`,
+        qty: 1,
+        unit: "st",
+        unitPrice: Math.round((row.base * amountInclVat) / totals.total),
+        // vatBreakdown grupperar på radernas momssatser, så raten är alltid en giltig VatRate.
+        vatRate: row.rate as VatRate,
+      })
+    );
 }
 
 function shareLinesFromVersion(version: QuoteVersion, amountInclVat: number, description: string): DocLine[] {

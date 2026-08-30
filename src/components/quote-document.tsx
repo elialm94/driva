@@ -4,15 +4,11 @@ import { kr, datumLang, datumTid, datumNumeriskt } from "@/lib/format";
 import { ShieldCheck, BadgeCheck } from "lucide-react";
 import { taxReductionDeductionLabel, getTaxReductionTerms } from "@/lib/tax-reduction-terms";
 import { TaxReductionQuoteClause, TaxReductionCalcHint } from "./tax-reduction-terms";
+import { lineKindLabel } from "@/lib/economic-line-type";
 import { CompanyLogo } from "./company-logo";
 import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
 import { RichTextView } from "./rich-text";
 
-const LINE_KIND_LABEL: Record<string, string> = {
-  arbete: "Arbete",
-  material: "Material",
-  ovrigt: "Övrigt",
-};
 
 export function DocCompanyHeader({ company, docType, docNumber }: { company: CompanySettings; docType: string; docNumber: string }) {
   return (
@@ -80,7 +76,7 @@ export function DocLinesTable({
             <td className="py-3 pr-3">
               <p className="font-medium text-ink">{line.description}</p>
               <p className="text-[12px] text-muted">
-                {LINE_KIND_LABEL[line.kind]}
+                {lineKindLabel(line.kind)}
                 <span className="sm:hidden">
                   {" "}
                   · {line.qty} {line.unit} × {kr(line.unitPrice)}
