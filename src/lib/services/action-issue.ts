@@ -183,12 +183,15 @@ export function attentionKind(action: Pick<BusinessAction, "id">): AttentionKind
 /**
  * Vad avfärdan GÖR per typ – aldrig ett universellt "ta bort för alltid":
  *   MARK_NOT_RELEVANT offert → status "avbojd" med skäl (riktig domänövergång)
- *   DISMISS_REMINDER  påminnelse → mjuk borttagning via påminnelsetjänsten
  *   HIDE              rent ignorerbara info-rader (ingen nuvarande typ) –
  *                     lagras i attention_states.dismissed_at
- *   none              ingen avfärdanväg (finansiella sanningar snoozas bara)
+ *   none              ingen avfärdanväg (finansiella sanningar snoozas bara;
+ *                     påminnelser avslutas med Klar, inte med en extra Ta bort)
+ *
+ * DISMISSED finns kvar i påminnelsedomänen (admin / GDPR / ångra-efter-skapande)
+ * men är inte en kundåtgärd på raden.
  */
-export type DismissBehavior = "MARK_NOT_RELEVANT" | "DISMISS_REMINDER" | "HIDE" | "none";
+export type DismissBehavior = "MARK_NOT_RELEVANT" | "HIDE" | "none";
 
 export interface ActionControls {
   kind: AttentionKind | "unknown";
@@ -202,7 +205,7 @@ export interface ActionControls {
   canSnooze: boolean;
   canDismiss: boolean;
   dismissBehavior: DismissBehavior;
-  /** Mänsklig avfärdan-etikett ("Markera hanterad", "Inte aktuell", "Ta bort"). */
+  /** Mänsklig avfärdan-etikett ("Inte aktuell"). Aldrig "Ta bort" på påminnelser. */
   dismissLabel?: string;
   /** Ändrar avfärdan entitetens status? → lätt bekräftelse i UI:t före utförande. */
   dismissNeedsConfirm?: boolean;
@@ -214,6 +217,17 @@ export interface ActionControls {
   requiresConfirmation: boolean;
 }
 
+/**
+ * Åtgärdspar (samma praktiska resultat?) – kirurgisk genomgång:
+ *   reminder          Klar vs Ta bort → samma för användaren (raden lämnar
+ *                     Attention). Ta bort är borttagen; Klar är enda avslut.
+ *   quoteFollowUp     Skicka påminnelse / Inte aktuell / Snooza → olika
+ *                     utfall (mejl, avböj, dölj). Kvar.
+ *   invoiceOverdue    Skicka påminnelse vs Snooza → olika. Kvar.
+ *   missingReceipt    Ladda upp vs Be kunden (redovisning) → olika. Kvar.
+ *   inboxMail         Inbox byggs om; rörs inte.
+ *   accountant queue  Samma AttentionSection – påminnelser är ägarens.
+ */
 const CONTROLS: Record<AttentionKind, Omit<ActionControls, "kind">> = {
   invoiceDeliveryFailed: {
     viewLabel: "Visa faktura",
@@ -264,10 +278,10 @@ const CONTROLS: Record<AttentionKind, Omit<ActionControls, "kind">> = {
   },
   reminder: {
     viewLabel: "Öppna",
-    canSnooze: true, // egen domänsnooze (Klar/Snooza-flödet) – inte attention_states
-    canDismiss: true,
-    dismissBehavior: "DISMISS_REMINDER",
-    dismissLabel: "Ta bort",
+    canSnooze: true, // egen domänsnooze (Klar/Snooza) – inte attention_states
+    // Klar avslutar. DISMISSED är intern, inte en parallell kundåtgärd.
+    canDismiss: false,
+    dismissBehavior: "none",
     requiresConfirmation: false,
   },
   rot: {
@@ -371,6 +385,17 @@ export function controlsForAction(action: Pick<BusinessAction, "id">): ActionCon
     return { ...base, viewLabel: "Visa leverantörsfakturor", requiresConfirmation: false };
   }
   return base;
+}
+
+/**
+ * ⋯-meny bara när den bär något utöver radens synliga knappar.
+ * Påminnelser: ingen overflow – raden är redan länk, Klar/Snooza räcker.
+ */
+export function attentionRowHasOverflow(action: Pick<BusinessAction, "id" | "href">): boolean {
+  const controls = controlsForAction(action);
+  if (controls.kind === "reminder") return false;
+  const showView = action.href !== "/";
+  return showView || controls.canSnooze || controls.canDismiss;
 }
 
 /* ------------------------------- Snooze-presets -------------------------------- */

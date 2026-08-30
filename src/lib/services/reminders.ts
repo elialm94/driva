@@ -134,14 +134,30 @@ export function completeReminder(id: string, now = new Date()): Reminder {
   return reminder;
 }
 
+/** Ångra Klar: tillbaka till PENDING så raden syns i uppmärksamhet igen. */
+export function reopenReminder(id: string): Reminder {
+  const reminder = requireOwned(id);
+  if (reminder.status !== "COMPLETED") throw new Error("Påminnelsen är inte markerad som klar.");
+  reminder.status = "PENDING";
+  delete reminder.completedAt;
+  save();
+  return reminder;
+}
+
 export type SnoozeChoice = "1h" | "imorgon" | { date: string };
+
+export type SnoozeResult = {
+  reminder: Reminder;
+  previousSnoozedUntil?: string;
+};
 
 /**
  * Snabbval för Snooza-knappen: 1 timme (exakt), imorgon (morgon-dagsdelen)
  * eller valfritt datum (behåller påminnelsens ursprungliga klockslag).
  */
-export function snoozeReminderBy(id: string, choice: SnoozeChoice, now = new Date()): Reminder {
+export function snoozeReminderBy(id: string, choice: SnoozeChoice, now = new Date()): SnoozeResult {
   const reminder = requireOwned(id);
+  const previousSnoozedUntil = reminder.snoozedUntil;
   const tz = reminder.timezone;
   let until: Date;
   if (choice === "1h") {
@@ -163,7 +179,8 @@ export function snoozeReminderBy(id: string, choice: SnoozeChoice, now = new Dat
       tz
     );
   }
-  return snoozeReminder(id, until.toISOString());
+  const updated = snoozeReminder(id, until.toISOString());
+  return previousSnoozedUntil ? { reminder: updated, previousSnoozedUntil } : { reminder: updated };
 }
 
 export function snoozeReminder(id: string, untilIso: string): Reminder {
@@ -174,7 +191,27 @@ export function snoozeReminder(id: string, untilIso: string): Reminder {
   return reminder;
 }
 
-/** Mjuk borttagning – historiken bevaras, raden försvinner ur alla listor. */
+/**
+ * Ångra Snooza: återställ föregående snooze, eller ta bort den så förra
+ * schemat (dueAt) gäller igen.
+ */
+export function unsnoozeReminder(id: string, previousSnoozedUntil?: string | null): Reminder {
+  const reminder = requireOwned(id);
+  if (previousSnoozedUntil) {
+    if (Number.isNaN(Date.parse(previousSnoozedUntil))) throw new Error("Ogiltig tidpunkt att återställa.");
+    reminder.snoozedUntil = new Date(previousSnoozedUntil).toISOString();
+  } else {
+    delete reminder.snoozedUntil;
+  }
+  save();
+  return reminder;
+}
+
+/**
+ * Mjuk borttagning – historiken bevaras, raden försvinner ur alla listor.
+ * Inte en kundåtgärd i UI:t (Klar är enda sättet att avsluta). Behålls för
+ * admin, dataradering och kommandofältets ångra-efter-skapande.
+ */
 export function dismissReminder(id: string): Reminder {
   const reminder = requireOwned(id);
   reminder.status = "DISMISSED";
@@ -247,6 +284,35 @@ export function describeReminderDue(reminder: Reminder, now = new Date()): { ove
   }
   const capitalized = day.charAt(0).toUpperCase() + day.slice(1);
   return { overdue, text: `${capitalized} kl ${time}` };
+}
+
+/**
+ * Mänsklig snooze-tid för Ångra-raden: "imorgon kl. 09:00", "idag kl. 10:55".
+ * Egen sträng – rör inte Hem-etiketterna i describeReminderDue.
+ */
+export function describeSnoozeUntil(untilIso: string, timezone: string, now = new Date()): string {
+  const until = new Date(untilIso);
+  const dayDiff = Math.round(
+    (startOfLocalDay(until, timezone).getTime() - startOfLocalDay(now, timezone).getTime()) / 86_400_000
+  );
+  const time = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(until);
+  const day =
+    dayDiff === 0
+      ? "idag"
+      : dayDiff === 1
+        ? "imorgon"
+        : new Intl.DateTimeFormat("sv-SE", {
+            timeZone: timezone,
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+          }).format(until);
+  return `${day} kl. ${time}`;
 }
 
 /** Djuplänk till kopplad entitet – annars Hem. */

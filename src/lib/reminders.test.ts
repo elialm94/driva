@@ -22,11 +22,14 @@ import {
   completeReminder,
   createReminder,
   describeReminderDue,
+  describeSnoozeUntil,
   dismissReminder,
   listReminders,
   reminderVisibleFrom,
+  reopenReminder,
   snoozeReminder,
   snoozeReminderBy,
+  unsnoozeReminder,
   updateReminder,
 } from "./services/reminders";
 import { getBusinessActions } from "./services/actions";
@@ -386,12 +389,17 @@ describe("påminnelser i åtgärdsmotorn", () => {
     assert.match(row.subtitle, /Försenad – skulle gjorts igår kl 10:00/);
   });
 
-  it("klar och borttagen försvinner (historiken finns kvar)", () => {
+  it("klar försvinner (COMPLETED) och Ångra återställer raden", () => {
     const rem = create({ kind: "date", date: "2026-08-28" });
     completeReminder(rem.id, NOW);
     assert.ok(!attentionIds(NOW).includes(`reminder-${rem.id}`));
     assert.equal(db().reminders.find((r) => r.id === rem.id)?.status, "COMPLETED");
     assert.ok(db().reminders.find((r) => r.id === rem.id)?.completedAt);
+
+    reopenReminder(rem.id);
+    assert.ok(attentionIds(NOW).includes(`reminder-${rem.id}`));
+    assert.equal(db().reminders.find((r) => r.id === rem.id)?.status, "PENDING");
+    assert.equal(db().reminders.find((r) => r.id === rem.id)?.completedAt, undefined);
 
     const rem2 = create({ kind: "date", date: "2026-08-28" }, { title: "Annan sak" });
     dismissReminder(rem2.id);
@@ -411,12 +419,34 @@ describe("påminnelser i åtgärdsmotorn", () => {
 
   it("snoozeReminderBy: 1h är exakt, imorgon = 09:00 lokal, datum behåller klockslaget", () => {
     const rem = create({ kind: "date", date: "2026-08-29", time: "14:00" });
-    snoozeReminderBy(rem.id, "1h", NOW);
-    assert.equal(db().reminders.find((r) => r.id === rem.id)?.snoozedUntil, "2026-08-29T07:00:00.000Z");
-    snoozeReminderBy(rem.id, "imorgon", NOW);
-    assert.equal(db().reminders.find((r) => r.id === rem.id)?.snoozedUntil, "2026-08-30T07:00:00.000Z"); // 09:00 CEST
+    const first = snoozeReminderBy(rem.id, "1h", NOW);
+    assert.equal(first.reminder.snoozedUntil, "2026-08-29T07:00:00.000Z");
+    assert.equal(first.previousSnoozedUntil, undefined);
+    const second = snoozeReminderBy(rem.id, "imorgon", NOW);
+    assert.equal(second.reminder.snoozedUntil, "2026-08-30T07:00:00.000Z"); // 09:00 CEST
+    assert.equal(second.previousSnoozedUntil, "2026-08-29T07:00:00.000Z");
     snoozeReminderBy(rem.id, { date: "2026-09-01" }, NOW);
     assert.equal(db().reminders.find((r) => r.id === rem.id)?.snoozedUntil, "2026-09-01T12:00:00.000Z"); // 14:00 kvar
+  });
+
+  it("Ångra snooze återställer förra schemat", () => {
+    const rem = create({ kind: "date", date: "2026-08-29" });
+    const first = snoozeReminderBy(rem.id, "1h", NOW);
+    assert.ok(!attentionIds(NOW).includes(`reminder-${rem.id}`));
+    unsnoozeReminder(rem.id, first.previousSnoozedUntil);
+    assert.ok(attentionIds(NOW).includes(`reminder-${rem.id}`));
+    assert.equal(db().reminders.find((r) => r.id === rem.id)?.snoozedUntil, undefined);
+
+    const again = snoozeReminderBy(rem.id, "1h", NOW);
+    snoozeReminderBy(rem.id, "imorgon", NOW);
+    unsnoozeReminder(rem.id, again.reminder.snoozedUntil);
+    assert.equal(db().reminders.find((r) => r.id === rem.id)?.snoozedUntil, again.reminder.snoozedUntil);
+    assert.ok(!attentionIds(NOW).includes(`reminder-${rem.id}`));
+  });
+
+  it("describeSnoozeUntil: idag / imorgon med kl.", () => {
+    assert.equal(describeSnoozeUntil("2026-08-29T07:00:00.000Z", TZ, NOW), "idag kl. 09:00");
+    assert.equal(describeSnoozeUntil("2026-08-30T07:00:00.000Z", TZ, NOW), "imorgon kl. 09:00");
   });
 
   it("uppdatering flyttar tiden och nollställer snooze", () => {
