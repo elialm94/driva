@@ -15,7 +15,7 @@ import { Modal } from "./modal";
 import { SnoozeMenu } from "./snooze-menu";
 import { buttonClasses, Card, cx, SectionTitle } from "./ui";
 import { prettyReminderTitle } from "@/lib/reminders/parse";
-import { groupHomeReminders, type HomeReminderGroup, type HomeReminderItem } from "@/lib/services/reminders";
+import { groupHomeReminders, type HomeReminderGroup, type HomeReminderItem } from "@/lib/reminders/home-groups";
 
 /** Så många rader visas direkt – resten bakom "Visa alla". */
 const HOME_REMINDERS_VISIBLE = 3;

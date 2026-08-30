@@ -13,6 +13,14 @@ import {
   type WhenExpression,
 } from "../reminders/when";
 import { customerHref, invoiceHref, jobHref, quoteHref } from "../nav";
+import {
+  groupHomeReminders,
+  type HomeReminderGroup,
+  type HomeReminderItem,
+} from "../reminders/home-groups";
+
+export type { HomeReminderGroup, HomeReminderItem };
+export { groupHomeReminders };
 
 /**
  * Påminnelser: domäntjänst med företags- OCH användarskopning.
@@ -381,19 +389,6 @@ export function reminderTargetHref(reminder: Reminder): string {
 
 /* ------------------------- Hem: grupperade påminnelser ------------------------- */
 
-export type HomeReminderGroup = "overdue" | "today" | "upcoming" | "undated";
-
-export interface HomeReminderItem {
-  id: string;
-  title: string;
-  whenLabel: string;
-  group: HomeReminderGroup;
-  hasDate: boolean;
-  hasExplicitTime: boolean;
-  dueAt?: string;
-  timezone: string;
-}
-
 export function homeReminderGroup(reminder: Reminder, now = new Date()): HomeReminderGroup {
   if (!reminder.dueAt) return "undated";
   const dayDiff = Math.round(
@@ -422,23 +417,4 @@ export function toHomeReminderItem(reminder: Reminder, now = new Date()): HomeRe
 /** Aktiva påminnelser för Hem – samma källa som uppmärksamhet, ingen extra query. */
 export function listHomeReminders(now = new Date()): HomeReminderItem[] {
   return listReminders().map((r) => toHomeReminderItem(r, now));
-}
-
-export function groupHomeReminders(items: HomeReminderItem[]): {
-  overdue: HomeReminderItem[];
-  today: HomeReminderItem[];
-  upcoming: HomeReminderItem[];
-  undated: HomeReminderItem[];
-} {
-  const overdue: HomeReminderItem[] = [];
-  const today: HomeReminderItem[] = [];
-  const upcoming: HomeReminderItem[] = [];
-  const undated: HomeReminderItem[] = [];
-  for (const item of items) {
-    if (item.group === "overdue") overdue.push(item);
-    else if (item.group === "today") today.push(item);
-    else if (item.group === "upcoming") upcoming.push(item);
-    else undated.push(item);
-  }
-  return { overdue, today, upcoming, undated };
 }
