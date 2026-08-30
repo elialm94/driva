@@ -1145,7 +1145,26 @@ export interface ActivityEvent {
 
 /* ---------------------------------- Hemsida ---------------------------------- */
 
+/**
+ * Äldre palettfält från AI-generatorn (branschpaletter). Ersatt av
+ * `WebsiteDesign` (tema + accentfärg) men behålls i lagringen så att äldre
+ * sajter kan härledas till rätt utseende utan datamigrering.
+ */
 export type WebsiteTheme = "tra" | "studio" | "ren" | "el" | "konsult";
+
+/**
+ * Utseende = tema + accentfärg. Temat äger typografi, layout, ytor och hur
+ * accenten används; accenten är den ENDA fria färgvariabeln (kuraterad lista,
+ * aldrig fri färgväljare). Definitionerna bor i `src/lib/website-design.ts`.
+ */
+export type WebsiteThemeId = "klassisk" | "modern" | "robust" | "minimal";
+
+export type WebsiteAccentId = "gron" | "bla" | "tegel" | "sand" | "svart";
+
+export interface WebsiteDesign {
+  themeId: WebsiteThemeId;
+  accent: WebsiteAccentId;
+}
 
 export interface WebsiteSectionItem {
   title: string;
@@ -1179,6 +1198,18 @@ export interface Website {
   city?: string;
   status: "utkast" | "publicerad";
   theme: WebsiteTheme;
+  /**
+   * Publicerat utseende (tema + accent). Saknas på äldre sajter – då härleds
+   * det från det äldre `theme`-fältet (alla äldre sajter blir Klassisk, med
+   * en accent som ligger nära den gamla palettens färg).
+   */
+  design?: WebsiteDesign;
+  /**
+   * Utkast till utseende: uppdaterar förhandsvisningen direkt men den
+   * publicerade sajten först vid "Publicera ändringar" (samma utkast →
+   * publicera-modell som sajten i övrigt). Tas bort vid publicering.
+   */
+  draftDesign?: WebsiteDesign;
   /** Arrayordning = visningsordning på sajten. */
   sections: WebsiteSection[];
   /** Gemensam primärknapp i sidhuvud och startsektion. Saknas = DEFAULT_PRIMARY_CTA_LABEL. */

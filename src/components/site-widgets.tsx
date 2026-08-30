@@ -48,20 +48,28 @@ export type SectionListSection = Omit<WebsiteSection, "image" | "items"> & {
 
 /* ------------------------- Kontaktformulär på sajten ------------------------- */
 
+/**
+ * Formulärets utseendetokens – beräknas av renderaren utifrån temat.
+ * Endast presentation: fält, inskick, validering och Driva-integrationen är
+ * identiska i alla teman.
+ */
+export interface SiteFormTokens {
+  /** Klasser för <input>/<textarea>. */
+  field: string;
+  /** Klasser för skicka-knappen (temats primärknapp i full bredd). */
+  button: string;
+  /** Klasser för kvittenskortet efter lyckat inskick. */
+  confirm: string;
+  /** Klasser för felmeddelandet (ljus röd på mörka band). */
+  error: string;
+}
+
 export function SiteContactForm({
   interactive,
-  accent,
-  accentInk,
-  line,
-  bg,
-  ink,
+  tokens,
 }: {
   interactive: boolean;
-  accent: string;
-  accentInk: string;
-  line: string;
-  bg: string;
-  ink: string;
+  tokens: SiteFormTokens;
 }) {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,12 +84,10 @@ export function SiteContactForm({
     message: "Berätta kort vad du behöver hjälp med.",
   });
 
-  const inputStyle = { background: bg, border: `1px solid ${line}`, color: ink } as const;
-
   if (sent) {
     return (
-      <div className="rounded-2xl p-6 text-center" style={{ background: bg, border: `1px solid ${line}` }}>
-        <CheckCircle2 className="mx-auto size-8" style={{ color: accent }} />
+      <div className={tokens.confirm}>
+        <CheckCircle2 className="mx-auto size-8 text-(--site-accent)" />
         <p className="mt-2 text-[16px] font-semibold">Tack för ditt meddelande!</p>
         <p className="mt-1 text-[14px] opacity-70">Vi återkommer till dig så snart vi kan, oftast samma dag.</p>
       </div>
@@ -130,7 +136,7 @@ export function SiteContactForm({
           />
         </label>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 @2xl:grid-cols-2">
         <input
           required
           name="name"
@@ -139,8 +145,7 @@ export function SiteContactForm({
           autoComplete="name"
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
-          className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
-          style={inputStyle}
+          className={tokens.field}
           {...fieldProps("name", "sajtkontakt-namn-fel")}
         />
         <input
@@ -153,8 +158,7 @@ export function SiteContactForm({
           autoCapitalize="none"
           value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })}
-          className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
-          style={inputStyle}
+          className={tokens.field}
           {...fieldProps("email", "sajtkontakt-epost-fel")}
         />
       </div>
@@ -166,8 +170,7 @@ export function SiteContactForm({
         autoComplete="tel"
         value={form.phone}
         onChange={(e) => setForm({ ...form, phone: e.target.value })}
-        className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
-        style={inputStyle}
+        className={tokens.field}
       />
       <textarea
         required
@@ -177,20 +180,14 @@ export function SiteContactForm({
         aria-label="Beskriv vad du behöver hjälp med"
         value={form.message}
         onChange={(e) => setForm({ ...form, message: e.target.value })}
-        className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
-        style={inputStyle}
+        className={tokens.field}
         {...fieldProps("message", "sajtkontakt-meddelande-fel")}
       />
       <FieldError id="sajtkontakt-namn-fel">{errors.name}</FieldError>
       <FieldError id="sajtkontakt-epost-fel">{errors.email}</FieldError>
       <FieldError id="sajtkontakt-meddelande-fel">{errors.message}</FieldError>
-      {error ? <p className="text-[13px] font-medium" style={{ color: "#b42318" }}>{error}</p> : null}
-      <button
-        type="submit"
-        disabled={pending}
-        className="w-full rounded-xl py-3 text-[14px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-60"
-        style={{ background: accent, color: accentInk }}
-      >
+      {error ? <p className={tokens.error}>{error}</p> : null}
+      <button type="submit" disabled={pending} className={tokens.button}>
         {pending ? "Skickar …" : "Skicka meddelande"}
       </button>
     </form>

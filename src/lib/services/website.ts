@@ -5,10 +5,18 @@ import {
   type Customer,
   type Job,
   type Website,
+  type WebsiteDesign,
   type WebsiteSection,
   type WebsiteSectionItem,
   type WebsiteTheme,
 } from "../types";
+import {
+  WEBSITE_ACCENTS,
+  WEBSITE_THEMES,
+  assertWebsiteDesign,
+  publishedWebsiteDesign,
+  sameDesign,
+} from "../website-design";
 import { logActivity } from "./activity";
 import { findOrCreateCustomerByEmail } from "./customers";
 import { createJob, titleFromIncomingMessage } from "./jobs";
@@ -23,6 +31,8 @@ import { newQuoteHref } from "../nav";
 
 interface BranchTemplate {
   theme: WebsiteTheme;
+  /** Föreslaget utseende (tema + accent) för branschen. Användaren kan byta fritt. */
+  design: WebsiteDesign;
   taglines: string[];
   heroBody: (city: string) => string;
   services: WebsiteSectionItem[];
@@ -32,6 +42,7 @@ interface BranchTemplate {
 const BRANCHES: Record<string, BranchTemplate> = {
   snickeri: {
     theme: "tra",
+    design: { themeId: "klassisk", accent: "tegel" },
     taglines: ["Platsbyggt snickeri med känsla för detaljer", "Hantverk som håller i generationer"],
     heroBody: (city) =>
       `Vi ritar, bygger och monterar kök, garderober och platsbyggda möbler i ${city} med omnejd. Fast pris, tydlig offert och alltid BankID-signerat avtal.`,
@@ -45,6 +56,7 @@ const BRANCHES: Record<string, BranchTemplate> = {
   },
   foto: {
     theme: "studio",
+    design: { themeId: "minimal", accent: "svart" },
     taglines: ["Bilder som berättar er historia", "Fotografi med känsla och precision"],
     heroBody: (city) =>
       `Porträtt, företagsfoto och event i ${city}. Trygg process från idé till färdiga bilder – alltid med tydlig offert i förväg.`,
@@ -58,6 +70,7 @@ const BRANCHES: Record<string, BranchTemplate> = {
   },
   stad: {
     theme: "ren",
+    design: { themeId: "modern", accent: "gron" },
     taglines: ["Rent, punktligt och pålitligt", "Städning ni kan lita på"],
     heroBody: (city) =>
       `Hemstäd, flyttstäd och kontorsstäd i ${city}. Samma team varje gång, nöjd-kund-garanti och RUT-avdrag direkt på fakturan.`,
@@ -70,6 +83,7 @@ const BRANCHES: Record<string, BranchTemplate> = {
   },
   el: {
     theme: "el",
+    design: { themeId: "robust", accent: "sand" },
     taglines: ["Trygg el – installerat och klart", "Behörig elektriker nära dig"],
     heroBody: (city) =>
       `Auktoriserade elinstallationer i ${city}: belysning, elbilsladdare, säkringsskåp och felsökning. Fast pris och BankID-signerad offert.`,
@@ -82,6 +96,7 @@ const BRANCHES: Record<string, BranchTemplate> = {
   },
   konsult: {
     theme: "konsult",
+    design: { themeId: "modern", accent: "bla" },
     taglines: ["Rådgivning som gör skillnad", "Er partner för nästa steg"],
     heroBody: (city) =>
       `Vi hjälper företag i ${city} att växa – strategi, ekonomi och verksamhetsutveckling med konkreta resultat.`,
@@ -152,6 +167,7 @@ export function generateWebsite(description: string): Website {
     city,
     status: "utkast",
     theme: branch.theme,
+    design: branch.design,
     sections,
     createdAt: new Date().toISOString(),
     submissions: 0,
@@ -354,9 +370,37 @@ export function setSectionVisible(sectionId: string, visible: boolean): void {
   touchSite(site);
 }
 
+/**
+ * Väljer tema + accent. Ändringen är ett UTKAST: förhandsvisningen uppdateras
+ * direkt, den publika sajten först vid "Publicera ändringar". Rör aldrig
+ * innehållet – texter, tjänster, bilder, ordning och formulär är opåverkade.
+ */
+export function setWebsiteDesign(input: { themeId: unknown; accent: unknown }): WebsiteDesign {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att uppdatera");
+  const design = assertWebsiteDesign(input);
+  if (sameDesign(design, publishedWebsiteDesign(site))) {
+    // Tillbaka till det publicerade utseendet → inget utkast kvar att publicera.
+    delete site.draftDesign;
+  } else {
+    site.draftDesign = design;
+  }
+  touchSite(site);
+  return design;
+}
+
 export function publishWebsite(): Website {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att publicera");
+  if (site.draftDesign) {
+    const theme = WEBSITE_THEMES[site.draftDesign.themeId];
+    const accent = WEBSITE_ACCENTS[site.draftDesign.accent];
+    site.design = site.draftDesign;
+    delete site.draftDesign;
+    logActivity(`Hemsidans utseende byttes till ${theme.namn} med accentfärgen ${accent.namn.toLowerCase()}.`, {
+      entity: { type: "hemsida", id: site.id },
+    });
+  }
   site.status = "publicerad";
   site.publishedAt = new Date().toISOString();
   logActivity(`Hemsidan för ${site.businessName} publicerades.`, { entity: { type: "hemsida", id: site.id } });
