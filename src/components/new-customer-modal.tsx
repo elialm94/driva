@@ -21,11 +21,10 @@ export interface CreatedCustomer {
 }
 
 /**
- * Ny kund: bara namnet krävs – "Erik" → Skapa kund → klart. E-post, telefon
- * och adress är frivilliga genvägar. Personnummer (känsligt, behövs först
- * vid ROT/RUT) och företagsfälten bor under "+ Fler uppgifter"; fastigheter
- * under "+ Lägg till fastighet". Flöden som behöver mer frågar när det
- * behövs.
+ * Ny kund: bara namnet krävs – "Erik" → Skapa kund → klart. E-post, telefon,
+ * adress och personnummer är frivilliga. Personnummer syns alltid för
+ * privatperson (behövs först vid ROT/RUT). Företagsfälten bor under
+ * "+ Fler uppgifter"; fastigheter under "+ Lägg till fastighet".
  */
 export function NewCustomerModal({
   open,
@@ -85,7 +84,7 @@ export function NewCustomerModal({
       if (!result.ok) {
         if (result.field) setFieldError(result.field, result.error);
         if (result.field === "personalIdentityNumber") {
-          revealAndFocus("ny-kund-personnummer", () => setMoreOpen(true));
+          focusField("ny-kund-personnummer");
         } else if (result.field === "orgNumber") {
           revealAndFocus("ny-kund-orgnr", () => setMoreOpen(true));
         } else if (result.field === "propertyDesignation") {
@@ -186,51 +185,49 @@ export function NewCustomerModal({
           </button>
         )}
 
-        {moreOpen ? (
-          kind === "privat" ? (
+        {kind === "privat" ? (
+          <div>
+            <label className={labelCls} htmlFor="ny-kund-personnummer">
+              Personnummer
+            </label>
+            <input
+              id="ny-kund-personnummer"
+              name="personalIdentityNumber"
+              value={personnummer}
+              onChange={(e) => setPersonnummer(formatPersonnummer(e.target.value))}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="ÅÅÅÅMMDD-XXXX"
+              className={cx(inputCls, errors.personalIdentityNumber && invalidFieldCls)}
+              {...fieldProps("personalIdentityNumber", "ny-kund-personnummer-fel")}
+            />
+            <FieldError id="ny-kund-personnummer-fel">{errors.personalIdentityNumber}</FieldError>
+            <p className="mt-1 text-[12px] text-muted">Behövs först vid ROT/RUT – går att lägga till då.</p>
+          </div>
+        ) : moreOpen ? (
+          <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className={labelCls} htmlFor="ny-kund-personnummer">
-                Personnummer
+              <label className={labelCls} htmlFor="ny-kund-kontaktperson">
+                Kontaktperson
+              </label>
+              <input id="ny-kund-kontaktperson" name="contactPerson" autoComplete="name" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls} htmlFor="ny-kund-orgnr">
+                Org.nummer
               </label>
               <input
-                id="ny-kund-personnummer"
-                name="personalIdentityNumber"
-                value={personnummer}
-                onChange={(e) => setPersonnummer(formatPersonnummer(e.target.value))}
+                id="ny-kund-orgnr"
+                name="orgNumber"
                 inputMode="numeric"
                 autoComplete="off"
-                placeholder="ÅÅÅÅMMDD-XXXX"
-                className={cx(inputCls, errors.personalIdentityNumber && invalidFieldCls)}
-                {...fieldProps("personalIdentityNumber", "ny-kund-personnummer-fel")}
+                placeholder="556000-0000"
+                className={cx(inputCls, errors.orgNumber && invalidFieldCls)}
+                {...fieldProps("orgNumber", "ny-kund-orgnr-fel")}
               />
-              <FieldError id="ny-kund-personnummer-fel">{errors.personalIdentityNumber}</FieldError>
-              <p className="mt-1 text-[12px] text-muted">Behövs först vid ROT/RUT – går att lägga till då.</p>
+              <FieldError id="ny-kund-orgnr-fel">{errors.orgNumber}</FieldError>
             </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className={labelCls} htmlFor="ny-kund-kontaktperson">
-                  Kontaktperson
-                </label>
-                <input id="ny-kund-kontaktperson" name="contactPerson" autoComplete="name" className={inputCls} />
-              </div>
-              <div>
-                <label className={labelCls} htmlFor="ny-kund-orgnr">
-                  Org.nummer
-                </label>
-                <input
-                  id="ny-kund-orgnr"
-                  name="orgNumber"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="556000-0000"
-                  className={cx(inputCls, errors.orgNumber && invalidFieldCls)}
-                  {...fieldProps("orgNumber", "ny-kund-orgnr-fel")}
-                />
-                <FieldError id="ny-kund-orgnr-fel">{errors.orgNumber}</FieldError>
-              </div>
-            </div>
-          )
+          </div>
         ) : (
           <button
             type="button"
