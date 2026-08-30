@@ -6,6 +6,7 @@ import { markQuoteViewed } from "@/lib/services/quotes";
 import { kr, datumTid, datumLang, dagarTill } from "@/lib/format";
 import { QuoteDocument } from "@/components/quote-document";
 import { CompanyLogo } from "@/components/company-logo";
+import { signedWithBankIdBy } from "@/lib/status-labels";
 import { BankIDApproval, DeclineQuoteButton, QuoteQuestionButton } from "@/components/bankid-flow";
 import { DemoTag } from "@/components/ui";
 import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
@@ -70,12 +71,11 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
               <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
               <div className="flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-[15px] font-semibold text-ok">Offerten är godkänd</p>
+                  <p className="text-[15px] font-semibold text-ok">Offerten är signerad</p>
                   {signature.environment === "mock" ? <DemoTag>Demo-signering</DemoTag> : null}
                 </div>
                 <p className="mt-0.5 text-[14px] text-soft">
-                  Tack! Din BankID-signering är registrerad. Godkänd av {signature.signerName},{" "}
-                  {datumTid(signature.signedAt)}.
+                  Tack! {signedWithBankIdBy(signature.signerName)}, {datumTid(signature.signedAt)}.
                 </p>
                 <a
                   href={`/offert/${quote.token}/underlag`}

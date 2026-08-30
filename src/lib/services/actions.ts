@@ -47,6 +47,7 @@ import {
 } from "./payment-details";
 import { payerAccountLabel } from "./payment-files";
 import { amountIsCertain, isPaymentInFlight, isReadyToApproveNow, needsAmountReview } from "../inbox/workflow";
+import { quoteWaitingLabel } from "../status-labels";
 
 /**
  * Central åtgärdsmotor: EN härledning av "vad behöver jag göra?" ur riktig
@@ -459,7 +460,7 @@ function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) 
           category: "invoice",
           icon: "alert",
           title: `${invoiceLabel(inv)} kunde inte skickas`,
-          subtitle: `${customer.name} · ${kr(toPay)} · utfärdad men aldrig levererad`,
+          subtitle: `${customer.name} · ${kr(toPay)} · mejlet nådde aldrig kunden`,
           href: invoiceHref(inv.id),
           cta: { type: "retryInvoiceEmail", label: "Skicka igen", invoiceId: inv.id },
           amount: toPay,
@@ -586,7 +587,7 @@ function collectQuotes(ranked: Ranked[], watching: WatchingItem[]) {
           category: "quote",
           icon: "clock",
           title: `Offert #${q.number} har väntat i ${days} dagar`,
-          subtitle: `${customer.name} · ${kr(toPay)} · väntar på BankID`,
+          subtitle: `${customer.name} · ${kr(toPay)} · ${quoteWaitingLabel({ viewed: Boolean(q.viewedAt) })}`,
           href: quoteHref(q.id),
           // Skickar en påminnelse via e-post – etiketten säger vad som händer.
           cta: { type: "followUpQuote", label: "Skicka påminnelse", quoteId: q.id },
@@ -604,11 +605,13 @@ function collectQuotes(ranked: Ranked[], watching: WatchingItem[]) {
         },
       });
     } else {
+      // "Öppnad · väntar på signering": vad som hänt + vad vi väntar på –
+      // metoden (BankID) hör hemma i tidslinjen, inte här.
       watching.push({
         id: `quote-open-${q.id}`,
         category: "quote",
         title: `Offert #${q.number} · ${kr(toPay)}`,
-        subtitle: `${customer.name} · väntar på BankID${q.viewedAt ? " · öppnad av kunden" : ""}`,
+        subtitle: `${customer.name} · ${quoteWaitingLabel({ viewed: Boolean(q.viewedAt) })}`,
         href: quoteHref(q.id),
         amount: toPay,
         date: (q.sentAt ?? q.createdAt).slice(0, 10),

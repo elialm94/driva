@@ -1,9 +1,11 @@
 import { db } from "../store";
+import type { Invoice, Job, Quote } from "../types";
 import { countsTowardInvoiced, invoiceTotals, isOpenReceivable, quoteTotals } from "./data";
 import { invoiceHref, jobHref, quoteHref } from "../nav";
 import { invoiceNumberLabel } from "../invoices/display";
 import type { CustomerActivityKind, CustomerActivityRow, CustomerMoneyLine } from "../customer-activity-model";
 import { customerActivityClusters, customerActivityMembers } from "./business-chain";
+import { INVOICE_CREDIT_NOTE, INVOICE_STATUS, JOB_STATUS, QUOTE_STATUS } from "../status-labels";
 
 export type { CustomerActivityKind, CustomerActivityRow, CustomerMoneyLine } from "../customer-activity-model";
 export { ACTIVITY_FILTER_MIN } from "../customer-activity-model";
@@ -14,6 +16,21 @@ function eventTime(iso: string): string {
 
 function quoteTitle(number: number, title?: string): string {
   return title ? `Offert #${number} · ${title}` : `Offert #${number}`;
+}
+
+function quoteStatusLabel(quote: Quote): string {
+  return QUOTE_STATUS[quote.status].label;
+}
+
+function invoiceStatusLabel(invoice: Invoice): string {
+  if (invoice.type === "kredit") return INVOICE_CREDIT_NOTE.label;
+  return INVOICE_STATUS[invoice.status].label;
+}
+
+function jobStatusLabel(job: Job): string {
+  if (job.status === "klart") return JOB_STATUS.klart.label;
+  if (job.status === "pagar") return JOB_STATUS.pagar.label;
+  return JOB_STATUS.planerat.label;
 }
 
 /**

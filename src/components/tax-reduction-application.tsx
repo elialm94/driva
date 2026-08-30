@@ -157,7 +157,7 @@ export function TaxReductionApplicationCard({
               {cse.application.underlagSummary}
             </pre>
           ) : null}
-          <p className="mt-3 text-[13px] text-muted">Markera vad Skatteverket beslutade.</p>
+          <p className="mt-3 text-[13px] text-muted">Väntar på Skatteverket – markera beslutet när det kommer.</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               className={buttonClasses("secondary", "sm")}

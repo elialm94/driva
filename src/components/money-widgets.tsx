@@ -210,7 +210,7 @@ export function FollowUpButton({ quoteId }: { quoteId: string }) {
         }
       >
         <p className="px-6 py-4 text-[14px] leading-relaxed text-soft">
-          Kunden får ett mejl med en påminnelse om offerten och länken för att svara med BankID.
+          Kunden får ett mejl med en påminnelse om offerten och länken där den kan signeras eller avböjas.
         </p>
         {error ? <p className="px-6 pb-4 text-[13px] font-medium text-danger">{error}</p> : null}
       </Modal>

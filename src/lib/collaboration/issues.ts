@@ -125,6 +125,6 @@ export function clientHealth(attention: BusinessAction[]): ClientHealth {
 
 export function healthLabel(health: ClientHealth, count: number): string {
   if (health === "klart") return "Klart";
-  if (health === "forsenat") return "Försenat";
+  if (health === "forsenat") return "Brådskande";
   return count === 1 ? "1 sak" : `${count} saker`;
 }

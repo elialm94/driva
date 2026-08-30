@@ -3,6 +3,7 @@ import { kr, datumLang } from "@/lib/format";
 import { Badge, Card, cx } from "./ui";
 import { GenerateVatReportButton, MarkVatDeclaredButton } from "./bokforing-widgets";
 import { vatChecklist, type VatPeriodSummary } from "@/lib/accounting/vat";
+import { VAT_PERIOD_STATE } from "@/lib/status-labels";
 
 export function MomsPeriods({ periods, readOnly }: { periods: VatPeriodSummary[]; readOnly?: boolean }) {
   return (
@@ -17,10 +18,8 @@ export function MomsPeriods({ periods, readOnly }: { periods: VatPeriodSummary[]
                 <div className="flex items-center gap-2.5">
                   <Landmark className="size-4.5 text-muted" />
                   <h3 className="text-[15px] font-semibold">{p.period.label}</h3>
-                  <Badge
-                    tone={p.state === "deklarerad" ? "ok" : p.state === "att_deklarera" ? "warn" : "neutral"}
-                  >
-                    {p.state === "deklarerad" ? "✓ Deklarerad" : p.state === "att_deklarera" ? "Att deklarera" : "Pågår"}
+                  <Badge tone={VAT_PERIOD_STATE[p.state].tone}>
+                    {p.state === "deklarerad" ? `✓ ${VAT_PERIOD_STATE.deklarerad.label}` : VAT_PERIOD_STATE[p.state].label}
                   </Badge>
                 </div>
                 <p className="mt-1 text-[13px] text-soft">

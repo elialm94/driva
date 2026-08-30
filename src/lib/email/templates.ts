@@ -37,7 +37,7 @@ export function quoteEmail(input: QuoteEmailInput): { subject: string; text: str
   const subject = `Offert #${input.quoteNumber} från ${input.businessName}`;
   const valid = datumLang(input.validUntil);
   const bankid = input.bankidEnabled
-    ? "Du godkänner offerten med BankID via länken."
+    ? "Du signerar offerten med BankID via länken."
     : "Öppna länken för att läsa offerten.";
   const text = [
     `Hej ${input.customerName},`,

@@ -372,7 +372,7 @@ function ManagedDomainCard({
           </p>
           {live ? (
             <p className="mt-1.5 flex items-center gap-1.5 text-[14px] font-medium text-ok">
-              <Check className="size-4" /> Live
+              <Check className="size-4" /> Igång
             </p>
           ) : (
             <p className="mt-1.5 text-[13px] text-soft">Vi kopplar adressen till din hemsida.</p>
@@ -683,7 +683,7 @@ export function DomainSidebarCard({
             <>
               <p className="truncate font-mono text-[13px] font-medium text-ink">{hostname}</p>
               <p className="mt-0.5 text-[13px] text-soft">
-                {live ? "Live" : "Kopplas"}
+                {live ? "Igång" : "Kopplas"}
                 {demo ? " · demo" : ""}
               </p>
             </>
@@ -711,7 +711,7 @@ export function DomainSettingsCard({
       <div>
         <p className="text-[13px] font-medium text-muted">Webbadress</p>
         <p className="font-mono text-[14px] font-medium text-ink">{summary.hostname}</p>
-        <p className="text-[13px] text-soft">{summary.live ? "Live" : "Kopplas"}</p>
+        <p className="text-[13px] text-soft">{summary.live ? "Igång" : "Kopplas"}</p>
       </div>
       <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => navigate("/hemsida/doman")}>
         Öppna domänsidan →

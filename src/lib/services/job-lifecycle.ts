@@ -68,7 +68,8 @@ export function jobEconomyLine(input: { remaining: number; unpaid: number; paid:
   label: string;
   kind: JobEconomyKind;
 } {
-  if (input.remaining > 0) return { label: `${kr(input.remaining)} kvar`, kind: "kvar" };
+  // "kvar att fakturera" – inte bara "kvar", som kan läsas som kvar att betala.
+  if (input.remaining > 0) return { label: `${kr(input.remaining)} kvar att fakturera`, kind: "kvar" };
   if (input.unpaid > 0) return { label: `${kr(input.unpaid)} väntar på betalning`, kind: "vantar" };
   if (input.paid > 0) return { label: "Betalt ✓", kind: "betalt" };
   return { label: "—", kind: "tom" };

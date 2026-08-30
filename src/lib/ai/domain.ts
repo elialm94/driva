@@ -697,7 +697,7 @@ export function requestSendQuote(quoteId: string): DomainResult {
     card: {
       kind: "confirm",
       actionId: action.id,
-      summary: "Offerten skickas till kunden med länk för BankID-godkännande.",
+      summary: "Offerten skickas till kunden med en länk där den kan signeras med BankID.",
       rows: [
         { label: `Offert #${quote.number}`, value: kr(t.toPay) },
         { label: "Till", value: customer.name },
@@ -758,13 +758,13 @@ export function requestSendInvoice(invoiceId: string): DomainResult {
 export function requestRemindLate(): DomainResult {
   const late = db().invoices.filter(isOverdue);
   if (late.length === 0) {
-    return { ok: true, text: "Inga fakturor är försenade just nu – allt ser bra ut.", forModel: { count: 0 } };
+    return { ok: true, text: "Inga fakturor är förfallna just nu – allt ser bra ut.", forModel: { count: 0 } };
   }
   const action: PendingAssistantAction = { id: uid(), type: "paminn_forsenade", invoiceIds: late.map((i) => i.id) };
   addPending(action);
   return {
     ok: true,
-    text: `Jag hittade ${late.length === 1 ? "1 försenad faktura" : `${late.length} försenade fakturor`}. Ska jag skicka påminnelser?`,
+    text: `Jag hittade ${late.length === 1 ? "1 förfallen faktura" : `${late.length} förfallna fakturor`}. Ska jag skicka påminnelser?`,
     card: {
       kind: "confirm",
       actionId: action.id,
@@ -785,7 +785,7 @@ export function requestFollowUpQuotes(minDays = 7): DomainResult {
   if (waiting.length === 0) {
     return {
       ok: true,
-      text: `Ingen offert har väntat på BankID i mer än ${minDays} dagar.`,
+      text: `Ingen offert har väntat på signering i mer än ${minDays} dagar.`,
       forModel: { count: 0 },
     };
   }
@@ -793,7 +793,7 @@ export function requestFollowUpQuotes(minDays = 7): DomainResult {
   addPending(action);
   return {
     ok: true,
-    text: "Dessa offerter väntar fortfarande på BankID-godkännande. Ska jag skicka en vänlig påminnelse?",
+    text: "Dessa offerter väntar fortfarande på signering. Ska jag skicka en vänlig påminnelse?",
     card: {
       kind: "confirm",
       actionId: action.id,
@@ -880,7 +880,7 @@ export function companyStatusResult(): DomainResult {
     ok: true,
     text: `Det går bra. Du har fakturerat ${kr(s.revenueMonth)} den här månaden och ${kr(s.revenueYear)} i år, med en uppskattad vinst på ${kr(
       s.profitYear
-    )}. ${kr(s.unpaidSum)} väntar på betalning${s.overdueCount > 0 ? ` (varav ${kr(s.overdueSum)} är försenat)` : ""} och ${kr(
+    )}. ${kr(s.unpaidSum)} väntar på betalning${s.overdueCount > 0 ? ` (varav ${kr(s.overdueSum)} är förfallet)` : ""} och ${kr(
       s.upcomingIncome
     )} är på väg in från godkända offerter som inte fakturerats klart. På banken finns ${kr(f.bank)}, varav ungefär ${kr(f.available)} är tillgängligt efter moms, skatt och räkningar.`,
     card: { kind: "links", links: [{ label: "Öppna Ekonomi", href: "/ekonomi" }] },
@@ -1584,7 +1584,7 @@ export function requestSubmitSupplierPayment(paymentId: string): DomainResult {
       actionId: action.id,
       summary: "Betalningen skickas till banken. Driva hittar aldrig på att den är betald.",
       rows: supplierPaymentConfirmRows(payment, invoice),
-      confirmLabel: "Skicka till bank",
+      confirmLabel: "Skicka till banken",
       state: "vantar",
     },
     forModel: { pendingConfirmation: true, paymentId: payment.id, submitted: false },

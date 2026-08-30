@@ -1,5 +1,12 @@
 import { datumKort, kr } from "../format";
 import { CONFIDENCE_THRESHOLDS } from "../autopilot";
+import {
+  INBOX_AMOUNT_REVIEW,
+  INBOX_ITEM_STATUS,
+  PAYMENT_DETAILS_CAUSE,
+  SUPPLIER_INVOICE_LIFECYCLE,
+  supplierPaymentStatus,
+} from "../status-labels";
 import type { PaymentDetailsCause } from "../services/payment-details";
 import type {
   Expense,
@@ -33,25 +40,11 @@ export function isPaymentInFlight(status: SupplierPaymentStatus): boolean {
 /** Hjälptext som alltid följer med "Bankfil skapad" – aldrig fejkad bankstatus. */
 export const PAYMENT_FILE_HELP_TEXT = "Ladda upp filen i din internetbank och godkänn betalningen där.";
 
+/** Betalningsinstruktionens etikett – bankfil-livscykeln, sen central vokabulär. */
 export function supplierPaymentUiLabel(status: SupplierPaymentStatus, scheduledDate?: string): string {
-  switch (status) {
-    case "DRAFT":
-    case "READY":
-      return "Redo att betala";
-    case "PAYMENT_FILE_CREATED":
-      return "Bankfil skapad";
-    case "SUBMITTED_TO_BANK":
-    case "AWAITING_APPROVAL":
-      return "Skickad till bank";
-    case "SCHEDULED":
-      return scheduledDate ? `Bokförd · Betalas ${datumKort(scheduledDate)}` : "Schemalagd";
-    case "PAID":
-      return "Betald";
-    case "FAILED":
-      return "Betalningen misslyckades";
-    case "CANCELLED":
-      return "Avbruten";
-  }
+  if (status === "PAYMENT_FILE_CREATED") return "Bankfil skapad";
+  if (status === "DRAFT" || status === "READY") return "Redo att betala";
+  return supplierPaymentStatus(status, { scheduledDate, formatDate: datumKort }).label;
 }
 
 export function classifyEconomicDocument(input: {
@@ -127,53 +120,53 @@ export function inboxDisplayStatus(input: {
   const { item, invoice, payment, detailsCause } = input;
 
   if (payment?.status === "FAILED") {
-    return { label: "Betalningen misslyckades", tone: "danger" };
+    return supplierPaymentStatus("FAILED");
   }
   if (payment?.status === "PAID" || invoice?.status === "betald") {
-    return { label: "Betald", tone: "ok" };
+    return SUPPLIER_INVOICE_LIFECYCLE.BETALD;
   }
   if (payment?.status === "PAYMENT_FILE_CREATED") {
     return { label: "Bankfil skapad", tone: "info" };
   }
   if (payment && isPaymentInFlight(payment.status)) {
-    if (payment.status === "SCHEDULED") {
-      return { label: `Bokförd · Betalas ${datumKort(payment.scheduledDate)}`, tone: "info" };
-    }
-    return { label: "Skickad till bank", tone: "info" };
+    // "Betalas 3 sep" – samma ord som Ekonomi-registret för samma instruktion.
+    return supplierPaymentStatus(payment.status, { scheduledDate: payment.scheduledDate, formatDate: datumKort });
   }
   if (payment?.destinationChanged || detailsCause === "CHANGED") {
-    return { label: "Kontrollera bankuppgifter", tone: "danger" };
+    return PAYMENT_DETAILS_CAUSE.CHANGED;
   }
-  // Orsaksspecifik status i stället för ett generiskt "Saknar bankuppgifter".
+  // Orsaksspecifik status i stället för ett generiskt "uppgifter saknas".
   if (invoice && detailsCause === "AWAITING_SUPPLIER") {
-    return { label: "Väntar på leverantören", tone: "info" };
+    return PAYMENT_DETAILS_CAUSE.AWAITING_SUPPLIER;
   }
   if (invoice?.accountingStatus === "bokford" && detailsCause === "EXTRACTION_UNCERTAIN") {
-    return { label: "Kontrollera betalningsuppgifter", tone: "warn" };
+    return PAYMENT_DETAILS_CAUSE.EXTRACTION_UNCERTAIN;
   }
   if (invoice?.accountingStatus === "bokford" && detailsCause === "MISSING") {
-    return { label: "Väntar på betalningsuppgifter", tone: "warn" };
+    return PAYMENT_DETAILS_CAUSE.MISSING;
   }
   if (invoice && invoice.accountingStatus === "bokford" && !hasRecipientAccount(invoice, payment)) {
-    return { label: "Saknar bankuppgifter", tone: "warn" };
+    return PAYMENT_DETAILS_CAUSE.MISSING;
   }
   if (needsAmountReview(item) && !invoice) {
-    return { label: "Kontrollera belopp", tone: "warn" };
+    return INBOX_AMOUNT_REVIEW;
   }
   if (invoice?.accountingStatus === "bokford" && (payment?.status === "READY" || payment?.status === "DRAFT")) {
-    return { label: "Bokförd · Redo att betala", tone: "warn" };
+    return { label: "Bokförd · Redo att betala", tone: SUPPLIER_INVOICE_LIFECYCLE.REDO_ATT_BETALA.tone };
+  }
   }
   if (invoice?.accountingStatus === "bokford" && !payment) {
+    // Ingen betalning är planerad ännu – lova inte "Betalas", säg förfallodatum.
     return hasRecipientAccount(invoice)
-      ? { label: `Bokförd · Betalas ${datumKort(invoice.dueDate)}`, tone: "info" }
-      : { label: "Saknar bankuppgifter", tone: "warn" };
+      ? { label: `Bokförd · Förfaller ${datumKort(invoice.dueDate)}`, tone: "info" }
+      : PAYMENT_DETAILS_CAUSE.MISSING;
   }
   if (item.documentType === "kvitto" && item.status === "bokford") {
-    return { label: "Bokförd", tone: "ok" };
+    return INBOX_ITEM_STATUS.bokford;
   }
-  if (item.status === "bokford") return { label: "Bokförd", tone: "ok" };
-  if (item.status === "behandlad") return { label: "Behandlad", tone: "neutral" };
-  return { label: "Ny", tone: "info" };
+  if (item.status === "bokford") return INBOX_ITEM_STATUS.bokford;
+  if (item.status === "behandlad") return INBOX_ITEM_STATUS.behandlad;
+  return INBOX_ITEM_STATUS.ny;
 }
 
 export function hasRecipientAccount(invoice?: SupplierInvoice, payment?: SupplierPayment): boolean {

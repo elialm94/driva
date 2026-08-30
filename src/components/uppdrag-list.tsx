@@ -43,9 +43,10 @@ const LIFECYCLE_CHIPS: [JobLifecycleFilter, string][] = [
   ["arkiverade", "Arkiverade"],
 ];
 
+// Samma ordförråd som ekonomiraden: kvar att fakturera / väntar på betalning / betalt.
 const ECONOMY_CHIPS: [JobEconomyFilter, string][] = [
-  ["kvar", "Kvar"],
-  ["vantar", "Väntar"],
+  ["kvar", "Kvar att fakturera"],
+  ["vantar", "Väntar på betalning"],
   ["betalt", "Betalt"],
 ];
 
@@ -136,7 +137,7 @@ export function UppdragList({
           text={
             query.q || query.lifecycle !== "aktiva" || query.economy !== "alla"
               ? "Prova ett annat sökord eller ta bort ett filter."
-              : "När en kund godkänner en offert med BankID dyker uppdraget upp här. Du kan också skapa ett själv."
+              : "När en kund signerar en offert dyker uppdraget upp här. Du kan också skapa ett själv."
           }
         />
       ) : (

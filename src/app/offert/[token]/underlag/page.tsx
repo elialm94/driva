@@ -61,7 +61,7 @@ export default async function SigningEvidencePage(props: PageProps<"/offert/[tok
               </div>
               <div>
                 <h1 className="text-[20px] font-semibold tracking-tight">Signeringsunderlag</h1>
-                <p className="text-[13px] text-soft">Verifierbart underlag för BankID-godkännandet</p>
+                <p className="text-[13px] text-soft">Verifierbart underlag för BankID-signeringen</p>
               </div>
             </div>
           </div>
@@ -73,7 +73,7 @@ export default async function SigningEvidencePage(props: PageProps<"/offert/[tok
                   <ShieldCheck className="size-3.5" /> Dokumentet är oförändrat sedan signeringen
                 </Badge>
               ) : (
-                <Badge tone="danger">Varning: dokumentet matchar inte signerad version</Badge>
+                <Badge tone="danger">Dokumentet matchar inte den signerade versionen</Badge>
               )}
               {signature.environment === "mock" ? <DemoTag>Demo-signatur</DemoTag> : null}
             </div>
@@ -104,7 +104,7 @@ export default async function SigningEvidencePage(props: PageProps<"/offert/[tok
               <p className="mt-1">
                 Vid signeringen låstes offertversionen och en kryptografisk kontrollsumma (SHA-256) av hela innehållet
                 sparades tillsammans med BankID-signaturen. Genom att räkna om kontrollsumman kan man när som helst styrka
-                att dokumentet inte ändrats efter godkännandet. I produktion sparas även BankID:s fullständiga
+                att dokumentet inte ändrats efter signeringen. I produktion sparas även BankID:s fullständiga
                 signaturbevis (XML-DSig) och OCSP-svar, som knyter signeringen till undertecknarens identitet.
               </p>
               {signature.environment === "mock" ? (

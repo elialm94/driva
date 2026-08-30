@@ -8,6 +8,19 @@ import { getBusinessActions, type BusinessAction } from "./actions";
 import { indexActionsBySource, issueForAction } from "./action-issue";
 import { paymentDetailsInfo } from "./payment-details";
 import { invoicesReadyForPaymentFile, paymentFileBlockersForInvoice } from "./payment-files";
+import {
+  EXPENSE_STATUS,
+  INVOICE_CREDIT_NOTE,
+  INVOICE_STATUS,
+  INVOICE_STATUS_FILTER,
+  PAYMENT_DETAILS_CAUSE,
+  QUOTE_STATUS,
+  QUOTE_STATUS_FILTER,
+  SUPPLIER_INVOICE_LIFECYCLE,
+  TX_STATUS,
+  invoiceOverdueLabel,
+  supplierPaymentStatus,
+} from "../status-labels";
 
 /**
  * Läsmodeller för Ekonomi-registret: en genomläsning av lagret per flik,
@@ -53,11 +66,11 @@ export type QuoteStatusFilter = "alla" | "utkast" | "skickad" | "godkand" | "avb
 
 export const QUOTE_STATUS_OPTIONS: [QuoteStatusFilter, string][] = [
   ["alla", "Alla"],
-  ["utkast", "Utkast"],
-  ["skickad", "Väntar på BankID"],
-  ["godkand", "Godkända"],
-  ["avbojd", "Avböjda"],
-  ["utgangen", "Utgångna"],
+  ["utkast", QUOTE_STATUS_FILTER.utkast],
+  ["skickad", QUOTE_STATUS_FILTER.skickad],
+  ["godkand", QUOTE_STATUS_FILTER.godkand],
+  ["avbojd", QUOTE_STATUS_FILTER.avbojd],
+  ["utgangen", QUOTE_STATUS_FILTER.utgangen],
 ];
 
 export interface QuoteTableRow {
@@ -73,13 +86,8 @@ export interface QuoteTableRow {
   statusTone: StatusTone;
 }
 
-const QUOTE_STATUS_META: Record<Quote["status"], { label: string; tone: StatusTone }> = {
-  utkast: { label: "Utkast", tone: "neutral" },
-  skickad: { label: "Väntar på BankID", tone: "warn" },
-  godkand: { label: "Godkänd med BankID", tone: "ok" },
-  avbojd: { label: "Avböjd", tone: "danger" },
-  utgangen: { label: "Utgången", tone: "neutral" },
-};
+// Central vokabulär (status-labels.ts): samma ord som badge och filter.
+const QUOTE_STATUS_META: Record<Quote["status"], { label: string; tone: StatusTone }> = QUOTE_STATUS;
 
 export function listQuotesForTable(
   input: { q?: string; status?: QuoteStatusFilter; page?: number; pageSize?: number } = {}
@@ -122,11 +130,11 @@ export type InvoiceStatusFilter = "alla" | "utkast" | "obetald" | "forsenad" | "
 
 export const INVOICE_STATUS_OPTIONS: [InvoiceStatusFilter, string][] = [
   ["alla", "Alla"],
-  ["utkast", "Utkast"],
-  ["obetald", "Obetalda"],
-  ["forsenad", "Försenade"],
-  ["betald", "Betalda"],
-  ["kredit", "Krediterade"],
+  ["utkast", INVOICE_STATUS_FILTER.utkast],
+  ["obetald", INVOICE_STATUS_FILTER.obetald],
+  ["forsenad", INVOICE_STATUS_FILTER.forfallen],
+  ["betald", INVOICE_STATUS_FILTER.betald],
+  ["kredit", INVOICE_STATUS_FILTER.kredit],
 ];
 
 export interface InvoiceTableRow {
@@ -143,21 +151,10 @@ export interface InvoiceTableRow {
 }
 
 function invoiceStatusMeta(inv: Invoice): { label: string; tone: StatusTone } {
-  // Speglar InvoiceStatusBadge: kredit är ingen fordran och kan aldrig vara försenad.
-  if (inv.type === "kredit") return { label: "Kreditfaktura", tone: "neutral" };
-  if (isOverdue(inv)) return { label: `Försenad ${daysOverdue(inv)} dagar`, tone: "danger" };
-  switch (inv.status) {
-    case "utkast":
-      return { label: "Utkast", tone: "neutral" };
-    case "skickad":
-      return { label: "Skickad", tone: "info" };
-    case "delbetald":
-      return { label: "Delbetald", tone: "warn" };
-    case "betald":
-      return { label: "Betald", tone: "ok" };
-    case "krediterad":
-      return { label: "Krediterad", tone: "neutral" };
-  }
+  // Speglar InvoiceStatusBadge: kredit är ingen fordran och kan aldrig vara förfallen.
+  if (inv.type === "kredit") return INVOICE_CREDIT_NOTE;
+  if (isOverdue(inv)) return invoiceOverdueLabel(daysOverdue(inv));
+  return INVOICE_STATUS[inv.status];
 }
 
 function invoiceMatchesFilter(inv: Invoice, filter: InvoiceStatusFilter): boolean {
@@ -338,16 +335,16 @@ export function listExpensesForTable(
       const hay = `${e.supplier} ${e.description ?? ""} ${categoryLabel}`.toLowerCase();
       if (!hay.includes(q)) continue;
     }
-    // Konkret åtgärdsetikett från motorn ("Saknar kvitto", "Välj kategori").
+    // Konkret åtgärdsetikett från motorn ("Kvitto saknas", "Välj kategori").
     const action = bucket === "atgard" ? attention.get(`expense:${e.id}`) : undefined;
     const meta: { label: string; tone: StatusTone } =
       e.status === "bokford"
-        ? { label: e.receiptId ? "Kvitto · Bokfört" : "Bokförd", tone: "ok" }
+        ? e.receiptId
+          ? { label: "Kvitto · Bokfört", tone: "ok" }
+          : EXPENSE_STATUS.bokford
         : action
           ? { label: issueForAction(action), tone: "warn" }
-          : e.status === "saknar_kvitto"
-            ? { label: "Saknar kvitto", tone: "warn" }
-            : { label: "Välj kategori", tone: "warn" };
+          : EXPENSE_STATUS[e.status];
     rows.push({
       id: e.id,
       kind: "utgift",
@@ -430,11 +427,10 @@ export interface BankTableRow {
   statusTone: StatusTone;
 }
 
+// Central vokabulär (status-labels.ts) + "matchad" som bara finns i registret.
 const TX_STATUS_META: Record<string, { label: string; tone: StatusTone }> = {
-  ny: { label: "Ny", tone: "neutral" },
+  ...TX_STATUS,
   matchad: { label: "Matchad", tone: "info" },
-  bokford: { label: "Bokförd", tone: "ok" },
-  behover_atgard: { label: "Behöver åtgärd", tone: "warn" },
 };
 
 export function listBankForTable(

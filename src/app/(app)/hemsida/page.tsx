@@ -100,7 +100,8 @@ export default async function WebsitePage() {
               <span className="min-w-0 break-all font-mono text-[12px]">
                 {liveHost ? liveHost : published ? "driva.site/" + site.slug : "Förhandsvisning"}
               </span>
-              <Badge tone={published ? "ok" : "warn"}>{published ? "Publicerad" : "Utkast"}</Badge>
+              {/* Utkast är grått som överallt annars – gult betyder "väntar/uppmärksamhet". */}
+              <Badge tone={published ? "ok" : "neutral"}>{published ? "Publicerad" : "Utkast"}</Badge>
             </div>
             <CopyLinkButton path="/sajt" label="Kopiera länk" />
           </div>

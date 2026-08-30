@@ -38,6 +38,7 @@ import { hrefWithNav, invoiceHref, sanitizeReturnLabel, sanitizeReturnTo } from 
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { quoteChainState } from "@/lib/services/business-chain";
 import { QuoteChainActions } from "@/components/quote-chain-actions";
+import { QUOTE_TIMELINE, signedWithBankIdBy } from "@/lib/status-labels";
 
 export const metadata = { title: "Offert" };
 
@@ -197,10 +198,11 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
         <Card className="mb-6 flex items-start gap-3 border-warn/20 bg-warn-soft/40 px-5 py-4">
           <ShieldCheck className="mt-0.5 size-5 shrink-0 text-warn" />
           <div className="text-[14px] leading-relaxed text-soft">
-            <span className="font-medium text-ink">Väntar på signering.</span> Skickad {quote.sentAt ? relativ(quote.sentAt) : ""}
+            <span className="font-medium text-ink">Offerten är skickad och väntar på att {customer.name} ska signera.</span>{" "}
+            Skickad {quote.sentAt ? relativ(quote.sentAt) : ""}
             {quote.viewedAt ? `, öppnad av kunden ${relativ(quote.viewedAt)}` : ", inte öppnad ännu"}.
             {quote.followUps.length > 0 ? ` ${quote.followUps.length} påminnelse${quote.followUps.length > 1 ? "r" : ""} skickad.` : ""}{" "}
-            I demoläget kan du öppna kundvyn själv och genomföra BankID-flödet.
+            I demoläget kan du öppna kundvyn själv och signera som kunden.
           </div>
         </Card>
       ) : null}
@@ -211,10 +213,8 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
             <div className="flex items-start gap-3">
               <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
               <div>
-                <p className="text-[15px] font-semibold text-ok">Godkänd med BankID</p>
-                <p className="text-[14px] text-soft">
-                  {signature.signerName} · {datumTid(signature.signedAt)}
-                </p>
+                <p className="text-[15px] font-semibold text-ok">{signedWithBankIdBy(signature.signerName)}</p>
+                <p className="text-[14px] text-soft">{datumTid(signature.signedAt)}</p>
                 <p className="mt-1 text-[12px] text-muted">
                   Version {version.version} är låst och kan verifieras mot signeringsunderlaget. Ändringar kräver en ny version och ny signering.
                 </p>
@@ -301,13 +301,18 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
             <Card className="px-5 py-4">
               <ol className="space-y-3">
                 {[
-                  { label: "Skapad", at: quote.createdAt, done: true },
-                  { label: "Skickad", at: quote.sentAt, done: !!quote.sentAt },
-                  { label: "Öppnad av kunden", at: quote.viewedAt, done: !!quote.viewedAt },
-                  ...quote.followUps.map((f, i) => ({ label: `Påminnelse ${i + 1}`, at: f as string | undefined, done: true })),
+                  { label: QUOTE_TIMELINE.skapad, at: quote.createdAt, done: true },
+                  { label: QUOTE_TIMELINE.skickad, at: quote.sentAt, done: !!quote.sentAt },
+                  { label: QUOTE_TIMELINE.oppnad, at: quote.viewedAt, done: !!quote.viewedAt },
+                  ...quote.followUps.map((f, i) => ({ label: `${QUOTE_TIMELINE.paminnelse} ${i + 1}`, at: f as string | undefined, done: true })),
                   quote.status === "avbojd"
-                    ? { label: "Avböjd", at: quote.decidedAt, done: true }
-                    : { label: "Godkänd med BankID", at: signature?.signedAt, done: !!signature },
+                    ? { label: QUOTE_TIMELINE.avbojd, at: quote.decidedAt, done: true }
+                    : {
+                        // Historiken är precis: metoden (BankID) och signatären hör hemma här.
+                        label: signature ? signedWithBankIdBy(signature.signerName) : QUOTE_TIMELINE.signerad,
+                        at: signature?.signedAt,
+                        done: !!signature,
+                      },
                 ].map((step, i) => (
                   <li key={i} className="flex items-start gap-3">
                     <span

@@ -44,7 +44,7 @@ const CTA_ISSUE: Partial<Record<ActionCta["type"], string>> = {
   followUpQuote: "Skicka påminnelse",
   createJobInvoice: "Fakturera",
   startJobFromQuote: "Starta uppdrag",
-  paySupplier: "Skicka till bank",
+  paySupplier: "Skicka till banken",
   createPaymentFile: "Skapa bankfil",
   confirmRotPayout: "Bekräfta utbetalning",
   registerCreditRefund: "Återbetala",
@@ -72,7 +72,7 @@ export function issueForAction(action: BusinessAction): string {
   if (action.id.startsWith("supplier-dest-")) return "Kontrollera bankuppgifter";
   if (action.id.startsWith("supplier-fail-")) return "Skapa ny bankfil";
   if (action.id.startsWith("supplier-")) return "Redo att betala";
-  if (action.id.startsWith("invoice-late-")) return "Försenad";
+  if (action.id.startsWith("invoice-late-")) return "Förfallen";
   if (action.id.startsWith("invoice-refund-")) return "Återbetala";
   if (action.id.startsWith("quote-expired-")) return "Utgången offert";
   if (action.id.startsWith("bank-unexplained")) return "Stäm av banken";

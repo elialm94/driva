@@ -150,11 +150,11 @@ export function InvoiceDraftSend({
         <div className="px-6 py-5">
           <p className="text-[15px] leading-relaxed text-soft">
             Den här fakturan är <span className="font-semibold text-ink">{kr(excessAmount ?? 0)}</span> högre än den
-            offert kunden godkände med BankID.
+            offert kunden signerade.
           </p>
           <p className="mt-3 text-[13px] leading-relaxed text-muted">
             Vi varnar när beloppet är mer än {kr(QUOTE_EXCESS_WARN_AMOUNT)} eller {QUOTE_EXCESS_WARN_PERCENT} % högre än
-            offerten. Du kan skicka ändå, eller skapa en tilläggsoffert som kunden kan godkänna med BankID.
+            offerten. Du kan skicka ändå, eller skapa en tilläggsoffert som kunden kan signera.
           </p>
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button className={buttonClasses("secondary")} onClick={() => tillaggHref && router.push(tillaggHref)}>

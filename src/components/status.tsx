@@ -1,17 +1,11 @@
 import type { Invoice, Job, Quote, TxStatus } from "@/lib/types";
-import { Badge, StatusDot, type BadgeTone } from "./ui";
+import { Badge, StatusDot } from "./ui";
 import { dagarTill } from "@/lib/format";
 import { derivedJobStatus, type DerivedJobStatus } from "@/lib/services/job-lifecycle";
+import { INVOICE_CREDIT_NOTE, INVOICE_STATUS, JOB_STATUS, QUOTE_STATUS, TX_STATUS, invoiceOverdueLabel } from "@/lib/status-labels";
 
 export function QuoteStatusBadge({ quote, status }: { quote: Quote; status?: Quote["status"] }) {
-  const map: Record<Quote["status"], { tone: BadgeTone; label: string }> = {
-    utkast: { tone: "neutral", label: "Utkast" },
-    skickad: { tone: "warn", label: "Väntar på BankID" },
-    godkand: { tone: "ok", label: "Godkänd med BankID" },
-    avbojd: { tone: "danger", label: "Avböjd" },
-    utgangen: { tone: "neutral", label: "Utgången" },
-  };
-  const { tone, label } = map[status ?? quote.status];
+  const { tone, label } = QUOTE_STATUS[status ?? quote.status];
   return (
     <Badge tone={tone}>
       <StatusDot tone={tone} />
@@ -21,31 +15,25 @@ export function QuoteStatusBadge({ quote, status }: { quote: Quote; status?: Quo
 }
 
 export function InvoiceStatusBadge({ invoice }: { invoice: Invoice }) {
-  // En kreditfaktura är ingen fordran – den kan aldrig vara "försenad" eller "obetald".
+  // En kreditfaktura är ingen fordran – den kan aldrig vara "förfallen" eller "obetald".
   if (invoice.type === "kredit") {
     return (
-      <Badge tone="neutral">
-        <StatusDot tone="neutral" />
-        Kreditfaktura
+      <Badge tone={INVOICE_CREDIT_NOTE.tone}>
+        <StatusDot tone={INVOICE_CREDIT_NOTE.tone} />
+        {INVOICE_CREDIT_NOTE.label}
       </Badge>
     );
   }
   if ((invoice.status === "skickad" || invoice.status === "delbetald") && dagarTill(invoice.dueDate) < 0) {
+    const overdue = invoiceOverdueLabel(-dagarTill(invoice.dueDate));
     return (
-      <Badge tone="danger">
-        <StatusDot tone="danger" />
-        Försenad {-dagarTill(invoice.dueDate)} dagar
+      <Badge tone={overdue.tone}>
+        <StatusDot tone={overdue.tone} />
+        {overdue.label}
       </Badge>
     );
   }
-  const map: Record<Invoice["status"], { tone: BadgeTone; label: string }> = {
-    utkast: { tone: "neutral", label: "Utkast" },
-    skickad: { tone: "info", label: "Skickad" },
-    delbetald: { tone: "warn", label: "Delbetald" },
-    betald: { tone: "ok", label: "Betald" },
-    krediterad: { tone: "neutral", label: "Krediterad" },
-  };
-  const { tone, label } = map[invoice.status];
+  const { tone, label } = INVOICE_STATUS[invoice.status];
   return (
     <Badge tone={tone}>
       <StatusDot tone={tone} />
@@ -64,13 +52,8 @@ export function JobStatusBadge({
   completedAt?: string;
 }) {
   const stored: Job["status"] = status === "planerat" ? "kommande" : status;
-  const derived = derivedJobStatus({ status: stored, startDate, completedAt });
-  const map: Record<DerivedJobStatus, { tone: BadgeTone; label: string }> = {
-    planerat: { tone: "info", label: "Planerat" },
-    pagar: { tone: "warn", label: "Pågår" },
-    klart: { tone: "ok", label: "Klart" },
-  };
-  const { tone, label } = map[derived];
+  const derived: DerivedJobStatus = derivedJobStatus({ status: stored, startDate, completedAt });
+  const { tone, label } = JOB_STATUS[derived];
   return (
     <Badge tone={tone}>
       <StatusDot tone={tone} />
@@ -80,11 +63,6 @@ export function JobStatusBadge({
 }
 
 export function TxStatusBadge({ status }: { status: TxStatus }) {
-  const map: Record<TxStatus, { tone: BadgeTone; label: string }> = {
-    ny: { tone: "neutral", label: "Ny" },
-    bokford: { tone: "ok", label: "Bokförd" },
-    behover_atgard: { tone: "warn", label: "Behöver åtgärd" },
-  };
-  const { tone, label } = map[status];
+  const { tone, label } = TX_STATUS[status];
   return <Badge tone={tone}>{label}</Badge>;
 }
