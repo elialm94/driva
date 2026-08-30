@@ -1,4 +1,5 @@
 import type { DocLine, RotRut, VatRate } from "./types";
+import { isTaxReductionEligible, lineTypeOf } from "./economic-line-type";
 
 /**
  * Skattereduktion: ROT 30 % av arbetskostnaden inkl. moms, RUT 50 %.
@@ -72,11 +73,11 @@ export function docTotals(lines: DocLine[], rot: RotRut | null): DocTotals {
   const vat = lines.reduce((s, l) => s + lineVat(l), 0);
   const total = subtotal + vat;
   const laborInclVat = lines
-    .filter((l) => l.kind === "arbete")
+    .filter((l) => isTaxReductionEligible(lineTypeOf(l), rot?.type ?? "rot"))
     .reduce((s, l) => s + lineTotal(l) + lineVat(l), 0);
   let calculatedEligibleTaxReduction = 0;
   if (rot) {
-    const andel = rot.type === "rot" ? ROT_ANDEL : RUT_ANDEL;
+    const andel = taxReductionRate(rot.type);
     calculatedEligibleTaxReduction = Math.min(Math.round(laborInclVat * andel), taxReductionCap(rot.type));
   }
   let deduction = calculatedEligibleTaxReduction;

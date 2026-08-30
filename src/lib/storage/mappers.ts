@@ -54,6 +54,7 @@ import type {
   Website,
   WorkLocation,
 } from "@/lib/types";
+import { lineKindOf, syncDocLineClassification } from "@/lib/economic-line-type";
 import type { SqlRow } from "./executor";
 
 /* ------------------------------- primitiver ------------------------------- */
@@ -587,17 +588,18 @@ export function invoiceLineToRow(
   invoiceId: string,
   position: number
 ): Record<string, unknown> {
+  const synced = syncDocLineClassification(line);
   return {
-    id: line.id,
+    id: synced.id,
     business_id: businessId,
     invoice_id: invoiceId,
     position,
-    kind: line.kind,
-    description: line.description,
-    qty: line.qty,
-    unit: line.unit,
-    unit_price: line.unitPrice,
-    vat_rate: line.vatRate,
+    kind: synced.kind,
+    description: synced.description,
+    qty: synced.qty,
+    unit: synced.unit,
+    unit_price: synced.unitPrice,
+    vat_rate: synced.vatRate,
   };
 }
 
@@ -606,7 +608,7 @@ export const invoiceLineColumns = [
 ];
 
 export function invoiceLineFromRow(r: SqlRow): DocLine {
-  return {
+  return syncDocLineClassification({
     id: str(r.id),
     kind: r.kind as DocLine["kind"],
     description: str(r.description),
@@ -614,7 +616,7 @@ export function invoiceLineFromRow(r: SqlRow): DocLine {
     unit: str(r.unit),
     unitPrice: num(r.unit_price),
     vatRate: num(r.vat_rate) as DocLine["vatRate"],
-  };
+  });
 }
 
 /* -------------------------------- payments -------------------------------- */

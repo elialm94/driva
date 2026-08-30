@@ -9,6 +9,7 @@ import { kr, isoDaysFromNow, dagarTill, datumKort } from "../format";
 import { logActivity } from "./activity";
 import { taxReductionFields } from "../tax-reduction-terms";
 import { rotWithAmounts } from "../tax-reduction-amount";
+import { syncDocLineClassification } from "../economic-line-type";
 import { sellerSnapshot } from "../invoices/snapshot";
 import { missingEmailForSend } from "../customer-validation";
 
@@ -45,7 +46,7 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
     version: 1,
     title: input.title,
     intro: input.intro,
-    lines: input.lines,
+    lines: input.lines.map((l) => syncDocLineClassification({ ...l })),
     paymentPlan: input.paymentPlan,
     paymentTermsDays: input.paymentTermsDays,
     lateInterestRate: input.lateInterestRate ?? data.settings.lateInterestRate,
@@ -98,7 +99,11 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
   if (!quote) throw new Error("Offerten finns inte");
   const version = currentVersion(quote);
   // Servergräns: klientens rika text lita aldrig på rakt av.
-  input = { ...input, richText: sanitizeRichText(input.richText) };
+  input = {
+    ...input,
+    richText: sanitizeRichText(input.richText),
+    lines: input.lines.map((l) => syncDocLineClassification({ ...l })),
+  };
 
   if (version.lockedAt || quote.status === "godkand") {
     // Ny version krävs efter signering.

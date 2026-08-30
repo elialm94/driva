@@ -30,6 +30,7 @@ export type {
   JobInvoiceOptionBasis,
   JobWorkComparison,
 } from "../job-ui-types";
+import { lineKindFromType, syncDocLineClassification } from "../economic-line-type";
 import { currentVersion, getInvoice, getJob, jobQuote, requireCustomer } from "./data";
 import { logActivity } from "./activity";
 import { nextPaymentPlanPartForJob, remainingToInvoiceForJob } from "./attention";
@@ -87,9 +88,10 @@ function normalizeDesc(s: string): string {
 }
 
 export function workTypeToLineKind(type: JobWorkEntryType): LineKind {
-  if (type === "labor") return "arbete";
-  if (type === "material") return "material";
-  return "ovrigt";
+  if (type === "labor") return lineKindFromType("LABOR");
+  if (type === "material") return lineKindFromType("MATERIAL");
+  if (type === "travel") return lineKindFromType("TRAVEL");
+  return lineKindFromType("OTHER");
 }
 
 export function entryInclVat(entry: Pick<JobWorkEntry, "qty" | "unitPrice" | "vatRate">): number {
@@ -369,7 +371,7 @@ export function deleteJobWorkEntry(entryId: string): void {
 }
 
 export function entryToDocLine(entry: JobWorkEntry): DocLine {
-  return {
+  return syncDocLineClassification({
     id: uid(),
     kind: workTypeToLineKind(entry.type),
     description: entry.description,
@@ -377,7 +379,7 @@ export function entryToDocLine(entry: JobWorkEntry): DocLine {
     unit: entry.unit,
     unitPrice: entry.unitPrice,
     vatRate: entry.vatRate,
-  };
+  });
 }
 
 export function associateEntriesWithInvoice(entryIds: string[], invoiceId: string): void {
@@ -474,15 +476,7 @@ export function quotePrefillFromJob(jobId: string): {
   return {
     title: job.title,
     intro: job.description.trim(),
-    lines: source.map((e) => ({
-      id: uid(),
-      kind: workTypeToLineKind(e.type),
-      description: e.description,
-      qty: e.qty,
-      unit: e.unit,
-      unitPrice: e.unitPrice,
-      vatRate: e.vatRate,
-    })),
+    lines: source.map((e) => entryToDocLine(e)),
   };
 }
 

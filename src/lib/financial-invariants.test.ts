@@ -27,6 +27,7 @@ import assert from "node:assert/strict";
 import { db, replaceDb } from "./store";
 import { buildSeed } from "./seed";
 import { docTotals, ROT_ANDEL, RUT_ANDEL, ROT_TAK, RUT_TAK, taxReductionCap } from "./calc";
+import { isTaxReductionEligible, lineTypeOf } from "./economic-line-type";
 import type { DocLine, RotRut, VerificationEntry } from "./types";
 import {
   entriesCredit,
@@ -62,7 +63,7 @@ function mulberry32(seed: number): () => number {
 }
 
 const VAT_RATES = [0, 6, 12, 25] as const;
-const KINDS = ["arbete", "material", "ovrigt"] as const;
+const KINDS = ["arbete", "material", "resor", "ovrigt"] as const;
 
 function randomLine(rnd: () => number, i: number): DocLine {
   const qty = Math.max(0.25, Math.round(rnd() * 160) / 4); // 0,25–40 i steg om 0,25
@@ -117,7 +118,7 @@ describe("Egenskap: docTotals-ekvationen håller för slumpade rader", () => {
         assert.ok(t.deduction <= cap, `avdrag ${t.deduction} över taket ${cap}`);
         // Avdraget är aldrig större än andelen av arbetskostnaden inkl. moms (+1 kr avrundning).
         const laborInclVat = lines
-          .filter((l) => l.kind === "arbete")
+          .filter((l) => isTaxReductionEligible(lineTypeOf(l), rot.type))
           .reduce((s, l) => s + Math.round(l.qty * l.unitPrice) * (1 + l.vatRate / 100), 0);
         assert.ok(
           t.deduction <= Math.round(laborInclVat * andel) + 1,

@@ -1,4 +1,5 @@
 import type { CompanySettings, Customer, DB, DocLine } from "../types";
+import { syncDocLineClassification } from "../economic-line-type";
 
 export function testCompany(over: Partial<CompanySettings> = {}): CompanySettings {
   return {
@@ -41,7 +42,7 @@ export function testCustomer(over: Partial<Customer> = {}): Customer {
 }
 
 export function labor(over: Partial<DocLine> = {}): DocLine {
-  return {
+  return syncDocLineClassification({
     id: over.id ?? `line-${Math.random().toString(36).slice(2, 8)}`,
     kind: "arbete",
     description: "Snickeriarbete",
@@ -50,7 +51,7 @@ export function labor(over: Partial<DocLine> = {}): DocLine {
     unitPrice: 1000,
     vatRate: 25,
     ...over,
-  };
+  });
 }
 
 export function emptyTestDb(over: Partial<DB> = {}): DB {

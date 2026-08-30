@@ -15,6 +15,7 @@ import type {
   VerificationEntry,
   VerificationSource,
 } from "./types";
+import { syncDocLineClassification } from "./economic-line-type";
 import {
   entriesExpense,
   entriesInvoicePaid,
@@ -36,7 +37,15 @@ function d(daysAgo: number, hour = 10, minute = 0): string {
 }
 
 function L(kind: LineKind, description: string, qty: number, unit: string, unitPrice: number, vatRate: VatRate = 25): DocLine {
-  return { id: `line-${Math.random().toString(36).slice(2, 9)}`, kind, description, qty, unit, unitPrice, vatRate };
+  return syncDocLineClassification({
+    id: `line-${Math.random().toString(36).slice(2, 9)}`,
+    kind,
+    description,
+    qty,
+    unit,
+    unitPrice,
+    vatRate,
+  });
 }
 
 export function buildSeed(): DB {
