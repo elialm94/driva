@@ -6,6 +6,7 @@ import {
   DAYPARTS,
   WEEKDAYS_SV,
   formatDueAt,
+  formatDueAtDisplay,
   resolveWhen,
   type Daypart,
   type WeekdaySv,
@@ -100,6 +101,8 @@ export type ToolResult = {
   text?: string;
   card?: AssistantCard;
   requiresConfirmation?: boolean;
+  /** One-shot SAFE_WRITE: klienten kan ångra utan bekräftelsekort. */
+  undo?: { kind: "dismiss_reminder"; id: string };
 };
 
 export type AccountantToolScope = "current" | "all_clients";
@@ -376,7 +379,8 @@ function handleCreateReminder(args: Record<string, unknown>): ToolResult {
 
   const reminder = created.reminder;
   const dueText = formatDueAt(reminder.dueAt, reminder.timezone);
-  const parts = [`Klart – jag påminner dig ${dueText}.`];
+  const dueDisplay = formatDueAtDisplay(reminder.dueAt, reminder.timezone);
+  const parts = [`Påminnelse skapad till ${dueDisplay}.`];
   if (link.relatedLabel) parts.push(`Kopplad till ${link.relatedLabel}.`);
   if (link.note) parts.push(link.note);
   return {
@@ -386,8 +390,9 @@ function handleCreateReminder(args: Record<string, unknown>): ToolResult {
     card: {
       kind: "list",
       title: "Påminnelse skapad",
-      rows: [{ label: reminder.title, value: dueText, href: reminderTargetHref(reminder) }],
+      rows: [{ label: reminder.title, value: dueDisplay, href: reminderTargetHref(reminder) }],
     },
+    undo: { kind: "dismiss_reminder", id: reminder.id },
   };
 }
 

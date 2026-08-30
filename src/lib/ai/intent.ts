@@ -36,7 +36,7 @@ export type IntentResult =
   /** Rent textsvar från modellen (ingen åtgärd). */
   | { kind: "answer"; text: string }
   /** Hela verktygsloopen kördes serverside – färdigt resultat med ev. kort. */
-  | { kind: "final"; ok: boolean; text: string; card?: AssistantCard; requiresConfirmation?: boolean }
+  | { kind: "final"; ok: boolean; text: string; card?: AssistantCard; requiresConfirmation?: boolean; undo?: { kind: "dismiss_reminder"; id: string } }
   /** Transportfel (nere/timeout/429/ogiltigt svar) – ärligt besked, inga påhitt. */
   | { kind: "unavailable"; text: string };
 
@@ -115,6 +115,7 @@ export class OpenRouterAiIntentProvider implements AiIntentProvider {
       text: result.text,
       card: result.card,
       requiresConfirmation: result.requiresConfirmation,
+      undo: result.undo,
     };
   }
 }

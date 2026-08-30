@@ -69,8 +69,17 @@ anropa det som inte exponeras.
 
 ## Påminnelser (persisterade, ur naturligt språk)
 
-"Påminn mig att ringa Göran på onsdag" skapar en riktig `Reminder`-rad som
-dyker upp under Hem → "Behöver din uppmärksamhet" när den förfaller.
+"Påminn mig att ringa Göran på onsdag" och "Skapa en påminnelse att ringa
+Göran kl 12 nästa onsdag" skapar en riktig `Reminder`-rad som dyker upp
+under Hem → "Behöver din uppmärksamhet" när den förfaller.
+
+**Hela originalfrasen parsas först.** Autocomplete "Skapa påminnelse" är
+bara intent – resten slängs aldrig och startar inte en tom guide.
+`parseCommand` (kommandofältet) + `parseReminderCommandInput` extraherar
+`{ intent, title, when }` ur hela meningen. Bara faktiskt saknade fält
+efterfrågas. Complett + hög konfidens → `create_reminder` direkt
+(`SAFE_WRITE`, reversibelt) med succé + Ångra (`dismiss_reminder`).
+
 Arbetsdelningen är strikt: LLM:n (eller den deterministiska snabbvägen i
 `src/lib/reminders/parse.ts`) extraherar ett STRUKTURERAT tidsuttryck –
 `src/lib/reminders/when.ts` äger ALL tolkningspolicy och är enhetstestad utan
@@ -79,19 +88,21 @@ LLM:
 | Uttryck | Policy |
 | --- | --- |
 | Veckodag ("på onsdag") | Framför oss i veckan → denna vecka; idag/passerad → nästa vecka |
-| "nästa onsdag" | Alltid nästa vecka |
-| Ingen tid | 10:00 lokal tid (`DEFAULT_REMINDER_TIME`), dagsnivå (syns från dagsstart) |
+| "nästa onsdag" | Hoppa till nästa vecka **bara om dagen fortfarande är framför oss i denna**. Söndag 30 aug 2026 + nästa onsdag kl 12 → onsdag 2 september kl. 12:00 (CEST). Måndag 24 aug + nästa onsdag → 2 september (hoppar över 26 aug). |
+| Ingen tid | 10:00 lokal tid (`DEFAULT_REMINDER_TIME`), dagsnivå (syns från dagsstart) – tiden visas alltid tillbaka |
 | Dagsdel | morgon 09:00 · förmiddag 10:00 · eftermiddag 14:00 · kväll 18:00 (`DAYPART_TIMES`) |
-| "om 2 timmar" | Exakt nu + 2 h |
+| "om 2 timmar" / "om 30 minuter" | Exakt nu + N |
+| "i övermorgon" | +2 lokala dagar |
 | Tidszon | `businessTimezone()` (Europe/Stockholm som standard), lagras per påminnelse |
 
 Verktyg: `create_reminder`/`update_reminder`/`complete_reminder`/
 `snooze_reminder`/`dismiss_reminder` är `SAFE_WRITE` (dismiss = mjuk
-borttagning, historiken kvar), `list_reminders` är `READ_ONLY`.
+borttagning, historiken kvar; one-shot Ångra använder dismiss),
+`list_reminders` är `READ_ONLY`.
 Entitetskoppling: exakt en kund-/offert-/fakturaträff länkas, flera →
 klargörande fråga (inget skapas), noll → ren textpåminnelse – aldrig
-gissningar. Snabbvägen "påminn mig [imorgon|på onsdag|om N timmar] att X"
-skapar helt utan LLM-anrop.
+gissningar. Deterministisk först (även "skapa en påminnelse …");
+OpenRouter bara om parsern inte räcker – samma `create_reminder`-schema.
 
 ## Bekräftelsepolicy
 
