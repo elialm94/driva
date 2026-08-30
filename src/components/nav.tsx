@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { cx } from "./ui";
+import { CreateAccountRow, DemoBadge, EndDemoRow } from "./demo-controls";
 import { LogoutRow } from "./logout-button";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { enterLocalAccountantDemoAction } from "@/app/collaboration-actions";
@@ -42,6 +43,8 @@ export function Sidebar({
   canLogout = false,
   accountingClientCount = 0,
   localAccountantDemo = false,
+  demoBadge = false,
+  demoSession = false,
 }: {
   companyName: string;
   inboxCount?: number;
@@ -50,6 +53,10 @@ export function Sidebar({
   /** Visas när samma användare också är konsult på andra företag. */
   accountingClientCount?: number;
   localAccountantDemo?: boolean;
+  /** Demoläge (lokala JSON-demon eller publika demosessionen): visa markören. */
+  demoBadge?: boolean;
+  /** Publika demosessionen: Avsluta demo/Skapa eget konto ersätter Logga ut. */
+  demoSession?: boolean;
 }) {
   const pathname = usePathname();
   const settingsActive = pathname.startsWith("/installningar") || pathname.startsWith("/foretag");
@@ -100,7 +107,10 @@ export function Sidebar({
       {/* Fot: företagsnamnet är ren kontext (ej klickbart); Inställningar är en
           riktig nav-rad och Logga ut en dämpad rad (endast Supabase-läge). */}
       <div className="flex flex-col gap-1 border-t border-line px-3 py-4">
-        <p className="truncate px-3 pb-1 text-[13px] font-medium text-soft">{companyName}</p>
+        <p className="flex items-center gap-2 px-3 pb-1 text-[13px] font-medium text-soft">
+          <span className="truncate">{companyName}</span>
+          {demoBadge ? <DemoBadge className="shrink-0" /> : null}
+        </p>
         {accountingClientCount > 0 ? (
           <WorkspaceSwitcher
             variant="to-redovisning"
@@ -121,7 +131,14 @@ export function Sidebar({
           <Settings className={cx("size-[18px]", settingsActive ? "text-white" : "text-muted")} strokeWidth={2} />
           Inställningar
         </Link>
-        {canLogout ? <LogoutRow variant="sidebar" /> : null}
+        {demoSession ? (
+          <>
+            <CreateAccountRow variant="sidebar" />
+            <EndDemoRow variant="sidebar" />
+          </>
+        ) : canLogout ? (
+          <LogoutRow variant="sidebar" />
+        ) : null}
       </div>
     </aside>
   );
@@ -131,10 +148,14 @@ export function BottomNav({
   canLogout = false,
   inboxCount = 0,
   localAccountantDemo = false,
+  demoBadge = false,
+  demoSession = false,
 }: {
   canLogout?: boolean;
   inboxCount?: number;
   localAccountantDemo?: boolean;
+  demoBadge?: boolean;
+  demoSession?: boolean;
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -154,7 +175,10 @@ export function BottomNav({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 pt-3 pb-1">
-              <p className="text-sm font-semibold text-ink">Mer</p>
+              <p className="flex items-center gap-2 text-sm font-semibold text-ink">
+                Mer
+                {demoBadge ? <DemoBadge /> : null}
+              </p>
               <button
                 type="button"
                 onClick={() => setMoreOpen(false)}
@@ -208,7 +232,14 @@ export function BottomNav({
               <Settings className="size-5 text-muted" />
               Inställningar
             </Link>
-            {canLogout ? <LogoutRow variant="sheet" /> : null}
+            {demoSession ? (
+              <>
+                <CreateAccountRow variant="sheet" />
+                <EndDemoRow variant="sheet" />
+              </>
+            ) : canLogout ? (
+              <LogoutRow variant="sheet" />
+            ) : null}
           </div>
         </div>
       ) : null}

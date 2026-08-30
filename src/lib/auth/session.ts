@@ -13,6 +13,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { isSupabaseMode } from "@/lib/storage/config";
 import {
+  businessNameById,
   createBusinessWithOwner,
   loadStateSnapshot,
   membershipsForUser,
@@ -104,9 +105,26 @@ async function applyDemoAccountantView(userId: string, memberships: MembershipIn
   const user = await getSessionUser();
   if (!user || user.id !== userId || !isDemoUserEmail(user.email)) return memberships;
   if ((await readDemoActorCookie()) !== "accountant") return memberships;
-  return memberships.map((m) =>
+  const viewed = memberships.map((m) =>
     isOwnerRole(m.role) ? { ...m, role: "accounting_consultant" as BusinessRole } : m
   );
+  // Klientlistan i /redovisning läses ur det instanslokala registret – spegla
+  // konsultvyn dit så listan fungerar även på en kall serverless-instans.
+  // Registret ger aldrig åtkomst; auktoriseringen är SQL-medlemskapet + RLS.
+  for (const m of viewed) {
+    if (!isAccountingRole(m.role) || activeMembershipFor(userId, m.businessId)) continue;
+    const now = new Date().toISOString();
+    putMembership({
+      businessId: m.businessId,
+      businessName: await businessNameById(m.businessId),
+      userId,
+      role: m.role,
+      acceptedAt: now,
+      lastActiveAt: m.lastActiveAt ?? now,
+      createdAt: now,
+    });
+  }
+  return viewed;
 }
 
 /** Kräver inloggning – annars till /login (proxyn bevarar next-param). */

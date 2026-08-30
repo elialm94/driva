@@ -197,10 +197,14 @@ export async function insertMembership(input: {
 
 export async function revokeMembershipRow(businessId: string, userId: string): Promise<void> {
   const client = await sqlClient();
+  // Samarbeta hanterar bara konsulter/revisorer. Ägarmedlemskap återkallas
+  // aldrig den här vägen – skyddar både riktiga ägare mot förfalskade
+  // revoke-anrop och det delade demoföretagets enda medlemskap.
   await client.query(
     `update public.business_memberships
         set revoked_at = now()
-      where business_id = $1 and user_id = $2 and revoked_at is null`,
+      where business_id = $1 and user_id = $2 and revoked_at is null
+        and role in ('accounting_consultant', 'auditor')`,
     [businessId, userId]
   );
 }

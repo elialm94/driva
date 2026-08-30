@@ -81,6 +81,33 @@ export function ensureLocalDemoCollaboration(businessName = localDemoBusinessNam
   return { ownerId: LOCAL_JSON_USER_ID, accountantId: LOCAL_JSON_ACCOUNTANT_ID };
 }
 
+/**
+ * Publika demosessionen (Supabase): visa Anna som kopplad konsult i Samarbeta.
+ * Raden finns BARA i det instanslokala registret – Anna är ingen auth-användare
+ * och får aldrig SQL-medlemskap eller RLS-åtkomst. Redovisningsytan öppnas i
+ * stället som en vy på demo-användarens egen session (demo-aktörskakan).
+ * Återskapar inte en rad som besökaren tagit bort på den här instansen.
+ */
+export function ensureDemoAccountantShown(businessId: string, businessName: string): void {
+  const now = new Date().toISOString();
+  upsertUser({
+    id: LOCAL_JSON_ACCOUNTANT_ID,
+    email: LOCAL_JSON_ACCOUNTANT_EMAIL,
+    name: LOCAL_JSON_ACCOUNTANT_NAME,
+  });
+  if (!membershipFor(LOCAL_JSON_ACCOUNTANT_ID, businessId)) {
+    putMembership({
+      businessId,
+      businessName,
+      userId: LOCAL_JSON_ACCOUNTANT_ID,
+      role: "accounting_consultant",
+      acceptedAt: now,
+      lastActiveAt: now,
+      createdAt: now,
+    });
+  }
+}
+
 /** Återställer Annas demo-åtkomst även om den revokerats (endast explicit demo-knapp). */
 export function restoreLocalAccountantDemo(businessName = localDemoBusinessName()): void {
   ensureLocalDemoCollaboration(businessName);

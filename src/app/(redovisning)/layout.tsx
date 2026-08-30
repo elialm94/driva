@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { AccountantScopeSync } from "@/components/accountant-scope-sync";
 import { RedovisningMobileHeader, RedovisningMobileNav, RedovisningSidebar } from "@/components/redovisning-shell";
-import { getSessionUser, listMemberships } from "@/lib/auth/session";
+import { getSessionUser, isDemoSession, listMemberships } from "@/lib/auth/session";
 import { LOCAL_JSON_ACCOUNTANT_ID } from "@/lib/collaboration/actor";
 import { isAccountingRole, isOwnerRole } from "@/lib/collaboration/permissions";
 import { listAccountantClients } from "@/lib/collaboration/clients";
@@ -27,9 +27,13 @@ export default async function RedovisningLayout({ children }: { children: ReactN
 
   const clients = listAccountantClients(userId).map((c) => ({ id: c.businessId, name: c.businessName }));
   const profile = userById(userId);
+  // Publika demosessionen ser redovisningsytan som Anna-vyn – tillbaka till
+  // ägarvyn går alltid (demo-aktörskakan släpps, samma verifierade session).
+  const demoSession = await isDemoSession();
   const canSwitchToOwner =
     memberships.some((m) => isOwnerRole(m.role)) ||
-    (!isSupabaseMode() && userId === LOCAL_JSON_ACCOUNTANT_ID);
+    (!isSupabaseMode() && userId === LOCAL_JSON_ACCOUNTANT_ID) ||
+    demoSession;
 
   return (
     <div className="min-h-dvh">
@@ -42,6 +46,8 @@ export default async function RedovisningLayout({ children }: { children: ReactN
         canSwitchToOwner={canSwitchToOwner}
         clients={clients}
         canLogout={isSupabaseMode()}
+        demoBadge={!isSupabaseMode() || demoSession}
+        demoSession={demoSession}
       />
       <main className="pb-[calc(var(--bottom-nav-h)+env(safe-area-inset-bottom)+2.5rem)] lg:pb-16 lg:pl-60">
         <RedovisningMobileHeader clients={clients} />

@@ -4,7 +4,7 @@ import { Sidebar, BottomNav } from "@/components/nav";
 import { NavOriginProvider } from "@/components/nav-origin";
 import { db } from "@/lib/store";
 import { countOpenInbox } from "@/lib/services/inbox";
-import { ensurePageBusiness, getSessionUser, listMemberships } from "@/lib/auth/session";
+import { ensurePageBusiness, getSessionUser, isDemoSession, listMemberships } from "@/lib/auth/session";
 import { isAccountingRole } from "@/lib/collaboration/permissions";
 import { isSupabaseMode } from "@/lib/storage/config";
 
@@ -19,14 +19,22 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const accountingClientCount = user
     ? (await listMemberships(user.id)).filter((m) => isAccountingRole(m.role)).length
     : 0;
+  // Demoläge = lokala JSON-demon ELLER den publika demosessionen. Markören
+  // visas i båda; Avsluta demo/Skapa eget konto gäller bara riktiga sessioner.
+  const demoSession = await isDemoSession();
+  const demoBadge = !isSupabaseMode() || demoSession;
+  // Demon får samma konsult-genväg som lokala demon (Anna-vyn via Samarbeta).
+  const accountantDemoSwitch = !isSupabaseMode() || demoSession;
   return (
     <div className="min-h-dvh">
       <Sidebar
         companyName={settings.name}
         inboxCount={countOpenInbox()}
         canLogout={canLogout}
-        accountingClientCount={Math.max(accountingClientCount, isSupabaseMode() ? 0 : 1)}
-        localAccountantDemo={!isSupabaseMode()}
+        accountingClientCount={Math.max(accountingClientCount, accountantDemoSwitch ? 1 : 0)}
+        localAccountantDemo={accountantDemoSwitch}
+        demoBadge={demoBadge}
+        demoSession={demoSession}
       />
       <Suspense fallback={null}>
         <NavOriginProvider />
@@ -38,7 +46,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <BottomNav
         canLogout={canLogout}
         inboxCount={countOpenInbox()}
-        localAccountantDemo={!isSupabaseMode()}
+        localAccountantDemo={accountantDemoSwitch}
+        demoBadge={demoBadge}
+        demoSession={demoSession}
       />
     </div>
   );
