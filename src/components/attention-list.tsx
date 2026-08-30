@@ -31,6 +31,7 @@ import {
   answerExpenseQuestionAction,
   completeReminderAction,
   createNextInvoiceForJobAction,
+  startJobFromQuoteAction,
   deliverInvoiceAction,
   dismissReminderAction,
   followUpQuoteAction,
@@ -817,6 +818,21 @@ function AttentionRow({
                 }
               >
                 {isPending ? "Skapar …" : cta.label}
+              </button>
+            ) : null}
+            {cta?.type === "startJobFromQuote" && surface !== "accountant" ? (
+              <button
+                className={cx(buttonClasses("accent", "sm"), "max-lg:min-h-11")}
+                disabled={isPending}
+                aria-label={`${cta.label} – ${item.title}`}
+                onClick={() =>
+                  startTransition(async () => {
+                    const jobId = await startJobFromQuoteAction(cta.quoteId);
+                    router.push(`/uppdrag/${jobId}` as never);
+                  })
+                }
+              >
+                {isPending ? "Startar …" : cta.label}
               </button>
             ) : null}
             {error ? <span className="text-[13px] font-medium text-danger">{error}</span> : null}

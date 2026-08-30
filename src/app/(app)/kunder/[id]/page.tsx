@@ -1,16 +1,15 @@
 import { notFound } from "next/navigation";
-import { Plus } from "lucide-react";
 import { getCustomer } from "@/lib/services/data";
 import { isDesignationOnlyLocation } from "@/lib/services/work-locations";
 import { maskPersonnummer } from "@/lib/personnummer";
 import { customerActivityFeed, customerMoneyLine } from "@/lib/services/customer-activity";
-import { ButtonLink, SectionTitle } from "@/components/ui";
+import { customerChainCtas } from "@/lib/services/business-chain";
+import { SectionTitle } from "@/components/ui";
 import { CustomerDetailsPanel } from "@/components/customer-details-panel";
 import { CustomerRotSection } from "@/components/customer-rot-section";
 import { CustomerActivity } from "@/components/customer-activity";
-import { NewUppdragButton } from "@/components/uppdrag-form";
+import { CustomerChainActions } from "@/components/customer-chain-actions";
 import { SmartBack } from "@/components/back-link";
-import { newInvoiceHref, newQuoteHref } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Kund" };
@@ -57,26 +56,18 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
         }
         back={<SmartBack />}
         actions={
-          <div className="flex flex-wrap gap-2">
-            <NewUppdragButton
-              customers={[{ id: customer.id, name: customer.name, kind: customer.kind }]}
-              defaultCustomerId={customer.id}
-              workLocations={(customer.workLocations ?? []).map((l) => ({
-                id: l.id,
-                label: l.label,
-                city: l.city,
-              }))}
-              defaultWorkLocationId={customer.defaultWorkLocationId}
-              size="sm"
-              variant="secondary"
-            />
-            <ButtonLink href={newQuoteHref({ kund: customer.id, from: fromHere })} size="sm" variant="secondary">
-              <Plus className="size-3.5" /> Ny offert
-            </ButtonLink>
-            <ButtonLink href={newInvoiceHref({ kund: customer.id, from: fromHere })} size="sm">
-              <Plus className="size-3.5" /> Ny faktura
-            </ButtonLink>
-          </div>
+          <CustomerChainActions
+            customerId={customer.id}
+            customerName={customer.name}
+            customerKind={customer.kind}
+            workLocations={(customer.workLocations ?? []).map((l) => ({
+              id: l.id,
+              label: l.label,
+              city: l.city,
+            }))}
+            defaultWorkLocationId={customer.defaultWorkLocationId}
+            ctas={customerChainCtas(customer.id, fromHere)}
+          />
         }
       />
 

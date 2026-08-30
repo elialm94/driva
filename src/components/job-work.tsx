@@ -210,7 +210,10 @@ function ComparisonBlock({ comparison }: { comparison: JobWorkComparison }) {
     <div className="mb-4 rounded-2xl border border-line/80 px-4 py-3">
       <button type="button" className="flex w-full items-baseline justify-between gap-3 text-left" onClick={() => setOpen((v) => !v)}>
         <p className="text-[14px] tabular text-ink">
-          <span className="text-muted">Avtalat</span> {kr(comparison.quotedExcl)}{" "}
+          <span className="text-muted">Avtalat</span> {kr(comparison.quotedExcl)}
+          {comparison.quoteNumber ? (
+            <span className="text-muted"> (från offert #{comparison.quoteNumber})</span>
+          ) : null}{" "}
           <span className="text-muted">· Registrerat</span> {kr(comparison.registeredExcl)}{" "}
           <span className="text-muted">· Skillnad</span>{" "}
           {comparison.deltaExcl === 0

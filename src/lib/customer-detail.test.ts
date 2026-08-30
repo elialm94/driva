@@ -163,10 +163,10 @@ describe("kundaktivitet", () => {
     const times = rows.map((r) => r.at);
     const sorted = [...times].sort((a, b) => b.localeCompare(a));
     assert.deepEqual(times, sorted);
-    assert.ok(rows.some((r) => r.kind === "faktura" && r.href.includes("/ekonomi/fakturor/")));
-    assert.ok(rows.some((r) => r.kind === "offert" && r.href.includes("/ekonomi/offerter/")));
-    assert.ok(rows.some((r) => r.kind === "uppdrag" && r.href.includes("/uppdrag/")));
-    assert.ok(rows.some((r) => r.kind === "betalning"));
+    assert.ok(rows.some((r) => (r.kinds ?? [r.kind]).includes("faktura") && (r.href.includes("/ekonomi/fakturor/") || r.members?.some((m) => m.href.includes("/ekonomi/fakturor/")))));
+    assert.ok(rows.some((r) => (r.kinds ?? [r.kind]).includes("offert") && (r.href.includes("/ekonomi/offerter/") || r.members?.some((m) => m.href.includes("/ekonomi/offerter/")))));
+    assert.ok(rows.some((r) => (r.kinds ?? [r.kind]).includes("uppdrag") && (r.href.includes("/uppdrag/") || r.members?.some((m) => m.href.includes("/uppdrag/")))));
+    assert.ok(rows.some((r) => (r.kinds ?? [r.kind]).includes("betalning")));
     const money = customerMoneyLine("cust-johan");
     assert.ok(money);
     assert.ok(money.avtalat > 0 || money.fakturerat > 0);

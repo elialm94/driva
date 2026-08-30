@@ -7,6 +7,7 @@ import {
   createFinalInvoiceForJob,
   createInvoice,
   createInvoiceForJob,
+  createInvoiceFromQuote,
   createNextInvoiceForJob,
   createPartInvoiceForQuote,
   createDeniedReductionInvoice,
@@ -76,6 +77,7 @@ import {
 import {
   appendJobNote,
   createJob,
+  startJobFromQuote,
   deleteOrArchiveJob,
   reopenJob,
   setJobStatus,
@@ -393,6 +395,22 @@ export async function askQuoteQuestionByTokenAction(token: string, question: str
 }
 
 /* ----------------------------------- Uppdrag ---------------------------------- */
+
+export async function startJobFromQuoteAction(quoteId: string): Promise<string> {
+  return withBusiness(() => {
+    const job = startJobFromQuote(quoteId);
+    refresh();
+    return job.id;
+  });
+}
+
+export async function createInvoiceFromQuoteAction(quoteId: string): Promise<string> {
+  return withBusiness(() => {
+    const inv = createInvoiceFromQuote(quoteId);
+    refresh();
+    return inv.id;
+  });
+}
 
 export async function createJobAction(input: {
   customerId: string;
