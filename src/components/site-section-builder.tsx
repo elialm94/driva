@@ -1,425 +1,546 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
+import Link from "next/link";
 import {
-  addTestimonialItem,
-  addWebsiteSection,
-  beginInstagramConnect,
-  disconnectInstagram,
-  refreshInstagramPosts,
-  removeTestimonialItem,
-  removeWebsiteSection,
-  reorderTestimonialItems,
-  updateSection,
-  updateTestimonialItem,
+  addTestimonialItemAction,
+  beginInstagramConnectAction,
+  disconnectInstagramAction,
+  instagramStatusAction,
+  refreshInstagramPostsAction,
+  updateTestimonialItemAction,
 } from "@/app/actions";
-import { Button, Input, Label, Textarea } from "@/components/ui";
-import { ADDABLE_SECTION_TYPES, SECTION_LABELS, type AddableSectionType } from "@/lib/website-sections";
-import type { WebsiteSection } from "@/lib/types";
+import { Modal } from "@/components/modal";
+import { buttonClasses, cx } from "@/components/ui";
+import { FieldError, focusField, invalidFieldCls } from "@/components/form-validation";
+import { addableTypesFor, type AddableSectionType } from "@/lib/website-sections";
+import type { WebsiteSection, WebsiteSectionItem } from "@/lib/types";
+import type { SiteContact } from "@/lib/website-contact";
+import { formatAddressLine } from "@/lib/website-contact";
+import type { InstagramProviderState } from "@/lib/instagram";
+import { SETTINGS_HREF } from "@/lib/settings-routes";
 
-export function AddSectionButton({
-  addableTypes,
-  onAdded,
+export function AddSectionPicker({
+  open,
+  existingTypes,
+  pending,
+  onClose,
+  onPick,
 }: {
-  addableTypes: AddableSectionType[];
-  onAdded: (sectionId: string) => void;
+  open: boolean;
+  existingTypes: Pick<WebsiteSection, "type">[];
+  pending: boolean;
+  onClose: () => void;
+  onPick: (type: AddableSectionType) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [pending, start] = useTransition();
-
-  if (addableTypes.length === 0) {
-    return (
-      <p className="mt-3 text-xs text-muted">
-        Alla extra sektioner är redan tillagda. Text och call to action kan läggas till flera gånger.
-      </p>
-    );
-  }
+  const options = addableTypesFor(existingTypes);
 
   return (
-    <div className="relative mt-3">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full rounded-2xl border border-dashed border-ink/20 px-3 py-2.5 text-sm font-medium text-ink hover:bg-paper"
-      >
-        + Lägg till sektion
-      </button>
-      {open ? (
-        <div className="absolute left-0 right-0 z-20 mt-2 rounded-2xl border border-line bg-white p-2 shadow-lg">
-          <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
-            Välj sektion
-          </p>
-          {addableTypes.map((type) => (
-            <button
-              key={type}
-              type="button"
-              disabled={pending}
-              onClick={() =>
-                start(async () => {
-                  const added = await addWebsiteSection(type);
-                  setOpen(false);
-                  onAdded(added.id);
-                })
-              }
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm hover:bg-paper disabled:opacity-50"
-            >
-              <span>{SECTION_LABELS[type]}</span>
-              {ADDABLE_SECTION_TYPES.find((item) => item.type === type)?.hint ? (
-                <span className="max-w-[55%] text-right text-[11px] text-muted">
-                  {ADDABLE_SECTION_TYPES.find((item) => item.type === type)?.hint}
-                </span>
-              ) : null}
-            </button>
-          ))}
+    <Modal open={open} onClose={onClose} title="Lägg till sektion" size="sm">
+      <div className="space-y-2 px-6 py-5">
+        <p className="text-[13px] leading-relaxed text-soft">
+          Välj en sektion. Startsektionen finns redan och kan inte läggas till igen.
+        </p>
+        {options.length === 0 ? (
+          <p className="text-[13px] text-muted">Alla extra sektioner är redan tillagda. Text och call to action kan läggas till flera gånger.</p>
+        ) : (
+          <div className="grid gap-1.5">
+            {options.map((option) => (
+              <button
+                key={option.type}
+                type="button"
+                disabled={pending}
+                onClick={() => onPick(option.type)}
+                className="rounded-xl border border-line-strong px-3.5 py-3 text-left transition-colors hover:border-accent hover:bg-accent-soft disabled:opacity-50"
+              >
+                <span className="block text-[14px] font-medium text-ink">{option.label}</span>
+                <span className="mt-0.5 block text-[12px] leading-relaxed text-muted">{option.description}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+export function DeleteSectionDialog({
+  open,
+  typeLabel,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  typeLabel: string;
+  pending: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Ta bort ${typeLabel.toLowerCase()}?`}
+      size="sm"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button type="button" className={buttonClasses("ghost")} disabled={pending} onClick={onClose}>
+            Avbryt
+          </button>
+          <button type="button" className={buttonClasses("danger")} disabled={pending} onClick={onConfirm}>
+            {pending ? "Tar bort …" : "Ta bort sektionen"}
+          </button>
         </div>
-      ) : null}
+      }
+    >
+      <p className="px-6 py-5 text-[14px] leading-relaxed text-soft">
+        Sektionen och dess innehåll tas bort från hemsidan. Det går inte att ångra. Vill du bara dölja den tills vidare
+        kan du stänga av synligheten i stället.
+      </p>
+    </Modal>
+  );
+}
+
+export function ContactDetailsEditor({
+  hours,
+  onHoursChange,
+  contact,
+}: {
+  hours: string;
+  onHoursChange: (value: string) => void;
+  contact?: SiteContact;
+}) {
+  const address = contact ? formatAddressLine(contact) : "";
+  return (
+    <div className="space-y-3 rounded-xl border border-line bg-canvas/50 p-3.5">
+      <p className="text-[13px] leading-relaxed text-soft">
+        Telefon, e-post och adress hämtas från Inställningar → Kontakt. Du behöver inte skriva dem igen här.
+      </p>
+      <dl className="grid gap-2 text-[13px]">
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted">Telefon</dt>
+          <dd className="text-right font-medium">{contact?.phone || "Saknas"}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted">E-post</dt>
+          <dd className="text-right font-medium">{contact?.email || "Saknas"}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-muted">Adress</dt>
+          <dd className="text-right font-medium">{address || "Saknas"}</dd>
+        </div>
+      </dl>
+      <Link href={`${SETTINGS_HREF.foretag}#installningar-phone` as never} className="text-[13px] font-medium text-accent hover:underline">
+        Ändra i Inställningar →
+      </Link>
+      <div>
+        <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="kontaktuppgifter-hours">
+          Öppettider (valfritt)
+        </label>
+        <input
+          id="kontaktuppgifter-hours"
+          value={hours}
+          onChange={(e) => onHoursChange(e.target.value)}
+          placeholder="Vardagar 7–16"
+          className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
+        />
+      </div>
     </div>
   );
 }
 
-export const AddSectionPicker = AddSectionButton;
-
-export function DeleteSectionButton({
-  section,
-  onDeleted,
+export function InstagramEditor({
+  sectionId,
+  handle,
+  limit,
+  status,
+  error,
+  pending,
+  onHandleChange,
+  onLimitChange,
+  onStatus,
+  onError,
 }: {
-  section: WebsiteSection;
-  onDeleted: () => void;
+  sectionId: string;
+  handle: string;
+  limit: string;
+  status: InstagramProviderState | null;
+  error: string | null;
+  pending: boolean;
+  onHandleChange: (value: string) => void;
+  onLimitChange: (value: string) => void;
+  onStatus: (status: InstagramProviderState | null) => void;
+  onError: (error: string | null) => void;
 }) {
-  const [confirming, setConfirming] = useState(false);
-  const [pending, start] = useTransition();
+  const [busy, start] = useTransition();
+  const working = pending || busy;
+  const needsCredentials = status?.status === "needs_credentials";
+  const connected = Boolean(status?.connected);
+  const ready = status?.status === "ready_to_connect" || connected;
 
-  if (section.type === "hero") return null;
-
-  if (!confirming) {
-    return (
-      <button type="button" onClick={() => setConfirming(true)} className="text-[11px] text-red-700 hover:underline">
-        Ta bort
-      </button>
-    );
+  function refreshStatus() {
+    return instagramStatusAction(sectionId).then((next) => {
+      if (next) onStatus(next);
+    });
   }
 
   return (
-    <span className="inline-flex items-center gap-2 text-[11px]">
-      <span className="text-red-700">Ta bort sektionen?</span>
-      <button
-        type="button"
-        disabled={pending}
-        onClick={() =>
-          start(async () => {
-            await removeWebsiteSection(section.id);
-            onDeleted();
-          })
-        }
-        className="font-semibold text-red-700 hover:underline disabled:opacity-50"
-      >
-        Ja, ta bort
-      </button>
-      <button type="button" onClick={() => setConfirming(false)} className="text-muted hover:underline">
-        Avbryt
-      </button>
-    </span>
-  );
-}
-
-export const DeleteSectionDialog = DeleteSectionButton;
-
-export function ImagePositionField({
-  section,
-}: {
-  section: WebsiteSection;
-}) {
-  if (section.type !== "text" && section.type !== "om") return null;
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-medium text-muted">Bildplacering</span>
-      <select
-        defaultValue={section.imagePosition ?? "right"}
-        onChange={(event) => void updateSection(section.id, { imagePosition: event.target.value as "left" | "right" })}
-        className="w-full rounded-2xl border border-line bg-paper px-4 py-3 text-sm"
-      >
-        <option value="right">Bild till höger</option>
-        <option value="left">Bild till vänster</option>
-      </select>
-    </label>
-  );
-}
-
-export function ContactDetailsFields({
-  section,
-  fallbackPhone,
-  fallbackEmail,
-  fallbackAddress,
-  fallbackCity,
-}: {
-  section: WebsiteSection;
-  fallbackPhone?: string;
-  fallbackEmail?: string;
-  fallbackAddress?: string;
-  fallbackCity?: string;
-}) {
-  if (section.type !== "kontaktuppgifter") return null;
-  return (
-    <div className="space-y-3 rounded-2xl border border-line bg-paper/70 p-3 text-sm">
-      <p className="text-xs text-muted">
-        Telefon, e-post och adress hämtas från Inställningar → Kontakt. Ändra där så uppdateras hemsidan.
-      </p>
-      <p>
-        <span className="text-muted">Telefon:</span> {fallbackPhone || "Saknas"}
-      </p>
-      <p>
-        <span className="text-muted">E-post:</span> {fallbackEmail || "Saknas"}
-      </p>
-      <p>
-        <span className="text-muted">Adress:</span> {[fallbackAddress, fallbackCity].filter(Boolean).join(", ") || "Saknas"}
-      </p>
-      <label className="block">
-        <span className="mb-1.5 block text-xs font-medium text-muted">Öppettider (valfritt)</span>
-        <Input defaultValue={section.hours ?? ""} onBlur={(event) => void updateSection(section.id, { hours: event.target.value })} />
-      </label>
-    </div>
-  );
-}
-
-export const ContactDetailsEditor = ContactDetailsFields;
-
-export function CtaFields({ section }: { section: WebsiteSection }) {
-  if (section.type !== "cta") return null;
-  const cta = section.cta ?? { label: "Kontakta oss", destination: "contact" as const };
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <label className="block">
-        <span className="mb-1.5 block text-xs font-medium text-muted">Knapptext</span>
-        <Input defaultValue={cta.label} onBlur={(event) => void updateSection(section.id, { cta: { ...cta, label: event.target.value } })} />
-      </label>
-      <label className="block">
-        <span className="mb-1.5 block text-xs font-medium text-muted">Knappen går till</span>
-        <select
-          defaultValue={cta.destination}
-          onChange={(event) =>
-            void updateSection(section.id, {
-              cta: { ...cta, destination: event.target.value as "contact" | "phone" | "email" },
-            })
-          }
-          className="w-full rounded-2xl border border-line bg-paper px-4 py-3 text-sm"
-        >
-          <option value="contact">Kontaktformulär</option>
-          <option value="phone">Telefon</option>
-          <option value="email">E-post</option>
-        </select>
-      </label>
-    </div>
-  );
-}
-
-export function InstagramFields({
-  section,
-  status,
-}: {
-  section: WebsiteSection;
-  status?: { status: string; setupSteps?: string[] };
-}) {
-  const [pending, start] = useTransition();
-  if (section.type !== "instagram") return null;
-  const ig = section.instagram;
-  const connected = ig?.connected;
-  const needsCredentials = status?.status === "needs_credentials";
-
-  return (
-    <div className="space-y-3 rounded-2xl border border-line bg-paper/70 p-3">
-      <p className="text-xs text-muted">
+    <div className="space-y-3 rounded-xl border border-line bg-canvas/50 p-3.5">
+      <p className="text-[13px] leading-relaxed text-soft">
         Visar senaste inlägg via Instagrams officiella API. Driva skrapar inte Instagram.
       </p>
-      <label className="block">
-        <span className="mb-1.5 block text-xs font-medium text-muted">Konto</span>
-        <Input
-          defaultValue={ig?.handle ?? ""}
+      <div>
+        <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="instagram-handle">
+          Konto
+        </label>
+        <input
+          id="instagram-handle"
+          value={handle}
+          onChange={(e) => onHandleChange(e.target.value)}
           placeholder="@dittforetag"
-          onBlur={(event) =>
-            void updateSection(section.id, {
-              instagram: { ...(ig ?? { connected: false, postCount: 6, posts: [] }), handle: event.target.value },
-            })
-          }
+          className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
         />
-      </label>
-      <label className="block">
-        <span className="mb-1.5 block text-xs font-medium text-muted">Antal inlägg</span>
-        <Input
+      </div>
+      <div>
+        <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="instagram-limit">
+          Antal inlägg
+        </label>
+        <input
+          id="instagram-limit"
           type="number"
-          min={3}
+          min={1}
           max={12}
-          defaultValue={ig?.postCount ?? 6}
-          onBlur={(event) =>
-            void updateSection(section.id, {
-              instagram: { ...(ig ?? { connected: false, postCount: 6, posts: [] }), postCount: Number(event.target.value) || 6 },
-            })
-          }
+          value={limit}
+          onChange={(e) => onLimitChange(e.target.value)}
+          className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
         />
-      </label>
+      </div>
       {needsCredentials && status?.setupSteps?.length ? (
-        <ol className="list-decimal space-y-1 pl-5 text-xs text-muted">
-          {status.setupSteps.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ol>
+        <div className="space-y-2">
+          <p className="text-[13px] font-medium text-ink">Kvar för att ansluta på riktigt</p>
+          <ol className="list-decimal space-y-1 pl-5 text-[12px] leading-relaxed text-muted">
+            {status.setupSteps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </div>
       ) : null}
+      {error ? <p className="text-[13px] text-danger">{error}</p> : null}
       <div className="flex flex-wrap gap-2">
-        <Button
+        <button
           type="button"
-          size="sm"
-          disabled={pending || needsCredentials}
+          className={buttonClasses("primary", "sm")}
+          disabled={working || needsCredentials}
           onClick={() =>
             start(async () => {
-              const result = await beginInstagramConnect(section.id);
-              if (result.ok && result.url) window.location.href = result.url;
+              onError(null);
+              const result = await beginInstagramConnectAction(sectionId, handle);
+              if (result.ok) {
+                window.location.href = result.url;
+                return;
+              }
+              onError(result.error);
+              await refreshStatus();
             })
           }
         >
           {connected ? "Anslut igen" : "Anslut Instagram"}
-        </Button>
+        </button>
         {connected ? (
           <>
-            <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => start(() => refreshInstagramPosts(section.id))}>
-              Uppdatera
-            </Button>
-            <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => start(() => disconnectInstagram(section.id))}>
+            <button
+              type="button"
+              className={buttonClasses("secondary", "sm")}
+              disabled={working}
+              onClick={() =>
+                start(async () => {
+                  onError(null);
+                  const result = await refreshInstagramPostsAction(sectionId);
+                  if (result && result.ok === false) onError(result.error);
+                  await refreshStatus();
+                })
+              }
+            >
+              Uppdatera inlägg
+            </button>
+            <button
+              type="button"
+              className={buttonClasses("ghost", "sm")}
+              disabled={working}
+              onClick={() =>
+                start(async () => {
+                  onError(null);
+                  const result = await disconnectInstagramAction(sectionId);
+                  if (result && result.ok === false) onError(result.error);
+                  await refreshStatus();
+                })
+              }
+            >
               Koppla från
-            </Button>
+            </button>
           </>
         ) : null}
       </div>
-      {connected && ig?.posts?.length ? (
-        <p className="text-xs text-muted">{ig.posts.length} inlägg hämtade. De syns på sajten efter publicering.</p>
+      {connected && (status?.postCount ?? 0) > 0 ? (
+        <p className="text-[12px] text-muted">{status?.postCount} inlägg hämtade. De syns på sajten efter publicering.</p>
       ) : connected ? (
-        <p className="text-xs text-muted">Kontot är anslutet men inga inlägg hämtades. Kontrollera att kontot är ett professionellt Instagram-konto.</p>
+        <p className="text-[12px] text-muted">
+          Kontot är anslutet men inga inlägg hämtades. Kontrollera att det är ett professionellt Instagram-konto.
+        </p>
+      ) : ready ? (
+        <p className="text-[12px] text-muted">Redo att ansluta. Inga inlägg visas publikt förrän Instagram är anslutet.</p>
       ) : (
-        <p className="text-xs text-muted">Sektionen är redo. Inga inlägg visas publikt förrän Instagram är anslutet.</p>
+        <p className="text-[12px] text-muted">Sektionen är redo. Inga inlägg visas publikt förrän Instagram är anslutet.</p>
       )}
     </div>
   );
 }
 
-export const InstagramEditor = InstagramFields;
-
-function TestimonialForm({
-  sectionId,
-  initial,
-  onClose,
+export function TestimonialItemsEditor({
+  items,
+  error,
+  busy,
+  onEdit,
+  onAdd,
+  onRemove,
 }: {
-  sectionId: string;
-  initial?: { id?: string; title?: string; body?: string; rating?: number };
-  onClose: () => void;
+  items: Array<Pick<WebsiteSectionItem, "title" | "text" | "rating" | "location">>;
+  error: string | null;
+  busy: boolean;
+  onEdit: (index: number) => void;
+  onAdd: () => void;
+  onRemove: (index: number) => void;
 }) {
-  const [pending, start] = useTransition();
   return (
-    <form
-      className="space-y-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        const payload = {
-          title: String(form.get("title") ?? ""),
-          body: String(form.get("body") ?? ""),
-          rating: Number(form.get("rating") || 0) || undefined,
-        };
-        start(async () => {
-          if (initial?.id) await updateTestimonialItem(sectionId, initial.id, payload);
-          else await addTestimonialItem(sectionId, payload);
-          onClose();
-        });
-      }}
-    >
-      <label className="block">
-        <Label>Namn</Label>
-        <Input name="title" required defaultValue={initial?.title} />
-      </label>
-      <label className="block">
-        <Label>Omdöme</Label>
-        <Textarea name="body" required rows={4} defaultValue={initial?.body} />
-      </label>
-      <label className="block">
-        <Label>Betyg (1–5, valfritt)</Label>
-        <Input name="rating" type="number" min={1} max={5} defaultValue={initial?.rating ?? ""} />
-      </label>
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="ghost" onClick={onClose}>Avbryt</Button>
-        <Button type="submit" disabled={pending}>{pending ? "Sparar…" : "Spara"}</Button>
-      </div>
-    </form>
-  );
-}
-
-export const TestimonialItemModal = TestimonialForm;
-
-export function TestimonialsEditor({
-  section,
-  onItemsChange,
-}: {
-  section: WebsiteSection;
-  onItemsChange: (items: WebsiteSection["items"]) => void;
-}) {
-  const [editing, setEditing] = useState<WebsiteSection["items"][number] | "new" | null>(null);
-  const [pending, start] = useTransition();
-  const items = useMemo(() => section.items ?? [], [section.items]);
-  if (section.type !== "omdomen") return null;
-
-  return (
-    <div className="space-y-3">
-      {items.map((item, index) => (
-        <div key={item.id} className="rounded-2xl border border-line bg-white p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium">{item.title}</p>
-              {item.rating ? <p className="text-xs text-muted">{"★".repeat(item.rating)}</p> : null}
-              <p className="mt-1 text-sm text-ink/80">{item.body}</p>
+    <div>
+      <label className="mb-1.5 block text-[13px] font-medium text-soft">Omdömen</label>
+      <div className="space-y-1.5">
+        {items.map((item, index) => (
+          <div key={`${item.title}-${index}`} className="flex items-start gap-2 rounded-xl border border-line bg-canvas/40 px-3 py-2.5">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[14px] font-medium">{item.title || "Namnlöst omdöme"}</p>
+              {item.rating ? (
+                <p className="text-[12px] text-muted" aria-label={`${item.rating} av 5`}>
+                  {"★".repeat(item.rating)}
+                  <span className="text-muted/40">{"★".repeat(5 - item.rating)}</span>
+                </p>
+              ) : null}
+              <p className="mt-0.5 line-clamp-2 text-[12px] text-muted">{item.text || "Ingen text"}</p>
+              {item.location ? <p className="text-[12px] text-muted">{item.location}</p> : null}
             </div>
-            <div className="flex shrink-0 flex-col gap-1 text-right">
-              <button type="button" className="text-xs text-accent hover:underline" onClick={() => setEditing(item)}>Redigera</button>
-              <button
-                type="button"
-                className="text-xs text-muted hover:underline"
-                disabled={index === 0 || pending}
-                onClick={() =>
-                  start(async () => {
-                    const next = [...items];
-                    [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                    await reorderTestimonialItems(section.id, next.map((entry) => entry.id));
-                    onItemsChange(next);
-                  })
-                }
-              >
-                Upp
-              </button>
-              <button
-                type="button"
-                className="text-xs text-red-700 hover:underline"
-                onClick={() =>
-                  start(async () => {
-                    await removeTestimonialItem(section.id, item.id);
-                    onItemsChange(items.filter((entry) => entry.id !== item.id));
-                  })
-                }
-              >
-                Ta bort
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => onEdit(index)}
+              disabled={busy}
+              className="rounded-lg px-2 py-1 text-[12px] font-medium text-accent hover:underline disabled:opacity-40"
+            >
+              Redigera
+            </button>
+            <button
+              type="button"
+              onClick={() => onRemove(index)}
+              disabled={busy}
+              className="rounded-lg px-2 py-1 text-[12px] font-medium text-danger hover:underline disabled:opacity-40"
+            >
+              Ta bort
+            </button>
           </div>
-        </div>
-      ))}
-      <Button type="button" size="sm" variant="secondary" onClick={() => setEditing("new")}>
+        ))}
+      </div>
+      {error ? <p className="mt-2 text-[13px] text-danger">{error}</p> : null}
+      <button
+        type="button"
+        onClick={onAdd}
+        disabled={busy}
+        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-line-strong py-2.5 text-[13px] font-medium text-soft transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+      >
         + Lägg till omdöme
-      </Button>
-      {editing ? (
-        <div className="rounded-2xl border border-line bg-paper p-3">
-          <TestimonialForm
-            sectionId={section.id}
-            initial={editing === "new" ? undefined : editing}
-            onClose={() => setEditing(null)}
-          />
-        </div>
-      ) : null}
+      </button>
     </div>
   );
 }
 
-export const TestimonialItemsEditor = TestimonialsEditor;
+export type TestimonialDraft = {
+  index: number | "new";
+  title: string;
+  text: string;
+  rating?: number;
+  location?: string;
+};
+
+export function TestimonialItemModal({
+  draft,
+  sectionId,
+  onClose,
+  onSaved,
+}: {
+  draft: TestimonialDraft | null;
+  sectionId: string;
+  onClose: () => void;
+  onSaved: (saved: { index: number | "new"; item: WebsiteSectionItem }) => void;
+}) {
+  if (!draft) return null;
+  return <TestimonialItemForm key={String(draft.index)} draft={draft} sectionId={sectionId} onClose={onClose} onSaved={onSaved} />;
+}
+
+function TestimonialItemForm({
+  draft,
+  sectionId,
+  onClose,
+  onSaved,
+}: {
+  draft: TestimonialDraft;
+  sectionId: string;
+  onClose: () => void;
+  onSaved: (saved: { index: number | "new"; item: WebsiteSectionItem }) => void;
+}) {
+  const [title, setTitle] = useState(draft.title);
+  const [text, setText] = useState(draft.text);
+  const [location, setLocation] = useState(draft.location ?? "");
+  const [rating, setRating] = useState(draft.rating ? String(draft.rating) : "");
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const [textError, setTextError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  function save() {
+    const nextTitle = title.trim();
+    const nextText = text.trim();
+    if (!nextTitle) {
+      setTitleError("Ange namnet, till exempel Anna.");
+      focusField("omdome-namn");
+      return;
+    }
+    if (!nextText) {
+      setTextError("Skriv omdömet.");
+      focusField("omdome-text");
+      return;
+    }
+    const parsedRating = rating.trim() ? Number(rating) : undefined;
+    const item: WebsiteSectionItem = {
+      title: nextTitle,
+      text: nextText,
+      source: "manual",
+    };
+    if (location.trim()) item.location = location.trim();
+    if (parsedRating) item.rating = parsedRating;
+    start(async () => {
+      setFormError(null);
+      if (draft.index === "new") {
+        const result = await addTestimonialItemAction(sectionId, item);
+        if (result.ok === false) {
+          setFormError(result.error);
+          return;
+        }
+        onSaved({ index: "new", item });
+        return;
+      }
+      const result = await updateTestimonialItemAction(sectionId, draft.index, {
+        title: item.title,
+        text: item.text,
+        location: item.location ?? null,
+        rating: item.rating ?? null,
+      });
+      if (result.ok === false) {
+        setFormError(result.error);
+        return;
+      }
+      onSaved({ index: draft.index, item });
+    });
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={draft.index === "new" ? "Lägg till omdöme" : "Redigera omdöme"}
+      size="sm"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button type="button" className={buttonClasses("ghost")} onClick={onClose}>
+            Avbryt
+          </button>
+          <button type="button" className={buttonClasses("primary")} disabled={pending} onClick={save}>
+            {pending ? "Sparar …" : "Spara omdöme"}
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-4 px-6 py-5">
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="omdome-namn">
+            Namn
+          </label>
+          <input
+            id="omdome-namn"
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              if (e.target.value.trim()) setTitleError(null);
+            }}
+            className={cx(
+              "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent",
+              titleError && invalidFieldCls,
+            )}
+            aria-invalid={titleError ? true : undefined}
+          />
+          <FieldError id="omdome-namn-fel" className="mt-1.5">
+            {titleError}
+          </FieldError>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="omdome-text">
+            Omdöme
+          </label>
+          <textarea
+            id="omdome-text"
+            value={text}
+            rows={4}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (e.target.value.trim()) setTextError(null);
+            }}
+            className={cx(
+              "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] leading-relaxed focus:border-accent",
+              textError && invalidFieldCls,
+            )}
+            aria-invalid={textError ? true : undefined}
+          />
+          <FieldError id="omdome-text-fel" className="mt-1.5">
+            {textError}
+          </FieldError>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="omdome-betyg">
+              Betyg (1–5, valfritt)
+            </label>
+            <input
+              id="omdome-betyg"
+              type="number"
+              min={1}
+              max={5}
+              value={rating}
+              onChange={(e) => setRating(e.target.value)}
+              className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="omdome-ort">
+              Ort (valfritt)
+            </label>
+            <input
+              id="omdome-ort"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Stockholm"
+              className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
+            />
+          </div>
+        </div>
+        {formError ? <p className="text-[13px] text-danger">{formError}</p> : null}
+      </div>
+    </Modal>
+  );
+}

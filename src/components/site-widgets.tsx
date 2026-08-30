@@ -602,7 +602,7 @@ export function SectionList({
           className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-line-strong py-2.5 text-[13px] font-medium text-soft transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
         >
           <Plus className="size-4" />
-          Lägg till sektion
+          + Lägg till sektion
         </button>
         {addError ? <p className="mt-2 text-[13px] text-danger">{addError}</p> : null}
       </div>
@@ -1200,7 +1200,7 @@ function SectionEditor({
         <ServiceItemModal
           draft={draft}
           onClose={() => setDraft(null)}
-          onSaved={(saved) => {
+          onSaved={(saved: { index: number | "new"; item: WebsiteSectionItem; imageChanged: boolean }) => {
             setList((prev) =>
               saved.index === "new"
                 ? [...prev, saved.item]
@@ -1225,26 +1225,11 @@ function SectionEditor({
           draft={quoteDraft}
           sectionId={sectionId}
           onClose={() => setQuoteDraft(null)}
-          onSaved={(saved) => {
+          onSaved={(saved: { index: number | "new"; item: WebsiteSectionItem }) => {
             setList((prev) =>
               saved.index === "new"
                 ? [...prev, saved.item]
                 : prev.map((it, i) => (i === saved.index ? saved.item : it)),
-            );
-            setQuoteDraft(null);
-            setListError(null);
-            router.refresh();
-          }}
-        />
-      ) : null}
-      {isTestimonials && quoteDraft ? (
-        <TestimonialItemModal
-          draft={quoteDraft}
-          sectionId={sectionId}
-          onClose={() => setQuoteDraft(null)}
-          onSaved={(saved) => {
-            setList((prev) =>
-              saved.index === "new" ? [...prev, saved.item] : prev.map((it, i) => (i === saved.index ? saved.item : it)),
             );
             setQuoteDraft(null);
             setListError(null);
