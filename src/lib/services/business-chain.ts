@@ -132,11 +132,11 @@ export function nextPaymentPlanPartForQuote(quoteId: string): {
   return { index, percent: part.percent, label: part.label, amount: isLast ? remaining : fromPlan, isLast };
 }
 
-export function lineWithQuoteProvenance(line: DocLine, quote: Quote): DocLine {
+export function lineWithQuoteProvenance(line: DocLine, quote: Quote, originalLineId?: string): DocLine {
   return {
     ...line,
     sourceKind: line.sourceKind ?? "QUOTE_LINE",
-    sourceId: line.sourceId ?? line.id,
+    sourceId: line.sourceId ?? originalLineId ?? line.id,
     sourceQuoteNumber: line.sourceQuoteNumber ?? quote.number,
   };
 }

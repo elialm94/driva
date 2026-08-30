@@ -317,7 +317,7 @@ export function createFinalInvoiceForJob(jobId: string, createdBy: Actor = "anva
           jobId,
           quoteId: quote.id,
           type: "slutfaktura",
-          lines: version.lines.map((l) => lineWithQuoteProvenance({ ...l, id: uid() }, quote)),
+          lines: version.lines.map((l) => lineWithQuoteProvenance({ ...l, id: uid() }, quote, l.id)),
           rot: version.rot,
           dueInDays: version.paymentTermsDays,
           lateInterestRate: version.lateInterestRate,
@@ -587,7 +587,7 @@ export function createInvoiceFromQuote(quoteId: string, createdBy: Actor = "anva
       ? shareLinesFromVersion(version, remaining, `Slutfaktura – ${version.title} (resterande enligt offert #${quote.number})`).map(
           (l) => lineWithQuoteProvenance(l, quote)
         )
-      : version.lines.map((l) => lineWithQuoteProvenance({ ...l, id: uid() }, quote));
+      : version.lines.map((l) => lineWithQuoteProvenance({ ...l, id: uid() }, quote, l.id));
   return createInvoice(
     {
       customerId: quote.customerId,
