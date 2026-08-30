@@ -303,9 +303,10 @@ export function applyReminderFollowUp(
 
   const clockOnly = CLOCK_ONLY.exec(cleaned);
   if (clockOnly) {
-    if (!local) return null;
     const time = padClock(`${clockOnly[1]}:${clockOnly[2] ?? "00"}`);
-    return { args: reminderArgsFromLocal(local.date, time) };
+    if (local) return { args: reminderArgsFromLocal(local.date, time) };
+    const whenArgs = parseWhenText(cleaned, now, timezone);
+    return whenArgs ? { args: whenArgs } : null;
   }
 
   const whenArgs = parseWhenText(cleaned, now, timezone);
