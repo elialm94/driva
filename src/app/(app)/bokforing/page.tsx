@@ -4,7 +4,16 @@ import { db } from "@/lib/store";
 import { kr, datumKort } from "@/lib/format";
 import { ButtonLink, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { AttentionSection } from "@/components/attention-list";
+import { ScrollToId } from "@/components/scroll-to-id";
 import { getBusinessActions } from "@/lib/services/actions";
+import {
+  BOOKKEEPING_PAGE_SUBTITLE,
+  BOOKKEEPING_SECTION_TITLE,
+  BOOKKEEPING_UNRESOLVED_ANCHOR,
+  bookkeepingQueue,
+  bookkeepingStatusHeadline,
+  isBookkeepingUnresolvedVisa,
+} from "@/lib/services/action-views";
 import { bankReconciliation } from "@/lib/accounting/reconciliation";
 import { vatChecklist, vatPeriods } from "@/lib/accounting/vat";
 import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
@@ -24,18 +33,21 @@ function monthsBefore(date: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export default async function BookkeepingPage() {
+export default async function BookkeepingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ visa?: string }>;
+}) {
   await ensurePageBusiness();
+  const params = await searchParams;
+  const focusUnresolved = isBookkeepingUnresolvedVisa(params.visa);
   const data = db();
   const recon = bankReconciliation();
   const rr = resultatrapport();
   const today = todayDate();
 
-  // Samma åtgärdsmotor som Hem, filtrerad till bokföringsundantag + moms.
-  // Offerter/BankID/ej förfallna fakturor hör inte hemma här.
-  const bookkeepingActions = getBusinessActions().attention.filter(
-    (a) => a.category === "accounting" || a.category === "vat"
-  );
+  // Samma åtgärdsmotor som Hem – komplett bokföringskö, ingen gruppering.
+  const bookkeepingActions = bookkeepingQueue(getBusinessActions().attention);
   const vatIsAttention = bookkeepingActions.some((a) => a.category === "vat");
   const needsHelp = bookkeepingActions.length;
   const allGood = needsHelp === 0;
@@ -55,10 +67,8 @@ export default async function BookkeepingPage() {
 
   return (
     <div className="animate-fade-up">
-      <PageHeader
-        title="Bokföring"
-        subtitle="Sköts automatiskt i bakgrunden – du behöver bara svara när något är oklart."
-      />
+      <PageHeader title="Bokföring" subtitle={BOOKKEEPING_PAGE_SUBTITLE} />
+      {focusUnresolved ? <ScrollToId id={BOOKKEEPING_UNRESOLVED_ANCHOR} /> : null}
 
       {/* 1. Är min bokföring i ordning? */}
       <div className="mb-8">
@@ -66,12 +76,12 @@ export default async function BookkeepingPage() {
           {allGood ? (
             <>
               <BadgeCheck className="size-5 text-ok" />
-              Bokföringen är uppdaterad
+              {bookkeepingStatusHeadline(0)}
             </>
           ) : (
             <>
               <CircleHelp className="size-5 text-warn" />
-              {needsHelp === 1 ? "1 sak behöver din hjälp" : `${needsHelp} saker behöver din hjälp`}
+              {bookkeepingStatusHeadline(needsHelp)}
             </>
           )}
         </h2>
@@ -84,11 +94,13 @@ export default async function BookkeepingPage() {
         </p>
       </div>
 
-      {/* 2. Behöver jag göra något? Samma motor som Hem, filtrerad till bokföring + moms. */}
+      {/* 2. Komplett bokföringskö – samma åtgärds-id:n som Hem, aldrig en andra inbox. */}
       {needsHelp > 0 ? (
-        <section className="mb-8">
-          <AttentionSection title="Behöver din hjälp" items={bookkeepingActions} />
+        <section id={BOOKKEEPING_UNRESOLVED_ANCHOR} className="mb-8 scroll-mt-6">
+          <AttentionSection title={BOOKKEEPING_SECTION_TITLE} items={bookkeepingActions} />
         </section>
+      ) : focusUnresolved ? (
+        <section id={BOOKKEEPING_UNRESOLVED_ANCHOR} className="mb-8 scroll-mt-6" />
       ) : null}
 
       {/* 3. Vad behöver jag snart betala/deklarera? (Om momsen redan ligger som åtgärd ovan visas den inte dubbelt.) */}

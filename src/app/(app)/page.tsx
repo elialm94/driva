@@ -1,4 +1,5 @@
 import { getBusinessActions } from "@/lib/services/actions";
+import { projectHomeAttention } from "@/lib/services/action-views";
 import { halsning, datumUtanAr, veckodag, isoNow } from "@/lib/format";
 import { SectionTitle } from "@/components/ui";
 import { AttentionEmptyCard, AttentionSection } from "@/components/attention-list";
@@ -15,6 +16,8 @@ const HOME_ATTENTION_VISIBLE = 5;
 export default async function HomePage() {
   await ensurePageBusiness();
   const actions = getBusinessActions();
+  // Prioriterad vy – samma åtgärds-id:n som Bokföring, inte en komplett kö.
+  const attention = projectHomeAttention(actions.attention);
   const now = isoNow();
 
   return (
@@ -29,7 +32,7 @@ export default async function HomePage() {
       <div className="mt-10">
         <AttentionSection
           title="Behöver din uppmärksamhet"
-          items={actions.attention}
+          items={attention}
           initialVisible={HOME_ATTENTION_VISIBLE}
           empty={<AttentionEmptyCard />}
         />
