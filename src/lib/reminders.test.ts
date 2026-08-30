@@ -11,11 +11,16 @@ import { replaceDb, db } from "./store";
 import { emptyTestDb, testCustomer } from "./invoices/test-db";
 import { DAYPART_TIMES, formatDueAt, resolveWhen, type WhenExpression } from "./reminders/when";
 import {
+  applyReminderFollowUp,
+  formatReminderDateChip,
   parseReminderCommandInput,
   parseReminderText,
   parseWhenText,
+  prettyReminderTitle,
   previewReminderDue,
   previewReminderDueFromArgs,
+  reminderLocalFromArgs,
+  reminderNeedsReview,
   reminderTextFromParts,
 } from "./reminders/parse";
 import {
@@ -412,6 +417,82 @@ describe("parseWhenText: NÄR-steget tolkar rena tidfraser strikt", () => {
     assert.equal(parseWhenText("imorgon kanske vid nio", NOW, TZ), null);
     assert.equal(parseWhenText("hejsan", NOW, TZ), null);
     assert.equal(parseWhenText("   ", NOW, TZ), null);
+  });
+});
+
+describe("prettyReminderTitle: visningsversalisering utan verbbyte", () => {
+  it("'skicka till göran' → 'Skicka till Göran' – skicka byts inte mot ring", () => {
+    assert.equal(prettyReminderTitle("skicka till göran"), "Skicka till Göran");
+    assert.equal(prettyReminderTitle("ringa göran"), "Ringa Göran");
+  });
+
+  it("behåller redan versaliserad titel", () => {
+    assert.equal(prettyReminderTitle("Ring Göran om altanen"), "Ring Göran om altanen");
+  });
+});
+
+describe("applyReminderFollowUp: rättar fält utan att starta om", () => {
+  const NOW = new Date("2026-08-29T10:00:00Z"); // lördag 12:00 CEST
+  const current = { title: "Skicka till Göran", whenDate: "2026-08-30", time: "15:00" };
+
+  it("'nej kl 10 istället' ändrar bara klockslaget – datumet står kvar", () => {
+    const next = applyReminderFollowUp(current, "nej kl 10 istället", NOW, TZ);
+    assert.ok(next);
+    assert.equal(next.title, undefined);
+    assert.equal(next.args.whenDate, "2026-08-30");
+    assert.equal(next.args.time, "10:00");
+  });
+
+  it("'ändra till imorgon kl 9' byter både dag och tid", () => {
+    const next = applyReminderFollowUp(current, "ändra till imorgon kl 9", NOW, TZ);
+    assert.ok(next);
+    assert.equal(next.args.whenDate, "2026-08-30");
+    assert.equal(next.args.time, "9:00");
+  });
+
+  it("'imorgon kl 10' utan rättelseord uppdaterar förhandsvisningen direkt", () => {
+    const next = applyReminderFollowUp(current, "imorgon kl 10", NOW, TZ);
+    assert.ok(next);
+    assert.equal(next.args.whenDate, "2026-08-30");
+    assert.equal(next.args.time, "10:00");
+  });
+
+  it("'onsdag' behåller klockslaget som redan visas", () => {
+    const next = applyReminderFollowUp(current, "onsdag", NOW, TZ);
+    assert.ok(next);
+    assert.equal(next.args.weekday, "onsdag");
+    assert.equal(next.args.time, "15:00");
+  });
+
+  it("obegriplig fras → null, befintligt tillstånd orört", () => {
+    assert.equal(applyReminderFollowUp(current, "kanske senare", NOW, TZ), null);
+  });
+});
+
+describe("reminderLocalFromArgs + review-grind", () => {
+  const NOW = new Date("2026-08-29T10:00:00Z");
+
+  it("lokal väggtid speglar det som visas", () => {
+    const local = reminderLocalFromArgs({ whenDate: "2026-08-30", time: "15:00" }, NOW, TZ);
+    assert.deepEqual(local, { date: "2026-08-30", time: "15:00", whenIso: "2026-08-30T15:00" });
+    assert.equal(formatReminderDateChip("2026-08-30"), "Sön 30 aug");
+  });
+
+  it("HIGH + SAFE + komplett utan guide → ingen obligatorisk review", () => {
+    assert.equal(
+      reminderNeedsReview({ complete: true, confidence: "high", inGuidedFlow: false }),
+      false
+    );
+  });
+
+  it("guidat flöde, låg konfidens eller tvetydighet → review", () => {
+    assert.equal(reminderNeedsReview({ complete: true, confidence: "high", inGuidedFlow: true }), true);
+    assert.equal(reminderNeedsReview({ complete: true, confidence: "low", inGuidedFlow: false }), true);
+    assert.equal(
+      reminderNeedsReview({ complete: true, confidence: "high", inGuidedFlow: false, ambiguous: true }),
+      true
+    );
+    assert.equal(reminderNeedsReview({ complete: false, confidence: "high", inGuidedFlow: false }), true);
   });
 });
 

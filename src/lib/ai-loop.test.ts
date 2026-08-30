@@ -515,6 +515,32 @@ describe("påminnelser via verktygsloopen", () => {
     );
   });
 
+  test("redigerad förhandsvisning: title + whenIso är det som skapas – inte den gamla frasen", async () => {
+    const result = await runBarCommand("create_reminder", {
+      title: "Ring Göran",
+      whenIso: "2026-08-30T10:00",
+      text: "skicka till göran imorgon kl 15",
+    });
+    assert.equal(result.ok, true);
+    const rem = db().reminders.find((r) => r.title === "Ring Göran");
+    assert.ok(rem, "skapade den visade titeln, inte originalfrasen");
+    assert.equal(db().reminders.some((r) => /skicka till göran/i.test(r.title)), false);
+    const local = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: rem.timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(rem.dueAt));
+    assert.equal(local, "10:00");
+    const svDate = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: rem.timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(rem.dueAt));
+    assert.equal(svDate, "2026-08-30");
+  });
+
   test("guidat kommando: 'kl 9 istället' ändrar bara tiden – titeln (VAD) förblir exakt", async () => {
     const result = await runBarCommand("create_reminder", { title: "Ring Göran", whenText: "kl 9 istället" });
     assert.equal(result.ok, true);

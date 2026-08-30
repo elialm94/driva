@@ -277,6 +277,13 @@ export interface CommandRunParams {
    * förhandsvisning. Används när ett enda yttrande innehöll både VAD och NÄR.
    */
   text?: string;
+  /**
+   * Exakt visat tillstånd från den redigerbara förhandsvisningen.
+   * Vinner över text/whenText så skapa aldrig skickar en gammal parse.
+   */
+  whenIso?: string;
+  whenDate?: string;
+  time?: string;
 }
 
 function missingParam(what: string): ToolResult {
@@ -343,6 +350,23 @@ export async function runBarCommand(
           forModel: {},
           error: "Jag förstod inte tidpunkten. Prova t.ex. imorgon, onsdag eller om 2 timmar.",
         };
+        // Redigerad förhandsvisning: exakt det som visas – ingen omparsning
+        // av den ursprungliga frasen som kan vara inaktuell.
+        const editedTitle = params.title?.trim() ?? "";
+        if (editedTitle && (params.whenIso?.trim() || params.whenDate?.trim())) {
+          result = await executeTool(
+            "create_reminder",
+            {
+              title: editedTitle,
+              ...(params.whenIso?.trim() ? { whenIso: params.whenIso.trim() } : {}),
+              ...(params.whenDate?.trim() ? { whenDate: params.whenDate.trim() } : {}),
+              ...(params.time?.trim() ? { time: params.time.trim() } : {}),
+              ...(relatedFromTitle(editedTitle) ?? {}),
+            },
+            toolOptions
+          );
+          break;
+        }
         // Ett-yttrande-vägen: hela frasen bär både VAD och NÄR.
         const text = params.text?.trim() ?? "";
         if (text) {
@@ -355,7 +379,7 @@ export async function runBarCommand(
           result = parsed?.complete ? await executeTool("create_reminder", parsed.args, toolOptions) : cannotParse;
           break;
         }
-        const title = params.title?.trim() ?? "";
+        const title = editedTitle;
         const whenText = params.whenText?.trim() ?? "";
         if (!title || !whenText) {
           result = missingParam(title ? "När" : "Titel");

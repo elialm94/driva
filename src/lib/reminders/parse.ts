@@ -260,8 +260,162 @@ export function whenFromReminderArgs(args: Record<string, string | number | bool
       daypart: typeof args.daypart === "string" ? (args.daypart as Daypart) : undefined,
     };
   }
+  if (typeof args.whenIso === "string") {
+    return { kind: "isoDateTime", value: args.whenIso };
+  }
   if (typeof args.daypart === "string") return { kind: "daypart", daypart: args.daypart as Daypart };
   return null;
+}
+
+/** HH:MM med nollutfyllnad ("9:00" → "09:00"). */
+export function padClock(time: string): string {
+  const m = /^(\d{1,2})(?:[:.](\d{2}))?$/.exec(time.trim());
+  if (!m) return time;
+  return `${String(Number(m[1])).padStart(2, "0")}:${m[2] ?? "00"}`;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+export interface ReminderLocalWhen {
+  date: string;
+  time: string;
+  whenIso: string;
+}
+
+/** Tolkade argument → lokal väggtid som förhandsvisningen visar och skapa skickar. */
+export function reminderLocalFromArgs(
+  args: Record<string, string | number | boolean>,
+  now: Date,
+  timezone: string
+): ReminderLocalWhen | null {
+  const expr = whenFromReminderArgs(args);
+  if (!expr) return null;
+  const resolved = resolveWhen(expr, now, timezone);
+  if (!resolved.ok) return null;
+  const p = localParts(new Date(resolved.value.dueAt), timezone);
+  const date = `${p.year}-${pad2(p.month)}-${pad2(p.day)}`;
+  const time = `${pad2(p.hour)}:${pad2(p.minute)}`;
+  return { date, time, whenIso: `${date}T${time}` };
+}
+
+export function reminderArgsFromLocal(date: string, time: string): Record<string, string | number | boolean> {
+  return { whenDate: date, time: padClock(time), whenIso: `${date}T${padClock(time)}` };
+}
+
+/* ----------------------------- Visning / rättelse ----------------------------- */
+
+const TITLE_STOP = new Set([
+  "att", "och", "om", "en", "ett", "på", "i", "den", "det", "av", "för", "med", "till",
+  "hos", "åt", "från", "som", "vid", "efter", "innan", "under", "över",
+]);
+
+const NAME_AFTER = new Set(["till", "med", "hos", "åt", "och"]);
+const LEAD_VERBS = new Set([
+  "ring", "ringa", "skicka", "beställa", "kolla", "kontakta", "maila", "mejla", "boka", "följa", "prata",
+]);
+
+/**
+ * Rimlig visningsversalisering: "skicka till göran" → "Skicka till Göran".
+ * Byter ALDRIG verb ("skicka" förblir "skicka", inte "ring").
+ */
+export function prettyReminderTitle(title: string): string {
+  const words = title.replace(/\s+/g, " ").trim().split(" ");
+  if (words.length === 1 && !words[0]) return "";
+  return words
+    .map((raw, i) => {
+      if (!raw) return raw;
+      const lower = raw.toLocaleLowerCase("sv");
+      if (i === 0) return raw.charAt(0).toLocaleUpperCase("sv") + raw.slice(1);
+      if (TITLE_STOP.has(lower)) return lower;
+      const prev = words[i - 1]?.toLocaleLowerCase("sv");
+      if (prev && NAME_AFTER.has(prev)) {
+        return raw.charAt(0).toLocaleUpperCase("sv") + raw.slice(1);
+      }
+      if (i === 1 && LEAD_VERBS.has(words[0]?.toLocaleLowerCase("sv") ?? "") && !TITLE_STOP.has(lower)) {
+        return raw.charAt(0).toLocaleUpperCase("sv") + raw.slice(1);
+      }
+      return raw;
+    })
+    .join(" ");
+}
+
+const FOLLOW_UP_LEAD =
+  /^(?:nej(?:\s+förresten)?|ändra(?:\s+till)?|gör\s+det|jag\s+menar|istället)\s+/i;
+const CLOCK_ONLY = /^kl(?:ockan)?\.?\s*(\d{1,2})(?:[:.](\d{2}))?$/i;
+const HAS_CLOCK = /\bkl(?:ockan)?\.?\s*\d{1,2}(?:[:.]\d{2})?\b/i;
+
+function stripFollowUpLead(text: string): string {
+  let rest = text.replace(WHEN_FILLER, " ").replace(/\s+/g, " ").trim();
+  for (let i = 0; i < 3; i++) {
+    const next = rest.replace(FOLLOW_UP_LEAD, "").trim();
+    if (next === rest) break;
+    rest = next;
+  }
+  return rest.replace(/[\s,.!?…]+$/g, "").trim();
+}
+
+export interface ReminderFollowUp {
+  title?: string;
+  args: Record<string, string | number | boolean>;
+}
+
+/**
+ * Tunn uppföljning i förhandsvisningen: "nej kl 10 istället" / "ändra till
+ * imorgon kl 9" uppdaterar bara det fält som ändrades. Startar inte om
+ * flödet. Delar parser med parseWhenText; korrektionslagret (nl-corrections)
+ * kan byta ut den här haken när det landar.
+ */
+export function applyReminderFollowUp(
+  current: Record<string, string | number | boolean>,
+  followUp: string,
+  now: Date,
+  timezone: string
+): ReminderFollowUp | null {
+  const cleaned = stripFollowUpLead(followUp);
+  if (!cleaned) return null;
+
+  const local = reminderLocalFromArgs(current, now, timezone);
+
+  const clockOnly = CLOCK_ONLY.exec(cleaned);
+  if (clockOnly) {
+    const time = padClock(`${clockOnly[1]}:${clockOnly[2] ?? "00"}`);
+    if (local) return { args: reminderArgsFromLocal(local.date, time) };
+    const whenArgs = parseWhenText(cleaned, now, timezone);
+    return whenArgs ? { args: whenArgs } : null;
+  }
+
+  const whenArgs = parseWhenText(cleaned, now, timezone);
+  if (whenArgs) {
+    if (!HAS_CLOCK.test(cleaned) && local && !whenArgs.time && !whenArgs.daypart) {
+      return { args: { ...whenArgs, time: local.time } };
+    }
+    return { args: whenArgs };
+  }
+
+  const parsed = parseReminderCommandInput(cleaned, now, timezone);
+  if (parsed?.complete) {
+    return { title: prettyReminderTitle(parsed.title), args: parsed.args };
+  }
+  return null;
+}
+
+/**
+ * När förhandsvisning ska visas vs one-shot. HIGH + SAFE + komplett och inte
+ * i guidat/tvetydigt läge → skapa + Ångra (oneshot-grenen). Annars redigerbar
+ * preview. Guidat flöde (slot-fill) visar alltid preview när den finns.
+ */
+export function reminderNeedsReview(input: {
+  complete: boolean;
+  confidence: "high" | "low";
+  inGuidedFlow: boolean;
+  ambiguous?: boolean;
+  explicitReview?: boolean;
+}): boolean {
+  if (input.explicitReview || input.ambiguous || input.inGuidedFlow) return true;
+  if (!input.complete || input.confidence !== "high") return true;
+  return false;
 }
 
 /* --------------------- Kommandokontext: tolka ALLT ur EN mening --------------------- */
@@ -328,6 +482,17 @@ export function parseWhenText(
 }
 
 /* ------------------------------- Förhandsvisning ------------------------------ */
+
+/** "Sön 30 aug" – kort chip i förhandsvisningen. */
+export function formatReminderDateChip(date: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!m) return date;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const text = new Intl.DateTimeFormat("sv-SE", { weekday: "short", day: "numeric", month: "short" })
+    .format(d)
+    .replace(/\./g, "");
+  return text.charAt(0).toLocaleUpperCase("sv") + text.slice(1);
+}
 
 /** Tolkade verktygsargument → "Onsdag 2 september kl 10:00" (eller null). */
 export function previewReminderDueFromArgs(
