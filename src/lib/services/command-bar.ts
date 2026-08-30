@@ -291,6 +291,8 @@ export interface CommandRunParams {
   whenIso?: string;
   whenDate?: string;
   time?: string;
+  /** Sant när förhandsvisningen skapar utan deadline. */
+  undated?: boolean;
 }
 
 function missingParam(what: string): ToolResult {
@@ -355,12 +357,12 @@ export async function runBarCommand(
         const cannotParse: ToolResult = {
           ok: false,
           forModel: {},
-          error: "Jag förstod inte tidpunkten. Prova t.ex. imorgon, onsdag eller om 2 timmar.",
+          error: "Jag förstod inte tidpunkten. Prova t.ex. imorgon, onsdag eller om 2 timmar – eller lämna tomt.",
         };
         // Redigerad förhandsvisning: exakt det som visas – ingen omparsning
         // av den ursprungliga frasen som kan vara inaktuell.
         const editedTitle = params.title?.trim() ?? "";
-        if (editedTitle && (params.whenIso?.trim() || params.whenDate?.trim())) {
+        if (editedTitle && (params.whenIso?.trim() || params.whenDate?.trim() || params.undated)) {
           result = await executeTool(
             "create_reminder",
             {
@@ -374,7 +376,7 @@ export async function runBarCommand(
           );
           break;
         }
-        // Ett-yttrande-vägen: hela frasen bär både VAD och NÄR.
+        // Ett-yttrande-vägen: hela frasen bär VAD och ev. NÄR (tid är valfritt).
         const text = params.text?.trim() ?? "";
         if (text) {
           const resolution = resolveUtteranceCorrections(text);
@@ -388,8 +390,16 @@ export async function runBarCommand(
         }
         const title = editedTitle;
         const whenText = params.whenText?.trim() ?? "";
-        if (!title || !whenText) {
-          result = missingParam(title ? "När" : "Titel");
+        if (!title) {
+          result = missingParam("Titel");
+          break;
+        }
+        if (!whenText) {
+          result = await executeTool(
+            "create_reminder",
+            { title, ...(relatedFromTitle(title) ?? {}) },
+            toolOptions
+          );
           break;
         }
         // Guidade steget: titeln är DATA och tolkas aldrig om – bara tidfrasen
@@ -500,16 +510,10 @@ export async function interpretFreeTextViaAi(
         ? parseReminderCommandInput(text, new Date(), businessTimezone())
         : null;
       if (slots && !slots.complete) {
-        if (slots.missing === "when") {
-          return {
-            ok: true,
-            text: `När ska jag påminna dig om ${prettyReminderTitle(slots.title)}?`,
-          };
-        }
         if (slots.missing === "title") {
           return { ok: true, text: "Vad ska jag påminna dig om?" };
         }
-        return { ok: true, text: "Vad ska jag påminna dig om, och när?" };
+        return { ok: true, text: "Vad ska jag påminna dig om?" };
       }
     }
   }

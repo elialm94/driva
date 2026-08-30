@@ -62,6 +62,9 @@ export interface ResolvedWhen {
   hasExplicitTime: boolean;
 }
 
+/** Ingen deadline – giltig påminnelse, inte försenad. */
+export type OptionalWhenExpression = WhenExpression | { kind: "none" };
+
 /* ------------------------- Tidszonssäker datumräkning ------------------------ */
 
 interface LocalParts {
@@ -211,32 +214,44 @@ export function resolveWhen(expr: WhenExpression, now: Date, timezone: string): 
 
 /* ------------------------- Formatering för svar/kort ------------------------- */
 
-/** "onsdag 2 september kl 10:00" – alltid i påminnelsens tidszon. */
-export function formatDueAt(dueAtIso: string, timezone: string): string {
-  const instant = new Date(dueAtIso);
-  const day = new Intl.DateTimeFormat("sv-SE", {
+/** "onsdag 2 september" – datum utan klockslag. */
+export function formatDueDate(dueAtIso: string, timezone: string): string {
+  return new Intl.DateTimeFormat("sv-SE", {
     timeZone: timezone,
     weekday: "long",
     day: "numeric",
     month: "long",
-  }).format(instant);
-  const time = new Intl.DateTimeFormat("sv-SE", {
+  }).format(new Date(dueAtIso));
+}
+
+function formatClock(dueAtIso: string, timezone: string): string {
+  return new Intl.DateTimeFormat("sv-SE", {
     timeZone: timezone,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  }).format(instant);
-  return `${day} kl ${time}`;
+  }).format(new Date(dueAtIso));
+}
+
+/** "onsdag 2 september kl 10:00" – alltid i påminnelsens tidszon. */
+export function formatDueAt(dueAtIso: string, timezone: string, hasExplicitTime = true): string {
+  const day = formatDueDate(dueAtIso, timezone);
+  if (!hasExplicitTime) return day;
+  return `${day} kl ${formatClock(dueAtIso, timezone)}`;
+}
+
+function capitalizeSv(text: string): string {
+  return text ? text.charAt(0).toLocaleUpperCase("sv") + text.slice(1) : text;
 }
 
 /** "Onsdag 2 september kl. 12:00" – visning tillbaka till användaren. */
-export function formatDueAtDisplay(dueAtIso: string, timezone: string): string {
-  const raw = formatDueAt(dueAtIso, timezone).replace(" kl ", " kl. ");
-  return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : raw;
+export function formatDueAtDisplay(dueAtIso: string, timezone: string, hasExplicitTime = true): string {
+  const raw = formatDueAt(dueAtIso, timezone, hasExplicitTime).replace(" kl ", " kl. ");
+  return capitalizeSv(raw);
 }
 
 /** "onsdag 2 sep. kl. 12:00" – kompakt sekundärrad i autocomplete. */
-export function formatDueAtCompact(dueAtIso: string, timezone: string): string {
+export function formatDueAtCompact(dueAtIso: string, timezone: string, hasExplicitTime = true): string {
   const instant = new Date(dueAtIso);
   const day = new Intl.DateTimeFormat("sv-SE", {
     timeZone: timezone,
@@ -244,13 +259,40 @@ export function formatDueAtCompact(dueAtIso: string, timezone: string): string {
     day: "numeric",
     month: "short",
   }).format(instant);
-  const time = new Intl.DateTimeFormat("sv-SE", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(instant);
-  return `${day} kl. ${time}`;
+  if (!hasExplicitTime) return day;
+  return `${day} kl. ${formatClock(dueAtIso, timezone)}`;
+}
+
+export const NO_REMINDER_TIME_LABEL = "Ingen tid";
+
+/**
+ * Kompakt etikett för Hem-listan: "15:00" / "onsdag" / "4 sep" / "Ingen tid".
+ * Visar aldrig 00:00 för datum-utan-tid.
+ */
+export function formatReminderWhenChip(
+  dueAt: string | undefined,
+  timezone: string,
+  hasExplicitTime: boolean,
+  now = new Date()
+): string {
+  if (!dueAt) return NO_REMINDER_TIME_LABEL;
+  const instant = new Date(dueAt);
+  const dayDiff = Math.round(
+    (startOfLocalDay(instant, timezone).getTime() - startOfLocalDay(now, timezone).getTime()) / 86_400_000
+  );
+  if (hasExplicitTime && dayDiff === 0) return formatClock(dueAt, timezone);
+  if (dayDiff === 0) return "Idag";
+  if (dayDiff === 1) return hasExplicitTime ? `imorgon ${formatClock(dueAt, timezone)}` : "imorgon";
+  if (dayDiff > 1 && dayDiff < 7) {
+    const weekday = new Intl.DateTimeFormat("sv-SE", { timeZone: timezone, weekday: "long" }).format(instant);
+    return hasExplicitTime ? `${weekday} ${formatClock(dueAt, timezone)}` : weekday;
+  }
+  const day = localParts(instant, timezone).day;
+  const month = new Intl.DateTimeFormat("sv-SE", { timeZone: timezone, month: "short" })
+    .format(instant)
+    .replace(/\.$/, "");
+  const date = `${day} ${month}`;
+  return hasExplicitTime ? `${date} ${formatClock(dueAt, timezone)}` : date;
 }
 
 function pad2(n: number): string {

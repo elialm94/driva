@@ -20,8 +20,8 @@ import { jobMoneySummary, nextPaymentPlanPartForJob, remainingToInvoiceForJob } 
 import { taxReductionCaseForInvoice, taxReductionCaseForJob, type TaxReductionCase } from "./tax-reduction";
 import {
   describeReminderDue,
+  listHomeReminders,
   listReminders,
-  reminderLocalDate,
   reminderTargetHref,
   reminderVisibleFrom,
 } from "./reminders";
@@ -117,7 +117,7 @@ export type ActionCta =
   | { type: "pickPaymentMatch"; txId: string }
   | { type: "confirmRotPayout"; label: string; txId: string }
   | { type: "registerCreditRefund"; label: string; invoiceId: string; txId?: string }
-  | { type: "reminderActions"; reminderId: string; dueAt: string; timezone: string }
+  | { type: "reminderActions"; reminderId: string; dueAt?: string; timezone: string }
   // Betalningsuppgifter för leverantörsfakturor – konkreta lösningsflöden,
   // aldrig ett generiskt "öppna dokumentet" som låtsas vara en åtgärd.
   | {
@@ -205,6 +205,8 @@ export interface WatchingItem {
 export interface BusinessActions {
   attention: BusinessAction[];
   watching: WatchingItem[];
+  /** Aktiva påminnelser – samma pass som attention, ingen extra query. */
+  reminders: import("./reminders").HomeReminderItem[];
 }
 
 /** Skickad offert utan svar i så här många dagar → dags att följa upp. */
@@ -338,7 +340,11 @@ export function getBusinessActions(
   watching.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   const unique = watching.filter((item) => !attentionIds.has(item.id));
 
-  return { attention, watching: unique.slice(0, WATCHING.maxItems) };
+  return {
+    attention,
+    watching: unique.slice(0, WATCHING.maxItems),
+    reminders: listHomeReminders(now),
+  };
 }
 
 /**
@@ -741,36 +747,21 @@ function collectJobs(ranked: Ranked[], watching: WatchingItem[], now: Date) {
 
 /**
  * Policy (härledd – aldrig lagrad):
+ *  - Ingen deadline → inte i uppmärksamhet (finns i Påminnelser-sektionen).
  *  - Klockslag/dagsdel → syns i uppmärksamhet från dueAt.
- *  - Dagsnivå → syns från lokal dagsstart (förfaller kl 10:00 = standardtid).
- *  - Framtida inom WATCHING.reminderDays → På gång, aldrig uppmärksamhet i förtid.
+ *  - Dagsnivå → syns från lokal dagsstart den dagen.
+ *  - Framtida syns i Påminnelser, inte i Behöver din uppmärksamhet.
  *  - Uppskjutna försvinner tills snoozedUntil. COMPLETED/DISMISSED syns aldrig.
- *  - Förseningar presenteras tydligt ("Försenad – skulle gjorts igår kl 10:00").
  */
-function collectReminders(ranked: Ranked[], watching: WatchingItem[], now: Date) {
+function collectReminders(ranked: Ranked[], _watching: WatchingItem[], now: Date) {
   for (const reminder of listReminders()) {
     const visibleFrom = reminderVisibleFrom(reminder);
+    if (!visibleFrom || !reminder.dueAt) continue;
+    if (visibleFrom.getTime() > now.getTime()) continue;
+
     const due = describeReminderDue(reminder, now);
-    const href = reminderTargetHref(reminder);
-
-    if (visibleFrom.getTime() > now.getTime()) {
-      const days = Math.round((startOfLocalDayMs(visibleFrom) - startOfLocalDayMs(now)) / DAY_MS);
-      if (days <= WATCHING.reminderDays) {
-        watching.push({
-          id: `reminder-upcoming-${reminder.id}`,
-          category: "reminder",
-          title: reminder.title,
-          subtitle: due.text,
-          href,
-          date: reminderLocalDate(reminder),
-        });
-      }
-      continue;
-    }
-
     ranked.push({
       rank: RANK.reminder,
-      // Mest försenade först, därefter tidigast tidpunkt.
       order: Date.parse(reminder.dueAt) || 0,
       action: {
         id: `reminder-${reminder.id}`,
@@ -779,7 +770,7 @@ function collectReminders(ranked: Ranked[], watching: WatchingItem[], now: Date)
         icon: "bell",
         title: reminder.title,
         subtitle: reminder.description ? `${due.text} · ${reminder.description}` : due.text,
-        href,
+        href: reminderTargetHref(reminder),
         cta: {
           type: "reminderActions",
           reminderId: reminder.id,

@@ -54,7 +54,7 @@ export function isPaymentReminderUtterance(text: string): boolean {
 export function isInternalReminderIntent(text: string): boolean {
   const t = text.trim();
   if (!t || isPaymentReminderUtterance(t)) return false;
-  return /^(?:skapa(?:\s+en)?\s+påminnelse|påminn(?:a)?(?:\s+mig)?)\b/i.test(t);
+  return /^(?:skapa(?:\s+en)?\s+påminnelse|påminn(?:a)?(?:\s+mig)?|kom(?:\s+ihåg))\b/i.test(t);
 }
 
 export function identifyUtteranceIntent(text: string): UtteranceIntent {
@@ -67,7 +67,8 @@ export function identifyUtteranceIntent(text: string): UtteranceIntent {
   if (/\btelefon\b/i.test(t) && extractPhoneCandidates(t).length > 0) return "create_customer";
   if (
     isInternalReminderIntent(t) ||
-    (/\b(?:skapa(?:\s+en)?\s+påminnelse|påminn(?:a)?(?:\s+mig)?)\b/i.test(t) && !isPaymentReminderUtterance(t))
+    (/\b(?:skapa(?:\s+en)?\s+påminnelse|påminn(?:a)?(?:\s+mig)?|kom(?:\s+ihåg))\b/i.test(t) &&
+      !isPaymentReminderUtterance(t))
   ) {
     return "create_reminder";
   }

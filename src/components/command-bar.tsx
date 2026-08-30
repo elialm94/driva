@@ -82,6 +82,7 @@ import {
   runCommandAction,
 } from "@/app/command-actions";
 import { cancelAssistantActionAction, confirmAssistantActionAction } from "@/app/actions";
+import { useRouter } from "next/navigation";
 import { AppLink, useAppNavigate } from "./app-link";
 import { AssistantCardView } from "./assistant-ui";
 import { NewCustomerModal } from "./new-customer-modal";
@@ -165,7 +166,7 @@ type BarItem =
   | {
       key: string;
       kind: "reminderSlotFill";
-      missing: "when" | "title" | "both";
+      missing: "title" | "both";
       title?: string;
       args?: Record<string, string | number | boolean>;
     };
@@ -210,6 +211,7 @@ export function CommandBar({
 }) {
   const workspace: CommandWorkspace = variant === "accountant" ? "accountant" : "owner";
   const navigate = useAppNavigate();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [flow, setFlow] = useState<FlowState | null>(null);
@@ -291,6 +293,7 @@ export function CommandBar({
       setFlow(null);
       setQuery("");
       setHits(null);
+      router.refresh();
     }
     setResult(res);
   }
@@ -329,9 +332,7 @@ export function CommandBar({
     setAiTurns([]);
     setQuery("");
     setHits(null);
-    if (parsed.missing === "when") {
-      setFlow({ command, step: "when", reminderTitle: prettyReminderTitle(parsed.title) });
-    } else if (parsed.missing === "title") {
+    if (parsed.missing === "title") {
       setFlow({ command, step: "title", reminderArgs: parsed.args });
     } else {
       setFlow({ command, step: "title" });
@@ -412,18 +413,14 @@ export function CommandBar({
         ? parsed.args
         : parsed && "args" in parsed
           ? parsed.args
-          : f.reminderArgs;
-      setFlow(
-        parsed?.complete
-          ? {
-              command: f.command,
-              step: "when",
-              reminderTitle: pretty,
-              reminderArgs: parsed.args,
-              reminderSource: title.trim(),
-            }
-          : { command: f.command, step: "when", reminderTitle: pretty, reminderArgs: nextArgs }
-      );
+          : f.reminderArgs ?? { title: pretty };
+      setFlow({
+        command: f.command,
+        step: "when",
+        reminderTitle: pretty,
+        reminderArgs: nextArgs,
+        reminderSource: title.trim(),
+      });
       setQuery("");
       focusInput();
       return;
@@ -454,15 +451,17 @@ export function CommandBar({
       }
     }
     const local = args ? reminderLocalFromArgs(args, now, DEFAULT_TIMEZONE) : null;
-    if (!local) return;
-    // Exakt det som visas – aldrig den ursprungliga parsade frasen bakom UI:t.
     startTransition(async () => {
       applyResult(
         await runCommandAction("create_reminder", {
           title,
-          whenIso: local.whenIso,
-          whenDate: local.date,
-          time: local.time,
+          ...(local
+            ? {
+                whenIso: local.whenIso,
+                whenDate: local.date,
+                ...(local.time ? { time: local.time } : {}),
+              }
+            : { undated: true }),
         })
       );
     });
@@ -474,13 +473,15 @@ export function CommandBar({
     );
   }
 
-  function updateReminderWhen(date: string, time: string) {
+  function updateReminderWhen(date?: string, time?: string) {
     setQuery("");
     setFlow((f) => {
       if (!f || f.command.id !== "create_reminder") return f;
       return {
         ...f,
-        reminderArgs: { ...reminderArgsFromLocal(date, time), title: f.reminderTitle ?? "" },
+        reminderArgs: date
+          ? { ...reminderArgsFromLocal(date, time), title: f.reminderTitle ?? "" }
+          : { title: f.reminderTitle ?? "" },
         reminderSource: undefined,
       };
     });
@@ -563,11 +564,9 @@ export function CommandBar({
         break;
       case "reminderSlotFill":
         startReminderSlotFill(
-          item.missing === "when"
-            ? { complete: false, missing: "when", title: item.title ?? "" }
-            : item.missing === "title"
-              ? { complete: false, missing: "title", args: item.args ?? {} }
-              : { complete: false, missing: "both" }
+          item.missing === "title"
+            ? { complete: false, missing: "title", args: item.args ?? {} }
+            : { complete: false, missing: "both" }
         );
         break;
     }
@@ -683,13 +682,15 @@ export function CommandBar({
                       kind: "titleSubmit" as const,
                       title: resolvedTitle,
                       submitText: title,
-                      actionLabel: parsedDue ? "Skapa påminnelse" : isReminder ? "Fortsätt med" : "Skapa",
+                      actionLabel: isReminder ? "Skapa påminnelse" : "Skapa",
                       sublabel: isReminder
                         ? clarify
                           ? clarify
-                          : parsedDue
-                            ? formatResolvedCommandCta({ command: "Skapa påminnelse", detail: resolvedTitle, when: parsedDue })
-                            : "Nästa: när ska du bli påmind?"
+                          : formatResolvedCommandCta({
+                              command: "Skapa påminnelse",
+                              detail: resolvedTitle,
+                              when: parsedDue ?? "Ingen tid",
+                            })
                         : "Enter för att skapa",
                       icon: isReminder ? ("clock" as const) : ("job" as const),
                     },
@@ -821,7 +822,6 @@ export function CommandBar({
       };
     }
     if (reminderSlots && !reminderSlots.complete) {
-      const slotTitle = "title" in reminderSlots ? prettyReminderTitle(reminderSlots.title) : undefined;
       return {
         sections: [
           {
@@ -830,7 +830,6 @@ export function CommandBar({
                 key: "reminder-slot",
                 kind: "reminderSlotFill",
                 missing: reminderSlots.missing,
-                title: slotTitle,
                 args: "args" in reminderSlots ? reminderSlots.args : undefined,
               },
               ...matches.slice(0, 3).map((m) => commandItem(m.command)),
@@ -1062,13 +1061,13 @@ export function CommandBar({
       ? previewReminderDueFromArgs(args ?? reminderArgsFromLocal(local.date, local.time), now, DEFAULT_TIMEZONE)
       : q
         ? previewReminderDue(q, now, DEFAULT_TIMEZONE)
-        : null;
+        : "Ingen tid";
     return { title, args, local, preview, followUpError };
   })();
 
-  const reminderPreview = reminderDraft?.preview ?? null;
+  const reminderPreview = reminderDraft?.preview ?? "Ingen tid";
   const showReminderReview =
-    Boolean(reminderDraft?.local) &&
+    Boolean(reminderDraft) &&
     reminderNeedsReview({ complete: true, confidence: "high", inGuidedFlow: true });
 
   const inputValueDisabled = flow?.step === "confirm" || flow?.step === "invoiceTarget" || flow?.step === "quoteTopic";
@@ -1121,11 +1120,11 @@ export function CommandBar({
           onConfirm={finishInvoice}
           onBack={stepBack}
         />
-      ) : flow?.step === "when" && flow.reminderTitle && showReminderReview && reminderDraft?.local ? (
+      ) : flow?.step === "when" && flow.reminderTitle && showReminderReview && reminderDraft ? (
         <ReminderConfirm
           title={reminderDraft.title}
-          date={reminderDraft.local.date}
-          time={reminderDraft.local.time}
+          date={reminderDraft.local?.date}
+          time={reminderDraft.local?.time}
           preview={reminderPreview}
           followUpError={reminderDraft.followUpError}
           cta={flow.command.run.kind === "flow" ? flow.command.run.cta : "Skapa påminnelse"}
@@ -1414,18 +1413,8 @@ function rowVisual(item: BarItem): { icon: CommandIcon; label: ReactNode; sublab
     case "reminderSlotFill":
       return {
         icon: "clock",
-        label:
-          item.missing === "when"
-            ? `När ska jag påminna dig om ${item.title ?? "det"}?`
-            : item.missing === "title"
-              ? "Vad ska jag påminna dig om?"
-              : "Skapa påminnelse",
-        sublabel:
-          item.missing === "when"
-            ? "Nästa: tidpunkt"
-            : item.missing === "title"
-              ? "Nästa: vad"
-              : "Vad och när?",
+        label: item.missing === "title" ? "Vad ska jag påminna dig om?" : "Skapa påminnelse",
+        sublabel: item.missing === "title" ? "Nästa: vad" : "Vad ska du komma ihåg?",
       };
   }
 }
@@ -1556,15 +1545,15 @@ function ReminderConfirm({
   onWhenChange,
 }: {
   title: string;
-  date: string;
-  time: string;
+  date?: string;
+  time?: string;
   preview: string | null;
   followUpError: boolean;
   cta: string;
   pending: boolean;
   onConfirm: () => void;
   onTitleChange: (title: string) => void;
-  onWhenChange: (date: string, time: string) => void;
+  onWhenChange: (date?: string, time?: string) => void;
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(title);
@@ -1630,15 +1619,17 @@ function ReminderConfirm({
             onClick={() => setPickerOpen(true)}
             className="min-h-11 rounded-lg bg-card px-2.5 py-1.5 text-[13.5px] font-medium text-ink ring-1 ring-line transition-colors hover:ring-accent"
           >
-            {formatReminderDateChip(date)}
+            {date ? formatReminderDateChip(date) : "Ingen tid"}
           </button>
-          <button
-            type="button"
-            onClick={() => setPickerOpen(true)}
-            className="min-h-11 rounded-lg bg-card px-2.5 py-1.5 text-[13.5px] font-medium tabular text-ink ring-1 ring-line transition-colors hover:ring-accent"
-          >
-            {time}
-          </button>
+          {date ? (
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="min-h-11 rounded-lg bg-card px-2.5 py-1.5 text-[13.5px] font-medium tabular text-ink ring-1 ring-line transition-colors hover:ring-accent"
+            >
+              {time ?? "Ingen tid"}
+            </button>
+          ) : null}
         </div>
         {preview ? <p className="sr-only">{preview}</p> : null}
         {followUpError ? (
@@ -1648,12 +1639,14 @@ function ReminderConfirm({
         ) : null}
       </div>
       <DateTimePicker
-        date={date}
-        time={time}
+        date={date ?? ""}
+        time={time ?? ""}
         open={pickerOpen}
         onOpenChange={setPickerOpen}
         anchorRef={whenAnchorRef}
-        onChange={(next) => onWhenChange(next.date, next.time)}
+        timeOptional
+        allowEmpty
+        onChange={(next) => onWhenChange(next.date || undefined, next.time || undefined)}
       />
       <div className="mt-3 flex items-center gap-2">
         <button type="button" className={buttonClasses("accent", "md")} disabled={pending} onClick={onConfirm}>
