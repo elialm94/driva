@@ -24,6 +24,7 @@ import { AppLink } from "@/components/app-link";
 import { SmartBack } from "@/components/back-link";
 import { invoiceHref, newQuoteHref, quoteHref } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { getInvoiceDefaults } from "@/lib/services/settings";
 
 export async function generateMetadata(props: PageProps<"/uppdrag/[id]">) {
   const { id } = await props.params;
@@ -225,6 +226,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         material={actuals.filter((e) => e.type === "material").map(toView)}
         other={actuals.filter((e) => e.type === "other" || e.type === "travel").map(toView)}
         laborPrefill={laborPrefill}
+        defaultHourlyRate={getInvoiceDefaults().defaultHourlyRate}
         invoiceChoice={invoiceChoice}
       />
 

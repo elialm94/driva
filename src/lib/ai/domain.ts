@@ -1271,6 +1271,7 @@ export function businessProfileResult(): DomainResult {
         { label: "Bankgiro", value: s.bankgiro || "–" },
         { label: "Betalningsvillkor", value: `${d.paymentTermsDays} dagar` },
         { label: "Dröjsmålsränta", value: `${d.lateInterestRate} %` },
+        { label: "Timpris", value: d.defaultHourlyRate != null ? `${d.defaultHourlyRate} kr` : "Inte satt" },
       ],
       links: [{ label: "Öppna Inställningar", href: "/installningar" }],
     },

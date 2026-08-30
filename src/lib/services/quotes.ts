@@ -397,6 +397,7 @@ export function quoteDefaults() {
     lateInterestRate: settings.lateInterestRate,
     validUntil: isoDaysFromNow(settings.quoteValidityDays ?? 30),
     defaultVatRate: settings.defaultVatRate ?? 25,
+    defaultHourlyRate: settings.defaultHourlyRate,
     terms: STANDARD_TERMS,
   };
 }

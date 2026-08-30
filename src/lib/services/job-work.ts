@@ -83,6 +83,11 @@ function defaultVat(): VatRate {
   return db().settings.defaultVatRate ?? 25;
 }
 
+function defaultHourlyRate(): number | undefined {
+  const n = db().settings.defaultHourlyRate;
+  return n != null && Number.isFinite(n) && n >= 1 ? Math.round(n) : undefined;
+}
+
 function normalizeDesc(s: string): string {
   return s.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -233,7 +238,7 @@ export function registerJobTime(jobId: string, input: JobTimeInput): JobWorkEntr
     date: (input.date || todayISO()).slice(0, 10),
     qty: hours,
     unit: prefill?.unit || "tim",
-    unitPrice: assertMoney(input.unitPrice ?? prefill?.unitPrice ?? 0),
+    unitPrice: assertMoney(input.unitPrice ?? prefill?.unitPrice ?? defaultHourlyRate() ?? 0),
     vatRate: input.vatRate ?? prefill?.vatRate ?? defaultVat(),
     source: input.source ?? "manual",
     quotedLineItemId,

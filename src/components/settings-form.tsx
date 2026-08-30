@@ -70,6 +70,7 @@ type FormState = {
   lateInterestRate: number;
   quoteValidityDays: number;
   defaultVatRate: VatRate;
+  defaultHourlyRate: string;
 };
 
 function fromInitial(initial: CompanySettings, defaults: InvoiceDefaults): FormState {
@@ -100,6 +101,7 @@ function fromInitial(initial: CompanySettings, defaults: InvoiceDefaults): FormS
     lateInterestRate: defaults.lateInterestRate,
     quoteValidityDays: defaults.quoteValidityDays,
     defaultVatRate: defaults.defaultVatRate,
+    defaultHourlyRate: defaults.defaultHourlyRate != null ? String(defaults.defaultHourlyRate) : "",
   };
 }
 
@@ -254,6 +256,7 @@ export function SettingsForm({
         lateInterestRate: Number(form.lateInterestRate),
         quoteValidityDays: Number(form.quoteValidityDays),
         defaultVatRate: form.defaultVatRate,
+        defaultHourlyRate: form.defaultHourlyRate.trim() === "" ? undefined : Number(form.defaultHourlyRate.replace(",", ".")),
       });
       if (result.ok === false) {
         setError(result.error);
@@ -792,6 +795,29 @@ export function SettingsForm({
                 <option value={0}>0 %</option>
               </select>
               <p className={hintCls}>Förifylld på nya rader. Ändras inte på redan skapade dokument.</p>
+            </div>
+          </div>
+          <div>
+            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Arbete</p>
+            <div className="mt-3 max-w-xs">
+              <label className={labelCls} htmlFor="installningar-defaultHourlyRate">
+                Standard timpris (kr)
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                inputMode="numeric"
+                placeholder="t.ex. 550"
+                value={form.defaultHourlyRate}
+                onChange={(e) => patch("defaultHourlyRate", e.target.value)}
+                {...fieldMarkProps("defaultHourlyRate", inputCls)}
+              />
+              <FieldError id="installningar-defaultHourlyRate-fel">{errorFor("defaultHourlyRate")}</FieldError>
+              <p className={hintCls}>
+                Förifylls när du lägger till arbete på en offert eller faktura, och när du registrerar tid. Lämna tomt
+                om du vill ange priset varje gång.
+              </p>
             </div>
           </div>
         </Card>

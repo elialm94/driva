@@ -80,6 +80,7 @@ export default async function NewInvoicePage(props: PageProps<"/ekonomi/fakturor
         defaultLateInterestRate={defaults.lateInterestRate}
         defaultPaymentTermsDays={defaults.paymentTermsDays}
         defaultVatRate={defaults.defaultVatRate}
+        defaultHourlyRate={defaults.defaultHourlyRate}
         jobId={job?.id}
         quoteId={quote?.id ?? job?.quoteId}
         rotByCustomer={rotByCustomer}

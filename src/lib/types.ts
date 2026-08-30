@@ -57,6 +57,11 @@ export interface CompanySettings {
   /** Vanlig momssats för nya dokumentrader. */
   defaultVatRate: VatRate;
   /**
+   * Standard timpris i hela kronor för ny arbetstid (offert-/fakturarad
+   * "arbete" och tidregistrering). Saknas = fältet lämnas tomt (0 kr).
+   */
+  defaultHourlyRate?: number;
+  /**
    * Stabil lokal-del för inkommande leverantörsmejl (`slug@in.driva.se`).
    * Tenantuppslag sker på den här sluggen – aldrig på From-headern.
    */

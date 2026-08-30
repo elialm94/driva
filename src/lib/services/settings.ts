@@ -11,7 +11,11 @@ import {
   normalizePlusgiro,
 } from "../invoices/formats";
 import { normalizeSwedishPhone, normalizeSwedishPostalCode } from "../validation";
-import { settingsDefaultsFieldErrors, settingsProfileFieldErrors } from "../settings-validation";
+import {
+  parseOptionalHourlyRate,
+  settingsDefaultsFieldErrors,
+  settingsProfileFieldErrors,
+} from "../settings-validation";
 
 export function getBusinessProfile(): CompanySettings {
   return db().settings;
@@ -55,15 +59,18 @@ export interface InvoiceDefaults {
   lateInterestRate: number;
   quoteValidityDays: number;
   defaultVatRate: VatRate;
+  defaultHourlyRate?: number;
 }
 
 export function getInvoiceDefaults(): InvoiceDefaults {
   const s = db().settings;
+  const hourly = parseOptionalHourlyRate(s.defaultHourlyRate);
   return {
     paymentTermsDays: s.paymentTermsDays,
     lateInterestRate: s.lateInterestRate,
     quoteValidityDays: s.quoteValidityDays ?? 30,
     defaultVatRate: s.defaultVatRate ?? 25,
+    ...(hourly.ok && hourly.value != null ? { defaultHourlyRate: hourly.value } : {}),
   };
 }
 
@@ -140,6 +147,7 @@ export function updateInvoiceDefaults(input: InvoiceDefaults): InvoiceDefaults {
   s.lateInterestRate = input.lateInterestRate;
   s.quoteValidityDays = Math.round(input.quoteValidityDays);
   s.defaultVatRate = input.defaultVatRate;
+  applyHourlyRate(s, input.defaultHourlyRate);
   logActivity("Standardval för offerter och fakturor uppdaterades.");
   save();
   return getInvoiceDefaults();
@@ -155,9 +163,17 @@ export function updateCompanySettings(input: CompanySettingsInput): CompanySetti
   s.lateInterestRate = input.lateInterestRate;
   s.quoteValidityDays = Math.round(input.quoteValidityDays);
   s.defaultVatRate = input.defaultVatRate;
+  applyHourlyRate(s, input.defaultHourlyRate);
   logActivity("Inställningarna uppdaterades.");
   save();
   return s;
+}
+
+function applyHourlyRate(s: CompanySettings, raw: unknown): void {
+  const parsed = parseOptionalHourlyRate(raw);
+  if (!parsed.ok) throw new Error(parsed.message);
+  if (parsed.value == null) delete s.defaultHourlyRate;
+  else s.defaultHourlyRate = parsed.value;
 }
 
 export function suggestedVatNumber(orgNumber: string): string {
@@ -204,6 +220,7 @@ const PATCHABLE: (keyof CompanySettingsInput)[] = [
   "lateInterestRate",
   "quoteValidityDays",
   "defaultVatRate",
+  "defaultHourlyRate",
 ];
 
 export const SETTINGS_FIELD_LABELS: Record<string, string> = {
@@ -231,6 +248,7 @@ export const SETTINGS_FIELD_LABELS: Record<string, string> = {
   lateInterestRate: "Dröjsmålsränta (%)",
   quoteValidityDays: "Offertens giltighetstid (dagar)",
   defaultVatRate: "Vanlig momssats",
+  defaultHourlyRate: "Timpris (kr)",
 };
 
 export function applyBusinessProfilePatch(patch: Record<string, string | number | null>): CompanySettings {
@@ -262,11 +280,19 @@ export function applyBusinessProfilePatch(patch: Record<string, string | number 
     lateInterestRate: s.lateInterestRate,
     quoteValidityDays: s.quoteValidityDays ?? 30,
     defaultVatRate: s.defaultVatRate ?? 25,
+    defaultHourlyRate: s.defaultHourlyRate,
   };
   for (const key of PATCHABLE) {
     if (!(key in patch)) continue;
     const value = patch[key];
-    if (key === "paymentTermsDays" || key === "lateInterestRate" || key === "quoteValidityDays" || key === "defaultVatRate") {
+    if (key === "defaultHourlyRate") {
+      if (value == null || value === "") next.defaultHourlyRate = undefined;
+      else {
+        const n = typeof value === "number" ? value : Number(value);
+        if (!Number.isFinite(n)) throw new Error(`Ogiltigt värde för ${SETTINGS_FIELD_LABELS[key] ?? key}.`);
+        next.defaultHourlyRate = n;
+      }
+    } else if (key === "paymentTermsDays" || key === "lateInterestRate" || key === "quoteValidityDays" || key === "defaultVatRate") {
       const n = typeof value === "number" ? value : Number(value);
       if (!Number.isFinite(n)) throw new Error(`Ogiltigt värde för ${SETTINGS_FIELD_LABELS[key] ?? key}.`);
       if (key === "defaultVatRate") next.defaultVatRate = n as VatRate;

@@ -1692,7 +1692,7 @@ export const settingsColumns = [
   "website_notification_email", "phone", "website_url", "address", "postal_code", "city",
   "sate", "country", "bankgiro", "plusgiro", "bank_account", "iban", "bic", "logo_initials",
   "logo_data_url", "f_skatt_per_month", "payroll_reserve_per_month", "payment_terms_days",
-  "late_interest_rate", "quote_validity_days", "default_vat_rate", "inbound_mail_slug",
+  "late_interest_rate", "quote_validity_days", "default_vat_rate", "default_hourly_rate", "inbound_mail_slug",
   "payer_bank_name", "payer_iban", "payer_bic",
 ];
 
@@ -1725,6 +1725,7 @@ export function settingsToRow(s: CompanySettings, businessId: string): Record<st
     late_interest_rate: s.lateInterestRate,
     quote_validity_days: s.quoteValidityDays,
     default_vat_rate: s.defaultVatRate,
+    default_hourly_rate: s.defaultHourlyRate ?? null,
     inbound_mail_slug: s.inboundMailSlug || "demo",
     payer_bank_name: s.payerBankName ?? null,
     payer_iban: s.payerIban ?? null,
@@ -1760,6 +1761,7 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
     lateInterestRate: num(r.late_interest_rate),
     quoteValidityDays: num(r.quote_validity_days),
     defaultVatRate: num(r.default_vat_rate) as CompanySettings["defaultVatRate"],
+    ...opt("defaultHourlyRate", numOrU(r.default_hourly_rate)),
     ...opt("inboundMailSlug", strOrU(r.inbound_mail_slug)),
     ...opt("payerBankName", strOrU(r.payer_bank_name)),
     ...opt("payerIban", strOrU(r.payer_iban)),

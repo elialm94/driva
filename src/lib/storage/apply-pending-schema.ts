@@ -49,6 +49,12 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     `alter table public.businesses add column if not exists disabled_at timestamptz`
   );
 
+  await ensureColumn(
+    "business_settings",
+    "default_hourly_rate",
+    `alter table public.business_settings add column if not exists default_hourly_rate integer`
+  );
+
   await ensureColumn("websites", "design", `alter table public.websites add column if not exists design jsonb`);
   await ensureColumn(
     "websites",

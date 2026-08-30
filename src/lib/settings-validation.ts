@@ -61,6 +61,30 @@ export interface SettingsDefaultsFields {
   lateInterestRate: number;
   quoteValidityDays: number;
   defaultVatRate: VatRate;
+  /** Tomt / saknas = inte satt. Annars hela kronor. */
+  defaultHourlyRate?: number | string | null;
+}
+
+/** Tolkar valfritt timpris. Tomt och 0 = inte satt. */
+export function parseOptionalHourlyRate(
+  value: unknown
+): { ok: true; value?: number } | { ok: false; message: string } {
+  if (value == null || String(value).trim() === "") return { ok: true };
+  const raw = typeof value === "number" ? value : Number(String(value).trim().replace(",", ".").replace(/\s/g, ""));
+  if (!Number.isFinite(raw)) {
+    return { ok: false, message: "Timpriset ska anges i hela kronor, t.ex. 550." };
+  }
+  const n = Math.round(raw);
+  if (n < 0) return { ok: false, message: "Timpriset kan inte vara negativt." };
+  if (n === 0) return { ok: true };
+  if (n > 1_000_000) return { ok: false, message: "Timpriset är orimligt högt." };
+  return { ok: true, value: n };
+}
+
+/** À-pris för en ny rad. Bara arbete använder standardtimpriset. */
+export function defaultUnitPriceForLineKind(kind: string, hourly?: number): number {
+  if (kind !== "arbete") return 0;
+  return hourly != null && Number.isFinite(hourly) && hourly >= 1 ? Math.round(hourly) : 0;
 }
 
 export function settingsProfileFieldErrors(input: SettingsProfileFields): SettingsFieldError[] {
@@ -192,6 +216,15 @@ export function settingsDefaultsFieldErrors(input: SettingsDefaultsFields): Sett
       field: "defaultVatRate",
       label: "Vanlig momssats",
       message: "Vanlig momssats måste vara 0, 6, 12 eller 25 %.",
+      tab: "standardval",
+    });
+  }
+  const hourly = parseOptionalHourlyRate(input.defaultHourlyRate);
+  if (!hourly.ok) {
+    errors.push({
+      field: "defaultHourlyRate",
+      label: "Timpris",
+      message: hourly.message,
       tab: "standardval",
     });
   }

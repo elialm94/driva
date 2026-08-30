@@ -59,6 +59,7 @@ export default async function EditInvoicePage(props: { params: Promise<{ id: str
         customers={customers}
         defaultCustomerId={invoice.customerId}
         defaultLateInterestRate={db().settings.lateInterestRate}
+        defaultHourlyRate={db().settings.defaultHourlyRate}
         invoiceId={invoice.id}
         jobId={invoice.jobId}
         quoteId={invoice.quoteId}

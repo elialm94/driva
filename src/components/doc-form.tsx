@@ -48,6 +48,7 @@ import {
   prunedLines,
   quoteMissingRequirements,
 } from "@/lib/form-requirements";
+import { defaultUnitPriceForLineKind } from "@/lib/settings-validation";
 import { FieldError, FormValidationSummary, focusField, invalidFieldCls } from "./form-validation";
 import { StickyMobileActions } from "./sticky-actions";
 import type { RichTextDoc } from "@/lib/richtext";
@@ -173,7 +174,7 @@ export type { CustomerOption };
  * både på servern och i klienten, och ett slumpat id ger olika DOM-id:n
  * (rad-…-beskrivning) → hydration mismatch som React inte lappar ihop.
  */
-function newLine(kind: LineKind = "arbete", vatRate: VatRate = 25, stableId?: string): DocLine {
+function newLine(kind: LineKind = "arbete", vatRate: VatRate = 25, stableId?: string, hourlyRate?: number): DocLine {
   const type = lineTypeOf({ kind });
   return syncDocLineClassification({
     id: stableId ?? crypto.randomUUID(),
@@ -182,7 +183,7 @@ function newLine(kind: LineKind = "arbete", vatRate: VatRate = 25, stableId?: st
     description: "",
     qty: 1,
     unit: defaultUnitForLineType(type),
-    unitPrice: 0,
+    unitPrice: defaultUnitPriceForLineKind(kind, hourlyRate),
     vatRate,
   });
 }
@@ -232,12 +233,14 @@ function LinesEditor({
   lines,
   onChange,
   defaultVatRate = 25,
+  defaultHourlyRate,
   showErrors = false,
   rotActive = false,
 }: {
   lines: DocLine[];
   onChange: (lines: DocLine[]) => void;
   defaultVatRate?: VatRate;
+  defaultHourlyRate?: number;
   /** Efter ett sparförsök: markera ofullständiga rader tills de är ifyllda. */
   showErrors?: boolean;
   rotActive?: boolean;
@@ -428,7 +431,7 @@ function LinesEditor({
             type="button"
             className={buttonClasses("secondary", "sm", "max-sm:h-11 flex-1 sm:flex-none")}
             title={lineTypeHint(type)}
-            onClick={() => onChange([...lines, newLine(lineKindFromType(type), defaultVatRate)])}
+            onClick={() => onChange([...lines, newLine(lineKindFromType(type), defaultVatRate, undefined, defaultHourlyRate)])}
           >
             <Plus className="size-3.5" /> {lineTypeLabel(type)}
           </button>
@@ -611,7 +614,14 @@ export function QuoteForm({
     { personalIdentityNumber?: string; addressLine?: string; properties?: InvoicePropertyOption[] }
   >;
   initial?: QuoteFormInitial;
-  defaults: { paymentTermsDays: number; lateInterestRate: number; validUntil: string; terms: string; defaultVatRate?: VatRate };
+  defaults: {
+    paymentTermsDays: number;
+    lateInterestRate: number;
+    validUntil: string;
+    terms: string;
+    defaultVatRate?: VatRate;
+    defaultHourlyRate?: number;
+  };
   cancelHref: string;
   returnTo?: string;
   returnLabel?: string;
@@ -624,8 +634,11 @@ export function QuoteForm({
   const [title, setTitle] = useState(initial?.title ?? "");
   const [intro, setIntro] = useState(initial?.intro ?? "");
   const vat = defaults.defaultVatRate ?? 25;
+  const hourly = defaults.defaultHourlyRate;
   const [lines, setLines] = useState<DocLine[]>(
-    initial?.lines?.length ? initial.lines : [newLine("arbete", vat, "start-arbete"), newLine("material", vat, "start-material")]
+    initial?.lines?.length
+      ? initial.lines
+      : [newLine("arbete", vat, "start-arbete", hourly), newLine("material", vat, "start-material")]
   );
   const [rot, setRot] = useState<RotRut | null>(() =>
     initial?.rot ? rotForEditor(initial.rot.type, initial.lines?.length ? initial.lines : [], initial.rot, "offert") : null
@@ -787,6 +800,7 @@ export function QuoteForm({
             lines={lines}
             onChange={changeQuoteLines}
             defaultVatRate={vat}
+            defaultHourlyRate={hourly}
             showErrors={attempted}
             rotActive={Boolean(rot)}
           />
@@ -1060,6 +1074,7 @@ export function InvoiceForm({
   defaultLateInterestRate = 10,
   defaultPaymentTermsDays = 30,
   defaultVatRate = 25,
+  defaultHourlyRate,
   invoiceId,
   jobId,
   quoteId,
@@ -1076,6 +1091,7 @@ export function InvoiceForm({
   defaultLateInterestRate?: number;
   defaultPaymentTermsDays?: number;
   defaultVatRate?: VatRate;
+  defaultHourlyRate?: number;
   invoiceId?: string;
   jobId?: string;
   quoteId?: string;
@@ -1095,7 +1111,7 @@ export function InvoiceForm({
   const [customerOptions, setCustomerOptions] = useState(customers);
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
   const [lines, setLines] = useState<DocLine[]>(
-    initial?.lines?.length ? initial.lines : [newLine("arbete", defaultVatRate, "start-arbete")]
+    initial?.lines?.length ? initial.lines : [newLine("arbete", defaultVatRate, "start-arbete", defaultHourlyRate)]
   );
   const [rot, setRot] = useState<RotRut | null>(() =>
     initial?.rot ? rotForEditor(initial.rot.type, initial.lines?.length ? initial.lines : [], initial.rot, "faktura") : null
@@ -1302,6 +1318,7 @@ export function InvoiceForm({
             lines={lines}
             onChange={changeInvoiceLines}
             defaultVatRate={defaultVatRate}
+            defaultHourlyRate={defaultHourlyRate}
             showErrors={attempted}
             rotActive={Boolean(rot)}
           />
