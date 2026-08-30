@@ -3,6 +3,7 @@ import {
   DEFAULT_PRIMARY_CTA_LABEL,
   type CompanySettings,
   type Website,
+  type WebsiteCtaDestination,
   type WebsiteDesign,
   type WebsiteSection,
   type WebsiteSectionItem,
@@ -15,6 +16,9 @@ import {
 } from "@/lib/website-design";
 import { SiteContactForm, type SiteFormTokens } from "./site-widgets";
 import { SmoothSectionLink } from "./smooth-section-link";
+import { formatAddressLine, mailHref, resolveSiteContact, telHref } from "@/lib/website-contact";
+import { defaultCtaLabel, sectionAnchorId } from "@/lib/website-sections";
+import { instagramProfileUrl } from "@/lib/instagram";
 
 /**
  * Ren renderare för den publika hemsidan. Används i tre lägen: publika sajten
@@ -151,6 +155,7 @@ export function SiteRenderer({
   const sections = website.sections.filter(isVisible);
   const contactOn = sections.some((s) => s.type === "kontakt");
   const servicesOn = sections.some((s) => s.type === "tjanster");
+  const contact = resolveSiteContact(company, website);
 
   return (
     <div
@@ -158,7 +163,7 @@ export function SiteRenderer({
       style={vars as CSSProperties}
       className="@container min-h-full bg-(--site-bg) font-sans text-(--site-ink)"
     >
-      <SiteHeader website={website} company={company} theme={theme} contactOn={contactOn} />
+      <SiteHeader website={website} company={company} theme={theme} contactOn={contactOn} phone={contact.phone} />
 
       {sections.map((section, index) => {
         const lined = index > 0;
@@ -179,9 +184,36 @@ export function SiteRenderer({
           case "tjanster":
             return <ServicesSection key={section.id} section={section} theme={theme} lined={lined} />;
           case "om":
+          case "text":
             return <AboutSection key={section.id} section={section} theme={theme} lined={lined} />;
           case "galleri":
             return <GallerySection key={section.id} section={section} theme={theme} lined={lined} />;
+          case "instagram":
+            return <InstagramSection key={section.id} section={section} theme={theme} lined={lined} />;
+          case "omdomen":
+            return <TestimonialsSection key={section.id} section={section} theme={theme} lined={lined} />;
+          case "kontaktuppgifter":
+            return (
+              <ContactDetailsSection
+                key={section.id}
+                section={section}
+                company={company}
+                website={website}
+                theme={theme}
+                lined={lined}
+              />
+            );
+          case "cta":
+            return (
+              <CtaSection
+                key={section.id}
+                section={section}
+                company={company}
+                contactOn={contactOn}
+                theme={theme}
+                lined={lined}
+              />
+            );
           case "kontakt":
             return (
               <ContactSection
@@ -211,13 +243,27 @@ function SiteHeader({
   company,
   theme,
   contactOn,
+  phone,
 }: {
   website: Website;
   company: CompanySettings;
   theme: SiteThemeTokens;
   contactOn: boolean;
+  phone: string;
 }) {
   const onBand = theme.header === "band";
+  const callHref = telHref(phone);
+  const call = callHref ? (
+    <a
+      href={callHref}
+      className={`shrink-0 text-[13px] font-medium ${
+        onBand ? "text-(--site-band-ink) hover:opacity-80" : "text-(--site-soft) hover:text-(--site-ink)"
+      }`}
+    >
+      <span className="@md:hidden">Ring oss</span>
+      <span className="hidden @md:inline">{phone}</span>
+    </a>
+  ) : null;
   const cta = contactOn ? (
     <SmoothSectionLink href="#kontakt" className={`shrink-0 ${primaryButtonClass(theme.buttons, "md")}`}>
       {primaryCtaLabel(website)}
@@ -241,7 +287,10 @@ function SiteHeader({
       >
         <SiteLogo company={company} name={website.businessName} onBand={onBand} />
       </span>
-      {cta}
+      <span className="flex shrink-0 items-center gap-3">
+        {call}
+        {cta}
+      </span>
     </div>
   );
 
@@ -631,10 +680,12 @@ function AboutSection({
       <p className={`mt-3 ${theme.bodyClass} text-[15px] text-(--site-soft)`}>{section.body}</p>
     </>
   );
+  const imageRight = section.imagePosition !== "left";
+  const id = sectionAnchorId(section);
 
   if (theme.images === "editorial") {
     return (
-      <SectionShell id="om" lined={lined} theme={theme}>
+      <SectionShell id={id} lined={lined} theme={theme}>
         <div className="mx-auto max-w-2xl text-center">{copy}</div>
         {section.image ? (
           <div className="mx-auto mt-12 max-w-(--site-wide-w)">
@@ -646,9 +697,13 @@ function AboutSection({
   }
 
   return (
-    <SectionShell id="om" lined={lined} theme={theme}>
+    <SectionShell id={id} lined={lined} theme={theme}>
       {section.image ? (
-        <div className="grid items-center gap-8 @2xl:grid-cols-2 @2xl:gap-10">
+        <div
+          className={`grid items-center gap-8 @2xl:grid-cols-2 @2xl:gap-10 ${
+            imageRight ? "" : "@2xl:[&>*:first-child]:order-2"
+          }`}
+        >
           <div>{copy}</div>
           <SiteImage
             src={section.image}
@@ -755,9 +810,24 @@ function ContactSection({
   lined: boolean;
   interactive: boolean;
 }) {
+  const details = resolveSiteContact(company, website);
+  const phoneLink = telHref(details.phone);
+  const emailLink = mailHref(details.email);
   const info = (
     <>
-      {company.phone} · {company.email} · {website.city ?? company.city}
+      {phoneLink ? (
+        <a href={phoneLink} className="underline-offset-2 hover:underline">
+          {details.phone}
+        </a>
+      ) : null}
+      {phoneLink && (details.email || details.city) ? " · " : null}
+      {emailLink ? (
+        <a href={emailLink} className="underline-offset-2 hover:underline">
+          {details.email}
+        </a>
+      ) : null}
+      {emailLink && details.city ? " · " : null}
+      {details.city}
     </>
   );
 
@@ -858,10 +928,35 @@ function SiteFooter({
   company: CompanySettings;
   theme: SiteThemeTokens;
 }) {
+  const contact = resolveSiteContact(company, website);
+  const phoneLink = telHref(contact.phone);
+  const emailLink = mailHref(contact.email);
+  const address = formatAddressLine(contact);
   const line = (
-    <>
-      © {new Date().getFullYear()} {website.businessName} · Org.nr {company.orgNumber} · Hemsida byggd med Driva
-    </>
+    <div className="space-y-2">
+      <p>
+        © {new Date().getFullYear()} {website.businessName}
+        {contact.orgNumber ? ` · Org.nr ${contact.orgNumber}` : null}
+        {" · "}
+        Hemsida byggd med Driva
+      </p>
+      {phoneLink || emailLink || address ? (
+        <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+          {phoneLink ? (
+            <a href={phoneLink} className="underline-offset-2 hover:underline">
+              <span className="@md:hidden">Ring oss</span>
+              <span className="hidden @md:inline">{contact.phone}</span>
+            </a>
+          ) : null}
+          {emailLink ? (
+            <a href={emailLink} className="underline-offset-2 hover:underline">
+              {contact.email}
+            </a>
+          ) : null}
+          {address ? <span>{address}</span> : null}
+        </p>
+      ) : null}
+    </div>
   );
   if (theme.header === "band") {
     return (
@@ -876,5 +971,252 @@ function SiteFooter({
     >
       {line}
     </footer>
+  );
+}
+
+function ctaTarget({
+  destination,
+  company,
+  contactOn,
+}: {
+  destination: WebsiteCtaDestination;
+  company: CompanySettings;
+  contactOn: boolean;
+}): { href: string; external: boolean } | null {
+  if (destination === "kontakt") return contactOn ? { href: "#kontakt", external: false } : null;
+  if (destination === "phone") {
+    const href = telHref(company.phone);
+    return href ? { href, external: true } : null;
+  }
+  const href = mailHref(company.email);
+  return href ? { href, external: true } : null;
+}
+
+function InstagramSection({
+  section,
+  theme,
+  lined,
+}: {
+  section: WebsiteSection;
+  theme: SiteThemeTokens;
+  lined: boolean;
+}) {
+  const handle = section.instagram?.handle ?? "";
+  const posts = (section.instagram?.connected ? section.instagram.posts : undefined) ?? [];
+  const profile = handle ? instagramProfileUrl(handle) : "https://www.instagram.com/";
+  const centered = theme.gallery === "editorial";
+  const grid =
+    theme.gallery === "soft"
+      ? "mt-6 grid grid-cols-2 gap-3 @2xl:grid-cols-3"
+      : theme.gallery === "grid"
+        ? "mt-10 grid grid-cols-2 gap-3 @3xl:grid-cols-3"
+        : theme.gallery === "mosaic"
+          ? "mt-8 grid grid-cols-2 gap-1.5 @2xl:grid-cols-3"
+          : "mt-12 grid grid-cols-2 gap-4 @2xl:grid-cols-3";
+
+  return (
+    <SectionShell id={sectionAnchorId(section)} lined={lined} theme={theme} wide={theme.gallery === "editorial"}>
+      <div className={centered ? "mx-auto max-w-2xl text-center" : undefined}>
+        <SiteHeading as="h2" className={theme.h2Class}>
+          {section.heading}
+        </SiteHeading>
+        {section.body ? <p className="mt-2 text-[15px] text-(--site-soft)">{section.body}</p> : null}
+      </div>
+      {posts.length > 0 ? (
+        <div className={grid}>
+          {posts.map((post) => (
+            <a key={post.id} href={post.permalink || profile} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-(--site-radius-image)">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={post.mediaUrl} alt={post.caption ? post.caption.slice(0, 80) : ""} loading="lazy" decoding="async" className="aspect-square w-full object-cover" />
+            </a>
+          ))}
+        </div>
+      ) : handle ? (
+        <p className={`mt-6 ${centered ? "text-center" : ""} text-[15px] text-(--site-soft)`}>
+          <a href={profile} target="_blank" rel="noreferrer" className="font-medium text-(--site-ink) underline-offset-2 hover:underline">
+            @{handle}
+          </a>{" "}
+          på Instagram
+        </p>
+      ) : (
+        <p className={`mt-6 ${centered ? "text-center" : ""} text-[15px] text-(--site-soft)`}>Instagram är inte anslutet ännu.</p>
+      )}
+    </SectionShell>
+  );
+}
+
+function TestimonialsSection({
+  section,
+  theme,
+  lined,
+}: {
+  section: WebsiteSection;
+  theme: SiteThemeTokens;
+  lined: boolean;
+}) {
+  const items = (section.items ?? []).slice(0, 4);
+  const centered = theme.cards === "plain";
+  return (
+    <SectionShell id={sectionAnchorId(section)} lined={lined} theme={theme}>
+      <div className={centered ? "mx-auto max-w-2xl text-center" : undefined}>
+        <SiteHeading as="h2" className={theme.h2Class}>
+          {section.heading}
+        </SiteHeading>
+        {section.body ? (
+          <p className={`mt-2 max-w-xl text-[15px] leading-relaxed text-(--site-soft) ${centered ? "mx-auto" : ""}`}>{section.body}</p>
+        ) : null}
+      </div>
+      {items.length === 0 ? (
+        <p className="mt-8 text-center text-[14px] text-(--site-soft)">Inga omdömen att visa ännu.</p>
+      ) : (
+        <div className={`mt-8 grid gap-4 ${items.length === 1 ? "grid-cols-1 @2xl:max-w-xl" : "grid-cols-1 @2xl:grid-cols-2"}`}>
+          {items.map((item, i) => (
+            <figure
+              key={`${item.title}-${i}`}
+              className={
+                theme.cards === "bordered"
+                  ? "rounded-(--site-radius-card) border border-(--site-line) bg-(--site-card) p-5"
+                  : theme.cards === "tinted"
+                    ? "rounded-(--site-radius-card) bg-(--site-card) p-6"
+                    : theme.cards === "outlined"
+                      ? "rounded-(--site-radius-card) border-2 border-(--site-line-strong) bg-(--site-card) p-5"
+                      : "border-t border-(--site-line) pt-6"
+              }
+            >
+              {item.rating ? (
+                <p className="text-[13px] font-medium text-(--site-accent-band-text)" aria-label={`${item.rating} av 5`}>
+                  {"★".repeat(item.rating)}
+                  <span className="text-(--site-line-strong)">{"★".repeat(5 - item.rating)}</span>
+                </p>
+              ) : null}
+              <blockquote className={`text-[15px] leading-relaxed text-(--site-ink) ${item.rating ? "mt-2" : ""}`}>{item.text}</blockquote>
+              <figcaption className="mt-3 text-[13px] font-medium text-(--site-soft)">
+                {item.title}
+                {item.location ? `, ${item.location}` : ""}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
+    </SectionShell>
+  );
+}
+
+function ContactDetailsSection({
+  section,
+  company,
+  website,
+  theme,
+  lined,
+}: {
+  section: WebsiteSection;
+  company: CompanySettings;
+  website: Website;
+  theme: SiteThemeTokens;
+  lined: boolean;
+}) {
+  const contact = resolveSiteContact(company, website, section);
+  const phoneLink = telHref(contact.phone);
+  const emailLink = mailHref(contact.email);
+  const address = formatAddressLine(contact);
+  const rows: { label: string; node: ReactNode }[] = [];
+  if (phoneLink) {
+    rows.push({
+      label: "Telefon",
+      node: (
+        <a href={phoneLink} className="font-medium underline-offset-2 hover:underline">
+          <span className="@md:hidden">Ring oss · {contact.phone}</span>
+          <span className="hidden @md:inline">{contact.phone}</span>
+        </a>
+      ),
+    });
+  }
+  if (emailLink) {
+    rows.push({
+      label: "E-post",
+      node: (
+        <a href={emailLink} className="font-medium underline-offset-2 hover:underline">
+          {contact.email}
+        </a>
+      ),
+    });
+  }
+  if (address) rows.push({ label: "Adress", node: address });
+  if (contact.hours) rows.push({ label: "Öppettider", node: contact.hours });
+
+  return (
+    <SectionShell id={sectionAnchorId(section)} lined={lined} theme={theme}>
+      <SiteHeading as="h2" className={theme.h2Class}>
+        {section.heading}
+      </SiteHeading>
+      {section.body ? <p className="mt-2 max-w-xl text-[15px] text-(--site-soft)">{section.body}</p> : null}
+      <dl className="mt-6 grid gap-4 @2xl:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.label}>
+            <dt className={`${theme.eyebrowClass} text-(--site-accent-band-text)`}>{row.label}</dt>
+            <dd className="mt-1 text-[15px]">{row.node}</dd>
+          </div>
+        ))}
+      </dl>
+    </SectionShell>
+  );
+}
+
+function CtaSection({
+  section,
+  company,
+  contactOn,
+  theme,
+  lined,
+}: {
+  section: WebsiteSection;
+  company: CompanySettings;
+  contactOn: boolean;
+  theme: SiteThemeTokens;
+  lined: boolean;
+}) {
+  const destination = section.cta?.destination ?? "kontakt";
+  const target = ctaTarget({ destination, company, contactOn });
+  const label = section.cta?.label?.trim() || defaultCtaLabel(destination);
+  const button = target ? (
+    target.external ? (
+      <a href={target.href} className={primaryButtonClass(theme.buttons)}>
+        {label}
+      </a>
+    ) : (
+      <SmoothSectionLink href={target.href} className={primaryButtonClass(theme.buttons)}>
+        {label}
+      </SmoothSectionLink>
+    )
+  ) : null;
+
+  if (theme.contact === "band") {
+    return (
+      <section
+        id={sectionAnchorId(section)}
+        className={`${SECTION_SCROLL} bg-(--site-band) text-(--site-band-ink)`}
+        style={{ "--color-accent": "var(--site-accent-band-text)" } as CSSProperties}
+      >
+        <div className="mx-auto max-w-(--site-content-w) px-6 py-14 text-center @2xl:py-16">
+          <SiteHeading as="h2" className={theme.h2Class}>
+            {section.heading}
+          </SiteHeading>
+          {section.body ? <p className={`mx-auto mt-3 max-w-xl ${theme.bodyClass} text-(--site-band-soft)`}>{section.body}</p> : null}
+          {button ? <div className="mt-7 flex justify-center">{button}</div> : null}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <SectionShell id={sectionAnchorId(section)} lined={lined} theme={theme}>
+      <div className="mx-auto max-w-2xl text-center">
+        <SiteHeading as="h2" className={theme.h2Class}>
+          {section.heading}
+        </SiteHeading>
+        {section.body ? <p className={`mt-3 ${theme.bodyClass} text-(--site-soft)`}>{section.body}</p> : null}
+        {button ? <div className="mt-7 flex justify-center">{button}</div> : null}
+      </div>
+    </SectionShell>
   );
 }

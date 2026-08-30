@@ -20,10 +20,14 @@ import { Modal } from "./modal";
 import { humanizeMediaError, ImageDropzone } from "./image-dropzone";
 import {
   addServiceItemAction,
+  addWebsiteSectionAction,
   generateWebsiteAction,
   getSectionImagesAction,
+  instagramStatusAction,
   publishWebsiteAction,
   removeServiceItemAction,
+  removeTestimonialItemAction,
+  removeWebsiteSectionAction,
   reorderSectionsAction,
   reorderServiceItemsAction,
   rewriteSectionAction,
@@ -32,9 +36,26 @@ import {
   updateSectionAction,
   updateServiceItemAction,
 } from "@/app/actions";
-import type { WebsiteSection, WebsiteSectionItem } from "@/lib/types";
+import type {
+  WebsiteCtaDestination,
+  WebsiteImagePosition,
+  WebsiteInstagram,
+  WebsiteSection,
+  WebsiteSectionItem,
+} from "@/lib/types";
 import { DEFAULT_PRIMARY_CTA_LABEL, PRIMARY_CTA_LABEL_MAX } from "@/lib/types";
 import { FieldError, focusField, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
+import { canDeleteSection, defaultCtaLabel, isTextSectionType, type AddableSectionType } from "@/lib/website-sections";
+import type { SiteContact } from "@/lib/website-contact";
+import type { InstagramProviderState } from "@/lib/instagram";
+import {
+  AddSectionPicker,
+  ContactDetailsEditor,
+  DeleteSectionDialog,
+  InstagramEditor,
+  TestimonialItemModal,
+  TestimonialItemsEditor,
+} from "./site-section-builder";
 
 /**
  * Sektionsdata för redigeringslistan – utan tunga bild-data-URL:er.
@@ -463,13 +484,17 @@ export function SectionList({
   sections,
   labels,
   primaryCtaLabel = DEFAULT_PRIMARY_CTA_LABEL,
+  businessContact,
 }: {
   sections: SectionListSection[];
   labels: Record<string, string>;
   primaryCtaLabel?: string;
+  businessContact?: SiteContact;
 }) {
   const [rows, setRows] = useState(sections);
   const [pending, startTransition] = useTransition();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -512,31 +537,82 @@ export function SectionList({
     });
   }
 
+  function addType(type: AddableSectionType) {
+    setAddError(null);
+    startTransition(async () => {
+      const result = await addWebsiteSectionAction(type);
+      if (result.ok === false) {
+        setAddError(result.error);
+        return;
+      }
+      setPickerOpen(false);
+      router.refresh();
+    });
+  }
+
+  function remove(sectionId: string) {
+    setRows((prev) => prev.filter((s) => s.id !== sectionId));
+    startTransition(async () => {
+      const result = await removeWebsiteSectionAction(sectionId);
+      if (result.ok === false) {
+        setRows(sections);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   return (
-    <div ref={reorder.listRef}>
-      {rows.map((section, index) => (
-        <div key={section.id}>
-          {reorder.isDropGap(index) ? <ListDropGap /> : null}
-          <SectionRow
-            section={section}
-            typeLabel={labels[section.type] ?? section.type}
-            last={index === rows.length - 1}
-            dragging={reorder.dragIndex === index}
-            pending={pending}
-            primaryCtaLabel={primaryCtaLabel}
-            onMoveUp={() => move(index, index - 1)}
-            onMoveDown={() => move(index, index + 1)}
-            canMoveUp={index > 0}
-            canMoveDown={index < rows.length - 1}
-            onToggle={(visible) => setVisible(section.id, visible)}
-            onPointerDown={(e) => reorder.handlePointerDown(e, index)}
-            onPointerMove={reorder.handlePointerMove}
-            onPointerUp={() => reorder.finishDrag()}
-            onPointerCancel={() => reorder.finishDrag(true)}
-          />
-        </div>
-      ))}
-      {reorder.isDropGap(rows.length) ? <ListDropGap /> : null}
+    <div>
+      <div ref={reorder.listRef}>
+        {rows.map((section, index) => (
+          <div key={section.id}>
+            {reorder.isDropGap(index) ? <ListDropGap /> : null}
+            <SectionRow
+              section={section}
+              typeLabel={labels[section.type] ?? section.type}
+              last={index === rows.length - 1}
+              dragging={reorder.dragIndex === index}
+              pending={pending}
+              primaryCtaLabel={primaryCtaLabel}
+              businessContact={businessContact}
+              onMoveUp={() => move(index, index - 1)}
+              onMoveDown={() => move(index, index + 1)}
+              canMoveUp={index > 0}
+              canMoveDown={index < rows.length - 1}
+              onToggle={(visible) => setVisible(section.id, visible)}
+              onRemove={() => remove(section.id)}
+              onPointerDown={(e) => reorder.handlePointerDown(e, index)}
+              onPointerMove={reorder.handlePointerMove}
+              onPointerUp={() => reorder.finishDrag()}
+              onPointerCancel={() => reorder.finishDrag(true)}
+            />
+          </div>
+        ))}
+        {reorder.isDropGap(rows.length) ? <ListDropGap /> : null}
+      </div>
+      <div className="border-t border-line/70 px-3 py-3 sm:px-4">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            setAddError(null);
+            setPickerOpen(true);
+          }}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-line-strong py-2.5 text-[13px] font-medium text-soft transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+        >
+          <Plus className="size-4" />
+          Lägg till sektion
+        </button>
+        {addError ? <p className="mt-2 text-[13px] text-danger">{addError}</p> : null}
+      </div>
+      <AddSectionPicker
+        open={pickerOpen}
+        existingTypes={rows}
+        pending={pending}
+        onClose={() => setPickerOpen(false)}
+        onPick={addType}
+      />
     </div>
   );
 }
@@ -548,11 +624,13 @@ function SectionRow({
   dragging,
   pending,
   primaryCtaLabel,
+  businessContact,
   onMoveUp,
   onMoveDown,
   canMoveUp,
   canMoveDown,
   onToggle,
+  onRemove,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -564,19 +642,23 @@ function SectionRow({
   dragging: boolean;
   pending: boolean;
   primaryCtaLabel: string;
+  businessContact?: SiteContact;
   onMoveUp: () => void;
   onMoveDown: () => void;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onToggle: (visible: boolean) => void;
+  onRemove: () => void;
   onPointerDown: (e: PointerEvent<HTMLDivElement>) => void;
   onPointerMove: (e: PointerEvent<HTMLDivElement>) => void;
   onPointerUp: () => void;
   onPointerCancel: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const visible = sectionIsVisible(section);
   const canHide = section.type !== "hero";
+  const canDelete = canDeleteSection(section);
 
   return (
     <>
@@ -637,6 +719,21 @@ function SectionRow({
           {canHide ? (
             <VisibilitySwitch on={visible} onChange={onToggle} disabled={pending} label={typeLabel} />
           ) : null}
+          {canDelete ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirmDelete(true);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-danger-soft hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-40"
+              aria-label={`Ta bort ${typeLabel.toLowerCase()}`}
+            >
+              <Trash2 className="size-4" />
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={(e) => {
@@ -664,11 +761,26 @@ function SectionRow({
           heading={section.heading}
           body={section.body}
           hasImage={section.hasImage}
+          imagePosition={section.imagePosition}
+          hours={section.hours}
+          instagram={section.instagram}
+          cta={section.cta}
           primaryCtaLabel={section.type === "hero" ? primaryCtaLabel : undefined}
-          items={section.type === "tjanster" ? (section.items ?? []) : undefined}
+          items={section.type === "tjanster" || section.type === "omdomen" ? (section.items ?? []) : undefined}
+          businessContact={businessContact}
           onClose={() => setOpen(false)}
         />
       ) : null}
+      <DeleteSectionDialog
+        open={confirmDelete}
+        typeLabel={typeLabel}
+        pending={pending}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          onRemove();
+        }}
+      />
     </>
   );
 }
@@ -687,8 +799,13 @@ function SectionEditor({
   heading,
   body,
   hasImage,
+  imagePosition,
+  hours,
+  instagram,
+  cta: ctaConfig,
   primaryCtaLabel,
   items,
+  businessContact,
   onClose,
 }: {
   sectionId: string;
@@ -698,19 +815,35 @@ function SectionEditor({
   body: string;
   onClose: () => void;
   hasImage?: boolean;
+  imagePosition?: WebsiteImagePosition;
+  hours?: string;
+  instagram?: WebsiteInstagram;
+  cta?: WebsiteSection["cta"];
   primaryCtaLabel?: string;
   items?: SectionListItem[];
+  businessContact?: SiteContact;
 }) {
-  const isServices = items !== undefined;
+  const isServices = sectionType === "tjanster";
+  const isTestimonials = sectionType === "omdomen";
   const isHero = sectionType === "hero" || typeLabel === "Startsektion";
-  const showSectionImage =
-    isHero ||
-    sectionType === "om" ||
-    typeLabel === "Om oss";
+  const isText = sectionType ? isTextSectionType(sectionType) : typeLabel === "Om oss" || typeLabel === "Text";
+  const isCta = sectionType === "cta";
+  const isInstagram = sectionType === "instagram";
+  const isContactDetails = sectionType === "kontaktuppgifter";
+  const showSectionImage = isHero || isText;
   const [h, setH] = useState(heading);
   const [b, setB] = useState(body);
   const [cta, setCta] = useState(primaryCtaLabel ?? DEFAULT_PRIMARY_CTA_LABEL);
   const [ctaError, setCtaError] = useState<string | null>(null);
+  const [imgPos, setImgPos] = useState<WebsiteImagePosition>(imagePosition ?? "right");
+  const [hoursValue, setHoursValue] = useState(hours ?? "");
+  const [igHandle, setIgHandle] = useState(instagram?.handle ?? "");
+  const [igLimit, setIgLimit] = useState(String(instagram?.limit ?? 6));
+  const [igStatus, setIgStatus] = useState<InstagramProviderState | null>(null);
+  const [igError, setIgError] = useState<string | null>(null);
+  const [ctaDest, setCtaDest] = useState<WebsiteCtaDestination>(ctaConfig?.destination ?? "kontakt");
+  const [ctaBtn, setCtaBtn] = useState(ctaConfig?.label ?? defaultCtaLabel(ctaConfig?.destination ?? "kontakt"));
+  const [quoteDraft, setQuoteDraft] = useState<{ index: number | "new"; title: string; text: string; rating?: number } | null>(null);
   const [image, setImage] = useState<string | undefined>(undefined);
   // Sparad bild på servern – jämförelsepunkt så att oförändrade bilder inte skickas om vid spara.
   const [baselineImage, setBaselineImage] = useState<string | undefined>(undefined);
@@ -751,6 +884,17 @@ function SectionEditor({
     // Körs en gång när redigeraren öppnas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!isInstagram) return;
+    let cancelled = false;
+    instagramStatusAction(sectionId).then((status) => {
+      if (!cancelled && status) setIgStatus(status);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isInstagram, sectionId]);
 
   function closeAll() {
     setDraft(null);
@@ -829,13 +973,114 @@ function SectionEditor({
           ) : null}
 
           {showSectionImage ? (
-            <SectionImageField
-              image={image}
-              loading={Boolean(hasImage) && !imagesLoaded}
-              onChange={setImage}
-              error={imageError}
-              onError={setImageError}
-              onBusy={setReadingImage}
+            <div className="space-y-3">
+              <SectionImageField
+                image={image}
+                loading={Boolean(hasImage) && !imagesLoaded}
+                onChange={setImage}
+                error={imageError}
+                onError={setImageError}
+                onBusy={setReadingImage}
+              />
+              {isText && image ? (
+                <div>
+                  <p className="mb-1.5 text-[13px] font-medium text-soft">Bildens sida</p>
+                  <div className="flex gap-2">
+                    {([["left", "Vänster"], ["right", "Höger"]] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setImgPos(value)}
+                        className={cx(
+                          "rounded-xl border px-3 py-2 text-[13px] font-medium",
+                          imgPos === value ? "border-accent bg-accent-soft text-ink" : "border-line-strong text-soft hover:text-ink",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {isCta ? (
+            <div className="space-y-3">
+              <div>
+                <p className="mb-1.5 text-[13px] font-medium text-soft">Knappen leder till</p>
+                <div className="grid gap-2">
+                  {([["kontakt", "Kontaktformuläret"], ["phone", "Telefon"], ["email", "E-post"]] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        setCtaDest(value);
+                        if (!ctaBtn.trim() || ctaBtn === defaultCtaLabel(ctaDest)) setCtaBtn(defaultCtaLabel(value));
+                      }}
+                      className={cx(
+                        "rounded-xl border px-3 py-2 text-left text-[13px] font-medium",
+                        ctaDest === value ? "border-accent bg-accent-soft text-ink" : "border-line-strong text-soft hover:text-ink",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[13px] font-medium text-soft">Knapptext</label>
+                <input
+                  value={ctaBtn}
+                  onChange={(e) => setCtaBtn(e.target.value)}
+                  maxLength={PRIMARY_CTA_LABEL_MAX}
+                  className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {isContactDetails ? (
+            <ContactDetailsEditor hours={hoursValue} onHoursChange={setHoursValue} contact={businessContact} />
+          ) : null}
+
+          {isInstagram ? (
+            <InstagramEditor
+              sectionId={sectionId}
+              handle={igHandle}
+              limit={igLimit}
+              status={igStatus}
+              error={igError}
+              pending={pending}
+              onHandleChange={setIgHandle}
+              onLimitChange={setIgLimit}
+              onStatus={setIgStatus}
+              onError={setIgError}
+            />
+          ) : null}
+
+          {isTestimonials ? (
+            <TestimonialItemsEditor
+              items={list}
+              error={listError}
+              busy={itemsPending}
+              onEdit={(index) => {
+                const item = list[index];
+                setQuoteDraft({ index, title: item.title, text: item.text, rating: item.rating });
+              }}
+              onAdd={() => setQuoteDraft({ index: "new", title: "", text: "" })}
+              onRemove={(index) => {
+                startItems(async () => {
+                  const result = await removeTestimonialItemAction(sectionId, index);
+                  if (result.error) {
+                    setListError(result.error);
+                    return;
+                  }
+                  setList((prev) => prev.filter((_, i) => i !== index));
+                  setListError(null);
+                  router.refresh();
+                });
+              }}
             />
           ) : null}
 
@@ -911,6 +1156,10 @@ function SectionEditor({
                       body: b,
                       ...(isHero ? { primaryCtaLabel: cta.trim() } : {}),
                       ...(showSectionImage && image !== baselineImage ? { image: image ?? null } : {}),
+                      ...(isText ? { imagePosition: imgPos } : {}),
+                      ...(isContactDetails ? { hours: hoursValue } : {}),
+                      ...(isInstagram ? { instagramHandle: igHandle, instagramLimit: Number(igLimit) || 6 } : {}),
+                      ...(isCta ? { ctaDestination: ctaDest, ctaLabel: ctaBtn } : {}),
                     });
                     if (result && result.ok === false) {
                       const msg = result.error;
@@ -956,6 +1205,21 @@ function SectionEditor({
             router.refresh();
           }}
           sectionId={sectionId}
+        />
+      ) : null}
+      {isTestimonials && quoteDraft ? (
+        <TestimonialItemModal
+          draft={quoteDraft}
+          sectionId={sectionId}
+          onClose={() => setQuoteDraft(null)}
+          onSaved={(saved) => {
+            setList((prev) =>
+              saved.index === "new" ? [...prev, saved.item] : prev.map((it, i) => (i === saved.index ? saved.item : it)),
+            );
+            setQuoteDraft(null);
+            setListError(null);
+            router.refresh();
+          }}
         />
       ) : null}
     </>

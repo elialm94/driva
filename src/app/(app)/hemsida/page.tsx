@@ -14,16 +14,10 @@ import { getWebsiteNotificationEmail } from "@/lib/services/settings";
 import { isLiveMailConfigured } from "@/lib/mail";
 import { SETTINGS_HREF } from "@/lib/settings-routes";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { SECTION_LABELS, stripWebsiteSecrets } from "@/lib/website-sections";
+import { resolveSiteContact } from "@/lib/website-contact";
 
 export const metadata = { title: "Hemsida" };
-
-const SECTION_LABELS: Record<string, string> = {
-  hero: "Startsektion",
-  tjanster: "Tjänster",
-  om: "Om oss",
-  galleri: "Galleri",
-  kontakt: "Kontakt",
-};
 
 export default async function WebsitePage() {
   await ensurePageBusiness();
@@ -61,11 +55,13 @@ export default async function WebsitePage() {
 
   // Redigeringslistan behöver inte bilddatan (tunga data-URL:er) – bara vetskap om att bild finns.
   // Själva bilderna hämtas när en sektion öppnas för redigering.
-  const listSections = site.sections.map(({ image, items, ...rest }) => ({
+  const safeSite = stripWebsiteSecrets(site);
+  const listSections = safeSite.sections.map(({ image, items, ...rest }) => ({
     ...rest,
     hasImage: Boolean(image),
     items: items?.map(({ image: itemImage, ...itemRest }) => ({ ...itemRest, hasImage: Boolean(itemImage) })),
   }));
+  const businessContact = resolveSiteContact(data.settings, site);
 
   return (
     <div className="animate-fade-up">
@@ -107,7 +103,7 @@ export default async function WebsitePage() {
             </div>
             <CopyLinkButton path="/sajt" label="Kopiera länk" />
           </div>
-          <SitePreviewFrame website={site} company={data.settings} />
+          <SitePreviewFrame website={safeSite} company={data.settings} />
           <p className="mt-2 text-[12px] text-muted">
             Det här är exakt vad besökarna ser. Formuläret är aktivt på den publicerade sajten.
           </p>
@@ -132,6 +128,7 @@ export default async function WebsitePage() {
                 sections={listSections}
                 labels={SECTION_LABELS}
                 primaryCtaLabel={site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL}
+                businessContact={businessContact}
               />
             </Card>
             <p className="mt-2 text-[12px] leading-relaxed text-muted">
