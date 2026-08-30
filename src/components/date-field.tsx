@@ -1,61 +1,18 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 import { cx } from "./ui";
-
-const WEEKDAYS = ["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"];
-
-function parseISODate(iso: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
-  if (!m) return null;
-  const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  if (date.getFullYear() !== Number(m[1]) || date.getMonth() !== Number(m[2]) - 1 || date.getDate() !== Number(m[3])) {
-    return null;
-  }
-  return date;
-}
-
-function toISODate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function startOfToday(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function sameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-
-function formatDisplay(date: Date): string {
-  return new Intl.DateTimeFormat("sv-SE", { day: "numeric", month: "long", year: "numeric" }).format(date);
-}
-
-function formatMonthTitle(year: number, month: number): string {
-  return new Intl.DateTimeFormat("sv-SE", { month: "long", year: "numeric" }).format(new Date(year, month, 1));
-}
-
-type Cell = { date: Date; iso: string; outside: boolean };
-
-function monthCells(year: number, month: number): Cell[] {
-  const first = new Date(year, month, 1);
-  const startOffset = (first.getDay() + 6) % 7;
-  const start = new Date(year, month, 1 - startOffset);
-  return Array.from({ length: 42 }, (_, i) => {
-    const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
-    return { date, iso: toISODate(date), outside: date.getMonth() !== month };
-  });
-}
+import { DateTimePicker } from "./date-time-picker";
+import { formatDateDisplay, parseISODate } from "@/lib/dates/iso-date";
 
 type Pos = { top: number; left: number };
 
+/**
+ * Datumfält (DATE ONLY) – återanvänder DateTimePicker i date-läge.
+ * Aldrig klockslag: förfallodatum, arbetsperiod, uppdrag, offert.
+ */
 export function DateField({
   name,
   value,
@@ -91,16 +48,11 @@ export function DateField({
   const [internal, setInternal] = useState(defaultValue);
   const iso = isControlled ? value : internal;
   const selected = iso ? parseISODate(iso) : null;
-  const minDate = min ? parseISODate(min) : null;
 
   const isOpenControlled = openProp !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = isOpenControlled ? openProp : uncontrolledOpen;
   const [mounted, setMounted] = useState(false);
-  const [view, setView] = useState(() => {
-    const base = selected ?? startOfToday();
-    return { year: base.getFullYear(), month: base.getMonth() };
-  });
   const [pos, setPos] = useState<Pos | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -129,8 +81,6 @@ export function DateField({
   }
 
   function openCalendar() {
-    const base = selected ?? startOfToday();
-    setView({ year: base.getFullYear(), month: base.getMonth() });
     setOpenState(true);
   }
 
@@ -138,15 +88,6 @@ export function DateField({
     setIso(next);
     close();
   }
-
-  const wasOpen = useRef(open);
-  useEffect(() => {
-    if (open && !wasOpen.current) {
-      const base = selected ?? startOfToday();
-      setView({ year: base.getFullYear(), month: base.getMonth() });
-    }
-    wasOpen.current = open;
-  }, [open, selected]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -174,7 +115,7 @@ export function DateField({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, view]);
+  }, [open, iso]);
 
   useEffect(() => {
     if (!open) return;
@@ -204,11 +145,6 @@ export function DateField({
     popover.focus();
   }, [open, pos]);
 
-  const cells = useMemo(() => monthCells(view.year, view.month), [view.year, view.month]);
-  const today = startOfToday();
-  const todayIso = toISODate(today);
-  const todayDisabled = minDate ? today < minDate : false;
-
   const calendar =
     open && mounted
       ? createPortal(
@@ -220,7 +156,7 @@ export function DateField({
             lang="sv"
             tabIndex={-1}
             onPointerDown={(e) => e.stopPropagation()}
-            className="fixed z-[80] w-[18.5rem] rounded-2xl border border-line bg-card p-3 shadow-pop animate-fade-in"
+            className="fixed z-[80] rounded-2xl border border-line bg-card p-3 shadow-pop animate-fade-in"
             style={{
               top: pos?.top ?? 0,
               left: pos?.left ?? 0,
@@ -228,84 +164,15 @@ export function DateField({
               pointerEvents: pos ? "auto" : "none",
             }}
           >
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                className="flex size-10 items-center justify-center rounded-lg text-muted transition-colors hover:bg-ink/5 hover:text-ink"
-                aria-label="Föregående månad"
-                onClick={() =>
-                  setView((v) => (v.month === 0 ? { year: v.year - 1, month: 11 } : { year: v.year, month: v.month - 1 }))
-                }
-              >
-                <ChevronLeft className="size-4" />
-              </button>
-              <p className="text-[13px] font-semibold text-ink">{formatMonthTitle(view.year, view.month)}</p>
-              <button
-                type="button"
-                className="flex size-10 items-center justify-center rounded-lg text-muted transition-colors hover:bg-ink/5 hover:text-ink"
-                aria-label="Nästa månad"
-                onClick={() =>
-                  setView((v) => (v.month === 11 ? { year: v.year + 1, month: 0 } : { year: v.year, month: v.month + 1 }))
-                }
-              >
-                <ChevronRight className="size-4" />
-              </button>
-            </div>
-            <div className="mb-1 grid grid-cols-7">
-              {WEEKDAYS.map((d) => (
-                <div key={d} className="py-1 text-center text-[11px] font-medium text-muted">
-                  {d}
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7">
-              {cells.map((cell) => {
-                const isSelected = selected ? sameDay(cell.date, selected) : false;
-                const isToday = sameDay(cell.date, today);
-                const isDisabled = minDate ? cell.date < minDate : false;
-                return (
-                  <button
-                    key={cell.iso}
-                    type="button"
-                    disabled={isDisabled}
-                    onClick={() => pick(cell.iso)}
-                    aria-pressed={isSelected}
-                    aria-current={isToday ? "date" : undefined}
-                    className={cx(
-                      "flex h-10 w-full items-center justify-center rounded-lg text-[13px] tabular transition-colors sm:h-9",
-                      cell.outside && "text-muted/70",
-                      isDisabled && "pointer-events-none opacity-40",
-                      !isDisabled && !isSelected && !cell.outside && "text-ink hover:bg-canvas",
-                      !isDisabled && !isSelected && cell.outside && "hover:bg-canvas",
-                      isToday && !isSelected && !isDisabled && "font-semibold text-accent",
-                      isSelected && "bg-accent font-semibold text-white hover:bg-accent-deep"
-                    )}
-                  >
-                    {cell.date.getDate()}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-2 flex items-center justify-between border-t border-line pt-2">
-              <button
-                type="button"
-                className="rounded-lg px-3 py-2 text-[13px] font-medium text-soft transition-colors hover:bg-ink/5 hover:text-ink"
-                onClick={() => setIso("")}
-              >
-                Rensa
-              </button>
-              <button
-                type="button"
-                disabled={todayDisabled}
-                className="rounded-lg px-3 py-2 text-[13px] font-medium text-accent transition-colors hover:bg-accent-soft disabled:pointer-events-none disabled:opacity-40"
-                onClick={() => {
-                  setView({ year: today.getFullYear(), month: today.getMonth() });
-                  pick(todayIso);
-                }}
-              >
-                Idag
-              </button>
-            </div>
+            <DateTimePicker
+              mode="date"
+              date={iso || undefined}
+              min={min}
+              onDateChange={pick}
+              showClear
+              showToday
+              onClear={() => setIso("")}
+            />
           </div>,
           document.body
         )
@@ -323,7 +190,7 @@ export function DateField({
       aria-controls={open ? popoverId : undefined}
     >
       <span className={cx("min-w-0 truncate", !selected && "text-muted")}>
-        {selected ? formatDisplay(selected) : placeholder}
+        {selected ? formatDateDisplay(selected) : placeholder}
       </span>
       <CalendarDays className="size-4 shrink-0 text-muted" />
     </button>
