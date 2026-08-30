@@ -33,7 +33,7 @@ export default async function DemoPage({
         <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
           {expired ? (
             <p role="status" className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Demosessionen har gått ut. Öppna demon igen så börjar du om med färsk exempeldata.
+              Demosessionen har gått ut. Öppna demon igen för att fortsätta utforska.
             </p>
           ) : null}
           <p className="text-sm text-stone-600">
