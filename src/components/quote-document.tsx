@@ -7,6 +7,7 @@ import { TaxReductionQuoteClause, TaxReductionCalcHint } from "./tax-reduction-t
 import { CompanyLogo } from "./company-logo";
 import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
 import { RichTextView } from "./rich-text";
+import { signedWithBankIdBy } from "@/lib/status-labels";
 
 const LINE_KIND_LABEL: Record<string, string> = {
   arbete: "Arbete",
@@ -250,19 +251,17 @@ export function QuoteDocument({
         <div className="mt-8 flex items-start gap-3 rounded-2xl border border-ok/20 bg-ok-soft/60 p-4">
           <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
           <div>
-            <p className="text-[14px] font-semibold text-ok">Godkänd med BankID</p>
-            <p className="text-[13px] text-soft">
-              {signature.signerName} · {datumTid(signature.signedAt)}
-            </p>
+            <p className="text-[14px] font-semibold text-ok">{signedWithBankIdBy(signature.signerName)}</p>
+            <p className="text-[13px] text-soft">{datumTid(signature.signedAt)}</p>
           </div>
         </div>
       ) : (
         <div className="mt-8 flex items-start gap-3 rounded-2xl border border-bankid/15 bg-bankid-soft/60 p-4">
           <ShieldCheck className="mt-0.5 size-5 shrink-0 text-bankid" />
           <div>
-            <p className="text-[14px] font-semibold text-bankid">Godkänns med BankID</p>
+            <p className="text-[14px] font-semibold text-bankid">Signeras med BankID</p>
             <p className="text-[13px] leading-relaxed text-soft">
-              Offerten godkänns tryggt och juridiskt bindande med BankID via länken i e-postmeddelandet. Giltig till{" "}
+              Offerten signeras tryggt och juridiskt bindande med BankID via länken i e-postmeddelandet. Giltig till{" "}
               {datumLang(version.validUntil)}.
             </p>
           </div>

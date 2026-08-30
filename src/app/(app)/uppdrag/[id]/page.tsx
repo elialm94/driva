@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MapPin, CalendarDays, FileText, ReceiptText, BadgeCheck } from "lucide-react";
 import { getJob, getInvoice, currentVersion, effectiveQuoteStatus, quoteStatusLabel, requireCustomer, invoiceTotals } from "@/lib/services/data";
+import { signedWithBankIdBy } from "@/lib/status-labels";
 import { jobAdminState } from "@/lib/services/job-admin";
 import { parseJobNotes } from "@/lib/services/jobs";
 import {
@@ -187,7 +188,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
                     <p className={`mt-0.5 flex items-center gap-1 text-[13px] ${quote.status === "godkand" ? "text-ok" : "text-muted"}`}>
                       {quote.status === "godkand" ? <BadgeCheck className="size-3.5 shrink-0" /> : null}
                       {admin.signatureName && admin.signatureAt
-                        ? `Godkänd med BankID av ${admin.signatureName}, ${datumTid(admin.signatureAt)}`
+                        ? `${signedWithBankIdBy(admin.signatureName)}, ${datumTid(admin.signatureAt)}`
                         : quoteStatusLabel(quote)}
                     </p>
                   </div>

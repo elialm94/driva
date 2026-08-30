@@ -171,10 +171,10 @@ export function BankIDApproval({
     <>
       <button className={cx(buttonClasses("bankid", "lg"), "w-full sm:w-auto")} onClick={() => setOpen(true)}>
         <Fingerprint className="size-5" />
-        Godkänn med BankID
+        Signera med BankID
       </button>
 
-      <Modal open={open} onClose={close} size="md" title={step === "done" ? undefined : "Godkänn med BankID"}>
+      <Modal open={open} onClose={close} size="md" title={step === "done" ? undefined : "Signera med BankID"}>
         <div className="px-6 py-6">
           {/* Vad kunden signerar – alltid synligt under processen */}
           {step !== "done" ? (
@@ -276,7 +276,7 @@ export function BankIDApproval({
               <div className="flex size-16 items-center justify-center rounded-full bg-ok-soft">
                 <CheckCircle2 className="size-8 text-ok" />
               </div>
-              <p className="mt-5 text-[20px] font-semibold tracking-tight">Offerten är godkänd</p>
+              <p className="mt-5 text-[20px] font-semibold tracking-tight">Offerten är signerad</p>
               <p className="mt-2 max-w-sm text-[14px] leading-relaxed text-soft">
                 Tack! Din BankID-signering är registrerad. {companyName} har fått besked och återkommer om nästa steg.
               </p>
@@ -291,9 +291,9 @@ export function BankIDApproval({
               <div className="flex size-14 items-center justify-center rounded-full bg-danger-soft">
                 {failReason.includes("Tiden") ? <Clock className="size-7 text-danger" /> : <XCircle className="size-7 text-danger" />}
               </div>
-              <p className="mt-4 text-[17px] font-semibold">BankID ej slutfört</p>
+              <p className="mt-4 text-[17px] font-semibold">Signeringen slutfördes inte</p>
               <p className="mt-1.5 max-w-sm text-[14px] leading-relaxed text-soft">
-                {failReason} Offerten är inte godkänd.
+                {failReason} Offerten är inte signerad.
               </p>
               <div className="mt-5 flex gap-2">
                 <button className={buttonClasses("ghost")} onClick={close}>

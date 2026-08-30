@@ -136,7 +136,7 @@ export function UppdragList({
           text={
             query.q || query.lifecycle !== "aktiva" || query.economy !== "alla"
               ? "Prova ett annat sökord eller ta bort ett filter."
-              : "När en kund godkänner en offert med BankID dyker uppdraget upp här. Du kan också skapa ett själv."
+              : "När en kund signerar en offert dyker uppdraget upp här. Du kan också skapa ett själv."
           }
         />
       ) : (

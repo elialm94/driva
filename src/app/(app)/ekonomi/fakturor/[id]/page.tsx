@@ -10,6 +10,7 @@ import { invoiceHeading } from "@/lib/invoices/display";
 import { kr, datumTid, datumLang, relativ } from "@/lib/format";
 import { ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
 import { InvoiceStatusBadge } from "@/components/status";
+import { QUOTE_STATUS } from "@/lib/status-labels";
 import { InvoiceDocument } from "@/components/invoice-document";
 import { ActionMenu, PageActions } from "@/components/action-menu";
 import { CopyLinkButton } from "@/components/copy-button";
@@ -247,7 +248,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
                 <Link href={hrefWithNav(`/ekonomi/offerter/${quote.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label }) as never} className="block px-4 py-3 text-[14px] font-medium transition-colors hover:bg-canvas/60">
                   Offert #{quote.number}
                   <span className="block text-[12px] font-normal text-muted">
-                    {quote.status === "godkand" ? "Godkänd med BankID" : "Offert"}
+                    {quote.status === "godkand" ? QUOTE_STATUS.godkand.label : "Offert"}
                   </span>
                 </Link>
               ) : null}

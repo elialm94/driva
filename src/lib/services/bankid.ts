@@ -186,8 +186,8 @@ export function finalizeApproval(order: BankIDOrder): BankIDSignature {
   // 5. Informera företagaren.
   logActivity(
     hadJob
-      ? `${signature.signerName} godkände offert #${quote.number} med BankID.`
-      : `${signature.signerName} godkände offert #${quote.number} med BankID. Uppdraget ${version.title} skapades.`,
+      ? `${signature.signerName} signerade offert #${quote.number} med BankID.`
+      : `${signature.signerName} signerade offert #${quote.number} med BankID. Uppdraget ${version.title} skapades.`,
     { customerId: customer.id, entity: { type: "offert", id: quote.id } }
   );
 
