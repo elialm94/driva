@@ -20,7 +20,7 @@ process.env.DRIVA_TEST = "1";
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { db, replaceDb } from "./store";
-import { emptyTestDb, labor } from "./invoices/test-db";
+import { emptyTestDb, labor, rotReadyCustomer } from "./invoices/test-db";
 import { uid } from "./ids";
 import type { BankAccount, BankTransaction } from "./types";
 import {
@@ -57,6 +57,7 @@ import { bokforingsdatum } from "./accounting/dates";
 function reset() {
   replaceDb(
     emptyTestDb({
+      customers: [rotReadyCustomer()],
       bankAccounts: [
         {
           id: "acc-1",

@@ -11,10 +11,19 @@ import { taxReductionFields } from "../tax-reduction-terms";
 import { rotWithAmounts } from "../tax-reduction-amount";
 import { sellerSnapshot } from "../invoices/snapshot";
 import { missingEmailForSend } from "../customer-validation";
+import {
+  assertTaxReductionSendReady,
+  resolvePersistedWorkLocationId,
+  taxReductionSendBlockers,
+  taxReductionSendInputFromCustomer,
+} from "../tax-reduction-send";
+import { workLocationsOf } from "./work-locations";
 
 export interface QuoteInput {
   customerId: string;
   jobId?: string;
+  /** Bostad som ROT/RUT på offerten gäller. Sparas på offerten, inte på versionen. */
+  workLocationId?: string;
   title: string;
   intro: string;
   lines: DocLine[];
@@ -61,6 +70,7 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
     number,
     customerId: input.customerId,
     jobId: input.jobId,
+    ...persistQuoteWorkLocation(customer, input.rot, input.workLocationId),
     status: "utkast",
     currentVersionId: versionId,
     token: publicToken(),
@@ -88,6 +98,19 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
 
 export type QuoteVersionInput = Omit<QuoteInput, "customerId" | "jobId">;
 
+function persistQuoteWorkLocation(
+  customer: ReturnType<typeof requireCustomer>,
+  rot: RotRut | null | undefined,
+  requested?: string | null
+): { workLocationId?: string } {
+  const workLocationId = resolvePersistedWorkLocationId({
+    taxReduction: rot,
+    workLocationId: requested,
+    customerWorkLocationIds: workLocationsOf(customer).map((location) => location.id),
+  });
+  return workLocationId ? { workLocationId } : {};
+}
+
 /**
  * Uppdatera en offert. Låsta (BankID-signerade) versioner ändras aldrig –
  * i stället skapas en ny version som måste signeras på nytt.
@@ -98,7 +121,12 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
   if (!quote) throw new Error("Offerten finns inte");
   const version = currentVersion(quote);
   // Servergräns: klientens rika text lita aldrig på rakt av.
-  input = { ...input, richText: sanitizeRichText(input.richText) };
+  const { workLocationId: requestedLocation, ...versionFields } = input;
+  input = { ...versionFields, richText: sanitizeRichText(input.richText) };
+  const customer = requireCustomer(quote.customerId);
+  const persisted = persistQuoteWorkLocation(customer, input.rot, requestedLocation ?? quote.workLocationId);
+  if (persisted.workLocationId) quote.workLocationId = persisted.workLocationId;
+  else delete quote.workLocationId;
 
   if (version.lockedAt || quote.status === "godkand") {
     // Ny version krävs efter signering.
@@ -158,11 +186,22 @@ export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
       actionLabel: "Ändra datum",
     });
   }
-  const emailBlocker = missingEmailForSend(requireCustomer(quote.customerId));
+  const customer = requireCustomer(quote.customerId);
+  const emailBlocker = missingEmailForSend(customer);
   if (emailBlocker) {
     // Namnges i checklistan; kompletteras inline i skickaflödet – ingen länk till Kunden.
     blockers.push(emailBlocker);
   }
+  blockers.push(
+    ...taxReductionSendBlockers(
+      taxReductionSendInputFromCustomer(customer, {
+        kind: "offert",
+        documentId: quote.id,
+        taxReduction: version.rot,
+        workLocationId: quote.workLocationId,
+      })
+    )
+  );
   return blockers;
 }
 
@@ -182,6 +221,14 @@ export function sendQuote(quoteId: string, delivery: QuoteDeliveryInfo = MOCK_DE
   if (!quote) throw new Error("Offerten finns inte");
   const customer = requireCustomer(quote.customerId);
   const version = currentVersion(quote);
+  assertTaxReductionSendReady(
+    taxReductionSendInputFromCustomer(customer, {
+      kind: "offert",
+      documentId: quote.id,
+      taxReduction: version.rot,
+      workLocationId: quote.workLocationId,
+    })
+  );
   if (dagarTill(version.validUntil) < 0) {
     throw new Error(
       `Offertens giltighetsdatum (${datumKort(version.validUntil)}) har passerat – kunden skulle inte kunna godkänna den. Ändra "Giltig till" och skicka sedan.`

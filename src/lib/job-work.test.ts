@@ -42,7 +42,28 @@ import { listJobsForTable } from "./services/job-list";
 import type { DocLine } from "./types";
 
 function reset() {
-  replaceDb(emptyTestDb({ customers: [testCustomer({ id: "cust-1", personalIdentityNumber: "19850515-1234" })] }));
+  replaceDb(
+    emptyTestDb({
+      customers: [
+        testCustomer({
+          id: "cust-1",
+          personalIdentityNumber: "19850515-1234",
+          workLocations: [
+            {
+              id: "loc-1",
+              label: "Hem",
+              address: "Folkungagatan 1",
+              postalCode: "116 30",
+              city: "Stockholm",
+              propertyType: "smahus",
+              propertyDesignation: "Södermalm 1:1",
+            },
+          ],
+          defaultWorkLocationId: "loc-1",
+        }),
+      ],
+    })
+  );
 }
 
 function approvedQuote(lines: DocLine[], over: { rot?: "rot" | null; jobId?: string } = {}) {

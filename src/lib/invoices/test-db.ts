@@ -1,4 +1,4 @@
-import type { CompanySettings, Customer, DB, DocLine } from "../types";
+import type { CompanySettings, Customer, DB, DocLine, WorkLocation } from "../types";
 
 export function testCompany(over: Partial<CompanySettings> = {}): CompanySettings {
   return {
@@ -37,7 +37,34 @@ export function testCustomer(over: Partial<Customer> = {}): Customer {
     createdAt: over.createdAt ?? new Date().toISOString(),
     orgNumber: over.orgNumber,
     contactPerson: over.contactPerson,
+    personalIdentityNumber: over.personalIdentityNumber,
+    workLocations: over.workLocations,
+    defaultWorkLocationId: over.defaultWorkLocationId,
   };
+}
+
+export function testWorkLocation(over: Partial<WorkLocation> = {}): WorkLocation {
+  return {
+    id: over.id ?? "loc-1",
+    label: over.label ?? "Hem",
+    address: over.address ?? "Folkungagatan 1",
+    postalCode: over.postalCode ?? "116 30",
+    city: over.city ?? "Stockholm",
+    propertyType: over.propertyType ?? "smahus",
+    propertyDesignation: over.propertyDesignation ?? "Södermalm 1:1",
+    ...over,
+  };
+}
+
+/** Kund med giltigt personnummer och en bostad – redo för ROT/RUT-utskick. */
+export function rotReadyCustomer(over: Partial<Customer> = {}): Customer {
+  const location = over.workLocations?.[0] ?? testWorkLocation();
+  return testCustomer({
+    personalIdentityNumber: "19850515-1234",
+    workLocations: over.workLocations ?? [location],
+    defaultWorkLocationId: over.defaultWorkLocationId ?? location.id,
+    ...over,
+  });
 }
 
 export function labor(over: Partial<DocLine> = {}): DocLine {

@@ -5,6 +5,7 @@ import { getInvoice, requireCustomer } from "../services/data";
 import { db } from "../store";
 import { radLabel } from "../form-requirements";
 import { isBankgiroFormat, isIbanFormat, isOrgnrFormat, isPlusgiroFormat, isVatNumberFormat, vatMatchesOrgnr } from "./formats";
+import { taxReductionSendBlockers, taxReductionSendInputFromCustomer } from "../tax-reduction-send";
 
 export interface IssueBlocker {
   code: string;
@@ -227,6 +228,14 @@ export function collectIssueErrors(input: {
     ...collectLineBlockers(invoice),
     ...collectTotalsBlockers(invoice),
     ...collectPaymentBlockers(invoice, seller),
+    ...taxReductionSendBlockers(
+      taxReductionSendInputFromCustomer(buyer, {
+        kind: "faktura",
+        documentId: invoice.id,
+        taxReduction: invoice.rot,
+        workLocationId: invoice.workLocationId,
+      })
+    ),
   ];
   return all.filter((b) => {
     if (seen.has(b.code)) return false;

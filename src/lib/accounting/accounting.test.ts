@@ -3,7 +3,7 @@ process.env.DRIVA_TEST = "1";
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { db, replaceDb } from "../store";
-import { emptyTestDb, labor } from "../invoices/test-db";
+import { emptyTestDb, labor, rotReadyCustomer } from "../invoices/test-db";
 import { createInvoice, creditInvoice, issueInvoice, markInvoicePaid } from "../services/invoices";
 import { answerExpenseQuestion, undoExpenseBooking } from "../services/expenses";
 import { receiveSupplierInvoice } from "../services/suppliers";
@@ -33,7 +33,7 @@ function bankAccount(balance = 0): BankAccount {
 }
 
 function reset(over: Parameters<typeof emptyTestDb>[0] = {}) {
-  replaceDb(emptyTestDb({ bankAccounts: [bankAccount()], ...over }));
+  replaceDb(emptyTestDb({ customers: [rotReadyCustomer()], bankAccounts: [bankAccount()], ...over }));
 }
 
 function unansweredExpense(over: Partial<Expense> = {}): Expense {
