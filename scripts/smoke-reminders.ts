@@ -51,8 +51,9 @@ async function main() {
   const rem = db().reminders.find((r) => r.status === "PENDING");
   if (!rem) throw new Error("Ingen påminnelse persisterades!");
   console.log(
-    `   persisterad: "${rem.title}" · ${formatDueAt(rem.dueAt, rem.timezone)} · explicitTid=${rem.hasExplicitTime} · koppling=${rem.relatedEntityType ?? "ingen"}`
+    `   persisterad: "${rem.title}" · ${rem.dueAt ? formatDueAt(rem.dueAt, rem.timezone, rem.hasExplicitTime) : "Ingen tid"} · explicitTid=${rem.hasExplicitTime} · koppling=${rem.relatedEntityType ?? "ingen"}`
   );
+  if (!rem.dueAt) throw new Error("Röktestet förväntar en daterad påminnelse.");
   const wd = new Intl.DateTimeFormat("sv-SE", { timeZone: rem.timezone, weekday: "long" }).format(new Date(rem.dueAt));
   if (wd !== "onsdag") throw new Error(`Fel veckodag: ${wd}`);
   if (!rem.relatedEntityType) console.warn("   OBS: modellen länkade inte kunden (acceptabelt men noterat).");

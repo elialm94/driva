@@ -38,6 +38,7 @@ import {
   instagramHasCredentials,
   instagramState,
 } from "../instagram";
+import { normalizePrivacyPolicySupplement } from "../website-privacy";
 import { logActivity } from "./activity";
 import { findOrCreateCustomerByEmail } from "./customers";
 import { createJob, titleFromIncomingMessage } from "./jobs";
@@ -646,6 +647,15 @@ export function setWebsiteDesign(input: { themeId: unknown; accent: unknown }): 
   }
   touchSite(site);
   return design;
+}
+
+export function updatePrivacyPolicySupplement(raw: string): void {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att uppdatera");
+  const text = normalizePrivacyPolicySupplement(raw);
+  if (text) site.privacyPolicySupplement = text;
+  else delete site.privacyPolicySupplement;
+  touchSite(site);
 }
 
 export function publishWebsite(): Website {

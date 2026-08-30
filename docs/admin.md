@@ -140,11 +140,12 @@ Inte impersonation – en explicit, kort, auditerad session:
 ## Kundens "Hjälp & support"
 
 Länk i kundappens meny (desktop-sidfot + mobilens "Mer") → `/support`:
-"Vad behöver du hjälp med?" + kort beskrivning + valfri bild/fil. Metadata
-(användare, företag, aktuell rutt, useragent, appversion, tidsstämpel) bifogas
-automatiskt – kunden skriver aldrig teknisk info. Ärendet hamnar i
-`/admin/support` (köflikar Nya/Pågående/Väntar/Klart; status, prioritet,
-tilldelning; direktknappar **Öppna företag** och **Starta supportläge**).
+kort beskrivning + valfri bild/PDF. Metadata (användare, företag, aktuell
+rutt, useragent, appversion, tidsstämpel) bifogas automatiskt – kunden skriver
+aldrig teknisk info. **Ärendet sparas i `support_tickets` och syns i
+`/admin/support`** – mejl är inte ett krav och får aldrig stoppa skapandet.
+Kön visar Datum/Företag/Användare/Ärende/Status; i detaljen [Öppen] [Pågår]
+[Löst], intern anteckning, **Öppna företag** och **Starta supportläge**.
 
 ## Miljövariabler
 

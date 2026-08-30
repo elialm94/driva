@@ -133,6 +133,24 @@ html:has([data-public-site]) {
   }
 }
 
+/*
+ * Flikbyte i Bokföring: visa pending-hint bara om navigeringen faktiskt
+ * tar tid, så snabba byten inte blinkar.
+ */
+.bokforing-tab-pending {
+  animation: bokforing-tab-pending 1s ease-in-out infinite;
+  animation-delay: 120ms;
+}
+@keyframes bokforing-tab-pending {
+  50% { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bokforing-tab-pending {
+    animation: none;
+    opacity: 0.75;
+  }
+}
+
 @media print {
   body {
     background: #fff;

@@ -66,7 +66,7 @@ export default async function BookkeepingPage({
   const recent = [...data.verifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 4);
 
   return (
-    <div className="animate-fade-up">
+    <div>
       <PageHeader title="Bokföring" subtitle={BOOKKEEPING_PAGE_SUBTITLE} />
       {focusUnresolved ? <ScrollToId id={BOOKKEEPING_UNRESOLVED_ANCHOR} /> : null}
 
@@ -218,7 +218,7 @@ export default async function BookkeepingPage({
         <p className="text-[13px] font-medium text-ink">Bokföringsdetaljer</p>
         <p className="mt-0.5 text-[13px] text-muted">Behöver du se konton, verifikationer eller rapporter?</p>
         <Link
-          href="/bokforing/detaljer"
+          href="/bokforing/verifikationer"
           className="mt-2 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline"
         >
           Visa bokföringsdetaljer <ArrowRight className="size-3.5" />

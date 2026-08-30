@@ -5,7 +5,6 @@ import { Card, EmptyState, PageHeader, cx } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { huvudbok } from "@/lib/accounting/ledger";
 import { PrintButton } from "@/components/bokforing-widgets";
-import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Huvudbok" };
@@ -25,7 +24,7 @@ export default async function HuvudbokPage({
   const account = selected ? accounts.find((a) => a.account === selected) : undefined;
 
   return (
-    <div className="animate-fade-up">
+    <div>
       <PageHeader
         back={<SmartBack />}
         title="Huvudbok"
@@ -39,7 +38,6 @@ export default async function HuvudbokPage({
           </div>
         }
       />
-      <BokforingAdvancedTabs />
 
       {/* Kontoväljare */}
       <div className="mb-6 flex flex-wrap gap-1.5 print:hidden">

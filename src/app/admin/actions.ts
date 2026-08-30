@@ -27,7 +27,13 @@ import {
   PlatformAdminError,
 } from "@/lib/platform/admins";
 import { sendPlatformAdminInvite } from "@/lib/platform/mail";
-import { assignTicket, setTicketPriority, setTicketStatus, SupportTicketError } from "@/lib/platform/tickets";
+import {
+  assignTicket,
+  setTicketAdminNotes,
+  setTicketPriority,
+  setTicketStatus,
+  SupportTicketError,
+} from "@/lib/platform/tickets";
 import { endSupportSession, startSupportSession, SupportSessionError } from "@/lib/platform/support";
 import {
   AdminOperationError,
@@ -86,6 +92,22 @@ export async function setTicketPriorityAction(formData: FormData): Promise<Admin
     return { notice: "Prioritet uppdaterad." };
   } catch (e) {
     return toError(e, "Kunde inte uppdatera prioriteten.");
+  }
+}
+
+export async function setTicketAdminNotesAction(
+  _prev: AdminActionState,
+  formData: FormData
+): Promise<AdminActionState> {
+  try {
+    const ctx = await requirePlatformAdmin();
+    const ticketId = String(formData.get("ticketId") ?? "");
+    const notes = String(formData.get("notes") ?? "");
+    await setTicketAdminNotes(ctx.admin, ticketId, notes);
+    revalidatePath(`/admin/support/${ticketId}`);
+    return { notice: "Anteckningen sparad." };
+  } catch (e) {
+    return toError(e, "Kunde inte spara anteckningen.");
   }
 }
 

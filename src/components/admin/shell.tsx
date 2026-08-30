@@ -161,6 +161,9 @@ export function AdminShell({
                   )}
                 >
                   {label}
+                  {href === "/admin/support" && openTickets > 0 ? (
+                    <span className="ml-1 tabular-nums text-amber-300"> {openTickets}</span>
+                  ) : null}
                 </Link>
               );
             })}

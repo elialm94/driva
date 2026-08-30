@@ -2,7 +2,6 @@ import { kr } from "@/lib/format";
 import { Card, PageHeader } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
-import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { resultatrapport } from "@/lib/accounting/ledger";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
@@ -13,7 +12,7 @@ export default async function ResultatPage() {
   const rr = resultatrapport();
 
   return (
-    <div className="animate-fade-up">
+    <div>
       <PageHeader
         back={<SmartBack />}
         title="Resultatrapport"
@@ -27,7 +26,6 @@ export default async function ResultatPage() {
           </div>
         }
       />
-      <BokforingAdvancedTabs />
 
       {/* Ägarvänlig sammanfattning */}
       <Card className="mb-6 px-6 py-5">

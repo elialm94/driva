@@ -21,6 +21,7 @@ import {
   invoiceOverdueLabel,
   supplierPaymentStatus,
 } from "../status-labels";
+import { compareEconomyRows, type EconomySortState, type EconomySortable } from "../economy-sort";
 
 /**
  * Läsmodeller för Ekonomi-registret: en genomläsning av lagret per flik,
@@ -89,12 +90,23 @@ export interface QuoteTableRow {
 // Central vokabulär (status-labels.ts): samma ord som badge och filter.
 const QUOTE_STATUS_META: Record<Quote["status"], { label: string; tone: StatusTone }> = QUOTE_STATUS;
 
+function quoteSortable(row: QuoteTableRow): EconomySortable {
+  return {
+    documentNumber: row.number,
+    documentLabel: row.title || `#${row.number}`,
+    customerName: row.customerName,
+    date: row.date,
+    amount: row.amount,
+  };
+}
+
 export function listQuotesForTable(
-  input: { q?: string; status?: QuoteStatusFilter; page?: number; pageSize?: number } = {}
+  input: { q?: string; status?: QuoteStatusFilter; page?: number; pageSize?: number; sort?: EconomySortState | null } = {}
 ): PagedResult<QuoteTableRow> {
   const names = customersById();
   const q = normalize(input.q ?? "");
   const status = input.status ?? "alla";
+  const sort = input.sort ?? null;
 
   const rows: QuoteTableRow[] = [];
   for (const quote of db().quotes) {
@@ -120,7 +132,11 @@ export function listQuotesForTable(
     });
   }
 
-  rows.sort((a, b) => b.date.localeCompare(a.date) || b.number - a.number);
+  if (sort) {
+    rows.sort((a, b) => compareEconomyRows(quoteSortable(a), quoteSortable(b), sort));
+  } else {
+    rows.sort((a, b) => b.date.localeCompare(a.date) || b.number - a.number);
+  }
   return paginate(rows, input.page ?? 1, input.pageSize ?? ECONOMY_PAGE_SIZE);
 }
 
@@ -181,14 +197,25 @@ const INVOICE_TYPE_LABEL: Record<Invoice["type"], string> = {
   kredit: "Kredit",
 };
 
+function invoiceSortable(item: { row: InvoiceTableRow; number: number | null }): EconomySortable {
+  return {
+    documentNumber: item.number,
+    documentLabel: item.row.label,
+    customerName: item.row.customerName,
+    date: item.row.dueDate,
+    amount: item.row.amount,
+  };
+}
+
 export function listInvoicesForTable(
-  input: { q?: string; status?: InvoiceStatusFilter; page?: number; pageSize?: number } = {}
+  input: { q?: string; status?: InvoiceStatusFilter; page?: number; pageSize?: number; sort?: EconomySortState | null } = {}
 ): PagedResult<InvoiceTableRow> {
   const names = customersById();
   const q = normalize(input.q ?? "");
   const status = input.status ?? "alla";
+  const sort = input.sort ?? null;
 
-  const withSort: { row: InvoiceTableRow; draft: boolean; number: number; createdAt: string }[] = [];
+  const withSort: { row: InvoiceTableRow; draft: boolean; number: number | null; createdAt: string }[] = [];
   for (const inv of db().invoices) {
     if (!invoiceMatchesFilter(inv, status)) continue;
     const customerName = names.get(inv.customerId) ?? "";
@@ -199,7 +226,7 @@ export function listInvoicesForTable(
     const meta = invoiceStatusMeta(inv);
     withSort.push({
       draft: inv.status === "utkast",
-      number: inv.number ?? 0,
+      number: inv.number,
       createdAt: inv.createdAt,
       row: {
         id: inv.id,
@@ -214,12 +241,16 @@ export function listInvoicesForTable(
     });
   }
 
-  // Utkast överst (senaste först), sedan fallande fakturanummer – samma ordning som tidigare listan.
-  withSort.sort((a, b) => {
-    if (a.draft !== b.draft) return a.draft ? -1 : 1;
-    if (a.draft) return b.createdAt.localeCompare(a.createdAt);
-    return b.number - a.number;
-  });
+  if (sort) {
+    withSort.sort((a, b) => compareEconomyRows(invoiceSortable(a), invoiceSortable(b), sort));
+  } else {
+    // Utkast överst (senaste först), sedan fallande fakturanummer – samma ordning som tidigare listan.
+    withSort.sort((a, b) => {
+      if (a.draft !== b.draft) return a.draft ? -1 : 1;
+      if (a.draft) return b.createdAt.localeCompare(a.createdAt);
+      return (b.number ?? 0) - (a.number ?? 0);
+    });
+  }
 
   return paginate(
     withSort.map((w) => w.row),
@@ -319,8 +350,18 @@ function supplierInvoiceLifecycle(
   return { label: "Väntar på bokföring", tone: "warn", bucket: "atgard" };
 }
 
+function expenseSortable(row: ExpenseTableRow): EconomySortable {
+  return {
+    documentNumber: null,
+    documentLabel: row.reference ?? row.supplier,
+    customerName: row.supplier,
+    date: row.date,
+    amount: row.amount,
+  };
+}
+
 export function listExpensesForTable(
-  input: { q?: string; status?: ExpenseStatusFilter; page?: number; pageSize?: number } = {}
+  input: { q?: string; status?: ExpenseStatusFilter; page?: number; pageSize?: number; sort?: EconomySortState | null } = {}
 ): PagedResult<ExpenseTableRow> {
   const q = normalize(input.q ?? "");
   const status = input.status ?? "alla";
@@ -381,7 +422,12 @@ export function listExpensesForTable(
     });
   }
 
-  rows.sort((a, b) => b.date.localeCompare(a.date));
+  const sort = input.sort ?? null;
+  if (sort) {
+    rows.sort((a, b) => compareEconomyRows(expenseSortable(a), expenseSortable(b), sort));
+  } else {
+    rows.sort((a, b) => b.date.localeCompare(a.date));
+  }
   return paginate(rows, input.page ?? 1, input.pageSize ?? ECONOMY_PAGE_SIZE);
 }
 
@@ -433,8 +479,18 @@ const TX_STATUS_META: Record<string, { label: string; tone: StatusTone }> = {
   matchad: { label: "Matchad", tone: "info" },
 };
 
+function bankSortable(row: BankTableRow): EconomySortable {
+  return {
+    documentNumber: null,
+    documentLabel: row.reference ?? row.counterpart,
+    customerName: row.counterpart,
+    date: row.date,
+    amount: row.amount,
+  };
+}
+
 export function listBankForTable(
-  input: { q?: string; status?: BankStatusFilter; page?: number; pageSize?: number } = {}
+  input: { q?: string; status?: BankStatusFilter; page?: number; pageSize?: number; sort?: EconomySortState | null } = {}
 ): PagedResult<BankTableRow> {
   const q = normalize(input.q ?? "");
   const status = input.status ?? "alla";
@@ -464,6 +520,11 @@ export function listBankForTable(
     });
   }
 
-  rows.sort((a, b) => b.date.localeCompare(a.date));
+  const sort = input.sort ?? null;
+  if (sort) {
+    rows.sort((a, b) => compareEconomyRows(bankSortable(a), bankSortable(b), sort));
+  } else {
+    rows.sort((a, b) => b.date.localeCompare(a.date));
+  }
   return paginate(rows, input.page ?? 1, input.pageSize ?? ECONOMY_PAGE_SIZE);
 }

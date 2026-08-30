@@ -36,6 +36,7 @@ import {
   reopenReminder,
   snoozeReminderBy,
   unsnoozeReminder,
+  updateReminder,
 } from "@/lib/services/reminders";
 import { clearAttentionSnooze, snoozeAttention } from "@/lib/services/attention-state";
 import { snoozeDoneText } from "@/lib/reminders/when";
@@ -133,6 +134,7 @@ import {
   setSectionVisible,
   setWebsiteDesign,
   submitContactForm,
+  updatePrivacyPolicySupplement,
   updateSection,
   updateServiceItem,
   updateTestimonialItem,
@@ -748,6 +750,28 @@ export async function dismissReminderAction(reminderId: string) {
   );
 }
 
+export async function updateReminderAction(
+  reminderId: string,
+  patch: { title?: string; whenDate?: string; time?: string; clearWhen?: boolean }
+) {
+  return withBusiness(
+    async () => {
+      const updated = updateReminder(reminderId, {
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+        when: patch.clearWhen
+          ? { kind: "none" }
+          : patch.whenDate
+            ? { kind: "date", date: patch.whenDate, time: patch.time }
+            : undefined,
+      });
+      if (!updated.ok) return { ok: false as const, error: updated.error };
+      refresh();
+      return { ok: true as const };
+    },
+    { retry: false }
+  );
+}
+
 /**
  * Snooza en uppmärksamhetsrad: döljer den ur "Behöver din uppmärksamhet"
  * tills tidpunkten passerat. Ändrar ALDRIG domänstatus – fakturan förblir
@@ -1357,6 +1381,20 @@ export async function setWebsiteDesignAction(input: {
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara utseendet." };
   }
+}
+
+export async function updatePrivacyPolicySupplementAction(
+  text: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      updatePrivacyPolicySupplement(text);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara." } as const;
+    }
+    refresh();
+    return { ok: true } as const;
+  }, { capability: "change_website" });
 }
 
 export async function publishWebsiteAction() {

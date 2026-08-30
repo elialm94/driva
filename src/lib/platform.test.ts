@@ -57,7 +57,8 @@ import {
   setTicketStatus,
   SupportTicketError,
 } from "./platform/tickets";
-import { listSupportTickets, countSupportTicketsByStatus } from "./platform/store";
+import { listSupportTickets, countSupportTicketsByStatus, supportTicketById } from "./platform/store";
+import { setMailTransportForTests } from "./mail";
 import {
   businessDeletionPolicy,
   searchBusinesses,
@@ -296,7 +297,58 @@ describe("supportsessioner (Öppna som kund)", () => {
 });
 
 describe("supportärenden", () => {
-  it("skapas med automatisk kontext och valideras hårt", async () => {
+  it("A: meddelande skapar öppet ärende med företag och användare", async () => {
+    const ticket = await createSupportTicket({
+      businessId: "biz-1",
+      businessName: "Södermalms Snickeri AB",
+      userId: "user-k",
+      userEmail: "Kund@Firma.se",
+      userName: "Kim Kund",
+      message: "Jag kan inte skicka min faktura",
+      route: "/ekonomi/fakturor/1047",
+      userAgent: "Mozilla/5.0",
+      appVersion: "abc123",
+      environment: "test",
+    });
+    assert.equal(ticket.status, "open");
+    assert.equal(ticket.priority, "normal");
+    assert.equal(ticket.userEmail, "kund@firma.se");
+    assert.equal(ticket.userName, "Kim Kund");
+    assert.equal(ticket.businessId, "biz-1");
+    assert.equal(ticket.businessName, "Södermalms Snickeri AB");
+    assert.equal(ticket.subject, "Jag kan inte skicka min faktura");
+    assert.equal(ticket.route, "/ekonomi/fakturor/1047");
+    assert.equal(ticket.environment, "test");
+    const listed = await listSupportTickets({ statuses: ["open"] });
+    assert.equal(listed[0]?.id, ticket.id);
+    assert.equal(listed[0]?.businessName, "Södermalms Snickeri AB");
+    assert.equal(listed[0]?.userEmail, "kund@firma.se");
+  });
+
+  it("B: bildbilaga följer med och stannar på ärendet (privat, ingen publik URL)", async () => {
+    const png =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const ticket = await createSupportTicket({
+      businessId: "biz-1",
+      businessName: "Södermalms Snickeri AB",
+      userId: "user-k",
+      userEmail: "kund@firma.se",
+      message: "Här är en skärmdump på felet",
+      attachment: { name: "screenshot.png", dataUrl: png },
+    });
+    assert.equal(ticket.attachmentName, "screenshot.png");
+    assert.ok(ticket.attachmentDataUrl?.startsWith("data:image/png"));
+    assert.equal(ticket.attachmentDataUrl?.startsWith("http"), false);
+    const stored = await supportTicketById(ticket.id);
+    assert.equal(stored?.attachmentName, "screenshot.png");
+    assert.ok(stored?.attachmentDataUrl?.startsWith("data:image/png"));
+  });
+
+  it("C: tomt/för kort meddelande ger svenskt fel och inget ärende", async () => {
+    await assert.rejects(
+      () => createSupportTicket({ userEmail: "k@k.se", message: "" }),
+      (e: unknown) => e instanceof SupportTicketError && /beskriv vad du behöver hjälp med/i.test(e.message)
+    );
     await assert.rejects(
       () => createSupportTicket({ userEmail: "k@k.se", message: "hej" }),
       SupportTicketError
@@ -310,32 +362,47 @@ describe("supportärenden", () => {
         }),
       SupportTicketError
     );
-    const ticket = await createSupportTicket({
-      businessId: "biz-1",
-      businessName: "Södermalms Snickeri AB",
-      userId: "user-k",
-      userEmail: "Kund@Firma.se",
-      message: "Jag kan inte skicka fakturan till min kund.",
-      route: "/ekonomi/fakturor/1047",
-      userAgent: "Mozilla/5.0",
-      appVersion: "abc123",
-    });
-    assert.equal(ticket.status, "open");
-    assert.equal(ticket.priority, "normal");
-    assert.equal(ticket.userEmail, "kund@firma.se");
-    assert.equal(ticket.subject, "Jag kan inte skicka fakturan till min kund.");
-    assert.equal(ticket.route, "/ekonomi/fakturor/1047");
+    assert.equal((await listSupportTickets()).length, 0);
   });
 
-  it("statusflöde + tilldelning skrivs till auditloggen", async () => {
+  it("D: Resend nere – ärendet skapas ändå", async () => {
+    process.env.SUPPORT_NOTIFY_EMAIL = "ops@driva.se";
+    setMailTransportForTests(async () => {
+      throw new Error("Resend unavailable");
+    });
+    try {
+      const ticket = await createSupportTicket({
+        businessId: "biz-1",
+        businessName: "Södermalms Snickeri AB",
+        userEmail: "kund@firma.se",
+        message: "Jag kan inte skicka min faktura",
+      });
+      assert.equal(ticket.status, "open");
+      const found = await listSupportTickets({ q: "skicka min faktura" });
+      assert.equal(found.length, 1);
+      assert.equal(found[0]?.id, ticket.id);
+    } finally {
+      delete process.env.SUPPORT_NOTIFY_EMAIL;
+      setMailTransportForTests(undefined);
+    }
+  });
+
+  it("E: admin öppnar ärende, sätter Pågår och sedan Löst", async () => {
     const sup = (await platformAdminByUserId("user-super"))!;
     const t = await createSupportTicket({
       userEmail: "k@k.se",
       message: "Hjälp med bokföringen tack",
     });
     await setTicketStatus(sup, t.id, "in_progress");
+    let current = await supportTicketById(t.id);
+    assert.equal(current?.status, "in_progress");
+    assert.equal(current?.resolvedAt, undefined);
     await assignTicket(sup, t.id, sup.userId);
     await setTicketStatus(sup, t.id, "resolved");
+    current = await supportTicketById(t.id);
+    assert.equal(current?.status, "resolved");
+    assert.ok(current?.resolvedAt);
+    assert.equal(current?.resolvedBy, sup.userId);
     const counts = await countSupportTicketsByStatus();
     assert.equal(counts.resolved, 1);
     assert.equal(counts.open, 0);
@@ -343,7 +410,6 @@ describe("supportärenden", () => {
     const actions = audit.map((a) => a.action);
     assert.ok(actions.includes("ticket_status_changed"));
     assert.ok(actions.includes("ticket_assigned"));
-    // Sök: ärendet hittas via text.
     const found = await listSupportTickets({ q: "bokföringen" });
     assert.equal(found.length, 1);
   });

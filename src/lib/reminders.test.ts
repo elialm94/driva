@@ -33,6 +33,7 @@ import {
   createReminder,
   describeReminderDue,
   dismissReminder,
+  listHomeReminders,
   listReminders,
   reminderVisibleFrom,
   snoozeReminder,
@@ -173,6 +174,7 @@ describe("resolveWhen: tidszoner (aldrig hårdkodat Stockholm)", () => {
   it("formatDueAt presenterar lokal tid i påminnelsens tidszon", () => {
     assert.equal(formatDueAt("2026-09-02T08:00:00.000Z", TZ), "onsdag 2 september kl 10:00");
     assert.equal(formatDueAt("2026-09-02T14:00:00.000Z", "America/New_York"), "onsdag 2 september kl 10:00");
+    assert.equal(formatDueAt("2026-09-02T08:00:00.000Z", TZ, false), "onsdag 2 september");
   });
 
   it("ogiltiga uttryck ger fel i stället för gissningar", () => {
@@ -233,8 +235,20 @@ describe("parseReminderText: snabbvägen utan LLM", () => {
     assert.equal(p.args.nextWeek, true);
   });
 
-  it("utan tidsuttryck eller utan påminn-prefix → null (LLM-vägen)", () => {
-    assert.equal(parseReminderText("påminn mig att ringa Göran", NOW, TZ), null);
+  it("utan tidsuttryck men med påminn-prefix → odaterad påminnelse", () => {
+    const p = parseReminderText("påminn mig att ringa Göran", NOW, TZ);
+    assert.ok(p);
+    assert.equal(p.title, "ringa Göran");
+    assert.equal(p.args.weekday, undefined);
+    assert.equal(p.args.whenDate, undefined);
+    assert.equal(p.args.time, undefined);
+    const kom = parseReminderText("Kom ihåg att köpa nya arbetskläder", NOW, TZ);
+    assert.ok(kom);
+    assert.equal(kom.title, "köpa nya arbetskläder");
+    assert.equal(kom.args.whenDate, undefined);
+  });
+
+  it("utan påminn-prefix eller betalningspåminnelse → null (LLM-vägen)", () => {
     assert.equal(parseReminderText("vad behöver jag göra idag?", NOW, TZ), null);
     assert.equal(parseReminderText("fakturera Johan imorgon", NOW, TZ), null);
     assert.equal(parseReminderText("skicka påminnelse till Johan om faktura", NOW, TZ), null);
@@ -249,7 +263,7 @@ describe("parseReminderText: snabbvägen utan LLM", () => {
     assert.equal(p.args.weekday, "onsdag");
     assert.equal(p.args.relatedQuery, "Göran");
     const preview = previewReminderDue("onsdag", NOW, TZ);
-    assert.equal(preview, "Onsdag 2 september kl 10:00");
+    assert.equal(preview, "Onsdag 2 september");
   });
 });
 
@@ -261,7 +275,7 @@ describe("parseReminderCommandInput: ingen stel guide – bara det som saknas ef
   function complete(text: string) {
     const p = parseReminderCommandInput(text, NOW, TZ);
     assert.ok(p, `"${text}" gav null`);
-    assert.ok(p.complete, `"${text}" hittade ingen tid – flödet skulle fråga "När?" i onödan`);
+    assert.ok(p.complete, `"${text}" skulle vara komplett (tid är valfritt)`);
     if (!p.complete) throw new Error("unreachable");
     return p;
   }
@@ -325,18 +339,19 @@ describe("parseReminderCommandInput: ingen stel guide – bara det som saknas ef
     assert.equal(p.args.daypart, "eftermiddag");
   });
 
-  it("'Ring Göran' utan tid → complete:false – ENDAST 'När?' efterfrågas", () => {
-    const p = parseReminderCommandInput("Ring Göran", NOW, TZ);
-    assert.ok(p && !p.complete && p.missing === "when");
-    if (!p || p.complete || p.missing !== "when") throw new Error("unreachable");
+  it("'Ring Göran' utan tid → komplett odaterad påminnelse", () => {
+    const p = complete("Ring Göran");
     assert.equal(p.title, "Ring Göran");
+    assert.equal(p.args.weekday, undefined);
+    assert.equal(p.args.whenDate, undefined);
+    assert.equal(previewReminderDueFromArgs(p.args, NOW, TZ), "Ingen tid");
   });
 
-  it("'påminn mig att ringa Göran' utan tid → titel utan prefix, complete:false", () => {
-    const p = parseReminderCommandInput("påminn mig att ringa Göran", NOW, TZ);
-    assert.ok(p && !p.complete && p.missing === "when");
-    if (!p || p.complete || p.missing !== "when") throw new Error("unreachable");
+  it("'påminn mig att ringa Göran' utan tid → komplett, prefixet stripas", () => {
+    const p = complete("påminn mig att ringa Göran");
     assert.equal(p.title, "ringa Göran");
+    assert.equal(p.args.whenDate, undefined);
+    assert.equal(previewReminderDueFromArgs(p.args, NOW, TZ), "Ingen tid");
   });
 
   it("tom inmatning → null", () => {
@@ -395,7 +410,8 @@ describe("påminnelser i åtgärdsmotorn", () => {
     assert.ok(row, "dagsnivåpåminnelsen syns från dagsstart");
     assert.equal(row.priority, "action"); // inte försenad ännu
     assert.equal(row.icon, "bell");
-    assert.match(row.subtitle, /Idag kl 10:00/);
+    assert.match(row.subtitle, /Idag/);
+    assert.doesNotMatch(row.subtitle, /kl 10:00/);
   });
 
   it("explicit tid syns först från dueAt", () => {
@@ -405,14 +421,16 @@ describe("påminnelser i åtgärdsmotorn", () => {
     assert.ok(attentionIds(later).includes(`reminder-${rem.id}`), "syns efter 14:00");
   });
 
-  it("framtida påminnelse hamnar under På gång – inte i uppmärksamhet", () => {
+  it("framtida påminnelse syns under Påminnelser – inte i uppmärksamhet eller På gång", () => {
     const rem = create({ kind: "weekday", weekday: "onsdag" }); // 2026-09-02, 4 dagar bort
     const actions = getBusinessActions(NOW);
     assert.ok(!actions.attention.some((a) => a.id === `reminder-${rem.id}`));
-    const upcoming = actions.watching.find((u) => u.id === `reminder-upcoming-${rem.id}`);
-    assert.ok(upcoming, "finns i På gång");
-    assert.equal(upcoming.date, "2026-09-02");
-    assert.equal(upcoming.category, "reminder");
+    assert.ok(!actions.watching.some((u) => u.id.includes(rem.id)));
+    const home = actions.reminders.find((r) => r.id === rem.id);
+    assert.ok(home, "finns i Påminnelser");
+    assert.equal(home.group, "upcoming");
+    assert.equal(home.whenLabel, "onsdag");
+    assert.doesNotMatch(home.whenLabel, /00:00|10:00/);
   });
 
   it("försenad markeras Försenad och blir brådskande", () => {
@@ -484,10 +502,10 @@ describe("påminnelser i åtgärdsmotorn", () => {
 
   it("reminderVisibleFrom + describeReminderDue: policyn är härledd, aldrig lagrad", () => {
     const dayLevel = create({ kind: "date", date: "2026-08-30" });
-    assert.equal(reminderVisibleFrom(dayLevel).toISOString(), "2026-08-29T22:00:00.000Z"); // lokal dagsstart
+    assert.equal(reminderVisibleFrom(dayLevel)?.toISOString(), "2026-08-29T22:00:00.000Z"); // lokal dagsstart
     const explicit = create({ kind: "date", date: "2026-08-30", time: "14:00" }, { title: "Explicit" });
-    assert.equal(reminderVisibleFrom(explicit).toISOString(), "2026-08-30T12:00:00.000Z");
-    assert.deepEqual(describeReminderDue(dayLevel, NOW), { overdue: false, text: "Imorgon kl 10:00" });
+    assert.equal(reminderVisibleFrom(explicit)?.toISOString(), "2026-08-30T12:00:00.000Z");
+    assert.deepEqual(describeReminderDue(dayLevel, NOW), { overdue: false, text: "Imorgon" });
   });
 
   it("listReminders sorterar på dueAt och utesluter avklarade", () => {
@@ -499,5 +517,43 @@ describe("påminnelser i åtgärdsmotorn", () => {
       listReminders().map((r) => r.id),
       [sooner.id, later.id]
     );
+  });
+
+  it("odaterad påminnelse är giltig, syns under Påminnelser och räknas inte som försenad", () => {
+    const created = createReminder({ title: "Beställ virke" }, NOW);
+    assert.ok(created.ok);
+    if (!created.ok) throw new Error("unreachable");
+    const rem = created.reminder;
+    assert.equal(rem.dueAt, undefined);
+    assert.equal(rem.hasExplicitTime, false);
+    assert.equal(reminderVisibleFrom(rem), null);
+    assert.deepEqual(describeReminderDue(rem, NOW), { overdue: false, text: "Ingen tid" });
+    const actions = getBusinessActions(NOW);
+    assert.ok(!actions.attention.some((a) => a.id === `reminder-${rem.id}`));
+    const home = actions.reminders.find((r) => r.id === rem.id);
+    assert.ok(home);
+    assert.equal(home.group, "undated");
+    assert.equal(home.whenLabel, "Ingen tid");
+  });
+
+  it("Hem: 0 aktiva → tom lista; sista Klar → tom igen; ny → syns igen", () => {
+    assert.deepEqual(listHomeReminders(NOW), []);
+    assert.deepEqual(getBusinessActions(NOW).reminders, []);
+
+    const first = createReminder({ title: "Beställ virke" }, NOW);
+    assert.ok(first.ok);
+    if (!first.ok) throw new Error("unreachable");
+    assert.equal(getBusinessActions(NOW).reminders.length, 1);
+
+    completeReminder(first.reminder.id, NOW);
+    assert.deepEqual(getBusinessActions(NOW).reminders, []);
+
+    const again = createReminder({ title: "Ring Göran", when: { kind: "date", date: "2026-08-30", time: "10:00" } }, NOW);
+    assert.ok(again.ok);
+    if (!again.ok) throw new Error("unreachable");
+    const listed = getBusinessActions(NOW).reminders;
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].title, "Ring Göran");
+    assert.equal(listed[0].group, "upcoming");
   });
 });

@@ -7,7 +7,7 @@ import puppeteer, { type Page } from "puppeteer-core";
  * kostnad) – LLM-vägen är separat verifierad i scripts/smoke-reminders.ts.
  *
  *   1. "Påminn mig att ringa Sara på onsdag" → svar med tolkad tid + kundkoppling.
- *   2. Framtida påminnelse syns under Hem → På gång.
+ *   2. Framtida påminnelse syns under Hem → Påminnelser.
  *   3. Förfallen påminnelse ("idag kl 06:00") → Behöver din uppmärksamhet,
  *      markerad Försenad, med [Klar] och [Snooza].
  *   4. Snooza → 1 timme → raden försvinner.
@@ -112,24 +112,19 @@ async function main() {
     let body = await sendPhrase(page, "Påminn mig att ringa Sara på onsdag");
     if (!/påminner dig onsdag/i.test(body)) fail(`svaret saknar tolkad tid: ${body.slice(0, 300)}`);
     if (!body.includes("Sara Nilsson")) fail("kundkopplingen (Sara Nilsson) saknas i svaret");
-    ok("1 fras → svar med tolkad dag/tid + kundkoppling", "”påminner dig onsdag … kl 10:00” + Sara Nilsson");
+    ok("1 fras → svar med tolkad dag + kundkoppling", "”påminner dig onsdag …” + Sara Nilsson");
 
     // Exakta specfrasen: ingen Göran i seedet → ärlig text utan koppling.
     body = await sendPhrase(page, "Påminn mig att ringa Göran på onsdag");
     if (!/utan koppling/i.test(body)) fail("noll kundträffar ska ge ärlig ’utan koppling’-not");
     ok("2 okänd kund → textpåminnelse, aldrig gissad koppling");
 
-    // 2. Framtida påminnelse under På gång (kan ligga bakom "Visa fler").
+    // 2. Framtida påminnelse under Påminnelser (inte På gång).
     await page.goto(`${BASE}/`, { waitUntil: "networkidle0" });
-    await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll("button")).find((b) =>
-        (b.textContent ?? "").startsWith("Visa ")
-      );
-      (btn as HTMLButtonElement | undefined)?.click();
-    });
-    const watching = await page.evaluate(() => document.body.textContent ?? "");
-    if (!watching.toLowerCase().includes("ringa sara")) fail("framtida påminnelsen syns inte under På gång");
-    ok("3 framtida påminnelse under På gång", "”ringa Sara” listad, inte i uppmärksamhet");
+    const home = await page.evaluate(() => document.body.textContent ?? "");
+    if (!home.toLowerCase().includes("påminnelser")) fail("Påminnelser-sektionen saknas när det finns aktiva påminnelser");
+    if (!home.toLowerCase().includes("ringa sara")) fail("framtida påminnelsen syns inte under Påminnelser");
+    ok("3 framtida påminnelse under Påminnelser", "”ringa Sara” listad, inte i uppmärksamhet");
 
     // 3. Förfallen påminnelse → Behöver din uppmärksamhet med Försenad + knappar.
     await sendPhrase(page, "Påminn mig idag kl 06:00 att kolla pannan");

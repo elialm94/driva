@@ -4,7 +4,6 @@ import { kr } from "@/lib/format";
 import { Card, EmptyState, PageHeader, cx } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
-import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { saldobalans } from "@/lib/accounting/ledger";
 import { fiscalYears } from "@/lib/accounting/fiscal";
 import { ensurePageBusiness } from "@/lib/auth/session";
@@ -20,7 +19,7 @@ export default async function SaldobalansPage({ searchParams }: { searchParams: 
   const activeLabel = chosen?.label ?? sb.fiscalYear?.label;
 
   return (
-    <div className="animate-fade-up">
+    <div>
       <PageHeader
         back={<SmartBack />}
         title="Saldobalans"
@@ -37,7 +36,6 @@ export default async function SaldobalansPage({ searchParams }: { searchParams: 
           </div>
         }
       />
-      <BokforingAdvancedTabs />
 
       {years.length > 1 ? (
         <div className="mb-5 flex flex-wrap gap-1.5 print:hidden">
