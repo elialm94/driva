@@ -6,6 +6,11 @@ export const SWEDISH_VALIDITY = {
   email: "Ange en giltig e-postadress.",
   phone: "Ange ett giltigt telefonnummer.",
   generic: "Ange ett giltigt värde.",
+  tooShort: "Värdet är för kort.",
+  tooLong: "Värdet är för långt.",
+  rangeUnderflow: "Ange ett belopp större än 0.",
+  rangeOverflow: "Ange ett värde som inte är för stort.",
+  stepMismatch: "Ange ett giltigt tal.",
 } as const;
 
 type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
@@ -34,6 +39,15 @@ export function swedishValidityMessage(el: Field): string {
   const v = el.validity;
   if (v.valid) return "";
   if (v.valueMissing) return SWEDISH_VALIDITY.required;
+  if (v.tooShort) return SWEDISH_VALIDITY.tooShort;
+  if (v.tooLong) return SWEDISH_VALIDITY.tooLong;
+  if (v.rangeUnderflow) {
+    const min = el instanceof HTMLInputElement ? Number(el.min) : NaN;
+    if (Number.isFinite(min) && min >= 1) return `Ange ett värde som är minst ${el instanceof HTMLInputElement ? el.min : min}.`;
+    return SWEDISH_VALIDITY.rangeUnderflow;
+  }
+  if (v.rangeOverflow) return SWEDISH_VALIDITY.rangeOverflow;
+  if (v.stepMismatch) return SWEDISH_VALIDITY.stepMismatch;
   if (v.typeMismatch || v.patternMismatch || v.badInput) {
     if (looksLikeEmail(el) || fieldType(el) === "email") return SWEDISH_VALIDITY.email;
     if (looksLikePhone(el)) return SWEDISH_VALIDITY.phone;

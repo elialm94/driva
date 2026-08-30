@@ -24,6 +24,10 @@ export function normalizeOrgnr(value: string): string {
   return value.trim();
 }
 
+/** Alias – kanoniskt namn för delad validering. */
+export const normalizeSwedishOrganizationNumber = normalizeOrgnr;
+export const formatSwedishOrganizationNumber = formatOrgnr;
+
 export function isOrgnrFormat(value: string): boolean {
   return ORGNR_DIGITS.test(digitsOnly(value));
 }
