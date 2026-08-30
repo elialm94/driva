@@ -4,7 +4,7 @@ import { db } from "@/lib/store";
 import { kr, datumKort } from "@/lib/format";
 import { ButtonLink, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { AttentionSection } from "@/components/attention-list";
-import { getBusinessActions } from "@/lib/services/actions";
+import { getBookkeepingAttention } from "@/lib/services/nav-counts";
 import { bankReconciliation } from "@/lib/accounting/reconciliation";
 import { vatChecklist, vatPeriods } from "@/lib/accounting/vat";
 import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
@@ -31,11 +31,8 @@ export default async function BookkeepingPage() {
   const rr = resultatrapport();
   const today = todayDate();
 
-  // Samma åtgärdsmotor som Hem, filtrerad till bokföringsundantag + moms.
-  // Offerter/BankID/ej förfallna fakturor hör inte hemma här.
-  const bookkeepingActions = getBusinessActions().attention.filter(
-    (a) => a.category === "accounting" || a.category === "vat"
-  );
+  // Samma räknare som sidomenyns Bokföring-badge (countBookkeepingBadge).
+  const bookkeepingActions = getBookkeepingAttention();
   const vatIsAttention = bookkeepingActions.some((a) => a.category === "vat");
   const needsHelp = bookkeepingActions.length;
   const allGood = needsHelp === 0;
