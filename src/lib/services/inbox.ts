@@ -29,6 +29,7 @@ import type {
   InboxItemStatus,
   SupplierInvoice,
 } from "../types";
+import { storableAttachmentContent } from "../inbox/attachment-content";
 import { createExpenseFromKnownReceipt, merchantRuleKey } from "./expenses";
 import { type PagedResult } from "./customers";
 import { attachExtractedPaymentDetails, bookSupplierInvoice, receiveSupplierInvoice } from "./suppliers";
@@ -434,13 +435,17 @@ export function ingestEconomicDocument(
   }
 
   const parsed = payload.parsed;
-  const attachments: InboxAttachment[] = (payload.attachments ?? []).map((a) => ({
-    id: uid(),
-    filename: a.filename,
-    contentType: a.contentType,
-    size: a.size ?? 0,
-    storageKey: `inbox/${payload.externalId}/${a.filename}`,
-  }));
+  const attachments: InboxAttachment[] = (payload.attachments ?? []).map((a) => {
+    const content = storableAttachmentContent(a.contentType, a.contentBase64);
+    return {
+      id: uid(),
+      filename: a.filename,
+      contentType: a.contentType,
+      size: a.size ?? (content ? Math.floor((content.length * 3) / 4) : 0),
+      storageKey: `inbox/${payload.externalId}/${a.filename}`,
+      ...(content ? { contentBase64: content } : {}),
+    };
+  });
 
   const documentType = classifyEconomicDocument({
     subject: payload.subject,

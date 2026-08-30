@@ -1476,13 +1476,22 @@ export type InboxItemStatus = "ny" | "behandlad" | "bokford";
 export type InboxDocumentType = "leverantorsfaktura" | "kvitto" | "ekonomiskt_dokument";
 export type InboxItemSource = "email" | "uppladdning" | "vidarebefordrad";
 
-/** Privat bilaga – lagras i bucket `inbox_attachments`, aldrig som publik URL. */
+/**
+ * Privat bilaga – hämtas alltid via den auktoriserade routen
+ * /api/inbox/bilaga/…, aldrig som publik URL.
+ */
 export interface InboxAttachment {
   id: ID;
   filename: string;
   contentType: string;
   size: number;
   storageKey: string;
+  /**
+   * Små dokument (≤ ~1,5 MB, pdf/bild) lagras inline så att båda
+   * lagringslägena kan servera innehållet. Demobilagor (storageKey "demo/…")
+   * genereras i stället deterministiskt och lagrar aldrig bytes.
+   */
+  contentBase64?: string;
 }
 
 /**
