@@ -459,8 +459,18 @@ export function newQuoteHref(params: {
   return params.from ? withReturnTo(path, params.from.href, params.from.label) : path;
 }
 
-export function newInvoiceHref(params?: { kund?: string; from?: { href: string; label?: string } }): string {
-  const path = params?.kund ? `/ekonomi/fakturor/ny?kund=${encodeURIComponent(params.kund)}` : "/ekonomi/fakturor/ny";
+export function newInvoiceHref(params?: {
+  kund?: string;
+  job?: string;
+  fristaende?: boolean;
+  from?: { href: string; label?: string };
+}): string {
+  const search = new URLSearchParams();
+  if (params?.kund) search.set("kund", params.kund);
+  if (params?.job) search.set("job", params.job);
+  if (params?.fristaende) search.set("fristaende", "1");
+  const qs = search.toString();
+  const path = qs ? `/ekonomi/fakturor/ny?${qs}` : "/ekonomi/fakturor/ny";
   return params?.from ? withReturnTo(path, params.from.href, params.from.label) : path;
 }
 

@@ -1,9 +1,9 @@
 import { db } from "../store";
-import type { Invoice, Job, Quote } from "../types";
 import { countsTowardInvoiced, invoiceTotals, isOpenReceivable, quoteTotals } from "./data";
-import { invoiceHref, quoteHref } from "../nav";
+import { invoiceHref, jobHref, quoteHref } from "../nav";
 import { invoiceNumberLabel } from "../invoices/display";
-import type { CustomerActivityRow, CustomerMoneyLine } from "../customer-activity-model";
+import type { CustomerActivityKind, CustomerActivityRow, CustomerMoneyLine } from "../customer-activity-model";
+import { customerActivityClusters, customerActivityMembers } from "./business-chain";
 
 export type { CustomerActivityKind, CustomerActivityRow, CustomerMoneyLine } from "../customer-activity-model";
 export { ACTIVITY_FILTER_MIN } from "../customer-activity-model";
@@ -12,97 +12,132 @@ function eventTime(iso: string): string {
   return iso.length <= 10 ? `${iso}T12:00:00.000Z` : iso;
 }
 
-function quoteTitle(quote: Quote): string {
-  const version = db().quoteVersions.find((v) => v.id === quote.currentVersionId);
-  return version?.title ? `Offert #${quote.number} · ${version.title}` : `Offert #${quote.number}`;
+function quoteTitle(number: number, title?: string): string {
+  return title ? `Offert #${number} · ${title}` : `Offert #${number}`;
 }
 
-function quoteStatusLabel(quote: Quote): string {
-  switch (quote.status) {
-    case "utkast":
-      return "Utkast";
-    case "skickad":
-      return "Väntar på BankID";
-    case "godkand":
-      return "Godkänd";
-    case "avbojd":
-      return "Avböjd";
-    case "utgangen":
-      return "Utgången";
-  }
-}
-
-function invoiceStatusLabel(invoice: Invoice): string {
-  if (invoice.type === "kredit") return "Kreditfaktura";
-  if (invoice.status === "utkast") return "Utkast";
-  if (invoice.status === "betald") return "Betald";
-  if (invoice.status === "krediterad") return "Krediterad";
-  return "Skickad";
-}
-
-function jobStatusLabel(job: Job): string {
-  if (job.status === "klart") return "Klart";
-  if (job.status === "pagar") return "Pågår";
-  return "Kommande";
-}
-
-/** Kronologisk kundaktivitet, nyast först. Byggs från objekten – inte från fritextloggen. */
+/**
+ * Kronologisk kundaktivitet, nyast först.
+ * Relaterade objekt (samma quoteId/jobId) blir EN kedja – inte tre lösa rader.
+ * Fristående fakturor utan länk förblir egna rader. Länkar gissas aldrig.
+ */
 export function customerActivityFeed(customerId: string): CustomerActivityRow[] {
   const data = db();
-  const from = { href: `/kunder/${customerId}` };
+  const from = { href: `/kunder/${customerId}`, label: "Kund" };
   const rows: CustomerActivityRow[] = [];
 
-  for (const q of data.quotes.filter((q) => q.customerId === customerId)) {
-    rows.push({
-      id: `offert-${q.id}`,
-      at: eventTime(q.decidedAt ?? q.sentAt ?? q.createdAt),
-      kind: "offert",
-      title: quoteTitle(q),
-      amount: quoteTotals(q).toPay || undefined,
-      statusLabel: quoteStatusLabel(q),
-      href: quoteHref(q.id, from),
-    });
-  }
+  for (const cluster of customerActivityClusters(customerId)) {
+    const members = customerActivityMembers(cluster, customerId);
+    const linked = Boolean(cluster.quote || cluster.job) && (cluster.invoices.length > 0 || Boolean(cluster.quote && cluster.job));
+    const standaloneInvoice = !cluster.quote && !cluster.job && cluster.invoices.length === 1;
+    const onlyQuote = cluster.quote && !cluster.job && cluster.invoices.length === 0;
+    const onlyJob = cluster.job && !cluster.quote && cluster.invoices.length === 0;
 
-  for (const inv of data.invoices.filter((i) => i.customerId === customerId)) {
-    rows.push({
-      id: `faktura-${inv.id}`,
-      at: eventTime(inv.issuedAt ?? inv.sentAt ?? inv.createdAt),
-      kind: "faktura",
-      title: inv.number == null ? "Fakturautkast" : `Faktura ${invoiceNumberLabel(inv)}`,
-      amount: invoiceTotals(inv).toPay || undefined,
-      statusLabel: invoiceStatusLabel(inv),
-      href: invoiceHref(inv.id, from),
-    });
-  }
+    if (linked || (cluster.quote && cluster.job) || cluster.invoices.length > 1) {
+      const quote = cluster.quote;
+      const job = cluster.job;
+      const version = quote ? data.quoteVersions.find((v) => v.id === quote.currentVersionId) : undefined;
+      const title = job
+        ? quote
+          ? `${job.title} · Offert #${quote.number}`
+          : job.title
+        : quote
+          ? quoteTitle(quote.number, version?.title)
+          : members[0]?.title ?? "Kedja";
+      const latestInv = [...cluster.invoices].sort((a, b) =>
+        eventTime(b.issuedAt ?? b.sentAt ?? b.createdAt).localeCompare(eventTime(a.issuedAt ?? a.sentAt ?? a.createdAt))
+      )[0];
+      const at = eventTime(
+        latestInv?.issuedAt ??
+          latestInv?.sentAt ??
+          latestInv?.createdAt ??
+          job?.createdAt ??
+          quote?.decidedAt ??
+          quote?.sentAt ??
+          quote?.createdAt ??
+          cluster.payments[0]?.date ??
+          new Date().toISOString()
+      );
+      const statusParts = members
+        .filter((m) => m.kind !== "betalning")
+        .map((m) => m.statusLabel);
+      const href = job
+        ? jobHref(job.id, from)
+        : quote
+          ? quoteHref(quote.id, from)
+          : latestInv
+            ? invoiceHref(latestInv.id, from)
+            : `/kunder/${customerId}`;
+      const amount = quote
+        ? quoteTotals(quote).toPay || undefined
+        : latestInv
+          ? invoiceTotals(latestInv).toPay || undefined
+          : undefined;
+      const kinds = [...new Set(members.map((m) => m.kind))];
+      rows.push({
+        id: `kedja-${job?.id ?? quote?.id ?? latestInv?.id ?? members[0]?.title}`,
+        at,
+        kind: job ? "uppdrag" : quote ? "offert" : "faktura",
+        kinds,
+        title,
+        subtitle: members.map((m) => m.title).join(" · "),
+        amount,
+        statusLabel: statusParts.join(" · ") || members[0]?.statusLabel || "",
+        href,
+        members,
+      });
+      continue;
+    }
 
-  for (const job of data.jobs.filter((j) => j.customerId === customerId)) {
-    const quote = job.quoteId ? data.quotes.find((q) => q.id === job.quoteId) : data.quotes.find((q) => q.jobId === job.id);
-    const amount = quote ? quoteTotals(quote).toPay : 0;
-    rows.push({
-      id: `uppdrag-${job.id}`,
-      at: eventTime(job.createdAt),
-      kind: "uppdrag",
-      title: job.title,
-      amount: amount || undefined,
-      statusLabel: jobStatusLabel(job),
-      href: `/uppdrag/${job.id}`,
-    });
-  }
+    if (onlyQuote && cluster.quote) {
+      const q = cluster.quote;
+      const version = data.quoteVersions.find((v) => v.id === q.currentVersionId);
+      rows.push({
+        id: `offert-${q.id}`,
+        at: eventTime(q.decidedAt ?? q.sentAt ?? q.createdAt),
+        kind: "offert",
+        kinds: ["offert"],
+        title: quoteTitle(q.number, version?.title),
+        amount: quoteTotals(q).toPay || undefined,
+        statusLabel: members[0]?.statusLabel ?? "",
+        href: quoteHref(q.id, from),
+        members,
+      });
+      continue;
+    }
 
-  const invoiceIds = new Set(data.invoices.filter((i) => i.customerId === customerId).map((i) => i.id));
-  for (const p of data.payments) {
-    if (!invoiceIds.has(p.invoiceId)) continue;
-    const inv = data.invoices.find((i) => i.id === p.invoiceId);
-    rows.push({
-      id: `betalning-${p.id}`,
-      at: eventTime(p.date),
-      kind: "betalning",
-      title: inv?.number != null ? `Betalning · Faktura #${inv.number}` : "Betalning",
-      amount: p.amount,
-      statusLabel: "Matchad",
-      href: inv ? invoiceHref(inv.id, from) : `/kunder/${customerId}`,
-    });
+    if (onlyJob && cluster.job) {
+      const job = cluster.job;
+      rows.push({
+        id: `uppdrag-${job.id}`,
+        at: eventTime(job.createdAt),
+        kind: "uppdrag",
+        kinds: ["uppdrag"],
+        title: job.title,
+        statusLabel: members[0]?.statusLabel ?? "",
+        href: jobHref(job.id, from),
+        members,
+      });
+      continue;
+    }
+
+    if (standaloneInvoice) {
+      const inv = cluster.invoices[0];
+      const pay = cluster.payments[0];
+      const kinds: CustomerActivityKind[] = ["faktura"];
+      if (pay) kinds.push("betalning");
+      rows.push({
+        id: `faktura-${inv.id}`,
+        at: eventTime(inv.issuedAt ?? inv.sentAt ?? inv.createdAt),
+        kind: "faktura",
+        kinds,
+        title: inv.number == null ? "Fakturautkast" : `Faktura ${invoiceNumberLabel(inv)}`,
+        amount: invoiceTotals(inv).toPay || undefined,
+        statusLabel: members.find((m) => m.kind === "faktura")?.statusLabel ?? "",
+        href: invoiceHref(inv.id, from),
+        members,
+      });
+    }
   }
 
   rows.sort((a, b) => b.at.localeCompare(a.at) || a.title.localeCompare(b.title, "sv"));
@@ -110,8 +145,8 @@ export function customerActivityFeed(customerId: string): CustomerActivityRow[] 
 }
 
 /**
- * Avtalat = godkända offerter. Fakturerat/obetalt använder samma regler som
- * `countsTowardInvoiced` / `isOpenReceivable` – ingen parallell formel.
+ * Avtalat = godkända offerter (inte uppdrag – samma affär räknas en gång).
+ * Fakturerat/obetalt = fakturor. Fristående fakturor ingår i fakturerat, inte avtalat.
  */
 export function customerMoneyLine(customerId: string): CustomerMoneyLine | null {
   const data = db();

@@ -502,7 +502,7 @@ export const invoicesSpec: TableSpec<Invoice & { amountToPay: number }> = {
     "issue_date", "due_date", "payment_terms_days", "service_date", "late_interest_rate",
     "issued_at", "sent_at", "last_sent_at", "last_email", "last_send_attempt_at", "paid_at", "reminders", "token", "ocr",
     "credits_invoice_id", "denied_reduction_of", "created_by", "amount_to_pay", "created_at",
-    "refund", "overpayment_credit", "rich_text",
+    "refund", "overpayment_credit", "rich_text", "payment_plan_index",
   ],
   toRow: (inv, businessId) => ({
     id: inv.id,
@@ -539,6 +539,7 @@ export const invoicesSpec: TableSpec<Invoice & { amountToPay: number }> = {
     created_at: inv.createdAt,
     refund: jsonParamOrNull(inv.refund),
     overpayment_credit: inv.overpaymentCredit ?? null,
+    payment_plan_index: inv.paymentPlanIndex ?? null,
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -577,6 +578,7 @@ export const invoicesSpec: TableSpec<Invoice & { amountToPay: number }> = {
     createdAt: tsIso(r.created_at),
     amountToPay: num(r.amount_to_pay),
     ...opt("refund", jsonOrU<NonNullable<Invoice["refund"]>>(r.refund)),
+    ...opt("paymentPlanIndex", numOrU(r.payment_plan_index)),
     ...opt("overpaymentCredit", numOrU(r.overpayment_credit)),
   }),
 };
@@ -598,11 +600,16 @@ export function invoiceLineToRow(
     unit: line.unit,
     unit_price: line.unitPrice,
     vat_rate: line.vatRate,
+    source_kind: line.sourceKind ?? null,
+    source_id: line.sourceId ?? null,
+    source_quote_number: line.sourceQuoteNumber ?? null,
+    payment_plan_index: line.paymentPlanIndex ?? null,
   };
 }
 
 export const invoiceLineColumns = [
   "id", "business_id", "invoice_id", "position", "kind", "description", "qty", "unit", "unit_price", "vat_rate",
+  "source_kind", "source_id", "source_quote_number", "payment_plan_index",
 ];
 
 export function invoiceLineFromRow(r: SqlRow): DocLine {
@@ -614,6 +621,10 @@ export function invoiceLineFromRow(r: SqlRow): DocLine {
     unit: str(r.unit),
     unitPrice: num(r.unit_price),
     vatRate: num(r.vat_rate) as DocLine["vatRate"],
+    ...opt("sourceKind", r.source_kind == null ? undefined : (str(r.source_kind) as DocLine["sourceKind"])),
+    ...opt("sourceId", strOrU(r.source_id)),
+    ...opt("sourceQuoteNumber", numOrU(r.source_quote_number)),
+    ...opt("paymentPlanIndex", numOrU(r.payment_plan_index)),
   };
 }
 

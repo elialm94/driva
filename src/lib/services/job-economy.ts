@@ -44,6 +44,8 @@ export interface JobMoney {
    * Inte samma sak som remaining (kvar enligt offert).
    */
   registeredUninvoiced: number;
+  /** Allt registrerat arbete/material inkl. moms (fakturerat + ofakturerat). */
+  registered: number;
   invoices: Invoice[];
 }
 
@@ -100,14 +102,14 @@ export function invoicesForJobOrQuote(jobId: string, quoteId?: string): Invoice[
   return [...byJob, ...byQuote.filter((i) => !seen.has(i.id))];
 }
 
-function registeredUninvoicedFor(jobId: string, invoices: Invoice[]): number {
+function actualsInclVat(jobId: string, onlyUninvoiced: boolean, invoices: Invoice[]): number {
   const live = new Set(
     invoices.filter((i) => i.status !== "krediterad" && i.type !== "kredit").map((i) => i.id)
   );
   let sum = 0;
   for (const e of db().jobWorkEntries ?? []) {
     if (e.jobId !== jobId || e.role !== "actual") continue;
-    if (e.invoiceId && live.has(e.invoiceId)) continue;
+    if (onlyUninvoiced && e.invoiceId && live.has(e.invoiceId)) continue;
     sum += Math.round(e.qty * e.unitPrice * (1 + e.vatRate / 100));
   }
   return sum;
@@ -144,7 +146,8 @@ function moneyFor(jobId: string, quote: Quote | undefined, invoices: Invoice[]):
     remaining,
     unpaid,
     paid,
-    registeredUninvoiced: registeredUninvoicedFor(jobId, invoices),
+    registeredUninvoiced: actualsInclVat(jobId, true, invoices),
+    registered: actualsInclVat(jobId, false, invoices),
     // Samma lista som tidigare jobMoneySummary: original som räknas – inte
     // kreditfakturor eller fullkrediterade par.
     invoices: invoices.filter(countsTowardInvoiced),

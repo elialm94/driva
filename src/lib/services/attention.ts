@@ -1,8 +1,8 @@
 import { db } from "../store";
-import { currentVersion, jobQuote } from "./data";
-import { docTotals } from "../calc";
+import { jobQuote } from "./data";
 import { derivedJobStatus } from "./job-lifecycle";
-import { invoicesForJobOrQuote, jobMoney, type JobMoney } from "./job-economy";
+import { jobMoney, type JobMoney } from "./job-economy";
+import { nextPaymentPlanPartForQuote } from "./business-chain";
 
 /**
  * Pengahjälpare för uppdrag: vad är offererat, fakturerat, kvar och betalt.
@@ -33,20 +33,7 @@ export function nextPaymentPlanPartForJob(jobId: string): {
   if (!job) return null;
   const quote = jobQuote(job);
   if (!quote || quote.status !== "godkand") return null;
-  const version = currentVersion(quote);
-  const plan = version.paymentPlan;
-  if (plan.length === 0) return null;
-  const issued = invoicesForJobOrQuote(jobId, quote.id).filter(
-    (i) => i.status !== "krediterad" && i.type !== "kredit"
-  );
-  const index = issued.length;
-  if (index >= plan.length) return null;
-  const part = plan[index];
-  const remaining = remainingToInvoiceForJob(jobId);
-  if (remaining <= 0) return null;
-  const isLast = index === plan.length - 1;
-  const fromPlan = Math.round((docTotals(version.lines, version.rot).total * part.percent) / 100);
-  return { index, percent: part.percent, label: part.label, amount: isLast ? remaining : fromPlan, isLast };
+  return nextPaymentPlanPartForQuote(quote.id);
 }
 
 /** Uppdrag som pågår eller startar inom en vecka, utifrån planerade datum. */

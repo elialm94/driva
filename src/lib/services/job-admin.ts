@@ -89,7 +89,11 @@ export function jobAdminState(job: Job): JobAdminState {
         : "visa_offert";
 
   const invoiceAction: JobInvoiceAction =
-    lifecycle === "klart" && remaining > 0 && approved ? "skapa_slutfaktura" : "skapa_faktura";
+    lifecycle === "klart" && remaining > 0 && approved
+      ? "skapa_slutfaktura"
+      : nextPart && !nextPart.isLast && remaining > 0 && approved
+        ? "skapa_delfaktura"
+        : "skapa_faktura";
 
   if (quote?.status === "skickad") {
     waitingLabel = "Väntar på BankID";
