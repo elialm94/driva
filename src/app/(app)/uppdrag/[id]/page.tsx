@@ -27,6 +27,9 @@ import { invoiceHref, newQuoteHref, quoteHref } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export async function generateMetadata(props: PageProps<"/uppdrag/[id]">) {
+  // Metadata renderas före sidkroppen: tenantstate (Supabase/demosession)
+  // måste laddas här också – cache() deduperar mot sidans anrop.
+  await ensurePageBusiness();
   const { id } = await props.params;
   const job = getJob(id);
   return { title: job?.title ?? "Uppdrag" };
