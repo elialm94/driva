@@ -179,7 +179,7 @@ export function LineDescriptionInput({
       return;
     }
     if (e.key === "Enter") {
-      if (e.nativeEvent?.isComposing || e.isComposing) return;
+      if (e.nativeEvent.isComposing) return;
       if (canOpen) {
         const pick = suggestions[highlight] ?? suggestions[0];
         if (pick) {
