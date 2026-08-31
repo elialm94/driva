@@ -27,6 +27,7 @@ import { ActionMenu, PageActions } from "@/components/action-menu";
 import { CopyLinkButton } from "@/components/copy-button";
 import { CreatePartInvoiceButton, FollowUpButton } from "@/components/money-widgets";
 import { QuoteDraftSend } from "@/components/quote-draft-send";
+import { DiscardDraftButton } from "@/components/discard-draft-button";
 import { SendChecklist } from "@/components/send-checklist";
 import { quoteSendBlockers } from "@/lib/services/quotes";
 import { sendQuoteAction } from "@/app/actions";
@@ -71,11 +72,11 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   const justSent = sentParam === "1" && !isDraft;
   const justSentDemo = sentParam === "demo" && !isDraft;
   const justSentManual = sentParam === "manuell" && !isDraft;
-  // EN källa (quoteSendBlockers). buyer_email kompletteras inline – ingen länk till Kunden.
+  // EN källa (quoteSendBlockers) för checklista, disabled Skicka och servervalidering.
   const sendBlockers = isDraft
     ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefWithNav(b.href, nav) } : b))
     : [];
-  const businessBlockers = sendBlockers.filter((b) => b.code !== "buyer_email");
+  const canSend = sendBlockers.length === 0;
 
   const invoicedTotal = relatedInvoices
     .filter(countsTowardInvoiced)
@@ -120,6 +121,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               <ButtonLink href={editHref} variant="secondary">
                 <Pencil className="size-4" /> Redigera
               </ButtonLink>
+              <DiscardDraftButton kind="quote" documentId={quote.id} />
               <QuoteDraftSend
                 documentId={quote.id}
                 customerId={customer.id}
@@ -130,7 +132,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                 detailHref={fromHere.href}
                 mailConfigured={isLiveMailConfigured()}
                 recipientEmail={customer.email}
-                hasSendBlockers={businessBlockers.length > 0}
+                canSend={canSend}
               />
             </PageActions>
           ) : null}

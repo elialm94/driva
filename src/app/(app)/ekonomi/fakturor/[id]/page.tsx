@@ -3,8 +3,7 @@ import { ExternalLink, BadgeCheck, Pencil } from "lucide-react";
 import { db } from "@/lib/store";
 import { getInvoice, invoiceTotals, requireCustomer, isOverdue } from "@/lib/services/data";
 import { invoiceQuoteDeviation } from "@/lib/services/invoice-quote-deviation";
-import { validateInvoiceForIssue } from "@/lib/invoices/validate";
-import { missingEmailForSend } from "@/lib/customer-validation";
+import { getInvoiceSendBlockers } from "@/lib/invoices/validate";
 import { invoiceHeading } from "@/lib/invoices/display";
 import { kr, datumTid, datumLang, relativ } from "@/lib/format";
 import { ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
@@ -16,11 +15,11 @@ import { ActionMenu, PageActions } from "@/components/action-menu";
 import { CopyLinkButton } from "@/components/copy-button";
 import {
   CreditInvoiceButton,
-  DiscardInvoiceButton,
   ResendInvoiceButton,
   SendReminderButton,
   SimulatePaymentButton,
 } from "@/components/money-widgets";
+import { DiscardDraftButton } from "@/components/discard-draft-button";
 import { QuoteDeviationCard } from "@/components/quote-deviation-card";
 import { InvoiceDraftSend } from "@/components/invoice-draft-send";
 import { InvoiceIssueChecklist } from "@/components/invoice-issue-checklist";
@@ -54,7 +53,6 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
     totals.deduction > 0 &&
     invoice.status !== "utkast" &&
     invoice.type !== "kredit";
-  const blockers = invoice.status === "utkast" ? validateInvoiceForIssue(invoice.id) : [];
   const isDraft = invoice.status === "utkast";
   const returnTo = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : undefined;
   const returnLabel =
@@ -63,13 +61,12 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   const fromHere = { href: hrefWithNav(`/ekonomi/fakturor/${invoice.id}`, nav), label: invoiceHeading(invoice) };
   const linkView = documentLinkView("invoice", invoice.id, fromHere);
   const settingsReturn = `/ekonomi/fakturor/${invoice.id}`;
-  const linkedBlockers = blockers.map((b) =>
-    b.href ? { ...b, href: withReturnTo(b.href, settingsReturn, invoiceHeading(invoice)) } : b
-  );
-  // Saknad e-post namnges i checklistan men kompletteras inline i skickaflödet
-  // (pendingAction SEND_INVOICE → resolveMissingRequirements → resume).
-  const emailBlocker = isDraft ? missingEmailForSend(customer) : null;
-  const sendBlockers = emailBlocker ? [...linkedBlockers, emailBlocker] : linkedBlockers;
+  const sendBlockers = isDraft
+    ? getInvoiceSendBlockers(invoice.id).map((b) =>
+        b.href ? { ...b, href: withReturnTo(b.href, settingsReturn, invoiceHeading(invoice)) } : b
+      )
+    : [];
+  const canSend = sendBlockers.length === 0;
   const editHref = hrefWithNav(`/ekonomi/fakturor/${invoice.id}/redigera`, nav);
   const tillaggHref = deviation?.largeExcess
     ? newQuoteHref({
@@ -104,7 +101,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
     </a>
   ) : null;
 
-  const moreMenu = (
+  const moreMenu = isDraft ? null : (
     <ActionMenu>
       {canCredit ? <CreditInvoiceButton invoiceId={invoice.id} appearance="menu" /> : null}
       {canCopyLink ? (
@@ -112,7 +109,6 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
       ) : null}
       {canResend ? <ResendInvoiceButton invoiceId={invoice.id} retry={!invoice.sentAt} appearance="menu" /> : null}
       {canSimulate ? <SimulatePaymentButton invoiceId={invoice.id} appearance="menu" /> : null}
-      {isDraft ? <DiscardInvoiceButton invoiceId={invoice.id} appearance="menu" /> : null}
     </ActionMenu>
   );
 
@@ -121,6 +117,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
       <ButtonLink href={editHref} variant="secondary">
         <Pencil className="size-4" /> Redigera faktura
       </ButtonLink>
+      <DiscardDraftButton kind="invoice" documentId={invoice.id} />
       <InvoiceDraftSend
         documentId={invoice.id}
         customerId={customer.id}
@@ -131,11 +128,10 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         detailHref={fromHere.href}
         mailConfigured={isLiveMailConfigured()}
         recipientEmail={customer.email}
-        hasIssuanceBlockers={linkedBlockers.length > 0}
+        canSend={canSend}
         excessAmount={deviation?.largeExcess ? deviation.delta : undefined}
         tillaggHref={tillaggHref}
       />
-      {moreMenu}
     </PageActions>
   ) : (
     <PageActions>

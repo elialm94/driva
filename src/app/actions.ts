@@ -25,7 +25,7 @@ import {
   sendQuoteWithEmail,
 } from "@/lib/services/document-mail";
 import { issueInvoice } from "@/lib/services/invoices";
-import { InvoiceNotReadyError } from "@/lib/invoices/validate";
+import { getInvoiceSendBlockers, InvoiceNotReadyError } from "@/lib/invoices/validate";
 import { userFacingInvoiceSendError, userFacingIssueError } from "@/lib/invoices/issue-errors";
 import { QuoteNotReadyError } from "@/lib/services/quotes";
 import { getInvoice, getQuoteByToken } from "@/lib/services/data";
@@ -88,6 +88,7 @@ import {
   askQuoteQuestion,
   createQuote,
   declineQuote,
+  discardQuote,
   markQuoteNotRelevant,
   updateQuote,
   type QuoteInput,
@@ -646,6 +647,8 @@ export async function sendInvoiceAction(
   // issueInvoice är idempotent, så dubbelklick/CAS-retry kan aldrig ge två nummer.
   try {
     await withBusiness(() => {
+      const blockers = getInvoiceSendBlockers(invoiceId);
+      if (blockers.length) throw new InvoiceNotReadyError(blockers);
       issueInvoice(invoiceId);
     }, { capability: "send_invoice" });
   } catch (e) {
@@ -705,7 +708,15 @@ export async function discardInvoiceAction(invoiceId: string): Promise<never> {
   return withBusiness((): never => {
     discardInvoice(invoiceId);
     refresh();
-    redirect("/ekonomi?flik=fakturor");
+    redirect("/ekonomi?flik=fakturor&kastat=faktura");
+  });
+}
+
+export async function discardQuoteAction(quoteId: string): Promise<never> {
+  return withBusiness((): never => {
+    discardQuote(quoteId);
+    refresh();
+    redirect("/ekonomi?flik=offerter&kastat=offert");
   });
 }
 
