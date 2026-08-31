@@ -167,17 +167,16 @@ export function AddressFields({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Beräknas efter mount: attributet finns bara i DOM (ingen hydreringsrisk).
-  const [liveMode, setLiveMode] = useState(!!MAPS_KEY);
-  useEffect(() => {
-    setLiveMode(Boolean(MAPS_KEY) && !isDemoSurface());
-  }, []);
+  // Källan (Google/demo) avgörs per sökning – DOM-attributet finns bara på
+  // klienten, och dropdownen visas först efter en sökning. Ingen effekt behövs.
+  const [liveMode, setLiveMode] = useState(false);
 
   const search = useCallback(async (query: string) => {
     const seq = ++requestSeq.current;
 
     if (!MAPS_KEY || isDemoSurface()) {
       const result = demoSuggestions(query);
+      setLiveMode(false);
       setSuggestions(result);
       setOpen(result.length > 0);
       setHighlight(0);
@@ -190,6 +189,7 @@ export function AddressFields({
       return;
     }
 
+    setLiveMode(true);
     setSearching(true);
     const lib = await loadPlaces();
     if (!lib || seq !== requestSeq.current) {
@@ -244,7 +244,8 @@ export function AddressFields({
     setAddress(value);
     emit({ address: value, postalCode, city });
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => void search(value), liveMode ? 250 : 80);
+    const live = Boolean(MAPS_KEY) && !isDemoSurface();
+    debounceRef.current = setTimeout(() => void search(value), live ? 250 : 80);
   }
 
   async function pick(s: Suggestion) {

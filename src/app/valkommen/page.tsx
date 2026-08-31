@@ -87,11 +87,11 @@ function ProductPreview() {
               <span className="size-2 shrink-0 rounded-full bg-danger" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-ink sm:text-sm">
-                  Faktura 2026-14 · Göran Eriksson
+                  Faktura #1047 · Johan Lindberg
                 </span>
-                <span className="block truncate text-xs text-muted">Förföll för 5 dagar sedan</span>
+                <span className="block truncate text-xs text-muted">Förföll för 8 dagar sedan</span>
               </span>
-              <span className="tabular shrink-0 text-[13px] font-semibold text-ink sm:text-sm">46 250 kr</span>
+              <span className="tabular shrink-0 text-[13px] font-semibold text-ink sm:text-sm">25 500 kr</span>
               <span className="hidden shrink-0 rounded-lg bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent-deep sm:block">
                 Skicka påminnelse
               </span>
@@ -100,11 +100,11 @@ function ProductPreview() {
               <span className="size-2 shrink-0 rounded-full bg-warn" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-ink sm:text-sm">
-                  Offert · Köksrenovering, Lindqvist
+                  Offert #115 · Fasadarbete, Lindqvist
                 </span>
                 <span className="block truncate text-xs text-muted">Väntar på signering med BankID</span>
               </span>
-              <span className="tabular shrink-0 text-[13px] font-semibold text-ink sm:text-sm">148 000 kr</span>
+              <span className="tabular shrink-0 text-[13px] font-semibold text-ink sm:text-sm">72 375 kr</span>
             </li>
             <li className="flex items-center gap-3 px-3.5 py-3 sm:px-4">
               <span className="size-2 shrink-0 rounded-full bg-info" />

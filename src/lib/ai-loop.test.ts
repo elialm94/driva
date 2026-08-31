@@ -90,7 +90,11 @@ function tools() {
 }
 
 beforeEach(() => {
-  replaceDb(buildSeed());
+  // Utan seedens påminnelser: testerna räknar och matchar på exakt de
+  // påminnelser de själva skapar.
+  const seed = buildSeed();
+  seed.reminders = [];
+  replaceDb(seed);
   configureAi();
   __setAiTransportForTests(null);
 });
