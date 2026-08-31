@@ -116,6 +116,7 @@ export function LineDescriptionInput({
   className,
   kind,
   autoFocus,
+  onEnterNavigate,
 }: {
   id?: string;
   value: string;
@@ -126,6 +127,8 @@ export function LineDescriptionInput({
   className?: string;
   kind?: LineKind;
   autoFocus?: boolean;
+  /** Enter när autocomplete inte är öppen – flytta till nästa fält. */
+  onEnterNavigate?: () => void;
 }) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -197,6 +200,12 @@ export function LineDescriptionInput({
         e.stopPropagation();
       }
       apply(pick.text);
+      return;
+    }
+    if (e.key === "Enter") {
+      if (e.nativeEvent.isComposing) return;
+      e.preventDefault();
+      onEnterNavigate?.();
     }
   }
 

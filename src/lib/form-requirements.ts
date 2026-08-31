@@ -29,7 +29,10 @@ export function radLabel(index: number): string {
   return index < ORDINALS.length ? `${ORDINALS[index]} raden` : `rad ${index + 1}`;
 }
 
-export function lineFieldId(lineId: string, part: "beskrivning" | "pris"): string {
+export const LINE_EDITOR_FIELDS = ["typ", "beskrivning", "antal", "enhet", "pris", "moms"] as const;
+export type LineEditorField = (typeof LINE_EDITOR_FIELDS)[number];
+
+export function lineFieldId(lineId: string, part: LineEditorField): string {
   return `rad-${lineId}-${part}`;
 }
 
