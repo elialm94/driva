@@ -15,6 +15,7 @@ import { isSupabaseMode } from "@/lib/storage/config";
 import {
   businessNameById,
   createBusinessWithOwner,
+  demoBusinessIdForTokenHash,
   loadStateSnapshot,
   membershipsForUser,
   resolvePublicToken,
@@ -35,7 +36,15 @@ import {
   setTestActor,
   type CollaborationActor,
 } from "@/lib/collaboration/actor";
-import { DEMO_ACTOR_COOKIE, isDemoUserEmail } from "@/lib/auth/demo-session";
+import {
+  DEMO_ACTOR_COOKIE,
+  DEMO_SESSION_COOKIE,
+  DEMO_WRITE_LIMIT_MESSAGE,
+  demoTokenFromCookieValue,
+  demoTokenHash,
+  isDemoUserEmail,
+  rateLimitDemoWrite,
+} from "@/lib/auth/demo-session";
 import { ensureLocalDemoCollaboration } from "@/lib/collaboration/local-demo";
 import {
   activeMembershipFor,
@@ -145,6 +154,33 @@ export async function isDemoSession(): Promise<boolean> {
 }
 
 /**
+ * Demosessionens "medlemskap": det EGNA demoföretaget, uppslaget via
+ * sessionstoken i demo-cookien (SHA-256-hash mot businesses.demo_token_hash).
+ *
+ * Per-sessionsföretag har medvetet INGEN rad i business_memberships – den
+ * delade demo-användarens JWT ger därför noll åtkomst via PostgREST, och två
+ * demosessioner kan aldrig se varandras data: utan rätt token finns inget
+ * företag. Utgångna sessioner ger tom lista (uppslaget kräver
+ * demo_expires_at > now) → requireBusiness startar om via /demo.
+ */
+async function demoSessionMemberships(): Promise<MembershipInfo[]> {
+  const jar = await cookies().catch(() => null);
+  const token = demoTokenFromCookieValue(jar?.get(DEMO_SESSION_COOKIE)?.value);
+  if (!token) return [];
+  const businessId = await demoBusinessIdForTokenHash(demoTokenHash(token));
+  return businessId ? [{ businessId, role: "owner" as BusinessRole }] : [];
+}
+
+/** Demosessionen auktoriseras via token-uppslaget – aldrig via medlemskapstabellen. */
+async function membershipsForSessionUser(userId: string): Promise<MembershipInfo[]> {
+  const user = await getSessionUser();
+  if (user && user.id === userId && isDemoUserEmail(user.email)) {
+    return demoSessionMemberships();
+  }
+  return membershipsForUser(userId);
+}
+
+/**
  * Medlemskap per request: layout, sida och åtgärdsvakter frågar alla efter
  * samma lista – React cache() deduperar till EN databasfråga per request.
  * Muterade medlemskap (invite/revoke) följs alltid av redirect, så en
@@ -152,7 +188,7 @@ export async function isDemoSession(): Promise<boolean> {
  */
 export const listMemberships = cache(async (userId: string): Promise<MembershipInfo[]> => {
   const base = isSupabaseMode()
-    ? await applyDemoAccountantView(userId, await membershipsForUser(userId))
+    ? await applyDemoAccountantView(userId, await membershipsForSessionUser(userId))
     : activeMembershipsForUser(userId)
         // Företag som inaktiverats av Driva Admin nekas (Supabase-läget
         // filtrerar samma sak i SQL:en; supportsessionen nedan går förbi).
@@ -245,6 +281,10 @@ export async function requireBusiness(): Promise<{
         memberships: [{ businessId: LOCAL_JSON_BUSINESS_ID, role: "owner" }],
       };
     }
+    // Demosessionen får ALDRIG hamna i onboarding (skulle skapa ett riktigt
+    // företag på den delade demo-användaren). Utgången/städad session →
+    // /demo provisionerar en fräsch demosession i stället.
+    if (isDemoUserEmail(user.email)) redirect("/demo");
     redirect("/onboarding");
   }
   const preferred = await preferredBusinessFromCookie();
@@ -403,6 +443,11 @@ export async function withBusiness<T>(
   const user = await requireUser();
   const businessId = await resolveActiveBusiness(user.id, opts.businessId);
   const role = await authorizeWrite(user, businessId, opts.capability);
+  // Skrivbudget per demosession: ETT centralt tak täcker alla skapande/
+  // kostsamma åtgärder. Generöst nog att aldrig märkas av en människa.
+  if (isDemoUserEmail(user.email) && !rateLimitDemoWrite(businessId)) {
+    throw new Error(DEMO_WRITE_LIMIT_MESSAGE);
+  }
   try {
     return await runAsActor(labelSupportActor(actorFrom(user, businessId, role), support), () =>
       runWithTenant({ businessId, userId: user.id, access: "write", retry: opts.retry }, fn)
@@ -523,6 +568,11 @@ export async function createBusinessForCurrentUser(input: {
   bankAccount?: string;
 }): Promise<string> {
   const user = await requireUser();
+  // Demosessionen skapar aldrig riktiga företag – ett företag ägt av den
+  // delade demo-användaren vore nåbart från framtida demosessioner.
+  if (isDemoUserEmail(user.email)) {
+    throw new Error("Demosessionen kan inte skapa företag. Skapa ett eget konto för att komma igång.");
+  }
   const memberships = await listMemberships(user.id);
   const owned = memberships.find((m) => isOwnerRole(m.role));
   if (owned) return owned.businessId;

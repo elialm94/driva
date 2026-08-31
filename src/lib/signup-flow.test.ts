@@ -7,6 +7,7 @@ import {
   VERIFY_EMAIL_PATH,
   afterSignupDestination,
   decideSignupResult,
+  demoNoticeCopy,
   isSilentExistingUser,
   loginHrefWithNext,
   mapLoginAuthError,
@@ -221,11 +222,19 @@ describe("inloggning: verifierad / overifierad", () => {
 
 describe("login-query och tillbaka-navigering", () => {
   it("query parsas defensivt: e-post saneras, ogiltig länk-flagga bara på exakt värde", () => {
-    assert.deepEqual(parseLoginAuthSearch({}), { email: null, next: "/", invalidLink: false });
+    assert.deepEqual(parseLoginAuthSearch({}), { email: null, next: "/", invalidLink: false, demoNotice: null });
     assert.equal(parseLoginAuthSearch({ email: "javascript:alert(1)" }).email, null);
     assert.equal(parseLoginAuthSearch({ email: EMAIL }).email, EMAIL);
     assert.equal(parseLoginAuthSearch({ lank: "ogiltig" }).invalidLink, true);
     assert.equal(parseLoginAuthSearch({ lank: "nåt-annat" }).invalidLink, false);
+  });
+
+  it("demo-notiser parsas bara på kända värden och får svensk copy", () => {
+    assert.equal(parseLoginAuthSearch({ demo: "upptagen" }).demoNotice, "upptagen");
+    assert.equal(parseLoginAuthSearch({ demo: "saknas" }).demoNotice, "saknas");
+    assert.equal(parseLoginAuthSearch({ demo: "fel" }).demoNotice, "fel");
+    assert.equal(parseLoginAuthSearch({ demo: "<script>" }).demoNotice, null);
+    assert.match(demoNoticeCopy("upptagen"), /försök igen/i);
   });
 
   it("lösenord kan inte smyga med i query-byggaren", () => {

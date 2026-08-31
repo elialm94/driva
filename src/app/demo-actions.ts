@@ -1,57 +1,23 @@
 "use server";
 
 /**
- * Demosessionens livscykel: starta från /demo, avsluta till /login,
- * eller avsluta och gå vidare till kontoskapande.
+ * Demosessionens livscykel: avsluta till /login, eller avsluta och gå vidare
+ * till kontoskapande. Själva STARTEN sker i /demo-routens GET-hanterare
+ * (src/app/(auth)/demo/route.ts) – "Se demo" går direkt in i produkten.
  *
- * Starten är den ENDA publika vägen in: en riktig Supabase-inloggning görs på
- * servern med demo-uppgifterna ur servermiljön (aldrig i klientbundeln), och
- * sessionen märks med en tidsbegränsad demo-cookie som proxyn upprätthåller.
- * Ingen auth hoppas över – demosessionen är en vanlig, begränsad användare.
+ * Demodata migreras aldrig till riktiga konton: att lämna demon släpper bara
+ * sessionen; det isolerade demoföretaget städas bort när det löper ut.
  */
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseMode } from "@/lib/storage/config";
-import {
-  BUSINESS_COOKIE,
-  WORKSPACE_COOKIE,
-  getSessionUser,
-} from "@/lib/auth/session";
-import {
-  DEMO_ACTOR_COOKIE,
-  DEMO_SESSION_COOKIE,
-  clientIpFrom,
-  demoCookieValueNow,
-  demoSessionMaxAgeSeconds,
-  demoUserEmail,
-  demoUserPassword,
-  isDemoLoginConfigured,
-  isDemoUserEmail,
-  rateLimitDemoStart,
-} from "@/lib/auth/demo-session";
-
-export interface DemoStartState {
-  error?: string;
-}
-
-const DEMO_UNAVAILABLE =
-  "Demon är inte tillgänglig i den här miljön ännu. Logga in eller skapa ett konto i stället.";
+import { BUSINESS_COOKIE, WORKSPACE_COOKIE, getSessionUser } from "@/lib/auth/session";
+import { DEMO_ACTOR_COOKIE, DEMO_SESSION_COOKIE, isDemoUserEmail } from "@/lib/auth/demo-session";
 
 function secureCookies(): boolean {
   return process.env.NODE_ENV === "production";
-}
-
-async function setDemoSessionCookie(): Promise<void> {
-  const jar = await cookies();
-  jar.set(DEMO_SESSION_COOKIE, demoCookieValueNow(), {
-    path: "/",
-    httpOnly: true,
-    sameSite: "lax",
-    secure: secureCookies(),
-    maxAge: demoSessionMaxAgeSeconds(),
-  });
 }
 
 async function clearDemoCookies(): Promise<void> {
@@ -62,42 +28,16 @@ async function clearDemoCookies(): Promise<void> {
   }
 }
 
-/** Öppna demon: serverinloggning som demo-användaren + tidsbegränsad markering. */
-export async function startDemoAction(_prev: DemoStartState, _formData: FormData): Promise<DemoStartState> {
-  // JSON-läget (lokal utveckling) ÄR demon – rakt in i appen.
-  if (!isSupabaseMode()) redirect("/");
-  if (!isDemoLoginConfigured()) return { error: DEMO_UNAVAILABLE };
-
-  const ip = clientIpFrom(await headers());
-  if (!rateLimitDemoStart(ip)) {
-    return { error: "Många öppnar demon just nu. Vänta en liten stund och försök igen." };
-  }
-
-  const supabase = await createSupabaseServerClient();
-  // En redan inloggad användare som uttryckligen öppnar demon byter session –
-  // samma semantik som att logga in med ett annat konto. Avsluta demo → /login.
-  const { error } = await supabase.auth.signInWithPassword({
-    email: demoUserEmail()!,
-    password: demoUserPassword()!,
-  });
-  if (error) {
-    console.error(`[driva:demo] demoinloggning misslyckades: ${error.code ?? error.message}`);
-    return { error: "Demon kunde inte öppnas just nu. Försök igen om en stund." };
-  }
-  await setDemoSessionCookie();
-  redirect("/");
-}
-
 /** Avsluta demo: släpp demosessionen (endast den – scope local) → /login. */
 export async function endDemoAction(): Promise<void> {
   await endDemoSession();
   redirect("/login");
 }
 
-/** "Skapa eget konto" i demon: avsluta demosessionen → registreringsläget. */
+/** "Skapa eget konto" i demon: avsluta demosessionen → registreringen. */
 export async function endDemoToSignupAction(): Promise<void> {
   await endDemoSession();
-  redirect("/login?skapa=1");
+  redirect("/signup");
 }
 
 async function endDemoSession(): Promise<void> {

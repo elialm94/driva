@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { parseLoginAuthSearch } from "@/lib/auth/signup-flow";
+import { demoNoticeCopy, parseLoginAuthSearch } from "@/lib/auth/signup-flow";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { isDemoLoginConfigured } from "@/lib/auth/demo-session";
 import { LoginForm } from "./login-form";
@@ -11,10 +11,10 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; email?: string; lank?: string }>;
+  searchParams: Promise<{ next?: string; email?: string; lank?: string; demo?: string }>;
 }) {
   const params = await searchParams;
-  const { email, next, invalidLink } = parseLoginAuthSearch(params);
+  const { email, next, invalidLink, demoNotice } = parseLoginAuthSearch(params);
   // Demo-CTA: lokalt JSON-läge är alltid demo; i produktion krävs den seedade
   // demo-användaren (servermiljön). Utan den visas ingen död knapp.
   const demoAvailable = !isSupabaseMode() || isDemoLoginConfigured();
@@ -36,6 +36,11 @@ export default async function LoginPage({
             <p role="status" className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
               Länken har gått ut eller redan använts. Logga in för att fortsätta – eller begär en
               ny länk nedan.
+            </p>
+          ) : null}
+          {demoNotice ? (
+            <p role="status" className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {demoNoticeCopy(demoNotice)}
             </p>
           ) : null}
           <LoginForm next={next} defaultEmail={email ?? ""} />

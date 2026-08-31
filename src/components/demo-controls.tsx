@@ -65,11 +65,14 @@ export function CreateAccountRow({ variant = "sidebar" }: { variant?: "sidebar" 
       type="button"
       onClick={() => startTransition(() => endDemoToSignupAction())}
       disabled={pending}
-      aria-label="Skapa eget konto"
+      aria-label="Skapa ditt eget konto – 14 dagar gratis, inget kort krävs"
       className={rowClasses(variant)}
     >
       <UserPlus className={iconClasses(variant)} strokeWidth={2} />
-      {pending ? "Öppnar …" : "Skapa eget konto"}
+      <span className="flex min-w-0 flex-col items-start">
+        <span>{pending ? "Öppnar …" : "Skapa ditt eget konto"}</span>
+        <span className="text-[12px] font-normal text-muted">14 dagar gratis · Inget kort krävs</span>
+      </span>
     </button>
   );
 }

@@ -100,21 +100,40 @@ export function isSilentExistingUser(data: {
   return Array.isArray(identities) && identities.length === 0;
 }
 
+/** /demo-routens felutfall när demostarten inte kunde genomföras. */
+export type DemoNotice = "saknas" | "upptagen" | "fel";
+
 export function parseLoginAuthSearch(params: {
   email?: string | string[];
   next?: string | string[];
   lank?: string | string[];
+  demo?: string | string[];
 }): {
   email: string | null;
   next: string;
   /** /auth/confirm skickar hit när mejllänken är utgången/förbrukad. */
   invalidLink: boolean;
+  /** /demo skickar hit när demon inte kunde öppnas. */
+  demoNotice: DemoNotice | null;
 } {
+  const demoRaw = firstSearchParam(params.demo);
   return {
     email: sanitizeAuthEmail(firstSearchParam(params.email)),
     next: safeAuthNext(firstSearchParam(params.next)),
     invalidLink: firstSearchParam(params.lank) === "ogiltig",
+    demoNotice: demoRaw === "saknas" || demoRaw === "upptagen" || demoRaw === "fel" ? demoRaw : null,
   };
+}
+
+export function demoNoticeCopy(notice: DemoNotice): string {
+  switch (notice) {
+    case "saknas":
+      return "Demon är inte tillgänglig i den här miljön ännu. Logga in eller skapa ett konto i stället.";
+    case "upptagen":
+      return "Många öppnar demon just nu. Vänta en liten stund och försök igen.";
+    case "fel":
+      return "Demon kunde inte öppnas just nu. Försök igen om en stund.";
+  }
 }
 
 /** Verifieringsvyns sökparametrar: e-post krävs (annars tillbaka till /signup). */

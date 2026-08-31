@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth/session";
+import { isDemoUserEmail } from "@/lib/auth/demo-session";
 import { sanitizeSignupPhone } from "@/lib/auth/signup-flow";
 import { needsCompanyOnboarding } from "@/lib/onboarding";
 import { membershipsForUser } from "@/lib/storage/adapter-supabase";
@@ -27,6 +28,9 @@ export default async function OnboardingPage() {
   if (!isSupabaseMode()) redirect("/"); // JSON-läget har ett färdigt demoföretag
   const user = await getSessionUser();
   if (!user) redirect("/login");
+  // Demosessionen onboardar aldrig – ett företag på den delade demo-användaren
+  // vore nåbart från andra demosessioner. Skapa eget konto i stället.
+  if (isDemoUserEmail(user.email)) redirect("/");
   const memberships = await membershipsForUser(user.id);
   if (!needsCompanyOnboarding(memberships.length)) redirect("/");
   const defaultPhone = await signupPhoneFromMetadata();

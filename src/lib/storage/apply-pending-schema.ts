@@ -101,6 +101,35 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     );
   }
 
+  // Isolerade demosessioner (migration 24): token-mappning + utgångstid.
+  const hadDemoTokenHash = await columnExists(client, "businesses", "demo_token_hash");
+  await ensureColumn(
+    "businesses",
+    "demo_token_hash",
+    `alter table public.businesses add column if not exists demo_token_hash text`
+  );
+  await ensureColumn(
+    "businesses",
+    "demo_expires_at",
+    `alter table public.businesses add column if not exists demo_expires_at timestamptz`
+  );
+  if (!hadDemoTokenHash) {
+    await run(
+      client,
+      `create unique index if not exists businesses_demo_token_hash_uq
+         on public.businesses (demo_token_hash)
+         where demo_token_hash is not null`
+    );
+    await run(
+      client,
+      `create index if not exists businesses_demo_expires_idx
+         on public.businesses (demo_expires_at)
+         where is_demo`
+    );
+    applied.push("businesses.demo_token_hash");
+  }
+  await ensureDemoCleanupFunction(client);
+
   await ensureColumn(
     "business_settings",
     "default_hourly_rate",
@@ -299,6 +328,59 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   applied.push(...supportApplied);
 
   return applied;
+}
+
+/**
+ * Cleanup-funktionen för utgångna demosessioner (migration 24). Kroppen är
+ * identisk med migrationsfilen. Villkoret is_demo AND demo_expires_at < now()
+ * är hårdkodat – funktionen kan aldrig radera riktiga företag. Kräver
+ * app.reset_demo_business (migration 19); saknas den hoppas skapandet över
+ * och /demo-cleanup får ett ärligt fel i stället.
+ */
+async function ensureDemoCleanupFunction(client: SqlClient): Promise<void> {
+  const reset = await client.query(
+    `select to_regprocedure('app.reset_demo_business(uuid, uuid)') is not null as present`
+  );
+  if (!reset[0]?.present) return;
+  const fn = await client.query(
+    `select to_regprocedure('app.cleanup_expired_demo_businesses(integer)') is not null as present`
+  );
+  if (fn[0]?.present) return;
+  await run(
+    client,
+    `create or replace function app.cleanup_expired_demo_businesses(p_limit integer default 25)
+     returns setof uuid
+     language plpgsql
+     security definer
+     set search_path = ''
+     as $$
+     declare
+       v_id uuid;
+     begin
+       for v_id in
+         select b.id
+           from public.businesses b
+          where b.is_demo
+            and b.demo_expires_at is not null
+            and b.demo_expires_at < now()
+          order by b.demo_expires_at
+          limit greatest(coalesce(p_limit, 1), 1)
+            for update skip locked
+       loop
+         perform app.reset_demo_business(v_id, null);
+         delete from public.payment_files where business_id = v_id;
+         if to_regclass('public.email_events') is not null then
+           delete from public.email_events where business_id = v_id;
+         end if;
+         delete from public.business_memberships where business_id = v_id;
+         delete from public.businesses where id = v_id and is_demo;
+         return next v_id;
+       end loop;
+     end;
+     $$`
+  );
+  await run(client, `revoke all on function app.cleanup_expired_demo_businesses(integer) from public`);
+  await run(client, `grant execute on function app.cleanup_expired_demo_businesses(integer) to driva_app`);
 }
 
 /**
