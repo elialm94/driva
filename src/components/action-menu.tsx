@@ -28,6 +28,31 @@ export function actionMenuItemClassName(opts?: { danger?: boolean }) {
   );
 }
 
+/** Länk som menyval – stänger menyn vid klick (t.ex. öppna PDF i ny flik). */
+export function ActionMenuLink({
+  href,
+  external,
+  children,
+}: {
+  href: string;
+  external?: boolean;
+  children: ReactNode;
+}) {
+  const menu = useActionMenu();
+  return (
+    <a
+      href={href}
+      role="menuitem"
+      target={external ? "_blank" : undefined}
+      rel={external ? "noreferrer" : undefined}
+      className={actionMenuItemClassName()}
+      onClick={() => menu?.close()}
+    >
+      {children}
+    </a>
+  );
+}
+
 export function PageActions({ children }: { children: ReactNode }) {
   return <div className="flex max-w-full flex-wrap items-center justify-end gap-2">{children}</div>;
 }

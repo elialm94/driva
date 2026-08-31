@@ -496,6 +496,14 @@ export interface InvoiceBuyerSnapshot {
   country: string;
   email: string;
   phone: string;
+  /** "Er referens" på dokumentet. */
+  contactPerson?: string;
+  /**
+   * Personnummer för den som får skattereduktionen – fryses ENDAST när
+   * fakturan har ROT/RUT (känsligt: lagras inte på vanliga fakturor).
+   * Historiska dokument renderar härifrån, aldrig via live-uppslag på kunden.
+   */
+  personalIdentityNumber?: string;
 }
 
 export interface InvoiceVatRow {

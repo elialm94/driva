@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { BadgeCheck } from "lucide-react";
+import { BadgeCheck, FileDown } from "lucide-react";
 import { db } from "@/lib/store";
 import { getInvoiceByToken, invoiceTotals, requireCustomer, isOverdue } from "@/lib/services/data";
 import { kr, datumLang } from "@/lib/format";
@@ -7,6 +7,7 @@ import { InvoiceDocument } from "@/components/invoice-document";
 import { resolveInvoiceView } from "@/lib/invoices/snapshot";
 import { invoiceHeading } from "@/lib/invoices/display";
 import { CompanyLogo } from "@/components/company-logo";
+import { buttonClasses } from "@/components/ui";
 import { ensurePublicPage } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -67,6 +68,13 @@ export default async function PublicInvoicePage(props: PageProps<"/faktura/[toke
             </p>
           </div>
         ) : null}
+
+        <div className="mb-3 flex justify-end">
+          <a href={`/faktura/${token}/pdf`} className={buttonClasses("secondary", "sm")}>
+            <FileDown className="size-3.5" />
+            Ladda ner PDF
+          </a>
+        </div>
 
         <div className="overflow-hidden rounded-3xl border border-line bg-white shadow-card">
           <InvoiceDocument company={data.settings} customer={customer} invoice={invoice} />
