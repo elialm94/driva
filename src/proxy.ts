@@ -3,8 +3,9 @@
  *
  *   * Friskar upp utgången Supabase-session på varje request (getClaims →
  *     nya cookies skrivs till svaret) så att inloggningen är beständig.
- *   * Oautentiserade requests till appens skyddade rutter skickas till
- *     /login?next=<ursprunglig sökväg> och tillbaka efter inloggning.
+ *   * Ruttbesluten (landning för utloggade, /login-redirect, demo-utgång)
+ *     är en ren funktion i src/lib/auth/route-decision.ts – proxyn samlar
+ *     bara in sessionsläget och verkställer.
  *   * Publika ytor (offert-/fakturalänkar, kundsajt, BankID-API) släpps
  *     igenom orörda – de auktoriseras med ogissbara tokens på serversidan.
  *
@@ -20,26 +21,7 @@ import {
   isDemoCookieValueActive,
   isDemoUserEmail,
 } from "@/lib/auth/demo-session";
-
-const PUBLIC_PREFIXES = [
-  "/login",
-  "/signup",
-  "/demo", // publik demo-entré: sessionen skapas av en server action på sidan
-  "/offert",
-  "/faktura",
-  "/sajt",
-  "/integritetspolicy",
-  "/inbjudan",
-  "/api/health", // driftdiagnostik: måste nås utan inloggning när appen är trasig
-  "/admin/inbjudan", // admin-invitationens acceptsida: mottagaren saknar ofta konto ännu
-  "/api/bankid",
-  "/api/inbox",
-  "/api/dev", // vaktas internt: endast utveckling
-];
-
-function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-}
+import { decideRoute } from "@/lib/auth/route-decision";
 
 /** Next.js prefetch – inte en riktig navigering. */
 function isRouterPrefetch(request: NextRequest): boolean {
@@ -89,17 +71,21 @@ async function runSessionProxy(request: NextRequest) {
   const isAuthenticated = Boolean(data?.claims?.sub);
   const { pathname, search } = request.nextUrl;
 
-  // Demosessioner är tidsbegränsade: utan giltig demo-cookie loggas
-  // demo-användarens session ut (endast DENNA besökares tokens – scope local)
-  // och besökaren landar på /demo igen. Riktiga användare berörs aldrig.
-  if (isAuthenticated && isDemoUserEmail(String(data?.claims?.email ?? ""))) {
-    const demoCookie = request.cookies.get(DEMO_SESSION_COOKIE)?.value;
-    if (!isDemoCookieValueActive(demoCookie)) {
+  const decision = decideRoute({
+    pathname,
+    search,
+    isAuthenticated,
+    isDemoUser: isAuthenticated && isDemoUserEmail(String(data?.claims?.email ?? "")),
+    demoCookieActive: isDemoCookieValueActive(request.cookies.get(DEMO_SESSION_COOKIE)?.value),
+  });
+
+  switch (decision.kind) {
+    case "end_demo_session": {
+      // Endast DENNA besökares tokens (scope local) – demo-användaren delas.
       await supabase.auth.signOut({ scope: "local" });
       const demoUrl = request.nextUrl.clone();
-      demoUrl.pathname = "/demo";
+      demoUrl.pathname = decision.pathname;
       demoUrl.search = "";
-      demoUrl.searchParams.set("utgangen", "1");
       const redirectResponse = NextResponse.redirect(demoUrl);
       // Bevara utloggningens Set-Cookie (skrevs till response via setAll ovan).
       for (const cookie of response.cookies.getAll()) redirectResponse.cookies.set(cookie);
@@ -107,27 +93,23 @@ async function runSessionProxy(request: NextRequest) {
       redirectResponse.cookies.delete(DEMO_ACTOR_COOKIE);
       return redirectResponse;
     }
-  }
-
-  if (!isAuthenticated && !isPublicPath(pathname)) {
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
-    loginUrl.search = "";
-    const next = `${pathname}${search}`;
-    if (next !== "/" && !next.startsWith("/login") && !next.startsWith("/signup")) {
-      loginUrl.searchParams.set("next", next);
+    case "rewrite": {
+      const target = request.nextUrl.clone();
+      target.pathname = decision.pathname;
+      const rewritten = NextResponse.rewrite(target, { request });
+      for (const cookie of response.cookies.getAll()) rewritten.cookies.set(cookie);
+      return rewritten;
     }
-    return NextResponse.redirect(loginUrl);
+    case "redirect": {
+      const target = request.nextUrl.clone();
+      target.pathname = decision.pathname;
+      target.search = "";
+      if (decision.next) target.searchParams.set("next", decision.next);
+      return NextResponse.redirect(target);
+    }
+    case "next":
+      return response;
   }
-
-  if (isAuthenticated && (pathname === "/login" || pathname === "/signup")) {
-    const homeUrl = request.nextUrl.clone();
-    homeUrl.pathname = "/";
-    homeUrl.search = "";
-    return NextResponse.redirect(homeUrl);
-  }
-
-  return response;
 }
 
 export const config = {

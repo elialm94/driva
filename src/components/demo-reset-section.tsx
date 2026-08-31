@@ -26,7 +26,7 @@ export function DemoResetSection() {
         <div>
           <p className="text-[14px] font-medium text-ink">Återställ demo</p>
           <p className="text-[13px] text-muted">
-            Alla ändringar du gjort i demon återställs till exempeldatat.
+            Alla ändringar du gjort i den här demosessionen tas bort och exempeldatat läses in igen.
           </p>
           {error ? (
             <p role="alert" className="mt-1 text-[13px] text-red-700">
@@ -41,7 +41,7 @@ export function DemoResetSection() {
           onClick={() => {
             if (
               !window.confirm(
-                "Återställ demo? Alla ändringar du gjort i demon återställs till exempeldatat. Detta går inte att ångra."
+                "Återställa demon? Alla ändringar du gjort i den här demosessionen tas bort. Detta går inte att ångra."
               )
             )
               return;

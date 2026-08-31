@@ -303,9 +303,13 @@ export async function businessNameById(businessId: string): Promise<string> {
   return rows[0]?.name ? String(rows[0].name) : "";
 }
 
+/** Provperiodens längd vid kontoskapande. Delas med tester och ev. framtida UI. */
+export const TRIAL_DAYS = 14;
+
 /**
  * Onboarding: skapa företag + ägarmedlemskap + inställningar + nummerserier
- * atomärt. Returnerar företagets id.
+ * atomärt. Returnerar företagets id. Riktiga företag startar sin provperiod
+ * här (trialing, 14 dagar); demoföretag får aldrig trial-fält.
  */
 export async function createBusinessWithOwner(input: {
   userId: string;
@@ -328,48 +332,146 @@ export async function createBusinessWithOwner(input: {
 }): Promise<string> {
   const client = await sqlClient();
   await ensurePendingSchema(client);
+  const isDemo = input.isDemo === true;
   return client.transaction(async (tx) => {
     const idRows = await tx.query(`select gen_random_uuid()::text as id`);
     const businessId = String(idRows[0].id);
     await bindTransaction(tx, businessId);
     await tx.query(
-      `insert into public.businesses (id, name, org_number, is_demo, meta)
-       values ($1, $2, $3, $4, jsonb_build_object('seededAt', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))`,
-      [businessId, input.name, input.orgNumber, input.isDemo === true]
+      `insert into public.businesses (
+         id, name, org_number, is_demo,
+         trial_started_at, trial_ends_at, subscription_status, meta
+       ) values (
+         $1, $2, $3, $4,
+         case when $4 then null else now() end,
+         case when $4 then null else now() + make_interval(days => $5) end,
+         case when $4 then null else 'trialing' end,
+         jsonb_build_object('seededAt', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+       )`,
+      [businessId, input.name, input.orgNumber, isDemo, TRIAL_DAYS]
     );
     await tx.query(
       `insert into public.business_memberships (business_id, user_id, role) values ($1, $2, 'owner')`,
       [businessId, input.userId]
     );
-    await tx.query(
-      `insert into public.business_settings (
-         business_id, name, org_number, vat_number, email, phone,
-         address, postal_code, city, country,
-         bankgiro, plusgiro, bank_account,
-         logo_initials, inbound_mail_slug, default_quote_terms
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-      [
-        businessId,
-        input.name,
-        input.orgNumber,
-        input.vatNumber ?? "",
-        input.email,
-        input.phone,
-        input.address ?? "",
-        input.postalCode ?? "",
-        input.city ?? "",
-        "Sverige",
-        input.bankgiro ?? "",
-        input.plusgiro ?? null,
-        input.bankAccount ?? null,
-        initialsFor(input.name),
-        inboundSlugFor(businessId),
-        STANDARD_TERMS,
-      ]
-    );
+    await insertBusinessSettingsRow(tx, businessId, input);
     await tx.query(`insert into public.business_sequences (business_id) values ($1)`, [businessId]);
     return businessId;
   });
+}
+
+/**
+ * Isolerad demosession: skapa ett EGET demoföretag för en besökare.
+ *
+ * Skiljer sig medvetet från createBusinessWithOwner:
+ *   * INGEN business_memberships-rad – den delade demo-användarens JWT ger
+ *     därmed noll åtkomst via PostgREST. Auktoriseringen är enbart
+ *     serversidans token-uppslag (demo_token_hash) + tenantvägen (GUC + RLS).
+ *   * is_demo = true (fryses av trigger), demo_expires_at sätter sessionens
+ *     hårda livslängd och inga trial-fält (demon är ingen provperiod).
+ */
+export async function createDemoSessionBusiness(input: {
+  tokenHash: string;
+  expiresAt: string;
+  name: string;
+  orgNumber: string;
+  email: string;
+  phone: string;
+}): Promise<string> {
+  const client = await sqlClient();
+  await ensurePendingSchema(client);
+  return client.transaction(async (tx) => {
+    const idRows = await tx.query(`select gen_random_uuid()::text as id`);
+    const businessId = String(idRows[0].id);
+    await bindTransaction(tx, businessId);
+    await tx.query(
+      `insert into public.businesses (id, name, org_number, is_demo, demo_token_hash, demo_expires_at, meta)
+       values ($1, $2, $3, true, $4, $5, jsonb_build_object(
+         'seededAt', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+       ))`,
+      [businessId, input.name, input.orgNumber, input.tokenHash, input.expiresAt]
+    );
+    await insertBusinessSettingsRow(tx, businessId, input);
+    await tx.query(`insert into public.business_sequences (business_id) values ($1)`, [businessId]);
+    return businessId;
+  });
+}
+
+/**
+ * Slå upp demosessionens företag via token-hashen. Endast levande sessioner:
+ * utgångna (demo_expires_at < now) behandlas som obefintliga även om
+ * cleanupen inte hunnit radera raden än.
+ */
+export async function demoBusinessIdForTokenHash(tokenHash: string): Promise<string | null> {
+  if (!tokenHash) return null;
+  const client = await sqlClient();
+  const rows = await client.query(
+    `select id from public.businesses
+      where demo_token_hash = $1 and is_demo and demo_expires_at > now()`,
+    [tokenHash]
+  );
+  return rows[0]?.id ? String(rows[0].id) : null;
+}
+
+/**
+ * Radera utgångna demoföretag (is_demo AND demo_expires_at < now() –
+ * hårdkodat i SQL-funktionen). Returnerar de raderade företagens id.
+ */
+export async function cleanupExpiredDemoBusinesses(limit = 25): Promise<string[]> {
+  const client = await sqlClient();
+  await ensurePendingSchema(client);
+  const rows = await client.transaction(async (tx) => {
+    await tx.query(`set local role driva_app`);
+    return tx.query(`select id from app.cleanup_expired_demo_businesses($1) as t(id)`, [limit]);
+  });
+  const ids = rows.map((r) => String(r.id));
+  for (const id of ids) invalidateSnapshot(id);
+  return ids;
+}
+
+async function insertBusinessSettingsRow(
+  tx: import("./executor").SqlExecutor,
+  businessId: string,
+  input: {
+    name: string;
+    orgNumber: string;
+    email: string;
+    phone: string;
+    vatNumber?: string;
+    address?: string;
+    postalCode?: string;
+    city?: string;
+    bankgiro?: string;
+    plusgiro?: string;
+    bankAccount?: string;
+  }
+): Promise<void> {
+  await tx.query(
+    `insert into public.business_settings (
+       business_id, name, org_number, vat_number, email, phone,
+       address, postal_code, city, country,
+       bankgiro, plusgiro, bank_account,
+       logo_initials, inbound_mail_slug, default_quote_terms
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+    [
+      businessId,
+      input.name,
+      input.orgNumber,
+      input.vatNumber ?? "",
+      input.email,
+      input.phone,
+      input.address ?? "",
+      input.postalCode ?? "",
+      input.city ?? "",
+      "Sverige",
+      input.bankgiro ?? "",
+      input.plusgiro ?? null,
+      input.bankAccount ?? null,
+      initialsFor(input.name),
+      inboundSlugFor(businessId),
+      STANDARD_TERMS,
+    ]
+  );
 }
 
 function initialsFor(name: string): string {

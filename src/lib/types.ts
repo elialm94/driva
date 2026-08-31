@@ -1871,6 +1871,16 @@ export interface DB {
      * skrivs ALDRIG tillbaka – appen kan inte flagga om ett riktigt företag.
      */
     demo?: boolean;
+    /**
+     * Provperiod/prenumeration – kanoniskt tillstånd från businesses-kolumnerna
+     * (trial_started_at, trial_ends_at, subscription_status). Sätts vid
+     * företagsskapandet (14 dagar, 'trialing') och speglas hit läs-endast:
+     * commit-vägen skriver aldrig tillbaka fälten via jsonb:n (som demo).
+     * Demoföretag saknar fälten. Ingen UI-gating ännu – bara sanningen.
+     */
+    trialStartedAt?: string;
+    trialEndsAt?: string;
+    subscriptionStatus?: SubscriptionStatus;
     /** Engångshydrering av ROT-demodata (personnummer m.m.) – får inte återuppstå om användaren tagit bort det. */
     taxReductionDemoHydrated?: boolean;
     /**
@@ -1903,6 +1913,9 @@ export interface DB {
     ignoredLineDescriptions?: Array<string | { key: string; kind: LineKind }>;
   };
 }
+
+/** Prenumerationsstatus. Trial sätts vid företagsskapandet; resten är framtida fakturering. */
+export type SubscriptionStatus = "trialing" | "active" | "expired" | "canceled";
 
 /** Lärd kategoriregel per leverantör (normaliserat namn som nyckel). */
 export interface MerchantCategoryRule {

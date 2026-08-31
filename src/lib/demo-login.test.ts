@@ -81,19 +81,19 @@ function draftQuote(customerId = "cust-1") {
 }
 
 describe("demosessionens kaka och livslängd", () => {
-  it("standard är 8 timmar och klampas till 1–72", () => {
-    assert.equal(demoSessionMaxAgeSeconds(), 8 * 3600);
+  it("standard är 24 timmar och klampas till 1–72", () => {
+    assert.equal(demoSessionMaxAgeSeconds(), 24 * 3600);
     process.env.DEMO_SESSION_HOURS = "0.2";
     assert.equal(demoSessionMaxAgeSeconds(), 3600);
     process.env.DEMO_SESSION_HOURS = "500";
     assert.equal(demoSessionMaxAgeSeconds(), 72 * 3600);
     process.env.DEMO_SESSION_HOURS = "skräp";
-    assert.equal(demoSessionMaxAgeSeconds(), 8 * 3600);
+    assert.equal(demoSessionMaxAgeSeconds(), 24 * 3600);
   });
 
   it("nytt kakvärde är aktivt, unikt per besökare och bär utgångstiden", () => {
     const value = demoCookieValueNow();
-    assert.match(value, /^\d+\.[a-z0-9]+$/);
+    assert.match(value, /^\d+\.[A-Za-z0-9_-]+$/);
     assert.equal(isDemoCookieValueActive(value), true);
     assert.notEqual(demoCookieValueNow(), value);
     const expires = Number(value.split(".")[0]);

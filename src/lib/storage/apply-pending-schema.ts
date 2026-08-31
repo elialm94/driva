@@ -68,6 +68,68 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     `alter table public.businesses add column if not exists disabled_at timestamptz`
   );
 
+  // Provperiod (migration 23): sätts vid företagsskapandet, läses till meta.
+  const hadSubscriptionStatus = await columnExists(client, "businesses", "subscription_status");
+  await ensureColumn(
+    "businesses",
+    "trial_started_at",
+    `alter table public.businesses add column if not exists trial_started_at timestamptz`
+  );
+  await ensureColumn(
+    "businesses",
+    "trial_ends_at",
+    `alter table public.businesses add column if not exists trial_ends_at timestamptz`
+  );
+  await ensureColumn(
+    "businesses",
+    "subscription_status",
+    `alter table public.businesses add column if not exists subscription_status text`
+  );
+  if (!hadSubscriptionStatus) {
+    await run(
+      client,
+      `alter table public.businesses drop constraint if exists businesses_subscription_status_check`
+    );
+    await run(
+      client,
+      `alter table public.businesses
+         add constraint businesses_subscription_status_check
+         check (
+           subscription_status is null
+           or subscription_status in ('trialing', 'active', 'expired', 'canceled')
+         )`
+    );
+  }
+
+  // Isolerade demosessioner (migration 24): token-mappning + utgångstid.
+  const hadDemoTokenHash = await columnExists(client, "businesses", "demo_token_hash");
+  await ensureColumn(
+    "businesses",
+    "demo_token_hash",
+    `alter table public.businesses add column if not exists demo_token_hash text`
+  );
+  await ensureColumn(
+    "businesses",
+    "demo_expires_at",
+    `alter table public.businesses add column if not exists demo_expires_at timestamptz`
+  );
+  if (!hadDemoTokenHash) {
+    await run(
+      client,
+      `create unique index if not exists businesses_demo_token_hash_uq
+         on public.businesses (demo_token_hash)
+         where demo_token_hash is not null`
+    );
+    await run(
+      client,
+      `create index if not exists businesses_demo_expires_idx
+         on public.businesses (demo_expires_at)
+         where is_demo`
+    );
+    applied.push("businesses.demo_token_hash");
+  }
+  await ensureDemoCleanupFunction(client);
+
   await ensureColumn(
     "business_settings",
     "default_hourly_rate",
@@ -266,6 +328,149 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   applied.push(...supportApplied);
 
   return applied;
+}
+
+/**
+ * Återställningsfunktionen med migration 24-kroppen: tömmer även
+ * payment_files/email_events (driva_app saknar delete-rätt på dem, så det
+ * måste ske inne i security definer-funktionen). Kroppen är identisk med
+ * migrationsfilen.
+ */
+async function ensureDemoResetFunction(client: SqlClient): Promise<void> {
+  await run(
+    client,
+    `create or replace function app.reset_demo_business(p_business_id uuid, p_keep_user_id uuid default null)
+     returns void
+     language plpgsql
+     security definer
+     set search_path = ''
+     as $$
+     begin
+       if not exists (
+         select 1 from public.businesses b where b.id = p_business_id and b.is_demo
+       ) then
+         raise exception 'demo_reset: företaget är inte ett demoföretag' using errcode = 'P0001';
+       end if;
+
+       perform set_config('app.demo_reset', '1', true);
+       perform pg_advisory_xact_lock(hashtextextended(p_business_id::text, 42));
+
+       delete from public.accounting_entries where business_id = p_business_id;
+       delete from public.verifications where business_id = p_business_id;
+       delete from public.payments where business_id = p_business_id;
+       delete from public.invoice_issued_snapshots where business_id = p_business_id;
+       delete from public.invoice_line_items where business_id = p_business_id;
+       delete from public.invoices where business_id = p_business_id;
+       delete from public.signatures where business_id = p_business_id;
+       delete from public.bankid_orders where business_id = p_business_id;
+       delete from public.quote_versions where business_id = p_business_id;
+       delete from public.quotes where business_id = p_business_id;
+       delete from public.job_work_entries where business_id = p_business_id;
+       delete from public.jobs where business_id = p_business_id;
+       delete from public.work_locations where business_id = p_business_id;
+       delete from public.customers where business_id = p_business_id;
+       delete from public.bank_transactions where business_id = p_business_id;
+       delete from public.bank_accounts where business_id = p_business_id;
+       delete from public.receipts where business_id = p_business_id;
+       delete from public.expenses where business_id = p_business_id;
+       delete from public.supplier_payments where business_id = p_business_id;
+       delete from public.supplier_invoices where business_id = p_business_id;
+       delete from public.vat_reports where business_id = p_business_id;
+       delete from public.assets where business_id = p_business_id;
+       delete from public.accruals where business_id = p_business_id;
+       delete from public.annual_reports where business_id = p_business_id;
+       delete from public.fiscal_years where business_id = p_business_id;
+       delete from public.websites where business_id = p_business_id;
+       delete from public.domains where business_id = p_business_id;
+       delete from public.assistant_messages where business_id = p_business_id;
+       delete from public.pending_actions where business_id = p_business_id;
+       delete from public.audit_log where business_id = p_business_id;
+       delete from public.reminders where business_id = p_business_id;
+       delete from public.attention_states where business_id = p_business_id;
+       delete from public.inbox_items where business_id = p_business_id;
+       delete from public.client_information_requests where business_id = p_business_id;
+       delete from public.collaboration_invitations where business_id = p_business_id;
+       delete from public.payment_files where business_id = p_business_id;
+       if to_regclass('public.email_events') is not null then
+         delete from public.email_events where business_id = p_business_id;
+       end if;
+
+       if p_keep_user_id is not null then
+         update public.business_memberships
+            set revoked_at = now()
+          where business_id = p_business_id
+            and revoked_at is null
+            and user_id <> p_keep_user_id;
+       end if;
+
+       update public.business_sequences
+          set quote = 1, invoice = 1, verification = 1
+        where business_id = p_business_id;
+
+       update public.businesses
+          set state_version = state_version + 1,
+              accounting_locked_through = null,
+              meta = '{}'::jsonb
+        where id = p_business_id;
+     end;
+     $$`
+  );
+  await run(client, `revoke all on function app.reset_demo_business(uuid, uuid) from public`);
+  await run(client, `grant execute on function app.reset_demo_business(uuid, uuid) to driva_app`);
+}
+
+/**
+ * Cleanup-funktionen för utgångna demosessioner (migration 24). Kroppen är
+ * identisk med migrationsfilen. Villkoret is_demo AND demo_expires_at < now()
+ * är hårdkodat – funktionen kan aldrig radera riktiga företag. Kräver
+ * app.reset_demo_business (migration 19); saknas den hoppas skapandet över
+ * och /demo-cleanup får ett ärligt fel i stället.
+ */
+async function ensureDemoCleanupFunction(client: SqlClient): Promise<void> {
+  const reset = await client.query(
+    `select to_regprocedure('app.reset_demo_business(uuid, uuid)') is not null as present`
+  );
+  if (!reset[0]?.present) return;
+  const fn = await client.query(
+    `select to_regprocedure('app.cleanup_expired_demo_businesses(integer)') is not null as present`
+  );
+  if (fn[0]?.present) return;
+  await ensureDemoResetFunction(client);
+  await run(
+    client,
+    `create or replace function app.cleanup_expired_demo_businesses(p_limit integer default 25)
+     returns setof uuid
+     language plpgsql
+     security definer
+     set search_path = ''
+     as $$
+     declare
+       v_id uuid;
+     begin
+       for v_id in
+         select b.id
+           from public.businesses b
+          where b.is_demo
+            and b.demo_expires_at is not null
+            and b.demo_expires_at < now()
+          order by b.demo_expires_at
+          limit greatest(coalesce(p_limit, 1), 1)
+            for update skip locked
+       loop
+         perform app.reset_demo_business(v_id, null);
+         delete from public.payment_files where business_id = v_id;
+         if to_regclass('public.email_events') is not null then
+           delete from public.email_events where business_id = v_id;
+         end if;
+         delete from public.business_memberships where business_id = v_id;
+         delete from public.businesses where id = v_id and is_demo;
+         return next v_id;
+       end loop;
+     end;
+     $$`
+  );
+  await run(client, `revoke all on function app.cleanup_expired_demo_businesses(integer) from public`);
+  await run(client, `grant execute on function app.cleanup_expired_demo_businesses(integer) to driva_app`);
 }
 
 /**

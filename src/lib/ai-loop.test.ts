@@ -391,6 +391,8 @@ describe("påminnelser via verktygsloopen", () => {
   });
 
   test("list/update/complete/snooze/dismiss-flödena fungerar med AI-origin", async () => {
+    // Räknar och matchar på egna påminnelser – börja utan seedens.
+    replaceDb({ ...buildSeed(), reminders: [] });
     await executeTool("create_reminder", { title: "Beställa virke", weekday: "fredag" }, { origin: "ai" });
 
     const list = await executeTool("list_reminders", {}, { origin: "ai" });

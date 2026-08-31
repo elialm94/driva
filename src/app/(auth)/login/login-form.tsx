@@ -5,7 +5,7 @@ import Link from "next/link";
 import { loginAction, type AuthFormState } from "@/app/auth-actions";
 import { signupHrefWithNext } from "@/lib/auth/signup-flow";
 import { FieldError, useNativeFieldErrors } from "@/components/form-validation";
-import { ResendVerification } from "./resend-verification";
+import { ResendVerification } from "../resend-verification";
 
 const initialState: AuthFormState = {};
 
@@ -15,8 +15,6 @@ export function LoginForm({
 }: {
   next: string;
   defaultEmail?: string;
-  /** Behålls så parallella login-ändringar kan skicka med banner-state utan att bryta props. */
-  signupSuccess?: boolean;
 }) {
   const [loginState, submitLogin, loginPending] = useActionState(loginAction, initialState);
   const { errors, formProps, fieldProps } = useNativeFieldErrors({
@@ -45,9 +43,17 @@ export function LoginForm({
         <FieldError id="auth-email-fel">{errors.email}</FieldError>
       </div>
       <div>
-        <label htmlFor="auth-password" className="block text-sm font-medium text-stone-700">
-          Lösenord
-        </label>
+        <div className="flex items-baseline justify-between">
+          <label htmlFor="auth-password" className="block text-sm font-medium text-stone-700">
+            Lösenord
+          </label>
+          <Link
+            href="/glomt-losenord"
+            className="text-[13px] font-medium text-stone-500 underline hover:text-stone-700"
+          >
+            Glömt lösenord?
+          </Link>
+        </div>
         <input
           id="auth-password"
           name="password"

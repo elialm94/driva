@@ -8,15 +8,19 @@ const initialState: AuthFormState = {};
 export function ResendVerification({
   email,
   label,
+  next,
 }: {
   email: string;
   label: string;
+  /** Bevaras genom bekräftelselänken (t.ex. inbjudan). */
+  next?: string;
 }) {
   const [state, submit, pending] = useActionState(resendVerificationAction, initialState);
 
   return (
     <form action={submit} className="space-y-2">
       <input type="hidden" name="email" value={email} />
+      {next ? <input type="hidden" name="next" value={next} /> : null}
       <button
         type="submit"
         disabled={pending || !email}

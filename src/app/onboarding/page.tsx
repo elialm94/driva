@@ -1,20 +1,39 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth/session";
+import { isDemoUserEmail } from "@/lib/auth/demo-session";
+import { sanitizeSignupPhone } from "@/lib/auth/signup-flow";
 import { needsCompanyOnboarding } from "@/lib/onboarding";
 import { membershipsForUser } from "@/lib/storage/adapter-supabase";
 import { isSupabaseMode } from "@/lib/storage/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { OnboardingForm } from "./onboarding-form";
 
 export const metadata: Metadata = { title: "Kom igång – Driva" };
 export const dynamic = "force-dynamic";
 
+/** Telefonen från registreringen (user metadata) prefyller kontaktfältet. */
+async function signupPhoneFromMetadata(): Promise<string> {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data } = await supabase.auth.getClaims();
+    const meta = data?.claims?.user_metadata as { phone?: unknown } | undefined;
+    return sanitizeSignupPhone(meta?.phone) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export default async function OnboardingPage() {
   if (!isSupabaseMode()) redirect("/"); // JSON-läget har ett färdigt demoföretag
   const user = await getSessionUser();
   if (!user) redirect("/login");
+  // Demosessionen onboardar aldrig – ett företag på den delade demo-användaren
+  // vore nåbart från andra demosessioner. Skapa eget konto i stället.
+  if (isDemoUserEmail(user.email)) redirect("/");
   const memberships = await membershipsForUser(user.id);
   if (!needsCompanyOnboarding(memberships.length)) redirect("/");
+  const defaultPhone = await signupPhoneFromMetadata();
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-stone-100 px-4 py-10">
@@ -26,7 +45,7 @@ export default async function OnboardingPage() {
           </p>
         </div>
         <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-          <OnboardingForm defaultEmail={user.email} />
+          <OnboardingForm defaultEmail={user.email} defaultPhone={defaultPhone} />
         </div>
       </div>
     </main>

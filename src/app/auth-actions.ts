@@ -14,7 +14,9 @@ import {
   mapLoginAuthError,
   safeAuthNext,
   sanitizeAuthEmail,
+  sanitizeSignupPhone,
   validateLoginFields,
+  validateNewPassword,
   validateSignupFields,
 } from "@/lib/auth/signup-flow";
 import { DEMO_ACTOR_COOKIE, DEMO_SESSION_COOKIE, isDemoUserEmail } from "@/lib/auth/demo-session";
@@ -39,13 +41,12 @@ function authUnavailable(): AuthFormState {
   };
 }
 
-/** Vart bekräftelselänken ska landa efter klick i mejlet. */
-async function confirmationRedirectUrl(): Promise<string | undefined> {
+/** Appens externa origin – för redirect-URL:er i auth-mejl. */
+async function appOrigin(): Promise<string | undefined> {
   const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (fromEnv) {
     try {
-      const url = new URL(fromEnv.includes("://") ? fromEnv : `https://${fromEnv}`);
-      return `${url.origin}/login`;
+      return new URL(fromEnv.includes("://") ? fromEnv : `https://${fromEnv}`).origin;
     } catch {
       /* fall through */
     }
@@ -55,10 +56,21 @@ async function confirmationRedirectUrl(): Promise<string | undefined> {
     const host = h.get("x-forwarded-host") || h.get("host");
     if (!host) return undefined;
     const proto = h.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
-    return `${proto}://${host}/login`;
+    return `${proto}://${host}`;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Vart länken i mejlet ska landa efter klick: /auth/confirm växlar koden till
+ * en session och skickar vidare (onboarding för nya konton, annars next).
+ */
+async function confirmationRedirectUrl(next?: string): Promise<string | undefined> {
+  const origin = await appOrigin();
+  if (!origin) return undefined;
+  const safe = next ? safeAuthNext(next) : "/";
+  return safe === "/" ? `${origin}/auth/confirm` : `${origin}/auth/confirm?next=${encodeURIComponent(safe)}`;
 }
 
 export async function loginAction(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
@@ -84,18 +96,24 @@ export async function loginAction(_prev: AuthFormState, formData: FormData): Pro
 export async function signupAction(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
   if (!isSupabaseMode()) return authUnavailable();
   const email = String(formData.get("email") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const next = typeof formData.get("next") === "string" ? String(formData.get("next")) : undefined;
-  const fieldError = validateSignupFields(email, password);
+  const fieldError = validateSignupFields(email, phone, password);
   const stay = (error: string): AuthFormState => ({ error });
   if (fieldError) return stay(fieldError);
 
   const supabase = await createSupabaseServerClient();
-  const emailRedirectTo = await confirmationRedirectUrl();
+  const emailRedirectTo = await confirmationRedirectUrl(next);
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: emailRedirectTo ? { emailRedirectTo } : undefined,
+    options: {
+      // Telefonen verifieras inte – den sparas som metadata och prefyller
+      // onboardingens kontaktfält efter e-postbekräftelsen.
+      data: { phone: sanitizeSignupPhone(phone) },
+      ...(emailRedirectTo ? { emailRedirectTo } : undefined),
+    },
   });
   const decision = decideSignupResult({
     authError: error ? { code: error.code, message: error.message } : null,
@@ -116,9 +134,10 @@ export async function resendVerificationAction(
   if (!isSupabaseMode()) return authUnavailable();
   const email = sanitizeAuthEmail(formData.get("email"));
   if (!email) return { error: "Ange en giltig e-postadress." };
+  const next = typeof formData.get("next") === "string" ? String(formData.get("next")) : undefined;
 
   const supabase = await createSupabaseServerClient();
-  const emailRedirectTo = await confirmationRedirectUrl();
+  const emailRedirectTo = await confirmationRedirectUrl(next);
   const { error } = await supabase.auth.resend({
     type: "signup",
     email,
@@ -147,7 +166,54 @@ export async function logoutAction(): Promise<void> {
       await supabase.auth.signOut();
     }
   }
-  redirect("/login");
+  // Utloggad landar på landningssidan (/) – inte på inloggningsformuläret.
+  redirect("/");
+}
+
+/** Glömt lösenord: skicka återställningsmejl. Avslöjar inte om kontot finns. */
+export async function requestPasswordResetAction(
+  _prev: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
+  if (!isSupabaseMode()) return authUnavailable();
+  const email = sanitizeAuthEmail(formData.get("email"));
+  if (!email) return { error: "Ange en giltig e-postadress." };
+
+  const supabase = await createSupabaseServerClient();
+  const redirectTo = await confirmationRedirectUrl("/aterstall-losenord");
+  const { error } = await supabase.auth.resetPasswordForEmail(
+    email,
+    redirectTo ? { redirectTo } : undefined
+  );
+  if (error && error.status === 429) {
+    return { error: "För många försök – vänta en stund och försök igen.", email };
+  }
+  // Samma svar oavsett om kontot finns (ingen user enumeration).
+  return {
+    notice: "Om e-postadressen har ett konto skickar vi en återställningslänk dit.",
+    email,
+  };
+}
+
+/** Sätt nytt lösenord – kräver session från återställningslänken. */
+export async function updatePasswordAction(
+  _prev: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
+  if (!isSupabaseMode()) return authUnavailable();
+  const password = String(formData.get("password") ?? "");
+  const fieldError = validateNewPassword(password);
+  if (fieldError) return { error: fieldError };
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) {
+    if (error.code === "same_password") {
+      return { error: "Det nya lösenordet är samma som det gamla – välj ett annat." };
+    }
+    return { error: `Lösenordet kunde inte uppdateras: ${error.message}` };
+  }
+  redirect("/");
 }
 
 export interface OnboardingFormState {

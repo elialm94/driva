@@ -3,7 +3,7 @@ import { uid } from "../ids";
 import type { Domain } from "../types";
 import { logActivity } from "../services/activity";
 import { logDomainAudit } from "./audit";
-import { domainRuntimeMode } from "./config";
+import { effectiveDomainRuntimeMode } from "./mode";
 import { DomainError } from "./errors";
 import { getHostingProvider, type DnsRecordInstruction } from "./hosting";
 import { parseHostnameInput } from "./hostname";
@@ -36,7 +36,7 @@ export async function startExistingDomain(raw: string): Promise<ExistingDomainSe
     hostname: parsed.hostname,
     tld: parsed.tld,
     source: "existing",
-    registrarProvider: domainRuntimeMode() === "mock" ? "mock" : "openprovider",
+    registrarProvider: effectiveDomainRuntimeMode() === "mock" ? "mock" : "openprovider",
     status: "configuring",
     isPrimary: !hasPrimary,
     autoRenew: false,

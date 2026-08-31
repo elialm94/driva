@@ -5,6 +5,7 @@ import type {
   DocLine,
   Invoice,
   Job,
+  JobWorkEntry,
   LineKind,
   PaymentFile,
   Quote,
@@ -149,6 +150,68 @@ export function buildSeed(): DB {
       notes: "",
       createdAt: d(0, 8, 45),
     },
+    {
+      id: "cust-bengt",
+      kind: "privat" as const,
+      name: "Bengt Eriksson",
+      email: "bengt.eriksson@telia.com",
+      phone: "070-618 42 77",
+      address: "Sockenvägen 212",
+      postalCode: "122 63",
+      city: "Enskede",
+      personalIdentityNumber: "19561203-1234",
+      workLocations: [
+        {
+          id: "loc-bengt-villa",
+          label: "Villan",
+          address: "Sockenvägen 212",
+          postalCode: "122 63",
+          city: "Enskede",
+          propertyType: "smahus" as const,
+          propertyDesignation: "Stockholm Sockenstugan 7",
+        },
+      ],
+      defaultWorkLocationId: "loc-bengt-villa",
+      notes: "Snäll hund (Ludde) som gärna hälsar. Parkera på garageuppfarten.",
+      createdAt: d(55),
+    },
+    {
+      id: "cust-lena",
+      kind: "privat" as const,
+      name: "Lena Bergström",
+      email: "lena.bergstrom@gmail.com",
+      phone: "073-210 45 88",
+      address: "Bondegatan 7",
+      postalCode: "116 23",
+      city: "Stockholm",
+      notes: "Rekommenderad av Anna Andersson.",
+      createdAt: d(35),
+    },
+    {
+      id: "cust-mats",
+      kind: "privat" as const,
+      name: "Mats Holmgren",
+      email: "mats.holmgren@hotmail.com",
+      phone: "070-771 23 05",
+      address: "Victor Balcks väg 11",
+      postalCode: "122 40",
+      city: "Enskede",
+      notes: "Vill ha fasadarbetet gjort före oktober.",
+      createdAt: d(6),
+    },
+    {
+      id: "cust-birgitta",
+      kind: "privat" as const,
+      name: "Birgitta Åkesson",
+      email: "birgitta.akesson@gmail.com",
+      phone: "070-482 19 60",
+      address: "Gotlandsgatan 46",
+      postalCode: "116 65",
+      city: "Stockholm",
+      personalIdentityNumber: "19480322-1234",
+      notes: "Ring hellre än mejla. Hemma förmiddagar.",
+      createdAt: d(220),
+    },
   ];
 
   /* ------------------------------ Offerter ------------------------------ */
@@ -235,6 +298,36 @@ export function buildSeed(): DB {
       paymentPlan: [{ label: "Betalning när arbetet är klart", percent: 100 }],
       paymentTermsDays: 30,
       validUntil: d(28),
+      terms: standardTerms,
+    },
+  });
+
+  addQuote({
+    id: "quote-altan-bengt",
+    number: 108,
+    customerId: "cust-bengt",
+    jobId: "job-altan-bengt",
+    status: "godkand",
+    token: "demo-bengt-altan",
+    createdAt: d(50),
+    sentAt: d(48, 10, 20),
+    viewedAt: d(47, 18, 3),
+    decidedAt: d(44, 12, 40),
+    locked: true,
+    version: {
+      title: "Altanbygge",
+      intro:
+        "Rivning av befintlig altan och nybyggnad om ca 16 kvm i tryckimpregnerat virke på Sockenvägen 212, inklusive nytt räcke och trappsteg. ROT-avdraget dras direkt på fakturan.",
+      lines: [
+        L("arbete", "Rivning av gammal altan samt nybyggnad", 20, "tim", 550),
+        L("material", "Trallvirke, reglar, plintar och skruv", 1, "st", 14800),
+        L("resor", "Servicebil och restid", 4, "resa", 350),
+      ],
+      rot: { type: "rot" },
+      taxReductionTerms: snapshotTaxReductionTerms("rot"),
+      paymentPlan: [{ label: "Betalning när arbetet är klart och godkänt", percent: 100 }],
+      paymentTermsDays: 10,
+      validUntil: d(20),
       terms: standardTerms,
     },
   });
@@ -400,6 +493,31 @@ export function buildSeed(): DB {
     },
   });
 
+  addQuote({
+    id: "quote-fasad",
+    number: 115,
+    customerId: "cust-mats",
+    status: "utkast",
+    token: "demo-mats-fasad",
+    createdAt: d(0, 9, 30),
+    version: {
+      title: "Fasadarbete – byte av panel",
+      intro:
+        "Byte av väderslitna panelbrädor på södra fasaden av villan på Victor Balcks väg 11, inklusive grundmålning av ny panel.",
+      lines: [
+        L("arbete", "Rivning av gammal panel, ny panel och grundmålning", 52, "tim", 550),
+        L("material", "Fasadpanel, spik och grundfärg", 1, "st", 16800),
+        L("resor", "Servicebil och restid", 6, "resa", 350),
+      ],
+      rot: { type: "rot" },
+      taxReductionTerms: snapshotTaxReductionTerms("rot"),
+      paymentPlan: [{ label: "Betalning när arbetet är klart", percent: 100 }],
+      paymentTermsDays: 10,
+      validUntil: d(-30),
+      terms: standardTerms,
+    },
+  });
+
   /* --------------------------- BankID-signaturer ------------------------- */
 
   const signatures = [
@@ -442,6 +560,20 @@ export function buildSeed(): DB {
       environment: "mock" as const,
       evidence: {
         contentHash: quoteVersions.find((v) => v.id === "quote-altan-v1")!.contentHash!,
+        note: "Demosignatur – i produktion lagras här BankID:s fullständiga signaturdata (XML-DSig) och OCSP-svar.",
+      },
+    },
+    {
+      id: "sig-altan-bengt",
+      quoteId: "quote-altan-bengt",
+      quoteVersionId: "quote-altan-bengt-v1",
+      orderRef: "mock-order-altan-bengt",
+      signerName: "Bengt Eriksson",
+      signerPersonalNumberMasked: "195612••-••••",
+      signedAt: d(44, 12, 40),
+      environment: "mock" as const,
+      evidence: {
+        contentHash: quoteVersions.find((v) => v.id === "quote-altan-bengt-v1")!.contentHash!,
         note: "Demosignatur – i produktion lagras här BankID:s fullständiga signaturdata (XML-DSig) och OCSP-svar.",
       },
     },
@@ -494,6 +626,28 @@ export function buildSeed(): DB {
       ],
       notes: "Virke beställt från Beijer, leverans till adressen dagen före start.",
       createdAt: d(20, 11, 18),
+    },
+    {
+      id: "job-altan-bengt",
+      customerId: "cust-bengt",
+      quoteId: "quote-altan-bengt",
+      title: "Altanbygge",
+      description: "Rivning och nybyggnad av altan ca 16 kvm med räcke och trappsteg enligt offert #108.",
+      status: "klart",
+      startDate: d(12),
+      endDate: d(2),
+      address: "Sockenvägen 212, Enskede",
+      checklist: [
+        { id: "c1", text: "Riva gammal altan", done: true },
+        { id: "c2", text: "Plintar och bärlinor", done: true },
+        { id: "c3", text: "Trall, räcke och trappsteg", done: true },
+        { id: "c4", text: "Slutbesiktning med kund", done: true },
+      ],
+      notes: "Bengt vill ha offert på pergola över altanen till våren. Tid och material klara – redo att fakturera.",
+      createdAt: d(44, 12, 40),
+      completedAt: d(2, 16, 30),
+      workLocationId: "loc-bengt-villa",
+      housing: { dwellingType: "smahus", propertyDesignation: "Stockholm Sockenstugan 7" },
     },
     {
       id: "job-fonster",
@@ -607,6 +761,53 @@ export function buildSeed(): DB {
     },
   ];
 
+  /* ----------------------------- Tid & material -------------------------- */
+
+  // Registrerat arbete/material (role "actual"). Den avtalade offertbaslinjen
+  // (role "planned") hydreras automatiskt från godkända offerter i store.normalize.
+  function W(
+    id: string,
+    jobId: string,
+    type: JobWorkEntry["type"],
+    description: string,
+    daysAgo: number,
+    qty: number,
+    unit: string,
+    unitPrice: number,
+    isExtra = false
+  ): JobWorkEntry {
+    return {
+      id,
+      jobId,
+      role: "actual",
+      type,
+      description,
+      date: d(daysAgo).slice(0, 10),
+      qty,
+      unit,
+      unitPrice,
+      vatRate: 25,
+      source: "manual",
+      isExtra,
+      createdAt: d(daysAgo, 17, 0),
+      updatedAt: d(daysAgo, 17, 0),
+    };
+  }
+
+  const jobWorkEntries: JobWorkEntry[] = [
+    // Altanbygget hos Bengt: klart och redo att fakturera – 18 h, material och restid.
+    W("work-bengt-riv", "job-altan-bengt", "labor", "Rivning av gammal altan och nytt bärverk", 10, 10, "tim", 550),
+    W("work-bengt-trall", "job-altan-bengt", "labor", "Trall, räcke och trappsteg", 4, 8, "tim", 550),
+    W("work-bengt-virke", "job-altan-bengt", "material", "Trallvirke 28×120 tryckimpregnerat", 11, 1, "st", 9800),
+    W("work-bengt-reglar", "job-altan-bengt", "material", "Reglar, plintar och skruv", 11, 1, "st", 4500),
+    W("work-bengt-resor", "job-altan-bengt", "travel", "Servicebil och restid", 4, 4, "resa", 350),
+    // Köksrenoveringen hos Anna pågår: timmar hittills plus ett tillägg utanför offerten.
+    W("work-kok-riv", "job-kok", "labor", "Rivning och stomjustering", 9, 24, "tim", 550),
+    W("work-kok-stommar", "job-kok", "labor", "Montering av stommar och luckor", 6, 30, "tim", 550),
+    W("work-kok-bankskiva", "job-kok", "labor", "Bänkskiva och belysning", 1, 12, "tim", 550),
+    W("work-kok-kakel", "job-kok", "material", "Kakel till stänkskydd (tillägg utanför offert)", 2, 1, "st", 2400, true),
+  ];
+
   /* ------------------------------ Fakturor ------------------------------ */
 
   const invoices: Invoice[] = [];
@@ -621,6 +822,9 @@ export function buildSeed(): DB {
     status: Invoice["status"];
     lines: DocLine[];
     rot?: Invoice["rot"];
+    taxReductionTerms?: Invoice["taxReductionTerms"];
+    taxReductionDetails?: Invoice["taxReductionDetails"];
+    taxReductionApplication?: Invoice["taxReductionApplication"];
     richText?: Invoice["richText"];
     issueDate: string;
     dueDate: string;
@@ -673,6 +877,38 @@ export function buildSeed(): DB {
     sentAt: d(130, 9, 0),
     paidAt: d(118),
     token: "demo-f1034",
+  });
+
+  // ROT-faktura: kunden betalade sin del, ROT-delen väntar på Skatteverket (1513).
+  addInvoice({
+    id: "inv-1038",
+    number: 1038,
+    customerId: "cust-birgitta",
+    type: "faktura",
+    status: "betald",
+    lines: [
+      L("arbete", "Byte av köksluckor och lådfronter, montering", 14, "tim", 550),
+      L("material", "Luckor, lådfronter och handtag", 1, "st", 8900),
+    ],
+    rot: { type: "rot" },
+    taxReductionTerms: snapshotTaxReductionTerms("rot"),
+    taxReductionDetails: {
+      workAddress: "Gotlandsgatan 46, 116 65 Stockholm",
+      workPeriodStart: d(72).slice(0, 10),
+      workPeriodEnd: d(66).slice(0, 10),
+      housing: { dwellingType: "bostadsratt", brfOrgNumber: "769605-4321", apartmentNumber: "1203" },
+    },
+    // Underlaget är inskickat – ROT-delen (2 888 kr på 1513) väntar på Skatteverket.
+    taxReductionApplication: {
+      status: "underlag_skapat",
+      underlagCreatedAt: d(50, 9, 20),
+      underlagSummary: "ROT-underlag för byte av köksluckor, Birgitta Åkesson, 2 888 kr.",
+    },
+    issueDate: d(64),
+    dueDate: d(34),
+    sentAt: d(64, 15, 30),
+    paidAt: d(52),
+    token: "demo-f1038",
   });
 
   addInvoice({
@@ -809,6 +1045,22 @@ export function buildSeed(): DB {
     token: "demo-f1047",
   });
 
+  // Utkast: skapad men inte utfärdad – bokförs först vid utskick.
+  addInvoice({
+    id: "inv-1046",
+    number: 1046,
+    customerId: "cust-brf",
+    type: "faktura",
+    status: "utkast",
+    lines: [
+      L("arbete", "Justering av dörrstängare och lås, gårdshuset", 5, "tim", 550),
+      L("material", "Dörrstängare och beslag", 1, "st", 640),
+    ],
+    issueDate: d(0),
+    dueDate: d(-30),
+    token: "demo-f1046",
+  });
+
   /* ------------------------------- Utgifter ------------------------------ */
 
   const expenses = [
@@ -895,6 +1147,20 @@ export function buildSeed(): DB {
       status: "bokford" as const,
       verificationId: "ver-exp-adobe",
       createdAt: d(15),
+    },
+    {
+      id: "exp-jula",
+      supplier: "Jula",
+      date: d(12),
+      amount: 1240,
+      vatAmount: 248,
+      category: "verktyg",
+      description: "Sågklingor, bits och skyddsglasögon",
+      receiptId: "rec-jula",
+      bankTransactionId: "tx-jula",
+      status: "bokford" as const,
+      verificationId: "ver-exp-jula",
+      createdAt: d(12),
     },
     {
       id: "exp-beijer-jul",
@@ -1033,6 +1299,22 @@ export function buildSeed(): DB {
         description: "Grand Hôtel Stockholm",
         category: "",
         confidence: "lag" as const,
+      },
+    },
+    {
+      id: "rec-jula",
+      expenseId: "exp-jula",
+      filename: "kvitto-jula.jpg",
+      source: "foto" as const,
+      uploadedAt: d(12, 15, 5),
+      extracted: {
+        supplier: "Jula",
+        date: d(12),
+        amount: 1240,
+        vatAmount: 248,
+        description: "Sågklingor och bits",
+        category: "verktyg",
+        confidence: "hog" as const,
       },
     },
     {
@@ -1388,6 +1670,7 @@ export function buildSeed(): DB {
   const paidInvoiceTx: [string, string, string][] = [
     ["inv-1033", "tx-in-1033", "Nord Studio AB"],
     ["inv-1034", "tx-in-1034", "Brf Eken"],
+    ["inv-1038", "tx-in-1038", "Birgitta Åkesson"],
     ["inv-1036", "tx-in-1036", "Johan Lindberg"],
     ["inv-1040", "tx-in-1040", "Brf Eken"],
     ["inv-1039", "tx-in-1039", "Nord Studio AB"],
@@ -1419,6 +1702,7 @@ export function buildSeed(): DB {
   addTx({ id: "tx-beijer", date: d(9), amount: -12400, counterpart: "Beijer Bygg", description: "Kortköp BEIJER BYGG 108", status: "bokford", matchedType: "utgift", matchedId: "exp-beijer", verificationId: "ver-exp-beijer" });
   addTx({ id: "tx-circlek", date: d(7), amount: -820, counterpart: "Circle K", description: "Kortköp CIRCLE K RINGVÄGEN", status: "bokford", matchedType: "utgift", matchedId: "exp-circlek", verificationId: "ver-exp-circlek" });
   addTx({ id: "tx-adobe", date: d(15), amount: -645, counterpart: "Adobe", description: "Autogiro ADOBE SYSTEMS", status: "bokford", matchedType: "utgift", matchedId: "exp-adobe", verificationId: "ver-exp-adobe" });
+  addTx({ id: "tx-jula", date: d(12), amount: -1240, counterpart: "Jula", description: "Kortköp JULA ÅRSTABERG", status: "bokford", matchedType: "utgift", matchedId: "exp-jula", verificationId: "ver-exp-jula" });
   addTx({ id: "tx-beijer-jul", date: d(45), amount: -22000, counterpart: "Beijer Bygg", description: "Kortköp BEIJER BYGG 108", status: "bokford", matchedType: "utgift", matchedId: "exp-beijer-jul", verificationId: "ver-exp-beijer-jul" });
   addTx({ id: "tx-bauhaus-jul", date: d(55), amount: -3150, counterpart: "Bauhaus", description: "Kortköp BAUHAUS SICKLA", status: "bokford", matchedType: "utgift", matchedId: "exp-bauhaus-jul", verificationId: "ver-exp-bauhaus-jul" });
   addTx({ id: "tx-beijer-maj", date: d(100), amount: -18400, counterpart: "Beijer Bygg", description: "Kortköp BEIJER BYGG 108", status: "bokford", matchedType: "utgift", matchedId: "exp-beijer-maj", verificationId: "ver-exp-beijer-maj" });
@@ -1475,6 +1759,7 @@ export function buildSeed(): DB {
   }
 
   for (const inv of invoices) {
+    if (inv.status === "utkast") continue; // utkast bokförs först vid utfärdandet
     const customer = customers.find((c) => c.id === inv.customerId)!;
     addVer({
       id: `ver-inv-${inv.number}`,
@@ -1545,6 +1830,53 @@ export function buildSeed(): DB {
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((v, i) => ({ ...v, number: i + 1 }));
 
+  /* ------------------------------ Påminnelser ---------------------------- */
+
+  const reminders = [
+    {
+      id: "rem-ring-karin",
+      userId: null,
+      title: "Ring Karin Ek om bokhyllan",
+      description: "Hon ville prata mått och träslag innan offerten skickas.",
+      dueAt: d(-1, 9, 0),
+      timezone: "Europe/Stockholm",
+      hasExplicitTime: true,
+      status: "PENDING" as const,
+      source: "user" as const,
+      relatedEntityType: "customer" as const,
+      relatedEntityId: "cust-karin",
+      createdAt: d(0, 8, 50),
+    },
+    {
+      id: "rem-virke-johan",
+      userId: null,
+      title: "Beställ virke till Johans altan",
+      description: "Leverans till Tantogatan 27 senast dagen före start.",
+      dueAt: d(-3, 12, 0),
+      timezone: "Europe/Stockholm",
+      hasExplicitTime: false,
+      status: "PENDING" as const,
+      source: "user" as const,
+      relatedEntityType: "job" as const,
+      relatedEntityId: "job-altan",
+      createdAt: d(1, 16, 0),
+    },
+    {
+      id: "rem-faktura-bengt",
+      userId: null,
+      title: "Fakturera altanbygget hos Bengt",
+      description: "Uppdraget är klart och genomgånget – tid och material ligger inne.",
+      dueAt: d(-2, 12, 0),
+      timezone: "Europe/Stockholm",
+      hasExplicitTime: false,
+      status: "PENDING" as const,
+      source: "assistant" as const,
+      relatedEntityType: "job" as const,
+      relatedEntityId: "job-altan-bengt",
+      createdAt: d(2, 16, 35),
+    },
+  ];
+
   /* ------------------------------- Aktivitet ----------------------------- */
 
   const activity: ActivityEvent[] = [
@@ -1566,6 +1898,9 @@ export function buildSeed(): DB {
     { id: "act-13", at: d(20, 11, 18), text: "Johan Lindberg godkände offert #111 med BankID. Uppdraget Altanrenovering skapades.", customerId: "cust-johan", entity: { type: "offert", id: "quote-altan" } },
     { id: "act-14", at: d(24, 14, 32), text: "Anna Andersson godkände offert #110 med BankID. Uppdraget Köksrenovering skapades.", customerId: "cust-anna", entity: { type: "offert", id: "quote-kok" } },
     { id: "act-15", at: d(26, 16, 20), text: "Uppdraget Fönsterbyte gårdshus markerades som klart.", customerId: "cust-brf", entity: { type: "jobb", id: "job-fonster" } },
+    { id: "act-19", at: d(2, 16, 30), text: "Uppdraget Altanbygge hos Bengt Eriksson markerades som klart – 18 h och material redo att fakturera.", customerId: "cust-bengt", entity: { type: "jobb", id: "job-altan-bengt" } },
+    { id: "act-20", at: d(44, 12, 40), text: "Bengt Eriksson godkände offert #108 med BankID. Uppdraget Altanbygge skapades.", customerId: "cust-bengt", entity: { type: "offert", id: "quote-altan-bengt" } },
+    { id: "act-21", at: d(52, 10, 5), text: "Betalning på 17 862 kr från Birgitta Åkesson matchades mot ROT-faktura #1038 och bokfördes.", customerId: "cust-birgitta", entity: { type: "faktura", id: "inv-1038" } },
   ];
 
   /* -------------------------------- Hemsida ------------------------------ */
@@ -1579,6 +1914,17 @@ export function buildSeed(): DB {
     status: "publicerad" as const,
     theme: "tra" as const,
     design: { themeId: "klassisk" as const, accent: "tegel" as const },
+    footer: {
+      showPhone: true,
+      showEmail: true,
+      showAddress: true,
+      showServices: true,
+      aboutText: "Platsbyggt snickeri på Södermalm sedan 2014. F-skatt, ansvarsförsäkring och ROT-avdrag direkt på fakturan.",
+      social: {
+        instagram: "https://instagram.com/sodermalmssnickeri",
+        facebook: "https://facebook.com/sodermalmssnickeri",
+      },
+    },
     publishedAt: d(90),
     createdAt: d(95),
     submissions: 1,
@@ -1667,14 +2013,14 @@ export function buildSeed(): DB {
       payerIban: PAYER_IBAN,
       payerBic: PAYER_BIC,
     },
-    sequences: { quote: 115, invoice: 1048, verification: verifications.length + 1 },
+    sequences: { quote: 116, invoice: 1048, verification: verifications.length + 1 },
     customers,
     quotes,
     quoteVersions,
     signatures,
     bankidOrders: [],
     jobs,
-    jobWorkEntries: [],
+    jobWorkEntries,
     invoices,
     payments,
     bankAccounts: [
@@ -1709,7 +2055,7 @@ export function buildSeed(): DB {
     assistantMessages,
     pendingActions: [],
     assistantAudit: [],
-    reminders: [],
+    reminders,
     attentionStates: [],
     collaborationInvitations: [],
     clientInformationRequests: [],
