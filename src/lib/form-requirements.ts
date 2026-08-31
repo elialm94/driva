@@ -1,3 +1,4 @@
+import { canonicalizeUnitPrice, isUnsetUnitPrice } from "./line-defaults";
 import type { DocLine } from "./types";
 
 /**
@@ -34,34 +35,66 @@ export function lineFieldId(lineId: string, part: "beskrivning" | "pris"): strin
 
 type LineLike = Pick<DocLine, "description" | "unitPrice">;
 
-/** Orörd rad (ingen beskrivning, inget à-pris) – sparas inte och felmarkeras inte. */
-export function lineIsBlank(line: LineLike): boolean {
-  return !line.description.trim() && line.unitPrice === 0;
+export type PriceLineIssue = {
+  field: "description" | "price";
+  message: string;
+};
+
+/**
+ * Gemensam validering för offert-, faktura- och uppdragsrader.
+ * 0 kr är ett giltigt à-pris. Tom beskrivning är det enda hårda kravet.
+ */
+export function validatePriceLine(line: {
+  description?: string | null;
+  unitPrice?: number | string | null;
+}): PriceLineIssue[] {
+  const issues: PriceLineIssue[] = [];
+  if (!line.description?.trim()) {
+    issues.push({ field: "description", message: "Beskrivning saknas på raden." });
+  }
+  if (!isUnsetUnitPrice(line.unitPrice) && !Number.isFinite(Number(line.unitPrice))) {
+    issues.push({ field: "price", message: "À-priset är ogiltigt." });
+  }
+  return issues;
 }
 
-/** Vad som saknas på en påbörjad rad. Blanka rader räknas inte. */
+/**
+ * Orörd startrad (ingen beskrivning, à-pris 0/osatt) – sparas inte.
+ * Beskrivning + 0 kr är en riktig kostnadsfri rad och rensas inte.
+ */
+export function lineIsBlank(line: LineLike): boolean {
+  return !line.description.trim() && (isUnsetUnitPrice(line.unitPrice) || line.unitPrice === 0);
+}
+
+/** Vad som saknas på en påbörjad rad. Blanka rader räknas inte i UI:t. */
 export function lineMissingParts(line: LineLike): { description: boolean; price: boolean } {
   if (lineIsBlank(line)) return { description: false, price: false };
-  return { description: !line.description.trim(), price: line.unitPrice === 0 };
+  const issues = validatePriceLine(line);
+  return {
+    description: issues.some((i) => i.field === "description"),
+    price: issues.some((i) => i.field === "price"),
+  };
 }
 
-/** Raderna som faktiskt sparas: orörda rader rensas bort. */
+/** Raderna som faktiskt sparas: rader utan beskrivning rensas bort. Tomt à-pris → 0. */
 export function prunedLines<T extends LineLike>(lines: T[]): T[] {
-  return lines.filter((line) => !lineIsBlank(line));
+  return lines
+    .filter((line) => !lineIsBlank(line))
+    .map((line) => ({ ...line, unitPrice: canonicalizeUnitPrice(line.unitPrice) }));
 }
 
 export function hasCompleteLine(lines: LineLike[]): boolean {
-  return lines.some((line) => line.description.trim() && line.unitPrice !== 0);
+  return lines.some((line) => line.description.trim());
 }
 
-/** Per-rad-krav med mänskliga etiketter: "Beskrivning på första raden", "Pris på raden ”Montör”". */
+/** Per-rad-krav med mänskliga etiketter: "Beskrivning på första raden". 0 kr är giltigt. */
 export function lineRequirements(lines: DocLine[]): MissingRequirement[] {
   const started = lines.filter((line) => !lineIsBlank(line));
   if (started.length === 0) {
     return [
       {
         id: "rader",
-        label: "Minst en prisrad med beskrivning och pris",
+        label: "Minst en prisrad med beskrivning",
         fieldId: lines[0] ? lineFieldId(lines[0].id, "beskrivning") : "prisrader",
       },
     ];

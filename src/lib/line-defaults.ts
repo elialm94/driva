@@ -12,47 +12,79 @@ export interface LinePriceDefaults {
   defaultVatRate?: VatRate;
 }
 
-/** Tolkat standardtimpris. Tomt / 0 / ogiltigt = inte satt. */
+/**
+ * Tolkat standardtimpris från inställningen. Tomt / null / undefined / 0 =
+ * inte satt. 0 på inställningen är alltså "ingen default" – inte "0 kr/tim".
+ */
 export function resolvedHourlyRate(raw: unknown): number | undefined {
   const parsed = parseOptionalHourlyRate(raw);
   return parsed.ok ? parsed.value : undefined;
 }
 
-/** À-pris som användaren inte har fyllt i (noll eller saknas). */
+/**
+ * À-pris som användaren inte har angett. 0 är ett giltigt, explicit pris
+ * och räknas INTE som tomt. Använd null/undefined/"" för "inte satt".
+ */
+export function isUnsetUnitPrice(price: number | string | null | undefined): boolean {
+  return price == null || price === "" || (typeof price === "number" && !Number.isFinite(price));
+}
+
+/** @deprecated Använd isUnsetUnitPrice – 0 är inte tomt. */
 export function isEmptyUnitPrice(price: number | undefined | null): boolean {
-  return price == null || !Number.isFinite(price) || price === 0;
+  return isUnsetUnitPrice(price);
+}
+
+/** Tomt/ogiltigt → 0. 0 förblir 0. Negativa rabattrader behålls. */
+export function canonicalizeUnitPrice(raw: number | string | null | undefined): number {
+  if (isUnsetUnitPrice(raw)) return 0;
+  const n = typeof raw === "number" ? raw : Number(String(raw).trim().replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
 }
 
 /**
- * Fyller tomma fält på en Arbete-rad. Skriver aldrig över ett ifyllt à-pris.
- * Material / Restid / Övrigt lämnas orörda. Används när en Arbete-rad skapas
- * eller när typen byts till Arbete med tomt pris – inte när ett dokument skapas.
+ * Välj ifyllt à-pris eller default. Nullish (??), aldrig || – 0 är ifyllt.
+ */
+export function pickUnitPrice(
+  unitPrice: number | null | undefined,
+  defaultUnitPrice: number | undefined
+): number {
+  return canonicalizeUnitPrice(unitPrice ?? defaultUnitPrice);
+}
+
+/**
+ * Fyller tomma fält på en Arbete-rad. Skriver aldrig över ett explicit à-pris,
+ * inte ens 0 kr. Material / Restid / Övrigt lämnas orörda. Används när en
+ * Arbete-rad skapas eller när typen byts till Arbete med osatt pris – inte
+ * när ett dokument skapas.
  */
 export function applyArbeteLineDefaults<
   T extends {
     kind?: string;
     type?: string;
     unit?: string;
-    unitPrice?: number;
+    unitPrice?: number | null;
     vatRate?: VatRate;
   },
 >(line: T, defaults: LinePriceDefaults): T {
-  if (lineTypeOf(line) !== "LABOR") return line;
+  if (lineTypeOf(line) !== "LABOR") {
+    return { ...line, unitPrice: canonicalizeUnitPrice(line.unitPrice) };
+  }
   const hourly = resolvedHourlyRate(defaults.defaultHourlyRate);
   const next = { ...line };
   if (!next.unit?.trim() || next.unit === "st") {
     next.unit = defaultUnitForLineType("LABOR");
   }
-  if (isEmptyUnitPrice(next.unitPrice) && hourly != null) {
+  if (isUnsetUnitPrice(next.unitPrice) && hourly != null) {
     next.unitPrice = hourly;
   }
+  next.unitPrice = canonicalizeUnitPrice(next.unitPrice);
   if (next.vatRate == null && defaults.defaultVatRate != null) {
     next.vatRate = defaults.defaultVatRate;
   }
   return next;
 }
 
-/** Ny dokumentrad. `applyHourlyRate` styr om standardtimpriset får fylla tomt à-pris. */
+/** Ny dokumentrad. `applyHourlyRate` styr om standardtimpriset får fylla osatt à-pris. */
 export function createDocLine(
   kind: LineKind,
   defaults: LinePriceDefaults = {},
@@ -66,9 +98,11 @@ export function createDocLine(
     description: "",
     qty: 1,
     unit: defaultUnitForLineType(type),
-    unitPrice: 0,
+    unitPrice: undefined as unknown as number,
     vatRate: defaults.defaultVatRate ?? 25,
   });
-  if (options?.applyHourlyRate === false) return line;
+  if (options?.applyHourlyRate === false) {
+    return { ...line, unitPrice: 0 };
+  }
   return applyArbeteLineDefaults(line, defaults);
 }

@@ -15,12 +15,11 @@ import {
   lineTypeLabel,
   lineTypeOf,
   shouldSuggestTravelType,
-  syncDocLineClassification,
   type EconomicLineType,
 } from "@/lib/economic-line-type";
+import { applyArbeteLineDefaults, createDocLine } from "@/lib/line-defaults";
 import { lineFieldId, lineIsBlank, lineMissingParts } from "@/lib/form-requirements";
 import { FieldError, invalidFieldCls } from "./form-validation";
-import { applyArbeteLineDefaults } from "@/lib/line-defaults";
 import { LineDescriptionInput } from "./line-description-input";
 
 const inputCls =
@@ -136,19 +135,17 @@ function DecimalInput({
  * både på servern och i klienten, och ett slumpat id ger olika DOM-id:n
  * (rad-…-beskrivning) → hydration mismatch som React inte lappar ihop.
  */
-export function newLine(kind: LineKind = "arbete", vatRate: VatRate = 25, stableId?: string, hourlyRate?: number): DocLine {
-  const type = lineTypeOf({ kind });
-  const line = syncDocLineClassification({
-    id: stableId ?? crypto.randomUUID(),
+export function newLine(
+  kind: LineKind = "arbete",
+  vatRate: VatRate = 25,
+  stableId?: string,
+  defaultHourlyRate?: number
+): DocLine {
+  return createDocLine(
     kind,
-    type,
-    description: "",
-    qty: 1,
-    unit: defaultUnitForLineType(type),
-    unitPrice: 0,
-    vatRate,
-  });
-  return applyArbeteLineDefaults(line, { defaultHourlyRate: hourlyRate, defaultVatRate: vatRate });
+    { defaultVatRate: vatRate, defaultHourlyRate },
+    { id: stableId, applyHourlyRate: !stableId }
+  );
 }
 
 export function LinesEditor({
@@ -185,7 +182,7 @@ export function LinesEditor({
       {lines.map((line, index) => {
         const parts = showErrors ? lineMissingParts(line) : { description: false, price: false };
         const markDescription = parts.description || (allBlank && index === 0);
-        const markPrice = parts.price || (allBlank && index === 0);
+        const markPrice = parts.price;
         const lineTotal =
           (Number.isFinite(line.qty) ? line.qty : 0) * (Number.isFinite(line.unitPrice) ? line.unitPrice : 0);
         return (
@@ -318,7 +315,7 @@ export function LinesEditor({
             </div>
             {parts.description || parts.price ? (
               <FieldError className="col-span-2 -mt-0.5 @min-[40rem]:col-span-full @min-[40rem]:mt-0">
-                {parts.description ? "Beskrivning saknas på raden." : "Pris saknas på raden."}
+                {parts.description ? "Beskrivning saknas på raden." : "À-priset är ogiltigt."}
               </FieldError>
             ) : null}
             {rotActive && shouldSuggestTravelType(line) ? (
@@ -342,7 +339,7 @@ export function LinesEditor({
           </div>
         );
       })}
-      {allBlank ? <FieldError>Minst en rad med beskrivning och pris behövs.</FieldError> : null}
+      {allBlank ? <FieldError>Beskrivning saknas på raden.</FieldError> : null}
       <div className="flex flex-wrap gap-2 pt-1">
         {(["LABOR", "MATERIAL", "TRAVEL", "OTHER"] as EconomicLineType[]).map((type) => (
           <button
@@ -350,7 +347,9 @@ export function LinesEditor({
             type="button"
             className={buttonClasses("secondary", "sm", "max-sm:h-11 flex-1 sm:flex-none")}
             title={lineTypeHint(type)}
-            onClick={() => onChange([...lines, newLine(lineKindFromType(type), defaultVatRate, undefined, defaultHourlyRate)])}
+            onClick={() =>
+              onChange([...lines, newLine(lineKindFromType(type), defaultVatRate, undefined, defaultHourlyRate)])
+            }
           >
             <Plus className="size-3.5" /> {lineTypeLabel(type)}
           </button>
