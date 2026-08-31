@@ -314,6 +314,11 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
     );
   await applySpec(workLocationsSpec, diffCollection(flattenLocations(baseline), flattenLocations(state)));
 
+  // Uppdrag skrivs före offerterna: quotes.job_id valideras av en trigger
+  // (migration 22) som kräver att uppdraget finns när offertraden skrivs.
+  // jobs.quote_id är ren text utan FK, så den här ordningen är alltid säker.
+  await applySpec(jobsSpec, diffCollection(baseline.jobs, state.jobs));
+
   // Offerter: diffa på domänobjektet, komplettera med denormaliserat belopp.
   {
     const change = diffCollection(baseline.quotes, state.quotes);
@@ -344,7 +349,6 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
   await applySpec(quoteVersionsSpec, diffCollection(baseline.quoteVersions, state.quoteVersions));
   await applySpec(bankidOrdersSpec, diffCollection(baseline.bankidOrders, state.bankidOrders, "orderRef"));
   await applySpec(signaturesSpec, diffCollection(baseline.signatures, state.signatures));
-  await applySpec(jobsSpec, diffCollection(baseline.jobs, state.jobs));
   await applySpec(bankAccountsSpec, diffCollection(baseline.bankAccounts, state.bankAccounts));
   await applySpec(bankTransactionsSpec, diffCollection(baseline.bankTransactions, state.bankTransactions));
   await applySpec(expensesSpec, diffCollection(baseline.expenses, state.expenses));
@@ -460,11 +464,17 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
       }
     }
     const allocate = base == null || base.number == null;
+    // Den juridiska kopian är obligatorisk (snapshot-kolumnen är not null och
+    // RPC:n speglar in nummer/OCR i den). Ett tydligt fel här i stället för
+    // SQL-felet "cannot set path in scalar" när jsonb-null smiter igenom.
+    if (!inv.issuedSnapshot) {
+      throw new Error(`Faktura ${inv.id} saknar issuedSnapshot och kan inte utfärdas mot databasen.`);
+    }
     await tx.query(`select app.issue_invoice($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6)`, [
       businessId,
       JSON.stringify(invoiceRpcPayload(inv, businessId)),
       JSON.stringify(linesRpcPayload(inv.lines)),
-      JSON.stringify(inv.issuedSnapshot ?? null),
+      JSON.stringify(inv.issuedSnapshot),
       verification ? JSON.stringify(verificationRpcPayload(verification)) : null,
       allocate,
     ]);

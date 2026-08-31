@@ -16,6 +16,7 @@
 import { randomBytes } from "crypto";
 import type { DB } from "../types";
 import { buildSeed } from "../seed";
+import { normalizeState } from "../store";
 import { quoteVersionHash } from "../hash";
 import { createDemoSessionBusiness, loadStateSnapshot, sqlClient } from "./adapter-supabase";
 import { bindTransaction } from "./load";
@@ -92,6 +93,11 @@ function randomDemoToken(): string {
  */
 export function demoSeedFor(businessId: string, inboundMailSlug?: string): DB {
   const seed = buildSeed();
+  // Samma hydrering som JSON-lägets load: fryser issuedSnapshot på utfärdade
+  // fakturor (app.issue_invoice kräver den juridiska kopian – snapshot-kolumnen
+  // är not null), offertsnapshots, ROT-demopersonnummer m.m. Körs FÖRE
+  // remappningen så att hydreringarnas id-uppslag (t.ex. cust-anna) träffar.
+  normalizeState(seed);
   const compact = businessId.replace(/-/g, "");
   const suffix = compact.slice(0, 10) || "demo";
 

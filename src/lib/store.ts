@@ -190,7 +190,14 @@ function dropRetiredWebsiteSections(data: DB): boolean {
 
 type QuoteWithLegacyRequest = { requestId?: string };
 
-export function normalize(loaded: DB): DB {
+/**
+ * Migrera/hydrera ett inläst tillstånd PÅ PLATS utan att persistera.
+ * Returnerar true om något ändrades. Används dels av JSON-lägets load
+ * (normalize nedan persisterar då), dels av demoimporten i Supabase-läget
+ * som måste ge varje demosession exakt samma starttillstånd som JSON-läget
+ * (bl.a. kräver app.issue_invoice att utfärdade fakturor bär sin snapshot).
+ */
+export function normalizeState(loaded: DB): boolean {
   // Fält tillagda efter att filen skapades får sina standardvärden här.
   loaded.settings.lateInterestRate ??= 10;
   loaded.settings.quoteValidityDays ??= 30;
@@ -224,16 +231,32 @@ export function normalize(loaded: DB): DB {
   // över migreringen.
   const descriptionsMigrated = migrateQuoteDescriptions(loaded);
   const buyerSnapshotsHydrated = hydrateQuoteBuyerSnapshots(loaded);
-  const dirty =
-    migrateRequestsToJobs(loaded) ||
-    hydrateIssuedInvoices(loaded) ||
-    hydrateQuoteSellerSnapshots(loaded) ||
-    hydrateTaxReductionTerms(loaded) ||
-    hydrateTaxReductionDemo(loaded) ||
-    hydrateQuotedBaselines(loaded) ||
-    droppedRetired;
+  // Egna const per steg – en ||-kedja skulle kortsluta och hoppa över
+  // hydreringar så fort ett tidigare steg ändrade något.
+  const requestsMigrated = migrateRequestsToJobs(loaded);
+  const invoicesHydrated = hydrateIssuedInvoices(loaded);
+  const sellerSnapshotsHydrated = hydrateQuoteSellerSnapshots(loaded);
+  const termsHydrated = hydrateTaxReductionTerms(loaded);
+  const demoHydrated = hydrateTaxReductionDemo(loaded);
+  const baselinesHydrated = hydrateQuotedBaselines(loaded);
+  return (
+    requestsMigrated ||
+    invoicesHydrated ||
+    sellerSnapshotsHydrated ||
+    termsHydrated ||
+    demoHydrated ||
+    baselinesHydrated ||
+    droppedRetired ||
+    migrated ||
+    domainsChanged ||
+    descriptionsMigrated ||
+    buyerSnapshotsHydrated
+  );
+}
+
+export function normalize(loaded: DB): DB {
   // Persist snapshots so later settings changes cannot rewrite seed/historical docs.
-  if (dirty || migrated || domainsChanged || descriptionsMigrated || buyerSnapshotsHydrated) persist(loaded);
+  if (normalizeState(loaded)) persist(loaded);
   return loaded;
 }
 
