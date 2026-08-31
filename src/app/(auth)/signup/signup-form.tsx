@@ -12,6 +12,7 @@ export function SignupForm({ next }: { next: string }) {
   const [signupState, submitSignup, signupPending] = useActionState(signupAction, initialState);
   const { errors, formProps, fieldProps } = useNativeFieldErrors({
     email: "Ange en giltig e-postadress.",
+    phone: "Ange ett giltigt telefonnummer.",
     password: "Lösenordet behöver minst 8 tecken.",
   });
 
@@ -43,6 +44,24 @@ export function SignupForm({ next }: { next: string }) {
           {...fieldProps("email", "signup-email-fel")}
         />
         <FieldError id="signup-email-fel">{errors.email}</FieldError>
+      </div>
+      <div>
+        <label htmlFor="signup-phone" className="block text-sm font-medium text-stone-700">
+          Telefonnummer
+        </label>
+        <input
+          id="signup-phone"
+          name="phone"
+          type="tel"
+          inputMode="tel"
+          required
+          pattern="[0-9+\-\s().]{8,32}"
+          autoComplete="tel"
+          className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-500"
+          placeholder="070-123 45 67"
+          {...fieldProps("phone", "signup-phone-fel")}
+        />
+        <FieldError id="signup-phone-fel">{errors.phone}</FieldError>
       </div>
       <div>
         <label htmlFor="signup-password" className="block text-sm font-medium text-stone-700">

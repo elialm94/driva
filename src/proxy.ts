@@ -24,11 +24,14 @@ import {
 const PUBLIC_PREFIXES = [
   "/login",
   "/signup",
-  "/demo", // publik demo-entré: sessionen skapas av en server action på sidan
+  "/glomt-losenord",
+  "/auth/confirm", // mejllänkarnas landningspunkt: växlar kod → session
+  "/demo", // publik demo-entré: startar en isolerad demosession direkt
   "/offert",
   "/faktura",
   "/sajt",
   "/integritetspolicy",
+  "/villkor",
   "/inbjudan",
   "/api/health", // driftdiagnostik: måste nås utan inloggning när appen är trasig
   "/admin/inbjudan", // admin-invitationens acceptsida: mottagaren saknar ofta konto ännu

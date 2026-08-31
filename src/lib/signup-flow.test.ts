@@ -4,24 +4,27 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  VERIFY_EMAIL_PATH,
   afterSignupDestination,
   decideSignupResult,
   isSilentExistingUser,
-  loginAfterSignupUrl,
   loginHrefWithNext,
   mapLoginAuthError,
   mapSignupAuthError,
   parseLoginAuthSearch,
+  parseVerifyEmailSearch,
   safeAuthNext,
   sanitizeAuthEmail,
-  shouldShowResendVerification,
+  sanitizeSignupPhone,
   signupHrefWithNext,
-  signupSuccessCopy,
   validateLoginFields,
+  validateNewPassword,
   validateSignupFields,
+  verifyEmailUrl,
 } from "./auth/signup-flow";
 
 const EMAIL = "erik@foretaget.se";
+const PHONE = "070-123 45 67";
 const PASSWORD = "hemligt-lösen-123";
 
 describe("sanitizeAuthEmail", () => {
@@ -32,6 +35,20 @@ describe("sanitizeAuthEmail", () => {
     assert.equal(sanitizeAuthEmail("erik@foretaget.se\ncc:andra@x.se"), null);
     assert.equal(sanitizeAuthEmail(""), null);
     assert.equal(sanitizeAuthEmail(undefined), null);
+  });
+});
+
+describe("sanitizeSignupPhone", () => {
+  it("accepterar svenska nummer i vanliga format, avvisar bokstäver och för korta", () => {
+    assert.equal(sanitizeSignupPhone("070-123 45 67"), "070-123 45 67");
+    assert.equal(sanitizeSignupPhone("  +46 70 123 45 67 "), "+46 70 123 45 67");
+    assert.equal(sanitizeSignupPhone("08-123 456"), "08-123 456");
+    assert.equal(sanitizeSignupPhone("ring mig"), null);
+    assert.equal(sanitizeSignupPhone("070abc123456"), null);
+    assert.equal(sanitizeSignupPhone("12345"), null); // för få siffror
+    assert.equal(sanitizeSignupPhone("1".repeat(16)), null); // för många siffror
+    assert.equal(sanitizeSignupPhone(""), null);
+    assert.equal(sanitizeSignupPhone(undefined), null);
   });
 });
 
@@ -49,35 +66,34 @@ describe("safeAuthNext", () => {
 });
 
 describe("lyckad signup som kräver e-postbekräftelse", () => {
-  it("lämnar /signup och landar på /login med success + e-post, aldrig lösenord", () => {
+  it("lämnar /signup och landar på verifieringsvyn med e-post, aldrig lösenord", () => {
     const result = decideSignupResult({
       hasSession: false,
       email: "  Erik@Foretaget.se ",
       next: undefined,
     });
     assert.equal(result.kind, "leave");
-    assert.equal(result.href, `/login?signup=success&email=${encodeURIComponent(EMAIL)}`);
+    assert.equal(result.href, `${VERIFY_EMAIL_PATH}?email=${encodeURIComponent(EMAIL)}`);
     assert.doesNotMatch(result.href, /password|lösen|hemligt/i);
     assert.equal(result.href.includes(PASSWORD), false);
 
-    const parsed = parseLoginAuthSearch({
-      signup: "success",
-      email: EMAIL,
-    });
-    assert.equal(parsed.signupSuccess, true);
+    const parsed = parseVerifyEmailSearch({ email: EMAIL });
     assert.equal(parsed.email, EMAIL);
-
-    const copy = signupSuccessCopy(parsed.email);
-    assert.equal(copy.title, "Kontot är skapat");
-    assert.match(copy.body, /Bekräfta din e-postadress/);
-    assert.equal(copy.emailLine, `Vi skickade länken till ${EMAIL}.`);
+    assert.equal(parsed.next, "/");
   });
 
-  it("bevarar next (t.ex. inbjudan) på login-URL:en", () => {
-    const href = loginAfterSignupUrl(EMAIL, "/inbjudan/token-1");
-    assert.equal(href.includes("signup=success"), true);
+  it("bevarar next (t.ex. inbjudan) genom verifieringsvyn", () => {
+    const href = verifyEmailUrl(EMAIL, "/inbjudan/token-1");
+    assert.equal(href.startsWith(`${VERIFY_EMAIL_PATH}?`), true);
     assert.equal(href.includes(encodeURIComponent("/inbjudan/token-1")), true);
     assert.equal(href.includes(PASSWORD), false);
+    const parsed = parseVerifyEmailSearch({ email: EMAIL, next: "/inbjudan/token-1" });
+    assert.equal(parsed.next, "/inbjudan/token-1");
+  });
+
+  it("verifieringsvyn utan e-post signalerar tillbaka till /signup (email null)", () => {
+    assert.equal(parseVerifyEmailSearch({}).email, null);
+    assert.equal(parseVerifyEmailSearch({ email: "javascript:alert(1)" }).email, null);
   });
 });
 
@@ -88,12 +104,15 @@ describe("auth-konfiguration vs runtime", () => {
     assert.match(emailBlock, /enable_confirmations = false/);
     // Prod kan ha Confirm email på. Session efter signUp är sanningen:
     assert.equal(afterSignupDestination({ hasSession: true, email: EMAIL }).href, "/onboarding");
-    assert.match(afterSignupDestination({ hasSession: false, email: EMAIL }).href, /^\/login\?signup=success/);
+    assert.equal(
+      afterSignupDestination({ hasSession: false, email: EMAIL }).href.startsWith(VERIFY_EMAIL_PATH),
+      true
+    );
   });
 });
 
-describe("lyckad signup när e-postbekräftelse inte krävs", () => {
-  it("skickar till onboarding när session finns – ingen bekräftelsecopy", () => {
+describe("efter e-postverifiering fortsätter användaren till onboarding", () => {
+  it("session direkt (bekräftelse av) → onboarding, aldrig tillbaka till signup", () => {
     const dest = afterSignupDestination({ hasSession: true, email: EMAIL });
     assert.equal(dest.href, "/onboarding");
     const result = decideSignupResult({ hasSession: true, email: EMAIL });
@@ -106,14 +125,22 @@ describe("lyckad signup när e-postbekräftelse inte krävs", () => {
       "/inbjudan/t"
     );
   });
+
+  it("next kan aldrig peka tillbaka på /signup eller /login (ingen loop)", () => {
+    assert.equal(afterSignupDestination({ hasSession: true, email: EMAIL, next: "/signup" }).href, "/onboarding");
+    assert.equal(afterSignupDestination({ hasSession: true, email: EMAIL, next: "/login" }).href, "/onboarding");
+  });
 });
 
 describe("signup-fel stannar på /signup", () => {
   it("valideringsfel, redan använd e-post, svagt lösenord och nätverksfel ger stay", () => {
-    assert.deepEqual(decideSignupResult({ fieldError: "Fyll i e-post och lösenord.", hasSession: false, email: "" }), {
-      kind: "stay",
-      error: "Fyll i e-post och lösenord.",
-    });
+    assert.deepEqual(
+      decideSignupResult({ fieldError: "Fyll i e-post, telefonnummer och lösenord.", hasSession: false, email: "" }),
+      {
+        kind: "stay",
+        error: "Fyll i e-post, telefonnummer och lösenord.",
+      }
+    );
     assert.deepEqual(
       decideSignupResult({
         authError: { code: "user_already_exists" },
@@ -155,13 +182,21 @@ describe("signup-fel stannar på /signup", () => {
 });
 
 describe("fältvalidering", () => {
-  it("signup kräver e-post och minst 8 tecken, login kräver båda fälten", () => {
-    assert.equal(validateSignupFields("", ""), "Fyll i e-post och lösenord.");
-    assert.equal(validateSignupFields("inte-epost", "abcdefgh"), "Ange en giltig e-postadress.");
-    assert.equal(validateSignupFields(EMAIL, "kort"), "Lösenordet behöver minst 8 tecken.");
-    assert.equal(validateSignupFields(EMAIL, PASSWORD), null);
+  it("signup kräver e-post, telefon och minst 8 tecken – login kräver båda fälten", () => {
+    assert.equal(validateSignupFields("", "", ""), "Fyll i e-post, telefonnummer och lösenord.");
+    assert.equal(validateSignupFields(EMAIL, "", PASSWORD), "Fyll i e-post, telefonnummer och lösenord.");
+    assert.equal(validateSignupFields("inte-epost", PHONE, "abcdefgh"), "Ange en giltig e-postadress.");
+    assert.equal(validateSignupFields(EMAIL, "bokstäver", PASSWORD), "Ange ett giltigt telefonnummer.");
+    assert.equal(validateSignupFields(EMAIL, PHONE, "kort"), "Lösenordet behöver minst 8 tecken.");
+    assert.equal(validateSignupFields(EMAIL, PHONE, PASSWORD), null);
     assert.equal(validateLoginFields("", "x"), "Fyll i e-post och lösenord.");
     assert.equal(validateLoginFields(EMAIL, PASSWORD), null);
+  });
+
+  it("nytt lösenord (glömt lösenord) har samma längdkrav", () => {
+    assert.equal(validateNewPassword(""), "Ange ett nytt lösenord.");
+    assert.equal(validateNewPassword("kort"), "Lösenordet behöver minst 8 tecken.");
+    assert.equal(validateNewPassword(PASSWORD), null);
   });
 });
 
@@ -175,7 +210,6 @@ describe("inloggning: verifierad / overifierad", () => {
     const mapped = mapLoginAuthError("email_not_confirmed");
     assert.equal(mapped.error, "Bekräfta din e-postadress innan du loggar in.");
     assert.equal(mapped.needsVerification, true);
-    assert.equal(shouldShowResendVerification({ signupSuccess: false, needsVerification: true }), true);
   });
 
   it("fel lösenord är inte ett verifieringsfel", () => {
@@ -185,27 +219,17 @@ describe("inloggning: verifierad / overifierad", () => {
   });
 });
 
-describe("resend-yta visas bara när den är relevant", () => {
-  it("normal login är ostörd; signup-success och unverified visar resend", () => {
-    assert.equal(shouldShowResendVerification({ signupSuccess: false, needsVerification: false }), false);
-    assert.equal(shouldShowResendVerification({ signupSuccess: true, needsVerification: false }), true);
-    assert.equal(shouldShowResendVerification({ signupSuccess: false, needsVerification: true }), true);
-  });
-});
-
 describe("login-query och tillbaka-navigering", () => {
-  it("success-banner styrs av query, inte av kvarvarande signup-state", () => {
-    assert.deepEqual(parseLoginAuthSearch({}), { signupSuccess: false, email: null, next: "/" });
-    assert.deepEqual(parseLoginAuthSearch({ signup: "nope", email: EMAIL }), {
-      signupSuccess: false,
-      email: EMAIL,
-      next: "/",
-    });
+  it("query parsas defensivt: e-post saneras, ogiltig länk-flagga bara på exakt värde", () => {
+    assert.deepEqual(parseLoginAuthSearch({}), { email: null, next: "/", invalidLink: false });
     assert.equal(parseLoginAuthSearch({ email: "javascript:alert(1)" }).email, null);
+    assert.equal(parseLoginAuthSearch({ email: EMAIL }).email, EMAIL);
+    assert.equal(parseLoginAuthSearch({ lank: "ogiltig" }).invalidLink, true);
+    assert.equal(parseLoginAuthSearch({ lank: "nåt-annat" }).invalidLink, false);
   });
 
   it("lösenord kan inte smyga med i query-byggaren", () => {
-    const href = loginAfterSignupUrl(`${EMAIL}&password=${PASSWORD}`, `/?password=${PASSWORD}`);
+    const href = verifyEmailUrl(`${EMAIL}&password=${PASSWORD}`, `/?password=${PASSWORD}`);
     assert.equal(href.includes(PASSWORD), false);
     assert.doesNotMatch(href, /[?&]password=/);
   });
