@@ -116,6 +116,7 @@ export function LineDescriptionInput({
   className,
   kind,
   autoFocus,
+  onEnterNavigate,
 }: {
   id?: string;
   value: string;
@@ -126,6 +127,8 @@ export function LineDescriptionInput({
   className?: string;
   kind?: LineKind;
   autoFocus?: boolean;
+  /** Enter när autocomplete inte är öppen – flytta till nästa fält. */
+  onEnterNavigate?: () => void;
 }) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -175,6 +178,21 @@ export function LineDescriptionInput({
       }
       return;
     }
+    if (e.key === "Enter") {
+      if (e.nativeEvent.isComposing) return;
+      if (canOpen) {
+        const pick = suggestions[highlight] ?? suggestions[0];
+        if (pick) {
+          e.preventDefault();
+          e.stopPropagation();
+          apply(pick.text);
+          return;
+        }
+      }
+      e.preventDefault();
+      onEnterNavigate?.();
+      return;
+    }
     if (!suggestions.length || value.trim().length < LINE_DESCRIPTION_MIN_QUERY) return;
 
     if (e.key === "ArrowDown") {
@@ -189,14 +207,9 @@ export function LineDescriptionInput({
       setHighlight((i) => (canOpen ? (i - 1 + suggestions.length) % suggestions.length : suggestions.length - 1));
       return;
     }
-    if ((e.key === "Enter" || e.key === "Tab") && canOpen) {
+    if (e.key === "Tab" && canOpen) {
       const pick = suggestions[highlight] ?? suggestions[0];
-      if (!pick) return;
-      if (e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-      apply(pick.text);
+      if (pick) apply(pick.text);
     }
   }
 

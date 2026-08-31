@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type SelectHTMLAttributes } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { buttonClasses, cx } from "./ui";
 import { kr } from "@/lib/format";
@@ -18,7 +18,21 @@ import {
   type EconomicLineType,
 } from "@/lib/economic-line-type";
 import { applyArbeteLineDefaults, createDocLine } from "@/lib/line-defaults";
-import { lineFieldId, lineIsBlank, lineMissingParts } from "@/lib/form-requirements";
+import { lineFieldId, lineIsBlank, lineMissingParts, type LineEditorField } from "@/lib/form-requirements";
+import {
+  LINE_DELETED_TOAST,
+  applyLineRedo,
+  applyLineUndo,
+  createFollowUpLine,
+  insertLineAfter,
+  lineUndoShortcut,
+  nextLineField,
+  pushLimited,
+  removeLineAt,
+  shouldHandleRowUndo,
+  shouldRefocusRestoredLine,
+  type LineDeleteEntry,
+} from "@/lib/line-editor-nav";
 import { FieldError, invalidFieldCls } from "./form-validation";
 import { LineDescriptionInput } from "./line-description-input";
 
@@ -56,6 +70,22 @@ function collapseLeadingZeros(raw: string): string {
   return raw.replace(/^(-?)0+(\d)/, "$1$2");
 }
 
+function lineIdFromElement(el: Element | null): string | null {
+  const node = el?.closest("[data-line-id]") ?? el;
+  const fromAttr = node instanceof HTMLElement ? node.dataset.lineId : undefined;
+  if (fromAttr) return fromAttr;
+  const id = el instanceof HTMLElement ? el.id : "";
+  const match = id.match(/^rad-(.+)-(typ|beskrivning|antal|enhet|pris|moms)$/);
+  return match?.[1] ?? null;
+}
+
+function focusLineField(lineId: string, field: LineEditorField) {
+  const el = document.getElementById(lineFieldId(lineId, field));
+  if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement)) return;
+  el.focus({ preventScroll: true });
+  if (el instanceof HTMLInputElement) el.select();
+}
+
 /**
  * Local string draft is the display source of truth while focused.
  * Parent numeric 0 must not rewrite the input mid-edit (that produced "02").
@@ -68,6 +98,7 @@ function DecimalInput({
   "aria-label": ariaLabel,
   id,
   invalid,
+  onEnterNavigate,
 }: {
   value: number;
   onValueChange: (n: number) => void;
@@ -76,6 +107,7 @@ function DecimalInput({
   "aria-label"?: string;
   id?: string;
   invalid?: boolean;
+  onEnterNavigate?: () => void;
 }) {
   const [focused, setFocused] = useState(false);
   const [text, setText] = useState(() => formatDecimal(value));
@@ -120,11 +152,55 @@ function DecimalInput({
         e.currentTarget.select();
       }}
       onChange={(e) => commitText(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+        e.preventDefault();
+        onEnterNavigate?.();
+      }}
       onBlur={() => {
         const next = clamp(parseDecimal(text));
         if (next !== value) onValueChange(next);
         setText(formatDecimal(next));
         setFocused(false);
+      }}
+    />
+  );
+}
+
+/** Native select: öppen dropdown behåller Enter; stängd dropdown går vidare. */
+function LineSelect({
+  onEnter,
+  onChange,
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement> & { onEnter: () => void }) {
+  const open = useRef(false);
+  return (
+    <select
+      {...props}
+      onMouseDown={(e) => {
+        open.current = true;
+        props.onMouseDown?.(e);
+      }}
+      onBlur={(e) => {
+        open.current = false;
+        props.onBlur?.(e);
+      }}
+      onChange={(e) => {
+        open.current = false;
+        onChange?.(e);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === " " || e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "F4") {
+          open.current = true;
+        }
+        if (e.key === "Escape") open.current = false;
+        if (e.key !== "Enter") return;
+        if (open.current) {
+          open.current = false;
+          return;
+        }
+        e.preventDefault();
+        onEnter();
       }}
     />
   );
@@ -164,12 +240,148 @@ export function LinesEditor({
   showErrors?: boolean;
   rotActive?: boolean;
 }) {
+  const linesRef = useRef(lines);
+  const onChangeRef = useRef(onChange);
+  const undoRef = useRef<LineDeleteEntry[]>([]);
+  const redoRef = useRef<LineDeleteEntry[]>([]);
+  const typedSinceDeleteRef = useRef(true);
+  const focusMovedRef = useRef(false);
+  const lastDeletedIdRef = useRef<string | null>(null);
+  const pendingFocusRef = useRef<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const [toastOpen, setToastOpen] = useState(false);
+
+  linesRef.current = lines;
+  onChangeRef.current = onChange;
+
   function update(id: string, patch: Partial<DocLine>) {
     onChange(lines.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   }
+
+  function requestDescriptionFocus(lineId: string) {
+    pendingFocusRef.current = lineId;
+  }
+
+  function goFrom(line: DocLine, field: LineEditorField) {
+    const next = nextLineField(field);
+    if (next.kind === "new-row") {
+      const created = createFollowUpLine(line, { defaultVatRate, defaultHourlyRate });
+      const index = lines.findIndex((row) => row.id === line.id);
+      requestDescriptionFocus(created.id);
+      onChange(insertLineAfter(lines, index < 0 ? lines.length - 1 : index, created));
+      return;
+    }
+    focusLineField(line.id, next.field);
+  }
+
+  function addType(type: EconomicLineType) {
+    const created = newLine(lineKindFromType(type), defaultVatRate, undefined, defaultHourlyRate);
+    requestDescriptionFocus(created.id);
+    onChange([...lines, created]);
+  }
+
+  function showToast() {
+    setToastOpen(true);
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToastOpen(false), 8000);
+  }
+
+  function deleteLine(id: string) {
+    const { lines: next, removed } = removeLineAt(lines, id);
+    if (!removed) return;
+    undoRef.current = pushLimited(undoRef.current, removed);
+    redoRef.current = [];
+    typedSinceDeleteRef.current = false;
+    focusMovedRef.current = false;
+    lastDeletedIdRef.current = id;
+    showToast();
+    onChange(next);
+  }
+
+  function undoDelete() {
+    const result = applyLineUndo(linesRef.current, undoRef.current, redoRef.current);
+    if (!result.restored) return;
+    undoRef.current = result.undo;
+    redoRef.current = result.redo;
+    onChangeRef.current(result.lines);
+    if (result.undo.length === 0) setToastOpen(false);
+    const activeId = lineIdFromElement(document.activeElement);
+    if (
+      shouldRefocusRestoredLine({
+        activeLineId: activeId,
+        restoredLineId: result.restored.line.id,
+        focusMovedToOtherLine: focusMovedRef.current,
+      })
+    ) {
+      requestDescriptionFocus(result.restored.line.id);
+    }
+  }
+
+  function redoDelete() {
+    const result = applyLineRedo(linesRef.current, undoRef.current, redoRef.current);
+    if (!result.removed) return;
+    undoRef.current = result.undo;
+    redoRef.current = result.redo;
+    lastDeletedIdRef.current = result.removed.line.id;
+    typedSinceDeleteRef.current = false;
+    focusMovedRef.current = false;
+    showToast();
+    onChangeRef.current(result.lines);
+  }
+
+  useLayoutEffect(() => {
+    const id = pendingFocusRef.current;
+    if (!id) return;
+    if (!lines.some((line) => line.id === id)) return;
+    pendingFocusRef.current = null;
+    focusLineField(id, "beskrivning");
+  }, [lines]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const shortcut = lineUndoShortcut(e);
+      if (!shortcut) return;
+      if (
+        !shouldHandleRowUndo({
+          shortcut,
+          hasUndo: undoRef.current.length > 0,
+          hasRedo: redoRef.current.length > 0,
+          typedSinceDelete: typedSinceDeleteRef.current,
+          target: e.target,
+        })
+      ) {
+        return;
+      }
+      e.preventDefault();
+      if (shortcut === "undo") undoDelete();
+      else redoDelete();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
   const allBlank = showErrors && lines.every(lineIsBlank);
   return (
-    <div id="prisrader" className="@container space-y-3.5 @min-[40rem]:space-y-2.5">
+    <div
+      id="prisrader"
+      data-line-editor
+      className="@container space-y-3.5 @min-[40rem]:space-y-2.5"
+      onInput={() => {
+        typedSinceDeleteRef.current = true;
+      }}
+      onFocusCapture={(e) => {
+        const id = lineIdFromElement(e.target);
+        if (id && lastDeletedIdRef.current && id !== lastDeletedIdRef.current) {
+          focusMovedRef.current = true;
+        }
+      }}
+    >
       <div className={LINE_GRID_HEADER}>
         <span>Typ</span>
         <span>Beskrivning</span>
@@ -186,14 +398,15 @@ export function LinesEditor({
         const lineTotal =
           (Number.isFinite(line.qty) ? line.qty : 0) * (Number.isFinite(line.unitPrice) ? line.unitPrice : 0);
         return (
-          <div key={line.id} className={LINE_GRID_ROW}>
+          <div key={line.id} data-line-id={line.id} className={LINE_GRID_ROW}>
             <div className="@min-[40rem]:contents">
-              <label htmlFor={`rad-${line.id}-typ`} className={mobileLineLabelCls}>
+              <label htmlFor={lineFieldId(line.id, "typ")} className={mobileLineLabelCls}>
                 Typ
               </label>
-              <select
-                id={`rad-${line.id}-typ`}
+              <LineSelect
+                id={lineFieldId(line.id, "typ")}
                 value={lineKindFromType(lineTypeOf(line))}
+                onEnter={() => goFrom(line, "typ")}
                 onChange={(e) => {
                   const kind = e.target.value as LineKind;
                   const type = lineTypeOf({ kind });
@@ -220,7 +433,7 @@ export function LinesEditor({
                     {lineTypeLabel(type)}
                   </option>
                 ))}
-              </select>
+              </LineSelect>
             </div>
             <div className="col-span-2 @min-[40rem]:contents">
               <label htmlFor={lineFieldId(line.id, "beskrivning")} className={mobileLineLabelCls}>
@@ -230,6 +443,7 @@ export function LinesEditor({
                 id={lineFieldId(line.id, "beskrivning")}
                 value={line.description}
                 onChange={(description) => update(line.id, { description })}
+                onEnterNavigate={() => goFrom(line, "beskrivning")}
                 placeholder="Vad ingår? (rabatt läggs som rad med minusbelopp)"
                 aria-label="Beskrivning"
                 aria-invalid={markDescription}
@@ -238,25 +452,31 @@ export function LinesEditor({
               />
             </div>
             <div className="@min-[40rem]:contents">
-              <label htmlFor={`rad-${line.id}-antal`} className={mobileLineLabelCls}>
+              <label htmlFor={lineFieldId(line.id, "antal")} className={mobileLineLabelCls}>
                 Antal
               </label>
               <DecimalInput
-                id={`rad-${line.id}-antal`}
+                id={lineFieldId(line.id, "antal")}
                 value={line.qty}
                 onValueChange={(qty) => update(line.id, { qty })}
+                onEnterNavigate={() => goFrom(line, "antal")}
                 className={inputCls}
                 aria-label="Antal"
               />
             </div>
             <div className="@min-[40rem]:contents">
-              <label htmlFor={`rad-${line.id}-enhet`} className={mobileLineLabelCls}>
+              <label htmlFor={lineFieldId(line.id, "enhet")} className={mobileLineLabelCls}>
                 Enhet
               </label>
               <input
-                id={`rad-${line.id}-enhet`}
+                id={lineFieldId(line.id, "enhet")}
                 value={line.unit}
                 onChange={(e) => update(line.id, { unit: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+                  e.preventDefault();
+                  goFrom(line, "enhet");
+                }}
                 aria-label="Enhet"
                 className={inputCls}
               />
@@ -270,6 +490,7 @@ export function LinesEditor({
                   id={lineFieldId(line.id, "pris")}
                   value={line.unitPrice}
                   onValueChange={(unitPrice) => update(line.id, { unitPrice })}
+                  onEnterNavigate={() => goFrom(line, "pris")}
                   className={cx(inputCls, "pr-8 @min-[40rem]:pr-3", markPrice && invalidFieldCls)}
                   allowNegative
                   aria-label="À-pris exkl. moms"
@@ -284,12 +505,13 @@ export function LinesEditor({
               </div>
             </div>
             <div className="@min-[40rem]:contents">
-              <label htmlFor={`rad-${line.id}-moms`} className={mobileLineLabelCls}>
+              <label htmlFor={lineFieldId(line.id, "moms")} className={mobileLineLabelCls}>
                 Moms
               </label>
-              <select
-                id={`rad-${line.id}-moms`}
+              <LineSelect
+                id={lineFieldId(line.id, "moms")}
                 value={line.vatRate}
+                onEnter={() => goFrom(line, "moms")}
                 onChange={(e) => update(line.id, { vatRate: Number(e.target.value) as VatRate })}
                 aria-label="Moms"
                 className={inputCls}
@@ -298,11 +520,12 @@ export function LinesEditor({
                 <option value={12}>12 %</option>
                 <option value={6}>6 %</option>
                 <option value={0}>0 %</option>
-              </select>
+              </LineSelect>
             </div>
             <button
               type="button"
-              onClick={() => onChange(lines.filter((l) => l.id !== line.id))}
+              tabIndex={-1}
+              onClick={() => deleteLine(line.id)}
               className="absolute right-1.5 top-1.5 flex size-10 items-center justify-center rounded-lg text-muted transition-colors hover:bg-danger-soft hover:text-danger @min-[40rem]:static @min-[40rem]:size-auto"
               title="Ta bort rad"
               aria-label="Ta bort rad"
@@ -347,14 +570,28 @@ export function LinesEditor({
             type="button"
             className={buttonClasses("secondary", "sm", "max-sm:h-11 flex-1 sm:flex-none")}
             title={lineTypeHint(type)}
-            onClick={() =>
-              onChange([...lines, newLine(lineKindFromType(type), defaultVatRate, undefined, defaultHourlyRate)])
-            }
+            onClick={() => addType(type)}
           >
             <Plus className="size-3.5" /> {lineTypeLabel(type)}
           </button>
         ))}
       </div>
+      {toastOpen ? (
+        <div
+          role="status"
+          data-line-delete-toast
+          className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl bg-ink px-4 py-2.5 text-[14px] font-medium text-white shadow-pop"
+        >
+          <span>{LINE_DELETED_TOAST}</span>
+          <button
+            type="button"
+            className="rounded-lg bg-white/15 px-2.5 py-1 text-[13px] font-semibold hover:bg-white/25"
+            onClick={undoDelete}
+          >
+            Ångra
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
