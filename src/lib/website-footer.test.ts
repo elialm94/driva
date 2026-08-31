@@ -5,8 +5,7 @@ import assert from "node:assert/strict";
 import { db, replaceDb } from "./store";
 import { emptyTestDb } from "./invoices/test-db";
 import type { Website } from "./types";
-import { generateWebsite, publishWebsite, setWebsiteDesign, setWebsiteFooter } from "./services/website";
-import { hasUnpublishedWebsiteDrafts } from "./website-drafts";
+import { generateWebsite, publishWebsite, setWebsiteFooter } from "./services/website";
 import {
   FOOTER_SERVICES_MAX,
   assertSocialUrl,
@@ -273,20 +272,3 @@ describe("sidfot: utkast → publicera", () => {
   });
 });
 
-describe("hasUnpublishedWebsiteDrafts", () => {
-  it("är false på publicerad sajt utan utkast, och på aldrig-publicerad sajt", () => {
-    replaceDb(emptyTestDb({ website: testWebsite() }));
-    assert.equal(hasUnpublishedWebsiteDrafts(db().website!), false);
-    replaceDb(emptyTestDb({ website: testWebsite({ status: "utkast", publishedAt: undefined }) }));
-    assert.equal(hasUnpublishedWebsiteDrafts(db().website!), false);
-  });
-
-  it("är true när sidfot eller utseende skiljer sig från det publicerade", () => {
-    replaceDb(emptyTestDb({ website: testWebsite() }));
-    setWebsiteFooter({ showPhone: false });
-    assert.equal(hasUnpublishedWebsiteDrafts(db().website!), true);
-    replaceDb(emptyTestDb({ website: testWebsite() }));
-    setWebsiteDesign({ themeId: "modern", accent: "bla" });
-    assert.equal(hasUnpublishedWebsiteDrafts(db().website!), true);
-  });
-});

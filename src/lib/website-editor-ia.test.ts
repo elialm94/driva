@@ -40,7 +40,6 @@ describe("Hemsida-editorns informationsarkitektur", () => {
     assert.match(footer, /Redigera sidfot/);
     assert.match(footer, /footerSummaryRows/);
     assert.match(footer, /<Modal/);
-    assert.match(footer, /Avbryt/);
-    assert.match(footer, /Spara/);
+    assert.match(footer, /Klar/);
   });
 });
