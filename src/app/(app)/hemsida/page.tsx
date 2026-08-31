@@ -62,13 +62,10 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
   }
 
   const published = site.status === "publicerad";
-<<<<<<< HEAD
   const unpublishedDrafts = hasUnpublishedWebsiteDrafts(site);
-  const dirty = !published || unpublishedDrafts;
-=======
   const paused = Boolean(data.meta.websitePausedAt);
   const live = published && !paused;
->>>>>>> origin/cursor/feature-management-215f
+  const dirty = !live || unpublishedDrafts;
   const domain = primaryDomain();
   const liveHost = domain?.status === "active" ? domain.hostname : null;
   const mailLive = isLiveMailConfigured();
@@ -84,11 +81,13 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
   const businessContact = resolveSiteContact(data.settings, site);
 
   const publishedLabel = site.publishedAt ? `Publicerad ${datumTid(site.publishedAt)}` : "Publicerad";
-  const subtitle = published
-    ? unpublishedDrafts
-      ? `${publishedLabel} · opublicerade ändringar`
-      : publishedLabel
-    : "Utkast – publicera när du är nöjd";
+  const subtitle = paused
+    ? "Pausad – innehållet är kvar. Publicera när du är redo."
+    : live
+      ? unpublishedDrafts
+        ? `${publishedLabel} · opublicerade ändringar`
+        : publishedLabel
+      : "Utkast – publicera när du är nöjd";
 
   return (
     <div className="animate-fade-up">
@@ -102,17 +101,7 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
       ) : null}
       <PageHeader
         title="Hemsida"
-<<<<<<< HEAD
         subtitle={subtitle}
-=======
-        subtitle={
-          live
-            ? `Publicerad ${site.publishedAt ? datumTid(site.publishedAt) : ""} · formuläret skapar uppdrag automatiskt`
-            : paused
-              ? "Pausad – innehållet är kvar. Publicera när du är redo."
-              : "Utkast – granska och publicera när du är nöjd"
-        }
->>>>>>> origin/cursor/feature-management-215f
         actions={
           <div className="flex items-center gap-2">
             <a
@@ -123,19 +112,14 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
             >
               <ExternalLink className="size-3.5" /> Öppna i ny flik
             </a>
-<<<<<<< HEAD
             <div className={dirty ? "max-lg:hidden" : undefined}>
-              <PublishWebsiteButton published={published} />
+              <PublishWebsiteButton published={live} />
             </div>
-=======
-            <PublishWebsiteButton published={live} />
->>>>>>> origin/cursor/feature-management-215f
           </div>
         }
       />
 
       <WebsiteDesignProvider initial={draftWebsiteDesign(site)}>
-<<<<<<< HEAD
         <SiteEditorShell
           preview={
             <div className="min-w-0">
@@ -143,10 +127,20 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
                 <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted">
                   <Globe className="size-4 shrink-0" />
                   <span className="min-w-0 break-all font-mono text-[12px]">
-                    {liveHost ? liveHost : published ? "driva.site/" + site.slug : "Förhandsvisning"}
+                    {liveHost ? liveHost : live ? "driva.site/" + site.slug : "Förhandsvisning"}
                   </span>
-                  <Badge tone={published ? (unpublishedDrafts ? "warn" : "ok") : "neutral"}>
-                    {published ? (unpublishedDrafts ? "Opublicerade ändringar" : "Publicerad") : "Utkast"}
+                  <Badge
+                    tone={
+                      paused ? "warn" : live ? (unpublishedDrafts ? "warn" : "ok") : "neutral"
+                    }
+                  >
+                    {paused
+                      ? "Pausad"
+                      : live
+                        ? unpublishedDrafts
+                          ? "Opublicerade ändringar"
+                          : "Publicerad"
+                        : "Utkast"}
                   </Badge>
                 </div>
                 <CopyLinkButton path="/sajt" label="Kopiera länk" />
@@ -155,45 +149,6 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
             </div>
           }
           innehall={
-=======
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-        {/* Live-preview */}
-        <div className="min-w-0">
-          {/* flex-wrap: på smala skärmar lägger sig Kopiera länk under adressen i stället för att spränga bredden. */}
-          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-            <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted">
-              <Globe className="size-4 shrink-0" />
-              <span className="min-w-0 break-all font-mono text-[12px]">
-                {liveHost ? liveHost : live ? "driva.site/" + site.slug : "Förhandsvisning"}
-              </span>
-              {/* Utkast är grått som överallt annars – gult betyder "väntar/uppmärksamhet". */}
-              <Badge tone={live ? "ok" : paused ? "warn" : "neutral"}>
-                {live ? "Publicerad" : paused ? "Pausad" : "Utkast"}
-              </Badge>
-            </div>
-            <CopyLinkButton path="/sajt" label="Kopiera länk" />
-          </div>
-          <SitePreviewFrame website={safeSite} company={data.settings} />
-          <p className="mt-2 text-[12px] text-muted">
-            Det här är exakt vad besökarna ser. Formuläret är aktivt på den publicerade sajten.
-          </p>
-        </div>
-
-        {/* Sidopanel */}
-        <div className="min-w-0 space-y-6">
-          <div className="min-w-0">
-            <SectionTitle>Utseende</SectionTitle>
-            <Card className="min-w-0">
-              <UtseendePanel publishedDesign={publishedWebsiteDesign(site)} published={live} />
-            </Card>
-            <p className="mt-2 text-[12px] leading-relaxed text-muted">
-              Välj känslan som passar ditt företag – innehållet är detsamma i alla teman.
-            </p>
-          </div>
-
-          <div className="min-w-0">
-            <SectionTitle>Innehåll</SectionTitle>
->>>>>>> origin/cursor/feature-management-215f
             <Card className="min-w-0 overflow-hidden">
               <SectionList
                 sections={listSections}
@@ -205,7 +160,7 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
           }
           design={
             <Card className="min-w-0">
-              <UtseendePanel publishedDesign={publishedWebsiteDesign(site)} published={published} />
+              <UtseendePanel publishedDesign={publishedWebsiteDesign(site)} published={live} />
             </Card>
           }
           installningar={
@@ -218,7 +173,7 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
                 />
               </Card>
               <Card className="min-w-0 px-4 py-3.5">
-                <FooterSettingsCard website={site} company={data.settings} published={published} />
+                <FooterSettingsCard website={site} company={data.settings} published={live} />
               </Card>
               <Card className="min-w-0 px-4 py-3.5">
                 <PrivacyPolicySettingsCard
@@ -233,7 +188,6 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
                 live={domain?.status === "active"}
                 demo={isMockDomainMode()}
               />
-<<<<<<< HEAD
             </div>
           }
         />
@@ -241,49 +195,15 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
           <StickyMobileActions
             summary={
               <p className="text-[13px] text-soft">
-                {published ? "Opublicerade ändringar" : "Hemsidan är ett utkast"}
+                {paused ? "Hemsidan är pausad" : live ? "Opublicerade ändringar" : "Hemsidan är ett utkast"}
               </p>
             }
           >
             <div className="w-full [&_button:first-of-type]:w-full">
-              <PublishWebsiteButton published={published} />
+              <PublishWebsiteButton published={live} />
             </div>
           </StickyMobileActions>
         ) : null}
-=======
-            </Card>
-          </div>
-
-          <div>
-            <SectionTitle>Sidfot</SectionTitle>
-            <Card className="min-w-0 px-5 py-4">
-              <FooterSettingsCard website={site} company={data.settings} published={live} />
-            </Card>
-            <Card className="mt-3 min-w-0 px-5 py-4">
-              <PrivacyPolicySettingsCard
-                company={data.settings}
-                businessName={site.businessName}
-                draft={draftPrivacyPolicyState(site)}
-                standardSeed={seedCustomPrivacyPolicy({ company: data.settings, website: site })}
-              />
-            </Card>
-            <p className="mt-2 text-[12px] leading-relaxed text-muted">
-              Sidfoten fylls i från företagsuppgifter och Tjänster. Integritetspolicy ligger alltid
-              längst ner.
-            </p>
-          </div>
-
-          <div>
-            <SectionTitle>Domän</SectionTitle>
-            <DomainSidebarCard
-              hostname={domain?.hostname}
-              live={domain?.status === "active"}
-              demo={isMockDomainMode()}
-            />
-          </div>
-        </div>
-      </div>
->>>>>>> origin/cursor/feature-management-215f
       </WebsiteDesignProvider>
     </div>
   );
