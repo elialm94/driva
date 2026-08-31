@@ -1258,6 +1258,18 @@ export interface WebsiteSection {
 export const DEFAULT_PRIMARY_CTA_LABEL = "Begär offert";
 export const PRIMARY_CTA_LABEL_MAX = 40;
 
+/** STANDARD = Driva underhåller texten. CUSTOM = företaget redigerar hela policyn. */
+export type PrivacyPolicyMode = "standard" | "custom";
+
+/** Publicerat eller utkastat policyläge. Default för alla företag är STANDARD. */
+export interface PrivacyPolicyState {
+  mode: PrivacyPolicyMode;
+  /** Eget tillägg i STANDARD-läge. Behålls vid byte till CUSTOM så det inte försvinner. */
+  supplement?: string;
+  /** Anpassad rich text. Tokens {{company.*}} interpoleras vid visning. */
+  customBody?: RichTextDoc;
+}
+
 export interface Website {
   id: ID;
   slug: string;
@@ -1293,10 +1305,27 @@ export interface Website {
   /** Gemensam primärknapp i sidhuvud och startsektion. Saknas = DEFAULT_PRIMARY_CTA_LABEL. */
   primaryCta?: { label: string };
   /**
-   * Valfritt tillägg till den automatiska integritetspolicyn. Företagsnamn,
-   * org.nr, adress och kontakt hämtas alltid live från företagsuppgifterna.
+   * Valfritt tillägg till den automatiska integritetspolicyn i STANDARD-läge.
+   * Företagsnamn, org.nr, adress och kontakt hämtas alltid live från
+   * företagsuppgifterna.
    */
   privacyPolicySupplement?: string;
+  /**
+   * Publicerat läge. Saknas = standard (Driva underhåller policyn).
+   * Befintliga sajter utan fältet är STANDARD – inget databortfall.
+   */
+  privacyPolicyMode?: PrivacyPolicyMode;
+  /**
+   * Publicerad anpassad policy (rich text). Tokens för företagsfält
+   * interpoleras vid visning. Används bara när mode är custom.
+   */
+  privacyPolicyCustomBody?: RichTextDoc;
+  /**
+   * Utkast till integritetspolicy: förhandsvisningen uppdateras direkt,
+   * den publika sajten först vid "Publicera ändringar". Tas bort vid
+   * publicering när det skiljer sig från det publicerade.
+   */
+  draftPrivacyPolicy?: PrivacyPolicyState;
   publishedAt?: string;
   createdAt: string;
   submissions: number;

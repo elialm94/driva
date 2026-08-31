@@ -5,6 +5,7 @@ import {
   PRIMARY_CTA_LABEL_MAX,
   type Customer,
   type Job,
+  type PrivacyPolicyState,
   type Website,
   type WebsiteCtaDestination,
   type WebsiteDesign,
@@ -33,7 +34,14 @@ import {
   isTextSectionType,
   type AddableSectionType,
 } from "../website-sections";
-import { normalizePrivacyPolicySupplement } from "../website-privacy";
+import {
+  applyPublishedPrivacyPolicy,
+  isPrivacyPolicyMode,
+  normalizePrivacyPolicySupplement,
+  publishedPrivacyPolicyState,
+  samePrivacyPolicyState,
+} from "../website-privacy";
+import { sanitizeRichText } from "../richtext";
 import { logActivity } from "./activity";
 import { findOrCreateCustomerByEmail } from "./customers";
 import { createJob, titleFromIncomingMessage } from "./jobs";
@@ -572,12 +580,49 @@ export function setWebsiteFooter(input: unknown): WebsiteFooter {
 }
 
 export function updatePrivacyPolicySupplement(raw: string): void {
+  updateWebsitePrivacyPolicy({ mode: "standard", supplement: raw });
+}
+
+export function updateWebsitePrivacyPolicy(input: {
+  mode: unknown;
+  supplement?: unknown;
+  customBody?: unknown;
+}): PrivacyPolicyState {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
-  const text = normalizePrivacyPolicySupplement(raw);
-  if (text) site.privacyPolicySupplement = text;
-  else delete site.privacyPolicySupplement;
+  if (!isPrivacyPolicyMode(input.mode)) throw new Error("Ogiltigt policyläge.");
+  const supplement =
+    input.mode === "standard"
+      ? normalizePrivacyPolicySupplement(typeof input.supplement === "string" ? input.supplement : "")
+      : optionalKeptSupplement(site);
+  const customBody = input.mode === "custom" ? sanitizeRichText(input.customBody) : undefined;
+  if (input.mode === "custom" && !customBody) {
+    throw new Error("Den anpassade policyn saknar innehåll.");
+  }
+  const next: PrivacyPolicyState = {
+    mode: input.mode,
+    ...(supplement ? { supplement } : {}),
+    ...(customBody ? { customBody } : {}),
+  };
+  if (samePrivacyPolicyState(next, publishedPrivacyPolicyState(site))) {
+    delete site.draftPrivacyPolicy;
+  } else {
+    site.draftPrivacyPolicy = next;
+  }
   touchSite(site);
+  return draftOrPublished(site);
+}
+
+function optionalKeptSupplement(site: Website): string | undefined {
+  return (
+    site.draftPrivacyPolicy?.supplement?.trim() ||
+    site.privacyPolicySupplement?.trim() ||
+    undefined
+  );
+}
+
+function draftOrPublished(site: Website): PrivacyPolicyState {
+  return site.draftPrivacyPolicy ?? publishedPrivacyPolicyState(site);
 }
 
 export function publishWebsite(): Website {
@@ -595,6 +640,11 @@ export function publishWebsite(): Website {
   if (site.draftFooter) {
     site.footer = site.draftFooter;
     delete site.draftFooter;
+  }
+  if (site.draftPrivacyPolicy) {
+    applyPublishedPrivacyPolicy(site, site.draftPrivacyPolicy);
+    delete site.draftPrivacyPolicy;
+    logActivity("Hemsidans integritetspolicy uppdaterades.", { entity: { type: "hemsida", id: site.id } });
   }
   site.status = "publicerad";
   site.publishedAt = new Date().toISOString();

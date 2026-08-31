@@ -100,7 +100,7 @@ async function main() {
 
   await page.goto(`${BASE}/hemsida`, { waitUntil: "networkidle0" });
   const builder = await page.evaluate(() => document.body.innerText);
-  if (!builder.includes("Automatiskt skapad från dina företagsuppgifter")) {
+  if (!builder.includes("Standard från Driva") && !builder.includes("Anpassad")) {
     fail("byggaren saknar integritetskort");
   }
   await page.screenshot({ path: `${OUT}/hemsida-settings.png`, fullPage: true });

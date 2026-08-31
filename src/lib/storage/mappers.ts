@@ -1235,6 +1235,7 @@ export const websitesSpec: TableSpec<Website> = {
   columns: [
     "id", "business_id", "slug", "business_name", "tagline", "city", "status", "theme",
     "design", "draft_design", "footer", "draft_footer", "sections", "primary_cta", "privacy_policy_supplement",
+    "privacy_policy_mode", "privacy_policy_custom_body", "draft_privacy_policy",
     "published_at", "submissions", "created_at",
   ],
   toRow: (w, businessId) => ({
@@ -1253,6 +1254,9 @@ export const websitesSpec: TableSpec<Website> = {
     sections: jsonParam(w.sections),
     primary_cta: jsonParamOrNull(w.primaryCta),
     privacy_policy_supplement: w.privacyPolicySupplement ?? null,
+    privacy_policy_mode: w.privacyPolicyMode ?? null,
+    privacy_policy_custom_body: jsonParamOrNull(w.privacyPolicyCustomBody),
+    draft_privacy_policy: jsonParamOrNull(w.draftPrivacyPolicy),
     published_at: w.publishedAt ?? null,
     submissions: w.submissions,
     created_at: w.createdAt,
@@ -1272,6 +1276,11 @@ export const websitesSpec: TableSpec<Website> = {
     sections: withoutRetiredSections(jsonVal<Website["sections"]>(r.sections)),
     ...opt("primaryCta", jsonOrU<NonNullable<Website["primaryCta"]>>(r.primary_cta)),
     ...opt("privacyPolicySupplement", strOrU(r.privacy_policy_supplement)),
+    ...opt("privacyPolicyMode", (r.privacy_policy_mode === "custom" || r.privacy_policy_mode === "standard"
+      ? r.privacy_policy_mode
+      : undefined) as Website["privacyPolicyMode"]),
+    ...opt("privacyPolicyCustomBody", jsonOrU<NonNullable<Website["privacyPolicyCustomBody"]>>(r.privacy_policy_custom_body)),
+    ...opt("draftPrivacyPolicy", jsonOrU<NonNullable<Website["draftPrivacyPolicy"]>>(r.draft_privacy_policy)),
     ...opt("publishedAt", tsIsoOrU(r.published_at)),
     createdAt: tsIso(r.created_at),
     submissions: num(r.submissions),

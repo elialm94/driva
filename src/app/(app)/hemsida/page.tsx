@@ -8,6 +8,7 @@ import { GenerateWebsiteForm, PublishWebsiteButton, SectionList } from "@/compon
 import { PrivacyPolicySettingsCard } from "@/components/privacy-policy-settings";
 import { WebsiteFormRecipientCard } from "@/components/website-form-recipient";
 import { FooterSettingsCard } from "@/components/site-footer-settings";
+import { draftPrivacyPolicyState, seedCustomPrivacyPolicy } from "@/lib/website-privacy";
 import { SitePreviewFrame, UtseendePanel, WebsiteDesignProvider } from "@/components/site-design-widgets";
 import { CopyLinkButton } from "@/components/copy-button";
 import { DomainSidebarCard } from "@/components/domain-widgets";
@@ -156,7 +157,8 @@ export default async function WebsitePage() {
               <PrivacyPolicySettingsCard
                 company={data.settings}
                 businessName={site.businessName}
-                supplement={site.privacyPolicySupplement}
+                draft={draftPrivacyPolicyState(site)}
+                standardSeed={seedCustomPrivacyPolicy({ company: data.settings, website: site })}
               />
             </Card>
             <p className="mt-2 text-[12px] leading-relaxed text-muted">

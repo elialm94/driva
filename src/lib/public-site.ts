@@ -6,7 +6,13 @@ import { isMockDomainMode, resolvePublicSite } from "./domains";
 import { ensurePageBusiness, ensurePublicPage } from "./auth/session";
 import { isSupabaseMode } from "./storage/config";
 import type { CompanySettings, Website, WebsiteDesign } from "./types";
-import { privacyPolicyHref } from "./website-privacy";
+import {
+  draftPrivacyPolicyState,
+  privacyPolicyHref,
+  publishedPrivacyPolicyState,
+  samePrivacyPolicyState,
+  websiteWithResolvedPrivacy,
+} from "./website-privacy";
 import { stripWebsiteSecrets } from "./website-sections";
 
 /**
@@ -42,6 +48,7 @@ export interface LoadedPublicSite {
   design: WebsiteDesign;
   draftDesignPending: boolean;
   draftFooterPending: boolean;
+  draftPrivacyPending: boolean;
   privacyHref: string;
   homeHref: string;
 }
@@ -66,14 +73,19 @@ export async function loadPublicSite(
   const footer = preview ? draftWebsiteFooter(website) : publishedWebsiteFooter(website);
   const draftFooterPending =
     preview && website.status === "publicerad" && !sameFooter(footer, publishedWebsiteFooter(website));
+  const draftPrivacyPending =
+    preview &&
+    website.status === "publicerad" &&
+    !samePrivacyPolicyState(draftPrivacyPolicyState(website), publishedPrivacyPolicyState(website));
 
   return {
-    website: stripWebsiteSecrets(website),
+    website: stripWebsiteSecrets(websiteWithResolvedPrivacy(website, preview)),
     company,
     preview,
     design,
     draftDesignPending,
     draftFooterPending,
+    draftPrivacyPending,
     privacyHref: privacyPolicyHref(preview),
     homeHref: preview ? "/sajt?preview=1" : "/sajt",
   };

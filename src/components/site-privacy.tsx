@@ -1,7 +1,8 @@
 import type { CSSProperties } from "react";
 import type { CompanySettings, Website, WebsiteDesign } from "@/lib/types";
 import { publishedWebsiteDesign, resolveSiteDesign } from "@/lib/website-design";
-import { buildPrivacyPolicy } from "@/lib/website-privacy";
+import { resolvePrivacyPolicyView } from "@/lib/website-privacy";
+import { RichTextView } from "./rich-text";
 
 export function SitePrivacyPolicy({
   website,
@@ -15,13 +16,19 @@ export function SitePrivacyPolicy({
   homeHref: string;
 }) {
   const { theme, vars } = resolveSiteDesign(design ?? publishedWebsiteDesign(website));
-  const policy = buildPrivacyPolicy({ company, website });
+  const view = resolvePrivacyPolicyView({ company, website });
   const onBand = theme.header === "band";
+  const headingStyle = {
+    fontFamily: "var(--site-heading-font)",
+    fontWeight: "var(--site-heading-weight)" as CSSProperties["fontWeight"],
+    letterSpacing: "var(--site-heading-tracking)",
+  };
 
   return (
     <div
       data-site-theme={theme.id}
       data-privacy-policy
+      data-privacy-mode={view.kind}
       style={vars as CSSProperties}
       className="@container min-h-dvh bg-(--site-bg) font-sans text-(--site-ink)"
     >
@@ -45,32 +52,38 @@ export function SitePrivacyPolicy({
       </header>
 
       <main className="mx-auto max-w-2xl px-6 py-12 @2xl:py-16">
-        <p className={`mb-3 ${theme.eyebrowClass} text-(--site-soft)`}>{policy.controllerName}</p>
-        <h1
-          className={theme.h2Class}
-          style={{
-            fontFamily: "var(--site-heading-font)",
-            fontWeight: "var(--site-heading-weight)" as CSSProperties["fontWeight"],
-            letterSpacing: "var(--site-heading-tracking)",
-          }}
-        >
-          {policy.title}
-        </h1>
-        <p className={`mt-3 text-[15px] leading-relaxed ${theme.bodyClass} text-(--site-soft)`}>{policy.intro}</p>
+        {view.kind === "custom" ? (
+          <>
+            <p className={`mb-3 ${theme.eyebrowClass} text-(--site-soft)`}>{view.controllerName}</p>
+            <div className={`privacy-richtext text-(--site-ink) ${theme.bodyClass}`}>
+              <RichTextView doc={view.doc} className="text-(--site-ink)" />
+            </div>
+          </>
+        ) : (
+          <>
+            <p className={`mb-3 ${theme.eyebrowClass} text-(--site-soft)`}>{view.document.controllerName}</p>
+            <h1 className={theme.h2Class} style={headingStyle}>
+              {view.document.title}
+            </h1>
+            <p className={`mt-3 text-[15px] leading-relaxed ${theme.bodyClass} text-(--site-soft)`}>
+              {view.document.intro}
+            </p>
 
-        {policy.sections.map((section) => (
-          <section key={section.id} className="mt-10">
-            <h2 className="text-[16px] font-semibold tracking-tight">{section.heading}</h2>
-            {section.paragraphs.map((p) => (
-              <p
-                key={p.slice(0, 48)}
-                className="mt-2 whitespace-pre-line text-[14.5px] leading-relaxed text-(--site-ink)"
-              >
-                {p}
-              </p>
+            {view.document.sections.map((section) => (
+              <section key={section.id} className="mt-10">
+                <h2 className="text-[16px] font-semibold tracking-tight">{section.heading}</h2>
+                {section.paragraphs.map((p) => (
+                  <p
+                    key={p.slice(0, 48)}
+                    className="mt-2 whitespace-pre-line text-[14.5px] leading-relaxed text-(--site-ink)"
+                  >
+                    {p}
+                  </p>
+                ))}
+              </section>
             ))}
-          </section>
-        ))}
+          </>
+        )}
       </main>
 
       <footer

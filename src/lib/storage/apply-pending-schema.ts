@@ -72,6 +72,21 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     "draft_footer",
     `alter table public.websites add column if not exists draft_footer jsonb`
   );
+  await ensureColumn(
+    "websites",
+    "privacy_policy_mode",
+    `alter table public.websites add column if not exists privacy_policy_mode text`
+  );
+  await ensureColumn(
+    "websites",
+    "privacy_policy_custom_body",
+    `alter table public.websites add column if not exists privacy_policy_custom_body jsonb`
+  );
+  await ensureColumn(
+    "websites",
+    "draft_privacy_policy",
+    `alter table public.websites add column if not exists draft_privacy_policy jsonb`
+  );
 
   await ensureColumn(
     "quotes",

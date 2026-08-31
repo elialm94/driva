@@ -137,6 +137,7 @@ import {
   setWebsiteFooter,
   submitContactForm,
   updatePrivacyPolicySupplement,
+  updateWebsitePrivacyPolicy,
   updateSection,
   updateServiceItem,
   updateTestimonialItem,
@@ -1403,6 +1404,22 @@ export async function updateWebsiteFormRecipientAction(
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara." } as const;
     }
+  }, { capability: "change_website" });
+}
+
+export async function updateWebsitePrivacyPolicyAction(input: {
+  mode: "standard" | "custom";
+  supplement?: string;
+  customBody?: unknown;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      updateWebsitePrivacyPolicy(input);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara." } as const;
+    }
+    refresh();
+    return { ok: true } as const;
   }, { capability: "change_website" });
 }
 
