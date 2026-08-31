@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check, Landmark, Plus } from "lucide-react";
@@ -25,11 +25,14 @@ import {
 } from "@/lib/validation";
 import { labelForHref, withReturnTo } from "@/lib/nav";
 import type { IssueBlocker } from "@/lib/invoices/validate";
+import type { SellerBlockerInput } from "@/lib/invoices/seller-blockers";
+import { extraPayFieldsNeeded, settingsFieldId } from "@/lib/billing-readiness";
 import { settingsFieldErrors, type SettingsFieldError, type SettingsTab } from "@/lib/settings-validation";
 import { FieldError, FormValidationSummary, focusField, invalidFieldCls } from "./form-validation";
 import type { MissingRequirement } from "@/lib/form-requirements";
 import { DomainSettingsCard } from "./domain-widgets";
 import { StickyMobileActions } from "./sticky-actions";
+import { SettingsBillingBanner } from "./settings-billing-readiness";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -112,6 +115,7 @@ export function SettingsForm({
   returnTo,
   returnLabel,
   domainSummary = null,
+  focusFieldKey = null,
 }: {
   initial: CompanySettings;
   defaults: InvoiceDefaults;
@@ -121,6 +125,7 @@ export function SettingsForm({
   returnTo?: string | null;
   returnLabel?: string | null;
   domainSummary?: { hostname: string; live: boolean } | null;
+  focusFieldKey?: string | null;
 }) {
   const router = useRouter();
   const [form, setForm] = useState(() => fromInitial(initial, defaults));
@@ -265,7 +270,26 @@ export function SettingsForm({
     });
   }
 
-  const firstMissingHref = readiness.blockers.find((b) => b.href)?.href;
+  const seller: SellerBlockerInput = {
+    name: form.name,
+    orgNumber: form.orgNumber,
+    vatNumber: form.vatNumber,
+    address: form.address,
+    postalCode: form.postalCode,
+    city: form.city,
+    bankgiro: form.bankgiro,
+    plusgiro: form.plusgiro,
+    bankAccount: form.bankAccount,
+    iban: form.iban,
+  };
+
+  useEffect(() => {
+    if (!focusFieldKey) return;
+    if (extraPayFieldsNeeded(focusFieldKey)) setExtraPay(true);
+    const id = settingsFieldId(focusFieldKey);
+    const frame = window.requestAnimationFrame(() => focusField(id));
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusFieldKey, flik]);
 
   const subtitle = useMemo(() => {
     if (flik === "fakturering") return "Uppgifter som hamnar på nya fakturor. Utfärdade fakturor ändras inte.";
@@ -286,23 +310,21 @@ export function SettingsForm({
         <PageHeader title="Inställningar" subtitle={subtitle} />
       )}
 
-      <Card className="mb-6 flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-        <div>
-          <p className="text-[13px] font-medium text-muted">Fakturering</p>
-          {readiness.ready ? (
-            <p className="mt-0.5 text-[15px] font-medium text-ok">✓ Redo att fakturera</p>
-          ) : (
-            <p className="mt-0.5 text-[15px] font-medium text-warn">
-              ⚠ {readiness.missingCount} {readiness.missingCount === 1 ? "uppgift saknas" : "uppgifter saknas"}
-            </p>
-          )}
-        </div>
-        {!readiness.ready && firstMissingHref ? (
-          <Link href={tabHref(firstMissingHref) as never} className={buttonClasses("secondary", "sm")}>
-            Komplettera
-          </Link>
-        ) : null}
-      </Card>
+      <SettingsBillingBanner
+        seller={seller}
+        flik={flik}
+        returnTo={returnTo}
+        returnLabel={returnLabel}
+        savedReady={readiness.ready}
+        onPatch={(next) => {
+          for (const [key, value] of Object.entries(next)) {
+            if (value !== undefined) patch(key as keyof FormState, value as FormState[keyof FormState]);
+          }
+        }}
+        onRequestExtraPay={() => setExtraPay(true)}
+        onSave={save}
+        saving={isPending}
+      />
 
       <div className="mb-5 flex gap-1 overflow-x-auto border-b border-line pb-px">
         {TABS.map((tab) => {
@@ -416,8 +438,15 @@ export function SettingsForm({
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Adress</p>
             <p className={hintCls}>Samma adress används på offerter, fakturor och hemsidan. Du behöver inte ange den igen under fakturering.</p>
             <div>
-              <label className={labelCls}>Gatuadress</label>
-              <input value={form.address} onChange={(e) => patch("address", e.target.value)} className={inputCls} />
+              <label className={labelCls} htmlFor="installningar-address">
+                Gatuadress
+              </label>
+              <input
+                id="installningar-address"
+                value={form.address}
+                onChange={(e) => patch("address", e.target.value)}
+                className={inputCls}
+              />
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
@@ -441,8 +470,15 @@ export function SettingsForm({
                 <FieldError id="installningar-postalCode-fel">{errorFor("postalCode")}</FieldError>
               </div>
               <div>
-                <label className={labelCls}>Ort</label>
-                <input value={form.city} onChange={(e) => patch("city", e.target.value)} className={inputCls} />
+                <label className={labelCls} htmlFor="installningar-city">
+                  Ort
+                </label>
+                <input
+                  id="installningar-city"
+                  value={form.city}
+                  onChange={(e) => patch("city", e.target.value)}
+                  className={inputCls}
+                />
               </div>
               <div>
                 <label className={labelCls}>Land</label>
