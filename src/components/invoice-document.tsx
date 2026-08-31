@@ -1,50 +1,226 @@
 import type { CompanySettings, Customer, Invoice } from "@/lib/types";
-import { docTotals, lineTotal } from "@/lib/calc";
+import { docTotals, lineTotal, vatBreakdown } from "@/lib/calc";
 import { kr, datumNumeriskt, datumLang } from "@/lib/format";
 import { BadgeCheck } from "lucide-react";
-import { DocCompanyHeader, DocFooter, DocTotalsBlock } from "./quote-document";
+import { CompanyLogo } from "./company-logo";
 import { resolveInvoiceView } from "@/lib/invoices/snapshot";
-import { invoiceNumberLabel, invoiceTypeLabel, sameCalendarDay } from "@/lib/invoices/display";
+import { invoiceTypeLabel } from "@/lib/invoices/display";
+import {
+  invoicePaymentRows,
+  invoicePaymentTermsLine,
+  invoiceQuoteReference,
+  invoiceTaxReductionView,
+  lineTypeNote,
+  type DocInfoRow,
+  type InvoiceTaxReductionDocView,
+} from "@/lib/invoices/document-view";
 import { TaxReductionInvoiceDisclaimer } from "./tax-reduction-terms";
-import { lineKindLabel } from "@/lib/economic-line-type";
 import { RichTextView } from "./rich-text";
 
+/** Sektionsrubrik i dokumentet – liten, spärrad versal (dokument, inte dashboard). */
+function DocSectionLabel({ children }: { children: React.ReactNode }) {
+  return <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">{children}</p>;
+}
+
 function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
+  const numericTh = "hidden pb-2 pl-3 text-right font-semibold sm:table-cell print:table-cell";
+  const numericTd = "hidden py-2.5 pl-3 text-right align-top text-soft tabular whitespace-nowrap sm:table-cell print:table-cell";
   return (
-    // Smal skärm: Antal/À-pris/Moms flyttar in som underrad så tabellen aldrig kläms.
-    <table className="w-full text-left text-[14px]">
+    // Smal skärm: Antal/À-pris/Moms flyttar in som underrad. Print/A4: alltid alla kolumner.
+    <table className="w-full text-left text-[13.5px]">
       <thead>
-        <tr className="border-b border-line text-[12px] font-semibold uppercase tracking-wide text-muted">
-          <th className="pb-2 pr-3 font-semibold">Beskrivning</th>
-          <th className="hidden pb-2 pr-3 text-right font-semibold sm:table-cell">Antal</th>
-          <th className="hidden pb-2 pr-3 text-right font-semibold sm:table-cell">À-pris exkl.</th>
-          <th className="hidden pb-2 pr-3 text-right font-semibold sm:table-cell">Moms</th>
-          <th className="pb-2 text-right font-semibold">Underlag</th>
+        <tr className="border-b border-ink/60 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+          <th className="pb-2 font-semibold">Beskrivning</th>
+          <th className={numericTh}>Antal</th>
+          <th className={numericTh}>À-pris exkl.</th>
+          <th className={numericTh}>Moms</th>
+          <th className="pb-2 pl-3 text-right font-semibold">Summa</th>
         </tr>
       </thead>
       <tbody>
-        {lines.map((line) => (
-          <tr key={line.id} className="border-b border-line/60 last:border-0">
-            <td className="py-3 pr-3">
-              <p className="font-medium text-ink">{line.description}</p>
-              <p className="text-[12px] text-muted">
-                {lineKindLabel(line.kind)}
-                <span className="sm:hidden">
-                  {" "}
-                  · {line.qty} {line.unit} × {kr(line.unitPrice)} · moms {line.vatRate} %
-                </span>
-              </p>
-            </td>
-            <td className="hidden py-3 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">
-              {line.qty} {line.unit}
-            </td>
-            <td className="hidden py-3 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">{kr(line.unitPrice)}</td>
-            <td className="hidden py-3 pr-3 text-right text-soft tabular whitespace-nowrap sm:table-cell">{line.vatRate} %</td>
-            <td className="py-3 text-right font-medium text-ink tabular whitespace-nowrap">{kr(lineTotal(line))}</td>
-          </tr>
-        ))}
+        {lines.map((line) => {
+          const typeNote = lineTypeNote(line);
+          return (
+            <tr key={line.id} className="break-inside-avoid border-b border-line/70 last:border-0">
+              <td className="py-2.5 align-top">
+                <p className="font-medium leading-snug text-ink">{line.description}</p>
+                {typeNote ? <p className="text-[11.5px] leading-snug text-muted">{typeNote}</p> : null}
+                <p className="text-[12px] text-muted sm:hidden print:hidden">
+                  {line.qty} {line.unit} × {kr(line.unitPrice)} · moms {line.vatRate} %
+                </p>
+              </td>
+              <td className={numericTd}>
+                {line.qty} {line.unit}
+              </td>
+              <td className={numericTd}>{kr(line.unitPrice)}</td>
+              <td className={numericTd}>{line.vatRate} %</td>
+              <td className="py-2.5 pl-3 text-right align-top font-medium text-ink tabular whitespace-nowrap">
+                {kr(lineTotal(line))}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
+  );
+}
+
+/** Normala totaler – ROT/RUT-detaljer bor i sin egen sektion, aldrig här. */
+function InvoiceTotals({ lines }: { lines: Invoice["lines"] }) {
+  const t = docTotals(lines, null);
+  const vat = vatBreakdown(lines);
+  return (
+    <div className="break-inside-avoid mt-3 flex justify-end">
+      <div className="w-full max-w-[300px] space-y-1.5 text-[13.5px]">
+        <div className="flex justify-between text-soft">
+          <span>Summa exkl. moms</span>
+          <span className="tabular">{kr(t.subtotal)}</span>
+        </div>
+        {vat.map((v) => (
+          <div key={v.rate} className="flex justify-between text-soft">
+            <span>Moms {v.rate} %</span>
+            <span className="tabular">{kr(v.vat)}</span>
+          </div>
+        ))}
+        {vat.length > 1 ? (
+          <div className="flex justify-between text-soft">
+            <span>Moms totalt</span>
+            <span className="tabular">{kr(t.vat)}</span>
+          </div>
+        ) : null}
+        <div className="flex justify-between border-t border-line pt-1.5 font-medium text-ink">
+          <span>Totalt</span>
+          <span className="tabular">{kr(t.total)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ROT/RUT-sektionen: person, fastighet/bostad, utförandedatum och avdragets
+ * belopp – från dokumentets egna (snapshotade) uppgifter. Disclaimer alltid
+ * fullt synlig direkt under, även i PDF.
+ */
+function InvoiceTaxReductionSection({
+  view,
+  termsVersion,
+}: {
+  view: InvoiceTaxReductionDocView;
+  termsVersion?: string;
+}) {
+  return (
+    <section className="break-inside-avoid mt-6 border-t border-line pt-4">
+      <DocSectionLabel>{view.heading}</DocSectionLabel>
+      <div className="mt-2.5 grid gap-x-8 gap-y-3 sm:grid-cols-[minmax(0,1fr)_300px] print:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="space-y-0.5 text-[13.5px] leading-relaxed">
+          <p className="font-medium text-ink">
+            {view.personName}
+            {view.personalIdentityNumber ? (
+              <span className="font-normal text-soft tabular"> · {view.personalIdentityNumber}</span>
+            ) : null}
+          </p>
+          {view.propertyRows.map((row) => (
+            <p key={row.label} className="text-soft">
+              {row.label}: {row.value}
+            </p>
+          ))}
+          {view.periodRow ? (
+            <p className="text-soft">
+              {view.periodRow.label}: {view.periodRow.value}
+            </p>
+          ) : null}
+        </div>
+        <div className="w-full max-w-[300px] space-y-1.5 self-start text-[13.5px] sm:justify-self-end print:justify-self-end">
+          <div className="flex justify-between text-soft">
+            <span>Arbetskostnad inkl. moms</span>
+            <span className="tabular">{kr(view.laborInclVat)}</span>
+          </div>
+          <div className="flex justify-between text-accent-deep">
+            <span>{view.deductionLabel}</span>
+            <span className="tabular">−{kr(view.deduction)}</span>
+          </div>
+        </div>
+      </div>
+      <TaxReductionInvoiceDisclaimer version={termsVersion} />
+    </section>
+  );
+}
+
+/** Dokumentets viktigaste ekonomiska resultat – visuellt tydligast av allt. */
+function InvoiceAmountDue({ label, amount }: { label: string; amount: number }) {
+  return (
+    <div className="break-inside-avoid mt-5 flex justify-end">
+      <div className="w-full max-w-[300px] border-t-2 border-ink pt-2.5">
+        <div className="flex items-baseline justify-between gap-4">
+          <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink">{label}</span>
+          <span className="text-[24px] font-semibold tracking-tight text-ink tabular">{kr(amount)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InvoicePaymentSection({ rows, termsLine }: { rows: DocInfoRow[]; termsLine: string }) {
+  return (
+    <section className="break-inside-avoid mt-7 border-t border-line pt-4">
+      <DocSectionLabel>Betalningsuppgifter</DocSectionLabel>
+      <div className="mt-2.5 flex flex-wrap gap-x-7 gap-y-1.5 text-[13.5px]">
+        {rows.map((row) => (
+          <p key={row.label} className="whitespace-nowrap">
+            <span className="text-muted">{row.label} </span>
+            <span className="font-semibold text-ink tabular">{row.value}</span>
+          </p>
+        ))}
+      </div>
+      <p className="mt-2 text-[12px] text-muted">{termsLine}</p>
+    </section>
+  );
+}
+
+/** Företagsuppgifter – fullt läsbara på A4, endast fält med värde. */
+function InvoiceCompanyFooter({ company }: { company: CompanySettings }) {
+  const sate = company.sate?.trim() || company.city;
+  const payment: string[] = [];
+  if (company.bankgiro?.trim()) payment.push(`Bankgiro ${company.bankgiro.trim()}`);
+  if (company.plusgiro?.trim()) payment.push(`PlusGiro ${company.plusgiro.trim()}`);
+  if (company.iban?.trim()) payment.push(`IBAN ${company.iban.trim()}`);
+  if (company.bic?.trim()) payment.push(`BIC ${company.bic.trim()}`);
+  if (!company.iban?.trim() && company.bankAccount?.trim()) payment.push(`Bankkonto ${company.bankAccount.trim()}`);
+
+  const columns: { label: string; rows: string[] }[] = [
+    {
+      label: "Adress",
+      rows: [company.name, company.address, `${company.postalCode} ${company.city}`.trim(), sate ? `Säte: ${sate}` : ""],
+    },
+    {
+      label: "Kontakt",
+      rows: [company.phone, company.email, company.websiteUrl ?? ""],
+    },
+    { label: "Betalning", rows: payment },
+    {
+      label: "Företag",
+      rows: [`Org.nr ${company.orgNumber}`, `Momsreg.nr ${company.vatNumber}`, "Godkänd för F-skatt"],
+    },
+  ]
+    .map((column) => ({ ...column, rows: column.rows.filter((row) => row.trim()) }))
+    .filter((column) => column.rows.length > 0);
+
+  return (
+    <footer className="break-inside-avoid mt-9 border-t border-line pt-4">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4 print:grid-cols-4">
+        {columns.map((column) => (
+          <div key={column.label} className="min-w-0">
+            <p className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted">{column.label}</p>
+            {column.rows.map((row, i) => (
+              <p key={i} className="mt-0.5 break-words text-[12px] leading-snug text-soft first-of-type:mt-1">
+                {row}
+              </p>
+            ))}
+          </div>
+        ))}
+      </div>
+    </footer>
   );
 }
 
@@ -64,136 +240,103 @@ export function InvoiceDocument({
   const doc = view.invoice;
   const t = docTotals(doc.lines, doc.rot);
   const isCredit = doc.type === "kredit";
-  const showServiceDate = Boolean(doc.serviceDate && !sameCalendarDay(doc.serviceDate, doc.issueDate));
+  const isPaid = invoice.status === "betald";
   const originalNumber = doc.issuedSnapshot?.creditsInvoiceNumber ?? invoice.issuedSnapshot?.creditsInvoiceNumber;
+  // ROT/RUT-vyn binder mot rådatan (snapshot för utfärdad, live för utkast).
+  const rotView = invoiceTaxReductionView(invoice, { buyer: customer });
+  const quoteRef = invoiceQuoteReference(doc.lines);
+
+  const metaRows: DocInfoRow[] = [
+    { label: "Fakturadatum", value: datumNumeriskt(doc.issueDate) },
+    { label: "Förfallodatum", value: datumNumeriskt(doc.dueDate) },
+    { label: "Betalningsvillkor", value: `${doc.paymentTermsDays} dagar` },
+    // Utkast utan OCR: ingen tom rad – OCR kommer med utfärdandet.
+    ...(doc.ocr ? [{ label: "OCR", value: doc.ocr }] : []),
+    ...(quoteRef != null ? [{ label: "Avser", value: `Offert #${quoteRef}` }] : []),
+    ...(buyer.contactPerson?.trim() ? [{ label: "Er referens", value: buyer.contactPerson.trim() }] : []),
+  ];
+
+  const buyerAddressLine = [buyer.address, [buyer.postalCode, buyer.city].filter(Boolean).join(" ")]
+    .map((part) => part?.trim())
+    .filter(Boolean) as string[];
 
   return (
-    <div className="relative bg-white px-7 py-8 text-ink sm:px-10 sm:py-10">
-      {invoice.status === "betald" ? (
-        <div className="absolute right-8 top-24 rotate-[-8deg] rounded-lg border-2 border-ok/50 px-3 py-1 text-[15px] font-bold uppercase tracking-widest text-ok/70">
+    <div className="relative bg-white px-7 py-8 text-ink sm:px-10 sm:py-10 print:px-0 print:py-0">
+      {isPaid ? (
+        <div className="absolute right-8 top-24 rotate-[-8deg] rounded-lg border-2 border-ok/50 px-3 py-1 text-[15px] font-bold uppercase tracking-widest text-ok/70 print:right-2">
           Betald
         </div>
       ) : null}
 
-      <DocCompanyHeader
-        company={seller}
-        docType={invoiceTypeLabel(doc.type)}
-        docNumber={invoiceNumberLabel(doc)}
-      />
-
-      <div className="mt-8 grid grid-cols-2 gap-x-6 gap-y-4 text-[13px] sm:grid-cols-4">
-        <div>
-          <p className="text-muted">Fakturadatum</p>
-          <p className="font-medium">{datumNumeriskt(doc.issueDate)}</p>
-        </div>
-        <div>
-          <p className="text-muted">Förfallodatum</p>
-          <p className="font-medium">{datumNumeriskt(doc.dueDate)}</p>
-        </div>
-        <div>
-          <p className="text-muted">OCR-nummer</p>
-          <p className="font-medium tabular">{doc.ocr || "–"}</p>
-        </div>
-        <div>
-          <p className="text-muted">Valuta</p>
-          <p className="font-medium">SEK</p>
-        </div>
-        {showServiceDate ? (
+      <header className="flex items-start justify-between gap-6">
+        <div className="flex items-center gap-3.5">
+          <CompanyLogo company={seller} size="md" />
           <div>
-            <p className="text-muted">Utförandedatum</p>
-            <p className="font-medium">{datumNumeriskt(doc.serviceDate!)}</p>
-          </div>
-        ) : null}
-        <div className={showServiceDate ? undefined : "sm:col-span-2"}>
-          <p className="text-muted">Kund</p>
-          <p className="font-medium">{buyer.name}</p>
-          {buyer.address ? (
-            <p className="text-muted">
-              {[buyer.address, [buyer.postalCode, buyer.city].filter(Boolean).join(" ")]
-                .filter(Boolean)
-                .join(", ")}
+            <p className="text-[16px] font-semibold leading-tight text-ink">{seller.name}</p>
+            <p className="mt-0.5 text-[12.5px] leading-snug text-muted">
+              {seller.address}, {seller.postalCode} {seller.city}
             </p>
-          ) : null}
-          {buyer.orgNumber ? <p className="text-muted">Org.nr {buyer.orgNumber}</p> : null}
+          </div>
         </div>
-        <div>
-          <p className="text-muted">Betalningsvillkor</p>
-          <p className="font-medium">{doc.paymentTermsDays} dagar netto</p>
+        <div className="shrink-0 text-right">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-muted">{invoiceTypeLabel(doc.type)}</p>
+          <p className="text-[22px] font-semibold leading-tight tracking-tight text-ink tabular">
+            {doc.number == null ? "Utkast" : `#${doc.number}`}
+          </p>
         </div>
+      </header>
+
+      <div className="mt-6 grid gap-x-10 gap-y-5 border-t border-line pt-5 sm:grid-cols-[minmax(0,1fr)_auto] print:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0">
+          <DocSectionLabel>Fakturamottagare</DocSectionLabel>
+          <p className="mt-1.5 text-[15px] font-semibold leading-snug text-ink">{buyer.name}</p>
+          {buyerAddressLine.map((row, i) => (
+            <p key={i} className="text-[13.5px] leading-relaxed text-soft">
+              {row}
+            </p>
+          ))}
+          {buyer.orgNumber ? <p className="text-[13px] text-muted">Org.nr {buyer.orgNumber}</p> : null}
+        </div>
+        <dl className="grid grid-cols-[auto_auto] content-start gap-x-6 gap-y-1 self-start text-[13px] sm:justify-end print:justify-end">
+          {metaRows.map((row) => (
+            <div key={row.label} className="contents">
+              <dt className="text-muted">{row.label}</dt>
+              <dd className="text-right font-medium text-ink tabular">{row.value}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
 
       {isCredit ? (
-        <p className="mt-6 rounded-xl bg-canvas px-4 py-3 text-[13px] text-soft">
+        <p className="mt-5 border-l-2 border-line-strong pl-3 text-[13px] leading-relaxed text-soft">
           Denna kreditfaktura krediterar
           {originalNumber != null ? ` faktura #${originalNumber}` : " tidigare skickad faktura"} i sin helhet.
           Delkredit stöds inte.
         </p>
       ) : null}
 
-      <div className="mt-8">
-        {/* Beskrivning före rader. Utfärdad faktura: frusen kopia via resolveInvoiceView. */}
-        <RichTextView doc={doc.richText} className="mb-7" />
+      {/* Användarens fritext – exakt som skapad, före raderna. Tom → ingenting. */}
+      <RichTextView doc={doc.richText} className="mt-6" />
+
+      <div className="mt-6">
         <InvoiceLinesTable lines={doc.lines} />
       </div>
 
-      <div className="mt-5">
-        <DocTotalsBlock
-          lines={doc.lines}
-          rot={doc.rot}
-          toPayLabel={isCredit ? "Att kreditera" : "Att betala nu"}
+      <InvoiceTotals lines={doc.lines} />
+
+      {rotView ? <InvoiceTaxReductionSection view={rotView} termsVersion={doc.taxReductionTerms?.version} /> : null}
+
+      <InvoiceAmountDue label={isCredit ? "Att kreditera" : "Att betala"} amount={t.toPay} />
+
+      {!isCredit && !isPaid ? (
+        <InvoicePaymentSection
+          rows={invoicePaymentRows({ seller, ocr: doc.ocr, dueDate: doc.dueDate, amount: t.toPay })}
+          termsLine={invoicePaymentTermsLine(doc)}
         />
-      </div>
-
-      {doc.rot ? <TaxReductionInvoiceDisclaimer version={doc.taxReductionTerms?.version} /> : null}
-
-      {!isCredit && invoice.status !== "betald" ? (
-        <div className="mt-8 rounded-2xl border border-line bg-canvas/70 p-5">
-          <p className="text-[13px] font-semibold uppercase tracking-wide text-muted">Betalning</p>
-          <div className="mt-3 grid grid-cols-1 gap-3 text-[14px] sm:grid-cols-3">
-            {seller.bankgiro ? (
-              <div>
-                <p className="text-muted">Bankgiro</p>
-                <p className="font-semibold tabular">{seller.bankgiro}</p>
-              </div>
-            ) : null}
-            {seller.plusgiro ? (
-              <div>
-                <p className="text-muted">PlusGiro</p>
-                <p className="font-semibold tabular">{seller.plusgiro}</p>
-              </div>
-            ) : null}
-            {seller.iban ? (
-              <div>
-                <p className="text-muted">IBAN</p>
-                <p className="font-semibold tabular">{seller.iban}</p>
-              </div>
-            ) : null}
-            {seller.bankAccount && !seller.iban ? (
-              <div>
-                <p className="text-muted">Bankkonto</p>
-                <p className="font-semibold tabular">{seller.bankAccount}</p>
-              </div>
-            ) : null}
-            <div>
-              <p className="text-muted">OCR</p>
-              <p className="font-semibold tabular">{doc.ocr || "–"}</p>
-            </div>
-            <div>
-              <p className="text-muted">Belopp</p>
-              <p className="font-semibold tabular">{kr(t.toPay)}</p>
-            </div>
-          </div>
-          <p className="mt-3 text-[12px] text-muted">
-            Betala senast {datumLang(doc.dueDate)}. Ange OCR-numret som referens.
-            {doc.lateInterestRate
-              ? ` Efter förfallodagen debiteras dröjsmålsränta med ${doc.lateInterestRate} % per år.`
-              : ""}
-          </p>
-        </div>
       ) : null}
 
-      {invoice.status === "betald" && invoice.paidAt ? (
-        <div className="mt-8 flex items-start gap-3 rounded-2xl border border-ok/20 bg-ok-soft/60 p-4">
+      {isPaid && invoice.paidAt ? (
+        <div className="break-inside-avoid mt-7 flex items-start gap-3 border-t border-line pt-4">
           <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
           <div>
             <p className="text-[14px] font-semibold text-ok">Betald</p>
@@ -202,7 +345,7 @@ export function InvoiceDocument({
         </div>
       ) : null}
 
-      <DocFooter company={seller} />
+      <InvoiceCompanyFooter company={seller} />
     </div>
   );
 }

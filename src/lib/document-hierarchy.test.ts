@@ -111,7 +111,7 @@ describe("InvoiceDocument: beskrivning före rader", () => {
     );
     assert.ok(indexOf(html, DESC_HEADING) < indexOf(html, LINE_TEXT));
     assert.ok(indexOf(html, DESC_BODY) < indexOf(html, LINE_TEXT));
-    assert.ok(indexOf(html, LINE_TEXT) < indexOf(html, "Att betala nu"));
+    assert.ok(indexOf(html, LINE_TEXT) < indexOf(html, "Att betala"));
     assert.ok(!html.includes("Övrig information"));
     assert.ok(!html.includes("ÖVRIG INFORMATION"));
   });
