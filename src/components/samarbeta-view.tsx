@@ -36,6 +36,8 @@ export function SamarbetaView({
   const [confirm, setConfirm] = useState<SamarbetaPerson | null>(null);
   const [inviteState, inviteAction, invitePending] = useActionState(inviteCollaboratorAction, {} as InviteState);
   const [revokeState, setRevokeState] = useState<InviteState>({});
+  const [resendState, setResendState] = useState<InviteState>({});
+  const [resendPendingId, setResendPendingId] = useState<string | null>(null);
   const [restoreState, setRestoreState] = useState<InviteState>({});
   const [restorePendingId, setRestorePendingId] = useState<string | null>(null);
   const [email, setEmail] = useState("");

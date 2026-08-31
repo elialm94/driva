@@ -68,6 +68,7 @@ import {
   reminderNeedsReview,
 } from "@/lib/reminders/parse";
 import { DEFAULT_TIMEZONE } from "@/lib/reminders/when";
+import { DateTimePopover as DateTimePicker } from "./date-time-picker";
 import type {
   CommandBarPrefetch,
   CommandEntityHit,

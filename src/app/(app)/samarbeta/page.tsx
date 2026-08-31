@@ -13,7 +13,6 @@ import { requestSlot } from "@/lib/storage/request-scope";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { db } from "@/lib/store";
 import { resolveOptionalFeatures } from "@/lib/features";
-import { SETTINGS_HREF } from "@/lib/settings-routes";
 import { redirect } from "next/navigation";
 
 export const metadata = { title: "Samarbeta" };
@@ -24,7 +23,7 @@ export default async function SamarbetaPage() {
     ? requestSlot().businessId ?? tenantContext()?.businessId ?? LOCAL_JSON_BUSINESS_ID
     : LOCAL_JSON_BUSINESS_ID;
   if (!resolveOptionalFeatures(db(), businessId).collaboration) {
-    redirect(SETTINGS_HREF.funktioner);
+    redirect("/installningar?flik=funktioner");
   }
   const demoSession = await isDemoSession();
   // Demon speglar den lokala demons Samarbeta: Anna visas som kopplad konsult.

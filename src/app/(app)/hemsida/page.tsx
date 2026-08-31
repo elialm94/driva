@@ -18,7 +18,6 @@ import { ensurePageBusiness } from "@/lib/auth/session";
 import { SECTION_LABELS, stripWebsiteSecrets } from "@/lib/website-sections";
 import { resolveSiteContact } from "@/lib/website-contact";
 import { resolveOptionalFeatures, shouldShowWebsiteRestoreNotice } from "@/lib/features";
-import { SETTINGS_HREF } from "@/lib/settings-routes";
 import { redirect } from "next/navigation";
 
 export const metadata = { title: "Hemsida" };
@@ -27,7 +26,7 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
   await ensurePageBusiness();
   const data = db();
   if (!resolveOptionalFeatures(data).website) {
-    redirect(SETTINGS_HREF.funktioner);
+    redirect("/installningar?flik=funktioner");
   }
   const site = data.website;
   const searchParams = await props.searchParams;
@@ -124,7 +123,7 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
               {/* Utkast är grått som överallt annars – gult betyder "väntar/uppmärksamhet". */}
               <Badge tone={live ? "ok" : paused ? "warn" : "neutral"}>
                 {live ? "Publicerad" : paused ? "Pausad" : "Utkast"}
-              </Badge></Badge>
+              </Badge>
             </div>
             <CopyLinkButton path="/sajt" label="Kopiera länk" />
           </div>
