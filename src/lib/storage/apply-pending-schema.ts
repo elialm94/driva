@@ -13,8 +13,8 @@ export function resetPendingSchemaGuard(): void {
 }
 
 /**
- * Idempotent: första skrivningen i processen lägger till saknade kolumner.
- * Misslyckad apply cachas inte – nästa commit försöker igen.
+ * Idempotent: första skrivningen i processen lägger till saknade kolumner
+ * (payer_*, footer, draft_design, …). Misslyckad apply cachas inte – nästa commit försöker igen.
  */
 export async function ensurePendingSchema(client: SqlClient): Promise<void> {
   if (schemaEnsured) return;

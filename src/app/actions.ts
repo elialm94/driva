@@ -31,6 +31,7 @@ import {
 import { issueInvoice } from "@/lib/services/invoices";
 import { getInvoiceSendBlockers, InvoiceNotReadyError } from "@/lib/invoices/validate";
 import { userFacingInvoiceSendError, userFacingIssueError } from "@/lib/invoices/issue-errors";
+import { userFacingStorageError } from "@/lib/storage/sql-errors";
 import { QuoteNotReadyError } from "@/lib/services/quotes";
 import { getInvoice, getQuoteByToken } from "@/lib/services/data";
 import {
@@ -1480,13 +1481,14 @@ export async function setWebsiteDesignAction(input: {
       try {
         setWebsiteDesign(input);
       } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : "Kunde inte byta utseende." } as const;
+        return { ok: false, error: userFacingStorageError(e, "Kunde inte byta utseende.") } as const;
       }
       refresh();
       return { ok: true } as const;
     }, { capability: "change_website" });
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara utseendet." };
+    console.error("[driva:hemsida] kunde inte spara utseende", e);
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte spara ändringen. Försök igen.") };
   }
 }
 
@@ -1504,13 +1506,14 @@ export async function setWebsiteFooterAction(input: {
       try {
         setWebsiteFooter(input);
       } catch (e) {
-        return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara sidfoten." } as const;
+        return { ok: false, error: userFacingStorageError(e, "Kunde inte spara sidfoten.") } as const;
       }
       refresh();
       return { ok: true } as const;
     }, { capability: "change_website" });
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara sidfoten." };
+    console.error("[driva:hemsida] kunde inte spara sidfot", e);
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte spara ändringen. Försök igen.") };
   }
 }
 

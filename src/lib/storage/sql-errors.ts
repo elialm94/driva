@@ -31,7 +31,7 @@ function looksLikeEngineError(message: string): boolean {
 
 /**
  * End-user-text. Rå SQL/Postgres (t.ex. saknad websites.footer) läcker aldrig.
- * Domänfel på svenska lämnas orörda.
+ * Domänfel på svenska (Okänt tema) lämnas orörda.
  */
 export function userFacingStorageError(err: unknown, fallback = STORAGE_SAVE_FAILED): string {
   if (isUndefinedColumn(err) || isUndefinedRelation(err)) return fallback;

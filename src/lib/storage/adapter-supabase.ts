@@ -111,6 +111,8 @@ export async function runWithTenant<T>(opts: RunWithTenantOptions, fn: () => T |
           })
         );
       } catch (err) {
+        // Saknad kolumn (t.ex. websites.footer / payer_*) efter ny deploy:
+        // applicera schemat igen och skriv om en gång. Inte en tyst swallow.
         if (!isUndefinedColumn(err)) throw err;
         resetPendingSchemaGuard();
         await ensurePendingSchema(client);
