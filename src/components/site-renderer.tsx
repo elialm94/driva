@@ -5,6 +5,7 @@ import {
   type Website,
   type WebsiteCtaDestination,
   type WebsiteDesign,
+  type WebsiteFooter,
   type WebsiteSection,
   type WebsiteSectionItem,
 } from "@/lib/types";
@@ -19,6 +20,12 @@ import { SmoothSectionLink } from "./smooth-section-link";
 import { formatAddressLine, mailHref, resolveSiteContact, telHref } from "@/lib/website-contact";
 import { defaultCtaLabel, sectionAnchorId } from "@/lib/website-sections";
 import { controllerName, privacyPolicyHref } from "@/lib/website-privacy";
+import {
+  draftWebsiteFooter,
+  publishedWebsiteFooter,
+  resolveWebsiteFooter,
+  type FooterSocialLink,
+} from "@/lib/website-footer";
 
 /**
  * Ren renderare för den publika hemsidan. Används i tre lägen: publika sajten
@@ -144,6 +151,8 @@ export function SiteRenderer({
   company,
   interactive = true,
   design,
+  footer,
+  preview = false,
   privacyHref = privacyPolicyHref(),
 }: {
   website: Website;
@@ -151,6 +160,10 @@ export function SiteRenderer({
   interactive?: boolean;
   /** Utseendet som ska renderas. Saknas → sajtens publicerade utseende. */
   design?: WebsiteDesign;
+  /** Sidfotens inställningar. Saknas → utkast i preview, annars publicerad. */
+  footer?: WebsiteFooter;
+  /** true = byggarens förhandsvisning / ?preview=1 (använder utkast). */
+  preview?: boolean;
   /** Länk till /integritetspolicy (kan ha ?preview=1). */
   privacyHref?: string;
 }) {
@@ -233,7 +246,13 @@ export function SiteRenderer({
         }
       })}
 
-      <SiteFooter website={website} company={company} theme={theme} privacyHref={privacyHref} />
+      <SiteFooter
+        website={website}
+        company={company}
+        theme={theme}
+        footer={footer ?? (preview ? draftWebsiteFooter(website) : publishedWebsiteFooter(website))}
+        privacyHref={privacyHref}
+      />
     </div>
   );
 }
@@ -938,64 +957,196 @@ function SiteFooter({
   website,
   company,
   theme,
+  footer,
   privacyHref,
 }: {
   website: Website;
   company: CompanySettings;
   theme: SiteThemeTokens;
+  footer: WebsiteFooter;
   privacyHref: string;
 }) {
-  const contact = resolveSiteContact(company, website);
-  const name = controllerName(company, website);
-  const phoneLink = telHref(contact.phone);
-  const emailLink = mailHref(contact.email);
-  const address = formatAddressLine(contact);
-  const inner = (
-    <div className="space-y-2">
-      <p>
-        © {new Date().getFullYear()} {name}
-        {contact.orgNumber ? ` · Org.nr ${contact.orgNumber}` : null}
-        {" · "}
-        Hemsida byggd med Driva
-      </p>
-      {phoneLink || emailLink || address ? (
-        <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
-          {phoneLink ? (
-            <a href={phoneLink} className="underline-offset-2 hover:underline">
-              <span className="@md:hidden">Ring oss</span>
-              <span className="hidden @md:inline">{contact.phone}</span>
-            </a>
+  const view = resolveWebsiteFooter(website, company, footer);
+  const onBand = theme.header === "band";
+  const ink = onBand ? "text-(--site-band-ink)" : "text-(--site-ink)";
+  const soft = onBand ? "text-(--site-band-soft)" : "text-(--site-soft)";
+  const link = `${soft} underline-offset-2 hover:underline hover:opacity-90`;
+  const hasServices = view.services.length > 0;
+  const hasAbout = Boolean(view.about);
+  const hasLogo = view.showLogo && Boolean(view.logoSrc);
+  const hasSocial = view.social.length > 0;
+  const columns = [true, hasServices, hasAbout, hasLogo].filter(Boolean).length;
+
+  return (
+    <footer
+      data-site-footer
+      className={
+        onBand
+          ? "bg-(--site-band) text-(--site-band-ink)"
+          : theme.sections === "open"
+            ? "text-(--site-ink)"
+            : "border-t border-(--site-line) text-(--site-ink)"
+      }
+    >
+      <div
+        className={`mx-auto max-w-(--site-content-w) px-6 ${
+          theme.sections === "open" ? "py-12 @2xl:py-16" : "py-10 @2xl:py-12"
+        }`}
+      >
+        <div
+          className={`grid gap-8 @md:grid-cols-2 ${
+            columns >= 4 ? "@2xl:grid-cols-4" : columns === 3 ? "@2xl:grid-cols-3" : "@2xl:grid-cols-2"
+          }`}
+        >
+          <FooterColumn title="Kontakt" theme={theme} className="order-1">
+            <p
+              className={`text-[15px] ${ink}`}
+              style={{
+                fontFamily: "var(--site-heading-font)",
+                fontWeight: "var(--site-heading-weight)" as CSSProperties["fontWeight"],
+              }}
+            >
+              {view.name}
+            </p>
+            {view.address ? <p className={`mt-2 text-[14px] leading-relaxed ${soft}`}>{view.address}</p> : null}
+            {view.phone ? (
+              <p className="mt-2 text-[14px]">
+                <a href={telHref(view.phone)} className={link}>
+                  {view.phone}
+                </a>
+              </p>
+            ) : null}
+            {view.email ? (
+              <p className="mt-1.5 text-[14px]">
+                <a href={mailHref(view.email)} className={link}>
+                  {view.email}
+                </a>
+              </p>
+            ) : null}
+            {hasSocial ? (
+              <FooterSocialIcons links={view.social} className={`mt-4 hidden @2xl:flex ${ink}`} />
+            ) : null}
+          </FooterColumn>
+
+          {hasServices ? (
+            <FooterColumn title="Våra tjänster" theme={theme} className="order-2">
+              <ul className="space-y-1.5">
+                {view.services.map((title) => (
+                  <li key={title} className={`text-[14px] leading-relaxed ${soft}`}>
+                    {title}
+                  </li>
+                ))}
+              </ul>
+            </FooterColumn>
           ) : null}
-          {emailLink ? (
-            <a href={emailLink} className="underline-offset-2 hover:underline">
-              {contact.email}
-            </a>
+
+          {hasAbout ? (
+            <FooterColumn title="Om företaget" theme={theme} className="order-3">
+              <p className={`text-[14px] leading-relaxed ${soft}`}>{view.about}</p>
+            </FooterColumn>
           ) : null}
-          {address ? <span>{address}</span> : null}
-        </p>
-      ) : null}
-      <p>
-        <a href={privacyHref} className="underline decoration-from-font underline-offset-2 hover:opacity-80">
-          Integritetspolicy
-        </a>
-      </p>
+
+          {hasLogo ? (
+            <FooterColumn title=" " theme={theme} className="order-5 @2xl:order-4 @2xl:justify-self-end">
+              {/* Data-URL:er – next/image passar inte här. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={view.logoSrc}
+                alt=""
+                className={`h-12 w-auto max-w-[140px] object-contain ${onBand ? "rounded-md bg-white/95 p-1" : ""}`}
+              />
+            </FooterColumn>
+          ) : null}
+
+          {hasSocial ? (
+            <div className={`order-4 @2xl:hidden ${ink}`}>
+              <FooterSocialIcons links={view.social} />
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          className={`mt-8 flex flex-wrap items-center gap-x-2 gap-y-1 pt-6 text-[12px] leading-relaxed ${soft} ${
+            onBand
+              ? "border-t border-(--site-band-line)"
+              : theme.sections === "open"
+                ? ""
+                : "border-t border-(--site-line)"
+          }`}
+        >
+          <span>
+            © {new Date().getFullYear()} {view.name}
+            {view.orgNumber ? ` · Org.nr ${view.orgNumber}` : null}
+          </span>
+          <span aria-hidden>·</span>
+          <a href={privacyHref} className="underline decoration-from-font underline-offset-2 hover:opacity-80">
+            Integritetspolicy
+          </a>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+function FooterColumn({
+  title,
+  theme,
+  className,
+  children,
+}: {
+  title: string;
+  theme: SiteThemeTokens;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={className}>
+      {title.trim() ? <p className={`mb-3 ${theme.eyebrowClass} text-current/70`}>{title}</p> : null}
+      {children}
     </div>
   );
-  if (theme.header === "band") {
+}
+
+function FooterSocialIcons({ links, className }: { links: FooterSocialLink[]; className?: string }) {
+  return (
+    <ul className={`flex flex-wrap items-center gap-2 ${className ?? ""}`}>
+      {links.map((link) => (
+        <li key={link.network}>
+          <a
+            href={link.href}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={link.label}
+            className="inline-flex size-9 items-center justify-center rounded-(--site-radius-button) border border-current/20 transition-opacity hover:opacity-80"
+          >
+            <SocialGlyph network={link.network} />
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SocialGlyph({ network }: { network: FooterSocialLink["network"] }) {
+  const common = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "currentColor", "aria-hidden": true as const };
+  if (network === "instagram") {
     return (
-      <footer className="bg-(--site-band) px-6 py-8 text-center text-[12px] leading-relaxed text-(--site-band-soft)">
-        {inner}
-      </footer>
+      <svg {...common}>
+        <path d="M7 3h10a4 4 0 0 1 4 4v10a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4zm10 2H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm-5 3.2A3.8 3.8 0 1 1 8.2 12 3.8 3.8 0 0 1 12 8.2zm0 1.6A2.2 2.2 0 1 0 14.2 12 2.2 2.2 0 0 0 12 9.8zM17.35 7.4a.85.85 0 1 1-.85.85.85.85 0 0 1 .85-.85z" />
+      </svg>
+    );
+  }
+  if (network === "facebook") {
+    return (
+      <svg {...common}>
+        <path d="M14.5 9H16V6.5h-1.5c-2.1 0-3.5 1.3-3.5 3.4V12H9v2.5h2v6h3v-6h2.1l.4-2.5H14v-1.6c0-.8.3-1.4 1.5-1.4z" />
+      </svg>
     );
   }
   return (
-    <footer
-      className={`px-6 text-center text-[12px] leading-relaxed text-(--site-soft) ${
-        theme.sections === "open" ? "py-12" : "border-t border-(--site-line) py-8"
-      }`}
-    >
-      {inner}
-    </footer>
+    <svg {...common}>
+      <path d="M13.4 3.2c.2 2.1 1.4 3.9 3.4 4.8v2.3c-1.2 0-2.3-.3-3.3-.9v6.3c0 3.1-2.5 5.3-5.5 5.3S2.5 18.8 2.5 15.7 5 10.4 8 10.4c.3 0 .6 0 .9.1v2.4c-.3-.1-.6-.2-.9-.2-1.7 0-3 1.3-3 3s1.3 3 3 3 3-1.3 3-3V3.2h2.4z" />
+    </svg>
   );
 }
 

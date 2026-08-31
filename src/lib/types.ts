@@ -1172,6 +1172,28 @@ export interface WebsiteDesign {
   accent: WebsiteAccentId;
 }
 
+/** Vanliga externa länkar i sidfoten – ingen feed, ingen OAuth. */
+export interface WebsiteFooterSocial {
+  instagram?: string;
+  facebook?: string;
+  tiktok?: string;
+}
+
+/**
+ * Inställningar för hemsidans sidfot. Tomma fält = smart default
+ * (visa det som finns i företagsuppgifter och Tjänster-sektionen).
+ */
+export interface WebsiteFooter {
+  showPhone?: boolean;
+  showEmail?: boolean;
+  showAddress?: boolean;
+  showServices?: boolean;
+  showLogo?: boolean;
+  /** Kort text. Tomt = föreslagen från befintligt innehåll. */
+  aboutText?: string;
+  social?: WebsiteFooterSocial;
+}
+
 /**
  * Sektionstyper i hemsidesbyggaren. `om` är äldre namn för en textsektion
  * (Om oss) och behandlas som `text` – nya sajter skapas med `text`.
@@ -1256,6 +1278,16 @@ export interface Website {
    * publicera-modell som sajten i övrigt). Tas bort vid publicering.
    */
   draftDesign?: WebsiteDesign;
+  /**
+   * Publicerad sidfot (visa/dölj, sociala länkar, kort text).
+   * Kontakt, tjänster och logotyp hämtas live – de kopieras inte in här.
+   */
+  footer?: WebsiteFooter;
+  /**
+   * Utkast till sidfot. Förhandsvisningen använder det direkt; den publika
+   * sajten först vid "Publicera ändringar". Tas bort vid publicering.
+   */
+  draftFooter?: WebsiteFooter;
   /** Arrayordning = visningsordning på sajten. */
   sections: WebsiteSection[];
   /** Gemensam primärknapp i sidhuvud och startsektion. Saknas = DEFAULT_PRIMARY_CTA_LABEL. */

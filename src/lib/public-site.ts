@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { db } from "./store";
 import { draftWebsiteDesign, publishedWebsiteDesign, sameDesign } from "./website-design";
+import { draftWebsiteFooter, publishedWebsiteFooter, sameFooter } from "./website-footer";
 import { isMockDomainMode, resolvePublicSite } from "./domains";
 import { ensurePageBusiness, ensurePublicPage } from "./auth/session";
 import { isSupabaseMode } from "./storage/config";
@@ -40,6 +41,7 @@ export interface LoadedPublicSite {
   preview: boolean;
   design: WebsiteDesign;
   draftDesignPending: boolean;
+  draftFooterPending: boolean;
   privacyHref: string;
   homeHref: string;
 }
@@ -61,6 +63,9 @@ export async function loadPublicSite(
   const design = preview ? draftWebsiteDesign(website) : publishedWebsiteDesign(website);
   const draftDesignPending =
     preview && website.status === "publicerad" && !sameDesign(design, publishedWebsiteDesign(website));
+  const footer = preview ? draftWebsiteFooter(website) : publishedWebsiteFooter(website);
+  const draftFooterPending =
+    preview && website.status === "publicerad" && !sameFooter(footer, publishedWebsiteFooter(website));
 
   return {
     website: stripWebsiteSecrets(website),
@@ -68,6 +73,7 @@ export async function loadPublicSite(
     preview,
     design,
     draftDesignPending,
+    draftFooterPending,
     privacyHref: privacyPolicyHref(preview),
     homeHref: preview ? "/sajt?preview=1" : "/sajt",
   };

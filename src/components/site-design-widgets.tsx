@@ -129,6 +129,7 @@ export function SitePreviewFrame({
             website={website}
             company={company}
             design={design}
+            preview
             interactive={false}
             privacyHref="/integritetspolicy?preview=1"
           />
