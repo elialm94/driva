@@ -68,6 +68,39 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     `alter table public.businesses add column if not exists disabled_at timestamptz`
   );
 
+  // Provperiod (migration 23): sätts vid företagsskapandet, läses till meta.
+  const hadSubscriptionStatus = await columnExists(client, "businesses", "subscription_status");
+  await ensureColumn(
+    "businesses",
+    "trial_started_at",
+    `alter table public.businesses add column if not exists trial_started_at timestamptz`
+  );
+  await ensureColumn(
+    "businesses",
+    "trial_ends_at",
+    `alter table public.businesses add column if not exists trial_ends_at timestamptz`
+  );
+  await ensureColumn(
+    "businesses",
+    "subscription_status",
+    `alter table public.businesses add column if not exists subscription_status text`
+  );
+  if (!hadSubscriptionStatus) {
+    await run(
+      client,
+      `alter table public.businesses drop constraint if exists businesses_subscription_status_check`
+    );
+    await run(
+      client,
+      `alter table public.businesses
+         add constraint businesses_subscription_status_check
+         check (
+           subscription_status is null
+           or subscription_status in ('trialing', 'active', 'expired', 'canceled')
+         )`
+    );
+  }
+
   await ensureColumn(
     "business_settings",
     "default_hourly_rate",

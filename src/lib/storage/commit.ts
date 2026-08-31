@@ -241,8 +241,15 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
       state.settings.name,
       state.settings.orgNumber,
       state.accounting.lockedThrough ?? null,
-      // meta.demo speglar kolumnen is_demo och skrivs aldrig till jsonb:n.
-      JSON.stringify({ ...state.meta, demo: undefined }),
+      // meta.demo och trial-fälten speglar businesses-kolumnerna (is_demo,
+      // trial_*, subscription_status) och skrivs aldrig till jsonb:n.
+      JSON.stringify({
+        ...state.meta,
+        demo: undefined,
+        trialStartedAt: undefined,
+        trialEndsAt: undefined,
+        subscriptionStatus: undefined,
+      }),
     ]
   );
   if (casRows.length === 0) {

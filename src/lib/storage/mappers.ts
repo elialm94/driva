@@ -1803,13 +1803,25 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
 /* ------------------------------- DB-metadata ------------------------------ */
 
 export function metaFromBusinessRow(r: SqlRow): DB["meta"] {
-  // demo speglar ALLTID kolumnen is_demo (fryst vid insert) – aldrig jsonb-
-  // innehållet, som appen kan skriva. Commit-vägen skriver aldrig tillbaka den.
-  const { demo: _fromJsonb, ...meta } = jsonVal<DB["meta"]>(r.meta ?? {});
+  // demo och trial-fälten speglar ALLTID kolumnerna (is_demo fryst vid insert,
+  // trial_* satta vid skapandet) – aldrig jsonb-innehållet, som appen kan
+  // skriva. Commit-vägen skriver aldrig tillbaka dem.
+  const {
+    demo: _fromJsonb,
+    trialStartedAt: _t1,
+    trialEndsAt: _t2,
+    subscriptionStatus: _t3,
+    ...meta
+  } = jsonVal<DB["meta"]>(r.meta ?? {});
   return {
     ...meta,
     seededAt: meta.seededAt ?? tsIso(r.created_at),
     ...(r.is_demo === true ? { demo: true } : {}),
+    ...(r.trial_started_at ? { trialStartedAt: tsIso(r.trial_started_at) } : {}),
+    ...(r.trial_ends_at ? { trialEndsAt: tsIso(r.trial_ends_at) } : {}),
+    ...(r.subscription_status
+      ? { subscriptionStatus: r.subscription_status as DB["meta"]["subscriptionStatus"] }
+      : {}),
   };
 }
 
