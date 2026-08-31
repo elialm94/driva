@@ -53,7 +53,7 @@ export interface SettingsProfileFields {
   payerBankName?: string;
   payerIban?: string;
   payerBic?: string;
-  logoDataUrl?: string;
+  logoDataUrl?: string | null;
 }
 
 export interface SettingsDefaultsFields {
@@ -134,7 +134,7 @@ export function settingsProfileFieldErrors(input: SettingsProfileFields): Settin
       tab: "foretag",
     });
   }
-  if (input.logoDataUrl && !input.logoDataUrl.startsWith("data:image/")) {
+  if (input.logoDataUrl && input.logoDataUrl !== "$undefined" && !input.logoDataUrl.startsWith("data:image/")) {
     errors.push({ field: "logoDataUrl", label: "Logotyp", message: "Logotypen måste vara en bild.", tab: "foretag" });
   }
   if (input.bankgiro.trim()) {

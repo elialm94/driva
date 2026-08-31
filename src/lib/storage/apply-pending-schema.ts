@@ -1,8 +1,26 @@
 /**
  * Applicerar schema som koden skriver mot när `supabase db push` inte körts.
- * Bara IF NOT EXISTS. Körs från /api/health via Vercels databas-URL.
+ * Bara IF NOT EXISTS. Körs från /api/health och före tenant-commits så att
+ * t.ex. business_settings.payer_* och websites.footer finns innan upsert.
  */
 import type { SqlClient } from "./executor";
+
+let schemaEnsured = false;
+
+/** Testkrok: nästa ensure kör apply igen (ny klient / annan databas). */
+export function resetPendingSchemaGuard(): void {
+  schemaEnsured = false;
+}
+
+/**
+ * Idempotent: första skrivningen i processen lägger till saknade kolumner.
+ * Misslyckad apply cachas inte – nästa commit försöker igen.
+ */
+export async function ensurePendingSchema(client: SqlClient): Promise<void> {
+  if (schemaEnsured) return;
+  await applyPendingPageLoadSchema(client);
+  schemaEnsured = true;
+}
 
 function isBenignSchemaError(err: unknown): boolean {
   const code = (err as { code?: string } | null)?.code;
@@ -198,15 +216,27 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
          add column if not exists extraction jsonb,
          add column if not exists reviewed_at timestamptz`
     );
-    await run(
-      client,
-      `alter table public.business_settings
-         add column if not exists payer_bank_name text,
-         add column if not exists payer_iban text,
-         add column if not exists payer_bic text`
-    );
     applied.push("payment_files");
   }
+
+  // Oberoende av payment_files: settings-upserten skriver alltid dessa kolumner.
+  // Tidigare låg DDL:en inne i `if (!payment_files)` – i produktion finns
+  // tabellen redan, så payer_* saknades och varje "Spara ändringar" 500:ade.
+  await ensureColumn(
+    "business_settings",
+    "payer_bank_name",
+    `alter table public.business_settings add column if not exists payer_bank_name text`
+  );
+  await ensureColumn(
+    "business_settings",
+    "payer_iban",
+    `alter table public.business_settings add column if not exists payer_iban text`
+  );
+  await ensureColumn(
+    "business_settings",
+    "payer_bic",
+    `alter table public.business_settings add column if not exists payer_bic text`
+  );
 
   await run(
     client,

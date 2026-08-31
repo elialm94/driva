@@ -106,6 +106,17 @@ describe("offert via Resend", () => {
     assert.equal(stored.lastEmail?.provider, "resend");
   });
 
+  it("ogiltig svara-till ger precis, återhämtningsbar text utan att skicka offerten", async () => {
+    setMailTransportForTests(async () => {
+      throw new Error("Invalid `reply_to` field. Must be a valid email address.");
+    });
+    const quote = draftQuote("cust-1");
+    const first = await sendQuoteWithEmail(quote.id);
+    assert.equal(first.outcome.ok, false);
+    assert.match(first.outcome.error ?? "", /Svara-till|företagets e-post/i);
+    assert.equal(db().quotes.find((q) => q.id === quote.id)?.status, "utkast");
+  });
+
   it("Resend-fel lämnar offerten osänd så att man kan försöka igen", async () => {
     failNext = true;
     const quote = draftQuote("cust-1");

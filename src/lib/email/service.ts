@@ -37,6 +37,8 @@ export function userFacingSendError(
 ): string {
   if (result.code === "not_configured") return result.error || MAIL_NOT_CONFIGURED;
   if (result.code === "unverified_domain") return result.error;
+  const text = result.error?.trim() ?? "";
+  if (text && /[åäöÅÄÖ]|avsändar|mottagar|e-post|Svara-till/i.test(text)) return text;
   return fallback;
 }
 

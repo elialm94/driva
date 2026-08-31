@@ -12,6 +12,7 @@ import { ImageDropzone } from "./image-dropzone";
 import { saveLogoAction, updateCompanySettingsAction } from "@/app/actions";
 import type { CompanySettings, VatRate } from "@/lib/types";
 import type { InvoiceDefaults } from "@/lib/services/settings";
+import { buildCompanySettingsActionInput } from "@/lib/settings-action-input";
 import { SETTINGS_HREF, SETTINGS_TABS, type SettingsFlik } from "@/lib/settings-routes";
 import { formatOrgnr, formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "@/lib/invoices/formats";
 import {
@@ -116,6 +117,7 @@ export function SettingsForm({
   domainSummary = null,
   features,
   focusFieldKey = null,
+  account,
 }: {
   initial: CompanySettings;
   defaults: InvoiceDefaults;
@@ -127,6 +129,8 @@ export function SettingsForm({
   domainSummary?: { hostname: string; live: boolean } | null;
   features: ResolvedOptionalFeatures;
   focusFieldKey?: string | null;
+  /** Demo-copy bara när appen faktiskt körs i demoläge. */
+  account: { demo: boolean; email?: string | null };
 }) {
   const router = useRouter();
   const [form, setForm] = useState(() => fromInitial(initial, defaults));
@@ -226,35 +230,7 @@ export function SettingsForm({
     setError(null);
     setSaved(false);
     startTransition(async () => {
-      const result = await updateCompanySettingsAction({
-        name: form.name,
-        orgNumber: form.orgNumber,
-        vatNumber: form.vatNumber,
-        email: form.email,
-        websiteNotificationEmail: form.websiteNotificationEmail,
-        phone: form.phone,
-        websiteUrl: form.websiteUrl,
-        address: form.address,
-        postalCode: form.postalCode,
-        city: form.city,
-        sate: form.sate,
-        country: form.country,
-        bankgiro: form.bankgiro,
-        plusgiro: form.plusgiro,
-        bankAccount: form.bankAccount,
-        iban: form.iban,
-        bic: form.bic,
-        payerBankName: form.payerBankName,
-        payerIban: form.payerIban,
-        payerBic: form.payerBic,
-        logoInitials: form.logoInitials,
-        logoDataUrl: form.logoDataUrl || undefined,
-        paymentTermsDays: Number(form.paymentTermsDays),
-        lateInterestRate: Number(form.lateInterestRate),
-        quoteValidityDays: Number(form.quoteValidityDays),
-        defaultVatRate: form.defaultVatRate,
-        defaultHourlyRate: form.defaultHourlyRate.trim() === "" ? undefined : Number(form.defaultHourlyRate.replace(",", ".")),
-      });
+      const result = await updateCompanySettingsAction(buildCompanySettingsActionInput(form));
       if (result.ok === false) {
         setError(result.error);
         return;
@@ -816,18 +792,32 @@ export function SettingsForm({
 
       {flik === "konto" ? (
         <div className="space-y-5">
-          <Card className="space-y-3 p-6">
-            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Demoläge</p>
-            <p className="text-[15px] leading-relaxed text-soft">
-              Driva körs just nu utan inloggning. Du arbetar som företagare för{" "}
-              <span className="font-medium text-ink">{initial.name}</span>. Det finns inget separat användarkonto eller
-              lösenord att ändra.
-            </p>
-            <p className="text-[14px] text-muted">
-              Utskick använder företagets e-post{" "}
-              <span className="font-medium text-ink">{initial.email || "–"}</span>.
-            </p>
-          </Card>
+          {account.demo ? (
+            <Card className="space-y-3 p-6">
+              <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Demoläge</p>
+              <p className="text-[15px] leading-relaxed text-soft">
+                Driva körs just nu utan inloggning. Du arbetar som företagare för{" "}
+                <span className="font-medium text-ink">{initial.name}</span>. Det finns inget separat användarkonto
+                eller lösenord att ändra.
+              </p>
+              <p className="text-[14px] text-muted">
+                Utskick använder företagets e-post{" "}
+                <span className="font-medium text-ink">{initial.email || "–"}</span>.
+              </p>
+            </Card>
+          ) : (
+            <Card className="space-y-3 p-6">
+              <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Konto</p>
+              <p className="text-[15px] leading-relaxed text-soft">
+                Du är inloggad som{" "}
+                <span className="font-medium text-ink">{account.email || "ett verifierat konto"}</span>.
+              </p>
+              <p className="text-[14px] text-muted">
+                Utskick använder företagets e-post{" "}
+                <span className="font-medium text-ink">{initial.email || "–"}</span>. Logga ut via menyn.
+              </p>
+            </Card>
+          )}
         </div>
       ) : null}
 

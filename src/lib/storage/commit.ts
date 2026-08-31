@@ -153,11 +153,15 @@ function amountToPayForQuote(state: DB, quoteId: string, currentVersionId: strin
 
 /* ------------------------------ RPC-payloads ------------------------------- */
 
-function invoiceRpcPayload(inv: Invoice, businessId: string): Record<string, unknown> {
+/** RPC-payload till app.issue_invoice. number/ocr/id är alltid konkreta JSON-fält. */
+export function invoiceRpcPayload(inv: Invoice, businessId: string): Record<string, unknown> {
+  const number =
+    inv.number != null && Number.isInteger(inv.number) && inv.number >= 1 ? inv.number : null;
+  const ocr = inv.ocr?.trim() ? inv.ocr : number != null ? ocrForInvoice(number) : "";
   return {
-    id: inv.id,
+    id: inv.id ?? "",
     business_id: businessId,
-    number: inv.number,
+    number,
     customer_id: inv.customerId,
     job_id: inv.jobId ?? null,
     quote_id: inv.quoteId ?? null,
@@ -179,7 +183,7 @@ function invoiceRpcPayload(inv: Invoice, businessId: string): Record<string, unk
     paid_at: inv.paidAt ?? null,
     reminders: inv.reminders,
     token: inv.token,
-    ocr: inv.ocr,
+    ocr,
     credits_invoice_id: inv.creditsInvoiceId ?? null,
     denied_reduction_of: inv.deniedReductionOf ?? null,
     created_by: inv.createdBy ?? null,
