@@ -17,6 +17,8 @@ import {
   parseOptionalHourlyRate,
   settingsDefaultsFieldErrors,
   settingsProfileFieldErrors,
+  type SettingsDefaultsFields,
+  type SettingsProfileFields,
 } from "../settings-validation";
 import {
   resolveWebsiteFormRecipient,
@@ -51,31 +53,37 @@ export function updateWebsiteFormRecipient(email: string | null | undefined): st
   return resolveWebsiteFormRecipient(s, s);
 }
 
-export type BusinessProfileInput = Pick<
-  CompanySettings,
-  | "name"
-  | "orgNumber"
-  | "vatNumber"
-  | "email"
-  | "websiteNotificationEmail"
-  | "phone"
-  | "websiteUrl"
-  | "address"
-  | "postalCode"
-  | "city"
-  | "sate"
-  | "country"
-  | "bankgiro"
-  | "plusgiro"
-  | "bankAccount"
-  | "iban"
-  | "bic"
-  | "payerBankName"
-  | "payerIban"
-  | "payerBic"
-  | "logoInitials"
-  | "logoDataUrl"
->;
+export type BusinessProfileInput = Omit<
+  Pick<
+    CompanySettings,
+    | "name"
+    | "orgNumber"
+    | "vatNumber"
+    | "email"
+    | "websiteNotificationEmail"
+    | "phone"
+    | "websiteUrl"
+    | "address"
+    | "postalCode"
+    | "city"
+    | "sate"
+    | "country"
+    | "bankgiro"
+    | "plusgiro"
+    | "bankAccount"
+    | "iban"
+    | "bic"
+    | "payerBankName"
+    | "payerIban"
+    | "payerBic"
+    | "logoInitials"
+    | "logoDataUrl"
+  >,
+  "logoDataUrl"
+> & {
+  /** null = rensa. Aldrig `undefined` över server-action-gränsen. */
+  logoDataUrl?: string | null;
+};
 
 export interface InvoiceDefaults {
   paymentTermsDays: number;
@@ -97,7 +105,11 @@ export function getInvoiceDefaults(): InvoiceDefaults {
   };
 }
 
-export type CompanySettingsInput = BusinessProfileInput & InvoiceDefaults;
+export type CompanySettingsInput = Omit<BusinessProfileInput, "logoDataUrl"> &
+  Omit<InvoiceDefaults, "defaultHourlyRate"> & {
+    logoDataUrl?: string | null;
+    defaultHourlyRate?: number | null;
+  };
 
 function initialsFromName(name: string): string {
   const parts = name
@@ -116,7 +128,7 @@ function optional(value: string | undefined | null): string | undefined {
 }
 
 /** Samma regler som klienten visar i realtid — se settings-validation.ts. */
-function validateProfile(input: BusinessProfileInput): string[] {
+function validateProfile(input: SettingsProfileFields): string[] {
   return settingsProfileFieldErrors(input).map((e) => e.message);
 }
 
@@ -149,7 +161,7 @@ function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
   s.logoInitials = input.logoInitials.trim() || initialsFromName(s.name);
 }
 
-function validateDefaults(input: InvoiceDefaults): string[] {
+function validateDefaults(input: SettingsDefaultsFields): string[] {
   return settingsDefaultsFieldErrors(input).map((e) => e.message);
 }
 

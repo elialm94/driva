@@ -18,6 +18,8 @@ import { cloneState, runInTenantContext, type TenantContext } from "./context";
 import { commitTenantState, isRetryableStorageError } from "./commit";
 import { getSqlClient, type SqlClient } from "./executor";
 import { bindTransaction, loadTenantState, type LoadedTenantState } from "./load";
+import { ensurePendingSchema, resetPendingSchemaGuard } from "./apply-pending-schema";
+import { isUndefinedColumn } from "./sql-errors";
 import { cachedStateIfFresh, clearSnapshotCache, invalidateSnapshot, putSnapshot } from "./snapshot-cache";
 import { markCacheHit, withPerfSpan } from "../perf/telemetry";
 
@@ -30,6 +32,7 @@ export function setSqlClientForTests(client: SqlClient | null): void {
   // Klientbyte kan peka på en HELT annan databas där samma businessId/version
   // råkar existera – gamla snapshots får aldrig återanvändas.
   clearSnapshotCache();
+  resetPendingSchemaGuard();
 }
 
 /**
@@ -93,18 +96,37 @@ export async function runWithTenant<T>(opts: RunWithTenantOptions, fn: () => T |
     // så cachen får bara innehålla tillstånd som kommer från en riktig
     // laddning. Nästa läsning läser färskt och fyller cachen igen.
     const commit = async () => {
-      await withPerfSpan(`commit business=${opts.businessId}`, () =>
-        client.transaction(async (tx) => {
-          await bindTransaction(tx, opts.businessId);
-          return commitTenantState(tx, {
-            businessId: opts.businessId,
-            userId: opts.userId,
-            baseline: ctx.baseline,
-            state: ctx.state,
-            stateVersion: ctx.stateVersion,
-          });
-        })
-      );
+      await ensurePendingSchema(client);
+      try {
+        await withPerfSpan(`commit business=${opts.businessId}`, () =>
+          client.transaction(async (tx) => {
+            await bindTransaction(tx, opts.businessId);
+            return commitTenantState(tx, {
+              businessId: opts.businessId,
+              userId: opts.userId,
+              baseline: ctx.baseline,
+              state: ctx.state,
+              stateVersion: ctx.stateVersion,
+            });
+          })
+        );
+      } catch (err) {
+        if (!isUndefinedColumn(err)) throw err;
+        resetPendingSchemaGuard();
+        await ensurePendingSchema(client);
+        await withPerfSpan(`commit-retry-schema business=${opts.businessId}`, () =>
+          client.transaction(async (tx) => {
+            await bindTransaction(tx, opts.businessId);
+            return commitTenantState(tx, {
+              businessId: opts.businessId,
+              userId: opts.userId,
+              baseline: ctx.baseline,
+              state: ctx.state,
+              stateVersion: ctx.stateVersion,
+            });
+          })
+        );
+      }
       invalidateSnapshot(opts.businessId);
     };
 
@@ -301,6 +323,7 @@ export async function createBusinessWithOwner(input: {
   isDemo?: boolean;
 }): Promise<string> {
   const client = await sqlClient();
+  await ensurePendingSchema(client);
   return client.transaction(async (tx) => {
     const idRows = await tx.query(`select gen_random_uuid()::text as id`);
     const businessId = String(idRows[0].id);

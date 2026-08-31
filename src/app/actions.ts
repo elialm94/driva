@@ -57,6 +57,8 @@ import {
   updateWebsiteFormRecipient,
   type CompanySettingsInput,
 } from "@/lib/services/settings";
+import { normalizeCompanySettingsInput } from "@/lib/settings-action-input";
+import { userFacingStorageError } from "@/lib/storage/sql-errors";
 import { createCustomer, updateCustomer, updateCustomerNotes } from "@/lib/services/customers";
 import {
   approveInboxExtraction,
@@ -1224,11 +1226,18 @@ export async function requestSupplierDetailsAction(
 
 /* ---------------------------------- Hemsida --------------------------------- */
 
-export async function generateWebsiteAction(description: string) {
-  await withBusiness(() => {
-    generateWebsite(description);
-    refresh();
-  }, { capability: "change_website" });
+export async function generateWebsiteAction(
+  description: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await withBusiness(() => {
+      generateWebsite(description);
+      refresh();
+    }, { capability: "change_website" });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: userFacingStorageError(e, "Hemsidan kunde inte skapas just nu. Försök igen.") };
+  }
 }
 
 export async function activateOptionalFeatureAction(
@@ -1617,30 +1626,30 @@ export async function completeAssistantCustomerAction(actionId: string, customer
 export async function updateCompanySettingsAction(
   input: CompanySettingsInput
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  return withBusiness(() => {
-    try {
-      updateCompanySettings(input);
+  try {
+    return await withBusiness(() => {
+      updateCompanySettings(normalizeCompanySettingsInput(input));
       refresh();
       return { ok: true } as const;
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara." } as const;
-    }
-  });
+    });
+  } catch (e) {
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte spara.") };
+  }
 }
 
 /** Autosparar enbart logotypen (null = ta bort). Rör aldrig resten av ett halvredigerat formulär. */
 export async function saveLogoAction(
   logoDataUrl: string | null
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  return withBusiness(() => {
-    try {
-      applyBusinessProfilePatch({ logoDataUrl });
+  try {
+    return await withBusiness(() => {
+      applyBusinessProfilePatch({ logoDataUrl: logoDataUrl === "$undefined" ? null : logoDataUrl });
       refresh();
       return { ok: true } as const;
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara." } as const;
-    }
-  });
+    });
+  } catch (e) {
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte spara.") };
+  }
 }
 
 /* ------------------------------------ Demo ---------------------------------- */

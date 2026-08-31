@@ -10,7 +10,7 @@ import {
 import { parseSettingsFalt, parseSettingsFlik } from "@/lib/settings-routes";
 import { sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
 import { primaryDomain } from "@/lib/domains";
-import { ensurePageBusiness, isDemoSession } from "@/lib/auth/session";
+import { ensurePageBusiness, getSessionUser, isDemoSession } from "@/lib/auth/session";
 import { resolveOptionalFeatures } from "@/lib/features";
 import { LOCAL_JSON_BUSINESS_ID } from "@/lib/collaboration/actor";
 import { hydrateInvitationsFromTenant } from "@/lib/collaboration/service";
@@ -29,6 +29,8 @@ export default async function SettingsPage(props: {
   const flik = parseSettingsFlik(typeof searchParams.flik === "string" ? searchParams.flik : undefined);
   const focusFieldKey = parseSettingsFalt(typeof searchParams.falt === "string" ? searchParams.falt : undefined);
   const profile = getBusinessProfile();
+  const demoAccount = isJsonDemoStore() || (await isDemoSession());
+  const sessionUser = await getSessionUser();
   const tillbaka = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : null;
   const tillbakaNamn =
     typeof searchParams.tillbakaNamn === "string" ? sanitizeReturnLabel(searchParams.tillbakaNamn) : null;
@@ -48,6 +50,7 @@ export default async function SettingsPage(props: {
           const d = primaryDomain();
           return d ? { hostname: d.hostname, live: d.status === "active" } : null;
         })()}
+        account={{ demo: demoAccount, email: sessionUser?.email ?? null }}
         features={(() => {
           const businessId = isSupabaseMode()
             ? requestSlot().businessId ?? tenantContext()?.businessId ?? LOCAL_JSON_BUSINESS_ID

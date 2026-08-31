@@ -18,6 +18,7 @@ import { getInvoice } from "../services/data";
 import { db } from "../store";
 import { ocrForInvoice } from "../ids";
 import { userFacingIssueError } from "./issue-errors";
+import { invoiceRpcPayload } from "../storage/commit";
 
 function reset(over: Parameters<typeof emptyTestDb>[0] = {}) {
   replaceDb(emptyTestDb(over));
@@ -88,6 +89,31 @@ describe("Fakturanummer och utkast", () => {
     assert.equal(getInvoice(inv.id)?.number, null);
   });
 });
+
+describe("Issue-RPC-payload", () => {
+  beforeEach(() => reset());
+
+  it("har alltid konkret id, number och ocr så SQL inte får issue_invalid", () => {
+    const inv = issueInvoice(draft().id);
+    const payload = invoiceRpcPayload(inv, "biz-1");
+    assert.equal(typeof payload.id, "string");
+    assert.ok(String(payload.id).length > 0);
+    assert.equal(typeof payload.number, "number");
+    assert.ok(Number.isInteger(payload.number) && (payload.number as number) >= 1);
+    assert.equal(typeof payload.ocr, "string");
+    assert.ok(String(payload.ocr).length > 0);
+    assert.equal(JSON.stringify(payload).includes(FLIGHT_UNDEFINED), false);
+  });
+
+  it("saknat OCR fylls i från numret före RPC", () => {
+    const inv = issueInvoice(draft().id);
+    inv.ocr = "";
+    const payload = invoiceRpcPayload(inv, "biz-1");
+    assert.equal(payload.ocr, ocrForInvoice(inv.number as number));
+  });
+});
+
+const FLIGHT_UNDEFINED = "$undefined";
 
 describe("Validering före utfärdande", () => {
   it("stoppar om säljaren saknar momsreg.nr", () => {

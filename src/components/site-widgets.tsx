@@ -240,6 +240,7 @@ const EXAMPLES = [
 export function GenerateWebsiteForm() {
   const [description, setDescription] = useState("");
   const [missingHint, setMissingHint] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -250,8 +251,13 @@ export function GenerateWebsiteForm() {
       focusField("hemsida-ai-beskrivning");
       return;
     }
+    setError(null);
     startTransition(async () => {
-      await generateWebsiteAction(text);
+      const result = await generateWebsiteAction(text);
+      if (result.ok === false) {
+        setError(result.error);
+        return;
+      }
       router.refresh();
     });
   }
@@ -277,6 +283,11 @@ export function GenerateWebsiteForm() {
       <FieldError id="hemsida-ai-beskrivning-fel">
         {missingHint ? "Beskriv först ditt företag – vad ni gör och var. Eller utgå från ett exempel nedan." : null}
       </FieldError>
+      {error ? (
+        <p className="mt-2 text-[13px] leading-relaxed text-danger" role="alert">
+          {error}
+        </p>
+      ) : null}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1.5">
           {EXAMPLES.map((ex) => (

@@ -195,6 +195,21 @@ function classifyProviderError(raw: string): {
   ) {
     return { error: MAIL_NOT_CONFIGURED, code: "not_configured" };
   }
+  if (text.includes("invalid `from`") || text.includes("invalid from") || text.includes("from field")) {
+    return { error: MAIL_SENDER_NOT_CONFIGURED, code: "not_configured" };
+  }
+  if (text.includes("reply") && (text.includes("invalid") || text.includes("must be"))) {
+    return {
+      error: "Svara-till-adressen (företagets e-post) accepterades inte. Uppdatera den under Inställningar.",
+      code: "provider",
+    };
+  }
+  if (text.includes("invalid `to`") || text.includes("invalid to") || text.includes("invalid email")) {
+    return {
+      error: "Mottagaradressen accepterades inte av e-posttjänsten. Kontrollera kundens e-post.",
+      code: "provider",
+    };
+  }
   return { error: raw, code: "provider" };
 }
 
@@ -280,7 +295,7 @@ async function sendViaResend(message: MailMessage): Promise<string | undefined> 
   const { data, error } = await resend.emails.send({
     from,
     to: [message.to],
-    replyTo: message.replyTo || undefined,
+    ...(message.replyTo ? { replyTo: message.replyTo } : {}),
     subject: message.subject,
     html: message.html,
     text: message.text,
