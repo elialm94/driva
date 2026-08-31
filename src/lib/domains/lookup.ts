@@ -13,17 +13,18 @@ export interface PublicSiteResolution {
 }
 
 /**
- * Host → Domain → Website → Business. O(n) på få rader, unikt hostname-index i normalize.
- * Publicering av hemsidan rör aldrig DNS.
+ * Host → Domain → Website även om sajten är utkast eller pausad.
+ * Används för att visa den neutrala "tillfälligt inte tillgänglig"-sidan
+ * utan att läcka innehåll.
  */
-export function resolvePublicSite(hostHeader: string | null | undefined): PublicSiteResolution | null {
+export function lookupBoundPublicSite(hostHeader: string | null | undefined): PublicSiteResolution | null {
   if (!hostHeader) return null;
   const host = hostHeader.split(":")[0]?.toLowerCase() ?? "";
   if (!host || isDrivaAppHost(host)) return null;
   const domain = findDomainByHostname(host);
   if (!domain || domain.status !== "active") return null;
   const website = db().website;
-  if (!website || website.status !== "publicerad") return null;
+  if (!website) return null;
   const apex = apexOf(domain.hostname);
   return {
     domain,
@@ -32,6 +33,17 @@ export function resolvePublicSite(hostHeader: string | null | undefined): Public
     canonicalHostname: apex,
     redirectToApex: isWww(host) && domain.isPrimary,
   };
+}
+
+/**
+ * Host → Domain → Website → Business. O(n) på få rader, unikt hostname-index i normalize.
+ * Publicering av hemsidan rör aldrig DNS. Returnerar bara en live sajt.
+ */
+export function resolvePublicSite(hostHeader: string | null | undefined): PublicSiteResolution | null {
+  const bound = lookupBoundPublicSite(hostHeader);
+  if (!bound) return null;
+  if (bound.website.status !== "publicerad") return null;
+  return bound;
 }
 
 export function lookupHostname(hostname: string): Domain | undefined {

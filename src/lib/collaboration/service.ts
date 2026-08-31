@@ -3,7 +3,7 @@
  */
 import { db, save } from "../store";
 import { isSupabaseMode } from "../storage/config";
-import { activateOptionalFeature } from "../features";
+import { activateOptionalFeature, resolveOptionalFeatures } from "../features";
 import {
   businessNameById,
   insertMembership,
@@ -15,6 +15,7 @@ import type { CollaborationInvitation, CollaborationRole } from "../types";
 import { logAudit } from "../accounting/audit";
 import {
   acceptInvitation,
+  CollaborationError,
   createInvitation,
   hashInviteToken,
   invitationStatus,
@@ -24,17 +25,19 @@ import {
   rotateInvitationToken,
 } from "./invitations";
 import {
+  accountingMembershipsForBusiness,
   activeMembershipsForBusiness,
-  invitationByTokenHash,
   invitationsForBusiness,
   putInvitation,
+  restoreMembership,
   touchLastActive,
   upsertUser,
   userById,
 } from "./registry";
 import { sendCollaborationInviteEmail } from "./mail";
 import { isLastActiveToday } from "./registry";
-import { roleLabel } from "./permissions";
+import { isAccountingRole, roleLabel } from "./permissions";
+import { LOCAL_JSON_BUSINESS_ID, currentActor } from "./actor";
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
@@ -116,6 +119,14 @@ export async function acceptCollaboratorInvite(input: {
 }): Promise<{ businessId: string; role: CollaborationRole }> {
   let inv = await lookupInvitation(input.token);
   if (!inv) throw new Error("Inbjudan finns inte eller är ogiltig.");
+  try {
+    if (!resolveOptionalFeatures(db(), inv.businessId).collaboration) {
+      throw new CollaborationError("Samarbeta är avstängt. Inbjudan kan inte accepteras.");
+    }
+  } catch (e) {
+    if (e instanceof CollaborationError) throw e;
+    /* utan tenantkontext: återkallad inbjudan stoppar ändå accept */
+  }
   upsertUser({ id: input.userId, email: input.email, name: input.name });
   let businessName = inv.invitedByName;
   if (isSupabaseMode()) {
@@ -247,4 +258,135 @@ export function hydrateInvitationsFromTenant(businessId: string): void {
   for (const inv of db().collaborationInvitations ?? []) {
     putInvitation({ ...inv, businessId: inv.businessId || businessId });
   }
+}
+
+/**
+ * Stäng av Samarbeta: återkalla aktiv konsultåtkomst och pending inbjudningar.
+ * Raderar inte historik, kommentarer eller config.
+ */
+export async function revokeCollaborationAccessForFeatureOff(input: {
+  businessId: string;
+  revokedByUserId: string;
+  revokedByName: string;
+}): Promise<{ revokedMembers: number; revokedInvites: number }> {
+  hydrateInvitationsFromTenant(input.businessId);
+  let revokedMembers = 0;
+  let revokedInvites = 0;
+  const members = activeMembershipsForBusiness(input.businessId).filter((m) => isAccountingRole(m.role));
+  for (const m of members) {
+    const inv = invitationsForBusiness(input.businessId).find((i) => i.acceptedByUserId === m.userId);
+    await revokeCollaborator({
+      businessId: input.businessId,
+      targetUserId: m.userId,
+      invitationId: inv?.id,
+      revokedByUserId: input.revokedByUserId,
+      revokedByName: input.revokedByName,
+    });
+    revokedMembers += 1;
+  }
+  for (const inv of invitationsForBusiness(input.businessId)) {
+    if (invitationStatus(inv) !== "pending") continue;
+    await revokeCollaborator({
+      businessId: input.businessId,
+      invitationId: inv.id,
+      revokedByUserId: input.revokedByUserId,
+      revokedByName: input.revokedByName,
+    });
+    revokedInvites += 1;
+  }
+  logAudit(
+    "anvandare",
+    "samarbete_avstangd",
+    `${input.revokedByName} stängde av Samarbeta. Åtkomst återkallades utan att historik raderades.`,
+    { targetType: "funktion", targetId: "collaboration" },
+  );
+  const last = db().auditTrail[db().auditTrail.length - 1];
+  if (last) {
+    last.actorUserId = input.revokedByUserId;
+    last.actorRole = "owner";
+  }
+  save();
+  return { revokedMembers, revokedInvites };
+}
+
+export function logCollaborationFeatureEnabled(actorName: string, actorUserId: string): void {
+  logAudit("anvandare", "samarbete_aktiverad", `${actorName} aktiverade Samarbeta.`, {
+    targetType: "funktion",
+    targetId: "collaboration",
+  });
+  const last = db().auditTrail[db().auditTrail.length - 1];
+  if (last) {
+    last.actorUserId = actorUserId;
+    last.actorRole = "owner";
+  }
+  save();
+}
+
+/** Tidigare anslutna konsulter (återkallade) – visas efter återaktivering, inte tyst återställda. */
+export function listFormerSamarbetaPeople(businessId: string): SamarbetaPerson[] {
+  const activeIds = new Set(
+    activeMembershipsForBusiness(businessId)
+      .filter((m) => isAccountingRole(m.role))
+      .map((m) => m.userId),
+  );
+  const people: SamarbetaPerson[] = [];
+  const seen = new Set<string>();
+  for (const m of accountingMembershipsForBusiness(businessId)) {
+    if (!m.revokedAt || activeIds.has(m.userId) || seen.has(m.userId)) continue;
+    seen.add(m.userId);
+    const user = userById(m.userId);
+    const inv = invitationsForBusiness(businessId).find((i) => i.acceptedByUserId === m.userId);
+    people.push({
+      key: `former:${m.userId}`,
+      name: user?.name || user?.email || "Konsult",
+      email: user?.email ?? "",
+      role: m.role as CollaborationRole,
+      roleLabel: roleLabel(m.role),
+      status: "active",
+      lastActiveToday: false,
+      userId: m.userId,
+      invitationId: inv?.id ?? "",
+    });
+  }
+  return people;
+}
+
+export async function restoreCollaboratorAccess(input: {
+  businessId: string;
+  targetUserId: string;
+  restoredByUserId: string;
+  restoredByName: string;
+}): Promise<{ name: string }> {
+  const membership = restoreMembership(input.targetUserId, input.businessId);
+  if (!membership || membership.revokedAt) {
+    throw new CollaborationError("Personen har ingen sparad åtkomst att återställa.");
+  }
+  if (isSupabaseMode()) {
+    await insertMembership({
+      businessId: input.businessId,
+      userId: input.targetUserId,
+      role: membership.role,
+      invitedByUserId: membership.invitedByUserId,
+    });
+  }
+  const name = userById(input.targetUserId)?.name || userById(input.targetUserId)?.email || "personen";
+  logAudit("anvandare", "samarbete_aterstalld", `${input.restoredByName} gav ${name} åtkomst igen.`, {
+    targetType: "medlemskap",
+    targetId: input.targetUserId,
+  });
+  const last = db().auditTrail[db().auditTrail.length - 1];
+  if (last) {
+    last.actorUserId = input.restoredByUserId;
+    last.actorRole = "owner";
+  }
+  save();
+  return { name };
+}
+
+export function actorForFeatureChange(): { userId: string; name: string; businessId: string } {
+  const actor = currentActor();
+  if (actor) {
+    return { userId: actor.userId, name: actor.name || actor.email || "Ägaren", businessId: actor.businessId };
+  }
+  return { userId: "owner", name: "Ägaren", businessId: LOCAL_JSON_BUSINESS_ID };
 }

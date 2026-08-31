@@ -166,8 +166,11 @@ import type { Customer, WebsiteSectionItem } from "@/lib/types";
 import { hrefWithNav, type ReturnNav } from "@/lib/nav";
 import {
   activateOptionalFeature,
+  deactivateOptionalFeature,
   isOptionalFeatureId,
   optionalFeatureHref,
+  shouldShowWebsiteRestoreNotice,
+  websiteRestoreNoticeHref,
   type OptionalFeatureId,
 } from "@/lib/features";
 import { headers } from "next/headers";
@@ -1232,16 +1235,59 @@ export async function activateOptionalFeatureAction(
   id: OptionalFeatureId,
 ): Promise<{ ok: true; href: string } | { ok: false; error: string }> {
   try {
-    return await withBusiness(() => {
+    return await withBusiness(async () => {
       if (!isOptionalFeatureId(id)) {
         return { ok: false, error: "Okänd funktion." } as const;
       }
+      const wasPaused = id === "website" && shouldShowWebsiteRestoreNotice();
       activateOptionalFeature(id);
+      if (id === "collaboration") {
+        const { actorForFeatureChange, logCollaborationFeatureEnabled } = await import(
+          "@/lib/collaboration/service"
+        );
+        const actor = actorForFeatureChange();
+        logCollaborationFeatureEnabled(actor.name, actor.userId);
+      }
       refresh();
-      return { ok: true, href: optionalFeatureHref(id) } as const;
+      const href =
+        id === "website" && (wasPaused || shouldShowWebsiteRestoreNotice())
+          ? websiteRestoreNoticeHref()
+          : optionalFeatureHref(id);
+      return { ok: true, href } as const;
     });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Kunde inte aktivera funktionen." };
+  }
+}
+
+export async function deactivateOptionalFeatureAction(
+  id: OptionalFeatureId,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    return await withBusiness(
+      async () => {
+        if (!isOptionalFeatureId(id)) {
+          return { ok: false, error: "Okänd funktion." } as const;
+        }
+        deactivateOptionalFeature(id);
+        if (id === "collaboration") {
+          const { actorForFeatureChange, revokeCollaborationAccessForFeatureOff } = await import(
+            "@/lib/collaboration/service"
+          );
+          const actor = actorForFeatureChange();
+          await revokeCollaborationAccessForFeatureOff({
+            businessId: actor.businessId,
+            revokedByUserId: actor.userId,
+            revokedByName: actor.name,
+          });
+        }
+        refresh();
+        return { ok: true } as const;
+      },
+      id === "collaboration" ? { capability: "revoke_collaborator", retry: false } : { retry: false },
+    );
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Kunde inte stänga av funktionen." };
   }
 }
 

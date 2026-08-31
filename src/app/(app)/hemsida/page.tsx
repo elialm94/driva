@@ -20,13 +20,23 @@ import { isLiveMailConfigured } from "@/lib/mail";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { SECTION_LABELS, stripWebsiteSecrets } from "@/lib/website-sections";
 import { resolveSiteContact } from "@/lib/website-contact";
+import { resolveOptionalFeatures, shouldShowWebsiteRestoreNotice } from "@/lib/features";
+import { redirect } from "next/navigation";
 
 export const metadata = { title: "Hemsida" };
 
-export default async function WebsitePage() {
+export default async function WebsitePage(props: PageProps<"/hemsida">) {
   await ensurePageBusiness();
   const data = db();
+  if (!resolveOptionalFeatures(data).website) {
+    redirect("/installningar?flik=funktioner");
+  }
   const site = data.website;
+  const searchParams = await props.searchParams;
+  const restoredParam = searchParams.aterstalld;
+  const restored =
+    (typeof restoredParam === "string" ? restoredParam : restoredParam?.[0]) === "1" ||
+    shouldShowWebsiteRestoreNotice(data);
 
   if (!site) {
     return (
@@ -52,8 +62,13 @@ export default async function WebsitePage() {
   }
 
   const published = site.status === "publicerad";
+<<<<<<< HEAD
   const unpublishedDrafts = hasUnpublishedWebsiteDrafts(site);
   const dirty = !published || unpublishedDrafts;
+=======
+  const paused = Boolean(data.meta.websitePausedAt);
+  const live = published && !paused;
+>>>>>>> origin/cursor/feature-management-215f
   const domain = primaryDomain();
   const liveHost = domain?.status === "active" ? domain.hostname : null;
   const mailLive = isLiveMailConfigured();
@@ -77,27 +92,50 @@ export default async function WebsitePage() {
 
   return (
     <div className="animate-fade-up">
+      {restored ? (
+        <div
+          role="status"
+          className="mb-4 rounded-2xl border border-ok/20 bg-ok-soft px-4 py-3 text-[14px] leading-relaxed text-ok"
+        >
+          Din tidigare hemsida är återställd. Publicera när du är redo.
+        </div>
+      ) : null}
       <PageHeader
         title="Hemsida"
+<<<<<<< HEAD
         subtitle={subtitle}
+=======
+        subtitle={
+          live
+            ? `Publicerad ${site.publishedAt ? datumTid(site.publishedAt) : ""} · formuläret skapar uppdrag automatiskt`
+            : paused
+              ? "Pausad – innehållet är kvar. Publicera när du är redo."
+              : "Utkast – granska och publicera när du är nöjd"
+        }
+>>>>>>> origin/cursor/feature-management-215f
         actions={
           <div className="flex items-center gap-2">
             <a
-              href={published ? "/sajt" : "/sajt?preview=1"}
+              href={live ? "/sajt" : "/sajt?preview=1"}
               target="_blank"
               rel="noreferrer"
               className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line-strong bg-card px-3.5 text-[13px] font-medium text-soft transition-colors hover:text-ink"
             >
               <ExternalLink className="size-3.5" /> Öppna i ny flik
             </a>
+<<<<<<< HEAD
             <div className={dirty ? "max-lg:hidden" : undefined}>
               <PublishWebsiteButton published={published} />
             </div>
+=======
+            <PublishWebsiteButton published={live} />
+>>>>>>> origin/cursor/feature-management-215f
           </div>
         }
       />
 
       <WebsiteDesignProvider initial={draftWebsiteDesign(site)}>
+<<<<<<< HEAD
         <SiteEditorShell
           preview={
             <div className="min-w-0">
@@ -117,6 +155,45 @@ export default async function WebsitePage() {
             </div>
           }
           innehall={
+=======
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+        {/* Live-preview */}
+        <div className="min-w-0">
+          {/* flex-wrap: på smala skärmar lägger sig Kopiera länk under adressen i stället för att spränga bredden. */}
+          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+            <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted">
+              <Globe className="size-4 shrink-0" />
+              <span className="min-w-0 break-all font-mono text-[12px]">
+                {liveHost ? liveHost : live ? "driva.site/" + site.slug : "Förhandsvisning"}
+              </span>
+              {/* Utkast är grått som överallt annars – gult betyder "väntar/uppmärksamhet". */}
+              <Badge tone={live ? "ok" : paused ? "warn" : "neutral"}>
+                {live ? "Publicerad" : paused ? "Pausad" : "Utkast"}
+              </Badge>
+            </div>
+            <CopyLinkButton path="/sajt" label="Kopiera länk" />
+          </div>
+          <SitePreviewFrame website={safeSite} company={data.settings} />
+          <p className="mt-2 text-[12px] text-muted">
+            Det här är exakt vad besökarna ser. Formuläret är aktivt på den publicerade sajten.
+          </p>
+        </div>
+
+        {/* Sidopanel */}
+        <div className="min-w-0 space-y-6">
+          <div className="min-w-0">
+            <SectionTitle>Utseende</SectionTitle>
+            <Card className="min-w-0">
+              <UtseendePanel publishedDesign={publishedWebsiteDesign(site)} published={live} />
+            </Card>
+            <p className="mt-2 text-[12px] leading-relaxed text-muted">
+              Välj känslan som passar ditt företag – innehållet är detsamma i alla teman.
+            </p>
+          </div>
+
+          <div className="min-w-0">
+            <SectionTitle>Innehåll</SectionTitle>
+>>>>>>> origin/cursor/feature-management-215f
             <Card className="min-w-0 overflow-hidden">
               <SectionList
                 sections={listSections}
@@ -156,6 +233,7 @@ export default async function WebsitePage() {
                 live={domain?.status === "active"}
                 demo={isMockDomainMode()}
               />
+<<<<<<< HEAD
             </div>
           }
         />
@@ -172,6 +250,40 @@ export default async function WebsitePage() {
             </div>
           </StickyMobileActions>
         ) : null}
+=======
+            </Card>
+          </div>
+
+          <div>
+            <SectionTitle>Sidfot</SectionTitle>
+            <Card className="min-w-0 px-5 py-4">
+              <FooterSettingsCard website={site} company={data.settings} published={live} />
+            </Card>
+            <Card className="mt-3 min-w-0 px-5 py-4">
+              <PrivacyPolicySettingsCard
+                company={data.settings}
+                businessName={site.businessName}
+                draft={draftPrivacyPolicyState(site)}
+                standardSeed={seedCustomPrivacyPolicy({ company: data.settings, website: site })}
+              />
+            </Card>
+            <p className="mt-2 text-[12px] leading-relaxed text-muted">
+              Sidfoten fylls i från företagsuppgifter och Tjänster. Integritetspolicy ligger alltid
+              längst ner.
+            </p>
+          </div>
+
+          <div>
+            <SectionTitle>Domän</SectionTitle>
+            <DomainSidebarCard
+              hostname={domain?.hostname}
+              live={domain?.status === "active"}
+              demo={isMockDomainMode()}
+            />
+          </div>
+        </div>
+      </div>
+>>>>>>> origin/cursor/feature-management-215f
       </WebsiteDesignProvider>
     </div>
   );

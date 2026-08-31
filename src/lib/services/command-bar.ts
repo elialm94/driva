@@ -270,6 +270,8 @@ export interface CommandRunResult {
   notConfigured?: boolean;
   /** One-shot påminnelse: Ångra = dismiss_reminder på den nyss skapade raden. */
   undo?: { kind: "dismiss_reminder"; id: string };
+  /** Funktion avstängd: visa knapp, aktivera inte tyst. */
+  activateFeature?: { id: "website" | "collaboration"; label: string };
 }
 
 export interface CommandRunParams {
@@ -309,6 +311,7 @@ function toRunResult(result: ToolResult): CommandRunResult {
     requiresConfirmation: result.requiresConfirmation,
     href: result.href ?? (result.card?.kind === "entity" ? result.card.href : undefined),
     undo: result.undo,
+    activateFeature: result.activateFeature,
   };
 }
 

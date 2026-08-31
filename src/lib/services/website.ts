@@ -1,6 +1,6 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
-import { activateOptionalFeature } from "../features";
+import { activateOptionalFeature, clearWebsitePublicPause, isOptionalFeatureExplicitlyDisabled } from "../features";
 import {
   PRIMARY_CTA_LABEL_MAX,
   type Customer,
@@ -648,6 +648,7 @@ export function publishWebsite(): Website {
   }
   site.status = "publicerad";
   site.publishedAt = new Date().toISOString();
+  clearWebsitePublicPause();
   logActivity(`Hemsidan för ${site.businessName} publicerades.`, { entity: { type: "hemsida", id: site.id } });
   save();
   return site;
@@ -827,6 +828,9 @@ function markJobNotification(job: Job, result: { ok: true } | { ok: false; error
 export async function submitContactForm(input: ContactFormInput): Promise<ContactFormResult | { skipped: true }> {
   if (input.website?.trim()) {
     return { skipped: true };
+  }
+  if (isOptionalFeatureExplicitlyDisabled("website") || Boolean(db().meta.websitePausedAt)) {
+    throw new Error("Sidan tar inte emot meddelanden just nu.");
   }
   const parsed = assertContactInput(input);
   const existing = findExistingWebFormJob({

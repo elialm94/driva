@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { db } from "./store";
 import { draftWebsiteDesign, publishedWebsiteDesign, sameDesign } from "./website-design";
 import { draftWebsiteFooter, publishedWebsiteFooter, sameFooter } from "./website-footer";
-import { isMockDomainMode, resolvePublicSite } from "./domains";
+import { isMockDomainMode, lookupBoundPublicSite, resolvePublicSite } from "./domains";
 import { ensurePageBusiness, ensurePublicPage } from "./auth/session";
 import { isSupabaseMode } from "./storage/config";
 import type { CompanySettings, Website, WebsiteDesign } from "./types";
@@ -14,6 +14,7 @@ import {
   websiteWithResolvedPrivacy,
 } from "./website-privacy";
 import { stripWebsiteSecrets } from "./website-sections";
+import { isWebsitePubliclyLive, resolveOptionalFeatures } from "./features";
 
 /**
  * Tenantupplösning för den publika sajten: i Supabase-läge löses företaget
@@ -53,19 +54,35 @@ export interface LoadedPublicSite {
   homeHref: string;
 }
 
-export async function loadPublicSite(
+export type PublicSiteLoad =
+  | { status: "ok"; site: LoadedPublicSite }
+  | { status: "unavailable" }
+  | { status: "missing" };
+
+export async function loadPublicSiteState(
   searchParams: { host?: string | string[]; preview?: string | string[] }
-): Promise<LoadedPublicSite | null> {
+): Promise<PublicSiteLoad> {
   const preview = searchParams.preview === "1";
   const host = await publicSiteHost(searchParams);
-  if (!(await ensureSiteTenant(host))) return null;
-  const mapped = host ? resolvePublicSite(host) : null;
+  if (!(await ensureSiteTenant(host))) return { status: "missing" };
+  const mapped = host ? lookupBoundPublicSite(host) : null;
   const data = db();
   const website = mapped?.website ?? data.website;
   const company = mapped?.company ?? data.settings;
-  if (!website) return null;
-  if (host && !mapped && !preview) return null;
-  if (website.status !== "publicerad" && !preview) return null;
+  if (!website) return { status: "missing" };
+  if (host && !mapped && !preview) return { status: "missing" };
+
+  const featureOn = resolveOptionalFeatures(data).website;
+  const publiclyLive = isWebsitePubliclyLive(data);
+
+  if (preview) {
+    if (!featureOn) return { status: "unavailable" };
+  } else if (!publiclyLive) {
+    if (website.status === "publicerad" || data.meta.websitePausedAt || !featureOn) {
+      return { status: "unavailable" };
+    }
+    return { status: "missing" };
+  }
 
   const design = preview ? draftWebsiteDesign(website) : publishedWebsiteDesign(website);
   const draftDesignPending =
@@ -79,14 +96,24 @@ export async function loadPublicSite(
     !samePrivacyPolicyState(draftPrivacyPolicyState(website), publishedPrivacyPolicyState(website));
 
   return {
-    website: stripWebsiteSecrets(websiteWithResolvedPrivacy(website, preview)),
-    company,
-    preview,
-    design,
-    draftDesignPending,
-    draftFooterPending,
-    draftPrivacyPending,
-    privacyHref: privacyPolicyHref(preview),
-    homeHref: preview ? "/sajt?preview=1" : "/sajt",
+    status: "ok",
+    site: {
+      website: stripWebsiteSecrets(websiteWithResolvedPrivacy(website, preview)),
+      company,
+      preview,
+      design,
+      draftDesignPending,
+      draftFooterPending,
+      draftPrivacyPending,
+      privacyHref: privacyPolicyHref(preview),
+      homeHref: preview ? "/sajt?preview=1" : "/sajt",
+    },
   };
+}
+
+export async function loadPublicSite(
+  searchParams: { host?: string | string[]; preview?: string | string[] }
+): Promise<LoadedPublicSite | null> {
+  const loaded = await loadPublicSiteState(searchParams);
+  return loaded.status === "ok" ? loaded.site : null;
 }

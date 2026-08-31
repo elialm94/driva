@@ -83,7 +83,7 @@ import {
   interpretFreeTextAction,
   runCommandAction,
 } from "@/app/command-actions";
-import { cancelAssistantActionAction, confirmAssistantActionAction } from "@/app/actions";
+import { activateOptionalFeatureAction, cancelAssistantActionAction, confirmAssistantActionAction } from "@/app/actions";
 import { useRouter } from "next/navigation";
 import { AppLink, useAppNavigate } from "./app-link";
 import { AssistantCardView } from "./assistant-ui";
@@ -287,7 +287,7 @@ export function CommandBar({
   );
 
   function applyResult(res: CommandRunResult) {
-    if (res.ok && res.href && !res.requiresConfirmation) {
+    if (res.ok && res.href && !res.requiresConfirmation && !res.activateFeature) {
       navigateTo(res.href);
       return;
     }
@@ -1666,11 +1666,29 @@ function ReminderConfirm({
 /* -------------------------------- Resultatpanel ------------------------------- */
 
 function ResultView({ result, onClose }: { result: CommandRunResult; onClose: () => void }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+
+  function activate() {
+    if (!result.activateFeature) return;
+    const id = result.activateFeature.id;
+    startTransition(async () => {
+      const res = await activateOptionalFeatureAction(id);
+      if (res.ok) {
+        onClose();
+        router.push(res.href as never);
+        router.refresh();
+      }
+    });
+  }
+
   return (
     <div className="p-4">
       <div className="flex items-start justify-between gap-3">
         <p className={cx("text-[14px] leading-relaxed", result.ok ? "text-ink" : "text-soft")}>
-          {result.ok ? <Check className="mr-1.5 inline size-4 -translate-y-px text-ok" aria-hidden /> : null}
+          {result.ok && !result.activateFeature ? (
+            <Check className="mr-1.5 inline size-4 -translate-y-px text-ok" aria-hidden />
+          ) : null}
           {result.text}
         </p>
         <button
@@ -1682,6 +1700,16 @@ function ResultView({ result, onClose }: { result: CommandRunResult; onClose: ()
           <X className="size-4" />
         </button>
       </div>
+      {result.activateFeature ? (
+        <button
+          type="button"
+          className={cx(buttonClasses("primary", "sm"), "mt-3")}
+          disabled={pending}
+          onClick={activate}
+        >
+          {pending ? "Aktiverar …" : result.activateFeature.label}
+        </button>
+      ) : null}
       {result.card ? (
         result.card.kind === "confirm" ? (
           <BarConfirmCard card={result.card} />
