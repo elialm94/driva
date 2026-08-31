@@ -36,6 +36,7 @@ export function NewCustomerButton({
       <button
         type="button"
         role={inMenu ? "menuitem" : undefined}
+        aria-label="Ny kund"
         className={inMenu ? actionMenuItemClassName() : buttonClasses(variant, full ? "md" : "md")}
         onClick={() => {
           menu?.close();

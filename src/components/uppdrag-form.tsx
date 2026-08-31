@@ -94,6 +94,7 @@ export function NewUppdragButton({
       <button
         type="button"
         role={inMenu ? "menuitem" : undefined}
+        aria-label={label}
         className={inMenu ? actionMenuItemClassName() : buttonClasses(variant, size)}
         onClick={() => {
           menu?.close();
