@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ExternalLink, BadgeCheck, Pencil } from "lucide-react";
+import { ExternalLink, BadgeCheck, FileDown, Pencil } from "lucide-react";
 import { db } from "@/lib/store";
 import { getInvoice, invoiceTotals, requireCustomer, isOverdue } from "@/lib/services/data";
 import { invoiceQuoteDeviation } from "@/lib/services/invoice-quote-deviation";
@@ -12,7 +12,7 @@ import { ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "
 import { InvoiceStatusBadge } from "@/components/status";
 import { QUOTE_STATUS } from "@/lib/status-labels";
 import { InvoiceDocument } from "@/components/invoice-document";
-import { ActionMenu, PageActions } from "@/components/action-menu";
+import { ActionMenu, ActionMenuLink, PageActions } from "@/components/action-menu";
 import { CopyLinkButton } from "@/components/copy-button";
 import {
   CreditInvoiceButton,
@@ -110,6 +110,11 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
       {canCredit ? <CreditInvoiceButton invoiceId={invoice.id} appearance="menu" /> : null}
       {canCopyLink ? (
         <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
+      ) : null}
+      {canCustomerView ? (
+        <ActionMenuLink href={`${publicPath}/pdf`} external>
+          <FileDown className="size-4" /> Ladda ner PDF
+        </ActionMenuLink>
       ) : null}
       {canResend ? <ResendInvoiceButton invoiceId={invoice.id} retry={!invoice.sentAt} appearance="menu" /> : null}
       {canSimulate ? <SimulatePaymentButton invoiceId={invoice.id} appearance="menu" /> : null}
