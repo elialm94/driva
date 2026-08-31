@@ -181,6 +181,7 @@ export function stripWebsiteSecrets(site: Website): Website {
   return {
     ...site,
     sections: withoutRetiredSections(site.sections),
+    ...(site.draftSections ? { draftSections: withoutRetiredSections(site.draftSections) } : {}),
   };
 }
 

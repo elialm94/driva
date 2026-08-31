@@ -121,6 +121,16 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     "published_revision",
     `alter table public.websites add column if not exists published_revision integer not null default 0`
   );
+  await ensureColumn(
+    "websites",
+    "draft_sections",
+    `alter table public.websites add column if not exists draft_sections jsonb`
+  );
+  await ensureColumn(
+    "websites",
+    "draft_primary_cta",
+    `alter table public.websites add column if not exists draft_primary_cta jsonb`
+  );
 
   await ensureColumn(
     "quotes",

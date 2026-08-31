@@ -140,6 +140,7 @@ import {
   generateWebsite,
   publishWebsite,
   publishedWebsiteSnapshot,
+  restorePublishedWebsiteDraft,
   removeServiceItem,
   removeTestimonialItem,
   removeWebsiteSection,
@@ -1583,6 +1584,32 @@ export async function updateWebsitePrivacyPolicyAction(input: {
     refresh();
     return { ok: true } as const;
   }, { capability: "change_website" });
+}
+
+export async function restoreWebsiteDraftAction(): Promise<
+  | ({ ok: true } & ReturnType<typeof publishedWebsiteSnapshot>)
+  | { ok: false; error: string }
+> {
+  try {
+    return await withBusiness(
+      () => {
+        try {
+          const site = restorePublishedWebsiteDraft();
+          refresh();
+          return { ok: true as const, ...publishedWebsiteSnapshot(site) };
+        } catch (e) {
+          return {
+            ok: false as const,
+            error: userFacingStorageError(e, "Kunde inte återställa hemsidan."),
+          };
+        }
+      },
+      { capability: "change_website" },
+    );
+  } catch (e) {
+    console.error("[driva:hemsida] kunde inte återställa", e);
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte återställa hemsidan. Försök igen.") };
+  }
 }
 
 export async function publishWebsiteAction(

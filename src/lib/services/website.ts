@@ -2,6 +2,7 @@ import { db, save } from "../store";
 import { uid } from "../ids";
 import { activateOptionalFeature, clearWebsitePublicPause, isOptionalFeatureExplicitlyDisabled } from "../features";
 import {
+  DEFAULT_PRIMARY_CTA_LABEL,
   PRIMARY_CTA_LABEL_MAX,
   type Customer,
   type Job,
@@ -57,7 +58,12 @@ import {
   type WebsiteSectionPublishUpdate,
   type WebsiteWriteMeta,
 } from "../website-publish";
-import { hasUnpublishedWebsiteDrafts } from "../website-drafts";
+import {
+  draftPrimaryCtaLabel,
+  draftWebsiteSections,
+  hasUnpublishedWebsiteDrafts,
+  sameSections,
+} from "../website-drafts";
 
 /**
  * AI-hemsidesgeneratorn är regelbaserad i demon (branschdetektering + mallar).
@@ -228,10 +234,41 @@ const HERO_VARIANTS = [
   () => "Kvalitet i varje detalj, från första mötet till slutbesiktning",
 ];
 
+function cloneSections(sections: WebsiteSection[]): WebsiteSection[] {
+  return structuredClone(sections);
+}
+
+/** Publicerad sajt redigeras i utkast; aldrig-publicerad sajt är utkast i sin helhet. */
+function mutableSections(site: Website): WebsiteSection[] {
+  if (site.status !== "publicerad") return site.sections;
+  if (!site.draftSections) site.draftSections = cloneSections(site.sections);
+  return site.draftSections;
+}
+
+function mutablePrimaryCta(site: Website): { label: string } {
+  if (site.status !== "publicerad") {
+    if (!site.primaryCta) site.primaryCta = { label: DEFAULT_PRIMARY_CTA_LABEL };
+    return site.primaryCta;
+  }
+  if (!site.draftPrimaryCta) {
+    site.draftPrimaryCta = { label: draftPrimaryCtaLabel(site) };
+  }
+  return site.draftPrimaryCta;
+}
+
+function clearMatchingSectionDrafts(site: Website): void {
+  if (site.draftSections && sameSections(site.draftSections, site.sections)) {
+    delete site.draftSections;
+  }
+  if (site.draftPrimaryCta && site.draftPrimaryCta.label === (site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL)) {
+    delete site.draftPrimaryCta;
+  }
+}
+
 export function rewriteSectionHeading(sectionId: string): void {
   const site = db().website;
   if (!site) return;
-  const section = site.sections.find((s) => s.id === sectionId);
+  const section = mutableSections(site).find((s) => s.id === sectionId);
   if (!section) return;
   if (section.type === "hero") {
     const idx = (HERO_VARIANTS.findIndex((v) => v(site.businessName) === section.heading) + 1) % HERO_VARIANTS.length;
@@ -257,7 +294,7 @@ export function updateSection(sectionId: string, fields: UpdateSectionFields, me
   const site = db().website;
   if (!site) return;
   if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
-  const section = site.sections.find((s) => s.id === sectionId);
+  const section = mutableSections(site).find((s) => s.id === sectionId);
   if (!section) return;
   if (fields.heading !== undefined) section.heading = fields.heading;
   if (fields.body !== undefined) section.body = fields.body;
@@ -279,7 +316,7 @@ export function updateSection(sectionId: string, fields: UpdateSectionFields, me
     if (section.type !== "hero") {
       throw new Error("Knapptext kan bara ändras i startsektionen.");
     }
-    site.primaryCta = { label: normalizePrimaryCtaLabel(fields.primaryCtaLabel) };
+    mutablePrimaryCta(site).label = normalizePrimaryCtaLabel(fields.primaryCtaLabel);
   }
   if (fields.hours !== undefined) {
     if (section.type !== "kontaktuppgifter") {
@@ -297,8 +334,7 @@ export function updateSection(sectionId: string, fields: UpdateSectionFields, me
     if (label.length > PRIMARY_CTA_LABEL_MAX) throw new Error("Knapptexten är för lång.");
     section.cta = { destination, label };
   }
-  site.status = site.status === "publicerad" ? "publicerad" : "utkast";
-  save();
+  touchSite(site);
 }
 
 export function addWebsiteSection(type: AddableSectionType, meta?: WebsiteWriteMeta): WebsiteSection {
@@ -307,14 +343,15 @@ export function addWebsiteSection(type: AddableSectionType, meta?: WebsiteWriteM
   if (!acceptWebsiteWrite(site, meta?.clientRevision)) {
     throw new Error("Ändringen är för gammal och ignorerades.");
   }
-  const allowed = addableTypesFor(site.sections);
+  const sections = mutableSections(site);
+  const allowed = addableTypesFor(sections);
   if (!allowed.some((o) => o.type === type)) {
     throw new Error("Den sektionstypen finns redan, eller kan inte läggas till.");
   }
   const section = createSectionDraft(type, uid());
-  const kontaktIndex = site.sections.findIndex((s) => s.type === "kontakt");
-  if (kontaktIndex >= 0) site.sections.splice(kontaktIndex, 0, section);
-  else site.sections.push(section);
+  const kontaktIndex = sections.findIndex((s) => s.type === "kontakt");
+  if (kontaktIndex >= 0) sections.splice(kontaktIndex, 0, section);
+  else sections.push(section);
   touchSite(site);
   return section;
 }
@@ -323,13 +360,14 @@ export function removeWebsiteSection(sectionId: string, meta?: WebsiteWriteMeta)
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
   if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
-  const index = site.sections.findIndex((s) => s.id === sectionId);
+  const sections = mutableSections(site);
+  const index = sections.findIndex((s) => s.id === sectionId);
   if (index < 0) throw new Error("Sektionen hittades inte");
-  const section = site.sections[index];
+  const section = sections[index];
   if (!canDeleteSection(section) || isHeroSection(section)) {
     throw new Error("Startsektionen kan inte tas bort");
   }
-  site.sections.splice(index, 1);
+  sections.splice(index, 1);
   touchSite(site);
 }
 
@@ -373,7 +411,8 @@ function normalizeItem(item: WebsiteSectionItem): WebsiteSectionItem {
  */
 export function sectionImages(sectionId: string): { image?: string; itemImages: (string | null)[] } | null {
   const site = db().website;
-  const section = site?.sections.find((s) => s.id === sectionId);
+  if (!site) return null;
+  const section = draftWebsiteSections(site).find((s) => s.id === sectionId);
   if (!section) return null;
   return {
     image: section.image,
@@ -392,7 +431,7 @@ function requireListSection(
 ): { site: Website; section: WebsiteSection } {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
-  const section = site.sections.find((s) => s.id === sectionId);
+  const section = mutableSections(site).find((s) => s.id === sectionId);
   if (!section || section.type !== type) throw new Error(missing);
   if (!section.items) section.items = [];
   return { site, section };
@@ -400,6 +439,8 @@ function requireListSection(
 
 function touchSite(site: Website): void {
   site.status = site.status === "publicerad" ? "publicerad" : "utkast";
+  // Tillbaka till publicerat läge → inga falska "opublicerade ändringar".
+  clearMatchingSectionDrafts(site);
   save();
 }
 
@@ -552,7 +593,8 @@ export function reorderSections(orderedIds: string[], meta?: WebsiteWriteMeta): 
   const site = db().website;
   if (!site) return;
   if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
-  const byId = new Map(site.sections.map((section) => [section.id, section]));
+  const current = mutableSections(site);
+  const byId = new Map(current.map((section) => [section.id, section]));
   const next: WebsiteSection[] = [];
   for (const id of orderedIds) {
     const section = byId.get(id);
@@ -561,7 +603,8 @@ export function reorderSections(orderedIds: string[], meta?: WebsiteWriteMeta): 
     byId.delete(id);
   }
   for (const leftover of byId.values()) next.push(leftover);
-  site.sections = next;
+  if (site.status === "publicerad") site.draftSections = next;
+  else site.sections = next;
   touchSite(site);
 }
 
@@ -569,7 +612,7 @@ export function setSectionVisible(sectionId: string, visible: boolean, meta?: We
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
   if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
-  const section = site.sections.find((s) => s.id === sectionId);
+  const section = mutableSections(site).find((s) => s.id === sectionId);
   if (!section) throw new Error("Sektionen hittades inte");
   if (section.type === "hero" && !visible) {
     throw new Error("Startsektionen kan inte döljas");
@@ -701,7 +744,21 @@ export function publishWebsite(input?: WebsitePublishInput): Website {
   }
 
   if (!keepNewerDrafts) {
-    applyLivePublishFields(site, input);
+    const hasSectionSnapshot = Boolean(
+      input?.sectionOrder ||
+        input?.sectionVisibility ||
+        input?.sectionUpdates ||
+        input?.primaryCtaLabel !== undefined,
+    );
+    if (hasSectionSnapshot) {
+      site.sections = cloneSections(draftWebsiteSections(site));
+      if (site.draftPrimaryCta) site.primaryCta = { ...site.draftPrimaryCta };
+      applyLivePublishFields(site, input);
+    } else {
+      promoteSectionDrafts(site);
+    }
+    delete site.draftSections;
+    delete site.draftPrimaryCta;
   }
 
   promotePersistedDrafts(site, {
@@ -720,6 +777,8 @@ export function publishWebsite(input?: WebsitePublishInput): Website {
     delete site.draftDesign;
     delete site.draftFooter;
     delete site.draftPrivacyPolicy;
+    delete site.draftSections;
+    delete site.draftPrimaryCta;
   }
   clearWebsitePublicPause();
   logActivity(`Hemsidan för ${site.businessName} publicerades.`, { entity: { type: "hemsida", id: site.id } });
@@ -805,7 +864,17 @@ function validatePublishSnapshot(
 
 function applyLivePublishFields(site: Website, input?: WebsitePublishInput): void {
   if (input?.sectionOrder && sectionOrderCoversCurrent(site, input.sectionOrder)) {
-    reorderSections(input.sectionOrder);
+    // Direkt på de publicerade sektionerna – inte via utkastlagret.
+    const byId = new Map(site.sections.map((section) => [section.id, section]));
+    const ordered: WebsiteSection[] = [];
+    for (const id of input.sectionOrder) {
+      const section = byId.get(id);
+      if (!section) continue;
+      ordered.push(section);
+      byId.delete(id);
+    }
+    for (const leftover of byId.values()) ordered.push(leftover);
+    site.sections = ordered;
   }
   if (input?.sectionVisibility) {
     for (const row of input.sectionVisibility) {
@@ -862,6 +931,34 @@ function applySectionPublishUpdate(site: Website, update: WebsiteSectionPublishU
     const label = (fields.ctaLabel ?? section.cta?.label ?? defaultCtaLabel(destination)).trim();
     if (label) section.cta = { destination, label };
   }
+}
+
+function promoteSectionDrafts(site: Website): void {
+  if (site.draftSections) site.sections = site.draftSections;
+  if (site.draftPrimaryCta) site.primaryCta = site.draftPrimaryCta;
+}
+
+/**
+ * Slänger alla opublicerade utkast och återställer redigeraren till den
+ * publicerade sajten. Höjer revisionen så att en sen autosave inte kan
+ * lägga tillbaka det som just kasserades.
+ */
+export function restorePublishedWebsiteDraft(): Website {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att återställa");
+  if (site.status !== "publicerad") {
+    throw new Error("Det finns ingen publicerad version att återställa till.");
+  }
+  delete site.draftDesign;
+  delete site.draftFooter;
+  delete site.draftPrivacyPolicy;
+  delete site.draftSections;
+  delete site.draftPrimaryCta;
+  const nextRev = Math.max(site.publishedRevision ?? 0, site.draftRevision ?? 0) + 1;
+  site.publishedRevision = nextRev;
+  site.draftRevision = nextRev;
+  save();
+  return site;
 }
 
 function promotePersistedDrafts(

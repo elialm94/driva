@@ -1331,10 +1331,18 @@ export interface Website {
    * sajten först vid "Publicera ändringar". Tas bort vid publicering.
    */
   draftFooter?: WebsiteFooter;
-  /** Arrayordning = visningsordning på sajten. */
+  /** Publicerade sektioner (det besökare ser). */
   sections: WebsiteSection[];
+  /**
+   * Utkast till sektioner: byggaren och förhandsvisningen använder det,
+   * den publika sajten först vid "Publicera ändringar". Tas bort vid
+   * publicering eller Återställ.
+   */
+  draftSections?: WebsiteSection[];
   /** Gemensam primärknapp i sidhuvud och startsektion. Saknas = DEFAULT_PRIMARY_CTA_LABEL. */
   primaryCta?: { label: string };
+  /** Utkast till primärknapp. Samma modell som draftSections. */
+  draftPrimaryCta?: { label: string };
   /**
    * Valfritt tillägg till den automatiska integritetspolicyn i STANDARD-läge.
    * Företagsnamn, org.nr, adress och kontakt hämtas alltid live från

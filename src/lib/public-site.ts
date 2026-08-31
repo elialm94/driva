@@ -14,6 +14,14 @@ import {
   websiteWithResolvedPrivacy,
 } from "./website-privacy";
 import { stripWebsiteSecrets } from "./website-sections";
+import {
+  draftPrimaryCtaLabel,
+  draftWebsiteSections,
+  publishedPrimaryCtaLabel,
+  publishedWebsiteSections,
+  sameSections,
+  websiteDraftView,
+} from "./website-drafts";
 import { isWebsitePubliclyLive, resolveOptionalFeatures } from "./features";
 
 /**
@@ -50,6 +58,8 @@ export interface LoadedPublicSite {
   draftDesignPending: boolean;
   draftFooterPending: boolean;
   draftPrivacyPending: boolean;
+  /** Opublicerade sektions-/innehållsändringar (bara i preview). */
+  draftContentPending: boolean;
   privacyHref: string;
   homeHref: string;
 }
@@ -94,17 +104,26 @@ export async function loadPublicSiteState(
     preview &&
     website.status === "publicerad" &&
     !samePrivacyPolicyState(draftPrivacyPolicyState(website), publishedPrivacyPolicyState(website));
+  const draftContentPending =
+    preview &&
+    website.status === "publicerad" &&
+    (!sameSections(draftWebsiteSections(website), publishedWebsiteSections(website)) ||
+      draftPrimaryCtaLabel(website) !== publishedPrimaryCtaLabel(website));
+
+  // Förhandsvisningen visar utkastet (sektioner + CTA); publika sajten det publicerade.
+  const resolvedWebsite = preview ? websiteDraftView(website) : website;
 
   return {
     status: "ok",
     site: {
-      website: stripWebsiteSecrets(websiteWithResolvedPrivacy(website, preview)),
+      website: stripWebsiteSecrets(websiteWithResolvedPrivacy(resolvedWebsite, preview)),
       company,
       preview,
       design,
       draftDesignPending,
       draftFooterPending,
       draftPrivacyPending,
+      draftContentPending,
       privacyHref: privacyPolicyHref(preview),
       homeHref: preview ? "/sajt?preview=1" : "/sajt",
     },

@@ -10,14 +10,18 @@ import { publishedWebsiteDesign, draftWebsiteDesign } from "./website-design";
 import { publishedWebsiteFooter } from "./website-footer";
 import { publishedPrivacyPolicyState } from "./website-privacy";
 import {
+  addWebsiteSection,
   publishWebsite,
   publishedWebsiteSnapshot,
+  reorderSections,
+  restorePublishedWebsiteDraft,
   setSectionVisible,
   setWebsiteDesign,
   setWebsiteFooter,
   updateSection,
   updateWebsitePrivacyPolicy,
 } from "./services/website";
+import { draftPrimaryCtaLabel, draftWebsiteSections, websiteDraftView } from "./website-drafts";
 import { acceptWebsiteWrite, isStaleWebsiteWrite } from "./website-publish";
 
 function testWebsite(over: Partial<Website> = {}): Website {
@@ -168,6 +172,100 @@ describe("hemsida: publicera synligt redigerarläge utan att vänta på autosave
     assert.equal(db().website!.sections.find((s) => s.id === "s-hero")?.heading, "Publicerad rubrik");
     setSectionVisible("s-om", false, { clientRevision: 2 });
     assert.equal(db().website!.sections.find((s) => s.id === "s-om")?.visible, true);
+  });
+});
+
+describe("hemsida: utkast är en trygg arbetsyta", () => {
+  beforeEach(() => {
+    replaceDb(emptyTestDb({ website: testWebsite() }));
+  });
+
+  it("sektionsändringar på publicerad sajt rör inte den publika sajten", () => {
+    updateSection("s-hero", { heading: "Nytt kök på tre veckor" }, { clientRevision: 1 });
+    reorderSections(["s-kontakt", "s-hero", "s-om"], { clientRevision: 2 });
+    const site = db().website!;
+    // Publikt: orört. Utkast: ändrat.
+    assert.equal(site.sections.find((s) => s.id === "s-hero")?.heading, "Hantverk som håller");
+    assert.deepEqual(site.sections.map((s) => s.id), ["s-hero", "s-om", "s-kontakt"]);
+    const draft = draftWebsiteSections(site);
+    assert.equal(draft.find((s) => s.id === "s-hero")?.heading, "Nytt kök på tre veckor");
+    assert.deepEqual(draft.map((s) => s.id), ["s-kontakt", "s-hero", "s-om"]);
+    assert.equal(hasUnpublishedWebsiteDrafts(site), true);
+  });
+
+  it("Publicera utan snapshot tar sektionsutkastet i produktion", () => {
+    updateSection("s-hero", { heading: "Publicera mig" }, { clientRevision: 1 });
+    addWebsiteSection("cta", { clientRevision: 2 });
+    const published = publishWebsite();
+    assert.equal(published.sections.find((s) => s.id === "s-hero")?.heading, "Publicera mig");
+    assert.ok(published.sections.some((s) => s.type === "cta"));
+    assert.equal(published.draftSections, undefined);
+    assert.equal(hasUnpublishedWebsiteDrafts(published), false);
+  });
+
+  it("återgång till publicerat innehåll lämnar inga falska utkast", () => {
+    updateSection("s-hero", { heading: "Tillfälligt" }, { clientRevision: 1 });
+    assert.equal(hasUnpublishedWebsiteDrafts(db().website!), true);
+    updateSection("s-hero", { heading: "Hantverk som håller" }, { clientRevision: 2 });
+    assert.equal(db().website!.draftSections, undefined);
+    assert.equal(hasUnpublishedWebsiteDrafts(db().website!), false);
+  });
+});
+
+describe("hemsida: Återställ slänger alla opublicerade ändringar", () => {
+  beforeEach(() => {
+    replaceDb(emptyTestDb({ website: testWebsite() }));
+  });
+
+  it("återställer tema, sidfot, policy, sektioner och CTA till publicerat", () => {
+    const before = structuredClone(db().website!);
+    setWebsiteDesign({ themeId: "minimal", accent: "svart" }, { clientRevision: 1 });
+    setWebsiteFooter({ showPhone: false }, { clientRevision: 2 });
+    updateWebsitePrivacyPolicy({ mode: "standard", supplement: "Utkast." }, { clientRevision: 3 });
+    updateSection("s-hero", { heading: "Utkastrubrik", primaryCtaLabel: "Ring oss" }, { clientRevision: 4 });
+    assert.equal(hasUnpublishedWebsiteDrafts(db().website!), true);
+
+    const restored = restorePublishedWebsiteDraft();
+
+    assert.equal(hasUnpublishedWebsiteDrafts(restored), false);
+    assert.equal(restored.draftDesign, undefined);
+    assert.equal(restored.draftFooter, undefined);
+    assert.equal(restored.draftPrivacyPolicy, undefined);
+    assert.equal(restored.draftSections, undefined);
+    assert.equal(restored.draftPrimaryCta, undefined);
+    // Utkastvyn == publicerade sajten, och publicerat innehåll är orört.
+    assert.deepEqual(websiteDraftView(restored).sections, before.sections);
+    assert.equal(draftPrimaryCtaLabel(restored), "Begär offert");
+    assert.equal(publishedWebsiteDesign(restored).themeId, "modern");
+    assert.equal(restored.publishedAt, before.publishedAt);
+  });
+
+  it("en sen autosave efter Återställ kan inte återskapa utkastet", () => {
+    setWebsiteDesign({ themeId: "minimal", accent: "svart" }, { clientRevision: 1 });
+    updateSection("s-hero", { heading: "Utkastrubrik" }, { clientRevision: 2 });
+    const restored = restorePublishedWebsiteDraft();
+    const staleRevision = restored.publishedRevision!; // äldre eller samma som spärren
+
+    setWebsiteDesign({ themeId: "minimal", accent: "svart" }, { clientRevision: staleRevision });
+    updateSection("s-hero", { heading: "Sen save" }, { clientRevision: staleRevision - 1 });
+    setWebsiteFooter({ showPhone: false }, { clientRevision: 1 });
+
+    const site = db().website!;
+    assert.equal(hasUnpublishedWebsiteDrafts(site), false);
+    assert.equal(site.sections.find((s) => s.id === "s-hero")?.heading, "Hantverk som håller");
+    assert.equal(publishedWebsiteDesign(site).themeId, "modern");
+  });
+
+  it("nya ändringar EFTER Återställ fungerar som vanligt", () => {
+    restorePublishedWebsiteDraft();
+    const next = (db().website!.publishedRevision ?? 0) + 1;
+    setWebsiteDesign({ themeId: "robust", accent: "sand" }, { clientRevision: next });
+    assert.equal(hasUnpublishedWebsiteDrafts(db().website!), true);
+  });
+
+  it("kräver en publicerad version att återställa till", () => {
+    replaceDb(emptyTestDb({ website: testWebsite({ status: "utkast", publishedAt: undefined }) }));
+    assert.throws(() => restorePublishedWebsiteDraft(), /publicerad version/);
   });
 });
 

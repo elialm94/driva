@@ -7,6 +7,8 @@ import type { WebsitePublishInput, WebsiteSectionPublishUpdate } from "@/lib/web
 type EditorSync = {
   publishing: boolean;
   bumpRevision: () => number;
+  /** Efter Återställ: adoptera serverns revision och släng lokala snapshots. */
+  resetToServer: (revision: number) => void;
   noteDesign: (design: WebsiteDesign) => void;
   noteFooter: (footer: WebsiteFooter) => void;
   notePrivacy: (privacy: PrivacyPolicyState) => void;
@@ -81,6 +83,13 @@ export function WebsiteEditorSyncProvider({
       bumpRevision() {
         revisionRef.current += 1;
         return revisionRef.current;
+      },
+      resetToServer(revision) {
+        // Router-refreshens serverstate (initialRevision === revision) adopteras
+        // av effekten ovan eftersom lokala revisionen inte längre ligger före.
+        revisionRef.current = revision;
+        sectionUpdatesRef.current.clear();
+        pendingRef.current.clear();
       },
       noteDesign(design) {
         designRef.current = design;

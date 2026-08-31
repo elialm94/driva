@@ -11,6 +11,7 @@ import {
   ImagePlus,
   Pencil,
   Plus,
+  RotateCcw,
   Sparkles,
   Trash2,
   WandSparkles,
@@ -24,6 +25,7 @@ import {
   generateWebsiteAction,
   getSectionImagesAction,
   publishWebsiteAction,
+  restoreWebsiteDraftAction,
   removeServiceItemAction,
   removeTestimonialItemAction,
   removeWebsiteSectionAction,
@@ -1572,6 +1574,69 @@ function ServiceItemForm({
         />
       </div>
     </Modal>
+  );
+}
+
+/* ------------------------------- Återställ --------------------------------- */
+
+/**
+ * Slänger ALLA opublicerade ändringar och återställer redigeraren till den
+ * publicerade versionen. Lätt bekräftelse – inga modaler vid navigering:
+ * utkastet är en trygg arbetsyta som ligger kvar tills man publicerar
+ * eller återställer.
+ */
+export function RestoreWebsiteDraftButton() {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  const sync = useWebsiteEditorSync();
+
+  function restoreNow() {
+    startTransition(async () => {
+      setError(null);
+      const result = await restoreWebsiteDraftAction();
+      if (result.ok === false) {
+        setError(result.error || "Kunde inte återställa. Försök igen.");
+        return;
+      }
+      // Serverns nya revision gör väntande autosaves inaktuella – de ignoreras.
+      sync.resetToServer(result.publishedRevision);
+      setOpen(false);
+      router.refresh();
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className={buttonClasses("ghost")}
+        onClick={() => {
+          setError(null);
+          setOpen(true);
+        }}
+      >
+        <RotateCcw className="size-4" />
+        Återställ
+      </button>
+      <Modal open={open} onClose={() => !pending && setOpen(false)} title="Återställ ändringar?" size="sm">
+        <div className="px-6 py-5">
+          <p className="text-[14px] leading-relaxed text-soft">
+            Alla opublicerade ändringar tas bort och hemsidan återställs till den publicerade versionen.
+          </p>
+          {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
+          <div className="mt-5 flex justify-end gap-2">
+            <button className={buttonClasses("ghost")} onClick={() => setOpen(false)} disabled={pending}>
+              Avbryt
+            </button>
+            <button className={buttonClasses("danger")} onClick={restoreNow} disabled={pending}>
+              {pending ? "Återställer …" : "Återställ"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 

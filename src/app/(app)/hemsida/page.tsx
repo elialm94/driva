@@ -1,16 +1,15 @@
 import { ExternalLink, Globe, WandSparkles } from "lucide-react";
 import { db } from "@/lib/store";
 import { datumTid } from "@/lib/format";
-import { DEFAULT_PRIMARY_CTA_LABEL } from "@/lib/types";
 import { draftWebsiteDesign, publishedWebsiteDesign } from "@/lib/website-design";
 import { draftWebsiteFooter } from "@/lib/website-footer";
 import { Badge, Card, PageHeader } from "@/components/ui";
-import { GenerateWebsiteForm, PublishWebsiteButton, SectionList } from "@/components/site-widgets";
+import { GenerateWebsiteForm, PublishWebsiteButton, RestoreWebsiteDraftButton, SectionList } from "@/components/site-widgets";
 import { PrivacyPolicySettingsCard } from "@/components/privacy-policy-settings";
 import { WebsiteFormRecipientCard } from "@/components/website-form-recipient";
 import { FooterSettingsCard } from "@/components/site-footer-settings";
 import { draftPrivacyPolicyState, seedCustomPrivacyPolicy } from "@/lib/website-privacy";
-import { hasUnpublishedWebsiteDrafts } from "@/lib/website-drafts";
+import { draftPrimaryCtaLabel, hasUnpublishedWebsiteDrafts, websiteDraftView } from "@/lib/website-drafts";
 import { SitePreviewFrame, UtseendePanel, WebsiteDesignProvider } from "@/components/site-design-widgets";
 import { WebsiteEditorSyncProvider } from "@/components/website-editor-sync";
 import { CopyLinkButton } from "@/components/copy-button";
@@ -72,9 +71,10 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
   const liveHost = domain?.status === "active" ? domain.hostname : null;
   const mailLive = isLiveMailConfigured();
 
-  // Redigeringslistan behöver inte bilddatan (tunga data-URL:er) – bara vetskap om att bild finns.
-  // Själva bilderna hämtas när en sektion öppnas för redigering.
-  const safeSite = stripWebsiteSecrets(site);
+  // Byggaren visar och redigerar UTKASTET; den publika sajten ändras först
+  // vid Publicera. Redigeringslistan behöver inte bilddatan (tunga
+  // data-URL:er) – bara vetskap om att bild finns.
+  const safeSite = stripWebsiteSecrets(websiteDraftView(site));
   const listSections = safeSite.sections.map(({ image, items, ...rest }) => ({
     ...rest,
     hasImage: Boolean(image),
@@ -114,6 +114,11 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
             >
               <ExternalLink className="size-3.5" /> Öppna i ny flik
             </a>
+            {live && unpublishedDrafts ? (
+              <div className="max-lg:hidden">
+                <RestoreWebsiteDraftButton />
+              </div>
+            ) : null}
             <div className={dirty ? "max-lg:hidden" : undefined}>
               <PublishWebsiteButton published={live} />
             </div>
@@ -127,12 +132,12 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
           initialDesign={draftWebsiteDesign(site)}
           initialFooter={draftWebsiteFooter(site)}
           initialPrivacy={draftPrivacyPolicyState(site)}
-          initialSectionOrder={site.sections.map((section) => section.id)}
-          initialSectionVisibility={site.sections.map((section) => ({
+          initialSectionOrder={safeSite.sections.map((section) => section.id)}
+          initialSectionVisibility={safeSite.sections.map((section) => ({
             id: section.id,
             visible: section.visible !== false,
           }))}
-          initialPrimaryCtaLabel={site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL}
+          initialPrimaryCtaLabel={draftPrimaryCtaLabel(site)}
         >
         <SiteEditorShell
           preview={
@@ -168,7 +173,7 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
                 <SectionList
                   sections={listSections}
                   labels={SECTION_LABELS}
-                  primaryCtaLabel={site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL}
+                  primaryCtaLabel={draftPrimaryCtaLabel(site)}
                   businessContact={businessContact}
                 />
               </Card>
@@ -215,8 +220,15 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
               </p>
             }
           >
-            <div className="w-full [&_button:first-of-type]:w-full">
-              <PublishWebsiteButton published={live} />
+            <div className="flex w-full items-center gap-2">
+              {live && unpublishedDrafts ? (
+                <div className="shrink-0">
+                  <RestoreWebsiteDraftButton />
+                </div>
+              ) : null}
+              <div className="min-w-0 flex-1 [&_button:first-of-type]:w-full">
+                <PublishWebsiteButton published={live} />
+              </div>
             </div>
           </StickyMobileActions>
         ) : null}

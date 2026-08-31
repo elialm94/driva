@@ -1246,7 +1246,7 @@ export const websitesSpec: TableSpec<Website> = {
   pk: ["id"],
   columns: [
     "id", "business_id", "slug", "business_name", "tagline", "city", "status", "theme",
-    "design", "draft_design", "footer", "draft_footer", "sections", "primary_cta", "privacy_policy_supplement",
+    "design", "draft_design", "footer", "draft_footer", "sections", "draft_sections", "primary_cta", "draft_primary_cta", "privacy_policy_supplement",
     "privacy_policy_mode", "privacy_policy_custom_body", "draft_privacy_policy",
     "draft_revision", "published_revision",
     "published_at", "submissions", "created_at",
@@ -1265,7 +1265,9 @@ export const websitesSpec: TableSpec<Website> = {
     footer: jsonParamOrNull(w.footer),
     draft_footer: jsonParamOrNull(w.draftFooter),
     sections: jsonParam(w.sections),
+    draft_sections: jsonParamOrNull(w.draftSections),
     primary_cta: jsonParamOrNull(w.primaryCta),
+    draft_primary_cta: jsonParamOrNull(w.draftPrimaryCta),
     privacy_policy_supplement: w.privacyPolicySupplement ?? null,
     privacy_policy_mode: w.privacyPolicyMode ?? null,
     privacy_policy_custom_body: jsonParamOrNull(w.privacyPolicyCustomBody),
@@ -1289,7 +1291,12 @@ export const websitesSpec: TableSpec<Website> = {
     ...opt("footer", jsonOrU<NonNullable<Website["footer"]>>(r.footer)),
     ...opt("draftFooter", jsonOrU<NonNullable<Website["draftFooter"]>>(r.draft_footer)),
     sections: withoutRetiredSections(jsonVal<Website["sections"]>(r.sections)),
+    ...opt(
+      "draftSections",
+      r.draft_sections == null ? undefined : withoutRetiredSections(jsonVal<Website["sections"]>(r.draft_sections)),
+    ),
     ...opt("primaryCta", jsonOrU<NonNullable<Website["primaryCta"]>>(r.primary_cta)),
+    ...opt("draftPrimaryCta", jsonOrU<NonNullable<Website["draftPrimaryCta"]>>(r.draft_primary_cta)),
     ...opt("privacyPolicySupplement", strOrU(r.privacy_policy_supplement)),
     ...opt("privacyPolicyMode", (r.privacy_policy_mode === "custom" || r.privacy_policy_mode === "standard"
       ? r.privacy_policy_mode
