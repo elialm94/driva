@@ -39,11 +39,12 @@ import { syncDocLineClassification } from "../economic-line-type";
 import { postVerification } from "../accounting/engine";
 import {
   detailsFromPrefill,
+  mergeHousing,
   persistTaxReductionOwnership,
   resolveTaxReductionPrefill,
 } from "./tax-reduction";
 import { resolvePersistedWorkLocationId } from "../tax-reduction-send";
-import { workLocationsOf } from "./work-locations";
+import { getWorkLocation, workLocationsOf, workLocationToHousing } from "./work-locations";
 import {
   associateEntriesWithInvoice,
   entryToDocLine,
@@ -158,20 +159,28 @@ function applyTaxReductionContext(
     invoice.taxReductionDetails = null;
     return;
   }
+  const customer = requireCustomer(invoice.customerId);
+  persistInvoiceWorkLocation(invoice, customer, invoice.workLocationId);
   const prefill = resolveTaxReductionPrefill({
     customerId: invoice.customerId,
     jobId: invoice.jobId,
     details: input.taxReductionDetails ?? invoice.taxReductionDetails,
   });
+  // Bostaden som är vald på JUST den här fakturan är basen för dokumentets
+  // fastighetsuppgifter – kundens standardbostad får aldrig frysa fel
+  // fastighet i snapshoten. Explicit ifyllda fält vinner över basen.
+  const selectedLocation = getWorkLocation(customer, invoice.workLocationId);
+  const baseHousing = selectedLocation ? workLocationToHousing(selectedLocation) : prefill.housing;
   const details = detailsFromPrefill({
     ...prefill,
     workAddress: input.taxReductionDetails?.workAddress ?? prefill.workAddress,
     workPeriodStart: input.taxReductionDetails?.workPeriodStart ?? prefill.workPeriodStart,
     workPeriodEnd: input.taxReductionDetails?.workPeriodEnd ?? prefill.workPeriodEnd,
-    housing: input.taxReductionDetails?.housing ?? prefill.housing,
+    housing: input.taxReductionDetails?.housing
+      ? mergeHousing(baseHousing, input.taxReductionDetails.housing)
+      : baseHousing,
   });
   invoice.taxReductionDetails = details;
-  persistInvoiceWorkLocation(invoice, requireCustomer(invoice.customerId), invoice.workLocationId);
   persistTaxReductionOwnership({
     customerId: invoice.customerId,
     jobId: invoice.jobId,

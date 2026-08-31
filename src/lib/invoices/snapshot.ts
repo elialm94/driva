@@ -8,6 +8,7 @@ import type {
   InvoiceSellerSnapshot,
 } from "../types";
 import { docTotals, vatBreakdown } from "../calc";
+import { normalizePersonnummer } from "../personnummer";
 
 export function sellerSnapshot(settings: CompanySettings): InvoiceSellerSnapshot {
   return {
@@ -32,7 +33,11 @@ export function sellerSnapshot(settings: CompanySettings): InvoiceSellerSnapshot
   };
 }
 
-export function buyerSnapshot(customer: Customer): InvoiceBuyerSnapshot {
+export function buyerSnapshot(
+  customer: Customer,
+  opts: { includePersonalIdentityNumber?: boolean } = {}
+): InvoiceBuyerSnapshot {
+  const pn = customer.personalIdentityNumber?.trim();
   return {
     name: customer.name,
     kind: customer.kind,
@@ -43,6 +48,9 @@ export function buyerSnapshot(customer: Customer): InvoiceBuyerSnapshot {
     country: "Sverige",
     email: customer.email,
     phone: customer.phone,
+    contactPerson: customer.contactPerson?.trim() || undefined,
+    // Känsligt: fryses bara när dokumentet behöver det (ROT/RUT).
+    ...(opts.includePersonalIdentityNumber && pn ? { personalIdentityNumber: normalizePersonnummer(pn) } : {}),
   };
 }
 
@@ -98,8 +106,9 @@ export function buyerAsCustomer(buyer: InvoiceBuyerSnapshot, fallback?: Customer
     city: buyer.city,
     notes: fallback?.notes ?? "",
     createdAt: fallback?.createdAt ?? "",
-    contactPerson: fallback?.contactPerson,
-    personalIdentityNumber: fallback?.personalIdentityNumber,
+    contactPerson: buyer.contactPerson ?? fallback?.contactPerson,
+    // Historiskt dokument: snapshotens personnummer vinner alltid över dagens kundkort.
+    personalIdentityNumber: buyer.personalIdentityNumber ?? fallback?.personalIdentityNumber,
     workLocations: fallback?.workLocations,
     defaultWorkLocationId: fallback?.defaultWorkLocationId,
   };
@@ -127,7 +136,9 @@ export function buildIssuedSnapshot(input: {
     currency: "SEK",
     serviceDate: invoice.serviceDate,
     seller: sellerSnapshot(input.seller),
-    buyer: buyerSnapshot(input.buyer),
+    // Personnummer fryses bara på ROT/RUT-fakturor – dokumentet ska kunna
+    // rendera skattereduktionens person utan live-uppslag på kundkortet.
+    buyer: buyerSnapshot(input.buyer, { includePersonalIdentityNumber: Boolean(invoice.rot) }),
     lines,
     // Villkorligt: äldre snapshots utan fältet förblir värde-exakta.
     ...(invoice.richText ? { richText: invoice.richText } : {}),
@@ -184,7 +195,19 @@ export function hydrateIssuedInvoices(data: DB): boolean {
       inv.issuedAt = inv.sentAt ?? inv.issueDate;
       changed = true;
     }
-    if (inv.issuedSnapshot) continue;
+    if (inv.issuedSnapshot) {
+      // Engångsbackfill: äldre ROT/RUT-snapshots fryser personnumret så att
+      // dokumentet kan rendera skattereduktionens person utan live-uppslag.
+      const snap = inv.issuedSnapshot;
+      if (snap.rot && !snap.buyer.personalIdentityNumber) {
+        const pn = data.customers.find((c) => c.id === inv.customerId)?.personalIdentityNumber?.trim();
+        if (pn) {
+          snap.buyer.personalIdentityNumber = normalizePersonnummer(pn);
+          changed = true;
+        }
+      }
+      continue;
+    }
     const buyer = data.customers.find((c) => c.id === inv.customerId);
     if (!buyer) continue;
     inv.issuedSnapshot = buildIssuedSnapshot({
