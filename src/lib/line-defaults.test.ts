@@ -70,10 +70,13 @@ describe("inställningsflikar", () => {
 describe("0 vs tomt à-pris (nullish)", () => {
   it("0 ?? default behåller 0; 0 || default återställer felaktigt", () => {
     const defaultPrice = 650;
-    assert.equal(0 ?? defaultPrice, 0);
-    assert.equal(0 || defaultPrice, 650);
-    assert.equal(undefined ?? defaultPrice, 650);
-    assert.equal(null ?? defaultPrice, 650);
+    const explicitZero: number | null | undefined = 0;
+    const missing: number | null | undefined = undefined;
+    const cleared: number | null | undefined = null;
+    assert.equal(explicitZero ?? defaultPrice, 0);
+    assert.equal(explicitZero || defaultPrice, 650);
+    assert.equal(missing ?? defaultPrice, 650);
+    assert.equal(cleared ?? defaultPrice, 650);
     assert.equal(pickUnitPrice(0, defaultPrice), 0);
     assert.equal(pickUnitPrice(undefined, defaultPrice), 650);
     assert.equal(pickUnitPrice(null, defaultPrice), 650);
@@ -218,7 +221,7 @@ describe("standard timpris", () => {
 
   it("osatt à-pris på ny Arbete-rad får 650", () => {
     const changed = applyArbeteLineDefaults(
-      { kind: "arbete", type: "LABOR" as const, unit: "st", vatRate: 25 as const },
+      { kind: "arbete", type: "LABOR" as const, unit: "st", unitPrice: undefined, vatRate: 25 as const },
       { defaultHourlyRate: 650, defaultVatRate: 25 }
     );
     assert.equal(changed.unitPrice, 650);
