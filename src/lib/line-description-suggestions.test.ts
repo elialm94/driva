@@ -5,10 +5,14 @@ import assert from "node:assert/strict";
 import { emptyTestDb, labor } from "./invoices/test-db";
 import type { JobWorkEntry, QuoteVersion } from "./types";
 import {
+  addIgnoredLineDescription,
   collectLineDescriptionVocabulary,
   isMeaningfulLineDescription,
+  isNearDuplicateKey,
+  levenshtein,
   normalizeLineDescriptionKey,
   rankLineDescriptionSuggestions,
+  shouldCollapseNearDuplicate,
   type LineDescriptionVocabEntry,
 } from "./line-description-suggestions";
 
@@ -68,6 +72,9 @@ describe("normalisering", () => {
   it("svenska tecken och casing blir samma nyckel", () => {
     assert.equal(normalizeLineDescriptionKey("Rörskydd"), normalizeLineDescriptionKey("rÖRSKYDD"));
     assert.equal(normalizeLineDescriptionKey("  Rör  skydd "), "rör skydd");
+    assert.equal(normalizeLineDescriptionKey("Rörskydd"), normalizeLineDescriptionKey(" Rörskydd "));
+    assert.equal(normalizeLineDescriptionKey("Rör\u00a0skydd"), "rör skydd");
+    assert.equal(normalizeLineDescriptionKey("rörskydd"), normalizeLineDescriptionKey("RÖRSKYDD"));
   });
 
   it("ignorerar tomma och meningslösa beskrivningar", () => {
@@ -321,3 +328,236 @@ describe("tenant-isolering", () => {
     assert.deepEqual(texts, ["Rörskydd"]);
   });
 });
+
+function specHistory(): LineDescriptionVocabEntry[] {
+  return [
+    entry("Rörskydd", { count: 18, lastUsed: daysAgo(2) }),
+    entry("Rörskyd", { count: 1, lastUsed: daysAgo(1) }),
+    entry("Rörarbete", { count: 7, lastUsed: daysAgo(4) }),
+    entry("Montering", { count: 12, lastUsed: daysAgo(3) }),
+  ];
+}
+
+describe("frekvens, fuzzy och near-duplicate-kollaps", () => {
+  const now = Date.parse("2026-08-31T12:00:00Z");
+
+  it("Rö visar etablerade termer och döljer engångsstavfelet Rörskyd", () => {
+    const ranked = rankLineDescriptionSuggestions(specHistory(), "Rö", { now });
+    assert.deepEqual(
+      ranked.map((r) => r.text),
+      ["Rörskydd", "Rörarbete"]
+    );
+    assert.equal(
+      ranked.some((r) => r.text === "Rörskyd"),
+      false
+    );
+  });
+
+  it("Rörsky / Rörskyd / Rörskyddd fuzzy-matchar Rörskydd", () => {
+    for (const query of ["Rörsky", "Rörskyd", "Rörskyddd"] as const) {
+      const ranked = rankLineDescriptionSuggestions(specHistory(), query, { now });
+      assert.equal(ranked[0]?.text, "Rörskydd", query);
+      assert.equal(
+        ranked.some((r) => r.text === "Rörskyd"),
+        query === "Rörskyd",
+        query
+      );
+    }
+  });
+
+  it("Monte visar Montering", () => {
+    const ranked = rankLineDescriptionSuggestions(specHistory(), "Monte", { now });
+    assert.deepEqual(
+      ranked.map((r) => r.text),
+      ["Montering"]
+    );
+  });
+
+  it("kollapsar inte Rör mot Rörskydd (prefix-av-varandra)", () => {
+    assert.equal(isNearDuplicateKey("rör", "rörskydd"), false);
+    const ranked = rankLineDescriptionSuggestions(
+      [entry("Rör", { count: 1, lastUsed: daysAgo(2) }), entry("Rörskydd", { count: 18, lastUsed: daysAgo(1) })],
+      "Rö",
+      { now }
+    );
+    assert.deepEqual(
+      ranked.map((r) => r.text),
+      ["Rörskydd", "Rör"]
+    );
+  });
+
+  it("kollapsar inte Montering mot Demontering", () => {
+    assert.equal(isNearDuplicateKey("montering", "demontering"), false);
+    assert.equal(shouldCollapseNearDuplicate(12, 12), false);
+    const vocab = [
+      entry("Montering", { count: 12, lastUsed: daysAgo(2) }),
+      entry("Demontering", { count: 8, lastUsed: daysAgo(3) }),
+    ];
+    assert.equal(rankLineDescriptionSuggestions(vocab, "Monte", { now })[0]?.text, "Montering");
+    assert.equal(rankLineDescriptionSuggestions(vocab, "Demo", { now })[0]?.text, "Demontering");
+    assert.equal(
+      rankLineDescriptionSuggestions(vocab, "Monte", { now }).some((r) => r.text === "Demontering"),
+      false
+    );
+  });
+
+  it("engångsvärde syns vid exakt match även om det är en near-duplicate", () => {
+    const ranked = rankLineDescriptionSuggestions(specHistory(), "Rörskyd", { now });
+    assert.equal(
+      ranked.some((r) => r.text === "Rörskyd"),
+      true
+    );
+    assert.equal(ranked[0]?.text, "Rörskydd");
+  });
+
+  it("unikt korrekt engångsvärde syns vid tydlig prefix", () => {
+    const ranked = rankLineDescriptionSuggestions(
+      [...specHistory(), entry("Rörinspektion special", { count: 1, lastUsed: daysAgo(1) })],
+      "Rörinspektion spec",
+      { now }
+    );
+    assert.equal(
+      ranked.some((r) => r.text === "Rörinspektion special"),
+      true
+    );
+  });
+
+  it("Levenshtein behandlar åäö som ett tecken", () => {
+    assert.equal(levenshtein("rörskydd", "rörskyd"), 1);
+    assert.equal(levenshtein("rörskydd", "rörskyddd"), 1);
+    assert.equal(levenshtein("åäö", "åäö"), 0);
+    assert.equal(levenshtein("åäö", "äö"), 1);
+  });
+});
+
+describe("glöm förslag", () => {
+  const now = Date.parse("2026-08-31T12:00:00Z");
+
+  function historyDb() {
+    return emptyTestDb({
+      quoteVersions: [
+        version({
+          id: "qv-hist",
+          createdAt: daysAgo(20),
+          lines: [
+            labor({ description: "Rörskydd" }),
+            labor({ description: "Rörarbete" }),
+            labor({ description: "Rörskyd" }),
+          ],
+        }),
+      ],
+      invoices: [
+        {
+          id: "inv-hist",
+          number: 9,
+          customerId: "cust-1",
+          type: "faktura",
+          status: "skickad",
+          lines: [labor({ description: "Rörarbete" }), labor({ description: "Montering" })],
+          rot: null,
+          issueDate: daysAgo(3),
+          dueDate: daysAgo(-10),
+          paymentTermsDays: 30,
+          reminders: [],
+          token: "forget",
+          ocr: "9",
+          createdAt: daysAgo(3),
+          issuedAt: daysAgo(3),
+        },
+      ],
+      jobWorkEntries: [work({ description: "Rörarbete", type: "labor", updatedAt: daysAgo(1) })],
+    });
+  }
+
+  it("Glöm förslag tar bort termen från framtida autocomplete", () => {
+    const data = historyDb();
+    const before = rankLineDescriptionSuggestions(collectLineDescriptionVocabulary(data), "Rö", { now });
+    assert.equal(
+      before.some((r) => r.text === "Rörarbete"),
+      true
+    );
+
+    addIgnoredLineDescription(data.meta, "Rörarbete");
+    const after = rankLineDescriptionSuggestions(collectLineDescriptionVocabulary(data), "Rö", { now });
+    assert.equal(
+      after.some((r) => r.text === "Rörarbete"),
+      false
+    );
+    assert.equal(
+      after.some((r) => r.text === "Rörskydd"),
+      true
+    );
+  });
+
+  it("Glöm förslag muterar inte historiska dokumentrader", () => {
+    const data = historyDb();
+    const quoteBefore = data.quoteVersions[0]!.lines.map((l) => l.description);
+    const invoiceBefore = data.invoices[0]!.lines.map((l) => l.description);
+    const workBefore = data.jobWorkEntries.map((e) => e.description);
+
+    addIgnoredLineDescription(data.meta, "  RÖRARBETE ");
+
+    assert.deepEqual(
+      data.quoteVersions[0]!.lines.map((l) => l.description),
+      quoteBefore
+    );
+    assert.deepEqual(
+      data.invoices[0]!.lines.map((l) => l.description),
+      invoiceBefore
+    );
+    assert.deepEqual(
+      data.jobWorkEntries.map((e) => e.description),
+      workBefore
+    );
+    assert.equal(data.quoteVersions[0]!.lines.some((l) => l.description === "Rörarbete"), true);
+    assert.equal(data.invoices[0]!.lines.some((l) => l.description === "Rörarbete"), true);
+  });
+
+  it("ignore-listan är per företag och normaliseras vid läsning", () => {
+    const businessA = historyDb();
+    const businessB = emptyTestDb({
+      quoteVersions: [
+        version({
+          id: "b-q",
+          createdAt: daysAgo(2),
+          lines: [labor({ description: "Rörarbete" }), labor({ description: "Revision" })],
+        }),
+      ],
+    });
+
+    addIgnoredLineDescription(businessA.meta, "Rörarbete");
+    assert.deepEqual(businessA.meta.ignoredLineDescriptions, ["rörarbete"]);
+
+    const a = rankLineDescriptionSuggestions(collectLineDescriptionVocabulary(businessA), "Rö", { now });
+    const b = rankLineDescriptionSuggestions(collectLineDescriptionVocabulary(businessB), "Rö", { now });
+
+    assert.equal(
+      a.some((r) => r.text === "Rörarbete"),
+      false
+    );
+    assert.equal(
+      b.some((r) => r.text === "Rörarbete"),
+      true
+    );
+    assert.equal(businessB.meta.ignoredLineDescriptions, undefined);
+    assert.equal(
+      collectLineDescriptionVocabulary(businessB).some((v) => v.text === "Rörarbete"),
+      true
+    );
+  });
+
+  it("rank respekterar explicit ignored-option utan att röra dokument", () => {
+    const data = historyDb();
+    const snapshot = JSON.stringify(data.quoteVersions);
+    const ranked = rankLineDescriptionSuggestions(collectLineDescriptionVocabulary(data), "Rö", {
+      now,
+      ignored: [" Rörskydd "],
+    });
+    assert.equal(
+      ranked.some((r) => r.text === "Rörskydd"),
+      false
+    );
+    assert.equal(JSON.stringify(data.quoteVersions), snapshot);
+  });
+});
+

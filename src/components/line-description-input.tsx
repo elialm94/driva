@@ -11,31 +11,42 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { getLineDescriptionVocabularyAction } from "@/app/actions";
+import { X } from "lucide-react";
+import {
+  forgetLineDescriptionSuggestionAction,
+  getLineDescriptionVocabularyAction,
+} from "@/app/actions";
 import {
   LINE_DESCRIPTION_MIN_QUERY,
+  normalizeLineDescriptionKey,
   rankLineDescriptionSuggestions,
   type LineDescriptionVocabEntry,
 } from "@/lib/line-description-suggestions";
 import type { LineKind } from "@/lib/types";
 import { cx } from "./ui";
 
-const VocabContext = createContext<LineDescriptionVocabEntry[] | null>(null);
+type VocabContextValue = {
+  vocab: LineDescriptionVocabEntry[];
+  forgetSuggestion: (text: string) => void;
+};
+
+const VocabContext = createContext<VocabContextValue | null>(null);
 
 export function LineDescriptionVocabProvider({ children }: { children: ReactNode }) {
-  const { vocab, ready } = useFetchedLineDescriptionVocabulary();
+  const state = useFetchedLineDescriptionVocabulary();
   return (
-    <VocabContext.Provider value={vocab}>
-      <div data-line-vocab={ready ? String(vocab.length) : "pending"} className="contents">
+    <VocabContext.Provider value={state}>
+      <div data-line-vocab={state.ready ? String(state.vocab.length) : "pending"} className="contents">
         {children}
       </div>
     </VocabContext.Provider>
   );
 }
 
-function useFetchedLineDescriptionVocabulary(): { vocab: LineDescriptionVocabEntry[]; ready: boolean } {
+function useFetchedLineDescriptionVocabulary(): VocabContextValue & { ready: boolean } {
   const [vocab, setVocab] = useState<LineDescriptionVocabEntry[]>([]);
   const [ready, setReady] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     getLineDescriptionVocabularyAction()
@@ -52,10 +63,23 @@ function useFetchedLineDescriptionVocabulary(): { vocab: LineDescriptionVocabEnt
       cancelled = true;
     };
   }, []);
-  return { vocab, ready };
+
+  function forgetSuggestion(text: string) {
+    const key = normalizeLineDescriptionKey(text);
+    setVocab((prev) => prev.filter((entry) => normalizeLineDescriptionKey(entry.text) !== key));
+    void forgetLineDescriptionSuggestionAction(text)
+      .then((next) => {
+        setVocab(next);
+      })
+      .catch(() => {
+        /* Optimistic removal already applied. */
+      });
+  }
+
+  return { vocab, ready, forgetSuggestion };
 }
 
-function useLineDescriptionVocabulary(): LineDescriptionVocabEntry[] {
+function useLineDescriptionVocabulary(): VocabContextValue {
   const ctx = useContext(VocabContext);
   const [local, setLocal] = useState<LineDescriptionVocabEntry[]>([]);
   useEffect(() => {
@@ -68,7 +92,18 @@ function useLineDescriptionVocabulary(): LineDescriptionVocabEntry[] {
       cancelled = true;
     };
   }, [ctx]);
-  return ctx ?? local;
+
+  function forgetSuggestion(text: string) {
+    const key = normalizeLineDescriptionKey(text);
+    setLocal((prev) => prev.filter((entry) => normalizeLineDescriptionKey(entry.text) !== key));
+    void forgetLineDescriptionSuggestionAction(text)
+      .then((next) => setLocal(next))
+      .catch(() => {
+        /* Optimistic removal already applied. */
+      });
+  }
+
+  return ctx ?? { vocab: local, forgetSuggestion };
 }
 
 export function LineDescriptionInput({
@@ -94,7 +129,7 @@ export function LineDescriptionInput({
 }) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
-  const vocab = useLineDescriptionVocabulary();
+  const { vocab, forgetSuggestion } = useLineDescriptionVocabulary();
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
 
@@ -109,6 +144,10 @@ export function LineDescriptionInput({
   }, [value, kind]);
 
   useEffect(() => {
+    setHighlight((i) => (suggestions.length === 0 ? 0 : Math.min(i, suggestions.length - 1)));
+  }, [suggestions.length]);
+
+  useEffect(() => {
     if (!canOpen) return;
     function onPointerDown(e: PointerEvent) {
       if (rootRef.current?.contains(e.target as Node)) return;
@@ -121,6 +160,10 @@ export function LineDescriptionInput({
   function apply(text: string) {
     onChange(text);
     setOpen(false);
+  }
+
+  function forget(text: string) {
+    forgetSuggestion(text);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
@@ -193,7 +236,7 @@ export function LineDescriptionInput({
               role="option"
               aria-selected={index === highlight}
               className={cx(
-                "cursor-pointer px-3 py-1.5 text-[14px] text-ink",
+                "flex cursor-pointer items-center gap-1 text-[14px] text-ink",
                 index === highlight ? "bg-accent-soft" : "hover:bg-canvas"
               )}
               onMouseEnter={() => setHighlight(index)}
@@ -202,7 +245,20 @@ export function LineDescriptionInput({
                 apply(item.text);
               }}
             >
-              {item.text}
+              <span className="min-w-0 flex-1 truncate px-3 py-1.5">{item.text}</span>
+              <button
+                type="button"
+                aria-label="Glöm förslag"
+                title="Glöm förslag"
+                className="mr-1 shrink-0 rounded-md p-1 text-muted hover:bg-card hover:text-ink"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  forget(item.text);
+                }}
+              >
+                <X className="size-3.5" />
+              </button>
             </li>
           ))}
         </ul>

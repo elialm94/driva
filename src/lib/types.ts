@@ -1809,6 +1809,11 @@ export interface DB {
      * "X har bokförts som Y n gånger". Ingen ML – bara räknade beslut.
      */
     merchantCategoryRules?: Record<string, MerchantCategoryRule>;
+    /**
+     * Normaliserade prisradsbeskrivningar som användaren glömt i autocomplete.
+     * Påverkar bara förslag – historiska offerter/fakturor/uppdrag lämnas orörda.
+     */
+    ignoredLineDescriptions?: string[];
   };
 }
 

@@ -2,8 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { db, resetDemoData } from "@/lib/store";
-import { collectLineDescriptionVocabulary } from "@/lib/line-description-suggestions";
+import { db, resetDemoData, save } from "@/lib/store";
+import {
+  addIgnoredLineDescription,
+  collectLineDescriptionVocabulary,
+} from "@/lib/line-description-suggestions";
 import {
   createFinalInvoiceForJob,
   createInvoice,
@@ -338,6 +341,19 @@ export async function removeCustomerWorkLocationAction(
  */
 export async function getLineDescriptionVocabularyAction() {
   return withBusinessRead(() => collectLineDescriptionVocabulary(db()));
+}
+
+/**
+ * Glöm ett autocomplete-förslag för det aktuella företaget.
+ * Skriver bara till businesses.meta.ignoredLineDescriptions – historiska
+ * offerter, fakturor och uppdrag lämnas orörda. Business hämtas från sessionen.
+ */
+export async function forgetLineDescriptionSuggestionAction(text: string) {
+  return withBusiness(() => {
+    addIgnoredLineDescription(db().meta, text);
+    save();
+    return collectLineDescriptionVocabulary(db());
+  });
 }
 
 /* --------------------------------- Offerter -------------------------------- */
