@@ -3,6 +3,7 @@ import { db } from "@/lib/store";
 import { getQuote, currentVersion, requireCustomer } from "@/lib/services/data";
 import { quoteDefaults } from "@/lib/services/quotes";
 import { customerInvoiceRotPrefill } from "@/lib/services/tax-reduction";
+import { quoteDescriptionDoc } from "@/lib/quote-description";
 import { PageHeader } from "@/components/ui";
 import { QuoteForm } from "@/components/doc-form";
 import { SmartBack } from "@/components/back-link";
@@ -55,7 +56,6 @@ export default async function EditQuotePage(props: PageProps<"/ekonomi/offerter/
         rotByCustomer={rotByCustomer}
         initial={{
           title: version.title,
-          intro: version.intro,
           lines: version.lines,
           rot: version.rot,
           workLocationId: quote.workLocationId,
@@ -64,7 +64,9 @@ export default async function EditQuotePage(props: PageProps<"/ekonomi/offerter/
           lateInterestRate: version.lateInterestRate,
           validUntil: version.validUntil,
           terms: version.terms,
-          richText: version.richText,
+          // Kanonisk beskrivning: på BankID-låsta versioner ligger legacy-
+          // "Beskrivning av arbetet" kvar och slås ihop här inför ny version.
+          richText: quoteDescriptionDoc(version),
         }}
         defaults={quoteDefaults()}
         cancelHref={quoteHref}

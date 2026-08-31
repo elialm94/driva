@@ -573,7 +573,6 @@ const PLAN_PRESETS: { label: string; plan: PaymentPlanPart[] }[] = [
 
 export interface QuoteFormInitial {
   title: string;
-  intro: string;
   lines: DocLine[];
   rot: RotRut | null;
   workLocationId?: string;
@@ -622,7 +621,6 @@ export function QuoteForm({
   const [customerOptions, setCustomerOptions] = useState(customers);
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
   const [title, setTitle] = useState(initial?.title ?? "");
-  const [intro, setIntro] = useState(initial?.intro ?? "");
   const vat = defaults.defaultVatRate ?? 25;
   const [lines, setLines] = useState<DocLine[]>(
     initial?.lines?.length ? initial.lines : [newLine("arbete", vat, "start-arbete"), newLine("material", vat, "start-material")]
@@ -650,7 +648,6 @@ export function QuoteForm({
   const snapshot = JSON.stringify({
     customerId,
     title,
-    intro,
     lines,
     rot,
     workLocationId,
@@ -704,7 +701,6 @@ export function QuoteForm({
     }
     const payload = {
       title: title.trim(),
-      intro: intro.trim(),
       lines: prunedLines(lines),
       rot,
       workLocationId: workLocationId || undefined,
@@ -770,14 +766,12 @@ export function QuoteForm({
             </div>
           </div>
           <div>
-            <label className={labelCls}>Beskrivning av arbetet</label>
-            <textarea
-              value={intro}
-              onChange={(e) => setIntro(e.target.value)}
-              rows={3}
-              placeholder="Kort beskrivning som kunden ser överst i offerten …"
-              className={inputCls}
-            />
+            <label className={labelCls}>Beskrivning</label>
+            <RichTextEditor value={initial?.richText} onChange={setRichText} aiEnabled={aiEnabled} ariaLabel="Beskrivning" />
+            <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
+              Allt du vill berätta om projektet – vad som ingår, förutsättningar och praktisk information.
+              Rubriker och listor i texten ger strukturen. Visas på offerten före prisraderna.
+            </p>
           </div>
         </Card>
 
@@ -832,6 +826,7 @@ export function QuoteForm({
                   calculated={quoteRotTotals.calculatedEligibleTaxReduction}
                   applied={quoteRotTotals.deduction}
                   toPay={quoteRotTotals.toPay}
+                  toPayLabel="Offertvärde"
                   manuallyAdjusted={Boolean(rot.taxReductionManuallyAdjusted)}
                   clampNotice={clampNotice}
                   onApply={(amount) => {
@@ -972,15 +967,6 @@ export function QuoteForm({
           </div>
 
           <div>
-            <label className={labelCls}>Beskrivning</label>
-            <RichTextEditor value={initial?.richText} onChange={setRichText} aiEnabled={aiEnabled} ariaLabel="Beskrivning" />
-            <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
-              Valfritt. Visas på offerten före prisraderna – t.ex. vad som ingår, förutsättningar eller
-              praktisk information. Rubriker och listor i texten ger strukturen. Sparas med utkastet.
-            </p>
-          </div>
-
-          <div>
             <label className={labelCls}>Villkor</label>
             <textarea value={terms} onChange={(e) => setTerms(e.target.value)} rows={3} className={inputCls} />
             <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
@@ -994,7 +980,8 @@ export function QuoteForm({
       <div className="xl:sticky xl:top-8 xl:self-start">
         <Card className="p-5">
           <p className="mb-3 text-[15px] font-semibold">Summering</p>
-          <TotalsPanel lines={lines} rot={rot} />
+          {/* "Offertvärde", inte "Att betala": inget betalas när offerten signeras. */}
+          <TotalsPanel lines={lines} rot={rot} toPayLabel="Offertvärde" />
           {showErrors ? <FormValidationSummary id="offert-saknas" missing={missing} className="mt-4" /> : null}
           {/* Mobil: knapparna bor i den stickiga raden nedanför i stället. */}
           <div className="hidden lg:block">
@@ -1022,7 +1009,7 @@ export function QuoteForm({
         {dialog}
       </div>
       <DocStickyActions
-        toPayLabel="Att betala"
+        toPayLabel="Offertvärde"
         toPay={liveTotals.toPay}
         missingCount={showErrors ? missing.length : 0}
         summaryId="offert-saknas"
