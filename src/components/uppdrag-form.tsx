@@ -26,6 +26,7 @@ export function NewUppdragButton({
   size = "md",
   variant = "primary",
   appearance = "button",
+  label = "Skapa uppdrag",
 }: {
   customers: CustomerOption[];
   defaultCustomerId?: string;
@@ -36,6 +37,7 @@ export function NewUppdragButton({
   size?: "sm" | "md";
   variant?: "primary" | "secondary";
   appearance?: ActionAppearance;
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [customerOptions, setCustomerOptions] = useState(customers);
@@ -101,7 +103,7 @@ export function NewUppdragButton({
         }}
       >
         <Plus className={cx("shrink-0", inMenu || size !== "sm" ? "size-4" : "size-3.5")} />
-        Skapa uppdrag
+        {label}
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title="Nytt uppdrag" size="md">
         <form action={submit} className="space-y-4 px-6 py-5" {...formProps()}>

@@ -2,7 +2,16 @@ import Link from "next/link";
 import { Plus, Landmark } from "lucide-react";
 import { db } from "@/lib/store";
 import { kr, datumKort } from "@/lib/format";
-import { Badge, ButtonLink, Card, EmptyState, PageHeader, cx } from "@/components/ui";
+import {
+  Badge,
+  ButtonLink,
+  Card,
+  CreateActionLabel,
+  EmptyState,
+  PageHeader,
+  PageHeaderCreateActions,
+  cx,
+} from "@/components/ui";
 import { UploadReceiptButton } from "@/components/money-widgets";
 import { CreatePaymentFileButton } from "@/components/payment-file-actions";
 import { payerAccountLabel } from "@/lib/services/payment-files";
@@ -100,15 +109,18 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
       <PageHeader
         title="Ekonomi"
         subtitle="Alla offerter, fakturor, utgifter och banktransaktioner – sök och hitta."
+        stackActions
         actions={
-          <>
-            <ButtonLink href="/ekonomi/fakturor/ny" variant="secondary">
-              <Plus className="size-4" /> Ny faktura
+          <PageHeaderCreateActions>
+            <ButtonLink href="/ekonomi/fakturor/ny" variant="secondary" aria-label="Ny faktura">
+              <Plus className="size-4 shrink-0" />
+              <CreateActionLabel label="Ny faktura" shortLabel="Faktura" />
             </ButtonLink>
-            <ButtonLink href="/ekonomi/offerter/ny">
-              <Plus className="size-4" /> Ny offert
+            <ButtonLink href="/ekonomi/offerter/ny" aria-label="Ny offert">
+              <Plus className="size-4 shrink-0" />
+              <CreateActionLabel label="Ny offert" shortLabel="Offert" />
             </ButtonLink>
-          </>
+          </PageHeaderCreateActions>
         }
       />
 

@@ -94,7 +94,11 @@ export function ActionMenu({ children, label = "Fler åtgärder" }: { children: 
   );
 }
 
-/** Compact create control when two header actions do not fit. */
+/**
+ * Compact create-meny när det finns fler än två (eller genuint sekundära)
+ * create-actions. Två centrala actions ska visas direkt – se
+ * PageHeaderCreateActions – inte gömmas bakom + Skapa.
+ */
 export function CreateMenu({ children, label = "Skapa" }: { children: ReactNode; label?: string }) {
   const visible = Children.toArray(children);
   const [open, setOpen] = useState(false);

@@ -40,15 +40,17 @@ export function ButtonLink({
   size = "md",
   className,
   children,
+  "aria-label": ariaLabel,
 }: {
   href: string;
   variant?: ButtonVariant;
   size?: ButtonSize;
   className?: string;
   children: ReactNode;
+  "aria-label"?: string;
 }) {
   return (
-    <AppLink href={href} className={buttonClasses(variant, size, className)}>
+    <AppLink href={href} className={buttonClasses(variant, size, className)} aria-label={ariaLabel}>
       {children}
     </AppLink>
   );
@@ -97,25 +99,63 @@ export function PageHeader({
   actions,
   back,
   crumbs,
+  stackActions = false,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
   back?: ReactNode;
   crumbs?: { href?: string; label: string }[];
+  /** Två create-actions: egen rad under intro på mobil, till höger på desktop. */
+  stackActions?: boolean;
 }) {
   return (
     <div className="mb-6">
       {back ? <div className="mb-2.5">{back}</div> : null}
       {crumbs && crumbs.length > 0 ? <Breadcrumbs items={crumbs} /> : null}
-      <div className={cx("flex flex-wrap justify-between gap-4", back ? "items-start" : "items-end")}>
+      <div
+        className={cx(
+          "flex justify-between gap-3 sm:gap-4",
+          stackActions ? "flex-col md:flex-row" : "flex-wrap",
+          back ? "items-start" : stackActions ? "items-stretch md:items-end" : "items-end",
+        )}
+      >
         <div className="min-w-0">
           <h1 className="text-[26px] font-semibold tracking-tight text-ink">{title}</h1>
           {subtitle ? <p className="mt-1 text-[15px] text-soft">{subtitle}</p> : null}
         </div>
-        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+        {actions ? (
+          <div
+            className={cx(
+              "flex min-w-0 flex-wrap items-center gap-2",
+              stackActions && "w-full md:w-auto md:justify-end",
+            )}
+          >
+            {actions}
+          </div>
+        ) : null}
       </div>
     </div>
+  );
+}
+
+/** Två direkta create-knappar: ~50/50 på mobil, auto-bredd till höger på desktop. */
+export function PageHeaderCreateActions({ children }: { children: ReactNode }) {
+  return (
+    <div className="grid w-full min-w-0 grid-cols-2 gap-2 md:flex md:w-auto md:flex-wrap md:items-center md:justify-end [&>*]:min-w-0 [&>*]:w-full [&>*]:justify-center md:[&>*]:w-auto">
+      {children}
+    </div>
+  );
+}
+
+/** Kortare etikett på små skärmar – samma knapp, inte annan interaktion. */
+export function CreateActionLabel({ label, shortLabel }: { label: string; shortLabel?: string }) {
+  if (!shortLabel || shortLabel === label) return label;
+  return (
+    <>
+      <span className="md:hidden">{shortLabel}</span>
+      <span className="hidden md:inline">{label}</span>
+    </>
   );
 }
 
