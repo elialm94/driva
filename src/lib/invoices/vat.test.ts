@@ -35,6 +35,17 @@ describe("VAT-motor (docTotals / vatBreakdown)", () => {
     );
   });
 
+  it("0-kr-rad bidrar med 0 till delsumma och moms", () => {
+    const lines = [
+      labor({ id: "paid", qty: 1, unitPrice: 1000, vatRate: 25 }),
+      labor({ id: "free", description: "Städning", qty: 1, unitPrice: 0, vatRate: 25 }),
+    ];
+    const t = docTotals(lines, null);
+    assert.equal(t.subtotal, 1000);
+    assert.equal(t.vat, 250);
+    assert.equal(t.total, 1250);
+  });
+
   it("behandlar negativt à-pris som rabatt i samma motor", () => {
     const lines = [
       labor({ id: "a", unitPrice: 2000, vatRate: 25 }),

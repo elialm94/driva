@@ -466,7 +466,7 @@ function MaterialSheet({ open, onClose, jobId }: { open: boolean; onClose: () =>
           <button
             type="button"
             className={buttonClasses("primary")}
-            disabled={isPending || !description.trim() || !price}
+            disabled={isPending || !description.trim()}
             onClick={submit}
           >
             {isPending ? "Sparar …" : "Lägg till"}

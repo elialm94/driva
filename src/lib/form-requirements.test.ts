@@ -12,6 +12,7 @@ import {
   prunedLines,
   quoteMissingRequirements,
   radLabel,
+  validatePriceLine,
 } from "./form-requirements";
 import { settingsFieldErrors } from "./settings-validation";
 
@@ -40,16 +41,45 @@ describe("rader", () => {
     );
   });
 
-  it("blank rad kräver ingenting; påbörjad rad kräver det som fattas", () => {
+  it("blank rad kräver ingenting; påbörjad rad kräver bara beskrivning", () => {
     assert.deepEqual(lineMissingParts(line({ description: "", unitPrice: 0 })), { description: false, price: false });
-    assert.deepEqual(lineMissingParts(line({ description: "Montör", unitPrice: 0 })), { description: false, price: true });
+    assert.deepEqual(lineMissingParts(line({ description: "Montör", unitPrice: 0 })), { description: false, price: false });
     assert.deepEqual(lineMissingParts(line({ description: "", unitPrice: 100_00 })), { description: true, price: false });
+  });
+
+  it("TEST A: Städning 1 st 0 kr är giltig och rensas inte bort", () => {
+    const free = line({ id: "stad", description: "Städning", qty: 1, unit: "st", unitPrice: 0, vatRate: 25 });
+    assert.equal(lineIsBlank(free), false);
+    assert.deepEqual(lineMissingParts(free), { description: false, price: false });
+    assert.deepEqual(validatePriceLine(free), []);
+    assert.deepEqual(
+      prunedLines([free]).map((l) => l.id),
+      ["stad"]
+    );
+    assert.equal(prunedLines([free])[0]?.unitPrice, 0);
+  });
+
+  it("TEST C: tom beskrivning + 0 kr → beskrivningsfel, inte prisfel", () => {
+    const issues = validatePriceLine(line({ description: "", unitPrice: 0 }));
+    assert.deepEqual(
+      issues.map((i) => i.field),
+      ["description"]
+    );
+    assert.equal(issues[0]?.message, "Beskrivning saknas på raden.");
+    assert.ok(!issues.some((i) => i.field === "price"));
+  });
+
+  it("TEST D: beskrivning Ingår + 0 kr är giltig", () => {
+    const included = line({ description: "Ingår", unitPrice: 0 });
+    assert.deepEqual(validatePriceLine(included), []);
+    assert.deepEqual(lineMissingParts(included), { description: false, price: false });
+    assert.equal(hasCompleteLine([included]), true);
   });
 
   it("bara blanka rader ⇒ ett samlat krav på första radens beskrivning", () => {
     const reqs = lineRequirements([line({ id: "a", description: "", unitPrice: 0 })]);
     assert.equal(reqs.length, 1);
-    assert.equal(reqs[0].label, "Minst en prisrad med beskrivning och pris");
+    assert.equal(reqs[0].label, "Minst en prisrad med beskrivning");
     assert.equal(reqs[0].fieldId, "rad-a-beskrivning");
   });
 
@@ -60,14 +90,15 @@ describe("rader", () => {
     ]);
     assert.deepEqual(
       reqs.map((r) => r.label),
-      ["Pris på raden ”Montör”", "Beskrivning på andra raden"]
+      ["Beskrivning på andra raden"]
     );
     assert.equal(radLabel(0), "första raden");
     assert.equal(radLabel(11), "rad 12");
   });
 
-  it("hasCompleteLine kräver både beskrivning och pris", () => {
-    assert.equal(hasCompleteLine([line({ description: "Montör", unitPrice: 0 })]), false);
+  it("hasCompleteLine kräver beskrivning – 0 kr räcker som pris", () => {
+    assert.equal(hasCompleteLine([line({ description: "Montör", unitPrice: 0 })]), true);
+    assert.equal(hasCompleteLine([line({ description: "", unitPrice: 0 })]), false);
     assert.equal(hasCompleteLine([line()]), true);
   });
 });
@@ -85,6 +116,16 @@ describe("offert", () => {
 
   it("komplett utkast ⇒ inga krav", () => {
     assert.deepEqual(quoteMissingRequirements(base), []);
+  });
+
+  it("TEST A: offert med 0 kr-rad är komplett", () => {
+    assert.deepEqual(
+      quoteMissingRequirements({
+        ...base,
+        lines: [line({ description: "Städning", qty: 1, unit: "st", unitPrice: 0, vatRate: 25 })],
+      }),
+      []
+    );
   });
 
   it("tomt formulär listar kund, rubrik och rader", () => {
@@ -123,6 +164,16 @@ describe("faktura", () => {
 
   it("komplett utkast ⇒ inga krav", () => {
     assert.deepEqual(invoiceMissingRequirements(base), []);
+  });
+
+  it("TEST A: faktura med 0 kr-rad är komplett", () => {
+    assert.deepEqual(
+      invoiceMissingRequirements({
+        ...base,
+        lines: [line({ description: "Bortforsling", qty: 1, unit: "st", unitPrice: 0, vatRate: 25 })],
+      }),
+      []
+    );
   });
 
   it("betalningsvillkor under 1 dag blockerar", () => {

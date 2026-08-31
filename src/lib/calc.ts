@@ -61,7 +61,9 @@ export interface VatBreakdownRow {
 }
 
 export function lineTotal(line: DocLine): number {
-  return Math.round(line.qty * line.unitPrice);
+  const qty = Number.isFinite(line.qty) ? line.qty : 0;
+  const unitPrice = Number.isFinite(line.unitPrice) ? line.unitPrice : 0;
+  return Math.round(qty * unitPrice);
 }
 
 export function lineVat(line: DocLine): number {

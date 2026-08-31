@@ -3,7 +3,7 @@ import { docTotals, isSupportedVatRate, lineTotal, vatBreakdown } from "../calc"
 import { taxReductionExceedsMaxError } from "../tax-reduction-terms";
 import { getInvoice, requireCustomer } from "../services/data";
 import { db } from "../store";
-import { radLabel } from "../form-requirements";
+import { radLabel, validatePriceLine } from "../form-requirements";
 import { taxReductionSendBlockers, taxReductionSendInputFromCustomer } from "../tax-reduction-send";
 import { missingEmailForSend } from "../customer-validation";
 import { collectSellerBlockers, type IssueBlocker } from "./seller-blockers";
@@ -57,7 +57,8 @@ export function collectLineBlockers(invoice: Invoice): IssueBlocker[] {
     const name = line.description?.trim();
     // "raden ”Montör”" när beskrivning finns, annars "första raden" osv.
     const label = name ? `raden ”${name}”` : radLabel(i);
-    if (missing(line.description)) {
+    const lineIssues = validatePriceLine(line);
+    if (lineIssues.some((issue) => issue.field === "description")) {
       blockers.push({ code: "line_description", message: `Beskrivning saknas på ${radLabel(i)}.` });
     }
     if (!Number.isFinite(line.qty)) {
@@ -66,7 +67,7 @@ export function collectLineBlockers(invoice: Invoice): IssueBlocker[] {
     if (missing(line.unit)) {
       blockers.push({ code: "line_unit", message: `Enhet saknas på ${label}.` });
     }
-    if (!Number.isFinite(line.unitPrice)) {
+    if (lineIssues.some((issue) => issue.field === "price") || !Number.isFinite(line.unitPrice)) {
       blockers.push({ code: "line_price", message: `À-priset på ${label} är ogiltigt.` });
     }
     if (!isSupportedVatRate(line.vatRate)) {

@@ -58,8 +58,8 @@ export interface CompanySettings {
   defaultVatRate: VatRate;
   /**
    * Standard timpris i hela kronor för nya arbetsrader (offert/faktura
-   * "+ Arbete" och tidregistrering utan offertpris). Saknas = inte satt;
-   * fältet lämnas tomt. Ändrar aldrig redan skapade rader.
+   * "+ Arbete" och tidregistrering utan offertpris). Saknas / undefined =
+   * inte satt. 0 på en rad är ett explicit pris och får inte skrivas över.
    */
   defaultHourlyRate?: number;
   /**

@@ -4,6 +4,7 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { buttonClasses, Card, cx } from "./ui";
 import { docTotals } from "@/lib/calc";
+import { canonicalizeUnitPrice } from "@/lib/line-defaults";
 import { kr } from "@/lib/format";
 import type { DocLine, PaymentPlanPart, RotRut, VatRate } from "@/lib/types";
 import { createQuoteAction, updateQuoteAction, createInvoiceAction, updateInvoiceAction } from "@/app/actions";
@@ -62,7 +63,7 @@ function finiteLines(lines: DocLine[]): DocLine[] {
   return lines.map((l) => ({
     ...l,
     qty: Number.isFinite(l.qty) ? l.qty : 0,
-    unitPrice: Number.isFinite(l.unitPrice) ? l.unitPrice : 0,
+    unitPrice: canonicalizeUnitPrice(l.unitPrice),
   }));
 }
 
@@ -114,7 +115,7 @@ function TotalsPanel({
         lines.map((l) => ({
           ...l,
           qty: Number.isFinite(l.qty) ? l.qty : 0,
-          unitPrice: Number.isFinite(l.unitPrice) ? l.unitPrice : 0,
+          unitPrice: canonicalizeUnitPrice(l.unitPrice),
         })),
         rot
       ),

@@ -5,6 +5,7 @@ import type { RichTextDoc } from "../richtext";
 import { sanitizeRichText } from "../richtext";
 import { currentVersion, getQuote, requireCustomer } from "./data";
 import { docTotals } from "../calc";
+import { resolvedHourlyRate } from "../line-defaults";
 import { kr, isoDaysFromNow, dagarTill, datumKort } from "../format";
 import { logActivity } from "./activity";
 import { taxReductionFields } from "../tax-reduction-terms";
@@ -444,7 +445,9 @@ export function quoteDefaults() {
     lateInterestRate: settings.lateInterestRate,
     validUntil: isoDaysFromNow(settings.quoteValidityDays ?? 30),
     defaultVatRate: settings.defaultVatRate ?? 25,
-    defaultHourlyRate: settings.defaultHourlyRate,
+    ...(resolvedHourlyRate(settings.defaultHourlyRate) != null
+      ? { defaultHourlyRate: resolvedHourlyRate(settings.defaultHourlyRate) }
+      : {}),
     terms: STANDARD_TERMS,
   };
 }
