@@ -38,7 +38,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // Demon får samma konsult-genväg som lokala demon (Anna-vyn via Samarbeta).
   const accountantDemoSwitch = !isSupabaseMode() || demoSession;
   return (
-    <div className="min-h-dvh">
+    // data-driva-demo: klientkomponenter (t.ex. adressautocomplete) läser
+    // markören för att inte dra Google-kostnader från anonyma demobesökare.
+    <div className="min-h-dvh" {...(demoSession ? { "data-driva-demo": "" } : {})}>
       <SupportModeBanner companyName={settings.name} />
       <Sidebar
         companyName={settings.name}

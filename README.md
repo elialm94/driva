@@ -15,13 +15,13 @@ Utan Supabase-miljövariabler kör appen i **lokalt JSON-läge** och seedas auto
 
 ### Google Maps-adresssökning (valfritt)
 
-Adressfältet i "Ny kund" använder Google Places-autocomplete och fyller i postnummer och ort automatiskt. Lägg en nyckel med **Places API (New)** aktiverat i `.env.local`:
+Alla adressfält (Ny kund, Redigera kund, Inställningar → Företag, onboarding, Komplettera-flöden, uppdrag och ROT/RUT-bostäder) använder samma Google Places-autocomplete och fyller i gatuadress, postnummer och ort automatiskt. Lägg en nyckel med **Places API (New)** aktiverat i `.env.local`:
 
 ```bash
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=din-nyckel
 ```
 
-Utan nyckel används svenska exempeladresser, tydligt märkta "Demo" i förslagslistan.
+Utan nyckel – eller om Google inte kan laddas – är fälten vanliga adressfält; manuell inmatning fungerar alltid. Kostnadskontrollen är centraliserad i `src/lib/address-autocomplete.ts` + `useAddressAutocomplete`: minst 3 meningsfulla tecken, debounce, en sessionstoken per inmatning, detaljhämtning (endast adresskomponenter) först när ett förslag väljs, kortlivad query-cache och Sverige-bias. Den publika demon anropar aldrig Google.
 
 ### AI-assistent (valfritt)
 
