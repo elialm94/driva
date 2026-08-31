@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { resetDemoData } from "@/lib/store";
+import { db, resetDemoData } from "@/lib/store";
+import { collectLineDescriptionVocabulary } from "@/lib/line-description-suggestions";
 import {
   createFinalInvoiceForJob,
   createInvoice,
@@ -328,6 +329,15 @@ export async function removeCustomerWorkLocationAction(
       return { ok: false, error: "Kunde inte ta bort bostaden" } as const;
     }
   });
+}
+
+/**
+ * Kompakt vokabulär för prisrads-autocomplete.
+ * Business hämtas från den autentiserade sessionen via withBusinessRead –
+ * klienten skickar inget business_id. Demo ser bara demoföretagets rader.
+ */
+export async function getLineDescriptionVocabularyAction() {
+  return withBusinessRead(() => collectLineDescriptionVocabulary(db()));
 }
 
 /* --------------------------------- Offerter -------------------------------- */

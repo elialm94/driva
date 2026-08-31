@@ -17,6 +17,7 @@ import {
 } from "@/app/actions";
 import type { JobInvoiceChoice, JobWorkComparison } from "@/lib/job-ui-types";
 import type { JobWorkEntry, VatRate } from "@/lib/types";
+import { LineDescriptionInput, LineDescriptionVocabProvider } from "./line-description-input";
 
 function hoursLabel(n: number): string {
   return `${Number(n.toFixed(2)).toLocaleString("sv-SE")} tim`;
@@ -96,6 +97,7 @@ export function JobWorkSection({
   }
 
   return (
+    <LineDescriptionVocabProvider>
     <div className="mb-8">
       <SectionTitle
         right={
@@ -201,6 +203,7 @@ export function JobWorkSection({
         </p>
       </Modal>
     </div>
+    </LineDescriptionVocabProvider>
   );
 }
 
@@ -377,7 +380,13 @@ function TimeSheet({
         </label>
         <label className="block">
           <span className="mb-1 block text-[13px] text-muted">Vad gjorde du?</span>
-          <input className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} />
+          <LineDescriptionInput
+            className={inputCls}
+            value={description}
+            onChange={setDescription}
+            kind="arbete"
+            aria-label="Vad gjorde du?"
+          />
         </label>
         <label className="block">
           <span className="mb-1 block text-[13px] text-muted">Tid (timmar)</span>
@@ -457,7 +466,14 @@ function MaterialSheet({ open, onClose, jobId }: { open: boolean; onClose: () =>
       <div className="space-y-3 px-6 py-5">
         <label className="block">
           <span className="mb-1 block text-[13px] text-muted">Beskrivning</span>
-          <input className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} autoFocus />
+          <LineDescriptionInput
+            className={inputCls}
+            value={description}
+            onChange={setDescription}
+            kind="material"
+            aria-label="Beskrivning"
+            autoFocus
+          />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
@@ -528,7 +544,13 @@ function EditSheet({ entry, onClose }: { entry: JobWorkViewEntry; onClose: () =>
       <div className="space-y-3 px-6 py-5">
         <label className="block">
           <span className="mb-1 block text-[13px] text-muted">Beskrivning</span>
-          <input className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} />
+          <LineDescriptionInput
+            className={inputCls}
+            value={description}
+            onChange={setDescription}
+            kind={entry.type === "labor" ? "arbete" : entry.type === "travel" ? "resor" : entry.type === "material" ? "material" : "ovrigt"}
+            aria-label="Beskrivning"
+          />
         </label>
         <label className="block">
           <span className="mb-1 block text-[13px] text-muted">Datum</span>
