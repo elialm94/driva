@@ -99,9 +99,12 @@ export function addIgnoredLineDescription(meta: DB["meta"], text: string): strin
  */
 export function isNearDuplicateKey(a: string, b: string): boolean {
   if (!a || !b || a === b) return false;
-  if (a.startsWith(b) || b.startsWith(a)) return false;
   const dist = levenshtein(a, b);
   const minLen = Math.min(a.length, b.length);
+  const extra = Math.abs(a.length - b.length);
+  // Rör vs Rörskydd: delad prefix men stort restsuffix = olika termer.
+  // Rörskyd vs Rörskydd: ett tecken skiljer = sannolikt stavfel.
+  if ((a.startsWith(b) || b.startsWith(a)) && extra > 2) return false;
   if (dist === 1 && minLen >= 4) return true;
   if (dist === 2 && minLen >= 10) return true;
   return false;

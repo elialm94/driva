@@ -374,6 +374,7 @@ describe("frekvens, fuzzy och near-duplicate-kollaps", () => {
   });
 
   it("kollapsar inte Rör mot Rörskydd (prefix-av-varandra)", () => {
+    assert.equal(isNearDuplicateKey("rörskyd", "rörskydd"), true);
     assert.equal(isNearDuplicateKey("rör", "rörskydd"), false);
     const ranked = rankLineDescriptionSuggestions(
       [entry("Rör", { count: 1, lastUsed: daysAgo(2) }), entry("Rörskydd", { count: 18, lastUsed: daysAgo(1) })],
