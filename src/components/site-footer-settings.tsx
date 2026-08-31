@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { setWebsiteFooterAction } from "@/app/actions";
@@ -58,186 +58,169 @@ export function FooterSettingsCard({
         </button>
       </div>
       {open ? (
-        <Modal
-          open
-          onClose={() => setOpen(false)}
-          title="Redigera sidfot"
-          size="lg"
-          footer={
-            <div className="flex justify-end gap-2">
-              <button type="button" className={buttonClasses("ghost")} onClick={() => setOpen(false)}>
-                Avbryt
-              </button>
-              <button type="button" className={buttonClasses("primary")} onClick={() => setOpen(false)}>
-                Spara
-              </button>
-            </div>
-          }
-        >
-          <div className="px-6 py-5">
-            <FooterSettingsForm website={website} company={company} published={published} />
-          </div>
-        </Modal>
+        <FooterEditModal website={website} company={company} published={published} onClose={() => setOpen(false)} />
       ) : null}
     </>
   );
 }
 
-function FooterSettingsForm({
+function FooterEditModal({
   website,
   company,
   published,
+  onClose,
 }: {
   website: Website;
   company: CompanySettings;
   published: boolean;
+  onClose: () => void;
 }) {
   const initial = draftWebsiteFooter(website);
-  const publishedFooter = website.footer;
   const [form, setForm] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
-  const savedRef = useRef(initial);
-
-  useEffect(() => {
-    const next = draftWebsiteFooter(website);
-    if (sameFooter(next, savedRef.current)) return;
-    savedRef.current = next;
-    setForm(next);
-  }, [website]);
 
   const contact = resolveSiteContact(company, website);
   const address = formatAddressLine(contact);
   const suggestedAbout = resolveFooterAbout({ ...form, aboutText: undefined }, website) ?? "";
-  const unpublished = published && !sameFooter(form, publishedFooter ?? {});
+  const unpublished = published && !sameFooter(form, website.footer ?? {});
 
-  function patch(next: WebsiteFooter) {
-    setForm(next);
+  function save() {
     setError(null);
     startTransition(async () => {
       const result = await setWebsiteFooterAction({
-        showPhone: next.showPhone,
-        showEmail: next.showEmail,
-        showAddress: next.showAddress,
-        showServices: next.showServices,
-        showLogo: next.showLogo,
-        aboutText: next.aboutText ?? "",
-        social: next.social ?? {},
+        showPhone: form.showPhone,
+        showEmail: form.showEmail,
+        showAddress: form.showAddress,
+        showServices: form.showServices,
+        showLogo: form.showLogo,
+        aboutText: form.aboutText ?? "",
+        social: form.social ?? {},
       });
       if (result.ok === false) {
         setError(result.error);
         return;
       }
-      savedRef.current = next;
       router.refresh();
+      onClose();
     });
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Toggle
-          label="Visa telefon"
-          hint={contact.phone || "Saknas i Inställningar"}
-          checked={form.showPhone !== false}
-          disabled={!contact.phone}
-          onChange={(showPhone) => patch({ ...form, showPhone })}
-        />
-        <Toggle
-          label="Visa e-post"
-          hint={contact.email || "Saknas i Inställningar"}
-          checked={form.showEmail !== false}
-          disabled={!contact.email}
-          onChange={(showEmail) => patch({ ...form, showEmail })}
-        />
-        <Toggle
-          label="Visa adress"
-          hint={address || "Saknas i Inställningar"}
-          checked={form.showAddress !== false}
-          disabled={!address}
-          onChange={(showAddress) => patch({ ...form, showAddress })}
-        />
-        <Toggle
-          label="Visa tjänster"
-          hint="Från Tjänster-sektionen"
-          checked={form.showServices !== false}
-          onChange={(showServices) => patch({ ...form, showServices })}
-        />
-        <Toggle
-          label="Visa logotyp"
-          hint={company.logoDataUrl ? "Samma logotyp som i Inställningar" : "Ingen logotyp uppladdad"}
-          checked={form.showLogo !== false}
-          disabled={!company.logoDataUrl}
-          onChange={(showLogo) => patch({ ...form, showLogo })}
-        />
-      </div>
+    <Modal
+      open
+      onClose={onClose}
+      title="Redigera sidfot"
+      size="lg"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button type="button" className={buttonClasses("ghost")} onClick={onClose} disabled={pending}>
+            Avbryt
+          </button>
+          <button type="button" className={buttonClasses("primary")} onClick={save} disabled={pending}>
+            {pending ? "Sparar …" : "Spara"}
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-4 px-6 py-5">
+        <div className="space-y-2">
+          <Toggle
+            label="Visa telefon"
+            hint={contact.phone || "Saknas i Inställningar"}
+            checked={form.showPhone !== false}
+            disabled={!contact.phone}
+            onChange={(showPhone) => setForm({ ...form, showPhone })}
+          />
+          <Toggle
+            label="Visa e-post"
+            hint={contact.email || "Saknas i Inställningar"}
+            checked={form.showEmail !== false}
+            disabled={!contact.email}
+            onChange={(showEmail) => setForm({ ...form, showEmail })}
+          />
+          <Toggle
+            label="Visa adress"
+            hint={address || "Saknas i Inställningar"}
+            checked={form.showAddress !== false}
+            disabled={!address}
+            onChange={(showAddress) => setForm({ ...form, showAddress })}
+          />
+          <Toggle
+            label="Visa tjänster"
+            hint="Från Tjänster-sektionen"
+            checked={form.showServices !== false}
+            onChange={(showServices) => setForm({ ...form, showServices })}
+          />
+          <Toggle
+            label="Visa logotyp"
+            hint={company.logoDataUrl ? "Samma logotyp som i Inställningar" : "Ingen logotyp uppladdad"}
+            checked={form.showLogo !== false}
+            disabled={!company.logoDataUrl}
+            onChange={(showLogo) => setForm({ ...form, showLogo })}
+          />
+        </div>
 
-      <p className="text-[12px] leading-relaxed text-muted">
-        Ändra telefon, e-post, adress och logotyp i{" "}
-        <a href={SETTINGS_HREF.foretag} className="font-medium text-accent hover:underline">
-          Företagsuppgifter
-        </a>
-        .
-      </p>
-
-      <div className="space-y-3">
-        {WEBSITE_SOCIAL_NETWORKS.map((network) => (
-          <div key={network}>
-            <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor={`footer-${network}`}>
-              {SOCIAL_NETWORK_LABELS[network]}
-            </label>
-            <input
-              id={`footer-${network}`}
-              type="url"
-              inputMode="url"
-              placeholder={`https://${network}.com/dittforetag`}
-              value={form.social?.[network] ?? ""}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  social: { ...form.social, [network]: e.target.value },
-                })
-              }
-              onBlur={(e) => patch({ ...form, social: { ...form.social, [network]: e.target.value } })}
-              className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
-            />
-          </div>
-        ))}
         <p className="text-[12px] leading-relaxed text-muted">
-          Vanliga länkar som öppnas i ny flik. Tomt fält döljer ikonen. Ingen feed eller inloggning.
+          Ändra telefon, e-post, adress och logotyp i{" "}
+          <a href={SETTINGS_HREF.foretag} className="font-medium text-accent hover:underline">
+            Företagsuppgifter
+          </a>
+          .
         </p>
-      </div>
 
-      <div>
-        <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="footer-about">
-          Kort om företaget
-        </label>
-        <textarea
-          id="footer-about"
-          value={form.aboutText ?? ""}
-          onChange={(e) => setForm({ ...form, aboutText: e.target.value })}
-          onBlur={(e) => patch({ ...form, aboutText: e.target.value })}
-          rows={4}
-          maxLength={FOOTER_ABOUT_MAX}
-          placeholder={suggestedAbout}
-          className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] leading-relaxed focus:border-accent"
-        />
-        <p className="mt-1.5 text-[12px] text-muted">
-          Tomt fält använder text från Om oss eller startsidan. {(form.aboutText ?? "").trim().length}/
-          {FOOTER_ABOUT_MAX}
-        </p>
-      </div>
+        <div className="space-y-3">
+          {WEBSITE_SOCIAL_NETWORKS.map((network) => (
+            <div key={network}>
+              <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor={`footer-${network}`}>
+                {SOCIAL_NETWORK_LABELS[network]}
+              </label>
+              <input
+                id={`footer-${network}`}
+                type="url"
+                inputMode="url"
+                placeholder={`https://${network}.com/dittforetag`}
+                value={form.social?.[network] ?? ""}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    social: { ...form.social, [network]: e.target.value },
+                  })
+                }
+                className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
+              />
+            </div>
+          ))}
+        </div>
 
-      {error ? <p className="text-[13px] font-medium text-danger">{error}</p> : null}
-      {unpublished ? (
-        <p className="text-[12px] leading-relaxed text-muted">
-          Sidfoten i förhandsvisningen publiceras när du klickar Publicera ändringar.
-        </p>
-      ) : pending ? (
-        <p className="text-[12px] text-muted">Sparar …</p>
-      ) : null}
-    </div>
+        <div>
+          <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="footer-about">
+            Kort om företaget
+          </label>
+          <textarea
+            id="footer-about"
+            value={form.aboutText ?? ""}
+            onChange={(e) => setForm({ ...form, aboutText: e.target.value })}
+            rows={4}
+            maxLength={FOOTER_ABOUT_MAX}
+            placeholder={suggestedAbout}
+            className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] leading-relaxed focus:border-accent"
+          />
+          <p className="mt-1.5 text-[12px] text-muted">
+            Tomt fält använder text från Om oss eller startsidan. {(form.aboutText ?? "").trim().length}/
+            {FOOTER_ABOUT_MAX}
+          </p>
+        </div>
+
+        {error ? <p className="text-[13px] font-medium text-danger">{error}</p> : null}
+        {unpublished ? (
+          <p className="text-[12px] leading-relaxed text-muted">
+            Sidfoten i förhandsvisningen publiceras när du klickar Publicera ändringar.
+          </p>
+        ) : null}
+      </div>
+    </Modal>
   );
 }
 
