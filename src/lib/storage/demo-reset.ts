@@ -46,6 +46,8 @@ const ID_KEYS = new Set([
   "matchedId",
   "workLocationId",
   "defaultWorkLocationId",
+  "relatedEntityId",
+  "quotedLineItemId",
   "accountId",
   "paymentFileId",
   "replacedByFileId",
