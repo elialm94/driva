@@ -51,6 +51,7 @@ export default async function CustomersPage(props: {
             ? "Vad som är beställt, när det sker, vad som är fakturerat och vad som är kvar."
             : "Alla du jobbar med eller pratar med – allt kopplas ihop automatiskt."
         }
+        stackActions
         actions={<KunderHeaderActions customers={customers} />}
       />
 
