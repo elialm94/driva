@@ -27,6 +27,7 @@ import {
 } from "../src/lib/storage/adapter-supabase";
 import { db, save } from "../src/lib/store";
 import { createCustomer, updateCustomer } from "../src/lib/services/customers";
+import { addWorkLocation } from "../src/lib/services/work-locations";
 import { completeReminder, createReminder, snoozeReminderBy } from "../src/lib/services/reminders";
 import { createQuote, sendQuote, STANDARD_TERMS } from "../src/lib/services/quotes";
 import {
@@ -139,6 +140,15 @@ async function main() {
     });
     customerId = c.id;
     updateCustomer(c.id, { personalIdentityNumber: "19850515-1234", notes: "Testkund" });
+    // ROT-utskick kräver en bostad på dokumentet; en enda bostad auto-väljs.
+    addWorkLocation(c.id, {
+      label: "Villan",
+      address: "Björkvägen 12",
+      postalCode: "125 30",
+      city: "Älvsjö",
+      propertyType: "smahus",
+      propertyDesignation: "Älvsjö Björken 12",
+    });
   });
 
   let customerJson = "";

@@ -13,13 +13,16 @@
  */
 import type { DB } from "../types";
 import { buildSeed } from "../seed";
+import { normalize } from "../store";
 import { loadStateSnapshot, sqlClient } from "./adapter-supabase";
 import { bindTransaction } from "./load";
 import { importStateIntoBusiness } from "./import-state";
 
 /** Exempeldatat med företagsunik inkommande-slug (aldrig seedens "demo"). */
 export function demoSeedFor(businessId: string, inboundMailSlug?: string): DB {
-  const seed = buildSeed();
+  // Normalisera direkt: hydrerar snapshots/räkenskapsår så att seedet som
+  // valideras mot databasen är samma som det som importeras.
+  const seed = normalize(buildSeed(), { persistIfDirty: false });
   const fallback = businessId.replace(/-/g, "").slice(0, 12) || "demo";
   seed.settings.inboundMailSlug = inboundMailSlug?.trim() || fallback;
   return seed;

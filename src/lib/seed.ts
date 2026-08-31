@@ -834,14 +834,17 @@ export function buildSeed(): DB {
     reminders?: string[];
     token: string;
   }) {
+    // Utkast är inte utfärdade: nummer och OCR tilldelas först vid issueInvoice.
+    const draft = inv.status === "utkast";
     invoices.push({
       ...inv,
+      number: draft ? null : inv.number,
       rot: inv.rot ?? null,
       lateInterestRate: 10,
       paymentTermsDays: 30,
-      issuedAt: inv.status === "utkast" ? undefined : inv.sentAt ?? inv.issueDate,
+      issuedAt: draft ? undefined : inv.sentAt ?? inv.issueDate,
       reminders: inv.reminders ?? [],
-      ocr: ocrForInvoice(inv.number),
+      ocr: draft ? "" : ocrForInvoice(inv.number),
       createdAt: inv.issueDate,
     });
   }
@@ -1808,9 +1811,9 @@ export function buildSeed(): DB {
     { id: "act-13", at: d(20, 11, 18), text: "Johan Lindberg godkände offert #111 med BankID. Uppdraget Altanrenovering skapades.", customerId: "cust-johan", entity: { type: "offert", id: "quote-altan" } },
     { id: "act-14", at: d(24, 14, 32), text: "Anna Andersson godkände offert #110 med BankID. Uppdraget Köksrenovering skapades.", customerId: "cust-anna", entity: { type: "offert", id: "quote-kok" } },
     { id: "act-15", at: d(26, 16, 20), text: "Uppdraget Fönsterbyte gårdshus markerades som klart.", customerId: "cust-brf", entity: { type: "jobb", id: "job-fonster" } },
-    { id: "act-16", at: d(4, 9, 40), text: "Offert #115 med ROT-avdrag skickades till Bertil Lindqvist.", customerId: "cust-bertil", entity: { type: "offert", id: "quote-fasad" } },
-    { id: "act-17", at: d(3, 18, 25), text: "Bertil Lindqvist öppnade offert #115.", customerId: "cust-bertil", entity: { type: "offert", id: "quote-fasad" } },
-    { id: "act-18", at: d(7, 15, 30), text: "Uppdraget Nytt trappräcke i ek hos Eva Holmgren markerades som klart – redo att fakturera.", customerId: "cust-eva", entity: { type: "jobb", id: "job-racke" } },
+    { id: "act-19", at: d(4, 9, 40), text: "Offert #115 med ROT-avdrag skickades till Bertil Lindqvist.", customerId: "cust-bertil", entity: { type: "offert", id: "quote-fasad" } },
+    { id: "act-20", at: d(3, 18, 25), text: "Bertil Lindqvist öppnade offert #115.", customerId: "cust-bertil", entity: { type: "offert", id: "quote-fasad" } },
+    { id: "act-21", at: d(7, 15, 30), text: "Uppdraget Nytt trappräcke i ek hos Eva Holmgren markerades som klart – redo att fakturera.", customerId: "cust-eva", entity: { type: "jobb", id: "job-racke" } },
   ];
 
   /* ------------------------------ Påminnelser ----------------------------- */

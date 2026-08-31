@@ -73,6 +73,13 @@ let cachedUrl: string | null = null;
 export async function getSqlClient(dbUrl: string): Promise<SqlClient> {
   if (cachedClient && cachedUrl === dbUrl) return cachedClient;
   const { default: postgres } = await import("postgres");
+  // json/jsonb-parametrar: adapterkoden skickar FÄRDIGSERIALISERADE
+  // JSON-strängar (jsonParam/JSON.stringify). postgres.js egna serializer
+  // kör JSON.stringify en gång till när servern härleder parametertypen till
+  // jsonb (t.ex. `$2::jsonb`), vilket lagrar en jsonb-STRÄNGSKALÄR i stället
+  // för objektet – SQL-funktioner ser då `->> 'fält'` = null. Strängar
+  // passerar därför orörda; objekt serialiseras en gång.
+  const rawJson = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v));
   const sql = postgres(dbUrl, {
     prepare: false,
     max: 10,
@@ -87,6 +94,18 @@ export async function getSqlClient(dbUrl: string): Promise<SqlClient> {
         from: [20],
         serialize: (v: unknown) => String(v),
         parse: (v: string) => Number(v),
+      },
+      json: {
+        to: 114,
+        from: [114],
+        serialize: rawJson,
+        parse: (v: string) => JSON.parse(v),
+      },
+      jsonb: {
+        to: 3802,
+        from: [3802],
+        serialize: rawJson,
+        parse: (v: string) => JSON.parse(v),
       },
     },
   }) as unknown as PostgresSql;

@@ -307,6 +307,13 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
     );
   await applySpec(workLocationsSpec, diffCollection(flattenLocations(baseline), flattenLocations(state)));
 
+  // Uppdrag skrivs FÖRE offerter/fakturor: dokumentens job_id valideras av
+  // en trigger (document_job_link) som kräver att uppdraget redan finns.
+  // Gäller både seed-import och t.ex. offertacceptans som skapar uppdrag +
+  // länkar offerten i samma commit. jobs.quote_id saknar FK, så ordningen
+  // är säker åt andra hållet.
+  await applySpec(jobsSpec, diffCollection(baseline.jobs, state.jobs));
+
   // Offerter: diffa på domänobjektet, komplettera med denormaliserat belopp.
   {
     const change = diffCollection(baseline.quotes, state.quotes);
@@ -337,7 +344,6 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
   await applySpec(quoteVersionsSpec, diffCollection(baseline.quoteVersions, state.quoteVersions));
   await applySpec(bankidOrdersSpec, diffCollection(baseline.bankidOrders, state.bankidOrders, "orderRef"));
   await applySpec(signaturesSpec, diffCollection(baseline.signatures, state.signatures));
-  await applySpec(jobsSpec, diffCollection(baseline.jobs, state.jobs));
   await applySpec(bankAccountsSpec, diffCollection(baseline.bankAccounts, state.bankAccounts));
   await applySpec(bankTransactionsSpec, diffCollection(baseline.bankTransactions, state.bankTransactions));
   await applySpec(expensesSpec, diffCollection(baseline.expenses, state.expenses));
@@ -457,7 +463,8 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
       businessId,
       JSON.stringify(invoiceRpcPayload(inv, businessId)),
       JSON.stringify(linesRpcPayload(inv.lines)),
-      JSON.stringify(inv.issuedSnapshot ?? null),
+      // SQL NULL – jsonb-skalären 'null' är "not null" och får jsonb_set att smälla.
+      inv.issuedSnapshot ? JSON.stringify(inv.issuedSnapshot) : null,
       verification ? JSON.stringify(verificationRpcPayload(verification)) : null,
       allocate,
     ]);

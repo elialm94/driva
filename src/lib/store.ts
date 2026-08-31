@@ -190,7 +190,8 @@ function dropRetiredWebsiteSections(data: DB): boolean {
 
 type QuoteWithLegacyRequest = { requestId?: string };
 
-export function normalize(loaded: DB): DB {
+export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): DB {
+  const persistIfDirty = opts.persistIfDirty ?? true;
   // Fält tillagda efter att filen skapades får sina standardvärden här.
   loaded.settings.lateInterestRate ??= 10;
   loaded.settings.quoteValidityDays ??= 30;
@@ -233,7 +234,9 @@ export function normalize(loaded: DB): DB {
     hydrateQuotedBaselines(loaded) ||
     droppedRetired;
   // Persist snapshots so later settings changes cannot rewrite seed/historical docs.
-  if (dirty || migrated || domainsChanged || descriptionsMigrated || buyerSnapshotsHydrated) persist(loaded);
+  if (persistIfDirty && (dirty || migrated || domainsChanged || descriptionsMigrated || buyerSnapshotsHydrated)) {
+    persist(loaded);
+  }
   return loaded;
 }
 
