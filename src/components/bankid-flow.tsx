@@ -183,7 +183,8 @@ export function BankIDApproval({
               <p className="mt-1 text-[14px] leading-relaxed text-ink">
                 {signText || `Jag godkänner offert #${quoteNumber} från ${companyName}.`}
               </p>
-              <p className="mt-1 text-[13px] text-soft">Att betala: {toPay}</p>
+              {/* "Offertvärde", inte "Att betala" – inget betalas vid signeringen. */}
+              <p className="mt-1 text-[13px] text-soft">Offertvärde: {toPay}</p>
             </div>
           ) : null}
 
