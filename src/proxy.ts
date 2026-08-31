@@ -32,6 +32,8 @@ const PUBLIC_PREFIXES = [
   "/sajt",
   "/integritetspolicy",
   "/villkor",
+  "/integritet",
+  "/valkommen", // landningssidans interna sökväg (rewrite-mål för "/")
   "/inbjudan",
   "/api/health", // driftdiagnostik: måste nås utan inloggning när appen är trasig
   "/admin/inbjudan", // admin-invitationens acceptsida: mottagaren saknar ofta konto ännu
@@ -110,6 +112,16 @@ async function runSessionProxy(request: NextRequest) {
       redirectResponse.cookies.delete(DEMO_ACTOR_COOKIE);
       return redirectResponse;
     }
+  }
+
+  // Utloggad besökare på "/" ser Drivas publika landningssida – som en
+  // rewrite så att URL:en förblir "/" och inloggade fortsatt får appens Hem.
+  if (!isAuthenticated && pathname === "/") {
+    const landingUrl = request.nextUrl.clone();
+    landingUrl.pathname = "/valkommen";
+    const rewritten = NextResponse.rewrite(landingUrl, { request });
+    for (const cookie of response.cookies.getAll()) rewritten.cookies.set(cookie);
+    return rewritten;
   }
 
   if (!isAuthenticated && !isPublicPath(pathname)) {
