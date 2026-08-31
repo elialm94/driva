@@ -27,6 +27,7 @@ import {
 } from "../src/lib/storage/adapter-supabase";
 import { db, save } from "../src/lib/store";
 import { createCustomer, updateCustomer } from "../src/lib/services/customers";
+import { addWorkLocation } from "../src/lib/services/work-locations";
 import { completeReminder, createReminder, snoozeReminderBy } from "../src/lib/services/reminders";
 import { createQuote, sendQuote, STANDARD_TERMS } from "../src/lib/services/quotes";
 import {
@@ -139,6 +140,15 @@ async function main() {
     });
     customerId = c.id;
     updateCustomer(c.id, { personalIdentityNumber: "19850515-1234", notes: "Testkund" });
+    // ROT-utskicket nedan kräver en bostad – med exakt en löses den automatiskt.
+    addWorkLocation(c.id, {
+      label: "Hem",
+      address: "Björkvägen 12",
+      postalCode: "125 30",
+      city: "Älvsjö",
+      propertyType: "smahus",
+      propertyDesignation: "Stockholm Björken 12",
+    });
   });
 
   let customerJson = "";
@@ -788,6 +798,168 @@ async function main() {
       [bizDemo, USER_DEMO]
     );
     assert.equal(row.rows[0].revoked_at, null, "ägarrollen omfattas inte av revoke-vägen");
+  });
+
+  console.log("\nProvperiod (trial) vid företagsskapande:");
+
+  await check("nytt riktigt företag startar som trialing med 14 dagars provperiod", async () => {
+    const row = await pg.query<{
+      subscription_status: string | null;
+      trial_started_at: string | null;
+      len_days: number | null;
+    }>(
+      `select subscription_status, trial_started_at,
+              extract(epoch from (trial_ends_at - trial_started_at))::int / 86400 as len_days
+         from businesses where id = $1`,
+      [bizA]
+    );
+    assert.equal(row.rows[0].subscription_status, "trialing");
+    assert.ok(row.rows[0].trial_started_at, "trial_started_at sätts vid skapandet");
+    assert.equal(Number(row.rows[0].len_days), 14, "provperioden är exakt 14 dagar");
+  });
+
+  await check("demoföretag får aldrig trial-fält – demon är ingen provperiod", async () => {
+    const row = await pg.query<{ subscription_status: string | null; trial_started_at: string | null }>(
+      `select subscription_status, trial_started_at from businesses where id = $1`,
+      [bizDemo]
+    );
+    assert.equal(row.rows[0].subscription_status, null);
+    assert.equal(row.rows[0].trial_started_at, null);
+  });
+
+  console.log("\nIsolerade demosessioner – provisionering, isolation och städning:");
+
+  const { provisionDemoSessionBusiness } = await import("../src/lib/storage/demo-reset");
+  const { demoBusinessIdForTokenHash, cleanupExpiredDemoBusinesses } = await import(
+    "../src/lib/storage/adapter-supabase"
+  );
+  const { demoTokenHash, newDemoSessionToken } = await import("../src/lib/auth/demo-session");
+
+  const tokenA = newDemoSessionToken();
+  const tokenB = newDemoSessionToken();
+  let sessionA = "";
+  let sessionB = "";
+
+  await check("två besökare får varsitt sessionsföretag från samma canonical seed", async () => {
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+    sessionA = await provisionDemoSessionBusiness({
+      tokenHash: demoTokenHash(tokenA),
+      expiresAt,
+      userId: USER_DEMO,
+    });
+    sessionB = await provisionDemoSessionBusiness({
+      tokenHash: demoTokenHash(tokenB),
+      expiresAt,
+      userId: USER_DEMO,
+    });
+    assert.notEqual(sessionA, sessionB);
+    const flags = await pg.query<{ id: string; is_demo: boolean }>(
+      `select id, is_demo from businesses where id in ($1, $2)`,
+      [sessionA, sessionB]
+    );
+    assert.equal(flags.rows.length, 2);
+    assert.ok(flags.rows.every((r) => r.is_demo), "sessionsföretag är alltid is_demo");
+  });
+
+  await check("sessionerna ser inte varandras data: id-rymder och tokens är disjunkta", async () => {
+    const read = async (businessId: string) =>
+      runWithTenant({ businessId, userId: USER_DEMO, access: "read" }, () => ({
+        customerIds: db().customers.map((c) => c.id),
+        quoteTokens: db().quotes.map((q) => q.token),
+        websiteSlug: db().website?.slug,
+      }));
+    const a = await read(sessionA);
+    const b = await read(sessionB);
+    assert.ok(a.customerIds.length >= 8, "seedens kunder finns i session A");
+    assert.equal(
+      a.customerIds.filter((id) => b.customerIds.includes(id)).length,
+      0,
+      "inga kund-id delas mellan sessionerna"
+    );
+    assert.equal(
+      a.quoteTokens.filter((t) => b.quoteTokens.includes(t)).length,
+      0,
+      "inga offert-tokens delas mellan sessionerna"
+    );
+    assert.notEqual(a.websiteSlug, b.websiteSlug, "hemsidesluggen är företagsunik");
+  });
+
+  await check("token-hashen är enda nyckeln till sessionen – fel hash ger ingenting", async () => {
+    assert.equal(await demoBusinessIdForTokenHash(demoTokenHash(tokenA)), sessionA);
+    assert.equal(await demoBusinessIdForTokenHash(demoTokenHash(tokenB)), sessionB);
+    assert.equal(await demoBusinessIdForTokenHash(demoTokenHash(newDemoSessionToken())), null);
+    assert.equal(await demoBusinessIdForTokenHash(sessionA), null, "ett gissat företags-id är ingen nyckel");
+    assert.equal(await demoBusinessIdForTokenHash(""), null);
+  });
+
+  await check("sessionsföretag har inga medlemskap – demo-JWT:n ger noll åtkomst via medlemskapsvägen", async () => {
+    const memberships = await membershipsForUser(USER_DEMO);
+    assert.deepEqual(
+      memberships.map((m) => m.businessId),
+      [bizDemo],
+      "den delade demoanvändaren ser bara det delade demoföretaget, aldrig sessionerna"
+    );
+    const rows = await pg.query<{ n: number }>(
+      `select count(*)::int as n from business_memberships where business_id in ($1, $2)`,
+      [sessionA, sessionB]
+    );
+    assert.equal(Number(rows.rows[0].n), 0);
+  });
+
+  await check("utgången session behandlas som obefintlig redan före städningen", async () => {
+    await pg.query(`update businesses set demo_expires_at = now() - interval '1 minute' where id = $1`, [sessionA]);
+    assert.equal(await demoBusinessIdForTokenHash(demoTokenHash(tokenA)), null);
+    assert.equal(await demoBusinessIdForTokenHash(demoTokenHash(tokenB)), sessionB);
+  });
+
+  await check("städningen raderar den utgångna sessionen med ALLT innehåll", async () => {
+    const removed = await cleanupExpiredDemoBusinesses(10);
+    assert.deepEqual(removed, [sessionA]);
+    const gone = await pg.query<{ n: number }>(`select count(*)::int as n from businesses where id = $1`, [sessionA]);
+    assert.equal(Number(gone.rows[0].n), 0, "företagsraden är borta");
+    const tables = await pg.query<{ relname: string }>(
+      `select c.relname
+         from pg_class c
+         join pg_namespace n on n.oid = c.relnamespace
+         join pg_attribute a on a.attrelid = c.oid
+        where n.nspname = 'public' and c.relkind = 'r'
+          and a.attname = 'business_id' and not a.attisdropped
+        order by c.relname`
+    );
+    for (const { relname } of tables.rows) {
+      const count = await pg.query<{ n: number }>(
+        `select count(*)::int as n from ${relname} where business_id = $1`,
+        [sessionA]
+      );
+      assert.equal(Number(count.rows[0].n), 0, `${relname} ska vara tömd för den städade sessionen`);
+    }
+  });
+
+  await check("icke-utgången session och riktiga företag är orörda av städningen", async () => {
+    assert.equal(await demoBusinessIdForTokenHash(demoTokenHash(tokenB)), sessionB);
+    const bCustomers = await pg.query<{ n: number }>(
+      `select count(*)::int as n from customers where business_id = $1`,
+      [sessionB]
+    );
+    assert.ok(Number(bCustomers.rows[0].n) >= 8, "session B har kvar sin data");
+    const realRows = await pg.query<{ n: number }>(`select count(*)::int as n from businesses where id = $1`, [bizA]);
+    assert.equal(Number(realRows.rows[0].n), 1, "riktiga företaget finns kvar");
+    const shared = await pg.query<{ n: number }>(`select count(*)::int as n from businesses where id = $1`, [bizDemo]);
+    assert.equal(Number(shared.rows[0].n), 1, "delade demoföretaget utan utgångstid lämnas orört");
+  });
+
+  await check("städningen kan ALDRIG träffa riktiga företag – även med utgångstid satt", async () => {
+    await pg.query(`update businesses set demo_expires_at = now() - interval '1 hour' where id = $1`, [bizA]);
+    const removed = await cleanupExpiredDemoBusinesses(10);
+    assert.deepEqual(removed, [], "is_demo-villkoret är hårdkodat i SQL-funktionen");
+    const rows = await pg.query<{ n: number }>(`select count(*)::int as n from businesses where id = $1`, [bizA]);
+    assert.equal(Number(rows.rows[0].n), 1);
+    const custRows = await pg.query<{ n: number }>(
+      `select count(*)::int as n from customers where business_id = $1`,
+      [bizA]
+    );
+    assert.ok(Number(custRows.rows[0].n) > 0, "det riktiga företagets data är kvar");
+    await pg.query(`update businesses set demo_expires_at = null where id = $1`, [bizA]);
   });
 
   await pg.close();
