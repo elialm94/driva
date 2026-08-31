@@ -104,6 +104,14 @@ import {
   updateJobNotes,
 } from "@/lib/services/jobs";
 import {
+  createJobAndLinkDocument,
+  linkDocumentToJob,
+  tryDocumentLink,
+  tryDocumentUnlink,
+  unlinkDocumentFromJob,
+} from "@/lib/services/document-job-link";
+import type { DocumentLinkKind, DocumentLinkResult } from "@/lib/document-job-link-model";
+import {
   addJobMaterial,
   deleteJobWorkEntry,
   registerJobTime,
@@ -547,6 +555,41 @@ export async function createInvoiceForJobAction(jobId: string, basis: JobInvoice
     const inv = createInvoiceForJob(jobId, basis);
     refresh();
     return inv.id;
+  });
+}
+
+export async function linkDocumentToJobAction(
+  kind: DocumentLinkKind,
+  documentId: string,
+  jobId: string
+): Promise<DocumentLinkResult> {
+  return withBusiness(() => {
+    const result = tryDocumentLink(() => linkDocumentToJob(kind, documentId, jobId));
+    if (result.ok) refresh();
+    return result;
+  });
+}
+
+export async function unlinkDocumentFromJobAction(
+  kind: DocumentLinkKind,
+  documentId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    const result = tryDocumentUnlink(() => unlinkDocumentFromJob(kind, documentId));
+    if (result.ok) refresh();
+    return result;
+  });
+}
+
+export async function createJobAndLinkDocumentAction(
+  kind: DocumentLinkKind,
+  documentId: string,
+  title: string
+): Promise<DocumentLinkResult> {
+  return withBusiness(() => {
+    const result = tryDocumentLink(() => createJobAndLinkDocument(kind, documentId, title));
+    if (result.ok) refresh();
+    return result;
   });
 }
 

@@ -37,7 +37,9 @@ import { AppLink } from "@/components/app-link";
 import { hrefWithNav, invoiceHref, sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { quoteChainState } from "@/lib/services/business-chain";
+import { documentLinkView } from "@/lib/services/document-job-link";
 import { QuoteChainActions } from "@/components/quote-chain-actions";
+import { LinkedToBox } from "@/components/linked-to-box";
 import { QUOTE_TIMELINE, signedWithBankIdBy } from "@/lib/status-labels";
 
 export const metadata = { title: "Offert" };
@@ -62,6 +64,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
     typeof searchParams.tillbakaNamn === "string" ? sanitizeReturnLabel(searchParams.tillbakaNamn) ?? undefined : undefined;
   const nav = { returnTo, returnLabel };
   const fromHere = { href: hrefWithNav(`/ekonomi/offerter/${quote.id}`, nav), label: `Offert #${quote.number}` };
+  const linkView = documentLinkView("quote", quote.id, fromHere);
   const editHref = hrefWithNav(`/ekonomi/offerter/${quote.id}/redigera`, nav);
   const isDraft = quote.status === "utkast";
   const sentParam = typeof searchParams.skickad === "string" ? searchParams.skickad : null;
@@ -232,10 +235,18 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
         </Card>
       ) : null}
 
+      <div className="mb-6 lg:hidden">
+        <LinkedToBox view={linkView} />
+      </div>
+
       <div className="grid gap-8 lg:grid-cols-[1fr_300px]">
         <div className="overflow-hidden rounded-2xl border border-line shadow-card">{doc}</div>
 
         <div className="space-y-8">
+          <div className="hidden lg:block">
+            <LinkedToBox view={linkView} />
+          </div>
+
           {quote.status === "godkand" ? (
             <div>
               <SectionTitle>Nästa steg</SectionTitle>
