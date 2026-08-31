@@ -8,7 +8,7 @@ export function cx(...parts: (string | false | null | undefined)[]): string {
 
 /* ---------------------------------- Button ---------------------------------- */
 
-type ButtonVariant = "primary" | "accent" | "secondary" | "ghost" | "danger" | "bankid";
+type ButtonVariant = "primary" | "accent" | "secondary" | "ghost" | "danger" | "danger-outline" | "bankid";
 type ButtonSize = "sm" | "md" | "lg";
 
 const buttonBase =
@@ -20,6 +20,7 @@ const buttonVariants: Record<ButtonVariant, string> = {
   secondary: "bg-card text-ink border border-line-strong hover:bg-canvas hover:border-muted/60",
   ghost: "text-soft hover:bg-ink/5 hover:text-ink",
   danger: "bg-danger-soft text-danger hover:bg-danger hover:text-white",
+  "danger-outline": "bg-transparent text-danger border border-danger/30 hover:bg-danger-soft hover:border-danger/50",
   bankid: "bg-bankid text-white hover:brightness-110 shadow-sm",
 };
 

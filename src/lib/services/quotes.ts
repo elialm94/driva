@@ -187,9 +187,8 @@ export class QuoteNotReadyError extends Error {
 const QUOTE_SELLER_CODES = new Set(["seller_name", "seller_orgnr", "seller_orgnr_format", "seller_address"]);
 
 /**
- * Vad som saknas innan offerten kan skickas — EN källa för checklistan på
- * offertsidan och skickaflödet. Saknad kund-e-post (code "buyer_email")
- * namnges explicit och kompletteras inline i skickaflödet utan att avbryta.
+ * Vad som saknas innan offerten kan skickas — EN källa för checklistan,
+ * disabled Skicka och serverside send-validering. canSend = blockers.length === 0.
  */
 export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
   const quote = getQuote(quoteId);
@@ -229,8 +228,10 @@ export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
   }
   const emailBlocker = missingEmailForSend(customer);
   if (emailBlocker) {
-    // Namnges i checklistan; kompletteras inline i skickaflödet – ingen länk till Kunden.
-    blockers.push(emailBlocker);
+    blockers.push({
+      ...emailBlocker,
+      href: `/kunder/${customer.id}`,
+    });
   }
   blockers.push(
     ...taxReductionSendBlockers(
@@ -245,10 +246,14 @@ export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
   return blockers;
 }
 
-/** Servergräns: affärsblockers (inte kund-e-post, den kompletteras inline). */
+/** Servergräns: samma lista som checklistan och disabled Skicka. */
 export function assertQuoteReadyToSend(quoteId: string): void {
-  const blockers = quoteSendBlockers(quoteId).filter((b) => b.code !== "buyer_email");
+  const blockers = quoteSendBlockers(quoteId);
   if (blockers.length) throw new QuoteNotReadyError(blockers);
+}
+
+export function quoteCanSend(quoteId: string): boolean {
+  return quoteSendBlockers(quoteId).length === 0;
 }
 
 /** Leveransutfall från e-postlagret. Produktionsvägen anropar bara hit efter provider-succé. */
@@ -385,6 +390,37 @@ export function askQuoteQuestion(quoteId: string, question: string): void {
   logActivity(`${customer.name} ställde en fråga om offert #${quote.number}: ”${question}”`, {
     customerId: customer.id,
     entity: { type: "offert", id: quoteId },
+  });
+  save();
+}
+
+/** Kasta ett offertutkast. Skickade/signerade offerter får inte tas bort. */
+export function discardQuote(quoteId: string, createdBy: "anvandare" | "assistent" = "anvandare"): void {
+  const data = db();
+  const quote = getQuote(quoteId);
+  if (!quote) throw new Error("Offerten finns inte");
+  if (quote.status !== "utkast") {
+    throw new Error("Skickade offerter kan inte kastas. Markera dem som inte aktuella i stället.");
+  }
+  const issued = data.invoices.filter((invoice) => invoice.quoteId === quoteId && invoice.status !== "utkast");
+  if (issued.length > 0) {
+    throw new Error("Offerten är kopplad till utfärdade fakturor och kan inte kastas.");
+  }
+  const customer = requireCustomer(quote.customerId);
+  for (const invoice of data.invoices) {
+    if (invoice.quoteId === quoteId) invoice.quoteId = undefined;
+  }
+  for (const job of data.jobs) {
+    if (job.quoteId === quoteId) job.quoteId = undefined;
+  }
+  data.signatures = data.signatures.filter((signature) => signature.quoteId !== quoteId);
+  data.bankidOrders = data.bankidOrders.filter((order) => order.quoteId !== quoteId);
+  data.quoteVersions = data.quoteVersions.filter((version) => version.quoteId !== quoteId);
+  data.quotes = data.quotes.filter((item) => item.id !== quoteId);
+  logActivity(`Offertutkast #${quote.number} kastades.`, {
+    customerId: customer.id,
+    entity: { type: "offert", id: quote.id },
+    createdBy,
   });
   save();
 }

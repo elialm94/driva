@@ -9,6 +9,7 @@ import { kr } from "@/lib/format";
 import { QUOTE_EXCESS_WARN_AMOUNT, QUOTE_EXCESS_WARN_PERCENT } from "@/lib/quote-excess";
 import { CustomerEmailPrompt } from "./customer-email-prompt";
 import { useBlockedAction } from "./blocked-action";
+import { DisabledSendWrap } from "./disabled-send-button";
 import type { PendingAction } from "@/lib/missing-requirements";
 
 function withFlag(href: string, key: string, value: string) {
@@ -26,7 +27,7 @@ export function InvoiceDraftSend({
   sendAction,
   detailHref,
   recipientEmail,
-  hasIssuanceBlockers = false,
+  canSend = true,
   mailConfigured: _mailConfigured = true,
   excessAmount,
   tillaggHref,
@@ -39,7 +40,8 @@ export function InvoiceDraftSend({
   sendAction: () => Promise<void | { ok: boolean; errors?: string[]; issued?: boolean; mailed?: boolean; demo?: boolean }>;
   detailHref: string;
   recipientEmail?: string;
-  hasIssuanceBlockers?: boolean;
+  /** Samma källa som checklistan: canSend = getInvoiceSendBlockers().length === 0. */
+  canSend?: boolean;
   /** Om e-postutskick är konfigurerat på servern – styr ärlig text i dialogen. */
   mailConfigured?: boolean;
   /** Positivt belopp om fakturan överstiger tröskeln; annars utelämnas varningen. */
@@ -77,10 +79,7 @@ export function InvoiceDraftSend({
   });
 
   function requestSend() {
-    if (hasIssuanceBlockers) {
-      document.getElementById("invoice-send-blockers")?.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
-    }
+    if (!canSend || isSending) return;
     requestAction();
   }
 
@@ -106,7 +105,7 @@ export function InvoiceDraftSend({
 
   return (
     <>
-      {hasIssuanceBlockers ? null : (
+      {canSend ? (
         <button
           type="button"
           className={buttonClasses("primary")}
@@ -116,6 +115,13 @@ export function InvoiceDraftSend({
           <Send className="size-4" />
           Skicka faktura
         </button>
+      ) : (
+        <DisabledSendWrap title="Komplettera uppgifterna ovan innan fakturan kan skickas.">
+          <button type="button" className={buttonClasses("primary")} disabled aria-disabled>
+            <Send className="size-4" />
+            Skicka faktura
+          </button>
+        </DisabledSendWrap>
       )}
 
       <Modal open={confirmOpen} onClose={() => !isSending && setConfirmOpen(false)} size="sm" title="Skicka faktura?">

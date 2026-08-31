@@ -30,6 +30,8 @@ import {
 import { EKONOMI_TABS, type EkonomiTab } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { parseEconomySort } from "@/lib/economy-sort";
+import { Suspense } from "react";
+import { DraftDiscardedToast } from "@/components/draft-discarded-toast";
 
 export const metadata = { title: "Ekonomi" };
 
@@ -97,6 +99,9 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
 
   return (
     <div className="animate-fade-up">
+      <Suspense>
+        <DraftDiscardedToast />
+      </Suspense>
       <PageHeader
         title="Ekonomi"
         subtitle="Alla offerter, fakturor, utgifter och banktransaktioner – sök och hitta."

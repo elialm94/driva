@@ -80,7 +80,6 @@ const COMPANY_BLOCKER_CODES = new Set([
   "seller_bankgiro_format",
   "seller_plusgiro_format",
   "seller_iban_format",
-  "payment_bankgiro",
 ]);
 
 describe("Kom igång-validering", () => {

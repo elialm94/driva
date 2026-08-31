@@ -8,6 +8,7 @@ import { buttonClasses } from "./ui";
 import { kr } from "@/lib/format";
 import { CustomerEmailPrompt } from "./customer-email-prompt";
 import { useBlockedAction } from "./blocked-action";
+import { DisabledSendWrap } from "./disabled-send-button";
 import type { PendingAction } from "@/lib/missing-requirements";
 
 function withFlag(href: string, key: string, value: string) {
@@ -25,7 +26,7 @@ export function QuoteDraftSend({
   sendAction,
   detailHref,
   recipientEmail,
-  hasSendBlockers = false,
+  canSend = true,
   mailConfigured = true,
 }: {
   documentId: string;
@@ -36,7 +37,8 @@ export function QuoteDraftSend({
   sendAction: () => Promise<void | { ok: boolean; errors?: string[]; mailed?: boolean; demo?: boolean }>;
   detailHref: string;
   recipientEmail?: string;
-  hasSendBlockers?: boolean;
+  /** Samma källa som checklistan: canSend = quoteSendBlockers().length === 0. */
+  canSend?: boolean;
   /** Om e-postutskick är konfigurerat på servern – styr ärlig text i dialogen. */
   mailConfigured?: boolean;
 }) {
@@ -57,11 +59,7 @@ export function QuoteDraftSend({
 
   function requestSend() {
     setSendError(null);
-    if (hasSendBlockers) {
-      // Checklistan "Innan offerten kan skickas" förklarar vad som behövs.
-      document.getElementById("quote-send-blockers")?.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
-    }
+    if (!canSend || isSending) return;
     requestAction();
   }
 
@@ -90,10 +88,19 @@ export function QuoteDraftSend({
 
   return (
     <>
-      <button className={buttonClasses("primary")} onClick={requestSend}>
-        <Send className="size-4" />
-        Skicka offert
-      </button>
+      {canSend ? (
+        <button type="button" className={buttonClasses("primary")} onClick={requestSend} disabled={isSending}>
+          <Send className="size-4" />
+          Skicka offert
+        </button>
+      ) : (
+        <DisabledSendWrap title="Komplettera uppgifterna ovan innan offerten kan skickas.">
+          <button type="button" className={buttonClasses("primary")} disabled aria-disabled>
+            <Send className="size-4" />
+            Skicka offert
+          </button>
+        </DisabledSendWrap>
+      )}
 
       <Modal open={confirmOpen} onClose={() => !isSending && setConfirmOpen(false)} size="sm" title="Skicka offert?">
         <div className="px-6 py-5">

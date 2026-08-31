@@ -163,6 +163,7 @@ describe("skicka offert till kund utan e-post", () => {
     );
     assert.match(blockers[0].message, /e-postadress/i);
     assert.equal(blockers[0].actionLabel, "Lägg till e-post");
+    assert.equal(blockers[0].href, `/kunder/${erik.id}`);
 
     // Inline-kompletteringen sparar adressen på kundkortet …
     updateCustomer(erik.id, { email: "erik@example.se" });

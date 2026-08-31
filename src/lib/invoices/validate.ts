@@ -6,6 +6,7 @@ import { db } from "../store";
 import { radLabel } from "../form-requirements";
 import { isBankgiroFormat, isIbanFormat, isOrgnrFormat, isPlusgiroFormat, isVatNumberFormat, vatMatchesOrgnr } from "./formats";
 import { taxReductionSendBlockers, taxReductionSendInputFromCustomer } from "../tax-reduction-send";
+import { missingEmailForSend } from "../customer-validation";
 
 export interface IssueBlocker {
   code: string;
@@ -191,7 +192,7 @@ export function collectTotalsBlockers(invoice: Invoice): IssueBlocker[] {
   return blockers;
 }
 
-export function collectPaymentBlockers(invoice: Invoice, seller: CompanySettings): IssueBlocker[] {
+export function collectPaymentBlockers(invoice: Invoice, _seller?: CompanySettings): IssueBlocker[] {
   const blockers: IssueBlocker[] = [];
   if (!invoice.dueDate) {
     blockers.push({ code: "due_date", message: "Förfallodatum saknas." });
@@ -199,16 +200,8 @@ export function collectPaymentBlockers(invoice: Invoice, seller: CompanySettings
   if (!invoice.paymentTermsDays || invoice.paymentTermsDays < 1) {
     blockers.push({ code: "payment_terms", message: "Betalningsvillkor (antal dagar) saknas." });
   }
-  const hasPayment =
-    !missing(seller.bankgiro) || !missing(seller.plusgiro) || !missing(seller.iban) || !missing(seller.bankAccount);
-  if (!hasPayment) {
-    blockers.push({
-      code: "payment_bankgiro",
-      message: "Betalningsuppgifter saknas – fyll i bankgiro, PlusGiro, bankkonto eller IBAN.",
-      href: "/installningar?flik=fakturering",
-      actionLabel: "Komplettera betalningsuppgifter",
-    });
-  }
+  // Betalningsuppgifter (bankgiro/PlusGiro/konto/IBAN) ägs av collectSellerBlockers
+  // (seller_bankgiro). Duplicera inte här – samma sak visades två gånger i checklistan.
   return blockers;
 }
 
@@ -221,7 +214,8 @@ export function collectIssueErrors(input: {
   if (invoice.status !== "utkast" && invoice.type !== "kredit") {
     return [];
   }
-  const seen = new Set<string>();
+  const seenCodes = new Set<string>();
+  const seenMessages = new Set<string>();
   const all = [
     ...collectSellerBlockers(seller),
     ...collectBuyerBlockers(buyer),
@@ -238,8 +232,10 @@ export function collectIssueErrors(input: {
     ),
   ];
   return all.filter((b) => {
-    if (seen.has(b.code)) return false;
-    seen.add(b.code);
+    const messageKey = b.message.trim().toLocaleLowerCase("sv");
+    if (seenCodes.has(b.code) || seenMessages.has(messageKey)) return false;
+    seenCodes.add(b.code);
+    seenMessages.add(messageKey);
     return true;
   });
 }
@@ -251,6 +247,30 @@ export function validateInvoiceForIssue(invoiceId: string): IssueBlocker[] {
   const seller = db().settings;
   const buyer = requireCustomer(invoice.customerId);
   return collectIssueErrors({ invoice, seller, buyer });
+}
+
+/**
+ * Kanonisk lista för utkast: checklista, disabled Skicka och serverside
+ * send-validering. Samma källa – ingen separat e-postif-sats i UI.
+ */
+export function getInvoiceSendBlockers(invoiceId: string): IssueBlocker[] {
+  const invoice = getInvoice(invoiceId);
+  if (!invoice) return [{ code: "missing", message: "Fakturan finns inte." }];
+  const seller = db().settings;
+  const buyer = requireCustomer(invoice.customerId);
+  const blockers = collectIssueErrors({ invoice, seller, buyer });
+  const email = missingEmailForSend(buyer);
+  if (email && !blockers.some((b) => b.code === email.code)) {
+    blockers.push({
+      ...email,
+      href: `/kunder/${buyer.id}`,
+    });
+  }
+  return blockers;
+}
+
+export function invoiceCanSend(invoiceId: string): boolean {
+  return getInvoiceSendBlockers(invoiceId).length === 0;
 }
 
 export function assertInvoiceReadyToIssue(invoiceId: string): void {

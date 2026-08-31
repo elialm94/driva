@@ -11,7 +11,6 @@ import {
   createPartInvoiceAction,
   creditInvoiceAction,
   deliverInvoiceAction,
-  discardInvoiceAction,
   followUpQuoteAction,
   paySupplierInvoiceAction,
   simulatePaymentAction,
@@ -389,77 +388,6 @@ export function ResendInvoiceButton({
     <span className="flex items-center gap-2">
       {button}
       {error ? <span className="text-[13px] font-medium text-danger">{error}</span> : null}
-    </span>
-  );
-}
-
-export function DiscardInvoiceButton({
-  invoiceId,
-  appearance = "button",
-}: {
-  invoiceId: string;
-  appearance?: ActionAppearance;
-}) {
-  const [isPending, startTransition] = useTransition();
-  const [confirming, setConfirming] = useState(false);
-  const menu = useActionMenu();
-  const inMenu = appearance === "menu";
-
-  function startConfirm() {
-    menu?.close();
-    setConfirming(true);
-  }
-
-  const trigger = (
-    <button
-      type="button"
-      role={inMenu ? "menuitem" : undefined}
-      className={inMenu ? actionMenuItemClassName({ danger: true }) : buttonClasses("ghost", "sm")}
-      onClick={startConfirm}
-    >
-      Kasta utkast
-    </button>
-  );
-
-  if (inMenu) {
-    return (
-      <>
-        {trigger}
-        <Modal open={confirming} onClose={() => !isPending && setConfirming(false)} size="sm" title="Kasta utkast?">
-          <div className="px-6 py-5">
-            <p className="text-[15px] leading-relaxed text-soft">Kasta utkastet? Det kan inte ångras.</p>
-            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button className={buttonClasses("secondary")} disabled={isPending} onClick={() => setConfirming(false)}>
-                Avbryt
-              </button>
-              <button
-                className={buttonClasses("danger")}
-                disabled={isPending}
-                onClick={() => startTransition(async () => discardInvoiceAction(invoiceId))}
-              >
-                {isPending ? "Kastar …" : "Ja, kasta"}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      </>
-    );
-  }
-
-  if (!confirming) return trigger;
-  return (
-    <span className="flex items-center gap-2">
-      <span className="text-[13px] text-soft">Kasta utkastet? Det kan inte ångras.</span>
-      <button
-        className={buttonClasses("danger", "sm")}
-        disabled={isPending}
-        onClick={() => startTransition(async () => discardInvoiceAction(invoiceId))}
-      >
-        {isPending ? "Kastar …" : "Ja, kasta"}
-      </button>
-      <button className={buttonClasses("ghost", "sm")} onClick={() => setConfirming(false)}>
-        Avbryt
-      </button>
     </span>
   );
 }

@@ -132,9 +132,14 @@ describe("offert via Resend", () => {
       city: "Stockholm",
     });
     const quote = draftQuote(sara.id);
-    const before = await sendQuoteWithEmail(quote.id);
-    assert.equal(before.outcome.ok, false);
-    assert.match(before.outcome.error ?? "", /e-postadress/i);
+    await assert.rejects(
+      () => sendQuoteWithEmail(quote.id),
+      (e: unknown) => {
+        assert.ok(e instanceof QuoteNotReadyError);
+        assert.ok(e.blockers.some((b) => b.code === "buyer_email"));
+        return true;
+      }
+    );
     assert.equal(sent.length, 0);
     assert.equal(db().quotes.find((q) => q.id === quote.id)?.status, "utkast");
 

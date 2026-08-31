@@ -3,7 +3,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AppLink } from "./app-link";
-import { ArrowUpDown, ChevronDown, ChevronUp, FileText, Landmark, ReceiptText, Search, ShoppingBag } from "lucide-react";
+import { ArrowUpDown, ChevronDown, ChevronUp, FileText, Landmark, Pencil, ReceiptText, Search, ShoppingBag } from "lucide-react";
+import { DiscardDraftButton } from "./discard-draft-button";
 import { Badge, Card, EmptyState, cx, type BadgeTone } from "./ui";
 import { Pagination } from "./customer-list";
 import { kr, datumKort } from "@/lib/format";
@@ -214,6 +215,28 @@ const thCls = "px-3 py-2.5 font-medium";
 const headRowCls = "border-b border-line/80 text-[12px] font-medium uppercase tracking-wide text-muted";
 const bodyRowCls = "relative border-b border-line/60 last:border-0 hover:bg-canvas/70";
 
+function DraftRowActions({
+  kind,
+  id,
+}: {
+  kind: "quote" | "invoice";
+  id: string;
+}) {
+  const editHref = kind === "quote" ? `/ekonomi/offerter/${id}/redigera` : `/ekonomi/fakturor/${id}/redigera`;
+  return (
+    <div className="relative z-20 flex items-center justify-end gap-0.5">
+      <AppLink
+        href={editHref}
+        className="inline-flex size-8 items-center justify-center rounded-lg text-soft hover:bg-ink/5 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        aria-label="Redigera utkast"
+      >
+        <Pencil className="size-4" />
+      </AppLink>
+      <DiscardDraftButton kind={kind} documentId={id} appearance="icon" />
+    </div>
+  );
+}
+
 /* ---------------------------------- Offerter ---------------------------------- */
 
 export function QuoteRegister({
@@ -266,6 +289,7 @@ export function QuoteRegister({
                       onSort={(sort) => go({ sort, page: 1 })}
                     />
                     <th className={thCls}>Status</th>
+                    <th className={`${thCls} w-px`}><span className="sr-only">Åtgärder</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -284,6 +308,9 @@ export function QuoteRegister({
                       <td className="pointer-events-none px-3 py-2.5 text-right tabular text-ink">{kr(r.amount)}</td>
                       <td className="pointer-events-none px-3 py-2.5">
                         <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
+                      </td>
+                      <td className="px-2 py-2.5">
+                        {r.isDraft ? <DraftRowActions kind="quote" id={r.id} /> : null}
                       </td>
                     </tr>
                   ))}
@@ -373,6 +400,7 @@ export function InvoiceRegister({
                       onSort={(sort) => go({ sort, page: 1 })}
                     />
                     <th className={thCls}>Status</th>
+                    <th className={`${thCls} w-px`}><span className="sr-only">Åtgärder</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -392,6 +420,9 @@ export function InvoiceRegister({
                       <td className="pointer-events-none px-3 py-2.5 text-right tabular text-ink">{kr(r.amount)}</td>
                       <td className="pointer-events-none px-3 py-2.5">
                         <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
+                      </td>
+                      <td className="px-2 py-2.5">
+                        {r.isDraft ? <DraftRowActions kind="invoice" id={r.id} /> : null}
                       </td>
                     </tr>
                   ))}

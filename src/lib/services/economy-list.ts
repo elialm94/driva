@@ -85,6 +85,7 @@ export interface QuoteTableRow {
   statusKey: Quote["status"];
   statusLabel: string;
   statusTone: StatusTone;
+  isDraft: boolean;
 }
 
 // Central vokabulär (status-labels.ts): samma ord som badge och filter.
@@ -129,6 +130,7 @@ export function listQuotesForTable(
       statusKey: effective,
       statusLabel: meta.label,
       statusTone: meta.tone,
+      isDraft: quote.status === "utkast",
     });
   }
 
@@ -164,6 +166,7 @@ export interface InvoiceTableRow {
   amount: number;
   statusLabel: string;
   statusTone: StatusTone;
+  isDraft: boolean;
 }
 
 function invoiceStatusMeta(inv: Invoice): { label: string; tone: StatusTone } {
@@ -237,6 +240,7 @@ export function listInvoicesForTable(
         amount: invoiceTotals(inv).toPay,
         statusLabel: meta.label,
         statusTone: meta.tone,
+        isDraft: inv.status === "utkast",
       },
     });
   }
