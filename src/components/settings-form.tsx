@@ -9,6 +9,7 @@ import { BackLink } from "./back-link";
 import { useUnsavedLeave } from "./unsaved-changes";
 import { CompanyLogo } from "./company-logo";
 import { ImageDropzone } from "./image-dropzone";
+import { AddressAutocompleteInput } from "./address-autocomplete";
 import { saveLogoAction, updateCompanySettingsAction } from "@/app/actions";
 import type { CompanySettings, VatRate } from "@/lib/types";
 import type { InvoiceDefaults } from "@/lib/services/settings";
@@ -415,11 +416,18 @@ export function SettingsForm({
               <label className={labelCls} htmlFor="installningar-address">
                 Gatuadress
               </label>
-              <input
+              <AddressAutocompleteInput
                 id="installningar-address"
                 value={form.address}
-                onChange={(e) => patch("address", e.target.value)}
-                className={inputCls}
+                onValueChange={(next) => patch("address", next)}
+                onAddressSelected={(parts) => {
+                  patch("address", parts.address);
+                  if (parts.postalCode) patch("postalCode", parts.postalCode);
+                  if (parts.city) patch("city", parts.city);
+                  // Befintlig konvention i Inställningar är "Sverige", inte "SE".
+                  if (parts.country) patch("country", parts.country === "SE" ? "Sverige" : parts.country);
+                }}
+                inputClassName={inputCls}
               />
             </div>
             <div className="grid gap-4 sm:grid-cols-3">

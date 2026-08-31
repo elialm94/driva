@@ -2,6 +2,7 @@
 
 import { useActionState, useRef, useState, type FormEvent } from "react";
 import { onboardingAction, type OnboardingFormState } from "@/app/auth-actions";
+import { AddressAutocompleteInput } from "@/components/address-autocomplete";
 import { FieldError, FormField, focusField, invalidFieldCls } from "@/components/form-validation";
 import { cx } from "@/components/ui";
 import {
@@ -166,12 +167,16 @@ export function OnboardingForm({
       <section className={groupCls}>
         <p className={groupTitle}>Adress</p>
         <FormField id={ONBOARDING_FIELD_IDS.address} label="Gatuadress" error={errors?.address} labelClassName={labelCls} helperClassName={helperCls}>
-          <input
+          <AddressAutocompleteInput
             name="address"
-            autoComplete="street-address"
             value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            className={cx(field, errors?.address && invalidFieldCls)}
+            onValueChange={setAddress}
+            onAddressSelected={(parts) => {
+              setAddress(parts.address);
+              if (parts.postalCode) setPostalCode(formatPostalCode(parts.postalCode));
+              if (parts.city) setCity(parts.city);
+            }}
+            inputClassName={cx(field, errors?.address && invalidFieldCls)}
             placeholder="Renstiernas gata 12"
           />
         </FormField>

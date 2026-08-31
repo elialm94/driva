@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, Circle } from "lucide-react";
 import { buttonClasses, Card, cx } from "./ui";
 import { Modal } from "./modal";
+import { AddressAutocompleteInput } from "./address-autocomplete";
 import { focusField } from "./form-validation";
 import {
   extraPayFieldsNeeded,
@@ -291,11 +292,18 @@ function CompletionFields({
           <label className={labelCls} htmlFor="komplettera-address">
             Gatuadress
           </label>
-          <input
+          <AddressAutocompleteInput
             id="komplettera-address"
             value={seller.address}
-            onChange={(e) => onPatch({ address: e.target.value })}
-            className={inputCls}
+            onValueChange={(next) => onPatch({ address: next })}
+            onAddressSelected={(parts) =>
+              onPatch({
+                address: parts.address,
+                ...(parts.postalCode ? { postalCode: parts.postalCode } : {}),
+                ...(parts.city ? { city: parts.city } : {}),
+              })
+            }
+            inputClassName={inputCls}
           />
         </div>
         <div className="grid gap-3 sm:grid-cols-2">

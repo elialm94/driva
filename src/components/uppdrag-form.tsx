@@ -9,7 +9,9 @@ import { buttonClasses, cx } from "./ui";
 import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
 import { createJobAction, updateJobAction } from "@/app/actions";
 import { addCustomerOption, CustomerPicker, type CustomerOption } from "./customer-picker";
+import { AddressAutocompleteInput } from "./address-autocomplete";
 import { FieldError, focusField, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
+import { singleLineAddress } from "@/lib/address-autocomplete";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
@@ -47,6 +49,9 @@ export function NewUppdragButton({
     workLocations.length === 1 ? workLocations[0].id : (defaultWorkLocationId ?? "")
   );
   const [newAddress, setNewAddress] = useState(false);
+  const [newStreet, setNewStreet] = useState("");
+  const [newPostal, setNewPostal] = useState("");
+  const [newCity, setNewCity] = useState("");
   const [isPending, startTransition] = useTransition();
   const navigate = useAppNavigate();
   const menu = useActionMenu();
@@ -99,6 +104,9 @@ export function NewUppdragButton({
         onClick={() => {
           menu?.close();
           setCustomerError(null);
+          setNewStreet("");
+          setNewPostal("");
+          setNewCity("");
           reset();
           setOpen(true);
         }}
@@ -160,12 +168,18 @@ export function NewUppdragButton({
               {newAddress ? (
                 <div className="mt-3 space-y-2">
                   <input name="newLabel" aria-label="Namn på adressen (valfritt)" placeholder="T.ex. Fritidshus" className={inputCls} />
-                  <input
+                  <AddressAutocompleteInput
                     name="newAddress"
                     aria-label="Gatuadress"
-                    autoComplete="street-address"
+                    value={newStreet}
+                    onValueChange={setNewStreet}
+                    onAddressSelected={(parts) => {
+                      setNewStreet(parts.address);
+                      if (parts.postalCode) setNewPostal(parts.postalCode);
+                      if (parts.city) setNewCity(parts.city);
+                    }}
                     placeholder="Gatuadress"
-                    className={inputCls}
+                    inputClassName={inputCls}
                   />
                   <div className="grid grid-cols-2 gap-2">
                     <input
@@ -174,9 +188,19 @@ export function NewUppdragButton({
                       inputMode="numeric"
                       autoComplete="postal-code"
                       placeholder="Postnummer"
+                      value={newPostal}
+                      onChange={(e) => setNewPostal(e.target.value)}
                       className={inputCls}
                     />
-                    <input name="newCity" aria-label="Ort" autoComplete="address-level2" placeholder="Ort" className={inputCls} />
+                    <input
+                      name="newCity"
+                      aria-label="Ort"
+                      autoComplete="address-level2"
+                      placeholder="Ort"
+                      value={newCity}
+                      onChange={(e) => setNewCity(e.target.value)}
+                      className={inputCls}
+                    />
                   </div>
                 </div>
               ) : null}
@@ -245,6 +269,7 @@ export function EditUppdragModal({
   initial: { title: string; description: string; address?: string; startDate?: string; endDate?: string };
 }) {
   const [isPending, startTransition] = useTransition();
+  const [address, setAddress] = useState(initial.address ?? "");
   const { errors, formProps, fieldProps } = useNativeFieldErrors({
     title: "Ange vad uppdraget gäller.",
   });
@@ -295,8 +320,17 @@ export function EditUppdragModal({
           <textarea name="description" rows={3} defaultValue={initial.description} className={inputCls} />
         </div>
         <div>
-          <label className="mb-1 block text-[13px] font-medium text-soft">Adress</label>
-          <input name="address" defaultValue={initial.address ?? ""} className={inputCls} />
+          <label className="mb-1 block text-[13px] font-medium text-soft" htmlFor="uppdrag-adress">
+            Adress
+          </label>
+          <AddressAutocompleteInput
+            id="uppdrag-adress"
+            name="address"
+            value={address}
+            onValueChange={setAddress}
+            onAddressSelected={(parts) => setAddress(singleLineAddress(parts))}
+            inputClassName={inputCls}
+          />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>

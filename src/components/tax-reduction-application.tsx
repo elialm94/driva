@@ -12,6 +12,8 @@ import {
 import type { TaxReductionCase } from "@/lib/services/tax-reduction";
 import { formatOrgnr } from "@/lib/invoices/formats";
 import { formatPersonnummer } from "@/lib/personnummer";
+import { AddressAutocompleteInput } from "./address-autocomplete";
+import { singleLineAddress } from "@/lib/address-autocomplete";
 
 export function TaxReductionApplicationCard({
   cse,
@@ -103,6 +105,16 @@ export function TaxReductionApplicationCard({
                     Bostadsrätt
                   </button>
                 </div>
+              ) : missing?.code === "workAddress" ? (
+                <AddressAutocompleteInput
+                  aria-label="Adress där arbetet utförs"
+                  value={fieldValue}
+                  onValueChange={setFieldValue}
+                  onAddressSelected={(parts) => setFieldValue(singleLineAddress(parts))}
+                  placeholder={addPlaceholder}
+                  className="w-full max-w-xs"
+                  inputClassName="w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px]"
+                />
               ) : (
                 <input
                   value={fieldValue}
