@@ -43,7 +43,7 @@ export default async function InvoicePdfPage(props: PageProps<"/faktura/[token]/
   const printCss = `
 @page {
   size: A4;
-  margin: 15mm 15mm 20mm;
+  margin: 12mm 15mm 16mm;
   @bottom-left {
     content: ${cssString(marginNote)};
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;

@@ -110,7 +110,7 @@ function InvoiceTaxReductionSection({
   termsVersion?: string;
 }) {
   return (
-    <section className="break-inside-avoid mt-6 border-t border-line pt-4">
+    <section className="break-inside-avoid mt-5 border-t border-line pt-3.5">
       <DocSectionLabel>{view.heading}</DocSectionLabel>
       <div className="mt-2.5 grid gap-x-8 gap-y-3 sm:grid-cols-[minmax(0,1fr)_300px] print:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-0.5 text-[13.5px] leading-relaxed">
@@ -150,8 +150,8 @@ function InvoiceTaxReductionSection({
 /** Dokumentets viktigaste ekonomiska resultat – visuellt tydligast av allt. */
 function InvoiceAmountDue({ label, amount }: { label: string; amount: number }) {
   return (
-    <div className="break-inside-avoid mt-5 flex justify-end">
-      <div className="w-full max-w-[300px] border-t-2 border-ink pt-2.5">
+    <div className="break-inside-avoid mt-4 flex justify-end">
+      <div className="w-full max-w-[300px] border-t-2 border-ink pt-2">
         <div className="flex items-baseline justify-between gap-4">
           <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink">{label}</span>
           <span className="text-[24px] font-semibold tracking-tight text-ink tabular">{kr(amount)}</span>
@@ -163,7 +163,7 @@ function InvoiceAmountDue({ label, amount }: { label: string; amount: number }) 
 
 function InvoicePaymentSection({ rows, termsLine }: { rows: DocInfoRow[]; termsLine: string }) {
   return (
-    <section className="break-inside-avoid mt-7 border-t border-line pt-4">
+    <section className="break-inside-avoid mt-5 border-t border-line pt-3.5">
       <DocSectionLabel>Betalningsuppgifter</DocSectionLabel>
       <div className="mt-2.5 flex flex-wrap gap-x-7 gap-y-1.5 text-[13.5px]">
         {rows.map((row) => (
@@ -181,6 +181,8 @@ function InvoicePaymentSection({ rows, termsLine }: { rows: DocInfoRow[]; termsL
 /** Företagsuppgifter – fullt läsbara på A4, endast fält med värde. */
 function InvoiceCompanyFooter({ company }: { company: CompanySettings }) {
   const sate = company.sate?.trim() || company.city;
+  // Dokumentkonvention: webbadress utan protokoll ("driva.se", inte "https://…").
+  const website = company.websiteUrl?.replace(/^https?:\/\//, "").replace(/\/$/, "") ?? "";
   const payment: string[] = [];
   if (company.bankgiro?.trim()) payment.push(`Bankgiro ${company.bankgiro.trim()}`);
   if (company.plusgiro?.trim()) payment.push(`PlusGiro ${company.plusgiro.trim()}`);
@@ -195,7 +197,7 @@ function InvoiceCompanyFooter({ company }: { company: CompanySettings }) {
     },
     {
       label: "Kontakt",
-      rows: [company.phone, company.email, company.websiteUrl ?? ""],
+      rows: [company.phone, company.email, website],
     },
     { label: "Betalning", rows: payment },
     {
@@ -207,8 +209,8 @@ function InvoiceCompanyFooter({ company }: { company: CompanySettings }) {
     .filter((column) => column.rows.length > 0);
 
   return (
-    <footer className="break-inside-avoid mt-9 border-t border-line pt-4">
-      <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4 print:grid-cols-4">
+    <footer className="break-inside-avoid mt-6 border-t border-line pt-3.5">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-[1fr_1.35fr_0.95fr_1fr] print:grid-cols-[1fr_1.35fr_0.95fr_1fr]">
         {columns.map((column) => (
           <div key={column.label} className="min-w-0">
             <p className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted">{column.label}</p>
@@ -262,12 +264,6 @@ export function InvoiceDocument({
 
   return (
     <div className="relative bg-white px-7 py-8 text-ink sm:px-10 sm:py-10 print:px-0 print:py-0">
-      {isPaid ? (
-        <div className="absolute right-8 top-24 rotate-[-8deg] rounded-lg border-2 border-ok/50 px-3 py-1 text-[15px] font-bold uppercase tracking-widest text-ok/70 print:right-2">
-          Betald
-        </div>
-      ) : null}
-
       <header className="flex items-start justify-between gap-6">
         <div className="flex items-center gap-3.5">
           <CompanyLogo company={seller} size="md" />
@@ -283,10 +279,15 @@ export function InvoiceDocument({
           <p className="text-[22px] font-semibold leading-tight tracking-tight text-ink tabular">
             {doc.number == null ? "Utkast" : `#${doc.number}`}
           </p>
+          {isPaid ? (
+            <span className="mt-1.5 inline-block rotate-[-6deg] rounded-lg border-2 border-ok/50 px-2.5 py-0.5 text-[13px] font-bold uppercase tracking-widest text-ok/70">
+              Betald
+            </span>
+          ) : null}
         </div>
       </header>
 
-      <div className="mt-6 grid gap-x-10 gap-y-5 border-t border-line pt-5 sm:grid-cols-[minmax(0,1fr)_auto] print:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="mt-5 grid gap-x-10 gap-y-5 border-t border-line pt-4 sm:grid-cols-[minmax(0,1fr)_auto] print:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0">
           <DocSectionLabel>Fakturamottagare</DocSectionLabel>
           <p className="mt-1.5 text-[15px] font-semibold leading-snug text-ink">{buyer.name}</p>
@@ -316,9 +317,9 @@ export function InvoiceDocument({
       ) : null}
 
       {/* Användarens fritext – exakt som skapad, före raderna. Tom → ingenting. */}
-      <RichTextView doc={doc.richText} className="mt-6" />
+      <RichTextView doc={doc.richText} className="mt-5" />
 
-      <div className="mt-6">
+      <div className="mt-5">
         <InvoiceLinesTable lines={doc.lines} />
       </div>
 
@@ -336,7 +337,7 @@ export function InvoiceDocument({
       ) : null}
 
       {isPaid && invoice.paidAt ? (
-        <div className="break-inside-avoid mt-7 flex items-start gap-3 border-t border-line pt-4">
+        <div className="break-inside-avoid mt-5 flex items-start gap-3 border-t border-line pt-3.5">
           <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
           <div>
             <p className="text-[14px] font-semibold text-ok">Betald</p>
