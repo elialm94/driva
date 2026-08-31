@@ -72,6 +72,7 @@ export function DiscardDraftButton({
           className={buttonClasses("danger-outline")}
           onClick={() => setConfirming(true)}
         >
+          <Trash2 className="size-4" aria-hidden />
           Kasta utkast
         </button>
       )}
