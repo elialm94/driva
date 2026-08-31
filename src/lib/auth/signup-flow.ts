@@ -1,14 +1,13 @@
 /**
- * Post-signup navigation and login-banner helpers.
+ * Post-signup-navigering och verifieringsflödets helpers.
  *
  * Password får aldrig hamna i URL, flash eller helper-returvärden.
  * E-postbekräftelse styrs av om Supabase returnerar en session vid signUp –
  * inte av lokal config.toml (prod kan ha Confirm email på även om lokal
- * supabase har enable_confirmations = false).
+ * supabase skulle ha enable_confirmations = false).
  */
+import { looksLikePhone } from "@/lib/onboarding";
 
-export const SIGNUP_SUCCESS_PARAM = "signup";
-export const SIGNUP_SUCCESS_VALUE = "success";
 export const SIGNUP_EMAIL_PARAM = "email";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -41,16 +40,17 @@ function firstSearchParam(value: string | string[] | undefined): string | undefi
   return value;
 }
 
-export function loginAfterSignupUrl(email: string, next?: string): string {
+/** "Kolla din mejl"-sidan efter registrering. E-posten visas, next följer med. */
+export function verifyEmailUrl(email: string, next?: string): string {
   const params = new URLSearchParams();
-  params.set(SIGNUP_SUCCESS_PARAM, SIGNUP_SUCCESS_VALUE);
   const clean = sanitizeAuthEmail(email);
   if (clean) params.set(SIGNUP_EMAIL_PARAM, clean);
   if (next) {
     const safe = safeAuthNext(next);
     if (safe !== "/") params.set("next", safe);
   }
-  return `/login?${params.toString()}`;
+  const qs = params.toString();
+  return qs ? `/verifiera-epost?${qs}` : "/verifiera-epost";
 }
 
 export function afterSignupDestination(input: {
@@ -59,11 +59,12 @@ export function afterSignupDestination(input: {
   next?: string;
 }): { href: string } {
   if (input.hasSession) {
+    // Bekräftelse avstängd i miljön: direkt vidare till Kom igång.
     const next = input.next ? safeAuthNext(input.next) : "/";
     if (next !== "/") return { href: next };
     return { href: "/onboarding" };
   }
-  return { href: loginAfterSignupUrl(input.email, input.next) };
+  return { href: verifyEmailUrl(input.email, input.next) };
 }
 
 /**
@@ -80,30 +81,15 @@ export function isSilentExistingUser(data: {
 }
 
 export function parseLoginAuthSearch(params: {
-  signup?: string | string[];
   email?: string | string[];
   next?: string | string[];
 }): {
-  signupSuccess: boolean;
   email: string | null;
   next: string;
 } {
   return {
-    signupSuccess: firstSearchParam(params.signup) === SIGNUP_SUCCESS_VALUE,
     email: sanitizeAuthEmail(firstSearchParam(params.email)),
     next: safeAuthNext(firstSearchParam(params.next)),
-  };
-}
-
-export function signupSuccessCopy(email: string | null): {
-  title: string;
-  body: string;
-  emailLine: string | null;
-} {
-  return {
-    title: "Kontot är skapat",
-    body: "Bekräfta din e-postadress via länken vi skickade innan du loggar in.",
-    emailLine: email ? `Vi skickade länken till ${email}.` : null,
   };
 }
 
@@ -131,16 +117,10 @@ export function mapLoginAuthError(
   };
 }
 
-export function shouldShowResendVerification(input: {
-  signupSuccess: boolean;
-  needsVerification: boolean;
-}): boolean {
-  return input.signupSuccess || input.needsVerification;
-}
-
-export function validateSignupFields(email: string, password: string): string | null {
-  if (!email || !password) return "Fyll i e-post och lösenord.";
+export function validateSignupFields(email: string, phone: string, password: string): string | null {
+  if (!email || !phone || !password) return "Fyll i e-post, telefonnummer och lösenord.";
   if (!sanitizeAuthEmail(email)) return "Ange en giltig e-postadress.";
+  if (!looksLikePhone(phone)) return "Ange ett giltigt telefonnummer.";
   if (password.length < 8) return "Lösenordet behöver minst 8 tecken.";
   return null;
 }

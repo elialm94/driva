@@ -151,6 +151,14 @@ export async function isDemoSession(): Promise<boolean> {
   return isDemoClaims(await sessionClaims());
 }
 
+/** Telefonnumret från registreringen (user_metadata) – förifyller onboarding. */
+export async function sessionPhoneHint(): Promise<string> {
+  if (!isSupabaseMode()) return "";
+  const claims = (await sessionClaims()) as { user_metadata?: { phone?: unknown } } | null;
+  const phone = claims?.user_metadata?.phone;
+  return typeof phone === "string" ? phone : "";
+}
+
 /**
  * Medlemskap per request: layout, sida och åtgärdsvakter frågar alla efter
  * samma lista – React cache() deduperar till EN databasfråga per request.

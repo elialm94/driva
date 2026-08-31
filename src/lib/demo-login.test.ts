@@ -81,14 +81,14 @@ function draftQuote(customerId = "cust-1") {
 }
 
 describe("demosessionens kaka och livslängd", () => {
-  it("standard är 8 timmar och klampas till 1–72", () => {
-    assert.equal(demoSessionMaxAgeSeconds(), 8 * 3600);
+  it("standard är 24 timmar (spec) och klampas till 1–72", () => {
+    assert.equal(demoSessionMaxAgeSeconds(), 24 * 3600);
     process.env.DEMO_SESSION_HOURS = "0.2";
     assert.equal(demoSessionMaxAgeSeconds(), 3600);
     process.env.DEMO_SESSION_HOURS = "500";
     assert.equal(demoSessionMaxAgeSeconds(), 72 * 3600);
     process.env.DEMO_SESSION_HOURS = "skräp";
-    assert.equal(demoSessionMaxAgeSeconds(), 8 * 3600);
+    assert.equal(demoSessionMaxAgeSeconds(), 24 * 3600);
   });
 
   it("nytt kakvärde är aktivt, unikt per besökare och bär utgångstiden", () => {
@@ -135,9 +135,9 @@ describe("demoanvändarens identitet", () => {
 });
 
 describe("rate limit för demostart och återställning", () => {
-  it("tillåter 10 starter per IP inom fönstret, sedan stopp", () => {
+  it("tillåter 6 provisioneringar per IP inom fönstret, sedan stopp", () => {
     const now = Date.now();
-    for (let i = 0; i < 10; i++) assert.equal(rateLimitDemoStart("1.2.3.4", now + i), true);
+    for (let i = 0; i < 6; i++) assert.equal(rateLimitDemoStart("1.2.3.4", now + i), true);
     assert.equal(rateLimitDemoStart("1.2.3.4", now + 100), false);
     // Annan besökare påverkas inte av den första IP:ns tak.
     assert.equal(rateLimitDemoStart("5.6.7.8", now + 100), true);
@@ -145,7 +145,7 @@ describe("rate limit för demostart och återställning", () => {
 
   it("släpper igenom samma IP igen när fönstret passerat", () => {
     const now = Date.now();
-    for (let i = 0; i < 10; i++) rateLimitDemoStart("1.2.3.4", now);
+    for (let i = 0; i < 6; i++) rateLimitDemoStart("1.2.3.4", now);
     assert.equal(rateLimitDemoStart("1.2.3.4", now + 1000), false);
     assert.equal(rateLimitDemoStart("1.2.3.4", now + 11 * 60_000), true);
   });
@@ -153,10 +153,10 @@ describe("rate limit för demostart och återställning", () => {
   it("har ett globalt tak per instans", () => {
     const now = Date.now();
     let allowed = 0;
-    for (let i = 0; i < 130; i++) {
+    for (let i = 0; i < 70; i++) {
       if (rateLimitDemoStart(`ip-${i}`, now)) allowed++;
     }
-    assert.equal(allowed, 120);
+    assert.equal(allowed, 60);
   });
 
   it("återställningen är strypt till en per instans per 20 sekunder", () => {

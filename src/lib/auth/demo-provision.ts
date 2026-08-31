@@ -19,9 +19,12 @@
  */
 import { cookies } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isSupabaseMode } from "@/lib/storage/config";
 import {
   BUSINESS_COOKIE,
   WORKSPACE_COOKIE,
+  getSessionUser,
+  isDemoSession,
 } from "@/lib/auth/session";
 import {
   DEMO_ACTOR_COOKIE,
@@ -29,7 +32,8 @@ import {
   demoCookieValueNow,
   demoSessionMaxAgeSeconds,
 } from "@/lib/auth/demo-session";
-import { membershipsForUser, createBusinessWithOwner } from "@/lib/storage/adapter-supabase";
+import { membershipsForUser, createBusinessWithOwner, sqlClient } from "@/lib/storage/adapter-supabase";
+import { bindTransaction } from "@/lib/storage/load";
 import { importStateIntoBusiness } from "@/lib/storage/import-state";
 import { demoSeedFor } from "@/lib/storage/demo-reset";
 
@@ -108,5 +112,52 @@ export async function hasDemoMembership(userId: string): Promise<boolean> {
     return (await membershipsForUser(userId)).length > 0;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Avsluta besökarens demosession: markera demoföretaget för omedelbar
+ * städning, släpp Supabase-tokens (endast DENNA besökares – scope local)
+ * och rensa demokakorna. Delas av demo-åtgärderna och logga ut-flödet.
+ */
+export async function endDemoSession(): Promise<void> {
+  if (!isSupabaseMode()) {
+    // JSON-läget har inga sessioner – bara ev. lokala demokakor städas.
+    await clearDemoCookies();
+    return;
+  }
+  const user = await getSessionUser();
+  if (user && (await isDemoSession())) {
+    await expireDemoBusinessesNow(user.id);
+    const supabase = await createSupabaseServerClient();
+    await supabase.auth.signOut({ scope: "local" });
+  }
+  await clearDemoCookies();
+}
+
+/**
+ * Bäst ansträngning: flytta demoföretagets utgångstid till nu så att nästa
+ * cleanup-körning tar datat direkt i stället för att vänta ut livslängden.
+ * Frystriggern tillåter bara tidigareläggning, och WHERE-villkoret gör att
+ * riktiga företag aldrig berörs.
+ */
+async function expireDemoBusinessesNow(userId: string): Promise<void> {
+  try {
+    const memberships = await membershipsForUser(userId);
+    const client = await sqlClient();
+    for (const m of memberships) {
+      await client.transaction(async (tx) => {
+        await bindTransaction(tx, m.businessId);
+        await tx.query(
+          `update public.businesses
+              set demo_expires_at = now()
+            where id = $1 and is_demo and demo_expires_at is not null and demo_expires_at > now()`,
+          [m.businessId]
+        );
+      });
+    }
+  } catch (e) {
+    // Städningen tar företaget senast vid ordinarie utgångstid.
+    console.warn(`[driva:demo] kunde inte tidigarelägga städning: ${e instanceof Error ? e.message : e}`);
   }
 }

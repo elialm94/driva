@@ -36,9 +36,12 @@ const PAYMENT_METHODS: { value: OnboardingPaymentMethod; label: string }[] = [
 export function OnboardingForm({
   defaultEmail,
   defaultName = "",
+  defaultPhone = "",
 }: {
   defaultEmail: string;
   defaultName?: string;
+  /** Från registreringen (user_metadata) – går att ändra här. */
+  defaultPhone?: string;
 }) {
   const [state, submit, pending] = useActionState(onboardingAction, initialState);
   const [clientErrors, setClientErrors] = useState<OnboardingFormState["fieldErrors"]>({});
@@ -53,7 +56,7 @@ export function OnboardingForm({
   const [plusgiro, setPlusgiro] = useState("");
   const [bankAccount, setBankAccount] = useState("");
   const [email, setEmail] = useState(defaultEmail);
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(defaultPhone);
   const lastSuggestedVat = useRef("");
 
   const errors = { ...state.fieldErrors, ...clientErrors };

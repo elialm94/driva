@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getSessionUser } from "@/lib/auth/session";
+import { getSessionUser, sessionPhoneHint } from "@/lib/auth/session";
 import { needsCompanyOnboarding } from "@/lib/onboarding";
 import { membershipsForUser } from "@/lib/storage/adapter-supabase";
 import { isSupabaseMode } from "@/lib/storage/config";
@@ -26,7 +26,7 @@ export default async function OnboardingPage() {
           </p>
         </div>
         <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-          <OnboardingForm defaultEmail={user.email} />
+          <OnboardingForm defaultEmail={user.email} defaultPhone={await sessionPhoneHint()} />
         </div>
       </div>
     </main>
