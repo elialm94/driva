@@ -19,6 +19,7 @@ import { SETTINGS_HREF } from "@/lib/settings-routes";
 import { buttonClasses, cx } from "./ui";
 import { Modal } from "./modal";
 
+/** Sammanfattning + modal. Ligger under Innehåll, inte bland reorderbara sektioner. */
 export function FooterSettingsCard({
   website,
   company,
