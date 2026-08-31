@@ -65,9 +65,12 @@ export function DocFooter({ company }: { company: CompanySettings }) {
 function QuoteCompanyFooter({ company }: { company: CompanySettings }) {
   const sate = company.sate?.trim() || company.city;
   const pay = paymentBits(company);
+  // Utan protokoll/slash – "sodermalmssnickeri.se" radbryts inte mitt i på A4.
+  const website = company.websiteUrl?.replace(/^https?:\/\//, "").replace(/\/$/, "");
   return (
     <div className="mt-10 border-t border-line pt-5 text-[12px] leading-relaxed text-muted">
-      <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+      {/* Naturlig blockbredd + radbryt mellan block – e-post/webb bryts inte mitt i ordet. */}
+      <div className="flex flex-wrap gap-x-10 gap-y-3">
         <div>
           <p className="font-semibold text-soft">{company.name}</p>
           {company.address ? <p>{company.address}</p> : null}
@@ -78,8 +81,8 @@ function QuoteCompanyFooter({ company }: { company: CompanySettings }) {
         </div>
         <div>
           {company.phone ? <p>{company.phone}</p> : null}
-          {company.email ? <p className="break-words">{company.email}</p> : null}
-          {company.websiteUrl ? <p className="break-words">{company.websiteUrl}</p> : null}
+          {company.email ? <p>{company.email}</p> : null}
+          {website ? <p>{website}</p> : null}
         </div>
         <div>
           <p>Org.nr {company.orgNumber}</p>
