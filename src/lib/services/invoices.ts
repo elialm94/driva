@@ -143,6 +143,9 @@ function invoiceTaxReductionFields(
   });
   return {
     rot: resolved,
+    // Fakturan kopierar inte offertens företagsvillkor (quote.terms).
+    // Betalningsvillkor stannar på paymentTermsDays + lateInterestRate.
+    // Bara den låsta ROT/RUT-snapshoten (eller live standard) följer med.
     taxReductionTerms: signedTaxReductionTerms(quoteId, rot.type) ?? snapshotTaxReductionTerms(rot.type),
   };
 }

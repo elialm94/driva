@@ -44,6 +44,7 @@ function form(over: Partial<SettingsFormPayload> = {}): SettingsFormPayload {
     quoteValidityDays: 30,
     defaultVatRate: 25,
     defaultHourlyRate: "",
+    defaultQuoteTerms: "Offerten omfattar arbete och material enligt specifikationen ovan.",
     ...over,
   };
 }

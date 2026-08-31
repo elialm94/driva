@@ -8,7 +8,8 @@ import { docTotals } from "../calc";
 import { resolvedHourlyRate } from "../line-defaults";
 import { kr, isoDaysFromNow, dagarTill, datumKort } from "../format";
 import { logActivity } from "./activity";
-import { taxReductionFields } from "../tax-reduction-terms";
+import { nextTaxReductionTerms } from "../tax-reduction-terms";
+import { STANDARD_TERMS } from "../standard-quote-terms";
 import { rotWithAmounts } from "../tax-reduction-amount";
 import { syncDocLineClassification } from "../economic-line-type";
 import { buyerSnapshot, sellerSnapshot } from "../invoices/snapshot";
@@ -36,14 +37,34 @@ export interface QuoteInput {
   validUntil: string;
   terms: string;
   /**
+   * Användarens ROT/RUT-villkor (rubrik/brödtext) från editorn. Snapshotas
+   * tillsammans med version/type från standardtexten. Saknas + rot valt =
+   * aktuell standard. Fakturan kopierar inte de här företagets offertvillkor.
+   */
+  taxReductionTerms?: { heading?: string; body?: string } | null;
+  /** Ersätt snapshoten med aktuell standard för valt ROT/RUT-typ. */
+  resetTaxReductionTerms?: boolean;
+  /**
    * Beskrivning – offertens enda fritextfält (samma modell som fakturan).
    * Saneras alltid serverside (vitlista, se lib/richtext).
    */
   richText?: RichTextDoc;
 }
 
-export const STANDARD_TERMS =
-  "Offerten omfattar arbete och material enligt specifikationen ovan. Eventuella tillkommande arbeten offereras separat innan de påbörjas. Vi innehar F-skattsedel och full ansvarsförsäkring. Garanti lämnas enligt konsumenttjänstlagen.";
+export { STANDARD_TERMS };
+
+function quoteTaxReductionSnapshot(
+  rot: RotRut | null,
+  previous: QuoteVersion["taxReductionTerms"] | null | undefined,
+  input: Pick<QuoteInput, "taxReductionTerms" | "resetTaxReductionTerms">
+) {
+  return nextTaxReductionTerms({
+    rot,
+    previous,
+    submitted: input.taxReductionTerms,
+    resetToStandard: input.resetTaxReductionTerms,
+  });
+}
 
 export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assistent" = "anvandare"): Quote {
   const data = db();
@@ -52,6 +73,7 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
   const versionId = uid();
   const number = data.sequences.quote++;
   const now = new Date().toISOString();
+  const rot = rotWithAmounts(input.rot, input.lines, { documentKind: "offert" });
 
   const version: QuoteVersion = {
     id: versionId,
@@ -65,7 +87,8 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
     validUntil: input.validUntil,
     terms: input.terms,
     richText: sanitizeRichText(input.richText),
-    ...taxReductionFields(rotWithAmounts(input.rot, input.lines, { documentKind: "offert" })),
+    rot,
+    taxReductionTerms: quoteTaxReductionSnapshot(rot, null, input),
     createdAt: now,
   };
 
@@ -140,14 +163,19 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
   if (persisted.workLocationId) quote.workLocationId = persisted.workLocationId;
   else delete quote.workLocationId;
 
+  const rot = rotWithAmounts(input.rot, input.lines, { documentKind: "offert" });
+  const taxReductionTerms = quoteTaxReductionSnapshot(rot, version.taxReductionTerms, input);
+  const { taxReductionTerms: _submittedTerms, resetTaxReductionTerms: _reset, ...versionInput } = input;
+
   if (version.lockedAt || quote.status === "godkand") {
     // Ny version krävs efter signering.
     const newVersion: QuoteVersion = {
       id: uid(),
       quoteId,
       version: version.version + 1,
-      ...input,
-      ...taxReductionFields(rotWithAmounts(input.rot, input.lines, { documentKind: "offert" })),
+      ...versionInput,
+      rot,
+      taxReductionTerms,
       createdAt: new Date().toISOString(),
     };
     data.quoteVersions.push(newVersion);
@@ -161,7 +189,7 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
       { customerId: quote.customerId, entity: { type: "offert", id: quoteId } }
     );
   } else {
-    Object.assign(version, input, taxReductionFields(rotWithAmounts(input.rot, input.lines, { documentKind: "offert" })));
+    Object.assign(version, versionInput, { rot, taxReductionTerms });
     // Legacy-fältet skrivs aldrig igen – och en gammal intro får inte ligga
     // kvar bredvid den redigerade beskrivningen (dubblerad text i dokumentet).
     delete version.intro;
@@ -296,9 +324,15 @@ export function sendQuote(quoteId: string, delivery: QuoteDeliveryInfo = MOCK_DE
       `Offertens giltighetsdatum (${datumKort(version.validUntil)}) har passerat – kunden skulle inte kunna godkänna den. Ändra "Giltig till" och skicka sedan.`
     );
   }
-  // Ingen ROT/RUT-offert får skickas utan systemvillkoret, oavsett skapandeflöde.
+  // Låsta versioner muteras aldrig. Befintlig snapshot skrivs inte över med
+  // live standardtext – bara saknad snapshot backfylls, och rot-belopp klamps.
   if (!version.lockedAt) {
-    Object.assign(version, taxReductionFields(rotWithAmounts(version.rot, version.lines, { documentKind: "offert", mode: "clamp" })));
+    const rot = rotWithAmounts(version.rot, version.lines, { documentKind: "offert", mode: "clamp" });
+    version.rot = rot;
+    version.taxReductionTerms = nextTaxReductionTerms({
+      rot,
+      previous: version.taxReductionTerms,
+    });
     version.sellerSnapshot = sellerSnapshot(db().settings);
     // Frys även kunduppgifterna – dokumentet ska visa adressen kunden fick.
     version.buyerSnapshot = buyerSnapshot(customer);
@@ -448,6 +482,6 @@ export function quoteDefaults() {
     ...(resolvedHourlyRate(settings.defaultHourlyRate) != null
       ? { defaultHourlyRate: resolvedHourlyRate(settings.defaultHourlyRate) }
       : {}),
-    terms: STANDARD_TERMS,
+    terms: settings.defaultQuoteTerms?.trim() || STANDARD_TERMS,
   };
 }

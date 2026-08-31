@@ -1,4 +1,5 @@
 import type { VatRate } from "./types";
+import { DEFAULT_QUOTE_TERMS_MAX } from "./standard-quote-terms";
 import {
   isBicFormat,
   isIbanFormat,
@@ -63,6 +64,8 @@ export interface SettingsDefaultsFields {
   defaultVatRate: VatRate;
   /** Tomt / saknas = inte satt. Annars hela kronor. */
   defaultHourlyRate?: number | string | null;
+  /** Tomt = fallback till STANDARD_TERMS på nya offerter. */
+  defaultQuoteTerms?: string | null;
 }
 
 /** Tolkar valfritt timpris. Tomt och 0 = inte satt. */
@@ -219,6 +222,15 @@ export function settingsDefaultsFieldErrors(input: SettingsDefaultsFields): Sett
       field: "defaultHourlyRate",
       label: "Standard timpris",
       message: hourly.message,
+      tab: "fakturering",
+    });
+  }
+  const quoteTerms = input.defaultQuoteTerms ?? "";
+  if (quoteTerms.length > DEFAULT_QUOTE_TERMS_MAX) {
+    errors.push({
+      field: "defaultQuoteTerms",
+      label: "Standardvillkor för offerter",
+      message: `Standardvillkoren får vara högst ${DEFAULT_QUOTE_TERMS_MAX} tecken.`,
       tab: "fakturering",
     });
   }

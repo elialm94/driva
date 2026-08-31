@@ -46,6 +46,7 @@ export interface SettingsFormPayload {
   quoteValidityDays: number;
   defaultVatRate: VatRate;
   defaultHourlyRate: string;
+  defaultQuoteTerms: string;
 }
 
 /**
@@ -82,6 +83,7 @@ export function buildCompanySettingsActionInput(form: SettingsFormPayload): Comp
     quoteValidityDays: Number(form.quoteValidityDays),
     defaultVatRate: form.defaultVatRate,
     defaultHourlyRate: hourlyRaw === "" ? null : Number(hourlyRaw.replace(",", ".")),
+    defaultQuoteTerms: form.defaultQuoteTerms,
   };
 }
 
@@ -121,6 +123,7 @@ export function normalizeCompanySettingsInput(input: CompanySettingsInput): Comp
     "payerBic",
     "logoInitials",
     "logoDataUrl",
+    "defaultQuoteTerms",
   ];
   for (const key of textKeys) cleanTextField(next, key);
   if (isFlightUndefined(next.defaultHourlyRate) || next.defaultHourlyRate === (FLIGHT_UNDEFINED as unknown)) {

@@ -64,6 +64,9 @@ export default async function EditQuotePage(props: PageProps<"/ekonomi/offerter/
           lateInterestRate: version.lateInterestRate,
           validUntil: version.validUntil,
           terms: version.terms,
+          taxReductionTerms: version.taxReductionTerms
+            ? { heading: version.taxReductionTerms.heading, body: version.taxReductionTerms.body }
+            : null,
           // Kanonisk beskrivning: på BankID-låsta versioner ligger legacy-
           // "Beskrivning av arbetet" kvar och slås ihop här inför ny version.
           richText: quoteDescriptionDoc(version),

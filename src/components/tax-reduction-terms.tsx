@@ -1,9 +1,8 @@
 import type { TaxReductionTermsSnapshot } from "@/lib/types";
-import { getInvoiceTaxReductionDisclaimer, getTaxReductionTerms } from "@/lib/tax-reduction-terms";
-import { kr } from "@/lib/format";
-import { taxReductionCalcHintText } from "@/lib/tax-reduction-terms";
+import { getInvoiceTaxReductionDisclaimer, taxReductionCalcHintText } from "@/lib/tax-reduction-terms";
 import { Info } from "lucide-react";
 
+/** ROT/RUT-villkor som underrubrik i Villkor-sektionen – inte ett eget kort. */
 export function TaxReductionQuoteClause({
   terms,
 }: {
@@ -11,9 +10,9 @@ export function TaxReductionQuoteClause({
 }) {
   if (!terms) return null;
   return (
-    <div className="mt-4 rounded-xl border border-line bg-canvas/50 px-4 py-3">
+    <div className="mt-4">
       <p className="text-[13px] font-semibold text-ink">{terms.heading}</p>
-      <p className="mt-1 text-[12px] leading-relaxed text-soft">{terms.body}</p>
+      <p className="mt-1 whitespace-pre-line text-[13px] leading-relaxed text-soft">{terms.body}</p>
     </div>
   );
 }
@@ -38,18 +37,6 @@ export function TaxReductionEditorHint({ version }: { version?: string }) {
       </summary>
       <p className="mt-1.5 text-[12px] leading-relaxed text-muted">{text}</p>
     </details>
-  );
-}
-
-/** Live-förhandsvisning i formulär – samma text som offerttjänsten kommer att spara. */
-export function TaxReductionFormPreview({ type }: { type: "rot" | "rut" }) {
-  const terms = getTaxReductionTerms(type);
-  return (
-    <div className="mt-3 rounded-xl border border-line bg-canvas/50 px-4 py-3">
-      <p className="text-[13px] font-semibold text-ink">{terms.heading}</p>
-      <p className="mt-1 text-[12px] leading-relaxed text-soft">{terms.body}</p>
-      <p className="mt-2 text-[12px] text-muted">Läggs till automatiskt. Kan inte redigeras.</p>
-    </div>
   );
 }
 

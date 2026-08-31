@@ -57,14 +57,78 @@ export function snapshotTaxReductionTerms(type: RotRut["type"]): TaxReductionTer
   };
 }
 
-/** Enda skrivaren av systemgenererade ROT/RUT-villkor – anropas från offerttjänsten. */
+export function taxReductionSnapshotFromSubmitted(
+  type: RotRut["type"],
+  submitted: { heading?: string; body?: string }
+): TaxReductionTermsSnapshot {
+  const standard = getTaxReductionTerms(type);
+  const heading = submitted.heading?.trim() || standard.heading;
+  const body = submitted.body?.trim() || standard.body;
+  return {
+    version: standard.version,
+    type,
+    heading,
+    body,
+    text: `${heading}\n${body}`,
+  };
+}
+
+/** True om heading+body skiljer sig från gällande standard för typen. */
+export function isCustomTaxReductionTerms(
+  snapshot: Pick<TaxReductionTermsText, "heading" | "body"> | null | undefined,
+  type: RotRut["type"]
+): boolean {
+  if (!snapshot) return false;
+  const standard = getTaxReductionTerms(type);
+  return snapshot.heading !== standard.heading || snapshot.body !== standard.body;
+}
+
+export interface NextTaxReductionTermsInput {
+  rot: RotRut | null;
+  previous?: TaxReductionTermsSnapshot | null;
+  submitted?: { heading?: string; body?: string } | null;
+  resetToStandard?: boolean;
+}
+
+/**
+ * Nästa ROT/RUT-villkorssnapshot. Data raderas inte när ROT slås av
+ * (utkast behåller texten); den renderas bara när rot är valt.
+ */
+export function nextTaxReductionTerms({
+  rot,
+  previous,
+  submitted,
+  resetToStandard,
+}: NextTaxReductionTermsInput): TaxReductionTermsSnapshot | null {
+  if (!rot) return previous ?? null;
+  if (resetToStandard) return snapshotTaxReductionTerms(rot.type);
+
+  const hasSubmitted = Boolean(submitted && (submitted.heading != null || submitted.body != null));
+  if (hasSubmitted) return taxReductionSnapshotFromSubmitted(rot.type, submitted!);
+
+  if (!previous) return snapshotTaxReductionTerms(rot.type);
+
+  if (previous.type !== rot.type) {
+    if (isCustomTaxReductionTerms(previous, previous.type)) {
+      return {
+        ...previous,
+        type: rot.type,
+        text: `${previous.heading}\n${previous.body}`,
+      };
+    }
+    return snapshotTaxReductionTerms(rot.type);
+  }
+  return previous;
+}
+
+/** Första aktivering utan tidigare snapshot. Använd nextTaxReductionTerms vid uppdatering. */
 export function taxReductionFields(rot: RotRut | null): {
   rot: RotRut | null;
   taxReductionTerms: TaxReductionTermsSnapshot | null;
 } {
   return {
     rot,
-    taxReductionTerms: rot ? snapshotTaxReductionTerms(rot.type) : null,
+    taxReductionTerms: nextTaxReductionTerms({ rot, previous: null }),
   };
 }
 

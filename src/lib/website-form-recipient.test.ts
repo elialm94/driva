@@ -48,6 +48,8 @@ function settingsInput(over: Partial<CompanySettingsInput> = {}): CompanySetting
     lateInterestRate: s.lateInterestRate,
     quoteValidityDays: s.quoteValidityDays ?? 30,
     defaultVatRate: s.defaultVatRate ?? 25,
+    defaultHourlyRate: s.defaultHourlyRate,
+    defaultQuoteTerms: s.defaultQuoteTerms,
     ...over,
   };
 }

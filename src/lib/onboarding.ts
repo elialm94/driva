@@ -4,6 +4,7 @@
  * invoices/formats + settings-validation. Ingen separat onboarding-profil.
  */
 import type { CompanySettings } from "./types";
+import { STANDARD_TERMS } from "./standard-quote-terms";
 import {
   formatVatNumber,
   isBankgiroFormat,
@@ -286,6 +287,7 @@ export function companySettingsFromOnboarding(input: OnboardingPersistInput): Co
     lateInterestRate: 10,
     quoteValidityDays: 30,
     defaultVatRate: 25,
+    defaultQuoteTerms: STANDARD_TERMS,
   };
 }
 

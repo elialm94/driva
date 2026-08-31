@@ -13,8 +13,13 @@ import { DateField } from "./date-field";
 import { addCustomerOption, CustomerPicker, type CustomerOption } from "./customer-picker";
 import { useUnsavedLeave } from "./unsaved-changes";
 import { hrefWithNav } from "@/lib/nav";
-import { taxReductionDeductionLabel, taxReductionClampedMessage } from "@/lib/tax-reduction-terms";
-import { TaxReductionFormPreview, TaxReductionEditorHint, TaxReductionCalcHint } from "./tax-reduction-terms";
+import {
+  taxReductionDeductionLabel,
+  taxReductionClampedMessage,
+  getTaxReductionTerms,
+  isCustomTaxReductionTerms,
+} from "@/lib/tax-reduction-terms";
+import { TaxReductionEditorHint, TaxReductionCalcHint } from "./tax-reduction-terms";
 import { EditorWorkspace } from "./editor-workspace";
 import { LinesEditor, newLine } from "./lines-editor";
 import {
@@ -243,6 +248,7 @@ export interface QuoteFormInitial {
   lateInterestRate?: number;
   validUntil: string;
   terms: string;
+  taxReductionTerms?: { heading?: string; body?: string } | null;
   richText?: RichTextDoc;
 }
 
@@ -311,6 +317,13 @@ export function QuoteForm({
   const [lateInterest, setLateInterest] = useState(initial?.lateInterestRate ?? defaults.lateInterestRate);
   const [validUntil, setValidUntil] = useState((initial?.validUntil ?? defaults.validUntil).slice(0, 10));
   const [terms, setTerms] = useState(initial?.terms ?? defaults.terms);
+  const standardTaxTerms = getTaxReductionTerms(initial?.rot?.type ?? "rot");
+  const [taxReductionHeading, setTaxReductionHeading] = useState(
+    initial?.taxReductionTerms?.heading ?? standardTaxTerms.heading
+  );
+  const [taxReductionBody, setTaxReductionBody] = useState(
+    initial?.taxReductionTerms?.body ?? standardTaxTerms.body
+  );
   const [richText, setRichText] = useState<RichTextDoc | undefined>(initial?.richText);
   const [isPending, startTransition] = useTransition();
   const [saving, setSaving] = useState(false);
@@ -326,6 +339,8 @@ export function QuoteForm({
     lateInterest,
     validUntil,
     terms,
+    taxReductionHeading,
+    taxReductionBody,
     richText: richText ?? null,
   });
   const initialSnapshot = useRef(snapshot);
@@ -379,6 +394,9 @@ export function QuoteForm({
       lateInterestRate: lateInterest,
       validUntil: new Date(validUntil + "T12:00:00").toISOString(),
       terms,
+      taxReductionTerms: rot
+        ? { heading: taxReductionHeading, body: taxReductionBody }
+        : undefined,
       richText,
     };
     setSaving(true);
@@ -515,10 +533,26 @@ export function QuoteForm({
                   type="button"
                   onClick={() => {
                     setClampNotice(null);
-                    setRot(value ? rotForEditor(value, lines, null, "offert") : null);
                     if (value) {
+                      const standard = getTaxReductionTerms(value);
+                      if (rot && rot.type !== value) {
+                        const prevStandard = getTaxReductionTerms(rot.type);
+                        const customized =
+                          taxReductionHeading !== prevStandard.heading ||
+                          taxReductionBody !== prevStandard.body;
+                        if (!customized) {
+                          setTaxReductionHeading(standard.heading);
+                          setTaxReductionBody(standard.body);
+                        }
+                      } else if (!rot && !taxReductionBody.trim()) {
+                        setTaxReductionHeading(standard.heading);
+                        setTaxReductionBody(standard.body);
+                      }
+                      setRot(rotForEditor(value, lines, null, "offert"));
                       const properties = propertiesByCustomer[customerId] ?? [];
                       setWorkLocationId((current) => autoSelectWorkLocationId(properties, current));
+                    } else {
+                      setRot(null);
                     }
                   }}
                   className={cx(
@@ -560,7 +594,6 @@ export function QuoteForm({
             ) : null}
             {rot ? (
               <div id="offert-rot-rut" className="mt-3 space-y-3">
-                <TaxReductionFormPreview type={rot.type} />
                 {rotByCustomer?.[customerId]?.personalIdentityNumber ? (
                   <p className="text-[13px] text-soft">
                     Personnummer {maskPersonnummer(rotByCustomer[customerId].personalIdentityNumber!)}
@@ -681,11 +714,35 @@ export function QuoteForm({
 
           <div>
             <label className={labelCls}>Villkor</label>
+            <p className="mb-1.5 text-[13px] font-medium text-ink">Standardvillkor</p>
             <textarea value={terms} onChange={(e) => setTerms(e.target.value)} rows={3} className={inputCls} />
-            <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
-              Egna villkor. ROT/RUT-villkor läggs till automatiskt när skattereduktion är vald och hamnar inte i det
-              här fältet.
-            </p>
+            {rot ? (
+              <div className="mt-4">
+                <p className="mb-1.5 text-[13px] font-medium text-ink">ROT/RUT-villkor</p>
+                <textarea
+                  value={taxReductionBody}
+                  onChange={(e) => setTaxReductionBody(e.target.value)}
+                  rows={4}
+                  className={inputCls}
+                />
+                {isCustomTaxReductionTerms(
+                  { heading: taxReductionHeading, body: taxReductionBody },
+                  rot.type
+                ) ? (
+                  <button
+                    type="button"
+                    className="mt-1.5 text-[12px] text-muted underline-offset-2 hover:text-ink hover:underline"
+                    onClick={() => {
+                      const standard = getTaxReductionTerms(rot.type);
+                      setTaxReductionHeading(standard.heading);
+                      setTaxReductionBody(standard.body);
+                    }}
+                  >
+                    Återställ standardtext
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </Card>
     </EditorWorkspace>

@@ -1,5 +1,6 @@
 import type { CompanySettings, Customer, DB, DocLine, WorkLocation } from "../types";
 import { syncDocLineClassification } from "../economic-line-type";
+import { STANDARD_TERMS } from "../standard-quote-terms";
 
 export function testCompany(over: Partial<CompanySettings> = {}): CompanySettings {
   return {
@@ -20,6 +21,7 @@ export function testCompany(over: Partial<CompanySettings> = {}): CompanySetting
     lateInterestRate: 10,
     quoteValidityDays: 30,
     defaultVatRate: 25,
+    defaultQuoteTerms: STANDARD_TERMS,
     ...over,
   };
 }

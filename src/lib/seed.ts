@@ -30,6 +30,7 @@ import { docTotals } from "./calc";
 import { quoteVersionHash } from "./hash";
 import { ocrForInvoice } from "./ids";
 import { snapshotTaxReductionTerms } from "./tax-reduction-terms";
+import { STANDARD_TERMS } from "./standard-quote-terms";
 
 /* Datum relativt "nu" så att demon alltid känns levande. */
 function d(daysAgo: number, hour = 10, minute = 0): string {
@@ -209,8 +210,7 @@ export function buildSeed(): DB {
     });
   }
 
-  const standardTerms =
-    "Offerten omfattar arbete och material enligt specifikationen ovan. Eventuella tillkommande arbeten offereras separat innan de påbörjas. Vi innehar F-skattsedel och full ansvarsförsäkring. Garanti lämnas enligt konsumenttjänstlagen.";
+  const standardTerms = STANDARD_TERMS;
 
   addQuote({
     id: "quote-nord1",
@@ -1660,6 +1660,7 @@ export function buildSeed(): DB {
       lateInterestRate: 10,
       quoteValidityDays: 30,
       defaultVatRate: 25,
+      defaultQuoteTerms: STANDARD_TERMS,
       inboundMailSlug: "demo",
       // Betalkontot för utgående leverantörsbetalningar (pain.001-debitorn).
       payerBankName: "SEB",

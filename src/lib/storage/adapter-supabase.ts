@@ -22,6 +22,17 @@ import { ensurePendingSchema, resetPendingSchemaGuard } from "./apply-pending-sc
 import { isUndefinedColumn } from "./sql-errors";
 import { cachedStateIfFresh, clearSnapshotCache, invalidateSnapshot, putSnapshot } from "./snapshot-cache";
 import { markCacheHit, withPerfSpan } from "../perf/telemetry";
+import { applyPendingPageLoadSchema } from "./apply-pending-schema";
+import { STANDARD_TERMS } from "../standard-quote-terms";
+
+/** Schema-apply före tenant-skrivningar, inte bara /api/health. */
+let pendingSchemaReady = false;
+
+async function ensurePendingSchema(client: SqlClient): Promise<void> {
+  if (pendingSchemaReady) return;
+  await applyPendingPageLoadSchema(client);
+  pendingSchemaReady = true;
+}
 
 const MAX_ATTEMPTS = 3;
 
@@ -135,6 +146,7 @@ export async function runWithTenant<T>(opts: RunWithTenantOptions, fn: () => T |
     try {
       const result = await runInTenantContext(ctx, () => fn());
       if (ctx.dirty && opts.access === "write") {
+        await ensurePendingSchema(client);
         await commit();
       }
       return result;
@@ -344,8 +356,8 @@ export async function createBusinessWithOwner(input: {
          business_id, name, org_number, vat_number, email, phone,
          address, postal_code, city, country,
          bankgiro, plusgiro, bank_account,
-         logo_initials, inbound_mail_slug
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+         logo_initials, inbound_mail_slug, default_quote_terms
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         businessId,
         input.name,
@@ -362,6 +374,7 @@ export async function createBusinessWithOwner(input: {
         input.bankAccount ?? null,
         initialsFor(input.name),
         inboundSlugFor(businessId),
+        STANDARD_TERMS,
       ]
     );
     await tx.query(`insert into public.business_sequences (business_id) values ($1)`, [businessId]);

@@ -63,6 +63,12 @@ export interface CompanySettings {
    */
   defaultHourlyRate?: number;
   /**
+   * Standardvillkor som kopieras till nya offerter (`quote.terms`).
+   * Tomt/saknas = fallback till STANDARD_TERMS. Ändring här skriver inte
+   * om befintliga offerter. ROT/RUT-villkor ligger i taxReductionTerms.
+   */
+  defaultQuoteTerms?: string;
+  /**
    * Stabil lokal-del för inkommande leverantörsmejl (`slug@in.driva.se`).
    * Tenantuppslag sker på den här sluggen – aldrig på From-headern.
    */
@@ -272,7 +278,7 @@ export interface QuoteVersion {
   /** Dröjsmålsränta i procent per år vid försenad betalning. */
   lateInterestRate?: number;
   validUntil: string;
-  /** Användarens egna villkor. ROT/RUT-villkor ligger i taxReductionTerms, inte här. */
+  /** Företagets/användarens villkor. ROT/RUT-villkor ligger i taxReductionTerms. */
   terms: string;
   /**
    * Beskrivning – rik text (strikt vitlistad delmängd, se lib/richtext).
@@ -281,8 +287,9 @@ export interface QuoteVersion {
    */
   richText?: RichTextDoc;
   /**
-   * Systemgenererade ROT/RUT-villkor. Sätts av offerttjänsten när rot är valt,
-   * tas bort när rot slås av. Snapshoten låses med versionen vid BankID.
+   * Snapshotade ROT/RUT-villkor (standard eller redigerade). Sätts vid första
+   * ROT-val, behålls i utkast om ROT slås av (renderas då inte). Låsta
+   * versioner muteras aldrig. Ingår i contentHash när fältet finns.
    */
   taxReductionTerms?: TaxReductionTermsSnapshot | null;
   /**
