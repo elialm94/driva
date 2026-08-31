@@ -139,6 +139,7 @@ import {
   addWebsiteSection,
   generateWebsite,
   publishWebsite,
+  publishedWebsiteSnapshot,
   removeServiceItem,
   removeTestimonialItem,
   removeWebsiteSection,
@@ -158,6 +159,7 @@ import {
   updateTestimonialItem,
   type UpdateSectionFields,
 } from "@/lib/services/website";
+import type { WebsitePublishInput } from "@/lib/website-publish";
 import type { AddableSectionType } from "@/lib/website-sections";
 import {
   cancelPendingAction,
@@ -1302,11 +1304,12 @@ export async function deactivateOptionalFeatureAction(
 
 export async function updateSectionAction(
   sectionId: string,
-  fields: UpdateSectionFields,
+  fields: UpdateSectionFields & { clientRevision?: number },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return withBusiness(() => {
     try {
-      updateSection(sectionId, fields);
+      const { clientRevision, ...sectionFields } = fields;
+      updateSection(sectionId, sectionFields, { clientRevision });
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara." } as const;
     }
@@ -1329,10 +1332,11 @@ export async function getSectionImagesAction(sectionId: string) {
 export async function addServiceItemAction(
   sectionId: string,
   item: WebsiteSectionItem,
+  clientRevision?: number,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return withBusiness(() => {
     try {
-      addServiceItem(sectionId, item);
+      addServiceItem(sectionId, item, { clientRevision });
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara tjänsten." } as const;
     }
@@ -1345,10 +1349,11 @@ export async function updateServiceItemAction(
   sectionId: string,
   index: number,
   fields: { title?: string; text?: string; image?: string | null },
+  clientRevision?: number,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return withBusiness(() => {
     try {
-      updateServiceItem(sectionId, index, fields);
+      updateServiceItem(sectionId, index, fields, { clientRevision });
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara tjänsten." } as const;
     }
@@ -1357,41 +1362,47 @@ export async function updateServiceItemAction(
   });
 }
 
-export async function removeServiceItemAction(sectionId: string, index: number) {
+export async function removeServiceItemAction(sectionId: string, index: number, clientRevision?: number) {
   return withBusiness(() => {
-    const result = removeServiceItem(sectionId, index);
+    const result = removeServiceItem(sectionId, index, { clientRevision });
     if (!result.error) refresh();
     return result;
   });
 }
 
-export async function reorderServiceItemsAction(sectionId: string, fromIndex: number, toIndex: number) {
+export async function reorderServiceItemsAction(
+  sectionId: string,
+  fromIndex: number,
+  toIndex: number,
+  clientRevision?: number,
+) {
   await withBusiness(() => {
-    reorderServiceItems(sectionId, fromIndex, toIndex);
+    reorderServiceItems(sectionId, fromIndex, toIndex, { clientRevision });
     refresh();
   });
 }
 
-export async function reorderSectionsAction(orderedIds: string[]) {
+export async function reorderSectionsAction(orderedIds: string[], clientRevision?: number) {
   await withBusiness(() => {
-    reorderSections(orderedIds);
+    reorderSections(orderedIds, { clientRevision });
     refresh();
   });
 }
 
-export async function setSectionVisibleAction(sectionId: string, visible: boolean) {
+export async function setSectionVisibleAction(sectionId: string, visible: boolean, clientRevision?: number) {
   await withBusiness(() => {
-    setSectionVisible(sectionId, visible);
+    setSectionVisible(sectionId, visible, { clientRevision });
     refresh();
   });
 }
 
 export async function addWebsiteSectionAction(
   type: AddableSectionType,
+  clientRevision?: number,
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   return withBusiness(() => {
     try {
-      const section = addWebsiteSection(type);
+      const section = addWebsiteSection(type, { clientRevision });
       refresh();
       return { ok: true as const, id: section.id };
     } catch (e) {
@@ -1402,10 +1413,11 @@ export async function addWebsiteSectionAction(
 
 export async function removeWebsiteSectionAction(
   sectionId: string,
+  clientRevision?: number,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return withBusiness(() => {
     try {
-      removeWebsiteSection(sectionId);
+      removeWebsiteSection(sectionId, { clientRevision });
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte ta bort sektionen." };
     }
@@ -1417,10 +1429,11 @@ export async function removeWebsiteSectionAction(
 export async function addTestimonialItemAction(
   sectionId: string,
   item: WebsiteSectionItem,
+  clientRevision?: number,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return withBusiness(() => {
     try {
-      addTestimonialItem(sectionId, item);
+      addTestimonialItem(sectionId, item, { clientRevision });
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte spara omdömet." };
     }
@@ -1433,10 +1446,11 @@ export async function updateTestimonialItemAction(
   sectionId: string,
   index: number,
   fields: { title?: string; text?: string; location?: string | null; rating?: number | null },
+  clientRevision?: number,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   return withBusiness(() => {
     try {
-      updateTestimonialItem(sectionId, index, fields);
+      updateTestimonialItem(sectionId, index, fields, { clientRevision });
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte spara omdömet." };
     }
@@ -1445,17 +1459,22 @@ export async function updateTestimonialItemAction(
   });
 }
 
-export async function removeTestimonialItemAction(sectionId: string, index: number) {
+export async function removeTestimonialItemAction(sectionId: string, index: number, clientRevision?: number) {
   return withBusiness(() => {
-    const result = removeTestimonialItem(sectionId, index);
+    const result = removeTestimonialItem(sectionId, index, { clientRevision });
     if (!result.error) refresh();
     return result;
   });
 }
 
-export async function reorderTestimonialItemsAction(sectionId: string, fromIndex: number, toIndex: number) {
+export async function reorderTestimonialItemsAction(
+  sectionId: string,
+  fromIndex: number,
+  toIndex: number,
+  clientRevision?: number,
+) {
   await withBusiness(() => {
-    reorderTestimonialItems(sectionId, fromIndex, toIndex);
+    reorderTestimonialItems(sectionId, fromIndex, toIndex, { clientRevision });
     refresh();
   });
 }
@@ -1474,11 +1493,13 @@ export async function rewriteSectionAction(sectionId: string) {
 export async function setWebsiteDesignAction(input: {
   themeId: string;
   accent: string;
+  clientRevision?: number;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     return await withBusiness(() => {
       try {
-        setWebsiteDesign(input);
+        const { clientRevision, ...design } = input;
+        setWebsiteDesign(design, { clientRevision });
       } catch (e) {
         return { ok: false, error: userFacingStorageError(e, "Kunde inte byta utseende.") } as const;
       }
@@ -1499,11 +1520,13 @@ export async function setWebsiteFooterAction(input: {
   showLogo?: boolean;
   aboutText?: string;
   social?: { instagram?: string; facebook?: string; tiktok?: string };
+  clientRevision?: number;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     return await withBusiness(() => {
       try {
-        setWebsiteFooter(input);
+        const { clientRevision, ...footer } = input;
+        setWebsiteFooter(footer, { clientRevision });
       } catch (e) {
         return { ok: false, error: userFacingStorageError(e, "Kunde inte spara sidfoten.") } as const;
       }
@@ -1548,10 +1571,12 @@ export async function updateWebsitePrivacyPolicyAction(input: {
   mode: "standard" | "custom";
   supplement?: string;
   customBody?: unknown;
+  clientRevision?: number;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   return withBusiness(() => {
     try {
-      updateWebsitePrivacyPolicy(input);
+      const { clientRevision, ...policy } = input;
+      updateWebsitePrivacyPolicy(policy, { clientRevision });
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara." } as const;
     }
@@ -1560,11 +1585,32 @@ export async function updateWebsitePrivacyPolicyAction(input: {
   }, { capability: "change_website" });
 }
 
-export async function publishWebsiteAction() {
-  await withBusiness(() => {
-    publishWebsite();
-    refresh();
-  });
+export async function publishWebsiteAction(
+  input?: WebsitePublishInput,
+): Promise<
+  | ({ ok: true } & ReturnType<typeof publishedWebsiteSnapshot>)
+  | { ok: false; error: string }
+> {
+  try {
+    return await withBusiness(
+      () => {
+        try {
+          const site = publishWebsite(input);
+          refresh();
+          return { ok: true as const, ...publishedWebsiteSnapshot(site) };
+        } catch (e) {
+          return {
+            ok: false as const,
+            error: userFacingStorageError(e, "Kunde inte publicera hemsidan."),
+          };
+        }
+      },
+      { capability: "change_website" },
+    );
+  } catch (e) {
+    console.error("[driva:hemsida] kunde inte publicera", e);
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte publicera hemsidan. Försök igen.") };
+  }
 }
 
 export async function submitContactFormAction(input: {

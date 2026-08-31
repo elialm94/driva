@@ -1357,6 +1357,14 @@ export interface Website {
    * publicering när det skiljer sig från det publicerade.
    */
   draftPrivacyPolicy?: PrivacyPolicyState;
+  /**
+   * Senaste accepterade klientrevisionen för utkastskrivningar.
+   * En sen save med lägre eller samma tal som `publishedRevision`
+   * ignoreras så att publicering inte kan bli smutsig igen.
+   */
+  draftRevision?: number;
+  /** Revisionen som senast publicerades. */
+  publishedRevision?: number;
   publishedAt?: string;
   createdAt: string;
   submissions: number;

@@ -15,6 +15,8 @@ describe("websites footer/design-schema", () => {
     assert.ok(websitesSpec.columns.includes("draft_footer"));
     assert.ok(websitesSpec.columns.includes("design"));
     assert.ok(websitesSpec.columns.includes("draft_design"));
+    assert.ok(websitesSpec.columns.includes("draft_revision"));
+    assert.ok(websitesSpec.columns.includes("published_revision"));
   });
 
   it("pending schema och migrationen skapar websites.footer", () => {
@@ -23,11 +25,19 @@ describe("websites footer/design-schema", () => {
       join(here, "../../../supabase/migrations/20260831121000_22_website_footer.sql"),
       "utf8"
     );
+    const revisionMigration = readFileSync(
+      join(here, "../../../supabase/migrations/20260831140000_23_website_revisions.sql"),
+      "utf8"
+    );
     assert.match(apply, /ensureColumn\(\s*"websites",\s*"footer"/);
     assert.match(apply, /ensureColumn\(\s*"websites",\s*"draft_footer"/);
+    assert.match(apply, /ensureColumn\(\s*"websites",\s*"draft_revision"/);
+    assert.match(apply, /ensureColumn\(\s*"websites",\s*"published_revision"/);
     assert.match(apply, /ensurePendingSchema/);
     assert.match(migration, /add column if not exists footer jsonb/);
     assert.match(migration, /add column if not exists draft_footer jsonb/);
+    assert.match(revisionMigration, /draft_revision/);
+    assert.match(revisionMigration, /published_revision/);
   });
 
   it("tema-commit applicerar schema före skrivning", () => {

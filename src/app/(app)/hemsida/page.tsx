@@ -3,6 +3,7 @@ import { db } from "@/lib/store";
 import { datumTid } from "@/lib/format";
 import { DEFAULT_PRIMARY_CTA_LABEL } from "@/lib/types";
 import { draftWebsiteDesign, publishedWebsiteDesign } from "@/lib/website-design";
+import { draftWebsiteFooter } from "@/lib/website-footer";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { GenerateWebsiteForm, PublishWebsiteButton, SectionList } from "@/components/site-widgets";
 import { PrivacyPolicySettingsCard } from "@/components/privacy-policy-settings";
@@ -11,6 +12,7 @@ import { FooterSettingsCard } from "@/components/site-footer-settings";
 import { draftPrivacyPolicyState, seedCustomPrivacyPolicy } from "@/lib/website-privacy";
 import { hasUnpublishedWebsiteDrafts } from "@/lib/website-drafts";
 import { SitePreviewFrame, UtseendePanel, WebsiteDesignProvider } from "@/components/site-design-widgets";
+import { WebsiteEditorSyncProvider } from "@/components/website-editor-sync";
 import { CopyLinkButton } from "@/components/copy-button";
 import { DomainSidebarCard } from "@/components/domain-widgets";
 import { SiteEditorShell } from "@/components/site-editor-shell";
@@ -120,6 +122,18 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
       />
 
       <WebsiteDesignProvider initial={draftWebsiteDesign(site)}>
+        <WebsiteEditorSyncProvider
+          initialRevision={Math.max(site.draftRevision ?? 0, site.publishedRevision ?? 0)}
+          initialDesign={draftWebsiteDesign(site)}
+          initialFooter={draftWebsiteFooter(site)}
+          initialPrivacy={draftPrivacyPolicyState(site)}
+          initialSectionOrder={site.sections.map((section) => section.id)}
+          initialSectionVisibility={site.sections.map((section) => ({
+            id: section.id,
+            visible: section.visible !== false,
+          }))}
+          initialPrimaryCtaLabel={site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL}
+        >
         <SiteEditorShell
           preview={
             <div className="min-w-0">
@@ -206,6 +220,7 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
             </div>
           </StickyMobileActions>
         ) : null}
+        </WebsiteEditorSyncProvider>
       </WebsiteDesignProvider>
     </div>
   );
