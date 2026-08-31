@@ -4,7 +4,7 @@ import type { Domain } from "../types";
 import { logActivity } from "../services/activity";
 import { logDomainAudit } from "./audit";
 import { getBillingProvider } from "./billing";
-import { CURRENT_BUSINESS_ID, domainRuntimeMode, SE_CUSTOMER_PRICE, SE_PURCHASE_PRICE } from "./config";
+import { CURRENT_BUSINESS_ID, SE_CUSTOMER_PRICE, SE_PURCHASE_PRICE } from "./config";
 import { DomainError } from "./errors";
 import { parseHostnameInput } from "./hostname";
 import { missingRegistrantFields } from "./profile";
@@ -68,7 +68,9 @@ export async function purchaseDomain(
     hostname: parsed.hostname,
     tld: parsed.tld,
     source: "purchased",
-    registrarProvider: domainRuntimeMode() === "mock" ? "mock" : registrar.id,
+    // Providern är redan demo-/mock-medveten (registrar/index) – id:t speglar
+    // den faktiska vägen: "mock" i demo och okonfigurerade miljöer.
+    registrarProvider: registrar.id,
     status: "purchasing",
     isPrimary: !hasPrimary,
     autoRenew: true,
