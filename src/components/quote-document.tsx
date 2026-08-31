@@ -301,10 +301,6 @@ export function QuoteDocument({
         <DocTotalsBlock lines={version.lines} rot={version.rot} toPayLabel="Offertvärde" />
       </div>
 
-      {version.rot ? (
-        <TaxReductionQuoteClause terms={version.taxReductionTerms ?? getTaxReductionTerms(version.rot.type)} />
-      ) : null}
-
       {version.paymentPlan.length > 0 ? (
         <div className="mt-8">
           <p className="text-[12px] font-semibold uppercase tracking-wide text-muted">Betalningsplan</p>
@@ -325,10 +321,13 @@ export function QuoteDocument({
         </div>
       ) : null}
 
-      {/* Avtalsvillkor: alltid fullt synliga – ingen accordion, ingen modal. */}
+      {/* En villkorssektion: företagets villkor + ev. ROT/RUT som underrubrik. */}
       <div className="mt-8">
         <p className="text-[12px] font-semibold uppercase tracking-wide text-muted">Villkor</p>
         <p className="mt-1.5 whitespace-pre-line text-[13px] leading-relaxed text-soft">{version.terms}</p>
+        {version.rot ? (
+          <TaxReductionQuoteClause terms={version.taxReductionTerms ?? getTaxReductionTerms(version.rot.type)} />
+        ) : null}
       </div>
 
       {signature ? (

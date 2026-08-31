@@ -96,8 +96,14 @@ async function run(): Promise<Check[]> {
       terms: manual,
     });
     const v = currentVersion(q);
-    const ok = v.rot == null && v.taxReductionTerms == null && v.terms === manual;
-    checks.push(assert("Clause removed when ROT turned off, manual terms kept", ok, `rot=${String(v.rot)} terms=${v.terms}`));
+    const ok = v.rot == null && v.taxReductionTerms != null && v.terms === manual;
+    checks.push(
+      assert(
+        "ROT off keeps tax-terms snapshot in draft; company terms unchanged",
+        ok,
+        `rot=${String(v.rot)} snapshot=${Boolean(v.taxReductionTerms)} terms=${v.terms}`
+      )
+    );
   }
 
   reset();

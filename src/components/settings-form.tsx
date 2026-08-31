@@ -12,6 +12,7 @@ import { ImageDropzone } from "./image-dropzone";
 import { saveLogoAction, updateCompanySettingsAction } from "@/app/actions";
 import type { CompanySettings, VatRate } from "@/lib/types";
 import type { InvoiceDefaults } from "@/lib/services/settings";
+import { STANDARD_TERMS } from "@/lib/standard-quote-terms";
 import { SETTINGS_HREF, SETTINGS_TABS, type SettingsFlik } from "@/lib/settings-routes";
 import { formatOrgnr, formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "@/lib/invoices/formats";
 import {
@@ -71,6 +72,7 @@ type FormState = {
   quoteValidityDays: number;
   defaultVatRate: VatRate;
   defaultHourlyRate: string;
+  defaultQuoteTerms: string;
 };
 
 function fromInitial(initial: CompanySettings, defaults: InvoiceDefaults): FormState {
@@ -102,6 +104,7 @@ function fromInitial(initial: CompanySettings, defaults: InvoiceDefaults): FormS
     quoteValidityDays: defaults.quoteValidityDays,
     defaultVatRate: defaults.defaultVatRate,
     defaultHourlyRate: defaults.defaultHourlyRate != null ? String(defaults.defaultHourlyRate) : "",
+    defaultQuoteTerms: defaults.defaultQuoteTerms?.trim() || STANDARD_TERMS,
   };
 }
 
@@ -254,6 +257,7 @@ export function SettingsForm({
         quoteValidityDays: Number(form.quoteValidityDays),
         defaultVatRate: form.defaultVatRate,
         defaultHourlyRate: form.defaultHourlyRate.trim() === "" ? undefined : Number(form.defaultHourlyRate.replace(",", ".")),
+        defaultQuoteTerms: form.defaultQuoteTerms,
       });
       if (result.ok === false) {
         setError(result.error);
@@ -736,6 +740,19 @@ export function SettingsForm({
                   {...fieldMarkProps("quoteValidityDays", inputCls)}
                 />
                 <FieldError id="installningar-quoteValidityDays-fel">{errorFor("quoteValidityDays")}</FieldError>
+              </div>
+              <div className="mt-4">
+                <label className={labelCls} htmlFor="installningar-defaultQuoteTerms">
+                  Standardvillkor för offerter
+                </label>
+                <textarea
+                  value={form.defaultQuoteTerms}
+                  onChange={(e) => patch("defaultQuoteTerms", e.target.value)}
+                  rows={4}
+                  {...fieldMarkProps("defaultQuoteTerms", inputCls)}
+                />
+                <FieldError id="installningar-defaultQuoteTerms-fel">{errorFor("defaultQuoteTerms")}</FieldError>
+                <p className={hintCls}>Förifylls på nya offerter. Kan ändras på varje offert.</p>
               </div>
             </div>
 

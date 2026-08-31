@@ -83,6 +83,8 @@ export interface InvoiceDefaults {
   quoteValidityDays: number;
   defaultVatRate: VatRate;
   defaultHourlyRate?: number;
+  /** Standardvillkor för nya offerter. Tomt = STANDARD_TERMS vid skapande. */
+  defaultQuoteTerms?: string;
 }
 
 export function getInvoiceDefaults(): InvoiceDefaults {
@@ -94,6 +96,7 @@ export function getInvoiceDefaults(): InvoiceDefaults {
     quoteValidityDays: s.quoteValidityDays ?? 30,
     defaultVatRate: s.defaultVatRate ?? 25,
     ...(hourly.ok && hourly.value != null ? { defaultHourlyRate: hourly.value } : {}),
+    ...(s.defaultQuoteTerms?.trim() ? { defaultQuoteTerms: s.defaultQuoteTerms.trim() } : {}),
   };
 }
 
@@ -172,6 +175,7 @@ export function updateInvoiceDefaults(input: InvoiceDefaults): InvoiceDefaults {
   s.quoteValidityDays = Math.round(input.quoteValidityDays);
   s.defaultVatRate = input.defaultVatRate;
   applyHourlyRate(s, input.defaultHourlyRate);
+  applyDefaultQuoteTerms(s, input.defaultQuoteTerms);
   logActivity("Standardvärden för offerter och fakturor uppdaterades.");
   save();
   return getInvoiceDefaults();
@@ -188,6 +192,7 @@ export function updateCompanySettings(input: CompanySettingsInput): CompanySetti
   s.quoteValidityDays = Math.round(input.quoteValidityDays);
   s.defaultVatRate = input.defaultVatRate;
   applyHourlyRate(s, input.defaultHourlyRate);
+  applyDefaultQuoteTerms(s, input.defaultQuoteTerms);
   logActivity("Inställningarna uppdaterades.");
   save();
   return s;
@@ -198,6 +203,16 @@ function applyHourlyRate(s: CompanySettings, raw: unknown): void {
   if (!parsed.ok) throw new Error(parsed.message);
   if (parsed.value == null) delete s.defaultHourlyRate;
   else s.defaultHourlyRate = parsed.value;
+}
+
+function applyDefaultQuoteTerms(s: CompanySettings, raw: unknown): void {
+  const text = raw == null ? "" : String(raw);
+  const trimmed = text.trim();
+  if (!trimmed) {
+    delete s.defaultQuoteTerms;
+    return;
+  }
+  s.defaultQuoteTerms = trimmed;
 }
 
 export function suggestedVatNumber(orgNumber: string): string {
@@ -245,6 +260,7 @@ const PATCHABLE: (keyof CompanySettingsInput)[] = [
   "quoteValidityDays",
   "defaultVatRate",
   "defaultHourlyRate",
+  "defaultQuoteTerms",
 ];
 
 export const SETTINGS_FIELD_LABELS: Record<string, string> = {
@@ -273,6 +289,7 @@ export const SETTINGS_FIELD_LABELS: Record<string, string> = {
   quoteValidityDays: "Offertens giltighetstid (dagar)",
   defaultVatRate: "Vanlig momssats",
   defaultHourlyRate: "Standard timpris (kr)",
+  defaultQuoteTerms: "Standardvillkor för offerter",
 };
 
 export function applyBusinessProfilePatch(patch: Record<string, string | number | null>): CompanySettings {
@@ -305,6 +322,7 @@ export function applyBusinessProfilePatch(patch: Record<string, string | number 
     quoteValidityDays: s.quoteValidityDays ?? 30,
     defaultVatRate: s.defaultVatRate ?? 25,
     defaultHourlyRate: s.defaultHourlyRate,
+    defaultQuoteTerms: s.defaultQuoteTerms,
   };
   for (const key of PATCHABLE) {
     if (!(key in patch)) continue;
@@ -344,6 +362,7 @@ export function applyBusinessProfilePatch(patch: Record<string, string | number 
     else if (key === "payerBic") next.payerBic = String(value ?? "");
     // Logotypens autospar går den här vägen: null/tom sträng tar bort logotypen.
     else if (key === "logoDataUrl") next.logoDataUrl = value === null ? undefined : String(value);
+    else if (key === "defaultQuoteTerms") next.defaultQuoteTerms = value == null ? undefined : String(value);
   }
   return updateCompanySettings(next);
 }

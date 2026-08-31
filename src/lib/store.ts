@@ -44,14 +44,14 @@ const g = globalThis as GlobalWithDb;
 function hydrateTaxReductionTerms(data: DB): boolean {
   let changed = false;
   for (const v of data.quoteVersions) {
+    // Låsta/signerade versioner muteras aldrig – display-fallback sker i vyn.
     if (v.lockedAt) continue;
     if (v.rot && !v.taxReductionTerms) {
       Object.assign(v, taxReductionFields(v.rot));
       changed = true;
-    } else if (!v.rot && v.taxReductionTerms) {
-      v.taxReductionTerms = null;
-      changed = true;
     }
+    // !rot && taxReductionTerms: behåll snapshoten så att utkast inte tappar
+    // redigerad text när användaren slår av ROT tillfälligt.
   }
   return changed;
 }

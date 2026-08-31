@@ -191,4 +191,29 @@ describe("QuoteDocument: beskrivning före rader", () => {
     assert.ok(!html.includes("Övrig information"));
     assert.ok(html.includes(LINE_TEXT));
   });
+
+  it("en Villkor-sektion: företagsvillkor, ROT som underrubrik, inget separat kort", () => {
+    const quote = createQuote({
+      customerId: "cust-1",
+      title: "Altan",
+      lines: [labor({ description: LINE_TEXT })],
+      rot: { type: "rot" },
+      paymentPlan: [{ label: "Allt", percent: 100 }],
+      paymentTermsDays: 30,
+      validUntil: "2099-01-01",
+      terms: "Egna villkor.",
+    });
+    const html = renderToStaticMarkup(
+      createElement(QuoteDocument, {
+        company: db().settings,
+        customer: db().customers[0],
+        quote,
+        version: currentVersion(quote),
+      })
+    );
+    assert.ok(indexOf(html, "Villkor") < indexOf(html, "Egna villkor."));
+    assert.ok(indexOf(html, "Egna villkor.") < indexOf(html, "ROT/RUT-avdrag"));
+    assert.ok(html.includes("Skatteverket"));
+    assert.equal(html.includes("rounded-xl border border-line bg-canvas/50"), false);
+  });
 });

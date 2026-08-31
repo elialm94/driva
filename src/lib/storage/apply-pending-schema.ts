@@ -1,6 +1,8 @@
 /**
  * Applicerar schema som koden skriver mot när `supabase db push` inte körts.
- * Bara IF NOT EXISTS. Körs från /api/health via Vercels databas-URL.
+ * Bara IF NOT EXISTS. Körs från /api/health och före tenant-skrivningar
+ * (runWithTenant commit / createBusinessWithOwner) så att nya kolumner
+ * finns innan settings/websites skrivs – inte bara via health.
  */
 import type { SqlClient } from "./executor";
 
@@ -53,6 +55,11 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     "business_settings",
     "default_hourly_rate",
     `alter table public.business_settings add column if not exists default_hourly_rate integer`
+  );
+  await ensureColumn(
+    "business_settings",
+    "default_quote_terms",
+    `alter table public.business_settings add column if not exists default_quote_terms text`
   );
 
   await ensureColumn("websites", "design", `alter table public.websites add column if not exists design jsonb`);
