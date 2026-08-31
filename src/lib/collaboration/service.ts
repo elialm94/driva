@@ -3,6 +3,7 @@
  */
 import { db, save } from "../store";
 import { isSupabaseMode } from "../storage/config";
+import { activateOptionalFeature } from "../features";
 import {
   businessNameById,
   insertMembership,
@@ -64,6 +65,7 @@ export async function inviteCollaborator(input: {
 }): Promise<{ invitation: CollaborationInvitation; token: string; mailOk: boolean }> {
   const created = createInvitation(input);
   await persistInvitation(created.invitation);
+  activateOptionalFeature("collaboration");
   logAudit("anvandare", "samarbete_bjuden", `${input.invitedByName} bjöd in ${input.email} som ${roleLabel(input.role)}.`, {
     targetType: "inbjudan",
     targetId: created.invitation.id,

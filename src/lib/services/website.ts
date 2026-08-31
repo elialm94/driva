@@ -1,5 +1,6 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
+import { activateOptionalFeature } from "../features";
 import {
   PRIMARY_CTA_LABEL_MAX,
   type Customer,
@@ -204,6 +205,7 @@ export function generateWebsite(description: string): Website {
   data.website = website;
   logActivity(`Assistenten genererade ett hemsideutkast för ${name}.`, { entity: { type: "hemsida", id: website.id } });
   save();
+  activateOptionalFeature("website");
   return website;
 }
 

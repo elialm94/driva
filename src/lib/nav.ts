@@ -27,6 +27,15 @@ export const NAV_ITEMS: { href: string; section: NavSection; label: string }[] =
   { href: "/hemsida", section: "hemsida", label: "Hemsida" },
 ];
 
+/** Hemsida och Samarbeta syns bara när funktionen är aktiv. */
+export function visibleNavItems(features: { website: boolean; collaboration: boolean }) {
+  return NAV_ITEMS.filter((item) => {
+    if (item.section === "hemsida") return features.website;
+    if (item.section === "samarbeta") return features.collaboration;
+    return true;
+  });
+}
+
 export const KUNDER_TABS = [
   { key: "kunder", href: "/kunder?flik=kunder", label: "Kunder" },
   { key: "uppdrag", href: "/kunder?flik=uppdrag", label: "Uppdrag" },

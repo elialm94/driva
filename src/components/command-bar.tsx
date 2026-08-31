@@ -20,7 +20,9 @@ import {
   Clock,
   CornerDownLeft,
   FileText,
+  Globe,
   Hammer,
+  Handshake,
   List,
   ListTodo,
   Loader2,
@@ -124,6 +126,8 @@ const ICONS: Record<CommandIcon, typeof FileText> = {
   receipt: Receipt,
   send: Send,
   list: List,
+  globe: Globe,
+  handshake: Handshake,
 };
 
 /* ------------------------------- Interna typer -------------------------------- */

@@ -148,6 +148,12 @@ import {
 } from "@/lib/services/assistant";
 import type { Customer, WebsiteSectionItem } from "@/lib/types";
 import { hrefWithNav, type ReturnNav } from "@/lib/nav";
+import {
+  activateOptionalFeature,
+  isOptionalFeatureId,
+  optionalFeatureHref,
+  type OptionalFeatureId,
+} from "@/lib/features";
 import { headers } from "next/headers";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { requireBusiness, withBusiness, withBusinessRead, withPublicBusiness } from "@/lib/auth/session";
@@ -1137,6 +1143,23 @@ export async function generateWebsiteAction(description: string) {
     generateWebsite(description);
     refresh();
   }, { capability: "change_website" });
+}
+
+export async function activateOptionalFeatureAction(
+  id: OptionalFeatureId,
+): Promise<{ ok: true; href: string } | { ok: false; error: string }> {
+  try {
+    return await withBusiness(() => {
+      if (!isOptionalFeatureId(id)) {
+        return { ok: false, error: "Okänd funktion." } as const;
+      }
+      activateOptionalFeature(id);
+      refresh();
+      return { ok: true, href: optionalFeatureHref(id) } as const;
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Kunde inte aktivera funktionen." };
+  }
 }
 
 export async function updateSectionAction(

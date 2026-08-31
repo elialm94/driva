@@ -98,6 +98,7 @@ import {
   requestUndoExpense,
   resultatRapportResult,
 } from "./accounting-domain";
+import { activateOptionalFeature, optionalFeatureHref } from "../features";
 
 export type ToolResult = {
   ok: boolean;
@@ -106,6 +107,8 @@ export type ToolResult = {
   text?: string;
   card?: AssistantCard;
   requiresConfirmation?: boolean;
+  /** Djuplänk efter SAFE_WRITE, t.ex. aktiverad funktion. */
+  href?: string;
   /** One-shot SAFE_WRITE: klienten kan ångra utan bekräftelsekort. */
   undo?: { kind: "dismiss_reminder"; id: string };
 };
@@ -1550,11 +1553,56 @@ const specs: ToolSpec[] = [
       type: "function",
       function: {
         name: "generate_website",
-        description: "Be om bekräftelse att generera hemsideutkast. Publicerar inte.",
+        description:
+          "Be om bekräftelse att generera hemsideutkast. Aktiverar Hemsida om den inte redan är aktiv. Publicerar inte.",
         parameters: obj({ description: { type: "string" } }, ["description"]),
       },
     },
     handler: (args) => fromDomain(requestGenerateWebsite(str(args, "description") ?? ""), true),
+  },
+  {
+    requiresConfirmation: false,
+    risk: "SAFE_WRITE",
+    def: {
+      type: "function",
+      function: {
+        name: "activate_website",
+        description:
+          "Aktivera Hemsida i menyn och öppna hemsidebyggaren. Skapar inte sajten själv. Använd när användaren vill skapa en hemsida men funktionen inte är aktiv.",
+        parameters: obj({}),
+      },
+    },
+    handler: () => {
+      activateOptionalFeature("website");
+      return {
+        ok: true,
+        forModel: { feature: "website", href: optionalFeatureHref("website") },
+        text: "Hemsida är aktiverad. Du kan skapa sajten där.",
+        href: optionalFeatureHref("website"),
+      };
+    },
+  },
+  {
+    requiresConfirmation: false,
+    risk: "SAFE_WRITE",
+    def: {
+      type: "function",
+      function: {
+        name: "activate_collaboration",
+        description:
+          "Aktivera Samarbeta i menyn och öppna inbjudan till redovisningskonsult. Använd när användaren vill bjuda in sin redovisningskonsult eller revisor.",
+        parameters: obj({}),
+      },
+    },
+    handler: () => {
+      activateOptionalFeature("collaboration");
+      return {
+        ok: true,
+        forModel: { feature: "collaboration", href: optionalFeatureHref("collaboration") },
+        text: "Samarbeta är aktiverat. Du kan bjuda in din redovisningskonsult där.",
+        href: optionalFeatureHref("collaboration"),
+      };
+    },
   },
   {
     requiresConfirmation: true,

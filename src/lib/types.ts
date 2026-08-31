@@ -1809,6 +1809,15 @@ export interface DB {
      * "X har bokförts som Y n gånger". Ingen ML – bara räknade beslut.
      */
     merchantCategoryRules?: Record<string, MerchantCategoryRule>;
+    /**
+     * Explicit aktiverade valfria funktioner (Hemsida, Samarbeta).
+     * Saknas flaggan men data finns → funktionen räknas ändå som aktiv
+     * så befintliga användare inte tappar navigationen.
+     */
+    features?: {
+      website?: boolean;
+      collaboration?: boolean;
+    };
   };
 }
 

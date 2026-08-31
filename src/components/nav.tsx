@@ -21,7 +21,8 @@ import { CreateAccountRow, DemoBadge, EndDemoRow } from "./demo-controls";
 import { LogoutRow } from "./logout-button";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { enterLocalAccountantDemoAction } from "@/app/collaboration-actions";
-import { isSectionActive, NAV_ITEMS, type NavSection } from "@/lib/nav";
+import { isSectionActive, visibleNavItems, type NavSection } from "@/lib/nav";
+import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 
 const NAV_ICONS: Record<NavSection, typeof Home> = {
   hem: Home,
@@ -33,10 +34,12 @@ const NAV_ICONS: Record<NavSection, typeof Home> = {
   hemsida: Globe,
 };
 
-const NAV = NAV_ITEMS.map((item) => ({
-  ...item,
-  icon: NAV_ICONS[item.section],
-}));
+function navWithIcons(features: ResolvedOptionalFeatures) {
+  return visibleNavItems(features).map((item) => ({
+    ...item,
+    icon: NAV_ICONS[item.section],
+  }));
+}
 
 /** Tal i nav = något väntar på dig. Bara Inbox och Bokföring. 0 = ingen badge. */
 function navAttentionCount(href: string, inboxCount: number, bokforingCount: number): number {
@@ -93,6 +96,7 @@ export function Sidebar({
   localAccountantDemo = false,
   demoBadge = false,
   demoSession = false,
+  features,
 }: {
   companyName: string;
   inboxCount?: number;
@@ -106,9 +110,11 @@ export function Sidebar({
   demoBadge?: boolean;
   /** Publika demosessionen: Avsluta demo/Skapa eget konto ersätter Logga ut. */
   demoSession?: boolean;
+  features: ResolvedOptionalFeatures;
 }) {
   const pathname = usePathname();
   const settingsActive = pathname.startsWith("/installningar") || pathname.startsWith("/foretag");
+  const NAV = navWithIcons(features);
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-card/70 backdrop-blur-xl lg:flex">
@@ -199,6 +205,7 @@ export function BottomNav({
   localAccountantDemo = false,
   demoBadge = false,
   demoSession = false,
+  features,
 }: {
   canLogout?: boolean;
   inboxCount?: number;
@@ -206,9 +213,11 @@ export function BottomNav({
   localAccountantDemo?: boolean;
   demoBadge?: boolean;
   demoSession?: boolean;
+  features: ResolvedOptionalFeatures;
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const NAV = navWithIcons(features);
   const primary = NAV.slice(0, 4);
   const more = NAV.slice(4);
   const settingsActive = pathname.startsWith("/installningar") || pathname.startsWith("/foretag");
