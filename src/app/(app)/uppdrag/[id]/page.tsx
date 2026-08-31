@@ -20,6 +20,7 @@ import { JobNotes } from "@/components/job-notes";
 import { JobWorkSection, type JobWorkViewEntry } from "@/components/job-work";
 import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
 import { taxReductionCaseForJob } from "@/lib/services/tax-reduction";
+import { getInvoiceDefaults } from "@/lib/services/settings";
 import { AppLink } from "@/components/app-link";
 import { SmartBack } from "@/components/back-link";
 import { invoiceHref, newQuoteHref, quoteHref } from "@/lib/nav";
@@ -225,6 +226,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         material={actuals.filter((e) => e.type === "material").map(toView)}
         other={actuals.filter((e) => e.type === "other" || e.type === "travel").map(toView)}
         laborPrefill={laborPrefill}
+        defaultHourlyRate={getInvoiceDefaults().defaultHourlyRate}
         invoiceChoice={invoiceChoice}
       />
 

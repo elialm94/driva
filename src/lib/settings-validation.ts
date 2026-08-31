@@ -18,7 +18,7 @@ import {
  * så meddelandena kan aldrig glida isär.
  */
 
-export type SettingsTab = "foretag" | "fakturering" | "standardval";
+export type SettingsTab = "foretag" | "fakturering";
 
 export interface SettingsFieldError {
   /** Nyckel i formuläret; fält-id i UI:t är `installningar-${field}`. */
@@ -61,6 +61,24 @@ export interface SettingsDefaultsFields {
   lateInterestRate: number;
   quoteValidityDays: number;
   defaultVatRate: VatRate;
+  /** Tomt / saknas = inte satt. Annars hela kronor. */
+  defaultHourlyRate?: number | string | null;
+}
+
+/** Tolkar valfritt timpris. Tomt och 0 = inte satt. */
+export function parseOptionalHourlyRate(
+  value: unknown
+): { ok: true; value?: number } | { ok: false; message: string } {
+  if (value == null || String(value).trim() === "") return { ok: true };
+  const raw = typeof value === "number" ? value : Number(String(value).trim().replace(",", ".").replace(/\s/g, ""));
+  if (!Number.isFinite(raw)) {
+    return { ok: false, message: "Timpriset ska anges i hela kronor, t.ex. 650." };
+  }
+  const n = Math.round(raw);
+  if (n < 0) return { ok: false, message: "Timpriset kan inte vara negativt." };
+  if (n === 0) return { ok: true };
+  if (n > 1_000_000) return { ok: false, message: "Timpriset är orimligt högt." };
+  return { ok: true, value: n };
 }
 
 export function settingsProfileFieldErrors(input: SettingsProfileFields): SettingsFieldError[] {
@@ -168,7 +186,7 @@ export function settingsDefaultsFieldErrors(input: SettingsDefaultsFields): Sett
       field: "paymentTermsDays",
       label: "Betalningsvillkor",
       message: "Betalningsvillkor måste vara minst 1 dag.",
-      tab: "standardval",
+      tab: "fakturering",
     });
   }
   if (!Number.isFinite(input.lateInterestRate) || input.lateInterestRate < 0) {
@@ -176,7 +194,7 @@ export function settingsDefaultsFieldErrors(input: SettingsDefaultsFields): Sett
       field: "lateInterestRate",
       label: "Dröjsmålsränta",
       message: "Dröjsmålsränta kan inte vara negativ.",
-      tab: "standardval",
+      tab: "fakturering",
     });
   }
   if (!Number.isFinite(input.quoteValidityDays) || input.quoteValidityDays < 1) {
@@ -184,7 +202,7 @@ export function settingsDefaultsFieldErrors(input: SettingsDefaultsFields): Sett
       field: "quoteValidityDays",
       label: "Offertens giltighetstid",
       message: "Offertens giltighetstid måste vara minst 1 dag.",
-      tab: "standardval",
+      tab: "fakturering",
     });
   }
   if (!SETTINGS_VAT_RATES.includes(input.defaultVatRate)) {
@@ -192,7 +210,16 @@ export function settingsDefaultsFieldErrors(input: SettingsDefaultsFields): Sett
       field: "defaultVatRate",
       label: "Vanlig momssats",
       message: "Vanlig momssats måste vara 0, 6, 12 eller 25 %.",
-      tab: "standardval",
+      tab: "fakturering",
+    });
+  }
+  const hourly = parseOptionalHourlyRate(input.defaultHourlyRate);
+  if (!hourly.ok) {
+    errors.push({
+      field: "defaultHourlyRate",
+      label: "Standard timpris",
+      message: hourly.message,
+      tab: "fakturering",
     });
   }
   return errors;

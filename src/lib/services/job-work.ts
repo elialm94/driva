@@ -31,6 +31,7 @@ export type {
   JobWorkComparison,
 } from "../job-ui-types";
 import { lineKindFromType, syncDocLineClassification } from "../economic-line-type";
+import { resolvedHourlyRate } from "../line-defaults";
 import { currentVersion, getInvoice, getJob, jobQuote, requireCustomer } from "./data";
 import { logActivity } from "./activity";
 import { nextPaymentPlanPartForJob, remainingToInvoiceForJob } from "./attention";
@@ -233,7 +234,7 @@ export function registerJobTime(jobId: string, input: JobTimeInput): JobWorkEntr
     date: (input.date || todayISO()).slice(0, 10),
     qty: hours,
     unit: prefill?.unit || "tim",
-    unitPrice: assertMoney(input.unitPrice ?? prefill?.unitPrice ?? 0),
+    unitPrice: assertMoney(input.unitPrice ?? prefill?.unitPrice ?? resolvedHourlyRate(db().settings.defaultHourlyRate) ?? 0),
     vatRate: input.vatRate ?? prefill?.vatRate ?? defaultVat(),
     source: input.source ?? "manual",
     quotedLineItemId,

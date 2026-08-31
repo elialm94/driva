@@ -12,7 +12,7 @@ import { ImageDropzone } from "./image-dropzone";
 import { saveLogoAction, updateCompanySettingsAction } from "@/app/actions";
 import type { CompanySettings, VatRate } from "@/lib/types";
 import type { InvoiceDefaults } from "@/lib/services/settings";
-import { SETTINGS_HREF, type SettingsFlik } from "@/lib/settings-routes";
+import { SETTINGS_HREF, SETTINGS_TABS, type SettingsFlik } from "@/lib/settings-routes";
 import { formatOrgnr, formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "@/lib/invoices/formats";
 import {
   formatSwedishPostalCode,
@@ -38,13 +38,7 @@ const inputCls =
 const labelCls = "mb-1 block text-[13px] font-medium text-soft";
 const hintCls = "mt-1 text-[12px] text-muted";
 
-const TABS: { key: SettingsFlik; label: string; href: string }[] = [
-  { key: "foretag", label: "Företag", href: SETTINGS_HREF.foretag },
-  { key: "fakturering", label: "Fakturering & betalning", href: SETTINGS_HREF.fakturering },
-  { key: "standardval", label: "Standardval", href: SETTINGS_HREF.standardval },
-  { key: "funktioner", label: "Funktioner", href: SETTINGS_HREF.funktioner },
-  { key: "konto", label: "Konto", href: SETTINGS_HREF.konto },
-];
+const TABS = SETTINGS_TABS;
 
 type FormState = {
   name: string;
@@ -73,6 +67,7 @@ type FormState = {
   lateInterestRate: number;
   quoteValidityDays: number;
   defaultVatRate: VatRate;
+  defaultHourlyRate: string;
 };
 
 function fromInitial(initial: CompanySettings, defaults: InvoiceDefaults): FormState {
@@ -103,6 +98,7 @@ function fromInitial(initial: CompanySettings, defaults: InvoiceDefaults): FormS
     lateInterestRate: defaults.lateInterestRate,
     quoteValidityDays: defaults.quoteValidityDays,
     defaultVatRate: defaults.defaultVatRate,
+    defaultHourlyRate: defaults.defaultHourlyRate != null ? String(defaults.defaultHourlyRate) : "",
   };
 }
 
@@ -200,16 +196,13 @@ export function SettingsForm({
     };
   }
 
-  // Betalningsvillkor och dröjsmålsränta redigeras på två flikar; fokusera lokalt när fältet finns här.
   function renderedOnCurrentTab(e: SettingsFieldError): boolean {
-    if (e.tab === flik) return true;
-    return flik === "fakturering" && (e.field === "paymentTermsDays" || e.field === "lateInterestRate");
+    return e.tab === flik;
   }
 
   const TAB_LABELS: Record<SettingsTab, string> = {
     foretag: "Företag",
     fakturering: "Fakturering & betalning",
-    standardval: "Standardval",
   };
 
   const missingSummary: MissingRequirement[] = fieldErrors.map((e) =>
@@ -255,6 +248,7 @@ export function SettingsForm({
         lateInterestRate: Number(form.lateInterestRate),
         quoteValidityDays: Number(form.quoteValidityDays),
         defaultVatRate: form.defaultVatRate,
+        defaultHourlyRate: form.defaultHourlyRate.trim() === "" ? undefined : Number(form.defaultHourlyRate.replace(",", ".")),
       });
       if (result.ok === false) {
         setError(result.error);
@@ -269,8 +263,7 @@ export function SettingsForm({
   const firstMissingHref = readiness.blockers.find((b) => b.href)?.href;
 
   const subtitle = useMemo(() => {
-    if (flik === "fakturering") return "Uppgifter som hamnar på nya fakturor. Utfärdade fakturor ändras inte.";
-    if (flik === "standardval") return "Används när du skapar nya offerter och fakturor. Befintliga dokument ändras inte.";
+    if (flik === "fakturering") return "Betalningsuppgifter och standardvärden för nya offerter och fakturor. Befintliga dokument ändras inte.";
     if (flik === "funktioner") return "Valfria ytor som bara syns i menyn när du använder dem.";
     if (flik === "konto") return "Personligt konto är skilt från företagsuppgifterna.";
     return "Uppgifterna används på offerter, fakturor, hemsidan och i mejl. Du fyller i dem en gång.";
@@ -652,36 +645,109 @@ export function SettingsForm({
             </div>
           </Card>
 
-          <Card className="space-y-4 p-6">
-            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Standard på nya fakturor</p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className={labelCls} htmlFor="installningar-paymentTermsDays">
-                  Betalningsvillkor (dagar)
+          <Card className="space-y-5 p-6">
+            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Standard på nya dokument</p>
+            <p className={hintCls}>
+              Kopieras när du skapar en ny offert eller faktura, eller när du lägger till en ny rad. Redan skapade
+              dokument och rader ändras inte.
+            </p>
+
+            <div>
+              <p className="text-[13px] font-medium text-ink">Fakturor</p>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={labelCls} htmlFor="installningar-paymentTermsDays">
+                    Betalningsvillkor (dagar)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={form.paymentTermsDays}
+                    onChange={(e) => patch("paymentTermsDays", Number(e.target.value))}
+                    {...fieldMarkProps("paymentTermsDays", inputCls)}
+                  />
+                  <FieldError id="installningar-paymentTermsDays-fel">{errorFor("paymentTermsDays")}</FieldError>
+                </div>
+                <div>
+                  <label className={labelCls} htmlFor="installningar-lateInterestRate">
+                    Dröjsmålsränta (% per år)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={form.lateInterestRate}
+                    onChange={(e) => patch("lateInterestRate", Number(e.target.value))}
+                    {...fieldMarkProps("lateInterestRate", inputCls)}
+                  />
+                  <FieldError id="installningar-lateInterestRate-fel">{errorFor("lateInterestRate")}</FieldError>
+                  <p className={hintCls}>Kan ändras per faktura.</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[13px] font-medium text-ink">Offerter</p>
+              <div className="mt-3 max-w-xs">
+                <label className={labelCls} htmlFor="installningar-quoteValidityDays">
+                  Giltighetstid (dagar)
                 </label>
                 <input
                   type="number"
                   min={1}
-                  value={form.paymentTermsDays}
-                  onChange={(e) => patch("paymentTermsDays", Number(e.target.value))}
-                  {...fieldMarkProps("paymentTermsDays", inputCls)}
+                  value={form.quoteValidityDays}
+                  onChange={(e) => patch("quoteValidityDays", Number(e.target.value))}
+                  {...fieldMarkProps("quoteValidityDays", inputCls)}
                 />
-                <FieldError id="installningar-paymentTermsDays-fel">{errorFor("paymentTermsDays")}</FieldError>
+                <FieldError id="installningar-quoteValidityDays-fel">{errorFor("quoteValidityDays")}</FieldError>
               </div>
-              <div>
-                <label className={labelCls} htmlFor="installningar-lateInterestRate">
-                  Dröjsmålsränta (% per år)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={form.lateInterestRate}
-                  onChange={(e) => patch("lateInterestRate", Number(e.target.value))}
-                  {...fieldMarkProps("lateInterestRate", inputCls)}
-                />
-                <FieldError id="installningar-lateInterestRate-fel">{errorFor("lateInterestRate")}</FieldError>
-                <p className={hintCls}>Kan ändras per faktura.</p>
+            </div>
+
+            <div>
+              <p className="text-[13px] font-medium text-ink">Pris &amp; moms</p>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={labelCls} htmlFor="installningar-defaultHourlyRate">
+                    Standard timpris
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      inputMode="numeric"
+                      placeholder=""
+                      value={form.defaultHourlyRate}
+                      onChange={(e) => patch("defaultHourlyRate", e.target.value)}
+                      {...fieldMarkProps("defaultHourlyRate", cx(inputCls, "pr-28"))}
+                    />
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-muted"
+                    >
+                      kr/tim exkl. moms
+                    </span>
+                  </div>
+                  <FieldError id="installningar-defaultHourlyRate-fel">{errorFor("defaultHourlyRate")}</FieldError>
+                  <p className={hintCls}>Förifylls på nya arbetsrader. Kan alltid ändras.</p>
+                </div>
+                <div>
+                  <label className={labelCls} htmlFor="installningar-defaultVatRate">
+                    Vanlig momssats
+                  </label>
+                  <select
+                    id="installningar-defaultVatRate"
+                    value={form.defaultVatRate}
+                    onChange={(e) => patch("defaultVatRate", Number(e.target.value) as VatRate)}
+                    className={inputCls}
+                  >
+                    <option value={25}>25 %</option>
+                    <option value={12}>12 %</option>
+                    <option value={6}>6 %</option>
+                    <option value={0}>0 %</option>
+                  </select>
+                  <p className={hintCls}>Förifylls på nya rader. Kan ändras per rad.</p>
+                </div>
               </div>
             </div>
           </Card>
@@ -705,81 +771,12 @@ export function SettingsForm({
         </div>
       ) : null}
 
-      {flik === "standardval" ? (
-        <Card className="space-y-5 p-6">
-          <div>
-            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Fakturor</p>
-            <div className="mt-3 grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className={labelCls} htmlFor="installningar-paymentTermsDays">
-                  Betalningsvillkor (dagar)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={form.paymentTermsDays}
-                  onChange={(e) => patch("paymentTermsDays", Number(e.target.value))}
-                  {...fieldMarkProps("paymentTermsDays", inputCls)}
-                />
-                <FieldError id="installningar-paymentTermsDays-fel">{errorFor("paymentTermsDays")}</FieldError>
-              </div>
-              <div>
-                <label className={labelCls} htmlFor="installningar-lateInterestRate">
-                  Dröjsmålsränta (% per år)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={form.lateInterestRate}
-                  onChange={(e) => patch("lateInterestRate", Number(e.target.value))}
-                  {...fieldMarkProps("lateInterestRate", inputCls)}
-                />
-                <FieldError id="installningar-lateInterestRate-fel">{errorFor("lateInterestRate")}</FieldError>
-              </div>
-            </div>
-          </div>
-          <div>
-            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Offerter</p>
-            <div className="mt-3 max-w-xs">
-              <label className={labelCls} htmlFor="installningar-quoteValidityDays">
-                Standard giltighetstid (dagar)
-              </label>
-              <input
-                type="number"
-                min={1}
-                value={form.quoteValidityDays}
-                onChange={(e) => patch("quoteValidityDays", Number(e.target.value))}
-                {...fieldMarkProps("quoteValidityDays", inputCls)}
-              />
-              <FieldError id="installningar-quoteValidityDays-fel">{errorFor("quoteValidityDays")}</FieldError>
-            </div>
-          </div>
-          <div>
-            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Moms</p>
-            <div className="mt-3 max-w-xs">
-              <label className={labelCls}>Vanlig momssats</label>
-              <select
-                value={form.defaultVatRate}
-                onChange={(e) => patch("defaultVatRate", Number(e.target.value) as VatRate)}
-                className={inputCls}
-              >
-                <option value={25}>25 %</option>
-                <option value={12}>12 %</option>
-                <option value={6}>6 %</option>
-                <option value={0}>0 %</option>
-              </select>
-              <p className={hintCls}>Förifylld på nya rader. Ändras inte på redan skapade dokument.</p>
-            </div>
-          </div>
-        </Card>
-      ) : null}
-
       {flik === "funktioner" ? (
         <Card className="p-6">
           <FeatureSettingsList features={features} />
         </Card>
       ) : null}
+
 
       {flik === "konto" ? (
         <div className="space-y-5">

@@ -176,13 +176,13 @@ describe("inställningar", () => {
     assert.deepEqual(errors, []);
   });
 
-  it("standardval: betalningsvillkor och giltighetstid kräver minst 1 dag", () => {
+  it("fakturering: betalningsvillkor och giltighetstid kräver minst 1 dag", () => {
     const errors = settingsFieldErrors({ ...ok, paymentTermsDays: 0, quoteValidityDays: 0 });
     assert.deepEqual(
       errors.map((e) => e.field),
       ["paymentTermsDays", "quoteValidityDays"]
     );
-    assert.ok(errors.every((e) => e.tab === "standardval"));
+    assert.ok(errors.every((e) => e.tab === "fakturering"));
   });
 
   it("företagsnamn krävs alltid", () => {
