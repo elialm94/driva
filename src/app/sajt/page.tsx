@@ -17,7 +17,10 @@ export async function generateMetadata(props: PageProps<"/sajt">) {
   const data = db();
   const preview = searchParams.preview === "1" || searchParams.preview?.[0] === "1";
   if (!isWebsitePubliclyLive(data) && !preview) {
-    return { title: "Sidan är tillfälligt inte tillgänglig" };
+    return {
+      title: "Sidan är tillfälligt inte tillgänglig",
+      robots: { index: false, follow: false },
+    };
   }
   const site = mapped?.website ?? data.website;
   return {

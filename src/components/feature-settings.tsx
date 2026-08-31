@@ -79,6 +79,9 @@ function FeatureRow({ id, active }: { id: OptionalFeatureId; active: boolean }) 
               type="button"
               className={buttonClasses("secondary", "sm")}
               disabled={pending}
+              data-feature={id}
+              data-feature-action="deactivate"
+              aria-label={`${copy.deactivate} ${copy.title}`}
               onClick={() => setConfirmOpen(true)}
             >
               {copy.deactivate}
@@ -93,6 +96,9 @@ function FeatureRow({ id, active }: { id: OptionalFeatureId; active: boolean }) 
               type="button"
               className={buttonClasses("secondary", "sm")}
               disabled={pending}
+              data-feature={id}
+              data-feature-action="activate"
+              aria-label={`${copy.activate} ${copy.title}`}
               onClick={activate}
             >
               {pending ? "Aktiverar …" : copy.activate}
@@ -120,6 +126,8 @@ function FeatureRow({ id, active }: { id: OptionalFeatureId; active: boolean }) 
               type="button"
               className={buttonClasses("danger")}
               disabled={pending}
+              data-feature={id}
+              data-feature-action="confirm-deactivate"
               onClick={deactivate}
             >
               {pending ? "Stänger av …" : copy.deactivateConfirmAction}

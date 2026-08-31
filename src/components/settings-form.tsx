@@ -288,7 +288,7 @@ export function SettingsForm({
 
   const subtitle = useMemo(() => {
     if (flik === "fakturering") return "Betalningsuppgifter och standardvärden för nya offerter och fakturor. Befintliga dokument ändras inte.";
-    if (flik === "funktioner") return "Valfria ytor som bara syns i menyn när du använder dem.";
+    if (flik === "funktioner") return "Grundfunktionerna syns alltid. Hemsida och Samarbeta kan du stänga av utan att något raderas.";
     if (flik === "konto") return "Personligt konto är skilt från företagsuppgifterna.";
     return "Uppgifterna används på offerter, fakturor, hemsidan och i mejl. Du fyller i dem en gång.";
   }, [flik]);

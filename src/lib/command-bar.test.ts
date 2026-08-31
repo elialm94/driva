@@ -84,7 +84,9 @@ describe("matchCommands (autocomplete utan nätverk)", () => {
 
   it("”skapa en hemsida” och ”bjud in min redovisningskonsult” träffar valfria funktioner", () => {
     assert.equal(matchCommands("skapa en hemsida")[0]?.command.id, "create_website");
+    assert.equal(matchCommands("öppna hemsida")[0]?.command.id, "create_website");
     assert.equal(matchCommands("bjud in min redovisningskonsult")[0]?.command.id, "invite_accountant");
+    assert.equal(matchCommands("bjud in min revisor")[0]?.command.id, "invite_accountant");
     const website = parseCommand("skapa hemsida");
     const invite = parseCommand("bjud in redovisningskonsult");
     assert.equal(website.confidence, "high");

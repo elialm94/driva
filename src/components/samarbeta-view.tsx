@@ -113,7 +113,7 @@ export function SamarbetaView({
           </div>
           <button type="button" className={buttonClasses("primary", "md")} onClick={openInvite}>
             <UserPlus className="size-4" />
-            Bjud in
+            {empty ? "Bjud in redovisningskonsult" : "Bjud in"}
           </button>
         </div>
 

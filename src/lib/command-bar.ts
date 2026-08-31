@@ -373,6 +373,7 @@ export const COMMANDS: CommandDef[] = [
     aliases: [
       "bjud in min redovisningskonsult",
       "bjud in redovisningskonsult",
+      "bjud in min revisor",
       "bjud in revisor",
       "aktivera samarbeta",
       "öppna samarbeta",
