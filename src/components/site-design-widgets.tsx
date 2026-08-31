@@ -120,7 +120,14 @@ export function SitePreviewFrame({
           ))}
         </div>
       </div>
-      <div className={cx("site-preview-scroll max-h-[640px] overflow-y-auto", viewport !== "dator" && "bg-ink/6 py-4")}>
+      <div
+        className={cx(
+          // Preview är huvudytan: fyll viewporten på desktop, håll en rimlig
+          // höjd på mobil/tablet utan att krympa typografin i sajten.
+          "site-preview-scroll max-h-[70dvh] overflow-y-auto @min-[64rem]:max-h-[calc(100dvh-10.5rem)]",
+          viewport !== "dator" && "bg-ink/6 py-4",
+        )}
+      >
         <div
           className={cx("mx-auto min-h-full transition-[max-width] duration-200", viewport !== "dator" && "shadow-pop")}
           style={{ maxWidth: active.width }}
@@ -301,7 +308,7 @@ export function UtseendePanel({
       <p className="mt-3 text-[12px] leading-relaxed text-muted">
         {unpublishedChanges && published
           ? "Nytt utseende i förhandsvisningen – sajten uppdateras när du klickar Publicera ändringar."
-          : "Ditt innehåll följer alltid med när du byter utseende."}
+          : "Välj känslan som passar ditt företag – innehållet är detsamma i alla teman."}
       </p>
     </div>
   );
