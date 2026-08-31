@@ -1,8 +1,27 @@
 /**
  * Applicerar schema som koden skriver mot när `supabase db push` inte körts.
- * Bara IF NOT EXISTS. Körs från /api/health via Vercels databas-URL.
+ * Bara IF NOT EXISTS. Körs från /api/health och före tenant-commits så att
+ * t.ex. websites.footer finns innan upsert – annars faller tema-sparning
+ * med "column footer does not exist" och UI rullar tillbaka utkastet.
  */
 import type { SqlClient } from "./executor";
+
+let schemaEnsured = false;
+
+/** Testkrok: nästa ensure kör apply igen (ny klient / annan databas). */
+export function resetPendingSchemaGuard(): void {
+  schemaEnsured = false;
+}
+
+/**
+ * Idempotent: första skrivningen i processen lägger till saknade kolumner
+ * (footer, draft_design, …). Misslyckad apply cachas inte – nästa commit försöker igen.
+ */
+export async function ensurePendingSchema(client: SqlClient): Promise<void> {
+  if (schemaEnsured) return;
+  await applyPendingPageLoadSchema(client);
+  schemaEnsured = true;
+}
 
 function isBenignSchemaError(err: unknown): boolean {
   const code = (err as { code?: string } | null)?.code;

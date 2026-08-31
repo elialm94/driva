@@ -221,17 +221,20 @@ export function UtseendePanel({
   const router = useRouter();
   // Senast sparade utseende – återställningspunkt om servern säger nej.
   const savedRef = useRef(design);
+  const applySeq = useRef(0);
 
   function apply(next: WebsiteDesign) {
     if (sameDesign(next, design)) return;
     const previous = savedRef.current;
+    const seq = ++applySeq.current;
     setDesign(next); // förhandsvisningen byter omedelbart
     setError(null);
     startTransition(async () => {
       const result = await setWebsiteDesignAction(next);
+      if (seq !== applySeq.current) return;
       if (result.ok === false) {
         setDesign(sameDesign(previous, publishedDesign) ? null : previous);
-        setError(result.error);
+        setError(result.error || "Kunde inte spara ändringen. Försök igen.");
         return;
       }
       savedRef.current = next;
@@ -255,6 +258,8 @@ export function UtseendePanel({
               aria-checked={selected}
               tabIndex={selected ? 0 : -1}
               onClick={() => apply({ themeId: id, accent: design.accent })}
+              data-theme-id={id}
+              data-selected={selected ? "true" : "false"}
               className={cx(
                 "rounded-xl border p-1.5 text-left transition-all",
                 selected

@@ -222,6 +222,21 @@ describe("temabyte: utkast → publicera, innehållet orört", () => {
     assert.deepEqual(publishedWebsiteDesign(site), { themeId: "minimal", accent: "svart" });
   });
 
+  it("pausad hemsida kan fortfarande byta utkast-tema", () => {
+    db().meta.websitePausedAt = "2026-08-31T10:00:00.000Z";
+    setWebsiteDesign({ themeId: "robust", accent: "sand" });
+    assert.deepEqual(db().website!.draftDesign, { themeId: "robust", accent: "sand" });
+    assert.deepEqual(publishedWebsiteDesign(db().website!), { themeId: "klassisk", accent: "tegel" });
+    assert.equal(db().meta.websitePausedAt, "2026-08-31T10:00:00.000Z");
+  });
+
+  it("temabyte rör inte sidfotens utkast", () => {
+    db().website!.draftFooter = { showPhone: false, social: { instagram: "https://instagram.com/x" } };
+    const before = JSON.stringify(db().website!.draftFooter);
+    setWebsiteDesign({ themeId: "robust", accent: "sand" });
+    assert.equal(JSON.stringify(db().website!.draftFooter), before);
+  });
+
   it("okänt tema eller accent avvisas", () => {
     assert.throws(() => setWebsiteDesign({ themeId: "neon", accent: "tegel" }), /Okänt tema/);
     assert.throws(() => setWebsiteDesign({ themeId: "modern", accent: "rosa" }), /Okänd accentfärg/);
