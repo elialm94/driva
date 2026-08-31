@@ -117,30 +117,19 @@ export default async function WebsitePage() {
             </div>
           }
           innehall={
-            <div className="min-w-0">
-              <Card className="min-w-0 overflow-hidden">
-                <SectionList
-                  sections={listSections}
-                  labels={SECTION_LABELS}
-                  primaryCtaLabel={site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL}
-                  businessContact={businessContact}
-                />
-              </Card>
-              <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                Dra för att ändra ordning. Klicka för att redigera. Dolda sektioner syns inte på sajten, men
-                innehållet sparas.
-              </p>
-            </div>
+            <Card className="min-w-0 overflow-hidden">
+              <SectionList
+                sections={listSections}
+                labels={SECTION_LABELS}
+                primaryCtaLabel={site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL}
+                businessContact={businessContact}
+              />
+            </Card>
           }
           design={
-            <div className="min-w-0">
-              <p className="mb-3 text-[13px] leading-relaxed text-soft">
-                Välj känslan som passar ditt företag – innehållet är detsamma i alla teman.
-              </p>
-              <Card className="min-w-0">
-                <UtseendePanel publishedDesign={publishedWebsiteDesign(site)} published={published} />
-              </Card>
-            </div>
+            <Card className="min-w-0">
+              <UtseendePanel publishedDesign={publishedWebsiteDesign(site)} published={published} />
+            </Card>
           }
           installningar={
             <div className="min-w-0 space-y-3">
