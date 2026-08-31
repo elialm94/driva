@@ -18,6 +18,8 @@ export function LinkedToBox({ view }: { view: DocumentLinkView }) {
   const [open, setOpen] = useState(false);
   const [optimistic, setOptimistic] = useState<DocumentLinkJob | null | undefined>(undefined);
   const job = optimistic === undefined ? view.job : optimistic;
+  const canAct =
+    view.canChange || (view.canLink && !job) || (view.canUnlink && Boolean(job));
 
   function afterLink(next: DocumentLinkJob) {
     setOptimistic(next);
@@ -54,7 +56,7 @@ export function LinkedToBox({ view }: { view: DocumentLinkView }) {
             Offert #{view.quote.number}
           </Link>
         ) : null}
-        {view.canLink || view.canUnlink ? (
+        {canAct ? (
           <div className="px-4 py-2.5">
             <button
               type="button"
@@ -66,7 +68,7 @@ export function LinkedToBox({ view }: { view: DocumentLinkView }) {
           </div>
         ) : null}
       </Card>
-      {view.canLink || view.canUnlink ? (
+      {canAct ? (
         <LinkToJobDialog
           view={view}
           open={open}
