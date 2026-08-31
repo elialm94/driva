@@ -2,7 +2,7 @@ import { db, save } from "../store";
 import { uid } from "../ids";
 import type { BankIDOrder, BankIDSignature, Quote } from "../types";
 import { quoteVersionHash } from "../hash";
-import { sellerSnapshot } from "../invoices/snapshot";
+import { buyerSnapshot, sellerSnapshot } from "../invoices/snapshot";
 import { currentVersion, getQuote, requireCustomer } from "./data";
 import { logActivity } from "./activity";
 import { createJobFromQuote } from "./jobs";
@@ -148,6 +148,9 @@ export function finalizeApproval(order: BankIDOrder): BankIDSignature {
   // 1. Lås exakt den version kunden signerade.
   if (!version.sellerSnapshot) {
     version.sellerSnapshot = sellerSnapshot(data.settings);
+  }
+  if (!version.buyerSnapshot) {
+    version.buyerSnapshot = buyerSnapshot(customer);
   }
   version.lockedAt = now;
   version.contentHash = quoteVersionHash(version);

@@ -24,6 +24,7 @@ import { Badge, ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx }
 import { QuoteStatusBadge, InvoiceStatusBadge } from "@/components/status";
 import { QuoteDocument } from "@/components/quote-document";
 import { ActionMenu, PageActions } from "@/components/action-menu";
+import { QuotePdfMenuItem } from "@/components/quote-pdf-menu-item";
 import { CopyLinkButton } from "@/components/copy-button";
 import { CreatePartInvoiceButton, FollowUpButton } from "@/components/money-widgets";
 import { QuoteDraftSend } from "@/components/quote-draft-send";
@@ -85,6 +86,9 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   const doc = (
     <QuoteDocument company={data.settings} customer={customer} quote={quote} version={version} signature={signature} />
   );
+
+  // Utskrifts-/PDF-vyn finns för allt som inte är utkast (samma regel som kundvyn).
+  const pdfMenuItem = <QuotePdfMenuItem href={`${publicPath}/pdf`} />;
 
   return (
     <div className="animate-fade-up">
@@ -149,6 +153,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               </a>
               <ActionMenu>
                 <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
+                {pdfMenuItem}
               </ActionMenu>
             </PageActions>
           ) : null}
@@ -169,6 +174,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               </a>
               <ActionMenu>
                 <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
+                {pdfMenuItem}
               </ActionMenu>
             </PageActions>
           ) : null}

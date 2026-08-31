@@ -4,6 +4,7 @@ import { customerInvoiceRotPrefill } from "@/lib/services/tax-reduction";
 import { getJob } from "@/lib/services/data";
 import { tillaggQuoteFromInvoice } from "@/lib/services/invoice-quote-deviation";
 import { quotePrefillFromJob } from "@/lib/services/job-work";
+import { plainTextToRichText } from "@/lib/quote-description";
 import { PageHeader } from "@/components/ui";
 import { QuoteForm, type QuoteFormInitial } from "@/components/doc-form";
 import { SmartBack } from "@/components/back-link";
@@ -39,7 +40,6 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
   const jobInitial: QuoteFormInitial | undefined = job
     ? {
         title: jobPrefill?.title ?? job.title,
-        intro: jobPrefill?.intro || job.originalMessage || job.description,
         lines: jobPrefill?.lines ?? [],
         rot: null,
         paymentPlan: [{ label: "Betalning när arbetet är klart", percent: 100 }],
@@ -47,13 +47,14 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
         lateInterestRate: defaults.lateInterestRate,
         validUntil: defaults.validUntil,
         terms: defaults.terms,
+        // Uppdragets beskrivning som stycken i offertens enda beskrivningsfält.
+        richText: plainTextToRichText(jobPrefill?.description || job.originalMessage || job.description),
       }
     : undefined;
 
   const initial: QuoteFormInitial | undefined = tillagg
     ? {
         title: tillagg.title,
-        intro: tillagg.intro,
         lines: tillagg.lines,
         rot: null,
         paymentPlan: [{ label: "Betalning när arbetet är klart", percent: 100 }],
@@ -61,6 +62,7 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
         lateInterestRate: defaults.lateInterestRate,
         validUntil: defaults.validUntil,
         terms: defaults.terms,
+        richText: plainTextToRichText(tillagg.description),
       }
     : jobInitial;
 

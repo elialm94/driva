@@ -26,7 +26,6 @@ function quoteInput(over: Partial<QuoteInput> = {}): QuoteInput {
   return {
     customerId: over.customerId ?? "cust-1",
     title: over.title ?? "Köksrenovering",
-    intro: over.intro ?? "",
     lines: over.lines ?? [labor({ unitPrice: 20_000 })],
     rot: over.rot === undefined ? { type: "rot" } : over.rot,
     workLocationId: over.workLocationId,

@@ -55,7 +55,6 @@ function approvedQuote(
   const quote = createQuote({
     customerId: "cust-1",
     title: over.title ?? "ROT-kök",
-    intro: "Byte av luckor enligt offert.",
     lines,
     rot: over.rot === "rot" ? { type: "rot" } : null,
     paymentPlan: over.paymentPlan ?? [{ label: "När arbetet är klart", percent: 100 }],
@@ -231,7 +230,6 @@ describe("§41 fristående faktura vs kopplad sökväg", () => {
     const quote = createQuote({
       customerId: "cust-1",
       title: "Väntar",
-      intro: "",
       lines: [labor({ unitPrice: 1000 })],
       rot: null,
       paymentPlan: [{ label: "Klart", percent: 100 }],

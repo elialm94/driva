@@ -39,7 +39,8 @@ export interface QuoteDeviation {
 export interface TillaggQuotePrefill {
   customerId: string;
   title: string;
-  intro: string;
+  /** Ren text till offertens beskrivning – görs om till rik text i editorn. */
+  description: string;
   lines: DocLine[];
   note: string;
   quoteNumber: number;
@@ -246,7 +247,7 @@ export function tillaggQuoteFromInvoice(invoiceId: string): TillaggQuotePrefill 
   return {
     customerId: invoice.customerId,
     title: `Tillägg – ${titleBase}`,
-    intro: `Tillägg till tidigare BankID-godkänd offert #${quote.number} (${titleBase}). Avser ${extrasNote}.`,
+    description: `Tillägg till tidigare BankID-godkänd offert #${quote.number} (${titleBase}). Avser ${extrasNote}.`,
     lines,
     note: `Förifylld från avvikelsen mot offert #${quote.number}. Kunden behöver godkänna tillägget med BankID innan det blir en ny låst referens.`,
     quoteNumber: quote.number,

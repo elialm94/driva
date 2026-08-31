@@ -143,7 +143,6 @@ describe("QuoteDocument: beskrivning före rader", () => {
     const quote = createQuote({
       customerId: "cust-1",
       title: "Altan",
-      intro: "Kort ingress.",
       lines: [labor({ description: LINE_TEXT, unitPrice: 8000 })],
       rot: null,
       paymentPlan: [{ label: "Allt", percent: 100 }],
@@ -163,7 +162,8 @@ describe("QuoteDocument: beskrivning före rader", () => {
     assert.ok(indexOf(html, "Altan") < indexOf(html, DESC_HEADING));
     assert.ok(indexOf(html, DESC_HEADING) < indexOf(html, LINE_TEXT));
     assert.ok(indexOf(html, DESC_BODY) < indexOf(html, LINE_TEXT));
-    assert.ok(indexOf(html, LINE_TEXT) < indexOf(html, "Att betala"));
+    // Offertens huvudtotal heter "Offertvärde" – inget betalas vid signeringen.
+    assert.ok(indexOf(html, LINE_TEXT) < indexOf(html, "Offertvärde"));
     assert.ok(!html.includes("Övrig information"));
     assert.ok(!html.includes("ÖVRIG INFORMATION"));
   });
@@ -172,7 +172,6 @@ describe("QuoteDocument: beskrivning före rader", () => {
     const quote = createQuote({
       customerId: "cust-1",
       title: "Altan",
-      intro: "Kort ingress.",
       lines: [labor({ description: LINE_TEXT })],
       rot: null,
       paymentPlan: [{ label: "Allt", percent: 100 }],

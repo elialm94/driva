@@ -114,11 +114,33 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
         ) : null}
 
         <div className="overflow-hidden rounded-3xl border border-line bg-white shadow-card">
-          <QuoteDocument company={data.settings} customer={customer} quote={quote} version={version} signature={signature} />
+          <QuoteDocument
+            company={data.settings}
+            customer={customer}
+            quote={quote}
+            version={version}
+            signature={signature}
+            acceptance={
+              // Dokumentets avslutning: godkännandet hör hemma i dokumentet,
+              // inte bara i den flytande bottenlisten.
+              canSign ? (
+                <BankIDApproval
+                  token={quote.token}
+                  quoteNumber={quote.number}
+                  toPay={kr(totals.toPay)}
+                  companyName={seller.name}
+                />
+              ) : undefined
+            }
+          />
         </div>
 
         <p className="mt-6 text-center text-[12px] text-muted">
           Skickad med Driva · Frågor? Kontakta {seller.name} på {seller.email}
+          <br />
+          <a href={`/offert/${quote.token}/pdf`} target="_blank" rel="noreferrer" className="mt-1 inline-block font-medium text-soft underline-offset-2 hover:text-ink hover:underline">
+            Skriv ut eller spara som PDF
+          </a>
         </p>
         <div className="h-28" />
       </main>
@@ -127,8 +149,9 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
         <div className="fixed inset-x-0 bottom-0 border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
           <div className="mx-auto flex max-w-3xl flex-col gap-2.5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div className="flex items-center justify-between gap-3 sm:block">
+              {/* Inget betalas vid signeringen – beloppet är offertens värde. */}
               <p className="text-[14px] font-medium">
-                Att betala: <span className="font-semibold">{kr(totals.toPay)}</span>
+                Offertvärde: <span className="font-semibold">{kr(totals.toPay)}</span>
               </p>
               <DeclineQuoteButton token={quote.token} />
             </div>

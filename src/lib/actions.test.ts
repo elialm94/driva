@@ -54,7 +54,6 @@ function approveQuote(opts: {
     customerId: job.customerId,
     jobId: job.id,
     title: opts.title,
-    intro: opts.title,
     lines: [labor({ unitPrice: 10_000 })],
     rot: opts.rot ? { type: "rot" } : null,
     paymentPlan: opts.paymentPlan,
@@ -152,7 +151,6 @@ describe("åtgärdsmotorn: offerter", () => {
     const quote = createQuote({
       customerId: "cust-1",
       title: "Altan",
-      intro: "",
       lines: [labor({ unitPrice: 20_000 })],
       rot: null,
       paymentPlan: [],
@@ -202,7 +200,6 @@ describe("åtgärdsmotorn: offerter", () => {
     const draft = createQuote({
       customerId: "cust-1",
       title: "Utkast",
-      intro: "",
       lines: [labor()],
       rot: null,
       paymentPlan: [],
@@ -858,7 +855,6 @@ describe("åtgärdsmotorn: rankning, snooze och kontrolldeklaration", () => {
       customerId: "cust-1",
       jobId: job.id,
       title: job.title,
-      intro: job.description,
       lines: [labor({ unitPrice: 8000 })],
       rot: null,
       paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
@@ -876,7 +872,6 @@ describe("åtgärdsmotorn: rankning, snooze och kontrolldeklaration", () => {
     const quote = createQuote({
       customerId: "cust-1",
       title: "Altan",
-      intro: "",
       lines: [labor({ unitPrice: 20_000 })],
       rot: null,
       paymentPlan: [],

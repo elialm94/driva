@@ -10,7 +10,7 @@ import { logActivity } from "./activity";
 import { taxReductionFields } from "../tax-reduction-terms";
 import { rotWithAmounts } from "../tax-reduction-amount";
 import { syncDocLineClassification } from "../economic-line-type";
-import { sellerSnapshot } from "../invoices/snapshot";
+import { buyerSnapshot, sellerSnapshot } from "../invoices/snapshot";
 import { missingEmailForSend } from "../customer-validation";
 import { collectSellerBlockers } from "../invoices/validate";
 import {
@@ -27,7 +27,6 @@ export interface QuoteInput {
   /** Bostad som ROT/RUT på offerten gäller. Sparas på offerten, inte på versionen. */
   workLocationId?: string;
   title: string;
-  intro: string;
   lines: DocLine[];
   rot: RotRut | null;
   paymentPlan: PaymentPlanPart[];
@@ -35,7 +34,10 @@ export interface QuoteInput {
   lateInterestRate?: number;
   validUntil: string;
   terms: string;
-  /** Beskrivning – saneras alltid serverside (vitlista, se lib/richtext). */
+  /**
+   * Beskrivning – offertens enda fritextfält (samma modell som fakturan).
+   * Saneras alltid serverside (vitlista, se lib/richtext).
+   */
   richText?: RichTextDoc;
 }
 
@@ -55,7 +57,6 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
     quoteId,
     version: 1,
     title: input.title,
-    intro: input.intro,
     lines: input.lines.map((l) => syncDocLineClassification({ ...l })),
     paymentPlan: input.paymentPlan,
     paymentTermsDays: input.paymentTermsDays,
@@ -160,7 +161,11 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
     );
   } else {
     Object.assign(version, input, taxReductionFields(rotWithAmounts(input.rot, input.lines, { documentKind: "offert" })));
+    // Legacy-fältet skrivs aldrig igen – och en gammal intro får inte ligga
+    // kvar bredvid den redigerade beskrivningen (dubblerad text i dokumentet).
+    delete version.intro;
     version.sellerSnapshot = undefined;
+    version.buyerSnapshot = undefined;
     if (quote.status === "skickad") {
       quote.status = "utkast";
       quote.sentAt = undefined;
@@ -294,6 +299,8 @@ export function sendQuote(quoteId: string, delivery: QuoteDeliveryInfo = MOCK_DE
   if (!version.lockedAt) {
     Object.assign(version, taxReductionFields(rotWithAmounts(version.rot, version.lines, { documentKind: "offert", mode: "clamp" })));
     version.sellerSnapshot = sellerSnapshot(db().settings);
+    // Frys även kunduppgifterna – dokumentet ska visa adressen kunden fick.
+    version.buyerSnapshot = buyerSnapshot(customer);
   }
   const t = docTotals(version.lines, version.rot);
   quote.status = "skickad";

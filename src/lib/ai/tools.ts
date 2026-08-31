@@ -1,6 +1,8 @@
 import { db } from "../store";
 import { uid } from "../ids";
 import { kr } from "../format";
+import { quoteDescriptionDoc } from "../quote-description";
+import { richTextToPlain } from "../richtext";
 import type { AssistantCard, Customer, Job, Reminder, ReminderRelatedType } from "../types";
 import {
   DAYPARTS,
@@ -817,7 +819,7 @@ const specs: ToolSpec[] = [
         ok: true,
         forModel: {
           ...compactQuote(q),
-          intro: v.intro.slice(0, 240),
+          description: richTextToPlain(quoteDescriptionDoc(v)).slice(0, 240),
           lineCount: v.lines.length,
         },
       };

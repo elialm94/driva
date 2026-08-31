@@ -13,6 +13,7 @@ import type {
 } from "../types";
 import { createCustomer } from "../services/customers";
 import { createQuote, quoteDefaults } from "../services/quotes";
+import { plainTextToRichText } from "../quote-description";
 import { createJob, deleteOrArchiveJob, findMatchingUnquotedJob, jobRemovalPolicy, reopenJob, setJobStatus } from "../services/jobs";
 import { findWorkLocationByHint, formatLocationAddress, workLocationToHousing, workLocationsForModel } from "../services/work-locations";
 import { createFinalInvoiceForJob, createInvoice, createInvoiceForJob, createNextInvoiceForJob, discardInvoice, updateInvoice, type InvoiceInput, type JobInvoiceBasis } from "../services/invoices";
@@ -157,6 +158,7 @@ export function createQuoteDraft(input: {
   customerId: string;
   title: string;
   amountInclVat?: number;
+  /** Ren text till offertens beskrivning – blir stycken i rik text-fältet. */
   intro?: string;
   percentAtStart?: number;
   rot?: "rot" | "rut" | null;
@@ -170,7 +172,7 @@ export function createQuoteDraft(input: {
     findMatchingUnquotedJob(input.customerId, input.title);
   const title = input.title.trim() || job?.title || "Offererat arbete";
   const genericIntro = !input.intro || /enligt överenskommelse/i.test(input.intro);
-  const intro =
+  const description =
     job && genericIntro
       ? job.originalMessage || job.description || `${title} enligt överenskommelse.`
       : (input.intro ?? `${title} enligt överenskommelse.`);
@@ -188,7 +190,7 @@ export function createQuoteDraft(input: {
         customerId: customer.id,
         jobId: job?.id,
         title,
-        intro,
+        richText: plainTextToRichText(description),
         lines: [classifiedLine(title, input.amountInclVat ?? 0)],
         rot,
         paymentPlan: percent
