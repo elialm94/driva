@@ -43,7 +43,8 @@ import { normalizePrivacyPolicySupplement } from "../website-privacy";
 import { logActivity } from "./activity";
 import { findOrCreateCustomerByEmail } from "./customers";
 import { createJob, titleFromIncomingMessage } from "./jobs";
-import { getBusinessProfile, getWebsiteNotificationEmail, isEmailFormat } from "./settings";
+import { getBusinessProfile, isEmailFormat } from "./settings";
+import { resolveWebsiteFormRecipient } from "../website-form-recipient";
 import { absoluteAppUrl, mailFromAddress, sendMail, type MailMessage } from "../mail";
 import { newQuoteHref } from "../nav";
 
@@ -819,7 +820,8 @@ export async function deliverWebsiteJobNotification(jobId: string): Promise<bool
   if (job.notification?.status === "sent") return true;
   const customer = db().customers.find((c) => c.id === job.customerId);
   if (!customer) return false;
-  const to = getWebsiteNotificationEmail();
+  const settings = getBusinessProfile();
+  const to = resolveWebsiteFormRecipient(settings, settings);
   if (!to) {
     markJobNotification(job, { ok: false, error: "Ingen e-postadress att skicka till." });
     return false;

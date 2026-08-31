@@ -22,8 +22,8 @@ export interface CompanySettings {
   vatNumber: string;
   email: string;
   /**
-   * Vart nya uppdrag från hemsidans formulär mejlas.
-   * Tomt = samma som `email`. Ändras inte när den publika kontaktadressen ändras.
+   * Egen mottagare för hemsidans kontaktformulär (Hemsida → Webbformulär).
+   * Tomt/samma som `email` = följ företagets kontaktmail. Redigeras inte här.
    */
   websiteNotificationEmail?: string;
   phone: string;

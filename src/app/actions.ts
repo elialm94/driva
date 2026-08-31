@@ -47,7 +47,12 @@ import {
   setTaxReductionDecision,
 } from "@/lib/services/tax-reduction";
 import type { DwellingType, PaymentDetailsMethod, TaxReductionDetails } from "@/lib/types";
-import { applyBusinessProfilePatch, updateCompanySettings, type CompanySettingsInput } from "@/lib/services/settings";
+import {
+  applyBusinessProfilePatch,
+  updateCompanySettings,
+  updateWebsiteFormRecipient,
+  type CompanySettingsInput,
+} from "@/lib/services/settings";
 import { createCustomer, updateCustomer, updateCustomerNotes } from "@/lib/services/customers";
 import {
   approveInboxExtraction,
@@ -1417,6 +1422,20 @@ export async function updatePrivacyPolicySupplementAction(
     }
     refresh();
     return { ok: true } as const;
+  }, { capability: "change_website" });
+}
+
+export async function updateWebsiteFormRecipientAction(
+  email: string | null,
+): Promise<{ ok: true; recipient: string } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const recipient = updateWebsiteFormRecipient(email);
+      refresh();
+      return { ok: true, recipient } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara." } as const;
+    }
   }, { capability: "change_website" });
 }
 
