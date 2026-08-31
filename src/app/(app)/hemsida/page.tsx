@@ -7,6 +7,7 @@ import { draftWebsiteDesign, publishedWebsiteDesign } from "@/lib/website-design
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { GenerateWebsiteForm, PublishWebsiteButton, SectionList } from "@/components/site-widgets";
 import { PrivacyPolicySettingsCard } from "@/components/privacy-policy-settings";
+import { FooterSettingsCard } from "@/components/site-footer-settings";
 import { SitePreviewFrame, UtseendePanel, WebsiteDesignProvider } from "@/components/site-design-widgets";
 import { CopyLinkButton } from "@/components/copy-button";
 import { DomainSidebarCard } from "@/components/domain-widgets";
@@ -203,7 +204,10 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
 
           <div>
             <SectionTitle>Sidfot</SectionTitle>
-            <Card className="px-5 py-4">
+            <Card className="min-w-0 px-5 py-4">
+              <FooterSettingsCard website={site} company={data.settings} published={published} />
+            </Card>
+            <Card className="mt-3 min-w-0 px-5 py-4">
               <PrivacyPolicySettingsCard
                 company={data.settings}
                 businessName={site.businessName}
@@ -211,8 +215,8 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
               />
             </Card>
             <p className="mt-2 text-[12px] leading-relaxed text-muted">
-              Länken Integritetspolicy ligger i sidfoten. Formuläret informerar besökaren – ingen
-              samtyckesruta.
+              Sidfoten fylls i från företagsuppgifter och Tjänster. Integritetspolicy ligger alltid
+              längst ner.
             </p>
           </div>
 

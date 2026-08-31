@@ -10,6 +10,7 @@ import {
   type WebsiteImagePosition,
   type WebsiteSection,
   type WebsiteSectionItem,
+  type WebsiteFooter,
   type WebsiteTheme,
 } from "../types";
 import {
@@ -19,6 +20,7 @@ import {
   publishedWebsiteDesign,
   sameDesign,
 } from "../website-design";
+import { assertWebsiteFooter, publishedWebsiteFooter, sameFooter } from "../website-footer";
 import {
   addableTypesFor,
   assertCtaDestination,
@@ -649,6 +651,24 @@ export function setWebsiteDesign(input: { themeId: unknown; accent: unknown }): 
   return design;
 }
 
+/**
+ * Sidfotens inställningar. Sparas som UTKAST: förhandsvisningen uppdateras
+ * direkt, den publika sajten först vid "Publicera ändringar". Kontakt,
+ * tjänster och logotyp hämtas fortfarande live – de kopieras inte in.
+ */
+export function setWebsiteFooter(input: unknown): WebsiteFooter {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att uppdatera");
+  const footer = assertWebsiteFooter((input ?? {}) as Parameters<typeof assertWebsiteFooter>[0]);
+  if (sameFooter(footer, publishedWebsiteFooter(site))) {
+    delete site.draftFooter;
+  } else {
+    site.draftFooter = footer;
+  }
+  touchSite(site);
+  return footer;
+}
+
 export function updatePrivacyPolicySupplement(raw: string): void {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
@@ -669,6 +689,10 @@ export function publishWebsite(): Website {
     logActivity(`Hemsidans utseende byttes till ${theme.namn} med accentfärgen ${accent.namn.toLowerCase()}.`, {
       entity: { type: "hemsida", id: site.id },
     });
+  }
+  if (site.draftFooter) {
+    site.footer = site.draftFooter;
+    delete site.draftFooter;
   }
   site.status = "publicerad";
   site.publishedAt = new Date().toISOString();

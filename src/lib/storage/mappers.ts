@@ -1233,7 +1233,7 @@ export const websitesSpec: TableSpec<Website> = {
   pk: ["id"],
   columns: [
     "id", "business_id", "slug", "business_name", "tagline", "city", "status", "theme",
-    "design", "draft_design", "sections", "primary_cta", "privacy_policy_supplement",
+    "design", "draft_design", "footer", "draft_footer", "sections", "primary_cta", "privacy_policy_supplement",
     "published_at", "submissions", "created_at",
   ],
   toRow: (w, businessId) => ({
@@ -1247,6 +1247,8 @@ export const websitesSpec: TableSpec<Website> = {
     theme: w.theme,
     design: jsonParamOrNull(w.design),
     draft_design: jsonParamOrNull(w.draftDesign),
+    footer: jsonParamOrNull(w.footer),
+    draft_footer: jsonParamOrNull(w.draftFooter),
     sections: jsonParam(w.sections),
     primary_cta: jsonParamOrNull(w.primaryCta),
     privacy_policy_supplement: w.privacyPolicySupplement ?? null,
@@ -1264,6 +1266,8 @@ export const websitesSpec: TableSpec<Website> = {
     theme: r.theme as Website["theme"],
     ...opt("design", jsonOrU<NonNullable<Website["design"]>>(r.design)),
     ...opt("draftDesign", jsonOrU<NonNullable<Website["draftDesign"]>>(r.draft_design)),
+    ...opt("footer", jsonOrU<NonNullable<Website["footer"]>>(r.footer)),
+    ...opt("draftFooter", jsonOrU<NonNullable<Website["draftFooter"]>>(r.draft_footer)),
     sections: jsonVal<Website["sections"]>(r.sections),
     ...opt("primaryCta", jsonOrU<NonNullable<Website["primaryCta"]>>(r.primary_cta)),
     ...opt("privacyPolicySupplement", strOrU(r.privacy_policy_supplement)),

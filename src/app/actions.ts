@@ -133,6 +133,7 @@ import {
   sectionImages,
   setSectionVisible,
   setWebsiteDesign,
+  setWebsiteFooter,
   submitContactForm,
   updatePrivacyPolicySupplement,
   updateSection,
@@ -1380,6 +1381,30 @@ export async function setWebsiteDesignAction(input: {
     }, { capability: "change_website" });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara utseendet." };
+  }
+}
+
+export async function setWebsiteFooterAction(input: {
+  showPhone?: boolean;
+  showEmail?: boolean;
+  showAddress?: boolean;
+  showServices?: boolean;
+  showLogo?: boolean;
+  aboutText?: string;
+  social?: { instagram?: string; facebook?: string; tiktok?: string };
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    return await withBusiness(() => {
+      try {
+        setWebsiteFooter(input);
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara sidfoten." } as const;
+      }
+      refresh();
+      return { ok: true } as const;
+    }, { capability: "change_website" });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara sidfoten." };
   }
 }
 
