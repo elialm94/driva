@@ -251,7 +251,14 @@ export interface QuoteVersion {
   quoteId: ID;
   version: number;
   title: string;
-  intro: string;
+  /**
+   * LEGACY: gamla "Beskrivning av arbetet" (ren text). Ersatt av richText –
+   * olåsta versioner migreras vid läsning (lib/quote-description) och fältet
+   * tas bort. Det finns bara kvar på BankID-låsta versioner, eftersom det
+   * ingår i contentHash; där renderas det ihopslaget med richText via
+   * quoteDescriptionDoc(). Skrivs aldrig för nya versioner.
+   */
+  intro?: string;
   lines: DocLine[];
   rot: RotRut | null;
   paymentPlan: PaymentPlanPart[];
@@ -277,6 +284,12 @@ export interface QuoteVersion {
    * Ingår inte i contentHash – ändra inte hash-payloaden.
    */
   sellerSnapshot?: InvoiceSellerSnapshot;
+  /**
+   * Kunduppgifter (namn/adress) när versionen skickades eller BankID-låstes –
+   * dokumentet ska återge den adress kunden faktiskt fick, även om kunden
+   * ändras senare. Ingår inte i contentHash – ändra inte hash-payloaden.
+   */
+  buyerSnapshot?: InvoiceBuyerSnapshot;
   createdAt: string;
   /** Sätts när versionen låses vid BankID-godkännande. Låsta versioner får aldrig ändras. */
   lockedAt?: string;

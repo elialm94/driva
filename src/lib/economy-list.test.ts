@@ -39,7 +39,6 @@ function addQuote(input: {
   const quote = createQuote({
     customerId: input.customerId,
     title: input.title,
-    intro: "",
     lines: [labor({ unitPrice: input.unitPrice })],
     rot: null,
     paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],

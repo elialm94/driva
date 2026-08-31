@@ -30,7 +30,6 @@ function approvedQuote(lines: DocLine[]) {
   const quote = createQuote({
     customerId: "cust-1",
     title: "Altan",
-    intro: "Test",
     lines,
     rot: { type: "rot" },
     paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],

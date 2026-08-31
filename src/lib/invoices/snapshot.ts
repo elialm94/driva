@@ -85,6 +85,15 @@ export function resolveQuoteCompany(
   return live;
 }
 
+/** Skickad/låst offert: kundsnapshot. Utkast (eller äldre data utan snapshot): live-kund. */
+export function resolveQuoteCustomer(
+  version: { buyerSnapshot?: InvoiceBuyerSnapshot },
+  live: Customer
+): Customer {
+  if (version.buyerSnapshot) return buyerAsCustomer(version.buyerSnapshot, live);
+  return live;
+}
+
 export function buyerAsCustomer(buyer: InvoiceBuyerSnapshot, fallback?: Customer): Customer {
   return {
     id: fallback?.id ?? "snapshot",
@@ -210,6 +219,26 @@ export function hydrateQuoteSellerSnapshots(data: DB): boolean {
     if (!quote) continue;
     if (quote.status === "utkast" && !version.lockedAt) continue;
     version.sellerSnapshot = { ...snap };
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+ * Backfill kundsnapshot på skickade/godkända offerter – samma princip som
+ * säljarsnapshoten: bästa tillgängliga data är dagens kunduppgifter, och
+ * snapshoten hindrar att SENARE kundändringar skriver om dokumentet.
+ */
+export function hydrateQuoteBuyerSnapshots(data: DB): boolean {
+  let changed = false;
+  for (const version of data.quoteVersions) {
+    if (version.buyerSnapshot) continue;
+    const quote = data.quotes.find((q) => q.id === version.quoteId);
+    if (!quote) continue;
+    if (quote.status === "utkast" && !version.lockedAt) continue;
+    const customer = data.customers.find((c) => c.id === quote.customerId);
+    if (!customer) continue;
+    version.buyerSnapshot = buyerSnapshot(customer);
     changed = true;
   }
   return changed;

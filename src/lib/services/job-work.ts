@@ -473,7 +473,8 @@ export function registeredUninvoicedAmount(jobId: string): number {
 
 export function quotePrefillFromJob(jobId: string): {
   title: string;
-  intro: string;
+  /** Ren text till offertens beskrivning – görs om till rik text i editorn. */
+  description: string;
   lines: DocLine[];
 } | null {
   const job = getJob(jobId);
@@ -482,7 +483,7 @@ export function quotePrefillFromJob(jobId: string): {
   const source = planned.length > 0 ? planned : actualEntries(jobId);
   return {
     title: job.title,
-    intro: job.description.trim(),
+    description: job.description.trim(),
     lines: source.map((e) => entryToDocLine(e)),
   };
 }

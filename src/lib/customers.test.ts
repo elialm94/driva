@@ -146,7 +146,6 @@ describe("skicka offert till kund utan e-post", () => {
     const quote = createQuote({
       customerId: erik.id,
       title: "Altanbygge",
-      intro: "",
       lines: [labor({ unitPrice: 50_000_00 })],
       rot: null,
       paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
@@ -179,7 +178,6 @@ describe("skicka offert till kund utan e-post", () => {
     const quote = createQuote({
       customerId: "cust-1",
       title: "",
-      intro: "",
       lines: [],
       rot: null,
       paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
@@ -214,7 +212,6 @@ describe("inkommande uppdrag utan offert", () => {
       customerId: "cust-karin",
       jobId: "job-karin",
       title: karin.title,
-      intro: karin.originalMessage ?? karin.description,
       lines: [],
       rot: null,
       paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],

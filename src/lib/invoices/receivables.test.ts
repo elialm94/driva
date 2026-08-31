@@ -100,7 +100,6 @@ describe("Kreditfakturor är inte fordringar", () => {
     const quote = createQuote({
       customerId: "cust-1",
       title: "Altan",
-      intro: "",
       lines: [labor({ unitPrice: 10_000 })],
       rot: null,
       paymentPlan: [],

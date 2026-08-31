@@ -27,7 +27,6 @@ function draftQuote(customerId: string) {
   return createQuote({
     customerId,
     title: "Altanbygge",
-    intro: "",
     lines: [labor({ unitPrice: 12_000 })],
     rot: null,
     paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],

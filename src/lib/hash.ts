@@ -11,6 +11,8 @@ export function quoteVersionHash(v: QuoteVersion): string {
     quoteId: v.quoteId,
     version: v.version,
     title: v.title,
+    // Legacy: nya versioner saknar intro (undefined → nyckeln utelämnas av
+    // JSON.stringify). Låsta versioner med intro behåller sitt historiska hash.
     intro: v.intro,
     lines: v.lines.map((l) => ({
       kind: l.kind,

@@ -1,5 +1,7 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
+import { quoteDescriptionDoc } from "../quote-description";
+import { richTextToPlain } from "../richtext";
 import type { Job, JobSource, Quote, WorkLocation } from "../types";
 import { currentVersion, getQuote, invoicePaidAmount, invoiceTotals, jobQuote, requireCustomer } from "./data";
 import { logActivity } from "./activity";
@@ -34,12 +36,17 @@ export function createJobFromQuote(quote: Quote): Job {
   const version = currentVersion(quote);
   const customer = requireCustomer(quote.customerId);
   const location = defaultWorkLocation(customer);
+  // Offertens kanoniska beskrivning som ren text (hanterar även äldre låsta
+  // versioner där legacy-intro ligger kvar bredvid rik texten).
+  const descriptionText = richTextToPlain(quoteDescriptionDoc(version)).trim();
   const job: Job = {
     id: uid(),
     customerId: quote.customerId,
     quoteId: quote.id,
     title: version.title,
-    description: `${version.intro}\n\nEnligt BankID-godkänd offert #${quote.number}.`,
+    description: [descriptionText, `Enligt BankID-godkänd offert #${quote.number}.`]
+      .filter(Boolean)
+      .join("\n\n"),
     status: "kommande",
     address: customer.address ? `${customer.address}, ${customer.city ?? ""}`.replace(/, $/, "") : undefined,
     checklist: [],
@@ -47,8 +54,8 @@ export function createJobFromQuote(quote: Quote): Job {
     createdAt: new Date().toISOString(),
   };
   if (location) applyWorkLocationToJob(job, location);
-  if (version.intro?.trim() && !job.notes) {
-    job.notes = `${new Date().toISOString()}\nFrån offert #${quote.number}: ${version.intro.trim()}`;
+  if (descriptionText && !job.notes) {
+    job.notes = `${new Date().toISOString()}\nFrån offert #${quote.number}: ${descriptionText}`;
   }
   data.jobs.push(job);
   quote.jobId = job.id;

@@ -115,7 +115,6 @@ describe("Golden path: webbformulär → uppdrag → offert → BankID → faktu
       customerId: incoming.customerId,
       jobId: incoming.jobId,
       title: "Altanbygge",
-      intro: "Enligt vårt samtal.",
       lines: [labor({ unitPrice: 40_000 })],
       rot: null,
       paymentPlan: [
@@ -184,7 +183,6 @@ describe("Golden path: webbformulär → uppdrag → offert → BankID → faktu
     const quote = createQuote({
       customerId: "cust-1",
       title: "Test",
-      intro: "",
       lines: [labor()],
       rot: null,
       paymentPlan: [],
@@ -204,7 +202,6 @@ describe("Golden path: webbformulär → uppdrag → offert → BankID → faktu
     const quote = createQuote({
       customerId: "cust-1",
       title: "Test",
-      intro: "",
       lines: [labor()],
       rot: null,
       paymentPlan: [],
@@ -310,7 +307,6 @@ describe("Delbetalningar ärver offertens momssats", () => {
     const quote = createQuote({
       customerId: "cust-1",
       title: "Blandat arbete",
-      intro: "",
       lines,
       rot: null,
       paymentPlan: [

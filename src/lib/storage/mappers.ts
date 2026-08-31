@@ -56,6 +56,7 @@ import type {
   WorkLocation,
 } from "@/lib/types";
 import { lineKindOf, syncDocLineClassification } from "@/lib/economic-line-type";
+import { migrateQuoteVersionDescription } from "@/lib/quote-description";
 import type { SqlRow } from "./executor";
 
 /* ------------------------------- primitiver ------------------------------- */
@@ -294,6 +295,13 @@ export function quoteFromRow(r: SqlRow): Quote {
 /**
  * payload är HELA QuoteVersion-objektet verbatim – hash-fryst yta.
  * Kolumnerna är extraherade kopior för SQL-frågor, aldrig sanningskälla.
+ *
+ * Läsuppgradering: äldre payloads kan bära legacy-fältet intro ("Beskrivning
+ * av arbetet"). Olåsta versioner migreras vid läsning (intro → överst i
+ * richText) – låsta lämnas verbatim eftersom intro ingår i contentHash.
+ * Baslinjen klonas EFTER mappningen (adapter-supabase), så uppgraderingen
+ * skapar aldrig falska diffar; raden skrivs om först när versionen faktiskt
+ * ändras. Därför behövs ingen SQL-migrering (jfr 11_richtext.sql).
  */
 export const quoteVersionsSpec: TableSpec<QuoteVersion> = {
   table: "quote_versions",
@@ -313,7 +321,11 @@ export const quoteVersionsSpec: TableSpec<QuoteVersion> = {
     payload: jsonParam(v),
     created_at: v.createdAt,
   }),
-  fromRow: (r) => jsonVal<QuoteVersion>(r.payload),
+  fromRow: (r) => {
+    const version = jsonVal<QuoteVersion>(r.payload);
+    migrateQuoteVersionDescription(version);
+    return version;
+  },
 };
 
 /* -------------------------------- signatures ------------------------------ */

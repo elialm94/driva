@@ -456,7 +456,6 @@ describe("Manuellt sänkt ROT-avdrag", () => {
     const quote = createQuote({
       customerId: "cust-anna",
       title: "ROT-offert",
-      intro: "Test",
       lines: quoteLines,
       rot: { type: "rot", appliedTaxReduction: applied, taxReductionManuallyAdjusted: true },
       paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
@@ -513,7 +512,6 @@ describe("Manuellt sänkt ROT-avdrag", () => {
     const q = createQuote({
       customerId: "cust-anna",
       title: "Hash-test",
-      intro: "Test",
       lines: [work()],
       rot: { type: "rot" },
       paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],

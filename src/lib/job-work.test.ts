@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { db, replaceDb } from "./store";
 import { emptyTestDb, labor, testCustomer } from "./invoices/test-db";
 import { createQuote, quoteDefaults } from "./services/quotes";
+import { plainTextToRichText } from "./quote-description";
 import {
   completeJob,
   createJob,
@@ -71,7 +72,6 @@ function approvedQuote(lines: DocLine[], over: { rot?: "rot" | null; jobId?: str
     customerId: "cust-1",
     jobId: over.jobId,
     title: "Testjobb",
-    intro: "Enligt överenskommelse",
     lines,
     rot: over.rot === "rot" ? { type: "rot" } : null,
     paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
@@ -196,14 +196,14 @@ describe("Uppdrag: avtalat vs registrerat vs fakturerat", () => {
     const prefill = quotePrefillFromJob(job.id);
     assert.ok(prefill);
     assert.equal(prefill.title, "Bokhylla");
-    assert.equal(prefill.intro, "Platsbyggd bokhylla");
+    assert.equal(prefill.description, "Platsbyggd bokhylla");
     assert.equal(prefill.lines.length, 1);
     assert.equal(prefill.lines[0].qty, 4);
     const quote = createQuote({
       customerId: "cust-1",
       jobId: job.id,
       title: prefill.title,
-      intro: prefill.intro,
+      richText: plainTextToRichText(prefill.description),
       lines: prefill.lines,
       rot: null,
       paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
@@ -331,7 +331,6 @@ describe("Uppdrag: avtalat vs registrerat vs fakturerat", () => {
       customerId: "cust-1",
       jobId: job.id,
       title: "Utkast",
-      intro: "",
       lines: [labor({ description: "Snickeri", qty: 2, unit: "tim", unitPrice: 800 })],
       rot: null,
       paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],

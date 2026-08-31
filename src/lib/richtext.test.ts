@@ -394,7 +394,6 @@ describe("offert: rik text genom tjänstelagret", () => {
     const quote = createQuote({
       customerId: "cust-1",
       title: "Altan",
-      intro: "",
       lines: [labor({})],
       rot: null,
       paymentPlan: [{ label: "Allt", percent: 100 }],
@@ -414,7 +413,6 @@ describe("offert: rik text genom tjänstelagret", () => {
 
     updateQuote(quote.id, {
       title: "Altan",
-      intro: "",
       lines: [labor({})],
       rot: null,
       paymentPlan: [{ label: "Allt", percent: 100 }],

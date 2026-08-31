@@ -2,7 +2,8 @@ import fs from "fs";
 import path from "path";
 import type { CompanySettings, DB, Job, JobSource } from "./types";
 import { buildSeed } from "./seed";
-import { hydrateIssuedInvoices, hydrateQuoteSellerSnapshots } from "./invoices/snapshot";
+import { hydrateIssuedInvoices, hydrateQuoteBuyerSnapshots, hydrateQuoteSellerSnapshots } from "./invoices/snapshot";
+import { migrateQuoteDescriptions } from "./quote-description";
 import { taxReductionFields } from "./tax-reduction-terms";
 import { migrateAccounting } from "./accounting/migrate";
 import { normalizeDomains } from "./domains/normalize";
@@ -207,6 +208,11 @@ export function normalize(loaded: DB): DB {
   const domainsChanged = normalizeDomains(loaded);
   // Bokföringsmotorn: räkenskapsår, IB och verifikationsfält (idempotent).
   const migrated = migrateAccounting(loaded);
+  // EN beskrivning per offert: legacy-intro flyttas in i rik texten (olåsta
+  // versioner). Egen const – ||-kedjan nedan kortsluter och får inte hoppa
+  // över migreringen.
+  const descriptionsMigrated = migrateQuoteDescriptions(loaded);
+  const buyerSnapshotsHydrated = hydrateQuoteBuyerSnapshots(loaded);
   const dirty =
     migrateRequestsToJobs(loaded) ||
     hydrateIssuedInvoices(loaded) ||
@@ -215,7 +221,7 @@ export function normalize(loaded: DB): DB {
     hydrateTaxReductionDemo(loaded) ||
     hydrateQuotedBaselines(loaded);
   // Persist snapshots so later settings changes cannot rewrite seed/historical docs.
-  if (dirty || migrated || domainsChanged) persist(loaded);
+  if (dirty || migrated || domainsChanged || descriptionsMigrated || buyerSnapshotsHydrated) persist(loaded);
   return loaded;
 }
 
