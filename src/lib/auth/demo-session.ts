@@ -2,18 +2,25 @@
  * Publik demosession: en RIKTIG, begränsad identitet – aldrig en auth-bypass.
  *
  * Modellen (Supabase-läget):
- *   * En dedikerad, seedad demo-auth-användare (npm run db:seed -- --demo)
- *     äger ETT demoföretag (businesses.is_demo, fryst vid insert).
- *   * /demo startar sessionen på servern med signInWithPassword mot
- *     inloggningsuppgifter som ENDAST finns i servermiljön
- *     (DEMO_USER_EMAIL / DEMO_USER_PASSWORD) – aldrig i klientbundeln.
- *   * Varje besökare får en EGEN Supabase-session (egna tokens) för samma
- *     demo-användare. All auktorisering går den vanliga vägen: proxy →
- *     requireBusiness → medlemskap → RLS. Demo-användaren är bara medlem i
- *     demoföretaget och kan därför aldrig nå riktiga företag.
- *   * Sessionens livslängd begränsas av demo-cookien (DEMO_SESSION_HOURS,
- *     standard 8 h). Proxyn loggar ut demo-sessioner vars cookie saknas
- *     eller gått ut.
+ *   * /demo skapar en ANONYM Supabase-session (signInAnonymously) och
+ *     provisionerar ett EGET demoföretag åt besökaren: businesses.is_demo
+ *     (fryst vid insert) + demo_expires_at, ägt via ett vanligt
+ *     ägarmedlemskap. All auktorisering går den vanliga vägen: proxy →
+ *     requireBusiness → medlemskap → RLS. Den anonyma användaren är bara
+ *     medlem i SITT demoföretag och kan därför aldrig nå andra demon eller
+ *     riktiga företag – exakt samma isolering som mellan riktiga tenants.
+ *   * Sessionens identifierare är Supabase-sessionens egna tokens
+ *     (kryptografiskt slumpade, httpOnly-cookies). Demo-cookien nedan bär
+ *     bara utgångstiden + en slumpdel för AI-budgetens sessionsfönster –
+ *     den ger ALDRIG åtkomst i sig.
+ *   * Livslängd: demo_expires_at i databasen (kan aldrig förlängas –
+ *     frystrigger) och demo-cookien håller samma tid. Proxyn loggar ut
+ *     demo-sessioner vars cookie saknas eller gått ut; cleanup-vägen
+ *     (app.delete_demo_business) tar utgångna demoföretag.
+ *
+ * Bakåtkompatibilitet: den äldre delade demo-användaren (DEMO_USER_EMAIL)
+ * känns fortfarande igen som demo av e-postgrinden, men /demo skapar aldrig
+ * fler sådana sessioner.
  *
  * JSON-läget (lokal utveckling) ÄR redan demon – där behövs ingen session.
  */
@@ -24,22 +31,26 @@ export const DEMO_SESSION_COOKIE = "driva_demo";
 /** Demo-only aktörsbyte: "accountant" = redovisningsytan som Anna Svensson. */
 export const DEMO_ACTOR_COOKIE = "driva_demo_actor";
 
-const DEFAULT_SESSION_HOURS = 8;
+/** Spec: en demosession lever 24 h; därefter städas datat och nästa besök får färsk seed. */
+const DEFAULT_SESSION_HOURS = 24;
 
+/** Minimala JWT-claims som demogrindarna behöver. */
+export interface SessionClaimsLike {
+  email?: unknown;
+  is_anonymous?: unknown;
+}
+
+/** Är claims-uppsättningen en demosession? (Anonym användare eller legacy-demo-mejl.) */
+export function isDemoClaims(claims: SessionClaimsLike | null | undefined): boolean {
+  if (!claims) return false;
+  if (claims.is_anonymous === true) return true;
+  return isDemoUserEmail(typeof claims.email === "string" ? claims.email : undefined);
+}
+
+/** Legacy: det äldre delade demokontots e-post (om miljön fortfarande har det). */
 export function demoUserEmail(): string | undefined {
   const v = process.env.DEMO_USER_EMAIL?.trim();
   return v || undefined;
-}
-
-/** Endast serversidan – används uteslutande i server actions. */
-export function demoUserPassword(): string | undefined {
-  const v = process.env.DEMO_USER_PASSWORD?.trim();
-  return v || undefined;
-}
-
-/** Demoinloggning är på när Supabase-läget kör och båda variablerna finns. */
-export function isDemoLoginConfigured(): boolean {
-  return isSupabaseMode() && Boolean(demoUserEmail()) && Boolean(demoUserPassword());
 }
 
 export function isDemoUserEmail(email: string | null | undefined): boolean {
@@ -48,7 +59,12 @@ export function isDemoUserEmail(email: string | null | undefined): boolean {
   return email.trim().toLowerCase() === demo.toLowerCase();
 }
 
-/** Begränsad livslängd (spec: timmar–ett dygn). Klampas till 1–72 h. */
+/** Demon är tillgänglig i Supabase-läget (anonyma sessioner provisioneras vid behov). */
+export function isDemoLoginConfigured(): boolean {
+  return isSupabaseMode();
+}
+
+/** Begränsad livslängd (spec: 24 h). Klampas till 1–72 h. */
 export function demoSessionMaxAgeSeconds(): number {
   const raw = Number(process.env.DEMO_SESSION_HOURS?.trim());
   const hours = Number.isFinite(raw) && raw > 0 ? Math.min(Math.max(raw, 1), 72) : DEFAULT_SESSION_HOURS;
@@ -75,17 +91,17 @@ export function isDemoCookieValueActive(value: string | undefined): boolean {
 /* ------------------------------------------------------------------------ *
  * Rate limit för den publika demostarten.
  *
- * Ingen delad rate-limit-infrastruktur finns i kodbasen, så gränsen hålls
- * i minnet per serverless-instans: skydd mot enkel skriptad massinloggning
+ * Varje start provisionerar en tenant (anonym användare + företag + seed),
+ * så gränsen är stramare än gamla inloggningsgränsen. Fönstren hålls i
+ * minnet per serverless-instans: skydd mot enkel skriptad massprovisionering
  * från samma instans, INTE en distribuerad garanti. I botten gäller dessutom
- * Supabases egna auth-rate-limits (token-endpointen), som är per projekt.
- * Ingen tenant skapas per session (delat demoföretag) – missbruksytan är
- * inloggningsförsök, inte massprovisionering.
+ * Supabases egna rate limits för anonyma inloggningar (per IP, per projekt)
+ * och cleanup-vägen som tar utgångna demoföretag efter 24 h.
  * ------------------------------------------------------------------------ */
 
 const WINDOW_MS = 10 * 60_000;
-const MAX_STARTS_PER_IP = 10;
-const MAX_STARTS_GLOBAL = 120;
+const MAX_STARTS_PER_IP = 6;
+const MAX_STARTS_GLOBAL = 60;
 const RESET_MIN_INTERVAL_MS = 20_000;
 
 const startsByIp = new Map<string, number[]>();

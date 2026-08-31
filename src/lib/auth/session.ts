@@ -35,7 +35,7 @@ import {
   setTestActor,
   type CollaborationActor,
 } from "@/lib/collaboration/actor";
-import { DEMO_ACTOR_COOKIE, isDemoUserEmail } from "@/lib/auth/demo-session";
+import { DEMO_ACTOR_COOKIE, isDemoClaims, type SessionClaimsLike } from "@/lib/auth/demo-session";
 import { ensureLocalDemoCollaboration } from "@/lib/collaboration/local-demo";
 import {
   activeMembershipFor,
@@ -61,6 +61,16 @@ export const LOCAL_USER_COOKIE = "driva_local_user";
 
 export type WorkspaceKind = "owner" | "redovisning";
 
+/** Verifierade JWT-claims från Supabase-sessionen (en getClaims per request). */
+const sessionClaims = cache(async (): Promise<(SessionClaimsLike & { sub?: unknown }) | null> => {
+  if (!isSupabaseMode()) return null;
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (!claims?.sub) return null;
+  return claims as SessionClaimsLike & { sub?: unknown };
+});
+
 /** Verifierad användare från Supabase-sessionen, eller JSON-lokal aktör. */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   if (!isSupabaseMode()) {
@@ -71,12 +81,10 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     if (user) return { id: user.id, email: user.email, name: user.name };
     return { id: LOCAL_JSON_USER_ID, email: "demo@driva.local", name: "Du" };
   }
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase.auth.getClaims();
-  const claims = data?.claims;
+  const claims = await sessionClaims();
   if (!claims?.sub) return null;
   const email = String(claims.email ?? "");
-  if (isDemoUserEmail(email)) {
+  if (isDemoClaims(claims)) {
     // Demosessionen presenteras som "Du" (som lokala demon) – och som Anna
     // Svensson när det demo-lokala konsultbytet är aktivt.
     const name = (await readDemoActorCookie()) === "accountant" ? LOCAL_JSON_ACCOUNTANT_NAME : "Du";
@@ -106,7 +114,7 @@ async function readDemoActorCookie(): Promise<"accountant" | null> {
 async function applyDemoAccountantView(userId: string, memberships: MembershipInfo[]): Promise<MembershipInfo[]> {
   if (!isSupabaseMode()) return memberships;
   const user = await getSessionUser();
-  if (!user || user.id !== userId || !isDemoUserEmail(user.email)) return memberships;
+  if (!user || user.id !== userId || !(await isDemoSession())) return memberships;
   if ((await readDemoActorCookie()) !== "accountant") return memberships;
   const viewed = memberships.map((m) =>
     isOwnerRole(m.role) ? { ...m, role: "accounting_consultant" as BusinessRole } : m
@@ -137,11 +145,10 @@ export async function requireUser(): Promise<SessionUser> {
   return user;
 }
 
-/** Är den aktiva Supabase-sessionen den publika demosessionen? */
+/** Är den aktiva Supabase-sessionen en publik demosession? (Anonym användare.) */
 export async function isDemoSession(): Promise<boolean> {
   if (!isSupabaseMode()) return false;
-  const user = await getSessionUser();
-  return Boolean(user && isDemoUserEmail(user.email));
+  return isDemoClaims(await sessionClaims());
 }
 
 /**
@@ -245,6 +252,9 @@ export async function requireBusiness(): Promise<{
         memberships: [{ businessId: LOCAL_JSON_BUSINESS_ID, role: "owner" }],
       };
     }
+    // En demosession utan företag (t.ex. städat efter utgång) ska aldrig se
+    // riktiga onboardingen – /demo provisionerar en färsk session i stället.
+    if (await isDemoSession()) redirect("/demo");
     redirect("/onboarding");
   }
   const preferred = await preferredBusinessFromCookie();

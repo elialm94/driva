@@ -3,10 +3,16 @@
  *
  *   * Friskar upp utgången Supabase-session på varje request (getClaims →
  *     nya cookies skrivs till svaret) så att inloggningen är beständig.
+ *   * Utloggad på "/" får den publika landningssidan (rewrite till
+ *     /valkommen – URL:en förblir "/"). Inloggade och demosessioner ser
+ *     appens Hem som vanligt.
  *   * Oautentiserade requests till appens skyddade rutter skickas till
  *     /login?next=<ursprunglig sökväg> och tillbaka efter inloggning.
  *   * Publika ytor (offert-/fakturalänkar, kundsajt, BankID-API) släpps
  *     igenom orörda – de auktoriseras med ogissbara tokens på serversidan.
+ *   * Demosessioner (anonyma användare) är tidsbegränsade: utan giltig
+ *     demo-cookie loggas besökarens tokens ut (scope local) och /demo
+ *     provisionerar en färsk session.
  *
  * Utan Supabase-miljö (lokal JSON-utveckling) är proxyn passiv.
  * OBS: Detta är första försvarslinjen för UX – den riktiga auktoriseringen
@@ -17,20 +23,27 @@ import { createServerClient } from "@supabase/ssr";
 import {
   DEMO_ACTOR_COOKIE,
   DEMO_SESSION_COOKIE,
+  isDemoClaims,
   isDemoCookieValueActive,
-  isDemoUserEmail,
 } from "@/lib/auth/demo-session";
 
 const PUBLIC_PREFIXES = [
   "/login",
   "/signup",
-  "/demo", // publik demo-entré: sessionen skapas av en server action på sidan
+  "/verifiera-epost", // efter registrering: "kolla din mejl"-sidan
+  "/glomt-losenord",
+  "/auth/bekrafta", // e-postbekräftelse/återställningslänkar från Supabase
+  "/demo", // publik demo: GET provisionerar en isolerad demosession
+  "/valkommen", // landningssidans interna sökväg (rewrite-mål)
+  "/villkor",
+  "/integritet", // Drivas egen integritetspolicy (kundsajternas ligger på /integritetspolicy)
   "/offert",
   "/faktura",
   "/sajt",
   "/integritetspolicy",
   "/inbjudan",
   "/api/health", // driftdiagnostik: måste nås utan inloggning när appen är trasig
+  "/api/demo/cleanup", // cron-skyddad städning av utgångna demosessioner (egen CRON_SECRET-vakt)
   "/admin/inbjudan", // admin-invitationens acceptsida: mottagaren saknar ofta konto ännu
   "/api/bankid",
   "/api/inbox",
@@ -90,16 +103,16 @@ async function runSessionProxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   // Demosessioner är tidsbegränsade: utan giltig demo-cookie loggas
-  // demo-användarens session ut (endast DENNA besökares tokens – scope local)
-  // och besökaren landar på /demo igen. Riktiga användare berörs aldrig.
-  if (isAuthenticated && isDemoUserEmail(String(data?.claims?.email ?? ""))) {
+  // demo-sessionens tokens ut (endast DENNA besökares – scope local) och
+  // besökaren landar på /demo, som provisionerar en färsk demosession.
+  // Riktiga användare berörs aldrig.
+  if (isAuthenticated && isDemoClaims(data?.claims)) {
     const demoCookie = request.cookies.get(DEMO_SESSION_COOKIE)?.value;
-    if (!isDemoCookieValueActive(demoCookie)) {
+    if (!isDemoCookieValueActive(demoCookie) && pathname !== "/demo") {
       await supabase.auth.signOut({ scope: "local" });
       const demoUrl = request.nextUrl.clone();
       demoUrl.pathname = "/demo";
       demoUrl.search = "";
-      demoUrl.searchParams.set("utgangen", "1");
       const redirectResponse = NextResponse.redirect(demoUrl);
       // Bevara utloggningens Set-Cookie (skrevs till response via setAll ovan).
       for (const cookie of response.cookies.getAll()) redirectResponse.cookies.set(cookie);
@@ -107,6 +120,23 @@ async function runSessionProxy(request: NextRequest) {
       redirectResponse.cookies.delete(DEMO_ACTOR_COOKIE);
       return redirectResponse;
     }
+  }
+
+  // Landningssidans interna sökväg har "/" som kanonisk adress.
+  if (pathname === "/valkommen") {
+    const homeUrl = request.nextUrl.clone();
+    homeUrl.pathname = "/";
+    homeUrl.search = "";
+    return NextResponse.redirect(homeUrl);
+  }
+
+  // Utloggad på "/": visa landningssidan (URL:en förblir "/").
+  if (!isAuthenticated && pathname === "/") {
+    const landingUrl = request.nextUrl.clone();
+    landingUrl.pathname = "/valkommen";
+    const rewrite = NextResponse.rewrite(landingUrl, { request });
+    for (const cookie of response.cookies.getAll()) rewrite.cookies.set(cookie);
+    return rewrite;
   }
 
   if (!isAuthenticated && !isPublicPath(pathname)) {

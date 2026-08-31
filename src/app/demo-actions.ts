@@ -1,103 +1,33 @@
 "use server";
 
 /**
- * Demosessionens livscykel: starta från /demo, avsluta till /login,
- * eller avsluta och gå vidare till kontoskapande.
+ * Demosessionens livscykel: avsluta (→ landningssidan) eller avsluta och gå
+ * vidare till kontoskapande (→ /signup). Själva starten sker i GET /demo,
+ * som provisionerar en isolerad demosession per besökare.
  *
- * Starten är den ENDA publika vägen in: en riktig Supabase-inloggning görs på
- * servern med demo-uppgifterna ur servermiljön (aldrig i klientbundeln), och
- * sessionen märks med en tidsbegränsad demo-cookie som proxyn upprätthåller.
- * Ingen auth hoppas över – demosessionen är en vanlig, begränsad användare.
+ * När besökaren lämnar demon flyttas demoföretagets utgångstid till nu
+ * (frystriggern tillåter bara tidigareläggning) så att cleanup-vägen tar
+ * datat vid nästa körning i stället för att vänta ut hela livslängden.
  */
-import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseMode } from "@/lib/storage/config";
-import {
-  BUSINESS_COOKIE,
-  WORKSPACE_COOKIE,
-  getSessionUser,
-} from "@/lib/auth/session";
-import {
-  DEMO_ACTOR_COOKIE,
-  DEMO_SESSION_COOKIE,
-  clientIpFrom,
-  demoCookieValueNow,
-  demoSessionMaxAgeSeconds,
-  demoUserEmail,
-  demoUserPassword,
-  isDemoLoginConfigured,
-  isDemoUserEmail,
-  rateLimitDemoStart,
-} from "@/lib/auth/demo-session";
+import { getSessionUser, isDemoSession } from "@/lib/auth/session";
+import { clearDemoCookies } from "@/lib/auth/demo-provision";
+import { membershipsForUser, sqlClient } from "@/lib/storage/adapter-supabase";
+import { bindTransaction } from "@/lib/storage/load";
 
-export interface DemoStartState {
-  error?: string;
-}
-
-const DEMO_UNAVAILABLE =
-  "Demon är inte tillgänglig i den här miljön ännu. Logga in eller skapa ett konto i stället.";
-
-function secureCookies(): boolean {
-  return process.env.NODE_ENV === "production";
-}
-
-async function setDemoSessionCookie(): Promise<void> {
-  const jar = await cookies();
-  jar.set(DEMO_SESSION_COOKIE, demoCookieValueNow(), {
-    path: "/",
-    httpOnly: true,
-    sameSite: "lax",
-    secure: secureCookies(),
-    maxAge: demoSessionMaxAgeSeconds(),
-  });
-}
-
-async function clearDemoCookies(): Promise<void> {
-  const jar = await cookies();
-  for (const name of [DEMO_SESSION_COOKIE, DEMO_ACTOR_COOKIE, WORKSPACE_COOKIE, BUSINESS_COOKIE]) {
-    jar.set(name, "", { path: "/", maxAge: 0, sameSite: "lax", secure: secureCookies() });
-    jar.delete(name);
-  }
-}
-
-/** Öppna demon: serverinloggning som demo-användaren + tidsbegränsad markering. */
-export async function startDemoAction(_prev: DemoStartState, _formData: FormData): Promise<DemoStartState> {
-  // JSON-läget (lokal utveckling) ÄR demon – rakt in i appen.
-  if (!isSupabaseMode()) redirect("/");
-  if (!isDemoLoginConfigured()) return { error: DEMO_UNAVAILABLE };
-
-  const ip = clientIpFrom(await headers());
-  if (!rateLimitDemoStart(ip)) {
-    return { error: "Många öppnar demon just nu. Vänta en liten stund och försök igen." };
-  }
-
-  const supabase = await createSupabaseServerClient();
-  // En redan inloggad användare som uttryckligen öppnar demon byter session –
-  // samma semantik som att logga in med ett annat konto. Avsluta demo → /login.
-  const { error } = await supabase.auth.signInWithPassword({
-    email: demoUserEmail()!,
-    password: demoUserPassword()!,
-  });
-  if (error) {
-    console.error(`[driva:demo] demoinloggning misslyckades: ${error.code ?? error.message}`);
-    return { error: "Demon kunde inte öppnas just nu. Försök igen om en stund." };
-  }
-  await setDemoSessionCookie();
+/** Avsluta demo: släpp demosessionen (endast den – scope local) → landningssidan. */
+export async function endDemoAction(): Promise<void> {
+  await endDemoSession();
   redirect("/");
 }
 
-/** Avsluta demo: släpp demosessionen (endast den – scope local) → /login. */
-export async function endDemoAction(): Promise<void> {
-  await endDemoSession();
-  redirect("/login");
-}
-
-/** "Skapa eget konto" i demon: avsluta demosessionen → registreringsläget. */
+/** "Skapa ditt eget konto" i demon: avsluta demosessionen → registrering. */
 export async function endDemoToSignupAction(): Promise<void> {
   await endDemoSession();
-  redirect("/login?skapa=1");
+  redirect("/signup");
 }
 
 async function endDemoSession(): Promise<void> {
@@ -108,12 +38,37 @@ async function endDemoSession(): Promise<void> {
     return;
   }
   const user = await getSessionUser();
-  if (user && isDemoUserEmail(user.email)) {
+  if (user && (await isDemoSession())) {
+    await expireDemoBusinessesNow(user.id);
     const supabase = await createSupabaseServerClient();
-    // scope "local": släpp bara DENNA besökares tokens. Demo-användaren delas
-    // av alla demosessioner – en global signOut skulle logga ut alla andra.
+    // scope "local": släpp bara DENNA besökares tokens – demosessionen är
+    // besökarens egen, men mönstret skyddar även äldre delade demokonton.
     await supabase.auth.signOut({ scope: "local" });
   }
   await clearDemoCookies();
   revalidatePath("/", "layout");
+}
+
+/** Bäst ansträngning: markera besökarens demoföretag för omedelbar städning. */
+async function expireDemoBusinessesNow(userId: string): Promise<void> {
+  try {
+    const memberships = await membershipsForUser(userId);
+    const client = await sqlClient();
+    for (const m of memberships) {
+      await client.transaction(async (tx) => {
+        await bindTransaction(tx, m.businessId);
+        // Endast demoföretag med utgångstid – frystriggern nekar förlängning,
+        // och WHERE-villkoret gör att riktiga företag aldrig berörs.
+        await tx.query(
+          `update public.businesses
+              set demo_expires_at = now()
+            where id = $1 and is_demo and demo_expires_at is not null and demo_expires_at > now()`,
+          [m.businessId]
+        );
+      });
+    }
+  } catch (e) {
+    // Städningen tar företaget senast vid ordinarie utgångstid.
+    console.warn(`[driva:demo] kunde inte tidigarelägga städning: ${e instanceof Error ? e.message : e}`);
+  }
 }
