@@ -82,7 +82,7 @@ function lineIdFromElement(el: Element | null): string | null {
 function focusLineField(lineId: string, field: LineEditorField) {
   const el = document.getElementById(lineFieldId(lineId, field));
   if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement)) return;
-  el.focus();
+  el.focus({ preventScroll: true });
   if (el instanceof HTMLInputElement) el.select();
 }
 
