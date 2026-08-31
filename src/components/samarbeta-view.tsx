@@ -9,6 +9,7 @@ import {
   enterLocalAccountantDemoAction,
   inviteCollaboratorAction,
   resendCollaboratorInviteAction,
+  restoreCollaboratorAction,
   revokeCollaboratorAction,
   type InviteState,
 } from "@/app/collaboration-actions";
@@ -21,10 +22,12 @@ function looksLikeEmail(value: string): boolean {
 
 export function SamarbetaView({
   people,
+  formerPeople = [],
   localDemo = false,
   demoSession = false,
 }: {
   people: SamarbetaPerson[];
+  formerPeople?: SamarbetaPerson[];
   localDemo?: boolean;
   /** Publika demosessionen: konsultbytet öppnas som vy på samma session. */
   demoSession?: boolean;
@@ -33,8 +36,8 @@ export function SamarbetaView({
   const [confirm, setConfirm] = useState<SamarbetaPerson | null>(null);
   const [inviteState, inviteAction, invitePending] = useActionState(inviteCollaboratorAction, {} as InviteState);
   const [revokeState, setRevokeState] = useState<InviteState>({});
-  const [resendState, setResendState] = useState<InviteState>({});
-  const [resendPendingId, setResendPendingId] = useState<string | null>(null);
+  const [restoreState, setRestoreState] = useState<InviteState>({});
+  const [restorePendingId, setRestorePendingId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [tried, setTried] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
@@ -83,6 +86,16 @@ export function SamarbetaView({
       {resendState.error ? (
         <p role="alert" className="text-[14px] text-danger">
           {resendState.error}
+        </p>
+      ) : null}
+      {restoreState.notice ? (
+        <p role="status" className="text-[14px] text-ok">
+          {restoreState.notice}
+        </p>
+      ) : null}
+      {restoreState.error ? (
+        <p role="alert" className="text-[14px] text-danger">
+          {restoreState.error}
         </p>
       ) : null}
 
@@ -174,7 +187,41 @@ export function SamarbetaView({
         ) : null}
       </Card>
 
-      <p className="text-[13px] text-muted">Du kan ta bort åtkomsten när som helst.</p>
+      {empty && formerPeople.length > 0 ? (
+        <Card className="p-5">
+          <h2 className="text-[17px] font-semibold tracking-tight">Tidigare samarbete</h2>
+          <ul className="mt-4 space-y-4">
+            {formerPeople.map((p) => (
+              <li key={p.key} className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-[14px] leading-relaxed text-soft">
+                  Du hade tidigare <span className="font-medium text-ink">{p.name}</span> ansluten.
+                </p>
+                <form
+                  action={async (fd) => {
+                    setRestorePendingId(p.userId ?? p.key);
+                    const res = await restoreCollaboratorAction(fd);
+                    setRestoreState(res);
+                    setRestorePendingId(null);
+                  }}
+                >
+                  {p.userId ? <input type="hidden" name="userId" value={p.userId} /> : null}
+                  <button
+                    type="submit"
+                    className={buttonClasses("secondary", "sm")}
+                    disabled={!p.userId || restorePendingId === (p.userId ?? p.key)}
+                  >
+                    {restorePendingId === (p.userId ?? p.key) ? "Återställer …" : "Ge åtkomst igen"}
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      {!empty ? (
+        <p className="text-[13px] text-muted">Du kan ta bort åtkomsten när som helst.</p>
+      ) : null}
 
       {localDemo || demoSession ? (
         <p className="text-[13px] text-soft">

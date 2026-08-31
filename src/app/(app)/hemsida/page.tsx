@@ -17,13 +17,24 @@ import { isLiveMailConfigured } from "@/lib/mail";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { SECTION_LABELS, stripWebsiteSecrets } from "@/lib/website-sections";
 import { resolveSiteContact } from "@/lib/website-contact";
+import { resolveOptionalFeatures, shouldShowWebsiteRestoreNotice } from "@/lib/features";
+import { SETTINGS_HREF } from "@/lib/settings-routes";
+import { redirect } from "next/navigation";
 
 export const metadata = { title: "Hemsida" };
 
-export default async function WebsitePage() {
+export default async function WebsitePage(props: PageProps<"/hemsida">) {
   await ensurePageBusiness();
   const data = db();
+  if (!resolveOptionalFeatures(data).website) {
+    redirect(SETTINGS_HREF.funktioner);
+  }
   const site = data.website;
+  const searchParams = await props.searchParams;
+  const restoredParam = searchParams.aterstalld;
+  const restored =
+    (typeof restoredParam === "string" ? restoredParam : restoredParam?.[0]) === "1" ||
+    shouldShowWebsiteRestoreNotice(data);
 
   if (!site) {
     return (
@@ -49,6 +60,8 @@ export default async function WebsitePage() {
   }
 
   const published = site.status === "publicerad";
+  const paused = Boolean(data.meta.websitePausedAt);
+  const live = published && !paused;
   const domain = primaryDomain();
   const liveHost = domain?.status === "active" ? domain.hostname : null;
   const mailLive = isLiveMailConfigured();
@@ -65,24 +78,34 @@ export default async function WebsitePage() {
 
   return (
     <div className="animate-fade-up">
+      {restored ? (
+        <div
+          role="status"
+          className="mb-4 rounded-2xl border border-ok/20 bg-ok-soft px-4 py-3 text-[14px] leading-relaxed text-ok"
+        >
+          Din tidigare hemsida är återställd. Publicera när du är redo.
+        </div>
+      ) : null}
       <PageHeader
         title="Hemsida"
         subtitle={
-          published
+          live
             ? `Publicerad ${site.publishedAt ? datumTid(site.publishedAt) : ""} · formuläret skapar uppdrag automatiskt`
-            : "Utkast – granska och publicera när du är nöjd"
+            : paused
+              ? "Pausad – innehållet är kvar. Publicera när du är redo."
+              : "Utkast – granska och publicera när du är nöjd"
         }
         actions={
           <div className="flex items-center gap-2">
             <a
-              href={published ? "/sajt" : "/sajt?preview=1"}
+              href={live ? "/sajt" : "/sajt?preview=1"}
               target="_blank"
               rel="noreferrer"
               className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line-strong bg-card px-3.5 text-[13px] font-medium text-soft transition-colors hover:text-ink"
             >
               <ExternalLink className="size-3.5" /> Öppna i ny flik
             </a>
-            <PublishWebsiteButton published={published} />
+            <PublishWebsiteButton published={live} />
           </div>
         }
       />
@@ -96,10 +119,12 @@ export default async function WebsitePage() {
             <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted">
               <Globe className="size-4 shrink-0" />
               <span className="min-w-0 break-all font-mono text-[12px]">
-                {liveHost ? liveHost : published ? "driva.site/" + site.slug : "Förhandsvisning"}
+                {liveHost ? liveHost : live ? "driva.site/" + site.slug : "Förhandsvisning"}
               </span>
               {/* Utkast är grått som överallt annars – gult betyder "väntar/uppmärksamhet". */}
-              <Badge tone={published ? "ok" : "neutral"}>{published ? "Publicerad" : "Utkast"}</Badge>
+              <Badge tone={live ? "ok" : paused ? "warn" : "neutral"}>
+                {live ? "Publicerad" : paused ? "Pausad" : "Utkast"}
+              </Badge></Badge>
             </div>
             <CopyLinkButton path="/sajt" label="Kopiera länk" />
           </div>
@@ -114,7 +139,7 @@ export default async function WebsitePage() {
           <div className="min-w-0">
             <SectionTitle>Utseende</SectionTitle>
             <Card className="min-w-0">
-              <UtseendePanel publishedDesign={publishedWebsiteDesign(site)} published={published} />
+              <UtseendePanel publishedDesign={publishedWebsiteDesign(site)} published={live} />
             </Card>
             <p className="mt-2 text-[12px] leading-relaxed text-muted">
               Välj känslan som passar ditt företag – innehållet är detsamma i alla teman.
@@ -151,7 +176,7 @@ export default async function WebsitePage() {
           <div>
             <SectionTitle>Sidfot</SectionTitle>
             <Card className="min-w-0 px-5 py-4">
-              <FooterSettingsCard website={site} company={data.settings} published={published} />
+              <FooterSettingsCard website={site} company={data.settings} published={live} />
             </Card>
             <Card className="mt-3 min-w-0 px-5 py-4">
               <PrivacyPolicySettingsCard

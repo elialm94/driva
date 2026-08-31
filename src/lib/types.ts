@@ -1095,6 +1095,9 @@ export type AuditAction =
   | "samarbete_bjuden"
   | "samarbete_accepterad"
   | "samarbete_aterkallad"
+  | "samarbete_avstangd"
+  | "samarbete_aktiverad"
+  | "samarbete_aterstalld"
   | "samarbete_skrivning"
   | "kundunderlag_begart"
   | "kundunderlag_lost";
@@ -1871,14 +1874,20 @@ export interface DB {
      */
     merchantCategoryRules?: Record<string, MerchantCategoryRule>;
     /**
-     * Explicit aktiverade valfria funktioner (Hemsida, Samarbeta).
-     * Saknas flaggan men data finns → funktionen räknas ändå som aktiv
-     * så befintliga användare inte tappar navigationen.
+     * Explicit tillstånd för valfria funktioner (Hemsida, Samarbeta).
+     * true = på, false = avstängd (data finns kvar). Saknas flaggan men
+     * data finns → backfill som aktiv så inget försvinner för befintliga.
      */
     features?: {
       website?: boolean;
       collaboration?: boolean;
     };
+    /**
+     * Publika sajten är pausad tills användaren publicerar igen.
+     * Sätts när Hemsida stängs av. Rör inte website.status – det
+     * publicerade innehållet ligger kvar.
+     */
+    websitePausedAt?: string;
     /**
      * Normaliserade prisradsbeskrivningar som användaren glömt i autocomplete.
      * Påverkar bara förslag – historiska offerter/fakturor/uppdrag lämnas orörda.

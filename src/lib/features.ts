@@ -2,11 +2,13 @@
  * Valfria funktioner i Driva: Hemsida och Samarbeta.
  *
  * Core-nav (Hem, Kunder, Ekonomi, Inbox, Bokföring) syns alltid.
- * Optional-nav syns när funktionen är aktiverad ELLER när företaget redan
- * har data – så befintliga användare inte tappar sidomenyn.
+ * Optional-nav syns bara när funktionen är explicit aktiv. Befintlig
+ * användning utan sparad flagga räknas som aktiv (backfill) så inget
+ * försvinner. Explicit false vinner över att data finns – Stäng av ≠ Ta bort.
  *
- * Aktivering sätter bara en flagga. Ingen hemsida, domän, inbjudan eller
- * konsult raderas eller skapas här.
+ * Aktivering/avstängning sätter bara flaggan (+ pausar publika sajten /
+ * återkallar konsultåtkomst). Ingen hemsida, domän, inbjudan eller
+ * konsult raderas här.
  */
 
 import type { CollaborationInvitation, DB, Domain, Website } from "./types";
@@ -30,7 +32,9 @@ export function storedOptionalFeatures(meta: DB["meta"] | undefined): OptionalFe
   if (!raw || typeof raw !== "object") return {};
   const next: OptionalFeatures = {};
   if (raw.website === true) next.website = true;
+  else if (raw.website === false) next.website = false;
   if (raw.collaboration === true) next.collaboration = true;
+  else if (raw.collaboration === false) next.collaboration = false;
   return next;
 }
 
@@ -66,6 +70,10 @@ export function resolveOwnerBusinessId(explicit?: string): string {
   return LOCAL_JSON_BUSINESS_ID;
 }
 
+/**
+ * Canonical synlighet: explicit false vinner, explicit true vinner,
+ * saknad flagga backfillas från användning så befintliga företag inte tappar menyn.
+ */
 export function resolveOptionalFeatures(
   data: Pick<DB, "website" | "domains" | "collaborationInvitations" | "meta"> = db(),
   businessId?: string,
@@ -73,23 +81,94 @@ export function resolveOptionalFeatures(
   const stored = storedOptionalFeatures(data.meta);
   const id = resolveOwnerBusinessId(businessId);
   return {
-    website: stored.website === true || hasWebsiteUsage(data),
-    collaboration: stored.collaboration === true || hasCollaborationUsage(data, id),
+    website: stored.website === false ? false : stored.website === true || hasWebsiteUsage(data),
+    collaboration:
+      stored.collaboration === false ? false : stored.collaboration === true || hasCollaborationUsage(data, id),
+  };
+}
+
+export function isOptionalFeatureExplicitlyDisabled(
+  id: OptionalFeatureId,
+  data: Pick<DB, "meta"> = db(),
+): boolean {
+  return storedOptionalFeatures(data.meta)[id] === false;
+}
+
+function writeFeatureFlag(id: OptionalFeatureId, value: boolean): void {
+  const data = db();
+  const current = storedOptionalFeatures(data.meta);
+  data.meta = {
+    ...data.meta,
+    features: { ...current, [id]: value },
   };
 }
 
 /**
  * Sätter flaggan. Rör inte hemsida, domän, inbjudningar eller medlemskap.
- * Redan aktiv → no-op.
+ * Redan aktiv → no-op. Rensar inte publika sajtens paus – publicera gör det.
  */
 export function activateOptionalFeature(id: OptionalFeatureId): ResolvedOptionalFeatures {
   const data = db();
   const current = storedOptionalFeatures(data.meta);
   if (current[id] === true) return resolveOptionalFeatures(data);
-  data.meta = {
-    ...data.meta,
-    features: { ...current, [id]: true },
-  };
+  writeFeatureFlag(id, true);
   save();
   return resolveOptionalFeatures(data);
+}
+
+/**
+ * Stänger av funktionen. Raderar inget. Hemsida: pausar publika sajten
+ * utan att ändra website.status (publicerad snapshot ligger kvar).
+ * Samarbeta: flaggan sätts här – åtkomst återkallas av anroparen.
+ */
+export function deactivateOptionalFeature(id: OptionalFeatureId): ResolvedOptionalFeatures {
+  const data = db();
+  const current = storedOptionalFeatures(data.meta);
+  if (current[id] === false) return resolveOptionalFeatures(data);
+  writeFeatureFlag(id, false);
+  if (id === "website") pauseWebsitePublic();
+  save();
+  return resolveOptionalFeatures(db());
+}
+
+/** Pausar den publika sajten utan att röra innehåll eller publiceringsstatus. */
+export function pauseWebsitePublic(): void {
+  const data = db();
+  if (!data.website) return;
+  if (data.meta.websitePausedAt) return;
+  data.meta = { ...data.meta, websitePausedAt: new Date().toISOString() };
+}
+
+/** Publicering tar bort pausen – sajten blir live igen. */
+export function clearWebsitePublicPause(): void {
+  const data = db();
+  if (!data.meta.websitePausedAt) return;
+  const next = { ...data.meta };
+  delete next.websitePausedAt;
+  data.meta = next;
+}
+
+/**
+ * Live mot besökare: funktionen på + publicerad + inte pausad.
+ * Enabled + utkast/pausad = syns i appen, inte publikt.
+ * Disabled = ingen meny + publik sida pausad.
+ */
+export function isWebsitePubliclyLive(
+  data: Pick<DB, "website" | "domains" | "collaborationInvitations" | "meta"> = db(),
+  businessId?: string,
+): boolean {
+  const site = data.website;
+  if (!site || site.status !== "publicerad") return false;
+  if (data.meta.websitePausedAt) return false;
+  return resolveOptionalFeatures(data, businessId).website;
+}
+
+export function websiteRestoreNoticeHref(): string {
+  return "/hemsida?aterstalld=1";
+}
+
+export function shouldShowWebsiteRestoreNotice(
+  data: Pick<DB, "website" | "meta"> = db(),
+): boolean {
+  return Boolean(data.website && data.meta.websitePausedAt);
 }

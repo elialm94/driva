@@ -100,7 +100,8 @@ import {
   requestUndoExpense,
   resultatRapportResult,
 } from "./accounting-domain";
-import { activateOptionalFeature, optionalFeatureHref } from "../features";
+import { activateOptionalFeature, isOptionalFeatureExplicitlyDisabled, optionalFeatureHref, resolveOptionalFeatures } from "../features";
+import { OPTIONAL_FEATURE_COPY } from "../optional-features";
 
 export type ToolResult = {
   ok: boolean;
@@ -113,6 +114,8 @@ export type ToolResult = {
   href?: string;
   /** One-shot SAFE_WRITE: klienten kan ångra utan bekräftelsekort. */
   undo?: { kind: "dismiss_reminder"; id: string };
+  /** Funktion avstängd: visa knapp, aktivera inte tyst. */
+  activateFeature?: { id: "website" | "collaboration"; label: string };
 };
 
 export type AccountantToolScope = "current" | "all_clients";
@@ -1561,7 +1564,18 @@ const specs: ToolSpec[] = [
         parameters: obj({ description: { type: "string" } }, ["description"]),
       },
     },
-    handler: (args) => fromDomain(requestGenerateWebsite(str(args, "description") ?? ""), true),
+    handler: (args) => {
+      if (isOptionalFeatureExplicitlyDisabled("website")) {
+        const copy = OPTIONAL_FEATURE_COPY.website;
+        return {
+          ok: true,
+          forModel: { feature: "website", disabled: true },
+          text: copy.disabledHint,
+          activateFeature: { id: "website" as const, label: copy.activateCta },
+        };
+      }
+      return fromDomain(requestGenerateWebsite(str(args, "description") ?? ""), true);
+    },
   },
   {
     requiresConfirmation: false,
@@ -1576,6 +1590,23 @@ const specs: ToolSpec[] = [
       },
     },
     handler: () => {
+      if (isOptionalFeatureExplicitlyDisabled("website")) {
+        const copy = OPTIONAL_FEATURE_COPY.website;
+        return {
+          ok: true,
+          forModel: { feature: "website", disabled: true },
+          text: copy.disabledHint,
+          activateFeature: { id: "website" as const, label: copy.activateCta },
+        };
+      }
+      if (resolveOptionalFeatures().website) {
+        return {
+          ok: true,
+          forModel: { feature: "website", href: optionalFeatureHref("website") },
+          text: "Hemsida är redan aktiverad.",
+          href: optionalFeatureHref("website"),
+        };
+      }
       activateOptionalFeature("website");
       return {
         ok: true,
@@ -1598,6 +1629,23 @@ const specs: ToolSpec[] = [
       },
     },
     handler: () => {
+      if (isOptionalFeatureExplicitlyDisabled("collaboration")) {
+        const copy = OPTIONAL_FEATURE_COPY.collaboration;
+        return {
+          ok: true,
+          forModel: { feature: "collaboration", disabled: true },
+          text: copy.disabledHint,
+          activateFeature: { id: "collaboration" as const, label: copy.activateCta },
+        };
+      }
+      if (resolveOptionalFeatures().collaboration) {
+        return {
+          ok: true,
+          forModel: { feature: "collaboration", href: optionalFeatureHref("collaboration") },
+          text: "Samarbeta är redan aktiverat.",
+          href: optionalFeatureHref("collaboration"),
+        };
+      }
       activateOptionalFeature("collaboration");
       return {
         ok: true,
@@ -1618,7 +1666,18 @@ const specs: ToolSpec[] = [
         parameters: obj({}),
       },
     },
-    handler: () => fromDomain(requestPublishWebsite(), true),
+    handler: () => {
+      if (isOptionalFeatureExplicitlyDisabled("website")) {
+        const copy = OPTIONAL_FEATURE_COPY.website;
+        return {
+          ok: true,
+          forModel: { feature: "website", disabled: true },
+          text: copy.disabledHint,
+          activateFeature: { id: "website" as const, label: copy.activateCta },
+        };
+      }
+      return fromDomain(requestPublishWebsite(), true);
+    },
   },
   {
     requiresConfirmation: true,

@@ -146,6 +146,25 @@ export function putMembership(row: CollaborationMembership): CollaborationMember
   return row;
 }
 
+export function restoreMembership(
+  userId: string,
+  businessId: string,
+  at = new Date().toISOString(),
+): CollaborationMembership | undefined {
+  const m = membershipFor(userId, businessId);
+  if (!m) return undefined;
+  if (!m.revokedAt) return m;
+  const restored = { ...m, lastActiveAt: at };
+  delete restored.revokedAt;
+  return putMembership(restored);
+}
+
+export function accountingMembershipsForBusiness(businessId: string): CollaborationMembership[] {
+  return collaborationRegistry().memberships.filter(
+    (m) => m.businessId === businessId && (m.role === "accounting_consultant" || m.role === "auditor"),
+  );
+}
+
 export function revokeMembership(userId: string, businessId: string, at = new Date().toISOString()): CollaborationMembership | undefined {
   const m = membershipFor(userId, businessId);
   if (!m || m.revokedAt) return m;

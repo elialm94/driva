@@ -33,6 +33,7 @@ import {
   hydrateInvitationsFromTenant,
   inviteCollaborator,
   resendCollaboratorInvite,
+  restoreCollaboratorAccess,
   revokeCollaborator,
 } from "@/lib/collaboration/service";
 import { upsertUser } from "@/lib/collaboration/registry";
@@ -138,6 +139,34 @@ export async function revokeCollaboratorAction(formData: FormData): Promise<Invi
     return { notice: "Åtkomsten är borttagen." };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Kunde inte ta bort åtkomsten." };
+  }
+}
+
+export async function restoreCollaboratorAction(formData: FormData): Promise<InviteState> {
+  const targetUserId = String(formData.get("userId") ?? "").trim();
+  if (!targetUserId) return { error: "Personen saknas." };
+  try {
+    return await withBusiness(
+      async () => {
+        const actor = currentActor();
+        const user = actor ?? (await requireUser());
+        assertCan(actor?.role ?? "owner", "invite_collaborator");
+        const result = await restoreCollaboratorAccess({
+          businessId: actor?.businessId ?? LOCAL_JSON_BUSINESS_ID,
+          targetUserId,
+          restoredByUserId: "userId" in user ? user.userId : user.id,
+          restoredByName: user.name || ("email" in user ? user.email.split("@")[0] : "Ägaren") || "Ägaren",
+        });
+        refresh();
+        return { notice: `${result.name} har åtkomst igen.` };
+      },
+      { capability: "invite_collaborator", retry: false },
+    );
+  } catch (e) {
+    if (e instanceof CollaborationError || e instanceof CollaborationDeniedError) {
+      return { error: e.message };
+    }
+    return { error: e instanceof Error ? e.message : "Kunde inte ge åtkomst igen." };
   }
 }
 

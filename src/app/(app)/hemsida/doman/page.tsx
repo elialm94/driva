@@ -5,11 +5,18 @@ import { DomainSearchPanel } from "@/components/domain-widgets";
 import { enrichDomainView, isMockDomainMode, missingRegistrantFields, primaryDomain } from "@/lib/domains";
 import { getBusinessProfile } from "@/lib/services/settings";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { resolveOptionalFeatures } from "@/lib/features";
+import { SETTINGS_HREF } from "@/lib/settings-routes";
+import { redirect } from "next/navigation";
+import { db } from "@/lib/store";
 
 export const metadata = { title: "Domän" };
 
 export default async function DomainPage() {
   await ensurePageBusiness();
+  if (!resolveOptionalFeatures(db()).website) {
+    redirect(SETTINGS_HREF.funktioner);
+  }
   const company = getBusinessProfile();
   const domain = primaryDomain();
   const missing = missingRegistrantFields(company);
