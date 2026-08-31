@@ -147,11 +147,16 @@ async function gotoOk(page: Page, url: string) {
   assert(res.status() < 400, `${url} → HTTP ${res.status()}`);
 }
 
+/** Dev-loggen från en byteposition (statSync.size) – aldrig String.slice på ett byteindex (multibyte-svenska). */
+function devLogSince(byteOffset: number): string {
+  if (!fs.existsSync(DEV_LOG)) return "";
+  const buf = fs.readFileSync(DEV_LOG);
+  return buf.subarray(Math.min(byteOffset, buf.length)).toString("utf8");
+}
+
 async function main() {
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(OUT, { recursive: true });
-  const devLogStart = fs.existsSync(DEV_LOG) ? fs.statSync(DEV_LOG).size : 0;
-
   const browser: Browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: true,
@@ -276,7 +281,11 @@ async function main() {
       });
 
       await check("skapa offert (utkast) i demon", async () => {
-        await gotoOk(page, `${BASE}/ekonomi/offerter/ny`);
+        // Offerten skapas för E2E-kunden (id ur sessionens JSON-fil) så att
+        // skickaflödet i (d) har en komplett mottagare utan ROT-blockerare.
+        const kundId = readSessionFile(sesA).customers.find((c) => c.name === "Anna Testkund E2E")?.id;
+        assert(kundId, "E2E-kundens id hittades inte i sessionsfilen");
+        await gotoOk(page, `${BASE}/ekonomi/offerter/ny?kund=${kundId}`);
         await page.waitForSelector("#offert-rubrik", { visible: true });
         await page.type("#offert-rubrik", "Altantrappa E2E");
         // Minst en komplett prisrad krävs för att spara. Radens beskrivning
@@ -349,18 +358,29 @@ async function main() {
     {
       const page = await newPage(ctxA);
       await check("skicka offert visar success utan riktigt mejlanrop", async () => {
+        // E2E:ns egen offert (kund med e-post, utan ROT) är skickbar direkt.
+        // Seedets utkast (bokhyllan) är medvetet ofullständigt – ROT utan
+        // personnummer/bostad – och har skickaknappen avstängd.
         await gotoOk(page, `${BASE}/ekonomi?flik=offerter`);
-        await waitForText(page, "Platsbyggd bokhylla");
+        await waitForText(page, "Altantrappa E2E");
         await Promise.all([
           page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 }),
-          clickByText(page, "a", "Platsbyggd bokhylla"),
+          clickByText(page, "a", "Altantrappa E2E"),
         ]);
         await waitForText(page, "Skicka offert");
+        const logStart = fs.existsSync(DEV_LOG) ? fs.statSync(DEV_LOG).size : 0;
         await clickByText(page, "button", "Skicka offert");
         await waitForText(page, "Skicka offert?");
         await clickByText(page, "[role=dialog] button", "Skicka offert");
         await waitForText(page, "Skickad", 30000);
-        const log = fs.readFileSync(DEV_LOG, "utf8").slice(devLogStart);
+        // Dev-serverns stdout är blockbuffrad mot loggfilen – ge raden en
+        // stund att flushas innan den bedöms som saknad.
+        let log = "";
+        for (let i = 0; i < 20; i++) {
+          log = devLogSince(logStart);
+          if (log.includes("demo_simulated") || log.includes("demo_sink")) break;
+          await new Promise((r) => setTimeout(r, 500));
+        }
         assert(log.includes("demo_simulated") || log.includes("demo_sink"), "demo-simulerat utskick loggades inte");
         assert(!log.includes("mode=live"), "ett LIVE-utskick loggades i demon!");
       });
@@ -500,8 +520,10 @@ async function main() {
         // Ett klientpåstått session-id når bara SIN egen fil: saknas den
         // klonas färskt seed – samma väg som när katalogstädningen tagit
         // filen på en kall instans. Ingen väg till andra sessioner/data.
-        const forged = "bbbbbbbbbbbbbbbbbbbbbbbbbb";
-        fs.rmSync(sessionFile(forged), { force: true });
+        // Slumpat per körning: ett återanvänt id kan ligga kvar i serverns
+        // instanscache från en tidigare körning och maskera klonvägen.
+        const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+        const forged = Array.from({ length: 26 }, () => alphabet[Math.floor(Math.random() * 36)]).join("");
         const ctx = await browser.createBrowserContext();
         const page = await newPage(ctx);
         await gotoOk(page, `${BASE}/`);
