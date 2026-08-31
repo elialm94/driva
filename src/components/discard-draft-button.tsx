@@ -66,7 +66,12 @@ export function DiscardDraftButton({
           <Trash2 className="size-4" />
         </button>
       ) : (
-        <button type="button" className={buttonClasses("danger-outline")} onClick={() => setConfirming(true)}>
+        <button
+          type="button"
+          data-testid="discard-draft-trigger"
+          className={buttonClasses("danger-outline")}
+          onClick={() => setConfirming(true)}
+        >
           Kasta utkast
         </button>
       )}
