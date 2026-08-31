@@ -1,5 +1,4 @@
-import { ExternalLink, Globe, Mail, WandSparkles } from "lucide-react";
-import Link from "next/link";
+import { ExternalLink, Globe, WandSparkles } from "lucide-react";
 import { db } from "@/lib/store";
 import { datumTid } from "@/lib/format";
 import { DEFAULT_PRIMARY_CTA_LABEL } from "@/lib/types";
@@ -7,13 +6,12 @@ import { draftWebsiteDesign, publishedWebsiteDesign } from "@/lib/website-design
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { GenerateWebsiteForm, PublishWebsiteButton, SectionList } from "@/components/site-widgets";
 import { PrivacyPolicySettingsCard } from "@/components/privacy-policy-settings";
+import { WebsiteFormRecipientCard } from "@/components/website-form-recipient";
 import { SitePreviewFrame, UtseendePanel, WebsiteDesignProvider } from "@/components/site-design-widgets";
 import { CopyLinkButton } from "@/components/copy-button";
 import { DomainSidebarCard } from "@/components/domain-widgets";
 import { isMockDomainMode, primaryDomain } from "@/lib/domains";
-import { getWebsiteNotificationEmail } from "@/lib/services/settings";
 import { isLiveMailConfigured } from "@/lib/mail";
-import { SETTINGS_HREF } from "@/lib/settings-routes";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { SECTION_LABELS, stripWebsiteSecrets } from "@/lib/website-sections";
 import { resolveSiteContact } from "@/lib/website-contact";
@@ -74,7 +72,6 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
   const published = site.status === "publicerad";
   const domain = primaryDomain();
   const liveHost = domain?.status === "active" ? domain.hostname : null;
-  const websiteEmail = getWebsiteNotificationEmail(data.settings);
   const mailLive = isLiveMailConfigured();
 
   // Redigeringslistan behöver inte bilddatan (tunga data-URL:er) – bara vetskap om att bild finns.
@@ -177,27 +174,11 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
           <div>
             <SectionTitle>Webbformulär</SectionTitle>
             <Card className="px-5 py-4">
-              <div className="flex items-start gap-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-info-soft">
-                  <Mail className="size-4.5 text-info" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[14px] font-medium text-ink">
-                    {mailLive ? `Skickas till ${websiteEmail || "din e-post"}` : "Sparas i Driva"}
-                  </p>
-                  <p className="mt-1 text-[13px] leading-relaxed text-soft">
-                    {mailLive
-                      ? "Meddelanden från formuläret skapar uppdrag och mejlas till dig."
-                      : "Meddelanden från formuläret sparas som uppdrag. E-postavisering kräver att utskick konfigureras (Resend)."}
-                  </p>
-                  <Link
-                    href={`${SETTINGS_HREF.foretag}#webbformulär` as never}
-                    className="mt-2 inline-block text-[13px] font-medium text-accent hover:underline"
-                  >
-                    Ändra →
-                  </Link>
-                </div>
-              </div>
+              <WebsiteFormRecipientCard
+                companyEmail={data.settings.email}
+                storedRecipient={data.settings.websiteNotificationEmail}
+                mailLive={mailLive}
+              />
             </Card>
           </div>
 

@@ -11,17 +11,38 @@ import {
   normalizePlusgiro,
 } from "../invoices/formats";
 import { normalizeSwedishPhone, normalizeSwedishPostalCode } from "../validation";
-import { settingsDefaultsFieldErrors, settingsProfileFieldErrors } from "../settings-validation";
+import { isEmailFormat, settingsDefaultsFieldErrors, settingsProfileFieldErrors } from "../settings-validation";
+import {
+  resolveWebsiteFormRecipient,
+  websiteFormRecipientOverride,
+} from "../website-form-recipient";
 
 export function getBusinessProfile(): CompanySettings {
   return db().settings;
 }
 
 export { isEmailFormat } from "../settings-validation";
+export { resolveWebsiteFormRecipient, websiteFormRecipientOverride } from "../website-form-recipient";
 
 /** Vart nya uppdrag från hemsidans formulär mejlas. Följer företagets e-post tills en annan adress sparas. */
 export function getWebsiteNotificationEmail(profile: CompanySettings = db().settings): string {
-  return (profile.websiteNotificationEmail?.trim() || profile.email).trim();
+  return resolveWebsiteFormRecipient(profile, profile);
+}
+
+/** Sparar egen mottagare, eller rensar override (tom/samma som företagets e-post). */
+export function updateWebsiteFormRecipient(email: string | null | undefined): string {
+  const trimmed = email?.trim() ?? "";
+  if (trimmed && !isEmailFormat(trimmed)) {
+    throw new Error("Ange en giltig e-postadress.");
+  }
+  const s = db().settings;
+  s.websiteNotificationEmail = websiteFormRecipientOverride(
+    { websiteNotificationEmail: trimmed },
+    s,
+  );
+  logActivity("Mottagare för webbformuläret uppdaterades.");
+  save();
+  return resolveWebsiteFormRecipient(s, s);
 }
 
 export type BusinessProfileInput = Pick<
@@ -95,9 +116,10 @@ function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
   s.orgNumber = input.orgNumber.trim() ? normalizeOrgnr(input.orgNumber) : "";
   s.vatNumber = input.vatNumber.trim().toUpperCase().replace(/\s/g, "");
   s.email = input.email.trim();
-  const notify = optional(input.websiteNotificationEmail);
-  s.websiteNotificationEmail =
-    notify && notify.toLowerCase() !== s.email.toLowerCase() ? notify : undefined;
+  s.websiteNotificationEmail = websiteFormRecipientOverride(
+    { websiteNotificationEmail: input.websiteNotificationEmail },
+    s,
+  );
   s.phone = input.phone.trim() ? normalizeSwedishPhone(input.phone) : "";
   s.websiteUrl = optional(input.websiteUrl);
   s.address = input.address.trim();

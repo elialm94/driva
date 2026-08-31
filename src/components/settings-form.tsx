@@ -78,7 +78,7 @@ function fromInitial(initial: CompanySettings, defaults: InvoiceDefaults): FormS
     orgNumber: formatOrgnr(initial.orgNumber),
     vatNumber: initial.vatNumber,
     email: initial.email,
-    websiteNotificationEmail: initial.websiteNotificationEmail || initial.email,
+    websiteNotificationEmail: initial.websiteNotificationEmail ?? "",
     phone: initial.phone,
     websiteUrl: initial.websiteUrl ?? "",
     address: initial.address,
@@ -130,7 +130,6 @@ export function SettingsForm({
   const [extraPay, setExtraPay] = useState(() =>
     Boolean(initial.plusgiro || initial.bankAccount || initial.iban || initial.bic)
   );
-  const [notifyTouched, setNotifyTouched] = useState(() => Boolean(initial.websiteNotificationEmail));
   const [isPending, startTransition] = useTransition();
   const [logoSaving, startLogoSave] = useTransition();
   const baseline = useRef(JSON.stringify(fromInitial(initial, defaults)));
@@ -143,9 +142,6 @@ export function SettingsForm({
       const next = { ...prev, [key]: value };
       if (key === "orgNumber" && isOrgnrFormat(String(value)) && !prev.vatNumber.trim()) {
         next.vatNumber = formatVatNumber(String(value));
-      }
-      if (key === "email" && !notifyTouched) {
-        next.websiteNotificationEmail = String(value);
       }
       return next;
     });
@@ -512,30 +508,6 @@ export function SettingsForm({
               />
             </div>
           </Card>
-
-          <div id="webbformulär" className="scroll-mt-24">
-          <Card className="space-y-4 p-6">
-            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Uppdrag från hemsidan</p>
-            <div>
-              <label className={labelCls} htmlFor="installningar-websiteNotificationEmail">
-                Skicka nya uppdrag till
-              </label>
-              <input
-                type="email"
-                value={form.websiteNotificationEmail}
-                onChange={(e) => {
-                  setNotifyTouched(true);
-                  patch("websiteNotificationEmail", e.target.value);
-                }}
-                {...fieldMarkProps("websiteNotificationEmail", inputCls)}
-              />
-              <FieldError id="installningar-websiteNotificationEmail-fel">{errorFor("websiteNotificationEmail")}</FieldError>
-              <p className={hintCls}>
-                Standard är företagets e-post. En annan adress här ändrar inte den publika kontaktadressen på hemsidan.
-              </p>
-            </div>
-          </Card>
-          </div>
         </div>
       ) : null}
 

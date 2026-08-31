@@ -7,6 +7,7 @@ import { emptyTestDb, testCustomer } from "./invoices/test-db";
 import { setMailTransportForTests, type MailMessage } from "./mail";
 import { submitContactForm, websiteJobQuoteCtaHref } from "./services/website";
 import { getBusinessProfile, getWebsiteNotificationEmail, updateCompanySettings } from "./services/settings";
+import { resolveWebsiteFormRecipient } from "./website-form-recipient";
 import type { CompanySettingsInput } from "./services/settings";
 
 const visitor = {
@@ -87,6 +88,8 @@ describe("webbformulär → uppdrag", () => {
     assert.equal(data.inboxItems?.length ?? 0, 0);
 
     assert.equal(sent.length, 1);
+    const expectedTo = resolveWebsiteFormRecipient(getBusinessProfile(), getBusinessProfile());
+    assert.equal(sent[0].to, expectedTo);
     assert.equal(sent[0].to, getWebsiteNotificationEmail());
     assert.equal(sent[0].replyTo, visitor.email);
     assert.match(sent[0].subject, /Nytt uppdrag från webbformuläret/);
@@ -159,10 +162,33 @@ describe("webbformulär → uppdrag", () => {
     updateCompanySettings(settingsInput({ websiteNotificationEmail: "chef@test.se" }));
     assert.equal(getBusinessProfile().email, publicEmail);
     assert.equal(getWebsiteNotificationEmail(), "chef@test.se");
+    assert.equal(
+      resolveWebsiteFormRecipient(getBusinessProfile(), getBusinessProfile()),
+      "chef@test.se",
+    );
 
     await submitContactForm({ ...visitor, idempotencyKey: "notify-1" });
     assert.equal(sent[0].to, "chef@test.se");
     assert.notEqual(sent[0].to, publicEmail);
+  });
+
+  it("mejlar företagets e-post när ingen egen mottagare är satt", async () => {
+    const company = getBusinessProfile();
+    assert.equal(company.websiteNotificationEmail, undefined);
+    const to = resolveWebsiteFormRecipient(company, company);
+    assert.equal(to, company.email);
+
+    await submitContactForm({ ...visitor, idempotencyKey: "default-mail-1" });
+    assert.equal(sent[0].to, to);
+  });
+
+  it("följer ny företagsmail när override saknas", async () => {
+    updateCompanySettings(settingsInput({ email: "ny@test.se", websiteNotificationEmail: undefined }));
+    assert.equal(getBusinessProfile().websiteNotificationEmail, undefined);
+    assert.equal(getWebsiteNotificationEmail(), "ny@test.se");
+
+    await submitContactForm({ ...visitor, idempotencyKey: "follow-company-1" });
+    assert.equal(sent[0].to, "ny@test.se");
   });
 
   it("honeypot skapar varken kund, uppdrag eller mejl", async () => {
