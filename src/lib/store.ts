@@ -217,6 +217,7 @@ export function normalize(loaded: DB): DB {
   const domainsChanged = normalizeDomains(loaded);
   // Bokföringsmotorn: räkenskapsår, IB och verifikationsfält (idempotent).
   const migrated = migrateAccounting(loaded);
+  const droppedRetired = dropRetiredWebsiteSections(loaded);
   const dirty =
     migrateRequestsToJobs(loaded) ||
     hydrateIssuedInvoices(loaded) ||
@@ -224,7 +225,7 @@ export function normalize(loaded: DB): DB {
     hydrateTaxReductionTerms(loaded) ||
     hydrateTaxReductionDemo(loaded) ||
     hydrateQuotedBaselines(loaded) ||
-    dropRetiredWebsiteSections(loaded);
+    droppedRetired;
   // Persist snapshots so later settings changes cannot rewrite seed/historical docs.
   if (dirty || migrated || domainsChanged) persist(loaded);
   return loaded;

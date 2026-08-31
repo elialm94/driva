@@ -97,7 +97,6 @@ describe("sektionsbyggaren", () => {
   it("unika typer döljs i väljaren och kan inte dupliceras", () => {
     const types = addableTypesFor(db().website!.sections).map((o) => o.type);
     assert.ok(types.includes("text"));
-    assert.ok(!types.includes("instagram"));
     assert.ok(types.includes("omdomen"));
     assert.ok(types.includes("cta"));
     assert.ok(types.includes("kontaktuppgifter"));
@@ -170,7 +169,10 @@ describe("sektionsbyggaren", () => {
 describe("borttagna sektionstyper", () => {
   it("Instagram går inte att lägga till", () => {
     assert.throws(() => addWebsiteSection("instagram" as never), /redan|kan inte/);
-    assert.ok(!ADDABLE_SECTION_TYPES.some((o) => o.type === "instagram"));
+    assert.equal(
+      ADDABLE_SECTION_TYPES.some((o) => (o.type as string) === "instagram"),
+      false,
+    );
   });
 
   it("släpper gamla Instagram-sektioner så publika sajter inte kraschar", () => {
