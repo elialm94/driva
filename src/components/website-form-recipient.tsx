@@ -33,23 +33,18 @@ export function WebsiteFormRecipientCard({
         <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-info-soft">
           <Mail className="size-4.5 text-info" />
         </div>
-        <div className="min-w-0">
-          <p className="text-[13px] font-medium text-soft">Skickas till</p>
-          <p className="mt-0.5 text-[14px] font-medium text-ink">{recipient || "din e-post"}</p>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-medium text-ink">Webbformulär</p>
           <p className="mt-1 text-[13px] leading-relaxed text-soft">
-            Nya förfrågningar skapar automatiskt ett uppdrag och skickas även till den här adressen.
+            Skickas till <span className="font-medium text-ink">{recipient || "din e-post"}</span>
           </p>
           {!mailLive ? (
-            <p className="mt-1 text-[13px] leading-relaxed text-muted">
+            <p className="mt-1 text-[12px] leading-relaxed text-muted">
               E-postavisering kräver att utskick konfigureras (Resend).
             </p>
           ) : null}
-          <button
-            type="button"
-            className="mt-2 inline-block text-[13px] font-medium text-accent hover:underline"
-            onClick={() => setOpen(true)}
-          >
-            Ändra
+          <button type="button" className={buttonClasses("secondary", "sm", "mt-3")} onClick={() => setOpen(true)}>
+            Redigera
           </button>
         </div>
       </div>

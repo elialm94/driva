@@ -673,25 +673,26 @@ export function DomainSidebarCard({
   demo: boolean;
 }) {
   return (
-    <Card className="px-5 py-4">
+    <Card className="px-4 py-3.5">
       <div className="flex items-start gap-3">
-        <div className="flex size-9 items-center justify-center rounded-xl bg-accent-soft">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent-soft">
           <Globe className="size-4.5 text-accent" />
         </div>
         <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-medium text-ink">Domän</p>
           {hostname ? (
             <>
-              <p className="truncate font-mono text-[13px] font-medium text-ink">{hostname}</p>
+              <p className="mt-1 truncate font-mono text-[13px] font-medium text-ink">{hostname}</p>
               <p className="mt-0.5 text-[13px] text-soft">
                 {live ? "Igång" : "Kopplas"}
                 {demo ? " · demo" : ""}
               </p>
             </>
           ) : (
-            <p className="text-[13px] leading-relaxed text-soft">Skaffa en .se-adress så ligger hemsidan på ditt namn.</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-soft">Ingen egen adress ännu</p>
           )}
-          <AppLink href="/hemsida/doman" className="mt-2 inline-block text-[13px] font-medium text-accent hover:underline">
-            {hostname ? "Öppna domänsidan →" : "Skaffa .se-adress →"}
+          <AppLink href="/hemsida/doman" className={buttonClasses("secondary", "sm", "mt-3")}>
+            Hantera
           </AppLink>
         </div>
       </div>

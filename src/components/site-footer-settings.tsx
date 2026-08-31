@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Pencil } from "lucide-react";
 import { setWebsiteFooterAction } from "@/app/actions";
 import type { CompanySettings, Website, WebsiteFooter } from "@/lib/types";
 import {
@@ -9,14 +10,80 @@ import {
   SOCIAL_NETWORK_LABELS,
   WEBSITE_SOCIAL_NETWORKS,
   draftWebsiteFooter,
+  footerSummaryRows,
   resolveFooterAbout,
   sameFooter,
 } from "@/lib/website-footer";
 import { formatAddressLine, resolveSiteContact } from "@/lib/website-contact";
 import { SETTINGS_HREF } from "@/lib/settings-routes";
-import { cx } from "./ui";
+import { buttonClasses, cx } from "./ui";
+import { Modal } from "./modal";
 
 export function FooterSettingsCard({
+  website,
+  company,
+  published,
+}: {
+  website: Website;
+  company: CompanySettings;
+  published: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const footer = draftWebsiteFooter(website);
+  const contact = resolveSiteContact(company, website);
+  const rows = footerSummaryRows(footer, {
+    phone: contact.phone,
+    email: contact.email,
+    address: formatAddressLine(contact),
+  });
+  const unpublished = published && !sameFooter(footer, website.footer ?? {});
+
+  return (
+    <>
+      <div>
+        <p className="text-[14px] font-medium text-ink">Sidfot</p>
+        <dl className="mt-2 space-y-1.5">
+          {rows.map((row) => (
+            <div key={row.label} className="flex items-baseline justify-between gap-3 text-[13px]">
+              <dt className="text-soft">{row.label}</dt>
+              <dd className="font-medium text-ink">{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+        {unpublished ? (
+          <p className="mt-2 text-[12px] leading-relaxed text-muted">Opublicerade ändringar</p>
+        ) : null}
+        <button type="button" className={cx(buttonClasses("secondary", "sm"), "mt-3")} onClick={() => setOpen(true)}>
+          <Pencil className="size-3.5" /> Redigera sidfot
+        </button>
+      </div>
+      {open ? (
+        <Modal
+          open
+          onClose={() => setOpen(false)}
+          title="Redigera sidfot"
+          size="lg"
+          footer={
+            <div className="flex justify-end gap-2">
+              <button type="button" className={buttonClasses("ghost")} onClick={() => setOpen(false)}>
+                Avbryt
+              </button>
+              <button type="button" className={buttonClasses("primary")} onClick={() => setOpen(false)}>
+                Spara
+              </button>
+            </div>
+          }
+        >
+          <div className="px-6 py-5">
+            <FooterSettingsForm website={website} company={company} published={published} />
+          </div>
+        </Modal>
+      ) : null}
+    </>
+  );
+}
+
+function FooterSettingsForm({
   website,
   company,
   published,
@@ -69,14 +136,6 @@ export function FooterSettingsCard({
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="text-[14px] font-medium text-ink">Sidfot</p>
-        <p className="mt-1 text-[13px] leading-relaxed text-soft">
-          Kontakt, tjänster och logotyp hämtas automatiskt. Du kan dölja fält och lägga till vanliga
-          sociala länkar.
-        </p>
-      </div>
-
       <div className="space-y-2">
         <Toggle
           label="Visa telefon"

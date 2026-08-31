@@ -46,15 +46,7 @@ export function PrivacyPolicySettingsCard({
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-medium text-ink">Integritetspolicy</p>
-          <p className="mt-1 text-[13px] leading-relaxed text-soft">
-            {custom ? "Anpassad" : "Standard från Driva"}
-          </p>
-          {custom ? null : (
-            <p className="mt-1 text-[13px] leading-relaxed text-soft">
-              Driva håller policyn uppdaterad utifrån dina företagsuppgifter och funktionerna du
-              använder.
-            </p>
-          )}
+          <p className="mt-1 text-[13px] leading-relaxed text-soft">{custom ? "Anpassad" : "Standard"}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <a
               href={privacyPolicyHref(true)}

@@ -99,8 +99,10 @@ async function main() {
   await page.screenshot({ path: `${OUT}/sajt-submitted.png` });
 
   await page.goto(`${BASE}/hemsida`, { waitUntil: "networkidle0" });
+  const settingsTab = await page.$('#sitetab-installningar');
+  if (settingsTab) await settingsTab.click();
   const builder = await page.evaluate(() => document.body.innerText);
-  if (!builder.includes("Standard från Driva") && !builder.includes("Anpassad")) {
+  if (!builder.includes("Standard") && !builder.includes("Anpassad")) {
     fail("byggaren saknar integritetskort");
   }
   await page.screenshot({ path: `${OUT}/hemsida-settings.png`, fullPage: true });

@@ -3,15 +3,18 @@ import { db } from "@/lib/store";
 import { datumTid } from "@/lib/format";
 import { DEFAULT_PRIMARY_CTA_LABEL } from "@/lib/types";
 import { draftWebsiteDesign, publishedWebsiteDesign } from "@/lib/website-design";
-import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
+import { Badge, Card, PageHeader } from "@/components/ui";
 import { GenerateWebsiteForm, PublishWebsiteButton, SectionList } from "@/components/site-widgets";
 import { PrivacyPolicySettingsCard } from "@/components/privacy-policy-settings";
 import { WebsiteFormRecipientCard } from "@/components/website-form-recipient";
 import { FooterSettingsCard } from "@/components/site-footer-settings";
 import { draftPrivacyPolicyState, seedCustomPrivacyPolicy } from "@/lib/website-privacy";
+import { hasUnpublishedWebsiteDrafts } from "@/lib/website-drafts";
 import { SitePreviewFrame, UtseendePanel, WebsiteDesignProvider } from "@/components/site-design-widgets";
 import { CopyLinkButton } from "@/components/copy-button";
 import { DomainSidebarCard } from "@/components/domain-widgets";
+import { SiteEditorShell } from "@/components/site-editor-shell";
+import { StickyMobileActions } from "@/components/sticky-actions";
 import { isMockDomainMode, primaryDomain } from "@/lib/domains";
 import { isLiveMailConfigured } from "@/lib/mail";
 import { ensurePageBusiness } from "@/lib/auth/session";
@@ -49,6 +52,8 @@ export default async function WebsitePage() {
   }
 
   const published = site.status === "publicerad";
+  const unpublishedDrafts = hasUnpublishedWebsiteDrafts(site);
+  const dirty = !published || unpublishedDrafts;
   const domain = primaryDomain();
   const liveHost = domain?.status === "active" ? domain.hostname : null;
   const mailLive = isLiveMailConfigured();
@@ -63,15 +68,18 @@ export default async function WebsitePage() {
   }));
   const businessContact = resolveSiteContact(data.settings, site);
 
+  const publishedLabel = site.publishedAt ? `Publicerad ${datumTid(site.publishedAt)}` : "Publicerad";
+  const subtitle = published
+    ? unpublishedDrafts
+      ? `${publishedLabel} · opublicerade ändringar`
+      : publishedLabel
+    : "Utkast – publicera när du är nöjd";
+
   return (
     <div className="animate-fade-up">
       <PageHeader
         title="Hemsida"
-        subtitle={
-          published
-            ? `Publicerad ${site.publishedAt ? datumTid(site.publishedAt) : ""} · formuläret skapar uppdrag automatiskt`
-            : "Utkast – granska och publicera när du är nöjd"
-        }
+        subtitle={subtitle}
         actions={
           <div className="flex items-center gap-2">
             <a
@@ -82,101 +90,99 @@ export default async function WebsitePage() {
             >
               <ExternalLink className="size-3.5" /> Öppna i ny flik
             </a>
-            <PublishWebsiteButton published={published} />
+            <div className={dirty ? "max-lg:hidden" : undefined}>
+              <PublishWebsiteButton published={published} />
+            </div>
           </div>
         }
       />
 
       <WebsiteDesignProvider initial={draftWebsiteDesign(site)}>
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-        {/* Live-preview */}
-        <div className="min-w-0">
-          {/* flex-wrap: på smala skärmar lägger sig Kopiera länk under adressen i stället för att spränga bredden. */}
-          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-            <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted">
-              <Globe className="size-4 shrink-0" />
-              <span className="min-w-0 break-all font-mono text-[12px]">
-                {liveHost ? liveHost : published ? "driva.site/" + site.slug : "Förhandsvisning"}
-              </span>
-              {/* Utkast är grått som överallt annars – gult betyder "väntar/uppmärksamhet". */}
-              <Badge tone={published ? "ok" : "neutral"}>{published ? "Publicerad" : "Utkast"}</Badge>
+        <SiteEditorShell
+          preview={
+            <div className="min-w-0">
+              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted">
+                  <Globe className="size-4 shrink-0" />
+                  <span className="min-w-0 break-all font-mono text-[12px]">
+                    {liveHost ? liveHost : published ? "driva.site/" + site.slug : "Förhandsvisning"}
+                  </span>
+                  <Badge tone={published ? (unpublishedDrafts ? "warn" : "ok") : "neutral"}>
+                    {published ? (unpublishedDrafts ? "Opublicerade ändringar" : "Publicerad") : "Utkast"}
+                  </Badge>
+                </div>
+                <CopyLinkButton path="/sajt" label="Kopiera länk" />
+              </div>
+              <SitePreviewFrame website={safeSite} company={data.settings} />
             </div>
-            <CopyLinkButton path="/sajt" label="Kopiera länk" />
-          </div>
-          <SitePreviewFrame website={safeSite} company={data.settings} />
-          <p className="mt-2 text-[12px] text-muted">
-            Det här är exakt vad besökarna ser. Formuläret är aktivt på den publicerade sajten.
-          </p>
-        </div>
-
-        {/* Sidopanel */}
-        <div className="min-w-0 space-y-6">
-          <div className="min-w-0">
-            <SectionTitle>Utseende</SectionTitle>
-            <Card className="min-w-0">
-              <UtseendePanel publishedDesign={publishedWebsiteDesign(site)} published={published} />
-            </Card>
-            <p className="mt-2 text-[12px] leading-relaxed text-muted">
-              Välj känslan som passar ditt företag – innehållet är detsamma i alla teman.
-            </p>
-          </div>
-
-          <div className="min-w-0">
-            <SectionTitle>Innehåll</SectionTitle>
-            <Card className="min-w-0 overflow-hidden">
-              <SectionList
-                sections={listSections}
-                labels={SECTION_LABELS}
-                primaryCtaLabel={site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL}
-                businessContact={businessContact}
+          }
+          innehall={
+            <div className="min-w-0">
+              <Card className="min-w-0 overflow-hidden">
+                <SectionList
+                  sections={listSections}
+                  labels={SECTION_LABELS}
+                  primaryCtaLabel={site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL}
+                  businessContact={businessContact}
+                />
+              </Card>
+              <p className="mt-2 text-[12px] leading-relaxed text-muted">
+                Dra för att ändra ordning. Klicka för att redigera. Dolda sektioner syns inte på sajten, men
+                innehållet sparas.
+              </p>
+            </div>
+          }
+          design={
+            <div className="min-w-0">
+              <p className="mb-3 text-[13px] leading-relaxed text-soft">
+                Välj känslan som passar ditt företag – innehållet är detsamma i alla teman.
+              </p>
+              <Card className="min-w-0">
+                <UtseendePanel publishedDesign={publishedWebsiteDesign(site)} published={published} />
+              </Card>
+            </div>
+          }
+          installningar={
+            <div className="min-w-0 space-y-3">
+              <Card className="min-w-0 px-4 py-3.5">
+                <WebsiteFormRecipientCard
+                  companyEmail={data.settings.email}
+                  storedRecipient={data.settings.websiteNotificationEmail}
+                  mailLive={mailLive}
+                />
+              </Card>
+              <Card className="min-w-0 px-4 py-3.5">
+                <FooterSettingsCard website={site} company={data.settings} published={published} />
+              </Card>
+              <Card className="min-w-0 px-4 py-3.5">
+                <PrivacyPolicySettingsCard
+                  company={data.settings}
+                  businessName={site.businessName}
+                  draft={draftPrivacyPolicyState(site)}
+                  standardSeed={seedCustomPrivacyPolicy({ company: data.settings, website: site })}
+                />
+              </Card>
+              <DomainSidebarCard
+                hostname={domain?.hostname}
+                live={domain?.status === "active"}
+                demo={isMockDomainMode()}
               />
-            </Card>
-            <p className="mt-2 text-[12px] leading-relaxed text-muted">
-              Dra för att ändra ordning. Klicka för att redigera. Dolda sektioner syns inte på sajten, men innehållet
-              sparas.
-            </p>
-          </div>
-
-          <div>
-            <SectionTitle>Webbformulär</SectionTitle>
-            <Card className="px-5 py-4">
-              <WebsiteFormRecipientCard
-                companyEmail={data.settings.email}
-                storedRecipient={data.settings.websiteNotificationEmail}
-                mailLive={mailLive}
-              />
-            </Card>
-          </div>
-
-          <div>
-            <SectionTitle>Sidfot</SectionTitle>
-            <Card className="min-w-0 px-5 py-4">
-              <FooterSettingsCard website={site} company={data.settings} published={published} />
-            </Card>
-            <Card className="mt-3 min-w-0 px-5 py-4">
-              <PrivacyPolicySettingsCard
-                company={data.settings}
-                businessName={site.businessName}
-                draft={draftPrivacyPolicyState(site)}
-                standardSeed={seedCustomPrivacyPolicy({ company: data.settings, website: site })}
-              />
-            </Card>
-            <p className="mt-2 text-[12px] leading-relaxed text-muted">
-              Sidfoten fylls i från företagsuppgifter och Tjänster. Integritetspolicy ligger alltid
-              längst ner.
-            </p>
-          </div>
-
-          <div>
-            <SectionTitle>Domän</SectionTitle>
-            <DomainSidebarCard
-              hostname={domain?.hostname}
-              live={domain?.status === "active"}
-              demo={isMockDomainMode()}
-            />
-          </div>
-        </div>
-      </div>
+            </div>
+          }
+        />
+        {dirty ? (
+          <StickyMobileActions
+            summary={
+              <p className="text-[13px] text-soft">
+                {published ? "Opublicerade ändringar" : "Hemsidan är ett utkast"}
+              </p>
+            }
+          >
+            <div className="w-full [&_button:first-of-type]:w-full">
+              <PublishWebsiteButton published={published} />
+            </div>
+          </StickyMobileActions>
+        ) : null}
       </WebsiteDesignProvider>
     </div>
   );

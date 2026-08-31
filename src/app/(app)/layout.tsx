@@ -56,7 +56,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       </Suspense>
       {/* Bottenmarginalen rymmer bottennavet + safe area så sista raden aldrig döljs. */}
       <main className="pb-[calc(var(--bottom-nav-h)+env(safe-area-inset-bottom)+2.5rem)] lg:pb-16 lg:pl-60">
-        <div className="mx-auto w-full max-w-5xl px-4 pt-6 sm:px-8 lg:pt-10 has-[[data-editor-shell]]:max-w-editor">
+        <div className="mx-auto w-full max-w-5xl px-4 pt-6 sm:px-8 lg:pt-10 has-[[data-editor-shell]]:max-w-editor has-[[data-site-editor-shell]]:max-w-site-editor">
           {children}
         </div>
       </main>

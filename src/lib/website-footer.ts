@@ -240,6 +240,33 @@ export function resolveFooterAbout(
   return text || undefined;
 }
 
+export interface FooterSummaryRow {
+  label: string;
+  value: string;
+}
+
+/**
+ * Kompakt status för Hemsida → Inställningar: vad sidfoten visar just nu,
+ * utan att hela formuläret behöver ta permanent plats.
+ */
+export function footerSummaryRows(
+  footer: WebsiteFooter,
+  contact: { phone?: string; email?: string; address?: string },
+): FooterSummaryRow[] {
+  const f = normalizeWebsiteFooter(footer);
+  const contactShown =
+    (Boolean(contact.phone?.trim()) && f.showPhone !== false) ||
+    (Boolean(contact.email?.trim()) && f.showEmail !== false) ||
+    (Boolean(contact.address?.trim()) && f.showAddress !== false);
+  const socialCount = WEBSITE_SOCIAL_NETWORKS.filter((network) => Boolean(f.social?.[network])).length;
+  return [
+    { label: "Kontaktuppgifter", value: contactShown ? "På" : "Av" },
+    { label: "Tjänster", value: f.showServices !== false ? "På" : "Av" },
+    { label: "Sociala länkar", value: socialCount > 0 ? String(socialCount) : "Inga" },
+    { label: "Kort om företaget", value: f.aboutText?.trim() ? "Angivet" : "Automatisk" },
+  ];
+}
+
 export function resolveWebsiteFooter(
   website: Pick<Website, "businessName" | "city" | "sections">,
   company: Pick<

@@ -5,12 +5,14 @@ import assert from "node:assert/strict";
 import { db, replaceDb } from "./store";
 import { emptyTestDb } from "./invoices/test-db";
 import type { Website } from "./types";
-import { generateWebsite, publishWebsite, setWebsiteFooter } from "./services/website";
+import { generateWebsite, publishWebsite, setWebsiteDesign, setWebsiteFooter } from "./services/website";
+import { hasUnpublishedWebsiteDrafts } from "./website-drafts";
 import {
   FOOTER_SERVICES_MAX,
   assertSocialUrl,
   draftWebsiteFooter,
   footerServiceTitles,
+  footerSummaryRows,
   publishedWebsiteFooter,
   resolveWebsiteFooter,
   suggestFooterAbout,
@@ -161,6 +163,44 @@ describe("sidfotens innehåll", () => {
   });
 });
 
+describe("footerSummaryRows", () => {
+  it("visar På när någon kontaktuppgift är synlig, och Automatisk om-text", () => {
+    assert.deepEqual(footerSummaryRows({}, { phone: "070-123 45 67", email: "a@b.se", address: "Gatan 1" }), [
+      { label: "Kontaktuppgifter", value: "På" },
+      { label: "Tjänster", value: "På" },
+      { label: "Sociala länkar", value: "Inga" },
+      { label: "Kort om företaget", value: "Automatisk" },
+    ]);
+  });
+
+  it("visar Av när kontakt och tjänster är avstängda", () => {
+    const rows = footerSummaryRows(
+      {
+        showPhone: false,
+        showEmail: false,
+        showAddress: false,
+        showServices: false,
+        aboutText: "Kort egen text.",
+        social: { instagram: "https://instagram.com/almqvist" },
+      },
+      { phone: "070-123 45 67", email: "a@b.se", address: "Gatan 1" },
+    );
+    assert.equal(rows[0].value, "Av");
+    assert.equal(rows[1].value, "Av");
+    assert.equal(rows[2].value, "1");
+    assert.equal(rows[3].value, "Angivet");
+  });
+
+  it("räknar ifyllda sociala länkar och döljer kontakt när uppgifterna saknas", () => {
+    const rows = footerSummaryRows(
+      { social: { instagram: "https://instagram.com/x", facebook: "https://facebook.com/x" } },
+      {},
+    );
+    assert.equal(rows.find((r) => r.label === "Sociala länkar")?.value, "2");
+    assert.equal(rows.find((r) => r.label === "Kontaktuppgifter")?.value, "Av");
+  });
+});
+
 describe("sociala länkar är bara URL:er", () => {
   it("godkänner https och lägger till protokoll", () => {
     assert.equal(trySocialUrl("https://instagram.com/firma"), "https://instagram.com/firma");
@@ -230,5 +270,23 @@ describe("sidfot: utkast → publicera", () => {
     assert.ok(view.about);
     assert.equal(site.footer, undefined);
     assert.equal(site.draftFooter, undefined);
+  });
+});
+
+describe("hasUnpublishedWebsiteDrafts", () => {
+  it("är false på publicerad sajt utan utkast, och på aldrig-publicerad sajt", () => {
+    replaceDb(emptyTestDb({ website: testWebsite() }));
+    assert.equal(hasUnpublishedWebsiteDrafts(db().website!), false);
+    replaceDb(emptyTestDb({ website: testWebsite({ status: "utkast", publishedAt: undefined }) }));
+    assert.equal(hasUnpublishedWebsiteDrafts(db().website!), false);
+  });
+
+  it("är true när sidfot eller utseende skiljer sig från det publicerade", () => {
+    replaceDb(emptyTestDb({ website: testWebsite() }));
+    setWebsiteFooter({ showPhone: false });
+    assert.equal(hasUnpublishedWebsiteDrafts(db().website!), true);
+    replaceDb(emptyTestDb({ website: testWebsite() }));
+    setWebsiteDesign({ themeId: "modern", accent: "bla" });
+    assert.equal(hasUnpublishedWebsiteDrafts(db().website!), true);
   });
 });

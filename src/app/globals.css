@@ -33,6 +33,8 @@
 
   /* Offert/faktura-editorns desktop-arbetsyta (~1240px, inte ultrawide-fullbredd). */
   --max-width-editor: 77.5rem;
+  /* Hemsida-editorn: stor preview + kompakt panel (~1440px, inte ultrawide-fullbredd). */
+  --max-width-site-editor: 90rem;
 
   --shadow-card: 0 1px 2px rgb(24 23 19 / 0.04), 0 12px 32px -18px rgb(24 23 19 / 0.14);
   --shadow-pop: 0 4px 12px rgb(24 23 19 / 0.08), 0 32px 80px -24px rgb(24 23 19 / 0.28);
