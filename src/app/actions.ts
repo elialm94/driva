@@ -117,12 +117,8 @@ import {
   addServiceItem,
   addTestimonialItem,
   addWebsiteSection,
-  beginInstagramConnect,
-  disconnectInstagram,
   generateWebsite,
-  instagramConnectStatus,
   publishWebsite,
-  refreshInstagramPosts,
   removeServiceItem,
   removeTestimonialItem,
   removeWebsiteSection,
@@ -1296,60 +1292,6 @@ export async function reorderTestimonialItemsAction(sectionId: string, fromIndex
   await withBusiness(() => {
     reorderTestimonialItems(sectionId, fromIndex, toIndex);
     refresh();
-  });
-}
-
-export async function instagramStatusAction(sectionId: string) {
-  return withBusinessRead(() => {
-    try {
-      return instagramConnectStatus(sectionId);
-    } catch {
-      return null;
-    }
-  });
-}
-
-export async function beginInstagramConnectAction(
-  sectionId: string,
-  handle: string,
-): Promise<{ ok: true; url: string } | { ok: false; error: string; needsSetup?: boolean }> {
-  return withBusiness(() => {
-    try {
-      const result = beginInstagramConnect(sectionId, handle);
-      refresh();
-      return { ok: true as const, url: result.url };
-    } catch (e) {
-      const error = e instanceof Error ? e.message : "Kunde inte ansluta Instagram.";
-      return {
-        ok: false as const,
-        error,
-        needsSetup: /INSTAGRAM_APP_|inte konfigurerat/i.test(error),
-      };
-    }
-  });
-}
-
-export async function disconnectInstagramAction(sectionId: string) {
-  return withBusiness(() => {
-    try {
-      disconnectInstagram(sectionId);
-    } catch (e) {
-      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte koppla från." };
-    }
-    refresh();
-    return { ok: true as const };
-  });
-}
-
-export async function refreshInstagramPostsAction(sectionId: string) {
-  return withBusiness(async () => {
-    try {
-      await refreshInstagramPosts(sectionId);
-    } catch (e) {
-      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte hämta inlägg." };
-    }
-    refresh();
-    return { ok: true as const };
   });
 }
 
