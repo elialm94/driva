@@ -1,7 +1,8 @@
 import { db, save } from "../store";
 import type { CompanySettings, VatRate } from "../types";
 import { logActivity } from "./activity";
-import { collectSellerBlockers, type IssueBlocker } from "../invoices/validate";
+import { settingsBillingReadiness } from "../billing-readiness";
+import type { IssueBlocker } from "../invoices/validate";
 import {
   formatVatNumber,
   normalizeBankgiro,
@@ -208,8 +209,8 @@ export function billingReadiness(profile: CompanySettings = db().settings): {
   missingCount: number;
   blockers: IssueBlocker[];
 } {
-  const blockers = collectSellerBlockers(profile);
-  return { ready: blockers.length === 0, missingCount: blockers.length, blockers };
+  const readiness = settingsBillingReadiness(profile);
+  return { ready: readiness.ready, missingCount: readiness.missingCount, blockers: readiness.blockers };
 }
 
 export function connectedBankSummary(): { label: string; href: string } | null {

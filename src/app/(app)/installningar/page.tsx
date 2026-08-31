@@ -7,7 +7,7 @@ import {
   getBusinessProfile,
   getInvoiceDefaults,
 } from "@/lib/services/settings";
-import { parseSettingsFlik } from "@/lib/settings-routes";
+import { parseSettingsFalt, parseSettingsFlik } from "@/lib/settings-routes";
 import { sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
 import { primaryDomain } from "@/lib/domains";
 import { ensurePageBusiness, isDemoSession } from "@/lib/auth/session";
@@ -27,6 +27,7 @@ export default async function SettingsPage(props: {
   await ensurePageBusiness();
   const searchParams = await props.searchParams;
   const flik = parseSettingsFlik(typeof searchParams.flik === "string" ? searchParams.flik : undefined);
+  const focusFieldKey = parseSettingsFalt(typeof searchParams.falt === "string" ? searchParams.falt : undefined);
   const profile = getBusinessProfile();
   const tillbaka = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : null;
   const tillbakaNamn =
@@ -39,6 +40,7 @@ export default async function SettingsPage(props: {
         defaults={getInvoiceDefaults()}
         flik={flik}
         readiness={billingReadiness(profile)}
+        focusFieldKey={focusFieldKey}
         bank={connectedBankSummary()}
         returnTo={tillbaka}
         returnLabel={tillbakaNamn}
