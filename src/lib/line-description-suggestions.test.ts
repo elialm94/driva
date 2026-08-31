@@ -3,7 +3,7 @@ process.env.DRIVA_TEST = "1";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { emptyTestDb, labor } from "./invoices/test-db";
-import type { JobWorkEntry, QuoteVersion } from "./types";
+import type { DocLine, JobWorkEntry, QuoteVersion } from "./types";
 import {
   addIgnoredLineDescription,
   collectLineDescriptionVocabulary,
@@ -35,6 +35,14 @@ function version(over: Partial<QuoteVersion> & { lines: QuoteVersion["lines"] })
     terms: over.terms ?? "",
     createdAt: over.createdAt ?? daysAgo(10),
   };
+}
+
+function material(over: Partial<DocLine> = {}): DocLine {
+  return labor({ kind: "material", type: "MATERIAL", unit: "st", unitPrice: 80, ...over });
+}
+
+function other(over: Partial<DocLine> = {}): DocLine {
+  return labor({ kind: "ovrigt", type: "OTHER", unit: "st", ...over });
 }
 
 function work(over: Partial<JobWorkEntry> & { description: string }): JobWorkEntry {
@@ -151,16 +159,21 @@ describe("ranking", () => {
     );
   });
 
-  it("type-aware: samma prefix, Material-historik lyfts när radtypen är material", () => {
+  it("type-aware: Material-historik syns inte när radtypen är Arbete", () => {
     const vocab = [
       entry("Montering", { count: 4, kindCounts: { arbete: 4 }, lastUsed: daysAgo(3) }),
       entry("Material", { count: 4, kindCounts: { material: 4 }, lastUsed: daysAgo(3) }),
     ];
     const asMaterial = rankLineDescriptionSuggestions(vocab, "M", { kind: "material", now });
     const asLabor = rankLineDescriptionSuggestions(vocab, "M", { kind: "arbete", now });
-    assert.equal(asMaterial[0]?.text, "Material");
-    assert.equal(asLabor[0]?.text, "Montering");
-    assert.equal(asMaterial.some((r) => r.text === "Montering"), true);
+    assert.deepEqual(
+      asMaterial.map((r) => r.text),
+      ["Material"]
+    );
+    assert.deepEqual(
+      asLabor.map((r) => r.text),
+      ["Montering"]
+    );
   });
 
   it("deduplicerar Rörskydd / rörskydd / RÖRSKYDD till ett förslag", () => {
@@ -559,6 +572,216 @@ describe("glöm förslag", () => {
       false
     );
     assert.equal(JSON.stringify(data.quoteVersions), snapshot);
+  });
+
+  it("Glöm förslag är type-specifikt: Material-glömt tar inte bort samma text på Arbete", () => {
+    const data = emptyTestDb({
+      quoteVersions: [
+        version({
+          createdAt: daysAgo(8),
+          lines: [
+            material({ description: "Montering" }),
+            labor({ description: "Montering" }),
+            labor({ description: "Rivning" }),
+          ],
+        }),
+      ],
+    });
+    addIgnoredLineDescription(data.meta, "Montering", "material");
+    const vocab = collectLineDescriptionVocabulary(data);
+    const montering = vocab.find((v) => v.text === "Montering");
+    assert.equal(montering?.kindCounts.material, undefined);
+    assert.equal(montering?.kindCounts.arbete, 1);
+    assert.equal(
+      rankLineDescriptionSuggestions(vocab, "Mo", { kind: "material", now }).some((r) => r.text === "Montering"),
+      false
+    );
+    assert.equal(
+      rankLineDescriptionSuggestions(vocab, "Mo", { kind: "arbete", now }).some((r) => r.text === "Montering"),
+      true
+    );
+    assert.deepEqual(data.meta.ignoredLineDescriptions, [{ key: "montering", kind: "material" }]);
+  });
+});
+
+describe("autocomplete per radtyp", () => {
+  const now = Date.parse("2026-08-31T12:00:00Z");
+
+  function screenshotHistoryDb() {
+    return emptyTestDb({
+      quoteVersions: [
+        version({
+          id: "qv-mat",
+          createdAt: daysAgo(12),
+          lines: [
+            material({ description: "Spikar" }),
+            material({ description: "Spikpistol" }),
+            material({ description: "Virke" }),
+            labor({ description: "Montering" }),
+            labor({ description: "Rivning" }),
+            labor({ description: "Snickeriarbete" }),
+          ],
+        }),
+      ],
+      invoices: [
+        {
+          id: "inv-mat",
+          number: 4,
+          customerId: "cust-1",
+          type: "faktura",
+          status: "skickad",
+          lines: [material({ description: "Spikar" }), labor({ description: "Rivning" })],
+          rot: null,
+          issueDate: daysAgo(3),
+          dueDate: daysAgo(-10),
+          paymentTermsDays: 30,
+          reminders: [],
+          token: "type-scope",
+          ocr: "4",
+          createdAt: daysAgo(3),
+          issuedAt: daysAgo(3),
+        },
+      ],
+    });
+  }
+
+  it("screenshot: Sp på Arbete visar inte Spikar/Spikpistol, Material gör det", () => {
+    const vocab = collectLineDescriptionVocabulary(screenshotHistoryDb());
+    const asLabor = rankLineDescriptionSuggestions(vocab, "Sp", { kind: "arbete", now });
+    const asMaterial = rankLineDescriptionSuggestions(vocab, "Sp", { kind: "material", now });
+    assert.deepEqual(
+      asLabor.map((r) => r.text),
+      []
+    );
+    assert.deepEqual(
+      asMaterial.map((r) => r.text),
+      ["Spikar", "Spikpistol"]
+    );
+  });
+
+  it("samma description kan finnas i flera types när historiken stöder det", () => {
+    const db = emptyTestDb({
+      quoteVersions: [
+        version({
+          createdAt: daysAgo(6),
+          lines: [labor({ description: "Montering" }), other({ description: "Montering" })],
+        }),
+      ],
+    });
+    const vocab = collectLineDescriptionVocabulary(db);
+    assert.equal(rankLineDescriptionSuggestions(vocab, "Mo", { kind: "arbete", now })[0]?.text, "Montering");
+    assert.equal(rankLineDescriptionSuggestions(vocab, "Mo", { kind: "ovrigt", now })[0]?.text, "Montering");
+    assert.equal(rankLineDescriptionSuggestions(vocab, "Mo", { kind: "material", now }).length, 0);
+  });
+
+  it("ranking sker endast inom vald type: prefix, frekvens, recency", () => {
+    const vocab = [
+      entry("Spikar", { count: 20, kindCounts: { material: 20 }, lastUsed: daysAgo(40) }),
+      entry("Spikpistol", { count: 4, kindCounts: { material: 4 }, lastUsed: daysAgo(2) }),
+      entry("Specialskruv", { count: 2, kindCounts: { material: 2 }, lastUsed: daysAgo(1) }),
+      entry("Spikning", { count: 50, kindCounts: { arbete: 50 }, lastUsed: daysAgo(1) }),
+    ];
+    assert.deepEqual(
+      rankLineDescriptionSuggestions(vocab, "Sp", { kind: "material", now }).map((r) => r.text),
+      ["Spikar", "Spikpistol", "Specialskruv"]
+    );
+  });
+
+  it("typo suppression är type-specifik", () => {
+    const vocab = [
+      entry("Spikar", { count: 20, kindCounts: { material: 20 }, lastUsed: daysAgo(2) }),
+      entry("Spikr", {
+        count: 6,
+        kindCounts: { material: 1, arbete: 5 },
+        lastUsed: daysAgo(1),
+        kindLastUsed: { material: daysAgo(8), arbete: daysAgo(1) },
+      }),
+    ];
+    const materialRanked = rankLineDescriptionSuggestions(vocab, "Sp", { kind: "material", now });
+    const laborRanked = rankLineDescriptionSuggestions(vocab, "Sp", { kind: "arbete", now });
+    assert.deepEqual(
+      materialRanked.map((r) => r.text),
+      ["Spikar"]
+    );
+    assert.equal(
+      materialRanked.some((r) => r.text === "Spikr"),
+      false
+    );
+    assert.deepEqual(
+      laborRanked.map((r) => r.text),
+      ["Spikr"]
+    );
+  });
+
+  it("ny description sparas under current type, inte andra types", () => {
+    const db = emptyTestDb({
+      quoteVersions: [version({ createdAt: daysAgo(0), lines: [material({ description: "Konstruktionsvirke" })] })],
+    });
+    const vocab = collectLineDescriptionVocabulary(db);
+    assert.equal(
+      rankLineDescriptionSuggestions(vocab, "Konst", { kind: "material" })[0]?.text,
+      "Konstruktionsvirke"
+    );
+    assert.equal(rankLineDescriptionSuggestions(vocab, "Konst", { kind: "arbete" }).length, 0);
+  });
+
+  it("byte av typ på sparad rad registrerar usage enligt den sparade typen", () => {
+    const db = emptyTestDb({
+      quoteVersions: [version({ createdAt: daysAgo(4), lines: [labor({ description: "Spikar" })] })],
+    });
+    assert.equal(
+      rankLineDescriptionSuggestions(collectLineDescriptionVocabulary(db), "Sp", { kind: "material" }).length,
+      0
+    );
+    assert.equal(
+      rankLineDescriptionSuggestions(collectLineDescriptionVocabulary(db), "Sp", { kind: "arbete" })[0]?.text,
+      "Spikar"
+    );
+  });
+
+  it("delar vocabulary mellan offert, faktura och uppdrag med samma type-scope", () => {
+    const db = emptyTestDb({
+      quoteVersions: [version({ createdAt: daysAgo(20), lines: [labor({ description: "Rivning" })] })],
+      invoices: [
+        {
+          id: "inv-cross-type",
+          number: 5,
+          customerId: "cust-1",
+          type: "faktura",
+          status: "skickad",
+          lines: [material({ description: "Spikar" })],
+          rot: null,
+          issueDate: daysAgo(3),
+          dueDate: daysAgo(-10),
+          paymentTermsDays: 30,
+          reminders: [],
+          token: "cross-type",
+          ocr: "5",
+          createdAt: daysAgo(3),
+          issuedAt: daysAgo(3),
+        },
+      ],
+      jobWorkEntries: [work({ description: "Spikar", type: "material", updatedAt: daysAgo(1) })],
+    });
+    const vocab = collectLineDescriptionVocabulary(db);
+    assert.deepEqual(
+      rankLineDescriptionSuggestions(vocab, "Ri", { kind: "arbete", now }).map((r) => r.text),
+      ["Rivning"]
+    );
+    assert.deepEqual(
+      rankLineDescriptionSuggestions(vocab, "Sp", { kind: "material", now }).map((r) => r.text),
+      ["Spikar"]
+    );
+    assert.equal(rankLineDescriptionSuggestions(vocab, "Sp", { kind: "arbete", now }).length, 0);
+    assert.equal(rankLineDescriptionSuggestions(vocab, "Ri", { kind: "material", now }).length, 0);
+  });
+
+  it("blockerar inte fri text: ranking filtrerar bara förslag", () => {
+    const vocab = [entry("Spikar", { kindCounts: { material: 3 } })];
+    assert.deepEqual(
+      rankLineDescriptionSuggestions(vocab, "Spikar", { kind: "arbete", now }).map((r) => r.text),
+      []
+    );
   });
 });
 

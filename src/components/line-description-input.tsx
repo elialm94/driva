@@ -27,7 +27,7 @@ import { cx } from "./ui";
 
 type VocabContextValue = {
   vocab: LineDescriptionVocabEntry[];
-  forgetSuggestion: (text: string) => void;
+  forgetSuggestion: (text: string, kind?: LineKind) => void;
 };
 
 const VocabContext = createContext<VocabContextValue | null>(null);
@@ -64,10 +64,21 @@ function useFetchedLineDescriptionVocabulary(): VocabContextValue & { ready: boo
     };
   }, []);
 
-  function forgetSuggestion(text: string) {
+  function forgetSuggestion(text: string, kind?: LineKind) {
     const key = normalizeLineDescriptionKey(text);
-    setVocab((prev) => prev.filter((entry) => normalizeLineDescriptionKey(entry.text) !== key));
-    void forgetLineDescriptionSuggestionAction(text)
+    setVocab((prev) =>
+      prev.flatMap((entry) => {
+        if (normalizeLineDescriptionKey(entry.text) !== key) return [entry];
+        if (!kind) return [];
+        const kindCounts = { ...entry.kindCounts };
+        const kindLastUsed = { ...entry.kindLastUsed };
+        delete kindCounts[kind];
+        delete kindLastUsed[kind];
+        if (!Object.values(kindCounts).some((n) => (n ?? 0) > 0)) return [];
+        return [{ ...entry, kindCounts, kindLastUsed }];
+      })
+    );
+    void forgetLineDescriptionSuggestionAction(text, kind)
       .then((next) => {
         setVocab(next);
       })
@@ -93,10 +104,21 @@ function useLineDescriptionVocabulary(): VocabContextValue {
     };
   }, [ctx]);
 
-  function forgetSuggestion(text: string) {
+  function forgetSuggestion(text: string, kind?: LineKind) {
     const key = normalizeLineDescriptionKey(text);
-    setLocal((prev) => prev.filter((entry) => normalizeLineDescriptionKey(entry.text) !== key));
-    void forgetLineDescriptionSuggestionAction(text)
+    setLocal((prev) =>
+      prev.flatMap((entry) => {
+        if (normalizeLineDescriptionKey(entry.text) !== key) return [entry];
+        if (!kind) return [];
+        const kindCounts = { ...entry.kindCounts };
+        const kindLastUsed = { ...entry.kindLastUsed };
+        delete kindCounts[kind];
+        delete kindLastUsed[kind];
+        if (!Object.values(kindCounts).some((n) => (n ?? 0) > 0)) return [];
+        return [{ ...entry, kindCounts, kindLastUsed }];
+      })
+    );
+    void forgetLineDescriptionSuggestionAction(text, kind)
       .then((next) => setLocal(next))
       .catch(() => {
         /* Optimistic removal already applied. */
@@ -125,7 +147,7 @@ export function LineDescriptionInput({
   "aria-label"?: string;
   "aria-invalid"?: boolean;
   className?: string;
-  kind?: LineKind;
+  kind: LineKind;
   autoFocus?: boolean;
   /** Enter när autocomplete inte är öppen – flytta till nästa fält. */
   onEnterNavigate?: () => void;
@@ -166,7 +188,7 @@ export function LineDescriptionInput({
   }
 
   function forget(text: string) {
-    forgetSuggestion(text);
+    forgetSuggestion(text, kind);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
