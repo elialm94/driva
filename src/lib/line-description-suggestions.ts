@@ -104,7 +104,7 @@ export function parseIgnoredLineDescriptions(raw: unknown): IgnoredLineDescripti
     if (!item || typeof item !== "object") continue;
     const rec = item as { key?: unknown; kind?: unknown; text?: unknown };
     const key = normalizeLineDescriptionKey(String(rec.key ?? rec.text ?? ""));
-    if (!key || !isLineKind(rec.kind)) continue;
+    if (!key || typeof rec.kind !== "string" || !isLineKind(rec.kind)) continue;
     const id = `${rec.kind}:${key}`;
     if (seen.has(id)) continue;
     seen.add(id);
