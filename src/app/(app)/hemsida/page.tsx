@@ -149,14 +149,19 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
             </div>
           }
           innehall={
-            <Card className="min-w-0 overflow-hidden">
-              <SectionList
-                sections={listSections}
-                labels={SECTION_LABELS}
-                primaryCtaLabel={site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL}
-                businessContact={businessContact}
-              />
-            </Card>
+            <div className="min-w-0 space-y-3">
+              <Card className="min-w-0 overflow-hidden">
+                <SectionList
+                  sections={listSections}
+                  labels={SECTION_LABELS}
+                  primaryCtaLabel={site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL}
+                  businessContact={businessContact}
+                />
+              </Card>
+              <Card className="min-w-0 px-4 py-3.5" data-footer-innehall>
+                <FooterSettingsCard website={site} company={data.settings} published={live} />
+              </Card>
+            </div>
           }
           design={
             <Card className="min-w-0">
@@ -171,9 +176,6 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
                   storedRecipient={data.settings.websiteNotificationEmail}
                   mailLive={mailLive}
                 />
-              </Card>
-              <Card className="min-w-0 px-4 py-3.5">
-                <FooterSettingsCard website={site} company={data.settings} published={live} />
               </Card>
               <Card className="min-w-0 px-4 py-3.5">
                 <PrivacyPolicySettingsCard

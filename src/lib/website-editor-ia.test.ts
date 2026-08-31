@@ -15,12 +15,25 @@ describe("Hemsida-editorns informationsarkitektur", () => {
     assert.match(page, /innehall=/);
     assert.match(page, /design=/);
     assert.match(page, /installningar=/);
-    assert.match(page, /FooterSettingsCard/);
     assert.match(page, /WebsiteFormRecipientCard/);
     assert.match(page, /PrivacyPolicySettingsCard/);
     assert.match(page, /DomainSidebarCard/);
     assert.doesNotMatch(page, /SectionTitle>Utseende/);
     assert.doesNotMatch(page, /lg:grid-cols-\[minmax\(0,1fr\)_300px\]/);
+
+    const innehall = page.slice(page.indexOf("innehall="), page.indexOf("design="));
+    const installningar = page.slice(page.indexOf("installningar="));
+    assert.match(innehall, /FooterSettingsCard/);
+    assert.match(innehall, /data-footer-innehall/);
+    assert.match(innehall, /SectionList/);
+    assert.ok(
+      innehall.indexOf("SectionList") < innehall.indexOf("FooterSettingsCard"),
+      "Sidfot ska ligga efter sektionerna under Innehåll"
+    );
+    assert.doesNotMatch(installningar, /FooterSettingsCard/);
+    assert.match(installningar, /WebsiteFormRecipientCard/);
+    assert.match(installningar, /PrivacyPolicySettingsCard/);
+    assert.match(installningar, /DomainSidebarCard/);
   });
 
   it("skalet har tillgängliga flikar och Förhandsvisa/Redigera på smal yta", () => {
