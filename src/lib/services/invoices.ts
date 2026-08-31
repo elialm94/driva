@@ -224,6 +224,13 @@ export interface InvoiceInput {
 export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare"): Invoice {
   const data = db();
   const customer = requireCustomer(input.customerId);
+  if (input.jobId) {
+    const job = getJob(input.jobId);
+    if (!job) throw new Error("Uppdraget finns inte");
+    if (job.customerId !== input.customerId) {
+      throw new Error("Dokumentet kan bara kopplas till ett uppdrag för samma kund");
+    }
+  }
   const now = new Date().toISOString();
   const paymentTermsDays = input.dueInDays ?? data.settings.paymentTermsDays;
   const invoice: Invoice = {

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ExternalLink, BadgeCheck, Pencil } from "lucide-react";
 import { db } from "@/lib/store";
@@ -10,8 +9,9 @@ import { invoiceHeading } from "@/lib/invoices/display";
 import { kr, datumTid, datumLang, relativ } from "@/lib/format";
 import { ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
 import { InvoiceStatusBadge } from "@/components/status";
-import { QUOTE_STATUS } from "@/lib/status-labels";
 import { InvoiceDocument } from "@/components/invoice-document";
+import { LinkedToBox } from "@/components/linked-to-box";
+import { documentLinkView } from "@/lib/services/document-job-link";
 import { ActionMenu, PageActions } from "@/components/action-menu";
 import { CopyLinkButton } from "@/components/copy-button";
 import {
@@ -45,8 +45,6 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   const data = db();
   const customer = requireCustomer(invoice.customerId);
   const totals = invoiceTotals(invoice);
-  const job = invoice.jobId ? data.jobs.find((j) => j.id === invoice.jobId) : undefined;
-  const quote = invoice.quoteId ? data.quotes.find((q) => q.id === invoice.quoteId) : undefined;
   const payment = data.payments.find((p) => p.invoiceId === invoice.id);
   const publicPath = `/faktura/${invoice.token}`;
   const deviation = invoiceQuoteDeviation(invoice);
@@ -63,6 +61,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
     typeof searchParams.tillbakaNamn === "string" ? sanitizeReturnLabel(searchParams.tillbakaNamn) ?? undefined : undefined;
   const nav = { returnTo, returnLabel };
   const fromHere = { href: hrefWithNav(`/ekonomi/fakturor/${invoice.id}`, nav), label: invoiceHeading(invoice) };
+  const linkView = documentLinkView("invoice", invoice.id, fromHere);
   const settingsReturn = `/ekonomi/fakturor/${invoice.id}`;
   const linkedBlockers = blockers.map((b) =>
     b.href ? { ...b, href: withReturnTo(b.href, settingsReturn, invoiceHeading(invoice)) } : b
@@ -241,39 +240,16 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         </Card>
       ) : null}
 
+      <div className="mb-6 lg:hidden">
+        <LinkedToBox view={linkView} />
+      </div>
+
       <div className="grid gap-8 lg:grid-cols-[1fr_280px]">
         <div className="overflow-hidden rounded-2xl border border-line shadow-card">{doc}</div>
 
         <div className="space-y-8">
-          <div>
-            <SectionTitle>Kopplat till</SectionTitle>
-            <Card className="divide-y divide-line/70">
-              {quote || job ? (
-                <Link
-                  href={
-                    (job
-                      ? hrefWithNav(`/uppdrag/${job.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label })
-                      : hrefWithNav(`/ekonomi/offerter/${quote!.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label })) as never
-                  }
-                  className="block px-4 py-3 text-[14px] font-medium transition-colors hover:bg-canvas/60"
-                >
-                  {[quote ? `Offert #${quote.number}` : null, job?.title].filter(Boolean).join(" · ")}
-                  <span className="block text-[12px] font-normal text-muted">
-                    {quote && job ? "Offert och uppdrag" : job ? "Uppdrag" : quote?.status === "godkand" ? QUOTE_STATUS.godkand.label : "Offert"}
-                  </span>
-                </Link>
-              ) : (
-                <p className="px-4 py-3 text-[13px] text-muted">Fristående faktura.</p>
-              )}
-              {quote && job ? (
-                <Link
-                  href={hrefWithNav(`/ekonomi/offerter/${quote.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label }) as never}
-                  className="block px-4 py-3 text-[13px] text-soft transition-colors hover:bg-canvas/60"
-                >
-                  Visa offert #{quote.number}
-                </Link>
-              ) : null}
-            </Card>
+          <div className="hidden lg:block">
+            <LinkedToBox view={linkView} />
           </div>
 
           <div>

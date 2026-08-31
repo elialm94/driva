@@ -85,7 +85,11 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
 
   if (input.jobId) {
     const job = data.jobs.find((j) => j.id === input.jobId);
-    if (job && !job.quoteId) job.quoteId = quoteId;
+    if (!job) throw new Error("Uppdraget finns inte");
+    if (job.customerId !== input.customerId) {
+      throw new Error("Dokumentet kan bara kopplas till ett uppdrag för samma kund");
+    }
+    if (!job.quoteId) job.quoteId = quoteId;
   }
 
   logActivity(
