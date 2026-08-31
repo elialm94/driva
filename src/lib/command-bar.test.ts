@@ -82,6 +82,17 @@ describe("matchCommands (autocomplete utan nätverk)", () => {
     assert.equal(matchCommands("ny faktura")[0]?.command.id, "create_invoice");
   });
 
+  it("”skapa en hemsida” och ”bjud in min redovisningskonsult” träffar valfria funktioner", () => {
+    assert.equal(matchCommands("skapa en hemsida")[0]?.command.id, "create_website");
+    assert.equal(matchCommands("bjud in min redovisningskonsult")[0]?.command.id, "invite_accountant");
+    const website = parseCommand("skapa hemsida");
+    const invite = parseCommand("bjud in redovisningskonsult");
+    assert.equal(website.confidence, "high");
+    assert.equal(website.confidence === "high" ? website.commandId : null, "create_website");
+    assert.equal(invite.confidence, "high");
+    assert.equal(invite.confidence === "high" ? invite.commandId : null, "invite_accountant");
+  });
+
   it("”visa sena fakturor” träffar show_overdue_invoices först", () => {
     assert.equal(matchCommands("visa sena fakturor")[0]?.command.id, "show_overdue_invoices");
   });

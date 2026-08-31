@@ -29,7 +29,9 @@ import { settingsFieldErrors, type SettingsFieldError, type SettingsTab } from "
 import { FieldError, FormValidationSummary, focusField, invalidFieldCls } from "./form-validation";
 import type { MissingRequirement } from "@/lib/form-requirements";
 import { DomainSettingsCard } from "./domain-widgets";
+import { FeatureSettingsList } from "./feature-settings";
 import { StickyMobileActions } from "./sticky-actions";
+import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -40,6 +42,7 @@ const TABS: { key: SettingsFlik; label: string; href: string }[] = [
   { key: "foretag", label: "Företag", href: SETTINGS_HREF.foretag },
   { key: "fakturering", label: "Fakturering & betalning", href: SETTINGS_HREF.fakturering },
   { key: "standardval", label: "Standardval", href: SETTINGS_HREF.standardval },
+  { key: "funktioner", label: "Funktioner", href: SETTINGS_HREF.funktioner },
   { key: "konto", label: "Konto", href: SETTINGS_HREF.konto },
 ];
 
@@ -112,6 +115,7 @@ export function SettingsForm({
   returnTo,
   returnLabel,
   domainSummary = null,
+  features,
 }: {
   initial: CompanySettings;
   defaults: InvoiceDefaults;
@@ -121,6 +125,7 @@ export function SettingsForm({
   returnTo?: string | null;
   returnLabel?: string | null;
   domainSummary?: { hostname: string; live: boolean } | null;
+  features: ResolvedOptionalFeatures;
 }) {
   const router = useRouter();
   const [form, setForm] = useState(() => fromInitial(initial, defaults));
@@ -270,6 +275,7 @@ export function SettingsForm({
   const subtitle = useMemo(() => {
     if (flik === "fakturering") return "Uppgifter som hamnar på nya fakturor. Utfärdade fakturor ändras inte.";
     if (flik === "standardval") return "Används när du skapar nya offerter och fakturor. Befintliga dokument ändras inte.";
+    if (flik === "funktioner") return "Valfria ytor som bara syns i menyn när du använder dem.";
     if (flik === "konto") return "Personligt konto är skilt från företagsuppgifterna.";
     return "Uppgifterna används på offerter, fakturor, hemsidan och i mejl. Du fyller i dem en gång.";
   }, [flik]);
@@ -797,6 +803,12 @@ export function SettingsForm({
         </Card>
       ) : null}
 
+      {flik === "funktioner" ? (
+        <Card className="p-6">
+          <FeatureSettingsList features={features} />
+        </Card>
+      ) : null}
+
       {flik === "konto" ? (
         <div className="space-y-5">
           <Card className="space-y-3 p-6">
@@ -814,7 +826,7 @@ export function SettingsForm({
         </div>
       ) : null}
 
-      {flik !== "konto" ? (
+      {flik !== "konto" && flik !== "funktioner" ? (
         <div className="mt-6">
           {showErrors ? (
             <FormValidationSummary

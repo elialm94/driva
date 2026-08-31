@@ -35,7 +35,9 @@ export type CommandIcon =
   | "today"
   | "receipt"
   | "send"
-  | "list";
+  | "list"
+  | "globe"
+  | "handshake";
 
 /** Steg i ett kontextflöde. Prompterna är det användaren ser i fältet. */
 export type CommandStep =
@@ -82,7 +84,9 @@ export type CommandId =
   | "accountant_bank_diff"
   | "accountant_whats_open"
   | "accountant_unusual"
-  | "accountant_reconcile";
+  | "accountant_reconcile"
+  | "create_website"
+  | "invite_accountant";
 
 export interface CommandDef {
   id: CommandId;
@@ -342,6 +346,43 @@ export const COMMANDS: CommandDef[] = [
     requiredContext: null,
     run: { kind: "navigate", href: "/ekonomi?flik=utgifter" },
     priority: 3,
+  },
+  {
+    id: "create_website",
+    label: "Skapa en hemsida",
+    hint: "Aktiverar Hemsida och öppnar byggaren",
+    aliases: [
+      "skapa en hemsida",
+      "skapa hemsida",
+      "ny hemsida",
+      "bygg hemsida",
+      "aktivera hemsida",
+      "öppna hemsida",
+    ],
+    keywords: ["hemsida", "website", "sajt"],
+    icon: "globe",
+    risk: "SAFE_WRITE",
+    requiredContext: null,
+    run: { kind: "tool", tool: "activate_website" },
+    priority: 6,
+  },
+  {
+    id: "invite_accountant",
+    label: "Bjud in redovisningskonsult",
+    hint: "Aktiverar Samarbeta och öppnar inbjudan",
+    aliases: [
+      "bjud in min redovisningskonsult",
+      "bjud in redovisningskonsult",
+      "bjud in revisor",
+      "aktivera samarbeta",
+      "öppna samarbeta",
+    ],
+    keywords: ["samarbeta", "redovisningskonsult", "revisor", "konsult"],
+    icon: "handshake",
+    risk: "SAFE_WRITE",
+    requiredContext: null,
+    run: { kind: "tool", tool: "activate_collaboration" },
+    priority: 5,
   },
   {
     id: "remind_late_invoices",

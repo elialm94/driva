@@ -145,6 +145,8 @@ export const CONSULTANT_FORBIDDEN_TOOLS: readonly string[] = [
   "propose_invoice_for_customer",
   "propose_extra_from_notes",
   "generate_website",
+  "activate_website",
+  "activate_collaboration",
   "publish_website",
   "purchase_domain",
   "submit_supplier_payment",

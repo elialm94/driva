@@ -8,6 +8,11 @@ import { getNavAttentionCounts } from "@/lib/services/nav-counts";
 import { ensurePageBusiness, getSessionUser, isDemoSession, listMemberships } from "@/lib/auth/session";
 import { isAccountingRole } from "@/lib/collaboration/permissions";
 import { isSupabaseMode } from "@/lib/storage/config";
+import { LOCAL_JSON_BUSINESS_ID } from "@/lib/collaboration/actor";
+import { hydrateInvitationsFromTenant } from "@/lib/collaboration/service";
+import { resolveOptionalFeatures } from "@/lib/features";
+import { tenantContext } from "@/lib/storage/context";
+import { requestSlot } from "@/lib/storage/request-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +26,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     ? (await listMemberships(user.id)).filter((m) => isAccountingRole(m.role)).length
     : 0;
   const navCounts = getNavAttentionCounts();
+  const businessId = isSupabaseMode()
+    ? requestSlot().businessId ?? tenantContext()?.businessId ?? LOCAL_JSON_BUSINESS_ID
+    : LOCAL_JSON_BUSINESS_ID;
+  hydrateInvitationsFromTenant(businessId);
+  const features = resolveOptionalFeatures(db(), businessId);
   // Demoläge = lokala JSON-demon ELLER den publika demosessionen. Markören
   // visas i båda; Avsluta demo/Skapa eget konto gäller bara riktiga sessioner.
   const demoSession = await isDemoSession();
@@ -39,6 +49,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         localAccountantDemo={accountantDemoSwitch}
         demoBadge={demoBadge}
         demoSession={demoSession}
+        features={features}
       />
       <Suspense fallback={null}>
         <NavOriginProvider />
@@ -54,6 +65,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         localAccountantDemo={accountantDemoSwitch}
         demoBadge={demoBadge}
         demoSession={demoSession}
+        features={features}
       />
     </div>
   );
