@@ -20,7 +20,7 @@ export function EditorWorkspace({
   return (
     <LineDescriptionVocabProvider>
       <div data-editor-shell className="@container w-full max-w-editor">
-        <div className="grid gap-6 @min-[68rem]:grid-cols-[minmax(0,1fr)_minmax(15.5rem,18.75rem)]">
+        <div className="grid gap-6 @min-[68rem]:grid-cols-[minmax(0,1fr)_16.5rem]">
           <div className="min-w-0 space-y-6">{children}</div>
           <aside className="@min-[68rem]:sticky @min-[68rem]:top-8 @min-[68rem]:self-start">{summary}</aside>
         </div>

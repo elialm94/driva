@@ -23,22 +23,36 @@ import { cx } from "./ui";
 const VocabContext = createContext<LineDescriptionVocabEntry[] | null>(null);
 
 export function LineDescriptionVocabProvider({ children }: { children: ReactNode }) {
-  const vocab = useFetchedLineDescriptionVocabulary();
-  return <VocabContext.Provider value={vocab}>{children}</VocabContext.Provider>;
+  const { vocab, ready } = useFetchedLineDescriptionVocabulary();
+  return (
+    <VocabContext.Provider value={vocab}>
+      <div data-line-vocab={ready ? String(vocab.length) : "pending"} className="contents">
+        {children}
+      </div>
+    </VocabContext.Provider>
+  );
 }
 
-function useFetchedLineDescriptionVocabulary(): LineDescriptionVocabEntry[] {
+function useFetchedLineDescriptionVocabulary(): { vocab: LineDescriptionVocabEntry[]; ready: boolean } {
   const [vocab, setVocab] = useState<LineDescriptionVocabEntry[]>([]);
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    getLineDescriptionVocabularyAction().then((next) => {
-      if (!cancelled) setVocab(next);
-    });
+    getLineDescriptionVocabularyAction()
+      .then((next) => {
+        if (!cancelled) {
+          setVocab(next);
+          setReady(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setReady(true);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
-  return vocab;
+  return { vocab, ready };
 }
 
 function useLineDescriptionVocabulary(): LineDescriptionVocabEntry[] {

@@ -25,7 +25,7 @@ import { LineDescriptionInput } from "./line-description-input";
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
 /** Etikett som bara syns i mobilens radkort – desktop har kolumnrubrikerna. */
-const mobileLineLabelCls = "mb-1 block text-[12px] font-medium text-muted @min-[48rem]:hidden";
+const mobileLineLabelCls = "mb-1 block text-[12px] font-medium text-muted @min-[40rem]:hidden";
 
 /**
  * Desktop-tabell när den faktiska kolumnbredden räcker.
@@ -33,9 +33,9 @@ const mobileLineLabelCls = "mb-1 block text-[12px] font-medium text-muted @min-[
  * Hela klassnamnet måste stå statiskt så Tailwind hittar det.
  */
 const LINE_GRID_HEADER =
-  "hidden gap-2 text-[12px] font-medium uppercase tracking-wide text-muted @min-[48rem]:grid @min-[48rem]:grid-cols-[7.5rem_minmax(0,1fr)_4.375rem_4.375rem_6.875rem_5.625rem_2rem]";
+  "hidden gap-2 text-[12px] font-medium uppercase tracking-wide text-muted @min-[40rem]:grid @min-[40rem]:grid-cols-[7.5rem_minmax(0,1fr)_4.375rem_4.375rem_6.875rem_5.625rem_2rem]";
 const LINE_GRID_ROW =
-  "relative grid grid-cols-2 gap-x-2.5 gap-y-3 rounded-2xl border border-line bg-canvas/40 p-3.5 @min-[48rem]:static @min-[48rem]:grid-cols-[7.5rem_minmax(0,1fr)_4.375rem_4.375rem_6.875rem_5.625rem_2rem] @min-[48rem]:gap-2 @min-[48rem]:rounded-none @min-[48rem]:border-0 @min-[48rem]:bg-transparent @min-[48rem]:p-0";
+  "relative grid grid-cols-2 gap-x-2.5 gap-y-3 rounded-2xl border border-line bg-canvas/40 p-3.5 @min-[40rem]:static @min-[40rem]:grid-cols-[7.5rem_minmax(0,1fr)_4.375rem_4.375rem_6.875rem_5.625rem_2rem] @min-[40rem]:gap-2 @min-[40rem]:rounded-none @min-[40rem]:border-0 @min-[40rem]:bg-transparent @min-[40rem]:p-0";
 
 const DECIMAL_PARTIAL = /^-?\d*[.,]?\d*$/;
 const DECIMAL_PARTIAL_UNSIGNED = /^\d*[.,]?\d*$/;
@@ -168,7 +168,7 @@ export function LinesEditor({
   }
   const allBlank = showErrors && lines.every(lineIsBlank);
   return (
-    <div id="prisrader" className="@container space-y-3.5 @min-[48rem]:space-y-2.5">
+    <div id="prisrader" className="@container space-y-3.5 @min-[40rem]:space-y-2.5">
       <div className={LINE_GRID_HEADER}>
         <span>Typ</span>
         <span>Beskrivning</span>
@@ -186,7 +186,7 @@ export function LinesEditor({
           (Number.isFinite(line.qty) ? line.qty : 0) * (Number.isFinite(line.unitPrice) ? line.unitPrice : 0);
         return (
           <div key={line.id} className={LINE_GRID_ROW}>
-            <div className="@min-[48rem]:contents">
+            <div className="@min-[40rem]:contents">
               <label htmlFor={`rad-${line.id}-typ`} className={mobileLineLabelCls}>
                 Typ
               </label>
@@ -217,7 +217,7 @@ export function LinesEditor({
                 ))}
               </select>
             </div>
-            <div className="col-span-2 @min-[48rem]:contents">
+            <div className="col-span-2 @min-[40rem]:contents">
               <label htmlFor={lineFieldId(line.id, "beskrivning")} className={mobileLineLabelCls}>
                 Beskrivning
               </label>
@@ -232,7 +232,7 @@ export function LinesEditor({
                 className={cx(inputCls, markDescription && invalidFieldCls)}
               />
             </div>
-            <div className="@min-[48rem]:contents">
+            <div className="@min-[40rem]:contents">
               <label htmlFor={`rad-${line.id}-antal`} className={mobileLineLabelCls}>
                 Antal
               </label>
@@ -244,7 +244,7 @@ export function LinesEditor({
                 aria-label="Antal"
               />
             </div>
-            <div className="@min-[48rem]:contents">
+            <div className="@min-[40rem]:contents">
               <label htmlFor={`rad-${line.id}-enhet`} className={mobileLineLabelCls}>
                 Enhet
               </label>
@@ -256,29 +256,29 @@ export function LinesEditor({
                 className={inputCls}
               />
             </div>
-            <div className="@min-[48rem]:contents">
+            <div className="@min-[40rem]:contents">
               <label htmlFor={lineFieldId(line.id, "pris")} className={mobileLineLabelCls}>
                 À-pris exkl. moms
               </label>
-              <div className="relative @min-[48rem]:contents">
+              <div className="relative @min-[40rem]:contents">
                 <DecimalInput
                   id={lineFieldId(line.id, "pris")}
                   value={line.unitPrice}
                   onValueChange={(unitPrice) => update(line.id, { unitPrice })}
-                  className={cx(inputCls, "pr-8 @min-[48rem]:pr-3", markPrice && invalidFieldCls)}
+                  className={cx(inputCls, "pr-8 @min-[40rem]:pr-3", markPrice && invalidFieldCls)}
                   allowNegative
                   aria-label="À-pris exkl. moms"
                   invalid={markPrice}
                 />
                 <span
                   aria-hidden
-                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-muted @min-[48rem]:hidden"
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-muted @min-[40rem]:hidden"
                 >
                   kr
                 </span>
               </div>
             </div>
-            <div className="@min-[48rem]:contents">
+            <div className="@min-[40rem]:contents">
               <label htmlFor={`rad-${line.id}-moms`} className={mobileLineLabelCls}>
                 Moms
               </label>
@@ -298,23 +298,23 @@ export function LinesEditor({
             <button
               type="button"
               onClick={() => onChange(lines.filter((l) => l.id !== line.id))}
-              className="absolute right-1.5 top-1.5 flex size-10 items-center justify-center rounded-lg text-muted transition-colors hover:bg-danger-soft hover:text-danger @min-[48rem]:static @min-[48rem]:size-auto"
+              className="absolute right-1.5 top-1.5 flex size-10 items-center justify-center rounded-lg text-muted transition-colors hover:bg-danger-soft hover:text-danger @min-[40rem]:static @min-[40rem]:size-auto"
               title="Ta bort rad"
               aria-label="Ta bort rad"
             >
               <Trash2 className="size-4" />
             </button>
-            <div className="col-span-2 -mb-0.5 flex items-baseline justify-between gap-3 border-t border-line pt-2.5 @min-[48rem]:hidden">
+            <div className="col-span-2 -mb-0.5 flex items-baseline justify-between gap-3 border-t border-line pt-2.5 @min-[40rem]:hidden">
               <span className="text-[13px] text-soft">Summa exkl. moms</span>
               <span className="text-[14px] font-semibold tabular text-ink">{kr(lineTotal)}</span>
             </div>
             {parts.description || parts.price ? (
-              <FieldError className="col-span-2 -mt-0.5 @min-[48rem]:col-span-full @min-[48rem]:mt-0">
+              <FieldError className="col-span-2 -mt-0.5 @min-[40rem]:col-span-full @min-[40rem]:mt-0">
                 {parts.description ? "Beskrivning saknas på raden." : "Pris saknas på raden."}
               </FieldError>
             ) : null}
             {rotActive && shouldSuggestTravelType(line) ? (
-              <p className="col-span-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-soft @min-[48rem]:col-span-full">
+              <p className="col-span-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-soft @min-[40rem]:col-span-full">
                 <span>{TRAVEL_RECLASSIFY_PROMPT}</span>
                 <button
                   type="button"
