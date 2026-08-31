@@ -305,11 +305,11 @@ export function UtseendePanel({
       </div>
 
       {error ? <p className="mt-3 text-[12.5px] font-medium text-danger">{error}</p> : null}
-      {unpublishedChanges && published ? (
-        <p className="mt-3 text-[12px] leading-relaxed text-muted">
-          Nytt utseende i förhandsvisningen – publiceras när du klickar Publicera ändringar.
-        </p>
-      ) : null}
+      <p className="mt-3 text-[12px] leading-relaxed text-muted">
+        {unpublishedChanges && published
+          ? "Nytt utseende i förhandsvisningen – sajten uppdateras när du klickar Publicera ändringar."
+          : "Välj känslan som passar ditt företag – innehållet är detsamma i alla teman."}
+      </p>
     </div>
   );
 }
