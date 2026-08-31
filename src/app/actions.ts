@@ -177,8 +177,8 @@ import {
 } from "@/lib/features";
 import { headers } from "next/headers";
 import { isSupabaseMode } from "@/lib/storage/config";
-import { requireBusiness, withBusiness, withBusinessRead, withPublicBusiness } from "@/lib/auth/session";
-import { isDemoUserEmail, rateLimitDemoReset } from "@/lib/auth/demo-session";
+import { isDemoSession, requireBusiness, withBusiness, withBusinessRead, withPublicBusiness } from "@/lib/auth/session";
+import { rateLimitDemoReset } from "@/lib/auth/demo-session";
 
 /**
  * Alla åtgärder körs i tenantkontext via withBusiness (ladda → domänlogik →
@@ -1662,7 +1662,7 @@ export async function resetDemoAction(): Promise<{ ok: true } | { ok: false; err
     // vägrar för alla företag som inte skapades som demo) och spela upp
     // exempeldatat igen genom appens vanliga importväg.
     const { user, businessId } = await requireBusiness();
-    if (!isDemoUserEmail(user.email)) {
+    if (!(await isDemoSession())) {
       return { ok: false, error: "Endast demosessionen kan återställa demon." };
     }
     if (!rateLimitDemoReset()) {

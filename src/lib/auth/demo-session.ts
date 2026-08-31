@@ -104,12 +104,17 @@ const MAX_STARTS_PER_IP = 6;
 const MAX_STARTS_GLOBAL = 60;
 const RESET_MIN_INTERVAL_MS = 20_000;
 
+/** Skrivtak per demoföretag: långt över mänsklig takt, stopp för skript. */
+const WRITE_WINDOW_MS = 60_000;
+const MAX_WRITES_PER_WINDOW = 60;
+
 const startsByIp = new Map<string, number[]>();
 const startsGlobal: number[] = [];
+const writesByBusiness = new Map<string, number[]>();
 let lastResetAt = 0;
 
-function prune(list: number[], now: number): void {
-  while (list.length > 0 && now - list[0] > WINDOW_MS) list.shift();
+function prune(list: number[], now: number, windowMs = WINDOW_MS): void {
+  while (list.length > 0 && now - list[0] > windowMs) list.shift();
 }
 
 export function rateLimitDemoStart(ip: string, now = Date.now()): boolean {
@@ -139,9 +144,31 @@ export function rateLimitDemoReset(now = Date.now()): boolean {
   return true;
 }
 
+/**
+ * Skrivtak per demoföretag och instans: withBusiness frågar före varje
+ * skrivande flöde i en demosession. 60/min märks aldrig av en människa
+ * (autosparningar inräknade) men stoppar skriptad massgenerering. Riktiga
+ * företag passerar aldrig genom kontrollen.
+ */
+export function rateLimitDemoWrite(businessId: string, now = Date.now()): boolean {
+  const list = writesByBusiness.get(businessId) ?? [];
+  prune(list, now, WRITE_WINDOW_MS);
+  if (list.length >= MAX_WRITES_PER_WINDOW) return false;
+  list.push(now);
+  writesByBusiness.set(businessId, list);
+  if (writesByBusiness.size > 2_000) {
+    for (const [k, v] of writesByBusiness) {
+      prune(v, now, WRITE_WINDOW_MS);
+      if (v.length === 0) writesByBusiness.delete(k);
+    }
+  }
+  return true;
+}
+
 export function __resetDemoRateLimitForTests(): void {
   startsByIp.clear();
   startsGlobal.length = 0;
+  writesByBusiness.clear();
   lastResetAt = 0;
 }
 

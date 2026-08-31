@@ -35,7 +35,7 @@ import {
   setTestActor,
   type CollaborationActor,
 } from "@/lib/collaboration/actor";
-import { DEMO_ACTOR_COOKIE, isDemoClaims, type SessionClaimsLike } from "@/lib/auth/demo-session";
+import { DEMO_ACTOR_COOKIE, isDemoClaims, rateLimitDemoWrite, type SessionClaimsLike } from "@/lib/auth/demo-session";
 import { ensureLocalDemoCollaboration } from "@/lib/collaboration/local-demo";
 import {
   activeMembershipFor,
@@ -421,6 +421,11 @@ export async function withBusiness<T>(
   const user = await requireUser();
   const businessId = await resolveActiveBusiness(user.id, opts.businessId);
   const role = await authorizeWrite(user, businessId, opts.capability);
+  // Demosessioner har ett generöst skrivtak (skydd mot skriptad
+  // massgenerering) – riktiga företag berörs aldrig av kontrollen.
+  if ((await isDemoSession()) && !rateLimitDemoWrite(businessId)) {
+    throw new Error("Demon har ett tempotak för ändringar. Vänta en liten stund och försök igen.");
+  }
   try {
     return await runAsActor(labelSupportActor(actorFrom(user, businessId, role), support), () =>
       runWithTenant({ businessId, userId: user.id, access: "write", retry: opts.retry }, fn)
