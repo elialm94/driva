@@ -6,11 +6,20 @@
  * Isolering sker genom att anroparen bara skickar in den redan scopade DB:n –
  * aldrig ett klient-angivet business_id.
  *
+ * Vokabulären är per radtyp: Arbete, Material, Resor och Övrigt har egna
+ * listor. Samma text kan finnas i flera typer om historiken stöder det.
+ * Ranking, stavfelssanering och "Glöm förslag" sker inom vald typ.
+ *
  * Historiska dokumenttexter är immutable. Stavfel och engångsvarianter
  * saneras bara i förslagsvyn: normalisering, frekvens, fuzzy match,
- * near-duplicate-kollaps och en per-företag ignore-lista.
+ * near-duplicate-kollaps och en per-företag+typ ignore-lista.
  */
-import { economicLineTypeFromKind, lineKindFromType, type LineKind } from "./economic-line-type";
+import {
+  economicLineTypeFromKind,
+  isLineKind,
+  lineKindFromType,
+  type LineKind,
+} from "./economic-line-type";
 import type { DB, DocLine, JobWorkEntry } from "./types";
 
 export const LINE_DESCRIPTION_VOCAB_CAP = 500;
@@ -23,6 +32,15 @@ export interface LineDescriptionVocabEntry {
   count: number;
   lastUsed: string;
   kindCounts: Partial<Record<LineKind, number>>;
+  kindLastUsed?: Partial<Record<LineKind, string>>;
+}
+
+export type IgnoredLineDescription = string | { key: string; kind: LineKind };
+
+export interface IgnoredLineDescriptionRef {
+  key: string;
+  /** Saknas = äldre oscopead ignore (alla radtyper). */
+  kind?: LineKind;
 }
 
 export interface RankLineDescriptionOptions {
@@ -69,26 +87,75 @@ export function levenshtein(a: string, b: string): number {
   return prev[m] ?? 0;
 }
 
-export function readIgnoredLineDescriptions(raw: unknown): string[] {
+export function parseIgnoredLineDescriptions(raw: unknown): IgnoredLineDescriptionRef[] {
   if (!Array.isArray(raw)) return [];
-  const keys = new Set<string>();
+  const out: IgnoredLineDescriptionRef[] = [];
+  const seen = new Set<string>();
   for (const item of raw) {
-    if (typeof item !== "string") continue;
-    const key = normalizeLineDescriptionKey(item);
-    if (key) keys.add(key);
+    if (typeof item === "string") {
+      const key = normalizeLineDescriptionKey(item);
+      if (!key) continue;
+      const id = `*:${key}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ key });
+      continue;
+    }
+    if (!item || typeof item !== "object") continue;
+    const rec = item as { key?: unknown; kind?: unknown; text?: unknown };
+    const key = normalizeLineDescriptionKey(String(rec.key ?? rec.text ?? ""));
+    if (!key || !isLineKind(rec.kind)) continue;
+    const id = `${rec.kind}:${key}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ key, kind: rec.kind });
   }
-  return [...keys];
+  return out;
+}
+
+export function readIgnoredLineDescriptions(raw: unknown): string[] {
+  return [...new Set(parseIgnoredLineDescriptions(raw).map((item) => item.key))];
+}
+
+function serializeIgnoredLineDescriptions(refs: readonly IgnoredLineDescriptionRef[]): IgnoredLineDescription[] {
+  return [...refs]
+    .sort((a, b) => {
+      const keys = a.key.localeCompare(b.key, "sv");
+      if (keys !== 0) return keys;
+      return (a.kind ?? "").localeCompare(b.kind ?? "", "sv");
+    })
+    .map((ref) => (ref.kind ? { key: ref.key, kind: ref.kind } : ref.key));
+}
+
+function ignoredAppliesToKind(ref: IgnoredLineDescriptionRef, kind: LineKind | undefined): boolean {
+  if (!ref.kind) return true;
+  return kind != null && ref.kind === kind;
 }
 
 /**
- * Lägg till en term i företagets ignore-lista. Muterar bara meta –
- * historiska rader lämnas orörda.
+ * Lägg till en term i företagets ignore-lista. Med `kind` glöms bara den
+ * radtypen. Utan `kind` (äldre anrop) glöms termen för alla typer.
+ * Muterar bara meta – historiska rader lämnas orörda.
  */
-export function addIgnoredLineDescription(meta: DB["meta"], text: string): string[] {
+export function addIgnoredLineDescription(
+  meta: DB["meta"],
+  text: string,
+  kind?: LineKind
+): IgnoredLineDescription[] {
   const key = normalizeLineDescriptionKey(text);
-  const next = new Set(readIgnoredLineDescriptions(meta.ignoredLineDescriptions));
-  if (key) next.add(key);
-  const list = [...next].sort((a, b) => a.localeCompare(b, "sv"));
+  const refs = parseIgnoredLineDescriptions(meta.ignoredLineDescriptions);
+  if (key) {
+    if (kind) {
+      const already = refs.some((ref) => ref.key === key && ignoredAppliesToKind(ref, kind));
+      if (!already) refs.push({ key, kind });
+    } else if (!refs.some((ref) => ref.key === key && !ref.kind)) {
+      const next = refs.filter((ref) => ref.key !== key);
+      next.push({ key });
+      refs.length = 0;
+      refs.push(...next);
+    }
+  }
+  const list = serializeIgnoredLineDescriptions(refs);
   meta.ignoredLineDescriptions = list;
   return list;
 }
@@ -180,6 +247,7 @@ interface AccEntry {
   count: number;
   lastUsed: string;
   kindCounts: Partial<Record<LineKind, number>>;
+  kindLastUsed: Partial<Record<LineKind, string>>;
 }
 
 function addOccurrence(acc: Map<string, AccEntry>, raw: string, usedAt: string, kind: LineKind) {
@@ -193,12 +261,16 @@ function addOccurrence(acc: Map<string, AccEntry>, raw: string, usedAt: string, 
       count: 1,
       lastUsed: usedAt,
       kindCounts: { [kind]: 1 },
+      kindLastUsed: { [kind]: usedAt },
     });
     return;
   }
   existing.count += 1;
   existing.lastUsed = laterIso(existing.lastUsed, usedAt);
   existing.kindCounts[kind] = (existing.kindCounts[kind] ?? 0) + 1;
+  existing.kindLastUsed[kind] = existing.kindLastUsed[kind]
+    ? laterIso(existing.kindLastUsed[kind], usedAt)
+    : usedAt;
   const variant = existing.variants.get(display);
   if (variant) {
     variant.count += 1;
@@ -231,16 +303,52 @@ function toVocabEntry(entry: AccEntry): LineDescriptionVocabEntry {
     count: entry.count,
     lastUsed: entry.lastUsed,
     kindCounts: entry.kindCounts,
+    kindLastUsed: entry.kindLastUsed,
   };
 }
 
-function ignoredKeySet(raw: unknown, extra?: readonly string[]): Set<string> {
-  const set = new Set(readIgnoredLineDescriptions(raw));
+function extraUnscopedIgnores(extra?: readonly string[]): IgnoredLineDescriptionRef[] {
+  const refs: IgnoredLineDescriptionRef[] = [];
   for (const item of extra ?? []) {
     const key = normalizeLineDescriptionKey(item);
-    if (key) set.add(key);
+    if (key) refs.push({ key });
   }
-  return set;
+  return refs;
+}
+
+/** Projektion för ranking/kollaps inom en radtyp. */
+export function vocabEntryForKind(
+  entry: LineDescriptionVocabEntry,
+  kind: LineKind
+): LineDescriptionVocabEntry | null {
+  const count = entry.kindCounts[kind] ?? 0;
+  if (count <= 0) return null;
+  return {
+    text: entry.text,
+    count,
+    lastUsed: entry.kindLastUsed?.[kind] ?? entry.lastUsed,
+    kindCounts: { [kind]: count },
+    kindLastUsed: entry.kindLastUsed?.[kind]
+      ? { [kind]: entry.kindLastUsed[kind] }
+      : undefined,
+  };
+}
+
+function applyIgnoredToEntry(
+  entry: LineDescriptionVocabEntry,
+  ignored: readonly IgnoredLineDescriptionRef[]
+): LineDescriptionVocabEntry | null {
+  const key = normalizeLineDescriptionKey(entry.text);
+  if (ignored.some((ref) => ref.key === key && !ref.kind)) return null;
+  const kindCounts = { ...entry.kindCounts };
+  const kindLastUsed = { ...entry.kindLastUsed };
+  for (const ref of ignored) {
+    if (ref.key !== key || !ref.kind) continue;
+    delete kindCounts[ref.kind];
+    delete kindLastUsed[ref.kind];
+  }
+  if (!Object.values(kindCounts).some((n) => (n ?? 0) > 0)) return null;
+  return { ...entry, kindCounts, kindLastUsed };
 }
 
 function collapseNearDuplicates(
@@ -301,10 +409,11 @@ export function collectLineDescriptionVocabulary(
     addOccurrence(acc, entry.description ?? "", usedAt, kindOfWorkEntry(entry));
   }
 
-  const ignored = ignoredKeySet(data.meta?.ignoredLineDescriptions);
+  const ignored = parseIgnoredLineDescriptions(data.meta?.ignoredLineDescriptions);
   return [...acc.values()]
     .map(toVocabEntry)
-    .filter((entry) => !ignored.has(normalizeLineDescriptionKey(entry.text)))
+    .map((entry) => applyIgnoredToEntry(entry, ignored))
+    .filter((entry): entry is LineDescriptionVocabEntry => entry != null)
     .sort((a, b) => {
       if (b.count !== a.count) return b.count - a.count;
       return Date.parse(b.lastUsed) - Date.parse(a.lastUsed);
@@ -323,24 +432,24 @@ export function rankLineDescriptionSuggestions(
   const now = options.now ?? Date.now();
   const limit = options.limit ?? LINE_DESCRIPTION_SUGGESTION_LIMIT;
   const kind = options.kind;
-  const ignored = ignoredKeySet(undefined, options.ignored);
-  const candidates = collapseNearDuplicates(
-    vocab.filter((entry) => !ignored.has(normalizeLineDescriptionKey(entry.text))),
-    q
-  );
+  const ignored = extraUnscopedIgnores(options.ignored);
+  const scoped = vocab
+    .map((entry) => applyIgnoredToEntry(entry, ignored))
+    .filter((entry): entry is LineDescriptionVocabEntry => entry != null)
+    .map((entry) => (kind ? vocabEntryForKind(entry, kind) : entry))
+    .filter((entry): entry is LineDescriptionVocabEntry => entry != null);
+  const candidates = collapseNearDuplicates(scoped, q);
 
   const scored: { entry: LineDescriptionVocabEntry; score: number }[] = [];
   for (const entry of candidates) {
     const match = matchQuality(normalizeLineDescriptionKey(entry.text), q);
     if (!match) continue;
-    const typeBoost = kind ? (entry.kindCounts[kind] ?? 0) * 50 : 0;
     const frequency = entry.count === 1 ? 200 : entry.count * 10_000;
     const score =
       match.tier * 1_000_000 -
       match.dist * 10_000 +
       frequency +
-      recencyScore(entry.lastUsed, now) +
-      typeBoost;
+      recencyScore(entry.lastUsed, now);
     scored.push({ entry, score });
   }
 

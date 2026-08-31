@@ -50,7 +50,7 @@ import {
   patchTaxReductionFields,
   setTaxReductionDecision,
 } from "@/lib/services/tax-reduction";
-import type { DwellingType, PaymentDetailsMethod, TaxReductionDetails } from "@/lib/types";
+import type { DwellingType, LineKind, PaymentDetailsMethod, TaxReductionDetails } from "@/lib/types";
 import {
   applyBusinessProfilePatch,
   updateCompanySettings,
@@ -365,13 +365,13 @@ export async function getLineDescriptionVocabularyAction() {
 }
 
 /**
- * Glöm ett autocomplete-förslag för det aktuella företaget.
+ * Glöm ett autocomplete-förslag för det aktuella företaget och radtypen.
  * Skriver bara till businesses.meta.ignoredLineDescriptions – historiska
  * offerter, fakturor och uppdrag lämnas orörda. Business hämtas från sessionen.
  */
-export async function forgetLineDescriptionSuggestionAction(text: string) {
+export async function forgetLineDescriptionSuggestionAction(text: string, kind?: LineKind) {
   return withBusiness(() => {
-    addIgnoredLineDescription(db().meta, text);
+    addIgnoredLineDescription(db().meta, text, kind);
     save();
     return collectLineDescriptionVocabulary(db());
   });

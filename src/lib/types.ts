@@ -1889,10 +1889,11 @@ export interface DB {
      */
     websitePausedAt?: string;
     /**
-     * Normaliserade prisradsbeskrivningar som användaren glömt i autocomplete.
-     * Påverkar bara förslag – historiska offerter/fakturor/uppdrag lämnas orörda.
+     * Prisradsbeskrivningar som användaren glömt i autocomplete.
+     * Sträng = glömd för alla radtyper (äldre format). Objekt = glömd
+     * bara för den typen. Påverkar bara förslag – historiska dokument orörda.
      */
-    ignoredLineDescriptions?: string[];
+    ignoredLineDescriptions?: Array<string | { key: string; kind: LineKind }>;
   };
 }
 
