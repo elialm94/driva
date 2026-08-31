@@ -5,19 +5,33 @@ import assert from "node:assert/strict";
 import { db, replaceDb } from "./store";
 import { emptyTestDb, testCompany } from "./invoices/test-db";
 import type { Website } from "./types";
-import { generateWebsite, publishWebsite, updatePrivacyPolicySupplement } from "./services/website";
+import {
+  generateWebsite,
+  publishWebsite,
+  updatePrivacyPolicySupplement,
+  updateWebsitePrivacyPolicy,
+} from "./services/website";
+import { richTextToPlain } from "./richtext";
 import {
   CONTACT_FORM_NOT_COLLECTED,
   CONTACT_FORM_PRIVACY_LINK_LABEL,
   CONTACT_FORM_STORED_FIELDS,
+  PRIVACY_COMPANY_TOKENS,
   PRIVACY_POLICY_PATH,
+  applyPrivacyTokens,
   buildPrivacyPolicy,
+  capturePrivacyTokens,
   contactFormPrivacyLead,
   controllerName,
+  draftPrivacyPolicyState,
   formatCompanyAddress,
   privacyPolicyHref,
+  publishedPrivacyPolicyState,
   resolvePrivacyIntegrations,
+  resolvePrivacyPolicyView,
+  seedCustomPrivacyPolicy,
   websiteHasEnabledIntegration,
+  websiteWithResolvedPrivacy,
 } from "./website-privacy";
 
 const demoCompany = testCompany({
@@ -163,22 +177,27 @@ describe("formulärsnotis utan samtyckesruta", () => {
 
 describe("redigerbart tillägg på hemsidan", () => {
   beforeEach(() => {
-    replaceDb(emptyTestDb({ settings: demoCompany }));
+    replaceDb(emptyTestDb({ settings: { ...demoCompany } }));
   });
 
-  it("sparar tillägg och lämnar företagsnamnet dynamiskt", () => {
+  it("sparar tillägg som utkast och lämnar företagsnamnet dynamiskt", () => {
     generateWebsite("Hemsida för Södermalms Snickeri i Stockholm");
     publishWebsite();
     updatePrivacyPolicySupplement("Vi ringer bara på dagtid.");
     const site = db().website;
     assert.ok(site);
-    assert.equal(site.privacyPolicySupplement, "Vi ringer bara på dagtid.");
-    const doc = buildPrivacyPolicy({ company: db().settings, website: site });
+    assert.equal(site.privacyPolicySupplement, undefined);
+    assert.equal(draftPrivacyPolicyState(site).supplement, "Vi ringer bara på dagtid.");
+    const preview = websiteWithResolvedPrivacy(site, true);
+    const doc = buildPrivacyPolicy({ company: db().settings, website: preview });
     assert.equal(doc.controllerName, "Södermalms Snickeri AB");
     assert.match(doc.sections.find((s) => s.id === "tillägg")?.paragraphs.join(" ") ?? "", /dagtid/);
 
-    db().settings.name = "Annat Demo AB";
-    const afterRename = buildPrivacyPolicy({ company: db().settings, website: db().website });
+    const renamed = { ...db().settings, name: "Annat Demo AB" };
+    const afterRename = buildPrivacyPolicy({
+      company: renamed,
+      website: websiteWithResolvedPrivacy(db().website!, true),
+    });
     assert.equal(afterRename.controllerName, "Annat Demo AB");
   });
 
@@ -187,5 +206,143 @@ describe("redigerbart tillägg på hemsidan", () => {
     updatePrivacyPolicySupplement("Tillfälligt tillägg");
     updatePrivacyPolicySupplement("  ");
     assert.equal(db().website?.privacyPolicySupplement, undefined);
+    assert.equal(db().website?.draftPrivacyPolicy, undefined);
+  });
+});
+
+describe("integritetspolicy STANDARD och CUSTOM", () => {
+  beforeEach(() => {
+    replaceDb(emptyTestDb({ settings: { ...demoCompany } }));
+  });
+
+  it("defaultar till STANDARD utan mode-fält – befintligt tillägg bevaras", () => {
+    const website = testSite({ privacyPolicySupplement: "Vi fotar aldrig inne hos kunden utan att fråga." });
+    const published = publishedPrivacyPolicyState(website);
+    const draft = draftPrivacyPolicyState(website);
+    assert.equal(published.mode, "standard");
+    assert.equal(draft.mode, "standard");
+    assert.equal(published.supplement, "Vi fotar aldrig inne hos kunden utan att fråga.");
+    const doc = buildPrivacyPolicy({ company: demoCompany, website });
+    assert.match(doc.sections.find((s) => s.id === "tillägg")?.paragraphs.join(" ") ?? "", /fotar aldrig/);
+  });
+
+  it("custom börjar från genererad standard, inte tomt, med tokens", () => {
+    const website = testSite({ privacyPolicySupplement: "Vi ringer bara på dagtid." });
+    const seed = seedCustomPrivacyPolicy({ company: demoCompany, website });
+    const plain = richTextToPlain(seed);
+    assert.match(plain, /Integritetspolicy/);
+    assert.match(plain, /Personuppgiftsansvarig/);
+    assert.match(plain, /6\.1 b/);
+    assert.match(plain, /dagtid/);
+    assert.match(plain, new RegExp(PRIVACY_COMPANY_TOKENS.name.replace(/[{}]/g, "\\$&")));
+    assert.match(plain, new RegExp(PRIVACY_COMPANY_TOKENS.email.replace(/[{}]/g, "\\$&")));
+    assert.doesNotMatch(plain, /Södermalms Snickeri AB/);
+    assert.doesNotMatch(plain, /info@sodermalmssnickeri\.se/);
+    assert.ok(plain.length > 400, "seed ska vara hela policyn");
+  });
+
+  it("custom skrivs inte över av malluppdateringar", () => {
+    generateWebsite("Hemsida för Södermalms Snickeri i Stockholm");
+    publishWebsite();
+    const seed = seedCustomPrivacyPolicy({ company: demoCompany, website: db().website });
+    const edited = {
+      ...seed,
+      content: [
+        ...seed.content,
+        { type: "paragraph" as const, content: [{ type: "text" as const, text: "Egen mening som inte finns i mallen." }] },
+      ],
+    };
+    updateWebsitePrivacyPolicy({ mode: "custom", customBody: edited });
+    publishWebsite();
+    const saved = db().website!.privacyPolicyCustomBody;
+    assert.ok(saved);
+    assert.match(richTextToPlain(saved), /Egen mening som inte finns i mallen/);
+    const regenerated = seedCustomPrivacyPolicy({ company: demoCompany, website: db().website });
+    assert.doesNotMatch(richTextToPlain(regenerated), /Egen mening som inte finns i mallen/);
+    assert.deepEqual(db().website!.privacyPolicyCustomBody, saved);
+    assert.equal(publishedPrivacyPolicyState(db().website!).mode, "custom");
+  });
+
+  it("återställ till STANDARD använder aktuell mall och släpper custom", () => {
+    generateWebsite("Hemsida för Södermalms Snickeri i Stockholm");
+    publishWebsite();
+    const seed = seedCustomPrivacyPolicy({ company: demoCompany, website: db().website });
+    updateWebsitePrivacyPolicy({ mode: "custom", customBody: seed });
+    publishWebsite();
+    updateWebsitePrivacyPolicy({ mode: "standard" });
+    const draft = draftPrivacyPolicyState(db().website!);
+    assert.equal(draft.mode, "standard");
+    assert.equal(draft.customBody, undefined);
+    publishWebsite();
+    assert.equal(publishedPrivacyPolicyState(db().website!).mode, "standard");
+    assert.equal(db().website!.privacyPolicyCustomBody, undefined);
+    const view = resolvePrivacyPolicyView({
+      company: demoCompany,
+      website: websiteWithResolvedPrivacy(db().website!, false),
+    });
+    assert.equal(view.kind, "standard");
+    assert.match(view.document.intro, /Södermalms Snickeri AB/);
+  });
+
+  it("utkast syns i preview men inte på publicerad sida förrän publicering", () => {
+    generateWebsite("Hemsida för Södermalms Snickeri i Stockholm");
+    publishWebsite();
+    const seed = seedCustomPrivacyPolicy({ company: demoCompany, website: db().website });
+    updateWebsitePrivacyPolicy({ mode: "custom", customBody: seed });
+    const site = db().website!;
+    assert.equal(publishedPrivacyPolicyState(site).mode, "standard");
+    assert.equal(draftPrivacyPolicyState(site).mode, "custom");
+    const publicView = resolvePrivacyPolicyView({
+      company: demoCompany,
+      website: websiteWithResolvedPrivacy(site, false),
+    });
+    const previewView = resolvePrivacyPolicyView({
+      company: demoCompany,
+      website: websiteWithResolvedPrivacy(site, true),
+    });
+    assert.equal(publicView.kind, "standard");
+    assert.equal(previewView.kind, "custom");
+    publishWebsite();
+    const live = resolvePrivacyPolicyView({
+      company: demoCompany,
+      website: websiteWithResolvedPrivacy(db().website!, false),
+    });
+    assert.equal(live.kind, "custom");
+    assert.equal(db().website!.draftPrivacyPolicy, undefined);
+  });
+
+  it("ändrad e-post syns i STANDARD och CUSTOM via tokens", () => {
+    generateWebsite("Hemsida för Södermalms Snickeri i Stockholm");
+    publishWebsite();
+    const seed = seedCustomPrivacyPolicy({ company: demoCompany, website: db().website });
+    assert.match(richTextToPlain(seed), /{{company\.email}}/);
+    updateWebsitePrivacyPolicy({ mode: "custom", customBody: seed });
+    publishWebsite();
+
+    const renamed = { ...demoCompany, email: "ny@sodermalmssnickeri.se" };
+    const standard = buildPrivacyPolicy({ company: renamed, website: db().website });
+    assert.match(standard.sections.map((s) => s.paragraphs.join(" ")).join(" "), /ny@sodermalmssnickeri\.se/);
+    assert.doesNotMatch(standard.sections.map((s) => s.paragraphs.join(" ")).join(" "), /info@sodermalmssnickeri\.se/);
+
+    const custom = resolvePrivacyPolicyView({
+      company: renamed,
+      website: websiteWithResolvedPrivacy(db().website!, false),
+    });
+    assert.equal(custom.kind, "custom");
+    const customText = richTextToPlain(custom.doc);
+    assert.match(customText, /ny@sodermalmssnickeri\.se/);
+    assert.doesNotMatch(customText, /info@sodermalmssnickeri\.se/);
+    assert.doesNotMatch(customText, /{{company\.email}}/);
+  });
+
+  it("editorn visar live värden men sparar tokens", () => {
+    const seed = seedCustomPrivacyPolicy({ company: demoCompany, website: testSite() });
+    const shown = applyPrivacyTokens(seed, demoCompany, { businessName: "Södermalms Snickeri" });
+    assert.match(richTextToPlain(shown), /Södermalms Snickeri AB/);
+    assert.match(richTextToPlain(shown), /info@sodermalmssnickeri\.se/);
+    const stored = capturePrivacyTokens(shown, demoCompany, { businessName: "Södermalms Snickeri" });
+    assert.match(richTextToPlain(stored), /{{company\.name}}/);
+    assert.match(richTextToPlain(stored), /{{company\.email}}/);
+    assert.doesNotMatch(richTextToPlain(stored), /info@sodermalmssnickeri\.se/);
   });
 });

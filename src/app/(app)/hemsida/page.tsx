@@ -7,6 +7,7 @@ import { draftWebsiteDesign, publishedWebsiteDesign } from "@/lib/website-design
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { GenerateWebsiteForm, PublishWebsiteButton, SectionList } from "@/components/site-widgets";
 import { PrivacyPolicySettingsCard } from "@/components/privacy-policy-settings";
+import { draftPrivacyPolicyState, seedCustomPrivacyPolicy } from "@/lib/website-privacy";
 import { SitePreviewFrame, UtseendePanel, WebsiteDesignProvider } from "@/components/site-design-widgets";
 import { CopyLinkButton } from "@/components/copy-button";
 import { DomainSidebarCard } from "@/components/domain-widgets";
@@ -207,7 +208,8 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
               <PrivacyPolicySettingsCard
                 company={data.settings}
                 businessName={site.businessName}
-                supplement={site.privacyPolicySupplement}
+                draft={draftPrivacyPolicyState(site)}
+                standardSeed={seedCustomPrivacyPolicy({ company: data.settings, website: site })}
               />
             </Card>
             <p className="mt-2 text-[12px] leading-relaxed text-muted">
