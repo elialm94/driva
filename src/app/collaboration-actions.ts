@@ -219,15 +219,15 @@ export async function switchWorkspaceAction(workspace: "owner" | "redovisning", 
 /**
  * Demo: öppna redovisningsytan som Anna Svensson.
  *
- *   * JSON-läget: byt lokal identitet till den seedade konsulten.
- *   * Publika demosessionen (Supabase): sätt demo-aktörskakan – sessionslagret
- *     presenterar då demoföretagets ägarmedlemskap som redovisningskonsult
- *     (endast en vy, isolerad till demoföretaget – ingen impersonering av
- *     riktiga företag finns).
+ *   * Publika demosessionen (JSON-fil per besökare): sätt demo-aktörskakan –
+ *     sessionslagret presenterar då demoföretagets ägarmedlemskap som
+ *     redovisningskonsult (endast en vy, isolerad till sessionens egen fil –
+ *     ingen impersonering av riktiga företag finns).
+ *   * Lokala JSON-läget utan demosession: byt lokal identitet till den
+ *     seedade konsulten.
  */
 export async function enterLocalAccountantDemoAction(): Promise<void> {
-  if (isSupabaseMode()) {
-    if (!(await isDemoSession())) redirect("/login?next=/redovisning");
+  if (await isDemoSession()) {
     const jar = await cookies();
     jar.set(DEMO_ACTOR_COOKIE, "accountant", { path: "/", sameSite: "lax", httpOnly: true });
     jar.set(WORKSPACE_COOKIE, "redovisning", { path: "/", sameSite: "lax" });
@@ -236,6 +236,7 @@ export async function enterLocalAccountantDemoAction(): Promise<void> {
     refresh();
     redirect("/redovisning");
   }
+  if (isSupabaseMode()) redirect("/login?next=/redovisning");
   restoreLocalAccountantDemo();
   const membership = activeMembershipFor(LOCAL_JSON_ACCOUNTANT_ID, LOCAL_JSON_BUSINESS_ID);
   if (!membership || !isAccountingRole(membership.role)) redirect("/");
@@ -250,7 +251,7 @@ export async function enterLocalAccountantDemoAction(): Promise<void> {
 
 /** Demo: tillbaka till ägaren. */
 export async function leaveLocalAccountantDemoAction(): Promise<void> {
-  if (isSupabaseMode()) {
+  if ((await isDemoSession()) || isSupabaseMode()) {
     const jar = await cookies();
     jar.set(DEMO_ACTOR_COOKIE, "", { path: "/", maxAge: 0, sameSite: "lax" });
     jar.delete(DEMO_ACTOR_COOKIE);

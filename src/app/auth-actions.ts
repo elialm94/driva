@@ -17,7 +17,7 @@ import {
   validateLoginFields,
   validateSignupFields,
 } from "@/lib/auth/signup-flow";
-import { endDemoSession } from "@/lib/auth/demo-provision";
+import { endDemoSession } from "@/lib/auth/demo-request";
 import { isSupabaseMode } from "@/lib/storage/config";
 import {
   readOnboardingFormData,
@@ -195,15 +195,12 @@ export async function updatePasswordAction(
 }
 
 export async function logoutAction(): Promise<void> {
-  if (isSupabaseMode()) {
-    if (await isDemoSession()) {
-      // Demosessionen är besökarens egen: avsluta den (markera företaget
-      // för städning + scope local) i stället för en global signOut.
-      await endDemoSession();
-    } else {
-      const supabase = await createSupabaseServerClient();
-      await supabase.auth.signOut();
-    }
+  if (await isDemoSession()) {
+    // Demosessionen är besökarens egen JSON-fil: släng filen + kakorna.
+    await endDemoSession();
+  } else if (isSupabaseMode()) {
+    const supabase = await createSupabaseServerClient();
+    await supabase.auth.signOut();
   }
   // Utloggad landar på landningssidan (proxyns rewrite på "/").
   redirect("/");

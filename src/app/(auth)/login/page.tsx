@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import { parseLoginAuthSearch } from "@/lib/auth/signup-flow";
-import { isSupabaseMode } from "@/lib/storage/config";
-import { isDemoLoginConfigured } from "@/lib/auth/demo-session";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Logga in – Driva" };
@@ -24,12 +22,6 @@ function noticeFor(params: { bekraftelse?: string; demo?: string }): {
   if (params.demo === "upptagen") {
     return { text: "Demon har många besökare just nu. Försök igen om en liten stund.", tone: "info" };
   }
-  if (params.demo === "stangd") {
-    return { text: "Demon är inte tillgänglig just nu.", tone: "info" };
-  }
-  if (params.demo === "fel") {
-    return { text: "Demon kunde inte startas. Försök igen om en liten stund.", tone: "error" };
-  }
   return null;
 }
 
@@ -41,9 +33,9 @@ export default async function LoginPage({
   const params = await searchParams;
   const { email, next } = parseLoginAuthSearch(params);
   const notice = noticeFor(params);
-  // Demo-CTA: lokalt JSON-läge är alltid demo; i Supabase-läget provisionerar
-  // /demo en isolerad demosession per besökare.
-  const demoAvailable = !isSupabaseMode() || isDemoLoginConfigured();
+  // Demo-CTA: /demo klonar exempeldatat till en egen JSON-fil per besökare –
+  // fungerar i alla miljöer, ingen databas eller extra konfiguration krävs.
+  const demoAvailable = true;
   return (
     <main className="flex min-h-dvh items-center justify-center bg-stone-100 px-4 py-10">
       <div className="w-full max-w-sm">

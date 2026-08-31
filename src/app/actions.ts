@@ -177,8 +177,10 @@ import {
 } from "@/lib/features";
 import { headers } from "next/headers";
 import { isSupabaseMode } from "@/lib/storage/config";
-import { isDemoSession, requireBusiness, withBusiness, withBusinessRead, withPublicBusiness } from "@/lib/auth/session";
+import { isDemoSession, withBusiness, withBusinessRead, withPublicBusiness } from "@/lib/auth/session";
 import { rateLimitDemoReset } from "@/lib/auth/demo-session";
+import { readDemoSessionId } from "@/lib/auth/demo-request";
+import { resetDemoSessionState } from "@/lib/storage/demo-session-store";
 
 /**
  * Alla åtgärder körs i tenantkontext via withBusiness (ladda → domänlogik →
@@ -1657,28 +1659,25 @@ export async function saveLogoAction(
 /* ------------------------------------ Demo ---------------------------------- */
 
 export async function resetDemoAction(): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (isSupabaseMode()) {
-    // Publika demosessionen: töm demoföretaget i databasen (SQL-funktionen
-    // vägrar för alla företag som inte skapades som demo) och spela upp
-    // exempeldatat igen genom appens vanliga importväg.
-    const { user, businessId } = await requireBusiness();
-    if (!(await isDemoSession())) {
-      return { ok: false, error: "Endast demosessionen kan återställa demon." };
-    }
+  // Publika demosessionen: skriv över sessionens EGEN JSON-fil med färskt
+  // seed. Ingen databas inblandad – Supabase-rader rörs aldrig av demon.
+  // isDemoSession respekterar att en RIKTIG inloggning alltid vinner över
+  // en kvarglömd demokaka – då är detta ingen demosession.
+  if (await isDemoSession()) {
+    const sessionId = await readDemoSessionId();
+    if (!sessionId) return { ok: false, error: "Demosessionen har gått ut." };
     if (!rateLimitDemoReset()) {
       return { ok: false, error: "Demon återställdes nyss. Vänta en liten stund och försök igen." };
     }
-    const { resetDemoBusinessToSeed } = await import("@/lib/storage/demo-reset");
-    try {
-      await resetDemoBusinessToSeed(businessId, user.id);
-    } catch (e) {
-      console.error(`[driva:demo] återställning misslyckades: ${e instanceof Error ? e.message : e}`);
-      return { ok: false, error: "Demon kunde inte återställas just nu. Försök igen om en stund." };
-    }
+    resetDemoSessionState(sessionId);
     refresh();
     return { ok: true };
   }
-  // JSON-läget – resetDemoData() vägrar köra mot Supabase.
+  if (isSupabaseMode()) {
+    return { ok: false, error: "Endast demosessionen kan återställa demon." };
+  }
+  // JSON-läget (lokal utveckling utan demosession) – resetDemoData() vägrar
+  // köra mot Supabase.
   resetDemoData();
   refresh();
   return { ok: true };

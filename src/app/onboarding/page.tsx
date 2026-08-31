@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getSessionUser, sessionPhoneHint } from "@/lib/auth/session";
+import { getSessionUser, isDemoSession, sessionPhoneHint } from "@/lib/auth/session";
 import { needsCompanyOnboarding } from "@/lib/onboarding";
 import { membershipsForUser } from "@/lib/storage/adapter-supabase";
 import { isSupabaseMode } from "@/lib/storage/config";
@@ -10,6 +10,7 @@ export const metadata: Metadata = { title: "Kom igång – Driva" };
 export const dynamic = "force-dynamic";
 
 export default async function OnboardingPage() {
+  if (await isDemoSession()) redirect("/"); // demon har redan sitt exempelföretag
   if (!isSupabaseMode()) redirect("/"); // JSON-läget har ett färdigt demoföretag
   const user = await getSessionUser();
   if (!user) redirect("/login");

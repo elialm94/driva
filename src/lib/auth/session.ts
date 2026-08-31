@@ -13,7 +13,6 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { isSupabaseMode } from "@/lib/storage/config";
 import {
-  businessNameById,
   createBusinessWithOwner,
   loadStateSnapshot,
   membershipsForUser,
@@ -24,8 +23,13 @@ import {
   type PublicTokenKind,
 } from "@/lib/storage/adapter-supabase";
 import { requestSlot } from "@/lib/storage/request-scope";
+import { runInTenantContext, type TenantContext } from "@/lib/storage/context";
+import {
+  ensureDemoSessionState,
+  persistDemoSessionState,
+} from "@/lib/storage/demo-session-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { BusinessRole } from "@/lib/types";
+import type { BusinessRole, DB } from "@/lib/types";
 import { isAccountingRole, isOwnerRole, type CollaborationCapability, assertCan } from "@/lib/collaboration/permissions";
 import {
   LOCAL_JSON_ACCOUNTANT_NAME,
@@ -35,7 +39,8 @@ import {
   setTestActor,
   type CollaborationActor,
 } from "@/lib/collaboration/actor";
-import { DEMO_ACTOR_COOKIE, isDemoClaims, rateLimitDemoWrite, type SessionClaimsLike } from "@/lib/auth/demo-session";
+import { DEMO_ACTOR_COOKIE, rateLimitDemoWrite } from "@/lib/auth/demo-session";
+import { demoBusinessIdFor, demoUserIdFor, readDemoSessionId } from "@/lib/auth/demo-request";
 import { ensureLocalDemoCollaboration } from "@/lib/collaboration/local-demo";
 import {
   activeMembershipFor,
@@ -61,18 +66,38 @@ export const LOCAL_USER_COOKIE = "driva_local_user";
 
 export type WorkspaceKind = "owner" | "redovisning";
 
+/** Minimala JWT-claims sessionslagret läser (verifierade av Supabase-klienten). */
+type SessionClaims = { sub?: unknown; email?: unknown };
+
 /** Verifierade JWT-claims från Supabase-sessionen (en getClaims per request). */
-const sessionClaims = cache(async (): Promise<(SessionClaimsLike & { sub?: unknown }) | null> => {
+const sessionClaims = cache(async (): Promise<SessionClaims | null> => {
   if (!isSupabaseMode()) return null;
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
   if (!claims?.sub) return null;
-  return claims as SessionClaimsLike & { sub?: unknown };
+  return claims as SessionClaims;
 });
 
-/** Verifierad användare från Supabase-sessionen, eller JSON-lokal aktör. */
+/**
+ * Aktiv demosession för requesten (session-id ur demo-cookien), eller null.
+ * En RIKTIG inloggning vinner alltid: en inloggad användare med kvarglömd
+ * demokaka fortsätter mot Supabase – demofilen läses aldrig för den.
+ */
+const demoRequestSessionId = cache(async (): Promise<string | null> => {
+  if (isSupabaseMode() && (await sessionClaims())?.sub) return null;
+  return readDemoSessionId();
+});
+
+/** Verifierad användare från Supabase-sessionen, demosessionen eller JSON-lokal aktör. */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
+  const demoId = await demoRequestSessionId();
+  if (demoId) {
+    // Demosessionen presenteras som "Du" (som lokala demon) – och som Anna
+    // Svensson när det demo-lokala konsultbytet är aktivt.
+    const name = (await readDemoActorCookie()) === "accountant" ? LOCAL_JSON_ACCOUNTANT_NAME : "Du";
+    return { id: demoUserIdFor(demoId), email: "demo@driva.local", name };
+  }
   if (!isSupabaseMode()) {
     if (process.env.DRIVA_TEST !== "1") ensureLocalDemoCollaboration();
     const store = await cookies().catch(() => null);
@@ -83,14 +108,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   }
   const claims = await sessionClaims();
   if (!claims?.sub) return null;
-  const email = String(claims.email ?? "");
-  if (isDemoClaims(claims)) {
-    // Demosessionen presenteras som "Du" (som lokala demon) – och som Anna
-    // Svensson när det demo-lokala konsultbytet är aktivt.
-    const name = (await readDemoActorCookie()) === "accountant" ? LOCAL_JSON_ACCOUNTANT_NAME : "Du";
-    return { id: String(claims.sub), email, name };
-  }
-  return { id: String(claims.sub), email };
+  return { id: String(claims.sub), email: String(claims.email ?? "") };
 });
 
 /** Demo-only aktörsbyte (Anna-vyn). Läses aldrig för riktiga användare. */
@@ -103,39 +121,35 @@ async function readDemoActorCookie(): Promise<"accountant" | null> {
   }
 }
 
+/** Demosessionens roll: ägare, eller redovisningskonsult i Anna-vyn. */
+async function demoSessionRole(): Promise<BusinessRole> {
+  return (await readDemoActorCookie()) === "accountant" ? "accounting_consultant" : "owner";
+}
+
 /**
- * Demo-only impersonering, isolerad till demoföretaget: när demosessionen
- * öppnat redovisningsytan "som Anna Svensson" presenteras demo-användarens
- * ägarmedlemskap som redovisningskonsult. Bara en VY på samma verifierade
- * identitet – medlemskapet i databasen ändras inte, inga andra företag
- * tillkommer, och all skrivauktorisering går genom samma capability-kontroll
- * som för riktiga konsulter. Riktiga användare berörs aldrig (e-postgrind).
+ * Demosessionens medlemskap: EXAKT ett – sessionens eget demoföretag
+ * (fil-storen). I Anna-vyn presenteras det som redovisningskonsult; bara en
+ * VY på samma session – ingen annan session och inget riktigt företag kan
+ * någonsin dyka upp här. Konsultvyn speglas till det instanslokala registret
+ * så klientlistan i /redovisning fungerar (visning – auktoriseringen är
+ * medlemslistan här).
  */
-async function applyDemoAccountantView(userId: string, memberships: MembershipInfo[]): Promise<MembershipInfo[]> {
-  if (!isSupabaseMode()) return memberships;
-  const user = await getSessionUser();
-  if (!user || user.id !== userId || !(await isDemoSession())) return memberships;
-  if ((await readDemoActorCookie()) !== "accountant") return memberships;
-  const viewed = memberships.map((m) =>
-    isOwnerRole(m.role) ? { ...m, role: "accounting_consultant" as BusinessRole } : m
-  );
-  // Klientlistan i /redovisning läses ur det instanslokala registret – spegla
-  // konsultvyn dit så listan fungerar även på en kall serverless-instans.
-  // Registret ger aldrig åtkomst; auktoriseringen är SQL-medlemskapet + RLS.
-  for (const m of viewed) {
-    if (!isAccountingRole(m.role) || activeMembershipFor(userId, m.businessId)) continue;
+async function demoMemberships(sessionId: string, userId: string): Promise<MembershipInfo[]> {
+  const businessId = demoBusinessIdFor(sessionId);
+  const role = await demoSessionRole();
+  if (isAccountingRole(role) && !activeMembershipFor(userId, businessId)) {
     const now = new Date().toISOString();
     putMembership({
-      businessId: m.businessId,
-      businessName: await businessNameById(m.businessId),
+      businessId,
+      businessName: ensureDemoSessionState(sessionId).settings.name,
       userId,
-      role: m.role,
+      role,
       acceptedAt: now,
-      lastActiveAt: m.lastActiveAt ?? now,
+      lastActiveAt: now,
       createdAt: now,
     });
   }
-  return viewed;
+  return [{ businessId, role }];
 }
 
 /** Kräver inloggning – annars till /login (proxyn bevarar next-param). */
@@ -145,10 +159,9 @@ export async function requireUser(): Promise<SessionUser> {
   return user;
 }
 
-/** Är den aktiva Supabase-sessionen en publik demosession? (Anonym användare.) */
+/** Är requesten en publik demosession? (Giltig demo-cookie, ingen riktig inloggning.) */
 export async function isDemoSession(): Promise<boolean> {
-  if (!isSupabaseMode()) return false;
-  return isDemoClaims(await sessionClaims());
+  return (await demoRequestSessionId()) !== null;
 }
 
 /** Telefonnumret från registreringen (user_metadata) – förifyller onboarding. */
@@ -166,8 +179,12 @@ export async function sessionPhoneHint(): Promise<string> {
  * memoiserad läsning kan aldrig ge inaktuell auktorisering inom en request.
  */
 export const listMemberships = cache(async (userId: string): Promise<MembershipInfo[]> => {
+  const demoId = await demoRequestSessionId();
+  if (demoId && userId === demoUserIdFor(demoId)) {
+    return demoMemberships(demoId, userId);
+  }
   const base = isSupabaseMode()
-    ? await applyDemoAccountantView(userId, await membershipsForUser(userId))
+    ? await membershipsForUser(userId)
     : activeMembershipsForUser(userId)
         // Företag som inaktiverats av Driva Admin nekas (Supabase-läget
         // filtrerar samma sak i SQL:en; supportsessionen nedan går förbi).
@@ -260,9 +277,6 @@ export async function requireBusiness(): Promise<{
         memberships: [{ businessId: LOCAL_JSON_BUSINESS_ID, role: "owner" }],
       };
     }
-    // En demosession utan företag (t.ex. städat efter utgång) ska aldrig se
-    // riktiga onboardingen – /demo provisionerar en färsk session i stället.
-    if (await isDemoSession()) redirect("/demo");
     redirect("/onboarding");
   }
   const preferred = await preferredBusinessFromCookie();
@@ -397,11 +411,82 @@ async function resolveActiveBusiness(userId: string, explicit?: string): Promise
   throw new Error("Inget företag valt.");
 }
 
+/**
+ * Demosessionens tenantkontext: sessionens JSON-fil är hela världen.
+ *
+ * Tillståndet lastas från fil-storen (samma objekt per instans – parallella
+ * requests i samma session delar det, precis som den globala JSON-storen),
+ * fn körs i samma AsyncLocalStorage-kontext som Supabase-vägen använder –
+ * db()/save() i domänlagret är helt oförändrade – och vid save() skrivs
+ * HELA filen ner igen. Ingen diffning, ingen SQL: demorequests rör aldrig
+ * Supabase, och riktiga användare passerar aldrig genom den här vägen.
+ */
+async function runInDemoSession<T>(
+  sessionId: string,
+  opts: { access: "read" | "write"; actor?: CollaborationActor },
+  fn: () => T | Promise<T>
+): Promise<T> {
+  const state = ensureDemoSessionState(sessionId);
+  const ctx: TenantContext = {
+    businessId: demoBusinessIdFor(sessionId),
+    userId: opts.actor?.userId ?? null,
+    writable: opts.access === "write",
+    state,
+    // Ingen diffning för filskrivningen – baslinjen används aldrig här.
+    baseline: state,
+    stateVersion: 0,
+    dirty: false,
+  };
+  const run = () => runInTenantContext(ctx, () => fn());
+  try {
+    return opts.actor ? await runAsActor(opts.actor, run) : await run();
+  } finally {
+    // finally: även flöden som avslutas med redirect() får sina ändringar
+    // sparade (tillståndet i minnet är redan muterat – filen ska spegla det).
+    if (ctx.dirty) persistDemoSessionState(sessionId, state);
+  }
+}
+
+/** Auktoriserat demoflöde (server actions/sidor): roll + ev. capability + skrivtak. */
+async function withDemoSession<T>(
+  sessionId: string,
+  fn: () => T | Promise<T>,
+  opts: { access: "read" | "write"; businessId?: string; capability?: CollaborationCapability }
+): Promise<T> {
+  const businessId = demoBusinessIdFor(sessionId);
+  if (opts.businessId && opts.businessId !== businessId) {
+    throw new Error("Du har inte åtkomst till det företaget.");
+  }
+  const user = await requireUser();
+  const role = await demoSessionRole();
+  if (opts.access === "write") {
+    if (opts.capability) {
+      assertCan(role, opts.capability);
+    } else if (isAccountingRole(role)) {
+      throw new Error("Den här åtgärden är inte tillgänglig från redovisningsytan.");
+    }
+    // Skrivtak per demosession (skydd mot skriptad massgenerering) –
+    // riktiga företag berörs aldrig av kontrollen.
+    if (!rateLimitDemoWrite(businessId)) {
+      throw new Error("Demon har ett tempotak för ändringar. Vänta en liten stund och försök igen.");
+    }
+  }
+  return runInDemoSession(sessionId, { access: opts.access, actor: actorFrom(user, businessId, role) }, fn);
+}
+
 /** Skrivande flöde i tenantkontext. */
 export async function withBusiness<T>(
   fn: () => T | Promise<T>,
   opts: { retry?: boolean; businessId?: string; capability?: CollaborationCapability } = {}
 ): Promise<T> {
+  const demoId = await demoRequestSessionId();
+  if (demoId) {
+    return withDemoSession(demoId, fn, {
+      access: "write",
+      businessId: opts.businessId,
+      capability: opts.capability,
+    });
+  }
   const support = await activeSupportContext().catch(() => null);
   if (!isSupabaseMode()) {
     const user = (await getSessionUser()) ?? {
@@ -421,11 +506,6 @@ export async function withBusiness<T>(
   const user = await requireUser();
   const businessId = await resolveActiveBusiness(user.id, opts.businessId);
   const role = await authorizeWrite(user, businessId, opts.capability);
-  // Demosessioner har ett generöst skrivtak (skydd mot skriptad
-  // massgenerering) – riktiga företag berörs aldrig av kontrollen.
-  if ((await isDemoSession()) && !rateLimitDemoWrite(businessId)) {
-    throw new Error("Demon har ett tempotak för ändringar. Vänta en liten stund och försök igen.");
-  }
   try {
     return await runAsActor(labelSupportActor(actorFrom(user, businessId, role), support), () =>
       runWithTenant({ businessId, userId: user.id, access: "write", retry: opts.retry }, fn)
@@ -440,11 +520,40 @@ export async function withBusinessRead<T>(
   fn: () => T | Promise<T>,
   opts: { businessId?: string } = {}
 ): Promise<T> {
+  const demoId = await demoRequestSessionId();
+  if (demoId) return withDemoSession(demoId, fn, { access: "read", businessId: opts.businessId });
   if (!isSupabaseMode()) return await fn();
   const user = await requireUser();
   const businessId = await resolveActiveBusiness(user.id, opts.businessId);
   await authorizeWrite(user, businessId);
   return runWithTenant({ businessId, userId: user.id, access: "read" }, fn);
+}
+
+/**
+ * Finns den publika tokenen i demosessionens eget tillstånd? Publika länkar
+ * (offert/faktura/sajt/BankID) som skapats i demon lever i sessionens fil –
+ * inte i databasen – och fungerar därför i besökarens egen webbläsare.
+ * Ingen träff = ingen demoväg: riktiga publika länkar fortsätter fungera
+ * som vanligt även med en demokaka i webbläsaren.
+ */
+function demoStateHasToken(state: DB, kind: PublicTokenKind, token: string): boolean {
+  if (!token) return false;
+  switch (kind) {
+    case "quote":
+      return state.quotes.some((q) => q.token === token);
+    case "invoice":
+      return state.invoices.some((i) => i.token === token);
+    case "bankid_order":
+      return state.bankidOrders.some((o) => o.orderRef === token);
+    case "website":
+      return state.website?.id === token;
+    case "website_slug":
+      return state.website?.slug === token;
+    default:
+      // hostname/inbound: externa kanaler (egna domäner, inkommande mejl)
+      // pekar aldrig på en demosession.
+      return false;
+  }
 }
 
 export async function withPublicBusiness<T>(
@@ -453,6 +562,10 @@ export async function withPublicBusiness<T>(
   fn: () => T | Promise<T>,
   opts: { access?: "read" | "write"; retry?: boolean } = {}
 ): Promise<T | null> {
+  const demoId = await demoRequestSessionId();
+  if (demoId && demoStateHasToken(ensureDemoSessionState(demoId), kind, token)) {
+    return runInDemoSession(demoId, { access: opts.access ?? "write" }, fn);
+  }
   if (!isSupabaseMode()) return await fn();
   const resolved = await resolvePublicToken(kind, token);
   if (!resolved) return null;
@@ -502,13 +615,32 @@ const loadPageBusiness = cache(async (businessId?: string): Promise<void> => {
   }
 });
 
+/**
+ * Demosessionens sidladdning: sessionens filtillstånd in i request-cellen,
+ * så att db() i nästlade serverkomponenter läser rätt fil – i BÅDA
+ * lagringslägena. Sidorenderingar muterar aldrig (save() utan skrivkontext
+ * kastar i Supabase-läget och demoflödenas skrivningar går via withBusiness).
+ */
+const loadDemoPage = cache(async (sessionId: string): Promise<void> => {
+  const user = await requireUser();
+  const businessId = demoBusinessIdFor(sessionId);
+  const slot = requestSlot();
+  slot.state = ensureDemoSessionState(sessionId);
+  slot.businessId = businessId;
+  slot.actor = actorFrom(user, businessId, await demoSessionRole());
+});
+
 export async function ensurePageBusiness(): Promise<void> {
+  const demoId = await demoRequestSessionId();
+  if (demoId) return loadDemoPage(demoId);
   if (!isSupabaseMode()) return;
   return loadPageBusiness();
 }
 
 export async function ensureAccountantPage(businessId: string): Promise<void> {
   const access = await requireAccountingAccess(businessId);
+  const demoId = await demoRequestSessionId();
+  if (demoId) return loadDemoPage(demoId);
   if (!isSupabaseMode()) {
     runAsActor(actorFrom(access.user, access.businessId, access.role), () => undefined);
     touchLastActive(access.user.id, access.businessId);
@@ -527,7 +659,18 @@ const loadPublicPage = cache(async (kind: PublicTokenKind, token: string): Promi
   return true;
 });
 
+const loadDemoPublicPage = cache(async (sessionId: string): Promise<void> => {
+  const slot = requestSlot();
+  slot.state = ensureDemoSessionState(sessionId);
+  slot.businessId = demoBusinessIdFor(sessionId);
+});
+
 export async function ensurePublicPage(kind: PublicTokenKind, token: string): Promise<boolean> {
+  const demoId = await demoRequestSessionId();
+  if (demoId && demoStateHasToken(ensureDemoSessionState(demoId), kind, token)) {
+    await loadDemoPublicPage(demoId);
+    return true;
+  }
   if (!isSupabaseMode()) return true;
   return loadPublicPage(kind, token);
 }

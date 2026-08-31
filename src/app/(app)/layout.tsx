@@ -26,9 +26,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     ? (await listMemberships(user.id)).filter((m) => isAccountingRole(m.role)).length
     : 0;
   const navCounts = getNavAttentionCounts();
-  const businessId = isSupabaseMode()
-    ? requestSlot().businessId ?? tenantContext()?.businessId ?? LOCAL_JSON_BUSINESS_ID
-    : LOCAL_JSON_BUSINESS_ID;
+  // Request-cellen är satt i Supabase-läget OCH för demosessioner (fil per
+  // besökare) – annars gäller det lokala JSON-företaget.
+  const businessId = requestSlot().businessId ?? tenantContext()?.businessId ?? LOCAL_JSON_BUSINESS_ID;
   hydrateInvitationsFromTenant(businessId);
   const features = resolveOptionalFeatures(db(), businessId);
   // Demoläge = lokala JSON-demon ELLER den publika demosessionen. Markören

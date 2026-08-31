@@ -3,17 +3,16 @@
 /**
  * Demosessionens livscykel: avsluta (→ landningssidan) eller avsluta och gå
  * vidare till kontoskapande (→ /signup). Själva starten sker i GET /demo,
- * som provisionerar en isolerad demosession per besökare.
+ * som sätter demo-cookien och klonar seedet till sessionens JSON-fil.
  *
- * När besökaren lämnar demon flyttas demoföretagets utgångstid till nu
- * (frystriggern tillåter bara tidigareläggning) så att cleanup-vägen tar
- * datat vid nästa körning i stället för att vänta ut hela livslängden.
+ * Att avsluta slänger sessionens fil och rensar demokakorna – inget annat.
+ * Supabase berörs aldrig: demon bor inte där.
  */
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { endDemoSession } from "@/lib/auth/demo-provision";
+import { endDemoSession } from "@/lib/auth/demo-request";
 
-/** Avsluta demo: släpp demosessionen (endast den – scope local) → landningssidan. */
+/** Avsluta demo: släng sessionens fil + kakor → landningssidan. */
 export async function endDemoAction(): Promise<void> {
   await endDemoSession();
   revalidatePath("/", "layout");

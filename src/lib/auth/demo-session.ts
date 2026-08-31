@@ -1,68 +1,35 @@
 /**
- * Publik demosession: en RIKTIG, begränsad identitet – aldrig en auth-bypass.
+ * Publik demosession: JSON + cookie – aldrig databasen.
  *
- * Modellen (Supabase-läget):
- *   * /demo skapar en ANONYM Supabase-session (signInAnonymously) och
- *     provisionerar ett EGET demoföretag åt besökaren: businesses.is_demo
- *     (fryst vid insert) + demo_expires_at, ägt via ett vanligt
- *     ägarmedlemskap. All auktorisering går den vanliga vägen: proxy →
- *     requireBusiness → medlemskap → RLS. Den anonyma användaren är bara
- *     medlem i SITT demoföretag och kan därför aldrig nå andra demon eller
- *     riktiga företag – exakt samma isolering som mellan riktiga tenants.
- *   * Sessionens identifierare är Supabase-sessionens egna tokens
- *     (kryptografiskt slumpade, httpOnly-cookies). Demo-cookien nedan bär
- *     bara utgångstiden + en slumpdel för AI-budgetens sessionsfönster –
- *     den ger ALDRIG åtkomst i sig.
- *   * Livslängd: demo_expires_at i databasen (kan aldrig förlängas –
- *     frystrigger) och demo-cookien håller samma tid. Proxyn loggar ut
- *     demo-sessioner vars cookie saknas eller gått ut; cleanup-vägen
- *     (app.delete_demo_business) tar utgångna demoföretag.
+ * Modellen:
+ *   * "Se demo" (GET /demo) sätter en httpOnly-cookie (driva_demo) vars
+ *     värde bär ett KRYPTOGRAFISKT slumpat session-id och sessionens
+ *     utgångstid. Vid första träffen klonas det kanoniska exempeldatat
+ *     (Södermalms Snickeri AB) till sessionens EGEN JSON-fil,
+ *     .data/demo-sessions/<id>.json (se storage/demo-session-store.ts).
+ *   * db()/save() i en demorequest läser/skriver BARA den filen – samma
+ *     JSON-lager som den lokala utvecklingen använder, request-skopat.
+ *     Supabase (riktiga företag) berörs aldrig av demon: inga rader skapas,
+ *     läses eller raderas där.
+ *   * Reload inom livslängden → samma fil. Annan cookie/incognito → egen
+ *     färsk klon. Återställ → filen skrivs över med färskt seed. Utgångna
+ *     filer städas bort med enkel katalogstädning (aldrig SQL).
+ *   * Isoleringen är per session-id: utan cookien (ogissbart id) finns ingen
+ *     väg till en annan besökares fil, och en demosession kan aldrig nå
+ *     riktiga företag eftersom demorequests aldrig rör Supabase-lagret.
  *
- * Bakåtkompatibilitet: den äldre delade demo-användaren (DEMO_USER_EMAIL)
- * känns fortfarande igen som demo av e-postgrinden, men /demo skapar aldrig
- * fler sådana sessioner.
- *
- * JSON-läget (lokal utveckling) ÄR redan demon – där behövs ingen session.
+ * Den här modulen är de RENA hjälparna (cookievärde, livslängd, rate limits)
+ * – importeras även av proxyn och måste därför vara fri från Node-API:er
+ * (Web Crypto i stället för node:crypto).
  */
-import { isSupabaseMode } from "@/lib/storage/config";
 
-/** Markerar en aktiv demosession; värdet är utgångstiden (epoch ms). */
+/** Markerar en aktiv demosession; värdet är "utgångstid.session-id". */
 export const DEMO_SESSION_COOKIE = "driva_demo";
 /** Demo-only aktörsbyte: "accountant" = redovisningsytan som Anna Svensson. */
 export const DEMO_ACTOR_COOKIE = "driva_demo_actor";
 
-/** Spec: en demosession lever 24 h; därefter städas datat och nästa besök får färsk seed. */
+/** Spec: en demosession lever 24 h; därefter städas filen och nästa besök får färsk seed. */
 const DEFAULT_SESSION_HOURS = 24;
-
-/** Minimala JWT-claims som demogrindarna behöver. */
-export interface SessionClaimsLike {
-  email?: unknown;
-  is_anonymous?: unknown;
-}
-
-/** Är claims-uppsättningen en demosession? (Anonym användare eller legacy-demo-mejl.) */
-export function isDemoClaims(claims: SessionClaimsLike | null | undefined): boolean {
-  if (!claims) return false;
-  if (claims.is_anonymous === true) return true;
-  return isDemoUserEmail(typeof claims.email === "string" ? claims.email : undefined);
-}
-
-/** Legacy: det äldre delade demokontots e-post (om miljön fortfarande har det). */
-export function demoUserEmail(): string | undefined {
-  const v = process.env.DEMO_USER_EMAIL?.trim();
-  return v || undefined;
-}
-
-export function isDemoUserEmail(email: string | null | undefined): boolean {
-  const demo = demoUserEmail();
-  if (!demo || !email) return false;
-  return email.trim().toLowerCase() === demo.toLowerCase();
-}
-
-/** Demon är tillgänglig i Supabase-läget (anonyma sessioner provisioneras vid behov). */
-export function isDemoLoginConfigured(): boolean {
-  return isSupabaseMode();
-}
 
 /** Begränsad livslängd (spec: 24 h). Klampas till 1–72 h. */
 export function demoSessionMaxAgeSeconds(): number {
@@ -71,15 +38,33 @@ export function demoSessionMaxAgeSeconds(): number {
   return Math.round(hours * 3600);
 }
 
+/** Session-id:n är filnamn – strikt alfabet, ingen väg ut ur katalogen. */
+const SESSION_ID_PATTERN = /^[a-z0-9]{20,64}$/;
+
+export function isValidDemoSessionId(id: string | undefined | null): id is string {
+  return typeof id === "string" && SESSION_ID_PATTERN.test(id);
+}
+
+/** Kryptografiskt slumpat session-id (Web Crypto – fungerar även i proxyn). */
+export function newDemoSessionId(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = new Uint8Array(26);
+  globalThis.crypto.getRandomValues(bytes);
+  let out = "";
+  // 26 tecken à 36 möjligheter ≈ 134 bitar – ogissbart.
+  for (const b of bytes) out += alphabet[b % alphabet.length];
+  return out;
+}
+
 /**
- * Cookievärdet är "utgångstid.slumpdel": proxyn läser utgångstiden (litar
- * aldrig enbart på maxAge) och slumpdelen gör värdet unikt per besökare –
- * AI-budgetens per-sessionsfönster nycklar på det.
+ * Cookievärdet är "utgångstid.session-id": utgångstiden läses av proxyn
+ * (litar aldrig enbart på maxAge) och session-id:t pekar ut sessionens
+ * JSON-fil. Id:t ger bara åtkomst till den EGNA demofilen – aldrig till
+ * någon annan session eller till riktiga data.
  */
-export function demoCookieValueNow(): string {
+export function demoCookieValueNow(sessionId = newDemoSessionId()): string {
   const expires = Date.now() + demoSessionMaxAgeSeconds() * 1000;
-  const nonce = Math.random().toString(36).slice(2, 12);
-  return `${expires}.${nonce}`;
+  return `${expires}.${sessionId}`;
 }
 
 export function isDemoCookieValueActive(value: string | undefined): boolean {
@@ -88,23 +73,37 @@ export function isDemoCookieValueActive(value: string | undefined): boolean {
   return Number.isFinite(expires) && expires > Date.now();
 }
 
+/** Session-id:t ur ett AKTIVT cookievärde – annars null. */
+export function demoSessionIdFromCookie(value: string | undefined): string | null {
+  if (!isDemoCookieValueActive(value)) return null;
+  const id = value?.split(".")[1];
+  return isValidDemoSessionId(id) ? id : null;
+}
+
 /* ------------------------------------------------------------------------ *
  * Rate limit för den publika demostarten.
  *
- * Varje start provisionerar en tenant (anonym användare + företag + seed),
- * så gränsen är stramare än gamla inloggningsgränsen. Fönstren hålls i
- * minnet per serverless-instans: skydd mot enkel skriptad massprovisionering
- * från samma instans, INTE en distribuerad garanti. I botten gäller dessutom
- * Supabases egna rate limits för anonyma inloggningar (per IP, per projekt)
- * och cleanup-vägen som tar utgångna demoföretag efter 24 h.
+ * Varje start klonar seedet till en ny JSON-fil, så gränsen skyddar mot
+ * skriptad massgenerering av filer. Fönstren hålls i minnet per
+ * serverless-instans: skydd mot enkel skriptning från samma instans, INTE
+ * en distribuerad garanti. I botten gäller katalogstädningen som tar
+ * utgångna sessionsfiler.
  * ------------------------------------------------------------------------ */
 
+function limitOverride(name: string, fallback: number): number {
+  // Endast för lokal utveckling/E2E (skript slår i taket snabbare än en
+  // människa). Ingen override i produktion – standardvärdena gäller.
+  if (process.env.NODE_ENV === "production") return fallback;
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 const WINDOW_MS = 10 * 60_000;
-const MAX_STARTS_PER_IP = 6;
-const MAX_STARTS_GLOBAL = 60;
+const MAX_STARTS_PER_IP = limitOverride("DRIVA_DEMO_MAX_STARTS_PER_IP", 6);
+const MAX_STARTS_GLOBAL = limitOverride("DRIVA_DEMO_MAX_STARTS_GLOBAL", 60);
 const RESET_MIN_INTERVAL_MS = 20_000;
 
-/** Skrivtak per demoföretag: långt över mänsklig takt, stopp för skript. */
+/** Skrivtak per demosession: långt över mänsklig takt, stopp för skript. */
 const WRITE_WINDOW_MS = 60_000;
 const MAX_WRITES_PER_WINDOW = 60;
 
@@ -137,7 +136,7 @@ export function rateLimitDemoStart(ip: string, now = Date.now()): boolean {
   return true;
 }
 
-/** Återställningen är dyr (tömning + återimport) – max en per instans per 20 s. */
+/** Återställningen skriver om hela filen – max en per instans per 20 s. */
 export function rateLimitDemoReset(now = Date.now()): boolean {
   if (now - lastResetAt < RESET_MIN_INTERVAL_MS) return false;
   lastResetAt = now;
@@ -145,7 +144,7 @@ export function rateLimitDemoReset(now = Date.now()): boolean {
 }
 
 /**
- * Skrivtak per demoföretag och instans: withBusiness frågar före varje
+ * Skrivtak per demosession och instans: withBusiness frågar före varje
  * skrivande flöde i en demosession. 60/min märks aldrig av en människa
  * (autosparningar inräknade) men stoppar skriptad massgenerering. Riktiga
  * företag passerar aldrig genom kontrollen.

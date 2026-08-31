@@ -10,21 +10,23 @@
  *     /login?next=<ursprunglig sökväg> och tillbaka efter inloggning.
  *   * Publika ytor (offert-/fakturalänkar, kundsajt, BankID-API) släpps
  *     igenom orörda – de auktoriseras med ogissbara tokens på serversidan.
- *   * Demosessioner (anonyma användare) är tidsbegränsade: utan giltig
- *     demo-cookie loggas besökarens tokens ut (scope local) och /demo
- *     provisionerar en färsk session.
+ *   * Demosessioner är en httpOnly-cookie (driva_demo) som pekar på
+ *     besökarens egen JSON-fil – ingen Supabase-identitet. En giltig
+ *     demo-cookie släpps in i appen; en utgången rensas och besökaren
+ *     landar på landningssidan igen. En RIKTIG inloggning vinner alltid
+ *     över en kvarglömd demokaka.
  *
  * Utan Supabase-miljö (lokal JSON-utveckling) är proxyn passiv.
  * OBS: Detta är första försvarslinjen för UX – den riktiga auktoriseringen
- * sker alltid på serversidan (withBusiness + RLS), aldrig bara här.
+ * sker alltid på serversidan (withBusiness + demofilens request-skopning),
+ * aldrig bara här.
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import {
   DEMO_ACTOR_COOKIE,
   DEMO_SESSION_COOKIE,
-  isDemoClaims,
-  isDemoCookieValueActive,
+  demoSessionIdFromCookie,
 } from "@/lib/auth/demo-session";
 
 const PUBLIC_PREFIXES = [
@@ -43,7 +45,6 @@ const PUBLIC_PREFIXES = [
   "/integritetspolicy",
   "/inbjudan",
   "/api/health", // driftdiagnostik: måste nås utan inloggning när appen är trasig
-  "/api/demo/cleanup", // cron-skyddad städning av utgångna demosessioner (egen CRON_SECRET-vakt)
   "/admin/inbjudan", // admin-invitationens acceptsida: mottagaren saknar ofta konto ännu
   "/api/bankid",
   "/api/inbox",
@@ -102,24 +103,23 @@ async function runSessionProxy(request: NextRequest) {
   const isAuthenticated = Boolean(data?.claims?.sub);
   const { pathname, search } = request.nextUrl;
 
-  // Demosessioner är tidsbegränsade: utan giltig demo-cookie loggas
-  // demo-sessionens tokens ut (endast DENNA besökares – scope local) och
-  // besökaren landar på /demo, som provisionerar en färsk demosession.
-  // Riktiga användare berörs aldrig.
-  if (isAuthenticated && isDemoClaims(data?.claims)) {
-    const demoCookie = request.cookies.get(DEMO_SESSION_COOKIE)?.value;
-    if (!isDemoCookieValueActive(demoCookie) && pathname !== "/demo") {
-      await supabase.auth.signOut({ scope: "local" });
-      const demoUrl = request.nextUrl.clone();
-      demoUrl.pathname = "/demo";
-      demoUrl.search = "";
-      const redirectResponse = NextResponse.redirect(demoUrl);
-      // Bevara utloggningens Set-Cookie (skrevs till response via setAll ovan).
-      for (const cookie of response.cookies.getAll()) redirectResponse.cookies.set(cookie);
-      redirectResponse.cookies.delete(DEMO_SESSION_COOKIE);
-      redirectResponse.cookies.delete(DEMO_ACTOR_COOKIE);
-      return redirectResponse;
-    }
+  // Demosessionen: giltig cookie + INGEN riktig inloggning. Cookien pekar på
+  // besökarens egen JSON-fil på serversidan – den ger aldrig åtkomst till
+  // riktiga data, och en riktig session vinner alltid över en kvarglömd kaka.
+  const demoCookie = request.cookies.get(DEMO_SESSION_COOKIE)?.value;
+  const hasDemoSession = !isAuthenticated && demoSessionIdFromCookie(demoCookie) !== null;
+
+  // Utgången/trasig demokaka: rensa den och låt besökaren landa som utloggad
+  // (landningssidan på "/"). Ny demo startas via "Se demo" – aldrig av sig själv.
+  if (!isAuthenticated && demoCookie && !hasDemoSession && pathname !== "/demo") {
+    const target = request.nextUrl.clone();
+    target.pathname = "/";
+    target.search = "";
+    const redirectResponse = NextResponse.redirect(target);
+    for (const cookie of response.cookies.getAll()) redirectResponse.cookies.set(cookie);
+    redirectResponse.cookies.delete(DEMO_SESSION_COOKIE);
+    redirectResponse.cookies.delete(DEMO_ACTOR_COOKIE);
+    return redirectResponse;
   }
 
   // Landningssidans interna sökväg har "/" som kanonisk adress.
@@ -130,8 +130,8 @@ async function runSessionProxy(request: NextRequest) {
     return NextResponse.redirect(homeUrl);
   }
 
-  // Utloggad på "/": visa landningssidan (URL:en förblir "/").
-  if (!isAuthenticated && pathname === "/") {
+  // Utloggad (och utan demosession) på "/": visa landningssidan (URL:en förblir "/").
+  if (!isAuthenticated && !hasDemoSession && pathname === "/") {
     const landingUrl = request.nextUrl.clone();
     landingUrl.pathname = "/valkommen";
     const rewrite = NextResponse.rewrite(landingUrl, { request });
@@ -139,7 +139,7 @@ async function runSessionProxy(request: NextRequest) {
     return rewrite;
   }
 
-  if (!isAuthenticated && !isPublicPath(pathname)) {
+  if (!isAuthenticated && !hasDemoSession && !isPublicPath(pathname)) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.search = "";
@@ -150,6 +150,8 @@ async function runSessionProxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // Endast RIKTIGA sessioner skickas bort från login/registrering – en
+  // demosession ska tvärtom kunna skapa sitt konto därifrån.
   if (isAuthenticated && (pathname === "/login" || pathname === "/signup")) {
     const homeUrl = request.nextUrl.clone();
     homeUrl.pathname = "/";

@@ -1,11 +1,5 @@
 {
   "git": {
     "deploymentEnabled": true
-  },
-  "crons": [
-    {
-      "path": "/api/demo/cleanup",
-      "schedule": "17 * * * *"
-    }
-  ]
+  }
 }

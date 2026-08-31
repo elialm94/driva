@@ -1,5 +1,7 @@
 /**
- * Återställning av det publika demoföretaget i Supabase-läget.
+ * Seed-verktyg för UTVECKLAR-seedade demoföretag i en riktig Supabase-databas
+ * (db:seed --demo och adaptertesterna). Den PUBLIKA demon använder aldrig
+ * detta – den bor i JSON-filer per besökare (storage/demo-session-store.ts).
  *
  * Vägen är avsiktligt densamma som seedningen (db:seed --demo):
  *   1. app.reset_demo_business(id) tömmer företagets data atomärt i databasen

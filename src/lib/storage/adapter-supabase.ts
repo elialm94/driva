@@ -321,17 +321,11 @@ export async function createBusinessWithOwner(input: {
   plusgiro?: string;
   bankAccount?: string;
   /**
-   * Demoprovisionering (seed-skriptet och den publika demosessionen).
-   * is_demo fryses av en trigger vid insert – appens onboarding skapar
-   * aldrig demoföretag.
+   * Endast seed-skriptets demoprovisionering (db:seed --demo). is_demo
+   * fryses av en trigger vid insert – appens onboarding skapar aldrig
+   * demoföretag, och den publika demon bor i JSON-filer, inte i databasen.
    */
   isDemo?: boolean;
-  /**
-   * Utgångstid för besökarens demoföretag (endast tillsammans med isDemo).
-   * Kan bara flyttas tidigare efter insert (frystrigger) – en demosession
-   * kan aldrig förlänga sig själv.
-   */
-  demoExpiresAt?: string;
 }): Promise<string> {
   const client = await sqlClient();
   await ensurePendingSchema(client);
@@ -340,20 +334,20 @@ export async function createBusinessWithOwner(input: {
     const idRows = await tx.query(`select gen_random_uuid()::text as id`);
     const businessId = String(idRows[0].id);
     await bindTransaction(tx, businessId);
-    // Riktiga företag startar sin 14-dagars provperiod här; demoföretag får
-    // i stället en utgångstid som cleanup-vägen städar efter.
+    // Riktiga företag startar sin 14-dagars provperiod här; demoföretag
+    // (seed-skriptet) får ingen provperiod.
     await tx.query(
       `insert into public.businesses (
-         id, name, org_number, is_demo, demo_expires_at,
+         id, name, org_number, is_demo,
          trial_started_at, trial_ends_at, subscription_status, meta
        ) values (
-         $1, $2, $3, $4, $5,
+         $1, $2, $3, $4,
          case when $4 then null else now() end,
          case when $4 then null else now() + interval '14 days' end,
          case when $4 then null else 'trialing' end,
          jsonb_build_object('seededAt', to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
        )`,
-      [businessId, input.name, input.orgNumber, isDemo, isDemo ? (input.demoExpiresAt ?? null) : null]
+      [businessId, input.name, input.orgNumber, isDemo]
     );
     await tx.query(
       `insert into public.business_memberships (business_id, user_id, role) values ($1, $2, 'owner')`,

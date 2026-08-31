@@ -1,17 +1,18 @@
 /**
  * GET /demo – "Se demo": rakt in i produkten som Södermalms Snickeri AB.
  *
- * Ingen mellansida, inget konto: routen provisionerar en isolerad
- * demosession (anonym Supabase-användare + eget demoföretag + exempeldata)
- * och skickar besökaren direkt till appens Hem. Ett återbesök inom en aktiv
- * session återanvänder den – ändringarna finns kvar. Incognito/annan
- * webbläsare = nya cookies = egen färsk demo.
+ * Ingen mellansida, inget konto och INGEN databas: routen sätter en
+ * httpOnly-cookie med ett kryptografiskt slumpat session-id och klonar det
+ * kanoniska exempeldatat till besökarens egen JSON-fil
+ * (.data/demo-sessions/<id>.json). Ett återbesök inom sessionens livslängd
+ * återanvänder samma fil – ändringarna finns kvar. Incognito/annan
+ * webbläsare = ny cookie = egen färsk klon.
  *
  * Vakter:
- *   * Prefetch/spekulativa hämtningar provisionerar aldrig (204).
+ *   * Prefetch/spekulativa hämtningar startar aldrig en session (204).
  *   * Rate limit per IP + instans (drygt för människor, stopp för skript).
  *   * Redan inloggade riktiga användare skickas till sin app – deras
- *     session röres aldrig.
+ *     session röres aldrig, och demon rör aldrig Supabase.
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { isSupabaseMode } from "@/lib/storage/config";
@@ -19,15 +20,10 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   DEMO_SESSION_COOKIE,
   clientIpFrom,
-  isDemoClaims,
   isDemoCookieValueActive,
   rateLimitDemoStart,
 } from "@/lib/auth/demo-session";
-import {
-  clearDemoCookies,
-  hasDemoMembership,
-  provisionDemoSession,
-} from "@/lib/auth/demo-provision";
+import { startDemoSession } from "@/lib/auth/demo-request";
 
 export const dynamic = "force-dynamic";
 
@@ -42,46 +38,30 @@ function isSpeculativeFetch(request: NextRequest): boolean {
 }
 
 export async function GET(request: NextRequest) {
-  // JSON-läget (lokal utveckling) ÄR demon – rakt in i appen.
-  if (!isSupabaseMode()) {
-    return NextResponse.redirect(new URL("/", request.url));
-  }
-
   if (isSpeculativeFetch(request)) {
     return new NextResponse(null, { status: 204 });
   }
 
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase.auth.getClaims();
-  const claims = data?.claims;
-
-  if (claims?.sub && !isDemoClaims(claims)) {
-    // En inloggad riktig användare har redan hela produkten.
-    return NextResponse.redirect(new URL("/", request.url));
-  }
-
-  if (claims?.sub && isDemoClaims(claims)) {
-    const cookieValue = request.cookies.get(DEMO_SESSION_COOKIE)?.value;
-    if (isDemoCookieValueActive(cookieValue) && (await hasDemoMembership(String(claims.sub)))) {
-      // Aktiv demosession: fortsätt där besökaren var.
+  if (isSupabaseMode()) {
+    const supabase = await createSupabaseServerClient();
+    const { data } = await supabase.auth.getClaims();
+    if (data?.claims?.sub) {
+      // En inloggad riktig användare har redan hela produkten.
       return NextResponse.redirect(new URL("/", request.url));
     }
-    // Utgången/halv session: släpp tokens och provisionera en färsk demo.
-    await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
-    await clearDemoCookies().catch(() => undefined);
+  }
+
+  // Aktiv demosession: fortsätt där besökaren var (samma fil).
+  if (isDemoCookieValueActive(request.cookies.get(DEMO_SESSION_COOKIE)?.value)) {
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   if (!rateLimitDemoStart(clientIpFrom(request.headers))) {
     return NextResponse.redirect(new URL("/login?demo=upptagen", request.url));
   }
 
-  // Cookie-skrivningarna (Supabase-tokens + demo-cookien) går via cookies()
-  // i route handler-kontext och följer med redirect-svaret nedan.
-  const result = await provisionDemoSession();
-  if (!result.ok) {
-    return NextResponse.redirect(
-      new URL(result.reason === "unavailable" ? "/login?demo=stangd" : "/login?demo=fel", request.url)
-    );
-  }
+  // Cookien skrivs via cookies() i route handler-kontext och följer med
+  // redirect-svaret nedan. Seedet klonas till sessionens egen JSON-fil.
+  await startDemoSession();
   return NextResponse.redirect(new URL("/", request.url));
 }
