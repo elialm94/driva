@@ -40,7 +40,6 @@ function draftQuote(customerId: string, title = "Altanbygge"): ReturnType<typeof
   return createQuote({
     customerId,
     title,
-    intro: "Enligt möte.",
     lines,
     rot: null,
     paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],

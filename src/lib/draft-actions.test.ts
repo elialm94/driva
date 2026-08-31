@@ -20,7 +20,6 @@ function draftQuote(over: { customerId?: string } = {}) {
   return createQuote({
     customerId: over.customerId ?? "cust-1",
     title: "Altan",
-    intro: "",
     lines: [labor()],
     rot: null,
     paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],

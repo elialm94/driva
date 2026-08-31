@@ -266,7 +266,6 @@ describe("Efter komplettering: faktura och offert", () => {
     const quote = createQuote({
       customerId: "cust-1",
       title: "Renovering",
-      intro: "",
       lines: [labor()],
       rot: null,
       paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],

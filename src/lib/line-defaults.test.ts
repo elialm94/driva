@@ -120,7 +120,6 @@ describe("standard timpris", () => {
     const quote = createQuote({
       customerId: "cust-1",
       title: "Köksrenovering",
-      intro: "",
       lines: [labor({ description: "Snickeri", qty: 1, unit: "tim", unitPrice: 650, vatRate: 25 })],
       rot: null,
       paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
