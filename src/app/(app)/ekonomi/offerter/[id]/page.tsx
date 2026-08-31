@@ -6,6 +6,7 @@ import {
   BadgeCheck,
   FileLock2,
   Hammer,
+  Printer,
   ShieldCheck,
 } from "lucide-react";
 import { db } from "@/lib/store";
@@ -23,7 +24,7 @@ import { kr, datumTid, datumLang, relativ } from "@/lib/format";
 import { Badge, ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
 import { QuoteStatusBadge, InvoiceStatusBadge } from "@/components/status";
 import { QuoteDocument } from "@/components/quote-document";
-import { ActionMenu, PageActions } from "@/components/action-menu";
+import { ActionMenu, PageActions, actionMenuItemClassName } from "@/components/action-menu";
 import { CopyLinkButton } from "@/components/copy-button";
 import { CreatePartInvoiceButton, FollowUpButton } from "@/components/money-widgets";
 import { QuoteDraftSend } from "@/components/quote-draft-send";
@@ -80,6 +81,19 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
 
   const doc = (
     <QuoteDocument company={data.settings} customer={customer} quote={quote} version={version} signature={signature} />
+  );
+
+  // Utskrifts-/PDF-vyn finns för allt som inte är utkast (samma regel som kundvyn).
+  const pdfMenuItem = (
+    <a
+      href={`${publicPath}/pdf`}
+      target="_blank"
+      rel="noreferrer"
+      role="menuitem"
+      className={actionMenuItemClassName()}
+    >
+      <Printer className="size-3.5 shrink-0" /> Skriv ut / PDF
+    </a>
   );
 
   return (
@@ -144,6 +158,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               </a>
               <ActionMenu>
                 <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
+                {pdfMenuItem}
               </ActionMenu>
             </PageActions>
           ) : null}
@@ -164,6 +179,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               </a>
               <ActionMenu>
                 <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
+                {pdfMenuItem}
               </ActionMenu>
             </PageActions>
           ) : null}
