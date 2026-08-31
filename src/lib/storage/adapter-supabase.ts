@@ -22,17 +22,7 @@ import { ensurePendingSchema, resetPendingSchemaGuard } from "./apply-pending-sc
 import { isUndefinedColumn } from "./sql-errors";
 import { cachedStateIfFresh, clearSnapshotCache, invalidateSnapshot, putSnapshot } from "./snapshot-cache";
 import { markCacheHit, withPerfSpan } from "../perf/telemetry";
-import { applyPendingPageLoadSchema } from "./apply-pending-schema";
 import { STANDARD_TERMS } from "../standard-quote-terms";
-
-/** Schema-apply före tenant-skrivningar, inte bara /api/health. */
-let pendingSchemaReady = false;
-
-async function ensurePendingSchema(client: SqlClient): Promise<void> {
-  if (pendingSchemaReady) return;
-  await applyPendingPageLoadSchema(client);
-  pendingSchemaReady = true;
-}
 
 const MAX_ATTEMPTS = 3;
 

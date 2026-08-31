@@ -31,7 +31,6 @@ import {
 import { issueInvoice } from "@/lib/services/invoices";
 import { getInvoiceSendBlockers, InvoiceNotReadyError } from "@/lib/invoices/validate";
 import { userFacingInvoiceSendError, userFacingIssueError } from "@/lib/invoices/issue-errors";
-import { userFacingStorageError } from "@/lib/storage/sql-errors";
 import { QuoteNotReadyError } from "@/lib/services/quotes";
 import { getInvoice, getQuoteByToken } from "@/lib/services/data";
 import {
