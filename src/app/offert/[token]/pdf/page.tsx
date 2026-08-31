@@ -32,7 +32,9 @@ export default async function QuotePdfPage(props: PageProps<"/offert/[token]/pdf
   const signature = quoteSignature(quote.id);
 
   return (
-    <div className="min-h-dvh bg-white print:bg-white">
+    <div className="mx-auto min-h-dvh max-w-[210mm] bg-white print:max-w-none print:bg-white">
+      {/* Riktig A4 – gäller bara den här utskriftsvyn, inte appens övriga print-lägen. */}
+      <style>{`@page { size: A4; margin: 10mm 0; }`}</style>
       <QuoteDocument
         company={data.settings}
         customer={customer}
