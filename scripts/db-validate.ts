@@ -1038,20 +1038,180 @@ async function main() {
   }
 
   // Inaktiverat företag: kolumnen finns och medlemsuppslaget filtrerar i appen.
+  // (is_demo är fryst sedan skapandet – rundresan gäller endast disabled_at.)
   await asSuperuser();
-  await expectOk(db, "businesses.disabled_at och is_demo rundresar", async () => {
-    await db.query(`update public.businesses set disabled_at = now(), is_demo = true where id = $1`, [B]);
-    const r = await rows<{ disabled_at: string | null; is_demo: boolean }>(
+  await expectOk(db, "businesses.disabled_at rundresar", async () => {
+    await db.query(`update public.businesses set disabled_at = now() where id = $1`, [B]);
+    const r = await rows<{ disabled_at: string | null }>(
       db,
-      `select disabled_at, is_demo from public.businesses where id = $1`,
+      `select disabled_at from public.businesses where id = $1`,
       [B]
     );
-    if (!r[0]?.disabled_at || !r[0]?.is_demo) throw new Error("kolumnerna sparades inte");
-    await db.query(`update public.businesses set disabled_at = null, is_demo = false where id = $1`, [B]);
+    if (!r[0]?.disabled_at) throw new Error("kolumnen sparades inte");
+    await db.query(`update public.businesses set disabled_at = null where id = $1`, [B]);
   });
+  await expectError(db, "businesses.is_demo är fryst efter skapandet", "is_demo", () =>
+    db.query(`update public.businesses set is_demo = true where id = $1`, [B])
+  );
 
   await asSuperuser();
   await clearPlatformCtx();
+
+  // ------------------------------------------------------------------
+  // Demosessioner per besökare: utgångstid, frys och säker borttagning
+  // ------------------------------------------------------------------
+  console.log("\nDemosessioner – utgångstid och borttagning:");
+
+  const D1 = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1";
+  const D2 = "dddddddd-dddd-4ddd-8ddd-ddddddddddd2";
+  const USER_D1 = "33333333-3333-4333-8333-333333333331";
+  const USER_D2 = "33333333-3333-4333-8333-333333333332";
+
+  await asSuperuser();
+  await expectError(
+    db,
+    "demo_expires_at kräver is_demo (CHECK)",
+    "businesses_demo_expiry_only_for_demo",
+    () =>
+      db.query(
+        `insert into public.businesses (id, name, org_number, demo_expires_at)
+         values ('dddddddd-dddd-4ddd-8ddd-dddddddddd99', 'Inte demo', '556000-0099', now())`
+      )
+  );
+
+  await expectOk(db, "utgånget + aktivt demoföretag kan skapas med utgångstid", async () => {
+    await db.exec(`
+      insert into auth.users (id, email) values ('${USER_D1}', null), ('${USER_D2}', null);
+      insert into public.businesses (id, name, org_number, is_demo, demo_expires_at) values
+        ('${D1}', 'Demo utgången', '559000-0001', true, now() - interval '1 hour'),
+        ('${D2}', 'Demo aktiv', '559000-0002', true, now() + interval '23 hours');
+      insert into public.business_memberships (business_id, user_id, role) values
+        ('${D1}', '${USER_D1}', 'owner'),
+        ('${D2}', '${USER_D2}', 'owner');
+      insert into public.business_settings (business_id, name) values
+        ('${D1}', 'Demo utgången'), ('${D2}', 'Demo aktiv');
+      insert into public.business_sequences (business_id) values ('${D1}'), ('${D2}');
+      insert into public.customers (id, business_id, kind, name, email, phone, notes, created_at) values
+        ('cust-d1', '${D1}', 'privat', 'Demo-Kund 1', 'd1@x.se', '070', '', now()),
+        ('cust-d2', '${D2}', 'privat', 'Demo-Kund 2', 'd2@x.se', '070', '', now());
+      insert into public.quotes (id, business_id, number, customer_id, status, current_version_id, token) values
+        ('quote-d1', '${D1}', 1, 'cust-d1', 'godkand', 'qv-d1', 'token-d1');
+      insert into public.quote_versions (id, business_id, quote_id, version, title, locked_at, payload) values
+        ('qv-d1', '${D1}', 'quote-d1', 1, 'Altan', now(), '{}'::jsonb);
+      insert into public.audit_log (id, business_id, channel, event_type, created_at) values
+        ('audit-d1', '${D1}', 'activity', 'test', now());
+    `);
+  });
+
+  await expectError(db, "demo_expires_at kan inte förlängas (frystrigger)", "flyttas tidigare", () =>
+    db.query(`update public.businesses set demo_expires_at = now() + interval '7 days' where id = $1`, [D2])
+  );
+  await expectError(db, "demo_expires_at kan inte nollställas (frystrigger)", "flyttas tidigare", () =>
+    db.query(`update public.businesses set demo_expires_at = null where id = $1`, [D2])
+  );
+  await expectOk(db, "demo_expires_at kan flyttas tidigare (avsluta i förtid)", () =>
+    db.query(
+      `update public.businesses set demo_expires_at = now() + interval '22 hours' where id = $1`,
+      [D2]
+    )
+  );
+
+  // Anropas som driva_app – samma roll som cleanup-vägen i appen använder.
+  await asApp(null);
+  {
+    const r = await rows<{ deleted: boolean }>(db, `select app.delete_demo_business($1) as deleted`, [B]);
+    if (r[0]?.deleted === false) ok("delete_demo_business vägrar riktiga företag");
+    else fail("delete_demo_business vägrar riktiga företag", JSON.stringify(r));
+  }
+  {
+    const r = await rows<{ deleted: boolean }>(db, `select app.delete_demo_business($1) as deleted`, [D2]);
+    if (r[0]?.deleted === false) ok("delete_demo_business vägrar aktiva (ej utgångna) demoföretag");
+    else fail("delete_demo_business vägrar aktiva (ej utgångna) demoföretag", JSON.stringify(r));
+  }
+  {
+    const r = await rows<{ deleted: boolean }>(db, `select app.delete_demo_business($1) as deleted`, [D1]);
+    if (r[0]?.deleted === true) ok("delete_demo_business raderar utgånget demoföretag (trots BankID-lås/audit)");
+    else fail("delete_demo_business raderar utgånget demoföretag (trots BankID-lås/audit)", JSON.stringify(r));
+  }
+
+  await asSuperuser();
+  {
+    const r = await rows(db, `select 1 from public.businesses where id = '${B}'`);
+    if (r.length === 1) ok("riktigt företag orört efter vägrad borttagning");
+    else fail("riktigt företag orört efter vägrad borttagning", "raden försvann!");
+  }
+  {
+    const leftovers = await rows(
+      db,
+      `select 'businesses' as t from public.businesses where id = '${D1}'
+       union all select 'customers' from public.customers where business_id = '${D1}'
+       union all select 'quote_versions' from public.quote_versions where business_id = '${D1}'
+       union all select 'audit_log' from public.audit_log where business_id = '${D1}'
+       union all select 'memberships' from public.business_memberships where business_id = '${D1}'
+       union all select 'settings' from public.business_settings where business_id = '${D1}'`
+    );
+    if (leftovers.length === 0) ok("utgånget demoföretag är helt borta (inkl. medlemskap och audit)");
+    else fail("utgånget demoföretag är helt borta (inkl. medlemskap och audit)", JSON.stringify(leftovers));
+  }
+  {
+    const r = await rows(
+      db,
+      `select 1 from public.businesses where id = '${D2}'
+       union all select 1 from public.customers where id = 'cust-d2'
+       union all select 1 from public.businesses where id = '${A}'
+       union all select 1 from public.businesses where id = '${B}'`
+    );
+    if (r.length === 4) ok("andra demoföretag och riktiga företag är orörda av borttagningen");
+    else fail("andra demoföretag och riktiga företag är orörda av borttagningen", `${r.length} av 4 rader kvar`);
+  }
+
+  // ------------------------------------------------------------------
+  // Provperiod: trial-stämplar frysta, status ändras bara via grinden
+  // ------------------------------------------------------------------
+  console.log("\nProvperiod – fryst tillstånd:");
+
+  await asSuperuser();
+  await expectOk(db, "trial-kolumner kan sättas vid insert", () =>
+    db.query(
+      `update public.businesses set disabled_at = disabled_at where id = '${A}'` // no-op sanity
+    )
+  );
+  await db.query(
+    `insert into public.businesses (id, name, org_number, trial_started_at, trial_ends_at, subscription_status)
+     values ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1', 'Trial AB', '556000-0100', now(), now() + interval '14 days', 'trialing')`
+  );
+  await expectError(db, "trial_ends_at är fryst efter insert", "provperiodens stämplar", () =>
+    db.query(
+      `update public.businesses set trial_ends_at = now() + interval '1 year'
+        where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1'`
+    )
+  );
+  await expectError(db, "subscription_status ändras inte utan grind", "faktureringsflödet", () =>
+    db.query(
+      `update public.businesses set subscription_status = 'active'
+        where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1'`
+    )
+  );
+  await expectOk(db, "subscription_status ändras med faktureringsgrinden", async () => {
+    await db.exec(`begin`);
+    try {
+      await db.query(`select set_config('app.allow_subscription_update', '1', true)`);
+      await db.query(
+        `update public.businesses set subscription_status = 'active'
+          where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1'`
+      );
+      await db.exec(`commit`);
+    } catch (e) {
+      await db.exec(`rollback`);
+      throw e;
+    }
+  });
+  await expectError(db, "subscription_status accepterar bara kända värden (CHECK)", "businesses_subscription_status_check", () =>
+    db.query(
+      `insert into public.businesses (id, name, org_number, subscription_status)
+       values ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2', 'Trial fel', '556000-0101', 'gratis')`
+    )
+  );
 
   // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
