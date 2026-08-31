@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/store";
+import { getInvoiceDefaults } from "@/lib/services/settings";
 import { getInvoice, requireCustomer } from "@/lib/services/data";
 import { customerInvoiceRotPrefill, resolveTaxReductionPrefill } from "@/lib/services/tax-reduction";
 import { suggestedServiceDate } from "@/lib/tax-reduction-gaps";
@@ -59,6 +60,8 @@ export default async function EditInvoicePage(props: { params: Promise<{ id: str
         customers={customers}
         defaultCustomerId={invoice.customerId}
         defaultLateInterestRate={db().settings.lateInterestRate}
+        defaultVatRate={getInvoiceDefaults().defaultVatRate}
+        defaultHourlyRate={getInvoiceDefaults().defaultHourlyRate}
         invoiceId={invoice.id}
         jobId={invoice.jobId}
         quoteId={invoice.quoteId}

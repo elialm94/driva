@@ -987,6 +987,7 @@ const specs: ToolSpec[] = [
           lateInterestRate: { type: "number" },
           quoteValidityDays: { type: "number" },
           defaultVatRate: { type: "number" },
+          defaultHourlyRate: { type: "number" },
         }),
       },
     },

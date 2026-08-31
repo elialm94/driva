@@ -70,6 +70,7 @@ export function JobWorkSection({
   material,
   other,
   laborPrefill,
+  defaultHourlyRate,
   invoiceChoice,
 }: {
   jobId: string;
@@ -79,6 +80,7 @@ export function JobWorkSection({
   material: JobWorkViewEntry[];
   other: JobWorkViewEntry[];
   laborPrefill: JobWorkPrefill | null;
+  defaultHourlyRate?: number;
   invoiceChoice: JobInvoiceChoice;
 }) {
   const [sheet, setSheet] = useState<"tid" | "material" | null>(null);
@@ -166,6 +168,7 @@ export function JobWorkSection({
         onClose={() => setSheet(null)}
         jobId={jobId}
         prefill={laborPrefill}
+        defaultHourlyRate={defaultHourlyRate}
       />
       <MaterialSheet open={sheet === "material"} onClose={() => setSheet(null)} jobId={jobId} />
       {edit ? (
@@ -309,22 +312,30 @@ function WorkList({
   );
 }
 
+function ratePrefill(prefill: JobWorkPrefill | null, defaultHourlyRate?: number): string {
+  if (prefill) return String(prefill.unitPrice);
+  if (defaultHourlyRate != null && defaultHourlyRate >= 1) return String(defaultHourlyRate);
+  return "";
+}
+
 function TimeSheet({
   open,
   onClose,
   jobId,
   prefill,
+  defaultHourlyRate,
 }: {
   open: boolean;
   onClose: () => void;
   jobId: string;
   prefill: JobWorkPrefill | null;
+  defaultHourlyRate?: number;
 }) {
   const [isPending, startTransition] = useTransition();
   const [date, setDate] = useState(todayISO);
   const [description, setDescription] = useState(prefill?.description ?? "");
   const [hours, setHours] = useState("");
-  const [rate, setRate] = useState(prefill ? String(prefill.unitPrice) : "");
+  const [rate, setRate] = useState(ratePrefill(prefill, defaultHourlyRate));
   const hoursRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -332,10 +343,10 @@ function TimeSheet({
     setDate(todayISO());
     setDescription(prefill?.description ?? "");
     setHours("");
-    setRate(prefill ? String(prefill.unitPrice) : "");
+    setRate(ratePrefill(prefill, defaultHourlyRate));
     const t = window.setTimeout(() => hoursRef.current?.focus(), 50);
     return () => window.clearTimeout(t);
-  }, [open, prefill]);
+  }, [open, prefill, defaultHourlyRate]);
 
   function submit() {
     const qty = Number(hours.replace(",", "."));
@@ -346,7 +357,7 @@ function TimeSheet({
         date,
         description: description.trim() || undefined,
         hours: qty,
-        unitPrice: Number.isFinite(unitPrice) ? unitPrice : undefined,
+        unitPrice: rate.trim() === "" || !Number.isFinite(unitPrice) ? undefined : unitPrice,
         quotedLineItemId: prefill?.quotedLineItemId,
       });
       onClose();
