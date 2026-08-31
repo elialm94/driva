@@ -1879,6 +1879,11 @@ export interface DB {
       website?: boolean;
       collaboration?: boolean;
     };
+    /**
+     * Normaliserade prisradsbeskrivningar som användaren glömt i autocomplete.
+     * Påverkar bara förslag – historiska offerter/fakturor/uppdrag lämnas orörda.
+     */
+    ignoredLineDescriptions?: string[];
   };
 }
 

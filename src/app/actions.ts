@@ -2,7 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { resetDemoData } from "@/lib/store";
+import { db, resetDemoData, save } from "@/lib/store";
+import {
+  addIgnoredLineDescription,
+  collectLineDescriptionVocabulary,
+} from "@/lib/line-description-suggestions";
 import {
   createFinalInvoiceForJob,
   createInvoice,
@@ -345,6 +349,28 @@ export async function removeCustomerWorkLocationAction(
     } catch {
       return { ok: false, error: "Kunde inte ta bort bostaden" } as const;
     }
+  });
+}
+
+/**
+ * Kompakt vokabulär för prisrads-autocomplete.
+ * Business hämtas från den autentiserade sessionen via withBusinessRead –
+ * klienten skickar inget business_id. Demo ser bara demoföretagets rader.
+ */
+export async function getLineDescriptionVocabularyAction() {
+  return withBusinessRead(() => collectLineDescriptionVocabulary(db()));
+}
+
+/**
+ * Glöm ett autocomplete-förslag för det aktuella företaget.
+ * Skriver bara till businesses.meta.ignoredLineDescriptions – historiska
+ * offerter, fakturor och uppdrag lämnas orörda. Business hämtas från sessionen.
+ */
+export async function forgetLineDescriptionSuggestionAction(text: string) {
+  return withBusiness(() => {
+    addIgnoredLineDescription(db().meta, text);
+    save();
+    return collectLineDescriptionVocabulary(db());
   });
 }
 
