@@ -13,8 +13,6 @@ import type {
   WebsiteSectionType,
 } from "./types";
 
-export const DEFAULT_INSTAGRAM_HEADING = "Följ våra projekt";
-export const DEFAULT_INSTAGRAM_LIMIT = 6;
 export const DEFAULT_TESTIMONIAL_HEADING = "Vad kunderna säger";
 export const DEFAULT_CONTACT_DETAILS_HEADING = "Kontaktuppgifter";
 export const DEFAULT_CTA_HEADING = "Redo att sätta igång?";
@@ -25,7 +23,6 @@ export type AddableSectionType =
   | "text"
   | "tjanster"
   | "galleri"
-  | "instagram"
   | "omdomen"
   | "kontaktuppgifter"
   | "cta"
@@ -43,7 +40,6 @@ export const ADDABLE_SECTION_TYPES: SectionTypeOption[] = [
   { type: "text", label: "Text", description: "Rubrik, brödtext och valfri bild.", unique: false },
   { type: "tjanster", label: "Tjänster", description: "Lista med tjänster och valfria bilder.", unique: true },
   { type: "galleri", label: "Galleri", description: "Bilder från era projekt.", unique: true },
-  { type: "instagram", label: "Instagram", description: "Senaste inläggen från ert konto.", unique: true },
   { type: "omdomen", label: "Omdömen", description: "Kundcitat med valfritt betyg.", unique: true },
   {
     type: "kontaktuppgifter",
@@ -61,16 +57,11 @@ export const SECTION_LABELS: Record<WebsiteSectionType, string> = {
   om: "Text",
   tjanster: "Tjänster",
   galleri: "Galleri",
-  instagram: "Instagram",
   omdomen: "Omdömen",
   kontaktuppgifter: "Kontaktuppgifter",
   cta: "Call to action",
   kontakt: "Kontakt",
 };
-
-const UNIQUE_TYPES = new Set<WebsiteSectionType>(
-  ADDABLE_SECTION_TYPES.filter((o) => o.unique).map((o) => o.type),
-);
 
 export function isTextSectionType(type: WebsiteSectionType): boolean {
   return type === "text" || type === "om";
@@ -127,15 +118,6 @@ export function createSectionDraft(type: AddableSectionType, id: string): Websit
         body: "Ett urval av uppdrag vi genomfört.",
         visible: true,
       };
-    case "instagram":
-      return {
-        id,
-        type: "instagram",
-        heading: DEFAULT_INSTAGRAM_HEADING,
-        body: "",
-        visible: true,
-        instagram: { handle: "", limit: DEFAULT_INSTAGRAM_LIMIT, connected: false },
-      };
     case "omdomen":
       return { id, type: "omdomen", heading: DEFAULT_TESTIMONIAL_HEADING, body: "", visible: true, items: [] };
     case "kontaktuppgifter":
@@ -170,8 +152,6 @@ export function sectionAnchorId(section: Pick<WebsiteSection, "id" | "type">): s
       return "om";
     case "galleri":
       return "galleri";
-    case "instagram":
-      return "instagram";
     case "omdomen":
       return "omdomen";
     case "kontaktuppgifter":
@@ -184,25 +164,23 @@ export function sectionAnchorId(section: Pick<WebsiteSection, "id" | "type">): s
   }
 }
 
-export function publicInstagram(
-  instagram: Website["sections"][number]["instagram"],
-): Website["sections"][number]["instagram"] {
-  if (!instagram) return instagram;
-  return {
-    handle: instagram.handle,
-    limit: instagram.limit,
-    connected: Boolean(instagram.connected && instagram.accessToken),
-    posts: instagram.posts,
-    postsFetchedAt: instagram.postsFetchedAt,
-  };
+export function isSupportedSectionType(type: string): type is WebsiteSectionType {
+  return Object.prototype.hasOwnProperty.call(SECTION_LABELS, type);
 }
 
+/**
+ * Instagram-feeden är borttagen. Gamla sektioner av den typen droppas så att
+ * publicerade sajter inte kraschar. Generell sektionsarkitektur lämnas orörd.
+ */
+export function withoutRetiredSections(sections: WebsiteSection[]): WebsiteSection[] {
+  return sections.filter((section) => isSupportedSectionType(section.type));
+}
+
+/** Tar bort pensionerade sektioner (t.ex. gamla Instagram-feeds) innan sajten lämnar servern. */
 export function stripWebsiteSecrets(site: Website): Website {
   return {
     ...site,
-    sections: site.sections.map((section) =>
-      section.instagram ? { ...section, instagram: publicInstagram(section.instagram) } : section,
-    ),
+    sections: withoutRetiredSections(site.sections),
   };
 }
 
@@ -218,13 +196,4 @@ export function clampRating(value: unknown): number | undefined {
   const rounded = Math.round(n);
   if (rounded < 1 || rounded > 5) throw new Error("Betyget måste vara 1–5.");
   return rounded;
-}
-
-export function normalizeInstagramHandle(raw: string): string {
-  return raw.trim().replace(/^@+/, "").replace(/\s+/g, "").toLowerCase();
-}
-
-export function instagramProfileUrl(handle: string): string {
-  const h = normalizeInstagramHandle(handle);
-  return h ? `https://www.instagram.com/${encodeURIComponent(h)}/` : "https://www.instagram.com/";
 }

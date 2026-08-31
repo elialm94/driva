@@ -23,7 +23,6 @@ import {
   addWebsiteSectionAction,
   generateWebsiteAction,
   getSectionImagesAction,
-  instagramStatusAction,
   publishWebsiteAction,
   removeServiceItemAction,
   removeTestimonialItemAction,
@@ -39,7 +38,6 @@ import {
 import type {
   WebsiteCtaDestination,
   WebsiteImagePosition,
-  WebsiteInstagram,
   WebsiteSection,
   WebsiteSectionItem,
 } from "@/lib/types";
@@ -52,12 +50,10 @@ import {
 import { FieldError, focusField, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
 import { canDeleteSection, defaultCtaLabel, isTextSectionType, type AddableSectionType } from "@/lib/website-sections";
 import type { SiteContact } from "@/lib/website-contact";
-import type { InstagramProviderState } from "@/lib/instagram";
 import {
   AddSectionPicker,
   ContactDetailsEditor,
   DeleteSectionDialog,
-  InstagramEditor,
   TestimonialItemModal,
   TestimonialItemsEditor,
 } from "./site-section-builder";
@@ -781,7 +777,6 @@ function SectionRow({
           hasImage={section.hasImage}
           imagePosition={section.imagePosition}
           hours={section.hours}
-          instagram={section.instagram}
           cta={section.cta}
           primaryCtaLabel={section.type === "hero" ? primaryCtaLabel : undefined}
           items={section.type === "tjanster" || section.type === "omdomen" ? (section.items ?? []) : undefined}
@@ -819,7 +814,6 @@ function SectionEditor({
   hasImage,
   imagePosition,
   hours,
-  instagram,
   cta: ctaConfig,
   primaryCtaLabel,
   items,
@@ -835,7 +829,6 @@ function SectionEditor({
   hasImage?: boolean;
   imagePosition?: WebsiteImagePosition;
   hours?: string;
-  instagram?: WebsiteInstagram;
   cta?: WebsiteSection["cta"];
   primaryCtaLabel?: string;
   items?: SectionListItem[];
@@ -846,7 +839,6 @@ function SectionEditor({
   const isHero = sectionType === "hero" || typeLabel === "Startsektion";
   const isText = sectionType ? isTextSectionType(sectionType) : typeLabel === "Om oss" || typeLabel === "Text";
   const isCta = sectionType === "cta";
-  const isInstagram = sectionType === "instagram";
   const isContactDetails = sectionType === "kontaktuppgifter";
   const showSectionImage = isHero || isText;
   const [h, setH] = useState(heading);
@@ -855,10 +847,6 @@ function SectionEditor({
   const [ctaError, setCtaError] = useState<string | null>(null);
   const [imgPos, setImgPos] = useState<WebsiteImagePosition>(imagePosition ?? "right");
   const [hoursValue, setHoursValue] = useState(hours ?? "");
-  const [igHandle, setIgHandle] = useState(instagram?.handle ?? "");
-  const [igLimit, setIgLimit] = useState(String(instagram?.limit ?? 6));
-  const [igStatus, setIgStatus] = useState<InstagramProviderState | null>(null);
-  const [igError, setIgError] = useState<string | null>(null);
   const [ctaDest, setCtaDest] = useState<WebsiteCtaDestination>(ctaConfig?.destination ?? "kontakt");
   const [ctaBtn, setCtaBtn] = useState(ctaConfig?.label ?? defaultCtaLabel(ctaConfig?.destination ?? "kontakt"));
   const [quoteDraft, setQuoteDraft] = useState<{
@@ -908,17 +896,6 @@ function SectionEditor({
     // Körs en gång när redigeraren öppnas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (!isInstagram) return;
-    let cancelled = false;
-    instagramStatusAction(sectionId).then((status) => {
-      if (!cancelled && status) setIgStatus(status);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isInstagram, sectionId]);
 
   function closeAll() {
     setDraft(null);
@@ -1068,21 +1045,6 @@ function SectionEditor({
             <ContactDetailsEditor hours={hoursValue} onHoursChange={setHoursValue} contact={businessContact} />
           ) : null}
 
-          {isInstagram ? (
-            <InstagramEditor
-              sectionId={sectionId}
-              handle={igHandle}
-              limit={igLimit}
-              status={igStatus}
-              error={igError}
-              pending={pending}
-              onHandleChange={setIgHandle}
-              onLimitChange={setIgLimit}
-              onStatus={setIgStatus}
-              onError={setIgError}
-            />
-          ) : null}
-
           {isTestimonials ? (
             <TestimonialItemsEditor
               items={list}
@@ -1188,7 +1150,6 @@ function SectionEditor({
                       ...(showSectionImage && image !== baselineImage ? { image: image ?? null } : {}),
                       ...(isText ? { imagePosition: imgPos } : {}),
                       ...(isContactDetails ? { hours: hoursValue } : {}),
-                      ...(isInstagram ? { instagramHandle: igHandle, instagramLimit: Number(igLimit) || 6 } : {}),
                       ...(isCta ? { ctaDestination: ctaDest, ctaLabel: ctaBtn } : {}),
                     });
                     if (result && result.ok === false) {

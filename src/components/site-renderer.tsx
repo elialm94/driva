@@ -17,7 +17,7 @@ import {
 import { SiteContactForm, type SiteFormTokens } from "./site-widgets";
 import { SmoothSectionLink } from "./smooth-section-link";
 import { formatAddressLine, mailHref, resolveSiteContact, telHref } from "@/lib/website-contact";
-import { defaultCtaLabel, instagramProfileUrl, sectionAnchorId } from "@/lib/website-sections";
+import { defaultCtaLabel, sectionAnchorId } from "@/lib/website-sections";
 import { controllerName, privacyPolicyHref } from "@/lib/website-privacy";
 
 /**
@@ -191,8 +191,6 @@ export function SiteRenderer({
             return <AboutSection key={section.id} section={section} theme={theme} lined={lined} />;
           case "galleri":
             return <GallerySection key={section.id} section={section} theme={theme} lined={lined} />;
-          case "instagram":
-            return <InstagramSection key={section.id} section={section} theme={theme} lined={lined} />;
           case "omdomen":
             return <TestimonialsSection key={section.id} section={section} theme={theme} lined={lined} />;
           case "kontaktuppgifter":
@@ -1017,59 +1015,6 @@ function ctaTarget({
   }
   const href = mailHref(company.email);
   return href ? { href, external: true } : null;
-}
-
-function InstagramSection({
-  section,
-  theme,
-  lined,
-}: {
-  section: WebsiteSection;
-  theme: SiteThemeTokens;
-  lined: boolean;
-}) {
-  const handle = section.instagram?.handle ?? "";
-  const posts = (section.instagram?.connected ? section.instagram.posts : undefined) ?? [];
-  const profile = handle ? instagramProfileUrl(handle) : "https://www.instagram.com/";
-  const centered = theme.gallery === "editorial";
-  const grid =
-    theme.gallery === "soft"
-      ? "mt-6 grid grid-cols-2 gap-3 @2xl:grid-cols-3"
-      : theme.gallery === "grid"
-        ? "mt-10 grid grid-cols-2 gap-3 @3xl:grid-cols-3"
-        : theme.gallery === "mosaic"
-          ? "mt-8 grid grid-cols-2 gap-1.5 @2xl:grid-cols-3"
-          : "mt-12 grid grid-cols-2 gap-4 @2xl:grid-cols-3";
-
-  return (
-    <SectionShell id={sectionAnchorId(section)} lined={lined} theme={theme} wide={theme.gallery === "editorial"}>
-      <div className={centered ? "mx-auto max-w-2xl text-center" : undefined}>
-        <SiteHeading as="h2" className={theme.h2Class}>
-          {section.heading}
-        </SiteHeading>
-        {section.body ? <p className="mt-2 text-[15px] text-(--site-soft)">{section.body}</p> : null}
-      </div>
-      {posts.length > 0 ? (
-        <div className={grid}>
-          {posts.map((post) => (
-            <a key={post.id} href={post.permalink || profile} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-(--site-radius-image)">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={post.mediaUrl} alt={post.caption ? post.caption.slice(0, 80) : ""} loading="lazy" decoding="async" className="aspect-square w-full object-cover" />
-            </a>
-          ))}
-        </div>
-      ) : handle ? (
-        <p className={`mt-6 ${centered ? "text-center" : ""} text-[15px] text-(--site-soft)`}>
-          <a href={profile} target="_blank" rel="noreferrer" className="font-medium text-(--site-ink) underline-offset-2 hover:underline">
-            @{handle}
-          </a>{" "}
-          på Instagram
-        </p>
-      ) : (
-        <p className={`mt-6 ${centered ? "text-center" : ""} text-[15px] text-(--site-soft)`}>Instagram är inte anslutet ännu.</p>
-      )}
-    </SectionShell>
-  );
 }
 
 function TestimonialsSection({

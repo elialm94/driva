@@ -1182,7 +1182,6 @@ export type WebsiteSectionType =
   | "om"
   | "tjanster"
   | "galleri"
-  | "instagram"
   | "omdomen"
   | "kontaktuppgifter"
   | "cta"
@@ -1209,31 +1208,6 @@ export interface WebsiteSectionItem {
   source?: "manual" | "google";
 }
 
-export interface WebsiteInstagramPost {
-  id: string;
-  permalink: string;
-  mediaUrl: string;
-  thumbnailUrl?: string;
-  caption?: string;
-}
-
-/**
- * Instagram-sektionens publika data + ev. anslutning.
- * Access token lagras här (samma JSON som sektionerna) men STRIPPAS innan
- * objektet skickas till klienten. Aldrig skrapning – bara Meta Graph API.
- */
-export interface WebsiteInstagram {
-  handle: string;
-  /** Antal inlägg att visa. Default 6. */
-  limit?: number;
-  connected?: boolean;
-  userId?: string;
-  accessToken?: string;
-  tokenExpiresAt?: string;
-  posts?: WebsiteInstagramPost[];
-  postsFetchedAt?: string;
-}
-
 export interface WebsiteCta {
   destination: WebsiteCtaDestination;
   /** Knapptext. Saknas = standard per destination. */
@@ -1251,7 +1225,6 @@ export interface WebsiteSection {
   imagePosition?: WebsiteImagePosition;
   /** Tjänster, omdömen. Arrayordning = visningsordning. */
   items?: WebsiteSectionItem[];
-  instagram?: WebsiteInstagram;
   cta?: WebsiteCta;
   /** Öppettider – bara kontaktuppgifter. */
   hours?: string;

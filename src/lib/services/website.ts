@@ -29,16 +29,8 @@ import {
   defaultCtaLabel,
   isHeroSection,
   isTextSectionType,
-  normalizeInstagramHandle,
   type AddableSectionType,
 } from "../website-sections";
-import {
-  exchangeInstagramCode,
-  fetchInstagramMedia,
-  instagramAuthorizeUrl,
-  instagramHasCredentials,
-  instagramState,
-} from "../instagram";
 import { normalizePrivacyPolicySupplement } from "../website-privacy";
 import { logActivity } from "./activity";
 import { findOrCreateCustomerByEmail } from "./customers";
@@ -238,8 +230,6 @@ export interface UpdateSectionFields {
   imagePosition?: WebsiteImagePosition | null;
   primaryCtaLabel?: string;
   hours?: string | null;
-  instagramHandle?: string;
-  instagramLimit?: number;
   ctaDestination?: WebsiteCtaDestination;
   ctaLabel?: string;
 }
@@ -279,19 +269,6 @@ export function updateSection(sectionId: string, fields: UpdateSectionFields): v
     if (hours) section.hours = hours;
     else delete section.hours;
   }
-  if (fields.instagramHandle !== undefined || fields.instagramLimit !== undefined) {
-    if (section.type !== "instagram") throw new Error("Instagram-fält hör till Instagram-sektionen.");
-    const prev = section.instagram ?? { handle: "" };
-    if (fields.instagramHandle !== undefined) {
-      prev.handle = normalizeInstagramHandle(fields.instagramHandle);
-    }
-    if (fields.instagramLimit !== undefined) {
-      const n = Math.round(fields.instagramLimit);
-      if (!Number.isFinite(n) || n < 1 || n > 12) throw new Error("Välj 1–12 inlägg.");
-      prev.limit = n;
-    }
-    section.instagram = prev;
-  }
   if (fields.ctaDestination !== undefined || fields.ctaLabel !== undefined) {
     if (section.type !== "cta") throw new Error("Knappens mål hör till call to action-sektionen.");
     const destination = assertCtaDestination(fields.ctaDestination ?? section.cta?.destination ?? "kontakt");
@@ -329,84 +306,6 @@ export function removeWebsiteSection(sectionId: string): void {
     throw new Error("Startsektionen kan inte tas bort");
   }
   site.sections.splice(index, 1);
-  touchSite(site);
-}
-
-export function instagramConnectStatus(sectionId: string) {
-  const site = db().website;
-  const section = site?.sections.find((s) => s.id === sectionId);
-  if (!section || section.type !== "instagram") throw new Error("Instagram-sektionen hittades inte");
-  return instagramState(section);
-}
-
-export function beginInstagramConnect(sectionId: string, handle: string): { url: string } {
-  const site = db().website;
-  if (!site) throw new Error("Ingen hemsida att uppdatera");
-  const section = site.sections.find((s) => s.id === sectionId);
-  if (!section || section.type !== "instagram") throw new Error("Instagram-sektionen hittades inte");
-  const normalized = normalizeInstagramHandle(handle);
-  section.instagram = { ...(section.instagram ?? { handle: "" }), handle: normalized };
-  touchSite(site);
-  const state = Buffer.from(JSON.stringify({ sectionId, handle: normalized, siteId: site.id }), "utf8").toString(
-    "base64url",
-  );
-  return { url: instagramAuthorizeUrl({ handle: normalized, state }) };
-}
-
-export async function completeInstagramConnect(input: { state: string; code: string }): Promise<void> {
-  const site = db().website;
-  if (!site) throw new Error("Ingen hemsida att uppdatera");
-  let parsed: { sectionId?: string; handle?: string; siteId?: string };
-  try {
-    parsed = JSON.parse(Buffer.from(input.state, "base64url").toString("utf8")) as {
-      sectionId?: string;
-      handle?: string;
-      siteId?: string;
-    };
-  } catch {
-    throw new Error("Ogiltig Instagram-anslutning. Försök igen.");
-  }
-  if (parsed.siteId && parsed.siteId !== site.id) throw new Error("Ogiltig Instagram-anslutning. Försök igen.");
-  const section = site.sections.find((s) => s.id === parsed.sectionId && s.type === "instagram");
-  if (!section) throw new Error("Instagram-sektionen hittades inte");
-  const token = await exchangeInstagramCode(input.code);
-  const limit = section.instagram?.limit ?? 6;
-  const posts = await fetchInstagramMedia(token.accessToken, limit);
-  section.instagram = {
-    handle: parsed.handle ?? section.instagram?.handle ?? "",
-    limit,
-    connected: true,
-    userId: token.userId,
-    accessToken: token.accessToken,
-    tokenExpiresAt: token.expiresAt,
-    posts,
-    postsFetchedAt: new Date().toISOString(),
-  };
-  touchSite(site);
-}
-
-export function disconnectInstagram(sectionId: string): void {
-  const site = db().website;
-  if (!site) throw new Error("Ingen hemsida att uppdatera");
-  const section = site.sections.find((s) => s.id === sectionId);
-  if (!section || section.type !== "instagram") throw new Error("Instagram-sektionen hittades inte");
-  const handle = section.instagram?.handle ?? "";
-  const limit = section.instagram?.limit;
-  section.instagram = { handle, limit, connected: false };
-  touchSite(site);
-}
-
-export async function refreshInstagramPosts(sectionId: string): Promise<void> {
-  const site = db().website;
-  if (!site) throw new Error("Ingen hemsida att uppdatera");
-  const section = site.sections.find((s) => s.id === sectionId);
-  if (!section || section.type !== "instagram") throw new Error("Instagram-sektionen hittades inte");
-  const token = section.instagram?.accessToken;
-  if (!token || !section.instagram?.connected) {
-    throw new Error("Instagram är inte anslutet.");
-  }
-  section.instagram.posts = await fetchInstagramMedia(token, section.instagram.limit);
-  section.instagram.postsFetchedAt = new Date().toISOString();
   touchSite(site);
 }
 

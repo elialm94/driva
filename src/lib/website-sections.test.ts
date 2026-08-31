@@ -14,16 +14,14 @@ import {
   updateSection,
 } from "./services/website";
 import {
+  ADDABLE_SECTION_TYPES,
   addableTypesFor,
   canDeleteSection,
-  createSectionDraft,
   isTextSectionType,
-  normalizeInstagramHandle,
   SECTION_LABELS,
   stripWebsiteSecrets,
 } from "./website-sections";
 import { formatAddressLine, resolveSiteContact, telHref } from "./website-contact";
-import { instagramHasCredentials, instagramState, instagramSetupSteps } from "./instagram";
 
 function testWebsite(over: Partial<Website> = {}): Website {
   return {
@@ -99,7 +97,6 @@ describe("sektionsbyggaren", () => {
   it("unika typer döljs i väljaren och kan inte dupliceras", () => {
     const types = addableTypesFor(db().website!.sections).map((o) => o.type);
     assert.ok(types.includes("text"));
-    assert.ok(types.includes("instagram"));
     assert.ok(types.includes("omdomen"));
     assert.ok(types.includes("cta"));
     assert.ok(types.includes("kontaktuppgifter"));
@@ -110,12 +107,11 @@ describe("sektionsbyggaren", () => {
   });
 
   it("kan lägga till, dölja och ta bort valfria sektioner", () => {
-    const ig = addWebsiteSection("instagram");
     const quotes = addWebsiteSection("omdomen");
     const details = addWebsiteSection("kontaktuppgifter");
     const cta = addWebsiteSection("cta");
-    setSectionVisible(ig.id, false);
-    assert.equal(db().website!.sections.find((s) => s.id === ig.id)?.visible, false);
+    setSectionVisible(quotes.id, false);
+    assert.equal(db().website!.sections.find((s) => s.id === quotes.id)?.visible, false);
     removeWebsiteSection(quotes.id);
     assert.equal(db().website!.sections.some((s) => s.id === quotes.id), false);
     assert.ok(db().website!.sections.some((s) => s.id === details.id));
@@ -170,47 +166,39 @@ describe("sektionsbyggaren", () => {
   });
 });
 
-describe("Instagram-gränsen", () => {
-  it("är frånkopplad utan appuppgifter och skrapar inte", () => {
-    delete process.env.INSTAGRAM_APP_ID;
-    delete process.env.INSTAGRAM_APP_SECRET;
-    assert.equal(instagramHasCredentials(), false);
-    const state = instagramState({ instagram: { handle: "testsnickeri" } });
-    assert.equal(state.status, "needs_credentials");
-    assert.equal(state.connected, false);
-    assert.ok(instagramSetupSteps().some((s) => s.includes("INSTAGRAM_APP_ID")));
-    assert.equal(normalizeInstagramHandle("@TestSnickeri"), "testsnickeri");
+describe("borttagna sektionstyper", () => {
+  it("Instagram går inte att lägga till", () => {
+    assert.throws(() => addWebsiteSection("instagram" as never), /redan|kan inte/);
+    assert.equal(
+      ADDABLE_SECTION_TYPES.some((o) => (o.type as string) === "instagram"),
+      false,
+    );
   });
 
-  it("strippar access token innan objektet lämnar servern", () => {
+  it("släpper gamla Instagram-sektioner så publika sajter inte kraschar", () => {
+    const retired = {
+      id: "ig",
+      type: "instagram",
+      heading: "Följ våra projekt",
+      body: "",
+      visible: true,
+    } as unknown as Website["sections"][number];
     const site = testWebsite({
       sections: [
-        {
-          id: "ig",
-          type: "instagram",
-          heading: "Följ våra projekt",
-          body: "",
-          visible: true,
-          instagram: {
-            handle: "test",
-            connected: true,
-            accessToken: "SECRET",
-            userId: "123",
-            posts: [{ id: "1", permalink: "https://instagram.com/p/1", mediaUrl: "https://img/1.jpg" }],
-          },
-        },
+        { id: "s-hero", type: "hero", heading: "Hej", body: "Bygger kök.", visible: true },
+        retired,
       ],
     });
     const publicSite = stripWebsiteSecrets(site);
-    assert.equal(publicSite.sections[0].instagram?.accessToken, undefined);
-    assert.equal(publicSite.sections[0].instagram?.userId, undefined);
-    assert.equal(publicSite.sections[0].instagram?.connected, true);
-    assert.equal(publicSite.sections[0].instagram?.posts?.length, 1);
-  });
+    assert.deepEqual(
+      publicSite.sections.map((s) => s.type),
+      ["hero"],
+    );
 
-  it("utkast för Instagram börjar frånkopplat", () => {
-    const draft = createSectionDraft("instagram", "x");
-    assert.equal(draft.instagram?.connected, false);
-    assert.equal(draft.heading, "Följ våra projekt");
+    replaceDb(emptyTestDb({ website: site }));
+    assert.deepEqual(
+      db().website!.sections.map((s) => s.type),
+      ["hero"],
+    );
   });
 });

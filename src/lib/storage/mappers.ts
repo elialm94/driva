@@ -56,6 +56,7 @@ import type {
   WorkLocation,
 } from "@/lib/types";
 import { lineKindOf, syncDocLineClassification } from "@/lib/economic-line-type";
+import { withoutRetiredSections } from "@/lib/website-sections";
 import type { SqlRow } from "./executor";
 
 /* ------------------------------- primitiver ------------------------------- */
@@ -1264,7 +1265,7 @@ export const websitesSpec: TableSpec<Website> = {
     theme: r.theme as Website["theme"],
     ...opt("design", jsonOrU<NonNullable<Website["design"]>>(r.design)),
     ...opt("draftDesign", jsonOrU<NonNullable<Website["draftDesign"]>>(r.draft_design)),
-    sections: jsonVal<Website["sections"]>(r.sections),
+    sections: withoutRetiredSections(jsonVal<Website["sections"]>(r.sections)),
     ...opt("primaryCta", jsonOrU<NonNullable<Website["primaryCta"]>>(r.primary_cta)),
     ...opt("privacyPolicySupplement", strOrU(r.privacy_policy_supplement)),
     ...opt("publishedAt", tsIsoOrU(r.published_at)),

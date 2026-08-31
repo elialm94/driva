@@ -116,19 +116,13 @@ describe("integritetspolicy från företagsuppgifter", () => {
     assert.match(text, /personuppgiftsbiträde/);
   });
 
-  it("tar inte med Instagram förrän integrationen är på", () => {
+  it("nämner inte Instagram", () => {
     const website = testSite();
     assert.equal(websiteHasEnabledIntegration(website, "instagram"), false);
-    assert.equal(resolvePrivacyIntegrations(website).instagram, false);
+    assert.deepEqual(resolvePrivacyIntegrations(website), {});
     const text = policyText(demoCompany, website);
     assert.doesNotMatch(text, /Instagram/);
-
-    const enabled = buildPrivacyPolicy({
-      company: demoCompany,
-      website,
-      integrations: { instagram: true },
-    });
-    assert.ok(enabled.sections.some((s) => s.id === "instagram"));
+    assert.ok(!buildPrivacyPolicy({ company: demoCompany, website }).sections.some((s) => s.id === "instagram"));
   });
 
   it("lägger tilläggstext som Övrigt utan att frysa företagsuppgifter", () => {

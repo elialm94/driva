@@ -10,6 +10,7 @@ import { storageMode } from "./storage/config";
 import { tenantContext } from "./storage/context";
 import { requestTenantState } from "./storage/request-scope";
 import { hydrateQuotedBaselines } from "./services/job-work-baseline";
+import { withoutRetiredSections } from "./website-sections";
 
 /**
  * Lagringsfasad: all domänkod läser/skriver via db() + save().
@@ -177,6 +178,15 @@ function migrateRequestsToJobs(data: DB): boolean {
   return changed;
 }
 
+function dropRetiredWebsiteSections(data: DB): boolean {
+  const site = data.website;
+  if (!site) return false;
+  const next = withoutRetiredSections(site.sections);
+  if (next.length === site.sections.length) return false;
+  site.sections = next;
+  return true;
+}
+
 type QuoteWithLegacyRequest = { requestId?: string };
 
 export function normalize(loaded: DB): DB {
@@ -207,13 +217,15 @@ export function normalize(loaded: DB): DB {
   const domainsChanged = normalizeDomains(loaded);
   // Bokföringsmotorn: räkenskapsår, IB och verifikationsfält (idempotent).
   const migrated = migrateAccounting(loaded);
+  const droppedRetired = dropRetiredWebsiteSections(loaded);
   const dirty =
     migrateRequestsToJobs(loaded) ||
     hydrateIssuedInvoices(loaded) ||
     hydrateQuoteSellerSnapshots(loaded) ||
     hydrateTaxReductionTerms(loaded) ||
     hydrateTaxReductionDemo(loaded) ||
-    hydrateQuotedBaselines(loaded);
+    hydrateQuotedBaselines(loaded) ||
+    droppedRetired;
   // Persist snapshots so later settings changes cannot rewrite seed/historical docs.
   if (dirty || migrated || domainsChanged) persist(loaded);
   return loaded;

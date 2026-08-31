@@ -2,14 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import {
-  addTestimonialItemAction,
-  beginInstagramConnectAction,
-  disconnectInstagramAction,
-  instagramStatusAction,
-  refreshInstagramPostsAction,
-  updateTestimonialItemAction,
-} from "@/app/actions";
+import { addTestimonialItemAction, updateTestimonialItemAction } from "@/app/actions";
 import { Modal } from "@/components/modal";
 import { buttonClasses, cx } from "@/components/ui";
 import { FieldError, focusField, invalidFieldCls } from "@/components/form-validation";
@@ -17,7 +10,6 @@ import { addableTypesFor, type AddableSectionType } from "@/lib/website-sections
 import type { WebsiteSection, WebsiteSectionItem } from "@/lib/types";
 import type { SiteContact } from "@/lib/website-contact";
 import { formatAddressLine } from "@/lib/website-contact";
-import type { InstagramProviderState } from "@/lib/instagram";
 import { SETTINGS_HREF } from "@/lib/settings-routes";
 
 export function AddSectionPicker({
@@ -146,153 +138,6 @@ export function ContactDetailsEditor({
           className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
         />
       </div>
-    </div>
-  );
-}
-
-export function InstagramEditor({
-  sectionId,
-  handle,
-  limit,
-  status,
-  error,
-  pending,
-  onHandleChange,
-  onLimitChange,
-  onStatus,
-  onError,
-}: {
-  sectionId: string;
-  handle: string;
-  limit: string;
-  status: InstagramProviderState | null;
-  error: string | null;
-  pending: boolean;
-  onHandleChange: (value: string) => void;
-  onLimitChange: (value: string) => void;
-  onStatus: (status: InstagramProviderState | null) => void;
-  onError: (error: string | null) => void;
-}) {
-  const [busy, start] = useTransition();
-  const working = pending || busy;
-  const needsCredentials = status?.status === "needs_credentials";
-  const connected = Boolean(status?.connected);
-  const ready = status?.status === "ready_to_connect" || connected;
-
-  function refreshStatus() {
-    return instagramStatusAction(sectionId).then((next) => {
-      if (next) onStatus(next);
-    });
-  }
-
-  return (
-    <div className="space-y-3 rounded-xl border border-line bg-canvas/50 p-3.5">
-      <p className="text-[13px] leading-relaxed text-soft">
-        Visar senaste inlägg via Instagrams officiella API. Driva skrapar inte Instagram.
-      </p>
-      <div>
-        <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="instagram-handle">
-          Konto
-        </label>
-        <input
-          id="instagram-handle"
-          value={handle}
-          onChange={(e) => onHandleChange(e.target.value)}
-          placeholder="@dittforetag"
-          className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
-        />
-      </div>
-      <div>
-        <label className="mb-1.5 block text-[13px] font-medium text-soft" htmlFor="instagram-limit">
-          Antal inlägg
-        </label>
-        <input
-          id="instagram-limit"
-          type="number"
-          min={1}
-          max={12}
-          value={limit}
-          onChange={(e) => onLimitChange(e.target.value)}
-          className="w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] focus:border-accent"
-        />
-      </div>
-      {needsCredentials && status?.setupSteps?.length ? (
-        <div className="space-y-2">
-          <p className="text-[13px] font-medium text-ink">Kvar för att ansluta på riktigt</p>
-          <ol className="list-decimal space-y-1 pl-5 text-[12px] leading-relaxed text-muted">
-            {status.setupSteps.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-        </div>
-      ) : null}
-      {error ? <p className="text-[13px] text-danger">{error}</p> : null}
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className={buttonClasses("primary", "sm")}
-          disabled={working || needsCredentials}
-          onClick={() =>
-            start(async () => {
-              onError(null);
-              const result = await beginInstagramConnectAction(sectionId, handle);
-              if (result.ok) {
-                window.location.href = result.url;
-                return;
-              }
-              onError(result.error);
-              await refreshStatus();
-            })
-          }
-        >
-          {connected ? "Anslut igen" : "Anslut Instagram"}
-        </button>
-        {connected ? (
-          <>
-            <button
-              type="button"
-              className={buttonClasses("secondary", "sm")}
-              disabled={working}
-              onClick={() =>
-                start(async () => {
-                  onError(null);
-                  const result = await refreshInstagramPostsAction(sectionId);
-                  if (result && result.ok === false) onError(result.error);
-                  await refreshStatus();
-                })
-              }
-            >
-              Uppdatera inlägg
-            </button>
-            <button
-              type="button"
-              className={buttonClasses("ghost", "sm")}
-              disabled={working}
-              onClick={() =>
-                start(async () => {
-                  onError(null);
-                  const result = await disconnectInstagramAction(sectionId);
-                  if (result && result.ok === false) onError(result.error);
-                  await refreshStatus();
-                })
-              }
-            >
-              Koppla från
-            </button>
-          </>
-        ) : null}
-      </div>
-      {connected && (status?.postCount ?? 0) > 0 ? (
-        <p className="text-[12px] text-muted">{status?.postCount} inlägg hämtade. De syns på sajten efter publicering.</p>
-      ) : connected ? (
-        <p className="text-[12px] text-muted">
-          Kontot är anslutet men inga inlägg hämtades. Kontrollera att det är ett professionellt Instagram-konto.
-        </p>
-      ) : ready ? (
-        <p className="text-[12px] text-muted">Redo att ansluta. Inga inlägg visas publikt förrän Instagram är anslutet.</p>
-      ) : (
-        <p className="text-[12px] text-muted">Sektionen är redo. Inga inlägg visas publikt förrän Instagram är anslutet.</p>
-      )}
     </div>
   );
 }

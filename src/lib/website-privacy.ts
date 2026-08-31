@@ -3,8 +3,8 @@
  *
  * Företagsnamn, org.nr, adress och kontakt hämtas alltid live från
  * företagsuppgifterna – de kopieras inte in i policyn. Tilläggstext som
- * företagaren skriver sparas på hemsidan. Valfria integrationer (t.ex.
- * Instagram) läggs bara in när de faktiskt är på.
+ * företagaren skriver sparas på hemsidan. Valfria tredjepartsintegrationer
+ * läggs bara in när de faktiskt är på.
  *
  * Formuläraudit (submitContactForm):
  *   Sparas: namn, e-post, telefon om angiven, meddelandet, tidpunkt,
@@ -22,10 +22,7 @@ export const PRIVACY_POLICY_PATH = "/integritetspolicy";
 export const PRIVACY_POLICY_SUPPLEMENT_MAX = 8000;
 
 /** Framtida tillägg – bara stycken som faktiskt är på. */
-export interface WebsitePrivacyIntegrations {
-  /** Tredjepartsvisning av Instagram. Av tills sektionen finns och är synlig. */
-  instagram?: boolean;
-}
+export interface WebsitePrivacyIntegrations {}
 
 export interface PrivacyPolicySection {
   id: string;
@@ -67,7 +64,7 @@ export function contactFormPrivacyLead(companyName: string): string {
 export const CONTACT_FORM_PRIVACY_LINK_LABEL = "integritetspolicyn";
 
 /**
- * Instagram (eller liknande) räknas bara om sektionen finns och är synlig.
+ * En valfri tredjepartsräknas bara om sektionen finns och är synlig.
  * På sajter utan den sektionstypen är resultatet alltid false.
  */
 export function websiteHasEnabledIntegration(
@@ -82,12 +79,10 @@ function sectionType(section: WebsiteSection): string {
 }
 
 export function resolvePrivacyIntegrations(
-  website: Pick<Website, "sections">,
+  _website: Pick<Website, "sections">,
   explicit?: WebsitePrivacyIntegrations
 ): WebsitePrivacyIntegrations {
-  return {
-    instagram: explicit?.instagram ?? websiteHasEnabledIntegration(website, "instagram"),
-  };
+  return { ...explicit };
 }
 
 export function normalizePrivacyPolicySupplement(raw: string | undefined | null): string | undefined {
@@ -112,12 +107,8 @@ function controllerLines(company: CompanySettings, name: string): string[] {
 export function buildPrivacyPolicy(input: {
   company: CompanySettings;
   website?: Pick<Website, "businessName" | "privacyPolicySupplement" | "sections"> | null;
-  integrations?: WebsitePrivacyIntegrations;
 }): PrivacyPolicyDocument {
   const name = controllerName(input.company, input.website);
-  const integrations = input.website
-    ? resolvePrivacyIntegrations(input.website, input.integrations)
-    : { instagram: Boolean(input.integrations?.instagram) };
   const supplement = input.website?.privacyPolicySupplement?.trim();
 
   const sections: PrivacyPolicySection[] = [
@@ -184,16 +175,6 @@ export function buildPrivacyPolicy(input: {
       ],
     },
   ];
-
-  if (integrations.instagram) {
-    sections.splice(5, 0, {
-      id: "instagram",
-      heading: "Instagram",
-      paragraphs: [
-        "Om företaget visar inlägg från Instagram på den här sajten hämtas innehållet från Meta. Då kan Meta behandla tekniska uppgifter enligt Metas egna villkor. Det är skilt från kontaktformuläret och styrs inte av den här sidans formulär.",
-      ],
-    });
-  }
 
   if (supplement) {
     sections.push({

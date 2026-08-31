@@ -18,31 +18,8 @@ import { resolveSiteContact } from "@/lib/website-contact";
 
 export const metadata = { title: "Hemsida" };
 
-function instagramBanner(status?: string) {
-  if (status === "ansluten") {
-    return { tone: "ok" as const, text: "Instagram är anslutet. Publicera ändringar för att visa inläggen på sajten." };
-  }
-  if (status === "nekad") {
-    return { tone: "warn" as const, text: "Instagram-anslutningen avbröts. Du kan försöka igen från sektionen." };
-  }
-  if (status === "saknar_uppgifter") {
-    return {
-      tone: "warn" as const,
-      text: "Instagram är inte konfigurerat. Sätt INSTAGRAM_APP_ID och INSTAGRAM_APP_SECRET, starta om och försök igen.",
-    };
-  }
-  if (status === "fel") {
-    return { tone: "danger" as const, text: "Kunde inte ansluta Instagram. Kontrollera kontot och försök igen." };
-  }
-  return null;
-}
-
-export default async function WebsitePage(props: PageProps<"/hemsida">) {
+export default async function WebsitePage() {
   await ensurePageBusiness();
-  const searchParams = await props.searchParams;
-  const instagramNotice = instagramBanner(
-    typeof searchParams.instagram === "string" ? searchParams.instagram : undefined,
-  );
   const data = db();
   const site = data.website;
 
@@ -86,19 +63,6 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
 
   return (
     <div className="animate-fade-up">
-      {instagramNotice ? (
-        <div
-          className={`mb-4 rounded-2xl px-4 py-3 text-[13px] leading-relaxed ${
-            instagramNotice.tone === "ok"
-              ? "bg-ok-soft text-ok"
-              : instagramNotice.tone === "danger"
-                ? "bg-danger-soft text-danger"
-                : "bg-warn-soft text-warn"
-          }`}
-        >
-          {instagramNotice.text}
-        </div>
-      ) : null}
       <PageHeader
         title="Hemsida"
         subtitle={
