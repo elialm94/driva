@@ -1,5 +1,7 @@
 /** Svensk formattering av belopp, datum och relativ tid. */
 
+import { DEFAULT_TIMEZONE, instantFromLocal, localParts } from "./reminders/when";
+
 const krFmt = new Intl.NumberFormat("sv-SE", {
   style: "currency",
   currency: "SEK",
@@ -12,22 +14,35 @@ export function kr(n: number): string {
 
 const DAG_MS = 86_400_000;
 
+const sv = (options: Intl.DateTimeFormatOptions) =>
+  new Intl.DateTimeFormat("sv-SE", { timeZone: DEFAULT_TIMEZONE, ...options });
+
 export function isoNow(): string {
   return new Date().toISOString();
 }
 
+/** Tidpunkt om `days` hela kalenderdagar, kl `hour`:`minute` svensk tid. */
 export function isoDaysFromNow(days: number, hour = 10, minute = 0): string {
-  const d = new Date(Date.now() + days * DAG_MS);
-  d.setHours(hour, minute, 0, 0);
-  return d.toISOString();
+  const now = localParts(new Date(), DEFAULT_TIMEZONE);
+  const d = new Date(Date.UTC(now.year, now.month - 1, now.day + days));
+  return instantFromLocal(
+    {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth() + 1,
+      day: d.getUTCDate(),
+      hour,
+      minute,
+    },
+    DEFAULT_TIMEZONE
+  ).toISOString();
 }
 
 export function datumKort(iso: string): string {
-  return new Intl.DateTimeFormat("sv-SE", { day: "numeric", month: "short" }).format(new Date(iso));
+  return sv({ day: "numeric", month: "short" }).format(new Date(iso));
 }
 
 export function datumLang(iso: string): string {
-  return new Intl.DateTimeFormat("sv-SE", {
+  return sv({
     day: "numeric",
     month: "long",
     year: "numeric",
@@ -37,23 +52,22 @@ export function datumLang(iso: string): string {
 export function datumTid(iso: string): string {
   const d = new Date(iso);
   const datum = datumLang(iso);
-  const tid = new Intl.DateTimeFormat("sv-SE", { hour: "2-digit", minute: "2-digit" }).format(d);
+  const tid = sv({ hour: "2-digit", minute: "2-digit" }).format(d);
   return `${datum}, ${tid}`;
 }
 
 export function datumNumeriskt(iso: string): string {
-  return new Intl.DateTimeFormat("sv-SE").format(new Date(iso));
+  return sv({ day: "numeric", month: "numeric", year: "numeric" }).format(new Date(iso));
 }
 
-function startOfDay(d: Date): number {
-  const c = new Date(d);
-  c.setHours(0, 0, 0, 0);
-  return c.getTime();
+function stockholmDayUtcNoon(d: Date): number {
+  const p = localParts(d, DEFAULT_TIMEZONE);
+  return Date.UTC(p.year, p.month - 1, p.day, 12, 0, 0);
 }
 
-/** Hela dagar mellan idag och datumet. Positivt = framtid, negativt = passerat. */
-export function dagarTill(iso: string): number {
-  return Math.round((startOfDay(new Date(iso)) - startOfDay(new Date())) / DAG_MS);
+/** Hela kalenderdagar (svensk tid) mellan idag och datumet. Positivt = framtid. */
+export function dagarTill(iso: string, now: Date = new Date()): number {
+  return Math.round((stockholmDayUtcNoon(new Date(iso)) - stockholmDayUtcNoon(now)) / DAG_MS);
 }
 
 export function dagarSedan(iso: string): number {
@@ -69,8 +83,12 @@ export function relativ(iso: string): string {
   return `för ${-diff} dagar sedan`;
 }
 
+/**
+ * Hälsning efter klockan i Europe/Stockholm – inte serverns UTC
+ * (Vercel visar annars "God natt" vid svensk morgon).
+ */
 export function halsning(date = new Date()): string {
-  const h = date.getHours();
+  const h = localParts(date, DEFAULT_TIMEZONE).hour;
   if (h < 5) return "God natt";
   if (h < 10) return "God morgon";
   if (h < 12) return "God förmiddag";
@@ -80,10 +98,10 @@ export function halsning(date = new Date()): string {
 
 /** "27 augusti" utan år – för rubriker. */
 export function datumUtanAr(iso: string): string {
-  return new Intl.DateTimeFormat("sv-SE", { day: "numeric", month: "long" }).format(new Date(iso));
+  return sv({ day: "numeric", month: "long" }).format(new Date(iso));
 }
 
 export function veckodag(iso: string): string {
-  const s = new Intl.DateTimeFormat("sv-SE", { weekday: "long" }).format(new Date(iso));
+  const s = sv({ weekday: "long" }).format(new Date(iso));
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
