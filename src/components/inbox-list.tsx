@@ -8,6 +8,7 @@ import { Avatar, Badge, Card, EmptyState, cx } from "./ui";
 import { Pagination } from "./customer-list";
 import { datumKort, relativ } from "@/lib/format";
 import type { InboxListFilter, InboxListRow, PagedResult } from "@/lib/services/inbox";
+import { LIST_BODY_ROW_CLASS, LIST_CARD_CLASS, LIST_HEAD_ROW_CLASS, LIST_ROW_LINK_CLASS, LIST_TABLE_CLASS } from "./table-classes";
 
 export interface InboxListQuery {
   q: string;
@@ -104,10 +105,10 @@ export function InboxList({
       ) : (
         <>
           <div className="hidden md:block">
-            <Card className="overflow-hidden">
-              <table className="w-full text-left text-[14px]">
+            <Card className={LIST_CARD_CLASS}>
+              <table className={LIST_TABLE_CLASS}>
                 <thead>
-                  <tr className="border-b border-line/80 text-[12px] font-medium uppercase tracking-wide text-muted">
+                  <tr className={LIST_HEAD_ROW_CLASS}>
                     <th className="px-3 py-2.5 font-medium">Från</th>
                     <th className="px-3 py-2.5 font-medium">Dokument</th>
                     <th className="px-3 py-2.5 font-medium">Förfaller</th>
@@ -116,9 +117,9 @@ export function InboxList({
                 </thead>
                 <tbody>
                   {result.rows.map((r) => (
-                    <tr key={r.id} className="relative border-b border-line/60 last:border-0 hover:bg-canvas/70">
+                    <tr key={r.id} className={LIST_BODY_ROW_CLASS}>
                       <td className="px-3 py-2.5">
-                        <AppLink href={`/inbox/${r.id}`} className="absolute inset-0 z-10" aria-label={r.documentLabel}>
+                        <AppLink href={`/inbox/${r.id}`} className={LIST_ROW_LINK_CLASS} aria-label={r.documentLabel}>
                           <span className="sr-only">{r.fromLabel}</span>
                         </AppLink>
                         <div className="pointer-events-none flex items-center gap-3">

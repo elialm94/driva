@@ -8,6 +8,7 @@ import { Avatar, Badge, buttonClasses, Card, EmptyState, cx } from "./ui";
 import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
 import { NewCustomerModal } from "./new-customer-modal";
 import { kr } from "@/lib/format";
+import { LIST_BODY_ROW_CLASS, LIST_CARD_CLASS, LIST_HEAD_ROW_CLASS, LIST_ROW_LINK_CLASS, LIST_TABLE_CLASS } from "./table-classes";
 import type {
   CustomerActivityFilter,
   CustomerKindFilter,
@@ -132,10 +133,10 @@ export function CustomerRegister({
       ) : (
         <>
           <div className="hidden md:block">
-            <Card className="overflow-hidden">
-              <table className="w-full text-left text-[14px]">
+            <Card className={LIST_CARD_CLASS}>
+              <table className={LIST_TABLE_CLASS}>
                 <thead>
-                  <tr className="border-b border-line/80 text-[12px] font-medium uppercase tracking-wide text-muted">
+                  <tr className={LIST_HEAD_ROW_CLASS}>
                     <SortTh
                       label="Kund"
                       active={query.sort === "namn"}
@@ -156,9 +157,9 @@ export function CustomerRegister({
                 </thead>
                 <tbody>
                   {result.rows.map((c) => (
-                    <tr key={c.id} className="relative border-b border-line/60 last:border-0 hover:bg-canvas/70">
+                    <tr key={c.id} className={LIST_BODY_ROW_CLASS}>
                       <td className="px-3 py-2.5">
-                        <AppLink href={`/kunder/${c.id}`} className="absolute inset-0 z-10" aria-label={c.name}>
+                        <AppLink href={`/kunder/${c.id}`} className={LIST_ROW_LINK_CLASS} aria-label={c.name}>
                           <span className="sr-only">{c.name}</span>
                         </AppLink>
                         <div className="pointer-events-none flex items-center gap-3">
