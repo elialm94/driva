@@ -28,6 +28,7 @@ import { SnoozeMenu } from "./snooze-menu";
 import { Modal } from "./modal";
 import { actionMenuItemClassName } from "./action-menu";
 import { buttonClasses, Card, cx, SectionTitle } from "./ui";
+import { ATTENTION_TONES } from "./ui-classes";
 import { startOfToday, toISODate } from "@/lib/dates/iso-date";
 import { initialSnoozeDateTime, isFutureLocalDateTime } from "@/lib/reminders/when";
 import {
@@ -82,16 +83,16 @@ import {
  */
 
 const ICONS = {
-  inbox: { icon: Inbox, cls: "bg-info-soft text-info" },
-  clock: { icon: Clock, cls: "bg-warn-soft text-warn" },
-  alert: { icon: AlertCircle, cls: "bg-danger-soft text-danger" },
-  receipt: { icon: Receipt, cls: "bg-warn-soft text-warn" },
-  question: { icon: HelpCircle, cls: "bg-info-soft text-info" },
-  invoice: { icon: FileText, cls: "bg-accent-soft text-accent-deep" },
-  bank: { icon: Landmark, cls: "bg-info-soft text-info" },
-  calendar: { icon: CalendarClock, cls: "bg-warn-soft text-warn" },
-  percent: { icon: Percent, cls: "bg-ok-soft text-ok" },
-  bell: { icon: Bell, cls: "bg-accent-soft text-accent-deep" },
+  inbox: { icon: Inbox, cls: ATTENTION_TONES.inbox },
+  clock: { icon: Clock, cls: ATTENTION_TONES.clock },
+  alert: { icon: AlertCircle, cls: ATTENTION_TONES.alert },
+  receipt: { icon: Receipt, cls: ATTENTION_TONES.receipt },
+  question: { icon: HelpCircle, cls: ATTENTION_TONES.question },
+  invoice: { icon: FileText, cls: ATTENTION_TONES.invoice },
+  bank: { icon: Landmark, cls: ATTENTION_TONES.bank },
+  calendar: { icon: CalendarClock, cls: ATTENTION_TONES.calendar },
+  percent: { icon: Percent, cls: ATTENTION_TONES.percent },
+  bell: { icon: Bell, cls: ATTENTION_TONES.bell },
 } as const;
 
 /* --------------------------------- Bekräftelse --------------------------------- */

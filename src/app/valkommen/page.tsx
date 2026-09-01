@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { HomePreview } from "@/components/home-preview";
 
 /**
  * Drivas publika landningssida.
@@ -60,83 +61,6 @@ function CtaButtons({ center = false }: { center?: boolean }) {
   );
 }
 
-/** Stiliserad förhandsvisning av Hem-vyn – ren HTML, ingen skärmdump att ladda. */
-function ProductPreview() {
-  return (
-    <div aria-hidden className="relative mx-auto w-full max-w-3xl select-none">
-      <div className="overflow-hidden rounded-2xl border border-line bg-card shadow-pop">
-        <div className="flex items-center gap-2 border-b border-line bg-canvas px-4 py-2.5">
-          <span className="flex gap-1.5">
-            <span className="size-2.5 rounded-full bg-line-strong" />
-            <span className="size-2.5 rounded-full bg-line-strong" />
-            <span className="size-2.5 rounded-full bg-line-strong" />
-          </span>
-          <span className="mx-auto rounded-md bg-card px-3 py-0.5 text-[11px] text-muted">app.driva.se</span>
-        </div>
-        <div className="px-5 py-5 sm:px-7 sm:py-6">
-          <p className="text-xs font-medium text-muted">Torsdag 12 juni</p>
-          <p className="mt-0.5 text-lg font-semibold tracking-tight text-ink sm:text-xl">
-            God morgon, Södermalms Snickeri
-          </p>
-
-          <p className="mt-5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
-            Behöver din uppmärksamhet
-          </p>
-          <ul className="mt-2 divide-y divide-line rounded-xl border border-line">
-            <li className="flex items-center gap-3 px-3.5 py-3 sm:px-4">
-              <span className="size-2 shrink-0 rounded-full bg-danger" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium text-ink sm:text-sm">
-                  Faktura #1047 · Johan Lindberg
-                </span>
-                <span className="block truncate text-xs text-muted">Förföll för 8 dagar sedan</span>
-              </span>
-              <span className="tabular shrink-0 text-[13px] font-semibold text-ink sm:text-sm">25 500 kr</span>
-              <span className="hidden shrink-0 rounded-lg bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent-deep sm:block">
-                Skicka påminnelse
-              </span>
-            </li>
-            <li className="flex items-center gap-3 px-3.5 py-3 sm:px-4">
-              <span className="size-2 shrink-0 rounded-full bg-warn" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium text-ink sm:text-sm">
-                  Offert #115 · Fasadarbete, Lindqvist
-                </span>
-                <span className="block truncate text-xs text-muted">Väntar på signering med BankID</span>
-              </span>
-              <span className="tabular shrink-0 text-[13px] font-semibold text-ink sm:text-sm">72 375 kr</span>
-            </li>
-            <li className="flex items-center gap-3 px-3.5 py-3 sm:px-4">
-              <span className="size-2 shrink-0 rounded-full bg-info" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium text-ink sm:text-sm">
-                  Leverantörsfaktura · Beijer Byggmaterial
-                </span>
-                <span className="block truncate text-xs text-muted">Att hantera – förfaller om 6 dagar</span>
-              </span>
-              <span className="tabular shrink-0 text-[13px] font-semibold text-ink sm:text-sm">12 480 kr</span>
-            </li>
-          </ul>
-
-          <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
-            <div className="rounded-xl border border-line px-3 py-2.5">
-              <p className="text-[11px] text-muted">Att fakturera</p>
-              <p className="tabular mt-0.5 text-[13px] font-semibold text-ink sm:text-sm">23 400 kr</p>
-            </div>
-            <div className="rounded-xl border border-line px-3 py-2.5">
-              <p className="text-[11px] text-muted">Obetalda fakturor</p>
-              <p className="tabular mt-0.5 text-[13px] font-semibold text-ink sm:text-sm">46 250 kr</p>
-            </div>
-            <div className="rounded-xl border border-line px-3 py-2.5">
-              <p className="text-[11px] text-muted">Fakturerat i år</p>
-              <p className="tabular mt-0.5 text-[13px] font-semibold text-ink sm:text-sm">412 000 kr</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function LandingPage() {
   return (
@@ -180,7 +104,10 @@ export default function LandingPage() {
           </div>
 
           <div className="mt-14 sm:mt-16">
-            <ProductPreview />
+            <HomePreview />
+            <p className="mx-auto mt-5 max-w-md text-center text-[15px] leading-relaxed text-soft">
+              Driva håller koll. Du säger bara vad du vill göra.
+            </p>
           </div>
 
           <ul className="mx-auto mt-10 flex max-w-2xl flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-soft">

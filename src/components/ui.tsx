@@ -1,39 +1,10 @@
 import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
 import { AppLink } from "./app-link";
+import { buttonClasses, cx, type ButtonSize, type ButtonVariant } from "./ui-classes";
 
-export function cx(...parts: (string | false | null | undefined)[]): string {
-  return parts.filter(Boolean).join(" ");
-}
-
-/* ---------------------------------- Button ---------------------------------- */
-
-type ButtonVariant = "primary" | "accent" | "secondary" | "ghost" | "danger" | "danger-outline" | "bankid";
-type ButtonSize = "sm" | "md" | "lg";
-
-const buttonBase =
-  "inline-flex items-center justify-center gap-2 font-medium whitespace-nowrap rounded-xl transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
-
-const buttonVariants: Record<ButtonVariant, string> = {
-  primary: "bg-ink text-white hover:bg-black shadow-sm",
-  accent: "bg-accent text-white hover:bg-accent-deep shadow-sm",
-  secondary: "bg-card text-ink border border-line-strong hover:bg-canvas hover:border-muted/60",
-  ghost: "text-soft hover:bg-ink/5 hover:text-ink",
-  danger: "bg-danger-soft text-danger hover:bg-danger hover:text-white",
-  "danger-outline": "bg-transparent text-danger border border-danger/30 hover:bg-danger-soft hover:border-danger/50",
-  bankid: "bg-bankid text-white hover:brightness-110 shadow-sm",
-};
-
-/** Under lg växer knapparna något så träffytan blir ≥ ~44px på touch. Desktop oförändrad. */
-const buttonSizes: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-[13px] max-lg:h-9",
-  md: "h-10 px-4 text-sm max-lg:h-11",
-  lg: "h-12 px-6 text-[15px]",
-};
-
-export function buttonClasses(variant: ButtonVariant = "primary", size: ButtonSize = "md", extra?: string) {
-  return cx(buttonBase, buttonVariants[variant], buttonSizes[size], extra);
-}
+export { buttonClasses, cx };
+export type { ButtonSize, ButtonVariant };
 
 export function ButtonLink({
   href,
