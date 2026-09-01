@@ -15,6 +15,7 @@ import {
 } from "@/lib/services/job-list-filters";
 import type { JobListRow } from "@/lib/services/job-list";
 import type { PagedResult } from "@/lib/services/customers";
+import { LIST_BODY_ROW_CLASS, LIST_CARD_CLASS, LIST_HEAD_ROW_CLASS, LIST_ROW_LINK_CLASS, LIST_TABLE_CLASS } from "./table-classes";
 
 export interface UppdragListQuery {
   q: string;
@@ -143,10 +144,10 @@ export function UppdragList({
       ) : (
         <>
           <div className="hidden md:block">
-            <Card className="overflow-hidden">
-              <table className="w-full text-left text-[14px]">
+            <Card className={LIST_CARD_CLASS}>
+              <table className={LIST_TABLE_CLASS}>
                 <thead>
-                  <tr className="border-b border-line/80 text-[12px] font-medium uppercase tracking-wide text-muted">
+                  <tr className={LIST_HEAD_ROW_CLASS}>
                     <th className="px-3 py-2.5 font-medium">Uppdrag</th>
                     <SortTh
                       label="Kund"
@@ -168,9 +169,9 @@ export function UppdragList({
                 </thead>
                 <tbody>
                   {result.rows.map((job) => (
-                    <tr key={job.id} className="relative border-b border-line/60 last:border-0 hover:bg-canvas/70">
+                    <tr key={job.id} className={LIST_BODY_ROW_CLASS}>
                       <td className="px-3 py-2.5">
-                        <AppLink href={`/uppdrag/${job.id}`} className="absolute inset-0" aria-label={job.title} />
+                        <AppLink href={`/uppdrag/${job.id}`} className={LIST_ROW_LINK_CLASS} aria-label={job.title} />
                         <span className="block truncate font-medium text-ink">{job.title}</span>
                         {job.address ? (
                           <span className="mt-0.5 block truncate text-[12px] text-muted">{job.address}</span>

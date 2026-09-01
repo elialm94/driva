@@ -10,6 +10,7 @@ import {
   type CustomerMoneyLine,
 } from "@/lib/customer-activity-model";
 import { Card, cx } from "./ui";
+import { LIST_BODY_ROW_CLASS, LIST_CARD_CLASS, LIST_HEAD_ROW_CLASS, LIST_ROW_LINK_CLASS, LIST_TABLE_CLASS } from "./table-classes";
 
 const FILTERS: { key: "alla" | CustomerActivityKind; label: string }[] = [
   { key: "alla", label: "Alla" },
@@ -59,10 +60,10 @@ export function CustomerActivity({
       {visible.length === 0 ? (
         <p className="text-[14px] text-muted">Ingen aktivitet ännu.</p>
       ) : (
-        <Card className="overflow-hidden">
-          <table className="w-full text-left text-[14px]">
+        <Card className={LIST_CARD_CLASS}>
+          <table className={LIST_TABLE_CLASS}>
             <thead>
-              <tr className="border-b border-line/80 text-[12px] font-medium uppercase tracking-wide text-muted">
+              <tr className={LIST_HEAD_ROW_CLASS}>
                 <th className="px-4 py-2.5 font-medium">Datum</th>
                 <th className="px-4 py-2.5 font-medium">Händelse</th>
                 <th className="hidden px-4 py-2.5 text-right font-medium sm:table-cell">Belopp</th>
@@ -71,9 +72,9 @@ export function CustomerActivity({
             </thead>
             <tbody>
               {visible.map((row) => (
-                <tr key={row.id} className="relative border-b border-line/60 last:border-0 hover:bg-canvas/70">
+                <tr key={row.id} className={LIST_BODY_ROW_CLASS}>
                   <td className="whitespace-nowrap px-4 py-3 text-muted">
-                    <AppLink href={row.href} originLabel={originLabel} className="absolute inset-0" aria-label={row.title}>
+                    <AppLink href={row.href} originLabel={originLabel} className={LIST_ROW_LINK_CLASS} aria-label={row.title}>
                       <span className="sr-only">{row.title}</span>
                     </AppLink>
                     <span className="pointer-events-none">{datumKort(row.at)}</span>

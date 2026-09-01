@@ -29,6 +29,7 @@ import type {
   QuoteTableRow,
 } from "@/lib/services/economy-list";
 import type { PagedResult } from "@/lib/services/customers";
+import { LIST_BODY_ROW_CLASS, LIST_CARD_CLASS, LIST_HEAD_ROW_CLASS, LIST_ROW_LINK_CLASS, LIST_TABLE_CLASS } from "./table-classes";
 
 export { ekonomiRegisterHref };
 
@@ -212,8 +213,8 @@ function NoMatches({
 }
 
 const thCls = "px-3 py-2.5 font-medium";
-const headRowCls = "border-b border-line/80 text-[12px] font-medium uppercase tracking-wide text-muted";
-const bodyRowCls = "relative border-b border-line/60 last:border-0 hover:bg-canvas/70";
+const headRowCls = LIST_HEAD_ROW_CLASS;
+const bodyRowCls = LIST_BODY_ROW_CLASS;
 
 function DraftRowActions({
   kind,
@@ -274,8 +275,8 @@ export function QuoteRegister({
       ) : (
         <>
           <div className="hidden md:block">
-            <Card className="overflow-hidden">
-              <table className="w-full text-left text-[14px]">
+            <Card className={LIST_CARD_CLASS}>
+              <table className={LIST_TABLE_CLASS}>
                 <thead>
                   <tr className={headRowCls}>
                     <SortTh label="Offert" sortKey="document" current={query.sort} onSort={(sort) => go({ sort, page: 1 })} />
@@ -296,7 +297,7 @@ export function QuoteRegister({
                   {result.rows.map((r) => (
                     <tr key={r.id} className={bodyRowCls}>
                       <td className="px-3 py-2.5">
-                        <AppLink href={`/ekonomi/offerter/${r.id}`} className="absolute inset-0 z-10">
+                        <AppLink href={`/ekonomi/offerter/${r.id}`} className={LIST_ROW_LINK_CLASS}>
                           <span className="sr-only">Offert #{r.number}</span>
                         </AppLink>
                         <span className="pointer-events-none block truncate font-medium text-ink">
@@ -380,8 +381,8 @@ export function InvoiceRegister({
       ) : (
         <>
           <div className="hidden md:block">
-            <Card className="overflow-hidden">
-              <table className="w-full text-left text-[14px]">
+            <Card className={LIST_CARD_CLASS}>
+              <table className={LIST_TABLE_CLASS}>
                 <thead>
                   <tr className={headRowCls}>
                     <SortTh label="Faktura" sortKey="document" current={query.sort} onSort={(sort) => go({ sort, page: 1 })} />
@@ -407,7 +408,7 @@ export function InvoiceRegister({
                   {result.rows.map((r) => (
                     <tr key={r.id} className={bodyRowCls}>
                       <td className="px-3 py-2.5">
-                        <AppLink href={`/ekonomi/fakturor/${r.id}`} className="absolute inset-0 z-10">
+                        <AppLink href={`/ekonomi/fakturor/${r.id}`} className={LIST_ROW_LINK_CLASS}>
                           <span className="sr-only">Faktura {r.label}</span>
                         </AppLink>
                         <span className="pointer-events-none font-medium text-ink">
@@ -493,8 +494,8 @@ export function ExpenseRegister({
       ) : (
         <>
           <div className="hidden md:block">
-            <Card className="overflow-hidden">
-              <table className="w-full text-left text-[14px]">
+            <Card className={LIST_CARD_CLASS}>
+              <table className={LIST_TABLE_CLASS}>
                 <thead>
                   <tr className={headRowCls}>
                     <SortTh label="Datum" sortKey="date" current={query.sort} onSort={(sort) => go({ sort, page: 1 })} />
@@ -595,8 +596,8 @@ export function BankRegister({
       ) : (
         <>
           <div className="hidden md:block">
-            <Card className="overflow-hidden">
-              <table className="w-full text-left text-[14px]">
+            <Card className={LIST_CARD_CLASS}>
+              <table className={LIST_TABLE_CLASS}>
                 <thead>
                   <tr className={headRowCls}>
                     <SortTh label="Datum" sortKey="date" current={query.sort} onSort={(sort) => go({ sort, page: 1 })} />
