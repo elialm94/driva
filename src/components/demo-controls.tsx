@@ -1,19 +1,21 @@
 "use client";
 
 import { useTransition } from "react";
-import { LogOut, UserPlus } from "lucide-react";
-import { endDemoAction, endDemoToSignupAction } from "@/app/demo-actions";
+import { UserPlus } from "lucide-react";
+import { endDemoToSignupAction } from "@/app/demo-actions";
 import { cx } from "./ui";
 
 /**
  * Demoläges-kontroller i navigationen.
  *
  *   DemoBadge        – diskret men tydlig markör: datat är exempeldata.
- *   EndDemoRow       – "Avsluta demo": släpper demosessionen → /login.
  *   CreateAccountRow – "Skapa eget konto": avslutar demon → registrering.
  *
  * Varianterna följer LogoutRow: "sidebar" (desktopfot) och "sheet" (mobilens
  * Mer-ark). Ingen bekräftelse – att lämna demon är ofarligt och reversibelt.
+ *
+ * Övriga demoåtgärder (redovisningsvyn, återställ, avsluta) ligger samlade i
+ * DemoMenu bakom företagsraden – se demo-menu.tsx.
  */
 export function DemoBadge({ className }: { className?: string }) {
   return (
@@ -40,22 +42,6 @@ function rowClasses(variant: "sidebar" | "sheet"): string {
 
 function iconClasses(variant: "sidebar" | "sheet"): string {
   return cx("text-muted", variant === "sidebar" ? "size-[18px]" : "size-5");
-}
-
-export function EndDemoRow({ variant = "sidebar" }: { variant?: "sidebar" | "sheet" }) {
-  const [pending, startTransition] = useTransition();
-  return (
-    <button
-      type="button"
-      onClick={() => startTransition(() => endDemoAction())}
-      disabled={pending}
-      aria-label="Avsluta demo"
-      className={rowClasses(variant)}
-    >
-      <LogOut className={iconClasses(variant)} strokeWidth={2} />
-      {pending ? "Avslutar …" : "Avsluta demo"}
-    </button>
-  );
 }
 
 export function CreateAccountRow({ variant = "sidebar" }: { variant?: "sidebar" | "sheet" }) {
