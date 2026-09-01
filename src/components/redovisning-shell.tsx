@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ListTodo, Settings } from "lucide-react";
 import { ClientSwitcher } from "./client-switcher";
-import { CreateAccountRow, DemoBadge, EndDemoRow } from "./demo-controls";
+import { CreateAccountRow } from "./demo-controls";
+import { DemoMenu } from "./demo-menu";
 import { LogoutRow } from "./logout-button";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { arbetaHref, isArbetaPath, parseSelectedClientId } from "@/lib/collaboration/switch";
@@ -62,12 +63,20 @@ export function RedovisningSidebar({
       </nav>
 
       <div className="flex flex-col gap-1 border-t border-line px-3 py-4">
-        <p className="flex items-center gap-2 px-3 pb-1 text-[13px] font-medium text-soft">
-          <span className="truncate">{userName}</span>
-          {demoBadge ? <DemoBadge className="shrink-0" /> : null}
-        </p>
+        {demoBadge ? (
+          <DemoMenu title={userName} variant="sidebar" showAccountantView={false} canEndDemo={demoSession} />
+        ) : (
+          <p className="flex items-center gap-2 px-3 pb-1 text-[13px] font-medium text-soft">
+            <span className="truncate">{userName}</span>
+          </p>
+        )}
         {canSwitchToOwner ? (
-          <WorkspaceSwitcher variant="to-owner" localDemo={!canLogout || demoSession} />
+          <WorkspaceSwitcher
+            variant="to-owner"
+            localDemo={!canLogout || demoSession}
+            // Demon byter perspektiv, inte konto: säg vart man kommer.
+            label={demoBadge ? "Tillbaka till företaget" : undefined}
+          />
         ) : null}
         <p className="px-3 text-[12px] text-muted">
           {clientCount} {clientCount === 1 ? "klient" : "klienter"}
@@ -85,10 +94,7 @@ export function RedovisningSidebar({
           Inställningar
         </Link>
         {demoSession ? (
-          <>
-            <CreateAccountRow variant="sidebar" />
-            <EndDemoRow variant="sidebar" />
-          </>
+          <CreateAccountRow variant="sidebar" />
         ) : canLogout ? (
           <LogoutRow variant="sidebar" />
         ) : null}

@@ -17,10 +17,10 @@ import {
   X,
 } from "lucide-react";
 import { cx } from "./ui";
-import { CreateAccountRow, DemoBadge, EndDemoRow } from "./demo-controls";
+import { CreateAccountRow } from "./demo-controls";
+import { DemoMenu } from "./demo-menu";
 import { LogoutRow } from "./logout-button";
 import { WorkspaceSwitcher } from "./workspace-switcher";
-import { enterLocalAccountantDemoAction } from "@/app/collaboration-actions";
 import { isSectionActive, visibleNavItems, type NavSection } from "@/lib/nav";
 import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 
@@ -93,7 +93,6 @@ export function Sidebar({
   bokforingCount = 0,
   canLogout = false,
   accountingClientCount = 0,
-  localAccountantDemo = false,
   demoBadge = false,
   demoSession = false,
   features,
@@ -105,7 +104,6 @@ export function Sidebar({
   canLogout?: boolean;
   /** Visas när samma användare också är konsult på andra företag. */
   accountingClientCount?: number;
-  localAccountantDemo?: boolean;
   /** Demoläge (lokala JSON-demon eller publika demosessionen): visa markören. */
   demoBadge?: boolean;
   /** Publika demosessionen: Avsluta demo/Skapa eget konto ersätter Logga ut. */
@@ -152,18 +150,20 @@ export function Sidebar({
       </nav>
 
       {/* Fot: företagsnamnet är ren kontext (ej klickbart); Inställningar är en
-          riktig nav-rad och Logga ut en dämpad rad (endast Supabase-läge). */}
+          riktig nav-rad och Logga ut en dämpad rad (endast Supabase-läge).
+          I demoläge blir raden i stället knappen till demo-menyn, som samlar
+          redovisningsvyn, återställ och avsluta – sidomenyn hålls identisk med
+          den en vanlig användare ser. */}
       <div className="flex flex-col gap-1 border-t border-line px-3 py-4">
-        <p className="flex items-center gap-2 px-3 pb-1 text-[13px] font-medium text-soft">
-          <span className="truncate">{companyName}</span>
-          {demoBadge ? <DemoBadge className="shrink-0" /> : null}
-        </p>
-        {accountingClientCount > 0 ? (
-          <WorkspaceSwitcher
-            variant="to-redovisning"
-            clientCount={accountingClientCount}
-            localDemo={localAccountantDemo}
-          />
+        {demoBadge ? (
+          <DemoMenu title={companyName} variant="sidebar" canEndDemo={demoSession} />
+        ) : (
+          <p className="flex items-center gap-2 px-3 pb-1 text-[13px] font-medium text-soft">
+            <span className="truncate">{companyName}</span>
+          </p>
+        )}
+        {!demoBadge && accountingClientCount > 0 ? (
+          <WorkspaceSwitcher variant="to-redovisning" clientCount={accountingClientCount} />
         ) : null}
         <Link
           href="/installningar"
@@ -186,10 +186,7 @@ export function Sidebar({
           Hjälp & support
         </Link>
         {demoSession ? (
-          <>
-            <CreateAccountRow variant="sidebar" />
-            <EndDemoRow variant="sidebar" />
-          </>
+          <CreateAccountRow variant="sidebar" />
         ) : canLogout ? (
           <LogoutRow variant="sidebar" />
         ) : null}
@@ -199,18 +196,18 @@ export function Sidebar({
 }
 
 export function BottomNav({
+  companyName,
   canLogout = false,
   inboxCount = 0,
   bokforingCount = 0,
-  localAccountantDemo = false,
   demoBadge = false,
   demoSession = false,
   features,
 }: {
+  companyName: string;
   canLogout?: boolean;
   inboxCount?: number;
   bokforingCount?: number;
-  localAccountantDemo?: boolean;
   demoBadge?: boolean;
   demoSession?: boolean;
   features: ResolvedOptionalFeatures;
@@ -235,10 +232,8 @@ export function BottomNav({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 pt-3 pb-1">
-              <p className="flex items-center gap-2 text-sm font-semibold text-ink">
-                Mer
-                {demoBadge ? <DemoBadge /> : null}
-              </p>
+              {/* Demomarkören sitter på företagsraden nedan – inte här också. */}
+              <p className="text-sm font-semibold text-ink">Mer</p>
               <button
                 type="button"
                 onClick={() => setMoreOpen(false)}
@@ -271,18 +266,14 @@ export function BottomNav({
               );
             })}
             <div className="mx-4 my-1 h-px bg-line" />
-            {localAccountantDemo ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setMoreOpen(false);
-                  void enterLocalAccountantDemoAction();
-                }}
-                className="flex w-full items-center gap-3 rounded-2xl px-4 py-3.5 text-left text-[15px] text-ink hover:bg-canvas"
-              >
-                <BookOpenCheck className="size-5 text-muted" />
-                Redovisning
-              </button>
+            {/* Demoåtgärderna fälls ut bakom företagsraden så arket förblir kort. */}
+            {demoBadge ? (
+              <DemoMenu
+                title={companyName}
+                variant="sheet"
+                canEndDemo={demoSession}
+                onNavigate={() => setMoreOpen(false)}
+              />
             ) : null}
             <Link
               href="/installningar"
@@ -306,10 +297,7 @@ export function BottomNav({
               Hjälp & support
             </Link>
             {demoSession ? (
-              <>
-                <CreateAccountRow variant="sheet" />
-                <EndDemoRow variant="sheet" />
-              </>
+              <CreateAccountRow variant="sheet" />
             ) : canLogout ? (
               <LogoutRow variant="sheet" />
             ) : null}

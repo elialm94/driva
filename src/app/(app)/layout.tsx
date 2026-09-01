@@ -31,12 +31,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const businessId = requestSlot().businessId ?? tenantContext()?.businessId ?? LOCAL_JSON_BUSINESS_ID;
   hydrateInvitationsFromTenant(businessId);
   const features = resolveOptionalFeatures(db(), businessId);
-  // Demoläge = lokala JSON-demon ELLER den publika demosessionen. Markören
-  // visas i båda; Avsluta demo/Skapa eget konto gäller bara riktiga sessioner.
+  // Demoläge = lokala JSON-demon ELLER den publika demosessionen. Markören och
+  // demo-menyn (redovisningsvy, återställ) visas i båda; Avsluta demo och
+  // Skapa eget konto gäller bara den publika demosessionen.
   const demoSession = await isDemoSession();
   const demoBadge = !isSupabaseMode() || demoSession;
-  // Demon får samma konsult-genväg som lokala demon (Anna-vyn via Samarbeta).
-  const accountantDemoSwitch = !isSupabaseMode() || demoSession;
   return (
     // data-driva-demo: klientgrindar (t.ex. adressförslagens Places-laddare)
     // läser attributet och håller sig till lokala exempeldata i demon.
@@ -47,8 +46,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         inboxCount={navCounts.inbox}
         bokforingCount={navCounts.bokforing}
         canLogout={canLogout}
-        accountingClientCount={Math.max(accountingClientCount, accountantDemoSwitch ? 1 : 0)}
-        localAccountantDemo={accountantDemoSwitch}
+        accountingClientCount={accountingClientCount}
         demoBadge={demoBadge}
         demoSession={demoSession}
         features={features}
@@ -63,10 +61,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </main>
       <BottomNav
+        companyName={settings.name}
         canLogout={canLogout}
         inboxCount={navCounts.inbox}
         bokforingCount={navCounts.bokforing}
-        localAccountantDemo={accountantDemoSwitch}
         demoBadge={demoBadge}
         demoSession={demoSession}
         features={features}
