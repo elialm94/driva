@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { RotateCcw } from "lucide-react";
 import { buttonClasses, Card } from "./ui";
+import { Modal } from "./modal";
 import { resetDemoAction } from "@/app/actions";
 
 /**
@@ -12,6 +13,7 @@ import { resetDemoAction } from "@/app/actions";
  * alla företag som inte skapades som demo.
  */
 export function DemoResetSection() {
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [isResetting, startReset] = useTransition();
   const [error, setError] = useState<string | null>(null);
   return (
@@ -38,24 +40,49 @@ export function DemoResetSection() {
           type="button"
           className={buttonClasses("secondary", "sm")}
           disabled={isResetting}
-          onClick={() => {
-            if (
-              !window.confirm(
-                "Återställ demo? Alla ändringar du gjort i demon återställs till exempeldatat. Detta går inte att ångra."
-              )
-            )
-              return;
-            setError(null);
-            startReset(async () => {
-              const result = await resetDemoAction();
-              if (!result.ok) setError(result.error);
-            });
-          }}
+          onClick={() => setConfirmOpen(true)}
         >
           <RotateCcw className="size-3.5" />
           {isResetting ? "Återställer …" : "Återställ demo"}
         </button>
       </Card>
+
+      <Modal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title="Återställa demon?"
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              className={buttonClasses("secondary", "sm")}
+              onClick={() => setConfirmOpen(false)}
+            >
+              Avbryt
+            </button>
+            <button
+              type="button"
+              className={buttonClasses("primary", "sm")}
+              disabled={isResetting}
+              onClick={() => {
+                setConfirmOpen(false);
+                setError(null);
+                startReset(async () => {
+                  const result = await resetDemoAction();
+                  if (!result.ok) setError(result.error);
+                });
+              }}
+            >
+              {isResetting ? "Återställer …" : "Återställ"}
+            </button>
+          </div>
+        }
+      >
+        <p className="px-6 py-5 text-[15px] text-soft">
+          Alla ändringar du gjort i den här demosessionen tas bort.
+        </p>
+      </Modal>
     </section>
   );
 }

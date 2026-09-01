@@ -83,8 +83,10 @@ allowed_cidrs_v6 = ["::/0"]
 # [db.ssl_enforcement]
 # enabled = true
 
+# Driva använder inte Realtime (direkta Postgres-frågor + Supabase Auth) –
+# avstängd lokalt: startar snabbare och kräver inte realtime-migreringarna.
 [realtime]
-enabled = true
+enabled = false
 # Bind realtime via either IPv4 or IPv6. (default: IPv4)
 # ip_version = "IPv6"
 # The maximum length in bytes of HTTP request headers. (default: 4096)
@@ -155,11 +157,13 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "http://127.0.0.1:3000"
+# Dev-servern kör på 3123 (scripts/dev-3123.sh) – bekräftelselänkar i mejl
+# ska peka dit, annars landar lokala verifieringar på fel port.
+site_url = "http://localhost:3123"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+additional_redirect_urls = ["http://localhost:3123/auth/bekrafta", "http://127.0.0.1:3123/auth/bekrafta"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -174,6 +178,8 @@ refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
 enable_signup = true
 # Allow/disallow anonymous sign-ins to your project.
+# Demon bor i JSON-filer per besökare (ingen Supabase-identitet) – anonyma
+# inloggningar behövs inte och är avstängda.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
@@ -222,7 +228,9 @@ enable_signup = true
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-enable_confirmations = false
+# Speglar produktionen: registrering kräver verifierad e-post (mejlen landar
+# lokalt i mailpit på http://localhost:54324).
+enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
@@ -370,8 +378,9 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+# Inga edge functions i Driva – avstängd lokalt.
 [edge_runtime]
-enabled = true
+enabled = false
 # Supported request policies: `oneshot`, `per_worker`.
 # `per_worker` (default) — enables hot reload during local development.
 # `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
@@ -384,8 +393,9 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Logflare/analytics behövs inte för utveckling – tung container, avstängd.
 [analytics]
-enabled = true
+enabled = false
 port = 54327
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"

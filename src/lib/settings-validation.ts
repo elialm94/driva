@@ -140,6 +140,16 @@ export function settingsProfileFieldErrors(input: SettingsProfileFields): Settin
   if (input.logoDataUrl && input.logoDataUrl !== "$undefined" && !input.logoDataUrl.startsWith("data:image/")) {
     errors.push({ field: "logoDataUrl", label: "Logotyp", message: "Logotypen måste vara en bild.", tab: "foretag" });
   }
+  // Servergräns (klienten komprimerar redan): en logotyp ska aldrig kunna
+  // blåsa upp företagstillståndet – gäller alla, inte bara demon.
+  if (input.logoDataUrl && input.logoDataUrl.length > 1_000_000) {
+    errors.push({
+      field: "logoDataUrl",
+      label: "Logotyp",
+      message: "Logotypen är för stor. Välj en mindre bild.",
+      tab: "foretag",
+    });
+  }
   if (input.bankgiro.trim()) {
     const bg = validateSwedishBankgiro(input.bankgiro);
     if (!bg.ok) {

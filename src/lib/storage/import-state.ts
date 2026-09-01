@@ -7,7 +7,7 @@
  * transaktionen – ingen halvimport.
  */
 import type { DB } from "../types";
-import { db, save } from "../store";
+import { db, normalize, save } from "../store";
 import { quoteVersionHash } from "../hash";
 import { loadStateSnapshot, runWithTenant, sqlClient } from "./adapter-supabase";
 import { bindTransaction } from "./load";
@@ -70,6 +70,13 @@ export async function importStateIntoBusiness(
   userId: string,
   source: DB
 ): Promise<void> {
+  // Samma hydrering som vid load: utfärdade fakturor får sina frysta
+  // snapshots, säljar-/köparsnapshots byggs och bokföringsmotorn backfyller
+  // räkenskapsår. Utan detta vägrar app.issue_invoice (snapshot är NOT NULL
+  // för utfärdade fakturor). persistIfDirty=false: källan får inte skrivas
+  // till den lokala JSON-filen som bieffekt.
+  normalize(source, { persistIfDirty: false });
+
   // Källans numrering börjar sällan på 1 (t.ex. fakturor från 1032). RPC:erna
   // kräver att varje nummer är exakt nästa lediga – flytta fram räknarna till
   // källans FÖRSTA nummer innan uppspelningen, så att serien replayas exakt.

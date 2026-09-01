@@ -28,6 +28,13 @@ import { withoutRetiredSections } from "./website-sections";
  *     /tmp på serverless. I produktion är JSON-läget AVSTÄNGT – saknas
  *     Supabase-miljön stannar appen med tydligt fel (config.ts).
  *
+ * Den publika DEMON är ett request-skopat specialfall av JSON-lagret i BÅDA
+ * lägena: en demo-cookie pekar ut besökarens egen fil
+ * (.data/demo-sessions/<id>.json) som lastas in i samma tenantkontext/
+ * request-cell som Supabase-läget använder – db()/save() nedan är därför
+ * helt omedvetna om demon, och demorequests rör aldrig Postgres.
+ * Se auth/demo-request.ts + storage/demo-session-store.ts.
+ *
  * Personnummer i JSON-läget ligger i klartext i den lokala filen – endast
  * utvecklingsdata. I Supabase-läget gäller databasens skydd (RLS med mera).
  */
@@ -190,7 +197,8 @@ function dropRetiredWebsiteSections(data: DB): boolean {
 
 type QuoteWithLegacyRequest = { requestId?: string };
 
-export function normalize(loaded: DB): DB {
+export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): DB {
+  const persistIfDirty = opts.persistIfDirty ?? true;
   // Fält tillagda efter att filen skapades får sina standardvärden här.
   loaded.settings.lateInterestRate ??= 10;
   loaded.settings.quoteValidityDays ??= 30;
@@ -233,7 +241,9 @@ export function normalize(loaded: DB): DB {
     hydrateQuotedBaselines(loaded) ||
     droppedRetired;
   // Persist snapshots so later settings changes cannot rewrite seed/historical docs.
-  if (dirty || migrated || domainsChanged || descriptionsMigrated || buyerSnapshotsHydrated) persist(loaded);
+  if (persistIfDirty && (dirty || migrated || domainsChanged || descriptionsMigrated || buyerSnapshotsHydrated)) {
+    persist(loaded);
+  }
   return loaded;
 }
 

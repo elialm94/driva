@@ -1,26 +1,42 @@
 process.env.DRIVA_TEST = "1";
 
 /**
- * Publika demoinloggningen: sessionskakan, rate limits, tenantgrindarna,
- * den centrala e-postgrinden och AI-budgeten.
+ * Publika demosessionen (JSON + cookie): sessionskakan, fil-storen med
+ * isolering per session, rate limits, tenantgrindarna, den centrala
+ * e-postgrinden och AI-budgeten.
  *
- * Själva Supabase-vägarna (inloggning, medlemskap, RLS, återställningens
- * SQL) verifieras i scripts/adapter-validate.ts mot PGlite.
+ * Demon bor ALDRIG i databasen – fil-storen testas här mot en tillfällig
+ * katalog, precis som E2E-verifieringen testar den mot .data/demo-sessions.
  */
 import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { db, replaceDb } from "./store";
 import { emptyTestDb, labor, testCustomer } from "./invoices/test-db";
 import {
   __resetDemoRateLimitForTests,
   demoCookieValueNow,
+  demoSessionIdFromCookie,
   demoSessionMaxAgeSeconds,
   isDemoCookieValueActive,
-  isDemoLoginConfigured,
-  isDemoUserEmail,
+  isValidDemoSessionId,
+  newDemoSessionId,
   rateLimitDemoReset,
   rateLimitDemoStart,
 } from "./auth/demo-session";
+import {
+  __resetDemoSessionCacheForTests,
+  buildDemoSessionSeed,
+  cleanupExpiredDemoSessions,
+  deleteDemoSessionState,
+  demoSessionsDir,
+  ensureDemoSessionState,
+  loadDemoSessionState,
+  persistDemoSessionState,
+  resetDemoSessionState,
+} from "./storage/demo-session-store";
 import { DemoModeError, assertDemoMode, isDemoBusiness, isDemoMode } from "./demo";
 import { sendMail, setMailTransportForTests, type MailMessage } from "./mail";
 import { sendQuoteWithEmail } from "./services/document-mail";
@@ -30,12 +46,11 @@ import { AiDemoLimitError, AiTransportError } from "./ai/provider";
 import type { AssistantAuditEntry } from "./types";
 
 const ENV_KEYS = [
-  "DEMO_USER_EMAIL",
-  "DEMO_USER_PASSWORD",
   "DEMO_SESSION_HOURS",
   "DEMO_EMAIL_SINK",
   "DEMO_AI_DAILY_CAP",
   "DRIVA_DEMO",
+  "DRIVA_DEMO_SESSIONS_DIR",
   "RESEND_API_KEY",
 ] as const;
 const savedEnv = new Map<string, string | undefined>();
@@ -47,6 +62,7 @@ beforeEach(() => {
   }
   __resetDemoRateLimitForTests();
   __resetDemoAiBudgetForTests();
+  __resetDemoSessionCacheForTests();
   replaceDb(emptyTestDb({ customers: [testCustomer({ email: "anna@test.se" })] }));
 });
 
@@ -81,63 +97,139 @@ function draftQuote(customerId = "cust-1") {
 }
 
 describe("demosessionens kaka och livslängd", () => {
-  it("standard är 8 timmar och klampas till 1–72", () => {
-    assert.equal(demoSessionMaxAgeSeconds(), 8 * 3600);
+  it("standard är 24 timmar (spec) och klampas till 1–72", () => {
+    assert.equal(demoSessionMaxAgeSeconds(), 24 * 3600);
     process.env.DEMO_SESSION_HOURS = "0.2";
     assert.equal(demoSessionMaxAgeSeconds(), 3600);
     process.env.DEMO_SESSION_HOURS = "500";
     assert.equal(demoSessionMaxAgeSeconds(), 72 * 3600);
     process.env.DEMO_SESSION_HOURS = "skräp";
-    assert.equal(demoSessionMaxAgeSeconds(), 8 * 3600);
+    assert.equal(demoSessionMaxAgeSeconds(), 24 * 3600);
   });
 
-  it("nytt kakvärde är aktivt, unikt per besökare och bär utgångstiden", () => {
-    const value = demoCookieValueNow();
+  it("session-id:t är kryptografiskt slumpat, filnamnssäkert och unikt", () => {
+    const id = newDemoSessionId();
+    assert.equal(isValidDemoSessionId(id), true);
+    assert.match(id, /^[a-z0-9]{26}$/);
+    assert.notEqual(newDemoSessionId(), id);
+  });
+
+  it("nytt kakvärde är aktivt, bär utgångstiden och sitt session-id", () => {
+    const id = newDemoSessionId();
+    const value = demoCookieValueNow(id);
     assert.match(value, /^\d+\.[a-z0-9]+$/);
     assert.equal(isDemoCookieValueActive(value), true);
-    assert.notEqual(demoCookieValueNow(), value);
+    assert.equal(demoSessionIdFromCookie(value), id);
     const expires = Number(value.split(".")[0]);
     const maxAge = demoSessionMaxAgeSeconds() * 1000;
     assert.ok(expires > Date.now() && expires <= Date.now() + maxAge + 1000);
   });
 
-  it("utgångna, tomma och trasiga kakvärden är inaktiva", () => {
+  it("utgångna, tomma och trasiga kakvärden är inaktiva och ger inget session-id", () => {
     assert.equal(isDemoCookieValueActive(undefined), false);
     assert.equal(isDemoCookieValueActive(""), false);
     assert.equal(isDemoCookieValueActive("inte-ett-tal"), false);
-    assert.equal(isDemoCookieValueActive(`${Date.now() - 1000}.abc123`), false);
-    // Äldre format utan slumpdel accepteras fortfarande.
-    assert.equal(isDemoCookieValueActive(String(Date.now() + 60_000)), true);
+    assert.equal(isDemoCookieValueActive(`${Date.now() - 1000}.abcdefghijklmnopqrst12`), false);
+    assert.equal(demoSessionIdFromCookie(undefined), null);
+    assert.equal(demoSessionIdFromCookie(`${Date.now() - 1000}.abcdefghijklmnopqrst12`), null);
+    // Aktiv utgångstid men trasigt/farligt id-format → ingen session.
+    assert.equal(demoSessionIdFromCookie(`${Date.now() + 60_000}.`), null);
+    assert.equal(demoSessionIdFromCookie(`${Date.now() + 60_000}.kort`), null);
+    assert.equal(demoSessionIdFromCookie(`${Date.now() + 60_000}...%2Fetc%2Fpasswd`), null);
   });
 });
 
-describe("demoanvändarens identitet", () => {
-  it("utan DEMO_USER_EMAIL matchar ingen e-post", () => {
-    assert.equal(isDemoUserEmail("demo@driva.test"), false);
-    assert.equal(isDemoUserEmail(""), false);
-    assert.equal(isDemoUserEmail(undefined), false);
+describe("fil-storen: en JSON-fil per demosession", () => {
+  let dir = "";
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "driva-demo-test-"));
+    process.env.DRIVA_DEMO_SESSIONS_DIR = dir;
   });
 
-  it("matchar demo-adressen skiftlägesokänsligt och bara den", () => {
-    process.env.DEMO_USER_EMAIL = "Demo@Driva.test";
-    assert.equal(isDemoUserEmail("demo@driva.test"), true);
-    assert.equal(isDemoUserEmail("  DEMO@DRIVA.TEST  "), true);
-    assert.equal(isDemoUserEmail("agare@driva.test"), false);
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it("demoinloggningen är avstängd utan Supabase-läge", () => {
-    // Testmiljön kör JSON-läget – även med båda variablerna satta är den
-    // publika demoinloggningen bara aktuell där riktiga sessioner finns.
-    process.env.DEMO_USER_EMAIL = "demo@driva.test";
-    process.env.DEMO_USER_PASSWORD = "hemligt";
-    assert.equal(isDemoLoginConfigured(), false);
+  it("seedklonen är märkt som demo (servergrindarna gäller)", () => {
+    const seed = buildDemoSessionSeed();
+    assert.equal(seed.meta.demo, true);
+    assert.ok(seed.customers.length > 0);
+  });
+
+  it("första träffen klonar seedet till sessionens fil; reload läser samma fil", () => {
+    const id = newDemoSessionId();
+    const state = ensureDemoSessionState(id);
+    assert.ok(fs.existsSync(path.join(demoSessionsDir(), `${id}.json`)));
+    // Samma objekt inom instansen (parallella requests delar tillstånd).
+    assert.equal(ensureDemoSessionState(id), state);
+    // Kall instans (tom cache) läser filen – ändringar överlever.
+    state.customers.push(testCustomer({ id: "cust-e2e", name: "Fil-Kund" }));
+    persistDemoSessionState(id, state);
+    __resetDemoSessionCacheForTests();
+    const reloaded = ensureDemoSessionState(id);
+    assert.ok(reloaded.customers.some((c) => c.name === "Fil-Kund"));
+  });
+
+  it("två sessioner är helt isolerade: egna filer, egna kloner", () => {
+    const a = newDemoSessionId();
+    const b = newDemoSessionId();
+    const stateA = ensureDemoSessionState(a);
+    ensureDemoSessionState(b);
+    stateA.customers.push(testCustomer({ id: "cust-a", name: "Bara hos A" }));
+    persistDemoSessionState(a, stateA);
+    __resetDemoSessionCacheForTests();
+    assert.ok(ensureDemoSessionState(a).customers.some((c) => c.name === "Bara hos A"));
+    assert.ok(!ensureDemoSessionState(b).customers.some((c) => c.name === "Bara hos A"));
+  });
+
+  it("återställning skriver över sessionens fil med färskt seed", () => {
+    const id = newDemoSessionId();
+    const state = ensureDemoSessionState(id);
+    state.customers.push(testCustomer({ id: "cust-x", name: "Försvinner" }));
+    persistDemoSessionState(id, state);
+    const fresh = resetDemoSessionState(id);
+    assert.ok(!fresh.customers.some((c) => c.name === "Försvinner"));
+    __resetDemoSessionCacheForTests();
+    assert.ok(!ensureDemoSessionState(id).customers.some((c) => c.name === "Försvinner"));
+  });
+
+  it("avsluta tar bort sessionens fil – och bara den", () => {
+    const a = newDemoSessionId();
+    const b = newDemoSessionId();
+    ensureDemoSessionState(a);
+    ensureDemoSessionState(b);
+    deleteDemoSessionState(a);
+    assert.equal(loadDemoSessionState(a), null);
+    assert.equal(fs.existsSync(path.join(demoSessionsDir(), `${a}.json`)), false);
+    assert.equal(fs.existsSync(path.join(demoSessionsDir(), `${b}.json`)), true);
+  });
+
+  it("katalogstädningen tar utgångna filer men rör inte färska", () => {
+    const gammal = newDemoSessionId();
+    const farsk = newDemoSessionId();
+    ensureDemoSessionState(gammal);
+    ensureDemoSessionState(farsk);
+    const old = new Date(Date.now() - 26 * 3_600_000);
+    fs.utimesSync(path.join(demoSessionsDir(), `${gammal}.json`), old, old);
+    const removed = cleanupExpiredDemoSessions();
+    assert.equal(removed, 1);
+    assert.equal(fs.existsSync(path.join(demoSessionsDir(), `${gammal}.json`)), false);
+    assert.equal(fs.existsSync(path.join(demoSessionsDir(), `${farsk}.json`)), true);
+  });
+
+  it("ogiltiga session-id:n blir aldrig filnamn", () => {
+    assert.throws(() => ensureDemoSessionState("../../../etc/passwd"), /Ogiltigt/);
+    assert.throws(() => ensureDemoSessionState("KORT"), /Ogiltigt/);
+    assert.equal(isValidDemoSessionId("abc"), false);
+    assert.equal(isValidDemoSessionId("a".repeat(65)), false);
   });
 });
 
 describe("rate limit för demostart och återställning", () => {
-  it("tillåter 10 starter per IP inom fönstret, sedan stopp", () => {
+  it("tillåter 6 provisioneringar per IP inom fönstret, sedan stopp", () => {
     const now = Date.now();
-    for (let i = 0; i < 10; i++) assert.equal(rateLimitDemoStart("1.2.3.4", now + i), true);
+    for (let i = 0; i < 6; i++) assert.equal(rateLimitDemoStart("1.2.3.4", now + i), true);
     assert.equal(rateLimitDemoStart("1.2.3.4", now + 100), false);
     // Annan besökare påverkas inte av den första IP:ns tak.
     assert.equal(rateLimitDemoStart("5.6.7.8", now + 100), true);
@@ -145,7 +237,7 @@ describe("rate limit för demostart och återställning", () => {
 
   it("släpper igenom samma IP igen när fönstret passerat", () => {
     const now = Date.now();
-    for (let i = 0; i < 10; i++) rateLimitDemoStart("1.2.3.4", now);
+    for (let i = 0; i < 6; i++) rateLimitDemoStart("1.2.3.4", now);
     assert.equal(rateLimitDemoStart("1.2.3.4", now + 1000), false);
     assert.equal(rateLimitDemoStart("1.2.3.4", now + 11 * 60_000), true);
   });
@@ -153,10 +245,10 @@ describe("rate limit för demostart och återställning", () => {
   it("har ett globalt tak per instans", () => {
     const now = Date.now();
     let allowed = 0;
-    for (let i = 0; i < 130; i++) {
+    for (let i = 0; i < 70; i++) {
       if (rateLimitDemoStart(`ip-${i}`, now)) allowed++;
     }
-    assert.equal(allowed, 120);
+    assert.equal(allowed, 60);
   });
 
   it("återställningen är strypt till en per instans per 20 sekunder", () => {

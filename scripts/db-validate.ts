@@ -1038,20 +1038,72 @@ async function main() {
   }
 
   // Inaktiverat företag: kolumnen finns och medlemsuppslaget filtrerar i appen.
+  // (is_demo är fryst sedan skapandet – rundresan gäller endast disabled_at.)
   await asSuperuser();
-  await expectOk(db, "businesses.disabled_at och is_demo rundresar", async () => {
-    await db.query(`update public.businesses set disabled_at = now(), is_demo = true where id = $1`, [B]);
-    const r = await rows<{ disabled_at: string | null; is_demo: boolean }>(
+  await expectOk(db, "businesses.disabled_at rundresar", async () => {
+    await db.query(`update public.businesses set disabled_at = now() where id = $1`, [B]);
+    const r = await rows<{ disabled_at: string | null }>(
       db,
-      `select disabled_at, is_demo from public.businesses where id = $1`,
+      `select disabled_at from public.businesses where id = $1`,
       [B]
     );
-    if (!r[0]?.disabled_at || !r[0]?.is_demo) throw new Error("kolumnerna sparades inte");
-    await db.query(`update public.businesses set disabled_at = null, is_demo = false where id = $1`, [B]);
+    if (!r[0]?.disabled_at) throw new Error("kolumnen sparades inte");
+    await db.query(`update public.businesses set disabled_at = null where id = $1`, [B]);
   });
+  await expectError(db, "businesses.is_demo är fryst efter skapandet", "is_demo", () =>
+    db.query(`update public.businesses set is_demo = true where id = $1`, [B])
+  );
 
   await asSuperuser();
   await clearPlatformCtx();
+
+  // ------------------------------------------------------------------
+  // Provperiod: trial-stämplar frysta, status ändras bara via grinden
+  // ------------------------------------------------------------------
+  console.log("\nProvperiod – fryst tillstånd:");
+
+  await asSuperuser();
+  await expectOk(db, "trial-kolumner kan sättas vid insert", () =>
+    db.query(
+      `update public.businesses set disabled_at = disabled_at where id = '${A}'` // no-op sanity
+    )
+  );
+  await db.query(
+    `insert into public.businesses (id, name, org_number, trial_started_at, trial_ends_at, subscription_status)
+     values ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1', 'Trial AB', '556000-0100', now(), now() + interval '14 days', 'trialing')`
+  );
+  await expectError(db, "trial_ends_at är fryst efter insert", "provperiodens stämplar", () =>
+    db.query(
+      `update public.businesses set trial_ends_at = now() + interval '1 year'
+        where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1'`
+    )
+  );
+  await expectError(db, "subscription_status ändras inte utan grind", "faktureringsflödet", () =>
+    db.query(
+      `update public.businesses set subscription_status = 'active'
+        where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1'`
+    )
+  );
+  await expectOk(db, "subscription_status ändras med faktureringsgrinden", async () => {
+    await db.exec(`begin`);
+    try {
+      await db.query(`select set_config('app.allow_subscription_update', '1', true)`);
+      await db.query(
+        `update public.businesses set subscription_status = 'active'
+          where id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1'`
+      );
+      await db.exec(`commit`);
+    } catch (e) {
+      await db.exec(`rollback`);
+      throw e;
+    }
+  });
+  await expectError(db, "subscription_status accepterar bara kända värden (CHECK)", "businesses_subscription_status_check", () =>
+    db.query(
+      `insert into public.businesses (id, name, org_number, subscription_status)
+       values ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2', 'Trial fel', '556000-0101', 'gratis')`
+    )
+  );
 
   // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);

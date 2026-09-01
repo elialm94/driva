@@ -14,7 +14,6 @@ import { ensurePageBusiness, getSessionUser, isDemoSession } from "@/lib/auth/se
 import { resolveOptionalFeatures } from "@/lib/features";
 import { LOCAL_JSON_BUSINESS_ID } from "@/lib/collaboration/actor";
 import { hydrateInvitationsFromTenant } from "@/lib/collaboration/service";
-import { isSupabaseMode } from "@/lib/storage/config";
 import { tenantContext } from "@/lib/storage/context";
 import { requestSlot } from "@/lib/storage/request-scope";
 import { db } from "@/lib/store";
@@ -52,9 +51,8 @@ export default async function SettingsPage(props: {
         })()}
         account={{ demo: demoAccount, email: sessionUser?.email ?? null }}
         features={(() => {
-          const businessId = isSupabaseMode()
-            ? requestSlot().businessId ?? tenantContext()?.businessId ?? LOCAL_JSON_BUSINESS_ID
-            : LOCAL_JSON_BUSINESS_ID;
+          const businessId =
+            requestSlot().businessId ?? tenantContext()?.businessId ?? LOCAL_JSON_BUSINESS_ID;
           hydrateInvitationsFromTenant(businessId);
           return resolveOptionalFeatures(db(), businessId);
         })()}

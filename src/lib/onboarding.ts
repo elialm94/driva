@@ -94,7 +94,7 @@ function isPaymentMethod(value: string): value is OnboardingPaymentMethod {
   return value === "bankgiro" || value === "plusgiro" || value === "bankkonto";
 }
 
-function looksLikePhone(value: string): boolean {
+export function looksLikePhone(value: string): boolean {
   if (/[a-zA-ZåäöÅÄÖ]/.test(value)) return false;
   const digits = value.replace(/\D/g, "");
   return digits.length >= 8 && digits.length <= 15;

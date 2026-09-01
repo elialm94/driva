@@ -10,12 +10,13 @@
  *   --email <adress>     inloggningsmejl (standard: agare@driva.test)
  *   --password <lösen>   lösenord (standard: slumpas och skrivs ut)
  *   --empty              skapa bara användare + tomt företag, ingen demodata
- *   --demo               seeda det PUBLIKA demoföretaget: företaget skapas
- *                        med businesses.is_demo (fryst – krävs av både
- *                        /demo-inloggningen och återställningsvägen).
- *                        E-post/lösen tas från DEMO_USER_EMAIL /
- *                        DEMO_USER_PASSWORD om de är satta – samma värden
- *                        ska sedan in i Vercels servermiljö.
+ *   --demo               seeda ett INTERNT demoföretag (sandlåda med riktig
+ *                        inloggning): företaget skapas med businesses.is_demo
+ *                        (fryst kolumn) så att servergrindarna för externa
+ *                        sidoeffekter gäller och app.reset_demo_business kan
+ *                        återställa det. OBS: den PUBLIKA demon (/demo) bor
+ *                        i JSON-filer per besökare och behöver ingen seedning
+ *                        – se "Publik demo" i README.
  *
  * Körs ALDRIG automatiskt – endast manuellt av en utvecklare. Vägrar köra
  * om företaget redan innehåller data.
@@ -43,12 +44,8 @@ async function main() {
   }
 
   const args = parseArgs(process.argv.slice(2));
-  const email =
-    args.email ?? (args.demo ? process.env.DEMO_USER_EMAIL?.trim() || "demo@driva.test" : "agare@driva.test");
-  const password =
-    args.password ??
-    (args.demo ? process.env.DEMO_USER_PASSWORD?.trim() : undefined) ??
-    crypto.randomBytes(9).toString("base64url");
+  const email = args.email ?? (args.demo ? "demo@driva.test" : "agare@driva.test");
+  const password = args.password ?? crypto.randomBytes(9).toString("base64url");
 
   const { createBusinessWithOwner, membershipsForUser, sqlClient } = await import(
     "../src/lib/storage/adapter-supabase"
@@ -145,12 +142,6 @@ async function main() {
   console.log(`  E-post:   ${email}`);
   if (createdUser) console.log(`  Lösenord: ${password}`);
   console.log(`  Företag:  ${businessId}`);
-  if (args.demo) {
-    console.log("\nFör den publika demon: sätt i Vercels servermiljö (aldrig i klientkod):");
-    console.log(`  DEMO_USER_EMAIL=${email}`);
-    console.log(`  DEMO_USER_PASSWORD=${createdUser ? password : "<demo-användarens lösenord>"}`);
-  }
-
   const client = await sqlClient();
   await client.close();
 }

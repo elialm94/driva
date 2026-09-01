@@ -66,10 +66,19 @@ declare global {
 
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
+/**
+ * Demosessioner får exempeladresser även när nyckeln finns – anonyma
+ * besökare ska inte generera Places-kostnad. App-skalet sätter attributet
+ * på serversidan (isDemoSession), så gränsen kan inte stängas av från klienten.
+ */
+function isDemoSurface(): boolean {
+  return typeof document !== "undefined" && document.querySelector("[data-driva-demo]") !== null;
+}
+
 let placesLoader: Promise<PlacesLib | null> | null = null;
 
 function loadPlaces(): Promise<PlacesLib | null> {
-  if (!MAPS_KEY) return Promise.resolve(null);
+  if (!MAPS_KEY || isDemoSurface()) return Promise.resolve(null);
   if (placesLoader) return placesLoader;
   placesLoader = new Promise((resolve) => {
     const boot = () => {
@@ -158,13 +167,16 @@ export function AddressFields({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const liveMode = !!MAPS_KEY;
+  // Källan (Google/demo) avgörs per sökning – DOM-attributet finns bara på
+  // klienten, och dropdownen visas först efter en sökning. Ingen effekt behövs.
+  const [liveMode, setLiveMode] = useState(false);
 
   const search = useCallback(async (query: string) => {
     const seq = ++requestSeq.current;
 
-    if (!MAPS_KEY) {
+    if (!MAPS_KEY || isDemoSurface()) {
       const result = demoSuggestions(query);
+      setLiveMode(false);
       setSuggestions(result);
       setOpen(result.length > 0);
       setHighlight(0);
@@ -177,6 +189,7 @@ export function AddressFields({
       return;
     }
 
+    setLiveMode(true);
     setSearching(true);
     const lib = await loadPlaces();
     if (!lib || seq !== requestSeq.current) {
@@ -231,7 +244,8 @@ export function AddressFields({
     setAddress(value);
     emit({ address: value, postalCode, city });
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => void search(value), liveMode ? 250 : 80);
+    const live = Boolean(MAPS_KEY) && !isDemoSurface();
+    debounceRef.current = setTimeout(() => void search(value), live ? 250 : 80);
   }
 
   async function pick(s: Suggestion) {
@@ -322,7 +336,9 @@ export function AddressFields({
                 <>
                   <DemoTag>Demo</DemoTag>
                   <span className="text-[11px] text-muted">
-                    Exempeladresser – sätt NEXT_PUBLIC_GOOGLE_MAPS_API_KEY för riktig Google Maps-sökning
+                    {MAPS_KEY
+                      ? "Exempeladresser i demon"
+                      : "Exempeladresser – sätt NEXT_PUBLIC_GOOGLE_MAPS_API_KEY för riktig Google Maps-sökning"}
                   </span>
                 </>
               )}
