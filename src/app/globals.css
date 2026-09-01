@@ -103,6 +103,23 @@ input, textarea, select {
 }
 
 /*
+ * Sifferfältens inbyggda upp/ned-pilar döljs. De ritas i webbläsarens egen
+ * stil och lägger sig ovanpå fältens suffix ("kr/tim exkl. moms", "dagar"),
+ * så boxen ser trasig ut. Belopp, dagar och procent skrivs – de stegas inte.
+ */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+/*
  * iOS Safari zoomar in på fokuserade fält vars font-size är under 16px.
  * På touch-skärmar och smala viewports tvingas fältstorleken upp till 16px
  * i stället för user-scalable-hack. Desktop behåller den tätare 14px-skalan.
