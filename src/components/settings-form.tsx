@@ -744,7 +744,7 @@ export function SettingsForm({
                       min={1}
                       step={1}
                       inputMode="numeric"
-                      placeholder=""
+                      placeholder="t.ex. 650"
                       value={form.defaultHourlyRate}
                       onChange={(e) => patch("defaultHourlyRate", e.target.value)}
                       {...fieldMarkProps("defaultHourlyRate", cx(inputCls, "pr-28"))}
