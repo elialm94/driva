@@ -117,7 +117,7 @@ export async function acceptCollaboratorInvite(input: {
   email: string;
   name: string;
 }): Promise<{ businessId: string; role: CollaborationRole }> {
-  let inv = await lookupInvitation(input.token);
+  const inv = await lookupInvitation(input.token);
   if (!inv) throw new Error("Inbjudan finns inte eller är ogiltig.");
   try {
     if (!resolveOptionalFeatures(db(), inv.businessId).collaboration) {

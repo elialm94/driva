@@ -14,11 +14,9 @@ import {
   inboxDisplayStatus,
   inboxDocumentTitle,
   isInboxItemOpen,
-  needsAmountReview,
   type ExtractedFieldState,
   type InboxDisplayStatus,
-  type InboxStatusTone,
-} from "../inbox/workflow";
+  type InboxStatusTone } from "../inbox/workflow";
 import type {
   ExtractedField,
   InboxAttachment,

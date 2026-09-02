@@ -13,7 +13,7 @@ import {
   invoiceTaxReductionView,
   lineTypeNote,
 } from "./document-view";
-import { emptyTestDb, labor, rotReadyCustomer, testCustomer, testWorkLocation } from "./test-db";
+import { emptyTestDb, labor, rotReadyCustomer, testWorkLocation } from "./test-db";
 import { getInvoice } from "../services/data";
 
 function reset(over: Parameters<typeof emptyTestDb>[0] = {}) {

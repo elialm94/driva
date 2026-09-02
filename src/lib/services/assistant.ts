@@ -907,8 +907,8 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
       // Återanvänder leverantörens VERIFIERADE uppgifter via samma tjänst som
       // UI:t – proveniens supplier_history, aldrig något AI:n angett själv.
       try {
-        const { useVerifiedSupplierDetails } = await import("./supplier-payments");
-        const { invoice, details } = useVerifiedSupplierDetails(action.supplierInvoiceId);
+        const { applyVerifiedSupplierDetails } = await import("./supplier-payments");
+        const { invoice, details } = applyVerifiedSupplierDetails(action.supplierInvoiceId);
         updateConfirmCard(actionId, "utford", "Betalningsuppgifterna är kompletterade.");
         reply(
           `Klart – ${invoice.supplier} ${invoice.invoiceNumber} använder nu de tidigare verifierade uppgifterna (${details.account}). Betalningen skickas inte förrän du godkänner den.`,

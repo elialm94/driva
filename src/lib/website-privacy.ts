@@ -57,7 +57,7 @@ export const PRIVACY_COMPANY_TOKENS = {
 export type PrivacyCompanyToken = (typeof PRIVACY_COMPANY_TOKENS)[keyof typeof PRIVACY_COMPANY_TOKENS];
 
 /** Framtida tillägg – bara stycken som faktiskt är på. */
-export interface WebsitePrivacyIntegrations {}
+export type WebsitePrivacyIntegrations = Record<string, never>;
 
 export interface PrivacyPolicySection {
   id: string;

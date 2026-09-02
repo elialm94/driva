@@ -32,7 +32,7 @@ import { issueInvoice } from "@/lib/services/invoices";
 import { getInvoiceSendBlockers, InvoiceNotReadyError } from "@/lib/invoices/validate";
 import { userFacingInvoiceSendError, userFacingIssueError } from "@/lib/invoices/issue-errors";
 import { QuoteNotReadyError } from "@/lib/services/quotes";
-import { getInvoice, getQuoteByToken } from "@/lib/services/data";
+import { getQuoteByToken } from "@/lib/services/data";
 import {
   completeReminder,
   describeSnoozeUntil,
@@ -72,7 +72,7 @@ import {
   confirmChangedPaymentDetails,
   prepareSupplierPayment,
   submitSupplierPayment,
-  useVerifiedSupplierDetails,
+  applyVerifiedSupplierDetails,
   verifySupplierPaymentDetails,
 } from "@/lib/services/supplier-payments";
 import { requestPaymentDetailsFromSupplier } from "@/lib/services/payment-details";
@@ -1182,12 +1182,12 @@ export async function verifySupplierPaymentDetailsAction(input: {
 }
 
 /** Återanvänd tidigare VERIFIERADE uppgifter för samma leverantör. */
-export async function useVerifiedSupplierDetailsAction(
+export async function applyVerifiedSupplierDetailsAction(
   supplierInvoiceId: string
 ): Promise<{ ok: true; account: string } | { ok: false; error: string }> {
   return withBusiness(() => {
     try {
-      const { details } = useVerifiedSupplierDetails(supplierInvoiceId);
+      const { details } = applyVerifiedSupplierDetails(supplierInvoiceId);
       refresh();
       return { ok: true as const, account: details.account };
     } catch (e) {

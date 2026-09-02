@@ -18,12 +18,10 @@ import type {
   QuoteChainState,
 } from "../business-chain-model";
 import {
-  countsTowardInvoiced,
   currentVersion,
   getJob,
   getQuote,
   invoiceTotals,
-  isOpenReceivable,
   jobQuote,
   quoteTotals,
 } from "./data";

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { setWebsiteFooterAction } from "@/app/actions";
-import type { CompanySettings, Website, WebsiteFooter } from "@/lib/types";
+import type { CompanySettings, Website } from "@/lib/types";
 import {
   FOOTER_ABOUT_MAX,
   SOCIAL_NETWORK_LABELS,

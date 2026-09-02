@@ -1,7 +1,6 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
 import type { Customer } from "../types";
-import { logActivity } from "./activity";
 import { normalizePersonnummer } from "../personnummer";
 import {
   normalizeSwedishOrganizationNumber,

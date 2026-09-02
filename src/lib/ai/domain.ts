@@ -14,7 +14,7 @@ import type {
 import { createCustomer } from "../services/customers";
 import { createQuote, quoteDefaults } from "../services/quotes";
 import { plainTextToRichText } from "../quote-description";
-import { createJob, deleteOrArchiveJob, findMatchingUnquotedJob, jobRemovalPolicy, reopenJob, setJobStatus } from "../services/jobs";
+import { createJob, findMatchingUnquotedJob, jobRemovalPolicy, reopenJob, setJobStatus } from "../services/jobs";
 import { findWorkLocationByHint, formatLocationAddress, workLocationToHousing, workLocationsForModel } from "../services/work-locations";
 import { createFinalInvoiceForJob, createInvoice, createInvoiceForJob, createNextInvoiceForJob, discardInvoice, updateInvoice, type InvoiceInput, type JobInvoiceBasis } from "../services/invoices";
 import { addJobMaterial, actualEntries, jobInvoiceChoice, registerJobTime } from "../services/job-work";
@@ -39,7 +39,6 @@ import {
 import { maskPersonnummer } from "../personnummer";
 import { businessStats, financeOverview, momsForCurrentPeriod } from "../services/finance";
 import {
-  applyBusinessProfilePatch,
   billingReadiness,
   getBusinessProfile,
   getInvoiceDefaults,

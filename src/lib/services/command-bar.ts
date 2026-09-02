@@ -16,7 +16,6 @@ import {
   parseReminderCommandInput,
   parseReminderText,
   parseWhenText,
-  prettyReminderTitle,
   relatedFromTitle,
 } from "../reminders/parse";
 import { businessTimezone, dismissReminder } from "./reminders";

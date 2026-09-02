@@ -7,7 +7,7 @@ import { emptyTestDb, labor } from "./invoices/test-db";
 import { createInvoice, issueInvoice, markInvoicePaid } from "./services/invoices";
 import { answerExpenseQuestion } from "./services/expenses";
 import { receiveSupplierInvoice } from "./services/suppliers";
-import { postVerification, PostingError, verificationLabel } from "./accounting/engine";
+import { PostingError, verificationLabel } from "./accounting/engine";
 import { accountBalance } from "./accounting/ledger";
 import { lockPeriod } from "./accounting/fiscal";
 import { bokforingsdatum } from "./accounting/dates";

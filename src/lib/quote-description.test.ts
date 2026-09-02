@@ -17,7 +17,7 @@ process.env.DRIVA_TEST = "1";
 
 import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import type { DB, Quote, QuoteVersion } from "./types";
+import type { Quote, QuoteVersion } from "./types";
 import type { RichTextDoc } from "./richtext";
 import { richTextToPlain } from "./richtext";
 import {

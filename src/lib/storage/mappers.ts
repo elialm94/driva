@@ -55,7 +55,7 @@ import type {
   Website,
   WorkLocation,
 } from "@/lib/types";
-import { lineKindOf, syncDocLineClassification } from "@/lib/economic-line-type";
+import { syncDocLineClassification } from "@/lib/economic-line-type";
 import { migrateQuoteVersionDescription } from "@/lib/quote-description";
 import { withoutRetiredSections } from "@/lib/website-sections";
 import type { SqlRow } from "./executor";

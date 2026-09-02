@@ -1,4 +1,4 @@
-import { db, save } from "../store";
+import { save } from "../store";
 import { uid } from "../ids";
 import type { Customer, DwellingType, HousingDetails, Job, WorkLocation } from "../types";
 import {

@@ -67,6 +67,7 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
               Ladda om
             </button>
           </form>
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- global-error ersätter rotlayouten; klientrouterns <Link> finns inte här */}
           <a
             href="/"
             style={{

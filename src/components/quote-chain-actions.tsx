@@ -58,9 +58,11 @@ export function QuoteChainActions({
     });
   }
 
-  function Button({ cta, variant }: { cta: ChainCta; variant: "accent" | "secondary" }) {
+  // Renderfunktion, inte en komponent: en komponent deklarerad i render får ny
+  // identitet varje gång och nollställer sitt tillstånd.
+  function renderButton(cta: ChainCta, variant: "accent" | "secondary", key?: string) {
     return (
-      <button type="button" className={buttonClasses(variant)} disabled={isPending} onClick={() => run(cta)}>
+      <button key={key} type="button" className={buttonClasses(variant)} disabled={isPending} onClick={() => run(cta)}>
         {cta.kind === "starta_uppdrag" || cta.kind === "oppna_uppdrag" ? (
           <Hammer className="size-4" />
         ) : (
@@ -77,10 +79,8 @@ export function QuoteChainActions({
 
   return (
     <>
-      {state.primary ? <Button cta={state.primary} variant="accent" /> : null}
-      {state.secondary.map((cta) => (
-        <Button key={cta.kind + (cta.quoteId ?? cta.jobId ?? "")} cta={cta} variant="secondary" />
-      ))}
+      {state.primary ? renderButton(state.primary, "accent") : null}
+      {state.secondary.map((cta) => renderButton(cta, "secondary", cta.kind + (cta.quoteId ?? cta.jobId ?? "")))}
       {state.waitingLabel ? <p className="text-[14px] font-medium text-soft">{state.waitingLabel}</p> : null}
       {state.overflow.length > 0 ? (
         <ActionMenu>

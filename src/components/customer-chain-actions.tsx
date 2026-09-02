@@ -8,7 +8,6 @@ import { createInvoiceFromQuoteAction, startJobFromQuoteAction } from "@/app/act
 import { invoiceEditHref, jobHref, newInvoiceHref, newQuoteHref } from "@/lib/nav";
 import type { CustomerChainCtas } from "@/lib/business-chain-model";
 import { NewUppdragButton, type JobWorkLocationOption } from "./uppdrag-form";
-import type { CustomerOption } from "./customer-picker";
 
 export function CustomerChainActions({
   customerId,

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Check, CircleAlert, FileText, Lock, Wrench } from "lucide-react";
 import { db } from "@/lib/store";
-import { kr, datumKort, datumLang } from "@/lib/format";
+import { kr, datumKort } from "@/lib/format";
 import { Badge, Card, PageHeader, SectionTitle, cx } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import {

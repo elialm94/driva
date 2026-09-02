@@ -8,7 +8,7 @@ import { buttonClasses, cx } from "./ui";
 import {
   confirmChangedSupplierDetailsAction,
   requestSupplierDetailsAction,
-  useVerifiedSupplierDetailsAction,
+  applyVerifiedSupplierDetailsAction,
   verifySupplierPaymentDetailsAction,
 } from "@/app/actions";
 import type { ActionConfirm, ActionCta, PaymentDetailsQueueItem } from "@/lib/services/actions";
@@ -323,7 +323,7 @@ export function PaymentDetailsCta({
 
   function execute() {
     if (cta.type === "useVerifiedSupplierDetails") {
-      runConfirmed(() => useVerifiedSupplierDetailsAction(cta.supplierInvoiceId), "Uppgifterna återanvända");
+      runConfirmed(() => applyVerifiedSupplierDetailsAction(cta.supplierInvoiceId), "Uppgifterna återanvända");
     } else if (cta.type === "confirmChangedSupplierDetails") {
       runConfirmed(() => confirmChangedSupplierDetailsAction(cta.supplierInvoiceId), "Uppgifterna godkända");
     } else if (cta.type === "requestSupplierDetails") {
@@ -524,7 +524,7 @@ export function SupplierPaymentDetailsPanel(props: PaymentDetailsPanelProps) {
         pending={pending}
         error={error}
         onConfirm={() =>
-          runConfirmed(() => useVerifiedSupplierDetailsAction(props.supplierInvoiceId), "Uppgifterna återanvända")
+          runConfirmed(() => applyVerifiedSupplierDetailsAction(props.supplierInvoiceId), "Uppgifterna återanvända")
         }
       />
       <ConfirmRowsDialog
@@ -725,7 +725,7 @@ function QueueRow({ item, done, onDone }: { item: PaymentDetailsQueueItem; done:
                 onConfirm={() =>
                   runConfirmed(() =>
                     action.kind === "reuse"
-                      ? useVerifiedSupplierDetailsAction(item.supplierInvoiceId)
+                      ? applyVerifiedSupplierDetailsAction(item.supplierInvoiceId)
                       : requestSupplierDetailsAction(item.supplierInvoiceId)
                   )
                 }

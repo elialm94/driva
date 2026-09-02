@@ -11,7 +11,7 @@ process.env.DRIVA_TEST = "1";
  */
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { db, replaceDb } from "./store";
+import { replaceDb } from "./store";
 import { emptyTestDb } from "./invoices/test-db";
 import { resetPlatformRegistry, platformRegistry } from "./platform/registry";
 import {

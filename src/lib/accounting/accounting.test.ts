@@ -9,7 +9,7 @@ import { answerExpenseQuestion, undoExpenseBooking } from "../services/expenses"
 import { receiveSupplierInvoice } from "../services/suppliers";
 import { paySupplierInvoice, simulateIncomingPayment } from "../services/banking";
 import { postVerification, createCorrection, PostingError, validateEntries } from "./engine";
-import { accountBalance, balansrapport, ledgerIntegrity, resultatrapport, saldobalans, huvudbok } from "./ledger";
+import { accountBalance, balansrapport, ledgerIntegrity, saldobalans, huvudbok } from "./ledger";
 import { computeVatPosition, generateVatReport, markVatReportDeclared, vatPeriods } from "./vat";
 import { lockPeriod, isDateLocked, clampToOpenDate, fiscalYears, ensureFiscalYearFor } from "./fiscal";
 import { registerAssetFromExpense, createDepreciationEntry, depreciationForYear, INVENTARIE_GRANS, bookValue } from "./assets";

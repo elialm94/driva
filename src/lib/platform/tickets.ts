@@ -16,7 +16,6 @@ import {
 import {
   isAllowedTicketAttachmentMime,
   storeSupportAttachment,
-  TICKET_ATTACHMENT_MAX_BYTES,
 } from "./ticket-attachments";
 import type {
   PlatformAdmin,

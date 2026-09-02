@@ -484,7 +484,7 @@ export function verifySupplierPaymentDetails(input: VerifyPaymentDetailsInput): 
  * så uppgifter kan aldrig hittas på. OCR återanvänds ALDRIG från en annan
  * faktura – den är fakturaspecifik.
  */
-export function useVerifiedSupplierDetails(invoiceId: string): {
+export function applyVerifiedSupplierDetails(invoiceId: string): {
   invoice: SupplierInvoice;
   details: SupplierVerifiedDetails;
 } {

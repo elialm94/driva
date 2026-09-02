@@ -2216,9 +2216,9 @@ const specs: ToolSpec[] = [
         parameters: obj({ expenseId: { type: "string" }, message: { type: "string" } }, ["expenseId"]),
       },
     },
-    handler: (args) => {
-      const { currentActor } = require("../collaboration/actor") as typeof import("../collaboration/actor");
-      const { requestClientInformation } = require("../collaboration/requests") as typeof import("../collaboration/requests");
+    handler: async (args) => {
+      const { currentActor } = await import("../collaboration/actor");
+      const { requestClientInformation } = await import("../collaboration/requests");
       const actor = currentActor();
       if (!actor || (actor.role !== "accounting_consultant" && actor.role !== "owner" && actor.role !== "admin")) {
         return { ok: false, forModel: {}, error: "Bara redovisningskonsulten kan be kunden om underlag." };
@@ -2251,10 +2251,10 @@ const specs: ToolSpec[] = [
       },
     },
     handler: async (_args, options) => {
-      const { accountantQueue, ACCOUNTANT_ISSUE_LABEL, accountantIssueType } = require("../collaboration/issues") as typeof import("../collaboration/issues");
-      const { listAccountantClients } = require("../collaboration/clients") as typeof import("../collaboration/clients");
-      const { attentionForBusiness } = require("../collaboration/portfolio") as typeof import("../collaboration/portfolio");
-      const { currentActor } = require("../collaboration/actor") as typeof import("../collaboration/actor");
+      const { accountantQueue, ACCOUNTANT_ISSUE_LABEL, accountantIssueType } = await import("../collaboration/issues");
+      const { listAccountantClients } = await import("../collaboration/clients");
+      const { attentionForBusiness } = await import("../collaboration/portfolio");
+      const { currentActor } = await import("../collaboration/actor");
       const scope = options?.accountantScope === "all_clients" ? "all_clients" : "current";
 
       if (scope === "all_clients") {

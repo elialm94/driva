@@ -2,7 +2,6 @@ import {
   validateSwedishEmail,
   validateSwedishOrganizationNumber,
   validateSwedishPersonalIdentityNumber,
-  validateSwedishPhone,
   validateSwedishPostalCode,
 } from "./validation";
 import type { DwellingType } from "./types";

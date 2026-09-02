@@ -1,15 +1,13 @@
 import { db, save } from "../store";
-import type { BankTransaction, Invoice } from "../types";
+import type { BankTransaction } from "../types";
 import {
   getInvoice,
   invoiceOutstanding,
-  invoiceTotals,
   isOpenReceivable,
   requireCustomer,
 } from "./data";
 import { creditRefundDue, registerCreditRefund, registerInvoicePayment } from "./invoices";
 import {
-  CONFIDENCE_THRESHOLDS,
   ORE_TOLERANS_KR,
   decideFromConfidence,
   type AutopilotOutcome,

@@ -20,7 +20,7 @@ import {
   latestPaymentForInvoice,
   prepareSupplierPayment,
   submitSupplierPayment,
-  useVerifiedSupplierDetails,
+  applyVerifiedSupplierDetails,
   verifySupplierPaymentDetails,
 } from "./services/supplier-payments";
 import {
@@ -206,7 +206,7 @@ describe("verifierad leverantörshistorik och ändrade uppgifter", () => {
     assert.equal(info.previous?.account, "991-2345");
     assert.equal(info.previous?.source, "paid_payment");
 
-    const { invoice, details } = useVerifiedSupplierDetails(next.id);
+    const { invoice, details } = applyVerifiedSupplierDetails(next.id);
     assert.equal(details.account, "991-2345");
     assert.equal(invoice.paymentDetails?.verified?.source, "supplier_history");
     assert.equal(paymentDetailsInfo(invoice).cause, "VERIFIED");
@@ -232,7 +232,7 @@ describe("verifierad leverantörshistorik och ändrade uppgifter", () => {
       description: "Utan uppgifter",
     });
     assert.equal(paymentDetailsInfo(next).reusable, false);
-    assert.throws(() => useVerifiedSupplierDetails(next.id), /inga tidigare verifierade/);
+    assert.throws(() => applyVerifiedSupplierDetails(next.id), /inga tidigare verifierade/);
   });
 
   it("CHANGED kräver explicit mänskligt godkännande – aldrig automatik, aldrig återanvändning", () => {
@@ -247,7 +247,7 @@ describe("verifierad leverantörshistorik och ändrade uppgifter", () => {
     });
     assert.equal(paymentDetailsInfo(next).cause, "CHANGED");
     // Gamla uppgifter får inte återanvändas rakt över en flaggad ändring.
-    assert.throws(() => useVerifiedSupplierDetails(next.id), /kontrollera ändringen/i);
+    assert.throws(() => applyVerifiedSupplierDetails(next.id), /kontrollera ändringen/i);
 
     const payment = prepareSupplierPayment({ supplierInvoiceId: next.id });
     assert.equal(payment.destinationChanged, true);

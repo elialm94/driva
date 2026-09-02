@@ -15,7 +15,7 @@ import {
 import { importQuotedBaseline, isIssuedLinked, jobWorkEntries } from "./job-work";
 import { invoicesForJob } from "./job-economy";
 import { discardInvoice } from "./invoices";
-import type { JobCompleteWarning, JobRemovalKind, JobRemovalPolicy } from "../job-ui-types";
+import type { JobCompleteWarning, JobRemovalPolicy } from "../job-ui-types";
 export type { JobCompleteWarning, JobRemovalKind, JobRemovalPolicy } from "../job-ui-types";
 
 export function createJobFromQuote(quote: Quote): Job {

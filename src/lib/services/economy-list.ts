@@ -13,13 +13,10 @@ import {
   INVOICE_CREDIT_NOTE,
   INVOICE_STATUS,
   INVOICE_STATUS_FILTER,
-  PAYMENT_DETAILS_CAUSE,
   QUOTE_STATUS,
   QUOTE_STATUS_FILTER,
-  SUPPLIER_INVOICE_LIFECYCLE,
   TX_STATUS,
   invoiceOverdueLabel,
-  supplierPaymentStatus,
 } from "../status-labels";
 import { compareEconomyRows, type EconomySortState, type EconomySortable } from "../economy-sort";
 

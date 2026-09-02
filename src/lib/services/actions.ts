@@ -1,5 +1,5 @@
 import { db } from "../store";
-import type { Invoice, Job, SupplierInvoice } from "../types";
+import type { Invoice, SupplierInvoice } from "../types";
 import {
   daysOverdue,
   effectiveQuoteStatus,
