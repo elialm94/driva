@@ -15,7 +15,7 @@ Use this file to answer, without rediscovering the app:
 
 **Status vocabulary:** one source — `src/lib/status-labels.ts`. Never show raw enums (`skickad`, `POSTED`, `pending`) as primary UI. BankID is a **method**, not a status.
 
-**Unknowns** are marked `UNKNOWN`. Facts below are from code + the live demo on 2026-09-01 unless noted.
+**Unknowns** are marked `UNKNOWN`. Facts below are from code + the live demo on 2026-09-01 unless noted. Updated 2026-09-02 for PR #77 (mock-BankID gate, receipt file storage) from code only.
 
 ---
 
@@ -76,6 +76,8 @@ Proxy (Next 16 middleware): `src/proxy.ts`. Real auth is always server-side (`en
 
 **Public prefixes** (no login): `/login`, `/signup`, `/verifiera-epost`, `/glomt-losenord`, `/auth/bekrafta`, `/demo`, `/valkommen`, `/villkor`, `/integritet`, `/offert`, `/faktura`, `/sajt`, `/integritetspolicy`, `/inbjudan`, `/api/health`, `/admin/inbjudan`, `/api/bankid`, `/api/inbox`, `/api/dev`.
 
+`/api/kvitto/[receiptId]` is **not** public — it requires a session or demo cookie (`withBusinessRead`).
+
 **Logged-out `/`:** rewrite to `/valkommen` (URL stays `/`). **`/valkommen`:** redirect to `/`.
 
 **Protected + no session + no demo cookie:** redirect `/login?next=<path>`.
@@ -122,7 +124,7 @@ auth.users
         ├── jobs → job_work_entries
         ├── quotes → quote_versions; signatures (1:1); bankid_orders
         ├── invoices → invoice_line_items; invoice_issued_snapshots; payments
-        ├── expenses → receipts
+        ├── expenses → receipts (file: storage_path in bucket `receipts` XOR content_base64)
         ├── supplier_invoices → supplier_payments → payment_files
         ├── bank_accounts → bank_transactions
         ├── inbox_items
@@ -158,8 +160,10 @@ Platform (not tenant): `platform_admins`, `platform_admin_invitations`, `support
 
 Two layers (`src/lib/demo.ts`):
 
-1. **`isDemoMode()`** — env: `DRIVA_DEMO=1` force on; `=0` force off; production default off; local JSON/dev default on. Gates **fake money** (simulate payment, mock BankID, ROT payout demo).
-2. **`isDemoBusiness()`** — `db().meta.demo === true` from `businesses.is_demo`. Public seeded demo company in Supabase.
+1. **`isDemoMode()`** — env: `DRIVA_DEMO=1` force on; `=0` force off; production default off; local JSON/dev default on. Gates **fake money** (simulate payment, ROT payout demo, exempelkvitto).
+2. **`isDemoBusiness()`** — `db().meta.demo === true` from `businesses.is_demo`. Public seeded demo company in Supabase. Public `/demo` session clones also set `meta.demo = true` (`demo-session-store.ts`).
+
+**Mock BankID** is gated server-side by `bankidSigningAvailable()` (`src/lib/services/bankid.ts`): allowed when `isDemoMode() || isDemoBusiness()`; a real provider (`environment === "production"`) is always allowed. A real business in production without a real provider **cannot** sign — the mock throws `BankIDUnavailableError`. See [Offerter](#offerter-quotes).
 
 Public **Se demo** does **not** use Supabase. `GET /demo` (`src/app/demo/route.ts`) sets httpOnly cookie `driva_demo` (`<expiresMs>.<sessionId>`), clones `buildSeed()` (`src/lib/seed.ts`) to `.data/demo-sessions/<id>.json` (or `/tmp` on serverless). Incognito = new clone.
 
@@ -218,7 +222,8 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications, published 
 | Auth | Cookie / no login | Email + password |
 | Data | Isolated JSON clone | RLS tenant |
 | Outbound mail | Simulated | Resend if configured |
-| BankID | Mock, UI **Demo-signering** | Real RP API if configured |
+| BankID | Mock, UI **Demo-signering** | Real RP API if configured; otherwise **no signing** — public quote shows *Godkännande med BankID är inte aktiverat ännu*, `/api/bankid/start` → 503, `/api/bankid/demo` → 404 |
+| Receipt file (Ladda upp kvitto) | Inline `content_base64` (≤ 1,5 MB) | Private bucket `receipts` with `SUPABASE_SERVICE_ROLE_KEY`; inline fallback without it |
 | Bank / payments | Simulated Tink; **Simulera betalning** | Honest “not configured” — never fake success |
 | Places | Local examples | Google Places if key set |
 | AI | Optional; honest fallback if no key | Same |
@@ -294,7 +299,7 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications, published 
 - **Route:** `/` (authenticated or demo). File: `src/app/(app)/page.tsx`. Title *Hem*.
 - **How to get there:** Logo, nav **Hem**, `/assistent` redirect, post-login default.
 - **Layout (live demo):** greeting (*God eftermiddag* etc.) → command bar → **Behöver din uppmärksamhet** (first 5, *Visa N till*) → **På gång** → **Påminnelser**.
-- **Main actions:** type in command bar; click attention CTAs (Skicka påminnelse, Skapa bankfil, Öppna bokföring, …); reminder Klar / Snooza / Redigera / Ta bort.
+- **Main actions:** type in command bar; click attention CTAs (Skicka påminnelse, Skapa bankfil, Öppna bokföring, **Lägg till kvitto** = file picker that now stores the file, …); reminder Klar / Snooza / Redigera / Ta bort.
 - **Related:** same action engine as Bokföring (`src/lib/services/actions.ts`, `action-views.ts`). Hem shows a **projection** (`projectHomeAttention`), not a second queue.
 - **Components:** `command-bar.tsx`, `attention-list.tsx`, `watching-list.tsx`, `home-reminders.tsx`.
 - **DB:** derived from invoices, quotes, inbox, expenses, VAT, plus `reminders`, `attention_states`.
@@ -432,7 +437,8 @@ Two different systems:
 - **Main actions — skickad:** Öppna kundvyn · Kopiera kundlänk · PDF · Skicka påminnelse · chain (Starta uppdrag / Skapa faktura). Owner dismiss from Hem: **Inte aktuell**.
 - **Main actions — signerad/avböjd:** Ny version (new version → utkast) · Öppna kundvyn.
 - **Public `/offert/[token]`:** utkast → **404**. Bottom bar: Offertvärde, **Avböj offerten**, **Ställ en fråga**, **Signera med BankID**. First open → `viewedAt` / *Öppnad av kunden*.
-- **BankID:** `src/components/bankid-flow.tsx`, `/api/bankid/*`. Demo = mock. Success locks version (`lockedAt`, `contentHash`), inserts `signatures` (unique per quote).
+  - **When signing is unavailable** (`bankidSigningAvailable()` false — real business, production, no real provider): the BankID button is **hidden**, bottom bar still shows Offertvärde + **Ställ en fråga**, and an info card above the document reads *Godkännande med BankID är inte aktiverat ännu* / *Kontakta {företag} på {e-post} för att godkänna offerten.* Decline still works.
+- **BankID:** `src/components/bankid-flow.tsx`, `/api/bankid/*`. Demo = mock (`MockBankIDProvider`), gated by `bankidSigningAvailable()` = `isDemoMode() || isDemoBusiness()` (real provider always allowed). Outside that gate: `POST /api/bankid/start` → **503** *BankID-signering är inte aktiverad för det här företaget ännu.*; `POST /api/bankid/demo` → **404** (gate evaluated inside tenant context). Success locks version (`lockedAt`, `contentHash`), inserts `signatures` (unique per quote).
 - **Delete rules (critical):**
   - **Kasta utkast** only if `status === "utkast"` and no issued invoices linked.
   - Sent: *Skickade offerter kan inte kastas. Markera dem som inte aktuella i stället.*
@@ -443,7 +449,7 @@ Two different systems:
 - **Components:** `economy-register.tsx`, `doc-form.tsx` (QuoteForm), `discard-draft-button.tsx`, `quote-draft-send.tsx`, `send-checklist.tsx`, `quote-document.tsx`, `quote-chain-actions.tsx`, `bankid-flow.tsx`.
 - **Form ids:** `#offert-saknas`, `#offert-kund`, `#offert-rubrik`, `#offert-rot-rut`, `#offert-betalplan`, `#prisrader`.
 - **DB:** `quotes`, `quote_versions` (payload JSONB is hash-frozen), `signatures`, `bankid_orders`.
-- **Invariants:** Locked versions immutable. Public only via unguessable `token`. Totals panel says **Offertvärde**, not Att betala. Quote↔job same customer.
+- **Invariants:** Locked versions immutable. Public only via unguessable `token`. Totals panel says **Offertvärde**, not Att betala. Quote↔job same customer. Mock BankID never produces a signed quote for a real business in production (`demo-login.test.ts`).
 - **Desktop/mobile:** register table + cards. Form: sticky save on mobile (`DocStickyActions`). Public: fixed bottom bar + safe-area.
 - **Live draft:** Offert **#116** `/ekonomi/offerter/quote-bokhylla` — ROT blockers: personnummer + bostad. Public `/offert/demo-eva-bokhylla` is **not** viewable. Signable public: `/offert/demo-bertil-fasad`.
 
@@ -470,6 +476,8 @@ Two different systems:
 1. Open `/offert/demo-bertil-fasad` (or *Öppna kundvyn* on #115).
 2. *Signera med BankID* → mock complete.
 3. App detail shows *Signerad med BankID av …*.
+
+Works in `/demo` sessions and local JSON (`meta.demo` / `isDemoMode()`). For a **real** Supabase business in production the button is absent and the *inte aktiverat ännu* card shows instead — that is expected, not a bug.
 
 Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.ts`, `verify-attention-browser.ts`. Tests: `draft-actions.test.ts`, `flows.test.ts`, `quote-terms.test.ts`.
 
@@ -572,11 +580,17 @@ Not separate nav items; tabs on `/ekonomi`.
 ### Utgifter & kvitton (`?flik=utgifter`)
 
 - **Copy:** *Kvitton och leverantörsfakturor. Åtgärder som behövs dyker upp på Hem och Bokföring.*
-- **CTA:** Ladda upp kvitto (`UploadReceiptButton`). Demo: **Läs av exempelkvitto**.
+- **Header CTA:** `UploadReceiptButton` without `expenseId` renders **Läs av exempelkvitto** (the `label="Ladda upp kvitto"` prop is only used when an `expenseId` is set). Standalone path = `uploadStandaloneReceiptAction` → `uploadStandaloneReceipt`, **demo-only** (`assertDemoMode("Exempelkvitto")`), template expense, filename only — **no file stored**.
+- **Receipt for a specific purchase (file is stored):** CTA **Lägg till kvitto** on the *Kvitto saknas – {leverantör}* attention item (Hem / Bokföring, `attention-list.tsx`, `cta.type === "uploadReceipt"`) or `UploadReceiptButton expenseId=…`. Client reads the file as a data URL (`receiptFileToDataUrl`, max **5 MB**) → `uploadReceiptAction(expenseId, filename, dataUrl)` → `src/lib/receipts/receipt-file.ts` validates (PDF/JPEG/PNG/WebP/HEIC) and stores **before** the receipt row is committed. Storage failure → no receipt row, inline error text. Success copy: attention *Kvitto sparat och matchat*; button *Kvitto sparat* (was *Matchat & bokfört*).
+  - Supabase + `SUPABASE_SERVICE_ROLE_KEY` → private bucket **`receipts`** at `<business_id>/<receipt_id>/<filename>` (`storage_path`).
+  - Otherwise (JSON/demo, or no service key) → inline `content_base64`, max **1,5 MB** (`MAX_INLINE_ATTACHMENT_BYTES`); larger → error *Kvittot är för stort för att sparas utan fillagring (max 1,5 MB)…*.
+- **Viewing the file:** `GET /api/kvitto/[receiptId]` — **protected** (`withBusinessRead`, not a public prefix), `Content-Disposition: inline` for PDF/JPEG/PNG/WebP, `attachment` for HEIC, `Cache-Control: private, no-store`. 404 if the row has no stored file (*Kvittofilen finns inte sparad – endast uppgifterna om köpet.*).
+- **Register rows (`ExpenseRegister`):** bokförd + receipt **with** file → badge *Kvitto · Bokfört* + link **Visa kvitto** (`<a href="/api/kvitto/{receiptId}" target="_blank">`, table and card view). bokförd + receipt **without** file (older rows, seed data) → *Bokfört · kvittouppgifter utan fil*, no link. `ExpenseTableRow.receiptId` is only set when a file exists (`receiptFileStored`).
 - **Filters:** Alla, Behöver åtgärd, Redo att betala, Klara.
 - **Batch:** *N fakturor är redo att betalas* + **Skapa bankfil**.
-- **Live:** Telia Bankfil skapad; Beijer/Trygg-Hansa redo; Söderport *Betalningsuppgifter saknas*; Grand Hôtel *Välj kategori*; Clas Ohlson *Saknar kvitto*.
-- **DB:** `expenses`, `receipts`, `supplier_invoices`, `supplier_payments`.
+- **Live (2026-09-01, pre-PR #77):** Telia Bankfil skapad; Beijer/Trygg-Hansa redo; Söderport *Betalningsuppgifter saknas*; Grand Hôtel *Välj kategori*; Clas Ohlson *Saknar kvitto*. Seeded receipts have no stored file, so expect *Bokfört · kvittouppgifter utan fil* on seeded bokförda rows (code-verified, not re-checked live).
+- **DB:** `expenses`, `receipts` (`storage_path`, `content_type`, `size_bytes`, `content_base64` — migration `26_receipt_content`; check `receipts_one_storage_chk`: never both `storage_path` and `content_base64`), `supplier_invoices`, `supplier_payments`. Bucket `receipts`.
+- **Verify:** `/demo` → `/bokforing` (*Behöver lösas*; on Hem it may sit inside the grouped *N bokföringsfrågor* item) → *Kvitto saknas – Clas Ohlson* (`exp-clas`) → **Lägg till kvitto** → pick a small PNG/PDF (< 1,5 MB) → row resolves with *Kvitto sparat och matchat* → Ekonomi → Utgifter → row shows *Kvitto · Bokfört* + **Visa kvitto** → link opens `/api/kvitto/<id>` with the file. Tests: `src/lib/receipt-file.test.ts`; adapter round-trip in `scripts/adapter-validate.ts` (`npm run test:adapter`).
 
 ### Bank (`?flik=bank`)
 
@@ -693,6 +707,8 @@ The repo has **almost no** `data-testid`. No `data-cy` / `data-qa` / `getByTestI
 
 **Other:** `nekat-belopp`, `invite-email`, `invite-form`, `hemsida-ai-beskrivning`, `doman-sok`, `webbformular-mottagare`, `data-nav="back"`, `data-driva-demo="1"`.
 
+**Receipt file:** link text **Visa kvitto** with `href^="/api/kvitto/"` in `ExpenseRegister` (only when a file is stored); attention CTA label `aria-label` is not set on the *Lägg till kvitto* file `<label>` — match on text + `input[type=file][accept="image/*,.pdf"]`.
+
 **Aria / roles used by existing browser scripts:**
 
 - Nav links: `aria-label` = Swedish section name (plus badge text).
@@ -706,7 +722,7 @@ The repo has **almost no** `data-testid`. No `data-cy` / `data-qa` / `getByTestI
 
 **Demo fixtures (stable ids/tokens):** see [Demo mode](#demo-mode). Prefer these over brittle row indexes.
 
-**Existing automated coverage:** `src/lib/*.test.ts` (domain, no DOM). Browser scripts in `scripts/verify-*.ts` expect **dev server :3123** and mostly use text/aria, not testids.
+**Existing automated coverage:** `src/lib/*.test.ts` (domain, no DOM). Browser scripts in `scripts/verify-*.ts` expect **dev server :3123** and mostly use text/aria, not testids. **CI** (`.github/workflows/ci.yml`, every PR + push to main, no external services): `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:db` (PGlite), `npm run test:adapter` (PGlite), `npm run build`. Browser scripts are **not** in CI.
 
 ---
 
@@ -720,9 +736,10 @@ Important UI with **no** `data-testid` (agents must use text, href, or fragile C
 - Ekonomi / Kunder / Inbox / Bokföring **tabs and filter chips**
 - Register rows (quote/invoice/customer/job/inbox) as clickable units
 - Quote/invoice detail primary actions: Skicka, Redigera, Öppna kundvyn, Kopiera kundlänk (discard button is the exception)
-- Public BankID / Avböj / Ställ en fråga
+- Public BankID / Avböj / Ställ en fråga; the *Godkännande med BankID är inte aktiverat ännu* card (text only)
 - Job detail: Skapa faktura, Markera som klart, Ta bort
 - Inbox detail workflow + Skapa bankfil
+- Receipt upload: *Lägg till kvitto* file input (attention item), *Kvitto sparat* / error text, **Visa kvitto** link (only `href^="/api/kvitto/"` is stable)
 - Bokföring overview question cards and VAT mark-declared
 - Demo menu items (Återställ / Avsluta / Visa redovisningsvyn / Skapa konto)
 - Settings tab strip and feature toggles
@@ -748,6 +765,7 @@ Add **only** these. Enough to make the main Swedish flows automatable without a 
 | 8 | `job-row-{id}` + `job-create-invoice` | uppdrag list + `job-controls.tsx` | Job → invoice is the core money path. |
 | 9 | `inbox-row-{id}` + `inbox-create-payment-file` | inbox list/detail | Badge/open/pay path; today only address text is asserted. |
 | 10 | `kunder-tab-uppdrag` / `ekonomi-tab-{offerter,fakturor,utgifter,bank}` | tab strips | Agents constantly miss that Offerter/Uppdrag are **tabs**. |
+| 11 | `receipt-upload-input` + `receipt-file-link` | `attention-list.tsx` / `money-widgets.tsx` / `economy-register.tsx` | Receipt file persistence (PR #77) is a legal requirement; today only text + `href` are matchable. |
 
 Do **not** add testids to every settings field or design token — those already have `id=` hooks (`ob-*`, `offert-*`, `installningar-*`).
 
@@ -764,6 +782,7 @@ Do **not** add testids to every settings field or design token — those already
 | Sign a quote | `/offert/demo-bertil-fasad` → Signera med BankID |
 | Overdue invoice | `/ekonomi/fakturor/inv-1042` |
 | Inbox badge item | `/inbox/inbox-mail-byggmax` |
+| Upload a receipt file | `/bokforing` → *Kvitto saknas – Clas Ohlson* → **Lägg till kvitto** (file < 1,5 MB) → Ekonomi → Utgifter → **Visa kvitto** |
 | Enable Samarbeta | `/installningar?flik=funktioner` → Aktivera Samarbeta |
 | Accountant UI | Company row → Visa redovisningsvyn |
 | Auth wall | Incognito `/kunder` → login with `next=/kunder` |
