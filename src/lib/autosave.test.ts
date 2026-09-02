@@ -129,6 +129,24 @@ describe("createAutosaveLoop", () => {
     assert.equal(session.loop.getState().status, "saved");
   });
 
+  it("en kastande persist blir ett sparfel – inte fast i Sparar… med ohanterad rejection", async () => {
+    const session = trackLoop(async () => {
+      throw new Error("Nätverket försvann");
+    });
+    session.type("nytt namn");
+    const ok = await session.loop.flush();
+    assert.equal(ok, false);
+    assert.equal(session.loop.getState().status, "error");
+    assert.equal(session.loop.getState().error, "Nätverket försvann");
+    // Nästa försök med fungerande persist ska gå igenom.
+    const ok2 = await (async () => {
+      session.type("nytt namn", async () => ({ ok: true }));
+      return session.loop.flush();
+    })();
+    assert.equal(ok2, true);
+    assert.equal(session.loop.getState().status, "saved");
+  });
+
   it("håller latest key vid fel – markerar inte Sparat och återställer inte", async () => {
     const session = trackLoop(async () => ({
       ok: false,

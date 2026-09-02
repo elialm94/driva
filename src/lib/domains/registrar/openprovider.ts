@@ -11,6 +11,10 @@ import type {
   RegistrantHandle,
 } from "./types";
 
+// Server actions får inte hänga på en extern part – ett hängt anrop blir ett
+// tydligt "Kunde inte nå registret" i stället för en evig spinner.
+const REQUEST_TIMEOUT_MS = 15_000;
+
 /**
  * Openprovider reseller-API för .se.
  * Credentials läses bara server-side. Misslyckas anropet mappas det till en
@@ -34,7 +38,7 @@ export class OpenproviderDomainRegistrar implements DomainRegistrarProvider {
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
     let res: Response;
     try {
-      res = await fetch(`${cfg.apiUrl}${path}`, { ...init, headers });
+      res = await fetch(`${cfg.apiUrl}${path}`, { ...init, headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     } catch {
       throw new DomainError("registrar_failed", "Kunde inte nå registret just nu. Försök igen om en stund.");
     }

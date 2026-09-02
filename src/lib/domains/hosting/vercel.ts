@@ -3,6 +3,8 @@ import { DomainError } from "../errors";
 import { VERCEL_FALLBACK_A, VERCEL_FALLBACK_CNAME, VERCEL_FALLBACK_NS } from "./types";
 import type { DnsRecordInstruction, HostingDomainStatus, HostingProvider } from "./types";
 
+const REQUEST_TIMEOUT_MS = 15_000;
+
 /**
  * Kopplar kunders .se-adresser till Vercel-projektet `driva`
  * (https://driva-alpha.vercel.app/), inte leftover-projektet noxfort.
@@ -28,6 +30,7 @@ export class VercelHostingProvider implements HostingProvider {
     try {
       res = await fetch(this.url(path), {
         ...init,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",

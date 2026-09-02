@@ -146,7 +146,14 @@ export function createAutosaveLoop(options: {
     emit({ status: "saving", error: null });
 
     const work = (async () => {
-      const result = await persist();
+      let result: AutosavePersistResult;
+      try {
+        result = await persist();
+      } catch (e) {
+        // Server action som kastar (nätverk, 500) får inte lämna loopen fast i
+        // "saving" med en ohanterad rejection – det blir ett vanligt sparfel.
+        result = { ok: false, error: e instanceof Error && e.message ? e.message : "Kunde inte spara." };
+      }
       if (disposed) return;
       if (gen !== generation) {
         void run();

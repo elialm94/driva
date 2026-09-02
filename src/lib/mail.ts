@@ -286,20 +286,31 @@ async function sendDemoMail(message: MailMessage, meta?: MailSendMeta): Promise<
   }
 }
 
+const RESEND_TIMEOUT_MS = 20_000;
+
 async function sendViaResend(message: MailMessage): Promise<string | undefined> {
   const key = resendApiKey();
   if (!key) throw new Error(MAIL_NOT_CONFIGURED);
   const from = configuredFromAddress();
   if (!from) throw new Error(MAIL_SENDER_NOT_CONFIGURED);
   const resend = new Resend(key);
-  const { data, error } = await resend.emails.send({
-    from,
-    to: [message.to],
-    ...(message.replyTo ? { replyTo: message.replyTo } : {}),
-    subject: message.subject,
-    html: message.html,
-    text: message.text,
+  // Resend-SDK:t har ingen egen timeout; ett hängt anrop skulle annars låsa
+  // server actionen (och användarens knapp) tills plattformen dödar requesten.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("E-posttjänsten svarade inte i tid.")), RESEND_TIMEOUT_MS);
   });
+  const { data, error } = await Promise.race([
+    resend.emails.send({
+      from,
+      to: [message.to],
+      ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+    }),
+    timeout,
+  ]).finally(() => clearTimeout(timer));
   if (error) {
     throw new Error(resendErrorMessage(error));
   }
