@@ -38,6 +38,7 @@ import {
   resetDemoSessionState,
 } from "./storage/demo-session-store";
 import { DemoModeError, assertDemoMode, isDemoBusiness, isDemoMode } from "./demo";
+import { BankIDUnavailableError, bankidProvider, bankidSigningAvailable } from "./services/bankid";
 import { sendMail, setMailTransportForTests, type MailMessage } from "./mail";
 import { sendQuoteWithEmail } from "./services/document-mail";
 import { createQuote, quoteDefaults } from "./services/quotes";
@@ -273,6 +274,26 @@ describe("tenantgrindarna för demoläget", () => {
     replaceDb(emptyTestDb());
     assert.equal(isDemoBusiness(), false);
     assert.throws(() => assertDemoMode("Simulerad inbetalning"), DemoModeError);
+  });
+
+  it("mock-BankID kan inte signera för riktiga företag utanför demo – men för demoföretaget", () => {
+    process.env.DRIVA_DEMO = "0";
+    replaceDb(emptyTestDb());
+    assert.equal(bankidSigningAvailable(), false);
+    assert.throws(
+      () => bankidProvider.startSign({ quoteId: "q1", quoteVersionId: "v1", method: "qr" }),
+      BankIDUnavailableError
+    );
+    assert.throws(() => bankidProvider.advance("mock-x", "complete"), BankIDUnavailableError);
+
+    replaceDb(demoDb());
+    assert.equal(bankidSigningAvailable(), true);
+    const order = bankidProvider.startSign({ quoteId: "q1", quoteVersionId: "v1", method: "qr" });
+    assert.equal(order.status, "pending");
+
+    process.env.DRIVA_DEMO = "1";
+    replaceDb(emptyTestDb());
+    assert.equal(bankidSigningAvailable(), true);
   });
 });
 

@@ -6,6 +6,7 @@ import { buyerSnapshot, sellerSnapshot } from "../invoices/snapshot";
 import { currentVersion, getQuote, requireCustomer } from "./data";
 import { logActivity } from "./activity";
 import { createJobFromQuote } from "./jobs";
+import { isDemoBusiness, isDemoMode } from "../demo";
 
 /**
  * BankID-integration.
@@ -27,10 +28,36 @@ export interface BankIDProvider {
 
 const ORDER_TTL_MS = 3 * 60 * 1000; // BankID-ordrar gäller i 3 minuter.
 
+export class BankIDUnavailableError extends Error {
+  constructor() {
+    super("BankID-signering är inte aktiverad för det här företaget ännu.");
+    this.name = "BankIDUnavailableError";
+  }
+}
+
+/**
+ * Kan offerter signeras i den aktiva tenantkontexten?
+ *
+ * Mocken är en demofunktion (se ../demo.ts): den får aldrig producera en
+ * "BankID-godkänd" offert för ett riktigt företag i produktion – vem som helst
+ * med offertlänken kunde annars godkänna den via demo-panelen. En riktig
+ * leverantör (environment === "production") är alltid tillgänglig.
+ */
+export function bankidSigningAvailable(): boolean {
+  const provider: BankIDProvider = bankidProvider;
+  if (provider.environment === "production") return true;
+  return isDemoMode() || isDemoBusiness();
+}
+
+function assertMockSigningAllowed(): void {
+  if (!isDemoMode() && !isDemoBusiness()) throw new BankIDUnavailableError();
+}
+
 class MockBankIDProvider implements BankIDProvider {
   readonly environment = "mock" as const;
 
   startSign(input: { quoteId: string; quoteVersionId: string; method: "same_device" | "qr" }): BankIDOrder {
+    assertMockSigningAllowed();
     const data = db();
     const now = new Date().toISOString();
     const order: BankIDOrder = {
@@ -72,6 +99,7 @@ class MockBankIDProvider implements BankIDProvider {
 
   /** Endast i mock-läge: driv ordern framåt från demo-panelen. */
   advance(orderRef: string, event: "open_app" | "complete" | "cancel" | "timeout"): BankIDOrder | undefined {
+    assertMockSigningAllowed();
     const order = db().bankidOrders.find((o) => o.orderRef === orderRef);
     if (!order || order.status !== "pending") return order;
     order.updatedAt = new Date().toISOString();

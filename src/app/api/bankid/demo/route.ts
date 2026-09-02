@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { bankidProvider } from "@/lib/services/bankid";
+import { bankidProvider, bankidSigningAvailable } from "@/lib/services/bankid";
 import { withPublicBusiness } from "@/lib/auth/session";
 
 /**
@@ -20,10 +20,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "orderRef och event krävs" }, { status: 400 });
   }
   // "complete" fullbordar signeringen (mejl kan skickas) → ingen retry.
+  // Grinden utvärderas INNE i tenantkontexten: demoföretaget får simulera,
+  // ett riktigt företag i produktion får 404 precis som utan mock.
   const order = await withPublicBusiness(
     "bankid_order",
     body.orderRef,
-    () => bankidProvider.advance(body.orderRef!, body.event!),
+    () => (bankidSigningAvailable() ? bankidProvider.advance(body.orderRef!, body.event!) : undefined),
     { retry: false }
   );
   if (!order) return NextResponse.json({ error: "Ordern finns inte" }, { status: 404 });

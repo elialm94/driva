@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { BadgeCheck, FileLock2, XCircle, Clock } from "lucide-react";
+import { BadgeCheck, FileLock2, XCircle, Clock, Info } from "lucide-react";
 import { db } from "@/lib/store";
 import { getQuoteByToken, currentVersion, quoteSignature, quoteTotals, requireCustomer } from "@/lib/services/data";
 import { markQuoteViewed } from "@/lib/services/quotes";
@@ -7,6 +7,7 @@ import { kr, datumTid, datumLang, dagarTill } from "@/lib/format";
 import { QuoteDocument } from "@/components/quote-document";
 import { CompanyLogo } from "@/components/company-logo";
 import { signedWithBankIdBy } from "@/lib/status-labels";
+import { bankidSigningAvailable } from "@/lib/services/bankid";
 import { BankIDApproval, DeclineQuoteButton, QuoteQuestionButton } from "@/components/bankid-flow";
 import { DemoTag } from "@/components/ui";
 import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
@@ -45,7 +46,11 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
   const signature = quoteSignature(quote.id);
   const totals = quoteTotals(quote);
   const expired = quote.status === "skickad" && dagarTill(version.validUntil) < 0;
-  const canSign = quote.status === "skickad" && !expired;
+  const signable = quote.status === "skickad" && !expired;
+  // Mocken är en demofunktion – för riktiga företag i produktion utan riktig
+  // BankID-leverantör visas ett ärligt besked i stället för knappen.
+  const signingAvailable = bankidSigningAvailable();
+  const canSign = signable && signingAvailable;
 
   const seller = resolveQuoteCompany(version, data.settings);
 
@@ -113,6 +118,18 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
           </div>
         ) : null}
 
+        {signable && !signingAvailable ? (
+          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-line bg-card px-5 py-4">
+            <Info className="mt-0.5 size-5 shrink-0 text-soft" />
+            <div>
+              <p className="text-[15px] font-semibold">Godkännande med BankID är inte aktiverat ännu</p>
+              <p className="text-[14px] text-soft">
+                Kontakta {seller.name} på {seller.email} för att godkänna offerten.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
         <div className="overflow-hidden rounded-3xl border border-line bg-white shadow-card">
           <QuoteDocument
             company={data.settings}
@@ -145,7 +162,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
         <div className="h-28" />
       </main>
 
-      {canSign ? (
+      {signable ? (
         <div className="fixed inset-x-0 bottom-0 border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
           <div className="mx-auto flex max-w-3xl flex-col gap-2.5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div className="flex items-center justify-between gap-3 sm:block">
@@ -157,12 +174,14 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <QuoteQuestionButton token={quote.token} companyName={seller.name} />
-              <BankIDApproval
-                token={quote.token}
-                quoteNumber={quote.number}
-                toPay={kr(totals.toPay)}
-                companyName={seller.name}
-              />
+              {canSign ? (
+                <BankIDApproval
+                  token={quote.token}
+                  quoteNumber={quote.number}
+                  toPay={kr(totals.toPay)}
+                  companyName={seller.name}
+                />
+              ) : null}
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentVersion, getQuoteByToken } from "@/lib/services/data";
-import { bankidProvider, signText } from "@/lib/services/bankid";
+import { bankidProvider, bankidSigningAvailable, signText } from "@/lib/services/bankid";
 import { dagarTill } from "@/lib/format";
 import { withPublicBusiness } from "@/lib/auth/session";
 
@@ -20,6 +20,11 @@ export async function POST(req: NextRequest) {
     }
     if (dagarTill(currentVersion(quote).validUntil) < 0) {
       return { status: 409, error: "Offerten har gått ut och kan inte längre signeras." } as const;
+    }
+    // Servergrind: mocken får inte skapa "BankID-godkända" offerter för
+    // riktiga företag i produktion. Sidan visar samma besked i stället för knappen.
+    if (!bankidSigningAvailable()) {
+      return { status: 503, error: "BankID-signering är inte aktiverad för det här företaget ännu." } as const;
     }
 
     const order = bankidProvider.startSign({

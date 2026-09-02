@@ -67,7 +67,7 @@ npm run test:assistant
 | --- | --- | --- |
 | Domänmodell | `src/lib/types.ts` | Customer, Request, Quote, QuoteVersion, BankIDSignature, Job, Invoice, Payment, Expense, Receipt, SupplierInvoice, Verification … |
 | Tjänstelager | `src/lib/services/` | All affärslogik; UI:t och AI-assistenten anropar samma funktioner |
-| BankID | `src/lib/services/bankid.ts` | `BankIDProvider`-interface; demon kör `MockBankIDProvider` (tydligt markerat i UI). Byt till riktig RP-API-integration här |
+| BankID | `src/lib/services/bankid.ts` | `BankIDProvider`-interface; demon kör `MockBankIDProvider` (tydligt markerat i UI). Mocken är servergrindad: den signerar bara i demoläge/för demoföretaget – riktiga företag i produktion får ett ärligt "inte aktiverat" tills en riktig RP-API-integration kopplas in här |
 | Open Banking | `src/lib/services/banking.ts` | `BankProvider`-abstraktion förberedd för t.ex. Tink; matchningsmotorn är riktig |
 | Bokföring | `src/lib/bas.ts` | BAS-konton, momssatser, konteringsregler, verifikationer |
 | AI-assistent | `src/lib/services/assistant.ts`, `src/lib/ai/` | LLM med tool calling mot samma tjänster som UI:t; regelbaserad fallback utan `AI_API_KEY` |
