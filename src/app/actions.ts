@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, resetDemoData, save } from "@/lib/store";
+import { parseReceiptDataUrl, storeReceiptFile, validateReceiptFile } from "@/lib/receipts/receipt-file";
 import {
   addIgnoredLineDescription,
   collectLineDescriptionVocabulary,
@@ -1107,11 +1108,38 @@ export async function submitSupplierPaymentAction(input: {
 
 /* ------------------------------ Utgifter/kvitton ---------------------------- */
 
-export async function uploadReceiptAction(expenseId: string, filename: string) {
-  await withBusiness(() => {
-    uploadReceiptForExpense(expenseId, filename, "uppladdning");
-    refresh();
-  }, { capability: "categorize" });
+/**
+ * Kvitto för ett bankköp. `dataUrl` är själva filen (data:<mime>;base64,…) –
+ * den valideras och sparas (bucket eller inline) INNAN kvittoraden committas;
+ * misslyckas lagringen skrivs ingen kvittorad. Utan dataUrl registreras bara
+ * uppgifterna (äldre anropare) och raden markeras ärligt som utan fil.
+ */
+export async function uploadReceiptAction(
+  expenseId: string,
+  filename: string,
+  dataUrl?: string
+): Promise<{ ok: true; fileStored: boolean } | { ok: false; error: string }> {
+  try {
+    return await withBusiness(
+      async () => {
+        const parsed = dataUrl ? parseReceiptDataUrl(dataUrl) : null;
+        if (dataUrl && !parsed) throw new Error("Kvittofilen kunde inte läsas.");
+        const file = parsed ? validateReceiptFile(parsed) : undefined;
+        const { receipt } = uploadReceiptForExpense(expenseId, filename, "uppladdning");
+        if (file) {
+          Object.assign(receipt, await storeReceiptFile(receipt, file));
+          save();
+        }
+        refresh();
+        return { ok: true as const, fileStored: Boolean(file) };
+      },
+      // Retry vid samtidighetskonflikt är säkert: bucket-upload är upsert och
+      // ett ev. övergivet objekt från första försöket är harmlöst.
+      { capability: "categorize" }
+    );
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte spara kvittot." };
+  }
 }
 
 export async function uploadStandaloneReceiptAction(filename: string) {

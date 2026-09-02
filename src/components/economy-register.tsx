@@ -459,6 +459,20 @@ export function InvoiceRegister({
 
 /* ------------------------------ Utgifter & kvitton ---------------------------- */
 
+/** Öppnar den sparade kvittofilen (bara när den faktiskt finns). */
+function ReceiptFileLink({ receiptId }: { receiptId: string }) {
+  return (
+    <a
+      href={`/api/kvitto/${receiptId}`}
+      target="_blank"
+      rel="noreferrer"
+      className="text-[12px] font-medium text-soft underline-offset-2 hover:text-ink hover:underline"
+    >
+      Visa kvitto
+    </a>
+  );
+}
+
 export function ExpenseRegister({
   result,
   query,
@@ -527,7 +541,10 @@ export function ExpenseRegister({
                       <td className="max-w-44 truncate px-3 py-2.5 text-soft">{r.categoryLabel}</td>
                       <td className="px-3 py-2.5 text-right tabular text-ink">{kr(r.amount)}</td>
                       <td className="px-3 py-2.5">
-                        <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
+                        <span className="inline-flex items-center gap-2">
+                          <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
+                          {r.receiptId ? <ReceiptFileLink receiptId={r.receiptId} /> : null}
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -546,8 +563,9 @@ export function ExpenseRegister({
                   {datumKort(r.date)} · {r.categoryLabel}
                   {r.reference ? ` · ${r.reference}` : ""}
                 </p>
-                <div className="mt-1.5">
+                <div className="mt-1.5 flex items-center gap-2">
                   <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
+                  {r.receiptId ? <ReceiptFileLink receiptId={r.receiptId} /> : null}
                 </div>
               </div>
             ))}

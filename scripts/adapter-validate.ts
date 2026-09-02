@@ -569,6 +569,40 @@ async function main() {
     assert.equal(resolved, null);
   });
 
+  console.log("\nKvittofil genom adaptern:");
+  await check("kvitto med inline-fil rundresas (content_base64, content_type, size_bytes)", async () => {
+    const { uploadReceiptForExpense } = await import("../src/lib/services/expenses");
+    const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+    let receiptId = "";
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      db().expenses.push({
+        id: "adapter-exp-1",
+        date: "2026-08-01",
+        supplier: "Bauhaus",
+        amount: 875,
+        vatAmount: 175,
+        category: "",
+        status: "saknar_kvitto",
+        createdAt: new Date().toISOString(),
+      });
+      save();
+      const { receipt } = uploadReceiptForExpense("adapter-exp-1", "kvitto.png", "uppladdning", {
+        contentType: "image/png",
+        sizeBytes: png.length,
+        contentBase64: png.toString("base64"),
+      });
+      receiptId = receipt.id;
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const receipt = db().receipts.find((r) => r.id === receiptId);
+      assert.ok(receipt, "kvittoraden laddas tillbaka");
+      assert.equal(receipt.contentType, "image/png");
+      assert.equal(receipt.sizeBytes, png.length);
+      assert.equal(receipt.contentBase64, png.toString("base64"));
+      assert.equal(receipt.storagePath, undefined);
+    });
+  });
+
   console.log("\nUppdragsposter genom adaptern:");
   await check("tidregistrering rundresas och isoleras per tenant", async () => {
     const { createJob } = await import("../src/lib/services/jobs");

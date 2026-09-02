@@ -19,14 +19,16 @@ import {
   uploadStandaloneReceiptAction,
 } from "@/app/actions";
 import { invoiceHref } from "@/lib/nav";
+import { receiptFileToDataUrl } from "@/lib/receipts/read-file";
 
 export function UploadReceiptButton({ expenseId, label = "Lägg till kvitto" }: { expenseId?: string; label?: string }) {
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   if (done) {
     return (
       <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
-        <Check className="size-4" /> Matchat & bokfört
+        <Check className="size-4" /> Kvitto sparat
       </span>
     );
   }
@@ -49,17 +51,26 @@ export function UploadReceiptButton({ expenseId, label = "Lägg till kvitto" }: 
         className="hidden"
         disabled={isPending}
         onChange={(e) => {
-          const name = e.target.files?.[0]?.name ?? "kvitto.jpg";
+          const file = e.target.files?.[0];
+          const name = file?.name ?? "kvitto.jpg";
+          setError(null);
           startTransition(async () => {
             if (expenseId) {
-              await uploadReceiptAction(expenseId, name);
-              setDone(true);
+              try {
+                const dataUrl = file ? await receiptFileToDataUrl(file) : undefined;
+                const result = await uploadReceiptAction(expenseId, name, dataUrl);
+                if (result.ok === false) setError(result.error);
+                else setDone(true);
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Kunde inte spara kvittot.");
+              }
             } else {
               await uploadStandaloneReceiptAction(name);
             }
           });
         }}
       />
+      {error ? <span className="ml-2 text-[13px] font-medium text-danger">{error}</span> : null}
     </label>
   );
 }

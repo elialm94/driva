@@ -717,6 +717,16 @@ export interface Receipt {
   filename: string;
   source: "foto" | "uppladdning" | "email";
   uploadedAt: string;
+  /**
+   * Själva filen (bokföringsunderlaget). Saknas båda lagringsfälten finns bara
+   * uppgifterna om kvittot – UI:t säger det ärligt. Se lib/receipts/receipt-file.ts.
+   */
+  contentType?: string;
+  sizeBytes?: number;
+  /** Sökväg i privata bucketen `receipts` (Supabase-läge med service-nyckel). */
+  storagePath?: string;
+  /** Inline base64 (JSON-läge/demo, eller utan fillagring). Aldrig båda satta. */
+  contentBase64?: string;
   /** AI-extraherade fält (mockad OCR i demo). */
   extracted: {
     supplier: string;

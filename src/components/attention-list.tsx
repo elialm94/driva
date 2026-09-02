@@ -48,6 +48,7 @@ import {
   uploadReceiptAction,
   prepareSupplierPaymentAction,
 } from "@/app/actions";
+import { receiptFileToDataUrl } from "@/lib/receipts/read-file";
 import { requestClientInformationAction } from "@/app/collaboration-actions";
 import { isPaymentDetailsCta, PaymentDetailsCta } from "./payment-details-actions";
 import {
@@ -759,7 +760,17 @@ function AttentionRow({
                   disabled={isPending}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
-                    run(() => uploadReceiptAction(cta.expenseId, file?.name ?? "kvitto.jpg"), "Matchat och bokfört");
+                    startTransition(async () => {
+                      try {
+                        const dataUrl = file ? await receiptFileToDataUrl(file) : undefined;
+                        const result = await uploadReceiptAction(cta.expenseId, file?.name ?? "kvitto.jpg", dataUrl);
+                        if (result.ok === false) setError(result.error);
+                        else finish("Kvitto sparat och matchat");
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "Kunde inte spara kvittot.");
+                      }
+                      router.refresh();
+                    });
                   }}
                 />
               </label>

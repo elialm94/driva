@@ -97,7 +97,7 @@ Kopiera `.env.example` → `.env.local` och fyll i:
 | `NEXT_PUBLIC_SUPABASE_URL` | Dashboard → Settings → API | Publik (klient + server) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Dashboard → Settings → API (anon/publishable) | Publik (skyddas av RLS) |
 | `SUPABASE_DB_URL` | Dashboard → Connect → Session/Transaction pooler | **Endast server** |
-| `SUPABASE_SERVICE_ROLE_KEY` | Dashboard → Settings → API (service role) | **Endast server** – behövs bara för `db:seed`/migreringsskriptet |
+| `SUPABASE_SERVICE_ROLE_KEY` | Dashboard → Settings → API (service role) | **Endast server** – `db:seed`/migreringsskriptet samt kvittofiler i privata bucketen `receipts` (utan nyckel sparas kvitton inline, max 1,5 MB) |
 
 Serverless (Vercel): använd **Transaction pooler**-URL:en (port 6543) som `SUPABASE_DB_URL`. Ingen av server-variablerna får någonsin ges ett `NEXT_PUBLIC_`-prefix.
 

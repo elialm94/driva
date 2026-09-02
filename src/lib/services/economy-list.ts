@@ -1,5 +1,6 @@
 import { db } from "../store";
-import type { Invoice, Quote, SupplierInvoice, SupplierPayment } from "../types";
+import type { Invoice, Quote, Receipt, SupplierInvoice, SupplierPayment } from "../types";
+import { receiptFileStored } from "../receipts/receipt-meta";
 import { currentVersion, effectiveQuoteStatus, invoiceTotals, isOpenReceivable, isOverdue, daysOverdue, quoteTotals } from "./data";
 import type { PagedResult } from "./customers";
 import { categoryByKey } from "../bas";
@@ -288,6 +289,8 @@ export interface ExpenseTableRow {
   statusTone: StatusTone;
   /** Underlag: kvitto/bankkoppling finns. */
   hasReceipt: boolean;
+  /** Kvittofilen är sparad och kan öppnas via /api/kvitto/<receiptId>. */
+  receiptId?: string;
 }
 
 /**
@@ -369,6 +372,9 @@ export function listExpensesForTable(
   const rows: ExpenseTableRow[] = [];
   const attention = attentionBySource();
 
+  const receiptsWithFile = new Map<string, Receipt>();
+  for (const r of db().receipts) if (receiptFileStored(r)) receiptsWithFile.set(r.id, r);
+
   for (const e of db().expenses) {
     const bucket: ExpenseBucket = e.status === "bokford" ? "klar" : "atgard";
     if (status !== "alla" && bucket !== status) continue;
@@ -379,10 +385,13 @@ export function listExpensesForTable(
     }
     // Konkret åtgärdsetikett från motorn ("Kvitto saknas", "Välj kategori").
     const action = bucket === "atgard" ? attention.get(`expense:${e.id}`) : undefined;
+    const receiptFile = e.receiptId ? receiptsWithFile.get(e.receiptId) : undefined;
     const meta: { label: string; tone: StatusTone } =
       e.status === "bokford"
         ? e.receiptId
-          ? { label: "Kvitto · Bokfört", tone: "ok" }
+          ? receiptFile
+            ? { label: "Kvitto · Bokfört", tone: "ok" }
+            : { label: "Bokfört · kvittouppgifter utan fil", tone: "ok" }
           : EXPENSE_STATUS.bokford
         : action
           ? { label: issueForAction(action), tone: "warn" }
@@ -397,6 +406,7 @@ export function listExpensesForTable(
       statusLabel: meta.label,
       statusTone: meta.tone,
       hasReceipt: Boolean(e.receiptId),
+      ...(receiptFile ? { receiptId: receiptFile.id } : {}),
     });
   }
 

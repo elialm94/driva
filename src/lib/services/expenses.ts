@@ -171,11 +171,18 @@ function askAssetQuestion(expense: Expense): void {
   };
 }
 
-/** Ladda upp kvitto för ett köp som saknar kvitto. */
+/**
+ * Ladda upp kvitto för ett köp som saknar kvitto.
+ *
+ * `file` är var själva filen ligger (lib/receipts/receipt-file.ts). Utan den
+ * registreras bara uppgifterna – kvittoraden får då varken storagePath eller
+ * contentBase64 och UI:t visar det ärligt i stället för ett "Visa kvitto".
+ */
 export function uploadReceiptForExpense(
   expenseId: string,
   filename: string,
-  source: Receipt["source"]
+  source: Receipt["source"],
+  file?: Pick<Receipt, "contentType" | "sizeBytes" | "storagePath" | "contentBase64">
 ): { receipt: Receipt; autoBooked: boolean } {
   const data = db();
   const expense = data.expenses.find((e) => e.id === expenseId);
@@ -193,6 +200,10 @@ export function uploadReceiptForExpense(
     filename: filename || `kvitto-${expense.supplier.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.jpg`,
     source,
     uploadedAt: new Date().toISOString(),
+    ...(file?.contentType ? { contentType: file.contentType } : {}),
+    ...(file?.sizeBytes != null ? { sizeBytes: file.sizeBytes } : {}),
+    ...(file?.storagePath ? { storagePath: file.storagePath } : {}),
+    ...(file?.contentBase64 ? { contentBase64: file.contentBase64 } : {}),
     extracted: {
       supplier: expense.supplier,
       date: expense.date,

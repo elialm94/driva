@@ -788,9 +788,20 @@ export const expensesSpec: TableSpec<Expense> = {
 export const receiptsSpec: TableSpec<Receipt> = {
   table: "receipts",
   pk: ["id"],
-  columns: ["id", "business_id", "expense_id", "filename", "source", "uploaded_at", "extracted"],
-  // Storage-metadata skrivs av uppladdningsflödet, aldrig av differn.
-  protectedColumns: ["storage_path", "content_type", "size_bytes", "uploaded_by"],
+  columns: [
+    "id",
+    "business_id",
+    "expense_id",
+    "filename",
+    "source",
+    "uploaded_at",
+    "extracted",
+    "storage_path",
+    "content_type",
+    "size_bytes",
+    "content_base64",
+  ],
+  protectedColumns: ["uploaded_by"],
   toRow: (k, businessId) => ({
     id: k.id,
     business_id: businessId,
@@ -799,6 +810,10 @@ export const receiptsSpec: TableSpec<Receipt> = {
     source: k.source,
     uploaded_at: k.uploadedAt,
     extracted: jsonParam(k.extracted),
+    storage_path: k.storagePath ?? null,
+    content_type: k.contentType ?? null,
+    size_bytes: k.sizeBytes ?? null,
+    content_base64: k.contentBase64 ?? null,
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -807,6 +822,10 @@ export const receiptsSpec: TableSpec<Receipt> = {
     source: r.source as Receipt["source"],
     uploadedAt: tsIso(r.uploaded_at),
     extracted: jsonVal<Receipt["extracted"]>(r.extracted),
+    ...opt("storagePath", strOrU(r.storage_path)),
+    ...opt("contentType", strOrU(r.content_type)),
+    ...opt("sizeBytes", numOrU(r.size_bytes)),
+    ...opt("contentBase64", strOrU(r.content_base64)),
   }),
 };
 
