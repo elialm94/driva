@@ -87,7 +87,9 @@ export async function runWithTenant<T>(opts: RunWithTenantOptions, fn: () => T |
       userId: opts.userId,
       writable: opts.access === "write",
       state: loaded.state,
-      baseline: cloneState(loaded.state),
+      // Baslinjen används bara av commit-diffen; i läsläge är save() förbjudet
+      // och kopian vore en bortkastad structuredClone av hela tenanten.
+      baseline: opts.access === "write" ? cloneState(loaded.state) : loaded.state,
       stateVersion: loaded.stateVersion,
       dirty: false,
     };
