@@ -1,0 +1,40 @@
+# Kvalitetsgrind för varje PR och push till main. Allt körs utan externa
+# tjänster: databas- och adaptertesterna kör Postgres i WASM (PGlite).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      - name: Database invariants (PGlite)
+        run: npm run test:db
+      - name: Storage adapter round-trips (PGlite)
+        run: npm run test:adapter
+      - name: Build
+        run: npm run build
+        env:
+          # Bygget får inte kräva Supabase-miljö; JSON-läget räcker för att
+          # verifiera att alla routes kompilerar.
+          NEXT_TELEMETRY_DISABLED: "1"
