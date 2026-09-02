@@ -14,8 +14,19 @@ export function kr(n: number): string {
 
 const DAG_MS = 86_400_000;
 
-const sv = (options: Intl.DateTimeFormatOptions) =>
-  new Intl.DateTimeFormat("sv-SE", { timeZone: DEFAULT_TIMEZONE, ...options });
+// Formatterare återanvänds per options-uppsättning – konstruktorn är dyr och
+// listor/attention-motorn formaterar tusentals datum per request.
+const svFormatters = new Map<string, Intl.DateTimeFormat>();
+
+const sv = (options: Intl.DateTimeFormatOptions) => {
+  const key = JSON.stringify(options);
+  let fmt = svFormatters.get(key);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("sv-SE", { timeZone: DEFAULT_TIMEZONE, ...options });
+    svFormatters.set(key, fmt);
+  }
+  return fmt;
+};
 
 export function isoNow(): string {
   return new Date().toISOString();
@@ -65,9 +76,21 @@ function stockholmDayUtcNoon(d: Date): number {
   return Date.UTC(p.year, p.month - 1, p.day, 12, 0, 0);
 }
 
+// "Idag" beräknas en gång per instant: samma `now` skickas in för varje rad i
+// en lista, och default-fallet (ny Date per anrop) byter ms men sällan dygn.
+let todayMemo: { ms: number; noon: number } | undefined;
+
+function stockholmTodayUtcNoon(now: Date): number {
+  const ms = now.getTime();
+  if (todayMemo && todayMemo.ms === ms) return todayMemo.noon;
+  const noon = stockholmDayUtcNoon(now);
+  todayMemo = { ms, noon };
+  return noon;
+}
+
 /** Hela kalenderdagar (svensk tid) mellan idag och datumet. Positivt = framtid. */
 export function dagarTill(iso: string, now: Date = new Date()): number {
-  return Math.round((stockholmDayUtcNoon(new Date(iso)) - stockholmDayUtcNoon(now)) / DAG_MS);
+  return Math.round((stockholmDayUtcNoon(new Date(iso)) - stockholmTodayUtcNoon(now)) / DAG_MS);
 }
 
 export function dagarSedan(iso: string): number {

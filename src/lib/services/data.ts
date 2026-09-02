@@ -6,6 +6,7 @@ import type {
   Job,
   Quote,
   QuoteVersion,
+  Verification,
 } from "../types";
 import { docTotals, type DocTotals } from "../calc";
 import { dagarSedan, dagarTill } from "../format";
@@ -41,8 +42,21 @@ export function requireCustomer(id: string): Customer {
   return c;
 }
 
+/* Offertindex: id → objekt. Samma invariant som kundindexet (id ändras aldrig). */
+const quoteIndexCache = new WeakMap<object, { len: number; byId: Map<string, Quote> }>();
+
+function quotesById(): Map<string, Quote> {
+  const quotes = db().quotes;
+  let cached = quoteIndexCache.get(quotes);
+  if (!cached || cached.len !== quotes.length) {
+    cached = { len: quotes.length, byId: new Map(quotes.map((q) => [q.id, q])) };
+    quoteIndexCache.set(quotes, cached);
+  }
+  return cached.byId;
+}
+
 export function getQuote(id: string): Quote | undefined {
-  return db().quotes.find((q) => q.id === id);
+  return quotesById().get(id);
 }
 
 export function getQuoteByToken(token: string): Quote | undefined {
@@ -80,12 +94,13 @@ export function getJob(id: string): Job | undefined {
 
 /** Offerten kopplad till ett uppdrag – via job.quoteId eller quote.jobId. */
 export function jobQuote(job: Job): Quote | undefined {
-  const data = db();
   if (job.quoteId) {
-    const q = data.quotes.find((q) => q.id === job.quoteId);
+    const q = getQuote(job.quoteId);
     if (q) return q;
   }
-  return data.quotes.find((q) => q.jobId === job.id);
+  // quote.jobId muteras på plats (uppdrag startas/kopplas om) – ingen
+  // längdkeyad cache är säker här, så fallbacken förblir linjär.
+  return db().quotes.find((q) => q.jobId === job.id);
 }
 
 export function getInvoice(id: string): Invoice | undefined {
@@ -136,31 +151,37 @@ export function countsTowardInvoiced(inv: Invoice): boolean {
 const paidSumsCache = new WeakMap<object, { len: number; sums: Map<string, number> }>();
 const creditsCache = new WeakMap<object, { len: number; byOriginal: Map<string, Invoice[]> }>();
 
-function reversedPaymentIds(): Set<string> {
+function reversedPaymentIds(verifications: readonly Verification[]): Set<string> {
   const ids = new Set<string>();
-  for (const v of db().verifications) {
+  for (const v of verifications) {
     const src = v.source;
     if (src.type === "betalning" && v.correctedByVerificationId) ids.add(src.id);
   }
   return ids;
 }
 
+/*
+ * Rättelsestämpel (correctedByVerificationId) på en betalningsverifikation
+ * ändrar varken payments.length eller verifications.length, men en rättelse
+ * lägger ALLTID till en ny rättelseverifikation – så verifications.length
+ * räcker som invalidering. Nyckeln kombinerar båda längderna; själva
+ * genomgången av verifikationerna sker bara vid cachemiss (tidigare kördes den
+ * vid varje anrop, vilket gjorde utestående-beräkningen O(verifikationer) per
+ * faktura).
+ */
 function paidSums(): Map<string, number> {
   const payments = db().payments;
   const vers = db().verifications;
-  const reversed = reversedPaymentIds();
-  const corrN = reversed.size;
+  const key = payments.length + vers.length * 1_000_000;
   let cached = paidSumsCache.get(payments);
-  // Rättelsestämpel på en betalningsverifikation ändrar inte payments.length –
-  // cachen måste också se verifikationerna.
-  const verLen = vers.length;
-  if (!cached || cached.len !== payments.length + verLen * 1_000 + corrN) {
+  if (!cached || cached.len !== key) {
+    const reversed = reversedPaymentIds(vers);
     const sums = new Map<string, number>();
     for (const p of payments) {
       if (reversed.has(p.id)) continue;
       sums.set(p.invoiceId, (sums.get(p.invoiceId) ?? 0) + p.amount);
     }
-    cached = { len: payments.length + verLen * 1_000 + corrN, sums };
+    cached = { len: key, sums };
     paidSumsCache.set(payments, cached);
   }
   return cached.sums;

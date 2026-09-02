@@ -13,8 +13,10 @@ import {
   quoteWaitingDays,
   getCurrentVersion,
   getCustomer,
+  getInvoice,
 } from "./data";
 import { creditRefundDue } from "./invoices";
+import { invoicesForJob } from "./job-economy";
 import { derivedJobStatus, isPaymentPlanPartDue } from "./job-lifecycle";
 import { jobMoneySummary, nextPaymentPlanPartForJob, remainingToInvoiceForJob } from "./attention";
 import { taxReductionCaseForInvoice, taxReductionCaseForJob, type TaxReductionCase } from "./tax-reduction";
@@ -554,13 +556,19 @@ function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) 
 /* ---------------------------------- Offerter --------------------------------- */
 
 function collectQuotes(ranked: Ranked[], watching: WatchingItem[]) {
+  // Byggs per anrop (inte cachad): job.quoteId/quote.jobId muteras på plats.
+  const jobIds = new Set<string>();
+  const jobQuoteIds = new Set<string>();
+  for (const j of db().jobs) {
+    jobIds.add(j.id);
+    if (j.quoteId) jobQuoteIds.add(j.quoteId);
+  }
   for (const q of db().quotes) {
     const customer = getCustomer(q.customerId);
     if (!customer) continue;
     if (!getCurrentVersion(q)) continue;
     if (q.status === "godkand") {
-      const hasJob =
-        Boolean(q.jobId && db().jobs.some((j) => j.id === q.jobId)) || db().jobs.some((j) => j.quoteId === q.id);
+      const hasJob = Boolean(q.jobId && jobIds.has(q.jobId)) || jobQuoteIds.has(q.id);
       if (hasJob) continue;
       const toPay = quoteTotals(q).toPay;
       ranked.push({
@@ -785,13 +793,12 @@ function collectReminders(ranked: Ranked[], _watching: WatchingItem[], now: Date
 /* ---------------------------------- ROT/RUT ----------------------------------- */
 
 function caseInvoices(cse: TaxReductionCase): Invoice[] {
-  const data = db();
   if (cse.jobId) {
-    return data.invoices.filter(
-      (i) => i.jobId === cse.jobId && i.rot && i.type !== "kredit" && i.status !== "krediterad"
+    return invoicesForJob(cse.jobId).filter(
+      (i) => i.rot && i.type !== "kredit" && i.status !== "krediterad"
     );
   }
-  const inv = cse.invoiceId ? data.invoices.find((i) => i.id === cse.invoiceId) : undefined;
+  const inv = cse.invoiceId ? getInvoice(cse.invoiceId) : undefined;
   return inv ? [inv] : [];
 }
 

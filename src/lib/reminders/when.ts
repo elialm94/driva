@@ -79,18 +79,31 @@ interface LocalParts {
 
 const WD_INDEX: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
 
+// Intl.DateTimeFormat-konstruktorn är dyr (~40 µs); en instans per tidszon
+// räcker – formatToParts är trådsäkert och tillståndslöst.
+const partsFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function partsFormatter(timezone: string): Intl.DateTimeFormat {
+  let fmt = partsFormatters.get(timezone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      weekday: "short",
+      hour12: false,
+    });
+    partsFormatters.set(timezone, fmt);
+  }
+  return fmt;
+}
+
 /** Läser instantens lokala delar i en tidszon via Intl – inga bibliotek. */
 export function localParts(instant: Date, timezone: string): LocalParts {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    weekday: "short",
-    hour12: false,
-  });
+  const fmt = partsFormatter(timezone);
   const parts: Record<string, string> = {};
   for (const p of fmt.formatToParts(instant)) parts[p.type] = p.value;
   return {
