@@ -280,7 +280,7 @@ describe("Säljarens sidfot", () => {
 
   it("renderar kompakt sidfot utan kolumngrid och med nowrap på org/moms/F-skatt", () => {
     reset({ customers: [testCustomer()] });
-    const inv = createInvoice({ customerId: "cust-1", type: "faktura", lines: [labor()] });
+    const inv = createInvoice({ customerId: "cust-1", type: "faktura", lines: [labor()], rot: null });
     const html = renderToStaticMarkup(
       createElement(InvoiceDocument, {
         company: testCompany({ vatNumber: "" }),
