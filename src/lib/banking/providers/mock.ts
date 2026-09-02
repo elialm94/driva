@@ -28,6 +28,8 @@ import type {
 
 export const MOCK_BANK_NAME = "SEB";
 export const MOCK_MASKED_ACCOUNT = "···· 4512";
+/** Ingående saldo på demo-kontot – saldot ska se ut som ett riktigt företagskonto, inte börja på noll. */
+export const MOCK_OPENING_BALANCE = 48_250;
 
 function ensureMockAccount(): BankAccount {
   const data = db();
@@ -38,7 +40,7 @@ function ensureMockAccount(): BankAccount {
       provider: "mock",
       name: "Företagskonto",
       accountNumber: `${MOCK_BANK_NAME} ${MOCK_MASKED_ACCOUNT}`,
-      balance: 0,
+      balance: MOCK_OPENING_BALANCE,
       connectedAt: new Date().toISOString(),
       externalId: "mock-account-1",
     };

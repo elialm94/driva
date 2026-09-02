@@ -221,28 +221,34 @@ export function BankNoticeToast() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const [dismissed, setDismissed] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ kind: string; text: string } | null>(null);
 
   const kind = searchParams.get("bank");
-  const custom = searchParams.get("meddelande");
-  const active = kind && NOTICES[kind] && dismissed !== kind ? kind : null;
-  const text = active ? (active === "fel" && custom ? custom : NOTICES[active]) : null;
-  const tone = active === "kopplad" ? "ok" : active === "fel" ? "danger" : "neutral";
+  const incoming = kind && NOTICES[kind] ? kind : null;
+  // Statusordet i URL:en fångas i state under rendern (så att toasten överlever
+  // att parametern tas bort) och URL:en städas direkt – omladdning upprepar inget.
+  if (incoming && notice?.kind !== incoming) {
+    const custom = searchParams.get("meddelande");
+    setNotice({ kind: incoming, text: incoming === "fel" && custom ? custom : NOTICES[incoming] });
+  }
 
   useEffect(() => {
-    if (!active) return;
-    // Statusordet ligger kvar i URL:en medan toasten syns och tas bort när den
-    // stängs – så att omladdning strax efter inte upprepar den i evighet.
-    const timeout = window.setTimeout(() => {
-      setDismissed(active);
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete("bank");
-      params.delete("meddelande");
-      const query = params.toString();
-      router.replace((query ? `${pathname}?${query}` : pathname) as never, { scroll: false });
-    }, 6000);
+    if (!incoming) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("bank");
+    params.delete("meddelande");
+    const query = params.toString();
+    router.replace((query ? `${pathname}?${query}` : pathname) as never, { scroll: false });
+  }, [incoming, pathname, router, searchParams]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(null), 6000);
     return () => window.clearTimeout(timeout);
-  }, [active, pathname, router, searchParams]);
+  }, [notice]);
+
+  const text = notice?.text ?? null;
+  const tone = notice?.kind === "kopplad" ? "ok" : notice?.kind === "fel" ? "danger" : "neutral";
 
   if (!text) return null;
   return (
