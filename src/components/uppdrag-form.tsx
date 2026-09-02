@@ -9,6 +9,7 @@ import { buttonClasses, cx } from "./ui";
 import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
 import { createJobAction, updateJobAction } from "@/app/actions";
 import { addCustomerOption, CustomerPicker, type CustomerOption } from "./customer-picker";
+import { AddressAutocomplete, AddressFields } from "./address-input";
 import { FieldError, focusField, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
 
 const inputCls =
@@ -160,24 +161,10 @@ export function NewUppdragButton({
               {newAddress ? (
                 <div className="mt-3 space-y-2">
                   <input name="newLabel" aria-label="Namn på adressen (valfritt)" placeholder="T.ex. Fritidshus" className={inputCls} />
-                  <input
-                    name="newAddress"
-                    aria-label="Gatuadress"
-                    autoComplete="street-address"
-                    placeholder="Gatuadress"
-                    className={inputCls}
+                  <AddressFields
+                    names={{ address: "newAddress", postalCode: "newPostalCode", city: "newCity" }}
+                    inputClassName={inputCls}
                   />
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      name="newPostalCode"
-                      aria-label="Postnummer"
-                      inputMode="numeric"
-                      autoComplete="postal-code"
-                      placeholder="Postnummer"
-                      className={inputCls}
-                    />
-                    <input name="newCity" aria-label="Ort" autoComplete="address-level2" placeholder="Ort" className={inputCls} />
-                  </div>
                 </div>
               ) : null}
             </div>
@@ -294,10 +281,12 @@ export function EditUppdragModal({
           <label className="mb-1 block text-[13px] font-medium text-soft">Beskrivning</label>
           <textarea name="description" rows={3} defaultValue={initial.description} className={inputCls} />
         </div>
-        <div>
-          <label className="mb-1 block text-[13px] font-medium text-soft">Adress</label>
-          <input name="address" defaultValue={initial.address ?? ""} className={inputCls} />
-        </div>
+        <AddressAutocomplete
+          name="address"
+          defaultValue={initial.address ?? ""}
+          composeSelected="line"
+          inputClassName={inputCls}
+        />
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-[13px] font-medium text-soft">Planerad start</label>
