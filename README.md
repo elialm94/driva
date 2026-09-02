@@ -189,7 +189,7 @@ Läser `.data/db.json` (eller `--file <sökväg>`), skapar företaget och spelar
 
 `scripts/verify.mjs` och `scripts/verify2.mjs` klickar igenom alla flöden i headless Chrome (kräver `puppeteer-core` + lokal Chrome) och sparar skärmdumpar i `.shots/`.
 
-Fakturaenhetstester:
+Enhetstester (domän, bokföring, fakturor, lagring):
 
 ```bash
 npm test
@@ -198,8 +198,8 @@ npm test
 Databas- och persistenslager (Postgres i WASM – ingen Docker eller Supabase-miljö krävs):
 
 ```bash
-npm run test:db        # 59 SQL-invarianter: RLS, atomära RPC:er, immutabilitet, samtidighet, delbetalningar, dedup
-npm run test:adapter   # 20 adapterkontroller: riktiga domäntjänster → diff → commit → validering
+npm run test:db        # SQL-invarianter i PGlite: RLS, atomära RPC:er, immutabilitet, samtidighet, delbetalningar, dedup
+npm run test:adapter   # adapterkontroller: riktiga domäntjänster → diff → commit → validering
 ```
 
 ## Fakturering V1 – omfattning och begränsningar
