@@ -273,6 +273,70 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const supportApplied = await ensurePlatformSupportSchema(client);
   applied.push(...supportApplied);
 
+  const bankApplied = await ensureBankConnectionSchema(client);
+  applied.push(...bankApplied);
+
+  return applied;
+}
+
+/**
+ * Bankkoppling (migration 27): bank_connections + bank_accounts.external_id.
+ * Skapas här med IF NOT EXISTS så att en produktion där `supabase db push`
+ * inte körts ändå kan koppla banken. Speglar migrationen exakt – tokens är
+ * server-only (policy enbart för driva_app).
+ */
+export async function ensureBankConnectionSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  if (!(await columnExists(client, "bank_accounts", "external_id"))) {
+    await run(client, `alter table public.bank_accounts add column if not exists external_id text`);
+    await run(
+      client,
+      `create unique index if not exists bank_accounts_external_id_uq
+         on public.bank_accounts (business_id, external_id)
+         where external_id is not null`
+    );
+    applied.push("bank_accounts.external_id");
+  }
+  const table = await client.query(`select to_regclass('public.bank_connections') is not null as present`);
+  if (!table[0]?.present) {
+    await run(
+      client,
+      `create table if not exists public.bank_connections (
+        id text primary key,
+        business_id uuid not null references public.businesses (id) on delete cascade,
+        provider text not null check (provider in ('mock', 'tink')),
+        status text not null check (status in ('disconnected', 'pending', 'connected', 'error', 'revoked')),
+        external_user_id text,
+        tink_user_id text,
+        credentials_id text,
+        access_token text,
+        access_token_expires_at timestamptz,
+        pending_state text,
+        pending_state_expires_at timestamptz,
+        bank_name text,
+        masked_account text,
+        last_sync_at timestamptz,
+        last_error text,
+        connected_at timestamptz,
+        revoked_at timestamptz,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )`
+    );
+    await run(
+      client,
+      `create unique index if not exists bank_connections_business_uq on public.bank_connections (business_id)`
+    );
+    await run(client, `grant select, insert, update, delete on public.bank_connections to driva_app`);
+    await run(client, `alter table public.bank_connections enable row level security`);
+    await run(client, `drop policy if exists bank_connections_server on public.bank_connections`);
+    await run(
+      client,
+      `create policy bank_connections_server on public.bank_connections
+         for all to driva_app using (app.is_member(business_id)) with check (app.is_member(business_id))`
+    );
+    applied.push("bank_connections");
+  }
   return applied;
 }
 
