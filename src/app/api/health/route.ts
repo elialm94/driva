@@ -7,7 +7,6 @@ import {
   hasSupabaseEnv,
 } from "@/lib/storage/config";
 import { getSqlClient } from "@/lib/storage/executor";
-import { applyPendingPageLoadSchema } from "@/lib/storage/apply-pending-schema";
 
 /**
  * Driftdiagnostik för produktion (Vercel). Kräver INGEN inloggning så att den
@@ -19,6 +18,8 @@ import { applyPendingPageLoadSchema } from "@/lib/storage/apply-pending-schema";
  *
  * Svarar 200 när Supabase-miljön är komplett och schemat är på plats, annars
  * 503 med en `hint` som pekar på nästa åtgärd (sätt env / kör `supabase db push`).
+ * Endpointen är strikt läsande – schemaändringar körs aldrig från en oautentiserad
+ * route.
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,7 +33,6 @@ interface DbProbe {
   hasDisabledAt?: boolean;
   hasWebsiteDesign?: boolean;
   hasWebsiteFooter?: boolean;
-  schemaApplied?: string[];
   error?: string;
 }
 
@@ -69,11 +69,6 @@ async function probeDatabase(dbUrl: string): Promise<DbProbe> {
       "select to_regclass('public.businesses') is not null as present"
     );
     probe.hasCoreTables = Boolean(tableRows[0]?.present);
-    try {
-      probe.schemaApplied = await applyPendingPageLoadSchema(client);
-    } catch (err) {
-      probe.error = err instanceof Error ? err.message : String(err);
-    }
     const pageLoadTables: Record<string, boolean> = {};
     for (const name of PAGE_LOAD_TABLES) {
       const rows = await client.query(`select to_regclass($1) is not null as present`, [`public.${name}`]);
