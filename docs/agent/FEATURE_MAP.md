@@ -124,7 +124,7 @@ auth.users
         ├── invoices → invoice_line_items; invoice_issued_snapshots; payments
         ├── expenses → receipts
         ├── supplier_invoices → supplier_payments → payment_files
-        ├── bank_accounts → bank_transactions
+        ├── bank_accounts → bank_transactions; bank_connections (Tink tokens, server-only RLS)
         ├── inbox_items
         ├── reminders; attention_states
         ├── verifications → accounting_entries
@@ -219,7 +219,7 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications, published 
 | Data | Isolated JSON clone | RLS tenant |
 | Outbound mail | Simulated | Resend if configured |
 | BankID | Mock, UI **Demo-signering** | Real RP API if configured |
-| Bank / payments | Simulated Tink; **Simulera betalning** | Honest “not configured” — never fake success |
+| Bank / payments | **MockBankProvider** (SEB ···· 4512, synthetic tx, zero HTTP to Tink); **Simulera betalning** | **LiveTinkProvider** if all `TINK_*` set, else honest *Bankkoppling är inte konfigurerad* — never fake success |
 | Places | Local examples | Google Places if key set |
 | AI | Optional; honest fallback if no key | Same |
 | Trial | null | 14 days `trialing` |
@@ -484,7 +484,7 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **Statuses:** Utkast, Skickad, Delbetald, Betald, Krediterad. Overdue **derived:** *Förfallen* / *Förfallen N dagar*. Credit badge **Kreditfaktura** (never overdue). Types: faktura, delbetalning, slutfaktura, kredit.
 - **Filters:** Alla, Utkast, Obetalda, Förfallna, Betalda, Krediterade.
 - **Main actions — utkast:** Redigera · Kasta utkast · **Skicka faktura** (issues **then** emails — `issueInvoice` + `emailInvoice`). Checklist `#invoice-send-blockers`.
-- **Issued:** Visa kundvy, påminnelse if overdue, overflow: Kreditera (full only), Kopiera kundlänk, PDF, Skicka igen, **Simulera betalning** (demo + bank).
+- **Issued:** Visa kundvy, påminnelse if overdue, overflow: Kreditera (full only), Kopiera kundlänk, PDF, Skicka igen, **Simulera inbetalning** (demo **and** an active mock bank connection — hidden after *Koppla från*).
 - **Paid:** *Betald och bokförd.*
 - **Public:** utkast 404. *Fakturan är betald* / *Fakturan har förfallit*. Ladda ner PDF.
 - **Related:** ROT application card; `DeniedReductionCard`; quote deviation; payments / bank match.
@@ -578,14 +578,32 @@ Not separate nav items; tabs on `/ekonomi`.
 - **Live:** Telia Bankfil skapad; Beijer/Trygg-Hansa redo; Söderport *Betalningsuppgifter saknas*; Grand Hôtel *Välj kategori*; Clas Ohlson *Saknar kvitto*.
 - **DB:** `expenses`, `receipts`, `supplier_invoices`, `supplier_payments`.
 
-### Bank (`?flik=bank`)
+### Bank (`?flik=bank`) — Open Banking AIS via Tink
 
-- Empty: *Ingen bank kopplad ännu*.
-- Demo: connected SEB, badge *Demo – Tink/riktig bank kopplas senare*. Filters: Alla, Behöver åtgärd, Bokförda. Tx: Ny / Bokförd / Behöver åtgärd (or concrete *Matcha betalning*).
-- **DB:** `bank_accounts`, `bank_transactions`.
-- **Invariant:** production without bank must not fake payments.
+- **Purpose:** Fetch balance + transactions from the business account and run them through payment matching. **Account information only** — Driva never moves money (no PIS/VRP; payments are pain.001 files).
+- **Empty:** *Ingen bank kopplad ännu* + existing explanation + primary **Koppla företagskonto** + line *Du loggar in hos banken via Tink. Driva hämtar saldo och transaktioner för att matcha fakturor. Vi kan inte föra över pengar.*
+- **Connection states** (`BankConnectionStatus`, labels in `status-labels.ts` → `BANK_CONNECTION_STATUS`): `disconnected` *Ingen bank kopplad* · `pending` *Väntar på banken* · `connected` *Kopplad* · `error` *Kopplingen misslyckades* · `revoked` *Frånkopplad*. Card shows bank name + masked account (`SEB · ···· 4512`) + *Senast uppdaterad …* + balance. Demo adds badge *Demo-bank*.
+- **Actions (connected):** **Uppdatera** (fetch new tx → `registerBankTransactions` → matching; shows *N nya transaktioner*), **Koppla från** (confirm modal → revokes Tink credentials; **transactions and verifications stay**, status `revoked`, list still visible, **Koppla företagskonto** offered again). Pending: *Fortsätt hos banken* / *Avbryt kopplingen*. Error: *Försök igen*.
+- **Filters:** Alla, Behöver åtgärd, Bokförda. Tx: Ny / Bokförd / Behöver åtgärd (or concrete *Matcha betalning*).
 
-**Verify:** Ekonomi tabs switch via `?flik=`. Register in `economy-register.tsx`. Tests: `economy-list.test.ts`, `supplier-invoice-lifecycle.test.ts`.
+**Three modes (`selectBankProvider`, `src/lib/banking/select.ts`):**
+
+| Mode | When | Behaviour |
+|--|--|--|
+| **Mock** (`MockBankProvider`) | `/demo`, `is_demo` business, JSON store, or `DRIVA_DEMO=1` — regardless of env | Connect is instant, no redirect. Creates account *SEB ···· 4512* (opening balance 48 250 kr) + synthetic tx: OCR payment for the oldest open invoice (auto-booked), a payment without OCR (*Matcha betalning*), a card purchase without receipt (*Behöver åtgärd*). **Zero HTTP to tink.com / link.tink.com.** |
+| **Sandbox / live** (`LiveTinkProvider`) | Real business **and** `TINK_CLIENT_ID`, `TINK_CLIENT_SECRET`, `TINK_REDIRECT_URI` all set (`TINK_MARKET` default `SE`, `TINK_ENV` default `sandbox`) | Server creates a permanent Tink user (`external_user_id` = business id), delegates, builds the Tink Link URL (Transactions · connect-accounts, `market=SE`, `locale=sv_SE`, `state`=nonce.businessFingerprint, `test=true` when sandbox), client does **`window.location.assign`** (full page, never iframe). Callback validates state, exchanges token, imports 90 days of booked tx. |
+| **Production-not-enabled** (`UnconfiguredBankProvider`) | Real business, env missing/incomplete | Every action returns *Bankkoppling är inte konfigurerad*; nothing crashes, nothing is faked. `TINK_ENV=production` merely drops `test=true` — Tink production access is a separate commercial step, not enabled by this code. |
+
+- **Routes:** server actions `src/app/bank-actions.ts` (`connectBankAction`, `refreshBankAction`, `disconnectBankAction`, `cancelBankConnectAction`); callback `GET /api/bank/tink/callback` (= `TINK_REDIRECT_URI`, **requires the session cookie** — not a public prefix; proxy bounces to `/login?next=` and back). Callback redirects to `/ekonomi?flik=bank&bank=kopplad|avbrutet|fel` → toast, param stripped.
+- **Files:** `src/lib/banking/provider.ts` (interface + CSRF state), `providers/{mock,tink,unconfigured}.ts`, `select.ts`, `connection-state.ts` (`bankConnectionView()` — the only thing the UI reads; never tokens), `errors.ts` (Swedish texts, no raw Tink JSON), `tink/{config,client,amounts}.ts` (15 s timeouts, injectable transport for tests, `unscaledValue/scale` → whole kronor at the boundary, ADR-1). UI: `src/components/bank-connection.tsx`, card in `src/app/(app)/ekonomi/page.tsx`.
+- **DB:** `bank_accounts` (+ `external_id` = Tink account id, idempotent re-import), `bank_transactions` (unique `external_id`), **`bank_connections`** (migration 27: status, `tink_user_id`, `credentials_id`, `access_token` + expiry, pending CSRF state, bank name, masked account, `last_sync_at`, `last_error`). RLS grants **`driva_app` only** — no `authenticated` policy, so tokens are unreachable via the Data API. Demo reset deletes the row.
+- **Env:** `TINK_CLIENT_ID`, `TINK_CLIENT_SECRET`, `TINK_REDIRECT_URI` (byte-for-byte equal to the Console redirect URI), `TINK_MARKET`, `TINK_ENV`. Server-only; never `NEXT_PUBLIC_TINK_*`. Demo Bank usernames are never stored in env or repo.
+- **Errors (user-facing only):** *Banken godkände inte kopplingen. Försök igen.* (auth/declined/401/403) · *Tillfälligt fel hos banken. Försök igen.* (network, timeout, 5xx, bad JSON) · *Bankkoppling är inte konfigurerad* · *Kopplingen kunde inte verifieras. Försök igen.* (state mismatch). `USER_CANCELLED` from Tink Link is **not** an error → *Kopplingen avbröts.*
+- **Invariants:** production without bank must not fake payments; **Simulera inbetalning** / demo receipt tx require `hasConnectedBank()` (mock only); a demo business can never reach Tink even if the live provider were selected (`assertNotDemo`); a live business never gets mock data.
+
+**Verify (mock, JSON dev on :3123):** `POST /api/dev/reset {"mode":"empty"}` → `/ekonomi?flik=bank` shows empty state with **Koppla företagskonto** + secondary line → click → card *SEB · ···· 4512* · *Kopplad* · *Senast uppdaterad* · Uppdatera / Koppla från; tx list has *Clas Ohlson* → **Uppdatera** shows *N nya transaktioner* → **Koppla från** → confirm → *Frånkopplad*, list still populated, **Koppla företagskonto** back. Puppeteer request listener: no request to `tink.com`. Tests: `src/lib/bank-connection.test.ts` (selection, CSRF, öre→kr, error mapping, mock + live via fake transport), `economy-list.test.ts`.
+
+**Verify (sandbox, Vercel with env, real non-demo business):** Ekonomi → Bank → **Koppla företagskonto** → full-page redirect to `link.tink.com/1.0/transactions/connect-accounts?…&test=true` → choose **Demo Bank** → log in as Tink's *Demo Bank User 1* (credentials from Tink docs, not stored here) → approve → back on `/ekonomi?flik=bank` with toast *Banken är kopplad* and card *Demo Bank · ···· NNNN* · *Kopplad*. Transactions appear; a matching OCR payment books an invoice. **Uppdatera** re-syncs (7-day overlap, idempotent). **Koppla från** → `DELETE /api/v1/credentials/{id}` → *Frånkopplad*, history intact. Cancel in Tink Link → *Kopplingen avbröts. Inget har ändrats.*
 
 ---
 
