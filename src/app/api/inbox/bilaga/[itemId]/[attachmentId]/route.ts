@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/store";
-import { attachmentContent } from "@/lib/inbox/attachment-content";
+import { attachmentContent, isViewableContentType } from "@/lib/inbox/attachment-content";
 import { withBusinessRead } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -28,10 +28,16 @@ export async function GET(
         { status: 404 }
       );
     }
+    // Bara PDF/bilder renderas inline (dokumentvisaren). Allt annat – t.ex.
+    // äldre poster med godtycklig contentType – tvingas till nedladdning så att
+    // en bilaga aldrig kan köras som HTML/SVG i appens origin.
+    const viewable = isViewableContentType(content.contentType);
+    const filename = attachment.filename.replace(/[^\w.\-åäöÅÄÖ ]/g, "_");
     return new NextResponse(new Uint8Array(content.bytes), {
       headers: {
-        "Content-Type": content.contentType,
-        "Content-Disposition": `inline; filename="${attachment.filename.replace(/[^\w.\-åäöÅÄÖ ]/g, "_")}"`,
+        "Content-Type": viewable ? content.contentType : "application/octet-stream",
+        "Content-Disposition": `${viewable ? "inline" : "attachment"}; filename="${filename}"`,
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store",
       },
     });

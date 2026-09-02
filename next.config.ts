@@ -9,6 +9,21 @@ const nextConfig: NextConfig = {
     // 30 s klientcache återanvände avhuggna RSC-prefetch-payloads vid klick
     // och gav "This page couldn't load" (React #412 Connection closed).
   },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          // SAMEORIGIN (inte DENY): dokumentvisaren bäddar in /api/inbox/bilaga i en iframe.
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+        ],
+      },
+    ];
+  },
   async redirects() {
     return [
       { source: "/jobb", destination: "/uppdrag", permanent: true },
