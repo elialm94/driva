@@ -11,8 +11,10 @@ import {
   invoiceQuoteReference,
   invoiceTaxReductionView,
   lineTypeNote,
+  sellerIdentityFooter,
   type DocInfoRow,
   type InvoiceTaxReductionDocView,
+  type SellerIdentityToken,
 } from "@/lib/invoices/document-view";
 import { TaxReductionInvoiceDisclaimer } from "./tax-reduction-terms";
 import { RichTextView } from "./rich-text";
@@ -178,48 +180,37 @@ function InvoicePaymentSection({ rows, termsLine }: { rows: DocInfoRow[]; termsL
   );
 }
 
-/** Företagsuppgifter – fullt läsbara på A4, endast fält med värde. */
+function SellerIdentityTokenView({ token }: { token: SellerIdentityToken }) {
+  const className = token.nowrap ? "whitespace-nowrap" : undefined;
+  if (token.href) {
+    return (
+      <a href={token.href} className={`text-soft underline-offset-2 hover:underline print:no-underline ${className ?? ""}`.trim()}>
+        {token.text}
+      </a>
+    );
+  }
+  return <span className={className}>{token.text}</span>;
+}
+
+/**
+ * Säljarens sidfot – kompakt vänsterställd identitet (webb + PDF).
+ * Data från issuedSnapshot via resolveInvoiceView, aldrig live-uppslag på utfärdad faktura.
+ */
 function InvoiceCompanyFooter({ company }: { company: CompanySettings }) {
-  const sate = company.sate?.trim() || company.city;
-  // Dokumentkonvention: webbadress utan protokoll ("driva.se", inte "https://…").
-  const website = company.websiteUrl?.replace(/^https?:\/\//, "").replace(/\/$/, "") ?? "";
-  const payment: string[] = [];
-  if (company.bankgiro?.trim()) payment.push(`Bankgiro ${company.bankgiro.trim()}`);
-  if (company.plusgiro?.trim()) payment.push(`PlusGiro ${company.plusgiro.trim()}`);
-  if (company.iban?.trim()) payment.push(`IBAN ${company.iban.trim()}`);
-  if (company.bic?.trim()) payment.push(`BIC ${company.bic.trim()}`);
-  if (!company.iban?.trim() && company.bankAccount?.trim()) payment.push(`Bankkonto ${company.bankAccount.trim()}`);
-
-  const columns: { label: string; rows: string[] }[] = [
-    {
-      label: "Adress",
-      rows: [company.name, company.address, `${company.postalCode} ${company.city}`.trim(), sate ? `Säte: ${sate}` : ""],
-    },
-    {
-      label: "Kontakt",
-      rows: [company.phone, company.email, website],
-    },
-    { label: "Betalning", rows: payment },
-    {
-      label: "Företag",
-      rows: [`Org.nr ${company.orgNumber}`, `Momsreg.nr ${company.vatNumber}`, "Godkänd för F-skatt"],
-    },
-  ]
-    .map((column) => ({ ...column, rows: column.rows.filter((row) => row.trim()) }))
-    .filter((column) => column.rows.length > 0);
-
+  const { lines } = sellerIdentityFooter(company);
+  if (lines.length === 0) return null;
   return (
-    <footer className="break-inside-avoid mt-6 border-t border-line pt-3.5">
-      <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-[1fr_1.35fr_0.95fr_1fr] print:grid-cols-[1fr_1.35fr_0.95fr_1fr]">
-        {columns.map((column) => (
-          <div key={column.label} className="min-w-0">
-            <p className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted">{column.label}</p>
-            {column.rows.map((row, i) => (
-              <p key={i} className="mt-0.5 break-words text-[12px] leading-snug text-soft first-of-type:mt-1">
-                {row}
-              </p>
+    <footer className="break-inside-avoid mt-6 border-t border-line pt-3.5" data-invoice-seller-footer="">
+      <div className="space-y-0.5 text-left text-[12px] leading-snug text-soft">
+        {lines.map((line, i) => (
+          <p key={i}>
+            {line.map((token, j) => (
+              <span key={j}>
+                {j > 0 ? <span aria-hidden> · </span> : null}
+                <SellerIdentityTokenView token={token} />
+              </span>
             ))}
-          </div>
+          </p>
         ))}
       </div>
     </footer>
