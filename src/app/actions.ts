@@ -62,7 +62,6 @@ import { userFacingStorageError } from "@/lib/storage/sql-errors";
 import { createCustomer, updateCustomer, updateCustomerNotes } from "@/lib/services/customers";
 import {
   approveInboxExtraction,
-  createExpenseFromInboxItem,
   ingestUploadedDocument,
   markInboxMailProcessed,
   type ApproveExtractionInput,
@@ -957,20 +956,6 @@ export async function regeneratePaymentFileAction(
     refresh();
     return { ok: true as const, fileId: result.file.id, filename: result.file.filename };
   }, { capability: "submit_bank_payment" });
-}
-
-export async function createExpenseFromInboxAction(
-  itemId: string
-): Promise<{ ok: true; expenseId: string } | { ok: false; error: string }> {
-  return withBusiness(() => {
-    try {
-      const result = createExpenseFromInboxItem(itemId);
-      refresh();
-      return { ok: true as const, expenseId: result.expenseId };
-    } catch (e) {
-      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte skapa utgift." };
-    }
-  }, { capability: "write_accounting" });
 }
 
 /** "Inte aktuell" på en väntande offert – domänövergång till avböjd med skäl. */

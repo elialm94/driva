@@ -741,29 +741,6 @@ export function markInboxMailProcessed(id: string): InboxItem {
   return item;
 }
 
-export function createExpenseFromInboxItem(id: string): { expenseId: string; autoBooked: boolean } {
-  const item = getInboxMail(id);
-  if (!item) throw new Error("Posten finns inte i inboxen.");
-  if (item.expenseId) return { expenseId: item.expenseId, autoBooked: false };
-  if (item.parsedAmount == null || item.parsedVatAmount == null || !item.parsedSupplier) {
-    throw new Error("Belopp eller leverantör saknas – Driva gissar inte belopp.");
-  }
-  const { expense, autoBooked } = createExpenseFromKnownReceipt({
-    supplier: item.parsedSupplier,
-    amount: item.parsedAmount,
-    vatAmount: item.parsedVatAmount,
-    date: item.parsedDate ?? item.createdAt.slice(0, 10),
-    description: item.subject,
-    filename: item.attachments[0]?.filename,
-    source: item.source === "uppladdning" ? "uppladdning" : "email",
-  });
-  item.expenseId = expense.id;
-  item.status = autoBooked ? "bokford" : "behandlad";
-  item.processedAt = new Date().toISOString();
-  save();
-  return { expenseId: expense.id, autoBooked };
-}
-
 export function createSupplierInvoiceFromInboxItem(id: string): { invoiceId: string; autoBooked: boolean } {
   const item = getInboxMail(id);
   if (!item) throw new Error("Posten finns inte i inboxen.");

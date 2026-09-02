@@ -530,7 +530,7 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **Types:** Leverantörsfaktura (ska betalas) · Kvitto (redan betalt) · ekonomiskt dokument.
 - **Stored status:** `ny` → `behandlad` → `bokford`. UI may show richer lifecycle (*Kontrollera belopp*, *Bokförd · Redo att betala*, *Bankfil skapad*).
 - **Related:** Utgifter & kvitton, Bank, Bokföring questions, payment files (pain.001).
-- **Components:** `inbox-list.tsx`, `inbox-address.tsx`, `extraction-review.tsx`, `inbox-upload.tsx`, `inbox-mail-actions.tsx`, `payment-file-actions.tsx`.
+- **Components:** `inbox-list.tsx`, `inbox-address.tsx`, `extraction-review.tsx`, `inbox-upload.tsx`, `payment-file-actions.tsx`.
 - **DB:** `inbox_items`, `business_settings.inbound_mail_slug`, `payment_files`, `supplier_payments`. Bucket `inbox_attachments`.
 - **Invariants:** Tenant from **To** slug (`{slug}@in.driva.se`), never From. **No DELETE** on inbox_items. Dedup `(business_id, external_id)`. Badge ≠ open filter. Autopilot books only at high amount confidence or after `reviewedAt`. Website forms → jobs, not inbox.
 - **Live:** address `demo@in.driva.se`. Open: Byggmax *Kontrollera belopp*, Beijer *Bokförd · Redo att betala*. Badge **1**.
