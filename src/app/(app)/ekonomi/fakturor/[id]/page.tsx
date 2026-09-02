@@ -32,6 +32,8 @@ import { SmartBack } from "@/components/back-link";
 import { AppLink } from "@/components/app-link";
 import { hrefWithNav, newQuoteHref, sanitizeReturnLabel, sanitizeReturnTo, withReturnTo } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { hasConnectedBank } from "@/lib/banking/connection-state";
+import { isDemoBankRequest } from "@/lib/banking/select";
 
 export const metadata = { title: "Faktura" };
 
@@ -89,8 +91,9 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   const isCreditNote = invoice.type === "kredit";
   const canRemind = invoice.status === "skickad" && !isCreditNote && overdue;
   const canCredit = invoice.status === "skickad" && !isCreditNote;
-  // Simulering kräver ett (demo-)bankkonto att bokföra inbetalningen mot.
-  const canSimulate = invoice.status === "skickad" && !isCreditNote && data.bankAccounts.length > 0;
+  // Simulering är demo-bankens knapp: kräver en AKTIV (mock-)koppling – aldrig
+  // mot en riktig Tink-bank, och inte efter Koppla från.
+  const canSimulate = invoice.status === "skickad" && !isCreditNote && isDemoBankRequest() && hasConnectedBank();
   const canCustomerView = !isDraft;
   const canCopyLink = !isDraft;
   const canResend = !isDraft;
