@@ -8,27 +8,27 @@ import { logActivity } from "./activity";
 import { logAudit } from "../accounting/audit";
 import { postVerification } from "../accounting/engine";
 import { assertDemoMode } from "../demo";
+import { connectedBankAccount } from "../banking/connection-state";
 import { processIncomingTransaction } from "./payment-matching";
 import { expectedTaxReductionPayouts } from "./tax-reduction";
 
 /**
  * Open Banking-abstraktion.
  *
- * BankProvider är gränssnittet mot en riktig leverantör (t.ex. Tink, GoCardless
- * eller Enable Banking): kontosaldo + transaktionsström. Riktiga flöden bär
- * öre – beloppen avrundas till hela kronor VID IMPORTGRÄNSEN (se README-ADR);
- * matchningen tolererar öresdiffar och bokar dem på 3740.
+ * BankProvider (lib/banking/provider.ts) är gränssnittet mot leverantören:
+ * startConnect · handleCallback · refresh · listAccounts · listTransactions ·
+ * disconnect. LiveTinkProvider (Tink AIS) för riktiga företag med TINK_*-miljö,
+ * MockBankProvider för demo. Riktiga flöden bär öre – beloppen avrundas till
+ * hela kronor VID IMPORTGRÄNSEN (se README-ADR); matchningen tolererar
+ * öresdiffar och bokar dem på 3740. Importen går alltid via
+ * registerBankTransactions nedan – matchningsmotorn känner inte leverantören.
  *
  * Alla funktioner som HITTAR PÅ pengar (simulera inbetalning, betala
  * leverantörsfaktura utan riktig bank) är demo-gated (lib/demo.ts): i en
  * produktionsmiljö utan bankkoppling visas ett ärligt oconfigurerat läge.
  */
 
-export interface BankProvider {
-  readonly name: string;
-  /** I en riktig integration: hämta nya transaktioner sedan senaste synk. */
-  sync(): BankTransaction[];
-}
+export type { BankProvider } from "../banking/provider";
 
 /**
  * Registrera importerade banktransaktioner idempotent: transaktioner med ett
@@ -77,7 +77,7 @@ export function simulateIncomingPayment(invoiceId: string, opts: { amount?: numb
   const data = db();
   const invoice = getInvoice(invoiceId);
   if (!invoice || !isOpenReceivable(invoice)) return;
-  const account = data.bankAccounts[0];
+  const account = connectedBankAccount();
   if (!account) throw new Error("Ingen bank är kopplad – det finns inget konto att simulera inbetalningen mot.");
   const customer = requireCustomer(invoice.customerId);
   const amount = opts.amount ?? invoiceOutstanding(invoice);
@@ -107,7 +107,7 @@ export function simulateIncomingPayment(invoiceId: string, opts: { amount?: numb
 export function simulateTaxReductionPayout(input: { jobId?: string; invoiceId?: string; amount?: number }): void {
   assertDemoMode("Simulerad ROT/RUT-utbetalning");
   const data = db();
-  const account = data.bankAccounts[0];
+  const account = connectedBankAccount();
   if (!account) throw new Error("Ingen bank är kopplad – det finns inget konto att simulera utbetalningen mot.");
   const payout = expectedTaxReductionPayouts().find(
     (p) => (input.jobId && p.jobId === input.jobId) || (input.invoiceId && p.invoiceId === input.invoiceId)
@@ -138,7 +138,7 @@ export function paySupplierInvoice(supplierInvoiceId: string): void {
   const data = db();
   const sup = data.supplierInvoices.find((s) => s.id === supplierInvoiceId);
   if (!sup || sup.status === "betald") return;
-  const account = data.bankAccounts[0];
+  const account = connectedBankAccount();
   if (!account) throw new Error("Ingen bank är kopplad – det finns inget konto att betala från.");
   const now = new Date().toISOString();
   const tx: BankTransaction = {

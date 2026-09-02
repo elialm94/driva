@@ -10,7 +10,7 @@ import { kr, datumKort } from "@/lib/format";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { loadStateSnapshot } from "@/lib/storage/adapter-supabase";
 import { runInTenantContext } from "@/lib/storage/context";
-import { db } from "@/lib/store";
+import { hasConnectedBank } from "@/lib/banking/connection-state";
 
 export const metadata = { title: "Bank" };
 
@@ -30,14 +30,14 @@ export default async function AccountantBankPage({
           () => ({
             recon: bankReconciliation(),
             rows: listBankForTable({ status: "atgard", pageSize: 40 }).rows,
-            connected: db().bankAccounts.length > 0,
+            connected: hasConnectedBank(),
           })
         );
       })()
     : {
         recon: bankReconciliation(),
         rows: listBankForTable({ status: "atgard", pageSize: 40 }).rows,
-        connected: db().bankAccounts.length > 0,
+        connected: hasConnectedBank(),
       };
 
   const bankActions = [...snap.queue, ...snap.waiting]

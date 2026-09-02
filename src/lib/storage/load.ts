@@ -18,6 +18,7 @@ import {
   assistantMessagesSpec,
   auditTrailFromAuditRow,
   bankAccountsSpec,
+  bankConnectionsSpec,
   bankidOrdersSpec,
   bankTransactionsSpec,
   customersSpec,
@@ -154,7 +155,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     tx.query(`select * from public.annual_reports where business_id = $1 order by generated_at, id`, b),
   ]);
 
-  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows] =
+  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows, bankConnectionRows] =
     await Promise.all([
       tx.query(`select * from public.websites where business_id = $1`, b),
       tx.query(`select * from public.domains where business_id = $1 order by created_at, id`, b),
@@ -177,6 +178,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
          order by created_at, id`,
         b
       ),
+      queryIfTable(tx, "bank_connections", `select * from public.bank_connections where business_id = $1 order by created_at, id`, b),
     ]);
 
   // Bostäder per kund (position = visningsordning).
@@ -252,6 +254,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     payments: paymentRows.map(paymentsSpec.fromRow),
     bankAccounts: bankAccountRows.map(bankAccountsSpec.fromRow),
     bankTransactions: bankTxRows.map(bankTransactionsSpec.fromRow),
+    bankConnections: bankConnectionRows.map(bankConnectionsSpec.fromRow),
     expenses: expenseRows.map(expensesSpec.fromRow),
     receipts: receiptRows.map(receiptsSpec.fromRow),
     supplierInvoices: supplierRows.map(supplierInvoicesSpec.fromRow),

@@ -23,6 +23,7 @@
  */
 
 import type {
+  BankConnectionStatus,
   CollaborationInviteStatus,
   ExpenseStatus,
   InboxItemStatus,
@@ -145,6 +146,20 @@ export const TX_STATUS: Record<TxStatus, StatusLabel> = {
   ny: { label: "Ny", tone: "neutral" },
   bokford: { label: "Bokförd", tone: "ok" },
   behover_atgard: { label: "Behöver åtgärd", tone: "warn" },
+};
+
+/* ------------------------------ Bankkoppling ---------------------------------- */
+
+/**
+ * Bankkopplingens status (Ekonomi → Bank). Tink är en METOD, inte en status:
+ * etiketten säger vad som gäller för användaren – aldrig "pending"/"revoked".
+ */
+export const BANK_CONNECTION_STATUS: Record<BankConnectionStatus, StatusLabel> = {
+  disconnected: { label: "Ingen bank kopplad", tone: "neutral" },
+  pending: { label: "Väntar på banken", tone: "warn" },
+  connected: { label: "Kopplad", tone: "ok" },
+  error: { label: "Kopplingen misslyckades", tone: "danger" },
+  revoked: { label: "Frånkopplad", tone: "neutral" },
 };
 
 /* ---------------------------------- Utgifter ---------------------------------- */

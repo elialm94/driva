@@ -212,6 +212,7 @@ export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): 
   loaded.inboxItems ??= [];
   loaded.supplierPayments ??= [];
   loaded.paymentFiles ??= [];
+  loaded.bankConnections ??= [];
   loaded.jobWorkEntries ??= [];
   loaded.collaborationInvitations ??= [];
   loaded.clientInformationRequests ??= [];
@@ -367,6 +368,7 @@ export function resetToEmptyCompany(): void {
     payments: [],
     bankAccounts: [],
     bankTransactions: [],
+    bankConnections: [],
     expenses: [],
     receipts: [],
     supplierInvoices: [],

@@ -26,6 +26,7 @@ import type {
   CollaborationInvitation,
   InboxItem,
   BankAccount,
+  BankConnection,
   BankIDOrder,
   BankIDSignature,
   BankTransaction,
@@ -678,7 +679,7 @@ export const paymentsSpec: TableSpec<Payment> = {
 export const bankAccountsSpec: TableSpec<BankAccount> = {
   table: "bank_accounts",
   pk: ["id"],
-  columns: ["id", "business_id", "provider", "name", "account_number", "balance", "connected_at"],
+  columns: ["id", "business_id", "provider", "name", "account_number", "balance", "connected_at", "external_id"],
   toRow: (a, businessId) => ({
     id: a.id,
     business_id: businessId,
@@ -687,6 +688,7 @@ export const bankAccountsSpec: TableSpec<BankAccount> = {
     account_number: a.accountNumber,
     balance: a.balance,
     connected_at: a.connectedAt,
+    external_id: a.externalId ?? null,
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -695,6 +697,61 @@ export const bankAccountsSpec: TableSpec<BankAccount> = {
     accountNumber: str(r.account_number),
     balance: num(r.balance),
     connectedAt: tsIso(r.connected_at),
+    ...opt("externalId", strOrU(r.external_id)),
+  }),
+};
+
+/* ----------------------------- bank_connections --------------------------- */
+
+export const bankConnectionsSpec: TableSpec<BankConnection> = {
+  table: "bank_connections",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "provider", "status", "external_user_id", "tink_user_id", "credentials_id",
+    "access_token", "access_token_expires_at", "pending_state", "pending_state_expires_at",
+    "bank_name", "masked_account", "last_sync_at", "last_error", "connected_at", "revoked_at",
+    "created_at", "updated_at",
+  ],
+  toRow: (c, businessId) => ({
+    id: c.id,
+    business_id: businessId,
+    provider: c.provider,
+    status: c.status,
+    external_user_id: c.externalUserId ?? null,
+    tink_user_id: c.tinkUserId ?? null,
+    credentials_id: c.credentialsId ?? null,
+    access_token: c.accessToken ?? null,
+    access_token_expires_at: c.accessTokenExpiresAt ?? null,
+    pending_state: c.pendingState ?? null,
+    pending_state_expires_at: c.pendingStateExpiresAt ?? null,
+    bank_name: c.bankName ?? null,
+    masked_account: c.maskedAccount ?? null,
+    last_sync_at: c.lastSyncAt ?? null,
+    last_error: c.lastError ?? null,
+    connected_at: c.connectedAt ?? null,
+    revoked_at: c.revokedAt ?? null,
+    created_at: c.createdAt,
+    updated_at: c.updatedAt,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    provider: r.provider as BankConnection["provider"],
+    status: r.status as BankConnection["status"],
+    ...opt("externalUserId", strOrU(r.external_user_id)),
+    ...opt("tinkUserId", strOrU(r.tink_user_id)),
+    ...opt("credentialsId", strOrU(r.credentials_id)),
+    ...opt("accessToken", strOrU(r.access_token)),
+    ...opt("accessTokenExpiresAt", tsIsoOrU(r.access_token_expires_at)),
+    ...opt("pendingState", strOrU(r.pending_state)),
+    ...opt("pendingStateExpiresAt", tsIsoOrU(r.pending_state_expires_at)),
+    ...opt("bankName", strOrU(r.bank_name)),
+    ...opt("maskedAccount", strOrU(r.masked_account)),
+    ...opt("lastSyncAt", tsIsoOrU(r.last_sync_at)),
+    ...opt("lastError", strOrU(r.last_error)),
+    ...opt("connectedAt", tsIsoOrU(r.connected_at)),
+    ...opt("revokedAt", tsIsoOrU(r.revoked_at)),
+    createdAt: tsIso(r.created_at),
+    updatedAt: tsIso(r.updated_at),
   }),
 };
 

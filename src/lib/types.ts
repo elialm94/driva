@@ -660,6 +660,51 @@ export interface BankAccount {
   accountNumber: string;
   balance: number;
   connectedAt: string;
+  /** Leverantörens konto-id (Tink account id). Gör återimport av konton idempotent. */
+  externalId?: string;
+}
+
+/**
+ * Bankkopplingens livscykel (en koppling per företag):
+ *   disconnected → pending (användaren är hos banken via Tink Link)
+ *   → connected (credentials finns, transaktioner hämtas)
+ *   → revoked (Koppla från: Tink-åtkomsten återkallad; historiken kvar)
+ *   error = banken/Tink sa nej eller fel vid hämtning – användaren kan försöka igen.
+ */
+export type BankConnectionStatus = "disconnected" | "pending" | "connected" | "error" | "revoked";
+
+/**
+ * Bankkopplingen (Open Banking AIS via Tink, eller mock i demo).
+ *
+ * Tokens och Tink-id:n är SERVER-ONLY: raden nås bara av serverrollen (ingen
+ * RLS-policy för authenticated) och UI:t läser en projektion (bankConnectionView)
+ * som aldrig innehåller hemligheter.
+ */
+export interface BankConnection {
+  id: ID;
+  provider: "mock" | "tink";
+  status: BankConnectionStatus;
+  /** Tink permanent user: external_user_id = företagets id. */
+  externalUserId?: string;
+  tinkUserId?: string;
+  /** Tink credentials-id (bankmedgivandet). Töms vid Koppla från. */
+  credentialsId?: string;
+  /** Cachad användartoken (server-only). Nya hämtas via authorization-grant när den gått ut. */
+  accessToken?: string;
+  accessTokenExpiresAt?: string;
+  /** CSRF-state för pågående Tink Link-flöde (server-only). */
+  pendingState?: string;
+  pendingStateExpiresAt?: string;
+  bankName?: string;
+  /** Maskerat kontonummer för visning, t.ex. "···· 4512". */
+  maskedAccount?: string;
+  lastSyncAt?: string;
+  /** Senaste användarvänliga felet (svenska, aldrig rå Tink-JSON). */
+  lastError?: string;
+  connectedAt?: string;
+  revokedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
@@ -1841,6 +1886,8 @@ export interface DB {
   payments: Payment[];
   bankAccounts: BankAccount[];
   bankTransactions: BankTransaction[];
+  /** Bankkoppling (Tink/mock), max en aktiv per företag. Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  bankConnections?: BankConnection[];
   expenses: Expense[];
   receipts: Receipt[];
   supplierInvoices: SupplierInvoice[];
