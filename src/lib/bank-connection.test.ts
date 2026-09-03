@@ -126,6 +126,9 @@ describe("Val av bankleverantör", () => {
     assert.equal(url.searchParams.get("locale"), "sv_SE");
     assert.equal(url.searchParams.get("state"), "abc.def");
     assert.equal(url.searchParams.get("test"), "true");
+    // BUSINESS i financial_services_segments skickar Link till business-transactions,
+    // som inte stödjer permanent-user-flödet → REQUEST_FAILED_CREATE_AUTHORIZATION_CODE.
+    assert.equal(url.searchParams.get("financial_services_segments"), null);
 
     const prod = readTinkConfig({ ...FULL_ENV, TINK_ENV: "production" })!;
     const prodUrl = new URL(buildTinkLinkUrl(prod, { authorizationCode: "c", state: "s" }));
@@ -368,6 +371,89 @@ describe("LiveTinkProvider (falsk transport)", () => {
     assert.equal(row.pendingState, url.searchParams.get("state"));
     assert.ok(JSON.parse(bodies[0]).external_user_id === BUSINESS_ID);
     assert.ok(calls.every((c) => c.url.startsWith(TINK_API_BASE)));
+    assert.equal(
+      calls.some((c) => c.url.includes("/api/v1/credentials/list")),
+      false,
+      "första kopplingen letar inte efter gamla medgivanden"
+    );
+  });
+
+  it("startConnect adopterar ett medgivande som redan finns hos Tink i stället för nytt Link-varv", async () => {
+    // Förra försöket: banken godkände, men callbacken nådde oss aldrig (raden är pending utan credentialsId).
+    const { upsertBankConnection } = await import("./banking/connection-state");
+    upsertBankConnection({
+      provider: "tink",
+      status: "pending",
+      externalUserId: BUSINESS_ID,
+      tinkUserId: "tink-user-1",
+      pendingState: newConnectState(BUSINESS_ID),
+      pendingStateExpiresAt: new Date(Date.now() + BANK_STATE_TTL_MS).toISOString(),
+    });
+    const calls = fakeTransport({
+      "/api/v1/oauth/token": () => ({ access_token: "tok", expires_in: 7200 }),
+      "/api/v1/oauth/authorization-grant/delegate": () => ({ code: "should-not-be-used" }),
+      "/api/v1/oauth/authorization-grant": () => ({ code: "user-code" }),
+      "/api/v1/credentials/list": () => ({
+        credentials: [
+          { id: "cred-old-broken", providerName: "se-demobank-password", status: "AUTHENTICATION_ERROR" },
+          { id: "cred-demo", providerName: "se-demobank-password", status: "UPDATED" },
+        ],
+      }),
+      "/api/v1/credentials": () => ({ id: "cred-demo", providerName: "se-demobank-password", status: "UPDATED" }),
+      "/api/v1/providers": () => ({ providers: [{ name: "se-demobank-password", displayName: "Demo Bank" }] }),
+      "/data/v2/accounts": () => ({
+        accounts: [
+          {
+            id: "acc-1",
+            name: "Företagskonto",
+            type: "CHECKING",
+            balances: { booked: { amount: { value: { unscaledValue: "250000", scale: "2" } } } },
+            identifiers: { iban: { bban: "50000000058398257466" } },
+          },
+        ],
+      }),
+      "/data/v2/transactions": () => ({ transactions: [] }),
+    });
+    const result = await new LiveTinkProvider(cfg()).startConnect();
+    assert.equal(result.kind, "connected", "ingen redirect – kopplingen är klar");
+    assert.equal(calls.some((c) => c.url.includes("/authorization-grant/delegate")), false, "ingen ny Link-URL");
+
+    const view = bankConnectionView();
+    assert.equal(view.status, "connected");
+    assert.equal(view.bankName, "Demo Bank");
+    assert.equal(view.maskedAccount, "···· 7466");
+    assert.equal(activeBankConnection()!.credentialsId, "cred-demo", "det fungerande medgivandet valdes");
+    assert.equal(activeBankConnection()!.pendingState, undefined);
+  });
+
+  it("startConnect utan användbart medgivande hos Tink → vanligt Link-varv", async () => {
+    const { upsertBankConnection } = await import("./banking/connection-state");
+    upsertBankConnection({ provider: "tink", status: "disconnected", externalUserId: BUSINESS_ID, tinkUserId: "u" });
+    const calls = fakeTransport({
+      "/api/v1/oauth/token": () => ({ access_token: "tok" }),
+      "/api/v1/oauth/authorization-grant": () => ({ code: "user-code" }),
+      "/api/v1/credentials/list": () => ({ credentials: [{ id: "x", status: "AUTHENTICATION_ERROR" }] }),
+      "/api/v1/oauth/authorization-grant/delegate": () => ({ code: "delegate-code" }),
+    });
+    const result = await new LiveTinkProvider(cfg()).startConnect();
+    assert.equal(result.kind, "redirect");
+    assert.ok(calls.some((c) => c.url.includes("/api/v1/credentials/list")));
+    assert.ok(calls.some((c) => c.url.includes("/authorization-grant/delegate")));
+    assert.equal(bankConnectionView().status, "pending");
+  });
+
+  it("startConnect: fel när gamla medgivanden listas stoppar inte Link-varvet", async () => {
+    const { upsertBankConnection } = await import("./banking/connection-state");
+    upsertBankConnection({ provider: "tink", status: "error", externalUserId: BUSINESS_ID, tinkUserId: "u" });
+    fakeTransport({
+      "/api/v1/oauth/token": () => ({ access_token: "tok" }),
+      "/api/v1/oauth/authorization-grant": (_init, url) =>
+        url.pathname.endsWith("/delegate")
+          ? { code: "delegate-code" }
+          : new Response(JSON.stringify({ errorCode: "not_found" }), { status: 404 }),
+    });
+    const result = await new LiveTinkProvider(cfg()).startConnect();
+    assert.equal(result.kind, "redirect");
   });
 
   it("callback med fel state → error-läge och svensk text, inget hämtas", async () => {

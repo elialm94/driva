@@ -144,6 +144,14 @@ export class LiveTinkProvider implements BankProvider {
         const created = await tink.createUser(this.cfg, clientToken, { externalUserId: businessId });
         tinkUserId = created.userId ?? tinkUserId;
       }
+      // Ett tidigare försök kan ha lyckats hos banken utan att callbacken nådde
+      // oss (stängd flik, fel i Tink Link efteråt). Då finns medgivandet redan på
+      // Tink-användaren och ett nytt Link-varv ger INVALID_STATE_DUPLICATE_CREDENTIALS.
+      // Återanvänd det i stället för att skicka användaren till banken igen.
+      if (existing?.provider === "tink" && !existing.credentialsId) {
+        const adopted = await this.adoptExistingCredentials(existing);
+        if (adopted) return { kind: "connected" };
+      }
       const code = await tink.delegateAuthorizationCode(this.cfg, clientToken, {
         externalUserId: businessId,
         idHint: db().settings.name || "Driva",
@@ -210,28 +218,60 @@ export class LiveTinkProvider implements BankProvider {
     }
     upsertBankConnection({ provider: "tink", credentialsId, ...clearPending });
     try {
-      const current = activeBankConnection()!;
-      const token = await this.userToken(current);
-      const bankName = await this.resolveBankName(token, credentialsId);
-      const accounts = await this.syncAccounts(token);
-      const imported = await this.syncTransactions(token, accounts, isoDaysAgo(INITIAL_LOOKBACK_DAYS));
-      const primary = accounts[0];
-      upsertBankConnection({
-        provider: "tink",
-        status: "connected",
-        bankName,
-        maskedAccount: primary?.maskedNumber,
-        connectedAt: new Date().toISOString(),
-        lastSyncAt: new Date().toISOString(),
-        revokedAt: undefined,
-        lastError: undefined,
-      });
-      logActivity(`Banken ${bankName} kopplades via Tink och ${imported.imported} transaktioner hämtades.`);
+      await this.finishConnect(credentialsId);
       return "connected";
     } catch (err) {
       const message = userFacingBankError(err);
       upsertBankConnection({ provider: "tink", status: "error", lastError: message });
       return "error";
+    }
+  }
+
+  /** Medgivandet finns hos Tink: hämta konton + första transaktionerna och markera kopplad. */
+  private async finishConnect(credentialsId: string): Promise<void> {
+    const current = activeBankConnection()!;
+    const token = await this.userToken(current);
+    const bankName = await this.resolveBankName(token, credentialsId);
+    const accounts = await this.syncAccounts(token);
+    const imported = await this.syncTransactions(token, accounts, isoDaysAgo(INITIAL_LOOKBACK_DAYS));
+    const primary = accounts[0];
+    upsertBankConnection({
+      provider: "tink",
+      status: "connected",
+      credentialsId,
+      bankName,
+      maskedAccount: primary?.maskedNumber,
+      connectedAt: new Date().toISOString(),
+      lastSyncAt: new Date().toISOString(),
+      revokedAt: undefined,
+      pendingState: undefined,
+      pendingStateExpiresAt: undefined,
+      lastError: undefined,
+    });
+    logActivity(`Banken ${bankName} kopplades via Tink och ${imported.imported} transaktioner hämtades.`);
+  }
+
+  /**
+   * Finns ett fungerande bankmedgivande på Tink-användaren fast vi saknar
+   * credentialsId? Adoptera det. Returnerar false (utan att kasta) när inget
+   * finns eller när Tink inte går att nå – då kör vi Link-flödet som vanligt.
+   */
+  private async adoptExistingCredentials(row: BankConnection): Promise<boolean> {
+    let candidates: tink.TinkCredentials[];
+    try {
+      const token = await this.userToken(row);
+      candidates = await tink.listCredentials(this.cfg, token);
+    } catch {
+      return false;
+    }
+    const usable = candidates.find((c) => c.id && !tinkCredentialsStatusMessage(c.status));
+    if (!usable) return false;
+    try {
+      await this.finishConnect(usable.id);
+      return true;
+    } catch {
+      // Medgivandet är inte användbart – låt användaren koppla om via Link.
+      return false;
     }
   }
 
