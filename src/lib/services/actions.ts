@@ -1009,7 +1009,7 @@ function collectAccounting(ranked: Ranked[]) {
     let cta: ActionCta = incoming
       ? { type: "pickPaymentMatch", txId: tx.id }
       : { type: "link", label: "Öppna transaktionen", href: txHref };
-    let subtitle = `${kr(Math.abs(tx.amount))} · ${datumKort(tx.date)} · ${tx.description}`;
+    let subtitle = [kr(Math.abs(tx.amount)), datumKort(tx.date), tx.description].filter(Boolean).join(" · ");
 
     switch (suggestion.kind) {
       case "match":

@@ -637,8 +637,7 @@ export function BankRegister({
                       <td className="px-3 py-2.5 text-soft">{datumKort(r.date)}</td>
                       <td className="max-w-44 truncate px-3 py-2.5 font-medium text-ink">{r.counterpart}</td>
                       <td className="max-w-64 truncate px-3 py-2.5 text-soft">
-                        {r.description}
-                        {r.reference ? <span className="text-muted"> · {r.reference}</span> : null}
+                        {r.secondary || "—"}
                       </td>
                       <td
                         className={cx(
@@ -669,7 +668,7 @@ export function BankRegister({
                   </p>
                 </div>
                 <p className="mt-0.5 truncate text-[13px] text-muted">
-                  {datumKort(r.date)} · {r.description}
+                  {[datumKort(r.date), r.secondary].filter(Boolean).join(" · ")}
                 </p>
                 <div className="mt-1.5">
                   <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>

@@ -656,7 +656,7 @@ describe("LiveTinkProvider (falsk transport)", () => {
     assert.equal(calls.length, 0);
   });
 
-  it("toProviderTransaction: motpart, beskrivning och referens från Tinks fält", () => {
+  it("toProviderTransaction: motpart, beskrivning och referens från olika Tink-fält", () => {
     const tx = toProviderTransaction({
       id: "t",
       accountId: "a",
@@ -668,8 +668,43 @@ describe("LiveTinkProvider (falsk transport)", () => {
     });
     assert.equal(tx.amount, 2500);
     assert.equal(tx.counterpart, "Kalle Kund");
-    assert.equal(tx.description, "Inbetalning");
+    assert.equal(tx.description, "BG 999");
     assert.equal(tx.reference, "OCR 12345678");
     assert.equal(tx.date, "2026-09-01T00:00:00.000Z");
+  });
+
+  it("toProviderTransaction: merchant + original på kortköp, tom beskrivning när Tink bara har en text", () => {
+    const card = toProviderTransaction({
+      id: "t",
+      accountId: "a",
+      amount: { value: { unscaledValue: "-18000", scale: "2" } },
+      dates: { booked: "2026-09-03" },
+      descriptions: { display: "ICA", original: "ICA MAXI HUDDINGE" },
+      merchantInformation: { merchantName: "ICA" },
+      counterparties: { payee: { name: "Ica Maxi" } },
+    });
+    assert.equal(card.counterpart, "ICA");
+    assert.equal(card.description, "ICA MAXI HUDDINGE");
+
+    const demo = toProviderTransaction({
+      id: "t",
+      accountId: "a",
+      amount: { value: { unscaledValue: "-650000", scale: "2" } },
+      dates: { booked: "2026-09-03" },
+      descriptions: { display: "Hyra", original: "hyra" },
+    });
+    assert.equal(demo.counterpart, "Hyra");
+    assert.equal(demo.description, "", "samma text upprepas inte i Beskrivning");
+
+    const remit = toProviderTransaction({
+      id: "t",
+      accountId: "a",
+      amount: { value: { unscaledValue: "-650000", scale: "2" } },
+      dates: { booked: "2026-09-03" },
+      descriptions: { display: "Hyra", detailed: { unstructured: "Hyra september OCR 998877" } },
+      counterparties: { payee: { name: "Hyresvärden AB" } },
+    });
+    assert.equal(remit.counterpart, "Hyresvärden AB");
+    assert.equal(remit.description, "Hyra september OCR 998877");
   });
 });

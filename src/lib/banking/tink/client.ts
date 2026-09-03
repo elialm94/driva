@@ -222,6 +222,11 @@ export interface TinkAccount {
   dates?: { lastRefreshed?: string };
 }
 
+export interface TinkCounterparty {
+  name?: string;
+  identifiers?: { financialInstitution?: { accountNumber?: string } };
+}
+
 export interface TinkTransaction {
   id: string;
   accountId: string;
@@ -230,7 +235,9 @@ export interface TinkTransaction {
   bookedDateTime?: string;
   dates?: { booked?: string; value?: string; transaction?: string };
   descriptions?: { display?: string; original?: string; detailed?: { unstructured?: string } };
-  counterparties?: { payer?: { name?: string }; payee?: { name?: string } };
+  counterparties?: { payer?: TinkCounterparty; payee?: TinkCounterparty };
+  merchantInformation?: { merchantName?: string; merchantCategoryCode?: string };
+  types?: { type?: string; financialInstitutionTypeCode?: string };
   reference?: string;
   identifiers?: { providerTransactionId?: string };
 }

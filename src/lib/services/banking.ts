@@ -32,19 +32,24 @@ export type { BankProvider } from "../banking/provider";
 
 /**
  * Registrera importerade banktransaktioner idempotent: transaktioner med ett
- * `externalId` som redan finns hoppar över (databasen har dessutom ett unikt
- * index). Nya inbetalningar körs genom matchningsmotorn.
+ * `externalId` som redan finns skapar ingen dubblett och körs inte om genom
+ * matchningen. Motpart/beskrivning/referens skrivs ändå över från leverantören
+ * så att en om-synk (Uppdatera) kan fylla kolumnerna utan ny koppling.
  */
 export function registerBankTransactions(incoming: BankTransaction[]): { imported: number; skipped: number } {
   const data = db();
-  const known = new Set(
-    data.bankTransactions.filter((t) => t.externalId).map((t) => `${t.accountId}:${t.externalId}`)
-  );
+  const known = new Map<string, BankTransaction>();
+  for (const existing of data.bankTransactions) {
+    if (existing.externalId) known.set(`${existing.accountId}:${existing.externalId}`, existing);
+  }
   let imported = 0;
   let skipped = 0;
+  let labelsTouched = false;
   for (const tx of incoming) {
-    if (tx.externalId && known.has(`${tx.accountId}:${tx.externalId}`)) {
+    const existing = tx.externalId ? known.get(`${tx.accountId}:${tx.externalId}`) : undefined;
+    if (existing) {
       skipped++;
+      if (refreshImportedBankLabels(existing, tx)) labelsTouched = true;
       continue;
     }
     if (!Number.isInteger(tx.amount)) {
@@ -52,13 +57,31 @@ export function registerBankTransactions(incoming: BankTransaction[]): { importe
       tx.amount = Math.round(tx.amount);
     }
     data.bankTransactions.unshift(tx);
-    if (tx.externalId) known.add(`${tx.accountId}:${tx.externalId}`);
+    if (tx.externalId) known.set(`${tx.accountId}:${tx.externalId}`, tx);
     imported++;
     save();
     processIncomingTransaction(tx.id);
   }
-  if (imported > 0) save();
+  if (imported > 0 || labelsTouched) save();
   return { imported, skipped };
+}
+
+/** Visningsfält från banken – aldrig belopp, status eller matchning. */
+export function refreshImportedBankLabels(existing: BankTransaction, incoming: BankTransaction): boolean {
+  let changed = false;
+  if (incoming.counterpart !== existing.counterpart) {
+    existing.counterpart = incoming.counterpart;
+    changed = true;
+  }
+  if (incoming.description !== existing.description) {
+    existing.description = incoming.description;
+    changed = true;
+  }
+  if (incoming.reference && incoming.reference !== existing.reference) {
+    existing.reference = incoming.reference;
+    changed = true;
+  }
+  return changed;
 }
 
 /**
