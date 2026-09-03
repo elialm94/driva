@@ -479,9 +479,16 @@ export interface BankTableRow {
   counterpart: string;
   description: string;
   reference?: string;
+  /** Beskrivning och referens, tom när de inte tillför något utöver motparten. */
+  secondary: string;
   amount: number;
   statusLabel: string;
   statusTone: StatusTone;
+}
+
+/** Beskrivning och referens – hoppar över tomma så kolumnen inte upprepar motparten. */
+export function bankRowSecondaryText(row: Pick<BankTableRow, "description" | "reference">): string {
+  return [row.description, row.reference].map((part) => part?.trim()).filter(Boolean).join(" · ");
 }
 
 // Central vokabulär (status-labels.ts) + "matchad" som bara finns i registret.
@@ -525,6 +532,7 @@ export function listBankForTable(
       counterpart: tx.counterpart,
       description: tx.description,
       reference: tx.reference,
+      secondary: bankRowSecondaryText(tx),
       amount: tx.amount,
       statusLabel: meta.label,
       statusTone: meta.tone,

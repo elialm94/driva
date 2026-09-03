@@ -39,6 +39,7 @@ import {
 } from "../provider";
 import { tinkAmountToKronor } from "../tink/amounts";
 import type { TinkConfig } from "../tink/config";
+import { counterpartFromTink, descriptionFromTink } from "../tink/transaction-labels";
 import * as tink from "../tink/client";
 
 /** Första synken: så här långt bakåt hämtas bokförda transaktioner. */
@@ -82,17 +83,15 @@ export function toProviderAccount(account: tink.TinkAccount): ProviderAccount {
 
 export function toProviderTransaction(tx: tink.TinkTransaction): ProviderTransaction {
   const amount = tinkAmountToKronor(tx.amount.value);
-  const display = tx.descriptions?.display?.trim();
-  const original = tx.descriptions?.original?.trim();
-  const counterpartName = amount > 0 ? tx.counterparties?.payer?.name : tx.counterparties?.payee?.name;
+  const counterpart = counterpartFromTink(tx, amount);
   const date = tx.bookedDateTime ?? (tx.dates?.booked ? `${tx.dates.booked}T00:00:00.000Z` : new Date().toISOString());
   return {
     externalId: tx.id,
     accountExternalId: tx.accountId,
     date,
     amount,
-    counterpart: counterpartName?.trim() || display || original || "Okänd",
-    description: display || original || tx.descriptions?.detailed?.unstructured?.trim() || "Banktransaktion",
+    counterpart,
+    description: descriptionFromTink(tx, counterpart),
     reference: tx.reference?.trim() || undefined,
   };
 }
