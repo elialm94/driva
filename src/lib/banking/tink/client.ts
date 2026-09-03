@@ -155,6 +155,11 @@ export async function delegateAuthorizationCode(
  * Tink Link-URL (Transactions · connect-accounts). redirect_uri är exakt
  * TINK_REDIRECT_URI – URLSearchParams kodar den, Tink jämför avkodat värde
  * mot Console. Sandbox: test=true visar Demo Bank.
+ *
+ * Ingen `financial_services_segments`: med BUSINESS i värdet byter Tink Link
+ * till produkten business-transactions, som inte kör permanent-user-flödet
+ * (REQUEST_FAILED_CREATE_AUTHORIZATION_CODE efter bankinloggningen). Företags-
+ * konton hos Demo Bank och svenska banker nås ändå via transactions.
  */
 export function buildTinkLinkUrl(cfg: TinkConfig, input: { authorizationCode: string; state: string }): string {
   const params = new URLSearchParams({
@@ -164,7 +169,6 @@ export function buildTinkLinkUrl(cfg: TinkConfig, input: { authorizationCode: st
     market: cfg.market,
     locale: cfg.locale,
     state: input.state,
-    financial_services_segments: "BUSINESS,PERSONAL",
   });
   if (cfg.env === "sandbox") params.set("test", "true");
   return `${cfg.linkBase}/1.0/transactions/connect-accounts?${params.toString()}`;
@@ -283,6 +287,12 @@ export interface TinkCredentials {
   status?: string;
   statusPayload?: string;
   updated?: number;
+}
+
+/** Alla bankmedgivanden på den permanenta användaren (t.ex. ett som skapades utan att callbacken nådde oss). */
+export async function listCredentials(cfg: TinkConfig, userToken: string): Promise<TinkCredentials[]> {
+  const json = await call<{ credentials?: TinkCredentials[] }>(cfg, "/api/v1/credentials/list", { token: userToken });
+  return json?.credentials ?? [];
 }
 
 export async function getCredentials(cfg: TinkConfig, userToken: string, id: string): Promise<TinkCredentials> {
