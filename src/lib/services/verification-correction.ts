@@ -87,27 +87,7 @@ export interface CorrectionFlow {
   periodLockMessage?: string;
 }
 
-/** Overflow på verifikationsraden. Originalet muteras aldrig. */
-export type VerificationOverflowItem =
-  | { kind: "visa_detaljer" }
-  | { kind: "ratta_bokforing" }
-  | { kind: "fakturan_ar_fel"; invoiceId: string };
-
-export function verificationOverflowItems(
-  flow: Pick<CorrectionFlow, "kind" | "invoiceId">,
-  opts: { allowCorrection?: boolean } = {}
-): VerificationOverflowItem[] {
-  const items: VerificationOverflowItem[] = [{ kind: "visa_detaljer" }];
-  if (opts.allowCorrection === false) return items;
-  if (flow.kind === "kreditfaktura" && flow.invoiceId) {
-    items.push({ kind: "fakturan_ar_fel", invoiceId: flow.invoiceId });
-    return items;
-  }
-  if (flow.kind === "konto" || flow.kind === "avancerad" || flow.kind === "omatcha" || flow.kind === "moms") {
-    items.push({ kind: "ratta_bokforing" });
-  }
-  return items;
-}
+export { verificationOverflowItems, type VerificationOverflowItem } from "./verification-overflow";
 
 export interface CorrectionPreviewLine {
   account: number;

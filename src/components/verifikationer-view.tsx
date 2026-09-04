@@ -3,16 +3,16 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, ChevronLeft, MoreHorizontal, ShieldCheck } from "lucide-react";
+import { Check, ChevronLeft, MoreHorizontal, ShieldCheck, Undo2 } from "lucide-react";
 import { Badge, Card, EmptyState, buttonClasses, cx } from "./ui";
 import { Modal } from "./modal";
-import { ActionMenu, actionMenuItemClassName } from "./action-menu";
+import { ActionMenu, actionMenuItemClassName, useActionMenu } from "./action-menu";
 import { AccountCombobox } from "./account-combobox";
 import { kr, datumKort, datumTid } from "@/lib/format";
 import { correctVerificationAction } from "@/app/bokforing-actions";
-import type { CorrectionIntent } from "@/lib/services/verification-correction";
-import { verificationOverflowItems, type VerificationView } from "@/lib/services/verification-correction";
-import { CreditInvoiceButton } from "@/components/money-widgets";
+import type { CorrectionIntent, VerificationView } from "@/lib/services/verification-correction";
+import { verificationOverflowItems } from "@/lib/services/verification-overflow";
+import { CreditInvoiceButton, CreditInvoiceConfirmDialog } from "@/components/money-widgets";
 import { ReceiptText } from "lucide-react";
 
 type Filter = "alla" | "auto" | "manuella" | "rattade";
@@ -311,6 +311,23 @@ export function VerifikationerView({
   );
 }
 
+function InvoiceWrongMenuItem({ onPick }: { onPick: () => void }) {
+  const menu = useActionMenu();
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className={actionMenuItemClassName()}
+      onClick={() => {
+        menu?.close();
+        onPick();
+      }}
+    >
+      <Undo2 className="size-3.5 shrink-0" /> Fakturan är fel
+    </button>
+  );
+}
+
 function RowMenu({
   v,
   onOpen,
@@ -324,28 +341,32 @@ function RowMenu({
   onCredited: () => void;
   allowCorrection?: boolean;
 }) {
+  const [creditOpen, setCreditOpen] = useState(false);
   const overflow = verificationOverflowItems(v.flow, { allowCorrection });
   const invoiceWrong = overflow.find((item) => item.kind === "fakturan_ar_fel");
   const canCorrect = overflow.some((item) => item.kind === "ratta_bokforing");
   return (
-    <ActionMenu label="Åtgärder">
-      <button type="button" role="menuitem" className={actionMenuItemClassName()} onClick={onOpen}>
-        Visa detaljer
-      </button>
+    <>
+      <ActionMenu label="Åtgärder">
+        <button type="button" role="menuitem" className={actionMenuItemClassName()} onClick={onOpen}>
+          Visa detaljer
+        </button>
+        {invoiceWrong ? <InvoiceWrongMenuItem onPick={() => setCreditOpen(true)} /> : null}
+        {canCorrect ? (
+          <button type="button" role="menuitem" className={actionMenuItemClassName()} onClick={onCorrect}>
+            Rätta bokföring
+          </button>
+        ) : null}
+      </ActionMenu>
       {invoiceWrong ? (
-        <CreditInvoiceButton
+        <CreditInvoiceConfirmDialog
           invoiceId={invoiceWrong.invoiceId}
-          appearance="menu"
-          label="Fakturan är fel"
+          open={creditOpen}
+          onClose={() => setCreditOpen(false)}
           onSuccess={onCredited}
         />
       ) : null}
-      {canCorrect ? (
-        <button type="button" role="menuitem" className={actionMenuItemClassName()} onClick={onCorrect}>
-          Rätta bokföring
-        </button>
-      ) : null}
-    </ActionMenu>
+    </>
   );
 }
 
@@ -364,6 +385,7 @@ function VerificationDetail({
   onCredited: () => void;
   allowCorrection?: boolean;
 }) {
+  const [creditOpen, setCreditOpen] = useState(false);
   const overflow = verificationOverflowItems(v.flow, { allowCorrection });
   const invoiceWrong = overflow.find((item) => item.kind === "fakturan_ar_fel");
   const canCorrect = overflow.some((item) => item.kind === "ratta_bokforing");
@@ -428,10 +450,14 @@ function VerificationDetail({
       </div>
       {invoiceWrong ? (
         <div className="mt-6 flex justify-end">
-          <CreditInvoiceButton
+          <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setCreditOpen(true)}>
+            <Undo2 className="size-3.5" />
+            Fakturan är fel
+          </button>
+          <CreditInvoiceConfirmDialog
             invoiceId={invoiceWrong.invoiceId}
-            label="Fakturan är fel"
-            buttonVariant="secondary"
+            open={creditOpen}
+            onClose={() => setCreditOpen(false)}
             onSuccess={onCredited}
           />
         </div>

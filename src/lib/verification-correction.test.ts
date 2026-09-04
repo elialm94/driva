@@ -18,8 +18,8 @@ import {
   postVerificationCorrection,
   previewCorrection,
   isPaymentLive,
-  verificationOverflowItems,
 } from "./services/verification-correction";
+import { verificationOverflowItems } from "./services/verification-overflow";
 import type { BankAccount, Expense } from "./types";
 
 const THIS_YEAR = Number(new Date().toISOString().slice(0, 4));
