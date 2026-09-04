@@ -15,7 +15,7 @@ Use this file to answer, without rediscovering the app:
 
 **Status vocabulary:** one source — `src/lib/status-labels.ts`. Never show raw enums (`skickad`, `POSTED`, `pending`) as primary UI. The accept method is **not** a status — and the customer accept is **never** called BankID, e-legitimation or avancerad underskrift (see `offer.accept_simple`).
 
-**Unknowns** are marked `UNKNOWN`. Facts below are from code + the live demo on 2026-09-01 unless noted. Shared address autocomplete ([PR #79](https://github.com/elialm94/driva/pull/79)) verified against main code 2026-09-04. Receipt file storage ([PR #77](https://github.com/elialm94/driva/pull/77)) verified against main code and the live demo 2026-09-04.
+**Unknowns** are marked `UNKNOWN`. Facts below are from code + the live demo on 2026-09-01 unless noted. Shared address autocomplete ([PR #79](https://github.com/elialm94/driva/pull/79), hardened in [PR #94](https://github.com/elialm94/driva/pull/94): loader timeout, street-only types, Enter-while-searching) verified against main code 2026-09-04. Receipt file storage ([PR #77](https://github.com/elialm94/driva/pull/77)) verified against main code and the live demo 2026-09-04.
 
 ---
 
@@ -47,10 +47,10 @@ Bug: *“the quote delete button doesn't work.”*
 
 One Places integration for every editable physical address — `AddressAutocomplete` (single input) + `AddressFields` (gata / postnummer / ort) in `src/components/address-input.tsx`; pure helpers in `src/lib/address-autocomplete.ts` (+ `address-autocomplete.test.ts`). **Do not fork another.**
 
-- **Source:** Google Places API (New) when `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is set **and** the surface is not demo. `[data-driva-demo]` → local Swedish example list only, no Google HTTP. Missing key / Google failure → manual typing still works; no raw Google errors, no dead dropdown. Demo suggestions carry a **Demo** tag.
-- **Behaviour:** Sweden-first (`includedRegionCodes: ["se"]`), no map/Street View. Search from **3 meaningful characters** after trim (`"va"` does not fire), debounce 250 ms (`ADDRESS_SEARCH_DEBOUNCE_MS`). One session token per typing session; `fetchFields` only after the user picks a suggestion. Opening an edit form with a saved address does **not** call Places. Picking writes street + postal + city (or one composed line); name / e-mail / phone / personnummer untouched. `composeSelected="street"` (default) vs `"line"` (`gata, postnummer ort`) for single-field forms.
-- **Keyboard:** Arrow/Enter selects; Enter does not submit the parent form while the list is open; Escape closes; Tab moves on.
-- **Selectors:** input `role="combobox"` `aria-expanded` `aria-autocomplete="list"`; menu is portaled + viewport-flipped with `data-address-suggestions`; options `data-address-option={i}`. No `data-testid`.
+- **Source:** Google Places API (New) when `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is set **and** the surface is not demo. Key is read via `googleMapsApiKey()` (trimmed; empty / whitespace = not configured). `[data-driva-demo]` → local Swedish example list only, no Google HTTP. Missing key / Google failure → manual typing still works; no raw Google errors, no dead dropdown. Demo suggestions carry a **Demo** tag.
+- **Behaviour:** Sweden-only (`includedRegionCodes: ["se"]`) **and** street-only results — `includedPrimaryTypes` = `premise`, `subpremise`, `street_address`, `route` (`ADDRESS_PRIMARY_TYPES`), language `sv-SE`; no map/Street View. Search from **3 meaningful characters** after trim (`"va"` does not fire), debounce 250 ms (`ADDRESS_SEARCH_DEBOUNCE_MS`). One session token per typing session; `fetchFields(["addressComponents"])` only after the user picks a suggestion. Maps loader (`referrerPolicy="origin"`) gives up after **8 s** (`ADDRESS_PLACES_LOAD_TIMEOUT_MS`); invalid key / referer block / script failure clears the searching state — **no hung spinner**, field falls back to manual typing. Opening an edit form with a saved address does **not** call Places. Picking writes street + postal + city (or one composed line); name / e-mail / phone / personnummer untouched. `composeSelected="street"` (default) vs `"line"` (`gata, postnummer ort`) for single-field forms. Live key path (real Göteborg results etc.) is **not** verified in this environment — code only.
+- **Keyboard:** Arrow moves highlight; Enter picks the highlighted row when the list is open; Enter never submits the parent form while the list is **open or a search is in flight** (`searching`), so Ny kund cannot submit early; Escape closes; Tab moves on.
+- **Selectors:** input `role="combobox"` `aria-expanded` `aria-autocomplete="list"`, `aria-busy` while searching; menu is portaled + viewport-flipped with `data-address-suggestions`, `z-index` 400 (`ADDRESS_MENU_Z_INDEX`, above the Ny kund modal at z=50); options `data-address-option={i}`. No `data-testid`.
 
 | Surface | File | Mode |
 |---------|------|------|
@@ -251,7 +251,7 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications, published 
 | Quote accept | Simple accept (name + **Godkänn offert**), no e-mail to the carpenter | Same simple accept; carpenter notified via Resend if configured |
 | Receipt file (**Lägg till kvitto**) | Inline `content_base64` (≤ 1,5 MB) | Private bucket `receipts` with `SUPABASE_SERVICE_ROLE_KEY`; inline fallback without it |
 | Bank / payments | **MockBankProvider** (SEB ···· 4512, synthetic tx, zero HTTP to Tink); **Simulera betalning** | **LiveTinkProvider** if all `TINK_*` set, else honest *Bankkoppling är inte konfigurerad* — never fake success |
-| Places (address autocomplete) | Local Swedish examples with **Demo** tag — **zero Google HTTP** even if a key is set | Google Places API (New) if `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` set; no key / Google failure → manual typing (local examples as fallback). Shared component — see [Address autocomplete](#address-autocomplete-shared) |
+| Places (address autocomplete) | Local Swedish examples with **Demo** tag — **zero Google HTTP** even if a key is set | Google Places API (New, Sweden + street types only) if `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` set; no key / Google failure / 8 s load timeout → manual typing (local examples only when no key). Shared component — see [Address autocomplete](#address-autocomplete-shared) |
 | AI | Optional; honest fallback if no key | Same |
 | Trial | null | 14 days `trialing` |
 | Fake money APIs | Allowed | `DemoModeError` |
@@ -792,7 +792,7 @@ The repo has **almost no** `data-testid`. No `data-cy` / `data-qa` / `getByTestI
 
 **Settings:** `installningar-saknas`, `installningar-address`, `installningar-postalCode`, `installningar-city`, `installningar-bankgiro`, `komplettera-address`, `komplettera-postalCode`, `komplettera-city`.
 
-**Address autocomplete (all surfaces):** street input `role="combobox"` (`aria-expanded`, `aria-autocomplete="list"`); suggestion menu `data-address-suggestions` (portaled — query from `document`, not the form); options `data-address-option={i}`; demo suggestions show a **Demo** tag.
+**Address autocomplete (all surfaces):** street input `role="combobox"` (`aria-expanded`, `aria-autocomplete="list"`, `aria-busy` while a search is in flight — wait for it to clear before asserting the list); suggestion menu `data-address-suggestions` (portaled — query from `document`, not the form); options `data-address-option={i}`; demo suggestions show a **Demo** tag.
 
 **Other:** `nekat-belopp`, `invite-email`, `invite-form`, `hemsida-ai-beskrivning`, `doman-sok`, `webbformular-mottagare`, `data-nav="back"`, `data-driva-demo="1"`.
 
