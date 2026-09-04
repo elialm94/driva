@@ -584,7 +584,7 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 
 - **User-facing name:** Inbox
 - **Purpose:** Inbound supplier invoices, receipts, other economic docs. **Not** website contact forms.
-- **Routes:** `/inbox`, `/inbox/[id]`, `/inbox/[id]/kontrollera`. Inbound `POST /api/inbox/inbound`. Attachments `/api/inbox/bilaga/...`. Payment file `/api/betalfil/[id]`.
+- **Routes:** `/inbox`, `/inbox/[id]`, `/inbox/[id]/kontrollera`. Inbound HMAC `POST /api/inbox/inbound`. Resend Receiving `POST /api/inbox/inbound/resend` (Svix + `receiving.get`). Attachments `/api/inbox/bilaga/...`. Payment file `/api/betalfil/[id]`.
 - **How to get there:** Nav Inbox (badge). Hem attention. Ekonomi utgifter *Öppna utgifter*.
 - **Subtitle:** *Leverantörsfakturor, kvitton och andra ekonomiska dokument samlas här.*
 - **Main actions:** filter Öppna / Alla; search; **Lägg till dokument**; copy inbound address; detail: Kontrollera belopp, Godkänn uppgifter, Skapa bankfil, Visa PDF.
@@ -596,7 +596,7 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **Invariants:** Tenant from **To** slug (`{slug}@in.ferva.se`, alias `in.driva.se`), never From. **No DELETE** on inbox_items. Dedup `(business_id, external_id)`. Badge ≠ open filter. Autopilot books only at high amount confidence or after `reviewedAt`. Website forms → jobs, not inbox.
 - **Kvitto pipeline vs receipt file:** a `kvitto` inbox item that books (`createExpenseFromKnownReceipt`, `src/lib/services/inbox.ts` → `expenses.ts`) creates `expenses` + a `receipts` row with **filename only** (`item.attachments[0]?.filename`) — the attachment stays on `inbox_items.attachments` (`/api/inbox/bilaga/...`) and is **not** copied to `receipts.storage_path` / `content_base64`. Such rows therefore read *Bokfört · kvittouppgifter utan fil* in Utgifter and have no **Visa kvitto** link (see [Utgifter & kvitton](#utgifter--kvitton-flikutgifter)). Only **Lägg till kvitto** (`uploadReceiptAction`) stores the file on the receipt.
 - **Live:** address `demo@in.ferva.se`. Open: Byggmax *Kontrollera belopp*, Beijer *Bokförd · Redo att betala*. Badge **1**.
-- **Verify:** `/inbox` shows inbound card + Byggmax. Open row → `/inbox/inbox-mail-byggmax`. Script: `scripts/verify-nav-browser.ts` expects `demo@in.ferva.se`. Tests: `inbox.test.ts`. `scripts/db-validate.ts` asserts DELETE denied.
+- **Verify:** `/inbox` shows inbound card + Byggmax. Open row → `/inbox/inbox-mail-byggmax`. Script: `scripts/verify-nav-browser.ts` expects `demo@in.ferva.se`. Tests: `inbox.test.ts`, `inbox-resend.test.ts`. `scripts/db-validate.ts` asserts DELETE denied. SMTP→Inbox requires verified Receiving MX on `in.ferva.se` (not claimed live from code alone).
 
 ---
 

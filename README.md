@@ -224,15 +224,22 @@ Offerter, fakturor, betalningspåminnelser och samarbetsinbjudningar skickas via
 
 ### Inkommande mejl (`@in.ferva.se`)
 
-Leverantörsfakturor och kvitton landar i Inbox via `POST /api/inbox/inbound`. Den visade adressen är `{slug}@in.ferva.se` (styrbar med `INBOUND_MAIL_DOMAIN`). Tenant löses bara på local-part – webhooken tar även `@in.driva.se` som tyst alias. Kunden väljer eller redigerar inte adressen.
+Leverantörsfakturor och kvitton landar i Inbox. Den visade adressen är `{slug}@in.ferva.se` (styrbar med `INBOUND_MAIL_DOMAIN`). Tenant löses bara på local-part – även `@in.driva.se` är tyst alias. Kunden väljer eller redigerar inte adressen.
 
-Kod räcker inte: MX måste finnas, annars är den nya adressen död.
+Två webhookar:
 
-- Skapa subdomänen `in.ferva.se` (inte catch-all på apex `ferva.se`)
-- MX + inbound-routing (Resend eller nuvarande provider) → samma `POST /api/inbox/inbound`, samma HMAC (`INBOUND_MAIL_WEBHOOK_SECRET`)
-- Catch-all på `in.ferva.se` så `{valfri-slug}@in.ferva.se` landar i webhooken
-- Behåll MX på `in.driva.se` som alias
-- Verifiera med ett riktigt testmejl till `{slug}@in.ferva.se` och kolla att det skapar en inbox-rad
+- `POST /api/inbox/inbound` – internt JSON + HMAC (`INBOUND_MAIL_WEBHOOK_SECRET`). Tester och manuell POST.
+- `POST /api/inbox/inbound/resend` – Resend Receiving. Svix-signatur (`RESEND_WEBHOOK_SECRET`), sedan `receiving.get` + bilage-nedladdning → samma `ingestInboundMail`.
+
+Kod räcker inte: MX måste verifieras i Resend, annars är adressen död. Catch-all på apex `ferva.se` ska inte användas.
+
+1. I Resend: verifiera subdomänen `in.ferva.se` som eget domain-objekt (inte bara apex) och slå på Receiving
+2. Lägg MX som Resend visar på host `in`. Catch-all: alla `{slug}@in.ferva.se` ska in
+3. Vänta tills Receiving-MX är verified – skicka inte ett Gmail-test innan dess
+4. Webhook i Resend → `https://<prod-host>/api/inbox/inbound/resend`, event `email.received`
+5. Sätt `RESEND_WEBHOOK_SECRET`, `RESEND_API_KEY` (samma som utskick) och `INBOUND_MAIL_MODE=live`
+6. Behåll ev. `in.driva.se` som alias om den redan tar emot
+7. Verifiera med ett riktigt testmejl till `{slug}@in.ferva.se` och kolla att det blir en inbox-rad
 
 **Rabatt:** inget eget radfält. Negativt à-pris på en rad räknas i samma VAT-motor.
 
