@@ -12,6 +12,7 @@ import { postVerification, createCorrection, PostingError, validateEntries } fro
 import { accountBalance, balansrapport, ledgerIntegrity, saldobalans, huvudbok } from "./ledger";
 import { computeVatPosition, generateVatReport, markVatReportDeclared, vatPeriods } from "./vat";
 import { lockPeriod, isDateLocked, clampToOpenDate, fiscalYears, ensureFiscalYearFor } from "./fiscal";
+import { todayDate } from "./dates";
 import { registerAssetFromExpense, createDepreciationEntry, depreciationForYear, INVENTARIE_GRANS, bookValue } from "./assets";
 import { planAccrual, bookAccrual, reverseAccrualsInto, amountAfterYearEnd } from "./accruals";
 import { bokslutChecklist, closeFiscalYear, runBokslutAutomation } from "./close";
@@ -363,8 +364,10 @@ describe("Moms", () => {
     const expense = unansweredExpense({ amount: 1_250, vatAmount: 250 });
     answerExpenseQuestion(expense.id, "Material");
 
-    const fy = ensureFiscalYearFor(new Date().toISOString().slice(0, 10));
-    const today = new Date().toISOString().slice(0, 10);
+    // Bokföringsdatum sätts i Europe/Stockholm – periodslutet måste använda samma
+    // dag, annars hamnar verifikationerna utanför perioden 22–24 UTC.
+    const today = todayDate();
+    const fy = ensureFiscalYearFor(today);
     const period = { key: "t", label: "test", start: fy.startDate, end: today };
     const pos = computeVatPosition(period);
     assert.equal(pos.utgaende, 2_500);
