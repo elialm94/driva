@@ -71,7 +71,7 @@ const BRANCHES: Record<string, BranchTemplate> = {
     design: { themeId: "klassisk", accent: "tegel" },
     taglines: ["Platsbyggt snickeri med känsla för detaljer", "Hantverk som håller i generationer"],
     heroBody: (city) =>
-      `Vi ritar, bygger och monterar kök, garderober och platsbyggda möbler i ${city} med omnejd. Fast pris, tydlig offert och alltid BankID-signerat avtal.`,
+      `Vi ritar, bygger och monterar kök, garderober och platsbyggda möbler i ${city} med omnejd. Fast pris och tydlig offert som du godkänner digitalt.`,
     services: [
       { title: "Kök", text: "Renovering, nya luckor och bänkskivor eller helt nytt kök – vi tar hand om helheten." },
       { title: "Garderober & förvaring", text: "Platsbyggda garderober och smart förvaring som passar ditt hem exakt." },
@@ -112,7 +112,7 @@ const BRANCHES: Record<string, BranchTemplate> = {
     design: { themeId: "robust", accent: "sand" },
     taglines: ["Trygg el – installerat och klart", "Behörig elektriker nära dig"],
     heroBody: (city) =>
-      `Auktoriserade elinstallationer i ${city}: belysning, elbilsladdare, säkringsskåp och felsökning. Fast pris och BankID-signerad offert.`,
+      `Auktoriserade elinstallationer i ${city}: belysning, elbilsladdare, säkringsskåp och felsökning. Fast pris och tydlig offert som du godkänner digitalt.`,
     services: [
       { title: "Elbilsladdare", text: "Installation av laddbox med grönt teknik-avdrag direkt på fakturan." },
       { title: "Belysning", text: "Inomhus och utomhus – från spotlights till smarta hem." },

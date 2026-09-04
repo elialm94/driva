@@ -345,24 +345,56 @@ export interface DocumentEmailDelivery {
   sentTo: string;
 }
 
-/* ---------------------------------- BankID ----------------------------------- */
+/* ----------------------------- Offertgodkännande ------------------------------ */
 
-export type BankIDEnvironment = "mock" | "production";
+/**
+ * Hur kunden godkände offerten.
+ *   simple_accept – kunden skrev sitt namn och tryckte Godkänn offert på
+ *                   offertlänken (enkel elektronisk underskrift).
+ *   bankid_mock   – äldre demosignaturer från mock-BankID (inte på kundvägen längre).
+ *   bankid        – reserverat för en riktig BankID-leverantör; ingen finns i koden.
+ */
+export type QuoteAcceptanceMethod = "simple_accept" | "bankid_mock" | "bankid";
 
-export interface BankIDSignature {
+/**
+ * Kundens godkännande av EXAKT en offertversion. Bevisvärdet ligger i
+ * kombinationen: låst version + contentHash (vad), acceptedByName + kund-
+ * uppgifter (vem), acceptedAt (när), linkSentTo (länken gick till kundens
+ * e-post), ip/userAgent (varifrån) och statement (den mening kunden godkände).
+ * Lagras i tabellen signatures – en rad per offert.
+ */
+export interface QuoteAcceptance {
   id: ID;
   quoteId: ID;
   quoteVersionId: ID;
-  orderRef: string;
-  signerName: string;
-  signerPersonalNumberMasked: string;
-  signedAt: string;
-  environment: BankIDEnvironment;
-  evidence: {
-    contentHash: string;
+  method: QuoteAcceptanceMethod;
+  /** ISO-tid. Visas i Europe/Stockholm (format.ts). */
+  acceptedAt: string;
+  /** Namnet kunden skrev, trimmat. */
+  acceptedByName: string;
+  /** Kundens namn i registret vid godkännandet (företag: bolagsnamnet). */
+  customerNameAtAccept: string;
+  acceptedByEmail?: string;
+  /** SHA-256 av den låsta version kunden såg (samma som QuoteVersion.contentHash). */
+  contentHash: string;
+  /** Den fullständiga mening kunden godkände, ordagrant som den visades. */
+  statement: string;
+  ip?: string;
+  userAgent?: string;
+  /** Adressen offertlänken skickades till, om offerten mejlades. */
+  linkSentTo?: string;
+  /** Bara på äldre BankID-poster. */
+  bankid?: {
+    orderRef: string;
+    personalNumberMasked: string;
+    environment: BankIDEnvironment;
     note: string;
   };
 }
+
+/* ---------------------------------- BankID ----------------------------------- */
+
+export type BankIDEnvironment = "mock" | "production";
 
 export type BankIDHint =
   | "outstandingTransaction"
@@ -1877,7 +1909,8 @@ export interface DB {
   customers: Customer[];
   quotes: Quote[];
   quoteVersions: QuoteVersion[];
-  signatures: BankIDSignature[];
+  /** Offertgodkännanden (en per offert). Tabellnamnet signatures är historiskt. */
+  signatures: QuoteAcceptance[];
   bankidOrders: BankIDOrder[];
   jobs: Job[];
   /** Registrerat/avtalat arbete på uppdrag – skilt från offert- och fakturarader. */

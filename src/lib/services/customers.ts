@@ -259,7 +259,7 @@ function customerStatsById(): Map<string, CustomerStats> {
 }
 
 function customerStatus(s: CustomerStats): { key: CustomerStatusKey; label: string } {
-  // Central vokabulär: kunden har en skickad offert → vi väntar på signering.
+  // Central vokabulär: kunden har en skickad offert → vi väntar på godkännande.
   if (s.waitingQuotes > 0) return { key: "signering", label: QUOTE_STATUS.skickad.label };
   if (s.activeJobs > 0) return { key: "uppdrag", label: "Aktivt uppdrag" };
   return { key: "ingen", label: "—" };

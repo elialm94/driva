@@ -226,7 +226,7 @@ describe("§41 fristående faktura vs kopplad sökväg", () => {
     assert.equal(db().jobs.length, 0);
   });
 
-  it("skickad offert: Starta uppdrag är inte primärt, visar Väntar på signering", () => {
+  it("skickad offert: Starta uppdrag är inte primärt, visar Väntar på godkännande", () => {
     const quote = createQuote({
       customerId: "cust-1",
       title: "Väntar",
@@ -240,7 +240,7 @@ describe("§41 fristående faktura vs kopplad sökväg", () => {
     quote.status = "skickad";
     quote.sentAt = "2026-08-20T10:00:00.000Z";
     const state = quoteChainState(quote);
-    assert.equal(state.waitingLabel, "Väntar på signering");
+    assert.equal(state.waitingLabel, "Väntar på godkännande");
     assert.equal(state.primary, null);
     assert.ok(state.overflow.some((c) => c.kind === "starta_uppdrag"));
   });

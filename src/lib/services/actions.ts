@@ -639,8 +639,8 @@ function collectQuotes(ranked: Ranked[], watching: WatchingItem[]) {
         },
       });
     } else {
-      // "Öppnad · väntar på signering": vad som hänt + vad vi väntar på –
-      // metoden (BankID) hör hemma i tidslinjen, inte här.
+      // "Öppnad · väntar på godkännande": vad som hänt + vad vi väntar på –
+      // vem som godkände hör hemma i tidslinjen, inte här.
       watching.push({
         id: `quote-open-${q.id}`,
         category: "quote",

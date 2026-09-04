@@ -44,7 +44,7 @@ export function createJobFromQuote(quote: Quote): Job {
     customerId: quote.customerId,
     quoteId: quote.id,
     title: version.title,
-    description: [descriptionText, `Enligt BankID-godkänd offert #${quote.number}.`]
+    description: [descriptionText, `Enligt godkänd offert #${quote.number}.`]
       .filter(Boolean)
       .join("\n\n"),
     status: "kommande",

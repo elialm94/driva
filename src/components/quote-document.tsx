@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import type { BankIDSignature, CompanySettings, Customer, Quote, QuoteVersion } from "@/lib/types";
+import type { CompanySettings, Customer, Quote, QuoteAcceptance, QuoteVersion } from "@/lib/types";
 import { docTotals, lineTotal, vatBreakdown } from "@/lib/calc";
 import { kr, datumLang, datumTid, datumNumeriskt } from "@/lib/format";
-import { ShieldCheck, BadgeCheck } from "lucide-react";
+import { BadgeCheck } from "lucide-react";
 import { taxReductionDeductionLabel, getTaxReductionTerms } from "@/lib/tax-reduction-terms";
 import { TaxReductionQuoteClause, TaxReductionCalcHint } from "./tax-reduction-terms";
 import { lineKindLabel } from "@/lib/economic-line-type";
@@ -10,7 +10,7 @@ import { CompanyLogo } from "./company-logo";
 import { resolveQuoteCompany, resolveQuoteCustomer } from "@/lib/invoices/snapshot";
 import { quoteDescriptionDoc } from "@/lib/quote-description";
 import { RichTextView } from "./rich-text";
-import { signedWithBankIdBy } from "@/lib/status-labels";
+import { acceptedByLabel } from "@/lib/status-labels";
 
 
 export function DocCompanyHeader({ company, docType, docNumber }: { company: CompanySettings; docType: string; docNumber: string }) {
@@ -234,9 +234,11 @@ function MetaItem({ label, value }: { label: string; value: string }) {
  *
  * Ordning: företag/identitet → kund + adress → metadata → rubrik →
  * beskrivning → prisrader → summering → ROT/RUT → betalningsplan → villkor →
- * godkännande (BankID) → företagsuppgifter.
+ * godkännande → företagsuppgifter.
  *
- * `acceptance`: på den publika webbvyn skickas BankID-knappen in här och blir
+ * `acceptance`: kundens sparade godkännande (låst version) – ger raden
+ * "Godkänd {datum} av {namn}" i webbvy, ägarvy och PDF.
+ * `acceptForm`: på den publika webbvyn skickas namn + knapp in här och blir
  * dokumentets avslutande "Godkänn offerten". Utan slot (ägarvyn, PDF, print)
  * visas statisk information om hur offerten godkänns – aldrig en webbknapp.
  */
@@ -245,18 +247,18 @@ export function QuoteDocument({
   customer,
   quote,
   version,
-  signature,
   acceptance,
+  acceptForm,
 }: {
   company: CompanySettings;
   customer: Customer;
   quote: Quote;
   version: QuoteVersion;
-  signature?: BankIDSignature;
-  acceptance?: ReactNode;
+  acceptance?: QuoteAcceptance;
+  acceptForm?: ReactNode;
 }) {
   const seller = resolveQuoteCompany(version, company);
-  // Skickad/signerad offert visar kundens uppgifter som de var då – inte livedata.
+  // Skickad/godkänd offert visar kundens uppgifter som de var då – inte livedata.
   const buyer = resolveQuoteCustomer(version, customer);
   const t = docTotals(version.lines, version.rot);
   // Kanonisk beskrivning – slår ihop ev. legacy-"Beskrivning av arbetet" på
@@ -330,35 +332,39 @@ export function QuoteDocument({
         ) : null}
       </div>
 
-      {signature ? (
-        <div className="mt-9 rounded-2xl border border-ok/20 bg-ok-soft/60 p-5">
+      {acceptance ? (
+        <div data-quote-acceptance-line="" className="mt-9 rounded-2xl border border-ok/20 bg-ok-soft/60 p-5">
           <p className="text-[12px] font-semibold uppercase tracking-wide text-ok">Godkänd offert</p>
           <div className="mt-2 flex items-start gap-3">
             <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
             <div>
-              <p className="text-[14px] font-semibold text-ok">{signedWithBankIdBy(signature.signerName)}</p>
-              <p className="text-[13px] text-soft">{datumTid(signature.signedAt)}</p>
+              {/* En rad, ingen stämpel: "Godkänd 3 september 2026, 14:32 av Anna Andersson". */}
+              <p className="text-[14px] font-semibold text-ok">
+                Godkänd {datumTid(acceptance.acceptedAt)} av {acceptance.acceptedByName}
+              </p>
+              {acceptance.method !== "simple_accept" ? (
+                <p className="text-[13px] text-soft">{acceptedByLabel(acceptance)}</p>
+              ) : null}
             </div>
           </div>
         </div>
       ) : (
-        <div className="mt-9 rounded-2xl border border-bankid/20 bg-bankid-soft/50 p-5">
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-bankid">Godkänn offerten</p>
+        <div className="mt-9 rounded-2xl border border-line bg-canvas/60 p-5">
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-soft">Godkänn offerten</p>
           <p className="mt-1.5 max-w-xl text-[14px] leading-relaxed text-soft">
-            Offerten är giltig till {datumLang(version.validUntil)}. Signera tryggt och juridiskt bindande med
-            BankID.
+            Offerten är giltig till {datumLang(version.validUntil)}.
           </p>
-          {acceptance ? (
+          {acceptForm ? (
             <>
-              <div className="mt-4 print:hidden">{acceptance}</div>
+              <div className="mt-4 print:hidden">{acceptForm}</div>
               <p className="mt-2 hidden text-[13px] text-muted print:block">
-                Offerten godkänns med BankID via offertlänken från {seller.name}.
+                Offerten godkänns via offertlänken från {seller.name}.
               </p>
             </>
           ) : (
-            <p className="mt-2 flex items-start gap-2 text-[13px] leading-relaxed text-muted">
-              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-bankid" />
-              <span>Offerten godkänns med BankID via offertlänken från {seller.name}.</span>
+            <p className="mt-2 text-[13px] leading-relaxed text-muted">
+              Offerten godkänns via offertlänken från {seller.name}: kunden skriver sitt namn och trycker Godkänn
+              offert.
             </p>
           )}
         </div>

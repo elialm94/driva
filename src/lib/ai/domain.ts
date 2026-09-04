@@ -698,7 +698,7 @@ export function requestSendQuote(quoteId: string): DomainResult {
     card: {
       kind: "confirm",
       actionId: action.id,
-      summary: "Offerten skickas till kunden med en länk där den kan signeras med BankID.",
+      summary: "Offerten skickas till kunden med en länk där den kan läsas och godkännas.",
       rows: [
         { label: `Offert #${quote.number}`, value: kr(t.toPay) },
         { label: "Till", value: customer.name },
@@ -786,7 +786,7 @@ export function requestFollowUpQuotes(minDays = 7): DomainResult {
   if (waiting.length === 0) {
     return {
       ok: true,
-      text: `Ingen offert har väntat på signering i mer än ${minDays} dagar.`,
+      text: `Ingen offert har väntat på godkännande i mer än ${minDays} dagar.`,
       forModel: { count: 0 },
     };
   }
@@ -794,7 +794,7 @@ export function requestFollowUpQuotes(minDays = 7): DomainResult {
   addPending(action);
   return {
     ok: true,
-    text: "Dessa offerter väntar fortfarande på signering. Ska jag skicka en vänlig påminnelse?",
+    text: "Dessa offerter väntar fortfarande på kundens godkännande. Ska jag skicka en vänlig påminnelse?",
     card: {
       kind: "confirm",
       actionId: action.id,
@@ -1247,8 +1247,8 @@ export function compactInvoice(i: Invoice) {
 export function bankIdRefuseResult(): DomainResult {
   return {
     ok: true,
-    text: "Jag kan inte godkänna offerter. Det kan bara kunden göra med BankID på offertlänken. Vill du att jag skickar en påminnelse i stället?",
-    forModel: { refused: "bankid_approval" },
+    text: "Jag kan inte godkänna offerter. Det kan bara kunden göra på offertlänken. Vill du att jag skickar en påminnelse i stället?",
+    forModel: { refused: "quote_approval" },
   };
 }
 
@@ -1311,7 +1311,7 @@ export function requestUpdateBusinessProfile(patch: Record<string, string | numb
     ok: true,
     text: sensitive
       ? "Det här ändrar betalnings- eller bolagsuppgifter. Bekräfta så sparar jag det i Inställningar. Utfärdade fakturor ändras inte."
-      : "Så här blir ändringen i Inställningar. Bekräfta så sparar jag. Utfärdade fakturor och signerade offerter ändras inte.",
+      : "Så här blir ändringen i Inställningar. Bekräfta så sparar jag. Utfärdade fakturor och godkända offerter ändras inte.",
     card: {
       kind: "confirm",
       actionId: action.id,

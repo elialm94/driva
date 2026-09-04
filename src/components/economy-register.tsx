@@ -270,7 +270,7 @@ export function QuoteRegister({
           icon={FileText}
           filtered={filtered}
           title="Inga offerter ännu"
-          text="Skapa din första offert – kunden signerar den tryggt med BankID."
+          text="Skapa din första offert – kunden godkänner den direkt i länken."
         />
       ) : (
         <>

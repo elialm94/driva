@@ -21,7 +21,7 @@ const STEPS = [
   {
     n: "1",
     title: "Få jobbet",
-    body: "Skapa och skicka professionella offerter. Kunden kan godkänna digitalt eller med BankID.",
+    body: "Skapa och skicka professionella offerter. Kunden godkänner direkt i länken – inget konto, ingen app.",
   },
   {
     n: "2",
@@ -40,7 +40,7 @@ const STEPS = [
   },
 ];
 
-const FEATURES = ["ROT/RUT", "BankID", "Kvitton & bokföring", "Egen hemsida"];
+const FEATURES = ["ROT/RUT", "Digitalt godkännande", "Kvitton & bokföring", "Egen hemsida"];
 
 function CtaButtons({ center = false }: { center?: boolean }) {
   return (
