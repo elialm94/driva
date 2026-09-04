@@ -1,5 +1,5 @@
 import { db, save } from "../store";
-import { uid, publicToken, ocrForInvoice } from "../ids";
+import { uid, publicToken, isValidBankgirotOcr, ocrForInvoice } from "../ids";
 import type { DocLine, Invoice, QuoteVersion, RotRut, TaxReductionDetails, TaxReductionTermsSnapshot, VatRate, Verification } from "../types";
 import type { RichTextDoc } from "../richtext";
 import { sanitizeRichText } from "../richtext";
@@ -97,13 +97,32 @@ function allocateNextInvoiceNumber(): number {
   return number;
 }
 
+function issuedOcrTakenByOther(ocr: string, invoiceId: string): boolean {
+  return db().invoices.some((i) => i.id !== invoiceId && i.status !== "utkast" && i.ocr === ocr);
+}
+
+function assertUnusedIssuedOcr(ocr: string, invoiceId: string) {
+  if (issuedOcrTakenByOther(ocr, invoiceId)) {
+    throw new Error("OCR-numret är redan använt på en annan faktura.");
+  }
+}
+
+/**
+ * Tilldela nummer + OCR vid utfärdande. Nytt nummer får alltid färsk OCR-10.
+ * Befintligt nummer behåller giltigt sparat OCR (påminnelser/omutskick);
+ * tomt eller ogiltigt fylls från numret. OCR är unikt per utfärdad faktura.
+ */
 function assignInvoiceNumberAndOcr(invoice: Invoice): { number: number; ocr: string; allocatedNew: boolean } {
   const allocatedNew = invoice.number == null || !Number.isFinite(invoice.number);
   const number = allocatedNew ? allocateNextInvoiceNumber() : invoice.number!;
-  const ocr = !allocatedNew && invoice.ocr ? invoice.ocr : ocrForInvoice(number);
+  const stored = invoice.ocr?.trim() ?? "";
+  const keepStored =
+    !allocatedNew && isValidBankgirotOcr(stored) && !issuedOcrTakenByOther(stored, invoice.id);
+  const ocr = keepStored ? stored : ocrForInvoice(number);
   if (!Number.isInteger(number) || number < 1 || !ocr) {
     throw new Error("Fakturan kunde inte utfärdas utan nummer och OCR. Försök igen.");
   }
+  assertUnusedIssuedOcr(ocr, invoice.id);
   return { number, ocr, allocatedNew };
 }
 
@@ -1051,10 +1070,12 @@ export function creditInvoice(invoiceId: string, createdBy: Actor = "anvandare",
   const now = new Date().toISOString();
   const number = allocateNextInvoiceNumber();
   const ocr = ocrForInvoice(number);
+  const creditId = uid();
+  assertUnusedIssuedOcr(ocr, creditId);
   const sourceLines = original.issuedSnapshot?.lines ?? original.lines;
   const sourceRot = original.issuedSnapshot?.rot ?? original.rot;
   const credit: Invoice = {
-    id: uid(),
+    id: creditId,
     number,
     customerId: original.customerId,
     jobId: original.jobId,

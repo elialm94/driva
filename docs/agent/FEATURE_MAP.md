@@ -537,7 +537,7 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **Components:** `doc-form.tsx` (InvoiceForm), `invoice-document.tsx`, `invoice-draft-send.tsx`, `invoice-issue-checklist.tsx`, `money-widgets.tsx`, `denied-reduction-card.tsx`.
 - **Form ids:** `#faktura-saknas`, `#faktura-kund`, `#faktura-rot-rut`, `#faktura-betalvillkor`.
 - **DB:** `invoices` (`number` null until issue), `invoice_line_items`, `invoice_issued_snapshots` (immutable legal copy), `payments`.
-- **Invariants:** Number only via atomic `app.issue_invoice`. Issued UI reads snapshot. Partial pay → `delbetald`. Credit = reversal verification, not new revenue. Rest-invoice after denied ROT: `deniedReductionOf`, no new revenue.
+- **Invariants:** Number only via atomic `app.issue_invoice`. Issued UI reads snapshot. Partial pay → `delbetald`. Credit = reversal verification, not new revenue. Rest-invoice after denied ROT: `deniedReductionOf`, no new revenue. Issued OCR is Bankgirot **OCR-10 soft** (invoice-number digits + modulus-10 check, no length digit) via `ocrForInvoice` in `src/lib/ids.ts` — assigned once at `issueInvoice`, frozen on `issuedSnapshot`, reused on reminders/email/PDF. Drafts have no customer-facing OCR. SQL twin: `app.ocr_for_invoice`.
 - **Desktop/mobile:** same register pattern as offerter.
 - **Live:** `#1042` Förfallen 6 dagar (Brf Eken); `#1047` Skickad delbetalning; one Utkast Brf Eken (`inv-1048`).
 - **Verify:** Ekonomi → Fakturor → open #1042. Discard: only the Utkast row / detail `[data-testid=discard-draft-trigger]`. Public: `/faktura/{token}` for a sent invoice. Tests: `payment-flows.test.ts`, `financial-invariants.test.ts`. Script: `scripts/verify-financial-browser.ts`.

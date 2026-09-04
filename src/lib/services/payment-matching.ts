@@ -14,6 +14,7 @@ import {
 } from "../autopilot";
 import { kr } from "../format";
 import { logActivity } from "./activity";
+import { isValidBankgirotOcr } from "../ids";
 import { merchantRuleKey } from "./expenses";
 import { bookSupplierPaymentFromBank, supplierPayments } from "./supplier-payments";
 import { normalizeRecipientAccount } from "../inbox/workflow";
@@ -45,17 +46,9 @@ export function referenceTokens(tx: Pick<BankTransaction, "reference" | "descrip
   return [...text.matchAll(/\d{4,}/g)].map((m) => m[0]);
 }
 
-/** Luhn-kontroll (OCR-nummer har kontrollsiffra sist). */
+/** Bankgirot OCR-10-kontroll (samma som `isValidBankgirotOcr` i ids.ts). */
 export function luhnValid(token: string): boolean {
-  if (!/^\d+$/.test(token)) return false;
-  let sum = 0;
-  const digits = token.split("").reverse();
-  for (let i = 0; i < digits.length; i++) {
-    let d = parseInt(digits[i], 10) * (i % 2 === 1 ? 2 : 1);
-    if (d > 9) d -= 9;
-    sum += d;
-  }
-  return sum % 10 === 0;
+  return isValidBankgirotOcr(token);
 }
 
 function normalizeName(name: string): string {
