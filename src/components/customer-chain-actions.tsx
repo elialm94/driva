@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Hammer, Plus } from "lucide-react";
 import { buttonClasses, ButtonLink } from "./ui";
 import { createInvoiceFromQuoteAction, startJobFromQuoteAction } from "@/app/actions";
-import { invoiceEditHref, jobHref, newInvoiceHref, newQuoteHref } from "@/lib/nav";
+import { invoiceEditHref, jobHref, newInvoiceHref, newQuoteHref, type PageOrigin } from "@/lib/nav";
 import type { CustomerChainCtas } from "@/lib/business-chain-model";
 import { NewUppdragButton, type JobWorkLocationOption } from "./uppdrag-form";
 
@@ -16,6 +16,7 @@ export function CustomerChainActions({
   workLocations,
   defaultWorkLocationId,
   ctas,
+  from,
 }: {
   customerId: string;
   customerName: string;
@@ -23,10 +24,10 @@ export function CustomerChainActions({
   workLocations: JobWorkLocationOption[];
   defaultWorkLocationId?: string;
   ctas: CustomerChainCtas;
+  from: PageOrigin;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const from = { href: `/kunder/${customerId}`, label: customerName };
 
   function startFromQuote() {
     if (!ctas.approvedQuoteId) return;

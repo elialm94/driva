@@ -37,7 +37,7 @@ import { isLiveMailConfigured } from "@/lib/mail";
 import { docTotals } from "@/lib/calc";
 import { SmartBack } from "@/components/back-link";
 import { AppLink } from "@/components/app-link";
-import { hrefWithNav, invoiceHref, sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
+import { hrefFromOrigin, hrefWithNav, invoiceHref, pageOrigin, returnNavFromSearch } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { quoteChainState } from "@/lib/services/business-chain";
 import { documentLinkView } from "@/lib/services/document-job-link";
@@ -62,21 +62,20 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   const relatedInvoices = data.invoices.filter((i) => i.quoteId === quote.id);
   const job = quote.jobId ? data.jobs.find((j) => j.id === quote.jobId) : undefined;
   const publicPath = `/offert/${quote.token}`;
-  const returnTo = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : undefined;
-  const returnLabel =
-    typeof searchParams.tillbakaNamn === "string" ? sanitizeReturnLabel(searchParams.tillbakaNamn) ?? undefined : undefined;
-  const nav = { returnTo, returnLabel };
-  const fromHere = { href: hrefWithNav(`/ekonomi/offerter/${quote.id}`, nav), label: `Offert #${quote.number}` };
+  const fromHere = pageOrigin(`/ekonomi/offerter/${quote.id}`, searchParams, `Offert #${quote.number}`);
   const linkView = documentLinkView("quote", quote.id, fromHere);
-  const editHref = hrefWithNav(`/ekonomi/offerter/${quote.id}/redigera`, nav);
+  // Edit is a child of this quote — stamp the incoming parent so Back from
+  // redigera → quote still says Ekonomi/Offerter, not the quote itself.
+  const editHref = hrefWithNav(`/ekonomi/offerter/${quote.id}/redigera`, returnNavFromSearch(searchParams));
   const isDraft = quote.status === "utkast";
   const sentParam = typeof searchParams.skickad === "string" ? searchParams.skickad : null;
   const justSent = sentParam === "1" && !isDraft;
   const justSentDemo = sentParam === "demo" && !isDraft;
   const justSentManual = sentParam === "manuell" && !isDraft;
   // EN källa (quoteSendBlockers) för checklista, disabled Skicka och servervalidering.
+  // Stamp the quote (not its parent) so Komplettera / Lägg till e-post returns here.
   const sendBlockers = isDraft
-    ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefWithNav(b.href, nav) } : b))
+    ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefFromOrigin(b.href, fromHere) } : b))
     : [];
   const canSend = sendBlockers.length === 0;
 
@@ -286,7 +285,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               <SectionTitle>Nästa steg</SectionTitle>
               <Card className="space-y-3 px-5 py-4">
                 {job ? (
-                  <Link href={hrefWithNav(`/uppdrag/${job.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label }) as never} className="flex items-center gap-3 rounded-xl border border-line px-4 py-3 transition-colors hover:bg-canvas">
+                  <Link href={hrefFromOrigin(`/uppdrag/${job.id}`, fromHere) as never} className="flex items-center gap-3 rounded-xl border border-line px-4 py-3 transition-colors hover:bg-canvas">
                     <Hammer className="size-4 text-accent" />
                     <div className="flex-1">
                       <p className="text-[14px] font-medium">{job.title}</p>
