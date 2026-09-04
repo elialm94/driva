@@ -233,7 +233,7 @@ Seeded acceptances (`signatures`): `sig-nord1`, `sig-kok`, `sig-altan` — all `
 
 **Uppdrag (stable):** `job-kok` (Pågår), `job-altan` (Planerat), `job-fonster` / `job-nord1` / `job-kokso` / `job-racke` (Klart — hidden under Aktiva), plus planned jobs for Sara, Karin, garderob, nord2, fasad.
 
-**Fakturor:** paid `#1033`–`#1041`/`#1045`; `#1042` slutfaktura Brf Eken **Förfallen**; `#1047` delbetalning Johan **Skickad**; `inv-1048` **Utkast** Brf Eken (list title is the first line “Lagning av portparti, entré Åsögatan 114”, no number — status chip stays Utkast). Tokens e.g. `demo-f1048`.
+**Fakturor:** paid `#1033`–`#1041`/`#1045`; `#1042` slutfaktura Brf Eken **Förfallen**; `#1047` delbetalning Johan **Skickad**; `inv-1048` **Utkast** Brf Eken (list title is the first line “Lagning av portparti, entré Åsögatan 114”, no number — status chip stays Utkast). Two 0 kr **Utkast** for Eli (`inv-eli-luckor` “Luckor i ek”, `inv-eli-bankskiva` “Bänkskiva i ask”). Tokens e.g. `demo-f1048`.
 
 **Inbox:** `inbox-mail-beijer` (Beijer, redo att betala), `inbox-mail-byggmax` (Byggmax, kontrollera belopp — **the badge item**), `inbox-mail-bauhaus`, `inbox-mail-okq8`.
 
@@ -540,7 +540,7 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **DB:** `invoices` (`number` null until issue), `invoice_line_items`, `invoice_issued_snapshots` (immutable legal copy), `payments`.
 - **Invariants:** Number only via atomic `app.issue_invoice`. Issued UI reads snapshot. Partial pay → `delbetald`. Credit = reversal verification, not new revenue. Rest-invoice after denied ROT: `deniedReductionOf`, no new revenue.
 - **Desktop/mobile:** same register pattern as offerter.
-- **Live:** `#1042` Förfallen 6 dagar (Brf Eken); `#1047` Skickad delbetalning; one Utkast Brf Eken (`inv-1048`, list title from first line, chip Utkast).
+- **Live:** `#1042` Förfallen 6 dagar (Brf Eken); `#1047` Skickad delbetalning; Utkast Brf Eken (`inv-1048`, list title from first line); two 0 kr Eli drafts (`Luckor i ek`, `Bänkskiva i ask`).
 - **Verify:** Ekonomi → Fakturor → first column is document title (not “Utkast”). Open #1042. Discard: only the Utkast row / detail `[data-testid=discard-draft-trigger]`. Public: `/faktura/{token}` for a sent invoice. Tests: `src/lib/invoices/display.test.ts`, `economy-list.test.ts`, `payment-flows.test.ts`, `financial-invariants.test.ts`. Script: `scripts/verify-financial-browser.ts`.
 
 ---
