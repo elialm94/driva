@@ -81,11 +81,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         <SmartBack />
       </div>
       <Breadcrumbs
-        items={[
-          { href: "/kunder?flik=kunder", label: "Kunder" },
-          { href: "/kunder?flik=uppdrag", label: "Uppdrag" },
-          { label: job.title },
-        ]}
+        items={[{ href: "/uppdrag", label: "Uppdrag" }, { label: job.title }]}
       />
 
       <div className="mb-6">

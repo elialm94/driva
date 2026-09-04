@@ -12,7 +12,7 @@ import puppeteer, { type Page } from "puppeteer-core";
  *   5. ⋯-meny → Snooza → preset ("Imorgon") → raden försvinner + räknaren
  *      uppdateras utan omladdning; kvarstår efter omladdning (persistens).
  *   6. ⋯-meny → Snooza → "Välj datum …" → kalender → raden försvinner.
- *   7. Nytt uppdrag: ⋯ → "Öppna uppdrag"; uppdraget finns under Kunder → Uppdrag.
+ *   7. Nytt uppdrag: ⋯ → "Öppna uppdrag"; uppdraget finns under Uppdrag.
  *   8. Offert: ⋯ → "Inte aktuell" → lätt bekräftelse → status avböjd.
  *   9. Påminnelse: ⋯ → "Ta bort" (befintlig dismiss-tjänst).
  *  10. Mobil 390: fot fullbredd ≥44px, ⋯ ≥44px, bottensheet med stora träffytor.
@@ -294,7 +294,7 @@ async function main() {
     labels = await menuItemLabels(page);
     if (!labels.includes("Öppna uppdrag")) fail(`"Öppna uppdrag" saknas: ${labels.join(", ")}`);
     await page.keyboard.press("Escape");
-    await page.goto(`${BASE}/kunder?flik=uppdrag`, { waitUntil: "networkidle0" });
+    await page.goto(`${BASE}/uppdrag`, { waitUntil: "networkidle0" });
     const uppdragBody = await page.evaluate(() => document.body.textContent ?? "");
     if (!uppdragBody.includes(jobCustomer)) fail(`uppdraget (${jobCustomer}) saknas under Uppdrag`);
     ok("6 Nytt uppdrag finns kvar under Uppdrag", `${jobCustomer} syns som uppdrag, inte i Inbox`);

@@ -18,7 +18,8 @@ const OUT = path.join(process.cwd(), ".data", "ux-audit");
 
 const DEFAULT_ROUTES = [
   "/",
-  "/kunder?flik=kunder",
+  "/kunder",
+  "/uppdrag",
   "/kunder?flik=forfragningar",
   "/kunder/cust-anna",
   "/uppdrag",

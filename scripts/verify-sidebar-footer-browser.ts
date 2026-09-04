@@ -1,7 +1,8 @@
 /**
- * Webbläsarverifiering: sidofältets fot (Inställningar som riktig nav-rad,
- * Logga ut dold i JSON-läge, demodata-återställning flyttad till Inställningar)
- * samt mobilens "Mer"-ark. Körs mot dev-servern på :3123 i JSON-läge.
+ * Webbläsarverifiering: sidofältets Mer-grupp och fot (Inställningar som riktig
+ * nav-rad under Mer, företagsnamnet som ren text i foten, Logga ut dold i
+ * JSON-läge, demodata-återställning flyttad till Inställningar) samt mobilens
+ * "Mer"-ark. Körs mot dev-servern på :3123 i JSON-läge.
  *
  *   npx tsx scripts/verify-sidebar-footer-browser.ts
  *
@@ -28,11 +29,9 @@ async function main() {
   const page = await browser.newPage();
   page.setDefaultTimeout(15000);
 
-  // Bekräftelsedialoger: fånga texten och AVBRYT (rör inte demodatat –
-  // andra agenters webbläsartester kan köra samtidigt).
-  let lastDialogMessage = "";
+  // Eventuella native-dialoger AVBRYTS (rör inte demodatat – andra agenters
+  // webbläsartester kan köra samtidigt).
   page.on("dialog", async (d) => {
-    lastDialogMessage = d.message();
     await d.dismiss();
   });
 
@@ -52,12 +51,16 @@ async function main() {
     if (!aside) return null;
     const links = [...aside.querySelectorAll('a[href="/installningar"]')];
     const link = links[0] ?? null;
-    const footerDiv = link?.closest("div");
+    const merGroup = aside.querySelector('[data-nav-group="mer"]');
+    // Foten = sista direkta barnet i aside (företagsrad / demo-meny / logga ut).
+    const footerDiv = aside.lastElementChild;
     const nameP = footerDiv?.querySelector("p");
     return {
       settingsLinkCount: links.length,
       settingsText: (link?.textContent ?? "").trim(),
       settingsHasIcon: Boolean(link?.querySelector("svg")),
+      settingsInMer: Boolean(link && merGroup?.contains(link)),
+      merLabels: [...(merGroup?.querySelectorAll("a") ?? [])].map((a) => (a.textContent ?? "").replace(/\s+/g, " ").trim()),
       settingsAriaCurrent: link?.getAttribute("aria-current") ?? null,
       companyName: (nameP?.textContent ?? "").trim(),
       companyNameInsideLink: Boolean(nameP?.closest("a")),
@@ -67,6 +70,15 @@ async function main() {
   if (!footer) fail("sidofältet (aside) saknas");
   await ok("1 exakt EN Inställningar-länk i sidofältet", footer.settingsLinkCount === 1, `count=${footer.settingsLinkCount}`);
   await ok("1 Inställningar-raden har text + kugghjulsikon", footer.settingsText.includes("Inställningar") && footer.settingsHasIcon);
+  await ok("1 Inställningar ligger i Mer-gruppen", footer.settingsInMer);
+  await ok(
+    "1 Mer-gruppen: Inbox · Bokföring · (Hemsida) · Inställningar · Hjälp & support",
+    footer.merLabels[0]?.startsWith("Inbox") === true &&
+      footer.merLabels[1]?.startsWith("Bokföring") === true &&
+      footer.merLabels.at(-2) === "Inställningar" &&
+      footer.merLabels.at(-1) === "Hjälp & support",
+    footer.merLabels.join(" | ")
+  );
   await ok("1 företagsnamn visas som ren text (ej länk)", footer.companyName.length > 0 && !footer.companyNameInsideLink, footer.companyName);
   await ok("1 gamla 'Återställ demodata' borta ur sidofältet", !footer.asideText.includes("Återställ demodata"));
   await ok("1 Logga ut ABSENT i JSON-läge (sidofältet)", !footer.asideText.includes("Logga ut"));
@@ -126,6 +138,33 @@ async function main() {
     JSON.stringify(active)
   );
 
+  // Demosektionen (`DemoResetSection`): rubrik "Demo" (uppercase via CSS) + knappen "Återställ demo".
+  const demoSection = await page.evaluate(() => {
+    const section = document.querySelector('section[aria-labelledby="demo-sektion-rubrik"]');
+    return section ? (section as HTMLElement).innerText : null;
+  });
+  await ok(
+    "4 demosektionen syns på Inställningar (JSON-läge)",
+    !!demoSection && /demo/i.test(demoSection) && demoSection.includes("Återställ demo"),
+    demoSection ?? "saknas"
+  );
+
+  // Bekräftelseflödet: öppna modalen "Återställa demon?" men AVBRYT (rör inte demodatat).
+  await page.evaluate(() => {
+    const section = document.querySelector('section[aria-labelledby="demo-sektion-rubrik"]');
+    const btn = [...(section?.querySelectorAll("button") ?? [])].find((b) => (b.textContent ?? "").includes("Återställ demo"));
+    (btn as HTMLButtonElement | undefined)?.click();
+  });
+  await page.waitForFunction(() => [...document.querySelectorAll("[role=dialog]")].some((d) => (d.textContent ?? "").includes("Återställa demon?")));
+  await page.screenshot({ path: ".shots/installningar-demo-section.png", fullPage: true });
+  await page.evaluate(() => {
+    const dlg = [...document.querySelectorAll("[role=dialog]")].find((d) => (d.textContent ?? "").includes("Återställa demon?"));
+    const avbryt = [...(dlg?.querySelectorAll("button") ?? [])].find((b) => (b.textContent ?? "").trim() === "Avbryt");
+    (avbryt as HTMLButtonElement | undefined)?.click();
+  });
+  await page.waitForFunction(() => ![...document.querySelectorAll("[role=dialog]")].some((d) => (d.textContent ?? "").includes("Återställa demon?")));
+  await ok("4 confirm-modal visades och avbröts", true);
+
   await page.goto(`${BASE}/support`, { waitUntil: "networkidle0" });
   const supportActive = await page.evaluate(() => {
     const link = [...document.querySelectorAll("aside a")].find((a) => (a.getAttribute("href") ?? "").startsWith("/support"));
@@ -149,24 +188,6 @@ async function main() {
       supportActive.color !== "rgb(255, 255, 255)",
     JSON.stringify(supportActive)
   );
-
-  // Obs: rubriken renderas med text-transform: uppercase → innerText är versal.
-  const bodyText = await page.evaluate(() => document.body.innerText);
-  await ok(
-    "4 demosektionen syns på Inställningar (JSON-läge)",
-    /demo & utveckling/i.test(bodyText) && bodyText.includes("Återställ demodata")
-  );
-
-  // Bekräftelseflödet: klicka men AVBRYT via dialoghanteraren ovan.
-  lastDialogMessage = "";
-  await page.evaluate(() => {
-    const section = document.querySelector('section[aria-labelledby="demo-sektion-rubrik"]');
-    const btn = [...(section?.querySelectorAll("button") ?? [])].find((b) => (b.textContent ?? "").includes("Återställ demodata"));
-    (btn as HTMLButtonElement | undefined)?.click();
-  });
-  await new Promise((r) => setTimeout(r, 400));
-  await ok("4 confirm-dialog visas och avbröts", lastDialogMessage.includes("Återställa demodata?"), lastDialogMessage);
-  await page.screenshot({ path: ".shots/installningar-demo-section.png", fullPage: true });
 
   /* ------------------------- 5. Mobil 390px: Mer-arket ------------------------- */
   await page.setViewport({ width: 390, height: 844 });

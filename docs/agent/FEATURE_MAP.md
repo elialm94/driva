@@ -70,30 +70,35 @@ One Places integration for every editable physical address — `AddressAutocompl
 
 ### Primary nav (Swedish labels as shown)
 
-Config: `NAV_ITEMS` in `src/lib/nav.ts`. Icons in `src/components/nav.tsx`.
+Config: `NAV_ITEMS` in `src/lib/nav.ts` (each item has `group: "primary" | "more"`; helpers `primaryNavItems` / `moreNavItems` apply the optional-feature filter). Icons in `src/components/nav.tsx` (`NAV_ICONS`, Uppdrag = `Hammer`).
 
-| UI label | Route | Section | Badge |
-|----------|-------|---------|-------|
-| Hem | `/` | `hem` | never |
-| Kunder | `/kunder` | `kunder` | never |
-| Ekonomi | `/ekonomi` | `ekonomi` | never |
-| Inbox | `/inbox` | `inbox` | open items (`countInboxBadge`) |
-| Bokföring | `/bokforing` | `bokforing` | bookkeeping questions (`countBookkeepingBadge`) |
-| Samarbeta | `/samarbeta` | `samarbeta` | never; **optional** |
-| Hemsida | `/hemsida` | `hemsida` | never; **optional** |
+**Main navigation = Hem · Uppdrag · Kunder · Ekonomi · Mer** — identical on desktop sidebar and mobile bottom bar. Uppdrag is the craftsman's workspace and therefore primary; Kunder is only the customer register.
 
-Footer (not a section): **Inställningar** `/installningar`, **Hjälp & support** `/support?fran=<path>`.
+| UI label | Route | Section | Group | Badge |
+|----------|-------|---------|-------|-------|
+| Hem | `/` | `hem` | primary | never |
+| Uppdrag | `/uppdrag` | `uppdrag` | primary | never |
+| Kunder | `/kunder` | `kunder` | primary | never |
+| Ekonomi | `/ekonomi` | `ekonomi` | primary | never |
+| Inbox | `/inbox` | `inbox` | Mer | open items (`countInboxBadge`) |
+| Bokföring | `/bokforing` | `bokforing` | Mer | bookkeeping questions (`countBookkeepingBadge`) |
+| Samarbeta | `/samarbeta` | `samarbeta` | Mer | never; **optional** |
+| Hemsida | `/hemsida` | `hemsida` | Mer | never; **optional** |
+
+**Mer** also holds (not sections): **Inställningar** `/installningar`, **Hjälp & support** `/support?fran=<path>`. Inbox/Bokföring keep their count badges inside Mer; on mobile the **Mer** tab shows the summed badge (`Mer, {n} att lösa`).
+
+Active section: `sectionForPath` → `isSectionActive`. `/uppdrag` **and** `/uppdrag/[id]` (plus legacy `/jobb/[id]`, `/kunder/forfragningar/[id]`) light up **Uppdrag**; `/kunder` and `/kunder/[id]` light up **Kunder**. Active links carry `aria-current="page"`.
 
 **Optional features** (`src/lib/features.ts`, `src/lib/optional-features.ts`): `website`, `collaboration`. Hidden from nav when off. Direct URL redirects to `/installningar?flik=funktioner`. Existing usage without a stored flag counts as on (backfill). Explicit `false` wins. Deactivate does **not** delete content.
 
-**Live demo (2026-09-01):** nav shows Hem, Kunder, Ekonomi, Inbox (badge **1**), Bokföring (badge **4**), Hemsida. **Samarbeta is absent** (collaboration not activated). Company footer: **Södermalms Snickeri AB** + **Demo** badge.
+**Demo (JSON mode):** sidebar shows Hem, Uppdrag, Kunder, Ekonomi, then the **Mer** group: Inbox (badge), Bokföring (badge), Hemsida, Inställningar, Hjälp & support. **Samarbeta is absent** (collaboration not activated). Company footer: **Södermalms Snickeri AB** + **Demo** badge.
 
 Badge aria: `Inbox, {n} öppna` / `Bokföring, {n} bokföringsfrågor att lösa`. Counts from `src/lib/services/nav-counts.ts`.
 
 ### Desktop vs mobile
 
-- **Desktop (`lg+`):** fixed 240px sidebar. Company name / demo menu in footer.
-- **Mobile:** bottom bar = first 4 visible items (Hem, Kunder, Ekonomi, Inbox) + **Mer**. Mer sheet (`role="dialog"` `aria-label="Mer"`) holds Bokföring, optional Samarbeta/Hemsida, Inställningar, support, demo/logout.
+- **Desktop (`lg+`):** fixed 240px sidebar. Primary four rows, then a muted **Mer** heading (`#sidebar-mer-rubrik`) over the always-expanded group `[data-nav-group="mer"]` (Inbox, Bokföring, optional Samarbeta/Hemsida, Inställningar, Hjälp & support). Footer = company name / demo menu / workspace switcher / logout only.
+- **Mobile:** bottom bar `nav[aria-label="Huvudnavigation"]` = **Hem · Uppdrag · Kunder · Ekonomi · Mer** (five equal tabs, icon + label, ≥44px). Mer sheet (`role="dialog"` `aria-label="Mer"`) holds Inbox, Bokföring, optional Samarbeta/Hemsida, Inställningar, support, demo/logout.
 - Editor pages widen via `data-editor-shell` / `data-site-editor-shell`.
 
 ### Auth gates
@@ -128,10 +133,13 @@ Proxy (Next 16 middleware): `src/proxy.ts`. Real auth is always server-side (`en
 |-----|-----|
 | `/pengar`, `/pengar/*` | `/ekonomi`, `/ekonomi/*` |
 | `/jobb`, `/jobb/:id` | `/uppdrag`, `/uppdrag/:id` |
-| `/uppdrag` (list) | `/kunder?flik=uppdrag` |
+| `/kunder?flik=uppdrag` (old Kunder tab) | `/uppdrag` (q, visning, ekonomi, sortering, sida, tillbaka, tillbakaNamn preserved) |
+| `/kunder?flik=forfragningar` | `/uppdrag` |
+| `/kunder?flik=kunder` | `/kunder` |
 | `/assistent` | `/` |
-| `/kunder?flik=forfragningar` | `/kunder?flik=uppdrag` |
 | `/kunder/forfragningar/:id` | `/uppdrag/:id` |
+
+Server-side: `next.config.ts` `redirects()` (`/jobb*`, `/pengar*`, `/assistent`) plus page-level `redirect()` in `kunder/page.tsx` (`?flik=uppdrag|forfragningar` → `/uppdrag`, drops `flik`, keeps the list/back params), `jobb/page.tsx`, `jobb/[id]/page.tsx`, `kunder/forfragningar/[id]/page.tsx`. Client-side: `rewriteLegacyHref` / `sanitizeReturnTo` in `src/lib/nav.ts` normalise hrefs and `tillbaka=` chains the same way.
 
 ---
 
@@ -386,10 +394,10 @@ Two different systems:
 ## Kunder
 
 - **User-facing name:** Kunder
-- **Purpose:** People/companies you work with. Jobs are a **tab** here, not a top-level nav item.
-- **Routes:** `/kunder` (default `flik=kunder`), `/kunder/[id]`. Page: `src/app/(app)/kunder/page.tsx`.
+- **Purpose:** People/companies you work with. **Only the customer register** — jobs live under the primary nav item **Uppdrag** (`/uppdrag`); the old Kunder/Uppdrag tab strip is gone.
+- **Routes:** `/kunder`, `/kunder/[id]`. Page: `src/app/(app)/kunder/page.tsx`. `?flik=uppdrag|forfragningar` redirects to `/uppdrag`; `?flik=kunder` is ignored.
 - **How to get there:** Nav **Kunder**. Command *Ny kund* / *Hitta kund*. Attention/customer links.
-- **Tabs:** **Kunder** `/kunder?flik=kunder` · **Uppdrag** `/kunder?flik=uppdrag`.
+- **Tabs:** none.
 - **Subtitle:** *Alla du jobbar med eller pratar med – allt kopplas ihop automatiskt.*
 - **Main actions:** **Ny kund** (`aria-label="Ny kund"`) → `NewCustomerModal`. Row → `/kunder/{id}` (`aria-label={name}`).
 - **List filters:** Typ (Privat/Företag), Aktivitet, Betalning, sort Senast aktivitet / Kund / Att betala. Search: *Sök kund, företag, e-post eller telefon...*
@@ -411,8 +419,8 @@ Two different systems:
 
 - **User-facing name:** Uppdrag
 - **Purpose:** The work — dates, registered time/material, invoicing left. Economy status is **not** baked into “Klart”.
-- **Routes:** list `/kunder?flik=uppdrag` (`UppdragList`). Detail `/uppdrag/[id]` (`src/app/(app)/uppdrag/[id]/page.tsx`). Alias `/jobb/[id]`. Standalone `/uppdrag` list file exists but canonical list is the Kunder tab.
-- **How to get there:** Kunder → tab Uppdrag. Customer *Starta uppdrag*. Quote *Starta uppdrag*. Command *Skapa uppdrag*.
+- **Routes:** list `/uppdrag` (`src/app/(app)/uppdrag/page.tsx`, renders `UppdragList` — same filters/business logic as the former Kunder tab). Detail `/uppdrag/[id]` (`src/app/(app)/uppdrag/[id]/page.tsx`). Aliases `/jobb`, `/jobb/[id]`, `/kunder?flik=uppdrag` → redirect. Nav section `uppdrag` is active on both list and detail; crumbs *Uppdrag / {title}*; default back **Uppdrag** → `/uppdrag`.
+- **How to get there:** Nav **Uppdrag** (primary, desktop + mobile). Customer *Starta uppdrag*. Quote *Starta uppdrag*. Command *Skapa uppdrag*.
 - **Subtitle:** *Vad som är beställt, när det sker, vad som är fakturerat och vad som är kvar.*
 - **Stored status:** `kommande | pagar | klart`. **UI:** Planerat / Pågår / Klart / Arkiverat (`archivedAt`, not an enum).
 - **Economy line:** *X kr kvar att fakturera* · *X kr väntar på betalning* · *Betalt ✓*
@@ -430,7 +438,7 @@ Two different systems:
 - **Invariants:** Job describes **work**, not money. Quote/invoice linked to a job must share `customer_id`.
 - **Desktop/mobile:** table vs cards; row `aria-label={title}`.
 - **Live:** Aktiva includes Köksrenovering (Pågår, 59 500 kr kvar) and several Planerat. Klart jobs (fönster, etapp 1, …) under **Klart**.
-- **Verify:** `/kunder?flik=uppdrag` → click *Köksrenovering* → `/uppdrag/job-kok`. Create from header **Uppdrag**. Tests: `job-lifecycle.test.ts`, `job-work.test.ts`.
+- **Verify:** `/uppdrag` → click *Köksrenovering* → `/uppdrag/job-kok`; sidebar/bottom **Uppdrag** has `aria-current="page"` on both. Create from header **Uppdrag**. Tests: `job-lifecycle.test.ts`, `job-work.test.ts`, `nav.test.ts` (huvudnavigation). Browser: `scripts/verify-nav-browser.ts`, `scripts/verify-origin-back.ts`.
 
 ---
 
@@ -812,7 +820,7 @@ The repo has **almost no** `data-testid`. No `data-cy` / `data-qa` / `getByTestI
 - Create: `aria-label="Ny offert"|"Ny faktura"|"Ny kund"`.
 - Discard icon: `aria-label="Kasta offertutkast"|"Kasta fakturautkast"`.
 - Command bar: `role="listbox"` `aria-label="Förslag"`.
-- Mer sheet: `role="dialog"` `aria-label="Mer"`.
+- Mer sheet: `role="dialog"` `aria-label="Mer"`. Mobile bottom bar: `nav[aria-label="Huvudnavigation"]`. Desktop Mer group: `[data-nav-group="mer"]`. Active nav link: `aria-current="page"`.
 - Demo menu: `aria-haspopup="menu"`.
 - List rows: `aria-label={customer.name}` / `{job.title}`.
 - Attention overflow: `aria-label` prefix *Fler alternativ för*.
@@ -831,7 +839,7 @@ Important UI with **no** `data-testid` (agents must use text, href, or fragile C
 - Command bar input, suggestion rows, confirm cards
 - Address suggestion list / pick flow (use `[data-address-suggestions]`, `[data-address-option]`, the `role="combobox"` input, or the **Demo** tag text instead)
 - Hem attention rows, watching rows, reminder rows + Klar/Snooza
-- Ekonomi / Kunder / Inbox / Bokföring **tabs and filter chips**
+- Ekonomi / Inbox / Bokföring **tabs** and Kunder / Uppdrag **filter chips**
 - Register rows (quote/invoice/customer/job/inbox) as clickable units
 - Quote/invoice detail primary actions: Skicka, Redigera, Öppna kundvyn, Kopiera kundlänk (discard button is the exception)
 - Public Godkänn offert (`public-quote-accept` below the card; `public-quote-accept-bar` on mobile) / Avböj (`public-quote-decline`)
@@ -854,7 +862,7 @@ Add **only** these. Enough to make the main Swedish flows automatable without a 
 
 | Priority | Proposed `data-testid` | Where | Why |
 |----------|------------------------|-------|-----|
-| 1 | `nav-item-{hem,kunder,ekonomi,inbox,bokforing,hemsida,samarbeta,installningar}` | `nav.tsx` | Reach any area without depending on visible label/CSS. Include mobile Mer. |
+| 1 | `nav-item-{hem,uppdrag,kunder,ekonomi,inbox,bokforing,hemsida,samarbeta,installningar}` | `nav.tsx` | Reach any area without depending on visible label/CSS. Include mobile Mer. |
 | 2 | `command-bar-input` | `command-bar.tsx` | Hem’s primary control; every “do X from Hem” repro starts here. |
 | 3 | `quote-row-{id}` / `invoice-row-{id}` | `economy-register.tsx` | Open #116 / #1042 without matching Swedish status text. |
 | 4 | `quote-send` / `invoice-send` | draft send components | Pair with existing `discard-draft-trigger` + checklists. |
@@ -863,7 +871,7 @@ Add **only** these. Enough to make the main Swedish flows automatable without a 
 | 7 | `demo-menu` + `demo-reset` + `demo-end` | `demo-menu.tsx` | Every live/QA session enters and resets here. |
 | 8 | `job-row-{id}` + `job-create-invoice` | uppdrag list + `job-controls.tsx` | Job → invoice is the core money path. |
 | 9 | `inbox-row-{id}` + `inbox-create-payment-file` | inbox list/detail | Badge/open/pay path; today only address text is asserted. |
-| 10 | `kunder-tab-uppdrag` / `ekonomi-tab-{offerter,fakturor,utgifter,bank}` | tab strips | Agents constantly miss that Offerter/Uppdrag are **tabs**. |
+| 10 | `ekonomi-tab-{offerter,fakturor,utgifter,bank}` | tab strips | Agents constantly miss that Offerter/Fakturor are **tabs** under Ekonomi (Uppdrag is its own nav item). |
 
 Do **not** add testids to every settings field or design token — those already have `id=` hooks (`ob-*`, `offert-*`, `installningar-*`).
 
