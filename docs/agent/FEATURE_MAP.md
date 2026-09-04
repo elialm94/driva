@@ -15,7 +15,7 @@ Use this file to answer, without rediscovering the app:
 
 **Status vocabulary:** one source — `src/lib/status-labels.ts`. Never show raw enums (`skickad`, `POSTED`, `pending`) as primary UI. The accept method is **not** a status — and the customer accept is **never** called BankID, e-legitimation or avancerad underskrift (see `offer.accept_simple`).
 
-**Unknowns** are marked `UNKNOWN`. Facts below are from code + the live demo on 2026-09-01 unless noted. Shared address autocomplete ([PR #79](https://github.com/elialm94/driva/pull/79)) verified against main code 2026-09-04. Receipt file storage ([PR #77](https://github.com/elialm94/driva/pull/77)) verified against main code and the live demo 2026-09-04.
+**Unknowns** are marked `UNKNOWN`. Facts below are from code + the live demo on 2026-09-01 unless noted. Shared address autocomplete ([PR #79](https://github.com/elialm94/driva/pull/79)) verified against main code 2026-09-04. Receipt file storage ([PR #77](https://github.com/elialm94/driva/pull/77)) verified against main code and the live demo 2026-09-04. Customer e-mail subjects for quotes/invoices ([PR #101](https://github.com/elialm94/driva/pull/101)) verified against main code 2026-09-04.
 
 ---
 
@@ -483,6 +483,7 @@ Two different systems:
 - **Certificate PDF `/offert/[token]/underlag/pdf`:** A4 `@page`, `PdfPrintBar`, no SaaS chrome. Same facts and summary; hashes only in a short footer. Demo generates the PDF view; no email.
 - **Accept service (`acceptQuote`):** rate limit (10/token, 40/IP per 10 min) → token lookup (utkast = not_found) → idempotent return if already accepted → `normalizeAcceptName` (trim, collapse, ≤120; empty → `name_required`) → status (`declined` / `expired` / `not_acceptable`) → `expectedContentHash` from the rendered page must equal `quoteVersionHash(version)` (`changed`) → `finalizeQuoteAcceptance`: sets seller/buyer snapshots, `lockedAt`, `contentHash`, pushes the `QuoteAcceptance` (`method: simple_accept`, `acceptedAt`, `acceptedByName`, `customerNameAtAccept`, `acceptedByEmail`, `contentHash`, `statement`, `ip`, `userAgent`, `linkSentTo`), `status = godkand`, `decidedAt`, `createJobFromQuote` (idempotent — never a second job), `logActivity`, one `save()`. Errors are `QuoteAcceptError` with Swedish `QUOTE_ACCEPT_TEXT`.
 - **Confirmation mail:** `prepareQuoteAcceptedNotices` returns 0–2 envelopes (customer `quote_accepted_customer` + business `quote_accepted`). Empty in demo / `is_demo` / no mail provider. Sent with `after()` so the customer never waits on Resend; **either mail failing never blocks the accept**. Customer copy: typed name + Godkänn offert; links to `/offert/[token]` and `/underlag`. No BankID language.
+- **Customer e-mail subjects** ([PR #101](https://github.com/elialm94/driva/pull/101); `src/lib/email/rubrik.ts`, `templates.ts`, `services/document-mail.ts`): **Skicka offert** → `Offert från {företag} – {rubrik}`; **Skicka påminnelse** (`followUpQuoteByEmail`) → `Påminnelse: offert från {företag} – {rubrik}`. Rubrik = the current version's `title`. **No `#n` in the subject** — the offer number stays in the body. ` – {rubrik}` is dropped when the title is empty or only a document-type word (*Offert* / *Faktura* …) (`documentFromCompanySubject` / `reminderFromCompanySubject`). Demo / `is_demo` only simulates the send, but the prepared `MailMessage` has the same subject.
 - **Delete rules (critical):**
   - **Kasta utkast** only if `status === "utkast"` and no issued invoices linked.
   - Sent: *Skickade offerter kan inte kastas. Markera dem som inte aktuella i stället.*
@@ -514,6 +515,7 @@ Two different systems:
 1. New offert or fix #116 blockers (add personnummer on Eva + bostad).
 2. *Skicka offert* enabled only when `#quote-send-blockers` empty.
 3. After send: status **Väntar på godkännande**; demo banner about simulated mail.
+4. Prepared subject is `Offert från Södermalms Snickeri AB – {rubrik}` (no `#n`); `#{n}` appears only in the body. Same shape for **Skicka påminnelse** with the `Påminnelse: offert från …` prefix. Domain test: `src/lib/email-subjects.test.ts`.
 
 **Back from komplettera**
 
@@ -547,6 +549,7 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **Main actions — utkast:** Redigera · Kasta utkast · **Skicka faktura** (issues **then** emails — `issueInvoice` + `emailInvoice`). Checklist `#invoice-send-blockers`.
 - **Issued:** Visa kundvy, påminnelse if overdue, overflow: Kreditera (full only — after save, emails the **invoice customer**, never the carpenter inbox; demo / `is_demo` skips Resend; mail failure does not roll back the credit), Kopiera kundlänk, PDF, Skicka igen, **Simulera inbetalning** (demo **and** an active mock bank connection — hidden after *Koppla från*).
 - **Paid:** *Betald och bokförd.*
+- **Customer e-mail subjects** ([PR #101](https://github.com/elialm94/driva/pull/101)): **Skicka faktura** and **Skicka igen** (both `emailInvoice`) → `Faktura från {företag} – {rubrik}`; påminnelse (`remindInvoiceByEmail`) → `Påminnelse: faktura från {företag} – {rubrik}`. **No `#n` in the subject** — number, OCR, förfallodatum and bankgiro stay in the body. Rubrik from `invoiceEmailRubrik` (`src/lib/email/rubrik.ts`): linked quote version title → first non-empty line description → linked job title → first line of övrig information (rich text) → document-type label without number (which is then omitted, so the subject is just `Faktura från {företag}`). Credit notice (`creditInvoiceEmail`) is **not** part of this change — it still reads `Kreditfaktura från {företag} – Kreditfaktura #{n}` (`credit-invoice-mail.test.ts`). Demo / `is_demo` simulates the send with the same subject.
 - **Public:** utkast 404. *Fakturan är betald* / *Fakturan har förfallit*. Ladda ner PDF.
 - **Related:** ROT application card; `DeniedReductionCard`; quote deviation; payments / bank match.
 - **Components:** `doc-form.tsx` (InvoiceForm), `invoice-document.tsx`, `invoice-draft-send.tsx`, `invoice-issue-checklist.tsx`, `money-widgets.tsx`, `denied-reduction-card.tsx`.
@@ -555,7 +558,7 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **Invariants:** Number only via atomic `app.issue_invoice`. Issued UI reads snapshot. Partial pay → `delbetald`. Credit = reversal verification, not new revenue. Full credit notifies the customer (`prepareCreditInvoiceNotice` + `after` + `sendMail`); partial credit is not a product path and does not email. Rest-invoice after denied ROT: `deniedReductionOf`, no new revenue. Issued OCR is Bankgirot **OCR-10 soft** (invoice-number digits + modulus-10 check, no length digit) via `ocrForInvoice` in `src/lib/ids.ts` — assigned once at `issueInvoice`, frozen on `issuedSnapshot`, reused on reminders/email/PDF. Drafts have no customer-facing OCR. SQL twin: `app.ocr_for_invoice`.
 - **Desktop/mobile:** same register pattern as offerter.
 - **Live:** `#1042` Förfallen 6 dagar (Brf Eken); `#1047` Skickad delbetalning; Utkast Brf Eken (`inv-1048`, list title from first line); two 0 kr Eli drafts (`Luckor i ek`, `Bänkskiva i ask`).
-- **Verify:** Ekonomi → Fakturor → first column is document title (not “Utkast”). Open #1042. Discard: only the Utkast row / detail `[data-testid=discard-draft-trigger]`. Public: `/faktura/{token}` for a sent invoice. Tests: `src/lib/invoices/display.test.ts`, `economy-list.test.ts`, `payment-flows.test.ts`, `financial-invariants.test.ts`, `credit-invoice-mail.test.ts` (subject/body, demo null, send-throw isolation, customer not carpenter). Script: `scripts/verify-financial-browser.ts`.
+- **Verify:** Ekonomi → Fakturor → first column is document title (not “Utkast”). Open #1042. Discard: only the Utkast row / detail `[data-testid=discard-draft-trigger]`. Public: `/faktura/{token}` for a sent invoice. Tests: `src/lib/invoices/display.test.ts`, `economy-list.test.ts`, `payment-flows.test.ts`, `financial-invariants.test.ts`, `credit-invoice-mail.test.ts` (subject/body, demo null, send-throw isolation, customer not carpenter), `email-subjects.test.ts` (subject shapes without `#n`, `invoiceEmailRubrik` fallback order) + `email.test.ts` (same subjects through `emailInvoice` / `remindInvoiceByEmail` / `followUpQuoteByEmail`). Script: `scripts/verify-financial-browser.ts`.
 
 ---
 
