@@ -10,14 +10,18 @@ import { createHmac, timingSafeEqual } from "crypto";
  * Tenant styrs bara av local-part (inbound_mail_slug) – aldrig From, aldrig
  * domän. Visad/Reply-To-adress är alltid {slug}@{INBOUND_MAIL_DOMAIN}.
  *
+ * Två ingångar:
+ * - POST /api/inbox/inbound – internt JSON + HMAC (INBOUND_MAIL_WEBHOOK_SECRET).
+ *   Tester och manuell POST. Inte Resends format.
+ * - POST /api/inbox/inbound/resend – Resend Receiving (Svix + receiving.get).
+ *
  * Drift så att @in.ferva.se faktiskt tar emot mejl (kod räcker inte):
- * - Skapa subdomänen in.ferva.se (inte catch-all på apex ferva.se)
- * - MX + inbound-routing (Resend eller nuvarande provider) → samma
- *   POST /api/inbox/inbound som idag, samma HMAC (INBOUND_MAIL_WEBHOOK_SECRET)
- * - Catch-all på in.ferva.se så {valfri-slug}@in.ferva.se landar i webhooken
- * - Behåll MX på in.driva.se som alias
- * - Verifiera med ett riktigt testmejl till {slug}@in.ferva.se och kolla
- *   att det skapar en inbox-rad
+ * - Verifiera subdomänen in.ferva.se i Resend (eget domain-objekt, inte bara apex)
+ * - Slå på Receiving + MX som Resend visar på host `in` (inte catch-all på apex)
+ * - Webhook → /api/inbox/inbound/resend, event email.received
+ * - RESEND_WEBHOOK_SECRET + INBOUND_MAIL_MODE=live (samma RESEND_API_KEY som utskick)
+ * - Behåll ev. in.driva.se som alias
+ * - Verifiera med ett riktigt testmejl till {slug}@in.ferva.se
  */
 
 /** Kanonisk visad/Reply-To-domän. Överskrivs av env INBOUND_MAIL_DOMAIN. */
