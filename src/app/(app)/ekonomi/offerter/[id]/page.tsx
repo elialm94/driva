@@ -281,7 +281,11 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                   { label: QUOTE_TIMELINE.oppnad, at: quote.viewedAt, done: !!quote.viewedAt },
                   ...quote.followUps.map((f, i) => ({ label: `${QUOTE_TIMELINE.paminnelse} ${i + 1}`, at: f as string | undefined, done: true })),
                   quote.status === "avbojd"
-                    ? { label: QUOTE_TIMELINE.avbojd, at: quote.decidedAt, done: true }
+                    ? {
+                        label: isQuoteWithdrawnByOwner(quote) ? "Tillbakadragen" : QUOTE_TIMELINE.avbojd,
+                        at: quote.decidedAt,
+                        done: true,
+                      }
                     : {
                         // Historiken är precis: vem som godkände hör hemma här, inte i statusen.
                         label: acceptance ? acceptedByLabel(acceptance) : QUOTE_TIMELINE.godkand,

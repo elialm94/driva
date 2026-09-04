@@ -1,13 +1,13 @@
 "use client";
 
-import { useTransition, type ReactNode } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { FileLock2, Hammer, Pencil, Plus } from "lucide-react";
 import { buttonClasses } from "./ui";
 import { actionMenuItemClassName, ActionMenu, ActionMenuLink, PageActions, useActionMenu } from "./action-menu";
 import { QuotePdfMenuItem } from "./quote-pdf-menu-item";
 import { CopyLinkButton } from "./copy-button";
-import { WithdrawQuoteMenuItem } from "./withdraw-quote-button";
+import { WithdrawQuoteDialog, WithdrawQuoteMenuItem } from "./withdraw-quote-button";
 import { createInvoiceFromQuoteAction, startJobFromQuoteAction } from "@/app/actions";
 import { invoiceEditHref, jobHref } from "@/lib/nav";
 import type { ChainCta, QuoteChainState } from "@/lib/business-chain-model";
@@ -129,6 +129,7 @@ export function QuoteOwnerPageActions({
   followUp?: ReactNode;
 }) {
   const { run, isPending } = useQuoteChainRun(returnTo, returnLabel);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
 
   const startJob: ChainCta = { kind: "starta_uppdrag", label: "Starta uppdrag", quoteId };
   const fakturera: ChainCta = { kind: "skapa_faktura", label: "Fakturera", quoteId };
@@ -169,7 +170,7 @@ export function QuoteOwnerPageActions({
             <Pencil className="size-3.5 shrink-0" /> Ny version
           </ActionMenuLink>
         ) : null}
-        {showWithdraw ? <WithdrawQuoteMenuItem quoteId={quoteId} /> : null}
+        {showWithdraw ? <WithdrawQuoteMenuItem onOpen={() => setWithdrawOpen(true)} /> : null}
         {showIntyg ? (
           <ActionMenuLink href={`${publicPath}/underlag`} external>
             <FileLock2 className="size-3.5 shrink-0" /> Visa intyg
@@ -177,6 +178,9 @@ export function QuoteOwnerPageActions({
         ) : null}
       </ActionMenu>
     </PageActions>
+    {showWithdraw ? (
+      <WithdrawQuoteDialog quoteId={quoteId} open={withdrawOpen} onClose={() => setWithdrawOpen(false)} />
+    ) : null}
     </div>
   );
 }
