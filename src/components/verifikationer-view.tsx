@@ -115,6 +115,7 @@ export function VerifikationerView({
     setItems(initial);
   }, [initial]);
   const [correctId, setCorrectId] = useState<string | null>(null);
+  const [creditInvoiceId, setCreditInvoiceId] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const filtered = useMemo(() => items.filter((v) => matchesFilter(v, filter)), [items, filter]);
@@ -213,10 +214,7 @@ export function VerifikationerView({
                     setOpenId(v.id);
                     setCorrectId(v.id);
                   }}
-                  onCredited={() => {
-                    setSuccess("Fakturan krediterades. Originalverifikationen står kvar.");
-                    router.refresh();
-                  }}
+                  onCreditInvoice={(invoiceId) => setCreditInvoiceId(invoiceId)}
                 />
               </div>
             </div>
@@ -279,11 +277,7 @@ export function VerifikationerView({
             allowCorrection={allowCorrection}
             onOpen={openDetail}
             onCorrect={() => setCorrectId(open.id)}
-            onCredited={() => {
-              setOpenId(null);
-              setSuccess("Fakturan krediterades. Originalverifikationen står kvar.");
-              router.refresh();
-            }}
+            onCreditInvoice={(invoiceId) => setCreditInvoiceId(invoiceId)}
           />
         ) : null}
       </Modal>
@@ -307,6 +301,20 @@ export function VerifikationerView({
           />
         ) : null}
       </Modal>
+
+      <div data-testid="verification-credit" data-credit-invoice-id={creditInvoiceId ?? ""}>
+        <CreditInvoiceConfirmDialog
+          invoiceId={creditInvoiceId ?? ""}
+          open={Boolean(creditInvoiceId)}
+          onClose={() => setCreditInvoiceId(null)}
+          onSuccess={() => {
+            setCreditInvoiceId(null);
+            setOpenId(null);
+            setSuccess("Fakturan krediterades. Originalverifikationen står kvar.");
+            router.refresh();
+          }}
+        />
+      </div>
     </>
   );
 }
@@ -317,10 +325,11 @@ function InvoiceWrongMenuItem({ onPick }: { onPick: () => void }) {
     <button
       type="button"
       role="menuitem"
+      data-testid="fakturan-ar-fel"
       className={actionMenuItemClassName()}
       onClick={() => {
-        menu?.close();
         onPick();
+        menu?.close();
       }}
     >
       <Undo2 className="size-3.5 shrink-0" /> Fakturan är fel
@@ -332,41 +341,32 @@ function RowMenu({
   v,
   onOpen,
   onCorrect,
-  onCredited,
+  onCreditInvoice,
   allowCorrection = true,
 }: {
   v: VerificationView;
   onOpen: () => void;
   onCorrect: () => void;
-  onCredited: () => void;
+  onCreditInvoice: (invoiceId: string) => void;
   allowCorrection?: boolean;
 }) {
-  const [creditOpen, setCreditOpen] = useState(false);
   const overflow = verificationOverflowItems(v.flow, { allowCorrection });
   const invoiceWrong = overflow.find((item) => item.kind === "fakturan_ar_fel");
   const canCorrect = overflow.some((item) => item.kind === "ratta_bokforing");
   return (
-    <>
-      <ActionMenu label="Åtgärder">
-        <button type="button" role="menuitem" className={actionMenuItemClassName()} onClick={onOpen}>
-          Visa detaljer
-        </button>
-        {invoiceWrong ? <InvoiceWrongMenuItem onPick={() => setCreditOpen(true)} /> : null}
-        {canCorrect ? (
-          <button type="button" role="menuitem" className={actionMenuItemClassName()} onClick={onCorrect}>
-            Rätta bokföring
-          </button>
-        ) : null}
-      </ActionMenu>
+    <ActionMenu label="Åtgärder">
+      <button type="button" role="menuitem" className={actionMenuItemClassName()} onClick={onOpen}>
+        Visa detaljer
+      </button>
       {invoiceWrong ? (
-        <CreditInvoiceConfirmDialog
-          invoiceId={invoiceWrong.invoiceId}
-          open={creditOpen}
-          onClose={() => setCreditOpen(false)}
-          onSuccess={onCredited}
-        />
+        <InvoiceWrongMenuItem onPick={() => onCreditInvoice(invoiceWrong.invoiceId)} />
       ) : null}
-    </>
+      {canCorrect ? (
+        <button type="button" role="menuitem" className={actionMenuItemClassName()} onClick={onCorrect}>
+          Rätta bokföring
+        </button>
+      ) : null}
+    </ActionMenu>
   );
 }
 
@@ -375,17 +375,16 @@ function VerificationDetail({
   items,
   onOpen,
   onCorrect,
-  onCredited,
+  onCreditInvoice,
   allowCorrection = true,
 }: {
   v: VerificationView;
   items: VerificationView[];
   onOpen: (id: string) => void;
   onCorrect: () => void;
-  onCredited: () => void;
+  onCreditInvoice: (invoiceId: string) => void;
   allowCorrection?: boolean;
 }) {
-  const [creditOpen, setCreditOpen] = useState(false);
   const overflow = verificationOverflowItems(v.flow, { allowCorrection });
   const invoiceWrong = overflow.find((item) => item.kind === "fakturan_ar_fel");
   const canCorrect = overflow.some((item) => item.kind === "ratta_bokforing");
@@ -450,16 +449,14 @@ function VerificationDetail({
       </div>
       {invoiceWrong ? (
         <div className="mt-6 flex justify-end">
-          <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setCreditOpen(true)}>
+          <button
+            type="button"
+            className={buttonClasses("secondary", "sm")}
+            onClick={() => onCreditInvoice(invoiceWrong.invoiceId)}
+          >
             <Undo2 className="size-3.5" />
             Fakturan är fel
           </button>
-          <CreditInvoiceConfirmDialog
-            invoiceId={invoiceWrong.invoiceId}
-            open={creditOpen}
-            onClose={() => setCreditOpen(false)}
-            onSuccess={onCredited}
-          />
         </div>
       ) : canCorrect ? (
         <div className="mt-6 flex justify-end">
