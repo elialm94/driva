@@ -92,12 +92,12 @@ import {
 } from "@/lib/services/work-locations";
 import { maskPersonnummer } from "@/lib/personnummer";
 import {
-  askQuoteQuestion,
   createQuote,
   declineQuote,
   discardQuote,
   markQuoteNotRelevant,
   updateQuote,
+  withdrawQuote,
   type QuoteInput,
   type QuoteVersionInput,
 } from "@/lib/services/quotes";
@@ -188,7 +188,7 @@ import { quoteTotals } from "@/lib/services/data";
 import { sendMail } from "@/lib/mail";
 import {
   acceptQuote,
-  prepareQuoteAcceptedNotice,
+  prepareQuoteAcceptedNotices,
   QUOTE_ACCEPT_TEXT,
   QuoteAcceptError,
   type PreparedAcceptedMail,
@@ -481,17 +481,6 @@ export async function declineQuoteByTokenAction(token: string, reason?: string) 
   });
 }
 
-export async function askQuoteQuestionByTokenAction(token: string, question: string) {
-  await withPublicBusiness("quote", token, () => {
-    const quote = getQuoteByToken(token);
-    if (!quote || quote.status === "utkast") return;
-    const text = typeof question === "string" ? question.trim().slice(0, 4000) : "";
-    if (!text) return;
-    askQuoteQuestion(quote.id, text);
-    refresh();
-  });
-}
-
 export type AcceptQuoteActionResult =
   | { ok: true; acceptedByName: string; acceptedAt: string; amount: number; alreadyAccepted: boolean }
   | { ok: false; error: string; code: QuoteAcceptErrorCode | "unknown" };
@@ -499,7 +488,8 @@ export type AcceptQuoteActionResult =
 /**
  * Kundens godkännande av offerten (namn + knapp). Enda vägen in till
  * acceptQuote: identifieras av token, aldrig av id eller inloggning.
- * Mejlet till företagaren skickas efter svaret (after) och blockerar aldrig.
+ * Bekräftelsemejl (kund + företagare) skickas efter svaret (after) och
+ * blockerar aldrig – ett mejlfel lämnar godkännandet sparat.
  */
 export async function acceptQuoteByTokenAction(
   token: string,
@@ -513,7 +503,7 @@ export async function acceptQuoteByTokenAction(
   const result = await withPublicBusiness(
     "quote",
     safeToken,
-    (): AcceptQuoteActionResult & { notice?: PreparedAcceptedMail | null } => {
+    (): AcceptQuoteActionResult & { notices?: PreparedAcceptedMail[] } => {
       try {
         const r = acceptQuote({
           token: safeToken,
@@ -522,7 +512,7 @@ export async function acceptQuoteByTokenAction(
           ip: ip || undefined,
           userAgent,
         });
-        const notice = r.outcome === "accepted" ? prepareQuoteAcceptedNotice(r.acceptance) : null;
+        const notices = r.outcome === "accepted" ? prepareQuoteAcceptedNotices(r.acceptance) : [];
         refresh();
         return {
           ok: true,
@@ -530,7 +520,7 @@ export async function acceptQuoteByTokenAction(
           acceptedAt: r.acceptance.acceptedAt,
           amount: quoteTotals(r.quote).toPay,
           alreadyAccepted: r.outcome === "already_accepted",
-          notice,
+          notices,
         };
       } catch (e) {
         if (e instanceof QuoteAcceptError) return { ok: false, error: e.message, code: e.code };
@@ -541,13 +531,15 @@ export async function acceptQuoteByTokenAction(
   );
   if (!result) return { ok: false, error: QUOTE_ACCEPT_TEXT.not_found, code: "not_found" };
   if (result.ok) {
-    const { notice, ...rest } = result;
-    if (notice) {
+    const { notices, ...rest } = result;
+    if (notices?.length) {
       after(async () => {
-        try {
-          await sendMail(notice.message, notice.meta);
-        } catch {
-          // Notisen är sekundär – godkännandet är redan sparat.
+        for (const notice of notices) {
+          try {
+            await sendMail(notice.message, notice.meta);
+          } catch {
+            // Notisen är sekundär – godkännandet är redan sparat.
+          }
         }
       });
     }
@@ -1036,6 +1028,22 @@ export async function regeneratePaymentFileAction(
     refresh();
     return { ok: true as const, fileId: result.file.id, filename: result.file.filename };
   }, { capability: "submit_bank_payment" });
+}
+
+/** Dra tillbaka en skickad, ännu inte godkänd offert (overflow på offertsidan). */
+export async function withdrawQuoteAction(quoteId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(
+    () => {
+      try {
+        withdrawQuote(quoteId);
+        refresh();
+        return { ok: true as const };
+      } catch (e) {
+        return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte dra tillbaka offerten." };
+      }
+    },
+    { retry: false }
+  );
 }
 
 /** "Inte aktuell" på en väntande offert – domänövergång till avböjd med skäl. */

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/store";
-import { getQuote, currentVersion, requireCustomer } from "@/lib/services/data";
+import { getQuote, currentVersion, editableQuoteVersion, requireCustomer } from "@/lib/services/data";
 import { quoteDefaults } from "@/lib/services/quotes";
 import { customerInvoiceRotPrefill } from "@/lib/services/tax-reduction";
 import { quoteDescriptionDoc } from "@/lib/quote-description";
@@ -19,9 +19,10 @@ export default async function EditQuotePage(props: PageProps<"/ekonomi/offerter/
   const searchParams = await props.searchParams;
   const quote = getQuote(id);
   if (!quote) notFound();
-  const version = currentVersion(quote);
+  const version = editableQuoteVersion(quote);
   const customer = requireCustomer(quote.customerId);
-  const isLocked = !!version.lockedAt;
+  const governing = currentVersion(quote);
+  const isNewVersion = Boolean(governing.lockedAt) || quote.status === "godkand" || quote.status === "skickad";
   const returnTo = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : undefined;
   const returnLabel =
     typeof searchParams.tillbakaNamn === "string" ? sanitizeReturnLabel(searchParams.tillbakaNamn) ?? undefined : undefined;
@@ -40,12 +41,12 @@ export default async function EditQuotePage(props: PageProps<"/ekonomi/offerter/
           { href: "/ekonomi", label: "Ekonomi" },
           { href: "/ekonomi?flik=offerter", label: "Offerter" },
           { href: quoteHref, label: `#${quote.number}` },
-          { label: isLocked ? "Ny version" : "Redigera" },
+          { label: isNewVersion ? "Ny version" : "Redigera" },
         ]}
-        title={isLocked ? `Ny version av offert #${quote.number}` : `Redigera offert #${quote.number}`}
+        title={isNewVersion ? `Ny version av offert #${quote.number}` : `Redigera offert #${quote.number}`}
         subtitle={
-          isLocked
-            ? `Version ${version.version} är godkänd av kunden och låst. Dina ändringar sparas som version ${version.version + 1}, som behöver skickas och godkännas på nytt.`
+          quote.status === "godkand" || governing.lockedAt
+            ? `Den godkända versionen gäller tills kunden godkänner den nya. Ändringarna sparas som version ${version.lockedAt ? version.version + 1 : version.version}.`
             : `Till ${customer.name}. ${quote.status === "skickad" ? "Offerten är skickad – sparade ändringar gör att den behöver skickas om." : ""}`
         }
       />

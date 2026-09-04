@@ -1,37 +1,27 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  Pencil,
-  ExternalLink,
-  BadgeCheck,
-  FileLock2,
-  Hammer,
-  ShieldCheck,
-} from "lucide-react";
+import { Pencil, BadgeCheck, FileLock2, ShieldCheck } from "lucide-react";
 import { db } from "@/lib/store";
 import {
   getQuote,
-  countsTowardInvoiced,
   currentVersion,
   effectiveQuoteStatus,
+  pendingDraftQuoteVersion,
   quoteAcceptance,
   quoteTotals,
   requireCustomer,
   quoteVersions,
 } from "@/lib/services/data";
-import { describeUserAgent } from "@/lib/quote-acceptance";
 import { kr, datumTid, datumLang, relativ } from "@/lib/format";
-import { Badge, ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
+import { Badge, ButtonLink, Breadcrumbs, Card, SectionTitle, cx } from "@/components/ui";
 import { QuoteStatusBadge, InvoiceStatusBadge } from "@/components/status";
 import { QuoteDocument } from "@/components/quote-document";
-import { ActionMenu, PageActions } from "@/components/action-menu";
-import { QuotePdfMenuItem } from "@/components/quote-pdf-menu-item";
-import { CopyLinkButton } from "@/components/copy-button";
-import { CreatePartInvoiceButton, FollowUpButton } from "@/components/money-widgets";
+import { PageActions } from "@/components/action-menu";
+import { FollowUpButton } from "@/components/money-widgets";
 import { QuoteDraftSend } from "@/components/quote-draft-send";
 import { DiscardDraftButton } from "@/components/discard-draft-button";
 import { SendChecklist } from "@/components/send-checklist";
-import { quoteSendBlockers } from "@/lib/services/quotes";
+import { isQuoteWithdrawnByOwner, quoteSendBlockers } from "@/lib/services/quotes";
 import { sendQuoteAction } from "@/app/actions";
 import { isLiveMailConfigured } from "@/lib/mail";
 import { docTotals } from "@/lib/calc";
@@ -39,11 +29,11 @@ import { SmartBack } from "@/components/back-link";
 import { AppLink } from "@/components/app-link";
 import { hrefFromOrigin, hrefWithNav, invoiceHref, pageOrigin, returnNavFromSearch } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
-import { quoteChainState } from "@/lib/services/business-chain";
+import { nextPaymentPlanPartForQuote } from "@/lib/services/business-chain";
 import { documentLinkView } from "@/lib/services/document-job-link";
-import { QuoteChainActions } from "@/components/quote-chain-actions";
+import { QuoteOwnerPageActions } from "@/components/quote-chain-actions";
 import { LinkedToBox } from "@/components/linked-to-box";
-import { QUOTE_ACCEPT_METHOD, QUOTE_TIMELINE, acceptedByLabel } from "@/lib/status-labels";
+import { QUOTE_TIMELINE, acceptedByLabel } from "@/lib/status-labels";
 
 export const metadata = { title: "Offert" };
 
@@ -60,7 +50,6 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   const totals = quoteTotals(quote);
   const versions = quoteVersions(quote.id);
   const relatedInvoices = data.invoices.filter((i) => i.quoteId === quote.id);
-  const job = quote.jobId ? data.jobs.find((j) => j.id === quote.jobId) : undefined;
   const publicPath = `/offert/${quote.token}`;
   const fromHere = pageOrigin(`/ekonomi/offerter/${quote.id}`, searchParams, `Offert #${quote.number}`);
   const linkView = documentLinkView("quote", quote.id, fromHere);
@@ -74,21 +63,20 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   const justSentManual = sentParam === "manuell" && !isDraft;
   // EN källa (quoteSendBlockers) för checklista, disabled Skicka och servervalidering.
   // Stamp the quote (not its parent) so Komplettera / Lägg till e-post returns here.
-  const sendBlockers = isDraft
-    ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefFromOrigin(b.href, fromHere) } : b))
-    : [];
+  const pendingDraft = pendingDraftQuoteVersion(quote);
+  const pendingUnsent = Boolean(pendingDraft && !pendingDraft.sellerSnapshot);
+  const sendBlockers =
+    isDraft || pendingUnsent
+      ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefFromOrigin(b.href, fromHere) } : b))
+      : [];
   const canSend = sendBlockers.length === 0;
 
-  const invoicedTotal = relatedInvoices
-    .filter(countsTowardInvoiced)
-    .reduce((s, i) => s + docTotals(i.lines, i.rot).total, 0);
+  const jobLinked = Boolean(linkView.job);
+  const canInvoice = quote.status === "godkand" && jobLinked && nextPaymentPlanPartForQuote(quote.id) != null;
 
   const doc = (
     <QuoteDocument company={data.settings} customer={customer} quote={quote} version={version} acceptance={acceptance} />
   );
-
-  // Utskrifts-/PDF-vyn finns för allt som inte är utkast (samma regel som kundvyn).
-  const pdfMenuItem = <QuotePdfMenuItem href={`${publicPath}/pdf`} />;
 
   return (
     <div className="animate-fade-up">
@@ -139,45 +127,19 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                 canSend={canSend}
               />
             </PageActions>
-          ) : null}
-          {quote.status === "skickad" ? (
-            <PageActions>
-              <QuoteChainActions
-                state={quoteChainState(quote, fromHere)}
-                returnTo={fromHere.href}
-                returnLabel={fromHere.label}
-              />
-              <FollowUpButton quoteId={quote.id} />
-              <a href={publicPath} target="_blank" rel="noreferrer" className={buttonClasses("secondary")}>
-                <ExternalLink className="size-4" /> Öppna kundvyn
-              </a>
-              <ActionMenu>
-                <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
-                {pdfMenuItem}
-              </ActionMenu>
-            </PageActions>
-          ) : null}
-          {quote.status === "godkand" || quote.status === "avbojd" ? (
-            <PageActions>
-              {quote.status === "godkand" ? (
-                <QuoteChainActions
-                  state={quoteChainState(quote, fromHere)}
-                  returnTo={fromHere.href}
-                  returnLabel={fromHere.label}
-                />
-              ) : null}
-              <ButtonLink href={editHref} variant="secondary">
-                <Pencil className="size-4" /> Ny version
-              </ButtonLink>
-              <a href={publicPath} target="_blank" rel="noreferrer" className={buttonClasses("secondary")}>
-                <ExternalLink className="size-4" /> Öppna kundvyn
-              </a>
-              <ActionMenu>
-                <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
-                {pdfMenuItem}
-              </ActionMenu>
-            </PageActions>
-          ) : null}
+          ) : (
+            <QuoteOwnerPageActions
+              status={quote.status}
+              quoteId={quote.id}
+              publicPath={publicPath}
+              editHref={editHref}
+              returnTo={fromHere.href}
+              returnLabel={fromHere.label}
+              jobLinked={jobLinked}
+              canInvoice={canInvoice}
+              followUp={quote.status === "skickad" ? <FollowUpButton quoteId={quote.id} /> : null}
+            />
+          )}
         </div>
       </div>
 
@@ -203,7 +165,39 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
         </Card>
       ) : null}
 
-      {isDraft ? <SendChecklist id="quote-send-blockers" title="Innan offerten kan skickas" blockers={sendBlockers} /> : null}
+      {isDraft || pendingUnsent ? (
+        <SendChecklist id="quote-send-blockers" title="Innan offerten kan skickas" blockers={sendBlockers} />
+      ) : null}
+
+      {pendingDraft ? (
+        <Card className="mb-6 px-5 py-4 text-[14px] leading-relaxed text-soft">
+          {pendingDraft.sellerSnapshot ? (
+            <span>
+              <span className="font-medium text-ink">Version {pendingDraft.version} är skickad</span> och väntar på
+              kundens godkännande. Den godkända versionen gäller tills den nya accepteras.
+            </span>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span>
+                <span className="font-medium text-ink">Version {pendingDraft.version} är ett utkast.</span> Skicka den
+                till kunden – den godkända versionen gäller tills dess.
+              </span>
+              <QuoteDraftSend
+                documentId={quote.id}
+                customerId={customer.id}
+                customerName={customer.name}
+                amount={docTotals(pendingDraft.lines, pendingDraft.rot).toPay}
+                validUntilLabel={datumLang(pendingDraft.validUntil)}
+                sendAction={sendQuoteAction.bind(null, quote.id)}
+                detailHref={fromHere.href}
+                mailConfigured={isLiveMailConfigured()}
+                recipientEmail={customer.email}
+                canSend={canSend}
+              />
+            </div>
+          )}
+        </Card>
+      ) : null}
 
       {quote.status === "skickad" ? (
         <Card className="mb-6 flex items-start gap-3 border-warn/20 bg-warn-soft/40 px-5 py-4">
@@ -218,54 +212,30 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
         </Card>
       ) : null}
 
+      {isQuoteWithdrawnByOwner(quote) ? (
+        <Card className="mb-6 px-5 py-4 text-[14px] text-soft">
+          <span className="font-medium text-ink">Offerten är tillbakadragen.</span> Kunden kan inte längre godkänna den.
+        </Card>
+      ) : null}
+
       {acceptance ? (
+        <div data-quote-owner-accepted="">
         <Card className="mb-6 px-5 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
-              <div>
-                <p className="text-[15px] font-semibold text-ok">{acceptedByLabel(acceptance)}</p>
-                <p className="text-[14px] text-soft">{datumTid(acceptance.acceptedAt)}</p>
-                {/* Bevisuppgifterna – bara här, för företagaren. Kunden ser namn, tid och hash på underlaget. */}
-                <dl className="mt-2 grid gap-x-6 gap-y-0.5 text-[12px] text-muted sm:grid-cols-[auto_1fr]">
-                  <dt>Kund</dt>
-                  <dd className="text-soft">
-                    {acceptance.customerNameAtAccept}
-                    {acceptance.acceptedByEmail ? ` · ${acceptance.acceptedByEmail}` : ""}
-                  </dd>
-                  {acceptance.linkSentTo ? (
-                    <>
-                      <dt>Länk skickad till</dt>
-                      <dd className="text-soft">{acceptance.linkSentTo}</dd>
-                    </>
-                  ) : null}
-                  {acceptance.ip || acceptance.userAgent ? (
-                    <>
-                      <dt>Varifrån</dt>
-                      <dd className="text-soft">
-                        {[acceptance.ip, describeUserAgent(acceptance.userAgent)].filter(Boolean).join(" · ")}
-                      </dd>
-                    </>
-                  ) : null}
-                  <dt>Sätt</dt>
-                  <dd className="text-soft">{QUOTE_ACCEPT_METHOD[acceptance.method]}</dd>
-                </dl>
-                <p className="mt-2 text-[12px] text-muted">
-                  Version {version.version} är låst (SHA-256) och kan verifieras mot underlaget. Ändringar kräver en ny
-                  version som kunden godkänner på nytt.
-                </p>
-              </div>
-            </div>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px]">
+            <BadgeCheck className="size-5 shrink-0 text-ok" />
+            <span className="font-semibold text-ok">{acceptedByLabel(acceptance)}</span>
+            <span className="text-soft">· {datumTid(acceptance.acceptedAt)}</span>
             <a
               href={`${publicPath}/underlag`}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line-strong px-3.5 text-[13px] font-medium text-ink hover:bg-canvas"
+              className="inline-flex items-center gap-1 font-medium text-accent-deep hover:underline"
             >
-              <FileLock2 className="size-3.5" /> Visa underlag
+              <FileLock2 className="size-3.5" /> Visa intyg
             </a>
-          </div>
+          </p>
         </Card>
+        </div>
       ) : null}
 
       <div className="mb-6 lg:hidden">
@@ -279,45 +249,6 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
           <div className="hidden lg:block">
             <LinkedToBox view={linkView} />
           </div>
-
-          {quote.status === "godkand" ? (
-            <div>
-              <SectionTitle>Nästa steg</SectionTitle>
-              <Card className="space-y-3 px-5 py-4">
-                {job ? (
-                  <Link href={hrefFromOrigin(`/uppdrag/${job.id}`, fromHere) as never} className="flex items-center gap-3 rounded-xl border border-line px-4 py-3 transition-colors hover:bg-canvas">
-                    <Hammer className="size-4 text-accent" />
-                    <div className="flex-1">
-                      <p className="text-[14px] font-medium">{job.title}</p>
-                      <p className="text-[12px] text-muted">Uppdrag</p>
-                    </div>
-                  </Link>
-                ) : null}
-                {version.paymentPlan.map((part, i) => {
-                  const alreadyInvoiced = i < relatedInvoices.filter(countsTowardInvoiced).length;
-                  const partAmount = Math.round((totals.total * part.percent) / 100);
-                  if (invoicedTotal >= totals.total) return null;
-                  return alreadyInvoiced ? null : (
-                    <div key={i} className="flex items-center justify-between gap-2">
-                      <p className="text-[13px] text-soft">
-                        {part.label} · {kr(partAmount)}
-                      </p>
-                      <CreatePartInvoiceButton
-                        quoteId={quote.id}
-                        partIndex={i}
-                        label="Fakturera"
-                        returnTo={fromHere.href}
-                        returnLabel={fromHere.label}
-                      />
-                    </div>
-                  );
-                })}
-                {invoicedTotal >= totals.total ? (
-                  <p className="text-[13px] text-muted">Hela offerten är fakturerad.</p>
-                ) : null}
-              </Card>
-            </div>
-          ) : null}
 
           {relatedInvoices.length > 0 ? (
             <div>
@@ -350,7 +281,11 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                   { label: QUOTE_TIMELINE.oppnad, at: quote.viewedAt, done: !!quote.viewedAt },
                   ...quote.followUps.map((f, i) => ({ label: `${QUOTE_TIMELINE.paminnelse} ${i + 1}`, at: f as string | undefined, done: true })),
                   quote.status === "avbojd"
-                    ? { label: QUOTE_TIMELINE.avbojd, at: quote.decidedAt, done: true }
+                    ? {
+                        label: isQuoteWithdrawnByOwner(quote) ? "Tillbakadragen" : QUOTE_TIMELINE.avbojd,
+                        at: quote.decidedAt,
+                        done: true,
+                      }
                     : {
                         // Historiken är precis: vem som godkände hör hemma här, inte i statusen.
                         label: acceptance ? acceptedByLabel(acceptance) : QUOTE_TIMELINE.godkand,

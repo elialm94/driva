@@ -79,6 +79,43 @@ export function quoteVersions(quoteId: string): QuoteVersion[] {
     .sort((a, b) => b.version - a.version);
 }
 
+/**
+ * Styrande kommersiell snapshot: den godkända versionen (hash, uppdrag, intyg)
+ * tills en ny version godkänts. Annars currentVersion.
+ */
+export function governingQuoteVersion(quote: Quote): QuoteVersion {
+  const acceptance = quoteAcceptance(quote.id);
+  if (acceptance) {
+    const locked = db().quoteVersions.find((v) => v.id === acceptance.quoteVersionId);
+    if (locked) return locked;
+  }
+  return currentVersion(quote);
+}
+
+/**
+ * Olåst nyare version än den styrande – utkast eller skickad men inte godkänd.
+ * Supersede sker först när DENNA version accepteras.
+ */
+export function pendingDraftQuoteVersion(quote: Quote): QuoteVersion | undefined {
+  const governing = governingQuoteVersion(quote);
+  return quoteVersions(quote.id).find((v) => !v.lockedAt && v.version > governing.version);
+}
+
+/** Versionen redigera-sidan skriver i: pågående utkast, annars current. */
+export function editableQuoteVersion(quote: Quote): QuoteVersion {
+  return pendingDraftQuoteVersion(quote) ?? currentVersion(quote);
+}
+
+/**
+ * Det kunden ser på /offert/[token]: en nyare skickad version som väntar
+ * på godkännande, annars den styrande snapshoten. En Godkänn-yta – inte två.
+ */
+export function publicQuoteVersion(quote: Quote): QuoteVersion {
+  const pending = pendingDraftQuoteVersion(quote);
+  if (pending?.sellerSnapshot) return pending;
+  return currentVersion(quote);
+}
+
 export function quoteTotals(quote: Quote): DocTotals {
   const v = currentVersion(quote);
   return docTotals(v.lines, v.rot);

@@ -21,6 +21,7 @@ import {
   collaborationInviteEmail,
   invoiceEmail,
   invoiceReminderEmail,
+  quoteAcceptedCustomerEmail,
   quoteAcceptedEmail,
   quoteEmail,
   quoteFollowUpEmail,
@@ -130,6 +131,39 @@ export function prepareQuoteAcceptedMail(input: {
   return {
     message: envelope(input.to, built),
     meta: { kind: "quote_accepted", documentId: input.quoteId, businessId: businessId() },
+  };
+}
+
+/**
+ * Kundens bekräftelsemejl efter godkännande. Byggs i tenantkontext;
+ * sändningen sker efter svaret så att godkännandet aldrig väntar på Resend.
+ */
+export function prepareQuoteAcceptedCustomerMail(input: {
+  to: string;
+  quoteId: string;
+  quoteNumber: number;
+  title: string;
+  customerName: string;
+  acceptedByName: string;
+  acceptedAt: string;
+  amount: number;
+  token: string;
+}): { message: MailMessage; meta: MailSendMeta } {
+  const built = quoteAcceptedCustomerEmail({
+    businessName: db().settings.name,
+    customerName: input.customerName,
+    quoteNumber: input.quoteNumber,
+    title: input.title,
+    acceptedByName: input.acceptedByName,
+    acceptedAtLabel: datumTid(input.acceptedAt),
+    amount: input.amount,
+    url: absoluteAppUrl(`/offert/${input.token}`),
+    certificateUrl: absoluteAppUrl(`/offert/${input.token}/underlag`),
+    footer: footer(),
+  });
+  return {
+    message: envelope(input.to, built),
+    meta: { kind: "quote_accepted_customer", documentId: input.quoteId, businessId: businessId() },
   };
 }
 

@@ -216,4 +216,70 @@ describe("QuoteDocument: beskrivning före rader", () => {
     assert.ok(html.includes("Skatteverket"));
     assert.equal(html.includes("rounded-xl border border-line bg-canvas/50"), false);
   });
+
+  it("dokumentkortet har ingen Godkänn-CTA – det är sidchrome, inte offerten", () => {
+    const quote = createQuote({
+      customerId: "cust-1",
+      title: "Altan",
+      lines: [labor({ description: LINE_TEXT })],
+      rot: null,
+      paymentPlan: [{ label: "Allt", percent: 100 }],
+      paymentTermsDays: 30,
+      validUntil: "2099-01-01",
+      terms: "Egna villkor.",
+    });
+    const html = renderToStaticMarkup(
+      createElement(QuoteDocument, {
+        company: db().settings,
+        customer: db().customers[0],
+        quote,
+        version: currentVersion(quote),
+      })
+    );
+    assert.ok(!html.includes("Godkänn offerten"));
+    assert.ok(!html.includes("Godkänn offert"));
+    assert.ok(!html.includes("Ditt namn"));
+    assert.ok(!html.includes("Godkännandet sparas"));
+    assert.ok(!html.includes("data-quote-accept-form"));
+    assert.ok(!html.includes("Ställ en fråga"));
+    assert.ok(html.includes("Villkor"));
+    assert.ok(html.includes("Egna villkor."));
+  });
+
+  it("godkänd offert: tyst rad i dokumentet, ingen grön Godkänd-ruta", () => {
+    const quote = createQuote({
+      customerId: "cust-1",
+      title: "Altan",
+      lines: [labor({ description: LINE_TEXT })],
+      rot: null,
+      paymentPlan: [{ label: "Allt", percent: 100 }],
+      paymentTermsDays: 30,
+      validUntil: "2099-01-01",
+      terms: "Egna villkor.",
+    });
+    const html = renderToStaticMarkup(
+      createElement(QuoteDocument, {
+        company: db().settings,
+        customer: db().customers[0],
+        quote,
+        version: currentVersion(quote),
+        acceptance: {
+          id: "sig-1",
+          quoteId: quote.id,
+          quoteVersionId: currentVersion(quote).id,
+          method: "simple_accept",
+          acceptedAt: "2026-09-03T12:32:00.000Z",
+          acceptedByName: "Anna Andersson",
+          customerNameAtAccept: "Anna Andersson",
+          contentHash: "abc",
+          statement: "Genom att godkänna accepterar du offerten.",
+        },
+      })
+    );
+    assert.ok(html.includes("data-quote-acceptance-line"));
+    assert.match(html, /Godkänd .+ av Anna Andersson/);
+    assert.equal(html.includes("Godkänd offert"), false);
+    assert.equal(html.includes("bg-ok-soft/60"), false);
+    assert.equal(html.includes("border-ok/20"), false);
+  });
 });

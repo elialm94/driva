@@ -188,20 +188,17 @@ export function quoteChainState(
     jobId: job?.id,
     href: job ? jobHref(job.id, origin) : undefined,
   };
-  const openJob: ChainCta | null = job
-    ? {
-        kind: "oppna_uppdrag",
-        label: "Öppna uppdrag",
-        jobId: job.id,
-        href: jobHref(job.id, origin),
-      }
-    : null;
   const createInvoice: ChainCta = {
     kind: "skapa_faktura",
     label: "Skapa faktura",
     quoteId: quote.id,
     jobId: job?.id,
   };
+
+  const nextPart = quote.status === "godkand" ? nextPaymentPlanPartForQuote(quote.id) : null;
+  const fakturera: ChainCta | null = nextPart
+    ? { ...createInvoice, label: "Fakturera", jobId: job?.id }
+    : null;
 
   if (quote.status === "godkand") {
     if (!job) {
@@ -211,12 +208,11 @@ export function quoteChainState(
         status: quote.status,
         waitingLabel: null,
         primary: { ...startJob, primary: true },
-        secondary: [createInvoice],
+        secondary: fakturera ? [fakturera] : [],
         overflow: [],
       };
     }
-    const invoiceCta: ChainCta = { ...createInvoice, jobId: job.id };
-    const notStarted = job.status === "kommande";
+    // Kopplat uppdrag syns i Kopplat till – ingen Starta/Öppna i åtgärdsfältet.
     return {
       quoteId: quote.id,
       quoteNumber: quote.number,
@@ -224,11 +220,9 @@ export function quoteChainState(
       jobId: job.id,
       jobTitle: job.title,
       waitingLabel: null,
-      primary: notStarted
-        ? { ...startJob, jobId: job.id, href: jobHref(job.id, origin), primary: true }
-        : { ...openJob!, primary: true },
-      secondary: [invoiceCta],
-      overflow: notStarted && openJob ? [openJob] : [],
+      primary: fakturera ? { ...fakturera, primary: true } : null,
+      secondary: [],
+      overflow: [],
     };
   }
 
@@ -242,7 +236,7 @@ export function quoteChainState(
       waitingLabel,
       primary: null,
       secondary: [],
-      overflow: job ? [openJob!] : [startJob, createInvoice],
+      overflow: [],
     };
   }
 

@@ -2,32 +2,34 @@
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ChevronDown } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import { acceptQuoteByTokenAction, type AcceptQuoteActionResult } from "@/app/actions";
-import { datumTid, kr } from "@/lib/format";
+import { datumLang, datumTid, kr } from "@/lib/format";
 import { ACCEPTANCE_FOOTNOTE } from "@/lib/quote-acceptance";
 import { buttonClasses, cx } from "./ui-classes";
+import { DeclineQuoteButton } from "./quote-public-actions";
 
 export const QUOTE_ACCEPT_SECTION_ID = "godkann-offert";
 export const QUOTE_ACCEPT_NAME_ID = "godkann-namn";
+const QUOTE_ACCEPT_NAME_BAR_ID = "godkann-namn-bar";
 
 /**
- * Kundens godkännande: namn + en knapp. Formuläret ligger i dokumentets
- * avslutning (inte i en popover) så att det fungerar med tangentbordet uppe
- * på mobil. Efter lyckat godkännande visas kvittot direkt och sidan laddas
- * om till det låsta, godkända läget – företagaren ser statusen utan att
- * kunden behöver klicka mer.
+ * Kundens godkännande under offertdokumentet: namn + en knapp som verkligen
+ * skickar (ingen hopplänk, ingen chevron). En valfri mobilbar upprepar samma
+ * submit – samma state, samma acceptQuote-anrop.
  */
 export function QuoteAcceptForm({
   token,
   statement,
   prefillName,
   contentHash,
+  validUntil,
 }: {
   token: string;
   statement: string;
   prefillName: string;
   contentHash: string;
+  validUntil: string;
 }) {
   const router = useRouter();
   const [name, setName] = useState(prefillName);
@@ -37,6 +39,7 @@ export function QuoteAcceptForm({
   const submittedRef = useRef(false);
   const errorId = useId();
   const canSubmit = name.trim().length > 0 && !pending && !done;
+  const nameEmpty = name.trim().length === 0;
 
   useEffect(() => {
     if (done) router.refresh();
@@ -44,7 +47,7 @@ export function QuoteAcceptForm({
 
   function submit() {
     // Dubbeltryck: knappen är disabled under pending, och servern är
-    // idempotent – men släpp aldrig iväg två anrop från samma formulär.
+    // idempotent – men släpp aldrig iväg två anrop från samma sidvy.
     if (!canSubmit || submittedRef.current) return;
     submittedRef.current = true;
     setError(null);
@@ -67,7 +70,7 @@ export function QuoteAcceptForm({
       <div
         id={QUOTE_ACCEPT_SECTION_ID}
         data-quote-accepted=""
-        className="rounded-2xl border border-ok/25 bg-ok-soft/70 p-5 animate-fade-up"
+        className="mt-8 rounded-2xl border border-ok/25 bg-ok-soft/70 p-5 animate-fade-up"
         role="status"
         aria-live="polite"
       >
@@ -85,28 +88,28 @@ export function QuoteAcceptForm({
     );
   }
 
-  return (
-    <form
-      id={QUOTE_ACCEPT_SECTION_ID}
-      data-quote-accept-form=""
-      className="scroll-mt-6"
-      onSubmit={(e) => {
-        e.preventDefault();
-        submit();
-      }}
-    >
-      <label htmlFor={QUOTE_ACCEPT_NAME_ID} className="block text-[13px] font-medium text-soft">
+  const nameField = (id: string, opts?: { testId?: string; submitOnEnter?: boolean; autoFocus?: boolean }) => (
+    <>
+      <label htmlFor={id} className="block text-[13px] font-medium text-soft">
         Ditt namn
       </label>
       <input
-        id={QUOTE_ACCEPT_NAME_ID}
+        id={id}
         name="name"
         type="text"
         value={name}
         onChange={(e) => setName(e.target.value)}
-        // Autofokus bara när fältet är tomt – ett förifyllt namn ska inte
-        // dra upp tangentbordet över dokumentet.
-        autoFocus={!prefillName}
+        onKeyDown={
+          opts?.submitOnEnter
+            ? (e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  submit();
+                }
+              }
+            : undefined
+        }
+        autoFocus={opts?.autoFocus}
         autoComplete="name"
         autoCapitalize="words"
         enterKeyHint="done"
@@ -115,46 +118,67 @@ export function QuoteAcceptForm({
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
         placeholder="För- och efternamn"
+        data-testid={opts?.testId}
         className="mt-1.5 h-12 w-full rounded-xl border border-line-strong bg-white px-3.5 text-[16px] text-ink placeholder:text-muted focus:border-accent focus:outline-none"
       />
-      <p className="mt-4 text-[14px] leading-relaxed text-ink">{statement}</p>
-      {error ? (
-        <p id={errorId} role="alert" className="mt-3 text-[13px] font-medium text-danger">
-          {error}
-        </p>
-      ) : null}
-      <button
-        type="submit"
-        data-testid="public-quote-accept"
-        disabled={!canSubmit}
-        className={cx(buttonClasses("primary", "lg"), "mt-4 w-full sm:w-auto")}
-      >
-        {pending ? "Godkänner …" : "Godkänn offert"}
-      </button>
-      <p className="mt-3 text-[12px] text-muted">{ACCEPTANCE_FOOTNOTE}</p>
-    </form>
+    </>
   );
-}
 
-/** Bottenlistens knapp: hoppa till formuläret och fokusera namnfältet. */
-export function AcceptJumpButton() {
   return (
-    <a
-      href={`#${QUOTE_ACCEPT_SECTION_ID}`}
-      className={cx(buttonClasses("primary", "lg"), "w-full sm:w-auto")}
-      onClick={(e) => {
-        const section = document.getElementById(QUOTE_ACCEPT_SECTION_ID);
-        if (!section) return;
-        e.preventDefault();
-        section.scrollIntoView({ behavior: "smooth", block: "start" });
-        const input = document.getElementById(QUOTE_ACCEPT_NAME_ID) as HTMLInputElement | null;
-        if (input && !input.value.trim()) {
-          window.setTimeout(() => input.focus({ preventScroll: true }), 350);
-        }
-      }}
-    >
-      Godkänn offert
-      <ChevronDown className="size-4" />
-    </a>
+    <>
+      <form
+        id={QUOTE_ACCEPT_SECTION_ID}
+        data-quote-accept-form=""
+        method="post"
+        className="mt-8 scroll-mt-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <p className="text-[14px] text-soft">Offerten är giltig till {datumLang(validUntil)}.</p>
+        <div className="mt-5">{nameField(QUOTE_ACCEPT_NAME_ID, { autoFocus: !prefillName })}</div>
+        <p className="mt-4 text-[14px] leading-relaxed text-ink">{statement}</p>
+        {error ? (
+          <p id={errorId} role="alert" className="mt-3 text-[13px] font-medium text-danger">
+            {error}
+          </p>
+        ) : null}
+        <button
+          type="submit"
+          data-testid="public-quote-accept"
+          disabled={!canSubmit}
+          className={cx(buttonClasses("primary", "lg"), "mt-4 w-full sm:w-auto")}
+        >
+          {pending ? "Godkänner …" : "Godkänn offert"}
+        </button>
+        <p className="mt-3 text-[12px] text-muted">{ACCEPTANCE_FOOTNOTE}</p>
+        <div className="mt-4">
+          <DeclineQuoteButton token={token} />
+        </div>
+      </form>
+
+      {/* Mobil: samma godkännande, ingen andra fullständig blankett och ingen chevron. */}
+      <div
+        data-quote-accept-bar=""
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
+      >
+        <div className="mx-auto flex max-w-3xl flex-col gap-2.5 px-4 py-3">
+          {nameEmpty ? nameField(QUOTE_ACCEPT_NAME_BAR_ID, { testId: "public-quote-accept-name-bar", submitOnEnter: true }) : null}
+          <button
+            type="button"
+            data-testid="public-quote-accept-bar"
+            disabled={!canSubmit}
+            onClick={submit}
+            className={cx(buttonClasses("primary", "lg"), "w-full")}
+          >
+            {pending ? "Godkänner …" : "Godkänn offert"}
+          </button>
+          <div className="text-center">
+            <DeclineQuoteButton token={token} />
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

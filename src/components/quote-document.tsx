@@ -1,8 +1,6 @@
-import type { ReactNode } from "react";
 import type { CompanySettings, Customer, Quote, QuoteAcceptance, QuoteVersion } from "@/lib/types";
 import { docTotals, lineTotal, vatBreakdown } from "@/lib/calc";
-import { kr, datumLang, datumTid, datumNumeriskt } from "@/lib/format";
-import { BadgeCheck } from "lucide-react";
+import { kr, datumTid, datumNumeriskt } from "@/lib/format";
 import { taxReductionDeductionLabel, getTaxReductionTerms } from "@/lib/tax-reduction-terms";
 import { TaxReductionQuoteClause, TaxReductionCalcHint } from "./tax-reduction-terms";
 import { lineKindLabel } from "@/lib/economic-line-type";
@@ -10,8 +8,6 @@ import { CompanyLogo } from "./company-logo";
 import { resolveQuoteCompany, resolveQuoteCustomer } from "@/lib/invoices/snapshot";
 import { quoteDescriptionDoc } from "@/lib/quote-description";
 import { RichTextView } from "./rich-text";
-import { acceptedByLabel } from "@/lib/status-labels";
-
 
 export function DocCompanyHeader({ company, docType, docNumber }: { company: CompanySettings; docType: string; docNumber: string }) {
   return (
@@ -234,13 +230,11 @@ function MetaItem({ label, value }: { label: string; value: string }) {
  *
  * Ordning: företag/identitet → kund + adress → metadata → rubrik →
  * beskrivning → prisrader → summering → ROT/RUT → betalningsplan → villkor →
- * godkännande → företagsuppgifter.
+ * ev. godkänd-stämpel → företagsuppgifter.
  *
- * `acceptance`: kundens sparade godkännande (låst version) – ger raden
- * "Godkänd {datum} av {namn}" i webbvy, ägarvy och PDF.
- * `acceptForm`: på den publika webbvyn skickas namn + knapp in här och blir
- * dokumentets avslutande "Godkänn offerten". Utan slot (ägarvyn, PDF, print)
- * visas statisk information om hur offerten godkänns – aldrig en webbknapp.
+ * Dokumentkortet är den kommersiella offerten – ingen CTA. Godkännandet bor
+ * under kortet på /offert/[token]. `acceptance` ger en tyst rad
+ * "Godkänd {datum} av {namn}" i webbvy, ägarvy och PDF – ingen grön ruta.
  */
 export function QuoteDocument({
   company,
@@ -248,14 +242,12 @@ export function QuoteDocument({
   quote,
   version,
   acceptance,
-  acceptForm,
 }: {
   company: CompanySettings;
   customer: Customer;
   quote: Quote;
   version: QuoteVersion;
   acceptance?: QuoteAcceptance;
-  acceptForm?: ReactNode;
 }) {
   const seller = resolveQuoteCompany(version, company);
   // Skickad/godkänd offert visar kundens uppgifter som de var då – inte livedata.
@@ -333,42 +325,11 @@ export function QuoteDocument({
       </div>
 
       {acceptance ? (
-        <div data-quote-acceptance-line="" className="mt-9 rounded-2xl border border-ok/20 bg-ok-soft/60 p-5">
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-ok">Godkänd offert</p>
-          <div className="mt-2 flex items-start gap-3">
-            <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
-            <div>
-              {/* En rad, ingen stämpel: "Godkänd 3 september 2026, 14:32 av Anna Andersson". */}
-              <p className="text-[14px] font-semibold text-ok">
-                Godkänd {datumTid(acceptance.acceptedAt)} av {acceptance.acceptedByName}
-              </p>
-              {acceptance.method !== "simple_accept" ? (
-                <p className="text-[13px] text-soft">{acceptedByLabel(acceptance)}</p>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-9 rounded-2xl border border-line bg-canvas/60 p-5">
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-soft">Godkänn offerten</p>
-          <p className="mt-1.5 max-w-xl text-[14px] leading-relaxed text-soft">
-            Offerten är giltig till {datumLang(version.validUntil)}.
-          </p>
-          {acceptForm ? (
-            <>
-              <div className="mt-4 print:hidden">{acceptForm}</div>
-              <p className="mt-2 hidden text-[13px] text-muted print:block">
-                Offerten godkänns via offertlänken från {seller.name}.
-              </p>
-            </>
-          ) : (
-            <p className="mt-2 text-[13px] leading-relaxed text-muted">
-              Offerten godkänns via offertlänken från {seller.name}: kunden skriver sitt namn och trycker Godkänn
-              offert.
-            </p>
-          )}
-        </div>
-      )}
+        <p data-quote-acceptance-line="" className="mt-9 text-[13px] leading-relaxed text-muted">
+          Godkänd {datumTid(acceptance.acceptedAt)} av {acceptance.acceptedByName}
+          {acceptance.method === "bankid_mock" ? " (demo)" : ""}
+        </p>
+      ) : null}
 
       <QuoteCompanyFooter company={seller} />
     </div>

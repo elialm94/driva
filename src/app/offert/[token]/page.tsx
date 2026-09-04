@@ -1,16 +1,16 @@
 import { notFound } from "next/navigation";
 import { BadgeCheck, FileLock2, XCircle, Clock } from "lucide-react";
 import { db } from "@/lib/store";
-import { getQuoteByToken, currentVersion, quoteAcceptance, quoteTotals, requireCustomer } from "@/lib/services/data";
-import { markQuoteViewed } from "@/lib/services/quotes";
+import { getQuoteByToken, publicQuoteVersion, quoteAcceptance, requireCustomer } from "@/lib/services/data";
+import { docTotals } from "@/lib/calc";
+import { isQuoteWithdrawnByOwner, markQuoteViewed } from "@/lib/services/quotes";
 import { quoteAcceptanceStatement } from "@/lib/services/quote-accept";
 import { quoteVersionHash } from "@/lib/hash";
 import { kr, datumTid, datumLang, dagarTill } from "@/lib/format";
 import { QuoteDocument } from "@/components/quote-document";
 import { CompanyLogo } from "@/components/company-logo";
 import { acceptedByLabel } from "@/lib/status-labels";
-import { AcceptJumpButton, QuoteAcceptForm } from "@/components/quote-accept";
-import { DeclineQuoteButton, QuoteQuestionButton } from "@/components/quote-public-actions";
+import { QuoteAcceptForm } from "@/components/quote-accept";
 import { DemoTag } from "@/components/ui";
 import { resolveQuoteCompany, resolveQuoteCustomer } from "@/lib/invoices/snapshot";
 import { ensurePublicPage, withPublicBusiness } from "@/lib/auth/session";
@@ -23,15 +23,15 @@ export async function generateMetadata(props: PageProps<"/offert/[token]">) {
   const quote = getQuoteByToken(token);
   // Utkast är inte publika – läck inte offertnummer/avsändare via metadata.
   if (!quote || quote.status === "utkast") return { title: "Offert" };
-  const seller = resolveQuoteCompany(currentVersion(quote), db().settings);
+  const seller = resolveQuoteCompany(publicQuoteVersion(quote), db().settings);
   return { title: `Offert #${quote.number} – ${seller.name}` };
 }
 
 /**
- * Kundens offertsida. Kunden godkänner EXAKT det dokument som visas: namn +
- * knapp i dokumentets avslutning (QuoteAcceptForm). Ingen BankID, ingen ritad
- * signatur – godkännandet sparas med versionens hash, namn, tidpunkt och
- * varifrån det gjordes.
+ * Kundens offertsida. Dokumentkortet är den kommersiella offerten. Godkännandet
+ * (namn + knapp) ligger under kortet – inte i A4:an. Ingen BankID, ingen
+ * frågekanal, ingen ritad signatur. Godkännandet sparas med versionens hash,
+ * namn, tidpunkt och varifrån det gjordes.
  */
 export default async function PublicQuotePage(props: PageProps<"/offert/[token]">) {
   const { token } = await props.params;
@@ -49,12 +49,16 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
   if (!quote || quote.status === "utkast") notFound();
 
   const data = db();
-  const version = currentVersion(quote);
+  const version = publicQuoteVersion(quote);
   const customer = requireCustomer(quote.customerId);
   const acceptance = quoteAcceptance(quote.id);
-  const totals = quoteTotals(quote);
-  const expired = quote.status === "skickad" && dagarTill(version.validUntil) < 0;
-  const canAccept = quote.status === "skickad" && !expired;
+  const totals = docTotals(version.lines, version.rot);
+  const showingAcceptedSnapshot = Boolean(acceptance && version.id === acceptance.quoteVersionId);
+  const expired = (quote.status === "skickad" || Boolean(version.sellerSnapshot && !version.lockedAt)) && dagarTill(version.validUntil) < 0;
+  const canAccept =
+    !expired &&
+    (quote.status === "skickad" || (quote.status === "godkand" && Boolean(version.sellerSnapshot) && !showingAcceptedSnapshot));
+  const withdrawnByOwner = isQuoteWithdrawnByOwner(quote);
 
   const seller = resolveQuoteCompany(version, data.settings);
   const buyer = resolveQuoteCustomer(version, customer);
@@ -78,7 +82,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-5">
-        {quote.status === "godkand" && acceptance ? (
+        {showingAcceptedSnapshot && acceptance ? (
           <div
             data-quote-accepted-banner=""
             className="mb-6 rounded-2xl border border-ok/25 bg-ok-soft/70 px-5 py-4 animate-fade-up"
@@ -97,7 +101,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
                   href={`/offert/${quote.token}/underlag`}
                   className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-deep hover:underline"
                 >
-                  <FileLock2 className="size-3.5" /> Visa underlag för godkännandet
+                  <FileLock2 className="size-3.5" /> Intyg om godkännande
                 </a>
               </div>
             </div>
@@ -105,13 +109,19 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
         ) : null}
 
         {quote.status === "avbojd" ? (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-line bg-card px-5 py-4">
+          <div
+            data-quote-public-closed=""
+            className="mb-6 flex items-start gap-3 rounded-2xl border border-line bg-card px-5 py-4"
+          >
             <XCircle className="mt-0.5 size-5 shrink-0 text-muted" />
             <div>
-              <p className="text-[15px] font-semibold">Offerten är avböjd</p>
+              <p className="text-[15px] font-semibold">
+                {withdrawnByOwner ? "Offerten är tillbakadragen" : "Offerten är avböjd"}
+              </p>
               <p className="text-[14px] text-soft">
-                Offerten kan inte längre godkännas här. Ändrat dig? Hör av dig till {seller.name} på {seller.phone} så
-                tar vi det därifrån.
+                {withdrawnByOwner
+                  ? `${seller.name} har dragit tillbaka offerten. Den kan inte längre godkännas. Hör av dig på ${seller.phone} om du har frågor.`
+                  : `Offerten kan inte längre godkännas här. Ändrat dig? Hör av dig till ${seller.name} på ${seller.phone} så tar vi det därifrån.`}
               </p>
             </div>
           </div>
@@ -136,20 +146,19 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
             customer={customer}
             quote={quote}
             version={version}
-            acceptance={acceptance}
-            acceptForm={
-              // Godkännandet hör hemma i dokumentets avslutning – inte i en popover.
-              canAccept ? (
-                <QuoteAcceptForm
-                  token={quote.token}
-                  statement={quoteAcceptanceStatement(quote, version)}
-                  prefillName={prefillName}
-                  contentHash={contentHash}
-                />
-              ) : undefined
-            }
+            acceptance={showingAcceptedSnapshot ? acceptance : undefined}
           />
         </div>
+
+        {canAccept ? (
+          <QuoteAcceptForm
+            token={quote.token}
+            statement={quoteAcceptanceStatement(quote, version)}
+            prefillName={prefillName}
+            contentHash={contentHash}
+            validUntil={version.validUntil}
+          />
+        ) : null}
 
         <p className="mt-6 text-center text-[12px] text-muted">
           Skickad med Driva · Frågor? Kontakta {seller.name} på {seller.email}
@@ -157,28 +166,23 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
           <a href={`/offert/${quote.token}/pdf`} target="_blank" rel="noreferrer" className="mt-1 inline-block font-medium text-soft underline-offset-2 hover:text-ink hover:underline">
             Skriv ut eller spara som PDF
           </a>
+          {showingAcceptedSnapshot && acceptance ? (
+            <>
+              <span className="mx-2 text-line-strong">·</span>
+              <a
+                href={`/offert/${quote.token}/underlag/pdf`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block font-medium text-soft underline-offset-2 hover:text-ink hover:underline"
+              >
+                Skriv ut intyg om godkännande
+              </a>
+            </>
+          ) : null}
         </p>
-        {/* Luft under dokumentet så att formuläret aldrig hamnar under bottenlisten. */}
-        <div className={canAccept ? "h-36" : "h-10"} />
+        {/* Luft så att sidfoten inte hamnar under mobilbaren. */}
+        <div className={canAccept ? "h-36 md:h-10" : "h-10"} />
       </main>
-
-      {canAccept ? (
-        <div className="fixed inset-x-0 bottom-0 border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
-          <div className="mx-auto flex max-w-3xl flex-col gap-2.5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
-            <div className="flex items-center justify-between gap-3 sm:block">
-              {/* Inget betalas vid godkännandet – beloppet är offertens värde. */}
-              <p className="text-[14px] font-medium">
-                Offertvärde: <span className="font-semibold">{kr(totals.toPay)}</span>
-              </p>
-              <DeclineQuoteButton token={quote.token} />
-            </div>
-            <div className="flex gap-2 sm:items-center">
-              <QuoteQuestionButton token={quote.token} companyName={seller.name} />
-              <AcceptJumpButton />
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
