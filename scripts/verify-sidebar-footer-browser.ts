@@ -117,9 +117,37 @@ async function main() {
     };
   });
   await ok(
-    "4 aktivt tillstånd på /installningar (bg-ink + aria-current)",
-    !!active && active.ariaCurrent === "page" && active.className.includes("bg-ink") && active.color === "rgb(255, 255, 255)",
+    "4 aktivt tillstånd på /installningar (mjuk fyllning + aria-current)",
+    !!active &&
+      active.ariaCurrent === "page" &&
+      active.className.includes("bg-ink/5 font-medium") &&
+      !active.className.includes("bg-ink text-white") &&
+      active.color !== "rgb(255, 255, 255)",
     JSON.stringify(active)
+  );
+
+  await page.goto(`${BASE}/support`, { waitUntil: "networkidle0" });
+  const supportActive = await page.evaluate(() => {
+    const link = [...document.querySelectorAll("aside a")].find((a) => (a.getAttribute("href") ?? "").startsWith("/support"));
+    if (!link) return null;
+    const s = getComputedStyle(link);
+    const kunder = [...document.querySelectorAll("aside a")].find((a) => a.getAttribute("href") === "/kunder");
+    return {
+      ariaCurrent: link.getAttribute("aria-current"),
+      className: link.className,
+      bg: s.backgroundColor,
+      color: s.color,
+      kunderClass: kunder?.className ?? "",
+    };
+  });
+  await ok(
+    "4 Hjälp & support använder samma mjuka fyllning som övrig nav",
+    !!supportActive &&
+      supportActive.ariaCurrent === "page" &&
+      supportActive.className.includes("bg-ink/5 font-medium") &&
+      !supportActive.kunderClass.includes("bg-ink/5 font-medium") &&
+      supportActive.color !== "rgb(255, 255, 255)",
+    JSON.stringify(supportActive)
   );
 
   // Obs: rubriken renderas med text-transform: uppercase → innerText är versal.

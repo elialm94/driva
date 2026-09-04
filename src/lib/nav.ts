@@ -222,6 +222,18 @@ export function isSectionActive(pathname: string, href: string): boolean {
   return sectionForPath(pathname) === section;
 }
 
+/** Sidofotens Inställningar – ingen egen NavSection. */
+export function isSettingsPath(pathname: string): boolean {
+  const path = splitHref(pathname).pathname;
+  return path === "/installningar" || path.startsWith("/installningar/") || path === "/foretag" || path.startsWith("/foretag/");
+}
+
+/** Sidofotens Hjälp & support – ingen egen NavSection. */
+export function isSupportPath(pathname: string): boolean {
+  const path = splitHref(pathname).pathname;
+  return path === "/support" || path.startsWith("/support/");
+}
+
 export function labelForHref(href: string): string {
   const rewritten = rewriteLegacyHref(href);
   const { pathname, searchParams } = splitHref(rewritten);
