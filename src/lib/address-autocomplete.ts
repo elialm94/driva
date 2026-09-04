@@ -4,6 +4,8 @@
  * valt ett förslag (session token + details).
  */
 
+import { formatSwedishPostalCode, isSwedishPostalCode } from "./validation";
+
 export const ADDRESS_SEARCH_MIN_CHARS = 3;
 export const ADDRESS_SEARCH_DEBOUNCE_MS = 250;
 
@@ -30,6 +32,20 @@ export function shouldSearchAddress(raw: string): boolean {
 export function formatAddressLine(parts: AddressParts): string {
   const place = [parts.postalCode.trim(), parts.city.trim()].filter(Boolean).join(" ");
   return [parts.address.trim(), place].filter(Boolean).join(", ");
+}
+
+/**
+ * Ett valt förslag ersätter gata + postnummer + ort i ett svep.
+ * Gamla fältvärden får inte ligga kvar (t.ex. Inställningar med
+ * kontrollerat state, där en gatu-only-uppdatering annars vinner).
+ */
+export function applyPickedAddress(selected: AddressParts, suggestionMain: string): AddressParts {
+  const postal = selected.postalCode.trim();
+  return {
+    address: selected.address.trim() || suggestionMain.trim(),
+    postalCode: isSwedishPostalCode(postal) ? formatSwedishPostalCode(postal) : postal,
+    city: selected.city.trim(),
+  };
 }
 
 export function partsFromPlaceComponents(components: PlaceAddressComponent[]): AddressParts {

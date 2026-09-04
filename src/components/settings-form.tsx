@@ -411,6 +411,7 @@ export function SettingsForm({
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Adress</p>
             <p className={hintCls}>Samma adress används på offerter, fakturor och hemsidan. Du behöver inte ange den igen under fakturering.</p>
             <AddressFields
+              label="Gatuadress"
               value={{ address: form.address, postalCode: form.postalCode, city: form.city }}
               onChange={(parts) => {
                 setSaved(false);

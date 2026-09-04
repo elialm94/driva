@@ -19,6 +19,7 @@ import { FieldError, invalidFieldCls } from "./form-validation";
 import { formatSwedishPostalCode, isSwedishPostalCode } from "@/lib/validation";
 import {
   ADDRESS_SEARCH_DEBOUNCE_MS,
+  applyPickedAddress,
   demoAddressSuggestions,
   formatAddressLine,
   partsFromPlaceComponents,
@@ -344,11 +345,20 @@ export function AddressAutocomplete({
 
   async function pick(s: Suggestion) {
     setOpen(false);
-    setStreet(s.main);
-    const parts = await s.resolve();
-    const filled = composeSelected === "line" ? formatAddressLine(parts) : parts.address || s.main;
-    setStreet(filled);
-    onSelect?.(parts);
+    let resolved: AddressParts;
+    try {
+      resolved = await s.resolve();
+    } catch {
+      resolved = { address: s.main, postalCode: "", city: "" };
+    }
+    const selected = applyPickedAddress(resolved, s.main);
+    const filled = composeSelected === "line" ? formatAddressLine(selected) : selected.address;
+    const complete = composeSelected === "line" ? { ...selected, address: filled } : selected;
+    // Ett skriv: full adress via onSelect. Anropa inte onChange(gata) före/efter —
+    // kontrollerade formulär (Inställningar) skulle annars skriva gata + gammal postort.
+    if (value === undefined) setUncontrolled(filled);
+    if (onSelect) onSelect(complete);
+    else onChange?.(filled);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
@@ -526,13 +536,7 @@ export function AddressFields({
           label={label}
           value={parts.address}
           onChange={(address) => emit({ ...parts, address })}
-          onSelect={(selected) =>
-            emit({
-              address: selected.address,
-              postalCode: selected.postalCode || parts.postalCode,
-              city: selected.city || parts.city,
-            })
-          }
+          onSelect={(selected) => emit(applyPickedAddress(selected, selected.address || parts.address))}
           onBlur={onBlur}
           inputClassName={cx(fieldCls, (invalid?.address || errors?.address) && invalidFieldCls)}
           labelClassName={labelCls}

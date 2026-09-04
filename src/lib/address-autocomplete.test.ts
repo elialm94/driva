@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   ADDRESS_SEARCH_DEBOUNCE_MS,
   ADDRESS_SEARCH_MIN_CHARS,
+  applyPickedAddress,
   demoAddressSuggestions,
   formatAddressLine,
   partsFromPlaceComponents,
@@ -73,6 +74,28 @@ describe("address autocomplete helpers", () => {
     );
     assert.equal(formatAddressLine({ address: "Gatan 1", postalCode: "", city: "" }), "Gatan 1");
   });
+
+  it("valt förslag skriver över gata, postnummer och ort – inte bara gatan", () => {
+    const picked = applyPickedAddress(
+      { address: "Vädursvägen 13", postalCode: "14143", city: "Huddinge" },
+      "Vädursvägen 13"
+    );
+    assert.deepEqual(picked, {
+      address: "Vädursvägen 13",
+      postalCode: "141 43",
+      city: "Huddinge",
+    });
+  });
+
+  it("låter inte ett gammalt postnummer ligga kvar när förslaget har ny postort", () => {
+    const current = { address: "Åsögatan 114", postalCode: "116 24", city: "" };
+    const picked = applyPickedAddress(
+      { address: "Vädursvägen 13", postalCode: "141 43", city: "Huddinge" },
+      "Vädursvägen 13"
+    );
+    assert.notEqual(picked.postalCode, current.postalCode);
+    assert.equal(picked.city, "Huddinge");
+  });
 });
 
 describe("AddressAutocomplete-klienten", () => {
@@ -84,6 +107,13 @@ describe("AddressAutocomplete-klienten", () => {
     assert.match(source, /resolve: async \(\) => \{[\s\S]*fetchFields\(\{ fields: \["addressComponents"\] \}\)/);
     assert.match(source, /async function pick[\s\S]*await s\.resolve\(\)/);
     assert.match(source, /void pick\(s\)/);
+  });
+
+  it("pick skriver inte gatan ensam innan postnr/ort är klara", () => {
+    assert.match(source, /applyPickedAddress/);
+    assert.doesNotMatch(source, /setStreet\(s\.main\)/);
+    assert.match(source, /if \(onSelect\) onSelect\(complete\);\s*else onChange\?\.\(filled\);/);
+    assert.doesNotMatch(source, /selected\.postalCode \|\| parts\.postalCode/);
   });
 
   it("startar inte Places från ett redan sparat värde", () => {
@@ -121,4 +151,13 @@ describe("alla redigerbara adressfält använder den delade komponenten", () => 
       assert.match(src, /from ["'].*address-input["']/);
     });
   }
+
+  it("Inställningar använder AddressFields med Gatuadress", () => {
+    const src = readFileSync(join(root, "src/components/settings-form.tsx"), "utf8");
+    assert.match(src, /<AddressFields/);
+    assert.match(src, /label="Gatuadress"/);
+    assert.match(src, /installningar-address/);
+    assert.match(src, /installningar-postalCode/);
+    assert.match(src, /installningar-city/);
+  });
 });
