@@ -129,6 +129,7 @@ export function QuoteAcceptForm({
       <form
         id={QUOTE_ACCEPT_SECTION_ID}
         data-quote-accept-form=""
+        method="post"
         className="mt-8 scroll-mt-6"
         onSubmit={(e) => {
           e.preventDefault();
