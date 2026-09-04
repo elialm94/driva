@@ -218,7 +218,8 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
       ) : null}
 
       {acceptance ? (
-        <Card data-quote-owner-accepted="" className="mb-6 px-5 py-4">
+        <div data-quote-owner-accepted="">
+        <Card className="mb-6 px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-start gap-3">
               <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
@@ -237,6 +238,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
             </a>
           </div>
         </Card>
+        </div>
       ) : null}
 
       <div className="mb-6 lg:hidden">
