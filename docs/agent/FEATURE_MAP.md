@@ -210,7 +210,7 @@ Local JSON (`npm run dev`, no Supabase): already seeded; **Avsluta demo** hidden
 
 ### Seed company
 
-**Södermalms Snickeri AB**, org `559123-4567`, address Renstiernas gata 12, 116 28 Stockholm, bankgiro `5678-1234`, inbound `demo@in.driva.se`, site slug `sodermalms-snickeri`. Demo user: `demo@driva.local` / name **Du**. Accountant persona: **Anna Svensson**.
+**Södermalms Snickeri AB**, org `559123-4567`, address Renstiernas gata 12, 116 28 Stockholm, bankgiro `5678-1234`, inbound `demo@in.ferva.se`, site slug `sodermalms-snickeri`. Demo user: `demo@driva.local` / name **Du**. Accountant persona: **Anna Svensson**.
 
 ### What is seeded (stable ids)
 
@@ -578,10 +578,10 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **Related:** Utgifter & kvitton, Bank, Bokföring questions, payment files (pain.001).
 - **Components:** `inbox-list.tsx`, `inbox-address.tsx`, `extraction-review.tsx`, `inbox-upload.tsx`, `payment-file-actions.tsx`.
 - **DB:** `inbox_items`, `business_settings.inbound_mail_slug`, `payment_files`, `supplier_payments`. Bucket `inbox_attachments`.
-- **Invariants:** Tenant from **To** slug (`{slug}@in.driva.se`), never From. **No DELETE** on inbox_items. Dedup `(business_id, external_id)`. Badge ≠ open filter. Autopilot books only at high amount confidence or after `reviewedAt`. Website forms → jobs, not inbox.
+- **Invariants:** Tenant from **To** slug (`{slug}@in.ferva.se`, alias `in.driva.se`), never From. **No DELETE** on inbox_items. Dedup `(business_id, external_id)`. Badge ≠ open filter. Autopilot books only at high amount confidence or after `reviewedAt`. Website forms → jobs, not inbox.
 - **Kvitto pipeline vs receipt file:** a `kvitto` inbox item that books (`createExpenseFromKnownReceipt`, `src/lib/services/inbox.ts` → `expenses.ts`) creates `expenses` + a `receipts` row with **filename only** (`item.attachments[0]?.filename`) — the attachment stays on `inbox_items.attachments` (`/api/inbox/bilaga/...`) and is **not** copied to `receipts.storage_path` / `content_base64`. Such rows therefore read *Bokfört · kvittouppgifter utan fil* in Utgifter and have no **Visa kvitto** link (see [Utgifter & kvitton](#utgifter--kvitton-flikutgifter)). Only **Lägg till kvitto** (`uploadReceiptAction`) stores the file on the receipt.
-- **Live:** address `demo@in.driva.se`. Open: Byggmax *Kontrollera belopp*, Beijer *Bokförd · Redo att betala*. Badge **1**.
-- **Verify:** `/inbox` shows inbound card + Byggmax. Open row → `/inbox/inbox-mail-byggmax`. Script: `scripts/verify-nav-browser.ts` expects `demo@in.driva.se`. Tests: `inbox.test.ts`. `scripts/db-validate.ts` asserts DELETE denied.
+- **Live:** address `demo@in.ferva.se`. Open: Byggmax *Kontrollera belopp*, Beijer *Bokförd · Redo att betala*. Badge **1**.
+- **Verify:** `/inbox` shows inbound card + Byggmax. Open row → `/inbox/inbox-mail-byggmax`. Script: `scripts/verify-nav-browser.ts` expects `demo@in.ferva.se`. Tests: `inbox.test.ts`. `scripts/db-validate.ts` asserts DELETE denied.
 
 ---
 

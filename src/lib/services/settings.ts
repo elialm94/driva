@@ -163,6 +163,8 @@ function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
   s.payerBic = input.payerBic?.trim() ? normalizeBic(input.payerBic) : undefined;
   s.logoDataUrl = optional(input.logoDataUrl);
   s.logoInitials = input.logoInitials.trim() || initialsFromName(s.name);
+  // inboundMailSlug allokeras vid skapande och skrivs aldrig om här –
+  // namnbyte i Inställningar → Företag får inte byta inkommande adress.
 }
 
 function validateDefaults(input: SettingsDefaultsFields): string[] {

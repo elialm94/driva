@@ -222,6 +222,18 @@ Driva utfärdar **vanliga svenska småföretagsfakturor**: svensk säljare → s
 
 Offerter, fakturor, betalningspåminnelser och samarbetsinbjudningar skickas via Resend när **både** `RESEND_API_KEY` och avsändare (`RESEND_FROM_EMAIL` / `MAIL_FROM`) är satta. Testdefault `beth.t@example.com` används aldrig som tyst live-From (Resend avvisar då kundens adress). Utan nyckel eller From: offerten markeras som skickad och kundlänken delas – vi låtsas inte att ett mejl gick iväg. Misslyckad Resend lämnar status utkast.
 
+### Inkommande mejl (`@in.ferva.se`)
+
+Leverantörsfakturor och kvitton landar i Inbox via `POST /api/inbox/inbound`. Den visade adressen är `{slug}@in.ferva.se` (styrbar med `INBOUND_MAIL_DOMAIN`). Tenant löses bara på local-part – webhooken tar även `@in.driva.se` som tyst alias. Kunden väljer eller redigerar inte adressen.
+
+Kod räcker inte: MX måste finnas, annars är den nya adressen död.
+
+- Skapa subdomänen `in.ferva.se` (inte catch-all på apex `ferva.se`)
+- MX + inbound-routing (Resend eller nuvarande provider) → samma `POST /api/inbox/inbound`, samma HMAC (`INBOUND_MAIL_WEBHOOK_SECRET`)
+- Catch-all på `in.ferva.se` så `{valfri-slug}@in.ferva.se` landar i webhooken
+- Behåll MX på `in.driva.se` som alias
+- Verifiera med ett riktigt testmejl till `{slug}@in.ferva.se` och kolla att det skapar en inbox-rad
+
 **Rabatt:** inget eget radfält. Negativt à-pris på en rad räknas i samma VAT-motor.
 
 ## Ekonomiska beslut (ADR)

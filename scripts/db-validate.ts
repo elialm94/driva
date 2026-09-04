@@ -298,8 +298,8 @@ async function main() {
   await asSuperuser();
   await db.exec(`
     insert into public.inbox_items (id, business_id, status, external_id, from_address, to_address, subject, text_body) values
-      ('in-a1', '${A}', 'ny', 'ext-a-1', 'a@x.se', 'slug-a@in.driva.se', 'Kvitto A', 'text'),
-      ('in-b1', '${B}', 'ny', 'ext-b-1', 'b@x.se', 'slug-b@in.driva.se', 'Kvitto B', 'text');
+      ('in-a1', '${A}', 'ny', 'ext-a-1', 'a@x.se', 'slug-a@in.ferva.se', 'Kvitto A', 'text'),
+      ('in-b1', '${B}', 'ny', 'ext-b-1', 'b@x.se', 'slug-b@in.ferva.se', 'Kvitto B', 'text');
   `);
 
   await asApp(A);
@@ -325,14 +325,14 @@ async function main() {
   await expectError(db, "samma external_id hos samma företag stoppas (dedup)", "inbox_items_external_uq", () =>
     db.query(
       `insert into public.inbox_items (id, business_id, external_id, from_address, to_address, subject)
-       values ('in-a1-dup', $1, 'ext-a-1', 'a@x.se', 'slug-a@in.driva.se', 'Dubblett')`,
+       values ('in-a1-dup', $1, 'ext-a-1', 'a@x.se', 'slug-a@in.ferva.se', 'Dubblett')`,
       [A]
     )
   );
   await expectOk(db, "samma external_id hos annat företag tillåts", () =>
     db.query(
       `insert into public.inbox_items (id, business_id, external_id, from_address, to_address, subject)
-       values ('in-a-same-ext', $1, 'ext-b-1', 'a@x.se', 'slug-a@in.driva.se', 'Annan tenant')`,
+       values ('in-a-same-ext', $1, 'ext-b-1', 'a@x.se', 'slug-a@in.ferva.se', 'Annan tenant')`,
       [A]
     )
   );

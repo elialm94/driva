@@ -12,6 +12,7 @@ import { tenantContext } from "./storage/context";
 import { requestTenantState } from "./storage/request-scope";
 import { hydrateQuotedBaselines } from "./services/job-work-baseline";
 import { withoutRetiredSections } from "./website-sections";
+import { allocateInboundMailSlug, shouldRemintHexInboundSlug } from "./inbox/inbound-slug";
 
 /**
  * Lagringsfasad: all domänkod läser/skriver via db() + save().
@@ -245,6 +246,14 @@ function migrateLegacyAcceptances(loaded: DB): boolean {
   return changed;
 }
 
+function remintHexInboundSlugInMemory(loaded: DB): boolean {
+  if (!shouldRemintHexInboundSlug(loaded.settings.inboundMailSlug, loaded.inboxItems ?? [])) {
+    return false;
+  }
+  loaded.settings.inboundMailSlug = allocateInboundMailSlug(loaded.settings.name, () => false);
+  return true;
+}
+
 export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): DB {
   const persistIfDirty = opts.persistIfDirty ?? true;
   // Fält tillagda efter att filen skapades får sina standardvärden här.
@@ -265,6 +274,7 @@ export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): 
   loaded.collaborationInvitations ??= [];
   loaded.clientInformationRequests ??= [];
   loaded.settings.inboundMailSlug ??= "demo";
+  const remintedInbound = remintHexInboundSlugInMemory(loaded);
   for (const sup of loaded.supplierInvoices ?? []) {
     sup.accountingStatus ??= sup.verificationId ? "bokford" : "obokford";
   }
@@ -290,7 +300,8 @@ export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): 
     hydrateTaxReductionDemo(loaded) ||
     hydrateQuotedBaselines(loaded) ||
     droppedRetired ||
-    acceptancesMigrated;
+    acceptancesMigrated ||
+    remintedInbound;
   // Persist snapshots so later settings changes cannot rewrite seed/historical docs.
   if (persistIfDirty && (dirty || migrated || domainsChanged || descriptionsMigrated || buyerSnapshotsHydrated)) {
     persist(loaded);

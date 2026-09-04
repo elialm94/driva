@@ -6,9 +6,36 @@ import { createHmac, timingSafeEqual } from "crypto";
  * Webhooken tar emot ett normaliserat payload. Signatur är HMAC-SHA256 av
  * rå body. I produktion krävs giltig signatur. Lokalt (INBOUND_MAIL_MODE=mock,
  * default utanför production) får mock-providern posta osignerat.
+ *
+ * Tenant styrs bara av local-part (inbound_mail_slug) – aldrig From, aldrig
+ * domän. Visad/Reply-To-adress är alltid {slug}@{INBOUND_MAIL_DOMAIN}.
+ *
+ * Drift så att @in.ferva.se faktiskt tar emot mejl (kod räcker inte):
+ * - Skapa subdomänen in.ferva.se (inte catch-all på apex ferva.se)
+ * - MX + inbound-routing (Resend eller nuvarande provider) → samma
+ *   POST /api/inbox/inbound som idag, samma HMAC (INBOUND_MAIL_WEBHOOK_SECRET)
+ * - Catch-all på in.ferva.se så {valfri-slug}@in.ferva.se landar i webhooken
+ * - Behåll MX på in.driva.se som alias
+ * - Verifiera med ett riktigt testmejl till {slug}@in.ferva.se och kolla
+ *   att det skapar en inbox-rad
  */
 
-export const INBOUND_MAIL_DOMAIN = "in.driva.se";
+/** Kanonisk visad/Reply-To-domän. Överskrivs av env INBOUND_MAIL_DOMAIN. */
+export const DEFAULT_INBOUND_MAIL_DOMAIN = "in.ferva.se";
+
+/**
+ * Domäner webhooken känner igen. Tenant löses ändå bara på local-part –
+ * andra To-domäner avvisas inte (mock/tester).
+ */
+export const INBOUND_MAIL_ALIAS_DOMAINS = ["in.ferva.se", "in.driva.se"] as const;
+
+export function inboundMailDomain(): string {
+  const fromEnv = process.env.INBOUND_MAIL_DOMAIN?.trim().toLowerCase();
+  return fromEnv || DEFAULT_INBOUND_MAIL_DOMAIN;
+}
+
+/** Default-domän. Använd inboundMailDomain() när env ska gälla. */
+export const INBOUND_MAIL_DOMAIN = DEFAULT_INBOUND_MAIL_DOMAIN;
 
 export interface InboundAttachmentPayload {
   filename: string;
@@ -73,7 +100,7 @@ export function inboundMailMode(): InboundMailMode {
 }
 
 export function inboundMailAddress(slug: string): string {
-  return `${slug}@${INBOUND_MAIL_DOMAIN}`;
+  return `${slug}@${inboundMailDomain()}`;
 }
 
 /** Lokal-del av To – tenantnyckel. +tagg strippas. Aldrig From. */

@@ -32,4 +32,13 @@ describe("pending schema för settings och hemsida", () => {
     assert.match(adapter, /isUndefinedColumn/);
     assert.match(adapter, /commit-retry-schema/);
   });
+
+  it("hex-remint av inbound_mail_slug körs från pending schema", () => {
+    const apply = readFileSync(join(here, "apply-pending-schema.ts"), "utf8");
+    assert.match(apply, /remintHexInboundMailSlugs/);
+    assert.match(apply, /\^\[0-9a-f\]\{12\}\$/);
+    const adapter = readFileSync(join(here, "adapter-supabase.ts"), "utf8");
+    assert.match(adapter, /insertSettingsWithAllocatedSlug/);
+    assert.doesNotMatch(adapter, /function inboundSlugFor/);
+  });
 });

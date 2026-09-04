@@ -14,6 +14,14 @@ export function isUndefinedColumn(err: unknown): boolean {
   return /column ".+" does not exist/i.test(e.message ?? "");
 }
 
+/** Postgres: unique_violation (t.ex. inbound_mail_slug-race). */
+export function isUniqueViolation(err: unknown): boolean {
+  const e = err as { code?: string; message?: string } | null;
+  if (!e) return false;
+  if (e.code === "23505") return true;
+  return /duplicate key value violates unique constraint/i.test(e.message ?? "");
+}
+
 const STORAGE_SAVE_FAILED = "Kunde inte spara ändringen. Försök igen.";
 
 function looksLikeEngineError(message: string): boolean {

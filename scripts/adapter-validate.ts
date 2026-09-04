@@ -39,6 +39,8 @@ import {
 } from "../src/lib/services/invoices";
 import { quoteVersionHash } from "../src/lib/hash";
 import type { DocLine, Verification } from "../src/lib/types";
+import { inboundMailAddress } from "../src/lib/inbox/inbound-mail";
+import { updateCompanySettings } from "../src/lib/services/settings";
 
 let passed = 0;
 let failed = 0;
@@ -112,6 +114,86 @@ async function main() {
       assert.equal(db().settings.name, "Test Bygg AB");
       assert.equal(db().sequences.invoice, 1);
     });
+  });
+
+  await check("inbound-slug från företagsnamn, unik utan användarval", async () => {
+    const a = await pg.query<{ inbound_mail_slug: string }>(
+      `select inbound_mail_slug from business_settings where business_id = $1`,
+      [bizA],
+    );
+    const b = await pg.query<{ inbound_mail_slug: string }>(
+      `select inbound_mail_slug from business_settings where business_id = $1`,
+      [bizB],
+    );
+    assert.equal(a.rows[0].inbound_mail_slug, "testbygg");
+    assert.equal(b.rows[0].inbound_mail_slug, "annatforetag");
+
+    const USER_C = "44444444-4444-4444-8444-444444444444";
+    const USER_D = "55555555-5555-4555-8555-555555555555";
+    const USER_E = "66666666-6666-4666-8666-666666666666";
+    await pg.query(`insert into auth.users (id, email) values ($1, 'c@test.se'), ($2, 'd@test.se'), ($3, 'e@test.se')`, [
+      USER_C,
+      USER_D,
+      USER_E,
+    ]);
+    const c1 = await createBusinessWithOwner({
+      userId: USER_C,
+      name: "Calles Bygg AB",
+      orgNumber: "556111-1111",
+      email: "info@calles1.se",
+      phone: "",
+    });
+    const c2 = await createBusinessWithOwner({
+      userId: USER_D,
+      name: "Calles Bygg AB",
+      orgNumber: "556222-2222",
+      email: "info@calles2.se",
+      phone: "",
+    });
+    const c3 = await createBusinessWithOwner({
+      userId: USER_E,
+      name: "Calles Bygg AB",
+      orgNumber: "556333-3333",
+      email: "info@calles3.se",
+      phone: "",
+    });
+    const slugs = await pg.query<{ inbound_mail_slug: string }>(
+      `select inbound_mail_slug from business_settings where business_id in ($1, $2, $3) order by inbound_mail_slug`,
+      [c1, c2, c3],
+    );
+    assert.deepEqual(
+      slugs.rows.map((r) => r.inbound_mail_slug),
+      ["callesbygg", "callesbygg2", "callesbygg3"],
+    );
+  });
+
+  await check("namnbyte skriver inte om inbound-slug", async () => {
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      const s = db().settings;
+      updateCompanySettings({
+        name: "Helt Nytt Namn AB",
+        orgNumber: s.orgNumber,
+        vatNumber: s.vatNumber,
+        email: s.email,
+        phone: s.phone,
+        address: s.address || "Gatan 1",
+        postalCode: s.postalCode || "111 22",
+        city: s.city || "Stockholm",
+        bankgiro: s.bankgiro || "123-4567",
+        logoInitials: s.logoInitials,
+        paymentTermsDays: s.paymentTermsDays,
+        lateInterestRate: s.lateInterestRate,
+        quoteValidityDays: s.quoteValidityDays ?? 30,
+        defaultVatRate: s.defaultVatRate ?? 25,
+        defaultQuoteTerms: s.defaultQuoteTerms,
+      });
+    });
+    const after = await pg.query<{ inbound_mail_slug: string; name: string }>(
+      `select inbound_mail_slug, name from business_settings where business_id = $1`,
+      [bizA],
+    );
+    assert.equal(after.rows[0].name, "Helt Nytt Namn AB");
+    assert.equal(after.rows[0].inbound_mail_slug, "testbygg");
   });
 
   // Komplettera företagsprofilen så fakturor kan utfärdas.
@@ -549,7 +631,7 @@ async function main() {
       assert.ok(slug, "nytt företag fick inbound-slug");
       const result = ingestInboundMail({
         externalId: "adapter-mail-1",
-        to: `${slug}@in.driva.se`,
+        to: inboundMailAddress(slug),
         from: "faktura@byggmax.se",
         subject: "Kvitto",
         text: "Bifogat kvitto",
@@ -669,7 +751,11 @@ async function main() {
     });
     // Samma seedobjekt för import och validering – buildSeed är datumrelativ,
     // så två anrop ger olika tidsstämplar i de hash-frysta ytorna.
-    const seed = demoSeedFor(bizDemo);
+    const slugRow = await pg.query<{ inbound_mail_slug: string }>(
+      `select inbound_mail_slug from business_settings where business_id = $1`,
+      [bizDemo],
+    );
+    const seed = demoSeedFor(bizDemo, slugRow.rows[0].inbound_mail_slug);
     await importStateIntoBusiness(bizDemo, USER_DEMO, seed);
     const report = await validateImport(bizDemo, seed);
     const bad = report.rows.filter((r) => !r.ok);

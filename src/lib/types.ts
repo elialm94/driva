@@ -69,7 +69,8 @@ export interface CompanySettings {
    */
   defaultQuoteTerms?: string;
   /**
-   * Stabil lokal-del för inkommande leverantörsmejl (`slug@in.driva.se`).
+   * Stabil lokal-del för inkommande leverantörsmejl (`slug@in.ferva.se`).
+   * Allokeras från företagsnamn vid skapande och låses därefter.
    * Tenantuppslag sker på den här sluggen – aldrig på From-headern.
    */
   inboundMailSlug?: string;

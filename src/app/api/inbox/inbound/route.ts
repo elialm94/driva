@@ -24,6 +24,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: payload.error }, { status: 400 });
   }
 
+  // Tenant = local-part. in.ferva.se och in.driva.se (alias) går samma väg;
+  // andra To-domäner avvisas inte här – mock/tester kan använda egna.
   const slug = inboundSlugFromTo(payload.to);
   if (!slug) {
     return NextResponse.json({ error: "Kunde inte läsa tenant från To-adressen" }, { status: 400 });

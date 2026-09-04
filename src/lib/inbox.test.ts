@@ -10,6 +10,7 @@ import {
   parseInboundPayload,
   verifyInboundSignature,
   inboundSlugFromTo,
+  inboundMailAddress,
 } from "./inbox/inbound-mail";
 import { countInboxBadge, ingestInboundMail, inboundSlugMatches, listInbox } from "./services/inbox";
 import { countsTowardInboxBadge } from "./inbox/workflow";
@@ -50,9 +51,11 @@ describe("inbound signature", () => {
 
 describe("tenant from To, never From", () => {
   it("reads local-part and strips plus-tag", () => {
-    assert.equal(inboundSlugFromTo("demo@in.driva.se"), "demo");
-    assert.equal(inboundSlugFromTo("Demo+kvitto@in.driva.se"), "demo");
+    assert.equal(inboundSlugFromTo("demo@in.ferva.se"), "demo");
+    assert.equal(inboundSlugFromTo("Demo+kvitto@in.ferva.se"), "demo");
+    assert.equal(inboundSlugFromTo("callesbygg@in.driva.se"), "callesbygg");
     assert.equal(inboundSlugFromTo("Byggmax <faktura@byggmax.se>"), "faktura");
+    assert.equal(inboundMailAddress("demo"), `demo@${process.env.INBOUND_MAIL_DOMAIN?.trim() || "in.ferva.se"}`);
   });
 });
 
@@ -65,7 +68,7 @@ describe("ingest inbound mail", () => {
     const before = (db().inboxItems ?? []).length;
     const result = ingestInboundMail({
       externalId: "test-msg-1",
-      to: "demo@in.driva.se",
+      to: "demo@in.ferva.se",
       from: "faktura@okand.se",
       subject: "Faktura utan belopp",
       text: "Se bilaga.",
@@ -77,13 +80,13 @@ describe("ingest inbound mail", () => {
     assert.equal(result.autoBooked, false);
     assert.equal(result.item.status, "ny");
     assert.equal((db().inboxItems ?? []).length, before + 1);
-    assert.equal(inboundSlugMatches("andra@in.driva.se"), false);
+    assert.equal(inboundSlugMatches("andra@in.ferva.se"), false);
   });
 
   it("second post with same external_id is a no-op", () => {
     const first = ingestInboundMail({
       externalId: "dup-1",
-      to: "demo@in.driva.se",
+      to: "demo@in.ferva.se",
       from: "a@x.se",
       subject: "Ett",
       text: "hej",
@@ -91,7 +94,7 @@ describe("ingest inbound mail", () => {
     const count = (db().inboxItems ?? []).length;
     const second = ingestInboundMail({
       externalId: "dup-1",
-      to: "demo@in.driva.se",
+      to: "demo@in.ferva.se",
       from: "a@x.se",
       subject: "Två",
       text: "igen",
@@ -105,7 +108,7 @@ describe("ingest inbound mail", () => {
   it("rejects unknown inbound slug", () => {
     const result = ingestInboundMail({
       externalId: "other-tenant",
-      to: "annan@in.driva.se",
+      to: "annan@in.ferva.se",
       from: "a@x.se",
       subject: "Nej",
       text: "fel företag",
@@ -119,7 +122,7 @@ describe("ingest inbound mail", () => {
     const versBefore = db().verifications.length;
     const result = ingestInboundMail({
       externalId: "auto-bauhaus",
-      to: "demo@in.driva.se",
+      to: "demo@in.ferva.se",
       from: "faktura@bauhaus.se",
       subject: "Kvitto Bauhaus",
       text: "Tack för köpet.",
@@ -142,7 +145,7 @@ describe("ingest inbound mail", () => {
     const expensesBefore = db().expenses.length;
     const result = ingestInboundMail({
       externalId: "low-conf",
-      to: "demo@in.driva.se",
+      to: "demo@in.ferva.se",
       from: "okand@example.com",
       subject: "Kvitto",
       text: "Något köp",
@@ -194,7 +197,7 @@ describe("payload parse", () => {
     assert.equal("error" in parseInboundPayload({}), true);
     const ok = parseInboundPayload({
       externalId: "x",
-      to: "demo@in.driva.se",
+      to: "demo@in.ferva.se",
       from: "a@b.se",
       subject: "S",
       text: "T",

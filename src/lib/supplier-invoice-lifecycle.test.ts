@@ -47,7 +47,7 @@ describe("leverantörsfaktura: tolka → bokför → förbered betalning", () =>
     const beforePay = (db().supplierPayments ?? []).length;
     const result = ingestInboundMail({
       externalId: "inv-beijer-new",
-      to: "demo@in.driva.se",
+      to: "demo@in.ferva.se",
       from: "faktura@beijerbygg.se",
       subject: "Faktura BB-999",
       text: "Ny leverantörsfaktura",
@@ -81,7 +81,7 @@ describe("leverantörsfaktura: tolka → bokför → förbered betalning", () =>
     const payBefore = (db().supplierPayments ?? []).length;
     const result = ingestInboundMail({
       externalId: "kvitto-bauhaus-2",
-      to: "demo@in.driva.se",
+      to: "demo@in.ferva.se",
       from: "kvitto@bauhaus.se",
       subject: "Kvitto Bauhaus",
       text: "Tack för köpet.",

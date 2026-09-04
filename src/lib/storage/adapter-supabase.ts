@@ -16,13 +16,14 @@ import type { DB } from "../types";
 import { supabaseEnv } from "./config";
 import { cloneState, runInTenantContext, type TenantContext } from "./context";
 import { commitTenantState, isRetryableStorageError } from "./commit";
-import { getSqlClient, type SqlClient } from "./executor";
+import { getSqlClient, type SqlClient, type SqlExecutor } from "./executor";
 import { bindTransaction, loadTenantState, type LoadedTenantState } from "./load";
 import { ensurePendingSchema, resetPendingSchemaGuard } from "./apply-pending-schema";
-import { isUndefinedColumn } from "./sql-errors";
+import { isUndefinedColumn, isUniqueViolation } from "./sql-errors";
 import { cachedStateIfFresh, clearSnapshotCache, invalidateSnapshot, putSnapshot } from "./snapshot-cache";
 import { markCacheHit, withPerfSpan } from "../perf/telemetry";
 import { STANDARD_TERMS } from "../standard-quote-terms";
+import { allocateInboundMailSlugAsync } from "../inbox/inbound-slug";
 
 const MAX_ATTEMPTS = 3;
 
@@ -355,32 +356,7 @@ export async function createBusinessWithOwner(input: {
       `insert into public.business_memberships (business_id, user_id, role) values ($1, $2, 'owner')`,
       [businessId, input.userId]
     );
-    await tx.query(
-      `insert into public.business_settings (
-         business_id, name, org_number, vat_number, email, phone,
-         address, postal_code, city, country,
-         bankgiro, plusgiro, bank_account,
-         logo_initials, inbound_mail_slug, default_quote_terms
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-      [
-        businessId,
-        input.name,
-        input.orgNumber,
-        input.vatNumber ?? "",
-        input.email,
-        input.phone,
-        input.address ?? "",
-        input.postalCode ?? "",
-        input.city ?? "",
-        "Sverige",
-        input.bankgiro ?? "",
-        input.plusgiro ?? null,
-        input.bankAccount ?? null,
-        initialsFor(input.name),
-        inboundSlugFor(businessId),
-        STANDARD_TERMS,
-      ]
-    );
+    await insertSettingsWithAllocatedSlug(tx, businessId, input);
     await tx.query(`insert into public.business_sequences (business_id) values ($1)`, [businessId]);
     return businessId;
   });
@@ -395,9 +371,84 @@ function initialsFor(name: string): string {
   return initials.join("") || "AB";
 }
 
-function inboundSlugFor(businessId: string): string {
-  const compact = businessId.replace(/-/g, "");
-  return compact.slice(0, 12) || "inbox";
+async function inboundSlugTaken(tx: SqlExecutor, slug: string): Promise<boolean> {
+  const rows = await tx.query(
+    `select 1 from public.business_settings where inbound_mail_slug = $1 limit 1`,
+    [slug],
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Allokerar inbound_mail_slug från företagsnamn i samma transaktion som
+ * insert. Reserverade local-parts och upptagna slugs får suffix 2, 3, …
+ * Unique violation (race) → nästa siffra, fortfarande samma transaktion.
+ */
+async function insertSettingsWithAllocatedSlug(
+  tx: SqlExecutor,
+  businessId: string,
+  input: {
+    name: string;
+    orgNumber: string;
+    email: string;
+    phone: string;
+    vatNumber?: string;
+    address?: string;
+    postalCode?: string;
+    city?: string;
+    bankgiro?: string;
+    plusgiro?: string;
+    bankAccount?: string;
+  },
+): Promise<string> {
+  const skipped = new Set<string>();
+  for (let attempt = 0; attempt < 10_000; attempt++) {
+    const slug = await allocateInboundMailSlugAsync(
+      input.name,
+      async (candidate) => skipped.has(candidate) || inboundSlugTaken(tx, candidate),
+    );
+    try {
+      await tx.query("savepoint inbound_mail_slug_alloc");
+      await tx.query(
+        `insert into public.business_settings (
+           business_id, name, org_number, vat_number, email, phone,
+           address, postal_code, city, country,
+           bankgiro, plusgiro, bank_account,
+           logo_initials, inbound_mail_slug, default_quote_terms
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        [
+          businessId,
+          input.name,
+          input.orgNumber,
+          input.vatNumber ?? "",
+          input.email,
+          input.phone,
+          input.address ?? "",
+          input.postalCode ?? "",
+          input.city ?? "",
+          "Sverige",
+          input.bankgiro ?? "",
+          input.plusgiro ?? null,
+          input.bankAccount ?? null,
+          initialsFor(input.name),
+          slug,
+          STANDARD_TERMS,
+        ],
+      );
+      await tx.query("release savepoint inbound_mail_slug_alloc");
+      return slug;
+    } catch (err) {
+      try {
+        await tx.query("rollback to inbound_mail_slug_alloc");
+        await tx.query("release savepoint inbound_mail_slug_alloc");
+      } catch {
+        // Transaktionen kan redan vara i felstatus; släpp vidare originalfelet.
+      }
+      if (!isUniqueViolation(err)) throw err;
+      skipped.add(slug);
+    }
+  }
+  throw new Error("Kunde inte allokera inbound-slug.");
 }
 
 /* ------------------------- samarbete utanför tenantkontext ------------------------- */

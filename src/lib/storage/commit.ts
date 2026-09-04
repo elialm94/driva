@@ -261,7 +261,7 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
       settingsColumns,
       ["business_id"],
       settingsToRow(state.settings, businessId),
-      ["logo_path"]
+      ["logo_path", "inbound_mail_slug"]
     );
   }
 

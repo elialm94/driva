@@ -113,7 +113,14 @@ async function main() {
   }
   // Demoföretaget får en företagsunik inkommande-slug (aldrig seedens "demo")
   // – exakt samma regel som återställningen använder, så adressen är stabil.
-  if (args.demo) seed = demoSeedFor(businessId);
+  if (args.demo) {
+    const client = await sqlClient();
+    const slugRows = await client.query(
+      `select inbound_mail_slug from public.business_settings where business_id = $1`,
+      [businessId],
+    );
+    seed = demoSeedFor(businessId, String(slugRows[0]?.inbound_mail_slug ?? ""));
+  }
 
   /* 3. Demodata via samma commit-väg som appen (RPC:er, immutabilitet, RLS). */
   if (!args.empty) {
