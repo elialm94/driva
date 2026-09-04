@@ -8,7 +8,7 @@ process.env.DRIVA_TEST = "1";
  *   * Tomt namn kan aldrig godkänna. Utkast är inte publika. Avböjd/utgången
  *     kan inte godkännas. Ändrat dokument (hash) avvisas.
  *   * Idempotent: dubbeltryck ger samma godkännande, aldrig två uppdrag.
- *   * Demo: inget mejl lämnar appen. Riktigt företag: företagaren notifieras.
+ *   * Demo: inget mejl lämnar appen. Riktigt företag: kund + företagare.
  *   * Grundläggande rate limit per token.
  *   * Ordförrådet påstår aldrig BankID/e-legitimation för simple_accept.
  */
@@ -23,7 +23,7 @@ import { quoteVersionHash } from "./hash";
 import {
   __resetQuoteAcceptRateLimitForTests,
   acceptQuote,
-  prepareQuoteAcceptedNotice,
+  prepareQuoteAcceptedNotices,
   QuoteAcceptError,
   quoteAcceptanceStatement,
 } from "./services/quote-accept";
@@ -290,7 +290,7 @@ describe("acceptQuote: demo-isolering och notifiering", () => {
     const result = acceptQuote({ token: quote.token, name: "Anna Andersson" });
     assert.equal(result.outcome, "accepted");
     assert.equal(getQuote(quote.id)!.status, "godkand");
-    assert.equal(prepareQuoteAcceptedNotice(result.acceptance), null, "demo: ingen Resend");
+    assert.deepEqual(prepareQuoteAcceptedNotices(result.acceptance), [], "demo: ingen Resend");
     assert.equal(sent.length, 0);
     assert.equal(db().bankidOrders.length, 0, "mock-BankID rörs aldrig av godkännandet");
   });
@@ -300,21 +300,42 @@ describe("acceptQuote: demo-isolering och notifiering", () => {
     setMailTransportForTests(async () => undefined);
     const quote = sentQuote();
     const result = acceptQuote({ token: quote.token, name: "Anna" });
-    assert.equal(prepareQuoteAcceptedNotice(result.acceptance), null);
+    assert.deepEqual(prepareQuoteAcceptedNotices(result.acceptance), []);
   });
 
-  it("riktigt företag med e-posttjänst: företagaren får ett mejl om godkännandet", () => {
+  it("riktigt företag med e-posttjänst: kund och företagare får var sitt mejl", () => {
     process.env.DRIVA_DEMO = "0";
     setMailTransportForTests(async () => ({ messageId: "resend-1" }));
     const quote = sentQuote();
     const result = acceptQuote({ token: quote.token, name: "Anna Andersson" });
-    const notice = prepareQuoteAcceptedNotice(result.acceptance);
-    assert.ok(notice, "ett mejl förbereds");
-    assert.equal(notice.message.to, "info@test.se", "till företagets e-post");
-    assert.match(notice.message.subject, /Offert #\d+ är godkänd av Anna Andersson/);
-    assert.match(notice.message.text, /godkände offert/);
-    assert.doesNotMatch(notice.message.text, /BankID/);
-    assert.equal(notice.meta.kind, "quote_accepted");
+    const notices = prepareQuoteAcceptedNotices(result.acceptance);
+    assert.equal(notices.length, 2, "två bekräftelsemejl");
+    const customer = notices.find((n) => n.meta.kind === "quote_accepted_customer");
+    const business = notices.find((n) => n.meta.kind === "quote_accepted");
+    assert.ok(customer && business);
+    assert.equal(customer.message.to, "anna@test.se");
+    assert.match(customer.message.subject, /Bekräftelse: du har godkänt offert #\d+/);
+    assert.match(customer.message.text, /skrev ditt namn och tryckte Godkänn offert/);
+    assert.match(customer.message.text, /\/offert\/.+/);
+    assert.match(customer.message.text, /\/underlag/);
+    assert.doesNotMatch(customer.message.text, /BankID|e-legitimation|Ställ en fråga/i);
+    assert.equal(business.message.to, "info@test.se", "till företagets e-post");
+    assert.match(business.message.subject, /Offert #\d+ är godkänd av Anna Andersson/);
+    assert.match(business.message.text, /godkände offert/);
+    assert.doesNotMatch(business.message.text, /BankID/);
+  });
+
+  it("utan kundens e-post: bara företagaren får mejl", () => {
+    process.env.DRIVA_DEMO = "0";
+    setMailTransportForTests(async () => ({ messageId: "resend-1" }));
+    replaceDb(emptyTestDb({ customers: [rotReadyCustomer({ email: "" })] }));
+    const quote = sentQuote();
+    getQuote(quote.id)!.lastEmail = undefined;
+    const result = acceptQuote({ token: quote.token, name: "Anna Andersson" });
+    const notices = prepareQuoteAcceptedNotices(result.acceptance);
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].meta.kind, "quote_accepted");
+    assert.equal(notices[0].message.to, "info@test.se");
   });
 
   it("riktigt företag utan e-posttjänst: godkännandet blockeras inte", () => {
@@ -322,7 +343,7 @@ describe("acceptQuote: demo-isolering och notifiering", () => {
     const quote = sentQuote();
     const result = acceptQuote({ token: quote.token, name: "Anna" });
     assert.equal(result.outcome, "accepted");
-    assert.equal(prepareQuoteAcceptedNotice(result.acceptance), null);
+    assert.deepEqual(prepareQuoteAcceptedNotices(result.acceptance), []);
   });
 
   it("mock-BankID-providern är spärrad för riktiga företag och ligger inte på godkännandevägen", () => {

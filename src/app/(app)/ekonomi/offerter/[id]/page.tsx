@@ -262,7 +262,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               rel="noreferrer"
               className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line-strong px-3.5 text-[13px] font-medium text-ink hover:bg-canvas"
             >
-              <FileLock2 className="size-3.5" /> Visa underlag
+              <FileLock2 className="size-3.5" /> Intyg om godkännande
             </a>
           </div>
         </Card>

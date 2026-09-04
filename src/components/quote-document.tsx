@@ -1,7 +1,6 @@
 import type { CompanySettings, Customer, Quote, QuoteAcceptance, QuoteVersion } from "@/lib/types";
 import { docTotals, lineTotal, vatBreakdown } from "@/lib/calc";
 import { kr, datumTid, datumNumeriskt } from "@/lib/format";
-import { BadgeCheck } from "lucide-react";
 import { taxReductionDeductionLabel, getTaxReductionTerms } from "@/lib/tax-reduction-terms";
 import { TaxReductionQuoteClause, TaxReductionCalcHint } from "./tax-reduction-terms";
 import { lineKindLabel } from "@/lib/economic-line-type";
@@ -9,8 +8,6 @@ import { CompanyLogo } from "./company-logo";
 import { resolveQuoteCompany, resolveQuoteCustomer } from "@/lib/invoices/snapshot";
 import { quoteDescriptionDoc } from "@/lib/quote-description";
 import { RichTextView } from "./rich-text";
-import { acceptedByLabel } from "@/lib/status-labels";
-
 
 export function DocCompanyHeader({ company, docType, docNumber }: { company: CompanySettings; docType: string; docNumber: string }) {
   return (
@@ -236,8 +233,8 @@ function MetaItem({ label, value }: { label: string; value: string }) {
  * ev. godkänd-stämpel → företagsuppgifter.
  *
  * Dokumentkortet är den kommersiella offerten – ingen CTA. Godkännandet bor
- * under kortet på /offert/[token]. `acceptance` ger raden
- * "Godkänd {datum} av {namn}" i webbvy, ägarvy och PDF.
+ * under kortet på /offert/[token]. `acceptance` ger en tyst rad
+ * "Godkänd {datum} av {namn}" i webbvy, ägarvy och PDF – ingen grön ruta.
  */
 export function QuoteDocument({
   company,
@@ -328,21 +325,10 @@ export function QuoteDocument({
       </div>
 
       {acceptance ? (
-        <div data-quote-acceptance-line="" className="mt-9 rounded-2xl border border-ok/20 bg-ok-soft/60 p-5">
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-ok">Godkänd offert</p>
-          <div className="mt-2 flex items-start gap-3">
-            <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
-            <div>
-              {/* En rad, ingen stämpel: "Godkänd 3 september 2026, 14:32 av Anna Andersson". */}
-              <p className="text-[14px] font-semibold text-ok">
-                Godkänd {datumTid(acceptance.acceptedAt)} av {acceptance.acceptedByName}
-              </p>
-              {acceptance.method !== "simple_accept" ? (
-                <p className="text-[13px] text-soft">{acceptedByLabel(acceptance)}</p>
-              ) : null}
-            </div>
-          </div>
-        </div>
+        <p data-quote-acceptance-line="" className="mt-9 text-[13px] leading-relaxed text-muted">
+          Godkänd {datumTid(acceptance.acceptedAt)} av {acceptance.acceptedByName}
+          {acceptance.method === "bankid_mock" ? " (demo)" : ""}
+        </p>
       ) : null}
 
       <QuoteCompanyFooter company={seller} />

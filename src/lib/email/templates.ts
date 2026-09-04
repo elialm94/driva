@@ -100,6 +100,55 @@ export function quoteAcceptedEmail(input: QuoteAcceptedEmailInput): { subject: s
   return { subject, text, html };
 }
 
+export interface QuoteAcceptedCustomerEmailInput {
+  businessName: string;
+  customerName: string;
+  quoteNumber: number;
+  title: string;
+  acceptedByName: string;
+  acceptedAtLabel: string;
+  amount: number;
+  /** Publik godkänd offert. */
+  url: string;
+  /** Publik intygssida. */
+  certificateUrl: string;
+  footer: string;
+}
+
+/** Till kunden: bekräftelse på att offerten godkändes. Ingen e-legitimation. */
+export function quoteAcceptedCustomerEmail(
+  input: QuoteAcceptedCustomerEmailInput
+): { subject: string; text: string; html: string } {
+  const subject = `Bekräftelse: du har godkänt offert #${input.quoteNumber} från ${input.businessName}`;
+  const lead = `Du har godkänt offert #${input.quoteNumber} (${input.title}) från ${input.businessName} på ${kr(input.amount)} ${input.acceptedAtLabel}.`;
+  const method =
+    "Godkännandet skedde genom att du skrev ditt namn och tryckte Godkänn offert på offertlänken.";
+  const text = [
+    `Hej ${input.customerName},`,
+    "",
+    lead,
+    method,
+    "",
+    "Visa den godkända offerten:",
+    input.url,
+    "",
+    "Intyg om godkännande:",
+    input.certificateUrl,
+  ].join("\n");
+  const html = layout({
+    title: input.businessName,
+    footer: input.footer,
+    bodyHtml: `
+      <p style="margin:0 0 12px;font-size:16px;">Hej ${escapeHtml(input.customerName)},</p>
+      <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">${escapeHtml(lead)}</p>
+      <p style="margin:0;font-size:15px;color:#6b665c;">${escapeHtml(method)}</p>
+      ${cta(input.url, "Visa den godkända offerten")}
+      <p style="margin:16px 0 0;font-size:14px;"><a href="${escapeHtml(input.certificateUrl)}" style="color:#1a1916;">Intyg om godkännande</a></p>
+    `,
+  });
+  return { subject, text, html };
+}
+
 export interface InvoiceEmailInput {
   businessName: string;
   customerName: string;

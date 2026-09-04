@@ -186,7 +186,7 @@ import { quoteTotals } from "@/lib/services/data";
 import { sendMail } from "@/lib/mail";
 import {
   acceptQuote,
-  prepareQuoteAcceptedNotice,
+  prepareQuoteAcceptedNotices,
   QUOTE_ACCEPT_TEXT,
   QuoteAcceptError,
   type PreparedAcceptedMail,
@@ -486,7 +486,8 @@ export type AcceptQuoteActionResult =
 /**
  * Kundens godkännande av offerten (namn + knapp). Enda vägen in till
  * acceptQuote: identifieras av token, aldrig av id eller inloggning.
- * Mejlet till företagaren skickas efter svaret (after) och blockerar aldrig.
+ * Bekräftelsemejl (kund + företagare) skickas efter svaret (after) och
+ * blockerar aldrig – ett mejlfel lämnar godkännandet sparat.
  */
 export async function acceptQuoteByTokenAction(
   token: string,
@@ -500,7 +501,7 @@ export async function acceptQuoteByTokenAction(
   const result = await withPublicBusiness(
     "quote",
     safeToken,
-    (): AcceptQuoteActionResult & { notice?: PreparedAcceptedMail | null } => {
+    (): AcceptQuoteActionResult & { notices?: PreparedAcceptedMail[] } => {
       try {
         const r = acceptQuote({
           token: safeToken,
@@ -509,7 +510,7 @@ export async function acceptQuoteByTokenAction(
           ip: ip || undefined,
           userAgent,
         });
-        const notice = r.outcome === "accepted" ? prepareQuoteAcceptedNotice(r.acceptance) : null;
+        const notices = r.outcome === "accepted" ? prepareQuoteAcceptedNotices(r.acceptance) : [];
         refresh();
         return {
           ok: true,
@@ -517,7 +518,7 @@ export async function acceptQuoteByTokenAction(
           acceptedAt: r.acceptance.acceptedAt,
           amount: quoteTotals(r.quote).toPay,
           alreadyAccepted: r.outcome === "already_accepted",
-          notice,
+          notices,
         };
       } catch (e) {
         if (e instanceof QuoteAcceptError) return { ok: false, error: e.message, code: e.code };
@@ -528,13 +529,15 @@ export async function acceptQuoteByTokenAction(
   );
   if (!result) return { ok: false, error: QUOTE_ACCEPT_TEXT.not_found, code: "not_found" };
   if (result.ok) {
-    const { notice, ...rest } = result;
-    if (notice) {
+    const { notices, ...rest } = result;
+    if (notices?.length) {
       after(async () => {
-        try {
-          await sendMail(notice.message, notice.meta);
-        } catch {
-          // Notisen är sekundär – godkännandet är redan sparat.
+        for (const notice of notices) {
+          try {
+            await sendMail(notice.message, notice.meta);
+          } catch {
+            // Notisen är sekundär – godkännandet är redan sparat.
+          }
         }
       });
     }

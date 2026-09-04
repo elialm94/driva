@@ -96,7 +96,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
                   href={`/offert/${quote.token}/underlag`}
                   className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-deep hover:underline"
                 >
-                  <FileLock2 className="size-3.5" /> Visa underlag för godkännandet
+                  <FileLock2 className="size-3.5" /> Intyg om godkännande
                 </a>
               </div>
             </div>
@@ -155,6 +155,19 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
           <a href={`/offert/${quote.token}/pdf`} target="_blank" rel="noreferrer" className="mt-1 inline-block font-medium text-soft underline-offset-2 hover:text-ink hover:underline">
             Skriv ut eller spara som PDF
           </a>
+          {quote.status === "godkand" && acceptance ? (
+            <>
+              <span className="mx-2 text-line-strong">·</span>
+              <a
+                href={`/offert/${quote.token}/underlag/pdf`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block font-medium text-soft underline-offset-2 hover:text-ink hover:underline"
+              >
+                Skriv ut intyg om godkännande
+              </a>
+            </>
+          ) : null}
         </p>
         {/* Luft så att sidfoten inte hamnar under mobilbaren. */}
         <div className={canAccept ? "h-36 md:h-10" : "h-10"} />

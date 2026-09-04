@@ -9,7 +9,7 @@ import { acceptanceStatement, normalizeAcceptName } from "../quote-acceptance";
 import { isDemoBusiness, isDemoMode } from "../demo";
 import { isEmailFormat } from "../settings-validation";
 import { mailProviderAvailable, type MailMessage, type MailSendMeta } from "../mail";
-import { prepareQuoteAcceptedMail } from "../email/service";
+import { prepareQuoteAcceptedCustomerMail, prepareQuoteAcceptedMail } from "../email/service";
 import { currentVersion, getQuoteByToken, quoteAcceptance, requireCustomer } from "./data";
 import { logActivity } from "./activity";
 import { createJobFromQuote } from "./jobs";
@@ -246,32 +246,63 @@ export interface PreparedAcceptedMail {
 }
 
 /**
- * Mejl till företagaren om att offerten godkänts. Förbereds INNE i tenant-
- * kontexten (företagsnamn, mottagare) och skickas av anroparen efter svaret
- * (next/server after) så att kunden aldrig väntar på e-posttjänsten.
- * Demo och demoföretaget: ingen Resend, ingen förberedelse.
- * Returnerar null när inget ska skickas. Får aldrig kasta.
+ * Bekräftelsemejl efter godkännande: ett till kunden och ett till
+ * företagaren. Förbereds INNE i tenantkontexten och skickas av anroparen
+ * efter svaret (next/server after) så att kunden aldrig väntar på
+ * e-posttjänsten. Demo och demoföretaget: ingen Resend, tom lista.
+ * Får aldrig kasta. Ett misslyckat mejl får inte påverka godkännandet.
  */
-export function prepareQuoteAcceptedNotice(acceptance: QuoteAcceptance): PreparedAcceptedMail | null {
+export function prepareQuoteAcceptedNotices(acceptance: QuoteAcceptance): PreparedAcceptedMail[] {
   try {
-    if (isDemoBusiness() || isDemoMode()) return null;
-    if (!mailProviderAvailable()) return null;
-    const to = db().settings.email?.trim();
-    if (!to || !isEmailFormat(to)) return null;
+    if (isDemoBusiness() || isDemoMode()) return [];
+    if (!mailProviderAvailable()) return [];
     const quote = db().quotes.find((q) => q.id === acceptance.quoteId);
     const version = db().quoteVersions.find((v) => v.id === acceptance.quoteVersionId);
-    if (!quote || !version) return null;
+    if (!quote || !version) return [];
     const t = docTotals(version.lines, version.rot);
-    return prepareQuoteAcceptedMail({
-      to,
-      quoteId: quote.id,
-      quoteNumber: quote.number,
-      title: version.title,
-      acceptedByName: acceptance.acceptedByName,
-      acceptedAt: acceptance.acceptedAt,
-      amount: t.toPay,
-    });
+    const notices: PreparedAcceptedMail[] = [];
+
+    const customerTo = customerAcceptEmail(acceptance);
+    if (customerTo) {
+      notices.push(
+        prepareQuoteAcceptedCustomerMail({
+          to: customerTo,
+          quoteId: quote.id,
+          quoteNumber: quote.number,
+          title: version.title,
+          customerName: acceptance.customerNameAtAccept,
+          acceptedByName: acceptance.acceptedByName,
+          acceptedAt: acceptance.acceptedAt,
+          amount: t.toPay,
+          token: quote.token,
+        })
+      );
+    }
+
+    const businessTo = db().settings.email?.trim();
+    if (businessTo && isEmailFormat(businessTo)) {
+      notices.push(
+        prepareQuoteAcceptedMail({
+          to: businessTo,
+          quoteId: quote.id,
+          quoteNumber: quote.number,
+          title: version.title,
+          acceptedByName: acceptance.acceptedByName,
+          acceptedAt: acceptance.acceptedAt,
+          amount: t.toPay,
+        })
+      );
+    }
+    return notices;
   } catch {
-    return null;
+    return [];
   }
+}
+
+function customerAcceptEmail(acceptance: QuoteAcceptance): string | undefined {
+  for (const raw of [acceptance.acceptedByEmail, acceptance.linkSentTo]) {
+    const to = raw?.trim();
+    if (to && isEmailFormat(to)) return to;
+  }
+  return undefined;
 }
