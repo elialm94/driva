@@ -223,6 +223,40 @@ export function invoiceReminderEmail(input: InvoiceReminderEmailInput): { subjec
   return { subject, text, html };
 }
 
+export interface CreditInvoiceEmailInput {
+  businessName: string;
+  customerName: string;
+  /** Samma rubrik som på kreditdokumentet (`invoiceHeading`). */
+  title: string;
+  originalNumber: number;
+  creditNumber: number;
+  /** Publik kreditfaktura `/faktura/[token]` – utelämnas om länken saknas. */
+  url?: string;
+  footer: string;
+}
+
+/** Till fakturakunden efter hel kredit – inte till snickaren. */
+export function creditInvoiceEmail(input: CreditInvoiceEmailInput): { subject: string; text: string; html: string } {
+  const subject = `Kreditfaktura från ${input.businessName} – ${input.title}`;
+  const lead = `Faktura #${input.originalNumber} är krediterad i sin helhet med kreditfaktura #${input.creditNumber}. Du ska inte betala faktura #${input.originalNumber}.`;
+  const text = [
+    `Hej ${input.customerName},`,
+    "",
+    lead,
+    ...(input.url ? ["", "Visa kreditfakturan:", input.url] : []),
+  ].join("\n");
+  const html = layout({
+    title: input.businessName,
+    footer: input.footer,
+    bodyHtml: `
+      <p style="margin:0 0 12px;font-size:16px;">Hej ${escapeHtml(input.customerName)},</p>
+      <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">${escapeHtml(lead)}</p>
+      ${input.url ? cta(input.url, "Visa kreditfakturan") : ""}
+    `,
+  });
+  return { subject, text, html };
+}
+
 export interface QuoteFollowUpEmailInput {
   businessName: string;
   customerName: string;

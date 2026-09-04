@@ -19,6 +19,7 @@ import { tenantContext } from "../storage/context";
 import { datumTid } from "../format";
 import {
   collaborationInviteEmail,
+  creditInvoiceEmail,
   invoiceEmail,
   invoiceReminderEmail,
   quoteAcceptedCustomerEmail,
@@ -164,6 +165,36 @@ export function prepareQuoteAcceptedCustomerMail(input: {
   return {
     message: envelope(input.to, built),
     meta: { kind: "quote_accepted_customer", documentId: input.quoteId, businessId: businessId() },
+  };
+}
+
+/**
+ * Kundens kreditfaktura-mejl. Bygger bara kuvertet (kräver tenantkontext
+ * för företagsnamn/footer) – sändningen görs av anroparen efter krediteringen
+ * så att bokföringen aldrig väntar på Resend.
+ */
+export function prepareCreditInvoiceMail(input: {
+  to: string;
+  creditId: string;
+  company: string;
+  customerName: string;
+  title: string;
+  originalNumber: number;
+  creditNumber: number;
+  token?: string;
+}): { message: MailMessage; meta: MailSendMeta } {
+  const built = creditInvoiceEmail({
+    businessName: input.company,
+    customerName: input.customerName,
+    title: input.title,
+    originalNumber: input.originalNumber,
+    creditNumber: input.creditNumber,
+    url: input.token ? absoluteAppUrl(`/faktura/${input.token}`) : undefined,
+    footer: footer(),
+  });
+  return {
+    message: envelope(input.to, built),
+    meta: { kind: "invoice_credit", documentId: input.creditId, businessId: businessId() },
   };
 }
 

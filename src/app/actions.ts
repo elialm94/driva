@@ -187,6 +187,10 @@ import { clientIpFrom, rateLimitDemoReset } from "@/lib/auth/demo-session";
 import { quoteTotals } from "@/lib/services/data";
 import { sendMail } from "@/lib/mail";
 import {
+  prepareCreditInvoiceNotice,
+  sendCreditInvoiceNotice,
+} from "@/lib/services/credit-invoice-notice";
+import {
   acceptQuote,
   prepareQuoteAcceptedNotices,
   QUOTE_ACCEPT_TEXT,
@@ -1058,11 +1062,12 @@ export async function markQuoteNotRelevantAction(quoteId: string) {
 }
 
 export async function creditInvoiceAction(invoiceId: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  return withBusiness(() => {
+  const result = await withBusiness(() => {
     try {
-      creditInvoice(invoiceId);
+      const credit = creditInvoice(invoiceId);
+      const notice = prepareCreditInvoiceNotice(credit);
       refresh();
-      return { ok: true } as const;
+      return { ok: true as const, notice };
     } catch (e) {
       if (e instanceof InvoiceNotReadyError) {
         return { ok: false, error: e.blockers.map((b) => b.message).join(" ") } as const;
@@ -1070,6 +1075,13 @@ export async function creditInvoiceAction(invoiceId: string): Promise<{ ok: true
       return { ok: false, error: e instanceof Error ? e.message : "Kunde inte kreditera fakturan." } as const;
     }
   });
+  if (result.ok && result.notice) {
+    const notice = result.notice;
+    after(async () => {
+      await sendCreditInvoiceNotice(notice);
+    });
+  }
+  return result.ok ? { ok: true } : result;
 }
 
 export async function createDeniedReductionInvoiceAction(
