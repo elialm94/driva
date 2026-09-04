@@ -8,6 +8,7 @@ import type {
   InvoiceSellerSnapshot,
 } from "../types";
 import { docTotals, vatBreakdown } from "../calc";
+import { ocrForInvoice } from "../ids";
 import { normalizePersonnummer } from "../personnummer";
 
 export function sellerSnapshot(settings: CompanySettings): InvoiceSellerSnapshot {
@@ -200,6 +201,16 @@ export function hydrateIssuedInvoices(data: DB): boolean {
     }
     if (inv.status === "utkast") continue;
     if (inv.number == null) continue;
+    // Utfärdad OCR är immutabel. Fyll bara om den saknas – ogiltiga
+    // historiska värden lämnas (kunden kan redan ha betalat på dem).
+    if (!inv.ocr?.trim()) {
+      inv.ocr = ocrForInvoice(inv.number);
+      changed = true;
+    }
+    if (inv.issuedSnapshot && !inv.issuedSnapshot.ocr?.trim() && inv.ocr.trim()) {
+      inv.issuedSnapshot = { ...inv.issuedSnapshot, ocr: inv.ocr };
+      changed = true;
+    }
     if (!inv.issuedAt) {
       inv.issuedAt = inv.sentAt ?? inv.issueDate;
       changed = true;

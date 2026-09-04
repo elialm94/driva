@@ -23,7 +23,7 @@ till bank" ≠ "Betald").
 | Bankgiro-mottagare | `CdtrAcct/Id/Othr/Id` = enbart siffror, `SchmeNm/Prtry` = `BGNR` |
 | Plusgiro-mottagare | Samma struktur med `SchmeNm/Prtry` = `PGNR` |
 | IBAN-mottagare | `CdtrAcct/Id/IBAN` |
-| OCR | `RmtInf/Strd/CdtrRefInf` med `Tp/CdOrPrtry/Cd` = `SCOR` och `Ref` = OCR-numret (enbart siffror) |
+| OCR | `RmtInf/Strd/CdtrRefInf` med `Tp/CdOrPrtry/Cd` = `SCOR` och `Ref` = OCR-numret (enbart siffror). Leverantörens OCR kopieras som den är – det här är inte kundfakturans OCR-10. |
 | Utan OCR | `RmtInf/Ustrd` = "Faktura {fakturanummer}" (max 140 tecken) |
 | `PmtId` | `InstrId` och `EndToEndId` härleds ur instruktionens id (≤ 35 tecken) – spårbara hela vägen till avstämningen |
 | Filnamn | `driva-betalningar-{ÅÅÅÅ-MM-DD}.xml`, `-2`/`-3` vid flera filer samma dag |

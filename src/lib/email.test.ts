@@ -247,6 +247,7 @@ describe("faktura via samma arkitektur", () => {
     assert.match(sent[0].subject, /Faktura #/);
     assert.match(sent[0].text, /Visa faktura|OCR|Bankgiro/);
     const stored = db().invoices.find((i) => i.id === invoice.id)!;
+    assert.match(sent[0].text, new RegExp(`OCR: ${stored.ocr}`));
     assert.ok(stored.sentAt);
     assert.equal(stored.lastEmail?.messageId, "msg_1");
     assert.equal(stored.lastEmail?.sentTo, "anna@test.se");
@@ -272,11 +273,15 @@ describe("betalningspåminnelse", () => {
     const first = await emailInvoice(invoice.id);
     assert.equal(first.outcome.ok, true);
     sent.length = 0;
+    const storedBefore = db().invoices.find((i) => i.id === invoice.id)!;
+    const ocr = storedBefore.ocr;
     const { outcome } = await remindInvoiceByEmail(invoice.id);
     assert.equal(outcome.ok, true);
     assert.match(sent[0].subject, /Påminnelse om faktura/);
+    assert.match(sent[0].text, new RegExp(`OCR: ${ocr}`));
     const stored = db().invoices.find((i) => i.id === invoice.id)!;
     assert.equal(stored.reminders.length, 1);
+    assert.equal(stored.ocr, ocr);
   });
 });
 

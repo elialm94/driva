@@ -645,6 +645,10 @@ export interface Invoice {
   paidAt?: string;
   reminders: string[];
   token: string;
+  /**
+   * Bankgirot OCR-10 (mjuk): fakturanummer + kontrollsiffra.
+   * Tom på utkast. Sätts en gång i `issueInvoice` och fryses i issuedSnapshot.
+   */
   ocr: string;
   creditsInvoiceId?: ID;
   /**

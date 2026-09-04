@@ -10,13 +10,14 @@ import {
   issueInvoice,
   markInvoicePaid,
   sendInvoice,
+  sendReminder,
 } from "../services/invoices";
 import { collectIssueErrors, InvoiceNotReadyError } from "./validate";
-import { resolveInvoiceView } from "./snapshot";
+import { hydrateIssuedInvoices, resolveInvoiceView } from "./snapshot";
 import { emptyTestDb, labor, rotReadyCustomer, testCompany, testCustomer, testWorkLocation } from "./test-db";
 import { getInvoice } from "../services/data";
 import { db } from "../store";
-import { ocrForInvoice } from "../ids";
+import { bankgirotModulus10CheckDigit, isValidBankgirotOcr, ocrForInvoice } from "../ids";
 import { userFacingIssueError } from "./issue-errors";
 import { invoiceRpcPayload } from "../storage/commit";
 
@@ -64,13 +65,87 @@ describe("Fakturanummer och utkast", () => {
     assert.ok(x.number != null && y.number != null);
   });
 
-  it("behåller befintligt nummer på äldre utkast", () => {
+  it("behåller befintligt nummer på äldre utkast och ersätter ogiltigt OCR", () => {
     const inv = draft();
     inv.number = 77;
     inv.ocr = "legacy";
     const issued = issueInvoice(inv.id);
     assert.equal(issued.number, 77);
-    assert.equal(issued.ocr, "legacy");
+    assert.equal(issued.ocr, ocrForInvoice(77));
+    assert.ok(isValidBankgirotOcr(issued.ocr));
+  });
+
+  it("behåller giltigt sparat OCR på äldre utkast (även äldre 77-schema)", () => {
+    const inv = draft();
+    inv.number = 77;
+    const legacy = `7777${bankgirotModulus10CheckDigit("7777")}`;
+    inv.ocr = legacy;
+    const issued = issueInvoice(inv.id);
+    assert.equal(issued.number, 77);
+    assert.equal(issued.ocr, legacy);
+    assert.notEqual(legacy, ocrForInvoice(77));
+  });
+
+  it("tilldelar OCR en gång vid utfärdande: nummer + giltig kontrollsiffra", () => {
+    const before = db().sequences.invoice;
+    const issued = issueInvoice(draft().id);
+    assert.equal(issued.number, before);
+    assert.equal(issued.ocr, ocrForInvoice(before));
+    assert.equal(issued.ocr, `${before}${bankgirotModulus10CheckDigit(String(before))}`);
+    assert.ok(isValidBankgirotOcr(issued.ocr));
+    assert.equal(issued.issuedSnapshot?.ocr, issued.ocr);
+  });
+
+  it("påminnelse mintar inte nytt OCR", () => {
+    const issued = issueInvoice(draft().id);
+    const ocr = issued.ocr;
+    sendReminder(issued.id);
+    const stored = getInvoice(issued.id)!;
+    assert.equal(stored.ocr, ocr);
+    assert.equal(stored.issuedSnapshot?.ocr, ocr);
+    assert.equal(stored.reminders.length, 1);
+  });
+
+  it("skriver inte om giltigt OCR på redan utfärdad faktura", () => {
+    const issued = issueInvoice(draft().id);
+    const ocr = issued.ocr;
+    const again = issueInvoice(issued.id);
+    assert.equal(again.ocr, ocr);
+    assert.equal(getInvoice(issued.id)!.ocr, ocr);
+  });
+
+  it("fyller tomt OCR på utfärdad faktura, lämnar ogiltigt historiskt värde", () => {
+    const issued = issueInvoice(draft().id);
+    issued.ocr = "";
+    issued.issuedSnapshot = { ...issued.issuedSnapshot!, ocr: "" };
+    assert.equal(hydrateIssuedInvoices(db()), true);
+    assert.equal(getInvoice(issued.id)!.ocr, ocrForInvoice(issued.number as number));
+    assert.equal(getInvoice(issued.id)!.issuedSnapshot?.ocr, ocrForInvoice(issued.number as number));
+
+    const other = issueInvoice(draft().id);
+    other.ocr = "legacy";
+    other.issuedSnapshot = { ...other.issuedSnapshot!, ocr: "legacy" };
+    assert.equal(hydrateIssuedInvoices(db()), false);
+    assert.equal(getInvoice(other.id)!.ocr, "legacy");
+  });
+
+  it("återanvänder inte en annan fakturas OCR – räknar om från det egna numret", () => {
+    const first = issueInvoice(draft().id);
+    const inv = draft();
+    inv.number = 901;
+    inv.ocr = first.ocr;
+    const issued = issueInvoice(inv.id);
+    assert.equal(issued.number, 901);
+    assert.equal(issued.ocr, ocrForInvoice(901));
+    assert.notEqual(issued.ocr, first.ocr);
+  });
+
+  it("vägrar utfärda om beräknat OCR redan sitter på en annan faktura", () => {
+    const first = issueInvoice(draft().id);
+    const next = db().sequences.invoice;
+    first.ocr = ocrForInvoice(next);
+    first.issuedSnapshot = { ...first.issuedSnapshot!, ocr: first.ocr };
+    assert.throws(() => issueInvoice(draft().id), /OCR-numret är redan använt/);
   });
 
   it("allokerar nummer och OCR om utkastet bär ogiltigt nummer", () => {
@@ -110,6 +185,15 @@ describe("Issue-RPC-payload", () => {
     inv.ocr = "";
     const payload = invoiceRpcPayload(inv, "biz-1");
     assert.equal(payload.ocr, ocrForInvoice(inv.number as number));
+  });
+
+  it("ogiltigt OCR i payload ersätts, giltigt sparat behålls", () => {
+    const inv = issueInvoice(draft().id);
+    inv.ocr = "legacy";
+    assert.equal(invoiceRpcPayload(inv, "biz-1").ocr, ocrForInvoice(inv.number as number));
+    const legacy = `7777${bankgirotModulus10CheckDigit("7777")}`;
+    inv.ocr = legacy;
+    assert.equal(invoiceRpcPayload(inv, "biz-1").ocr, legacy);
   });
 });
 

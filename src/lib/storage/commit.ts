@@ -21,7 +21,7 @@
 import type { DB, DocLine, Invoice, Payment, Verification } from "@/lib/types";
 import { lineKindOf } from "@/lib/economic-line-type";
 import { docTotals } from "@/lib/calc";
-import { ocrForInvoice } from "@/lib/ids";
+import { issuedOcrForInvoice, ocrForInvoice } from "@/lib/ids";
 import type { SqlExecutor } from "./executor";
 import {
   accrualsSpec,
@@ -158,7 +158,7 @@ function amountToPayForQuote(state: DB, quoteId: string, currentVersionId: strin
 export function invoiceRpcPayload(inv: Invoice, businessId: string): Record<string, unknown> {
   const number =
     inv.number != null && Number.isInteger(inv.number) && inv.number >= 1 ? inv.number : null;
-  const ocr = inv.ocr?.trim() ? inv.ocr : number != null ? ocrForInvoice(number) : "";
+  const ocr = number != null ? issuedOcrForInvoice(number, inv.ocr) : "";
   return {
     id: inv.id ?? "",
     business_id: businessId,
@@ -454,9 +454,9 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
       if (inv.issuedSnapshot) {
         inv.issuedSnapshot = { ...inv.issuedSnapshot, number, ocr: inv.ocr };
       }
-    } else if (!inv.ocr) {
-      inv.ocr = ocrForInvoice(inv.number);
-      if (inv.issuedSnapshot) {
+    } else {
+      inv.ocr = issuedOcrForInvoice(inv.number, inv.ocr);
+      if (inv.issuedSnapshot && !inv.issuedSnapshot.ocr?.trim()) {
         inv.issuedSnapshot = { ...inv.issuedSnapshot, ocr: inv.ocr };
       }
     }
