@@ -60,7 +60,8 @@ export type CorrectionFlowKind =
   | "moms"
   | "avancerad"
   | "redan_rattad"
-  | "rattelse";
+  | "rattelse"
+  | "krediterad";
 
 export interface KontoOption {
   key: string;
@@ -75,6 +76,8 @@ export interface CorrectionFlow {
   hint: string;
   href?: string;
   hrefLabel?: string;
+  /** Kundfaktura att kreditera – bara när kind är kreditfaktura. */
+  invoiceId?: string;
   currentCategory?: string;
   currentAccount?: number;
   /** Sökbar lista – inte hela BAS-registret. */
@@ -83,6 +86,8 @@ export interface CorrectionFlow {
   periodLocked: boolean;
   periodLockMessage?: string;
 }
+
+export { verificationOverflowItems, type VerificationOverflowItem } from "./verification-overflow";
 
 export interface CorrectionPreviewLine {
   account: number;
@@ -275,12 +280,27 @@ export function inspectCorrectionFlow(verificationId: string): CorrectionFlow {
 
   if (v.source.type === "kundfaktura") {
     const inv = invoiceFor(v);
+    if (!inv || inv.type === "kredit" || inv.status === "krediterad") {
+      const creditNote = inv?.type === "kredit";
+      return {
+        kind: "krediterad",
+        title: creditNote ? "Kreditfaktura" : "Fakturan är krediterad",
+        hint: creditNote
+          ? "Det här är en kreditfaktura. Den krediteras inte igen – originalverifikationen och krediten står kvar."
+          : "Fakturan är redan krediterad. Belopp rättas inte genom att ändra konteringen. Originalverifikationen står kvar.",
+        href: inv ? `/ekonomi/fakturor/${inv.id}` : undefined,
+        hrefLabel: inv ? `Öppna faktura #${inv.number}` : undefined,
+        allowAdvanced: false,
+        ...period,
+      };
+    }
     return {
       kind: "kreditfaktura",
       title: "Fakturan är fel",
       hint: "Belopp, moms eller kund rättas genom kreditfaktura – inte genom att ändra konteringen. Originalverifikationen står kvar.",
-      href: inv ? `/ekonomi/fakturor/${inv.id}` : "/ekonomi",
-      hrefLabel: inv ? `Öppna faktura #${inv.number}` : "Öppna fakturan",
+      href: `/ekonomi/fakturor/${inv.id}`,
+      hrefLabel: `Öppna faktura #${inv.number}`,
+      invoiceId: inv.id,
       allowAdvanced: false,
       ...period,
     };
@@ -565,6 +585,9 @@ export function postVerificationCorrection(
   const flow = inspectCorrectionFlow(verificationId);
   if (flow.kind === "kreditfaktura") {
     throw new Error("Kundfakturan rättas med en kreditfaktura – inte genom att ändra konteringen.");
+  }
+  if (flow.kind === "krediterad") {
+    throw new Error(flow.hint);
   }
   if (flow.kind === "moms") {
     throw new Error("Momsrättelser går via momsrapporten, inte via verifikationens kontering.");

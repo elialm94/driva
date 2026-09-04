@@ -265,13 +265,67 @@ export function CreatePartInvoiceButton({
   );
 }
 
+/** Samma helkredit-bekräftelse som på fakturasidan. Rendera utanför overflow-menyn. */
+export function CreditInvoiceConfirmDialog({
+  invoiceId,
+  open,
+  onClose,
+  onSuccess,
+}: {
+  invoiceId: string;
+  open: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function confirm() {
+    startTransition(async () => {
+      const result = await creditInvoiceAction(invoiceId);
+      if (result && result.ok === false) {
+        setError(result.error);
+        return;
+      }
+      onClose();
+      onSuccess?.();
+      router.refresh();
+    });
+  }
+
+  return (
+    <Modal open={open} onClose={() => !isPending && onClose()} size="sm" title="Kreditera faktura?">
+      <div className="px-6 py-5">
+        <p className="text-[15px] leading-relaxed text-soft">Kreditera hela fakturan? Delkredit stöds inte.</p>
+        {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button className={buttonClasses("secondary")} disabled={isPending} onClick={onClose}>
+            Avbryt
+          </button>
+          <button className={buttonClasses("danger")} disabled={isPending} onClick={confirm}>
+            {isPending ? "Krediterar …" : "Ja, kreditera"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export function CreditInvoiceButton({
   invoiceId,
   appearance = "button",
+  label = "Kreditera",
+  buttonVariant = "ghost",
+  onSuccess,
 }: {
   invoiceId: string;
   appearance?: ActionAppearance;
+  label?: string;
+  buttonVariant?: "ghost" | "secondary";
+  onSuccess?: () => void;
 }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -287,7 +341,13 @@ export function CreditInvoiceButton({
   function confirm() {
     startTransition(async () => {
       const result = await creditInvoiceAction(invoiceId);
-      if (result && result.ok === false) setError(result.error);
+      if (result && result.ok === false) {
+        setError(result.error);
+        return;
+      }
+      setConfirming(false);
+      onSuccess?.();
+      router.refresh();
     });
   }
 
@@ -295,10 +355,10 @@ export function CreditInvoiceButton({
     <button
       type="button"
       role={inMenu ? "menuitem" : undefined}
-      className={inMenu ? actionMenuItemClassName() : buttonClasses("ghost", "sm")}
+      className={inMenu ? actionMenuItemClassName() : buttonClasses(buttonVariant, "sm")}
       onClick={startConfirm}
     >
-      <Undo2 className="size-3.5 shrink-0" /> Kreditera
+      <Undo2 className="size-3.5 shrink-0" /> {label}
     </button>
   );
 
@@ -306,20 +366,12 @@ export function CreditInvoiceButton({
     return (
       <>
         {trigger}
-        <Modal open={confirming} onClose={() => !isPending && setConfirming(false)} size="sm" title="Kreditera faktura?">
-          <div className="px-6 py-5">
-            <p className="text-[15px] leading-relaxed text-soft">Kreditera hela fakturan? Delkredit stöds inte.</p>
-            {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
-            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button className={buttonClasses("secondary")} disabled={isPending} onClick={() => setConfirming(false)}>
-                Avbryt
-              </button>
-              <button className={buttonClasses("danger")} disabled={isPending} onClick={confirm}>
-                {isPending ? "Krediterar …" : "Ja, kreditera"}
-              </button>
-            </div>
-          </div>
-        </Modal>
+        <CreditInvoiceConfirmDialog
+          invoiceId={invoiceId}
+          open={confirming}
+          onClose={() => !isPending && setConfirming(false)}
+          onSuccess={onSuccess}
+        />
       </>
     );
   }
