@@ -204,6 +204,18 @@ export function buildSeed(): DB {
       notes: "Allt arbete måste vara klart före kl 11 när köket öppnar.",
       createdAt: d(58),
     },
+    {
+      id: "cust-eli",
+      kind: "privat" as const,
+      name: "Eli",
+      email: "eli@example.com",
+      phone: "070-111 22 33",
+      address: "Götgatan 10",
+      postalCode: "118 46",
+      city: "Stockholm",
+      notes: "Två 0 kr-utkast med olika materialrader – listtitlar ska skilja dem åt.",
+      createdAt: d(0, 11, 0),
+    },
   ];
 
   /* ------------------------------ Offerter ------------------------------ */
@@ -1080,6 +1092,30 @@ export function buildSeed(): DB {
     issueDate: d(0),
     dueDate: d(-30),
     token: "demo-f1048",
+  });
+
+  addInvoice({
+    id: "inv-eli-luckor",
+    number: 1049,
+    customerId: "cust-eli",
+    type: "faktura",
+    status: "utkast",
+    lines: [L("material", "Luckor i ek", 1, "st", 0)],
+    issueDate: d(0, 10, 30),
+    dueDate: d(-30),
+    token: "demo-f-eli-luckor",
+  });
+
+  addInvoice({
+    id: "inv-eli-bankskiva",
+    number: 1050,
+    customerId: "cust-eli",
+    type: "faktura",
+    status: "utkast",
+    lines: [L("material", "Bänkskiva i ask", 1, "st", 0)],
+    issueDate: d(0, 10, 0),
+    dueDate: d(-30),
+    token: "demo-f-eli-bankskiva",
   });
 
   /* ------------------------------- Utgifter ------------------------------ */

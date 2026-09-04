@@ -61,11 +61,15 @@ function addInvoice(input: {
   status?: "utkast" | "skickad" | "betald";
   createdAt?: string;
   ocr?: string;
+  description?: string;
+  type?: "faktura" | "delbetalning" | "slutfaktura" | "kredit";
+  quoteId?: string;
 }) {
   const inv = createInvoice({
     customerId: input.customerId,
-    type: "faktura",
-    lines: [labor({ unitPrice: input.unitPrice })],
+    type: input.type ?? "faktura",
+    quoteId: input.quoteId,
+    lines: [labor({ unitPrice: input.unitPrice, description: input.description ?? "Snickeriarbete" })],
     rot: null,
   });
   inv.dueDate = input.dueDate;
@@ -263,8 +267,75 @@ describe("listInvoicesForTable sort", () => {
     });
 
     const labels = listInvoicesForTable().rows.map((r) => r.label);
-    assert.equal(labels[0], "Utkast");
+    assert.equal(labels[0], "Snickeriarbete");
+    assert.notEqual(labels[0], "Utkast");
     assert.deepEqual(labels.slice(1), ["#1042", "#1040"]);
+  });
+
+  it("utkast till samma kund skiljs åt på rubrik/rad – 0 kr visar materialnamn", () => {
+    seedPeople();
+    addInvoice({
+      customerId: "c-andersson",
+      unitPrice: 0,
+      dueDate: "2026-03-01",
+      number: null,
+      description: "Luckor i ek",
+      createdAt: "2026-03-02T10:00:00.000Z",
+    });
+    addInvoice({
+      customerId: "c-andersson",
+      unitPrice: 0,
+      dueDate: "2026-03-01",
+      number: null,
+      description: "Bänkskiva i ask",
+      createdAt: "2026-03-01T10:00:00.000Z",
+    });
+    addInvoice({
+      customerId: "c-andersson",
+      unitPrice: 0,
+      dueDate: "2026-03-01",
+      number: 20,
+      type: "delbetalning",
+      description: "Del 1 av köket",
+    });
+
+    const page = listInvoicesForTable({ q: "andersson" });
+    const drafts = page.rows.filter((r) => r.isDraft);
+    assert.deepEqual(
+      drafts.map((r) => r.label).sort(),
+      ["Bänkskiva i ask", "Luckor i ek"]
+    );
+    assert.ok(drafts.every((r) => r.label !== "Utkast"));
+    assert.ok(drafts.every((r) => r.statusLabel === "Utkast"));
+    assert.ok(drafts.every((r) => r.typeLabel === ""));
+
+    const instalment = page.rows.find((r) => r.label === "#20");
+    assert.ok(instalment);
+    assert.equal(instalment.typeLabel, "Delbetalning");
+    assert.equal(instalment.isDraft, false);
+
+    const byMaterial = listInvoicesForTable({ q: "luckor" });
+    assert.deepEqual(
+      byMaterial.rows.map((r) => r.label),
+      ["Luckor i ek"]
+    );
+  });
+
+  it("utkast kopplat till offert använder offertens rubrik, inte radtext", () => {
+    seedPeople();
+    const quote = addQuote({ customerId: "c-andersson", title: "Altan Eli", unitPrice: 1000 });
+    addInvoice({
+      customerId: "c-andersson",
+      unitPrice: 0,
+      dueDate: "2026-03-01",
+      number: null,
+      description: "Skruv",
+      quoteId: quote.id,
+    });
+    const row = listInvoicesForTable().rows[0];
+    assert.equal(row.label, "Altan Eli");
+    assert.equal(row.statusLabel, "Utkast");
+    assert.notEqual(row.label, "Utkast");
   });
 
   it("sorterar kund, förfallodatum, belopp och fakturanummer", () => {

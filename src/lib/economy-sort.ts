@@ -20,7 +20,7 @@ export interface EconomySortState {
 export interface EconomySortable {
   /** Dokumentnummer om det finns, annars null (t.ex. fakturautkast). */
   documentNumber: number | null;
-  /** Titel / "#1042" / "Utkast" – fallback när nummer saknas. */
+  /** Titel / "#1042" / utkastets rubrik eller första rad – fallback när nummer saknas. */
   documentLabel: string;
   customerName: string;
   /** ISO-datum eller -tid, inte formaterad visningstext. */

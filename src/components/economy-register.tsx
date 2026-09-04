@@ -411,7 +411,7 @@ export function InvoiceRegister({
                         <AppLink href={`/ekonomi/fakturor/${r.id}`} className={LIST_ROW_LINK_CLASS}>
                           <span className="sr-only">Faktura {r.label}</span>
                         </AppLink>
-                        <span className="pointer-events-none font-medium text-ink">
+                        <span className="pointer-events-none block truncate font-medium text-ink" data-testid="invoice-list-title">
                           {r.label}
                           {r.typeLabel ? <span className="ml-2 text-[12px] font-normal text-muted">{r.typeLabel}</span> : null}
                         </span>
@@ -435,7 +435,7 @@ export function InvoiceRegister({
             {result.rows.map((r) => (
               <AppLink key={r.id} href={`/ekonomi/fakturor/${r.id}`} className="card block px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
-                  <p className="min-w-0 truncate text-[15px] font-medium">
+                  <p className="min-w-0 truncate text-[15px] font-medium" data-testid="invoice-list-title">
                     {r.label}
                     {r.typeLabel ? <span className="ml-2 text-[12px] font-normal text-muted">{r.typeLabel}</span> : null}
                   </p>
