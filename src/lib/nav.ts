@@ -657,7 +657,7 @@ function rewriteAppPath(pathname: string): string {
 
 /** Path + query för gamla bokmärken och `tillbaka=`-kedjor. */
 export function rewriteLegacyHref(href: string): string {
-  const { pathname, searchParams } = splitHref(href);
+  const { pathname, searchParams, hash } = splitHref(href);
   const sourcePath = rewritePengarPath(rewriteJobPath(normalizePathname(pathname)));
   let path = rewriteInquiryPath(rewriteAssistentPath(rewriteUppdragListPath(sourcePath)));
   const params = new URLSearchParams(searchParams);
@@ -669,7 +669,7 @@ export function rewriteLegacyHref(href: string): string {
     params.set("flik", "uppdrag");
   }
   const qs = params.toString();
-  return qs ? `${path}?${qs}` : path;
+  return `${qs ? `${path}?${qs}` : path}${hash}`;
 }
 
 function normalizePathname(pathname: string): string {
@@ -702,12 +702,16 @@ function fillPattern(pattern: string, params: Record<string, string>): string {
   return query ? `${filled}?${query}` : filled;
 }
 
-function splitHref(href: string): { pathname: string; searchParams: URLSearchParams } {
-  const q = href.indexOf("?");
-  if (q < 0) return { pathname: normalizePathname(href), searchParams: new URLSearchParams() };
+function splitHref(href: string): { pathname: string; searchParams: URLSearchParams; hash: string } {
+  const hashIndex = href.indexOf("#");
+  const hash = hashIndex >= 0 ? href.slice(hashIndex) : "";
+  const withoutHash = hashIndex >= 0 ? href.slice(0, hashIndex) : href;
+  const q = withoutHash.indexOf("?");
+  if (q < 0) return { pathname: normalizePathname(withoutHash), searchParams: new URLSearchParams(), hash };
   return {
-    pathname: normalizePathname(href.slice(0, q)),
-    searchParams: new URLSearchParams(href.slice(q + 1)),
+    pathname: normalizePathname(withoutHash.slice(0, q)),
+    searchParams: new URLSearchParams(withoutHash.slice(q + 1)),
+    hash,
   };
 }
 

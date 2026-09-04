@@ -278,6 +278,24 @@ describe("komplettera from a document returns to that document", () => {
     assert.match(href, /#kund-epost$/);
   });
 
+  it("does not leak the dest hash into the back label after AppLink rewrite", () => {
+    const quote = pageOrigin(
+      "/ekonomi/offerter/q1",
+      new URLSearchParams("tillbaka=/ekonomi&tillbakaNamn=Ekonomi"),
+      "Offert #6"
+    );
+    const stamped = hrefFromOrigin("/kunder/cust-eva#kund-personnummer", quote);
+    const rewritten = resolveAppHref(stamped, "/ekonomi", "Ekonomi");
+    assert.match(rewritten, /#kund-personnummer$/);
+    assert.equal(rewritten.includes("kund-personnummer&"), false);
+    const back = resolveBack(
+      "/kunder/cust-eva",
+      new URLSearchParams(rewritten.slice(rewritten.indexOf("?") + 1).replace(/#.*$/, "")),
+      defaultBack("/kunder/cust-eva")!
+    );
+    assert.equal(back?.label, "Offert #6");
+  });
+
   it("maps inbox kontrollera to the inbox item", () => {
     assert.deepEqual(defaultBack("/inbox/mail-1/kontrollera"), {
       href: "/inbox/mail-1",
