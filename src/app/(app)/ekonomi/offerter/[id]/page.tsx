@@ -6,13 +6,14 @@ import {
   getQuote,
   currentVersion,
   effectiveQuoteStatus,
+  pendingDraftQuoteVersion,
   quoteAcceptance,
   quoteTotals,
   requireCustomer,
   quoteVersions,
 } from "@/lib/services/data";
 import { kr, datumTid, datumLang, relativ } from "@/lib/format";
-import { Badge, ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
+import { Badge, ButtonLink, Breadcrumbs, Card, SectionTitle, cx } from "@/components/ui";
 import { QuoteStatusBadge, InvoiceStatusBadge } from "@/components/status";
 import { QuoteDocument } from "@/components/quote-document";
 import { PageActions } from "@/components/action-menu";
@@ -20,7 +21,7 @@ import { FollowUpButton } from "@/components/money-widgets";
 import { QuoteDraftSend } from "@/components/quote-draft-send";
 import { DiscardDraftButton } from "@/components/discard-draft-button";
 import { SendChecklist } from "@/components/send-checklist";
-import { quoteSendBlockers } from "@/lib/services/quotes";
+import { isQuoteWithdrawnByOwner, quoteSendBlockers } from "@/lib/services/quotes";
 import { sendQuoteAction } from "@/app/actions";
 import { isLiveMailConfigured } from "@/lib/mail";
 import { docTotals } from "@/lib/calc";
@@ -62,13 +63,16 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   const justSentManual = sentParam === "manuell" && !isDraft;
   // EN källa (quoteSendBlockers) för checklista, disabled Skicka och servervalidering.
   // Stamp the quote (not its parent) so Komplettera / Lägg till e-post returns here.
-  const sendBlockers = isDraft
-    ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefFromOrigin(b.href, fromHere) } : b))
-    : [];
+  const pendingDraft = pendingDraftQuoteVersion(quote);
+  const pendingUnsent = Boolean(pendingDraft && !pendingDraft.sellerSnapshot);
+  const sendBlockers =
+    isDraft || pendingUnsent
+      ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefFromOrigin(b.href, fromHere) } : b))
+      : [];
   const canSend = sendBlockers.length === 0;
 
   const jobLinked = Boolean(linkView.job);
-  const canInvoice = quote.status === "godkand" && nextPaymentPlanPartForQuote(quote.id) != null;
+  const canInvoice = quote.status === "godkand" && jobLinked && nextPaymentPlanPartForQuote(quote.id) != null;
 
   const doc = (
     <QuoteDocument company={data.settings} customer={customer} quote={quote} version={version} acceptance={acceptance} />
@@ -161,7 +165,39 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
         </Card>
       ) : null}
 
-      {isDraft ? <SendChecklist id="quote-send-blockers" title="Innan offerten kan skickas" blockers={sendBlockers} /> : null}
+      {isDraft || pendingUnsent ? (
+        <SendChecklist id="quote-send-blockers" title="Innan offerten kan skickas" blockers={sendBlockers} />
+      ) : null}
+
+      {pendingDraft ? (
+        <Card className="mb-6 px-5 py-4 text-[14px] leading-relaxed text-soft">
+          {pendingDraft.sellerSnapshot ? (
+            <span>
+              <span className="font-medium text-ink">Version {pendingDraft.version} är skickad</span> och väntar på
+              kundens godkännande. Den godkända versionen gäller tills den nya accepteras.
+            </span>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span>
+                <span className="font-medium text-ink">Version {pendingDraft.version} är ett utkast.</span> Skicka den
+                till kunden – den godkända versionen gäller tills dess.
+              </span>
+              <QuoteDraftSend
+                documentId={quote.id}
+                customerId={customer.id}
+                customerName={customer.name}
+                amount={docTotals(pendingDraft.lines, pendingDraft.rot).toPay}
+                validUntilLabel={datumLang(pendingDraft.validUntil)}
+                sendAction={sendQuoteAction.bind(null, quote.id)}
+                detailHref={fromHere.href}
+                mailConfigured={isLiveMailConfigured()}
+                recipientEmail={customer.email}
+                canSend={canSend}
+              />
+            </div>
+          )}
+        </Card>
+      ) : null}
 
       {quote.status === "skickad" ? (
         <Card className="mb-6 flex items-start gap-3 border-warn/20 bg-warn-soft/40 px-5 py-4">
@@ -176,26 +212,28 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
         </Card>
       ) : null}
 
+      {isQuoteWithdrawnByOwner(quote) ? (
+        <Card className="mb-6 px-5 py-4 text-[14px] text-soft">
+          <span className="font-medium text-ink">Offerten är tillbakadragen.</span> Kunden kan inte längre godkänna den.
+        </Card>
+      ) : null}
+
       {acceptance ? (
         <div data-quote-owner-accepted="">
         <Card className="mb-6 px-5 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
-              <div>
-                <p className="text-[15px] font-semibold text-ok">{acceptedByLabel(acceptance)}</p>
-                <p className="text-[14px] text-soft">{datumTid(acceptance.acceptedAt)}</p>
-              </div>
-            </div>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px]">
+            <BadgeCheck className="size-5 shrink-0 text-ok" />
+            <span className="font-semibold text-ok">{acceptedByLabel(acceptance)}</span>
+            <span className="text-soft">· {datumTid(acceptance.acceptedAt)}</span>
             <a
               href={`${publicPath}/underlag`}
               target="_blank"
               rel="noreferrer"
-              className={buttonClasses("secondary", "sm")}
+              className="inline-flex items-center gap-1 font-medium text-accent-deep hover:underline"
             >
               <FileLock2 className="size-3.5" /> Visa intyg
             </a>
-          </div>
+          </p>
         </Card>
         </div>
       ) : null}

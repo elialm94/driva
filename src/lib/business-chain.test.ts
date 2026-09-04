@@ -254,7 +254,7 @@ describe("§41 fristående faktura vs kopplad sökväg", () => {
     const state = quoteChainState(quote);
     assert.equal(state.waitingLabel, "Väntar på godkännande");
     assert.equal(state.primary, null);
-    assert.ok(state.overflow.some((c) => c.kind === "starta_uppdrag"));
+    assert.equal(state.overflow.length, 0, "Starta uppdrag hör inte hemma på en skickad offert");
   });
 
   it("skickad offert med uppdrag: ingen Starta/Skapa i overflow – uppdraget syns i Kopplat till", () => {

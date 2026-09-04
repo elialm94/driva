@@ -96,6 +96,7 @@ import {
   discardQuote,
   markQuoteNotRelevant,
   updateQuote,
+  withdrawQuote,
   type QuoteInput,
   type QuoteVersionInput,
 } from "@/lib/services/quotes";
@@ -1026,6 +1027,22 @@ export async function regeneratePaymentFileAction(
     refresh();
     return { ok: true as const, fileId: result.file.id, filename: result.file.filename };
   }, { capability: "submit_bank_payment" });
+}
+
+/** Dra tillbaka en skickad, ännu inte godkänd offert (overflow på offertsidan). */
+export async function withdrawQuoteAction(quoteId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(
+    () => {
+      try {
+        withdrawQuote(quoteId);
+        refresh();
+        return { ok: true as const };
+      } catch (e) {
+        return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte dra tillbaka offerten." };
+      }
+    },
+    { retry: false }
+  );
 }
 
 /** "Inte aktuell" på en väntande offert – domänövergång till avböjd med skäl. */

@@ -2,11 +2,12 @@
 
 import { useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, Hammer, Pencil, Plus } from "lucide-react";
+import { FileLock2, Hammer, Pencil, Plus } from "lucide-react";
 import { buttonClasses } from "./ui";
 import { actionMenuItemClassName, ActionMenu, ActionMenuLink, PageActions, useActionMenu } from "./action-menu";
 import { QuotePdfMenuItem } from "./quote-pdf-menu-item";
 import { CopyLinkButton } from "./copy-button";
+import { WithdrawQuoteMenuItem } from "./withdraw-quote-button";
 import { createInvoiceFromQuoteAction, startJobFromQuoteAction } from "@/app/actions";
 import { invoiceEditHref, jobHref } from "@/lib/nav";
 import type { ChainCta, QuoteChainState } from "@/lib/business-chain-model";
@@ -102,9 +103,9 @@ export function QuoteChainActions({
 }
 
 /**
- * Ägarens åtgärdsfält på offertsidan: en primär knapp + en overflow-meny.
- * Godkänd + kopplat uppdrag: Fakturera. Starta/Öppna uppdrag och extra
- * Skapa faktura hör inte hemma här – uppdraget syns i Kopplat till.
+ * Ägarens åtgärdsfält: en synlig primär + en overflow.
+ * Kundnamnet i underrubriken är länken till kunden – ingen Öppna kundvyn.
+ * Starta uppdrag och Fakturera/Skapa faktura visas aldrig samtidigt.
  */
 export function QuoteOwnerPageActions({
   status,
@@ -131,14 +132,12 @@ export function QuoteOwnerPageActions({
 
   const startJob: ChainCta = { kind: "starta_uppdrag", label: "Starta uppdrag", quoteId };
   const fakturera: ChainCta = { kind: "skapa_faktura", label: "Fakturera", quoteId };
-  const skapaFaktura: ChainCta = { kind: "skapa_faktura", label: "Skapa faktura", quoteId };
 
   const showStartPrimary = status === "godkand" && !jobLinked;
   const showFaktureraPrimary = status === "godkand" && jobLinked && canInvoice;
-  const showFaktureraInMenu = status === "godkand" && !jobLinked && canInvoice;
-  const showSentChainInMenu = status === "skickad" && !jobLinked;
-  const showVersion = status === "godkand" || status === "avbojd";
-  const showCustomerView = status !== "utkast";
+  const showVersion = status === "skickad" || status === "godkand" || status === "avbojd";
+  const showWithdraw = status === "skickad";
+  const showIntyg = status === "godkand";
 
   return (
     <div data-quote-owner-actions="">
@@ -163,13 +162,6 @@ export function QuoteOwnerPageActions({
         </button>
       ) : null}
       <ActionMenu>
-        {showFaktureraInMenu ? <OverflowItem cta={fakturera} onRun={run} /> : null}
-        {showSentChainInMenu ? (
-          <>
-            <OverflowItem cta={startJob} onRun={run} />
-            <OverflowItem cta={skapaFaktura} onRun={run} />
-          </>
-        ) : null}
         <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
         <QuotePdfMenuItem href={`${publicPath}/pdf`} />
         {showVersion ? (
@@ -177,9 +169,10 @@ export function QuoteOwnerPageActions({
             <Pencil className="size-3.5 shrink-0" /> Ny version
           </ActionMenuLink>
         ) : null}
-        {showCustomerView ? (
-          <ActionMenuLink href={publicPath} external>
-            <ExternalLink className="size-3.5 shrink-0" /> Öppna kundvyn
+        {showWithdraw ? <WithdrawQuoteMenuItem quoteId={quoteId} /> : null}
+        {showIntyg ? (
+          <ActionMenuLink href={`${publicPath}/underlag`} external>
+            <FileLock2 className="size-3.5 shrink-0" /> Visa intyg
           </ActionMenuLink>
         ) : null}
       </ActionMenu>

@@ -10,7 +10,14 @@ import { isDemoBusiness, isDemoMode } from "../demo";
 import { isEmailFormat } from "../settings-validation";
 import { mailProviderAvailable, type MailMessage, type MailSendMeta } from "../mail";
 import { prepareQuoteAcceptedCustomerMail, prepareQuoteAcceptedMail } from "../email/service";
-import { currentVersion, getQuoteByToken, quoteAcceptance, requireCustomer } from "./data";
+import {
+  currentVersion,
+  getQuoteByToken,
+  pendingDraftQuoteVersion,
+  publicQuoteVersion,
+  quoteAcceptance,
+  requireCustomer,
+} from "./data";
 import { logActivity } from "./activity";
 import { createJobFromQuote } from "./jobs";
 
@@ -24,6 +31,9 @@ import { createJobFromQuote } from "./jobs";
  *     spara beviset, sätt godkänd, skapa/koppla uppdraget, en save().
  *   * Idempotent: en redan godkänd offert returnerar det befintliga
  *     godkännandet – dubbeltryck skapar aldrig två uppdrag.
+ *   * Ny version efter godkännande: den gamla snapshoten förblir styrande
+ *     tills kunden godkänner den nya (supersede-on-accept). Då ersätts
+ *     bevisraden och currentVersionId. Inget andra uppdrag.
  *   * Kundens namn krävs (trimmat, aldrig tomt). Inget personnummer, ingen
  *     ritad signatur, ingen legitimering – och det påstås inte heller.
  */
@@ -40,7 +50,7 @@ export type QuoteAcceptErrorCode =
 export const QUOTE_ACCEPT_TEXT: Record<QuoteAcceptErrorCode, string> = {
   not_found: "Offerten finns inte eller kan inte visas.",
   name_required: "Skriv ditt namn för att godkänna offerten.",
-  declined: "Offerten är avböjd och kan inte godkännas. Kontakta företaget om du ändrat dig.",
+  declined: "Offerten kan inte längre godkännas. Kontakta företaget om du ändrat dig.",
   expired: "Offertens giltighetstid har gått ut. Kontakta företaget för en uppdaterad offert.",
   not_acceptable: "Offerten kan inte godkännas i sitt nuvarande läge.",
   changed: "Offerten har ändrats sedan du öppnade den. Ladda om sidan och läs igenom den igen.",
@@ -131,7 +141,10 @@ export function acceptQuote(input: AcceptQuoteInput): AcceptQuoteResult {
   if (!quote || quote.status === "utkast") throw new QuoteAcceptError("not_found");
 
   const existing = quoteAcceptance(quote.id);
-  if (quote.status === "godkand" && existing) {
+  const version = publicQuoteVersion(quote);
+  // Samma version som redan är godkänd → idempotent. En nyare skickad version
+  // får godkännas och då ersätta den styrande snapshoten (supersede-on-accept).
+  if (existing && existing.quoteVersionId === version.id) {
     return { outcome: "already_accepted", quote, acceptance: existing };
   }
 
@@ -139,8 +152,9 @@ export function acceptQuote(input: AcceptQuoteInput): AcceptQuoteResult {
   if (!name) throw new QuoteAcceptError("name_required");
 
   if (quote.status === "avbojd") throw new QuoteAcceptError("declined");
-  if (quote.status !== "skickad") throw new QuoteAcceptError("not_acceptable");
-  const version = currentVersion(quote);
+  const pendingSent = Boolean(pendingDraftQuoteVersion(quote)?.sellerSnapshot);
+  const superseding = Boolean(existing && quote.status === "godkand" && pendingSent && version.id !== existing.quoteVersionId);
+  if (quote.status !== "skickad" && !superseding) throw new QuoteAcceptError("not_acceptable");
   if (dagarTill(version.validUntil) < 0) throw new QuoteAcceptError("expired");
 
   // Kunden godkänner det dokument hen såg – inte en version som hunnit ändras.
@@ -182,9 +196,13 @@ export function finalizeQuoteAcceptance(
 ): QuoteAcceptance {
   const data = db();
   const existing = quoteAcceptance(quote.id);
-  if (quote.status === "godkand" && existing) return existing;
-  if (quote.status !== "skickad") throw new QuoteAcceptError("not_acceptable");
-  if (quote.currentVersionId !== version.id) throw new QuoteAcceptError("changed");
+  const pendingSent = Boolean(pendingDraftQuoteVersion(quote)?.sellerSnapshot);
+  const superseding = Boolean(
+    existing && quote.status === "godkand" && pendingSent && version.id !== existing.quoteVersionId
+  );
+  if (existing && existing.quoteVersionId === version.id) return existing;
+  if (quote.status !== "skickad" && !superseding) throw new QuoteAcceptError("not_acceptable");
+  if (!superseding && quote.currentVersionId !== version.id) throw new QuoteAcceptError("changed");
 
   const customer = requireCustomer(quote.customerId);
   const now = new Date().toISOString();
@@ -213,11 +231,17 @@ export function finalizeQuoteAcceptance(
     ...(quote.lastEmail?.sentTo ? { linkSentTo: quote.lastEmail.sentTo } : {}),
     ...(input.bankid ? { bankid: input.bankid } : {}),
   };
+  // En rad per offert (signatures_quote_uq): ny version ersätter beviset.
+  if (existing && superseding) {
+    const idx = data.signatures.findIndex((s) => s.id === existing.id);
+    if (idx >= 0) data.signatures.splice(idx, 1);
+  }
   data.signatures.push(acceptance);
 
-  // 3. Offerten är godkänd.
+  // 3. Offerten är godkänd – den nya versionen blir styrande snapshot.
   quote.status = "godkand";
   quote.decidedAt = now;
+  quote.currentVersionId = version.id;
 
   // 4. Koppla till befintligt uppdrag, eller skapa ett – aldrig ett andra.
   const hadJob = Boolean(

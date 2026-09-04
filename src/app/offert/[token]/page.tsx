@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { BadgeCheck, FileLock2, XCircle, Clock } from "lucide-react";
 import { db } from "@/lib/store";
-import { getQuoteByToken, currentVersion, quoteAcceptance, quoteTotals, requireCustomer } from "@/lib/services/data";
-import { markQuoteViewed } from "@/lib/services/quotes";
+import { getQuoteByToken, publicQuoteVersion, quoteAcceptance, requireCustomer } from "@/lib/services/data";
+import { docTotals } from "@/lib/calc";
+import { isQuoteWithdrawnByOwner, markQuoteViewed } from "@/lib/services/quotes";
 import { quoteAcceptanceStatement } from "@/lib/services/quote-accept";
 import { quoteVersionHash } from "@/lib/hash";
 import { kr, datumTid, datumLang, dagarTill } from "@/lib/format";
@@ -22,7 +23,7 @@ export async function generateMetadata(props: PageProps<"/offert/[token]">) {
   const quote = getQuoteByToken(token);
   // Utkast är inte publika – läck inte offertnummer/avsändare via metadata.
   if (!quote || quote.status === "utkast") return { title: "Offert" };
-  const seller = resolveQuoteCompany(currentVersion(quote), db().settings);
+  const seller = resolveQuoteCompany(publicQuoteVersion(quote), db().settings);
   return { title: `Offert #${quote.number} – ${seller.name}` };
 }
 
@@ -48,12 +49,16 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
   if (!quote || quote.status === "utkast") notFound();
 
   const data = db();
-  const version = currentVersion(quote);
+  const version = publicQuoteVersion(quote);
   const customer = requireCustomer(quote.customerId);
   const acceptance = quoteAcceptance(quote.id);
-  const totals = quoteTotals(quote);
-  const expired = quote.status === "skickad" && dagarTill(version.validUntil) < 0;
-  const canAccept = quote.status === "skickad" && !expired;
+  const totals = docTotals(version.lines, version.rot);
+  const showingAcceptedSnapshot = Boolean(acceptance && version.id === acceptance.quoteVersionId);
+  const expired = (quote.status === "skickad" || Boolean(version.sellerSnapshot && !version.lockedAt)) && dagarTill(version.validUntil) < 0;
+  const canAccept =
+    !expired &&
+    (quote.status === "skickad" || (quote.status === "godkand" && Boolean(version.sellerSnapshot) && !showingAcceptedSnapshot));
+  const withdrawnByOwner = isQuoteWithdrawnByOwner(quote);
 
   const seller = resolveQuoteCompany(version, data.settings);
   const buyer = resolveQuoteCustomer(version, customer);
@@ -77,7 +82,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-5">
-        {quote.status === "godkand" && acceptance ? (
+        {showingAcceptedSnapshot && acceptance ? (
           <div
             data-quote-accepted-banner=""
             className="mb-6 rounded-2xl border border-ok/25 bg-ok-soft/70 px-5 py-4 animate-fade-up"
@@ -104,13 +109,19 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
         ) : null}
 
         {quote.status === "avbojd" ? (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-line bg-card px-5 py-4">
+          <div
+            data-quote-public-closed=""
+            className="mb-6 flex items-start gap-3 rounded-2xl border border-line bg-card px-5 py-4"
+          >
             <XCircle className="mt-0.5 size-5 shrink-0 text-muted" />
             <div>
-              <p className="text-[15px] font-semibold">Offerten är avböjd</p>
+              <p className="text-[15px] font-semibold">
+                {withdrawnByOwner ? "Offerten är tillbakadragen" : "Offerten är avböjd"}
+              </p>
               <p className="text-[14px] text-soft">
-                Offerten kan inte längre godkännas här. Ändrat dig? Hör av dig till {seller.name} på {seller.phone} så
-                tar vi det därifrån.
+                {withdrawnByOwner
+                  ? `${seller.name} har dragit tillbaka offerten. Den kan inte längre godkännas. Hör av dig på ${seller.phone} om du har frågor.`
+                  : `Offerten kan inte längre godkännas här. Ändrat dig? Hör av dig till ${seller.name} på ${seller.phone} så tar vi det därifrån.`}
               </p>
             </div>
           </div>
@@ -135,7 +146,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
             customer={customer}
             quote={quote}
             version={version}
-            acceptance={acceptance}
+            acceptance={showingAcceptedSnapshot ? acceptance : undefined}
           />
         </div>
 
@@ -155,7 +166,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
           <a href={`/offert/${quote.token}/pdf`} target="_blank" rel="noreferrer" className="mt-1 inline-block font-medium text-soft underline-offset-2 hover:text-ink hover:underline">
             Skriv ut eller spara som PDF
           </a>
-          {quote.status === "godkand" && acceptance ? (
+          {showingAcceptedSnapshot && acceptance ? (
             <>
               <span className="mx-2 text-line-strong">·</span>
               <a

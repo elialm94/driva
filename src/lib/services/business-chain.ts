@@ -236,7 +236,7 @@ export function quoteChainState(
       waitingLabel,
       primary: null,
       secondary: [],
-      overflow: job ? [] : [startJob, createInvoice],
+      overflow: [],
     };
   }
 

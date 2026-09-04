@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/store";
-import { getQuoteByToken, currentVersion, quoteAcceptance, requireCustomer } from "@/lib/services/data";
+import { getQuoteByToken, publicQuoteVersion, quoteAcceptance, requireCustomer } from "@/lib/services/data";
 import { QuoteDocument } from "@/components/quote-document";
 import { PdfPrintBar } from "@/components/pdf-print-bar";
 import { CERTIFICATE_PRINT_LABEL } from "@/lib/quote-acceptance-certificate";
@@ -30,9 +30,10 @@ export default async function QuotePdfPage(props: PageProps<"/offert/[token]/pdf
   const quote = getQuoteByToken(token);
   if (!quote || quote.status === "utkast") notFound();
   const data = db();
-  const version = currentVersion(quote);
+  const version = publicQuoteVersion(quote);
   const customer = requireCustomer(quote.customerId);
   const acceptance = quoteAcceptance(quote.id);
+  const showingAcceptedSnapshot = Boolean(acceptance && version.id === acceptance.quoteVersionId);
 
   return (
     <div className="min-h-dvh bg-[#eae7df] print:bg-white">
@@ -50,7 +51,7 @@ export default async function QuotePdfPage(props: PageProps<"/offert/[token]/pdf
             customer={customer}
             quote={quote}
             version={version}
-            acceptance={acceptance}
+            acceptance={showingAcceptedSnapshot ? acceptance : undefined}
           />
         </div>
         <p className="no-print mx-auto mt-4 max-w-[210mm] text-center text-[12px] text-muted">

@@ -3,7 +3,13 @@ import { uid, publicToken } from "../ids";
 import type { DocLine, PaymentPlanPart, Quote, QuoteVersion, RotRut } from "../types";
 import type { RichTextDoc } from "../richtext";
 import { sanitizeRichText } from "../richtext";
-import { currentVersion, getQuote, requireCustomer } from "./data";
+import {
+  currentVersion,
+  getQuote,
+  pendingDraftQuoteVersion,
+  quoteAcceptance,
+  requireCustomer,
+} from "./data";
 import { docTotals } from "../calc";
 import { resolvedHourlyRate } from "../line-defaults";
 import { kr, isoDaysFromNow, dagarTill, datumKort } from "../format";
@@ -167,7 +173,38 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
   const taxReductionTerms = quoteTaxReductionSnapshot(rot, version.taxReductionTerms, input);
   const { taxReductionTerms: _submittedTerms, resetTaxReductionTerms: _reset, ...versionInput } = input;
 
-  if (version.lockedAt || quote.status === "godkand") {
+  const pending = pendingDraftQuoteVersion(quote);
+  const acceptedGoverning = quote.status === "godkand" || Boolean(quoteAcceptance(quote.id) && version.lockedAt);
+
+  if (acceptedGoverning) {
+    // Supersede-on-accept: den godkända snapshoten förblir currentVersionId /
+    // status / decidedAt tills kunden godkänner den nya versionen.
+    if (pending) {
+      Object.assign(pending, versionInput, { rot, taxReductionTerms });
+      delete pending.intro;
+      pending.sellerSnapshot = undefined;
+      pending.buyerSnapshot = undefined;
+    } else {
+      const newVersion: QuoteVersion = {
+        id: uid(),
+        quoteId,
+        version: version.version + 1,
+        ...versionInput,
+        rot,
+        taxReductionTerms,
+        createdAt: new Date().toISOString(),
+      };
+      data.quoteVersions.push(newVersion);
+      logActivity(
+        `Ny version (v${newVersion.version}) av offert #${quote.number} skapades. Den godkända versionen gäller tills kunden godkänner den nya.`,
+        { customerId: quote.customerId, entity: { type: "offert", id: quoteId } }
+      );
+    }
+    save();
+    return quote;
+  }
+
+  if (version.lockedAt) {
     // Ny version krävs efter signering.
     const newVersion: QuoteVersion = {
       id: uid(),
@@ -231,7 +268,7 @@ const QUOTE_SELLER_CODES = new Set(["seller_name", "seller_orgnr", "seller_orgnr
 export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
   const quote = getQuote(quoteId);
   if (!quote) return [];
-  const version = currentVersion(quote);
+  const version = pendingDraftQuoteVersion(quote) ?? currentVersion(quote);
   const customer = requireCustomer(quote.customerId);
   const blockers: QuoteSendBlocker[] = [];
   const editHref = `/ekonomi/offerter/${quote.id}/redigera`;
@@ -310,6 +347,52 @@ export function sendQuote(quoteId: string, delivery: QuoteDeliveryInfo = MOCK_DE
   const quote = getQuote(quoteId);
   if (!quote) throw new Error("Offerten finns inte");
   const customer = requireCustomer(quote.customerId);
+  const pending = pendingDraftQuoteVersion(quote);
+  if (quote.status === "godkand") {
+    if (!pending) {
+      throw new Error("Den godkända versionen är låst. Skapa en ny version först.");
+    }
+    assertTaxReductionSendReady(
+      taxReductionSendInputFromCustomer(customer, {
+        kind: "offert",
+        documentId: quote.id,
+        taxReduction: pending.rot,
+        workLocationId: quote.workLocationId,
+      })
+    );
+    if (dagarTill(pending.validUntil) < 0) {
+      throw new Error(
+        `Offertens giltighetsdatum (${datumKort(pending.validUntil)}) har passerat – kunden skulle inte kunna godkänna den. Ändra "Giltig till" och skicka sedan.`
+      );
+    }
+    if (!pending.lockedAt) {
+      const rot = rotWithAmounts(pending.rot, pending.lines, { documentKind: "offert", mode: "clamp" });
+      pending.rot = rot;
+      pending.taxReductionTerms = nextTaxReductionTerms({
+        rot,
+        previous: pending.taxReductionTerms,
+      });
+      pending.sellerSnapshot = sellerSnapshot(db().settings);
+      pending.buyerSnapshot = buyerSnapshot(customer);
+    }
+    const t = docTotals(pending.lines, pending.rot);
+    quote.lastSendAttemptAt = new Date().toISOString();
+    if (delivery.messageId && delivery.sentTo) {
+      quote.lastEmail = { provider: "resend", messageId: delivery.messageId, sentTo: delivery.sentTo };
+    }
+    const emailed = delivery.mode !== "mock" && delivery.ok;
+    logActivity(
+      emailed
+        ? `Ny version (v${pending.version}) av offert #${quote.number} skickades med e-post till ${delivery.sentTo ?? customer.email} (${kr(t.toPay)}). Den godkända versionen gäller tills kunden godkänner den nya.`
+        : `Ny version (v${pending.version}) av offert #${quote.number} markerades som skickad (${kr(t.toPay)}). Den godkända versionen gäller tills kunden godkänner den nya.`,
+      {
+        customerId: customer.id,
+        entity: { type: "offert", id: quoteId },
+      }
+    );
+    save();
+    return quote;
+  }
   const version = currentVersion(quote);
   assertTaxReductionSendReady(
     taxReductionSendInputFromCustomer(customer, {
@@ -371,6 +454,17 @@ export function markQuoteViewed(quoteId: string): void {
   save();
 }
 
+/** Ägarens skäl när en väntande offert stängs – skiljs från kundens avböjan. */
+export const QUOTE_NOT_RELEVANT_REASON = "Inte längre aktuell";
+export const QUOTE_WITHDRAW_REASON = "Tillbakadragen";
+
+export function isQuoteWithdrawnByOwner(quote: { status: Quote["status"]; declineReason?: string }): boolean {
+  return (
+    quote.status === "avbojd" &&
+    (quote.declineReason === QUOTE_NOT_RELEVANT_REASON || quote.declineReason === QUOTE_WITHDRAW_REASON)
+  );
+}
+
 export function declineQuote(quoteId: string, reason?: string): void {
   const quote = getQuote(quoteId);
   if (!quote || quote.status === "godkand") return;
@@ -391,7 +485,7 @@ export function declineQuote(quoteId: string, reason?: string): void {
  * Riktig domänövergång: status avbojd + skäl; offerten ligger kvar i
  * registret och kundhistoriken men lämnar "Behöver din uppmärksamhet".
  */
-export function markQuoteNotRelevant(quoteId: string, reason = "Inte längre aktuell"): Quote {
+export function markQuoteNotRelevant(quoteId: string, reason = QUOTE_NOT_RELEVANT_REASON): Quote {
   const quote = getQuote(quoteId);
   if (!quote) throw new Error("Offerten finns inte.");
   if (quote.status !== "skickad") throw new Error("Bara skickade offerter kan markeras som inte aktuella.");
@@ -400,6 +494,36 @@ export function markQuoteNotRelevant(quoteId: string, reason = "Inte längre akt
   quote.declineReason = reason;
   const customer = requireCustomer(quote.customerId);
   logActivity(`Offert #${quote.number} markerades som inte aktuell.`, {
+    customerId: customer.id,
+    entity: { type: "offert", id: quoteId },
+  });
+  save();
+  return quote;
+}
+
+/**
+ * Dra tillbaka en skickad, ännu inte godkänd offert. Återanvänder status
+ * `avbojd` (ingen ny enum). Skiljs från kundens Avböj via declineReason.
+ * Idempotent om den redan är tillbakadragen av företaget.
+ */
+export function withdrawQuote(quoteId: string): Quote {
+  const quote = getQuote(quoteId);
+  if (!quote) throw new Error("Offerten finns inte.");
+  if (quote.status === "godkand") {
+    throw new Error("En godkänd offert kan inte dras tillbaka.");
+  }
+  if (quote.status === "avbojd") {
+    if (isQuoteWithdrawnByOwner(quote)) return quote;
+    throw new Error("Offerten är redan avböjd.");
+  }
+  if (quote.status !== "skickad") {
+    throw new Error("Bara skickade offerter kan dras tillbaka.");
+  }
+  quote.status = "avbojd";
+  quote.decidedAt = new Date().toISOString();
+  quote.declineReason = QUOTE_WITHDRAW_REASON;
+  const customer = requireCustomer(quote.customerId);
+  logActivity(`Offert #${quote.number} drogs tillbaka.`, {
     customerId: customer.id,
     entity: { type: "offert", id: quoteId },
   });

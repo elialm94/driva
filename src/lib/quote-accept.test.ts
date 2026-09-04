@@ -17,8 +17,16 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { db, normalize, replaceDb } from "./store";
 import { emptyTestDb, labor, rotReadyCustomer, testCustomer } from "./invoices/test-db";
-import { createQuote, quoteDefaults, sendQuote, updateQuote } from "./services/quotes";
-import { currentVersion, getQuote, quoteAcceptance, quoteTotals } from "./services/data";
+import {
+  createQuote,
+  isQuoteWithdrawnByOwner,
+  quoteDefaults,
+  QUOTE_WITHDRAW_REASON,
+  sendQuote,
+  updateQuote,
+  withdrawQuote,
+} from "./services/quotes";
+import { currentVersion, getQuote, pendingDraftQuoteVersion, quoteAcceptance, quoteTotals } from "./services/data";
 import { quoteVersionHash } from "./hash";
 import {
   __resetQuoteAcceptRateLimitForTests,
@@ -443,5 +451,87 @@ describe("ordförråd och hjälpfunktioner", () => {
     assert.equal(legacy.contentHash, "abc");
     assert.equal(legacy.bankid?.orderRef, "mock-1");
     assert.equal(legacy.bankid?.note, "Demosignatur");
+  });
+});
+
+function versionFields(quoteId: string) {
+  const v = currentVersion(getQuote(quoteId)!);
+  return {
+    title: v.title,
+    lines: v.lines,
+    rot: v.rot,
+    paymentPlan: v.paymentPlan,
+    paymentTermsDays: v.paymentTermsDays,
+    validUntil: v.validUntil,
+    terms: v.terms,
+  };
+}
+
+describe("Ny version efter godkännande: supersede-on-accept", () => {
+  it("Ny version lämnar den godkända snapshoten styrande", () => {
+    const quote = sentQuote();
+    const first = acceptQuote({ token: quote.token, name: "Anna Andersson" });
+    const acceptedId = currentVersion(getQuote(quote.id)!).id;
+    updateQuote(quote.id, { ...versionFields(quote.id), title: "Altanbygge v2" });
+    const after = getQuote(quote.id)!;
+    assert.equal(after.status, "godkand");
+    assert.equal(after.currentVersionId, acceptedId);
+    assert.equal(quoteAcceptance(after.id)!.id, first.acceptance.id);
+    assert.equal(quoteAcceptance(after.id)!.quoteVersionId, acceptedId);
+    const pending = pendingDraftQuoteVersion(after);
+    assert.ok(pending);
+    assert.equal(pending.title, "Altanbygge v2");
+    assert.equal(pending.version, 2);
+    assert.equal(acceptQuote({ token: quote.token, name: "Anna" }).outcome, "already_accepted");
+  });
+
+  it("andra sparningen skriver i samma utkast, inte en tredje version", () => {
+    const quote = sentQuote();
+    acceptQuote({ token: quote.token, name: "Anna" });
+    updateQuote(quote.id, { ...versionFields(quote.id), title: "v2" });
+    updateQuote(quote.id, { ...versionFields(quote.id), title: "v2b" });
+    assert.equal(db().quoteVersions.filter((v) => v.quoteId === quote.id).length, 2);
+    assert.equal(pendingDraftQuoteVersion(getQuote(quote.id)!)!.title, "v2b");
+  });
+
+  it("skickad ny version: ny accept ersätter beviset, inget andra uppdrag", () => {
+    const quote = sentQuote();
+    const first = acceptQuote({ token: quote.token, name: "Anna Andersson" });
+    const jobsBefore = db().jobs.length;
+    updateQuote(quote.id, { ...versionFields(quote.id), title: "Altanbygge v2" });
+    sendQuote(quote.id);
+    const mid = getQuote(quote.id)!;
+    assert.equal(mid.status, "godkand");
+    assert.equal(mid.currentVersionId, first.acceptance.quoteVersionId);
+    const pending = pendingDraftQuoteVersion(mid)!;
+    assert.ok(pending.sellerSnapshot);
+    const hash = quoteVersionHash(pending);
+    const second = acceptQuote({ token: quote.token, name: "Anna Andersson", expectedContentHash: hash });
+    assert.equal(second.outcome, "accepted");
+    const done = getQuote(quote.id)!;
+    assert.equal(done.currentVersionId, pending.id);
+    assert.equal(quoteAcceptance(done.id)!.quoteVersionId, pending.id);
+    assert.equal(db().signatures.filter((s) => s.quoteId === quote.id).length, 1);
+    assert.equal(db().jobs.length, jobsBefore);
+  });
+});
+
+describe("Dra tillbaka offerten", () => {
+  it("skickad offert kan dras tillbaka – public kan inte godkänna; idempotent", () => {
+    const quote = sentQuote();
+    const result = withdrawQuote(quote.id);
+    assert.equal(result.status, "avbojd");
+    assert.equal(result.declineReason, QUOTE_WITHDRAW_REASON);
+    assert.equal(isQuoteWithdrawnByOwner(result), true);
+    expectAcceptError(() => acceptQuote({ token: quote.token, name: "Anna" }), "declined");
+    assert.equal(withdrawQuote(quote.id).declineReason, QUOTE_WITHDRAW_REASON);
+    assert.equal(db().quoteVersions.filter((v) => v.quoteId === quote.id).length, 1);
+  });
+
+  it("godkänd offert kan inte dras tillbaka", () => {
+    const quote = sentQuote();
+    acceptQuote({ token: quote.token, name: "Anna" });
+    assert.throws(() => withdrawQuote(quote.id), /godkänd/);
+    assert.equal(getQuote(quote.id)!.status, "godkand");
   });
 });
