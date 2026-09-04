@@ -9,12 +9,10 @@ import { focusField } from "./form-validation";
 import {
   extraPayFieldsNeeded,
   settingsBillingReadiness,
-  suggestedVatForCompletion,
   type SettingsReadinessItem,
 } from "@/lib/billing-readiness";
 import type { SellerBlockerInput } from "@/lib/invoices/seller-blockers";
 import type { SettingsFlik } from "@/lib/settings-routes";
-import { formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "@/lib/invoices/formats";
 import {
   normalizeSwedishBankgiro,
   swedishBankgiroInputProps,
@@ -295,44 +293,9 @@ function CompletionFields({
     );
   }
 
-  if (item.id === "vat") {
-    const suggested = suggestedVatForCompletion(seller.orgNumber, seller.vatNumber);
-    const vatOk = seller.vatNumber.trim() ? isVatNumberFormat(seller.vatNumber) : false;
-    const vatSuggested =
-      isOrgnrFormat(seller.orgNumber) && seller.vatNumber.trim() === formatVatNumber(seller.orgNumber);
-    return (
-      <div>
-        <label className={labelCls} htmlFor="komplettera-vat">
-          Momsregistreringsnummer
-        </label>
-        <input
-          id="komplettera-vat"
-          value={seller.vatNumber}
-          onChange={(e) => onPatch({ vatNumber: e.target.value })}
-          placeholder="SE559123456701"
-          className={inputCls}
-        />
-        {suggested ? (
-          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-            <p className={hintCls}>Föreslaget från org.nr: {suggested}</p>
-            <button
-              type="button"
-              className={buttonClasses("secondary", "sm")}
-              onClick={() => onPatch({ vatNumber: suggested })}
-            >
-              Använd föreslaget
-            </button>
-          </div>
-        ) : vatOk ? (
-          <p className={cx(hintCls, "text-ok")}>
-            {vatSuggested ? "Föreslaget från org.nr. Format OK – inte verifierat." : "Format OK. Inte verifierat mot Skatteverket."}
-          </p>
-        ) : (
-          <p className={hintCls}>Svenskt momsreg.nr: SE + org.nr utan bindestreck + 01.</p>
-        )}
-      </div>
-    );
-  }
+  // Ingen "vat"-gren: svenska företag härleder momsreg.nr ur org.nr, så det
+  // kan aldrig saknas på egen hand. Utländska företag fyller i det i
+  // Inställningar → Företag där landet också går att ändra.
 
   if (item.id === "payment") {
     return (

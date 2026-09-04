@@ -221,7 +221,6 @@ export async function onboardingAction(
     const first =
       result.fieldErrors.name ??
       result.fieldErrors.orgNumber ??
-      result.fieldErrors.vatNumber ??
       result.fieldErrors.address ??
       result.fieldErrors.postalCode ??
       result.fieldErrors.city ??

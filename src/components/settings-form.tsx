@@ -15,7 +15,7 @@ import type { InvoiceDefaults } from "@/lib/services/settings";
 import { buildCompanySettingsActionInput } from "@/lib/settings-action-input";
 import { STANDARD_TERMS } from "@/lib/standard-quote-terms";
 import { SETTINGS_HREF, SETTINGS_TABS, type SettingsFlik } from "@/lib/settings-routes";
-import { formatOrgnr, formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "@/lib/invoices/formats";
+import { deriveSwedishVatNumber, formatOrgnr, isOrgnrFormat, isSwedishCountry } from "@/lib/invoices/formats";
 import {
   normalizeSwedishBankgiro,
   normalizeSwedishPhone,
@@ -152,8 +152,9 @@ export function SettingsForm({
     setSaved(false);
     setForm((prev) => {
       const next = { ...prev, [key]: value };
-      if (key === "orgNumber" && isOrgnrFormat(String(value)) && !prev.vatNumber.trim()) {
-        next.vatNumber = formatVatNumber(String(value));
+      // Svenska företag underhåller bara org.nr – momsreg.nr följer med direkt.
+      if ((key === "orgNumber" || key === "country") && isSwedishCountry(next.country)) {
+        next.vatNumber = deriveSwedishVatNumber(next.orgNumber);
       }
       return next;
     });
@@ -182,8 +183,8 @@ export function SettingsForm({
   }
 
   const orgnrOk = form.orgNumber.trim() ? isOrgnrFormat(form.orgNumber) : false;
-  const vatOk = form.vatNumber.trim() ? isVatNumberFormat(form.vatNumber) : false;
-  const vatSuggested = orgnrOk && form.vatNumber.trim() === formatVatNumber(form.orgNumber);
+  const swedish = isSwedishCountry(form.country);
+  const derivedVat = deriveSwedishVatNumber(form.orgNumber);
 
   const tabHref = (href: string) => withReturnTo(href, returnTo, returnLabel);
 
@@ -247,6 +248,7 @@ export function SettingsForm({
     name: form.name,
     orgNumber: form.orgNumber,
     vatNumber: form.vatNumber,
+    country: form.country,
     address: form.address,
     postalCode: form.postalCode,
     city: form.city,
@@ -389,19 +391,33 @@ export function SettingsForm({
                 <label className={labelCls} htmlFor="installningar-vatNumber">
                   Momsregistreringsnummer
                 </label>
-                <input
-                  value={form.vatNumber}
-                  onChange={(e) => patch("vatNumber", e.target.value)}
-                  placeholder="SE559123456701"
-                  {...fieldMarkProps("vatNumber", inputCls)}
-                />
-                <FieldError id="installningar-vatNumber-fel">{errorFor("vatNumber")}</FieldError>
-                {vatOk ? (
-                  <p className={cx(hintCls, "text-ok")}>
-                    {vatSuggested ? "Föreslaget från org.nr. Format OK – inte verifierat." : "Format OK. Inte verifierat mot Skatteverket."}
-                  </p>
-                ) : errorFor("vatNumber") ? null : (
-                  <p className={hintCls}>Svenskt momsreg.nr: SE + org.nr utan bindestreck + 01.</p>
+                {swedish ? (
+                  <>
+                    <p
+                      id="installningar-vatNumber"
+                      className={cx(inputCls, "flex items-center bg-surface-2 text-muted")}
+                    >
+                      {derivedVat || "–"}
+                    </p>
+                    <p className={hintCls}>
+                      {derivedVat
+                        ? "Beräknas automatiskt från organisationsnumret."
+                        : "Fyll i organisationsnumret – momsreg.nr beräknas automatiskt."}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      value={form.vatNumber}
+                      onChange={(e) => patch("vatNumber", e.target.value)}
+                      placeholder="DE123456789"
+                      {...fieldMarkProps("vatNumber", inputCls)}
+                    />
+                    <FieldError id="installningar-vatNumber-fel">{errorFor("vatNumber")}</FieldError>
+                    {errorFor("vatNumber") ? null : (
+                      <p className={hintCls}>Momsnummer med landskod. Inte verifierat mot VIES.</p>
+                    )}
+                  </>
                 )}
               </div>
             </div>

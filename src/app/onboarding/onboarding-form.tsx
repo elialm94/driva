@@ -1,18 +1,13 @@
 "use client";
 
-import { useActionState, useRef, useState, type FormEvent } from "react";
+import { useActionState, useState, type FormEvent } from "react";
 import { onboardingAction, type OnboardingFormState } from "@/app/auth-actions";
 import { AddressFields } from "@/components/address-input";
 import { FieldError, FormField, focusField, invalidFieldCls } from "@/components/form-validation";
 import { cx } from "@/components/ui";
-import {
-  formatOrgnr,
-  formatVatNumber,
-  isOrgnrFormat,
-} from "@/lib/invoices/formats";
+import { deriveSwedishVatNumber, formatOrgnr } from "@/lib/invoices/formats";
 import {
   ONBOARDING_FIELD_IDS,
-  suggestedOnboardingVatNumber,
   validateOnboardingFields,
   type OnboardingPaymentMethod,
 } from "@/lib/onboarding";
@@ -47,7 +42,6 @@ export function OnboardingForm({
   const [clientErrors, setClientErrors] = useState<OnboardingFormState["fieldErrors"]>({});
   const [name, setName] = useState(defaultName);
   const [orgNumber, setOrgNumber] = useState("");
-  const [vatNumber, setVatNumber] = useState("");
   const [address, setAddress] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [city, setCity] = useState("");
@@ -57,25 +51,15 @@ export function OnboardingForm({
   const [bankAccount, setBankAccount] = useState("");
   const [email, setEmail] = useState(defaultEmail);
   const [phone, setPhone] = useState(defaultPhone);
-  const lastSuggestedVat = useRef("");
 
   const errors = { ...state.fieldErrors, ...clientErrors };
-
-  function suggestVatFromOrgnr(formatted: string) {
-    if (!isOrgnrFormat(formatted)) return;
-    const suggested = suggestedOnboardingVatNumber(formatted);
-    setVatNumber((prev) => {
-      if (!prev.trim() || prev === lastSuggestedVat.current) return suggested;
-      return prev;
-    });
-    lastSuggestedVat.current = suggested;
-  }
+  // Momsreg.nr skrivs aldrig in – det följer org.nr direkt.
+  const derivedVat = deriveSwedishVatNumber(orgNumber);
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     const result = validateOnboardingFields({
       name,
       orgNumber,
-      vatNumber,
       address,
       postalCode,
       city,
@@ -94,7 +78,6 @@ export function OnboardingForm({
     }
     setName(result.values.name);
     setOrgNumber(result.values.orgNumber);
-    setVatNumber(result.values.vatNumber);
     setAddress(result.values.address);
     setPostalCode(result.values.postalCode);
     setCity(result.values.city);
@@ -126,7 +109,11 @@ export function OnboardingForm({
           id={ONBOARDING_FIELD_IDS.orgNumber}
           label="Organisationsnummer"
           error={errors?.orgNumber}
-          helper="10 siffror, med eller utan bindestreck."
+          helper={
+            derivedVat
+              ? `Momsreg.nr ${derivedVat} beräknas automatiskt härifrån.`
+              : "10 siffror, med eller utan bindestreck."
+          }
           labelClassName={labelCls}
           helperClassName={helperCls}
         >
@@ -134,34 +121,8 @@ export function OnboardingForm({
             name="orgNumber"
             {...swedishOrgnrInputProps}
             value={orgNumber}
-            onChange={(e) => {
-              const formatted = formatOrgnr(e.target.value);
-              setOrgNumber(formatted);
-              suggestVatFromOrgnr(formatted);
-            }}
+            onChange={(e) => setOrgNumber(formatOrgnr(e.target.value))}
             className={cx(field, errors?.orgNumber && invalidFieldCls)}
-          />
-        </FormField>
-        <FormField
-          id={ONBOARDING_FIELD_IDS.vatNumber}
-          label="Momsregistreringsnummer"
-          error={errors?.vatNumber}
-          helper={
-            vatNumber && vatNumber === formatVatNumber(orgNumber)
-              ? "Föreslaget från organisationsnumret."
-              : "Svenskt momsreg.nr: SE + org.nr utan bindestreck + 01."
-          }
-          labelClassName={labelCls}
-          helperClassName={helperCls}
-        >
-          <input
-            name="vatNumber"
-            autoComplete="off"
-            spellCheck={false}
-            value={vatNumber}
-            onChange={(e) => setVatNumber(e.target.value.toUpperCase().replace(/\s/g, ""))}
-            placeholder="SE559123456701"
-            className={cx(field, errors?.vatNumber && invalidFieldCls)}
           />
         </FormField>
       </section>

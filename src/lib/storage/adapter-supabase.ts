@@ -23,6 +23,7 @@ import { isUndefinedColumn } from "./sql-errors";
 import { cachedStateIfFresh, clearSnapshotCache, invalidateSnapshot, putSnapshot } from "./snapshot-cache";
 import { markCacheHit, withPerfSpan } from "../perf/telemetry";
 import { STANDARD_TERMS } from "../standard-quote-terms";
+import { deriveSwedishVatNumber } from "../invoices/formats";
 
 const MAX_ATTEMPTS = 3;
 
@@ -315,7 +316,6 @@ export async function createBusinessWithOwner(input: {
   orgNumber: string;
   email: string;
   phone: string;
-  vatNumber?: string;
   address?: string;
   postalCode?: string;
   city?: string;
@@ -366,7 +366,8 @@ export async function createBusinessWithOwner(input: {
         businessId,
         input.name,
         input.orgNumber,
-        input.vatNumber ?? "",
+        // Nya företag är svenska (country nedan): momsreg.nr härleds ur org.nr.
+        deriveSwedishVatNumber(input.orgNumber),
         input.email,
         input.phone,
         input.address ?? "",

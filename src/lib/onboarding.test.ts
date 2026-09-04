@@ -15,7 +15,6 @@ import {
   firstOnboardingFieldId,
   needsCompanyOnboarding,
   readOnboardingFormData,
-  suggestedOnboardingVatNumber,
   validateOnboardingFields,
   type OnboardingValues,
 } from "./onboarding";
@@ -24,7 +23,6 @@ function filled(over: Partial<OnboardingValues> = {}): OnboardingValues {
   return {
     name: "Söders Snickeri AB",
     orgNumber: "5591234567",
-    vatNumber: "",
     address: "Renstiernas gata 12",
     postalCode: "11624",
     city: "Stockholm",
@@ -83,7 +81,7 @@ const COMPANY_BLOCKER_CODES = new Set([
 ]);
 
 describe("Kom igång-validering", () => {
-  it("godkänner 5591234567 / 559123-4567 och föreslår momsreg.nr", () => {
+  it("godkänner 5591234567 / 559123-4567 och härleder momsreg.nr", () => {
     const a = validateOnboardingFields(filled({ orgNumber: "5591234567" }));
     const b = validateOnboardingFields(filled({ orgNumber: "559123-4567" }));
     assert.deepEqual(a.fieldErrors, {});
@@ -91,7 +89,13 @@ describe("Kom igång-validering", () => {
     assert.equal(a.values.orgNumber, "559123-4567");
     assert.equal(b.values.orgNumber, "559123-4567");
     assert.equal(a.values.vatNumber, "SE559123456701");
-    assert.equal(suggestedOnboardingVatNumber("559123-4567"), "SE559123456701");
+    assert.equal(b.values.vatNumber, "SE559123456701");
+  });
+
+  it("ogiltigt org.nr ger org.nr-felet och inget halvt momsnummer", () => {
+    const result = validateOnboardingFields(filled({ orgNumber: "559123" }));
+    assert.ok(result.fieldErrors.orgNumber);
+    assert.equal(result.values.vatNumber, "");
   });
 
   it("accepterar postnummer 11624 och 116 24", () => {
@@ -136,7 +140,7 @@ describe("Kom igång-validering", () => {
   });
 
   it("läser samma fält från FormData som webbläsaren skickar", () => {
-    const parsed = readOnboardingFormData(formDataFrom(filled({ orgNumber: "559123-4567", vatNumber: "SE559123456701" })));
+    const parsed = readOnboardingFormData(formDataFrom(filled({ orgNumber: "559123-4567" })));
     const result = validateOnboardingFields(parsed);
     assert.deepEqual(result.fieldErrors, {});
     assert.equal(result.values.orgNumber, "559123-4567");
@@ -147,13 +151,18 @@ describe("Kom igång-validering", () => {
 });
 
 describe("Kom igång – befintliga konton", () => {
-  it("tvingar inte tillbaka företag som redan finns, även om moms/adress/betalning saknas", () => {
+  it("tvingar inte tillbaka företag som redan finns, även om adress/betalning saknas", () => {
     assert.equal(needsCompanyOnboarding(0), true);
     assert.equal(needsCompanyOnboarding(1), false);
     assert.equal(needsCompanyOnboarding(3), false);
-    const incomplete = testCompany({ vatNumber: "", address: "", postalCode: "", city: "", bankgiro: "" });
+    const incomplete = testCompany({ address: "", postalCode: "", city: "", bankgiro: "" });
     assert.ok(collectSellerBlockers(incomplete).length > 0);
-    assert.ok(billingReadiness(incomplete).blockers.some((b) => b.code === "seller_vat"));
+    assert.ok(billingReadiness(incomplete).blockers.some((b) => b.code === "seller_address"));
+  });
+
+  it("ett tomt sparat momsreg.nr blockerar inte längre – det härleds ur org.nr", () => {
+    const noVat = testCompany({ vatNumber: "" });
+    assert.equal(collectSellerBlockers(noVat).length, 0);
   });
 });
 

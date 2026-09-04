@@ -117,7 +117,6 @@ async function main() {
   // Komplettera företagsprofilen så fakturor kan utfärdas.
   await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
     Object.assign(db().settings, {
-      vatNumber: "SE556677889901",
       address: "Verkstadsgatan 1",
       postalCode: "118 46",
       city: "Stockholm",

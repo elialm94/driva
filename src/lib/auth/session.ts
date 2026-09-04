@@ -680,7 +680,6 @@ export async function createBusinessForCurrentUser(input: {
   orgNumber: string;
   email: string;
   phone: string;
-  vatNumber?: string;
   address?: string;
   postalCode?: string;
   city?: string;
