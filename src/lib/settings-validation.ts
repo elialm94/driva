@@ -2,8 +2,9 @@ import type { VatRate } from "./types";
 import { DEFAULT_QUOTE_TERMS_MAX } from "./standard-quote-terms";
 import {
   isBicFormat,
+  isForeignVatNumberFormat,
   isIbanFormat,
-  isVatNumberFormat,
+  isSwedishCountry,
 } from "./invoices/formats";
 import {
   validateSwedishBankgiro,
@@ -41,7 +42,10 @@ export const SETTINGS_VAT_RATES: VatRate[] = [0, 6, 12, 25];
 export interface SettingsProfileFields {
   name: string;
   orgNumber: string;
+  /** Härlett för svenska företag – bara utländska företag skriver in det själva. */
   vatNumber: string;
+  /** Tomt/utelämnat = Sverige. Styr om momsreg.nr härleds eller skrivs in. */
+  country?: string;
   email?: string;
   websiteNotificationEmail?: string;
   phone?: string;
@@ -100,11 +104,15 @@ export function settingsProfileFieldErrors(input: SettingsProfileFields): Settin
       });
     }
   }
-  if (input.vatNumber.trim() && !isVatNumberFormat(input.vatNumber)) {
+  // Svenska företag skriver aldrig momsreg.nr själva – det härleds ur org.nr
+  // (companyVatNumber), så det finns inget eget fält att validera. Utländska
+  // företag har ett manuellt fält, men utländska momsnummerformat varierar:
+  // vi kräver bara att det inte är tomt-med-blanktecken.
+  if (!isSwedishCountry(input.country) && input.vatNumber.trim() && !isForeignVatNumberFormat(input.vatNumber)) {
     errors.push({
       field: "vatNumber",
       label: "Momsregistreringsnummer",
-      message: "Momsregistreringsnumret ska anges som SE följt av 12 siffror.",
+      message: "Ange momsregistreringsnumret med landskod, t.ex. DE123456789.",
       tab: "foretag",
     });
   }

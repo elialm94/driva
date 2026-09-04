@@ -11,6 +11,7 @@
  *
  * Körs med: npm run db:validate
  */
+import assert from "node:assert/strict";
 import type { PGlite } from "@electric-sql/pglite";
 import { createMigratedPglite } from "./pglite-db";
 
@@ -1121,6 +1122,83 @@ async function main() {
        values ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2', 'Trial fel', '556000-0101', 'gratis')`
     )
   );
+
+  // ------------------------------------------------------------------
+  // Momsreg.nr härlett ur org.nr (migration 29)
+  // ------------------------------------------------------------------
+  console.log("\nMomsreg.nr härlett ur org.nr:");
+
+  await asSuperuser();
+  await expectOk(db, "app.derive_swedish_vat_number ger SE + org.nr + 01", async () => {
+    const r = await rows<{ a: string; b: string; c: string; d: string }>(
+      db,
+      `select app.derive_swedish_vat_number('559327-4086') as a,
+              app.derive_swedish_vat_number('5593274086') as b,
+              app.derive_swedish_vat_number('  559327-4086 ') as c,
+              app.derive_swedish_vat_number('559327') as d`
+    );
+    assert.equal(r[0].a, "SE559327408601");
+    assert.equal(r[0].b, "SE559327408601");
+    assert.equal(r[0].c, "SE559327408601");
+    assert.equal(r[0].d, "", "ofullständigt org.nr ska inte ge något momsnummer");
+  });
+
+  await expectOk(db, "app.is_swedish_country behandlar tomt land som Sverige", async () => {
+    const r = await rows<{ a: boolean; b: boolean; c: boolean }>(
+      db,
+      `select app.is_swedish_country('') as a,
+              app.is_swedish_country('Sverige') as b,
+              app.is_swedish_country('Tyskland') as c`
+    );
+    assert.equal(r[0].a, true);
+    assert.equal(r[0].b, true);
+    assert.equal(r[0].c, false);
+  });
+
+  // Backfillen körde före dessa rader – kontrollera samma villkor på färsk data
+  // genom att köra migrationens update-sats en gång till.
+  await db.query(
+    `insert into public.businesses (id, name, org_number) values
+       ('dddddddd-dddd-4ddd-8ddd-dddddddddd01', 'Tomt moms AB', '559327-4086'),
+       ('dddddddd-dddd-4ddd-8ddd-dddddddddd02', 'Avvikande AB', '559327-4086'),
+       ('dddddddd-dddd-4ddd-8ddd-dddddddddd03', 'Tyskt GmbH', '559327-4086')`
+  );
+  await db.query(
+    `insert into public.business_settings (business_id, name, org_number, vat_number, country) values
+       ('dddddddd-dddd-4ddd-8ddd-dddddddddd01', 'Tomt moms AB', '559327-4086', '', 'Sverige'),
+       ('dddddddd-dddd-4ddd-8ddd-dddddddddd02', 'Avvikande AB', '559327-4086', 'SE999999999902', 'Sverige'),
+       ('dddddddd-dddd-4ddd-8ddd-dddddddddd03', 'Tyskt GmbH', '559327-4086', 'DE123456789', 'Tyskland')`
+  );
+  await db.query(
+    `update public.business_settings s
+     set vat_number = app.derive_swedish_vat_number(s.org_number)
+     where app.is_swedish_country(s.country)
+       and app.derive_swedish_vat_number(s.org_number) <> ''
+       and s.vat_number <> app.derive_swedish_vat_number(s.org_number)
+       and (trim(s.vat_number) = ''
+            or upper(replace(s.vat_number, ' ', '')) = app.derive_swedish_vat_number(s.org_number))`
+  );
+  await expectOk(db, "backfillen fyller tomt svenskt momsnummer", async () => {
+    const r = await rows<{ vat_number: string }>(
+      db,
+      `select vat_number from public.business_settings where business_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddd01'`
+    );
+    assert.equal(r[0].vat_number, "SE559327408601");
+  });
+  await expectOk(db, "backfillen skriver inte över ett avvikande svenskt momsnummer", async () => {
+    const r = await rows<{ vat_number: string }>(
+      db,
+      `select vat_number from public.business_settings where business_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddd02'`
+    );
+    assert.equal(r[0].vat_number, "SE999999999902");
+  });
+  await expectOk(db, "backfillen tappar inte ett utländskt momsnummer", async () => {
+    const r = await rows<{ vat_number: string }>(
+      db,
+      `select vat_number from public.business_settings where business_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddd03'`
+    );
+    assert.equal(r[0].vat_number, "DE123456789");
+  });
 
   // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);

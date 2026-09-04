@@ -5,7 +5,6 @@ import {
   type IssueBlocker,
   type SellerBlockerInput,
 } from "./invoices/seller-blockers";
-import { formatVatNumber, isOrgnrFormat } from "./invoices/formats";
 import { SETTINGS_HREF, type SettingsFlik } from "./settings-routes";
 
 export type SettingsReadinessItemId = "name" | "orgnr" | "vat" | "address" | "payment";
@@ -83,7 +82,7 @@ const ITEM_DEFS: ItemDef[] = [
   },
   {
     id: "vat",
-    codes: ["seller_vat", "seller_vat_format", "seller_vat_orgnr"],
+    codes: ["seller_vat", "seller_vat_format"],
     label: "Momsregistreringsnummer",
     flik: "foretag",
     fieldFor: () => "vatNumber",
@@ -124,19 +123,6 @@ export function groupBusinessBlockers(blockers: readonly IssueBlocker[]): Settin
     });
   }
   return items;
-}
-
-/**
- * Föreslaget momsreg.nr från org.nr när Driva kan härleda det.
- * Tomt om org.nr saknas/ogiltigt. Användaren ska inte behöva slå upp det själv.
- */
-export function suggestedVatForCompletion(orgNumber: string, vatNumber: string): string | null {
-  if (!isOrgnrFormat(orgNumber)) return null;
-  const suggested = formatVatNumber(orgNumber);
-  if (!suggested) return null;
-  const current = vatNumber.trim().toUpperCase().replace(/\s/g, "");
-  if (current === suggested) return null;
-  return suggested;
 }
 
 export function settingsBillingCopy(input: {

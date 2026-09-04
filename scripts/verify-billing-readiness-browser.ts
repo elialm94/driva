@@ -1,6 +1,7 @@
 /**
  * Browserverifiering av Inställningarnas faktureringsstatus.
- * Förväntar ett företag som saknar adress, momsreg.nr och betalning.
+ * Förväntar ett svenskt företag som saknar adress och betalning. Momsreg.nr
+ * är inget eget steg – det härleds ur organisationsnumret.
  *   npx tsx scripts/verify-billing-readiness-browser.ts
  */
 import fs from "node:fs";
@@ -39,10 +40,10 @@ async function main() {
   await page.waitForFunction(() => document.body.innerText.includes("Fakturering kan inte användas än"));
   let text = await bodyText();
   if (!text.includes("Fakturering kan inte användas än")) fail(`saknar konsekvens: ${text}`);
-  if (!text.includes("3 uppgifter behöver kompletteras innan du kan skicka fakturor")) {
+  if (!text.includes("2 uppgifter behöver kompletteras innan du kan skicka fakturor")) {
     fail(`fel count/copy: ${text}`);
   }
-  if (!text.includes("Företagsadress") || !text.includes("Momsregistreringsnummer") || !text.includes("Betalningsuppgifter")) {
+  if (!text.includes("Företagsadress") || !text.includes("Betalningsuppgifter")) {
     fail(`saknar exakta poster: ${text}`);
   }
   const bannerText = await page.evaluate(() => {
@@ -66,7 +67,6 @@ async function main() {
   text = await bodyText();
   if (!text.includes("Komplettera för fakturering")) fail(`modalrubrik saknas: ${text}`);
   if (!text.includes("Lägg till minst ett betalningssätt")) fail("betalningshint saknas i modalen");
-  if (!text.includes("Föreslaget från org.nr")) fail("VAT-förslag saknas i modalen");
   await page.screenshot({ path: `${OUT}/komplettera-modal.png`, fullPage: false });
 
   await page.click("#komplettera-address");
@@ -83,32 +83,21 @@ async function main() {
 
   const afterAddress = await page.evaluate(() => {
     const banner = document.querySelector("[data-testid='billing-readiness-banner']");
-    const vat = document.querySelector("[data-testid='billing-complete-vat']");
     const payment = document.querySelector("[data-testid='billing-complete-payment']");
     return {
       banner: banner ? banner.textContent ?? "" : "",
-      vatOpen: Boolean(vat && !(vat.textContent ?? "").includes("Klart")),
+      // Momsreg.nr har inget eget steg längre – det härleds ur org.nr.
+      vatStep: Boolean(document.querySelector("[data-testid='billing-complete-vat']")),
       paymentOpen: Boolean(payment && !(payment.textContent ?? "").includes("Klart")),
     };
   });
-  if (!afterAddress.vatOpen || !afterAddress.paymentOpen) {
-    fail(`efter adress skulle moms och betalning vara kvar: ${JSON.stringify(afterAddress)}`);
+  if (afterAddress.vatStep) fail("momssteget ska inte finnas – momsreg.nr härleds ur org.nr");
+  if (!afterAddress.paymentOpen) {
+    fail(`efter adress skulle betalning vara kvar: ${JSON.stringify(afterAddress)}`);
   }
-  if (afterAddress.banner && !afterAddress.banner.includes("2 uppgifter")) {
+  if (afterAddress.banner && !afterAddress.banner.includes("1 uppgift")) {
     fail(`räknade inte ner efter adress: ${afterAddress.banner}`);
   }
-
-  const useSuggested = await page.evaluateHandle(() => {
-    const buttons = Array.from(document.querySelectorAll("button"));
-    return buttons.find((b) => (b.textContent ?? "").includes("Använd föreslaget")) ?? null;
-  });
-  const suggestedEl = useSuggested.asElement();
-  if (!suggestedEl) fail("Använd föreslaget saknas");
-  await suggestedEl.click();
-  await page.waitForFunction(() => {
-    const row = document.querySelector("[data-testid='billing-complete-vat']");
-    return Boolean(row && row.textContent && row.textContent.includes("Klart"));
-  });
 
   await page.type("#komplettera-payment", "56781234");
   await page.waitForFunction(() => {
@@ -121,16 +110,21 @@ async function main() {
   if (!text.includes("Redo att fakturera")) fail(`saknar redo-status: ${text}`);
   await page.screenshot({ path: `${OUT}/ready-after-fill.png`, fullPage: false });
 
-  await page.goto(`${BASE}/installningar?flik=foretag&falt=vatNumber`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${BASE}/installningar?flik=foretag&falt=orgNumber`, { waitUntil: "domcontentloaded" });
   try {
     await page.waitForFunction(
-      () => document.activeElement && document.activeElement.id === "installningar-vatNumber",
+      () => document.activeElement && document.activeElement.id === "installningar-orgNumber",
       { timeout: 5000 }
     );
   } catch {
     console.log("warn deeplink-fokus hoppades över (sidan laddade inte om i tid)");
   }
-  await page.screenshot({ path: `${OUT}/deeplink-vat.png`, fullPage: false });
+  // Momsreg.nr visas som härlett värde intill org.nr, inte som ett inmatningsfält.
+  const derivedVat = await bodyText();
+  if (!derivedVat.includes("Beräknas automatiskt från organisationsnumret")) {
+    fail(`saknar härlett momsreg.nr i företagsfliken: ${derivedVat}`);
+  }
+  await page.screenshot({ path: `${OUT}/deeplink-orgnr.png`, fullPage: false });
 
   console.log("ok billing-readiness browser");
   await browser.close();

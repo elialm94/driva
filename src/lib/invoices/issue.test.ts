@@ -116,16 +116,29 @@ describe("Issue-RPC-payload", () => {
 const FLIGHT_UNDEFINED = "$undefined";
 
 describe("Validering före utfärdande", () => {
-  it("stoppar om säljaren saknar momsreg.nr", () => {
-    reset({ settings: testCompany({ vatNumber: "" }) });
+  it("stoppar om säljaren saknar org.nr – momsreg.nr härleds därifrån", () => {
+    reset({ settings: testCompany({ orgNumber: "", vatNumber: "" }) });
     const inv = draft();
     const blockers = collectIssueErrors({
       invoice: inv,
       seller: db().settings,
       buyer: testCustomer(),
     });
-    assert.ok(blockers.some((b) => b.code === "seller_vat"));
+    assert.ok(blockers.some((b) => b.code === "seller_orgnr"));
+    assert.ok(!blockers.some((b) => b.code === "seller_vat"));
     assert.throws(() => issueInvoice(inv.id), InvoiceNotReadyError);
+  });
+
+  it("tomt sparat momsreg.nr stoppar inte – det härleds ur org.nr och fryses", () => {
+    reset({ settings: testCompany({ vatNumber: "" }) });
+    const inv = draft();
+    assert.ok(
+      !collectIssueErrors({ invoice: inv, seller: db().settings, buyer: testCustomer() }).some((b) =>
+        b.code.startsWith("seller_vat")
+      )
+    );
+    const issued = issueInvoice(inv.id);
+    assert.equal(issued.issuedSnapshot?.seller.vatNumber, "SE559123456701");
   });
 
   it("stoppar om kunden saknar adress", () => {

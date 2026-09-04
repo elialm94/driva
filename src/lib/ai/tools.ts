@@ -973,11 +973,10 @@ const specs: ToolSpec[] = [
       function: {
         name: "update_business_profile",
         description:
-          "Be om bekräftelse att ändra företagsuppgifter eller betalningsuppgifter. Sparar inte själv. Använd samma fältnamn som i Inställningar, t.ex. bankgiro, orgNumber, vatNumber, address.",
+          "Be om bekräftelse att ändra företagsuppgifter eller betalningsuppgifter. Sparar inte själv. Använd samma fältnamn som i Inställningar, t.ex. bankgiro, orgNumber, address. Momsregistreringsnumret går inte att sätta – för svenska företag härleds det ur organisationsnumret.",
         parameters: obj({
           name: { type: "string" },
           orgNumber: { type: "string" },
-          vatNumber: { type: "string" },
           email: { type: "string" },
           phone: { type: "string" },
           websiteUrl: { type: "string" },

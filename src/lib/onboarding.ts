@@ -6,24 +6,21 @@
 import type { CompanySettings } from "./types";
 import { STANDARD_TERMS } from "./standard-quote-terms";
 import {
-  formatVatNumber,
+  deriveSwedishVatNumber,
   isBankgiroFormat,
   isOrgnrFormat,
   isPlusgiroFormat,
   isPostalCodeFormat,
-  isVatNumberFormat,
   normalizeBankgiro,
   normalizeOrgnr,
   normalizePlusgiro,
   normalizePostalCode,
-  vatMatchesOrgnr,
 } from "./invoices/formats";
 import { isEmailFormat } from "./settings-validation";
 
 export const ONBOARDING_FIELD_IDS = {
   name: "ob-name",
   orgNumber: "ob-orgnr",
-  vatNumber: "ob-vat",
   address: "ob-address",
   postalCode: "ob-postal",
   city: "ob-city",
@@ -39,10 +36,10 @@ export type OnboardingField = keyof typeof ONBOARDING_FIELD_IDS;
 
 export type OnboardingPaymentMethod = "bankgiro" | "plusgiro" | "bankkonto";
 
+/** Kom igång är svenskt: momsreg.nr härleds ur org.nr och finns inte i formuläret. */
 export type OnboardingValues = {
   name: string;
   orgNumber: string;
-  vatNumber: string;
   address: string;
   postalCode: string;
   city: string;
@@ -64,6 +61,7 @@ export type OnboardingValidation = {
 export type OnboardingPersistInput = {
   name: string;
   orgNumber: string;
+  /** Härlett ur orgNumber – aldrig inskrivet. */
   vatNumber: string;
   address: string;
   postalCode: string;
@@ -78,7 +76,6 @@ export type OnboardingPersistInput = {
 const FIELD_ORDER: OnboardingField[] = [
   "name",
   "orgNumber",
-  "vatNumber",
   "address",
   "postalCode",
   "city",
@@ -104,7 +101,6 @@ export function readOnboardingFormData(formData: FormData): OnboardingValues {
   return {
     name: String(formData.get("name") ?? ""),
     orgNumber: String(formData.get("orgNumber") ?? ""),
-    vatNumber: String(formData.get("vatNumber") ?? ""),
     address: String(formData.get("address") ?? ""),
     postalCode: String(formData.get("postalCode") ?? ""),
     city: String(formData.get("city") ?? ""),
@@ -115,10 +111,6 @@ export function readOnboardingFormData(formData: FormData): OnboardingValues {
     email: String(formData.get("email") ?? ""),
     phone: String(formData.get("phone") ?? ""),
   };
-}
-
-export function suggestedOnboardingVatNumber(orgNumber: string): string {
-  return formatVatNumber(orgNumber);
 }
 
 export function validateOnboardingFields(input: OnboardingValues): OnboardingValidation {
@@ -135,15 +127,9 @@ export function validateOnboardingFields(input: OnboardingValues): OnboardingVal
   }
 
   const orgNumber = isOrgnrFormat(orgTrimmed) ? normalizeOrgnr(orgTrimmed) : orgTrimmed;
-  const vatRaw = input.vatNumber.trim().toUpperCase().replace(/\s/g, "");
-  const vatNumber = vatRaw || (isOrgnrFormat(orgNumber) ? formatVatNumber(orgNumber) : "");
-  if (!vatNumber) {
-    fieldErrors.vatNumber = "Ange företagets momsregistreringsnummer.";
-  } else if (!isVatNumberFormat(vatNumber)) {
-    fieldErrors.vatNumber = "Momsregistreringsnumret ska anges som SE följt av 12 siffror.";
-  } else if (isOrgnrFormat(orgNumber) && !vatMatchesOrgnr(vatNumber, orgNumber)) {
-    fieldErrors.vatNumber = "Momsregistreringsnumret stämmer inte med organisationsnumret (förväntat SE + org.nr + 01).";
-  }
+  // Momsreg.nr är inget eget formulärfält – det härleds ur org.nr. Ogiltigt
+  // org.nr ger tom sträng, och org.nr-felet ovan är det som visas.
+  const vatNumber = deriveSwedishVatNumber(orgNumber);
 
   const address = input.address.trim();
   if (!address) fieldErrors.address = "Ange gatuadress.";
@@ -270,7 +256,7 @@ export function companySettingsFromOnboarding(input: OnboardingPersistInput): Co
   return {
     name: profile.name,
     orgNumber: normalizeOrgnr(profile.orgNumber),
-    vatNumber: profile.vatNumber.trim().toUpperCase().replace(/\s/g, ""),
+    vatNumber: deriveSwedishVatNumber(profile.orgNumber),
     email: profile.email.trim(),
     phone: profile.phone.trim(),
     address: profile.address.trim(),

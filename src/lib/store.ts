@@ -7,6 +7,7 @@ import { migrateQuoteDescriptions } from "./quote-description";
 import { taxReductionFields } from "./tax-reduction-terms";
 import { migrateAccounting } from "./accounting/migrate";
 import { normalizeDomains } from "./domains/normalize";
+import { companyVatNumber } from "./invoices/formats";
 import { storageMode } from "./storage/config";
 import { tenantContext } from "./storage/context";
 import { requestTenantState } from "./storage/request-scope";
@@ -252,6 +253,9 @@ export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): 
   loaded.settings.quoteValidityDays ??= 30;
   loaded.settings.defaultVatRate ??= 25;
   loaded.settings.country ??= "Sverige";
+  // Momsreg.nr härleds ur org.nr för svenska företag – aldrig ett eget värde
+  // som kan glida isär. Sparade utländska nummer behålls oförändrade.
+  loaded.settings.vatNumber = companyVatNumber(loaded.settings);
   loaded.assistantAudit ??= [];
   loaded.assistantMessages ??= [];
   loaded.pendingActions ??= [];

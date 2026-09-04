@@ -5,7 +5,7 @@ import { logActivity } from "./activity";
 import { settingsBillingReadiness } from "../billing-readiness";
 import type { IssueBlocker } from "../invoices/validate";
 import {
-  formatVatNumber,
+  companyVatNumber,
   normalizeBankgiro,
   normalizeBic,
   normalizeIban,
@@ -139,7 +139,14 @@ function validateProfile(input: SettingsProfileFields): string[] {
 function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
   s.name = input.name.trim();
   s.orgNumber = input.orgNumber.trim() ? normalizeOrgnr(input.orgNumber) : "";
-  s.vatNumber = input.vatNumber.trim().toUpperCase().replace(/\s/g, "");
+  s.country = optional(input.country) || "Sverige";
+  // Svenska företag: momsreg.nr härleds ur org.nr, inskrivet värde ignoreras.
+  // Utländska företag: det inskrivna värdet sparas som det är.
+  s.vatNumber = companyVatNumber({
+    orgNumber: s.orgNumber,
+    vatNumber: input.vatNumber,
+    country: s.country,
+  });
   s.email = input.email.trim();
   s.websiteNotificationEmail = websiteFormRecipientOverride(
     { websiteNotificationEmail: input.websiteNotificationEmail },
@@ -151,7 +158,6 @@ function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
   s.postalCode = input.postalCode.trim() ? normalizeSwedishPostalCode(input.postalCode) : "";
   s.city = input.city.trim();
   s.sate = optional(input.sate);
-  s.country = optional(input.country) || "Sverige";
   s.bankgiro = input.bankgiro.trim() ? normalizeBankgiro(input.bankgiro) : "";
   s.plusgiro = input.plusgiro?.trim() ? normalizePlusgiro(input.plusgiro) : undefined;
   s.bankAccount = optional(input.bankAccount);
@@ -228,10 +234,6 @@ function applyDefaultQuoteTerms(s: CompanySettings, raw: unknown): void {
   s.defaultQuoteTerms = trimmed;
 }
 
-export function suggestedVatNumber(orgNumber: string): string {
-  return formatVatNumber(orgNumber);
-}
-
 export function billingReadiness(profile: CompanySettings = db().settings): {
   ready: boolean;
   missingCount: number;
@@ -248,6 +250,11 @@ export function connectedBankSummary(): { label: string; href: string } | null {
   return { label, href: "/ekonomi?flik=bank" };
 }
 
+/**
+ * Fält assistenten får ändra. `vatNumber` biter bara på utländska företag –
+ * applyProfile härleder svenska momsnummer ur org.nr och ignorerar värdet.
+ * requestUpdateBusinessProfile avvisar patchen i förväg för svenska företag.
+ */
 const PATCHABLE: (keyof CompanySettingsInput)[] = [
   "name",
   "orgNumber",

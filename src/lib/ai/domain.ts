@@ -36,6 +36,7 @@ import {
   taxReductionMissingFields,
   detailsFromPrefill,
 } from "../services/tax-reduction";
+import { isSwedishCountry } from "../invoices/formats";
 import { maskPersonnummer } from "../personnummer";
 import { businessStats, financeOverview, momsForCurrentPeriod } from "../services/finance";
 import {
@@ -1292,6 +1293,14 @@ export function businessProfileResult(): DomainResult {
 }
 
 export function requestUpdateBusinessProfile(patch: Record<string, string | number | null>): DomainResult {
+  // Momsreg.nr härleds ur org.nr för svenska företag. Säg det rakt ut i
+  // stället för att visa en bekräftelse på en ändring som tysta kastas bort.
+  // Utländska företag har inget org.nr att härleda ur – där är fältet vanligt.
+  if ("vatNumber" in patch && patch.vatNumber !== undefined && isSwedishCountry(db().settings.country)) {
+    return fail(
+      "Momsregistreringsnumret går inte att ändra separat – det räknas ut från organisationsnumret (SE + org.nr + 01). Ändra organisationsnumret i stället om det är fel."
+    );
+  }
   const keys = Object.keys(patch).filter((k) => k in SETTINGS_FIELD_LABELS && patch[k] !== undefined);
   if (keys.length === 0) return fail("Inget att ändra. Säg vad som ska uppdateras, till exempel bankgiro.");
   const current = getBusinessProfile();
@@ -1306,7 +1315,7 @@ export function requestUpdateBusinessProfile(patch: Record<string, string | numb
   }));
   const action: PendingAssistantAction = { id: uid(), type: "uppdatera_foretag", patch };
   addPending(action);
-  const sensitive = keys.some((k) => ["bankgiro", "plusgiro", "iban", "bic", "bankAccount", "orgNumber", "vatNumber"].includes(k));
+  const sensitive = keys.some((k) => ["bankgiro", "plusgiro", "iban", "bic", "bankAccount", "orgNumber"].includes(k));
   return {
     ok: true,
     text: sensitive

@@ -1,11 +1,11 @@
 import type { CompanySettings } from "../types";
 import {
   isBankgiroFormat,
+  isForeignVatNumberFormat,
   isIbanFormat,
   isOrgnrFormat,
   isPlusgiroFormat,
-  isVatNumberFormat,
-  vatMatchesOrgnr,
+  isSwedishCountry,
 } from "./formats";
 
 export interface IssueBlocker {
@@ -19,7 +19,17 @@ export interface IssueBlocker {
 /** Fält som collectSellerBlockers läser – inget dokument eller kund. */
 export type SellerBlockerInput = Pick<
   CompanySettings,
-  "name" | "orgNumber" | "vatNumber" | "address" | "postalCode" | "city" | "bankgiro" | "plusgiro" | "iban" | "bankAccount"
+  | "name"
+  | "orgNumber"
+  | "vatNumber"
+  | "country"
+  | "address"
+  | "postalCode"
+  | "city"
+  | "bankgiro"
+  | "plusgiro"
+  | "iban"
+  | "bankAccount"
 >;
 
 /**
@@ -33,7 +43,6 @@ export const BUSINESS_LEVEL_BLOCKER_CODES = new Set([
   "seller_orgnr_format",
   "seller_vat",
   "seller_vat_format",
-  "seller_vat_orgnr",
   "seller_address",
   "seller_bankgiro",
   "seller_bankgiro_format",
@@ -104,22 +113,20 @@ export function collectSellerBlockers(seller: SellerBlockerInput): IssueBlocker[
       actionLabel: complete,
     });
   }
-  if (missing(seller.vatNumber)) {
-    blockers.push({ code: "seller_vat", message: "Momsregistreringsnummer saknas i företagsuppgifterna.", href, actionLabel: complete });
-  } else if (!isVatNumberFormat(seller.vatNumber)) {
-    blockers.push({
-      code: "seller_vat_format",
-      message: "Momsregistreringsnumret ska anges som SE följt av 12 siffror (t.ex. SE559123456701).",
-      href,
-      actionLabel: complete,
-    });
-  } else if (isOrgnrFormat(seller.orgNumber) && !vatMatchesOrgnr(seller.vatNumber, seller.orgNumber)) {
-    blockers.push({
-      code: "seller_vat_orgnr",
-      message: "Momsregistreringsnumret stämmer inte med organisationsnumret (förväntat SE + org.nr + 01).",
-      href,
-      actionLabel: complete,
-    });
+  // Svenska företag: momsreg.nr härleds ur org.nr, så det kan varken saknas
+  // eller ha fel format på egen hand – org.nr-blockern ovan täcker allt.
+  // Bara utländska företag har ett eget momsnummer som kan saknas.
+  if (!isSwedishCountry(seller.country)) {
+    if (missing(seller.vatNumber)) {
+      blockers.push({ code: "seller_vat", message: "Momsregistreringsnummer saknas i företagsuppgifterna.", href, actionLabel: complete });
+    } else if (!isForeignVatNumberFormat(seller.vatNumber)) {
+      blockers.push({
+        code: "seller_vat_format",
+        message: "Ange momsregistreringsnumret med landskod, t.ex. DE123456789.",
+        href,
+        actionLabel: complete,
+      });
+    }
   }
   if (missing(seller.address) || missing(seller.postalCode) || missing(seller.city)) {
     blockers.push({

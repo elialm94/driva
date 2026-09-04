@@ -36,11 +36,70 @@ export function isVatNumberFormat(value: string): boolean {
   return VAT_SE.test(value.trim().toUpperCase().replace(/\s/g, ""));
 }
 
+/**
+ * Grov rimlighetskontroll för utländska momsnummer: landskod + 2–20 tecken.
+ * Formaten skiljer sig per land och vi kontrollerar inget mot VIES – därför
+ * en bred kontroll som bara fångar uppenbart skräp.
+ */
+const VAT_FOREIGN = /^[A-Z]{2}[A-Z0-9]{2,20}$/;
+
+export function isForeignVatNumberFormat(value: string): boolean {
+  return VAT_FOREIGN.test(normalizeVatNumber(value));
+}
+
 export function vatMatchesOrgnr(vatNumber: string, orgNumber: string): boolean {
-  const vat = vatNumber.trim().toUpperCase().replace(/\s/g, "");
+  const derived = deriveSwedishVatNumber(orgNumber);
+  if (!derived) return false;
+  return normalizeVatNumber(vatNumber) === derived;
+}
+
+export function normalizeVatNumber(value: string): string {
+  return value.trim().toUpperCase().replace(/\s/g, "");
+}
+
+/**
+ * ENDA vägen till ett svenskt momsreg.nr: SE + organisationsnummerets 10
+ * siffror + 01. Organisationsnumret är sanningen – användaren skriver aldrig
+ * momsnumret själv, så de två kan inte glida isär.
+ *
+ * Tom sträng när organisationsnumret inte är 10 siffror: ett halvskrivet
+ * org.nr ska aldrig visas som ett halvt momsnummer.
+ *
+ * Härledningen är syntaktisk. Den säger INTE att företaget är momsregistrerat
+ * – det avgör Skatteverket, och Driva kontrollerar inget mot dem.
+ */
+export function deriveSwedishVatNumber(orgNumber: string): string {
   const org = digitsOnly(orgNumber);
-  if (!isVatNumberFormat(vat) || org.length !== 10) return false;
-  return vat === `SE${org}01`;
+  if (org.length !== 10) return "";
+  return `SE${org}01`;
+}
+
+/** Tomt/utelämnat land = Sverige (samma default som CompanySettings.country). */
+const SWEDISH_COUNTRY_NAMES = new Set(["", "sverige", "sweden", "se", "swe"]);
+
+export function isSwedishCountry(country?: string | null): boolean {
+  return SWEDISH_COUNTRY_NAMES.has((country ?? "").trim().toLowerCase());
+}
+
+export interface VatNumberSource {
+  orgNumber: string;
+  vatNumber?: string;
+  country?: string;
+}
+
+/**
+ * Momsreg.nr för ett företag. Svenska företag: härlett ur org.nr. Utländska:
+ * det sparade värdet oförändrat – utländska momsnummerformat varierar och
+ * ska inte tvingas in i den svenska mallen.
+ *
+ * Går org.nr inte att härleda ur (tomt eller ofullständigt) behålls ett redan
+ * sparat värde. Härledningen ska äga fältet, inte radera uppgifter vi fått
+ * från någon annanstans – och ett tomt org.nr har inget att glida isär med.
+ */
+export function companyVatNumber(company: VatNumberSource): string {
+  const stored = normalizeVatNumber(company.vatNumber ?? "");
+  if (!isSwedishCountry(company.country)) return stored;
+  return deriveSwedishVatNumber(company.orgNumber) || stored;
 }
 
 export function isBankgiroFormat(value: string): boolean {
@@ -57,12 +116,6 @@ export function normalizeBankgiro(value: string): string {
   if (d.length === 7) return `${d.slice(0, 3)}-${d.slice(3)}`;
   if (d.length === 8) return `${d.slice(0, 4)}-${d.slice(4)}`;
   return trimmed;
-}
-
-export function formatVatNumber(orgNumber: string): string {
-  const org = digitsOnly(orgNumber);
-  if (org.length !== 10) return "";
-  return `SE${org}01`;
 }
 
 /** Progressiv visning: 11624 → 116 24. */
