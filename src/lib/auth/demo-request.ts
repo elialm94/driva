@@ -73,7 +73,7 @@ export async function clearDemoCookies(): Promise<void> {
  */
 export async function startDemoSession(): Promise<string> {
   const sessionId = newDemoSessionId();
-  ensureDemoSessionState(sessionId);
+  await ensureDemoSessionState(sessionId);
   await setDemoSessionCookie(sessionId);
   return sessionId;
 }
@@ -85,6 +85,6 @@ export async function startDemoSession(): Promise<string> {
  */
 export async function endDemoSession(): Promise<void> {
   const sessionId = await readDemoSessionId();
-  if (sessionId) deleteDemoSessionState(sessionId);
+  if (sessionId) await deleteDemoSessionState(sessionId);
   await clearDemoCookies();
 }

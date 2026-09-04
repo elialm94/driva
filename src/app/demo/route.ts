@@ -1,18 +1,19 @@
 /**
  * GET /demo – "Se demo": rakt in i produkten som Södermalms Snickeri AB.
  *
- * Ingen mellansida, inget konto och INGEN databas: routen sätter en
- * httpOnly-cookie med ett kryptografiskt slumpat session-id och klonar det
- * kanoniska exempeldatat till besökarens egen JSON-fil
- * (.data/demo-sessions/<id>.json). Ett återbesök inom sessionens livslängd
- * återanvänder samma fil – ändringarna finns kvar. Incognito/annan
+ * Ingen mellansida, inget konto och inget företag i databasen: routen sätter
+ * en httpOnly-cookie med ett kryptografiskt slumpat session-id och klonar det
+ * kanoniska exempeldatat till besökarens eget tillstånd (JSON-fil lokalt, en
+ * jsonb-rad i public.demo_sessions i Supabase-läget – delad av alla
+ * serverless-instanser). Ett återbesök inom sessionens livslängd
+ * återanvänder samma tillstånd – ändringarna finns kvar. Incognito/annan
  * webbläsare = ny cookie = egen färsk klon.
  *
  * Vakter:
  *   * Prefetch/spekulativa hämtningar startar aldrig en session (204).
  *   * Rate limit per IP + instans (drygt för människor, stopp för skript).
  *   * Redan inloggade riktiga användare skickas till sin app – deras
- *     session röres aldrig, och demon rör aldrig Supabase.
+ *     session röres aldrig, och demon rör aldrig riktiga företags data.
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { isSupabaseMode } from "@/lib/storage/config";
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Cookien skrivs via cookies() i route handler-kontext och följer med
-  // redirect-svaret nedan. Seedet klonas till sessionens egen JSON-fil.
+  // redirect-svaret nedan. Seedet klonas till sessionens eget tillstånd.
   await startDemoSession();
   return NextResponse.redirect(new URL("/", request.url));
 }

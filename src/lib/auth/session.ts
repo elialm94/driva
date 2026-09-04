@@ -141,7 +141,7 @@ async function demoMemberships(sessionId: string, userId: string): Promise<Membe
     const now = new Date().toISOString();
     putMembership({
       businessId,
-      businessName: ensureDemoSessionState(sessionId).settings.name,
+      businessName: (await ensureDemoSessionState(sessionId)).settings.name,
       userId,
       role,
       acceptedAt: now,
@@ -412,21 +412,24 @@ async function resolveActiveBusiness(userId: string, explicit?: string): Promise
 }
 
 /**
- * Demosessionens tenantkontext: sessionens JSON-fil är hela världen.
+ * Demosessionens tenantkontext: sessionens eget tillstånd är hela världen.
  *
- * Tillståndet lastas från fil-storen (samma objekt per instans – parallella
- * requests i samma session delar det, precis som den globala JSON-storen),
- * fn körs i samma AsyncLocalStorage-kontext som Supabase-vägen använder –
- * db()/save() i domänlagret är helt oförändrade – och vid save() skrivs
- * HELA filen ner igen. Ingen diffning, ingen SQL: demorequests rör aldrig
- * Supabase, och riktiga användare passerar aldrig genom den här vägen.
+ * Tillståndet lastas från demosessionslagret (samma objekt per instans –
+ * parallella requests i samma session delar det, precis som den globala
+ * JSON-storen; i Supabase-läget verifieras det mot databasens state_version
+ * så att andra instansers skrivningar alltid syns), fn körs i samma
+ * AsyncLocalStorage-kontext som Supabase-vägen använder – db()/save() i
+ * domänlagret är helt oförändrade – och vid save() skrivs HELA tillståndet
+ * ner igen. Ingen diffning mot tenanttabeller: demorequests rör aldrig
+ * riktiga företags data, och riktiga användare passerar aldrig genom den
+ * här vägen.
  */
 async function runInDemoSession<T>(
   sessionId: string,
   opts: { access: "read" | "write"; actor?: CollaborationActor },
   fn: () => T | Promise<T>
 ): Promise<T> {
-  const state = ensureDemoSessionState(sessionId);
+  const state = await ensureDemoSessionState(sessionId);
   const ctx: TenantContext = {
     businessId: demoBusinessIdFor(sessionId),
     userId: opts.actor?.userId ?? null,
@@ -443,7 +446,7 @@ async function runInDemoSession<T>(
   } finally {
     // finally: även flöden som avslutas med redirect() får sina ändringar
     // sparade (tillståndet i minnet är redan muterat – filen ska spegla det).
-    if (ctx.dirty) persistDemoSessionState(sessionId, state);
+    if (ctx.dirty) await persistDemoSessionState(sessionId, state);
   }
 }
 
@@ -563,7 +566,7 @@ export async function withPublicBusiness<T>(
   opts: { access?: "read" | "write"; retry?: boolean } = {}
 ): Promise<T | null> {
   const demoId = await demoRequestSessionId();
-  if (demoId && demoStateHasToken(ensureDemoSessionState(demoId), kind, token)) {
+  if (demoId && demoStateHasToken(await ensureDemoSessionState(demoId), kind, token)) {
     return runInDemoSession(demoId, { access: opts.access ?? "write" }, fn);
   }
   if (!isSupabaseMode()) return await fn();
@@ -625,7 +628,7 @@ const loadDemoPage = cache(async (sessionId: string): Promise<void> => {
   const user = await requireUser();
   const businessId = demoBusinessIdFor(sessionId);
   const slot = requestSlot();
-  slot.state = ensureDemoSessionState(sessionId);
+  slot.state = await ensureDemoSessionState(sessionId);
   slot.businessId = businessId;
   slot.actor = actorFrom(user, businessId, await demoSessionRole());
 });
@@ -661,13 +664,13 @@ const loadPublicPage = cache(async (kind: PublicTokenKind, token: string): Promi
 
 const loadDemoPublicPage = cache(async (sessionId: string): Promise<void> => {
   const slot = requestSlot();
-  slot.state = ensureDemoSessionState(sessionId);
+  slot.state = await ensureDemoSessionState(sessionId);
   slot.businessId = demoBusinessIdFor(sessionId);
 });
 
 export async function ensurePublicPage(kind: PublicTokenKind, token: string): Promise<boolean> {
   const demoId = await demoRequestSessionId();
-  if (demoId && demoStateHasToken(ensureDemoSessionState(demoId), kind, token)) {
+  if (demoId && demoStateHasToken(await ensureDemoSessionState(demoId), kind, token)) {
     await loadDemoPublicPage(demoId);
     return true;
   }
