@@ -39,7 +39,12 @@ function acceptedQuote() {
     terms: "Standardvillkor",
   });
   sendQuote(quote.id, { mode: "live", ok: true, messageId: "m-1", sentTo: "anna@test.se" });
-  acceptQuote({ token: getQuote(quote.id)!.token, name: "Anna Andersson" });
+  acceptQuote({
+    token: getQuote(quote.id)!.token,
+    name: "Anna Andersson",
+    ip: "203.0.113.7",
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Version/17.5 Mobile/15E148 Safari/604.1",
+  });
   return getQuote(quote.id)!;
 }
 
@@ -73,6 +78,8 @@ describe("intyg om godkännande", () => {
     assert.equal(cert.statement, acceptance.statement);
     assert.equal(cert.storedHash, acceptance.contentHash);
     assert.doesNotMatch(cert.methodText, /BankID/);
+    assert.equal(cert.ip, "203.0.113.7");
+    assert.equal(cert.device, "Safari på iPhone");
   });
 
   it("ändrat dokument får vanlig svenska – inte hash mismatch", () => {
@@ -103,6 +110,9 @@ describe("intyg om godkännande", () => {
     assert.ok(indexOf(html, CERTIFICATE_TITLE) < indexOf(html, "SHA-256"));
     assert.doesNotMatch(html, /BankID|Ställ en fråga/);
     assert.doesNotMatch(html, /Godkänd offert/);
+    assert.ok(html.includes("203.0.113.7"));
+    assert.ok(html.includes("Safari på iPhone"));
+    assert.ok(indexOf(html, "Avsändare") < indexOf(html, "203.0.113.7"));
   });
 
   it("PDF: samma fakta, hashar bara i sidfot, ingen app-chrome", () => {

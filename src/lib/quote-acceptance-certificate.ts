@@ -5,6 +5,7 @@ import { docTotals } from "./calc";
 import { resolveQuoteCompany } from "./invoices/snapshot";
 import { db } from "./store";
 import { getQuoteByToken, quoteAcceptance } from "./services/data";
+import { describeUserAgent } from "./quote-acceptance";
 
 /**
  * Underlag som intyg: samma sparade fält som QuoteAcceptance, omformulerat
@@ -45,6 +46,8 @@ export interface AcceptanceCertificateModel {
   currentHash: string;
   linkSentTo?: string;
   acceptedByEmail?: string;
+  ip?: string;
+  device?: string;
   legacyDemo: boolean;
 }
 
@@ -121,6 +124,8 @@ export function buildAcceptanceCertificate(input: {
     currentHash,
     linkSentTo: acceptance.linkSentTo,
     acceptedByEmail: acceptance.acceptedByEmail,
+    ip: acceptance.ip,
+    device: describeUserAgent(acceptance.userAgent),
     legacyDemo,
   };
 }

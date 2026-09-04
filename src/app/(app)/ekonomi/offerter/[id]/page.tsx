@@ -19,7 +19,6 @@ import {
   requireCustomer,
   quoteVersions,
 } from "@/lib/services/data";
-import { describeUserAgent } from "@/lib/quote-acceptance";
 import { kr, datumTid, datumLang, relativ } from "@/lib/format";
 import { Badge, ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
 import { QuoteStatusBadge, InvoiceStatusBadge } from "@/components/status";
@@ -43,7 +42,7 @@ import { quoteChainState } from "@/lib/services/business-chain";
 import { documentLinkView } from "@/lib/services/document-job-link";
 import { QuoteChainActions } from "@/components/quote-chain-actions";
 import { LinkedToBox } from "@/components/linked-to-box";
-import { QUOTE_ACCEPT_METHOD, QUOTE_TIMELINE, acceptedByLabel } from "@/lib/status-labels";
+import { QUOTE_TIMELINE, acceptedByLabel } from "@/lib/status-labels";
 
 export const metadata = { title: "Offert" };
 
@@ -219,50 +218,22 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
       ) : null}
 
       {acceptance ? (
-        <Card className="mb-6 px-5 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <Card data-quote-owner-accepted="" className="mb-6 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-start gap-3">
               <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
               <div>
                 <p className="text-[15px] font-semibold text-ok">{acceptedByLabel(acceptance)}</p>
                 <p className="text-[14px] text-soft">{datumTid(acceptance.acceptedAt)}</p>
-                {/* Bevisuppgifterna – bara här, för företagaren. Kunden ser namn, tid och hash på underlaget. */}
-                <dl className="mt-2 grid gap-x-6 gap-y-0.5 text-[12px] text-muted sm:grid-cols-[auto_1fr]">
-                  <dt>Kund</dt>
-                  <dd className="text-soft">
-                    {acceptance.customerNameAtAccept}
-                    {acceptance.acceptedByEmail ? ` · ${acceptance.acceptedByEmail}` : ""}
-                  </dd>
-                  {acceptance.linkSentTo ? (
-                    <>
-                      <dt>Länk skickad till</dt>
-                      <dd className="text-soft">{acceptance.linkSentTo}</dd>
-                    </>
-                  ) : null}
-                  {acceptance.ip || acceptance.userAgent ? (
-                    <>
-                      <dt>Varifrån</dt>
-                      <dd className="text-soft">
-                        {[acceptance.ip, describeUserAgent(acceptance.userAgent)].filter(Boolean).join(" · ")}
-                      </dd>
-                    </>
-                  ) : null}
-                  <dt>Sätt</dt>
-                  <dd className="text-soft">{QUOTE_ACCEPT_METHOD[acceptance.method]}</dd>
-                </dl>
-                <p className="mt-2 text-[12px] text-muted">
-                  Version {version.version} är låst (SHA-256) och kan verifieras mot underlaget. Ändringar kräver en ny
-                  version som kunden godkänner på nytt.
-                </p>
               </div>
             </div>
             <a
               href={`${publicPath}/underlag`}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line-strong px-3.5 text-[13px] font-medium text-ink hover:bg-canvas"
+              className={buttonClasses("secondary", "sm")}
             >
-              <FileLock2 className="size-3.5" /> Intyg om godkännande
+              <FileLock2 className="size-3.5" /> Visa intyg
             </a>
           </div>
         </Card>

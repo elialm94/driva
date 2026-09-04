@@ -66,8 +66,12 @@ export function AcceptanceCertificate({
         <footer className="mt-10 border-t border-line pt-3 text-[11px] leading-relaxed text-muted">
           <p className="font-medium text-soft">Teknisk kontroll</p>
           <p className="mt-1">
-            {cert.versionLabel}. SHA-256 vid godkännandet: {cert.storedHash}. Hash nu: {cert.currentHash}.
+            {cert.versionLabel}. {cert.methodText} SHA-256 vid godkännandet: {cert.storedHash}. Hash nu:{" "}
+            {cert.currentHash}.
             {cert.linkSentTo ? ` Offertlänken skickades till ${cert.linkSentTo}.` : ""}
+            {cert.ip || cert.device
+              ? ` Varifrån: ${[cert.ip, cert.device].filter(Boolean).join(" · ")}.`
+              : ""}
           </p>
         </footer>
       </article>
@@ -96,10 +100,20 @@ export function AcceptanceCertificate({
             <dt className="text-muted">Hash vid kontroll nu</dt>
             <dd className="break-all font-mono text-[12px] text-soft">{cert.currentHash}</dd>
           </div>
+          <div>
+            <dt className="text-muted">Sätt</dt>
+            <dd className="text-ink">{cert.methodText}</dd>
+          </div>
           {cert.linkSentTo ? (
             <div>
               <dt className="text-muted">Offertlänken skickades till</dt>
               <dd className="text-ink">{cert.linkSentTo}</dd>
+            </div>
+          ) : null}
+          {cert.ip || cert.device ? (
+            <div>
+              <dt className="text-muted">Varifrån</dt>
+              <dd className="text-ink">{[cert.ip, cert.device].filter(Boolean).join(" · ")}</dd>
             </div>
           ) : null}
         </dl>
