@@ -545,17 +545,17 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **Statuses:** Utkast, Skickad, Delbetald, Betald, Krediterad. Overdue **derived:** *Förfallen* / *Förfallen N dagar*. Credit badge **Kreditfaktura** (never overdue). Types: faktura, delbetalning, slutfaktura, kredit.
 - **Filters:** Alla, Utkast, Obetalda, Förfallna, Betalda, Krediterade.
 - **Main actions — utkast:** Redigera · Kasta utkast · **Skicka faktura** (issues **then** emails — `issueInvoice` + `emailInvoice`). Checklist `#invoice-send-blockers`.
-- **Issued:** Visa kundvy, påminnelse if overdue, overflow: Kreditera (full only), Kopiera kundlänk, PDF, Skicka igen, **Simulera inbetalning** (demo **and** an active mock bank connection — hidden after *Koppla från*).
+- **Issued:** Visa kundvy, påminnelse if overdue, overflow: Kreditera (full only — after save, emails the **invoice customer**, never the carpenter inbox; demo / `is_demo` skips Resend; mail failure does not roll back the credit), Kopiera kundlänk, PDF, Skicka igen, **Simulera inbetalning** (demo **and** an active mock bank connection — hidden after *Koppla från*).
 - **Paid:** *Betald och bokförd.*
 - **Public:** utkast 404. *Fakturan är betald* / *Fakturan har förfallit*. Ladda ner PDF.
 - **Related:** ROT application card; `DeniedReductionCard`; quote deviation; payments / bank match.
 - **Components:** `doc-form.tsx` (InvoiceForm), `invoice-document.tsx`, `invoice-draft-send.tsx`, `invoice-issue-checklist.tsx`, `money-widgets.tsx`, `denied-reduction-card.tsx`.
 - **Form ids:** `#faktura-saknas`, `#faktura-kund`, `#faktura-rot-rut`, `#faktura-betalvillkor`.
 - **DB:** `invoices` (`number` null until issue), `invoice_line_items`, `invoice_issued_snapshots` (immutable legal copy), `payments`.
-- **Invariants:** Number only via atomic `app.issue_invoice`. Issued UI reads snapshot. Partial pay → `delbetald`. Credit = reversal verification, not new revenue. Rest-invoice after denied ROT: `deniedReductionOf`, no new revenue. Issued OCR is Bankgirot **OCR-10 soft** (invoice-number digits + modulus-10 check, no length digit) via `ocrForInvoice` in `src/lib/ids.ts` — assigned once at `issueInvoice`, frozen on `issuedSnapshot`, reused on reminders/email/PDF. Drafts have no customer-facing OCR. SQL twin: `app.ocr_for_invoice`.
+- **Invariants:** Number only via atomic `app.issue_invoice`. Issued UI reads snapshot. Partial pay → `delbetald`. Credit = reversal verification, not new revenue. Full credit notifies the customer (`prepareCreditInvoiceNotice` + `after` + `sendMail`); partial credit is not a product path and does not email. Rest-invoice after denied ROT: `deniedReductionOf`, no new revenue. Issued OCR is Bankgirot **OCR-10 soft** (invoice-number digits + modulus-10 check, no length digit) via `ocrForInvoice` in `src/lib/ids.ts` — assigned once at `issueInvoice`, frozen on `issuedSnapshot`, reused on reminders/email/PDF. Drafts have no customer-facing OCR. SQL twin: `app.ocr_for_invoice`.
 - **Desktop/mobile:** same register pattern as offerter.
 - **Live:** `#1042` Förfallen 6 dagar (Brf Eken); `#1047` Skickad delbetalning; Utkast Brf Eken (`inv-1048`, list title from first line); two 0 kr Eli drafts (`Luckor i ek`, `Bänkskiva i ask`).
-- **Verify:** Ekonomi → Fakturor → first column is document title (not “Utkast”). Open #1042. Discard: only the Utkast row / detail `[data-testid=discard-draft-trigger]`. Public: `/faktura/{token}` for a sent invoice. Tests: `src/lib/invoices/display.test.ts`, `economy-list.test.ts`, `payment-flows.test.ts`, `financial-invariants.test.ts`. Script: `scripts/verify-financial-browser.ts`.
+- **Verify:** Ekonomi → Fakturor → first column is document title (not “Utkast”). Open #1042. Discard: only the Utkast row / detail `[data-testid=discard-draft-trigger]`. Public: `/faktura/{token}` for a sent invoice. Tests: `src/lib/invoices/display.test.ts`, `economy-list.test.ts`, `payment-flows.test.ts`, `financial-invariants.test.ts`, `credit-invoice-mail.test.ts` (subject/body, demo null, send-throw isolation, customer not carpenter). Script: `scripts/verify-financial-browser.ts`.
 
 ---
 
