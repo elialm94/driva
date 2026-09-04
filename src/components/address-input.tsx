@@ -18,10 +18,17 @@ import { cx, DemoTag } from "./ui";
 import { FieldError, invalidFieldCls } from "./form-validation";
 import { formatSwedishPostalCode, isSwedishPostalCode } from "@/lib/validation";
 import {
+  ADDRESS_LANGUAGE,
+  ADDRESS_MENU_Z_INDEX,
+  ADDRESS_PLACE_FIELDS,
+  ADDRESS_PLACES_LOAD_TIMEOUT_MS,
+  ADDRESS_PRIMARY_TYPES,
+  ADDRESS_REGION_CODES,
   ADDRESS_SEARCH_DEBOUNCE_MS,
   applyPickedAddress,
   demoAddressSuggestions,
   formatAddressLine,
+  googleMapsApiKey,
   partsFromPlaceComponents,
   shouldSearchAddress,
   type AddressParts,
@@ -81,7 +88,7 @@ declare global {
   }
 }
 
-const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+const MAPS_KEY = googleMapsApiKey();
 
 /**
  * Demosessioner får exempeladresser även när nyckeln finns – anonyma
@@ -92,29 +99,57 @@ function isDemoSurface(): boolean {
   return typeof document !== "undefined" && document.querySelector("[data-driva-demo]") !== null;
 }
 
+const MAPS_CALLBACK = "__drivaMapsReady";
+
 let placesLoader: Promise<PlacesLib | null> | null = null;
 
 function loadPlaces(): Promise<PlacesLib | null> {
   if (!MAPS_KEY || isDemoSurface()) return Promise.resolve(null);
   if (placesLoader) return placesLoader;
   placesLoader = new Promise((resolve) => {
-    const boot = () => {
-      window.google
-        ?.maps!.importLibrary!("places")
-        .then((lib) => resolve(lib as PlacesLib))
-        .catch(() => resolve(null));
+    if (typeof window === "undefined") {
+      resolve(null);
+      return;
+    }
+    let settled = false;
+    const done = (lib: PlacesLib | null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      resolve(lib);
     };
+    const timeout = window.setTimeout(() => done(null), ADDRESS_PLACES_LOAD_TIMEOUT_MS);
+
+    const boot = () => {
+      const importLibrary = window.google?.maps?.importLibrary;
+      if (!importLibrary) {
+        done(null);
+        return;
+      }
+      importLibrary("places")
+        .then((lib) => done(lib as PlacesLib))
+        .catch(() => done(null));
+    };
+
     if (window.google?.maps?.importLibrary) {
       boot();
       return;
     }
+
     window.__drivaMapsReady = boot;
+    const existing = document.getElementById(MAPS_CALLBACK);
+    if (existing) return;
+
     const script = document.createElement("script");
+    script.id = MAPS_CALLBACK;
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
       MAPS_KEY
-    )}&v=weekly&loading=async&language=sv&region=SE&callback=__drivaMapsReady`;
+    )}&v=weekly&loading=async&language=sv&region=SE&callback=${MAPS_CALLBACK}`;
     script.async = true;
-    script.onerror = () => resolve(null);
+    // Origin-only referer så en nyckel låst till https://app.example/* matchar
+    // även med dokumentets strict-origin-when-cross-origin.
+    script.referrerPolicy = "origin";
+    script.onerror = () => done(null);
     document.head.appendChild(script);
   });
   return placesLoader;
@@ -161,7 +196,7 @@ function SuggestionMenu({
         left: rect.left,
         width: Math.max(rect.width, 220),
         maxHeight,
-        zIndex: 200,
+        zIndex: ADDRESS_MENU_Z_INDEX,
         ...(preferBelow
           ? { top: rect.bottom + gap }
           : { bottom: window.innerHeight - rect.top + gap }),
@@ -295,8 +330,9 @@ export function AddressAutocomplete({
       const { suggestions: raw } = await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
         input: query,
         sessionToken: sessionRef.current,
-        includedRegionCodes: ["se"],
-        language: "sv-SE",
+        includedPrimaryTypes: [...ADDRESS_PRIMARY_TYPES],
+        includedRegionCodes: [...ADDRESS_REGION_CODES],
+        language: ADDRESS_LANGUAGE,
         region: "se",
       });
       if (seq !== requestSeq.current) return;
@@ -311,7 +347,7 @@ export function AddressAutocomplete({
           secondary: p.secondaryText?.text ?? "",
           resolve: async () => {
             const place = p.toPlace();
-            await place.fetchFields({ fields: ["addressComponents"] });
+            await place.fetchFields({ fields: [...ADDRESS_PLACE_FIELDS] });
             // Sessionen förbrukas när detaljer hämtas – börja om vid nästa sökning.
             sessionRef.current = null;
             const parts = partsFromPlaceComponents(place.addressComponents ?? []);
@@ -366,6 +402,17 @@ export function AddressAutocomplete({
       setOpen(false);
       return;
     }
+    // Enter får inte skicka parent-formuläret medan listan är öppen eller
+    // medan vi väntar på förslag (annars hinner Ny kund submitta).
+    if (e.key === "Enter" && (open || searching)) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (open) {
+        const s = suggestions[highlight];
+        if (s) void pick(s);
+      }
+      return;
+    }
     if (!open) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -373,11 +420,6 @@ export function AddressAutocomplete({
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setHighlight((h) => Math.max(h - 1, 0));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      e.stopPropagation();
-      const s = suggestions[highlight];
-      if (s) void pick(s);
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
@@ -430,6 +472,7 @@ export function AddressAutocomplete({
           role="combobox"
           aria-expanded={open}
           aria-autocomplete="list"
+          aria-busy={searching || undefined}
           aria-invalid={ariaInvalid}
           aria-describedby={ariaDescribedBy}
           aria-label={hideLabel ? (ariaLabel ?? label) : ariaLabel}
