@@ -91,7 +91,6 @@ import {
 } from "@/lib/services/work-locations";
 import { maskPersonnummer } from "@/lib/personnummer";
 import {
-  askQuoteQuestion,
   createQuote,
   declineQuote,
   discardQuote,
@@ -476,17 +475,6 @@ export async function declineQuoteByTokenAction(token: string, reason?: string) 
     const quote = getQuoteByToken(token);
     if (!quote || quote.status !== "skickad") return;
     declineQuote(quote.id, typeof reason === "string" ? reason.slice(0, 2000) : undefined);
-    refresh();
-  });
-}
-
-export async function askQuoteQuestionByTokenAction(token: string, question: string) {
-  await withPublicBusiness("quote", token, () => {
-    const quote = getQuoteByToken(token);
-    if (!quote || quote.status === "utkast") return;
-    const text = typeof question === "string" ? question.trim().slice(0, 4000) : "";
-    if (!text) return;
-    askQuoteQuestion(quote.id, text);
     refresh();
   });
 }

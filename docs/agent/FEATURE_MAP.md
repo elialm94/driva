@@ -466,7 +466,7 @@ Two different systems:
 - **Main actions — utkast:** Redigera · **Kasta utkast** · **Skicka offert**. Checklist `#quote-send-blockers` *Innan offerten kan skickas*.
 - **Main actions — skickad:** Öppna kundvyn · Kopiera kundlänk · PDF · Skicka påminnelse · chain (Starta uppdrag / Skapa faktura). Owner dismiss from Hem: **Inte aktuell**.
 - **Main actions — godkänd/avböjd:** Ny version (new version → utkast) · Öppna kundvyn. Godkänd also shows the acceptance card (who, when, customer, e-mail, link recipient, IP + device, method) + **Visa underlag**.
-- **Public `/offert/[token]`:** utkast → **404**. Document ends with section **Godkänn offerten**: field **Ditt namn** (prefilled: person name, or company contact person; editable; button disabled while blank), one sentence *Genom att godkänna accepterar du offerten “{rubrik}” från {företag} daterad {datum} till ett totalt belopp om {totalt}.* (ROT/RUT adds *, varav … preliminärt ROT/RUT-avdrag*), primary **Godkänn offert** (`data-testid=public-quote-accept`), footnote *Godkännandet sparas tillsammans med offertens innehåll och tidpunkt.* Fixed bottom bar: Offertvärde, **Avböj offerten** (`public-quote-decline`), **Ställ en fråga**, **Godkänn offert** (anchor → `#godkann-offert`, focuses the name field if empty). No BankID button, no draw-to-sign, no checkbox. First open → `viewedAt` / *Öppnad av kunden*.
+- **Public `/offert/[token]`:** utkast → **404**. The A4 **QuoteDocument** is the commercial offer only (villkor + seller footer; *Godkänd {datum} av {namn}* once accepted). **No CTA inside the card** — no **Godkänn offerten** block, no name field, no accept button. Accept chrome sits **below** the card: validity *Offerten är giltig till …*, **Ditt namn** (prefilled: person name, or company contact person; editable; button disabled while blank), one sentence *Genom att godkänna accepterar du offerten “{rubrik}” från {företag} daterad {datum} till ett totalt belopp om {totalt}.* (ROT/RUT adds *, varav … preliminärt ROT/RUT-avdrag*), primary **Godkänn offert** (`data-testid=public-quote-accept`) — real submit, **no chevron / no jump link**, footnote *Godkännandet sparas tillsammans med offertens innehåll och tidpunkt.*, quiet **Avböj offerten** (`public-quote-decline`). Mobile sticky (`md:hidden`, `data-quote-accept-bar`, `public-quote-accept-bar`) repeats only that submit (and the name field if empty) — same `acceptQuote` call, not a second form inside the card. Footer *Skriv ut eller spara som PDF* stays outside the document. **No “Ställ en fråga”.** No BankID button, no draw-to-sign, no checkbox. First open → `viewedAt` / *Öppnad av kunden*.
 - **Accept states:** success → inline *Offerten är godkänd* + receipt (who, when, amount) then `router.refresh()` → server banner *Offerten är godkänd* / *Godkänd av {namn}, {tid} · {belopp}* + **Visa underlag för godkännandet**; document shows *Godkänd {datum} av {namn}*; **already accepted** = read-only, no second accept; **avbojd** / **expired** → Swedish explanation, no form; **utkast** → 404 (also for the action: `not_found`).
 - **Accept service (`acceptQuote`):** rate limit (10/token, 40/IP per 10 min) → token lookup (utkast = not_found) → idempotent return if already accepted → `normalizeAcceptName` (trim, collapse, ≤120; empty → `name_required`) → status (`declined` / `expired` / `not_acceptable`) → `expectedContentHash` from the rendered page must equal `quoteVersionHash(version)` (`changed`) → `finalizeQuoteAcceptance`: sets seller/buyer snapshots, `lockedAt`, `contentHash`, pushes the `QuoteAcceptance` (`method: simple_accept`, `acceptedAt`, `acceptedByName`, `customerNameAtAccept`, `acceptedByEmail`, `contentHash`, `statement`, `ip`, `userAgent`, `linkSentTo`), `status = godkand`, `decidedAt`, `createJobFromQuote` (idempotent — never a second job), `logActivity`, one `save()`. Errors are `QuoteAcceptError` with Swedish `QUOTE_ACCEPT_TEXT`.
 - **Carpenter notice:** `prepareQuoteAcceptedNotice` (null in demo / `is_demo` / no mail provider) → sent with `after()` so the customer never waits on Resend; failure never blocks the accept.
@@ -477,11 +477,11 @@ Two different systems:
   - Redirect: `/ekonomi?flik=offerter&kastat=offert` (`DraftDiscardedToast`).
   - There is **no** hard delete for sent/signed quotes.
 - **Related:** ROT on form; job link (`LinkedToBox`); invoices from payment plan.
-- **Components:** `economy-register.tsx`, `doc-form.tsx` (QuoteForm), `discard-draft-button.tsx`, `quote-draft-send.tsx`, `send-checklist.tsx`, `quote-document.tsx` (`acceptance` record + `acceptForm` slot), `quote-chain-actions.tsx`, `quote-accept.tsx` (`QuoteAcceptForm`, `AcceptJumpButton`), `quote-public-actions.tsx` (Avböj / Ställ en fråga).
+- **Components:** `economy-register.tsx`, `doc-form.tsx` (QuoteForm), `discard-draft-button.tsx`, `quote-draft-send.tsx`, `send-checklist.tsx`, `quote-document.tsx` (`acceptance` stamp only — no `acceptForm` slot), `quote-chain-actions.tsx`, `quote-accept.tsx` (`QuoteAcceptForm` below the card + mobile sticky submit), `quote-public-actions.tsx` (Avböj only).
 - **Form ids:** `#offert-saknas`, `#offert-kund`, `#offert-rubrik`, `#offert-rot-rut`, `#offert-betalplan`, `#prisrader`; public accept: `#godkann-offert`, `#godkann-namn`.
 - **DB:** `quotes`, `quote_versions` (payload JSONB is hash-frozen), `signatures` (= acceptances; migration 28 adds `method`, makes `order_ref` / `signer_personal_number_masked` / `environment` nullable; `evidence` JSONB holds contentHash, statement, customerNameAtAccept, acceptedByEmail, ip, userAgent, linkSentTo; `signatures_quote_uq` keeps one per quote; `apply-pending-schema.ensureQuoteAcceptanceSchema` mirrors it), `bankid_orders` (legacy).
 - **Invariants:** Locked versions immutable — a sent/accepted quote is a snapshot; later edits create a new version and never change what was accepted. Public only via unguessable `token`. Totals panel says **Offertvärde**, not Att betala. Quote↔job same customer. Accept never requires personnummer; ROT fields only when ROT/RUT is on the document. Demo/`is_demo` accept makes zero external HTTP.
-- **Desktop/mobile:** register table + cards. Form: sticky save on mobile (`DocStickyActions`). Public: fixed bottom bar + safe-area.
+- **Desktop/mobile:** register table + cards. Form: sticky save on mobile (`DocStickyActions`). Public: accept chrome below the document; mobile sticky repeats **Godkänn offert** (real submit, safe-area).
 - **Live draft:** Offert **#116** `/ekonomi/offerter/quote-bokhylla` — ROT blockers: personnummer + bostad. Public `/offert/demo-eva-bokhylla` is **not** viewable. Acceptable public: `/offert/demo-bertil-fasad`.
 
 ### How an agent verifies (quote delete / send / accept)
@@ -512,7 +512,7 @@ Two different systems:
 **Accept (demo, ~3 minutes)**
 
 1. `/demo` → open `/offert/demo-bertil-fasad` (or Ekonomi → Offerter → #115 → *Öppna kundvyn*).
-2. Scroll to **Godkänn offerten** (or tap **Godkänn offert** in the bottom bar → jumps + focuses). **Ditt namn** is prefilled *Bertil Lindqvist* — clear it and the button disables; type a name again.
+2. Scroll **past the document card** to the accept chrome (or tap **Godkänn offert** in the mobile sticky — it submits, it does not jump). **Ditt namn** is prefilled *Bertil Lindqvist* — clear it and the button disables; type a name again. The card itself has no Godkänn block and no **Ställ en fråga**.
 3. Read the sentence, press **Godkänn offert** → *Offerten är godkänd* + receipt; page reloads to the read-only state with *Godkänd av …* and **Visa underlag för godkännandet**. Reload → no form, no second accept.
 4. Back in the app: `/ekonomi/offerter/quote-fasad` shows badge **Godkänd**, *Version 1 låst*, the acceptance card (name, time, kund, e-post, IP · device, method) and the timeline row *Godkänd av Bertil Lindqvist*. `/kunder/cust-bertil` chain: Offert → Uppdrag (`job-fasad`, no duplicate) → Faktura.
 5. Negative checks: `/offert/demo-eva-bokhylla` (utkast) → 404. No request to any BankID host. Puppeteer: `[data-testid=public-quote-accept]`, `[data-quote-accepted-banner]`, `[data-quote-acceptance-line]`.
@@ -808,7 +808,7 @@ Important UI with **no** `data-testid` (agents must use text, href, or fragile C
 - Ekonomi / Kunder / Inbox / Bokföring **tabs and filter chips**
 - Register rows (quote/invoice/customer/job/inbox) as clickable units
 - Quote/invoice detail primary actions: Skicka, Redigera, Öppna kundvyn, Kopiera kundlänk (discard button is the exception)
-- Public Godkänn offert (`public-quote-accept`) / Avböj (`public-quote-decline`) / Ställ en fråga
+- Public Godkänn offert (`public-quote-accept` below the card; `public-quote-accept-bar` on mobile) / Avböj (`public-quote-decline`)
 - Job detail: Skapa faktura, Markera som klart, Ta bort
 - Inbox detail workflow + Skapa bankfil
 - Receipt upload: **Lägg till kvitto** file input (attention item / `UploadReceiptButton`), *Kvitto sparat* / *Kvitto sparat och matchat* / error text, **Visa kvitto** link (only `href^="/api/kvitto/"` is stable)
@@ -851,7 +851,7 @@ Do **not** add testids to every settings field or design token — those already
 |------|-------|
 | Open Offerter | `/demo` → **Ekonomi** → tab Offerter (default) |
 | Delete a quote | Only #116 → *Kasta utkast* → confirm. Sent quotes: Hem *Inte aktuell* or public *Avböj*. |
-| Accept a quote | `/offert/demo-bertil-fasad` → **Godkänn offerten** → name → Godkänn offert |
+| Accept a quote | `/offert/demo-bertil-fasad` → accept chrome **below** the document → name → Godkänn offert |
 | Overdue invoice | `/ekonomi/fakturor/inv-1042` |
 | Inbox badge item | `/inbox/inbox-mail-byggmax` |
 | Upload a receipt file | `/bokforing` → *Kvitto saknas – Clas Ohlson, 349 kr* → **Lägg till kvitto** (file < 1,5 MB) → Ekonomi → Utgifter → **Visa kvitto** |

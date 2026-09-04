@@ -9,8 +9,7 @@ import { kr, datumTid, datumLang, dagarTill } from "@/lib/format";
 import { QuoteDocument } from "@/components/quote-document";
 import { CompanyLogo } from "@/components/company-logo";
 import { acceptedByLabel } from "@/lib/status-labels";
-import { AcceptJumpButton, QuoteAcceptForm } from "@/components/quote-accept";
-import { DeclineQuoteButton, QuoteQuestionButton } from "@/components/quote-public-actions";
+import { QuoteAcceptForm } from "@/components/quote-accept";
 import { DemoTag } from "@/components/ui";
 import { resolveQuoteCompany, resolveQuoteCustomer } from "@/lib/invoices/snapshot";
 import { ensurePublicPage, withPublicBusiness } from "@/lib/auth/session";
@@ -28,10 +27,10 @@ export async function generateMetadata(props: PageProps<"/offert/[token]">) {
 }
 
 /**
- * Kundens offertsida. Kunden godkänner EXAKT det dokument som visas: namn +
- * knapp i dokumentets avslutning (QuoteAcceptForm). Ingen BankID, ingen ritad
- * signatur – godkännandet sparas med versionens hash, namn, tidpunkt och
- * varifrån det gjordes.
+ * Kundens offertsida. Dokumentkortet är den kommersiella offerten. Godkännandet
+ * (namn + knapp) ligger under kortet – inte i A4:an. Ingen BankID, ingen
+ * frågekanal, ingen ritad signatur. Godkännandet sparas med versionens hash,
+ * namn, tidpunkt och varifrån det gjordes.
  */
 export default async function PublicQuotePage(props: PageProps<"/offert/[token]">) {
   const { token } = await props.params;
@@ -137,19 +136,18 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
             quote={quote}
             version={version}
             acceptance={acceptance}
-            acceptForm={
-              // Godkännandet hör hemma i dokumentets avslutning – inte i en popover.
-              canAccept ? (
-                <QuoteAcceptForm
-                  token={quote.token}
-                  statement={quoteAcceptanceStatement(quote, version)}
-                  prefillName={prefillName}
-                  contentHash={contentHash}
-                />
-              ) : undefined
-            }
           />
         </div>
+
+        {canAccept ? (
+          <QuoteAcceptForm
+            token={quote.token}
+            statement={quoteAcceptanceStatement(quote, version)}
+            prefillName={prefillName}
+            contentHash={contentHash}
+            validUntil={version.validUntil}
+          />
+        ) : null}
 
         <p className="mt-6 text-center text-[12px] text-muted">
           Skickad med Driva · Frågor? Kontakta {seller.name} på {seller.email}
@@ -158,27 +156,9 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
             Skriv ut eller spara som PDF
           </a>
         </p>
-        {/* Luft under dokumentet så att formuläret aldrig hamnar under bottenlisten. */}
-        <div className={canAccept ? "h-36" : "h-10"} />
+        {/* Luft så att sidfoten inte hamnar under mobilbaren. */}
+        <div className={canAccept ? "h-36 md:h-10" : "h-10"} />
       </main>
-
-      {canAccept ? (
-        <div className="fixed inset-x-0 bottom-0 border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
-          <div className="mx-auto flex max-w-3xl flex-col gap-2.5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
-            <div className="flex items-center justify-between gap-3 sm:block">
-              {/* Inget betalas vid godkännandet – beloppet är offertens värde. */}
-              <p className="text-[14px] font-medium">
-                Offertvärde: <span className="font-semibold">{kr(totals.toPay)}</span>
-              </p>
-              <DeclineQuoteButton token={quote.token} />
-            </div>
-            <div className="flex gap-2 sm:items-center">
-              <QuoteQuestionButton token={quote.token} companyName={seller.name} />
-              <AcceptJumpButton />
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

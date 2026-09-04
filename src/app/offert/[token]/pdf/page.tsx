@@ -19,8 +19,8 @@ export async function generateMetadata(props: PageProps<"/offert/[token]/pdf">) 
  * Utskrifts-/PDF-vy (A4). Samma QuoteDocument och samma kanoniska data som
  * kundwebbvyn – snapshot + dokument är den juridiska representationen (ingen
  * sparad PDF-blob, samma mönster som fakturans /faktura/[token]/pdf).
- * Ingen formulär-slot: en godkänd offert visar raden "Godkänd {datum} av
- * {namn}", en skickad visar hur den godkänns.
+ * Ingen CTA: en godkänd offert visar raden "Godkänd {datum} av {namn}".
+ * En skickad offert är bara det kommersiella dokumentet.
  */
 export default async function QuotePdfPage(props: PageProps<"/offert/[token]/pdf">) {
   const { token } = await props.params;

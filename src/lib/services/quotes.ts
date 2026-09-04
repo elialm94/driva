@@ -428,18 +428,6 @@ export function followUpQuote(
   save();
 }
 
-/** En kundfråga från offertsidan. */
-export function askQuoteQuestion(quoteId: string, question: string): void {
-  const quote = getQuote(quoteId);
-  if (!quote) return;
-  const customer = requireCustomer(quote.customerId);
-  logActivity(`${customer.name} ställde en fråga om offert #${quote.number}: ”${question}”`, {
-    customerId: customer.id,
-    entity: { type: "offert", id: quoteId },
-  });
-  save();
-}
-
 /** Kasta ett offertutkast. Skickade/signerade offerter får inte tas bort. */
 export function discardQuote(quoteId: string, createdBy: "anvandare" | "assistent" = "anvandare"): void {
   const data = db();
