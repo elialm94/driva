@@ -15,7 +15,7 @@ Use this file to answer, without rediscovering the app:
 
 **Status vocabulary:** one source — `src/lib/status-labels.ts`. Never show raw enums (`skickad`, `POSTED`, `pending`) as primary UI. The accept method is **not** a status — and the customer accept is **never** called BankID, e-legitimation or avancerad underskrift (see `offer.accept_simple`).
 
-**Unknowns** are marked `UNKNOWN`. Facts below are from code + the live demo on 2026-09-01 unless noted.
+**Unknowns** are marked `UNKNOWN`. Facts below are from code + the live demo on 2026-09-01 unless noted. Shared address autocomplete ([PR #79](https://github.com/elialm94/driva/pull/79)) verified against main code 2026-09-04.
 
 ---
 
@@ -37,11 +37,36 @@ Bug: *“the quote delete button doesn't work.”*
 ### Layout
 
 - App chrome: `src/app/(app)/layout.tsx` — `Sidebar` + `BottomNav` (`src/components/nav.tsx`) + `main` (`lg:pl-60`, bottom padding for mobile nav).
-- Root wrapper: `data-driva-demo="1"` when JSON demo **or** public demo session (client gates e.g. Places autocomplete stay on local examples).
+- Root wrapper: `data-driva-demo="1"` when JSON demo **or** public demo session. Client gates read it: the shared address autocomplete (`src/components/address-input.tsx`) stays on the local Swedish example list and never calls Google when `[data-driva-demo]` is present — see [Address autocomplete](#address-autocomplete-shared).
 - Back/origin: `tillbaka` + `tillbakaNamn` query params (`src/lib/nav.ts`). `AppLink` stamps origin; `SmartBack` reads it. Browser back is real history.
 - Completing a send-blocker (customer email, company settings, ROT personnummer) must stamp the **document you left**, not that document's parent. Offert #6 → *Lägg till e-post* → customer Back is **Offert #6**. Helpers: `pageOrigin`, `hrefFromOrigin`. Inställningar accepts `tillbaka` even without a default back (`acceptsReturnTo`).
 - Breadcrumbs = structure, never history (`structuralCrumbs`).
 - Support impersonation: `SupportModeBanner` when a Driva Admin support session is active.
+
+### Address autocomplete (shared)
+
+One Places integration for every editable physical address — `AddressAutocomplete` (single input) + `AddressFields` (gata / postnummer / ort) in `src/components/address-input.tsx`; pure helpers in `src/lib/address-autocomplete.ts` (+ `address-autocomplete.test.ts`). **Do not fork another.**
+
+- **Source:** Google Places API (New) when `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is set **and** the surface is not demo. `[data-driva-demo]` → local Swedish example list only, no Google HTTP. Missing key / Google failure → manual typing still works; no raw Google errors, no dead dropdown. Demo suggestions carry a **Demo** tag.
+- **Behaviour:** Sweden-first (`includedRegionCodes: ["se"]`), no map/Street View. Search from **3 meaningful characters** after trim (`"va"` does not fire), debounce 250 ms (`ADDRESS_SEARCH_DEBOUNCE_MS`). One session token per typing session; `fetchFields` only after the user picks a suggestion. Opening an edit form with a saved address does **not** call Places. Picking writes street + postal + city (or one composed line); name / e-mail / phone / personnummer untouched. `composeSelected="street"` (default) vs `"line"` (`gata, postnummer ort`) for single-field forms.
+- **Keyboard:** Arrow/Enter selects; Enter does not submit the parent form while the list is open; Escape closes; Tab moves on.
+- **Selectors:** input `role="combobox"` `aria-expanded` `aria-autocomplete="list"`; menu is portaled + viewport-flipped with `data-address-suggestions`; options `data-address-option={i}`. No `data-testid`.
+
+| Surface | File | Mode |
+|---------|------|------|
+| Ny kund (privat + företag) | `new-customer-modal.tsx` | `AddressFields` |
+| Redigera kund | `customer-details-form.tsx` | `AddressFields` |
+| ROT-bostad / fastighet | `customer-rot-section.tsx` | `AddressFields` |
+| Onboarding företagsadress | `onboarding-form.tsx` | `AddressFields`; ids `ob-address`, `ob-postal`, `ob-city` |
+| Inställningar företagsadress | `settings-form.tsx` | `AddressFields`; ids `installningar-address`, `installningar-postalCode`, `installningar-city`; label **Gatuadress** |
+| Faktura/offert blockers → komplettera adress | `settings-billing-readiness.tsx` | `AddressFields`; ids `komplettera-address`, `komplettera-postalCode`, `komplettera-city` |
+| Nytt uppdrag, ny adress | `uppdrag-form.tsx` | `AddressFields`; names `newAddress`, `newPostalCode`, `newCity` |
+| Redigera uppdrag (one line) | `uppdrag-form.tsx` | `AddressAutocomplete composeSelected="line"` |
+| ROT saknad arbetsadress | `tax-reduction-application.tsx` | `AddressAutocomplete composeSelected="line"` |
+
+**Not autocomplete (do not expect it):** invoice/quote documents and public `/faktura/*` `/offert/*` (read-only); website contact/footer (company address from settings); inbox inbound e-mail address; domain registrant; fastighetsbeteckning; Land/säte fields; search boxes; supplier/kvitto extraction.
+
+**Verify (demo):** `/demo` → Kunder → **Ny kund** → type `Väd` in **Adress** (default label; Inställningar says **Gatuadress**) → list `[data-address-suggestions]` with **Demo** tag (e.g. *Vädursvägen 13*) → pick → adress + postnummer + ort filled, name field untouched. Puppeteer: assert no request to `maps.googleapis.com`.
 
 ### Primary nav (Swedish labels as shown)
 
@@ -223,7 +248,7 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications, published 
 | Outbound mail | Simulated | Resend if configured |
 | Quote accept | Simple accept (name + **Godkänn offert**), no e-mail to the carpenter | Same simple accept; carpenter notified via Resend if configured |
 | Bank / payments | **MockBankProvider** (SEB ···· 4512, synthetic tx, zero HTTP to Tink); **Simulera betalning** | **LiveTinkProvider** if all `TINK_*` set, else honest *Bankkoppling är inte konfigurerad* — never fake success |
-| Places | Local examples | Google Places if key set |
+| Places (address autocomplete) | Local Swedish examples with **Demo** tag — **zero Google HTTP** even if a key is set | Google Places API (New) if `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` set; no key / Google failure → manual typing (local examples as fallback). Shared component — see [Address autocomplete](#address-autocomplete-shared) |
 | AI | Optional; honest fallback if no key | Same |
 | Trial | null | 14 days `trialing` |
 | Fake money APIs | Allowed | `DemoModeError` |
@@ -282,7 +307,7 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications, published 
 - **Route:** `/onboarding` — `src/app/onboarding/page.tsx` + `onboarding-form.tsx`
 - **How to get there:** Automatic after first login when `needsCompanyOnboarding(memberships.length)` (`membershipCount === 0`). Demo/JSON → redirect `/`.
 - **Main actions:** submit **Kom igång**.
-- **Fields / ids:** `ob-name`, `ob-orgnr`, `ob-vat`, `ob-address`, `ob-postal`, `ob-city`, `ob-payment-method`, `ob-bankgiro`, `ob-plusgiro`, `ob-bankkonto`, `ob-email`, `ob-phone`. Summary: `#ob-sammanfattning`. Sections: Företag, Adress, Betalning, Kontakt.
+- **Fields / ids:** `ob-name`, `ob-orgnr`, `ob-vat`, `ob-address`, `ob-postal`, `ob-city`, `ob-payment-method`, `ob-bankgiro`, `ob-plusgiro`, `ob-bankkonto`, `ob-email`, `ob-phone`. Summary: `#ob-sammanfattning`. Sections: Företag, Adress, Betalning, Kontakt. **Adress** section is the shared `AddressFields` (autocomplete, `#ob-address` is a `role="combobox"`); ids unchanged.
 - **Related:** Inställningar Företag / Fakturering (same company fields later).
 - **DB:** `businesses`, `business_settings`, `business_sequences`, `business_memberships` (owner). Trial columns set on real businesses.
 - **Invariants:** One company at create. Payment method required (bankgiro / plusgiro / bankkonto).
@@ -370,6 +395,7 @@ Two different systems:
 - **Work locations:** on customer (not on quote). Types: Fastighet/småhus, Bostadsrätt.
 - **Related:** Offerter, Fakturor, Uppdrag, ROT/RUT.
 - **Components:** `customer-list.tsx`, `new-customer-modal.tsx` (`#ny-kund-namn`, `#ny-kund-epost`, …), `customer-details-form.tsx`, `customer-rot-section.tsx`, `customer-picker.tsx`.
+- **Address fields:** Ny kund (privat + företag), Redigera kund and ROT-bostad all use the shared `AddressFields` autocomplete (`address-input.tsx`) — existing field ids unchanged; picking a suggestion fills gata + postnummer + ort only. See [Address autocomplete](#address-autocomplete-shared).
 - **DB:** `customers` (`kind` `privat|foretag`), `work_locations`.
 - **Invariants:** Kind is required. Org.nr for företag. Personnummer for privat ROT.
 - **Desktop/mobile:** table vs cards.
@@ -396,6 +422,7 @@ Two different systems:
   - **Delete vs archive** (`jobRemovalPolicy`): empty → hard delete; if signed quote / issued invoice / payments / posted books / invoiced work → **archive**. Same menu label *Ta bort uppdrag*; modal explains.
 - **Related:** Kunder, Offerter, Fakturor, ROT card on job when relevant.
 - **Components:** `uppdrag-list.tsx`, `uppdrag-form.tsx` (`#nytt-uppdrag-titel`, `#uppdrag-titel`), `job-controls.tsx`, `job-invoice-choice.tsx`, job work section.
+- **Work address:** new uppdrag *ny adress* = shared `AddressFields` (names `newAddress` / `newPostalCode` / `newCity`); edit uppdrag address = single-line `AddressAutocomplete composeSelected="line"` (`gata, postnummer ort`). See [Address autocomplete](#address-autocomplete-shared).
 - **DB:** `jobs`, `job_work_entries`. JSON: `housing`, `tax_reduction_application`, `checklist`.
 - **Invariants:** Job describes **work**, not money. Quote/invoice linked to a job must share `customer_id`.
 - **Desktop/mobile:** table vs cards; row `aria-label={title}`.
@@ -527,7 +554,7 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **Application statuses:** Preliminär → Redo att ansökas → Väntar på Skatteverket → Godkänd / Delvis godkänd / Nekad.
 - **Main actions:** toggle ROT/RUT; pick bostad; *Skapa ansökningsunderlag*; mark Godkänt / Delvis / Nekat; on nekat create rest invoice.
 - **Related:** customers.personnummer, work_locations, quote/invoice terms snapshot.
-- **Components:** `tax-reduction-fields.tsx`, `tax-reduction-application.tsx`, `denied-reduction-card.tsx`. Logic: `src/lib/services/tax-reduction.ts`, `tax-reduction-gaps.ts`, `tax-reduction-send.ts`.
+- **Components:** `tax-reduction-fields.tsx`, `tax-reduction-application.tsx` (missing `workAddress` fill = `AddressAutocomplete composeSelected="line"`), `denied-reduction-card.tsx`. Logic: `src/lib/services/tax-reduction.ts`, `tax-reduction-gaps.ts`, `tax-reduction-send.ts`. Bostad address on the customer uses `AddressFields` (`customer-rot-section.tsx`).
 - **DB:** `customers.personal_identity_number`; `work_locations` (beteckning / BRF / lägenhet); `jobs.housing`, `jobs.tax_reduction_application`; `invoices.rot`, `tax_reduction_*` JSONB.
 - **Invariants:** Personnummer on **customer only**. Only `arbete` lines reduce. Cap 50 000 kr/person/year (shown in “Hur räknas detta?”). Denied rest invoice is collection, not new sales. Send blockers if ROT selected but PIN/bostad missing.
 - **Live:** #116 draft blocked on PIN + bostad. Public #115 shows *Preliminärt ROT-avdrag − 14 025 kr*, Offertvärde 58 350 kr.
@@ -649,8 +676,8 @@ Not separate nav items; tabs on `/ekonomi`.
 - **Route:** `/installningar?flik=foretag|fakturering|funktioner|konto` (`src/lib/settings-routes.ts`). Legacy `flik=standardval` → fakturering. Deep-link `?falt=name|orgNumber|vatNumber|address|…`.
 - **How to get there:** Sidebar/Mer **Inställningar**. Billing blockers and domain “complete company” deep-link here.
 - **Tabs:** Företag · Fakturering & betalning · Funktioner · Konto.
-- **Företag:** logo, name, org.nr, VAT, address, contact. Save *Spara ändringar*. `#installningar-saknas`.
-- **Fakturering:** payment details (bankgiro/plusgiro/bank/IBAN), invoice defaults, **billing readiness**.
+- **Företag:** logo, name, org.nr, VAT, address, contact. Save *Spara ändringar*. `#installningar-saknas`. Address = shared `AddressFields` (label **Gatuadress**): `#installningar-address`, `#installningar-postalCode`, `#installningar-city`.
+- **Fakturering:** payment details (bankgiro/plusgiro/bank/IBAN), invoice defaults, **billing readiness**. The *komplettera adress* form in `settings-billing-readiness.tsx` uses the same `AddressFields`: `#komplettera-address`, `#komplettera-postalCode`, `#komplettera-city`.
 - **Funktioner:** Hemsida + Samarbeta toggles (`feature-settings.tsx`) — Aktiv/Avstängd, Aktivera/Stäng av.
 - **Konto:** real user email + logout via menu. Demo: *Driva körs just nu utan inloggning…* no password.
 - **Billing readiness testids:** `billing-readiness-banner` | `billing-readiness-ready` | `billing-readiness-success` | `billing-complete-{name|orgnr|vat|address|payment}`. Copy: *Redo att fakturera*.
@@ -724,7 +751,9 @@ The repo has **almost no** `data-testid`. No `data-cy` / `data-qa` / `getByTestI
 
 **Customers / jobs:** `ny-kund-namn`, `ny-kund-epost`, `ny-kund-telefon`, `ny-kund-personnummer`, `ny-kund-orgnr`, `kund-namn`, `kund-epost`, `kund-personnummer`, `nytt-uppdrag-titel`, `uppdrag-titel`.
 
-**Settings:** `installningar-saknas`, `installningar-address`, `installningar-bankgiro`, `komplettera-*`.
+**Settings:** `installningar-saknas`, `installningar-address`, `installningar-postalCode`, `installningar-city`, `installningar-bankgiro`, `komplettera-address`, `komplettera-postalCode`, `komplettera-city`.
+
+**Address autocomplete (all surfaces):** street input `role="combobox"` (`aria-expanded`, `aria-autocomplete="list"`); suggestion menu `data-address-suggestions` (portaled — query from `document`, not the form); options `data-address-option={i}`; demo suggestions show a **Demo** tag.
 
 **Other:** `nekat-belopp`, `invite-email`, `invite-form`, `hemsida-ai-beskrivning`, `doman-sok`, `webbformular-mottagare`, `data-nav="back"`, `data-driva-demo="1"`.
 
@@ -751,6 +780,7 @@ Important UI with **no** `data-testid` (agents must use text, href, or fragile C
 
 - Sidebar / bottom nav / Mer sheet items and badges
 - Command bar input, suggestion rows, confirm cards
+- Address suggestion list / pick flow (use `[data-address-suggestions]`, `[data-address-option]`, the `role="combobox"` input, or the **Demo** tag text instead)
 - Hem attention rows, watching rows, reminder rows + Klar/Snooza
 - Ekonomi / Kunder / Inbox / Bokföring **tabs and filter chips**
 - Register rows (quote/invoice/customer/job/inbox) as clickable units
@@ -799,6 +829,7 @@ Do **not** add testids to every settings field or design token — those already
 | Accept a quote | `/offert/demo-bertil-fasad` → **Godkänn offerten** → name → Godkänn offert |
 | Overdue invoice | `/ekonomi/fakturor/inv-1042` |
 | Inbox badge item | `/inbox/inbox-mail-byggmax` |
+| Address autocomplete (demo) | `/demo` → Kunder → **Ny kund** → type `Väd` in **Adress** → `[data-address-suggestions]` with **Demo** tag → pick → adress + postnummer + ort filled |
 | Enable Samarbeta | `/installningar?flik=funktioner` → Aktivera Samarbeta |
 | Accountant UI | Company row → Visa redovisningsvyn |
 | Auth wall | Incognito `/kunder` → login with `next=/kunder` |
