@@ -4,11 +4,18 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  ADDRESS_LANGUAGE,
+  ADDRESS_MENU_Z_INDEX,
+  ADDRESS_PLACE_FIELDS,
+  ADDRESS_PLACES_LOAD_TIMEOUT_MS,
+  ADDRESS_PRIMARY_TYPES,
+  ADDRESS_REGION_CODES,
   ADDRESS_SEARCH_DEBOUNCE_MS,
   ADDRESS_SEARCH_MIN_CHARS,
   applyPickedAddress,
   demoAddressSuggestions,
   formatAddressLine,
+  googleMapsApiKey,
   partsFromPlaceComponents,
   shouldSearchAddress,
   trimmedAddressQuery,
@@ -58,13 +65,23 @@ describe("address autocomplete helpers", () => {
 
   it("demo-förslag kräver 3 tecken och matchar svensk exempelgata", () => {
     assert.deepEqual(demoAddressSuggestions("va"), []);
-    const hits = demoAddressSuggestions("Vädu");
+    const hits = demoAddressSuggestions("väd");
     assert.equal(hits.length, 1);
     assert.deepEqual(hits[0], {
       address: "Vädursvägen 13",
       postalCode: "141 43",
       city: "Huddinge",
     });
+  });
+
+  it("Places (New) är Sverige-biasad och bara adresstyper", () => {
+    assert.deepEqual([...ADDRESS_PRIMARY_TYPES], ["premise", "subpremise", "street_address", "route"]);
+    assert.deepEqual([...ADDRESS_REGION_CODES], ["se"]);
+    assert.equal(ADDRESS_LANGUAGE, "sv-SE");
+    assert.deepEqual([...ADDRESS_PLACE_FIELDS], ["addressComponents"]);
+    assert.ok(ADDRESS_MENU_Z_INDEX > 80);
+    assert.ok(ADDRESS_PLACES_LOAD_TIMEOUT_MS >= 3000 && ADDRESS_PLACES_LOAD_TIMEOUT_MS <= 15_000);
+    assert.equal(typeof googleMapsApiKey(), "string");
   });
 
   it("formaterar enradig adress utan att kräva place_id", () => {
@@ -104,7 +121,8 @@ describe("AddressAutocomplete-klienten", () => {
   it("använder session token och hämtar details bara efter val", () => {
     assert.match(source, /AutocompleteSessionToken/);
     assert.match(source, /sessionRef\.current = null/);
-    assert.match(source, /resolve: async \(\) => \{[\s\S]*fetchFields\(\{ fields: \["addressComponents"\] \}\)/);
+    assert.match(source, /resolve: async \(\) => \{[\s\S]*fetchFields\(\{ fields: \[\.\.\.ADDRESS_PLACE_FIELDS\] \}\)/);
+    assert.match(source, /includedPrimaryTypes: \[\.\.\.ADDRESS_PRIMARY_TYPES\]/);
     assert.match(source, /async function pick[\s\S]*await s\.resolve\(\)/);
     assert.match(source, /void pick\(s\)/);
   });
@@ -121,15 +139,24 @@ describe("AddressAutocomplete-klienten", () => {
     assert.match(source, /onAddressChange/);
   });
 
-  it("hindrar Enter från att skicka formuläret när listan är öppen", () => {
-    assert.match(source, /e\.key === "Enter"/);
+  it("hindrar Enter från att skicka formuläret när listan är öppen eller sökning pågår", () => {
+    assert.match(source, /e\.key === "Enter" && \(open \|\| searching\)/);
     assert.match(source, /e\.preventDefault\(\)/);
+    assert.match(source, /e\.stopPropagation\(\)/);
   });
 
   it("faller tillbaka till exempeladresser i demo och utan nyckel", () => {
     assert.match(source, /isDemoSurface/);
     assert.match(source, /demoAddressSuggestions/);
-    assert.match(source, /NEXT_PUBLIC_GOOGLE_MAPS_API_KEY/);
+    assert.match(source, /googleMapsApiKey/);
+    assert.match(source, /ADDRESS_PLACES_LOAD_TIMEOUT_MS/);
+    assert.match(source, /referrerPolicy = "origin"/);
+  });
+
+  it("portalerar förslagsmenyn ovanpå Ny kund-modalen", () => {
+    assert.match(source, /ADDRESS_MENU_Z_INDEX/);
+    assert.match(source, /data-address-suggestions/);
+    assert.match(source, /createPortal/);
   });
 });
 

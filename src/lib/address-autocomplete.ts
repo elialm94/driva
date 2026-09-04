@@ -9,6 +9,26 @@ import { formatSwedishPostalCode, isSwedishPostalCode } from "./validation";
 export const ADDRESS_SEARCH_MIN_CHARS = 3;
 export const ADDRESS_SEARCH_DEBOUNCE_MS = 250;
 
+/**
+ * Places API (New) – bara riktiga postadresser.
+ * Legacy-typen "address" finns inte; den här kombinationen är Googles motsvarighet.
+ */
+export const ADDRESS_PRIMARY_TYPES = ["premise", "subpremise", "street_address", "route"] as const;
+export const ADDRESS_REGION_CODES = ["se"] as const;
+export const ADDRESS_LANGUAGE = "sv-SE";
+export const ADDRESS_PLACE_FIELDS = ["addressComponents"] as const;
+
+/** Över Ny kund-modalen (z=50 + 10×lager) och datumväljaren (z=80). */
+export const ADDRESS_MENU_Z_INDEX = 400;
+
+/** Om Maps-skriptet aldrig anropar callback (ogiltig nyckel / referer) ska inte spinnaren hänga. */
+export const ADDRESS_PLACES_LOAD_TIMEOUT_MS = 8000;
+
+/** Publik nyckel, trimnad. Tom sträng = inte konfigurerad. */
+export function googleMapsApiKey(): string {
+  return process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ?? "";
+}
+
 export interface AddressParts {
   address: string;
   postalCode: string;
