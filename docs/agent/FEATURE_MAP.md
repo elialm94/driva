@@ -139,7 +139,7 @@ Proxy (Next 16 middleware): `src/proxy.ts`. Real auth is always server-side (`en
 | `/assistent` | `/` |
 | `/kunder/forfragningar/:id` | `/uppdrag/:id` |
 
-Server-side: `next.config.ts` `redirects()` (`/jobb*`, `/pengar*`, `/kunder?flik=uppdrag|forfragningar`, `/assistent`) plus page-level `redirect()` fallbacks in `kunder/page.tsx`, `jobb/page.tsx`, `jobb/[id]/page.tsx`, `kunder/forfragningar/[id]/page.tsx`. Client-side: `rewriteLegacyHref` / `sanitizeReturnTo` in `src/lib/nav.ts` normalise hrefs and `tillbaka=` chains the same way.
+Server-side: `next.config.ts` `redirects()` (`/jobb*`, `/pengar*`, `/assistent`) plus page-level `redirect()` in `kunder/page.tsx` (`?flik=uppdrag|forfragningar` → `/uppdrag`, drops `flik`, keeps the list/back params), `jobb/page.tsx`, `jobb/[id]/page.tsx`, `kunder/forfragningar/[id]/page.tsx`. Client-side: `rewriteLegacyHref` / `sanitizeReturnTo` in `src/lib/nav.ts` normalise hrefs and `tillbaka=` chains the same way.
 
 ---
 

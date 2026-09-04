@@ -137,6 +137,7 @@ async function main() {
     await ok(`${label} E customer back is uppdrag`, /bokhylla|Uppdrag/i.test(backE1 ?? ""), backE1 ?? "");
     await page.click("a[data-nav=back]");
     await page.waitForFunction(() => location.pathname.includes("/uppdrag/"));
+    await page.waitForFunction(() => /Hem/.test(document.querySelector("a[data-nav=back]")?.textContent ?? ""));
     const backE2 = await backText(page);
     await ok(`${label} E uppdrag back is Hem`, (backE2 ?? "").includes("Hem"), backE2 ?? "");
     await page.click("a[data-nav=back]");

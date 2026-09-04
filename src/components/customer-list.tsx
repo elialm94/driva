@@ -64,16 +64,17 @@ export interface CustomerRegisterQuery {
   page: number;
 }
 
+/** Registrets egna sök-/filter-/sid-URL:er. `/kunder` är bara kundregistret – ingen flik längre. */
 export function kunderRegisterHref(query: Partial<CustomerRegisterQuery>): string {
   const sp = new URLSearchParams();
-  sp.set("flik", "kunder");
   if (query.q) sp.set("q", query.q);
   if (query.kind && query.kind !== "alla") sp.set("typ", query.kind);
   if (query.activity && query.activity !== "alla") sp.set("aktivitet", query.activity);
   if (query.payment && query.payment !== "alla") sp.set("betalning", query.payment);
   if (query.sort && query.sort !== "aktivitet") sp.set("sortering", query.sort);
   if (query.page && query.page > 1) sp.set("sida", String(query.page));
-  return `/kunder?${sp.toString()}`;
+  const qs = sp.toString();
+  return qs ? `/kunder?${qs}` : "/kunder";
 }
 
 export function CustomerRegister({

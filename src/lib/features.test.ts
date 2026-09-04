@@ -68,7 +68,7 @@ describe("valfria funktioner: visibility", () => {
     assert.equal(features.collaboration, false);
     assert.deepEqual(
       visibleNavItems(features).map((i) => i.label),
-      ["Hem", "Kunder", "Ekonomi", "Inbox", "Bokföring"],
+      ["Hem", "Uppdrag", "Kunder", "Ekonomi", "Inbox", "Bokföring"],
     );
   });
 

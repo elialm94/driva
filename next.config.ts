@@ -30,14 +30,8 @@ const nextConfig: NextConfig = {
       { source: "/jobb/:id", destination: "/uppdrag/:id", permanent: true },
       { source: "/pengar", destination: "/ekonomi", permanent: true },
       { source: "/pengar/:path*", destination: "/ekonomi/:path*", permanent: true },
-      // Uppdragslistan var en period en flik under Kunder; nu är /uppdrag kanonisk.
-      // Övriga query-parametrar (q, visning, sida, tillbaka …) följer med automatiskt.
-      {
-        source: "/kunder",
-        has: [{ type: "query", key: "flik", value: "(uppdrag|forfragningar)" }],
-        destination: "/uppdrag",
-        permanent: true,
-      },
+      // /kunder?flik=uppdrag|forfragningar → /uppdrag sköts i kunder/page.tsx så
+      // att `flik` städas bort och q/visning/sida/tillbaka följer med.
       { source: "/assistent", destination: "/", permanent: true },
     ];
   },

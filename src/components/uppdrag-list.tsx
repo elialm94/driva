@@ -25,15 +25,16 @@ export interface UppdragListQuery {
   page: number;
 }
 
+/** Listans egna sök-/filter-/sid-URL:er – alltid mot den kanoniska `/uppdrag`. */
 export function uppdragListHref(query: Partial<UppdragListQuery>): string {
   const sp = new URLSearchParams();
-  sp.set("flik", "uppdrag");
   if (query.q) sp.set("q", query.q);
   if (query.lifecycle && query.lifecycle !== "aktiva") sp.set("visning", query.lifecycle);
   if (query.economy && query.economy !== "alla") sp.set("ekonomi", query.economy);
   if (query.sort && query.sort !== "standard") sp.set("sortering", query.sort);
   if (query.page && query.page > 1) sp.set("sida", String(query.page));
-  return `/kunder?${sp.toString()}`;
+  const qs = sp.toString();
+  return qs ? `/uppdrag?${qs}` : "/uppdrag";
 }
 
 const LIFECYCLE_CHIPS: [JobLifecycleFilter, string][] = [

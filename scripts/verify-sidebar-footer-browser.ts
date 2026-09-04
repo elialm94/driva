@@ -29,11 +29,9 @@ async function main() {
   const page = await browser.newPage();
   page.setDefaultTimeout(15000);
 
-  // Bekräftelsedialoger: fånga texten och AVBRYT (rör inte demodatat –
-  // andra agenters webbläsartester kan köra samtidigt).
-  let lastDialogMessage = "";
+  // Eventuella native-dialoger AVBRYTS (rör inte demodatat – andra agenters
+  // webbläsartester kan köra samtidigt).
   page.on("dialog", async (d) => {
-    lastDialogMessage = d.message();
     await d.dismiss();
   });
 
@@ -140,6 +138,33 @@ async function main() {
     JSON.stringify(active)
   );
 
+  // Demosektionen (`DemoResetSection`): rubrik "Demo" (uppercase via CSS) + knappen "Återställ demo".
+  const demoSection = await page.evaluate(() => {
+    const section = document.querySelector('section[aria-labelledby="demo-sektion-rubrik"]');
+    return section ? (section as HTMLElement).innerText : null;
+  });
+  await ok(
+    "4 demosektionen syns på Inställningar (JSON-läge)",
+    !!demoSection && /demo/i.test(demoSection) && demoSection.includes("Återställ demo"),
+    demoSection ?? "saknas"
+  );
+
+  // Bekräftelseflödet: öppna modalen "Återställa demon?" men AVBRYT (rör inte demodatat).
+  await page.evaluate(() => {
+    const section = document.querySelector('section[aria-labelledby="demo-sektion-rubrik"]');
+    const btn = [...(section?.querySelectorAll("button") ?? [])].find((b) => (b.textContent ?? "").includes("Återställ demo"));
+    (btn as HTMLButtonElement | undefined)?.click();
+  });
+  await page.waitForFunction(() => [...document.querySelectorAll("[role=dialog]")].some((d) => (d.textContent ?? "").includes("Återställa demon?")));
+  await page.screenshot({ path: ".shots/installningar-demo-section.png", fullPage: true });
+  await page.evaluate(() => {
+    const dlg = [...document.querySelectorAll("[role=dialog]")].find((d) => (d.textContent ?? "").includes("Återställa demon?"));
+    const avbryt = [...(dlg?.querySelectorAll("button") ?? [])].find((b) => (b.textContent ?? "").trim() === "Avbryt");
+    (avbryt as HTMLButtonElement | undefined)?.click();
+  });
+  await page.waitForFunction(() => ![...document.querySelectorAll("[role=dialog]")].some((d) => (d.textContent ?? "").includes("Återställa demon?")));
+  await ok("4 confirm-modal visades och avbröts", true);
+
   await page.goto(`${BASE}/support`, { waitUntil: "networkidle0" });
   const supportActive = await page.evaluate(() => {
     const link = [...document.querySelectorAll("aside a")].find((a) => (a.getAttribute("href") ?? "").startsWith("/support"));
@@ -163,24 +188,6 @@ async function main() {
       supportActive.color !== "rgb(255, 255, 255)",
     JSON.stringify(supportActive)
   );
-
-  // Obs: rubriken renderas med text-transform: uppercase → innerText är versal.
-  const bodyText = await page.evaluate(() => document.body.innerText);
-  await ok(
-    "4 demosektionen syns på Inställningar (JSON-läge)",
-    /demo & utveckling/i.test(bodyText) && bodyText.includes("Återställ demodata")
-  );
-
-  // Bekräftelseflödet: klicka men AVBRYT via dialoghanteraren ovan.
-  lastDialogMessage = "";
-  await page.evaluate(() => {
-    const section = document.querySelector('section[aria-labelledby="demo-sektion-rubrik"]');
-    const btn = [...(section?.querySelectorAll("button") ?? [])].find((b) => (b.textContent ?? "").includes("Återställ demodata"));
-    (btn as HTMLButtonElement | undefined)?.click();
-  });
-  await new Promise((r) => setTimeout(r, 400));
-  await ok("4 confirm-dialog visas och avbröts", lastDialogMessage.includes("Återställa demodata?"), lastDialogMessage);
-  await page.screenshot({ path: ".shots/installningar-demo-section.png", fullPage: true });
 
   /* ------------------------- 5. Mobil 390px: Mer-arket ------------------------- */
   await page.setViewport({ width: 390, height: 844 });

@@ -25,7 +25,6 @@ const UPPDRAG_LIST_PARAMS = ["q", "visning", "ekonomi", "sortering", "sida", RET
 export default async function CustomersPage(props: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await ensurePageBusiness();
   const searchParams = await props.searchParams;
   const flik = str(searchParams.flik);
   if (flik === "uppdrag" || flik === "forfragningar") {
@@ -37,6 +36,7 @@ export default async function CustomersPage(props: {
     const qs = q.toString();
     redirect(qs ? `/uppdrag?${qs}` : "/uppdrag");
   }
+  await ensurePageBusiness();
   const customers = [...db().customers]
     .sort((a, b) => a.name.localeCompare(b.name, "sv"))
     .map((c) => ({ id: c.id, name: c.name, kind: c.kind }));

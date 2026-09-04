@@ -49,8 +49,11 @@ async function main() {
   // 1. Ekonomi → Fakturor → Faktura → back to Fakturor
   await page.setViewport({ width: 1280, height: 900 });
   await page.goto(`${BASE}/ekonomi?flik=fakturor`, { waitUntil: "networkidle0" });
-  await page.click('a[href^="/ekonomi/fakturor/inv-1045"]');
-  await page.waitForSelector("h1");
+  await Promise.all([
+    page.waitForFunction(() => location.pathname.includes("/ekonomi/fakturor/inv-1045")),
+    page.click('a[href^="/ekonomi/fakturor/inv-1045"]'),
+  ]);
+  await page.waitForSelector("a[data-nav=back]");
   const back1 = await textOf(page, "a[data-nav=back]");
   await ok("1 back label Fakturor", (back1 ?? "").includes("Fakturor"), back1 ?? "");
   await page.click("a[data-nav=back]");
@@ -77,6 +80,7 @@ async function main() {
   await page.goto(`${BASE}/ekonomi?flik=offerter`, { waitUntil: "networkidle0" });
   await page.click('a[href^="/ekonomi/offerter/ny"]');
   await page.waitForFunction(() => location.pathname === "/ekonomi/offerter/ny");
+  await page.waitForSelector("a[data-nav=back]");
   const back3 = await textOf(page, "a[data-nav=back]");
   await ok("3 ny offert back Offerter", (back3 ?? "").includes("Offerter"), back3 ?? "");
   const avbryt = await page.$("button::-p-text(Avbryt)") ?? await page.evaluateHandle(() =>
@@ -182,8 +186,21 @@ async function main() {
   await ok("IA sidebar keeps Settings", sidebarText.includes("Inställningar"));
   await page.screenshot({ path: ".shots/ia-desktop-hem.png" });
 
-  await ok("IA sidebar primary order Hem·Uppdrag·Kunder·Ekonomi", /Hem\s+Uppdrag\s+Kunder\s+Ekonomi/.test(sidebarText));
-  await ok("IA sidebar Mer group holds Inbox + Bokföring", /Mer\s+Inbox/.test(sidebarText) && sidebarText.includes("Bokföring"));
+  const sidebarLinks = await page.$$eval("aside nav a", (as) => as.map((a) => (a.textContent ?? "").replace(/\s+/g, " ").trim()));
+  await ok(
+    "IA sidebar primary order Hem·Uppdrag·Kunder·Ekonomi",
+    sidebarLinks.slice(0, 4).join("|") === "Hem|Uppdrag|Kunder|Ekonomi",
+    sidebarLinks.join("|")
+  );
+  await ok(
+    "IA sidebar Mer group holds Inbox + Bokföring (+badges) … Inställningar, support",
+    /Mer\s*Inbox/.test(sidebarText) &&
+      sidebarLinks[4]?.startsWith("Inbox") === true &&
+      sidebarLinks[5]?.startsWith("Bokföring") === true &&
+      sidebarLinks.at(-2) === "Inställningar" &&
+      sidebarLinks.at(-1) === "Hjälp & support",
+    sidebarLinks.join("|")
+  );
 
   await page.goto(`${BASE}/kunder`, { waitUntil: "networkidle0" });
   await ok("IA bare /kunder stays on register", new URL(page.url()).pathname === "/kunder");
@@ -215,8 +232,14 @@ async function main() {
 
   await page.goto(`${BASE}/kunder?flik=uppdrag&q=kok&sida=1`, { waitUntil: "networkidle0" });
   await ok(
-    "IA /kunder?flik=uppdrag redirects to /uppdrag keeping query",
-    new URL(page.url()).pathname === "/uppdrag" && page.url().includes("q=kok"),
+    "IA /kunder?flik=uppdrag redirects to /uppdrag keeping query, dropping flik",
+    new URL(page.url()).pathname === "/uppdrag" && page.url().includes("q=kok") && !page.url().includes("flik="),
+    page.url()
+  );
+  await page.goto(`${BASE}/kunder?flik=uppdrag&tillbaka=%2F&tillbakaNamn=Hem`, { waitUntil: "networkidle0" });
+  await ok(
+    "IA /kunder?flik=uppdrag keeps tillbaka/tillbakaNamn",
+    new URL(page.url()).pathname === "/uppdrag" && page.url().includes("tillbaka=") && page.url().includes("tillbakaNamn=Hem"),
     page.url()
   );
   await page.goto(`${BASE}/jobb`, { waitUntil: "networkidle0" });
@@ -261,7 +284,8 @@ async function main() {
   const bottom = await page.evaluate(() => {
     const nav = document.querySelector('nav[aria-label="Huvudnavigation"]');
     const items = [...(nav?.querySelectorAll("a, button") ?? [])].map((el) => ({
-      label: (el.textContent ?? "").replace(/\s+/g, " ").trim(),
+      // Etiketten är sista span:en; badge-siffran (t.ex. Mer "5") räknas inte som label.
+      label: (el.querySelector("span.max-w-full")?.textContent ?? el.textContent ?? "").replace(/\s+/g, " ").trim(),
       width: el.getBoundingClientRect().width,
       height: el.getBoundingClientRect().height,
       hasIcon: Boolean(el.querySelector("svg")),
