@@ -10,7 +10,7 @@ import {
   setMailTransportForTests,
   type MailMessage,
 } from "./mail";
-import { sendQuoteWithEmail, emailInvoice, remindInvoiceByEmail } from "./services/document-mail";
+import { sendQuoteWithEmail, emailInvoice, remindInvoiceByEmail, followUpQuoteByEmail } from "./services/document-mail";
 import { createQuote, quoteDefaults, QuoteNotReadyError } from "./services/quotes";
 import { createInvoice, issueInvoice } from "./services/invoices";
 import { createCustomer, updateCustomer } from "./services/customers";
@@ -93,7 +93,9 @@ describe("offert via Resend", () => {
     assert.equal(outcome.messageId, "msg_1");
     assert.equal(outcome.sentTo, "anna@test.se");
     assert.equal(sent.length, 1);
-    assert.match(sent[0].subject, /Offert #1 från Södermalms Snickeri AB/);
+    assert.equal(sent[0].subject, "Offert från Södermalms Snickeri AB – Altanbygge");
+    assert.doesNotMatch(sent[0].subject, /#\d+/);
+    assert.match(sent[0].text, /offert #1/);
     assert.match(sent[0].text, /Visa offert/);
     assert.match(sent[0].html, /\/offert\//);
     assert.equal(sent[0].replyTo, "info@sodermalm.se");
@@ -244,7 +246,9 @@ describe("faktura via samma arkitektur", () => {
     const { outcome } = await emailInvoice(invoice.id);
     assert.equal(outcome.ok, true);
     assert.equal(outcome.messageId, "msg_1");
-    assert.match(sent[0].subject, /Faktura #/);
+    assert.equal(sent[0].subject, "Faktura från Södermalms Snickeri AB – Snickeriarbete");
+    assert.doesNotMatch(sent[0].subject, /#\d+/);
+    assert.match(sent[0].text, /faktura #/);
     assert.match(sent[0].text, /Visa faktura|OCR|Bankgiro/);
     const stored = db().invoices.find((i) => i.id === invoice.id)!;
     assert.match(sent[0].text, new RegExp(`OCR: ${stored.ocr}`));
@@ -266,6 +270,19 @@ describe("faktura via samma arkitektur", () => {
   });
 });
 
+describe("offertpåminnelse", () => {
+  it("skickar uppföljning med ämne utan löpnummer", async () => {
+    const quote = draftQuote("cust-1");
+    const first = await sendQuoteWithEmail(quote.id);
+    assert.equal(first.outcome.ok, true);
+    sent.length = 0;
+    const { outcome } = await followUpQuoteByEmail(quote.id);
+    assert.equal(outcome.ok, true);
+    assert.equal(sent[0].subject, "Påminnelse: offert från Södermalms Snickeri AB – Altanbygge");
+    assert.doesNotMatch(sent[0].subject, /#\d+/);
+  });
+});
+
 describe("betalningspåminnelse", () => {
   it("skickar via Resend efter bekräftad skickad faktura", async () => {
     const invoice = draftInvoice("cust-1");
@@ -277,7 +294,9 @@ describe("betalningspåminnelse", () => {
     const ocr = storedBefore.ocr;
     const { outcome } = await remindInvoiceByEmail(invoice.id);
     assert.equal(outcome.ok, true);
-    assert.match(sent[0].subject, /Påminnelse om faktura/);
+    assert.equal(sent[0].subject, "Påminnelse: faktura från Södermalms Snickeri AB – Snickeriarbete");
+    assert.doesNotMatch(sent[0].subject, /#\d+/);
+    assert.match(sent[0].text, /faktura #/);
     assert.match(sent[0].text, new RegExp(`OCR: ${ocr}`));
     const stored = db().invoices.find((i) => i.id === invoice.id)!;
     assert.equal(stored.reminders.length, 1);

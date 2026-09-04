@@ -81,7 +81,7 @@ async function sendOnce(lockKey: string, send: () => Promise<MailResult>): Promi
   return pending;
 }
 
-export async function sendQuote(input: {
+export type QuoteMailInput = {
   to: string;
   quoteId: string;
   quoteNumber: number;
@@ -90,19 +90,28 @@ export async function sendQuote(input: {
   amount: number;
   validUntil: string;
   token: string;
-}): Promise<MailResult> {
-  const built = quoteEmail({
-    businessName: db().settings.name,
-    customerName: input.customerName,
-    quoteNumber: input.quoteNumber,
-    title: input.title,
-    amount: input.amount,
-    validUntil: input.validUntil,
-    url: absoluteAppUrl(`/offert/${input.token}`),
-    footer: footer(),
-  });
+};
+
+export function prepareQuoteMail(input: QuoteMailInput): MailMessage {
+  return envelope(
+    input.to,
+    quoteEmail({
+      businessName: db().settings.name,
+      customerName: input.customerName,
+      quoteNumber: input.quoteNumber,
+      title: input.title,
+      amount: input.amount,
+      validUntil: input.validUntil,
+      url: absoluteAppUrl(`/offert/${input.token}`),
+      footer: footer(),
+    })
+  );
+}
+
+export async function sendQuote(input: QuoteMailInput): Promise<MailResult> {
+  const message = prepareQuoteMail(input);
   const meta: MailSendMeta = { kind: "quote", documentId: input.quoteId, businessId: businessId() };
-  return sendOnce(`quote:${input.quoteId}`, () => sendMail(envelope(input.to, built), meta));
+  return sendOnce(`quote:${input.quoteId}`, () => sendMail(message, meta));
 }
 
 /**
@@ -198,21 +207,25 @@ export function prepareCreditInvoiceMail(input: {
   };
 }
 
-export async function sendInvoice(input: {
+export type InvoiceMailInput = {
   to: string;
   invoiceId: string;
   invoiceNumber: number;
+  title: string;
   customerName: string;
   amount: number;
   dueDate: string;
   token: string;
   ocr?: string;
-}): Promise<MailResult> {
+};
+
+function invoiceEmailFields(input: InvoiceMailInput) {
   const s = db().settings;
-  const built = invoiceEmail({
+  return {
     businessName: s.name,
     customerName: input.customerName,
     invoiceNumber: input.invoiceNumber,
+    title: input.title,
     amount: input.amount,
     dueDate: input.dueDate,
     ocr: input.ocr,
@@ -220,43 +233,38 @@ export async function sendInvoice(input: {
     plusgiro: s.plusgiro,
     url: absoluteAppUrl(`/faktura/${input.token}`),
     footer: footer(),
-  });
+  };
+}
+
+export function prepareInvoiceMail(input: InvoiceMailInput): MailMessage {
+  return envelope(input.to, invoiceEmail(invoiceEmailFields(input)));
+}
+
+export async function sendInvoice(input: InvoiceMailInput): Promise<MailResult> {
+  const message = prepareInvoiceMail(input);
   const meta: MailSendMeta = { kind: "invoice", documentId: input.invoiceId, businessId: businessId() };
-  return sendOnce(`invoice:${input.invoiceId}`, () => sendMail(envelope(input.to, built), meta));
+  return sendOnce(`invoice:${input.invoiceId}`, () => sendMail(message, meta));
 }
 
-export async function sendPaymentReminder(input: {
-  to: string;
-  invoiceId: string;
-  invoiceNumber: number;
-  customerName: string;
-  amount: number;
+export type InvoiceReminderMailInput = InvoiceMailInput & {
   outstanding: number;
-  dueDate: string;
-  token: string;
-  ocr?: string;
   partial?: boolean;
-}): Promise<MailResult> {
-  const s = db().settings;
-  const built = invoiceReminderEmail({
-    businessName: s.name,
-    customerName: input.customerName,
-    invoiceNumber: input.invoiceNumber,
-    amount: input.amount,
-    outstanding: input.outstanding,
-    dueDate: input.dueDate,
-    ocr: input.ocr,
-    bankgiro: s.bankgiro,
-    plusgiro: s.plusgiro,
-    url: absoluteAppUrl(`/faktura/${input.token}`),
-    footer: footer(),
-    partial: input.partial,
-  });
-  const meta: MailSendMeta = { kind: "invoice_reminder", documentId: input.invoiceId, businessId: businessId() };
-  return sendOnce(`invoice-reminder:${input.invoiceId}`, () => sendMail(envelope(input.to, built), meta));
+};
+
+export function prepareInvoiceReminderMail(input: InvoiceReminderMailInput): MailMessage {
+  return envelope(
+    input.to,
+    invoiceReminderEmail({ ...invoiceEmailFields(input), outstanding: input.outstanding, partial: input.partial })
+  );
 }
 
-export async function sendQuoteFollowUp(input: {
+export async function sendPaymentReminder(input: InvoiceReminderMailInput): Promise<MailResult> {
+  const message = prepareInvoiceReminderMail(input);
+  const meta: MailSendMeta = { kind: "invoice_reminder", documentId: input.invoiceId, businessId: businessId() };
+  return sendOnce(`invoice-reminder:${input.invoiceId}`, () => sendMail(message, meta));
+}
+
+export type QuoteFollowUpMailInput = {
   to: string;
   quoteId: string;
   quoteNumber: number;
@@ -264,18 +272,27 @@ export async function sendQuoteFollowUp(input: {
   customerName: string;
   validUntil: string;
   token: string;
-}): Promise<MailResult> {
-  const built = quoteFollowUpEmail({
-    businessName: db().settings.name,
-    customerName: input.customerName,
-    quoteNumber: input.quoteNumber,
-    title: input.title,
-    validUntil: input.validUntil,
-    url: absoluteAppUrl(`/offert/${input.token}`),
-    footer: footer(),
-  });
+};
+
+export function prepareQuoteFollowUpMail(input: QuoteFollowUpMailInput): MailMessage {
+  return envelope(
+    input.to,
+    quoteFollowUpEmail({
+      businessName: db().settings.name,
+      customerName: input.customerName,
+      quoteNumber: input.quoteNumber,
+      title: input.title,
+      validUntil: input.validUntil,
+      url: absoluteAppUrl(`/offert/${input.token}`),
+      footer: footer(),
+    })
+  );
+}
+
+export async function sendQuoteFollowUp(input: QuoteFollowUpMailInput): Promise<MailResult> {
+  const message = prepareQuoteFollowUpMail(input);
   const meta: MailSendMeta = { kind: "quote_followup", documentId: input.quoteId, businessId: businessId() };
-  return sendOnce(`quote-followup:${input.quoteId}`, () => sendMail(envelope(input.to, built), meta));
+  return sendOnce(`quote-followup:${input.quoteId}`, () => sendMail(message, meta));
 }
 
 export async function sendCollaborationInvite(input: {
