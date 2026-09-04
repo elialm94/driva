@@ -4,7 +4,7 @@
 --   * Inbox är inkommande kanal (hemsideförfrågningar + leverantörsmejl),
 --     inte en uppgiftslista. Förfrågningar bor kvar i public.requests.
 --   * inbound_mail_slug är den stabila lokal-delen i adressen
---     (slug@in.driva.se). Tenant löses ALDRIG från From-headern.
+--     (slug@INBOUND_MAIL_DOMAIN, default in.ferva.se). Tenant löses ALDRIG från From-headern.
 --   * inbox_items: mjuk statusmaskin, ingen DELETE. Dedup via unique partial
 --     index på external_id (samma mönster som bank_transactions i 09).
 --   * Bilagor i privat bucket inbox_attachments (klon av receipts i 08).

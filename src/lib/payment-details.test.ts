@@ -62,7 +62,7 @@ function ingestInvoice(input: {
 }) {
   const result = ingestInboundMail({
     externalId: input.externalId,
-    to: "demo@in.driva.se",
+    to: "demo@in.ferva.se",
     from: input.from,
     subject: `Faktura ${input.invoiceNumber}`,
     text: "Leverantörsfaktura",
@@ -451,7 +451,7 @@ describe("mejlförfrågan till leverantören", () => {
     // Svar utan komplett fakturadata men med säkra betalningsuppgifter.
     const reply = ingestInboundMail({
       externalId: "req-reply-2",
-      to: "demo@in.driva.se",
+      to: "demo@in.ferva.se",
       from: "faktura@svarare.se",
       subject: "Re: Betalningsuppgifter för faktura SV-2",
       text: "Hej! Bankgiro 777-8888, OCR 90909.",

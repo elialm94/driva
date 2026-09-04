@@ -198,7 +198,7 @@ async function main() {
   const inboxText = await page.evaluate(() => document.body.innerText);
   await ok("IA Inbox is economic docs only", !/Förfrågan|bokhylla/i.test(inboxText));
   await ok("IA Inbox lists seed mail", inboxText.includes("Byggmax") || inboxText.includes("Kvitto"));
-  await ok("IA Inbox shows inbound address", inboxText.includes("demo@in.driva.se"));
+  await ok("IA Inbox shows inbound address", inboxText.includes("demo@in.ferva.se"));
   await page.screenshot({ path: ".shots/ia-desktop-inbox.png" });
 
   await page.goto(`${BASE}/kunder/forfragningar/job-karin`, { waitUntil: "networkidle0" });

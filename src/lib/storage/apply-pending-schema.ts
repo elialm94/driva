@@ -4,7 +4,8 @@
  * (runWithTenant commit / createBusinessWithOwner) så att payer_*,
  * default_quote_terms och websites.footer finns innan upsert.
  */
-import type { SqlClient } from "./executor";
+import type { SqlClient, SqlExecutor } from "./executor";
+import { allocateInboundMailSlugAsync, isLegacyHexInboundSlug } from "../inbox/inbound-slug";
 
 let schemaEnsured = false;
 
@@ -37,7 +38,7 @@ async function run(client: SqlClient, sql: string): Promise<void> {
   }
 }
 
-async function columnExists(client: SqlClient, table: string, column: string): Promise<boolean> {
+async function columnExists(client: SqlExecutor, table: string, column: string): Promise<boolean> {
   const rows = await client.query(
     `select exists (
        select 1 from information_schema.columns
@@ -299,7 +300,53 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const acceptanceApplied = await ensureQuoteAcceptanceSchema(client);
   applied.push(...acceptanceApplied);
 
+  const reminted = await remintHexInboundMailSlugs(client);
+  if (reminted > 0) applied.push(`inbound_mail_slug.remint:${reminted}`);
+
   return applied;
+}
+
+/**
+ * Engångs-remint: hex-sluggar (12 tecken a-f0-9) utan inbound-mejl får
+ * en läsbar slug från business_settings.name. Har de redan mejl: lämna hex.
+ */
+export async function remintHexInboundMailSlugs(client: SqlExecutor): Promise<number> {
+  if (!(await columnExists(client, "business_settings", "inbound_mail_slug"))) return 0;
+  const inbox = await client.query(`select to_regclass('public.inbox_items') is not null as present`);
+  const inboxPresent = Boolean(inbox[0]?.present);
+  const mailFilter = inboxPresent
+    ? `and not exists (
+         select 1 from public.inbox_items i
+          where i.business_id = s.business_id
+            and (i.kind = 'mail' or i.source in ('email', 'vidarebefordrad'))
+       )`
+    : "";
+  const rows = await client.query(
+    `select s.business_id::text as business_id, coalesce(s.name, '') as name, s.inbound_mail_slug
+       from public.business_settings s
+      where s.inbound_mail_slug ~ '^[0-9a-f]{12}$'
+        ${mailFilter}
+      order by s.business_id`,
+  );
+  let updated = 0;
+  for (const row of rows) {
+    const current = String(row.inbound_mail_slug ?? "");
+    if (!isLegacyHexInboundSlug(current)) continue;
+    const next = await allocateInboundMailSlugAsync(String(row.name ?? ""), async (slug) => {
+      const hit = await client.query(
+        `select 1 from public.business_settings where inbound_mail_slug = $1 limit 1`,
+        [slug],
+      );
+      return hit.length > 0;
+    });
+    if (next === current) continue;
+    await client.query(`update public.business_settings set inbound_mail_slug = $2 where business_id = $1::uuid`, [
+      String(row.business_id),
+      next,
+    ]);
+    updated += 1;
+  }
+  return updated;
 }
 
 /**

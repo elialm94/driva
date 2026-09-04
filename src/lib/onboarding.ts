@@ -19,6 +19,7 @@ import {
   vatMatchesOrgnr,
 } from "./invoices/formats";
 import { isEmailFormat } from "./settings-validation";
+import { allocateInboundMailSlug } from "./inbox/inbound-slug";
 
 export const ONBOARDING_FIELD_IDS = {
   name: "ob-name",
@@ -288,6 +289,7 @@ export function companySettingsFromOnboarding(input: OnboardingPersistInput): Co
     quoteValidityDays: 30,
     defaultVatRate: 25,
     defaultQuoteTerms: STANDARD_TERMS,
+    inboundMailSlug: allocateInboundMailSlug(profile.name, () => false),
   };
 }
 

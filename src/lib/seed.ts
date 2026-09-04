@@ -2091,7 +2091,7 @@ export function buildSeed(): DB {
         source: "email" as const,
         externalId: "seed-beijer-faktura-1",
         fromAddress: "faktura@beijerbygg.se",
-        toAddress: "demo@in.driva.se",
+        toAddress: "demo@in.ferva.se",
         subject: "Faktura BB-48211",
         textBody: "Bifogad leverantörsfaktura för virke och skivmaterial till altanprojektet.",
         attachments: [
@@ -2137,7 +2137,7 @@ export function buildSeed(): DB {
         source: "email" as const,
         externalId: "seed-byggmax-faktura-1",
         fromAddress: "faktura@byggmax.se",
-        toAddress: "demo@in.driva.se",
+        toAddress: "demo@in.ferva.se",
         subject: "Faktura BM-73821 Byggmax Hornstull",
         textBody:
           "Hej! Här kommer fakturan för ert köp hos Byggmax Hornstull. Betalningsuppgifter finns i den bifogade fakturan.",
@@ -2184,7 +2184,7 @@ export function buildSeed(): DB {
         source: "email" as const,
         externalId: "seed-bauhaus-kvitto-1",
         fromAddress: "kvitto@bauhaus.se",
-        toAddress: "demo@in.driva.se",
+        toAddress: "demo@in.ferva.se",
         subject: "Kvitto Bauhaus Sickla",
         textBody: "Tack för ditt köp hos Bauhaus Sickla! Ditt kvitto finns bifogat.",
         attachments: [
@@ -2219,7 +2219,7 @@ export function buildSeed(): DB {
         source: "email" as const,
         externalId: "seed-okq8-kvitto-1",
         fromAddress: "kvitto@okq8.se",
-        toAddress: "demo@in.driva.se",
+        toAddress: "demo@in.ferva.se",
         subject: "Kvitto OKQ8 diesel",
         textBody: "Kvitto för tankning. Posten är redan markerad som behandlad i demon.",
         attachments: [],

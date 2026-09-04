@@ -22,6 +22,7 @@ import { quoteVersionHash } from "../hash";
 import { loadStateSnapshot, sqlClient } from "./adapter-supabase";
 import { bindTransaction } from "./load";
 import { importStateIntoBusiness } from "./import-state";
+import { slugFromCompanyName } from "../inbox/inbound-slug";
 
 /**
  * Exempeldatats id:n är fasta strängar (cust-anna, quote-kok, …) och
@@ -93,11 +94,13 @@ export function demoSeedFor(businessId: string, inboundMailSlug?: string): DB {
   // Normalisera direkt: hydrerar snapshots/räkenskapsår så att seedet som
   // valideras mot databasen är samma som det som importeras.
   const seed = remapSeedForInstance(normalize(buildSeed(), { persistIfDirty: false }));
-  const fallback = businessId.replace(/-/g, "").slice(0, 12) || "demo";
-  seed.settings.inboundMailSlug = inboundMailSlug?.trim() || fallback;
+  const idTail = businessId.replace(/-/g, "").slice(0, 12) || "x";
+  // Aldrig seedens reserverade "demo" och inte hex från id – läsbar slug
+  // från namn, eller den redan tilldelade (reset bevarar den).
+  seed.settings.inboundMailSlug = inboundMailSlug?.trim() || slugFromCompanyName(seed.settings.name);
   // Hemsidans publika slug är också globalt unik – gör den företagsunik men
   // igenkännbar (används i förhandsvisningens adress).
-  if (seed.website) seed.website.slug = `${seed.website.slug}-${fallback.slice(0, 8)}`;
+  if (seed.website) seed.website.slug = `${seed.website.slug}-${idTail.slice(0, 8)}`;
   return seed;
 }
 

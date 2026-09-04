@@ -97,7 +97,7 @@ function ingestReadyInvoice(over: Partial<{
   const invoiceNumber = over.invoiceNumber ?? "XL-2201";
   const result = ingestInboundMail({
     externalId: `e2e-${invoiceNumber}`,
-    to: "demo@in.driva.se",
+    to: "demo@in.ferva.se",
     from: "faktura@example.se",
     subject: `Faktura ${invoiceNumber}`,
     text: "Leverantörsfaktura, se bilaga.",
@@ -137,7 +137,7 @@ describe("Fall A – kvitto: tolka → matcha banktransaktion → bokför, ingen
 
     const result = ingestInboundMail({
       externalId: "e2e-a-kvitto",
-      to: "demo@in.driva.se",
+      to: "demo@in.ferva.se",
       from: "kvitto@clasohlson.se",
       subject: "Kvitto Clas Ohlson",
       text: "Tack för ditt köp!",
@@ -335,7 +335,7 @@ describe("Fall D – saknade betalningsuppgifter: ingen fil, exakt fel", () => {
   it("bokförd faktura utan uppgifter kan inte hamna i bankfil", () => {
     const result = ingestInboundMail({
       externalId: "e2e-d-utan-uppgifter",
-      to: "demo@in.driva.se",
+      to: "demo@in.ferva.se",
       from: "faktura@kakelgrossisten.se",
       subject: "Faktura KG-501",
       text: "Faktura utan betalningsuppgifter i mejlet.",
@@ -458,7 +458,7 @@ describe("Fall F – dubbletter: samma faktura eller dubbel betalning blockeras"
 
     const again = ingestInboundMail({
       externalId: "e2e-f-dubblett",
-      to: "demo@in.driva.se",
+      to: "demo@in.ferva.se",
       from: "faktura@example.se",
       subject: "Faktura XL-5501 (påminnelse)",
       text: "Samma faktura igen.",
