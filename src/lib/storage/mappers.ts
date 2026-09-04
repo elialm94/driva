@@ -27,8 +27,8 @@ import type {
   InboxItem,
   BankAccount,
   BankConnection,
+  BankIDEnvironment,
   BankIDOrder,
-  BankIDSignature,
   BankTransaction,
   CompanySettings,
   Customer,
@@ -46,6 +46,7 @@ import type {
   PendingAssistantAction,
   Reminder,
   Quote,
+  QuoteAcceptance,
   QuoteVersion,
   Receipt,
   SupplierInvoice,
@@ -330,38 +331,91 @@ export const quoteVersionsSpec: TableSpec<QuoteVersion> = {
   },
 };
 
-/* -------------------------------- signatures ------------------------------ */
+/* ------------------------- signatures (offertgodkännanden) ------------------ */
 
-export const signaturesSpec: TableSpec<BankIDSignature> = {
+/**
+ * Godkännanderegistret. Kolumnnamnen är historiska (signer_name/signed_at);
+ * domänfälten heter acceptedByName/acceptedAt. BankID-kolumnerna (order_ref,
+ * signer_personal_number_masked, environment) är null för simple_accept.
+ * Beviset (contentHash, statement, ip, …) ligger i evidence jsonb – migration 28.
+ */
+interface AcceptanceEvidenceRow {
+  contentHash?: string;
+  statement?: string;
+  customerNameAtAccept?: string;
+  acceptedByEmail?: string;
+  ip?: string;
+  userAgent?: string;
+  linkSentTo?: string;
+  note?: string;
+}
+
+function acceptanceMethodFromRow(r: SqlRow): QuoteAcceptance["method"] {
+  const m = r.method;
+  if (m === "simple_accept" || m === "bankid_mock" || m === "bankid") return m;
+  // Rader från före migration 28: BankID-mocken (eller produktion om det fanns).
+  return r.environment === "production" ? "bankid" : "bankid_mock";
+}
+
+export const signaturesSpec: TableSpec<QuoteAcceptance> = {
   table: "signatures",
   pk: ["id"],
   columns: [
-    "id", "business_id", "quote_id", "quote_version_id", "order_ref", "signer_name",
+    "id", "business_id", "quote_id", "quote_version_id", "method", "order_ref", "signer_name",
     "signer_personal_number_masked", "signed_at", "environment", "evidence",
   ],
-  toRow: (s, businessId) => ({
-    id: s.id,
+  toRow: (a, businessId) => ({
+    id: a.id,
     business_id: businessId,
-    quote_id: s.quoteId,
-    quote_version_id: s.quoteVersionId,
-    order_ref: s.orderRef,
-    signer_name: s.signerName,
-    signer_personal_number_masked: s.signerPersonalNumberMasked,
-    signed_at: s.signedAt,
-    environment: s.environment,
-    evidence: jsonParam(s.evidence),
+    quote_id: a.quoteId,
+    quote_version_id: a.quoteVersionId,
+    method: a.method,
+    order_ref: a.bankid?.orderRef ?? null,
+    signer_name: a.acceptedByName,
+    signer_personal_number_masked: a.bankid?.personalNumberMasked ?? null,
+    signed_at: a.acceptedAt,
+    environment: a.bankid?.environment ?? null,
+    evidence: jsonParam({
+      contentHash: a.contentHash,
+      statement: a.statement,
+      customerNameAtAccept: a.customerNameAtAccept,
+      ...opt("acceptedByEmail", a.acceptedByEmail),
+      ...opt("ip", a.ip),
+      ...opt("userAgent", a.userAgent),
+      ...opt("linkSentTo", a.linkSentTo),
+      ...opt("note", a.bankid?.note),
+    } satisfies AcceptanceEvidenceRow),
   }),
-  fromRow: (r) => ({
-    id: str(r.id),
-    quoteId: str(r.quote_id),
-    quoteVersionId: str(r.quote_version_id),
-    orderRef: str(r.order_ref),
-    signerName: str(r.signer_name),
-    signerPersonalNumberMasked: str(r.signer_personal_number_masked),
-    signedAt: tsIso(r.signed_at),
-    environment: r.environment as BankIDSignature["environment"],
-    evidence: jsonVal<BankIDSignature["evidence"]>(r.evidence),
-  }),
+  fromRow: (r) => {
+    const evidence = jsonVal<AcceptanceEvidenceRow | null>(r.evidence) ?? {};
+    const method = acceptanceMethodFromRow(r);
+    const acceptedByName = str(r.signer_name);
+    return {
+      id: str(r.id),
+      quoteId: str(r.quote_id),
+      quoteVersionId: str(r.quote_version_id),
+      method,
+      acceptedAt: tsIso(r.signed_at),
+      acceptedByName,
+      customerNameAtAccept: strOrU(evidence.customerNameAtAccept) ?? acceptedByName,
+      ...opt("acceptedByEmail", strOrU(evidence.acceptedByEmail)),
+      contentHash: strOrU(evidence.contentHash) ?? "",
+      statement: strOrU(evidence.statement) ?? "",
+      ...opt("ip", strOrU(evidence.ip)),
+      ...opt("userAgent", strOrU(evidence.userAgent)),
+      ...opt("linkSentTo", strOrU(evidence.linkSentTo)),
+      ...(method === "simple_accept"
+        ? {}
+        : {
+            bankid: {
+              orderRef: str(r.order_ref),
+              personalNumberMasked: str(r.signer_personal_number_masked),
+              environment: (r.environment === "production" ? "production" : "mock") as BankIDEnvironment,
+              note: strOrU(evidence.note) ?? "",
+            },
+          }),
+    };
+  },
 };
 
 /* ------------------------------- bankid_orders ---------------------------- */

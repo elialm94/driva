@@ -39,9 +39,10 @@ import {
 } from "./storage/demo-session-store";
 import { DemoModeError, assertDemoMode, isDemoBusiness, isDemoMode } from "./demo";
 import { BankIDUnavailableError, bankidProvider, bankidSigningAvailable } from "./services/bankid";
+import { acceptQuote } from "./services/quote-accept";
 import { sendMail, setMailTransportForTests, type MailMessage } from "./mail";
 import { sendQuoteWithEmail } from "./services/document-mail";
-import { createQuote, quoteDefaults } from "./services/quotes";
+import { createQuote, quoteDefaults, sendQuote } from "./services/quotes";
 import { __resetDemoAiBudgetForTests, assertDemoAiBudget, demoAiDailyCap } from "./ai/demo-limit";
 import { AiDemoLimitError, AiTransportError } from "./ai/provider";
 import type { AssistantAuditEntry } from "./types";
@@ -276,7 +277,7 @@ describe("tenantgrindarna för demoläget", () => {
     assert.throws(() => assertDemoMode("Simulerad inbetalning"), DemoModeError);
   });
 
-  it("mock-BankID kan inte signera för riktiga företag utanför demo – men för demoföretaget", () => {
+  it("kvarvarande mock-BankID är spärrad för riktiga företag utanför demo – och ligger inte på kundens godkännandeväg", () => {
     process.env.DRIVA_DEMO = "0";
     replaceDb(emptyTestDb());
     assert.equal(bankidSigningAvailable(), false);
@@ -294,6 +295,22 @@ describe("tenantgrindarna för demoläget", () => {
     process.env.DRIVA_DEMO = "1";
     replaceDb(emptyTestDb());
     assert.equal(bankidSigningAvailable(), true);
+  });
+
+  it("kundens godkännande (namn + knapp) fungerar för riktiga företag utanför demo och för demoföretaget", () => {
+    process.env.DRIVA_DEMO = "0";
+    replaceDb(emptyTestDb({ customers: [testCustomer({ email: "anna@test.se" })] }));
+    const real = draftQuote();
+    sendQuote(real.id);
+    assert.equal(acceptQuote({ token: real.token, name: "Anna Andersson" }).outcome, "accepted");
+    assert.equal(db().quotes[0].status, "godkand");
+    assert.equal(db().bankidOrders.length, 0, "ingen BankID-order skapas av godkännandet");
+
+    replaceDb(demoDb({ customers: [testCustomer({ email: "anna@test.se" })] }));
+    const demo = draftQuote();
+    sendQuote(demo.id);
+    assert.equal(acceptQuote({ token: demo.token, name: "Anna Andersson" }).outcome, "accepted");
+    assert.equal(db().bankidOrders.length, 0);
   });
 });
 

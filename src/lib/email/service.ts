@@ -16,10 +16,12 @@ import {
 } from "../mail";
 import { isEmailFormat } from "../settings-validation";
 import { tenantContext } from "../storage/context";
+import { datumTid } from "../format";
 import {
   collaborationInviteEmail,
   invoiceEmail,
   invoiceReminderEmail,
+  quoteAcceptedEmail,
   quoteEmail,
   quoteFollowUpEmail,
 } from "./templates";
@@ -86,7 +88,6 @@ export async function sendQuote(input: {
   amount: number;
   validUntil: string;
   token: string;
-  bankidEnabled: boolean;
 }): Promise<MailResult> {
   const built = quoteEmail({
     businessName: db().settings.name,
@@ -96,11 +97,40 @@ export async function sendQuote(input: {
     amount: input.amount,
     validUntil: input.validUntil,
     url: absoluteAppUrl(`/offert/${input.token}`),
-    bankidEnabled: input.bankidEnabled,
     footer: footer(),
   });
   const meta: MailSendMeta = { kind: "quote", documentId: input.quoteId, businessId: businessId() };
   return sendOnce(`quote:${input.quoteId}`, () => sendMail(envelope(input.to, built), meta));
+}
+
+/**
+ * Företagarens "offerten är godkänd"-mejl. Bygger bara kuvertet (kräver
+ * tenantkontext för företagsnamn/footer) – själva sändningen görs av anroparen
+ * efter att kundens svar skickats, så att godkännandet aldrig väntar på Resend.
+ */
+export function prepareQuoteAcceptedMail(input: {
+  to: string;
+  quoteId: string;
+  quoteNumber: number;
+  title: string;
+  acceptedByName: string;
+  acceptedAt: string;
+  amount: number;
+}): { message: MailMessage; meta: MailSendMeta } {
+  const built = quoteAcceptedEmail({
+    businessName: db().settings.name,
+    quoteNumber: input.quoteNumber,
+    title: input.title,
+    acceptedByName: input.acceptedByName,
+    acceptedAtLabel: datumTid(input.acceptedAt),
+    amount: input.amount,
+    url: absoluteAppUrl(`/ekonomi/offerter/${input.quoteId}`),
+    footer: footer(),
+  });
+  return {
+    message: envelope(input.to, built),
+    meta: { kind: "quote_accepted", documentId: input.quoteId, businessId: businessId() },
+  };
 }
 
 export async function sendInvoice(input: {

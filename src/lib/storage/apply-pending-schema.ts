@@ -276,6 +276,50 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const bankApplied = await ensureBankConnectionSchema(client);
   applied.push(...bankApplied);
 
+  const acceptanceApplied = await ensureQuoteAcceptanceSchema(client);
+  applied.push(...acceptanceApplied);
+
+  return applied;
+}
+
+/**
+ * Offertgodkännande (migration 28): signatures.method + nullable BankID-
+ * kolumner. Utan detta 500:ar kundens "Godkänn offert" i en produktion där
+ * `supabase db push` inte körts. Speglar migrationen exakt.
+ */
+export async function ensureQuoteAcceptanceSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  if (await columnExists(client, "signatures", "method")) return applied;
+  await run(
+    client,
+    `alter table public.signatures add column if not exists method text not null default 'bankid_mock'`
+  );
+  await run(
+    client,
+    `alter table public.signatures
+       alter column order_ref drop not null,
+       alter column signer_personal_number_masked drop not null,
+       alter column environment drop not null`
+  );
+  await run(client, `alter table public.signatures drop constraint if exists signatures_environment_check`);
+  await run(
+    client,
+    `alter table public.signatures add constraint signatures_environment_check
+       check (environment is null or environment in ('mock', 'production'))`
+  );
+  await run(client, `alter table public.signatures drop constraint if exists signatures_method_check`);
+  await run(
+    client,
+    `alter table public.signatures add constraint signatures_method_check
+       check (method in ('simple_accept', 'bankid_mock', 'bankid'))`
+  );
+  await run(
+    client,
+    `update public.signatures
+        set method = case when environment = 'production' then 'bankid' else 'bankid_mock' end
+      where method = 'bankid_mock'`
+  );
+  applied.push("signatures.method");
   return applied;
 }
 

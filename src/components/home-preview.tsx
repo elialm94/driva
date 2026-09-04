@@ -44,7 +44,7 @@ const ROWS: PreviewRow[] = [
     tone: "clock",
     Icon: Clock,
     title: "Offert #115 · Fasadarbete",
-    subtitle: "Väntar på signering med BankID · 72 375 kr",
+    subtitle: "Öppnad · väntar på godkännande · 72 375 kr",
   },
   {
     tone: "receipt",

@@ -1,22 +1,20 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
-import type { BankIDOrder, BankIDSignature, Quote } from "../types";
-import { quoteVersionHash } from "../hash";
-import { buyerSnapshot, sellerSnapshot } from "../invoices/snapshot";
+import type { BankIDOrder, Quote, QuoteAcceptance } from "../types";
 import { currentVersion, getQuote, requireCustomer } from "./data";
-import { logActivity } from "./activity";
-import { createJobFromQuote } from "./jobs";
 import { isDemoBusiness, isDemoMode } from "../demo";
+import { finalizeQuoteAcceptance, QuoteAcceptError } from "./quote-accept";
 
 /**
- * BankID-integration.
+ * BankID-provider (mock) – INTE på kundens godkännandeväg.
  *
- * Arkitekturen följer BankID:s riktiga RP-API (sign → collect med hintCodes),
- * så att MockBankIDProvider kan bytas mot en riktig leverantör (t.ex. BankID
- * direkt, Criipto eller Signicat) utan att flöden eller datamodell ändras.
+ * Kunden godkänner offerter med namn + knapp på offertlänken
+ * (services/quote-accept.ts). Ingen sida eller route anropar den här
+ * providern längre; filen finns kvar som framtida krok för en riktig
+ * leverantör (sign → collect med hintCodes) och för äldre demodata.
  *
- * VIKTIGT: I mock-läge genomförs ingen riktig signering. Det markeras tydligt
- * i UI, i signaturens `environment`-fält och i signeringsunderlaget.
+ * Det finns ingen riktig BankID-integration i koden: environment är alltid
+ * "mock", och mocken får bara köras i demo (aldrig för riktiga företag).
  */
 
 export interface BankIDProvider {
@@ -30,19 +28,12 @@ const ORDER_TTL_MS = 3 * 60 * 1000; // BankID-ordrar gäller i 3 minuter.
 
 export class BankIDUnavailableError extends Error {
   constructor() {
-    super("BankID-signering är inte aktiverad för det här företaget ännu.");
+    super("BankID-signering är inte aktiverad för det här företaget.");
     this.name = "BankIDUnavailableError";
   }
 }
 
-/**
- * Kan offerter signeras i den aktiva tenantkontexten?
- *
- * Mocken är en demofunktion (se ../demo.ts): den får aldrig producera en
- * "BankID-godkänd" offert för ett riktigt företag i produktion – vem som helst
- * med offertlänken kunde annars godkänna den via demo-panelen. En riktig
- * leverantör (environment === "production") är alltid tillgänglig.
- */
+/** Mocken är en demofunktion: aldrig för riktiga företag i produktion. */
 export function bankidSigningAvailable(): boolean {
   const provider: BankIDProvider = bankidProvider;
   if (provider.environment === "production") return true;
@@ -97,7 +88,7 @@ class MockBankIDProvider implements BankIDProvider {
     }
   }
 
-  /** Endast i mock-läge: driv ordern framåt från demo-panelen. */
+  /** Endast mock: driv ordern framåt. */
   advance(orderRef: string, event: "open_app" | "complete" | "cancel" | "timeout"): BankIDOrder | undefined {
     assertMockSigningAllowed();
     const order = db().bankidOrders.find((o) => o.orderRef === orderRef);
@@ -108,9 +99,8 @@ class MockBankIDProvider implements BankIDProvider {
         order.hintCode = "userSign";
         break;
       case "complete":
-        // Slutför godkännandet FÖRST – om offerten hunnit avböjas/ändras
-        // kastar finalizeApproval, och ordern ska då bli failed i stället
-        // för att sparas som complete utan signatur.
+        // Godkännandet först – har offerten avböjts/ändrats kastar finalize
+        // och ordern blir failed i stället för complete utan bevis.
         try {
           finalizeApproval(order);
           order.status = "complete";
@@ -136,7 +126,7 @@ class MockBankIDProvider implements BankIDProvider {
 
 export const bankidProvider = new MockBankIDProvider();
 
-/** Texten kunden ser i BankID-appen (userVisibleData i riktiga API:et). */
+/** Texten kunden skulle se i en BankID-app (userVisibleData). */
 export function signText(quote: Quote): string {
   const version = currentVersion(quote);
   const rotNote = version.taxReductionTerms
@@ -146,82 +136,27 @@ export function signText(quote: Quote): string {
 }
 
 /**
- * Slutför godkännandet efter genomförd BankID-signering:
- * låser offertversionen, sparar verifierbart signeringsunderlag,
- * skapar eller kopplar uppdraget och informerar företagaren.
+ * Slutför en mock-order: samma atomiska väg som kundens godkännande
+ * (finalizeQuoteAcceptance) med method bankid_mock.
  */
-export function finalizeApproval(order: BankIDOrder): BankIDSignature {
+export function finalizeApproval(order: BankIDOrder): QuoteAcceptance {
   const data = db();
   const quote = getQuote(order.quoteId);
   if (!quote) throw new Error("Offerten finns inte");
-
-  // Idempotent: redan godkänd → returnera befintlig signatur.
-  const existing = data.signatures.find((s) => s.quoteId === quote.id);
-  if (quote.status === "godkand" && existing) return existing;
-
-  // Offerten kan ha avböjts eller redigerats mellan start och slutförande.
-  if (quote.status !== "skickad") {
-    throw new Error("Offerten kan inte godkännas i nuvarande status");
-  }
-
   const version = data.quoteVersions.find((v) => v.id === order.quoteVersionId);
   if (!version) throw new Error("Offertversionen finns inte");
-  if (quote.currentVersionId !== version.id) {
-    throw new Error("Offerten har ändrats sedan signeringen påbörjades");
+  if (quote.status !== "godkand" && quote.currentVersionId !== version.id) {
+    throw new QuoteAcceptError("changed");
   }
-
   const customer = requireCustomer(quote.customerId);
-  const now = new Date().toISOString();
-
-  // 1. Lås exakt den version kunden signerade.
-  if (!version.sellerSnapshot) {
-    version.sellerSnapshot = sellerSnapshot(data.settings);
-  }
-  if (!version.buyerSnapshot) {
-    version.buyerSnapshot = buyerSnapshot(customer);
-  }
-  version.lockedAt = now;
-  version.contentHash = quoteVersionHash(version);
-
-  // 2. Spara signeringsunderlaget.
-  const signature: BankIDSignature = {
-    id: uid(),
-    quoteId: quote.id,
-    quoteVersionId: version.id,
-    orderRef: order.orderRef,
-    signerName: customer.kind === "foretag" ? (customer.contactPerson ?? customer.name) : customer.name,
-    signerPersonalNumberMasked: "••••••••-••••",
-    signedAt: now,
-    environment: bankidProvider.environment,
-    evidence: {
-      contentHash: version.contentHash,
-      note:
-        bankidProvider.environment === "mock"
-          ? "Demosignatur – ingen riktig BankID-signering har genomförts. I produktion lagras här BankID:s fullständiga signaturdata (XML-DSig) och OCSP-svar."
-          : "BankID-signaturdata (XML-DSig) och OCSP-svar.",
+  return finalizeQuoteAcceptance(quote, version, {
+    method: "bankid_mock",
+    acceptedByName: customer.kind === "foretag" ? (customer.contactPerson ?? customer.name) : customer.name,
+    bankid: {
+      orderRef: order.orderRef,
+      personalNumberMasked: "••••••••-••••",
+      environment: bankidProvider.environment,
+      note: "Demosignatur – ingen riktig BankID-signering har genomförts.",
     },
-  };
-  data.signatures.push(signature);
-
-  // 3. Markera offerten som godkänd.
-  quote.status = "godkand";
-  quote.decidedAt = now;
-
-  // 4. Koppla till befintligt uppdrag, eller skapa ett – aldrig ett andra.
-  const hadJob = Boolean(
-    (quote.jobId && data.jobs.some((j) => j.id === quote.jobId)) || data.jobs.some((j) => j.quoteId === quote.id)
-  );
-  const job = createJobFromQuote(quote);
-  quote.jobId = job.id;
-
-  // 5. Informera företagaren.
-  logActivity(
-    hadJob
-      ? `${signature.signerName} signerade offert #${quote.number} med BankID.`
-      : `${signature.signerName} signerade offert #${quote.number} med BankID. Uppdraget ${version.title} skapades.`,
-    { customerId: customer.id, entity: { type: "offert", id: quote.id } }
-  );
-
-  save();
-  return signature;
+  });
 }

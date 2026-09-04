@@ -10,7 +10,7 @@ const geistSans = Geist({
 export const metadata: Metadata = {
   title: { default: "Driva", template: "%s · Driva" },
   description:
-    "Du gör jobbet. Driva sköter administrationen – offerter med BankID, fakturor, betalningar och bokföring.",
+    "Du gör jobbet. Driva sköter administrationen – offerter som kunden godkänner digitalt, fakturor, betalningar och bokföring.",
 };
 
 export const viewport: Viewport = {

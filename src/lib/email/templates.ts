@@ -29,22 +29,21 @@ export interface QuoteEmailInput {
   amount: number;
   validUntil: string;
   url: string;
-  bankidEnabled: boolean;
   footer: string;
 }
+
+/** Hur kunden svarar – samma formulering i mejl och på offertlänken. */
+const QUOTE_ACCEPT_HINT = "Du läser och godkänner offerten direkt via länken.";
 
 export function quoteEmail(input: QuoteEmailInput): { subject: string; text: string; html: string } {
   const subject = `Offert #${input.quoteNumber} från ${input.businessName}`;
   const valid = datumLang(input.validUntil);
-  const bankid = input.bankidEnabled
-    ? "Du signerar offerten med BankID via länken."
-    : "Öppna länken för att läsa offerten.";
   const text = [
     `Hej ${input.customerName},`,
     "",
     `Här är offert #${input.quoteNumber} från ${input.businessName} för ${input.title} på ${kr(input.amount)}.`,
     `Giltig till ${valid}.`,
-    bankid,
+    QUOTE_ACCEPT_HINT,
     "",
     "Visa offert:",
     input.url,
@@ -55,8 +54,47 @@ export function quoteEmail(input: QuoteEmailInput): { subject: string; text: str
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:16px;">Hej ${escapeHtml(input.customerName)},</p>
       <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">Här är offert <strong>#${input.quoteNumber}</strong> för ${escapeHtml(input.title)} på <strong>${escapeHtml(kr(input.amount))}</strong>.</p>
-      <p style="margin:0;font-size:15px;color:#6b665c;">Giltig till ${escapeHtml(valid)}. ${escapeHtml(bankid)}</p>
+      <p style="margin:0;font-size:15px;color:#6b665c;">Giltig till ${escapeHtml(valid)}. ${escapeHtml(QUOTE_ACCEPT_HINT)}</p>
       ${cta(input.url, "Visa offert")}
+    `,
+  });
+  return { subject, text, html };
+}
+
+export interface QuoteAcceptedEmailInput {
+  businessName: string;
+  quoteNumber: number;
+  title: string;
+  acceptedByName: string;
+  /** Redan formaterad tidpunkt (Europe/Stockholm). */
+  acceptedAtLabel: string;
+  amount: number;
+  /** Länk till offerten i appen. */
+  url: string;
+  footer: string;
+}
+
+/** Till företagaren: kunden har godkänt offerten. */
+export function quoteAcceptedEmail(input: QuoteAcceptedEmailInput): { subject: string; text: string; html: string } {
+  const subject = `Offert #${input.quoteNumber} är godkänd av ${input.acceptedByName}`;
+  const lead = `${input.acceptedByName} godkände offert #${input.quoteNumber} (${input.title}) på ${kr(input.amount)} ${input.acceptedAtLabel}.`;
+  const text = [
+    "Hej,",
+    "",
+    lead,
+    "Uppdraget finns nu i Driva och kan startas. Godkännandet är sparat tillsammans med offertens innehåll och tidpunkt.",
+    "",
+    "Öppna offerten:",
+    input.url,
+  ].join("\n");
+  const html = layout({
+    title: input.businessName,
+    footer: input.footer,
+    bodyHtml: `
+      <p style="margin:0 0 12px;font-size:16px;">Hej,</p>
+      <p style="margin:0 0 12px;font-size:15px;line-height:1.55;"><strong>${escapeHtml(input.acceptedByName)}</strong> godkände offert <strong>#${input.quoteNumber}</strong> (${escapeHtml(input.title)}) på <strong>${escapeHtml(kr(input.amount))}</strong> ${escapeHtml(input.acceptedAtLabel)}.</p>
+      <p style="margin:0;font-size:15px;color:#6b665c;">Uppdraget finns nu i Driva och kan startas. Godkännandet är sparat tillsammans med offertens innehåll och tidpunkt.</p>
+      ${cta(input.url, "Öppna offerten")}
     `,
   });
   return { subject, text, html };

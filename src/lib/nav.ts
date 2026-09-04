@@ -160,7 +160,7 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/hemsida/doman", section: "hemsida", parent: "/hemsida", label: "Domän", backLabel: "Hemsida", showBack: true },
   { pattern: "/hemsida", section: "hemsida", label: "Hemsida" },
   { pattern: "/", section: "hem", label: "Hem" },
-  { pattern: "/offert/:token/underlag", section: null, parent: "/offert/:token", label: "Signeringsunderlag", backLabel: "Offerten", showBack: true },
+  { pattern: "/offert/:token/underlag", section: null, parent: "/offert/:token", label: "Underlag för godkännandet", backLabel: "Offerten", showBack: true },
   { pattern: "/offert/:token", section: null, label: "Offert" },
   { pattern: "/faktura/:token", section: null, label: "Faktura" },
   { pattern: "/sajt", section: null, label: "Hemsida" },

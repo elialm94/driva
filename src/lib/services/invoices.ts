@@ -13,7 +13,7 @@ import {
   invoicePaidAmount,
   invoiceTotals,
   jobQuote,
-  quoteSignature,
+  quoteAcceptance,
   requireCustomer,
 } from "./data";
 import { docTotals, vatBreakdown } from "../calc";
@@ -115,9 +115,9 @@ function signedTaxReductionTerms(quoteId: string | undefined, type: RotRut["type
   if (!quoteId) return null;
   const quote = getQuote(quoteId);
   if (!quote || quote.status !== "godkand") return null;
-  const signature = quoteSignature(quote.id);
-  if (!signature) return null;
-  const version = db().quoteVersions.find((v) => v.id === signature.quoteVersionId);
+  const acceptance = quoteAcceptance(quote.id);
+  if (!acceptance) return null;
+  const version = db().quoteVersions.find((v) => v.id === acceptance.quoteVersionId);
   if (!version?.lockedAt || !version.taxReductionTerms) return null;
   if (version.taxReductionTerms.type !== type) return null;
   return { ...version.taxReductionTerms };

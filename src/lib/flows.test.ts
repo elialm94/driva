@@ -4,7 +4,7 @@ process.env.DRIVA_TEST = "1";
  * Integrationstester för de kritiska affärsflödena, hela vägen genom
  * domäntjänsterna (aldrig direkta store-mutationer där tjänster finns):
  *
- *   Webbformulär → Uppdrag → Offert → BankID → Faktura → Betalning → Bokföring
+ *   Webbformulär → Uppdrag → Offert → kundens godkännande → Faktura → Betalning → Bokföring
  *   ROT-faktura → nekat avdrag → restfaktura (omflytt 1513→1510, ingen ny moms)
  *   Delbetalningar ärver offertens momssats (inte alltid 25 %)
  *
@@ -22,7 +22,7 @@ import { emptyTestDb, labor, rotReadyCustomer } from "./invoices/test-db";
 import { submitContactForm } from "./services/website";
 import { updateCustomer } from "./services/customers";
 import { createQuote, quoteDefaults, sendQuote } from "./services/quotes";
-import { bankidProvider } from "./services/bankid";
+import { acceptQuote, QuoteAcceptError } from "./services/quote-accept";
 import { currentVersion, customerSummary, getInvoice, getQuote, invoiceTotals, quoteTotals } from "./services/data";
 import {
   createDeniedReductionInvoice,
@@ -69,19 +69,14 @@ function assertBooksConsistent() {
   assert.equal(bankBook, accountBalance(1930), "bankens saldo matchar inte huvudbokens 1930");
 }
 
-function approveQuoteViaBankID(quoteId: string) {
+/** Kunden godkänner på offertlänken: namn + knapp. */
+function approveQuoteAsCustomer(quoteId: string, name = "Anna Andersson") {
   const quote = getQuote(quoteId);
   assert.ok(quote);
-  const order = bankidProvider.startSign({
-    quoteId: quote.id,
-    quoteVersionId: currentVersion(quote).id,
-    method: "qr",
-  });
-  bankidProvider.advance(order.orderRef, "complete");
-  return order;
+  return acceptQuote({ token: quote.token, name });
 }
 
-describe("Golden path: webbformulär → uppdrag → offert → BankID → faktura → betalning", () => {
+describe("Golden path: webbformulär → uppdrag → offert → godkännande → faktura → betalning", () => {
   beforeEach(() => reset());
 
   it("hela kedjan går igenom och böckerna stämmer i varje steg", async () => {
@@ -128,11 +123,11 @@ describe("Golden path: webbformulär → uppdrag → offert → BankID → faktu
     sendQuote(quote.id);
     assert.equal(getQuote(quote.id)!.status, "skickad");
 
-    // 3. Kunden godkänner med BankID (mock) – uppdraget skapas automatiskt.
-    approveQuoteViaBankID(quote.id);
+    // 3. Kunden godkänner på offertlänken – uppdraget skapas automatiskt.
+    approveQuoteAsCustomer(quote.id, "Nya Kunden AB");
     const approved = getQuote(quote.id)!;
     assert.equal(approved.status, "godkand");
-    assert.ok(currentVersion(approved).lockedAt, "versionen låstes vid signering");
+    assert.ok(currentVersion(approved).lockedAt, "versionen låstes vid godkännandet");
     const approvedJob = db().jobs.find((j) => j.quoteId === quote.id);
     assert.ok(approvedJob, "uppdrag skapades av godkännandet");
     const total = quoteTotals(approved).total; // 40 000 + 25 % moms = 50 000
@@ -178,7 +173,7 @@ describe("Golden path: webbformulär → uppdrag → offert → BankID → faktu
     assert.equal(accountBalance(1510), 0);
   });
 
-  it("dubbelklick på BankID-slutförande skapar inte dubbla uppdrag eller signaturer", () => {
+  it("dubbeltryck på Godkänn offert skapar inte dubbla uppdrag eller godkännanden", () => {
     const defaults = quoteDefaults();
     const quote = createQuote({
       customerId: "cust-1",
@@ -191,13 +186,15 @@ describe("Golden path: webbformulär → uppdrag → offert → BankID → faktu
       terms: "",
     });
     sendQuote(quote.id);
-    const order = approveQuoteViaBankID(quote.id);
-    bankidProvider.advance(order.orderRef, "complete"); // andra klicket
+    const first = approveQuoteAsCustomer(quote.id);
+    const second = approveQuoteAsCustomer(quote.id); // andra trycket
+    assert.equal(first.outcome, "accepted");
+    assert.equal(second.outcome, "already_accepted");
     assert.equal(db().signatures.filter((s) => s.quoteId === quote.id).length, 1);
     assert.equal(db().jobs.filter((j) => j.quoteId === quote.id).length, 1);
   });
 
-  it("avböjd offert kan inte längre godkännas via BankID", () => {
+  it("avböjd offert kan inte längre godkännas", () => {
     const defaults = quoteDefaults();
     const quote = createQuote({
       customerId: "cust-1",
@@ -210,15 +207,12 @@ describe("Golden path: webbformulär → uppdrag → offert → BankID → faktu
       terms: "",
     });
     sendQuote(quote.id);
-    const order = bankidProvider.startSign({
-      quoteId: quote.id,
-      quoteVersionId: currentVersion(getQuote(quote.id)!).id,
-      method: "qr",
-    });
-    // Kunden avböjer i ett annat fönster innan signeringen slutförs.
+    // Kunden avböjer i ett annat fönster innan godkännandet skickas.
     getQuote(quote.id)!.status = "avbojd";
-    const advanced = bankidProvider.advance(order.orderRef, "complete");
-    assert.equal(advanced?.status, "failed", "ordern misslyckas i stället för att godkänna en avböjd offert");
+    assert.throws(
+      () => approveQuoteAsCustomer(quote.id),
+      (e: unknown) => e instanceof QuoteAcceptError && e.code === "declined"
+    );
     assert.equal(getQuote(quote.id)!.status, "avbojd");
     assert.equal(db().signatures.length, 0);
     assert.equal(db().jobs.length, 0);
@@ -318,7 +312,7 @@ describe("Delbetalningar ärver offertens momssats", () => {
       terms: "",
     });
     sendQuote(quote.id);
-    approveQuoteViaBankID(quote.id);
+    approveQuoteAsCustomer(quote.id);
     const job = db().jobs.find((j) => j.quoteId === quote.id)!;
     return { quote: getQuote(quote.id)!, job };
   }

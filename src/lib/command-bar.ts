@@ -283,9 +283,9 @@ export const COMMANDS: CommandDef[] = [
   {
     id: "show_open_quotes",
     label: "Visa öppna offerter",
-    hint: "Skickade offerter som väntar på signering",
-    aliases: ["visa öppna offerter", "öppna offerter", "offerter som väntar", "väntar på signering", "väntar på bankid", "skickade offerter"],
-    keywords: ["offerter", "signering", "bankid", "väntar", "svar"],
+    hint: "Skickade offerter som väntar på kundens godkännande",
+    aliases: ["visa öppna offerter", "öppna offerter", "offerter som väntar", "väntar på godkännande", "väntar på signering", "skickade offerter"],
+    keywords: ["offerter", "godkännande", "signering", "väntar", "svar"],
     icon: "clock",
     risk: "READ_ONLY",
     requiredContext: null,

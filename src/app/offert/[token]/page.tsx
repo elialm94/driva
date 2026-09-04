@@ -1,16 +1,18 @@
 import { notFound } from "next/navigation";
-import { BadgeCheck, FileLock2, XCircle, Clock, Info } from "lucide-react";
+import { BadgeCheck, FileLock2, XCircle, Clock } from "lucide-react";
 import { db } from "@/lib/store";
-import { getQuoteByToken, currentVersion, quoteSignature, quoteTotals, requireCustomer } from "@/lib/services/data";
+import { getQuoteByToken, currentVersion, quoteAcceptance, quoteTotals, requireCustomer } from "@/lib/services/data";
 import { markQuoteViewed } from "@/lib/services/quotes";
+import { quoteAcceptanceStatement } from "@/lib/services/quote-accept";
+import { quoteVersionHash } from "@/lib/hash";
 import { kr, datumTid, datumLang, dagarTill } from "@/lib/format";
 import { QuoteDocument } from "@/components/quote-document";
 import { CompanyLogo } from "@/components/company-logo";
-import { signedWithBankIdBy } from "@/lib/status-labels";
-import { bankidSigningAvailable } from "@/lib/services/bankid";
-import { BankIDApproval, DeclineQuoteButton, QuoteQuestionButton } from "@/components/bankid-flow";
+import { acceptedByLabel } from "@/lib/status-labels";
+import { AcceptJumpButton, QuoteAcceptForm } from "@/components/quote-accept";
+import { DeclineQuoteButton, QuoteQuestionButton } from "@/components/quote-public-actions";
 import { DemoTag } from "@/components/ui";
-import { resolveQuoteCompany } from "@/lib/invoices/snapshot";
+import { resolveQuoteCompany, resolveQuoteCustomer } from "@/lib/invoices/snapshot";
 import { ensurePublicPage, withPublicBusiness } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +27,12 @@ export async function generateMetadata(props: PageProps<"/offert/[token]">) {
   return { title: `Offert #${quote.number} – ${seller.name}` };
 }
 
+/**
+ * Kundens offertsida. Kunden godkänner EXAKT det dokument som visas: namn +
+ * knapp i dokumentets avslutning (QuoteAcceptForm). Ingen BankID, ingen ritad
+ * signatur – godkännandet sparas med versionens hash, namn, tidpunkt och
+ * varifrån det gjordes.
+ */
 export default async function PublicQuotePage(props: PageProps<"/offert/[token]">) {
   const { token } = await props.params;
   // "Visad"-stämpeln är en mutation – den körs i ett eget skrivblock INNAN
@@ -43,16 +51,16 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
   const data = db();
   const version = currentVersion(quote);
   const customer = requireCustomer(quote.customerId);
-  const signature = quoteSignature(quote.id);
+  const acceptance = quoteAcceptance(quote.id);
   const totals = quoteTotals(quote);
   const expired = quote.status === "skickad" && dagarTill(version.validUntil) < 0;
-  const signable = quote.status === "skickad" && !expired;
-  // Mocken är en demofunktion – för riktiga företag i produktion utan riktig
-  // BankID-leverantör visas ett ärligt besked i stället för knappen.
-  const signingAvailable = bankidSigningAvailable();
-  const canSign = signable && signingAvailable;
+  const canAccept = quote.status === "skickad" && !expired;
 
   const seller = resolveQuoteCompany(version, data.settings);
+  const buyer = resolveQuoteCustomer(version, customer);
+  // Förifyll med personens namn – för företag kontaktpersonen, inte bolaget.
+  const prefillName = buyer.kind === "foretag" ? (buyer.contactPerson ?? "") : buyer.name;
+  const contentHash = quoteVersionHash(version);
 
   return (
     <div className="min-h-dvh bg-canvas">
@@ -70,23 +78,26 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-5">
-        {quote.status === "godkand" && signature ? (
-          <div className="mb-6 rounded-2xl border border-ok/25 bg-ok-soft/70 px-5 py-4 animate-fade-up">
+        {quote.status === "godkand" && acceptance ? (
+          <div
+            data-quote-accepted-banner=""
+            className="mb-6 rounded-2xl border border-ok/25 bg-ok-soft/70 px-5 py-4 animate-fade-up"
+          >
             <div className="flex items-start gap-3">
               <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
               <div className="flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-[15px] font-semibold text-ok">Offerten är signerad</p>
-                  {signature.environment === "mock" ? <DemoTag>Demo-signering</DemoTag> : null}
+                  <p className="text-[15px] font-semibold text-ok">Offerten är godkänd</p>
+                  {acceptance.method === "bankid_mock" ? <DemoTag>Demo</DemoTag> : null}
                 </div>
                 <p className="mt-0.5 text-[14px] text-soft">
-                  Tack! {signedWithBankIdBy(signature.signerName)}, {datumTid(signature.signedAt)}.
+                  {acceptedByLabel(acceptance)}, {datumTid(acceptance.acceptedAt)} · {kr(totals.toPay)}
                 </p>
                 <a
                   href={`/offert/${quote.token}/underlag`}
-                  className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-bankid hover:underline"
+                  className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-deep hover:underline"
                 >
-                  <FileLock2 className="size-3.5" /> Visa signeringsunderlag
+                  <FileLock2 className="size-3.5" /> Visa underlag för godkännandet
                 </a>
               </div>
             </div>
@@ -99,7 +110,8 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
             <div>
               <p className="text-[15px] font-semibold">Offerten är avböjd</p>
               <p className="text-[14px] text-soft">
-                Ändrat dig? Hör av dig till {seller.name} på {seller.phone} så tar vi det därifrån.
+                Offerten kan inte längre godkännas här. Ändrat dig? Hör av dig till {seller.name} på {seller.phone} så
+                tar vi det därifrån.
               </p>
             </div>
           </div>
@@ -111,20 +123,8 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
             <div>
               <p className="text-[15px] font-semibold text-warn">Offerten har gått ut</p>
               <p className="text-[14px] text-soft">
-                Giltighetstiden gick ut {datumLang(version.validUntil)}. Kontakta {seller.name} för en uppdaterad
-                offert.
-              </p>
-            </div>
-          </div>
-        ) : null}
-
-        {signable && !signingAvailable ? (
-          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-line bg-card px-5 py-4">
-            <Info className="mt-0.5 size-5 shrink-0 text-soft" />
-            <div>
-              <p className="text-[15px] font-semibold">Godkännande med BankID är inte aktiverat ännu</p>
-              <p className="text-[14px] text-soft">
-                Kontakta {seller.name} på {seller.email} för att godkänna offerten.
+                Giltighetstiden gick ut {datumLang(version.validUntil)} och offerten kan inte längre godkännas.
+                Kontakta {seller.name} för en uppdaterad offert.
               </p>
             </div>
           </div>
@@ -136,16 +136,15 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
             customer={customer}
             quote={quote}
             version={version}
-            signature={signature}
-            acceptance={
-              // Dokumentets avslutning: godkännandet hör hemma i dokumentet,
-              // inte bara i den flytande bottenlisten.
-              canSign ? (
-                <BankIDApproval
+            acceptance={acceptance}
+            acceptForm={
+              // Godkännandet hör hemma i dokumentets avslutning – inte i en popover.
+              canAccept ? (
+                <QuoteAcceptForm
                   token={quote.token}
-                  quoteNumber={quote.number}
-                  toPay={kr(totals.toPay)}
-                  companyName={seller.name}
+                  statement={quoteAcceptanceStatement(quote, version)}
+                  prefillName={prefillName}
+                  contentHash={contentHash}
                 />
               ) : undefined
             }
@@ -159,29 +158,23 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
             Skriv ut eller spara som PDF
           </a>
         </p>
-        <div className="h-28" />
+        {/* Luft under dokumentet så att formuläret aldrig hamnar under bottenlisten. */}
+        <div className={canAccept ? "h-36" : "h-10"} />
       </main>
 
-      {signable ? (
+      {canAccept ? (
         <div className="fixed inset-x-0 bottom-0 border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
-          <div className="mx-auto flex max-w-3xl flex-col gap-2.5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="mx-auto flex max-w-3xl flex-col gap-2.5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
             <div className="flex items-center justify-between gap-3 sm:block">
-              {/* Inget betalas vid signeringen – beloppet är offertens värde. */}
+              {/* Inget betalas vid godkännandet – beloppet är offertens värde. */}
               <p className="text-[14px] font-medium">
                 Offertvärde: <span className="font-semibold">{kr(totals.toPay)}</span>
               </p>
               <DeclineQuoteButton token={quote.token} />
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex gap-2 sm:items-center">
               <QuoteQuestionButton token={quote.token} companyName={seller.name} />
-              {canSign ? (
-                <BankIDApproval
-                  token={quote.token}
-                  quoteNumber={quote.number}
-                  toPay={kr(totals.toPay)}
-                  companyName={seller.name}
-                />
-              ) : null}
+              <AcceptJumpButton />
             </div>
           </div>
         </div>

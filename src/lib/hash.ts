@@ -4,7 +4,7 @@ import { canonicalRichText } from "./richtext";
 
 /**
  * Kanoniskt, verifierbart hash av en offertversions innehåll.
- * Används för att i efterhand kunna styrka exakt vad kunden godkände med BankID.
+ * Används för att i efterhand kunna styrka exakt vad kunden godkände på offertlänken.
  */
 export function quoteVersionHash(v: QuoteVersion): string {
   const canonical = JSON.stringify({

@@ -2,7 +2,7 @@ import { db } from "../store";
 import { uid } from "../ids";
 import { docTotals, lineTotal, lineVat } from "../calc";
 import type { DocLine, Invoice, Quote, QuoteVersion } from "../types";
-import { currentVersion, getInvoice, getJob, getQuote, invoiceTotals, quoteSignature, quoteVersions } from "./data";
+import { currentVersion, getInvoice, getJob, getQuote, invoiceTotals, quoteAcceptance, quoteVersions } from "./data";
 import { QUOTE_EXCESS_WARN_AMOUNT, QUOTE_EXCESS_WARN_PERCENT } from "../quote-excess";
 
 export { QUOTE_EXCESS_WARN_AMOUNT, QUOTE_EXCESS_WARN_PERCENT };
@@ -15,7 +15,7 @@ export interface QuoteDeviationLine {
 export type QuoteBaselineKind = "delbetalning" | "resterande" | "offert";
 
 /**
- * Jämförelse mellan en faktura och den BankID-godkända offerten.
+ * Jämförelse mellan en faktura och den offert kunden godkänt.
  *
  * Val: den här fakturans `toPay` mot motsvarande offertunderlag –
  * delbetalningens andel i betalningsplanen, annars resterande att fakturera
@@ -61,10 +61,10 @@ function isBundleLine(line: DocLine): boolean {
 }
 
 function signedQuoteVersion(quote: Quote): QuoteVersion {
-  const signature = quoteSignature(quote.id);
-  if (signature) {
-    const signed = quoteVersions(quote.id).find((v) => v.id === signature.quoteVersionId);
-    if (signed) return signed;
+  const acceptance = quoteAcceptance(quote.id);
+  if (acceptance) {
+    const accepted = quoteVersions(quote.id).find((v) => v.id === acceptance.quoteVersionId);
+    if (accepted) return accepted;
   }
   const locked = quoteVersions(quote.id).find((v) => v.lockedAt);
   return locked ?? currentVersion(quote);
@@ -247,9 +247,9 @@ export function tillaggQuoteFromInvoice(invoiceId: string): TillaggQuotePrefill 
   return {
     customerId: invoice.customerId,
     title: `Tillägg – ${titleBase}`,
-    description: `Tillägg till tidigare BankID-godkänd offert #${quote.number} (${titleBase}). Avser ${extrasNote}.`,
+    description: `Tillägg till tidigare godkänd offert #${quote.number} (${titleBase}). Avser ${extrasNote}.`,
     lines,
-    note: `Förifylld från avvikelsen mot offert #${quote.number}. Kunden behöver godkänna tillägget med BankID innan det blir en ny låst referens.`,
+    note: `Förifylld från avvikelsen mot offert #${quote.number}. Kunden behöver godkänna tillägget via offertlänken innan det blir en ny låst referens.`,
     quoteNumber: quote.number,
   };
 }
