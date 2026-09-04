@@ -1,10 +1,12 @@
 "use client";
 
-import { useTransition } from "react";
+import { useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Hammer, Plus } from "lucide-react";
+import { ExternalLink, Hammer, Pencil, Plus } from "lucide-react";
 import { buttonClasses } from "./ui";
-import { actionMenuItemClassName, ActionMenu, useActionMenu } from "./action-menu";
+import { actionMenuItemClassName, ActionMenu, ActionMenuLink, PageActions, useActionMenu } from "./action-menu";
+import { QuotePdfMenuItem } from "./quote-pdf-menu-item";
+import { CopyLinkButton } from "./copy-button";
 import { createInvoiceFromQuoteAction, startJobFromQuoteAction } from "@/app/actions";
 import { invoiceEditHref, jobHref } from "@/lib/nav";
 import type { ChainCta, QuoteChainState } from "@/lib/business-chain-model";
@@ -27,15 +29,7 @@ function OverflowItem({ cta, onRun }: { cta: ChainCta; onRun: (cta: ChainCta) =>
   );
 }
 
-export function QuoteChainActions({
-  state,
-  returnTo,
-  returnLabel,
-}: {
-  state: QuoteChainState;
-  returnTo: string;
-  returnLabel: string;
-}) {
+function useQuoteChainRun(returnTo: string, returnLabel: string) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const from = { href: returnTo, label: returnLabel };
@@ -57,6 +51,20 @@ export function QuoteChainActions({
       }
     });
   }
+
+  return { run, isPending };
+}
+
+export function QuoteChainActions({
+  state,
+  returnTo,
+  returnLabel,
+}: {
+  state: QuoteChainState;
+  returnTo: string;
+  returnLabel: string;
+}) {
+  const { run, isPending } = useQuoteChainRun(returnTo, returnLabel);
 
   // Renderfunktion, inte en komponent: en komponent deklarerad i render får ny
   // identitet varje gång och nollställer sitt tillstånd.
@@ -90,5 +98,92 @@ export function QuoteChainActions({
         </ActionMenu>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Ägarens åtgärdsfält på offertsidan: en primär knapp + en overflow-meny.
+ * Godkänd + kopplat uppdrag: Fakturera. Starta/Öppna uppdrag och extra
+ * Skapa faktura hör inte hemma här – uppdraget syns i Kopplat till.
+ */
+export function QuoteOwnerPageActions({
+  status,
+  quoteId,
+  publicPath,
+  editHref,
+  returnTo,
+  returnLabel,
+  jobLinked,
+  canInvoice,
+  followUp,
+}: {
+  status: QuoteChainState["status"];
+  quoteId: string;
+  publicPath: string;
+  editHref: string;
+  returnTo: string;
+  returnLabel: string;
+  jobLinked: boolean;
+  canInvoice: boolean;
+  followUp?: ReactNode;
+}) {
+  const { run, isPending } = useQuoteChainRun(returnTo, returnLabel);
+
+  const startJob: ChainCta = { kind: "starta_uppdrag", label: "Starta uppdrag", quoteId };
+  const fakturera: ChainCta = { kind: "skapa_faktura", label: "Fakturera", quoteId };
+  const skapaFaktura: ChainCta = { kind: "skapa_faktura", label: "Skapa faktura", quoteId };
+
+  const showStartPrimary = status === "godkand" && !jobLinked;
+  const showFaktureraPrimary = status === "godkand" && jobLinked && canInvoice;
+  const showFaktureraInMenu = status === "godkand" && !jobLinked && canInvoice;
+  const showSentChainInMenu = status === "skickad" && !jobLinked;
+  const showVersion = status === "godkand" || status === "avbojd";
+  const showCustomerView = status !== "utkast";
+
+  return (
+    <div data-quote-owner-actions="">
+    <PageActions>
+      {followUp}
+      {showStartPrimary ? (
+        <button type="button" className={buttonClasses("accent")} disabled={isPending} onClick={() => run(startJob)}>
+          <Hammer className="size-4" />
+          {isPending ? "…" : "Starta uppdrag"}
+        </button>
+      ) : null}
+      {showFaktureraPrimary ? (
+        <button
+          type="button"
+          data-quote-owner-fakturera=""
+          className={buttonClasses("accent")}
+          disabled={isPending}
+          onClick={() => run(fakturera)}
+        >
+          <Plus className="size-4" />
+          {isPending ? "…" : "Fakturera"}
+        </button>
+      ) : null}
+      <ActionMenu>
+        {showFaktureraInMenu ? <OverflowItem cta={fakturera} onRun={run} /> : null}
+        {showSentChainInMenu ? (
+          <>
+            <OverflowItem cta={startJob} onRun={run} />
+            <OverflowItem cta={skapaFaktura} onRun={run} />
+          </>
+        ) : null}
+        <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
+        <QuotePdfMenuItem href={`${publicPath}/pdf`} />
+        {showVersion ? (
+          <ActionMenuLink href={editHref}>
+            <Pencil className="size-3.5 shrink-0" /> Ny version
+          </ActionMenuLink>
+        ) : null}
+        {showCustomerView ? (
+          <ActionMenuLink href={publicPath} external>
+            <ExternalLink className="size-3.5 shrink-0" /> Öppna kundvyn
+          </ActionMenuLink>
+        ) : null}
+      </ActionMenu>
+    </PageActions>
+    </div>
   );
 }

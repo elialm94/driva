@@ -226,6 +226,18 @@ describe("§41 fristående faktura vs kopplad sökväg", () => {
     assert.equal(db().jobs.length, 0);
   });
 
+  it("godkänd offert med uppdrag: Fakturera är primärt, ingen Starta eller Öppna uppdrag", () => {
+    const quote = approvedQuote([labor({ id: "q-tim", qty: 2, unitPrice: 900 })]);
+    const job = startJobFromQuote(quote.id);
+    const state = quoteChainState(quote);
+    assert.equal(state.jobId, job.id);
+    assert.equal(state.primary?.kind, "skapa_faktura");
+    assert.equal(state.primary?.label, "Fakturera");
+    assert.equal(state.secondary.length, 0);
+    assert.equal(state.overflow.length, 0);
+    assert.ok(![state.primary, ...state.secondary, ...state.overflow].some((c) => c?.kind === "starta_uppdrag" || c?.kind === "oppna_uppdrag"));
+  });
+
   it("skickad offert: Starta uppdrag är inte primärt, visar Väntar på godkännande", () => {
     const quote = createQuote({
       customerId: "cust-1",
@@ -243,6 +255,27 @@ describe("§41 fristående faktura vs kopplad sökväg", () => {
     assert.equal(state.waitingLabel, "Väntar på godkännande");
     assert.equal(state.primary, null);
     assert.ok(state.overflow.some((c) => c.kind === "starta_uppdrag"));
+  });
+
+  it("skickad offert med uppdrag: ingen Starta/Skapa i overflow – uppdraget syns i Kopplat till", () => {
+    const quote = createQuote({
+      customerId: "cust-1",
+      title: "Väntar kopplad",
+      lines: [labor({ unitPrice: 1000 })],
+      rot: null,
+      paymentPlan: [{ label: "Klart", percent: 100 }],
+      paymentTermsDays: 30,
+      validUntil: "2030-01-01",
+      terms: "",
+    });
+    quote.status = "godkand";
+    const job = startJobFromQuote(quote.id);
+    quote.status = "skickad";
+    quote.sentAt = "2026-08-20T10:00:00.000Z";
+    const state = quoteChainState(quote);
+    assert.equal(state.jobId, job.id);
+    assert.equal(state.primary, null);
+    assert.equal(state.overflow.length, 0);
   });
 });
 
