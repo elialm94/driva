@@ -6,14 +6,18 @@ import { db, replaceDb } from "../store";
 import { createInvoice, issueInvoice } from "../services/invoices";
 import { docTotals } from "../calc";
 import { hydrateIssuedInvoices } from "./snapshot";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { InvoiceDocument } from "../../components/invoice-document";
 import {
   invoicePaymentRows,
   invoicePaymentTermsLine,
   invoiceQuoteReference,
   invoiceTaxReductionView,
   lineTypeNote,
+  sellerIdentityFooter,
 } from "./document-view";
-import { emptyTestDb, labor, rotReadyCustomer, testWorkLocation } from "./test-db";
+import { emptyTestDb, labor, rotReadyCustomer, testCompany, testCustomer, testWorkLocation } from "./test-db";
 import { getInvoice } from "../services/data";
 
 function reset(over: Parameters<typeof emptyTestDb>[0] = {}) {
@@ -237,5 +241,61 @@ describe("Radtyp och referenser på dokumentet", () => {
   it("offertreferensen hämtas ur radernas proveniens", () => {
     assert.equal(invoiceQuoteReference([labor()]), undefined);
     assert.equal(invoiceQuoteReference([labor(), labor({ sourceQuoteNumber: 123 })]), 123);
+  });
+});
+
+describe("Säljarens sidfot", () => {
+  it("bygger 2–3 rader och utelämnar tomma fält", () => {
+    const full = sellerIdentityFooter(testCompany());
+    assert.deepEqual(
+      full.lines.map((line) => line.map((t) => t.text)),
+      [
+        ["Test Snickeri AB", "Gatan 1", "111 22 Stockholm"],
+        ["info@test.se", "08-123 45 67"],
+        ["Org.nr 559123-4567", "Momsreg.nr SE559123456701", "Godkänd för F-skatt"],
+      ]
+    );
+    assert.ok(full.lines[2]!.every((t) => t.nowrap));
+
+    const sparse = sellerIdentityFooter({
+      name: "Test Snickeri AB",
+      address: "",
+      postalCode: "",
+      city: "",
+      email: "info@test.se",
+      phone: "",
+      orgNumber: "556677-8899",
+      vatNumber: "   ",
+      approvedForFskatt: false,
+    });
+    assert.deepEqual(
+      sparse.lines.map((line) => line.map((t) => t.text)),
+      [["Test Snickeri AB"], ["info@test.se"], ["Org.nr 556677-8899"]]
+    );
+    assert.equal(
+      sparse.lines.flat().some((t) => t.text.startsWith("Momsreg") || t.text.includes("F-skatt")),
+      false
+    );
+  });
+
+  it("renderar kompakt sidfot utan kolumngrid och med nowrap på org/moms/F-skatt", () => {
+    reset({ customers: [testCustomer()] });
+    const inv = createInvoice({ customerId: "cust-1", type: "faktura", lines: [labor()], rot: null });
+    const html = renderToStaticMarkup(
+      createElement(InvoiceDocument, {
+        company: testCompany({ vatNumber: "" }),
+        customer: db().customers[0],
+        invoice: inv,
+      })
+    );
+    assert.match(html, /data-invoice-seller-footer/);
+    assert.doesNotMatch(html, />Adress</);
+    assert.doesNotMatch(html, />Kontakt</);
+    assert.doesNotMatch(html, />Företag</);
+    assert.doesNotMatch(html, /Momsreg\.nr\s*</);
+    assert.match(html, /whitespace-nowrap[^>]*>Org\.nr 559123-4567/);
+    assert.match(html, /whitespace-nowrap[^>]*>Godkänd för F-skatt/);
+    assert.match(html, /Test Snickeri AB/);
+    assert.match(html, /Gatan 1/);
   });
 });

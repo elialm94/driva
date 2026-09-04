@@ -60,7 +60,7 @@ export function DocFooter({ company }: { company: CompanySettings }) {
 /**
  * Offertens företagsuppgifter – läsbar A4-nederdel i stället för en enradig
  * mikrofooter: adress, kontakt, org-/momsnummer, F-skatt och betalningsvägar.
- * (Fakturan använder fortsatt DocFooter ovan.)
+ * Fakturan har egen kompakt sidfot i invoice-document.tsx.
  */
 function QuoteCompanyFooter({ company }: { company: CompanySettings }) {
   const sate = company.sate?.trim() || company.city;
