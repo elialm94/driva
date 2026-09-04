@@ -106,7 +106,6 @@ async function sendQuoteWithEmailOnce(quoteId: string): Promise<{ outcome: Deliv
     amount: t.toPay,
     validUntil: version.validUntil,
     token: quote.token,
-    bankidEnabled: true,
   });
   const outcome = toOutcome(result, to, QUOTE_SEND_FAILED);
   if (outcome.ok) {

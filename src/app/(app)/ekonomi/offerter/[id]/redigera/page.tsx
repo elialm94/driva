@@ -45,7 +45,7 @@ export default async function EditQuotePage(props: PageProps<"/ekonomi/offerter/
         title={isLocked ? `Ny version av offert #${quote.number}` : `Redigera offert #${quote.number}`}
         subtitle={
           isLocked
-            ? `Version ${version.version} är BankID-signerad och låst. Dina ändringar sparas som version ${version.version + 1}, som behöver skickas och signeras på nytt.`
+            ? `Version ${version.version} är godkänd av kunden och låst. Dina ändringar sparas som version ${version.version + 1}, som behöver skickas och godkännas på nytt.`
             : `Till ${customer.name}. ${quote.status === "skickad" ? "Offerten är skickad – sparade ändringar gör att den behöver skickas om." : ""}`
         }
       />
@@ -67,7 +67,7 @@ export default async function EditQuotePage(props: PageProps<"/ekonomi/offerter/
           taxReductionTerms: version.taxReductionTerms
             ? { heading: version.taxReductionTerms.heading, body: version.taxReductionTerms.body }
             : null,
-          // Kanonisk beskrivning: på BankID-låsta versioner ligger legacy-
+          // Kanonisk beskrivning: på låsta (godkända) versioner ligger legacy-
           // "Beskrivning av arbetet" kvar och slås ihop här inför ny version.
           richText: quoteDescriptionDoc(version),
         }}

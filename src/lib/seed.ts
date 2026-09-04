@@ -9,6 +9,7 @@ import type {
   LineKind,
   PaymentFile,
   Quote,
+  QuoteAcceptance,
   QuoteVersion,
   Reminder,
   SupplierInvoice,
@@ -30,6 +31,7 @@ import {
 } from "./bas";
 import { docTotals } from "./calc";
 import { quoteVersionHash } from "./hash";
+import { acceptanceStatement } from "./quote-acceptance";
 import { ocrForInvoice } from "./ids";
 import { snapshotTaxReductionTerms } from "./tax-reduction-terms";
 import { STANDARD_TERMS } from "./standard-quote-terms";
@@ -453,7 +455,7 @@ export function buildSeed(): DB {
     },
   });
 
-  // Skickad och öppnad – väntar på BankID-signering. Komplett ROT-exempel:
+  // Skickad och öppnad – väntar på kundens godkännande. Komplett ROT-exempel:
   // arbete + material + restid, fastighet via uppdragets arbetsplats,
   // betalningsplan i två steg och ROT-villkor.
   addQuote({
@@ -513,51 +515,80 @@ export function buildSeed(): DB {
     },
   });
 
-  /* --------------------------- BankID-signaturer ------------------------- */
+  /* ----------------------------- Offertgodkännanden ---------------------------- */
 
-  const signatures = [
-    {
+  // Kunden skrev sitt namn och tryckte Godkänn offert på offertlänken.
+  // statement är exakt den mening som visades – samma helper som kundsidan.
+  function accepted(a: {
+    id: string;
+    quoteId: string;
+    versionId: string;
+    name: string;
+    customerName: string;
+    email: string;
+    at: string;
+    ip: string;
+    userAgent: string;
+  }): QuoteAcceptance {
+    const version = quoteVersions.find((v) => v.id === a.versionId)!;
+    const t = docTotals(version.lines, version.rot);
+    return {
+      id: a.id,
+      quoteId: a.quoteId,
+      quoteVersionId: a.versionId,
+      method: "simple_accept",
+      acceptedAt: a.at,
+      acceptedByName: a.name,
+      customerNameAtAccept: a.customerName,
+      acceptedByEmail: a.email,
+      contentHash: version.contentHash!,
+      statement: acceptanceStatement({
+        title: version.title,
+        companyName: "Södermalms Snickeri AB",
+        datedIso: version.createdAt,
+        total: t.total,
+        deduction: t.deduction,
+      }),
+      ip: a.ip,
+      userAgent: a.userAgent,
+      linkSentTo: a.email,
+    };
+  }
+
+  const signatures: QuoteAcceptance[] = [
+    accepted({
       id: "sig-nord1",
       quoteId: "quote-nord1",
-      quoteVersionId: "quote-nord1-v1",
-      orderRef: "mock-order-nord1",
-      signerName: "Elin Nord",
-      signerPersonalNumberMasked: "198104••-••••",
-      signedAt: d(55, 15, 4),
-      environment: "mock" as const,
-      evidence: {
-        contentHash: quoteVersions.find((v) => v.id === "quote-nord1-v1")!.contentHash!,
-        note: "Demosignatur – i produktion lagras här BankID:s fullständiga signaturdata (XML-DSig) och OCSP-svar.",
-      },
-    },
-    {
+      versionId: "quote-nord1-v1",
+      name: "Elin Nord",
+      customerName: "Nord Studio AB",
+      email: "elin@nordstudio.se",
+      at: d(55, 15, 4),
+      ip: "83.233.12.41",
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+    }),
+    accepted({
       id: "sig-kok",
       quoteId: "quote-kok",
-      quoteVersionId: "quote-kok-v1",
-      orderRef: "mock-order-kok",
-      signerName: "Anna Andersson",
-      signerPersonalNumberMasked: "198505••-••••",
-      signedAt: d(24, 14, 32),
-      environment: "mock" as const,
-      evidence: {
-        contentHash: quoteVersions.find((v) => v.id === "quote-kok-v1")!.contentHash!,
-        note: "Demosignatur – i produktion lagras här BankID:s fullständiga signaturdata (XML-DSig) och OCSP-svar.",
-      },
-    },
-    {
+      versionId: "quote-kok-v1",
+      name: "Anna Andersson",
+      customerName: "Anna Andersson",
+      email: "anna.andersson@gmail.com",
+      at: d(24, 14, 32),
+      ip: "90.229.104.7",
+      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+    }),
+    accepted({
       id: "sig-altan",
       quoteId: "quote-altan",
-      quoteVersionId: "quote-altan-v1",
-      orderRef: "mock-order-altan",
-      signerName: "Johan Lindberg",
-      signerPersonalNumberMasked: "197911••-••••",
-      signedAt: d(20, 11, 18),
-      environment: "mock" as const,
-      evidence: {
-        contentHash: quoteVersions.find((v) => v.id === "quote-altan-v1")!.contentHash!,
-        note: "Demosignatur – i produktion lagras här BankID:s fullständiga signaturdata (XML-DSig) och OCSP-svar.",
-      },
-    },
+      versionId: "quote-altan-v1",
+      name: "Johan Lindberg",
+      customerName: "Johan Lindberg",
+      email: "johan.lindberg@outlook.com",
+      at: d(20, 11, 18),
+      ip: "78.72.55.190",
+      userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36",
+    }),
   ];
 
   /* -------------------------------- Uppdrag -------------------------------- */
@@ -727,7 +758,7 @@ export function buildSeed(): DB {
       status: "kommande",
       address: "Personnevägen 148, Hägersten",
       checklist: [],
-      notes: "Ställning bokas så snart offerten är signerad.",
+      notes: "Ställning bokas så snart offerten är godkänd.",
       createdAt: d(6, 13, 40),
       workLocationId: "loc-bertil-villa",
       housing: { dwellingType: "smahus", propertyDesignation: "Hägersten Ekgläntan 1:24" },
@@ -1808,8 +1839,8 @@ export function buildSeed(): DB {
     { id: "act-10", at: d(9, 16, 40), text: "Kvitto från Beijer Bygg (12 400 kr) matchades mot bankköpet och bokfördes som material.", entity: { type: "utgift", id: "exp-beijer" } },
     { id: "act-11", at: d(10, 7, 30), text: "Uppdraget Köksrenovering hos Anna Andersson startades.", customerId: "cust-anna", entity: { type: "jobb", id: "job-kok" } },
     { id: "act-12", at: d(16, 10, 20), text: "Betalning på 25 500 kr från Anna Andersson matchades mot faktura #1045 och bokfördes.", customerId: "cust-anna", entity: { type: "faktura", id: "inv-1045" } },
-    { id: "act-13", at: d(20, 11, 18), text: "Johan Lindberg godkände offert #111 med BankID. Uppdraget Altanrenovering skapades.", customerId: "cust-johan", entity: { type: "offert", id: "quote-altan" } },
-    { id: "act-14", at: d(24, 14, 32), text: "Anna Andersson godkände offert #110 med BankID. Uppdraget Köksrenovering skapades.", customerId: "cust-anna", entity: { type: "offert", id: "quote-kok" } },
+    { id: "act-13", at: d(20, 11, 18), text: "Johan Lindberg godkände offert #111. Uppdraget Altanrenovering skapades.", customerId: "cust-johan", entity: { type: "offert", id: "quote-altan" } },
+    { id: "act-14", at: d(24, 14, 32), text: "Anna Andersson godkände offert #110. Uppdraget Köksrenovering skapades.", customerId: "cust-anna", entity: { type: "offert", id: "quote-kok" } },
     { id: "act-15", at: d(26, 16, 20), text: "Uppdraget Fönsterbyte gårdshus markerades som klart.", customerId: "cust-brf", entity: { type: "jobb", id: "job-fonster" } },
     { id: "act-19", at: d(4, 9, 40), text: "Offert #115 med ROT-avdrag skickades till Bertil Lindqvist.", customerId: "cust-bertil", entity: { type: "offert", id: "quote-fasad" } },
     { id: "act-20", at: d(3, 18, 25), text: "Bertil Lindqvist öppnade offert #115.", customerId: "cust-bertil", entity: { type: "offert", id: "quote-fasad" } },
@@ -1887,7 +1918,7 @@ export function buildSeed(): DB {
         id: "sec-hero",
         type: "hero" as const,
         heading: "Platsbyggt snickeri med känsla för detaljer",
-        body: "Vi ritar, bygger och monterar kök, garderober och platsbyggda möbler på Södermalm med omnejd. Fast pris, tydlig offert och alltid BankID-signerat avtal.",
+        body: "Vi ritar, bygger och monterar kök, garderober och platsbyggda möbler på Södermalm med omnejd. Fast pris och tydlig offert som du godkänner digitalt.",
         visible: true,
       },
       {

@@ -345,24 +345,56 @@ export interface DocumentEmailDelivery {
   sentTo: string;
 }
 
-/* ---------------------------------- BankID ----------------------------------- */
+/* ----------------------------- Offertgodkännande ------------------------------ */
 
-export type BankIDEnvironment = "mock" | "production";
+/**
+ * Hur kunden godkände offerten.
+ *   simple_accept – kunden skrev sitt namn och tryckte Godkänn offert på
+ *                   offertlänken (enkel elektronisk underskrift).
+ *   bankid_mock   – äldre demosignaturer från mock-BankID (inte på kundvägen längre).
+ *   bankid        – reserverat för en riktig BankID-leverantör; ingen finns i koden.
+ */
+export type QuoteAcceptanceMethod = "simple_accept" | "bankid_mock" | "bankid";
 
-export interface BankIDSignature {
+/**
+ * Kundens godkännande av EXAKT en offertversion. Bevisvärdet ligger i
+ * kombinationen: låst version + contentHash (vad), acceptedByName + kund-
+ * uppgifter (vem), acceptedAt (när), linkSentTo (länken gick till kundens
+ * e-post), ip/userAgent (varifrån) och statement (den mening kunden godkände).
+ * Lagras i tabellen signatures – en rad per offert.
+ */
+export interface QuoteAcceptance {
   id: ID;
   quoteId: ID;
   quoteVersionId: ID;
-  orderRef: string;
-  signerName: string;
-  signerPersonalNumberMasked: string;
-  signedAt: string;
-  environment: BankIDEnvironment;
-  evidence: {
-    contentHash: string;
+  method: QuoteAcceptanceMethod;
+  /** ISO-tid. Visas i Europe/Stockholm (format.ts). */
+  acceptedAt: string;
+  /** Namnet kunden skrev, trimmat. */
+  acceptedByName: string;
+  /** Kundens namn i registret vid godkännandet (företag: bolagsnamnet). */
+  customerNameAtAccept: string;
+  acceptedByEmail?: string;
+  /** SHA-256 av den låsta version kunden såg (samma som QuoteVersion.contentHash). */
+  contentHash: string;
+  /** Den fullständiga mening kunden godkände, ordagrant som den visades. */
+  statement: string;
+  ip?: string;
+  userAgent?: string;
+  /** Adressen offertlänken skickades till, om offerten mejlades. */
+  linkSentTo?: string;
+  /** Bara på äldre BankID-poster. */
+  bankid?: {
+    orderRef: string;
+    personalNumberMasked: string;
+    environment: BankIDEnvironment;
     note: string;
   };
 }
+
+/* ---------------------------------- BankID ----------------------------------- */
+
+export type BankIDEnvironment = "mock" | "production";
 
 export type BankIDHint =
   | "outstandingTransaction"
@@ -660,6 +692,51 @@ export interface BankAccount {
   accountNumber: string;
   balance: number;
   connectedAt: string;
+  /** Leverantörens konto-id (Tink account id). Gör återimport av konton idempotent. */
+  externalId?: string;
+}
+
+/**
+ * Bankkopplingens livscykel (en koppling per företag):
+ *   disconnected → pending (användaren är hos banken via Tink Link)
+ *   → connected (credentials finns, transaktioner hämtas)
+ *   → revoked (Koppla från: Tink-åtkomsten återkallad; historiken kvar)
+ *   error = banken/Tink sa nej eller fel vid hämtning – användaren kan försöka igen.
+ */
+export type BankConnectionStatus = "disconnected" | "pending" | "connected" | "error" | "revoked";
+
+/**
+ * Bankkopplingen (Open Banking AIS via Tink, eller mock i demo).
+ *
+ * Tokens och Tink-id:n är SERVER-ONLY: raden nås bara av serverrollen (ingen
+ * RLS-policy för authenticated) och UI:t läser en projektion (bankConnectionView)
+ * som aldrig innehåller hemligheter.
+ */
+export interface BankConnection {
+  id: ID;
+  provider: "mock" | "tink";
+  status: BankConnectionStatus;
+  /** Tink permanent user: external_user_id = företagets id. */
+  externalUserId?: string;
+  tinkUserId?: string;
+  /** Tink credentials-id (bankmedgivandet). Töms vid Koppla från. */
+  credentialsId?: string;
+  /** Cachad användartoken (server-only). Nya hämtas via authorization-grant när den gått ut. */
+  accessToken?: string;
+  accessTokenExpiresAt?: string;
+  /** CSRF-state för pågående Tink Link-flöde (server-only). */
+  pendingState?: string;
+  pendingStateExpiresAt?: string;
+  bankName?: string;
+  /** Maskerat kontonummer för visning, t.ex. "···· 4512". */
+  maskedAccount?: string;
+  lastSyncAt?: string;
+  /** Senaste användarvänliga felet (svenska, aldrig rå Tink-JSON). */
+  lastError?: string;
+  connectedAt?: string;
+  revokedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
@@ -1832,7 +1909,8 @@ export interface DB {
   customers: Customer[];
   quotes: Quote[];
   quoteVersions: QuoteVersion[];
-  signatures: BankIDSignature[];
+  /** Offertgodkännanden (en per offert). Tabellnamnet signatures är historiskt. */
+  signatures: QuoteAcceptance[];
   bankidOrders: BankIDOrder[];
   jobs: Job[];
   /** Registrerat/avtalat arbete på uppdrag – skilt från offert- och fakturarader. */
@@ -1841,6 +1919,8 @@ export interface DB {
   payments: Payment[];
   bankAccounts: BankAccount[];
   bankTransactions: BankTransaction[];
+  /** Bankkoppling (Tink/mock), max en aktiv per företag. Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  bankConnections?: BankConnection[];
   expenses: Expense[];
   receipts: Receipt[];
   supplierInvoices: SupplierInvoice[];

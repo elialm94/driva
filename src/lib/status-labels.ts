@@ -7,10 +7,10 @@
  *
  * Principer (se UX-spec för statusspråk):
  *   * Statusen svarar på: Vad har hänt? Vad/vem väntar vi på? Behöver jag
- *     göra något? – aldrig implementationstermer (BankID, provider,
- *     processing, pending) som primär status.
- *   * BankID är en METOD, inte en status: badge säger "Väntar på signering" /
- *     "Signerad"; tidslinje och underlag säger "Signerad med BankID av …".
+ *     göra något? – aldrig implementationstermer (provider, processing,
+ *     pending) som primär status.
+ *   * Metoden är inte en status: badge säger "Väntar på godkännande" /
+ *     "Godkänd"; tidslinje och underlag säger "Godkänd av …".
  *   * Aktuell status är kort (badge), historik är precis (tidslinje),
  *     detaljsidor får förklara i hela meningar.
  *   * Filter använder exakt samma ordförråd som statusarna.
@@ -23,11 +23,13 @@
  */
 
 import type {
+  BankConnectionStatus,
   CollaborationInviteStatus,
   ExpenseStatus,
   InboxItemStatus,
   Invoice,
   Quote,
+  QuoteAcceptance,
   SupplierPaymentStatus,
   TaxReductionApplicationStatus,
   TxStatus,
@@ -44,13 +46,13 @@ export interface StatusLabel {
 /* ---------------------------------- Offerter ---------------------------------- */
 
 /**
- * Offertstatus. "skickad" betyder för användaren: vi väntar på att kunden
- * signerar – inte vilken teknik som används. "godkand" = kunden har signerat.
+ * Offertstatus. "skickad" betyder för användaren: vi väntar på kundens svar –
+ * inte vilken teknik som används. "godkand" = kunden har godkänt offerten.
  */
 export const QUOTE_STATUS: Record<Quote["status"], StatusLabel> = {
   utkast: { label: "Utkast", tone: "neutral" },
-  skickad: { label: "Väntar på signering", tone: "warn" },
-  godkand: { label: "Signerad", tone: "ok" },
+  skickad: { label: "Väntar på godkännande", tone: "warn" },
+  godkand: { label: "Godkänd", tone: "ok" },
   avbojd: { label: "Avböjd", tone: "danger" },
   utgangen: { label: "Utgången", tone: "neutral" },
 };
@@ -58,37 +60,55 @@ export const QUOTE_STATUS: Record<Quote["status"], StatusLabel> = {
 /** Filteretiketter – samma ordförråd som statusarna, i pluralform där det passar. */
 export const QUOTE_STATUS_FILTER: Record<Quote["status"], string> = {
   utkast: "Utkast",
-  skickad: "Väntar på signering",
-  godkand: "Signerade",
+  skickad: "Väntar på godkännande",
+  godkand: "Godkända",
   avbojd: "Avböjda",
   utgangen: "Utgångna",
 };
 
 /**
  * Radtext för en skickad offert i listor/På gång: "Öppnad · väntar på
- * signering" när kunden öppnat den, annars "Väntar på signering".
+ * godkännande" när kunden öppnat den, annars "Väntar på godkännande".
  */
 export function quoteWaitingLabel(opts: { viewed?: boolean } = {}): string {
-  return opts.viewed ? "Öppnad · väntar på signering" : "Väntar på signering";
+  return opts.viewed ? "Öppnad · väntar på godkännande" : "Väntar på godkännande";
 }
 
 /**
- * Tidslinje-/historiketiketter för offertflödet. Här hör metoden hemma:
- * "Signerad med BankID", aldrig som primär status.
+ * Tidslinje-/historiketiketter för offertflödet. Här hör metoden hemma –
+ * aldrig som primär status.
  */
 export const QUOTE_TIMELINE = {
   skapad: "Skapad",
   skickad: "Skickad",
   oppnad: "Öppnad av kunden",
   paminnelse: "Påminnelse",
-  signerad: "Signerad med BankID",
+  godkand: "Godkänd av kunden",
   avbojd: "Avböjd",
 } as const;
 
-/** Underlag/metadata: "Signerad med BankID av Sara Nilsson". */
-export function signedWithBankIdBy(name: string): string {
-  return `${QUOTE_TIMELINE.signerad} av ${name}`;
+/**
+ * Underlag/metadata: "Godkänd av Sara Nilsson". Godkännandet på offertlänken
+ * är namn + knapp – det kallas aldrig BankID, e-legitimation eller avancerad
+ * underskrift. Äldre demoposter från mock-BankID märks som demo.
+ */
+export function acceptedByLabel(acceptance: Pick<QuoteAcceptance, "method" | "acceptedByName">): string {
+  switch (acceptance.method) {
+    case "bankid":
+      return `Signerad med BankID av ${acceptance.acceptedByName}`;
+    case "bankid_mock":
+      return `Godkänd av ${acceptance.acceptedByName} (demo)`;
+    default:
+      return `Godkänd av ${acceptance.acceptedByName}`;
+  }
 }
+
+/** Metoden i klartext för underlag och detaljvy. */
+export const QUOTE_ACCEPT_METHOD: Record<QuoteAcceptance["method"], string> = {
+  simple_accept: "Godkännande via offertlänken – kunden skrev sitt namn och tryckte Godkänn offert",
+  bankid_mock: "Demo-signering (simulerad, ingen legitimering)",
+  bankid: "BankID",
+};
 
 /* ---------------------------------- Fakturor ---------------------------------- */
 
@@ -145,6 +165,20 @@ export const TX_STATUS: Record<TxStatus, StatusLabel> = {
   ny: { label: "Ny", tone: "neutral" },
   bokford: { label: "Bokförd", tone: "ok" },
   behover_atgard: { label: "Behöver åtgärd", tone: "warn" },
+};
+
+/* ------------------------------ Bankkoppling ---------------------------------- */
+
+/**
+ * Bankkopplingens status (Ekonomi → Bank). Tink är en METOD, inte en status:
+ * etiketten säger vad som gäller för användaren – aldrig "pending"/"revoked".
+ */
+export const BANK_CONNECTION_STATUS: Record<BankConnectionStatus, StatusLabel> = {
+  disconnected: { label: "Ingen bank kopplad", tone: "neutral" },
+  pending: { label: "Väntar på banken", tone: "warn" },
+  connected: { label: "Kopplad", tone: "ok" },
+  error: { label: "Kopplingen misslyckades", tone: "danger" },
+  revoked: { label: "Frånkopplad", tone: "neutral" },
 };
 
 /* ---------------------------------- Utgifter ---------------------------------- */

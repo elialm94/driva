@@ -10,7 +10,7 @@ import { kr, datumKort } from "@/lib/format";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { loadStateSnapshot } from "@/lib/storage/adapter-supabase";
 import { runInTenantContext } from "@/lib/storage/context";
-import { db } from "@/lib/store";
+import { hasConnectedBank } from "@/lib/banking/connection-state";
 
 export const metadata = { title: "Bank" };
 
@@ -30,14 +30,14 @@ export default async function AccountantBankPage({
           () => ({
             recon: bankReconciliation(),
             rows: listBankForTable({ status: "atgard", pageSize: 40 }).rows,
-            connected: db().bankAccounts.length > 0,
+            connected: hasConnectedBank(),
           })
         );
       })()
     : {
         recon: bankReconciliation(),
         rows: listBankForTable({ status: "atgard", pageSize: 40 }).rows,
-        connected: db().bankAccounts.length > 0,
+        connected: hasConnectedBank(),
       };
 
   const bankActions = [...snap.queue, ...snap.waiting]
@@ -100,7 +100,7 @@ export default async function AccountantBankPage({
                 className="flex items-baseline justify-between gap-3 border-b border-line/70 px-3 py-2 last:border-b-0"
               >
                 <span className="min-w-0 truncate text-[13px]">
-                  {r.counterpart} · {r.description}
+                  {r.secondary ? `${r.counterpart} · ${r.secondary}` : r.counterpart}
                 </span>
                 <span className="shrink-0 text-[12px] text-soft">
                   {datumKort(r.date)} · {kr(r.amount)} · {r.statusLabel}

@@ -224,6 +224,39 @@ describe("Betalningsmatchning: faktiskt belopp, öresdiff, del- och överbetalni
 describe("Idempotens: import och matchning kan aldrig dubbelboka", () => {
   beforeEach(() => reset());
 
+  it("om-import med samma externalId uppdaterar motpart och beskrivning men bokar inte om", () => {
+    const inv = issuedInvoice();
+    const toPay = invoiceTotals(inv).toPay;
+    const first = registerBankTransactions([
+      incomingTx({
+        amount: toPay,
+        externalId: "bank-labels-1",
+        counterpart: "Hyra",
+        description: "Hyra",
+        reference: `OCR ${inv.ocr}`,
+      }),
+    ]);
+    assert.equal(first.imported, 1);
+    assert.equal(db().bankTransactions[0].status, "bokford");
+    const payments = db().payments.length;
+
+    const second = registerBankTransactions([
+      incomingTx({
+        amount: toPay,
+        externalId: "bank-labels-1",
+        counterpart: "Hyresvärden AB",
+        description: "Hyra september",
+        reference: `OCR ${inv.ocr}`,
+      }),
+    ]);
+    assert.deepEqual({ i: second.imported, s: second.skipped }, { i: 0, s: 1 });
+    assert.equal(db().bankTransactions.length, 1);
+    assert.equal(db().payments.length, payments, "matchningen körs inte om");
+    assert.equal(db().bankTransactions[0].counterpart, "Hyresvärden AB");
+    assert.equal(db().bankTransactions[0].description, "Hyra september");
+    assert.equal(db().bankTransactions[0].status, "bokford");
+  });
+
   it("samma externalId importeras bara en gång", () => {
     const inv = issuedInvoice();
     const toPay = invoiceTotals(inv).toPay;

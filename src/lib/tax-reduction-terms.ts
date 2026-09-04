@@ -4,7 +4,7 @@ import { taxReductionCap, taxReductionRate } from "./calc";
 
 /**
  * Central ROT/RUT-villkorstext.
- * Alla vyer (offert, offertdetalj, BankID, faktura, PDF) läser härifrån.
+ * Alla vyer (offert, offertdetalj, godkännandeunderlag, faktura, PDF) läser härifrån.
  * Ändra v1-texten här – eller lägg till en ny version – i stället för att duplicera copy.
  */
 export const TAX_REDUCTION_TERMS_VERSION = "v1";
@@ -21,7 +21,7 @@ export interface TaxReductionTermsText {
   version: string;
   heading: string;
   body: string;
-  /** Heading + brödtext, den text som låses i BankID-hashen. */
+  /** Heading + brödtext, den text som låses i dokument-hashen vid godkännandet. */
   text: string;
 }
 

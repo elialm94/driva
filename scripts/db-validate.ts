@@ -600,7 +600,7 @@ async function main() {
   console.log("\nOffertversioner och audit-logg:");
 
   await asApp(A);
-  await expectOk(db, "offert + version skapas och BankID-låses", async () => {
+  await expectOk(db, "offert + version skapas och låses vid godkännande", async () => {
     await db.query(
       `insert into public.quotes (id, business_id, number, customer_id, status, current_version_id, token, created_at)
        values ('quote-a1', $1, 1, 'cust-a1', 'skickad', 'qv-a1', 'tok-quote-a1', now())`,
@@ -613,26 +613,43 @@ async function main() {
     );
     await db.query(`update public.quote_versions set locked_at = now(), content_hash = 'abc' where id = 'qv-a1'`);
   });
-  await expectError(db, "BankID-låst version är fryst", "immutability", () =>
+  await expectError(db, "låst version är fryst", "immutability", () =>
     db.query(`update public.quote_versions set payload = '{"title":"Hackat"}'::jsonb where id = 'qv-a1'`)
   );
-  await expectError(db, "BankID-låst version kan inte tas bort", "immutability", () =>
+  await expectError(db, "låst version kan inte tas bort", "immutability", () =>
     db.query(`delete from public.quote_versions where id = 'qv-a1'`)
   );
-  await expectOk(db, "signatur kan skapas", () =>
+  await expectOk(db, "godkännande (simple_accept) kan skapas utan BankID-kolumner", () =>
     db.query(
-      `insert into public.signatures (id, business_id, quote_id, quote_version_id, order_ref, signer_name, signer_personal_number_masked, signed_at, environment, evidence)
-       values ('sig-1', $1, 'quote-a1', 'qv-a1', 'ref-1', 'Anna A', '••••', now(), 'mock', '{}'::jsonb)`,
+      `insert into public.signatures (id, business_id, quote_id, quote_version_id, method, signer_name, signed_at, evidence)
+       values ('sig-1', $1, 'quote-a1', 'qv-a1', 'simple_accept', 'Anna A', now(),
+               '{"contentHash":"abc","statement":"Genom att godkänna …","customerNameAtAccept":"Anna A","ip":"203.0.113.7"}'::jsonb)`,
       [A]
     )
   );
-  await expectError(db, "dubbelsignatur på samma offert stoppas (unikt index)", "duplicate key", () =>
+  await expectError(db, "dubbelt godkännande på samma offert stoppas (unikt index)", "duplicate key", () =>
     db.query(
-      `insert into public.signatures (id, business_id, quote_id, quote_version_id, order_ref, signer_name, signer_personal_number_masked, signed_at, environment, evidence)
-       values ('sig-2', $1, 'quote-a1', 'qv-a1', 'ref-2', 'Anna A', '••••', now(), 'mock', '{}'::jsonb)`,
+      `insert into public.signatures (id, business_id, quote_id, quote_version_id, method, signer_name, signed_at, evidence)
+       values ('sig-2', $1, 'quote-a1', 'qv-a1', 'simple_accept', 'Anna A', now(), '{}'::jsonb)`,
       [A]
     )
   );
+  await expectError(db, "okänd godkännandemetod avvisas", "signatures_method_check", () =>
+    db.query(
+      `insert into public.signatures (id, business_id, quote_id, quote_version_id, method, signer_name, signed_at, evidence)
+       values ('sig-3', $1, 'quote-a1', 'qv-a1', 'ritad_signatur', 'Anna A', now(), '{}'::jsonb)`,
+      [A]
+    )
+  );
+  {
+    const r = await rows(db, `select method, order_ref, environment from public.signatures where id = 'sig-1'`);
+    const row = r[0] as { method: string; order_ref: string | null; environment: string | null } | undefined;
+    if (row && row.method === "simple_accept" && row.order_ref === null && row.environment === null) {
+      ok("godkännandet sparas med method simple_accept och utan BankID-fält");
+    } else {
+      fail("godkännandet sparas med method simple_accept och utan BankID-fält", JSON.stringify(row));
+    }
+  }
   await expectOk(db, "audit_log tar emot händelser", () =>
     db.query(
       `insert into public.audit_log (id, business_id, channel, actor_label, event_type, message, created_at)

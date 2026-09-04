@@ -3,7 +3,7 @@
  *
  *   withBusiness(fn)      – skrivande flöde (server actions, API-routes)
  *   withBusinessRead(fn)  – sidorenderingar (save() förbjudet)
- *   withPublicBusiness()  – publika tokenflöden (offert/faktura/sajt/BankID)
+ *   withPublicBusiness()  – publika tokenflöden (offert/faktura/sajt)
  *
  * Roll är PER FÖRETAG. Ägare och redovisningskonsult delar samma data –
  * skillnaden är UI och behörighet, inte bokföringsmotor.

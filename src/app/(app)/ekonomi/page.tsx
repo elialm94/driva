@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Plus, Landmark } from "lucide-react";
 import { db } from "@/lib/store";
-import { kr, datumKort } from "@/lib/format";
+import { kr, datumKort, datumTid } from "@/lib/format";
 import {
   Badge,
   ButtonLink,
@@ -10,9 +10,20 @@ import {
   EmptyState,
   PageHeader,
   PageHeaderCreateActions,
+  StatusDot,
   cx,
 } from "@/components/ui";
 import { UploadReceiptButton } from "@/components/money-widgets";
+import {
+  BankNoticeToast,
+  CancelPendingBankButton,
+  ConnectBankButton,
+  DisconnectBankButton,
+  RefreshBankButton,
+} from "@/components/bank-connection";
+import { bankConnectionView, type BankConnectionView } from "@/lib/banking/connection-state";
+import { bankProviderKind } from "@/lib/banking/select";
+import { BANK_CONNECTION_STATUS } from "@/lib/status-labels";
 import { CreatePaymentFileButton } from "@/components/payment-file-actions";
 import { payerAccountLabel } from "@/lib/services/payment-files";
 import {
@@ -94,6 +105,83 @@ function ReadyToPayBanner() {
   );
 }
 
+const BANK_SECONDARY_LINE =
+  "Du loggar in hos banken via Tink. Driva hämtar saldo och transaktioner för att matcha fakturor. Vi kan inte föra över pengar.";
+
+function bankConnectionSubtitle(view: BankConnectionView): string {
+  switch (view.status) {
+    case "connected":
+      if (view.lastSyncAt) return `Senast uppdaterad ${datumTid(view.lastSyncAt)}`;
+      if (view.connectedAt) return `Kopplad ${datumTid(view.connectedAt)}`;
+      return "Kopplad via Open Banking";
+    case "pending":
+      return "Slutför inloggningen hos banken. Kom tillbaka hit när du är klar.";
+    case "error":
+      return view.error ?? BANK_CONNECTION_STATUS.error.label;
+    case "revoked":
+      return "Driva hämtar inte längre något från banken. Tidigare transaktioner och verifikationer finns kvar.";
+    case "disconnected":
+      return "Koppla företagskontot så hämtas saldo och transaktioner hit.";
+  }
+}
+
+/**
+ * Bankkopplingens kort ovanför transaktionslistan. Läser bara projektionen
+ * (bankConnectionView) – aldrig tokens eller Tink-id:n. Status-etiketter
+ * kommer från status-labels, aldrig råa enum-värden.
+ */
+function BankConnectionCard({ view, demo }: { view: BankConnectionView; demo: boolean }) {
+  const status = BANK_CONNECTION_STATUS[view.status];
+  const identity = [view.bankName, view.maskedAccount].filter(Boolean).join(" · ") || "Företagskonto";
+
+  return (
+    <Card className="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
+      <div className="flex min-w-0 items-center gap-4">
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent-soft">
+          <Landmark className="size-5 text-accent" />
+        </div>
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-2 text-[15px] font-semibold">
+            <span className="truncate">{identity}</span>
+            <Badge tone={status.tone}>
+              <StatusDot tone={status.tone} />
+              {status.label}
+            </Badge>
+            {demo && view.status === "connected" ? <Badge tone="warn">Demo-bank</Badge> : null}
+          </p>
+          <p className="text-[13px] text-muted">{bankConnectionSubtitle(view)}</p>
+        </div>
+      </div>
+
+      {view.status === "connected" ? (
+        <div className="flex flex-wrap items-center gap-4">
+          {typeof view.balance === "number" ? (
+            <div className="text-right">
+              <p className="text-[12px] font-medium text-muted">Saldo</p>
+              <p className="text-[22px] font-semibold tracking-tight tabular">{kr(view.balance)}</p>
+            </div>
+          ) : null}
+          <div className="flex items-center gap-2">
+            <RefreshBankButton />
+            <DisconnectBankButton bankName={view.bankName} />
+          </div>
+        </div>
+      ) : null}
+
+      {view.status === "pending" ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <ConnectBankButton demo={demo} label="Fortsätt hos banken" variant="secondary" />
+          <CancelPendingBankButton />
+        </div>
+      ) : null}
+
+      {view.status === "error" || view.status === "revoked" || view.status === "disconnected" ? (
+        <ConnectBankButton demo={demo} label={view.status === "error" ? "Försök igen" : "Koppla företagskonto"} />
+      ) : null}
+    </Card>
+  );
+}
+
 export default async function MoneyPage(props: PageProps<"/ekonomi">) {
   await ensurePageBusiness();
   const searchParams = await props.searchParams;
@@ -104,12 +192,14 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
   const q = param(searchParams.q);
   const page = pageParam(searchParams.sida);
   const sort = parseEconomySort(searchParams.sort, searchParams.direction);
-  const account = db().bankAccounts[0];
+  const bank = tab === "bank" ? bankConnectionView() : null;
+  const bankDemo = tab === "bank" ? bankProviderKind() === "mock" : false;
 
   return (
     <div className="animate-fade-up">
       <Suspense>
         <DraftDiscardedToast />
+        {tab === "bank" ? <BankNoticeToast /> : null}
       </Suspense>
       <PageHeader
         title="Ekonomi"
@@ -192,37 +282,25 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
         </div>
       ) : null}
 
-      {tab === "bank" ? (
-        !account ? (
+      {tab === "bank" && bank ? (
+        bank.status === "disconnected" && !bank.hasHistory ? (
           <EmptyState
             icon={Landmark}
             title="Ingen bank kopplad ännu"
             text="När företagskontot kopplas via Open Banking dyker saldo och transaktioner upp här och matchas mot fakturor automatiskt."
+            action={
+              <div className="flex flex-col items-center gap-3">
+                <ConnectBankButton demo={bankDemo} />
+                <p className="max-w-md text-[13px] text-muted">{BANK_SECONDARY_LINE}</p>
+              </div>
+            }
           />
         ) : (
           <div className="space-y-6">
-            <Card className="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
-              <div className="flex items-center gap-4">
-                <div className="flex size-11 items-center justify-center rounded-xl bg-accent-soft">
-                  <Landmark className="size-5 text-accent" />
-                </div>
-                <div>
-                  <p className="text-[15px] font-semibold">
-                    {account.name} <span className="font-normal text-muted">· {account.accountNumber}</span>
-                  </p>
-                  <p className="text-[13px] text-muted">
-                    Kopplad via Open Banking{" "}
-                    <Badge tone="neutral" className="ml-1">
-                      Demo – Tink/riktig bank kopplas senare
-                    </Badge>
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-[12px] font-medium text-muted">Saldo</p>
-                <p className="text-[22px] font-semibold tracking-tight tabular">{kr(account.balance)}</p>
-              </div>
-            </Card>
+            <BankConnectionCard view={bank} demo={bankDemo} />
+            {bank.status !== "connected" ? (
+              <p className="text-[13px] text-muted">{BANK_SECONDARY_LINE}</p>
+            ) : null}
             <BankRegister
               result={listBankForTable({
                 q,

@@ -7,6 +7,7 @@ import { emptyTestDb, labor, testCustomer } from "./invoices/test-db";
 import { createQuote, quoteDefaults } from "./services/quotes";
 import { createInvoice } from "./services/invoices";
 import {
+  bankRowSecondaryText,
   listBankForTable,
   listExpensesForTable,
   listInvoicesForTable,
@@ -386,6 +387,26 @@ describe("listExpensesForTable / listBankForTable sort", () => {
       listBankForTable({ sort: { key: "amount", direction: "asc" } }).rows.map((r) => r.amount),
       [-23000, -15000, 9000]
     );
+  });
+});
+
+describe("bankRowSecondaryText", () => {
+  it("slår ihop beskrivning och referens och hoppar över tomma", () => {
+    assert.equal(bankRowSecondaryText({ description: "ICA MAXI HUDDINGE" }), "ICA MAXI HUDDINGE");
+    assert.equal(bankRowSecondaryText({ description: "", reference: "OCR 12" }), "OCR 12");
+    assert.equal(bankRowSecondaryText({ description: "Hyra", reference: "OCR 12" }), "Hyra · OCR 12");
+    assert.equal(bankRowSecondaryText({ description: "" }), "");
+  });
+
+  it("lägger secondary på bankraden", () => {
+    replaceDb(
+      emptyTestDb({
+        bankTransactions: [tx({ id: "t1", counterpart: "Hyra", description: "", date: "2026-09-03", amount: -6500 })],
+      })
+    );
+    const row = listBankForTable().rows[0];
+    assert.equal(row.counterpart, "Hyra");
+    assert.equal(row.secondary, "");
   });
 });
 

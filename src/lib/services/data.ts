@@ -1,10 +1,10 @@
 import { db } from "../store";
 import type {
-  BankIDSignature,
   Customer,
   Invoice,
   Job,
   Quote,
+  QuoteAcceptance,
   QuoteVersion,
   Verification,
 } from "../types";
@@ -84,7 +84,8 @@ export function quoteTotals(quote: Quote): DocTotals {
   return docTotals(v.lines, v.rot);
 }
 
-export function quoteSignature(quoteId: string): BankIDSignature | undefined {
+/** Kundens godkännande av offerten (en per offert), om det finns. */
+export function quoteAcceptance(quoteId: string): QuoteAcceptance | undefined {
   return db().signatures.find((s) => s.quoteId === quoteId);
 }
 

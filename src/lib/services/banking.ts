@@ -8,43 +8,48 @@ import { logActivity } from "./activity";
 import { logAudit } from "../accounting/audit";
 import { postVerification } from "../accounting/engine";
 import { assertDemoMode } from "../demo";
+import { connectedBankAccount } from "../banking/connection-state";
 import { processIncomingTransaction } from "./payment-matching";
 import { expectedTaxReductionPayouts } from "./tax-reduction";
 
 /**
  * Open Banking-abstraktion.
  *
- * BankProvider är gränssnittet mot en riktig leverantör (t.ex. Tink, GoCardless
- * eller Enable Banking): kontosaldo + transaktionsström. Riktiga flöden bär
- * öre – beloppen avrundas till hela kronor VID IMPORTGRÄNSEN (se README-ADR);
- * matchningen tolererar öresdiffar och bokar dem på 3740.
+ * BankProvider (lib/banking/provider.ts) är gränssnittet mot leverantören:
+ * startConnect · handleCallback · refresh · listAccounts · listTransactions ·
+ * disconnect. LiveTinkProvider (Tink AIS) för riktiga företag med TINK_*-miljö,
+ * MockBankProvider för demo. Riktiga flöden bär öre – beloppen avrundas till
+ * hela kronor VID IMPORTGRÄNSEN (se README-ADR); matchningen tolererar
+ * öresdiffar och bokar dem på 3740. Importen går alltid via
+ * registerBankTransactions nedan – matchningsmotorn känner inte leverantören.
  *
  * Alla funktioner som HITTAR PÅ pengar (simulera inbetalning, betala
  * leverantörsfaktura utan riktig bank) är demo-gated (lib/demo.ts): i en
  * produktionsmiljö utan bankkoppling visas ett ärligt oconfigurerat läge.
  */
 
-export interface BankProvider {
-  readonly name: string;
-  /** I en riktig integration: hämta nya transaktioner sedan senaste synk. */
-  sync(): BankTransaction[];
-}
+export type { BankProvider } from "../banking/provider";
 
 /**
  * Registrera importerade banktransaktioner idempotent: transaktioner med ett
- * `externalId` som redan finns hoppar över (databasen har dessutom ett unikt
- * index). Nya inbetalningar körs genom matchningsmotorn.
+ * `externalId` som redan finns skapar ingen dubblett och körs inte om genom
+ * matchningen. Motpart/beskrivning/referens skrivs ändå över från leverantören
+ * så att en om-synk (Uppdatera) kan fylla kolumnerna utan ny koppling.
  */
 export function registerBankTransactions(incoming: BankTransaction[]): { imported: number; skipped: number } {
   const data = db();
-  const known = new Set(
-    data.bankTransactions.filter((t) => t.externalId).map((t) => `${t.accountId}:${t.externalId}`)
-  );
+  const known = new Map<string, BankTransaction>();
+  for (const existing of data.bankTransactions) {
+    if (existing.externalId) known.set(`${existing.accountId}:${existing.externalId}`, existing);
+  }
   let imported = 0;
   let skipped = 0;
+  let labelsTouched = false;
   for (const tx of incoming) {
-    if (tx.externalId && known.has(`${tx.accountId}:${tx.externalId}`)) {
+    const existing = tx.externalId ? known.get(`${tx.accountId}:${tx.externalId}`) : undefined;
+    if (existing) {
       skipped++;
+      if (refreshImportedBankLabels(existing, tx)) labelsTouched = true;
       continue;
     }
     if (!Number.isInteger(tx.amount)) {
@@ -52,13 +57,31 @@ export function registerBankTransactions(incoming: BankTransaction[]): { importe
       tx.amount = Math.round(tx.amount);
     }
     data.bankTransactions.unshift(tx);
-    if (tx.externalId) known.add(`${tx.accountId}:${tx.externalId}`);
+    if (tx.externalId) known.set(`${tx.accountId}:${tx.externalId}`, tx);
     imported++;
     save();
     processIncomingTransaction(tx.id);
   }
-  if (imported > 0) save();
+  if (imported > 0 || labelsTouched) save();
   return { imported, skipped };
+}
+
+/** Visningsfält från banken – aldrig belopp, status eller matchning. */
+export function refreshImportedBankLabels(existing: BankTransaction, incoming: BankTransaction): boolean {
+  let changed = false;
+  if (incoming.counterpart !== existing.counterpart) {
+    existing.counterpart = incoming.counterpart;
+    changed = true;
+  }
+  if (incoming.description !== existing.description) {
+    existing.description = incoming.description;
+    changed = true;
+  }
+  if (incoming.reference && incoming.reference !== existing.reference) {
+    existing.reference = incoming.reference;
+    changed = true;
+  }
+  return changed;
 }
 
 /**
@@ -77,7 +100,7 @@ export function simulateIncomingPayment(invoiceId: string, opts: { amount?: numb
   const data = db();
   const invoice = getInvoice(invoiceId);
   if (!invoice || !isOpenReceivable(invoice)) return;
-  const account = data.bankAccounts[0];
+  const account = connectedBankAccount();
   if (!account) throw new Error("Ingen bank är kopplad – det finns inget konto att simulera inbetalningen mot.");
   const customer = requireCustomer(invoice.customerId);
   const amount = opts.amount ?? invoiceOutstanding(invoice);
@@ -107,7 +130,7 @@ export function simulateIncomingPayment(invoiceId: string, opts: { amount?: numb
 export function simulateTaxReductionPayout(input: { jobId?: string; invoiceId?: string; amount?: number }): void {
   assertDemoMode("Simulerad ROT/RUT-utbetalning");
   const data = db();
-  const account = data.bankAccounts[0];
+  const account = connectedBankAccount();
   if (!account) throw new Error("Ingen bank är kopplad – det finns inget konto att simulera utbetalningen mot.");
   const payout = expectedTaxReductionPayouts().find(
     (p) => (input.jobId && p.jobId === input.jobId) || (input.invoiceId && p.invoiceId === input.invoiceId)
@@ -138,7 +161,7 @@ export function paySupplierInvoice(supplierInvoiceId: string): void {
   const data = db();
   const sup = data.supplierInvoices.find((s) => s.id === supplierInvoiceId);
   if (!sup || sup.status === "betald") return;
-  const account = data.bankAccounts[0];
+  const account = connectedBankAccount();
   if (!account) throw new Error("Ingen bank är kopplad – det finns inget konto att betala från.");
   const now = new Date().toISOString();
   const tx: BankTransaction = {

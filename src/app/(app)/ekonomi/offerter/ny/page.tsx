@@ -96,10 +96,10 @@ export default async function NewQuotePage(props: PageProps<"/ekonomi/offerter/n
         title={tillagg ? tillagg.title : "Ny offert"}
         subtitle={
           tillagg
-            ? `Tillägg till offert #${tillagg.quoteNumber} – kunden godkänner med BankID.`
+            ? `Tillägg till offert #${tillagg.quoteNumber} – kunden godkänner direkt i länken.`
             : job
               ? `Till uppdraget ”${job.title}”`
-              : "Skapa, granska och skicka – kunden godkänner med BankID."
+              : "Skapa, granska och skicka – kunden godkänner direkt i länken."
         }
       />
       {tillagg ? (

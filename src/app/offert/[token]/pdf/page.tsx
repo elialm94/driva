@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/store";
-import { getQuoteByToken, currentVersion, quoteSignature, requireCustomer } from "@/lib/services/data";
+import { getQuoteByToken, currentVersion, quoteAcceptance, requireCustomer } from "@/lib/services/data";
 import { QuoteDocument } from "@/components/quote-document";
 import { ensurePublicPage } from "@/lib/auth/session";
 
@@ -19,7 +19,8 @@ export async function generateMetadata(props: PageProps<"/offert/[token]/pdf">) 
  * Utskrifts-/PDF-vy (A4). Samma QuoteDocument och samma kanoniska data som
  * kundwebbvyn – snapshot + dokument är den juridiska representationen (ingen
  * sparad PDF-blob, samma mönster som fakturans /faktura/[token]/pdf).
- * Ingen acceptance-slot: dokumentet visar statisk signeringsinformation.
+ * Ingen formulär-slot: en godkänd offert visar raden "Godkänd {datum} av
+ * {namn}", en skickad visar hur den godkänns.
  */
 export default async function QuotePdfPage(props: PageProps<"/offert/[token]/pdf">) {
   const { token } = await props.params;
@@ -29,7 +30,7 @@ export default async function QuotePdfPage(props: PageProps<"/offert/[token]/pdf
   const data = db();
   const version = currentVersion(quote);
   const customer = requireCustomer(quote.customerId);
-  const signature = quoteSignature(quote.id);
+  const acceptance = quoteAcceptance(quote.id);
 
   return (
     <div className="mx-auto min-h-dvh max-w-[210mm] bg-white print:max-w-none print:bg-white">
@@ -40,7 +41,7 @@ export default async function QuotePdfPage(props: PageProps<"/offert/[token]/pdf
         customer={customer}
         quote={quote}
         version={version}
-        signature={signature}
+        acceptance={acceptance}
       />
     </div>
   );

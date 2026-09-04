@@ -176,9 +176,20 @@ import {
   type OptionalFeatureId,
 } from "@/lib/features";
 import { headers } from "next/headers";
+import { after } from "next/server";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { isDemoSession, withBusiness, withBusinessRead, withPublicBusiness } from "@/lib/auth/session";
-import { rateLimitDemoReset } from "@/lib/auth/demo-session";
+import { clientIpFrom, rateLimitDemoReset } from "@/lib/auth/demo-session";
+import { quoteTotals } from "@/lib/services/data";
+import { sendMail } from "@/lib/mail";
+import {
+  acceptQuote,
+  prepareQuoteAcceptedNotice,
+  QUOTE_ACCEPT_TEXT,
+  QuoteAcceptError,
+  type PreparedAcceptedMail,
+  type QuoteAcceptErrorCode,
+} from "@/lib/services/quote-accept";
 import { readDemoSessionId } from "@/lib/auth/demo-request";
 import { resetDemoSessionState } from "@/lib/storage/demo-session-store";
 
@@ -475,6 +486,70 @@ export async function askQuoteQuestionByTokenAction(token: string, question: str
     askQuoteQuestion(quote.id, text);
     refresh();
   });
+}
+
+export type AcceptQuoteActionResult =
+  | { ok: true; acceptedByName: string; acceptedAt: string; amount: number; alreadyAccepted: boolean }
+  | { ok: false; error: string; code: QuoteAcceptErrorCode | "unknown" };
+
+/**
+ * Kundens godkännande av offerten (namn + knapp). Enda vägen in till
+ * acceptQuote: identifieras av token, aldrig av id eller inloggning.
+ * Mejlet till företagaren skickas efter svaret (after) och blockerar aldrig.
+ */
+export async function acceptQuoteByTokenAction(
+  token: string,
+  name: string,
+  expectedContentHash: string
+): Promise<AcceptQuoteActionResult> {
+  const h = await headers();
+  const ip = clientIpFrom(h);
+  const userAgent = h.get("user-agent") ?? undefined;
+  const safeToken = typeof token === "string" ? token : "";
+  const result = await withPublicBusiness(
+    "quote",
+    safeToken,
+    (): AcceptQuoteActionResult & { notice?: PreparedAcceptedMail | null } => {
+      try {
+        const r = acceptQuote({
+          token: safeToken,
+          name,
+          expectedContentHash: typeof expectedContentHash === "string" ? expectedContentHash : undefined,
+          ip: ip || undefined,
+          userAgent,
+        });
+        const notice = r.outcome === "accepted" ? prepareQuoteAcceptedNotice(r.acceptance) : null;
+        refresh();
+        return {
+          ok: true,
+          acceptedByName: r.acceptance.acceptedByName,
+          acceptedAt: r.acceptance.acceptedAt,
+          amount: quoteTotals(r.quote).toPay,
+          alreadyAccepted: r.outcome === "already_accepted",
+          notice,
+        };
+      } catch (e) {
+        if (e instanceof QuoteAcceptError) return { ok: false, error: e.message, code: e.code };
+        return { ok: false, error: "Godkännandet kunde inte sparas. Försök igen.", code: "unknown" };
+      }
+    },
+    { retry: false }
+  );
+  if (!result) return { ok: false, error: QUOTE_ACCEPT_TEXT.not_found, code: "not_found" };
+  if (result.ok) {
+    const { notice, ...rest } = result;
+    if (notice) {
+      after(async () => {
+        try {
+          await sendMail(notice.message, notice.meta);
+        } catch {
+          // Notisen är sekundär – godkännandet är redan sparat.
+        }
+      });
+    }
+    return rest;
+  }
+  return result;
 }
 
 /* ----------------------------------- Uppdrag ---------------------------------- */

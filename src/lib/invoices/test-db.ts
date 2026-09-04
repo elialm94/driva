@@ -98,6 +98,7 @@ export function emptyTestDb(over: Partial<DB> = {}): DB {
     payments: over.payments ?? [],
     bankAccounts: over.bankAccounts ?? [],
     bankTransactions: over.bankTransactions ?? [],
+    bankConnections: over.bankConnections ?? [],
     expenses: over.expenses ?? [],
     receipts: over.receipts ?? [],
     supplierInvoices: over.supplierInvoices ?? [],
