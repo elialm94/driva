@@ -59,6 +59,7 @@ import {
   type CompanySettingsInput,
 } from "@/lib/services/settings";
 import { normalizeCompanySettingsInput } from "@/lib/settings-action-input";
+import { BILLING_COMPLETION_PATCH_KEYS } from "@/lib/billing-readiness";
 import { userFacingStorageError } from "@/lib/storage/sql-errors";
 import { createCustomer, updateCustomer, updateCustomerNotes } from "@/lib/services/customers";
 import {
@@ -1794,6 +1795,27 @@ export async function updateCompanySettingsAction(
   try {
     return await withBusiness(() => {
       updateCompanySettings(normalizeCompanySettingsInput(input));
+      refresh();
+      return { ok: true } as const;
+    });
+  } catch (e) {
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte spara.") };
+  }
+}
+
+/** Sparar bara kompletteringsfälten från Komplettera-modalen (moms + betalning m.fl.). */
+export async function saveBillingCompletionAction(
+  patch: Partial<Record<(typeof BILLING_COMPLETION_PATCH_KEYS)[number], string>>
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    return await withBusiness(() => {
+      const clean: Record<string, string> = {};
+      for (const key of BILLING_COMPLETION_PATCH_KEYS) {
+        const value = patch[key];
+        if (value === undefined || value === "$undefined") continue;
+        clean[key] = String(value);
+      }
+      applyBusinessProfilePatch(clean);
       refresh();
       return { ok: true } as const;
     });

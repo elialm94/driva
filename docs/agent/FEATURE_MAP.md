@@ -698,10 +698,10 @@ Not separate nav items; tabs on `/ekonomi`.
 - **How to get there:** Sidebar/Mer **Inställningar**. Billing blockers and domain “complete company” deep-link here.
 - **Tabs:** Företag · Fakturering & betalning · Funktioner · Konto.
 - **Företag:** logo, name, org.nr, VAT, address, contact. Save *Spara ändringar*. `#installningar-saknas`. Address = shared `AddressFields` (label **Gatuadress**): `#installningar-address`, `#installningar-postalCode`, `#installningar-city`.
-- **Fakturering:** payment details (bankgiro/plusgiro/bank/IBAN), invoice defaults, **billing readiness**. The *komplettera adress* form in `settings-billing-readiness.tsx` uses the same `AddressFields`: `#komplettera-address`, `#komplettera-postalCode`, `#komplettera-city`.
+- **Fakturering:** payment details (bankgiro/plusgiro/bank/IBAN), invoice defaults, **billing readiness**. *Komplettera för fakturering* is a plain form (moms + bankgiro always visible; address via `AddressFields` only if missing at open). Draft local state; persist only on **Spara** (`saveBillingCompletionAction`). **Stäng** discards the draft. **Använd förslaget** fills moms only. Modal visibility is user-controlled (`completeOpen`), not `readiness.ready` / send-blockers.
 - **Funktioner:** Hemsida + Samarbeta toggles (`feature-settings.tsx`) — Aktiv/Avstängd, Aktivera/Stäng av.
 - **Konto:** real user email + logout via menu. Demo: *Driva körs just nu utan inloggning…* no password.
-- **Billing readiness testids:** `billing-readiness-banner` | `billing-readiness-ready` | `billing-readiness-success` | `billing-complete-{name|orgnr|vat|address|payment}`. Copy: *Redo att fakturera*.
+- **Billing readiness testids:** `billing-readiness-banner` | `billing-readiness-ready` | `billing-readiness-success` | `billing-complete-modal` | `billing-complete-suggest-vat` | `billing-complete-{name|orgnr|vat|address|payment}`. Copy: *Redo att fakturera*. Persist only on Spara.
 - **Related:** `/foretag` is a parent crumb to settings (legacy). Onboarding fields overlap.
 - **Components:** `settings-form.tsx`, `settings-billing-readiness.tsx`, `feature-settings.tsx`, `demo-reset-section.tsx`.
 - **DB:** `business_settings`, `meta.features`.
@@ -762,7 +762,9 @@ The repo has **almost no** `data-testid`. No `data-cy` / `data-qa` / `getByTestI
 | `billing-readiness-banner` | `settings-billing-readiness.tsx` | Missing billing fields |
 | `billing-readiness-ready` | same | Silent ready |
 | `billing-readiness-success` | same | Just completed |
-| `billing-complete-${id}` | same | Rows: `name`, `orgnr`, `vat`, `address`, `payment` |
+| `billing-complete-modal` | same | Komplettera-modal body (plain form) |
+| `billing-complete-suggest-vat` | same | Använd förslaget (fills only) |
+| `billing-complete-${id}` | same | Fields: `name`, `orgnr`, `vat`, `address`, `payment` |
 
 ### Other stable hooks (prefer these today)
 
