@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
   Home,
+  Hammer,
   Users,
   Wallet,
   Inbox,
@@ -21,11 +22,20 @@ import { CreateAccountRow } from "./demo-controls";
 import { DemoMenu } from "./demo-menu";
 import { LogoutRow } from "./logout-button";
 import { WorkspaceSwitcher } from "./workspace-switcher";
-import { isSectionActive, isSettingsPath, isSupportPath, visibleNavItems, type NavSection } from "@/lib/nav";
+import {
+  isSectionActive,
+  isSettingsPath,
+  isSupportPath,
+  moreNavItems,
+  primaryNavItems,
+  type NavItem,
+  type NavSection,
+} from "@/lib/nav";
 import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 
 const NAV_ICONS: Record<NavSection, typeof Home> = {
   hem: Home,
+  uppdrag: Hammer,
   kunder: Users,
   ekonomi: Wallet,
   inbox: Inbox,
@@ -34,11 +44,8 @@ const NAV_ICONS: Record<NavSection, typeof Home> = {
   hemsida: Globe,
 };
 
-function navWithIcons(features: ResolvedOptionalFeatures) {
-  return visibleNavItems(features).map((item) => ({
-    ...item,
-    icon: NAV_ICONS[item.section],
-  }));
+function withIcons(items: NavItem[]) {
+  return items.map((item) => ({ ...item, icon: NAV_ICONS[item.section] }));
 }
 
 /** Tal i nav = något väntar på dig. Bara Inbox och Bokföring. 0 = ingen badge. */
@@ -118,7 +125,28 @@ export function Sidebar({
   const pathname = usePathname();
   const settingsActive = isSettingsPath(pathname);
   const supportActive = isSupportPath(pathname);
-  const NAV = navWithIcons(features);
+  const primary = withIcons(primaryNavItems(features));
+  const more = withIcons(moreNavItems(features));
+
+  const renderItem = ({ href, label, icon: Icon }: (typeof primary)[number]) => {
+    const active = isSectionActive(pathname, href);
+    const count = navAttentionCount(href, inboxCount, bokforingCount);
+    return (
+      <Link
+        key={href}
+        href={href as never}
+        aria-label={navAttentionAriaLabel(href, label, count)}
+        aria-current={active ? "page" : undefined}
+        className={cx(SIDEBAR_LINK, active ? SIDEBAR_LINK_ACTIVE : SIDEBAR_LINK_IDLE)}
+      >
+        <Icon className="size-[18px] text-muted" strokeWidth={2} />
+        <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+          {label}
+          <SidebarCountBadge count={count} />
+        </span>
+      </Link>
+    );
+  };
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-card/70 backdrop-blur-xl lg:flex">
@@ -129,32 +157,42 @@ export function Sidebar({
         <span className="text-[19px] font-semibold tracking-tight">Driva</span>
       </Link>
 
-      <nav className="flex flex-1 flex-col gap-1 px-3">
-        {NAV.map(({ href, label, icon: Icon }) => {
-          const active = isSectionActive(pathname, href);
-          const count = navAttentionCount(href, inboxCount, bokforingCount);
-          return (
-            <Link
-              key={href}
-              href={href as never}
-              aria-label={navAttentionAriaLabel(href, label, count)}
-              className={cx(SIDEBAR_LINK, active ? SIDEBAR_LINK_ACTIVE : SIDEBAR_LINK_IDLE)}
-            >
-              <Icon className="size-[18px] text-muted" strokeWidth={2} />
-              <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                {label}
-                <SidebarCountBadge count={count} />
-              </span>
-            </Link>
-          );
-        })}
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">
+        {primary.map(renderItem)}
+
+        {/* Mer: sekundära ytor i en tydlig men diskret grupp. Alltid utfälld på
+            desktop så att Inbox/Bokförings-badgen syns utan klick. */}
+        <p
+          id="sidebar-mer-rubrik"
+          className="mt-5 mb-1 px-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted"
+        >
+          Mer
+        </p>
+        <div aria-labelledby="sidebar-mer-rubrik" className="flex flex-col gap-1" data-nav-group="mer">
+          {more.map(renderItem)}
+          <Link
+            href="/installningar"
+            aria-current={settingsActive ? "page" : undefined}
+            className={cx(SIDEBAR_LINK, settingsActive ? SIDEBAR_LINK_ACTIVE : SIDEBAR_LINK_IDLE)}
+          >
+            <Settings className="size-[18px] text-muted" strokeWidth={2} />
+            Inställningar
+          </Link>
+          <Link
+            href={(`/support?fran=${encodeURIComponent(pathname)}`) as never}
+            aria-current={supportActive ? "page" : undefined}
+            className={cx(SIDEBAR_LINK, supportActive ? SIDEBAR_LINK_ACTIVE : SIDEBAR_LINK_IDLE)}
+          >
+            <LifeBuoy className="size-[18px] text-muted" strokeWidth={2} />
+            Hjälp & support
+          </Link>
+        </div>
       </nav>
 
-      {/* Fot: företagsnamnet är ren kontext (ej klickbart); Inställningar är en
-          riktig nav-rad och Logga ut en dämpad rad (endast Supabase-läge).
-          I demoläge blir raden i stället knappen till demo-menyn, som samlar
-          redovisningsvyn, återställ och avsluta – sidomenyn hålls identisk med
-          den en vanlig användare ser. */}
+      {/* Fot: företagsnamnet är ren kontext (ej klickbart) och Logga ut en
+          dämpad rad (endast Supabase-läge). I demoläge blir raden i stället
+          knappen till demo-menyn, som samlar redovisningsvyn, återställ och
+          avsluta – sidomenyn hålls identisk med den en vanlig användare ser. */}
       <div className="flex flex-col gap-1 border-t border-line px-3 py-4">
         {demoBadge ? (
           <DemoMenu title={companyName} variant="sidebar" canEndDemo={demoSession} />
@@ -166,22 +204,6 @@ export function Sidebar({
         {!demoBadge && accountingClientCount > 0 ? (
           <WorkspaceSwitcher variant="to-redovisning" clientCount={accountingClientCount} />
         ) : null}
-        <Link
-          href="/installningar"
-          aria-current={settingsActive ? "page" : undefined}
-          className={cx(SIDEBAR_LINK, settingsActive ? SIDEBAR_LINK_ACTIVE : SIDEBAR_LINK_IDLE)}
-        >
-          <Settings className="size-[18px] text-muted" strokeWidth={2} />
-          Inställningar
-        </Link>
-        <Link
-          href={(`/support?fran=${encodeURIComponent(pathname)}`) as never}
-          aria-current={supportActive ? "page" : undefined}
-          className={cx(SIDEBAR_LINK, supportActive ? SIDEBAR_LINK_ACTIVE : SIDEBAR_LINK_IDLE)}
-        >
-          <LifeBuoy className="size-[18px] text-muted" strokeWidth={2} />
-          Hjälp & support
-        </Link>
         {demoSession ? (
           <CreateAccountRow variant="sidebar" />
         ) : canLogout ? (
@@ -211,9 +233,8 @@ export function BottomNav({
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
-  const NAV = navWithIcons(features);
-  const primary = NAV.slice(0, 4);
-  const more = NAV.slice(4);
+  const primary = withIcons(primaryNavItems(features));
+  const more = withIcons(moreNavItems(features));
   const settingsActive = isSettingsPath(pathname);
   const supportActive = isSupportPath(pathname);
   const moreActive = more.some((m) => isSectionActive(pathname, m.href)) || settingsActive || supportActive;
@@ -297,7 +318,12 @@ export function BottomNav({
         </div>
       ) : null}
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex h-[calc(var(--bottom-nav-h)+env(safe-area-inset-bottom))] items-stretch border-t border-line bg-card/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
+      {/* Fem lika breda flikar (Hem · Uppdrag · Kunder · Ekonomi · Mer); varje
+          flik är minst 44px hög och tar hela sin femtedel som tryckyta. */}
+      <nav
+        aria-label="Huvudnavigation"
+        className="fixed inset-x-0 bottom-0 z-30 flex h-[calc(var(--bottom-nav-h)+env(safe-area-inset-bottom))] items-stretch border-t border-line bg-card/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden"
+      >
         {primary.map(({ href, label, icon: Icon }) => {
           const active = isSectionActive(pathname, href);
           const count = navAttentionCount(href, inboxCount, bokforingCount);
@@ -306,8 +332,9 @@ export function BottomNav({
               key={href}
               href={href as never}
               aria-label={navAttentionAriaLabel(href, label, count)}
+              aria-current={active ? "page" : undefined}
               className={cx(
-                "relative flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium",
+                "relative flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] font-medium",
                 active ? "text-ink" : "text-muted"
               )}
             >
@@ -324,7 +351,7 @@ export function BottomNav({
           aria-expanded={moreOpen}
           aria-label={moreCount > 0 ? `Mer, ${moreCount} att lösa` : "Mer"}
           className={cx(
-            "relative flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium",
+            "relative flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] font-medium",
             moreActive || moreOpen ? "text-ink" : "text-muted"
           )}
         >

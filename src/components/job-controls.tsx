@@ -150,7 +150,7 @@ export function JobActions({
     startTransition(async () => {
       const kind = await deleteOrArchiveJobAction(jobId);
       setShowRemove(false);
-      if (kind === "deleted") router.push("/kunder?flik=uppdrag");
+      if (kind === "deleted") router.push("/uppdrag");
     });
   }
 

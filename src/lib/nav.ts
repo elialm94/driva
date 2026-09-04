@@ -1,7 +1,7 @@
 /**
  * Central navigation config for the Driva app.
  *
- * Back = origin ("← Hem"). Breadcrumbs = structure ("Kunder / Uppdrag / …").
+ * Back = origin ("← Hem"). Breadcrumbs = structure ("Uppdrag / Köksrenovering").
  * Origin lives on the navigation event (`tillbaka` query + optional label), never on
  * the domain object. AppLink / resolveAppHref stamp origin; SmartBack reads it.
  * Canonical parent in ROUTES is the fallback when origin is missing or invalid.
@@ -10,25 +10,41 @@
 export const RETURN_TO_PARAM = "tillbaka";
 export const RETURN_LABEL_PARAM = "tillbakaNamn";
 
-export type NavSection = "hem" | "kunder" | "ekonomi" | "inbox" | "bokforing" | "hemsida" | "samarbeta";
+export type NavSection = "hem" | "uppdrag" | "kunder" | "ekonomi" | "inbox" | "bokforing" | "hemsida" | "samarbeta";
+
+/** Primär = alltid synlig (sidomeny + bottennav). Mer = sekundär grupp / Mer-arket. */
+export type NavGroup = "primary" | "more";
+
+export interface NavItem {
+  href: string;
+  section: NavSection;
+  label: string;
+  group: NavGroup;
+}
 
 /**
- * Primär sidomeny. Badge (tal) betyder "något väntar på dig" – bara Inbox
- * och Bokföring. Hem är den samlade vyn och får ingen summerad badge.
- * Kunder/Ekonomi/Samarbeta/Hemsida räknar inte poster.
+ * Huvudnavigation. Uppdrag är hantverkarens arbetsyta och ligger därför
+ * bland de primära valen (Hem · Uppdrag · Kunder · Ekonomi · Mer).
+ * Badge (tal) betyder "något väntar på dig" – bara Inbox och Bokföring,
+ * som båda ligger under Mer men behåller sina tal där. Hem är den samlade
+ * vyn och får ingen summerad badge. Uppdrag/Kunder/Ekonomi/Samarbeta/Hemsida
+ * räknar inte poster.
  */
-export const NAV_ITEMS: { href: string; section: NavSection; label: string }[] = [
-  { href: "/", section: "hem", label: "Hem" },
-  { href: "/kunder", section: "kunder", label: "Kunder" },
-  { href: "/ekonomi", section: "ekonomi", label: "Ekonomi" },
-  { href: "/inbox", section: "inbox", label: "Inbox" },
-  { href: "/bokforing", section: "bokforing", label: "Bokföring" },
-  { href: "/samarbeta", section: "samarbeta", label: "Samarbeta" },
-  { href: "/hemsida", section: "hemsida", label: "Hemsida" },
+export const NAV_ITEMS: NavItem[] = [
+  { href: "/", section: "hem", label: "Hem", group: "primary" },
+  { href: "/uppdrag", section: "uppdrag", label: "Uppdrag", group: "primary" },
+  { href: "/kunder", section: "kunder", label: "Kunder", group: "primary" },
+  { href: "/ekonomi", section: "ekonomi", label: "Ekonomi", group: "primary" },
+  { href: "/inbox", section: "inbox", label: "Inbox", group: "more" },
+  { href: "/bokforing", section: "bokforing", label: "Bokföring", group: "more" },
+  { href: "/samarbeta", section: "samarbeta", label: "Samarbeta", group: "more" },
+  { href: "/hemsida", section: "hemsida", label: "Hemsida", group: "more" },
 ];
 
+export type NavFeatures = { website: boolean; collaboration: boolean };
+
 /** Hemsida och Samarbeta syns bara när funktionen är aktiv. */
-export function visibleNavItems(features: { website: boolean; collaboration: boolean }) {
+export function visibleNavItems(features: NavFeatures): NavItem[] {
   return NAV_ITEMS.filter((item) => {
     if (item.section === "hemsida") return features.website;
     if (item.section === "samarbeta") return features.collaboration;
@@ -36,12 +52,15 @@ export function visibleNavItems(features: { website: boolean; collaboration: boo
   });
 }
 
-export const KUNDER_TABS = [
-  { key: "kunder", href: "/kunder?flik=kunder", label: "Kunder" },
-  { key: "uppdrag", href: "/kunder?flik=uppdrag", label: "Uppdrag" },
-] as const;
+/** Hem · Uppdrag · Kunder · Ekonomi – samma fyra på desktop och i bottennavet. */
+export function primaryNavItems(features: NavFeatures): NavItem[] {
+  return visibleNavItems(features).filter((item) => item.group === "primary");
+}
 
-export type KunderTab = (typeof KUNDER_TABS)[number]["key"];
+/** Under Mer: Inbox, Bokföring och (när aktiva) Samarbeta, Hemsida. Inställningar/support läggs på av nav.tsx. */
+export function moreNavItems(features: NavFeatures): NavItem[] {
+  return visibleNavItems(features).filter((item) => item.group === "more");
+}
 
 export const EKONOMI_TABS = [
   { key: "offerter", href: "/ekonomi?flik=offerter", label: "Offerter" },
@@ -136,11 +155,12 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/inbox/:id/kontrollera", section: "inbox", parent: "/inbox/:id", label: "Kontrollera belopp", backLabel: "Inkorgspost", showBack: true },
   { pattern: "/inbox/:id", section: "inbox", parent: "/inbox", label: "Inkorgspost", backLabel: "Inbox", showBack: true },
   { pattern: "/inbox", section: "inbox", label: "Inbox" },
-  { pattern: "/kunder/forfragningar/:id", section: "kunder", parent: "/kunder?flik=uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
-  { pattern: "/kunder/:id", section: "kunder", parent: "/kunder?flik=kunder", label: "Kund", backLabel: "Kunder", showBack: true },
+  { pattern: "/kunder/forfragningar/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
+  { pattern: "/kunder/:id", section: "kunder", parent: "/kunder", label: "Kund", backLabel: "Kunder", showBack: true },
   { pattern: "/kunder", section: "kunder", label: "Kunder" },
-  { pattern: "/uppdrag/:id", section: "kunder", parent: "/kunder?flik=uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
-  { pattern: "/jobb/:id", section: "kunder", parent: "/kunder?flik=uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
+  { pattern: "/uppdrag/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
+  { pattern: "/jobb/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
+  { pattern: "/uppdrag", section: "uppdrag", label: "Uppdrag" },
   { pattern: "/bokforing/verifikationer", section: "bokforing", parent: "/bokforing", label: "Verifikationer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/huvudbok", section: "bokforing", parent: "/bokforing", label: "Huvudbok", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/saldobalans", section: "bokforing", parent: "/bokforing", label: "Saldobalans", backLabel: "Bokföring", showBack: true },
@@ -245,12 +265,8 @@ export function labelForHref(href: string): string {
     if (tab) return tab.label;
     return "Ekonomi";
   }
-  if (pathname === "/kunder") {
-    const flik = searchParams.get("flik");
-    const tab = KUNDER_TABS.find((t) => t.key === flik);
-    if (tab) return tab.label;
-    return "Kunder";
-  }
+  if (pathname === "/kunder") return "Kunder";
+  if (pathname === "/uppdrag") return "Uppdrag";
   if (pathname === "/inbox") return "Inbox";
   const matched = matchRoute(pathname);
   if (!matched) return "Tillbaka";
@@ -352,21 +368,12 @@ export function structuralCrumbs(
   switch (matched.meta.pattern) {
     case "/inbox/:id":
       return [{ href: "/inbox", label: "Inbox" }, { label: title }];
-    case "/kunder/forfragningar/:id":
-      return [
-        { href: "/kunder?flik=kunder", label: "Kunder" },
-        { href: "/kunder?flik=uppdrag", label: "Uppdrag" },
-        { label: title },
-      ];
     case "/kunder/:id":
-      return [{ href: "/kunder?flik=kunder", label: "Kunder" }, { label: title }];
+      return [{ href: "/kunder", label: "Kunder" }, { label: title }];
+    case "/kunder/forfragningar/:id":
     case "/uppdrag/:id":
     case "/jobb/:id":
-      return [
-        { href: "/kunder?flik=kunder", label: "Kunder" },
-        { href: "/kunder?flik=uppdrag", label: "Uppdrag" },
-        { label: title },
-      ];
+      return [{ href: "/uppdrag", label: "Uppdrag" }, { label: title }];
     case "/ekonomi/fakturor/ny":
     case "/ekonomi/fakturor/:id":
     case "/ekonomi/fakturor/:id/redigera":
@@ -589,24 +596,15 @@ export function sanitizeReturnTo(raw: string | null | undefined, depth = 0): str
   if (hashIndex >= 0) value = value.slice(0, hashIndex);
 
   const { pathname, searchParams } = splitHref(value);
-  const sourcePath = rewritePengarPath(rewriteJobPath(normalizePathname(pathname)));
-  let path = rewriteInquiryPath(rewriteAssistentPath(rewriteUppdragListPath(sourcePath)));
-  if (sourcePath === "/kunder" && searchParams.get("flik") === "forfragningar") {
-    path = "/kunder";
-    searchParams.set("flik", "uppdrag");
-  }
+  const { path, params: searchAfterTabs } = rewriteLegacyLocation(pathname, searchParams);
   if (!isInternalAppPath(path)) return null;
 
   const allowed = new URLSearchParams();
-  for (const [key, val] of searchParams.entries()) {
+  for (const [key, val] of searchAfterTabs.entries()) {
     if (key === RETURN_TO_PARAM || key === RETURN_LABEL_PARAM) continue;
-    if (key === "flik" && val === "forfragningar") continue;
     if (!/^[a-zA-Z0-9_-]{1,40}$/.test(key)) continue;
     if (val.length > 120 || /[<>]/.test(val)) continue;
     allowed.set(key, val);
-  }
-  if (sourcePath === "/uppdrag" && path === "/kunder" && !allowed.has("flik")) {
-    allowed.set("flik", "uppdrag");
   }
   const nestedReturn = sanitizeReturnTo(searchParams.get(RETURN_TO_PARAM), depth + 1);
   if (nestedReturn) allowed.set(RETURN_TO_PARAM, nestedReturn);
@@ -639,10 +637,29 @@ function rewriteJobPath(pathname: string): string {
   return pathname;
 }
 
-/** Uppdragslistan flyttade under Kunder. Detalj `/uppdrag/:id` lämnas orörd. */
-export function rewriteUppdragListPath(pathname: string): string {
-  if (pathname === "/uppdrag") return "/kunder";
-  return pathname;
+/**
+ * Uppdragslistan bodde en period som flik under Kunder (`/kunder?flik=uppdrag`,
+ * tidigare `flik=forfragningar`). Nu är `/uppdrag` kanonisk igen: gamla
+ * flik-länkar går dit med sök/filter/sida bevarade, och `flik=kunder` tas
+ * bort eftersom `/kunder` bara är kundregistret.
+ */
+function rewriteLegacyLocation(
+  pathname: string,
+  searchParams: URLSearchParams
+): { path: string; params: URLSearchParams } {
+  const params = new URLSearchParams(searchParams);
+  const sourcePath = rewritePengarPath(rewriteJobPath(normalizePathname(pathname)));
+  let path = rewriteInquiryPath(rewriteAssistentPath(sourcePath));
+  if (sourcePath === "/kunder") {
+    const flik = params.get("flik");
+    if (flik === "uppdrag" || flik === "forfragningar") {
+      path = "/uppdrag";
+      params.delete("flik");
+    } else if (flik === "kunder") {
+      params.delete("flik");
+    }
+  }
+  return { path, params };
 }
 
 function rewriteAssistentPath(pathname: string): string {
@@ -664,24 +681,13 @@ function rewritePengarPath(pathname: string): string {
 }
 
 function rewriteAppPath(pathname: string): string {
-  return rewriteInquiryPath(
-    rewriteAssistentPath(rewriteUppdragListPath(rewritePengarPath(rewriteJobPath(normalizePathname(pathname)))))
-  );
+  return rewriteInquiryPath(rewriteAssistentPath(rewritePengarPath(rewriteJobPath(normalizePathname(pathname)))));
 }
 
 /** Path + query för gamla bokmärken och `tillbaka=`-kedjor. */
 export function rewriteLegacyHref(href: string): string {
   const { pathname, searchParams, hash } = splitHref(href);
-  const sourcePath = rewritePengarPath(rewriteJobPath(normalizePathname(pathname)));
-  let path = rewriteInquiryPath(rewriteAssistentPath(rewriteUppdragListPath(sourcePath)));
-  const params = new URLSearchParams(searchParams);
-  if (sourcePath === "/kunder" && params.get("flik") === "forfragningar") {
-    path = "/kunder";
-    params.set("flik", "uppdrag");
-  }
-  if (sourcePath === "/uppdrag" && path === "/kunder" && !params.has("flik")) {
-    params.set("flik", "uppdrag");
-  }
+  const { path, params } = rewriteLegacyLocation(pathname, searchParams);
   const qs = params.toString();
   return `${qs ? `${path}?${qs}` : path}${hash}`;
 }

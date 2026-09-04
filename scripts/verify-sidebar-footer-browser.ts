@@ -1,7 +1,8 @@
 /**
- * Webbläsarverifiering: sidofältets fot (Inställningar som riktig nav-rad,
- * Logga ut dold i JSON-läge, demodata-återställning flyttad till Inställningar)
- * samt mobilens "Mer"-ark. Körs mot dev-servern på :3123 i JSON-läge.
+ * Webbläsarverifiering: sidofältets Mer-grupp och fot (Inställningar som riktig
+ * nav-rad under Mer, företagsnamnet som ren text i foten, Logga ut dold i
+ * JSON-läge, demodata-återställning flyttad till Inställningar) samt mobilens
+ * "Mer"-ark. Körs mot dev-servern på :3123 i JSON-läge.
  *
  *   npx tsx scripts/verify-sidebar-footer-browser.ts
  *
@@ -52,12 +53,16 @@ async function main() {
     if (!aside) return null;
     const links = [...aside.querySelectorAll('a[href="/installningar"]')];
     const link = links[0] ?? null;
-    const footerDiv = link?.closest("div");
+    const merGroup = aside.querySelector('[data-nav-group="mer"]');
+    // Foten = sista direkta barnet i aside (företagsrad / demo-meny / logga ut).
+    const footerDiv = aside.lastElementChild;
     const nameP = footerDiv?.querySelector("p");
     return {
       settingsLinkCount: links.length,
       settingsText: (link?.textContent ?? "").trim(),
       settingsHasIcon: Boolean(link?.querySelector("svg")),
+      settingsInMer: Boolean(link && merGroup?.contains(link)),
+      merLabels: [...(merGroup?.querySelectorAll("a") ?? [])].map((a) => (a.textContent ?? "").replace(/\s+/g, " ").trim()),
       settingsAriaCurrent: link?.getAttribute("aria-current") ?? null,
       companyName: (nameP?.textContent ?? "").trim(),
       companyNameInsideLink: Boolean(nameP?.closest("a")),
@@ -67,6 +72,15 @@ async function main() {
   if (!footer) fail("sidofältet (aside) saknas");
   await ok("1 exakt EN Inställningar-länk i sidofältet", footer.settingsLinkCount === 1, `count=${footer.settingsLinkCount}`);
   await ok("1 Inställningar-raden har text + kugghjulsikon", footer.settingsText.includes("Inställningar") && footer.settingsHasIcon);
+  await ok("1 Inställningar ligger i Mer-gruppen", footer.settingsInMer);
+  await ok(
+    "1 Mer-gruppen: Inbox · Bokföring · (Hemsida) · Inställningar · Hjälp & support",
+    footer.merLabels[0]?.startsWith("Inbox") === true &&
+      footer.merLabels[1]?.startsWith("Bokföring") === true &&
+      footer.merLabels.at(-2) === "Inställningar" &&
+      footer.merLabels.at(-1) === "Hjälp & support",
+    footer.merLabels.join(" | ")
+  );
   await ok("1 företagsnamn visas som ren text (ej länk)", footer.companyName.length > 0 && !footer.companyNameInsideLink, footer.companyName);
   await ok("1 gamla 'Återställ demodata' borta ur sidofältet", !footer.asideText.includes("Återställ demodata"));
   await ok("1 Logga ut ABSENT i JSON-läge (sidofältet)", !footer.asideText.includes("Logga ut"));

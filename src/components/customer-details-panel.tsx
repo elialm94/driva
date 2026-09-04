@@ -42,7 +42,7 @@ export function CustomerDetailsPanel({
     <>
       <PageHeader
         back={back}
-        crumbs={[{ href: "/kunder?flik=kunder", label: "Kunder" }, { label: title }]}
+        crumbs={[{ href: "/kunder", label: "Kunder" }, { label: title }]}
         title={title}
         subtitle={customer.kind === "foretag" ? "Företag" : "Privatperson"}
         actions={actions}

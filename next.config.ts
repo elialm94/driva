@@ -30,7 +30,14 @@ const nextConfig: NextConfig = {
       { source: "/jobb/:id", destination: "/uppdrag/:id", permanent: true },
       { source: "/pengar", destination: "/ekonomi", permanent: true },
       { source: "/pengar/:path*", destination: "/ekonomi/:path*", permanent: true },
-      { source: "/uppdrag", destination: "/kunder?flik=uppdrag", permanent: true },
+      // Uppdragslistan var en period en flik under Kunder; nu är /uppdrag kanonisk.
+      // Övriga query-parametrar (q, visning, sida, tillbaka …) följer med automatiskt.
+      {
+        source: "/kunder",
+        has: [{ type: "query", key: "flik", value: "(uppdrag|forfragningar)" }],
+        destination: "/uppdrag",
+        permanent: true,
+      },
       { source: "/assistent", destination: "/", permanent: true },
     ];
   },

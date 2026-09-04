@@ -938,7 +938,7 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
             ? "Klart – uppdraget är borttaget. Det fanns ingen godkänd offert, utfärdad faktura eller bokföring."
             : "Klart – uppdraget är arkiverat. Fakturor, offerter och bokföring är oförändrade.",
           jobGone
-            ? { kind: "links", links: [{ label: "Öppna Uppdrag", href: "/kunder?flik=uppdrag" }] }
+            ? { kind: "links", links: [{ label: "Öppna Uppdrag", href: "/uppdrag" }] }
             : { kind: "links", links: [{ label: "Öppna uppdrag", href: `/uppdrag/${result.jobId}` }] }
         );
       } catch (e) {

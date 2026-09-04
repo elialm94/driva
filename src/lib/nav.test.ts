@@ -17,7 +17,11 @@ import {
   isSupportPath,
   labelForHref,
   locationHref,
+  moreNavItems,
+  NAV_ITEMS,
   originNodeMatching,
+  primaryNavItems,
+  rewriteLegacyHref,
   resolveAppHref,
   resolveBack,
   sanitizeReturnTo,
@@ -42,12 +46,15 @@ describe("sanitizeReturnTo allowlist", () => {
 
   it("accepts app prefixes and rewrites legacy paths", () => {
     assert.equal(sanitizeReturnTo("/"), "/");
-    assert.equal(sanitizeReturnTo("/kunder?flik=forfragningar&q=karin&sida=3"), "/kunder?flik=uppdrag&q=karin&sida=3");
+    assert.equal(sanitizeReturnTo("/kunder?flik=forfragningar&q=karin&sida=3"), "/uppdrag?q=karin&sida=3");
+    assert.equal(sanitizeReturnTo("/kunder?flik=uppdrag&q=karin&sida=3"), "/uppdrag?q=karin&sida=3");
+    assert.equal(sanitizeReturnTo("/kunder?flik=kunder&q=anna"), "/kunder?q=anna");
     assert.equal(sanitizeReturnTo("/ekonomi?flik=fakturor"), "/ekonomi?flik=fakturor");
     assert.equal(sanitizeReturnTo("/pengar?flik=fakturor"), "/ekonomi?flik=fakturor");
+    assert.equal(sanitizeReturnTo("/jobb"), "/uppdrag");
     assert.equal(sanitizeReturnTo("/jobb/job-kok"), "/uppdrag/job-kok");
-    assert.equal(sanitizeReturnTo("/uppdrag"), "/kunder?flik=uppdrag");
-    assert.equal(sanitizeReturnTo("/uppdrag?q=kok"), "/kunder?q=kok&flik=uppdrag");
+    assert.equal(sanitizeReturnTo("/uppdrag"), "/uppdrag");
+    assert.equal(sanitizeReturnTo("/uppdrag?q=kok"), "/uppdrag?q=kok");
     assert.equal(sanitizeReturnTo("/assistent"), "/");
     assert.equal(sanitizeReturnTo("/kunder/forfragningar/req-karin"), "/uppdrag/req-karin");
     assert.equal(sanitizeReturnTo("/hemsida/doman"), "/hemsida/doman");
@@ -71,14 +78,15 @@ describe("canonical fallback", () => {
       label: "Inbox",
     });
     assert.deepEqual(defaultBack("/kunder/forfragningar/req-karin"), {
-      href: "/kunder?flik=uppdrag",
+      href: "/uppdrag",
       label: "Uppdrag",
     });
     assert.deepEqual(defaultBack("/kunder/cust-karin"), {
-      href: "/kunder?flik=kunder",
+      href: "/kunder",
       label: "Kunder",
     });
-    assert.deepEqual(defaultBack("/uppdrag/job-kok"), { href: "/kunder?flik=uppdrag", label: "Uppdrag" });
+    assert.deepEqual(defaultBack("/uppdrag/job-kok"), { href: "/uppdrag", label: "Uppdrag" });
+    assert.deepEqual(defaultBack("/jobb/job-kok"), { href: "/uppdrag", label: "Uppdrag" });
     assert.deepEqual(defaultBack("/ekonomi/fakturor/inv-1"), {
       href: "/ekonomi?flik=fakturor",
       label: "Fakturor",
@@ -93,6 +101,49 @@ describe("canonical fallback", () => {
     assert.deepEqual(defaultBack("/redovisning/k/biz-a/bank"), { href: "/redovisning/k/biz-a", label: "Arbeta" });
     assert.equal(defaultBack("/"), null);
     assert.equal(defaultBack("/kunder"), null);
+    assert.equal(defaultBack("/uppdrag"), null);
+  });
+});
+
+describe("huvudnavigation", () => {
+  const allOn = { website: true, collaboration: true };
+  const allOff = { website: false, collaboration: false };
+
+  it("is Hem · Uppdrag · Kunder · Ekonomi + Mer", () => {
+    assert.deepEqual(
+      primaryNavItems(allOff).map((i) => i.label),
+      ["Hem", "Uppdrag", "Kunder", "Ekonomi"]
+    );
+    assert.deepEqual(
+      primaryNavItems(allOff).map((i) => i.href),
+      ["/", "/uppdrag", "/kunder", "/ekonomi"]
+    );
+    assert.equal(primaryNavItems(allOn).length, 4, "optional features never enter the primary row");
+    assert.ok(NAV_ITEMS.some((i) => i.section === "uppdrag" && i.group === "primary"));
+  });
+
+  it("puts Inbox, Bokföring and the optional features under Mer", () => {
+    assert.deepEqual(moreNavItems(allOff).map((i) => i.label), ["Inbox", "Bokföring"]);
+    assert.deepEqual(moreNavItems(allOn).map((i) => i.label), ["Inbox", "Bokföring", "Samarbeta", "Hemsida"]);
+    assert.deepEqual(
+      moreNavItems({ website: true, collaboration: false }).map((i) => i.label),
+      ["Inbox", "Bokföring", "Hemsida"]
+    );
+    assert.deepEqual(
+      moreNavItems({ website: false, collaboration: true }).map((i) => i.label),
+      ["Inbox", "Bokföring", "Samarbeta"]
+    );
+  });
+
+  it("rewrites the old Kunder-tab list links to /uppdrag", () => {
+    assert.equal(rewriteLegacyHref("/kunder?flik=uppdrag"), "/uppdrag");
+    assert.equal(rewriteLegacyHref("/kunder?flik=uppdrag&q=kok&sida=2"), "/uppdrag?q=kok&sida=2");
+    assert.equal(rewriteLegacyHref("/kunder?flik=forfragningar"), "/uppdrag");
+    assert.equal(rewriteLegacyHref("/kunder?flik=kunder"), "/kunder");
+    assert.equal(rewriteLegacyHref("/kunder?q=anna"), "/kunder?q=anna");
+    assert.equal(rewriteLegacyHref("/jobb"), "/uppdrag");
+    assert.equal(rewriteLegacyHref("/jobb/job-kok?tillbaka=/"), "/uppdrag/job-kok?tillbaka=%2F");
+    assert.equal(rewriteLegacyHref("/uppdrag"), "/uppdrag");
   });
 });
 
@@ -120,12 +171,18 @@ describe("bokföring tab paths", () => {
 });
 
 describe("section active", () => {
-  it("keeps uppdrag detail under Kunder and inbox as its own section", () => {
-    assert.equal(isSectionActive("/uppdrag/job-kok", "/kunder"), true);
+  it("marks Uppdrag active on both list and detail, Kunder only for the register", () => {
+    assert.equal(isSectionActive("/uppdrag", "/uppdrag"), true);
+    assert.equal(isSectionActive("/uppdrag/job-kok", "/uppdrag"), true);
+    assert.equal(isSectionActive("/jobb/job-kok", "/uppdrag"), true);
+    assert.equal(isSectionActive("/kunder/forfragningar/req-karin", "/uppdrag"), true);
+    assert.equal(isSectionActive("/uppdrag/job-kok", "/kunder"), false);
     assert.equal(isSectionActive("/uppdrag/job-kok", "/inbox"), false);
     assert.equal(isSectionActive("/inbox/req-karin", "/inbox"), true);
     assert.equal(isSectionActive("/inbox/req-karin", "/kunder"), false);
     assert.equal(isSectionActive("/kunder", "/kunder"), true);
+    assert.equal(isSectionActive("/kunder/cust-anna", "/kunder"), true);
+    assert.equal(isSectionActive("/kunder", "/uppdrag"), false);
   });
 
   it("marks footer routes without treating them as primary sections", () => {
@@ -147,6 +204,8 @@ describe("section active", () => {
     assert.match(nav, /SIDEBAR_LINK_ACTIVE = "bg-ink\/5 font-medium text-ink"/);
     assert.match(nav, /SHEET_LINK_ACTIVE = "bg-ink\/5 font-medium text-ink"/);
     assert.doesNotMatch(nav, /bg-ink text-white font-medium shadow-sm/);
+    assert.match(nav, /uppdrag: Hammer/, "Uppdrag has its own nav icon");
+    assert.match(nav, /data-nav-group="mer"/, "desktop sidebar renders the Mer group");
     assert.match(settings, /rounded-2xl bg-ink\/4 p-1/);
     assert.match(settings, /active \? "bg-card text-ink shadow-sm"/);
   });
@@ -157,7 +216,11 @@ describe("origin labels", () => {
     assert.equal(labelForHref("/"), "Hem");
     assert.equal(labelForHref("/kunder?flik=forfragningar"), "Uppdrag");
     assert.equal(labelForHref("/kunder?flik=kunder"), "Kunder");
+    assert.equal(labelForHref("/kunder"), "Kunder");
     assert.equal(labelForHref("/kunder?flik=uppdrag"), "Uppdrag");
+    assert.equal(labelForHref("/uppdrag"), "Uppdrag");
+    assert.equal(labelForHref("/uppdrag?q=kok"), "Uppdrag");
+    assert.equal(labelForHref("/jobb"), "Uppdrag");
     assert.equal(labelForHref("/ekonomi?flik=offerter"), "Offerter");
     assert.equal(labelForHref("/ekonomi?flik=fakturor"), "Fakturor");
     assert.equal(labelForHref("/inbox/req-karin"), "Inkorgspost");
@@ -209,16 +272,29 @@ describe("stamp origin", () => {
       new URLSearchParams(href.slice(href.indexOf("?") + 1)),
       defaultBack("/inbox/req-karin")!
     );
-    assert.equal(back?.href, "/kunder?flik=uppdrag&q=karin&sida=2");
+    assert.equal(back?.href, "/uppdrag?q=karin&sida=2");
+  });
+
+  it("keeps uppdrag list state (search, page) as origin", () => {
+    const origin = "/uppdrag?q=karin&sida=2";
+    const href = resolveAppHref("/uppdrag/job-karin", origin);
+    const back = resolveBack(
+      "/uppdrag/job-karin",
+      new URLSearchParams(href.slice(href.indexOf("?") + 1)),
+      defaultBack("/uppdrag/job-karin")!
+    );
+    assert.equal(back?.href, origin);
+    assert.equal(back?.label, "Uppdrag");
   });
 
   it("does not stamp list destinations or already-stamped hrefs", () => {
     assert.equal(shouldStampOrigin("/", "/inbox"), false);
     assert.equal(shouldStampOrigin("/", "/kunder?flik=forfragningar"), false);
+    assert.equal(shouldStampOrigin("/", "/uppdrag"), false);
     assert.equal(shouldStampOrigin("/", "/ekonomi?flik=fakturor"), false);
     const stamped = withReturnTo("/kunder/cust-1", "/", "Hem");
-    assert.equal(shouldStampOrigin("/kunder?flik=kunder", stamped), false);
-    assert.equal(resolveAppHref(stamped, "/kunder?flik=kunder"), stamped);
+    assert.equal(shouldStampOrigin("/kunder", stamped), false);
+    assert.equal(resolveAppHref(stamped, "/kunder"), stamped);
   });
 
   it("does not stamp invalid or external origins", () => {
@@ -245,7 +321,8 @@ describe("stamp origin", () => {
 describe("scroll keys", () => {
   it("keys to path+list query, not origin params", () => {
     assert.equal(scrollKeyForHref("/inbox?q=karin"), "driva:scroll:/inbox?q=karin");
-    assert.equal(scrollKeyForHref("/kunder?flik=forfragningar&q=karin"), "driva:scroll:/kunder?flik=uppdrag&q=karin");
+    assert.equal(scrollKeyForHref("/kunder?flik=forfragningar&q=karin"), "driva:scroll:/uppdrag?q=karin");
+    assert.equal(scrollKeyForHref("/uppdrag?q=karin&tillbaka=/"), "driva:scroll:/uppdrag?q=karin");
     assert.equal(scrollKeyForHref("/inbox?q=karin&tillbaka=/&tillbakaNamn=Hem"), "driva:scroll:/inbox?q=karin");
     assert.equal(scrollKeyForHref(locationHref("/", "")), "driva:scroll:/");
   });
@@ -258,9 +335,12 @@ describe("structural crumbs stay hierarchical", () => {
       { label: "Platsbyggd bokhylla i ek" },
     ]);
     assert.deepEqual(structuralCrumbs("/uppdrag/job-kok", "Köksrenovering"), [
-      { href: "/kunder?flik=kunder", label: "Kunder" },
-      { href: "/kunder?flik=uppdrag", label: "Uppdrag" },
+      { href: "/uppdrag", label: "Uppdrag" },
       { label: "Köksrenovering" },
+    ]);
+    assert.deepEqual(structuralCrumbs("/kunder/cust-anna", "Anna Andersson"), [
+      { href: "/kunder", label: "Kunder" },
+      { label: "Anna Andersson" },
     ]);
     assert.equal(isBackAwarePath("/inbox/req-karin"), true);
     assert.equal(jobHref("job-karin"), "/uppdrag/job-karin");

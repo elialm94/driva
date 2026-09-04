@@ -76,13 +76,13 @@ async function main() {
     });
     await ok(
       `${label} A crumbs structural`,
-      crumbText.includes("Kunder") && crumbText.includes("Uppdrag"),
+      crumbText.startsWith("Uppdrag") && !crumbText.includes("Kunder"),
       crumbText
     );
 
     // B. Uppdragslista → Karin → tillbaka till listan
-    await page.goto(`${BASE}/kunder?flik=uppdrag`, { waitUntil: "networkidle0" });
-    await ok(`${label} B uppdragslista`, true);
+    await page.goto(`${BASE}/uppdrag`, { waitUntil: "networkidle0" });
+    await ok(`${label} B uppdragslista`, new URL(page.url()).pathname === "/uppdrag");
     await Promise.all([
       page.waitForFunction(() => location.pathname.includes("/uppdrag/job-karin")),
       clickVisible(page, 'a[href*="/uppdrag/job-karin"]'),
@@ -91,11 +91,11 @@ async function main() {
     const backB = await backText(page);
     await ok(`${label} B back says Uppdrag`, (backB ?? "").includes("Uppdrag"), backB ?? "");
     await page.click("a[data-nav=back]");
-    await page.waitForFunction(() => location.pathname === "/kunder" && location.search.includes("flik=uppdrag"));
-    await ok(`${label} B lands on uppdragslistan`, page.url().includes("flik=uppdrag"));
+    await page.waitForFunction(() => location.pathname === "/uppdrag");
+    await ok(`${label} B lands on uppdragslistan`, new URL(page.url()).pathname === "/uppdrag");
 
     // C. Sök → öppna → tillbaka behåller q
-    await page.goto(`${BASE}/kunder?flik=uppdrag`, { waitUntil: "networkidle0" });
+    await page.goto(`${BASE}/uppdrag`, { waitUntil: "networkidle0" });
     const search = await page.$('input[placeholder*="Sök"]');
     if (search) {
       await search.click({ clickCount: 3 });
@@ -108,7 +108,7 @@ async function main() {
       clickVisible(page, 'a[href*="/uppdrag/job-karin"]'),
     ]);
     await page.click("a[data-nav=back]");
-    await page.waitForFunction(() => location.pathname === "/kunder");
+    await page.waitForFunction(() => location.pathname === "/uppdrag");
     await ok(
       `${label} C restores search`,
       /q=Karin|q=karin/i.test(page.url()),
@@ -120,7 +120,7 @@ async function main() {
     const backD = await backText(page);
     await ok(`${label} D fallback Uppdrag`, (backD ?? "").includes("Uppdrag"), backD ?? "");
     const hrefD = await page.$eval("a[data-nav=back]", (a) => (a as HTMLAnchorElement).getAttribute("href") ?? "");
-    await ok(`${label} D href internal`, hrefD.startsWith("/kunder") && !hrefD.startsWith("//"), hrefD);
+    await ok(`${label} D href internal`, hrefD.startsWith("/uppdrag") && !hrefD.startsWith("//"), hrefD);
 
     // E. Hem → uppdrag → kund → uppdrag → Hem
     await page.goto(`${BASE}/`, { waitUntil: "networkidle0" });

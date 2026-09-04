@@ -302,8 +302,8 @@ async function main() {
       });
 
       await check("skapa uppdrag i demon", async () => {
-        // Uppdragslistan bor på /kunder?flik=uppdrag; skapaknappen heter "Uppdrag".
-        await gotoOk(page, `${BASE}/kunder?flik=uppdrag`);
+        // Uppdragslistan bor på /uppdrag; skapaknappen heter "Uppdrag".
+        await gotoOk(page, `${BASE}/uppdrag`);
         const opener = await page.$('button[aria-label="Uppdrag"]');
         assert(opener, "skapa uppdrag-knappen hittades inte");
         await opener.click();
@@ -336,7 +336,7 @@ async function main() {
         await waitForText(page, "Anna Testkund E2E");
         await gotoOk(page, `${BASE}/ekonomi?flik=offerter`);
         await waitForText(page, "Altantrappa E2E");
-        await gotoOk(page, `${BASE}/kunder?flik=uppdrag`);
+        await gotoOk(page, `${BASE}/uppdrag`);
         await waitForText(page, "Trallbyte E2E");
       });
       await check("ändringarna landade i A:s JSON-fil – och bara där", async () => {
@@ -411,7 +411,7 @@ async function main() {
       await check("demo B ser inte A:s offert/uppdrag", async () => {
         await gotoOk(page, `${BASE}/ekonomi?flik=offerter`);
         assert(!has(await text(page), "Altantrappa E2E"), "A:s offert läckte till B!");
-        await gotoOk(page, `${BASE}/kunder?flik=uppdrag`);
+        await gotoOk(page, `${BASE}/uppdrag`);
         assert(!has(await text(page), "Trallbyte E2E"), "A:s uppdrag läckte till B!");
       });
       await check("JSON-filerna bekräftar isoleringen (kunden bara i A:s fil)", async () => {
@@ -454,7 +454,7 @@ async function main() {
       await check("offerten och uppdraget från E2E är borta efter återställning", async () => {
         await gotoOk(page, `${BASE}/ekonomi?flik=offerter`);
         assert(!has(await text(page), "Altantrappa E2E"), "offerten kvar");
-        await gotoOk(page, `${BASE}/kunder?flik=uppdrag`);
+        await gotoOk(page, `${BASE}/uppdrag`);
         assert(!has(await text(page), "Trallbyte E2E"), "uppdraget kvar");
       });
       await check("A:s fil är färskt seed igen; B:s fil rördes inte", async () => {

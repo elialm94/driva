@@ -8,5 +8,5 @@ export default async function OldInquiryRedirect(props: { params: Promise<{ id: 
   await ensurePageBusiness();
   const { id } = await props.params;
   const job = getJob(id);
-  redirect(job ? `/uppdrag/${job.id}` : "/kunder?flik=uppdrag");
+  redirect(job ? `/uppdrag/${job.id}` : "/uppdrag");
 }
