@@ -1206,7 +1206,7 @@ const specs: ToolSpec[] = [
       function: {
         name: "delete_or_archive_job",
         description:
-          "Be om bekräftelse att ta bort eller arkivera ett uppdrag. Tar inte bort själv. Tomt uppdrag raderas, annars arkiveras det. Utfärdade fakturor, signerade offerter och bokföring raderas aldrig.",
+          "Be om bekräftelse att ta bort eller arkivera ett uppdrag. Tar inte bort själv. Tomt uppdrag raderas, annars arkiveras det. Utfärdade fakturor, godkända offerter och bokföring raderas aldrig.",
         parameters: obj({ jobId: { type: "string" } }, ["jobId"]),
       },
     },
@@ -1546,7 +1546,7 @@ const specs: ToolSpec[] = [
       type: "function",
       function: {
         name: "follow_up_quotes",
-        description: "Be om bekräftelse att följa upp offerter som väntar på BankID (followUpQuote).",
+        description: "Be om bekräftelse att följa upp offerter som väntar på kundens godkännande (followUpQuote).",
         parameters: obj({ minDays: { type: "number" } }),
       },
     },

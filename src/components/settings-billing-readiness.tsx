@@ -16,12 +16,11 @@ import type { SellerBlockerInput } from "@/lib/invoices/seller-blockers";
 import type { SettingsFlik } from "@/lib/settings-routes";
 import { formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "@/lib/invoices/formats";
 import {
-  formatSwedishPostalCode,
-  isSwedishPostalCode,
   normalizeSwedishBankgiro,
   swedishBankgiroInputProps,
 } from "@/lib/validation";
 import { withReturnTo } from "@/lib/nav";
+import { AddressFields } from "./address-input";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -286,49 +285,13 @@ function CompletionFields({
 }) {
   if (item.id === "address") {
     return (
-      <div className="space-y-3">
-        <div>
-          <label className={labelCls} htmlFor="komplettera-address">
-            Gatuadress
-          </label>
-          <input
-            id="komplettera-address"
-            value={seller.address}
-            onChange={(e) => onPatch({ address: e.target.value })}
-            className={inputCls}
-          />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className={labelCls} htmlFor="komplettera-postalCode">
-              Postnummer
-            </label>
-            <input
-              id="komplettera-postalCode"
-              value={seller.postalCode}
-              onChange={(e) => onPatch({ postalCode: e.target.value })}
-              onBlur={(e) => {
-                if (isSwedishPostalCode(e.target.value)) onPatch({ postalCode: formatSwedishPostalCode(e.target.value) });
-              }}
-              inputMode="numeric"
-              autoComplete="postal-code"
-              placeholder="116 24"
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label className={labelCls} htmlFor="komplettera-city">
-              Ort
-            </label>
-            <input
-              id="komplettera-city"
-              value={seller.city}
-              onChange={(e) => onPatch({ city: e.target.value })}
-              className={inputCls}
-            />
-          </div>
-        </div>
-      </div>
+      <AddressFields
+        value={{ address: seller.address, postalCode: seller.postalCode, city: seller.city }}
+        onChange={(parts) => onPatch(parts)}
+        ids={{ address: "komplettera-address", postalCode: "komplettera-postalCode", city: "komplettera-city" }}
+        inputClassName={inputCls}
+        labelClassName={labelCls}
+      />
     );
   }
 

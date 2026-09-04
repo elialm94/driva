@@ -114,6 +114,11 @@ export interface RouteMeta {
   backLabel?: string;
   /** Show in-app back control. */
   showBack?: boolean;
+  /**
+   * AppLink stamps `tillbaka` even when there is no default back
+   * (Inställningar opened from a document checklist).
+   */
+  acceptsReturnTo?: boolean;
 }
 
 /**
@@ -128,6 +133,7 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/ekonomi/offerter/ny", section: "ekonomi", parent: "/ekonomi?flik=offerter", label: "Ny offert", backLabel: "Offerter", showBack: true },
   { pattern: "/ekonomi/offerter/:id", section: "ekonomi", parent: "/ekonomi?flik=offerter", label: "Offert", backLabel: "Offerter", showBack: true },
   { pattern: "/ekonomi", section: "ekonomi", label: "Ekonomi" },
+  { pattern: "/inbox/:id/kontrollera", section: "inbox", parent: "/inbox/:id", label: "Kontrollera belopp", backLabel: "Inkorgspost", showBack: true },
   { pattern: "/inbox/:id", section: "inbox", parent: "/inbox", label: "Inkorgspost", backLabel: "Inbox", showBack: true },
   { pattern: "/inbox", section: "inbox", label: "Inbox" },
   { pattern: "/kunder/forfragningar/:id", section: "kunder", parent: "/kunder?flik=uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
@@ -155,12 +161,12 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/redovisning/klienter", section: null, parent: "/redovisning", label: "Klienter" },
   { pattern: "/redovisning", section: null, label: "Redovisning" },
   { pattern: "/inbjudan/:token", section: null, label: "Inbjudan" },
-  { pattern: "/installningar", section: null, label: "Inställningar" },
-  { pattern: "/foretag", section: null, parent: "/installningar", label: "Företagsuppgifter" },
+  { pattern: "/installningar", section: null, label: "Inställningar", acceptsReturnTo: true },
+  { pattern: "/foretag", section: null, parent: "/installningar", label: "Företagsuppgifter", acceptsReturnTo: true },
   { pattern: "/hemsida/doman", section: "hemsida", parent: "/hemsida", label: "Domän", backLabel: "Hemsida", showBack: true },
   { pattern: "/hemsida", section: "hemsida", label: "Hemsida" },
   { pattern: "/", section: "hem", label: "Hem" },
-  { pattern: "/offert/:token/underlag", section: null, parent: "/offert/:token", label: "Signeringsunderlag", backLabel: "Offerten", showBack: true },
+  { pattern: "/offert/:token/underlag", section: null, parent: "/offert/:token", label: "Underlag för godkännandet", backLabel: "Offerten", showBack: true },
   { pattern: "/offert/:token", section: null, label: "Offert" },
   { pattern: "/faktura/:token", section: null, label: "Faktura" },
   { pattern: "/sajt", section: null, label: "Hemsida" },
@@ -259,7 +265,8 @@ export function locationHref(pathname: string, search?: { toString(): string } |
 }
 
 export function isBackAwarePath(pathname: string): boolean {
-  return matchRoute(pathname)?.meta.showBack === true;
+  const matched = matchRoute(pathname);
+  return matched?.meta.showBack === true || matched?.meta.acceptsReturnTo === true;
 }
 
 /**
@@ -420,6 +427,50 @@ export function resolveBack(
 }
 
 export type ReturnNav = { returnTo?: string | null; returnLabel?: string | null };
+
+export type PageOrigin = { href: string; label: string };
+
+function firstSearchValue(value: string | string[] | undefined): string | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+  return undefined;
+}
+
+/** `tillbaka` / `tillbakaNamn` from a page search object or URLSearchParams. */
+export function returnNavFromSearch(
+  search:
+    | { get(name: string): string | null }
+    | { tillbaka?: string | string[]; tillbakaNamn?: string | string[] }
+): ReturnNav {
+  const reader = search as { get?: (name: string) => string | null };
+  const tillbaka =
+    typeof reader.get === "function"
+      ? reader.get(RETURN_TO_PARAM)
+      : firstSearchValue((search as { tillbaka?: string | string[] }).tillbaka);
+  const tillbakaNamn =
+    typeof reader.get === "function"
+      ? reader.get(RETURN_LABEL_PARAM)
+      : firstSearchValue((search as { tillbakaNamn?: string | string[] }).tillbakaNamn);
+  return {
+    returnTo: sanitizeReturnTo(tillbaka),
+    returnLabel: sanitizeReturnLabel(tillbakaNamn),
+  };
+}
+
+/** Current page as origin, including any incoming tillbaka-chain. */
+export function pageOrigin(
+  pathname: string,
+  search: Parameters<typeof returnNavFromSearch>[0],
+  label: string
+): PageOrigin {
+  return { href: hrefWithNav(pathname, returnNavFromSearch(search)), label };
+}
+
+/** Stamp a destination so Back returns to `origin` (the page you left). */
+export function hrefFromOrigin(dest: string, origin: PageOrigin | null | undefined): string {
+  if (!origin) return dest;
+  return withReturnTo(dest, origin.href, origin.label);
+}
 
 export function hrefWithNav(path: string, nav?: ReturnNav | null): string {
   if (!nav) return path;
@@ -606,7 +657,7 @@ function rewriteAppPath(pathname: string): string {
 
 /** Path + query för gamla bokmärken och `tillbaka=`-kedjor. */
 export function rewriteLegacyHref(href: string): string {
-  const { pathname, searchParams } = splitHref(href);
+  const { pathname, searchParams, hash } = splitHref(href);
   const sourcePath = rewritePengarPath(rewriteJobPath(normalizePathname(pathname)));
   let path = rewriteInquiryPath(rewriteAssistentPath(rewriteUppdragListPath(sourcePath)));
   const params = new URLSearchParams(searchParams);
@@ -618,7 +669,7 @@ export function rewriteLegacyHref(href: string): string {
     params.set("flik", "uppdrag");
   }
   const qs = params.toString();
-  return qs ? `${path}?${qs}` : path;
+  return `${qs ? `${path}?${qs}` : path}${hash}`;
 }
 
 function normalizePathname(pathname: string): string {
@@ -651,12 +702,16 @@ function fillPattern(pattern: string, params: Record<string, string>): string {
   return query ? `${filled}?${query}` : filled;
 }
 
-function splitHref(href: string): { pathname: string; searchParams: URLSearchParams } {
-  const q = href.indexOf("?");
-  if (q < 0) return { pathname: normalizePathname(href), searchParams: new URLSearchParams() };
+function splitHref(href: string): { pathname: string; searchParams: URLSearchParams; hash: string } {
+  const hashIndex = href.indexOf("#");
+  const hash = hashIndex >= 0 ? href.slice(hashIndex) : "";
+  const withoutHash = hashIndex >= 0 ? href.slice(0, hashIndex) : href;
+  const q = withoutHash.indexOf("?");
+  if (q < 0) return { pathname: normalizePathname(withoutHash), searchParams: new URLSearchParams(), hash };
   return {
-    pathname: normalizePathname(href.slice(0, q)),
-    searchParams: new URLSearchParams(href.slice(q + 1)),
+    pathname: normalizePathname(withoutHash.slice(0, q)),
+    searchParams: new URLSearchParams(withoutHash.slice(q + 1)),
+    hash,
   };
 }
 
@@ -665,5 +720,5 @@ function parseHref(href: string): URL {
 }
 
 function formatHref(url: URL): string {
-  return `${url.pathname}${url.search}`;
+  return `${url.pathname}${url.search}${url.hash}`;
 }

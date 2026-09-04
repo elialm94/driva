@@ -1,3 +1,4 @@
+import { connectedBankAccount } from "../banking/connection-state";
 import { db, save } from "../store";
 import { uid } from "../ids";
 import type { BankTransaction, Expense, MerchantCategoryRule, Receipt, Verification } from "../types";
@@ -527,7 +528,7 @@ export function uploadStandaloneReceipt(filename: string): Expense {
   if (match) {
     expense.bankTransactionId = match.transactionId;
   } else {
-    const account = data.bankAccounts[0];
+    const account = connectedBankAccount();
     if (account) {
       const tx: BankTransaction = {
         id: uid(),

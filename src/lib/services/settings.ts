@@ -1,3 +1,4 @@
+import { bankConnectionView } from "../banking/connection-state";
 import { db, save } from "../store";
 import type { CompanySettings, VatRate } from "../types";
 import { logActivity } from "./activity";
@@ -241,9 +242,10 @@ export function billingReadiness(profile: CompanySettings = db().settings): {
 }
 
 export function connectedBankSummary(): { label: string; href: string } | null {
-  const account = db().bankAccounts[0];
-  if (!account) return null;
-  return { label: `${account.name} · ${account.accountNumber}`, href: "/ekonomi?flik=bank" };
+  const view = bankConnectionView();
+  if (view.status !== "connected") return null;
+  const label = [view.bankName, view.maskedAccount].filter(Boolean).join(" · ") || "Företagskonto";
+  return { label, href: "/ekonomi?flik=bank" };
 }
 
 const PATCHABLE: (keyof CompanySettingsInput)[] = [

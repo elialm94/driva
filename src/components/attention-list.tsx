@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
-import { AppLink } from "./app-link";
+import { AppLink, useAppNavigate } from "./app-link";
 import { useRouter } from "next/navigation";
 import {
   Inbox,
@@ -56,7 +56,6 @@ import {
   confirmRotPayoutAction,
   registerCreditRefundAction,
 } from "@/app/bokforing-actions";
-import { invoiceHref } from "@/lib/nav";
 import type { ActionConfirm, BusinessAction } from "@/lib/services/actions";
 import {
   actionResolveHref,
@@ -509,6 +508,7 @@ function AttentionRow({
   // Skapad bankfil: raden är löst men nedladdningen ska vara ett klick bort.
   const [createdFile, setCreatedFile] = useState<{ fileId: string; filename: string } | null>(null);
   const router = useRouter();
+  const navigate = useAppNavigate();
   const { icon: Icon, cls } = ICONS[item.icon];
   const cta = item.cta;
   const controls = controlsForAction(item);
@@ -856,7 +856,7 @@ function AttentionRow({
                 onClick={() =>
                   startTransition(async () => {
                     const invoiceId = await createNextInvoiceForJobAction(cta.jobId);
-                    router.push(invoiceHref(invoiceId, { href: `/uppdrag/${cta.jobId}` }) as never);
+                    navigate(`/ekonomi/fakturor/${invoiceId}`);
                   })
                 }
               >
@@ -871,7 +871,7 @@ function AttentionRow({
                 onClick={() =>
                   startTransition(async () => {
                     const jobId = await startJobFromQuoteAction(cta.quoteId);
-                    router.push(`/uppdrag/${jobId}` as never);
+                    navigate(`/uppdrag/${jobId}`);
                   })
                 }
               >

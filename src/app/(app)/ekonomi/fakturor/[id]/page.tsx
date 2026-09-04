@@ -30,8 +30,10 @@ import { TaxReductionApplicationCard } from "@/components/tax-reduction-applicat
 import { taxReductionCaseForInvoice } from "@/lib/services/tax-reduction";
 import { SmartBack } from "@/components/back-link";
 import { AppLink } from "@/components/app-link";
-import { hrefWithNav, newQuoteHref, sanitizeReturnLabel, sanitizeReturnTo, withReturnTo } from "@/lib/nav";
+import { hrefFromOrigin, hrefWithNav, newQuoteHref, pageOrigin, returnNavFromSearch } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { hasConnectedBank } from "@/lib/banking/connection-state";
+import { isDemoBankRequest } from "@/lib/banking/select";
 
 export const metadata = { title: "Faktura" };
 
@@ -54,20 +56,15 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
     invoice.status !== "utkast" &&
     invoice.type !== "kredit";
   const isDraft = invoice.status === "utkast";
-  const returnTo = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : undefined;
-  const returnLabel =
-    typeof searchParams.tillbakaNamn === "string" ? sanitizeReturnLabel(searchParams.tillbakaNamn) ?? undefined : undefined;
-  const nav = { returnTo, returnLabel };
-  const fromHere = { href: hrefWithNav(`/ekonomi/fakturor/${invoice.id}`, nav), label: invoiceHeading(invoice) };
+  const fromHere = pageOrigin(`/ekonomi/fakturor/${invoice.id}`, searchParams, invoiceHeading(invoice));
   const linkView = documentLinkView("invoice", invoice.id, fromHere);
-  const settingsReturn = `/ekonomi/fakturor/${invoice.id}`;
   const sendBlockers = isDraft
     ? getInvoiceSendBlockers(invoice.id).map((b) =>
-        b.href ? { ...b, href: withReturnTo(b.href, settingsReturn, invoiceHeading(invoice)) } : b
+        b.href ? { ...b, href: hrefFromOrigin(b.href, fromHere) } : b
       )
     : [];
   const canSend = sendBlockers.length === 0;
-  const editHref = hrefWithNav(`/ekonomi/fakturor/${invoice.id}/redigera`, nav);
+  const editHref = hrefWithNav(`/ekonomi/fakturor/${invoice.id}/redigera`, returnNavFromSearch(searchParams));
   const tillaggHref = deviation?.largeExcess
     ? newQuoteHref({
         kund: invoice.customerId,
@@ -89,8 +86,9 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   const isCreditNote = invoice.type === "kredit";
   const canRemind = invoice.status === "skickad" && !isCreditNote && overdue;
   const canCredit = invoice.status === "skickad" && !isCreditNote;
-  // Simulering kräver ett (demo-)bankkonto att bokföra inbetalningen mot.
-  const canSimulate = invoice.status === "skickad" && !isCreditNote && data.bankAccounts.length > 0;
+  // Simulering är demo-bankens knapp: kräver en AKTIV (mock-)koppling – aldrig
+  // mot en riktig Tink-bank, och inte efter Koppla från.
+  const canSimulate = invoice.status === "skickad" && !isCreditNote && isDemoBankRequest() && hasConnectedBank();
   const canCustomerView = !isDraft;
   const canCopyLink = !isDraft;
   const canResend = !isDraft;

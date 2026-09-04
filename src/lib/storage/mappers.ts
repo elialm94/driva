@@ -26,8 +26,9 @@ import type {
   CollaborationInvitation,
   InboxItem,
   BankAccount,
+  BankConnection,
+  BankIDEnvironment,
   BankIDOrder,
-  BankIDSignature,
   BankTransaction,
   CompanySettings,
   Customer,
@@ -45,6 +46,7 @@ import type {
   PendingAssistantAction,
   Reminder,
   Quote,
+  QuoteAcceptance,
   QuoteVersion,
   Receipt,
   SupplierInvoice,
@@ -329,38 +331,91 @@ export const quoteVersionsSpec: TableSpec<QuoteVersion> = {
   },
 };
 
-/* -------------------------------- signatures ------------------------------ */
+/* ------------------------- signatures (offertgodkännanden) ------------------ */
 
-export const signaturesSpec: TableSpec<BankIDSignature> = {
+/**
+ * Godkännanderegistret. Kolumnnamnen är historiska (signer_name/signed_at);
+ * domänfälten heter acceptedByName/acceptedAt. BankID-kolumnerna (order_ref,
+ * signer_personal_number_masked, environment) är null för simple_accept.
+ * Beviset (contentHash, statement, ip, …) ligger i evidence jsonb – migration 28.
+ */
+interface AcceptanceEvidenceRow {
+  contentHash?: string;
+  statement?: string;
+  customerNameAtAccept?: string;
+  acceptedByEmail?: string;
+  ip?: string;
+  userAgent?: string;
+  linkSentTo?: string;
+  note?: string;
+}
+
+function acceptanceMethodFromRow(r: SqlRow): QuoteAcceptance["method"] {
+  const m = r.method;
+  if (m === "simple_accept" || m === "bankid_mock" || m === "bankid") return m;
+  // Rader från före migration 28: BankID-mocken (eller produktion om det fanns).
+  return r.environment === "production" ? "bankid" : "bankid_mock";
+}
+
+export const signaturesSpec: TableSpec<QuoteAcceptance> = {
   table: "signatures",
   pk: ["id"],
   columns: [
-    "id", "business_id", "quote_id", "quote_version_id", "order_ref", "signer_name",
+    "id", "business_id", "quote_id", "quote_version_id", "method", "order_ref", "signer_name",
     "signer_personal_number_masked", "signed_at", "environment", "evidence",
   ],
-  toRow: (s, businessId) => ({
-    id: s.id,
+  toRow: (a, businessId) => ({
+    id: a.id,
     business_id: businessId,
-    quote_id: s.quoteId,
-    quote_version_id: s.quoteVersionId,
-    order_ref: s.orderRef,
-    signer_name: s.signerName,
-    signer_personal_number_masked: s.signerPersonalNumberMasked,
-    signed_at: s.signedAt,
-    environment: s.environment,
-    evidence: jsonParam(s.evidence),
+    quote_id: a.quoteId,
+    quote_version_id: a.quoteVersionId,
+    method: a.method,
+    order_ref: a.bankid?.orderRef ?? null,
+    signer_name: a.acceptedByName,
+    signer_personal_number_masked: a.bankid?.personalNumberMasked ?? null,
+    signed_at: a.acceptedAt,
+    environment: a.bankid?.environment ?? null,
+    evidence: jsonParam({
+      contentHash: a.contentHash,
+      statement: a.statement,
+      customerNameAtAccept: a.customerNameAtAccept,
+      ...opt("acceptedByEmail", a.acceptedByEmail),
+      ...opt("ip", a.ip),
+      ...opt("userAgent", a.userAgent),
+      ...opt("linkSentTo", a.linkSentTo),
+      ...opt("note", a.bankid?.note),
+    } satisfies AcceptanceEvidenceRow),
   }),
-  fromRow: (r) => ({
-    id: str(r.id),
-    quoteId: str(r.quote_id),
-    quoteVersionId: str(r.quote_version_id),
-    orderRef: str(r.order_ref),
-    signerName: str(r.signer_name),
-    signerPersonalNumberMasked: str(r.signer_personal_number_masked),
-    signedAt: tsIso(r.signed_at),
-    environment: r.environment as BankIDSignature["environment"],
-    evidence: jsonVal<BankIDSignature["evidence"]>(r.evidence),
-  }),
+  fromRow: (r) => {
+    const evidence = jsonVal<AcceptanceEvidenceRow | null>(r.evidence) ?? {};
+    const method = acceptanceMethodFromRow(r);
+    const acceptedByName = str(r.signer_name);
+    return {
+      id: str(r.id),
+      quoteId: str(r.quote_id),
+      quoteVersionId: str(r.quote_version_id),
+      method,
+      acceptedAt: tsIso(r.signed_at),
+      acceptedByName,
+      customerNameAtAccept: strOrU(evidence.customerNameAtAccept) ?? acceptedByName,
+      ...opt("acceptedByEmail", strOrU(evidence.acceptedByEmail)),
+      contentHash: strOrU(evidence.contentHash) ?? "",
+      statement: strOrU(evidence.statement) ?? "",
+      ...opt("ip", strOrU(evidence.ip)),
+      ...opt("userAgent", strOrU(evidence.userAgent)),
+      ...opt("linkSentTo", strOrU(evidence.linkSentTo)),
+      ...(method === "simple_accept"
+        ? {}
+        : {
+            bankid: {
+              orderRef: str(r.order_ref),
+              personalNumberMasked: str(r.signer_personal_number_masked),
+              environment: (r.environment === "production" ? "production" : "mock") as BankIDEnvironment,
+              note: strOrU(evidence.note) ?? "",
+            },
+          }),
+    };
+  },
 };
 
 /* ------------------------------- bankid_orders ---------------------------- */
@@ -678,7 +733,7 @@ export const paymentsSpec: TableSpec<Payment> = {
 export const bankAccountsSpec: TableSpec<BankAccount> = {
   table: "bank_accounts",
   pk: ["id"],
-  columns: ["id", "business_id", "provider", "name", "account_number", "balance", "connected_at"],
+  columns: ["id", "business_id", "provider", "name", "account_number", "balance", "connected_at", "external_id"],
   toRow: (a, businessId) => ({
     id: a.id,
     business_id: businessId,
@@ -687,6 +742,7 @@ export const bankAccountsSpec: TableSpec<BankAccount> = {
     account_number: a.accountNumber,
     balance: a.balance,
     connected_at: a.connectedAt,
+    external_id: a.externalId ?? null,
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -695,6 +751,61 @@ export const bankAccountsSpec: TableSpec<BankAccount> = {
     accountNumber: str(r.account_number),
     balance: num(r.balance),
     connectedAt: tsIso(r.connected_at),
+    ...opt("externalId", strOrU(r.external_id)),
+  }),
+};
+
+/* ----------------------------- bank_connections --------------------------- */
+
+export const bankConnectionsSpec: TableSpec<BankConnection> = {
+  table: "bank_connections",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "provider", "status", "external_user_id", "tink_user_id", "credentials_id",
+    "access_token", "access_token_expires_at", "pending_state", "pending_state_expires_at",
+    "bank_name", "masked_account", "last_sync_at", "last_error", "connected_at", "revoked_at",
+    "created_at", "updated_at",
+  ],
+  toRow: (c, businessId) => ({
+    id: c.id,
+    business_id: businessId,
+    provider: c.provider,
+    status: c.status,
+    external_user_id: c.externalUserId ?? null,
+    tink_user_id: c.tinkUserId ?? null,
+    credentials_id: c.credentialsId ?? null,
+    access_token: c.accessToken ?? null,
+    access_token_expires_at: c.accessTokenExpiresAt ?? null,
+    pending_state: c.pendingState ?? null,
+    pending_state_expires_at: c.pendingStateExpiresAt ?? null,
+    bank_name: c.bankName ?? null,
+    masked_account: c.maskedAccount ?? null,
+    last_sync_at: c.lastSyncAt ?? null,
+    last_error: c.lastError ?? null,
+    connected_at: c.connectedAt ?? null,
+    revoked_at: c.revokedAt ?? null,
+    created_at: c.createdAt,
+    updated_at: c.updatedAt,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    provider: r.provider as BankConnection["provider"],
+    status: r.status as BankConnection["status"],
+    ...opt("externalUserId", strOrU(r.external_user_id)),
+    ...opt("tinkUserId", strOrU(r.tink_user_id)),
+    ...opt("credentialsId", strOrU(r.credentials_id)),
+    ...opt("accessToken", strOrU(r.access_token)),
+    ...opt("accessTokenExpiresAt", tsIsoOrU(r.access_token_expires_at)),
+    ...opt("pendingState", strOrU(r.pending_state)),
+    ...opt("pendingStateExpiresAt", tsIsoOrU(r.pending_state_expires_at)),
+    ...opt("bankName", strOrU(r.bank_name)),
+    ...opt("maskedAccount", strOrU(r.masked_account)),
+    ...opt("lastSyncAt", tsIsoOrU(r.last_sync_at)),
+    ...opt("lastError", strOrU(r.last_error)),
+    ...opt("connectedAt", tsIsoOrU(r.connected_at)),
+    ...opt("revokedAt", tsIsoOrU(r.revoked_at)),
+    createdAt: tsIso(r.created_at),
+    updatedAt: tsIso(r.updated_at),
   }),
 };
 
@@ -1265,8 +1376,9 @@ export const websitesSpec: TableSpec<Website> = {
   pk: ["id"],
   columns: [
     "id", "business_id", "slug", "business_name", "tagline", "city", "status", "theme",
-    "design", "draft_design", "footer", "draft_footer", "sections", "primary_cta", "privacy_policy_supplement",
+    "design", "draft_design", "footer", "draft_footer", "sections", "draft_sections", "primary_cta", "draft_primary_cta", "privacy_policy_supplement",
     "privacy_policy_mode", "privacy_policy_custom_body", "draft_privacy_policy",
+    "draft_revision", "published_revision",
     "published_at", "submissions", "created_at",
   ],
   toRow: (w, businessId) => ({
@@ -1283,11 +1395,15 @@ export const websitesSpec: TableSpec<Website> = {
     footer: jsonParamOrNull(w.footer),
     draft_footer: jsonParamOrNull(w.draftFooter),
     sections: jsonParam(w.sections),
+    draft_sections: jsonParamOrNull(w.draftSections),
     primary_cta: jsonParamOrNull(w.primaryCta),
+    draft_primary_cta: jsonParamOrNull(w.draftPrimaryCta),
     privacy_policy_supplement: w.privacyPolicySupplement ?? null,
     privacy_policy_mode: w.privacyPolicyMode ?? null,
     privacy_policy_custom_body: jsonParamOrNull(w.privacyPolicyCustomBody),
     draft_privacy_policy: jsonParamOrNull(w.draftPrivacyPolicy),
+    draft_revision: w.draftRevision ?? 0,
+    published_revision: w.publishedRevision ?? 0,
     published_at: w.publishedAt ?? null,
     submissions: w.submissions,
     created_at: w.createdAt,
@@ -1305,13 +1421,20 @@ export const websitesSpec: TableSpec<Website> = {
     ...opt("footer", jsonOrU<NonNullable<Website["footer"]>>(r.footer)),
     ...opt("draftFooter", jsonOrU<NonNullable<Website["draftFooter"]>>(r.draft_footer)),
     sections: withoutRetiredSections(jsonVal<Website["sections"]>(r.sections)),
+    ...opt(
+      "draftSections",
+      r.draft_sections == null ? undefined : withoutRetiredSections(jsonVal<Website["sections"]>(r.draft_sections)),
+    ),
     ...opt("primaryCta", jsonOrU<NonNullable<Website["primaryCta"]>>(r.primary_cta)),
+    ...opt("draftPrimaryCta", jsonOrU<NonNullable<Website["draftPrimaryCta"]>>(r.draft_primary_cta)),
     ...opt("privacyPolicySupplement", strOrU(r.privacy_policy_supplement)),
     ...opt("privacyPolicyMode", (r.privacy_policy_mode === "custom" || r.privacy_policy_mode === "standard"
       ? r.privacy_policy_mode
       : undefined) as Website["privacyPolicyMode"]),
     ...opt("privacyPolicyCustomBody", jsonOrU<NonNullable<Website["privacyPolicyCustomBody"]>>(r.privacy_policy_custom_body)),
     ...opt("draftPrivacyPolicy", jsonOrU<NonNullable<Website["draftPrivacyPolicy"]>>(r.draft_privacy_policy)),
+    ...opt("draftRevision", numOrU(r.draft_revision)),
+    ...opt("publishedRevision", numOrU(r.published_revision)),
     ...opt("publishedAt", tsIsoOrU(r.published_at)),
     createdAt: tsIso(r.created_at),
     submissions: num(r.submissions),

@@ -22,14 +22,14 @@ import {
   VAT_PERIOD_STATE,
   invoiceOverdueLabel,
   quoteWaitingLabel,
-  signedWithBankIdBy,
+  acceptedByLabel,
   supplierPaymentStatus,
   type StatusLabel,
 } from "./status-labels";
 
 /**
  * Statusspråket är en produktyta: samma domäntillstånd = samma ord överallt,
- * BankID endast som metod i historik, inga engelska/tekniska statusord.
+ * godkännandemetoden endast i historik, inga engelska/tekniska statusord.
  */
 
 function allStatusLabels(): string[] {
@@ -68,20 +68,23 @@ describe("status-labels: kanoniskt ordförråd", () => {
     }
   });
 
-  it("offert: skickad = Väntar på signering, godkänd = Signerad", () => {
-    assert.equal(QUOTE_STATUS.skickad.label, "Väntar på signering");
-    assert.equal(QUOTE_STATUS.godkand.label, "Signerad");
-    assert.equal(QUOTE_STATUS_FILTER.skickad, "Väntar på signering");
+  it("offert: skickad = Väntar på godkännande, godkänd = Godkänd", () => {
+    assert.equal(QUOTE_STATUS.skickad.label, "Väntar på godkännande");
+    assert.equal(QUOTE_STATUS.godkand.label, "Godkänd");
+    assert.equal(QUOTE_STATUS_FILTER.skickad, "Väntar på godkännande");
+    assert.equal(QUOTE_STATUS_FILTER.godkand, "Godkända");
   });
 
-  it("öppnad offert visas som Öppnad · väntar på signering", () => {
-    assert.equal(quoteWaitingLabel({ viewed: true }), "Öppnad · väntar på signering");
-    assert.equal(quoteWaitingLabel(), "Väntar på signering");
+  it("öppnad offert visas som Öppnad · väntar på godkännande", () => {
+    assert.equal(quoteWaitingLabel({ viewed: true }), "Öppnad · väntar på godkännande");
+    assert.equal(quoteWaitingLabel(), "Väntar på godkännande");
   });
 
-  it("BankID är metod i tidslinjen: Signerad med BankID av <namn>", () => {
-    assert.equal(QUOTE_TIMELINE.signerad, "Signerad med BankID");
-    assert.equal(signedWithBankIdBy("Sara Nilsson"), "Signerad med BankID av Sara Nilsson");
+  it("vem som godkände hör hemma i tidslinjen: Godkänd av <namn> – aldrig BankID för det enkla godkännandet", () => {
+    assert.equal(QUOTE_TIMELINE.godkand, "Godkänd av kunden");
+    assert.equal(acceptedByLabel({ method: "simple_accept", acceptedByName: "Sara Nilsson" }), "Godkänd av Sara Nilsson");
+    assert.doesNotMatch(acceptedByLabel({ method: "simple_accept", acceptedByName: "Sara Nilsson" }), /bankid|legitimation/i);
+    assert.equal(acceptedByLabel({ method: "bankid_mock", acceptedByName: "Sara Nilsson" }), "Godkänd av Sara Nilsson (demo)");
   });
 
   it("faktura: förfallen heter Förfallen och böjs per dag", () => {

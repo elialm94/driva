@@ -24,6 +24,7 @@ import {
 import { setWebsiteDesignAction } from "@/app/actions";
 import { SiteRenderer } from "./site-renderer";
 import { cx } from "./ui";
+import { enqueueWebsiteMutation, useWebsiteEditorSyncOptional } from "./website-editor-sync";
 
 /**
  * Utseende-väljaren i hemsidesbyggaren.
@@ -216,6 +217,7 @@ export function UtseendePanel({
   published: boolean;
 }) {
   const { design, setDesign } = useWebsiteDesign();
+  const sync = useWebsiteEditorSyncOptional();
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const router = useRouter();
@@ -230,10 +232,16 @@ export function UtseendePanel({
     setDesign(next); // förhandsvisningen byter omedelbart
     setError(null);
     startTransition(async () => {
-      const result = await setWebsiteDesignAction(next);
+      const result = await enqueueWebsiteMutation(
+        sync,
+        (clientRevision) => setWebsiteDesignAction({ ...next, clientRevision }),
+        () => sync?.noteDesign(next),
+      );
       if (seq !== applySeq.current) return;
       if (result.ok === false) {
         setDesign(sameDesign(previous, publishedDesign) ? null : previous);
+        if (sameDesign(previous, publishedDesign)) sync?.noteDesign(publishedDesign);
+        else sync?.noteDesign(previous);
         setError(result.error || "Kunde inte spara ändringen. Försök igen.");
         return;
       }

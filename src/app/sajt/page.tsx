@@ -42,7 +42,7 @@ export default async function PublicSitePage(props: PageProps<"/sajt">) {
         <div className="sticky top-0 z-50 bg-warn px-4 py-2 text-center text-[13px] font-medium text-white">
           Förhandsvisning – sajten är inte publicerad ännu
         </div>
-      ) : site.draftDesignPending || site.draftFooterPending || site.draftPrivacyPending ? (
+      ) : site.draftDesignPending || site.draftFooterPending || site.draftPrivacyPending || site.draftContentPending ? (
         <div className="sticky top-0 z-50 bg-warn px-4 py-2 text-center text-[13px] font-medium text-white">
           Förhandsvisning av opublicerade ändringar – publicera för att uppdatera sajten
         </div>

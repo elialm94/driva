@@ -77,13 +77,13 @@ export function remapSeedForInstance(seed: DB): DB {
   for (const i of remapped.invoices) i.token = publicToken();
 
   // contentHash omfattar quoteId – räkna om efter remappningen och håll
-  // signaturernas beviskopior konsekventa (seedens BankID-data är fiktiv).
+  // godkännandenas beviskopior konsekventa (seedens godkännanden är fiktiva).
   for (const v of remapped.quoteVersions) {
     if (v.contentHash) v.contentHash = quoteVersionHash(v);
   }
   for (const s of remapped.signatures) {
     const version = remapped.quoteVersions.find((v) => v.id === s.quoteVersionId);
-    if (version?.contentHash) s.evidence.contentHash = version.contentHash;
+    if (version?.contentHash) s.contentHash = version.contentHash;
   }
   return remapped;
 }

@@ -70,7 +70,7 @@ import {
  *
  * Viktiga externa handlingar (skicka, påminna, publicera) kräver alltid
  * bekräftelse. Assistenten kan aldrig markera en offert som godkänd – det kan
- * bara en genomförd BankID-signering.
+ * bara kunden göra på offertlänken (services/quote-accept.ts).
  */
 
 function push(msg: Omit<AssistantMessage, "id" | "at">): AssistantMessage {
@@ -666,7 +666,7 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
       updateConfirmCard(actionId, mailed ? "utford" : "avbruten", mailed ? "Påminnelserna har skickats." : "Påminnelsen kunde inte skickas.");
       reply(
         mailed
-          ? `Klart – jag har påmint ${action.quoteIds.length === 1 ? "kunden" : `${action.quoteIds.length} kunder`} med e-post om att offerten väntar på signering.`
+          ? `Klart – jag har påmint ${action.quoteIds.length === 1 ? "kunden" : `${action.quoteIds.length} kunder`} med e-post om att offerten väntar på godkännande.`
           : "Påminnelsen kunde inte skickas. Försök igen."
       );
       break;
@@ -699,7 +699,7 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
           break;
         }
         updateConfirmCard(actionId, "utford", "Offerten har skickats.");
-        reply("Klart – offerten är skickad med e-post. Kunden signerar med BankID när hen är redo.");
+        reply("Klart – offerten är skickad med e-post. Kunden godkänner den direkt i länken när hen är redo.");
       } catch (e) {
         const message = e instanceof Error ? e.message : "Kunde inte skicka offerten.";
         updateConfirmCard(actionId, "avbruten", message);
@@ -738,7 +738,7 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
       try {
         applyBusinessProfilePatch(action.patch);
         updateConfirmCard(actionId, "utford", "Inställningarna är uppdaterade.");
-        reply("Klart – uppgifterna är sparade i Inställningar. Utfärdade fakturor och BankID-signerade offerter ändras inte.", {
+        reply("Klart – uppgifterna är sparade i Inställningar. Utfärdade fakturor och godkända offerter ändras inte.", {
           kind: "links",
           links: [{ label: "Öppna Inställningar", href: "/installningar" }],
         });

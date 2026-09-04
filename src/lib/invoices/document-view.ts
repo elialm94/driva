@@ -139,6 +139,71 @@ export function invoicePaymentTermsLine(doc: Pick<Invoice, "paymentTermsDays" | 
   return parts.join(" · ");
 }
 
+/** Ett token i säljarens sidfot. `nowrap` = juridisk identitet som inte får brytas mitt i. */
+export interface SellerIdentityToken {
+  text: string;
+  nowrap?: boolean;
+  /** `tel:` / `mailto:` – bara webb; PDF/print visar samma text. */
+  href?: string;
+}
+
+export interface SellerIdentityFooterView {
+  lines: SellerIdentityToken[][];
+}
+
+export type SellerIdentityInput = Pick<
+  CompanySettings,
+  "name" | "address" | "postalCode" | "city" | "email" | "phone" | "orgNumber" | "vatNumber"
+> & {
+  /**
+   * Driva har inget inställningsfält för F-skatt. Saknas/true = visa
+   * "Godkänd för F-skatt". Explicit false döljer radbiten (tester / framtida flagga).
+   */
+  approvedForFskatt?: boolean;
+};
+
+function sellerIdentityPart(value: string | undefined): string {
+  return value?.trim() ?? "";
+}
+
+/**
+ * Kompakt säljaridentitet för fakturans sidfot (webb + PDF).
+ * 1) namn · gata · postort  2) e-post · telefon  3) org.nr · moms · F-skatt
+ * Tomma fält utelämnas. Aldrig en kolumnrubrik "Adress".
+ */
+export function sellerIdentityFooter(company: SellerIdentityInput): SellerIdentityFooterView {
+  const name = sellerIdentityPart(company.name);
+  const street = sellerIdentityPart(company.address);
+  const place = [sellerIdentityPart(company.postalCode), sellerIdentityPart(company.city)]
+    .filter(Boolean)
+    .join(" ");
+
+  const line1: SellerIdentityToken[] = [];
+  if (name) line1.push({ text: name });
+  if (street) line1.push({ text: street });
+  if (place) line1.push({ text: place });
+
+  const email = sellerIdentityPart(company.email);
+  const phone = sellerIdentityPart(company.phone);
+  const line2: SellerIdentityToken[] = [];
+  if (email) line2.push({ text: email, href: `mailto:${email}` });
+  if (phone) {
+    const tel = phone.replace(/[^\d+]/g, "");
+    line2.push({ text: phone, href: tel ? `tel:${tel}` : undefined });
+  }
+
+  const org = sellerIdentityPart(company.orgNumber);
+  const vat = sellerIdentityPart(company.vatNumber);
+  const line3: SellerIdentityToken[] = [];
+  if (org) line3.push({ text: `Org.nr ${org}`, nowrap: true });
+  if (vat) line3.push({ text: `Momsreg.nr ${vat}`, nowrap: true });
+  if (company.approvedForFskatt !== false) {
+    line3.push({ text: "Godkänd för F-skatt", nowrap: true });
+  }
+
+  return { lines: [line1, line2, line3].filter((line) => line.length > 0) };
+}
+
 /** Offertnummer som fakturan avser – ur radernas proveniens (frusen i snapshot). */
 export function invoiceQuoteReference(lines: DocLine[]): number | undefined {
   return lines.find((line) => line.sourceQuoteNumber != null)?.sourceQuoteNumber;

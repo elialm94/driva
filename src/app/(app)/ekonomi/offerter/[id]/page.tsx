@@ -14,11 +14,12 @@ import {
   countsTowardInvoiced,
   currentVersion,
   effectiveQuoteStatus,
-  quoteSignature,
+  quoteAcceptance,
   quoteTotals,
   requireCustomer,
   quoteVersions,
 } from "@/lib/services/data";
+import { describeUserAgent } from "@/lib/quote-acceptance";
 import { kr, datumTid, datumLang, relativ } from "@/lib/format";
 import { Badge, ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
 import { QuoteStatusBadge, InvoiceStatusBadge } from "@/components/status";
@@ -36,13 +37,13 @@ import { isLiveMailConfigured } from "@/lib/mail";
 import { docTotals } from "@/lib/calc";
 import { SmartBack } from "@/components/back-link";
 import { AppLink } from "@/components/app-link";
-import { hrefWithNav, invoiceHref, sanitizeReturnLabel, sanitizeReturnTo } from "@/lib/nav";
+import { hrefFromOrigin, hrefWithNav, invoiceHref, pageOrigin, returnNavFromSearch } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { quoteChainState } from "@/lib/services/business-chain";
 import { documentLinkView } from "@/lib/services/document-job-link";
 import { QuoteChainActions } from "@/components/quote-chain-actions";
 import { LinkedToBox } from "@/components/linked-to-box";
-import { QUOTE_TIMELINE, signedWithBankIdBy } from "@/lib/status-labels";
+import { QUOTE_ACCEPT_METHOD, QUOTE_TIMELINE, acceptedByLabel } from "@/lib/status-labels";
 
 export const metadata = { title: "Offert" };
 
@@ -55,27 +56,26 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   const data = db();
   const version = currentVersion(quote);
   const customer = requireCustomer(quote.customerId);
-  const signature = quoteSignature(quote.id);
+  const acceptance = quoteAcceptance(quote.id);
   const totals = quoteTotals(quote);
   const versions = quoteVersions(quote.id);
   const relatedInvoices = data.invoices.filter((i) => i.quoteId === quote.id);
   const job = quote.jobId ? data.jobs.find((j) => j.id === quote.jobId) : undefined;
   const publicPath = `/offert/${quote.token}`;
-  const returnTo = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : undefined;
-  const returnLabel =
-    typeof searchParams.tillbakaNamn === "string" ? sanitizeReturnLabel(searchParams.tillbakaNamn) ?? undefined : undefined;
-  const nav = { returnTo, returnLabel };
-  const fromHere = { href: hrefWithNav(`/ekonomi/offerter/${quote.id}`, nav), label: `Offert #${quote.number}` };
+  const fromHere = pageOrigin(`/ekonomi/offerter/${quote.id}`, searchParams, `Offert #${quote.number}`);
   const linkView = documentLinkView("quote", quote.id, fromHere);
-  const editHref = hrefWithNav(`/ekonomi/offerter/${quote.id}/redigera`, nav);
+  // Edit is a child of this quote — stamp the incoming parent so Back from
+  // redigera → quote still says Ekonomi/Offerter, not the quote itself.
+  const editHref = hrefWithNav(`/ekonomi/offerter/${quote.id}/redigera`, returnNavFromSearch(searchParams));
   const isDraft = quote.status === "utkast";
   const sentParam = typeof searchParams.skickad === "string" ? searchParams.skickad : null;
   const justSent = sentParam === "1" && !isDraft;
   const justSentDemo = sentParam === "demo" && !isDraft;
   const justSentManual = sentParam === "manuell" && !isDraft;
   // EN källa (quoteSendBlockers) för checklista, disabled Skicka och servervalidering.
+  // Stamp the quote (not its parent) so Komplettera / Lägg till e-post returns here.
   const sendBlockers = isDraft
-    ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefWithNav(b.href, nav) } : b))
+    ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefFromOrigin(b.href, fromHere) } : b))
     : [];
   const canSend = sendBlockers.length === 0;
 
@@ -84,7 +84,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
     .reduce((s, i) => s + docTotals(i.lines, i.rot).total, 0);
 
   const doc = (
-    <QuoteDocument company={data.settings} customer={customer} quote={quote} version={version} signature={signature} />
+    <QuoteDocument company={data.settings} customer={customer} quote={quote} version={version} acceptance={acceptance} />
   );
 
   // Utskrifts-/PDF-vyn finns för allt som inte är utkast (samma regel som kundvyn).
@@ -109,7 +109,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
             <h1 className="text-[26px] font-semibold tracking-tight">Offert #{quote.number}</h1>
             <QuoteStatusBadge quote={quote} status={effectiveQuoteStatus(quote)} />
             {version.lockedAt ? (
-              <Badge tone="bankid">
+              <Badge tone="ok">
                 <FileLock2 className="size-3" /> Version {version.version} låst
               </Badge>
             ) : null}
@@ -209,25 +209,50 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
         <Card className="mb-6 flex items-start gap-3 border-warn/20 bg-warn-soft/40 px-5 py-4">
           <ShieldCheck className="mt-0.5 size-5 shrink-0 text-warn" />
           <div className="text-[14px] leading-relaxed text-soft">
-            <span className="font-medium text-ink">Offerten är skickad och väntar på att {customer.name} ska signera.</span>{" "}
+            <span className="font-medium text-ink">Offerten är skickad och väntar på att {customer.name} ska godkänna.</span>{" "}
             Skickad {quote.sentAt ? relativ(quote.sentAt) : ""}
             {quote.viewedAt ? `, öppnad av kunden ${relativ(quote.viewedAt)}` : ", inte öppnad ännu"}.
             {quote.followUps.length > 0 ? ` ${quote.followUps.length} påminnelse${quote.followUps.length > 1 ? "r" : ""} skickad.` : ""}{" "}
-            I demoläget kan du öppna kundvyn själv och signera som kunden.
+            Kunden godkänner direkt i offertlänken genom att skriva sitt namn och trycka Godkänn offert.
           </div>
         </Card>
       ) : null}
 
-      {signature ? (
+      {acceptance ? (
         <Card className="mb-6 px-5 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-start gap-3">
               <BadgeCheck className="mt-0.5 size-5 shrink-0 text-ok" />
               <div>
-                <p className="text-[15px] font-semibold text-ok">{signedWithBankIdBy(signature.signerName)}</p>
-                <p className="text-[14px] text-soft">{datumTid(signature.signedAt)}</p>
-                <p className="mt-1 text-[12px] text-muted">
-                  Version {version.version} är låst och kan verifieras mot signeringsunderlaget. Ändringar kräver en ny version och ny signering.
+                <p className="text-[15px] font-semibold text-ok">{acceptedByLabel(acceptance)}</p>
+                <p className="text-[14px] text-soft">{datumTid(acceptance.acceptedAt)}</p>
+                {/* Bevisuppgifterna – bara här, för företagaren. Kunden ser namn, tid och hash på underlaget. */}
+                <dl className="mt-2 grid gap-x-6 gap-y-0.5 text-[12px] text-muted sm:grid-cols-[auto_1fr]">
+                  <dt>Kund</dt>
+                  <dd className="text-soft">
+                    {acceptance.customerNameAtAccept}
+                    {acceptance.acceptedByEmail ? ` · ${acceptance.acceptedByEmail}` : ""}
+                  </dd>
+                  {acceptance.linkSentTo ? (
+                    <>
+                      <dt>Länk skickad till</dt>
+                      <dd className="text-soft">{acceptance.linkSentTo}</dd>
+                    </>
+                  ) : null}
+                  {acceptance.ip || acceptance.userAgent ? (
+                    <>
+                      <dt>Varifrån</dt>
+                      <dd className="text-soft">
+                        {[acceptance.ip, describeUserAgent(acceptance.userAgent)].filter(Boolean).join(" · ")}
+                      </dd>
+                    </>
+                  ) : null}
+                  <dt>Sätt</dt>
+                  <dd className="text-soft">{QUOTE_ACCEPT_METHOD[acceptance.method]}</dd>
+                </dl>
+                <p className="mt-2 text-[12px] text-muted">
+                  Version {version.version} är låst (SHA-256) och kan verifieras mot underlaget. Ändringar kräver en ny
+                  version som kunden godkänner på nytt.
                 </p>
               </div>
             </div>
@@ -237,7 +262,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               rel="noreferrer"
               className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line-strong px-3.5 text-[13px] font-medium text-ink hover:bg-canvas"
             >
-              <FileLock2 className="size-3.5" /> Visa signeringsunderlag
+              <FileLock2 className="size-3.5" /> Visa underlag
             </a>
           </div>
         </Card>
@@ -260,7 +285,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               <SectionTitle>Nästa steg</SectionTitle>
               <Card className="space-y-3 px-5 py-4">
                 {job ? (
-                  <Link href={hrefWithNav(`/uppdrag/${job.id}`, { returnTo: fromHere.href, returnLabel: fromHere.label }) as never} className="flex items-center gap-3 rounded-xl border border-line px-4 py-3 transition-colors hover:bg-canvas">
+                  <Link href={hrefFromOrigin(`/uppdrag/${job.id}`, fromHere) as never} className="flex items-center gap-3 rounded-xl border border-line px-4 py-3 transition-colors hover:bg-canvas">
                     <Hammer className="size-4 text-accent" />
                     <div className="flex-1">
                       <p className="text-[14px] font-medium">{job.title}</p>
@@ -327,10 +352,10 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                   quote.status === "avbojd"
                     ? { label: QUOTE_TIMELINE.avbojd, at: quote.decidedAt, done: true }
                     : {
-                        // Historiken är precis: metoden (BankID) och signatären hör hemma här.
-                        label: signature ? signedWithBankIdBy(signature.signerName) : QUOTE_TIMELINE.signerad,
-                        at: signature?.signedAt,
-                        done: !!signature,
+                        // Historiken är precis: vem som godkände hör hemma här, inte i statusen.
+                        label: acceptance ? acceptedByLabel(acceptance) : QUOTE_TIMELINE.godkand,
+                        at: acceptance?.acceptedAt,
+                        done: !!acceptance,
                       },
                 ].map((step, i) => (
                   <li key={i} className="flex items-start gap-3">
@@ -360,7 +385,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                       Version {v.version}
                       {v.id === version.id ? " (aktuell)" : ""}
                     </span>
-                    {v.lockedAt ? <Badge tone="bankid">Låst</Badge> : <Badge tone="neutral">Utkast</Badge>}
+                    {v.lockedAt ? <Badge tone="ok">Låst</Badge> : <Badge tone="neutral">Utkast</Badge>}
                   </div>
                 ))}
               </Card>

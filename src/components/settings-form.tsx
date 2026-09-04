@@ -17,8 +17,6 @@ import { STANDARD_TERMS } from "@/lib/standard-quote-terms";
 import { SETTINGS_HREF, SETTINGS_TABS, type SettingsFlik } from "@/lib/settings-routes";
 import { formatOrgnr, formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "@/lib/invoices/formats";
 import {
-  formatSwedishPostalCode,
-  isSwedishPostalCode,
   normalizeSwedishBankgiro,
   normalizeSwedishPhone,
   normalizeSwedishPlusgiro,
@@ -37,6 +35,7 @@ import { FeatureSettingsList } from "./feature-settings";
 import { StickyMobileActions } from "./sticky-actions";
 import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 import { SettingsBillingBanner } from "./settings-billing-readiness";
+import { AddressFields } from "./address-input";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -411,63 +410,38 @@ export function SettingsForm({
           <Card className="space-y-4 p-6">
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Adress</p>
             <p className={hintCls}>Samma adress används på offerter, fakturor och hemsidan. Du behöver inte ange den igen under fakturering.</p>
-            <div>
-              <label className={labelCls} htmlFor="installningar-address">
-                Gatuadress
-              </label>
-              <input
-                id="installningar-address"
-                value={form.address}
-                onChange={(e) => patch("address", e.target.value)}
-                className={inputCls}
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <label className={labelCls} htmlFor="installningar-postalCode">
-                  Postnummer
-                </label>
-                <input
-                  value={form.postalCode}
-                  onChange={(e) => patch("postalCode", e.target.value)}
-                  onBlur={(e) => {
-                    if (isSwedishPostalCode(e.target.value)) patch("postalCode", formatSwedishPostalCode(e.target.value));
-                  }}
-                  inputMode="numeric"
-                  autoComplete="postal-code"
-                  placeholder="116 24"
-                  className={cx(inputCls, errorFor("postalCode") && invalidFieldCls)}
-                  aria-invalid={errorFor("postalCode") ? true : undefined}
-                  aria-describedby={errorFor("postalCode") ? "installningar-postalCode-fel" : undefined}
-                  id="installningar-postalCode"
-                />
-                <FieldError id="installningar-postalCode-fel">{errorFor("postalCode")}</FieldError>
-              </div>
-              <div>
-                <label className={labelCls} htmlFor="installningar-city">
-                  Ort
-                </label>
-                <input
-                  id="installningar-city"
-                  value={form.city}
-                  onChange={(e) => patch("city", e.target.value)}
-                  className={inputCls}
-                />
-              </div>
+            <AddressFields
+              label="Gatuadress"
+              value={{ address: form.address, postalCode: form.postalCode, city: form.city }}
+              onChange={(parts) => {
+                setSaved(false);
+                setForm((prev) => ({
+                  ...prev,
+                  address: parts.address,
+                  postalCode: parts.postalCode,
+                  city: parts.city,
+                }));
+              }}
+              ids={{ address: "installningar-address", postalCode: "installningar-postalCode", city: "installningar-city" }}
+              inputClassName={inputCls}
+              labelClassName={labelCls}
+              errors={{ postalCode: errorFor("postalCode") }}
+            />
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className={labelCls}>Land</label>
                 <input value={form.country} onChange={(e) => patch("country", e.target.value)} className={inputCls} />
               </div>
-            </div>
-            <div>
-              <label className={labelCls}>Sätesort</label>
-              <input
-                value={form.sate}
-                onChange={(e) => patch("sate", e.target.value)}
-                placeholder={form.city || "Samma som ort"}
-                className={inputCls}
-              />
-              <p className={hintCls}>Om tomt används orten på fakturan.</p>
+              <div>
+                <label className={labelCls}>Sätesort</label>
+                <input
+                  value={form.sate}
+                  onChange={(e) => patch("sate", e.target.value)}
+                  placeholder={form.city || "Samma som ort"}
+                  className={inputCls}
+                />
+                <p className={hintCls}>Om tomt används orten på fakturan.</p>
+              </div>
             </div>
           </Card>
 

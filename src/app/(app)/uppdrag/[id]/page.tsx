@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MapPin, CalendarDays, FileText, ReceiptText, BadgeCheck } from "lucide-react";
 import { getJob, getInvoice, currentVersion, effectiveQuoteStatus, quoteStatusLabel, requireCustomer, invoiceTotals } from "@/lib/services/data";
-import { signedWithBankIdBy } from "@/lib/status-labels";
+import { acceptedByLabel } from "@/lib/status-labels";
 import { jobAdminState } from "@/lib/services/job-admin";
 import { parseJobNotes } from "@/lib/services/jobs";
 import {
@@ -23,7 +23,7 @@ import { taxReductionCaseForJob } from "@/lib/services/tax-reduction";
 import { getInvoiceDefaults } from "@/lib/services/settings";
 import { AppLink } from "@/components/app-link";
 import { SmartBack } from "@/components/back-link";
-import { invoiceHref, newQuoteHref, quoteHref } from "@/lib/nav";
+import { invoiceHref, newQuoteHref, pageOrigin, quoteHref } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export async function generateMetadata(props: PageProps<"/uppdrag/[id]">) {
@@ -58,6 +58,7 @@ function toView(entry: ReturnType<typeof actualEntries>[number]): JobWorkViewEnt
 export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
   await ensurePageBusiness();
   const { id } = await props.params;
+  const searchParams = await props.searchParams;
   const job = getJob(id);
   if (!job) notFound();
   const customer = requireCustomer(job.customerId);
@@ -65,7 +66,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
   const { money, quote } = admin;
   const version = quote ? currentVersion(quote) : undefined;
   const invoices = money.invoices;
-  const fromHere = { href: `/uppdrag/${job.id}`, label: job.title };
+  const fromHere = pageOrigin(`/uppdrag/${job.id}`, searchParams, job.title);
   const notes = parseJobNotes(job.notes);
   const taxCase = taxReductionCaseForJob(job);
   const actuals = actualEntries(job.id);
@@ -191,8 +192,8 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
                     </p>
                     <p className={`mt-0.5 flex items-center gap-1 text-[13px] ${quote.status === "godkand" ? "text-ok" : "text-muted"}`}>
                       {quote.status === "godkand" ? <BadgeCheck className="size-3.5 shrink-0" /> : null}
-                      {admin.signatureName && admin.signatureAt
-                        ? `${signedWithBankIdBy(admin.signatureName)}, ${datumTid(admin.signatureAt)}`
+                      {admin.acceptance
+                        ? `${acceptedByLabel(admin.acceptance)}, ${datumTid(admin.acceptance.acceptedAt)}`
                         : quoteStatusLabel(quote)}
                     </p>
                   </div>

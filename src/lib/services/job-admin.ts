@@ -1,8 +1,8 @@
 import { kr } from "../format";
 import { QUOTE_STATUS } from "../status-labels";
-import type { Job, Quote } from "../types";
+import type { Job, Quote, QuoteAcceptance } from "../types";
 import { jobMoneySummary, nextPaymentPlanPartForJob } from "./attention";
-import { quoteSignature } from "./data";
+import { quoteAcceptance } from "./data";
 import { derivedJobStatus, isPaymentPlanPartDue } from "./job-lifecycle";
 import { taxReductionCaseForJob } from "./tax-reduction";
 import { uninvoicedActuals } from "./job-work";
@@ -20,8 +20,8 @@ import type { JobInvoiceAction, JobPrimaryKind, JobQuoteAction, JobSecondaryKind
 export interface JobAdminState {
   money: ReturnType<typeof jobMoneySummary>;
   quote: Quote | undefined;
-  signatureName?: string;
-  signatureAt?: string;
+  /** Kundens godkännande av offerten, när det finns. */
+  acceptance?: QuoteAcceptance;
   nextPart: ReturnType<typeof nextPaymentPlanPartForJob>;
   remaining: number;
   unpaid: boolean;
@@ -63,7 +63,7 @@ function unresolvedActionCountForJob(jobId: string): number {
 export function jobAdminState(job: Job): JobAdminState {
   const money = jobMoneySummary(job.id);
   const quote = money.quote;
-  const signature = quote ? quoteSignature(quote.id) : undefined;
+  const acceptance = quote ? quoteAcceptance(quote.id) : undefined;
   const nextPart = nextPaymentPlanPartForJob(job.id);
   const remaining = money.remaining;
   const unpaid = money.invoices.some(
@@ -113,7 +113,7 @@ export function jobAdminState(job: Job): JobAdminState {
   if (!quote && hasUninvoicedActuals) {
     nextStep = `${kr(money.registeredUninvoiced)} registrerat, inte fakturerat än.`;
   } else if (quote?.status === "skickad") {
-    nextStep = "Väntar på att kunden ska signera offerten.";
+    nextStep = "Väntar på att kunden ska godkänna offerten.";
   } else if (quote?.status === "utkast") {
     nextStep = "Offerten är ett utkast – skicka den när den är klar.";
   } else if (quote?.status === "avbojd") {
@@ -145,8 +145,7 @@ export function jobAdminState(job: Job): JobAdminState {
   return {
     money,
     quote,
-    signatureName: signature?.signerName,
-    signatureAt: signature?.signedAt,
+    acceptance,
     nextPart,
     remaining,
     unpaid,

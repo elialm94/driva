@@ -157,13 +157,13 @@ export async function runAssistantChecks(): Promise<Check[]> {
     const reply = lastAssistant();
     const stillWaiting = db().quotes.filter((q) => q.customerId === "cust-anna" && q.status === "skickad");
     const ok = refuse && /kan inte godkänna/i.test(reply.text) && stillWaiting.length > 0;
-    checks.push(assert("8. Godkänn Annas offert → vägrar BankID", ok, reply.text.slice(0, 100)));
+    checks.push(assert("8. Godkänn Annas offert → vägrar att godkänna åt kunden", ok, reply.text.slice(0, 100)));
   }
 
   checks.push(
     assert(
-      "Verktygsregistret exponerar inte BankID-godkännande",
-      !ASSISTANT_TOOL_NAMES.some((n) => /bankid|finalize|approve_quote|godkann/i.test(n)),
+      "Verktygsregistret exponerar inte offertgodkännande",
+      !ASSISTANT_TOOL_NAMES.some((n) => /bankid|finalize|accept|approve_quote|godkann/i.test(n)),
       ASSISTANT_TOOL_NAMES.join(", ")
     )
   );

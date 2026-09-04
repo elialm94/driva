@@ -8,7 +8,7 @@
  *     appens Hem som vanligt.
  *   * Oautentiserade requests till appens skyddade rutter skickas till
  *     /login?next=<ursprunglig sökväg> och tillbaka efter inloggning.
- *   * Publika ytor (offert-/fakturalänkar, kundsajt, BankID-API) släpps
+ *   * Publika ytor (offert-/fakturalänkar, kundsajt) släpps
  *     igenom orörda – de auktoriseras med ogissbara tokens på serversidan.
  *   * Demosessioner är en httpOnly-cookie (driva_demo) som pekar på
  *     besökarens egen JSON-fil – ingen Supabase-identitet. En giltig
@@ -46,7 +46,6 @@ const PUBLIC_PREFIXES = [
   "/inbjudan",
   "/api/health", // driftdiagnostik: måste nås utan inloggning när appen är trasig
   "/admin/inbjudan", // admin-invitationens acceptsida: mottagaren saknar ofta konto ännu
-  "/api/bankid",
   "/api/inbox",
   "/api/dev", // vaktas internt: endast utveckling
 ];

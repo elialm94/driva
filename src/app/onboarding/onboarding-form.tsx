@@ -2,11 +2,11 @@
 
 import { useActionState, useRef, useState, type FormEvent } from "react";
 import { onboardingAction, type OnboardingFormState } from "@/app/auth-actions";
+import { AddressFields } from "@/components/address-input";
 import { FieldError, FormField, focusField, invalidFieldCls } from "@/components/form-validation";
 import { cx } from "@/components/ui";
 import {
   formatOrgnr,
-  formatPostalCode,
   formatVatNumber,
   isOrgnrFormat,
 } from "@/lib/invoices/formats";
@@ -168,45 +168,22 @@ export function OnboardingForm({
 
       <section className={groupCls}>
         <p className={groupTitle}>Adress</p>
-        <FormField id={ONBOARDING_FIELD_IDS.address} label="Gatuadress" error={errors?.address} labelClassName={labelCls} helperClassName={helperCls}>
-          <input
-            name="address"
-            autoComplete="street-address"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            className={cx(field, errors?.address && invalidFieldCls)}
-            placeholder="Renstiernas gata 12"
-          />
-        </FormField>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <FormField
-            id={ONBOARDING_FIELD_IDS.postalCode}
-            label="Postnummer"
-            error={errors?.postalCode}
-            labelClassName={labelCls}
-            helperClassName={helperCls}
-          >
-            <input
-              name="postalCode"
-              inputMode="numeric"
-              autoComplete="postal-code"
-              value={postalCode}
-              onChange={(e) => setPostalCode(formatPostalCode(e.target.value))}
-              className={cx(field, errors?.postalCode && invalidFieldCls)}
-              placeholder="116 24"
-            />
-          </FormField>
-          <FormField id={ONBOARDING_FIELD_IDS.city} label="Ort" error={errors?.city} labelClassName={labelCls} helperClassName={helperCls}>
-            <input
-              name="city"
-              autoComplete="address-level2"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              className={cx(field, errors?.city && invalidFieldCls)}
-              placeholder="Stockholm"
-            />
-          </FormField>
-        </div>
+        <AddressFields
+          value={{ address, postalCode, city }}
+          onChange={(parts) => {
+            setAddress(parts.address);
+            setPostalCode(parts.postalCode);
+            setCity(parts.city);
+          }}
+          ids={{
+            address: ONBOARDING_FIELD_IDS.address,
+            postalCode: ONBOARDING_FIELD_IDS.postalCode,
+            city: ONBOARDING_FIELD_IDS.city,
+          }}
+          inputClassName="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-500"
+          labelClassName={labelCls}
+          errors={{ address: errors?.address, postalCode: errors?.postalCode, city: errors?.city }}
+        />
       </section>
 
       <section className={groupCls}>

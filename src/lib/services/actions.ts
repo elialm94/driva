@@ -639,8 +639,8 @@ function collectQuotes(ranked: Ranked[], watching: WatchingItem[]) {
         },
       });
     } else {
-      // "Öppnad · väntar på signering": vad som hänt + vad vi väntar på –
-      // metoden (BankID) hör hemma i tidslinjen, inte här.
+      // "Öppnad · väntar på godkännande": vad som hänt + vad vi väntar på –
+      // vem som godkände hör hemma i tidslinjen, inte här.
       watching.push({
         id: `quote-open-${q.id}`,
         category: "quote",
@@ -1009,7 +1009,7 @@ function collectAccounting(ranked: Ranked[]) {
     let cta: ActionCta = incoming
       ? { type: "pickPaymentMatch", txId: tx.id }
       : { type: "link", label: "Öppna transaktionen", href: txHref };
-    let subtitle = `${kr(Math.abs(tx.amount))} · ${datumKort(tx.date)} · ${tx.description}`;
+    let subtitle = [kr(Math.abs(tx.amount)), datumKort(tx.date), tx.description].filter(Boolean).join(" · ");
 
     switch (suggestion.kind) {
       case "match":

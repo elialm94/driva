@@ -753,8 +753,8 @@ describe("åtgärdsmotorn: helhet", () => {
     const ids = new Set(actions.attention.map((a) => a.id));
     assert.equal(ids.size, actions.attention.length);
 
-    // På gång: skickade offerter väntar på signering (BankID är metoden, inte statusen).
-    assert.ok(actions.watching.some((o) => o.category === "quote" && /[Vv]äntar på signering/.test(o.subtitle)));
+    // På gång: skickade offerter väntar på kundens godkännande (metoden är inte statusen).
+    assert.ok(actions.watching.some((o) => o.category === "quote" && /[Vv]äntar på godkännande/.test(o.subtitle)));
 
     // På gång är sorterad kronologiskt och aldrig dubblerad mot Attention.
     const dates = actions.watching.map((u) => u.date);

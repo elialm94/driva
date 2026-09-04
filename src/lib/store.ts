@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import type { CompanySettings, DB, Job, JobSource } from "./types";
+import type { CompanySettings, DB, Job, JobSource, QuoteAcceptance } from "./types";
 import { buildSeed } from "./seed";
 import { hydrateIssuedInvoices, hydrateQuoteBuyerSnapshots, hydrateQuoteSellerSnapshots } from "./invoices/snapshot";
 import { migrateQuoteDescriptions } from "./quote-description";
@@ -197,6 +197,54 @@ function dropRetiredWebsiteSections(data: DB): boolean {
 
 type QuoteWithLegacyRequest = { requestId?: string };
 
+/** Signaturformatet före offertgodkännandet (mock-BankID): läses en gång och skrivs om. */
+interface LegacySignatureRecord {
+  id: string;
+  quoteId: string;
+  quoteVersionId: string;
+  orderRef?: string;
+  signerName?: string;
+  signerPersonalNumberMasked?: string;
+  signedAt?: string;
+  environment?: "mock" | "production";
+  evidence?: { contentHash?: string; note?: string };
+}
+
+/**
+ * JSON-lagret (lokal utveckling, demosessioner) kan bära äldre BankID-formade
+ * signaturer. De blir bankid_mock-godkännanden med samma bevisfält som
+ * databasmapparen ger – vyerna ser då aldrig ett halvt objekt.
+ */
+function migrateLegacyAcceptances(loaded: DB): boolean {
+  let changed = false;
+  loaded.signatures ??= [];
+  loaded.signatures = loaded.signatures.map((raw) => {
+    const rec = raw as unknown as Partial<QuoteAcceptance> & LegacySignatureRecord;
+    if (typeof rec.acceptedByName === "string" && rec.method) return raw;
+    changed = true;
+    const name = rec.signerName ?? rec.acceptedByName ?? "";
+    const migrated: QuoteAcceptance = {
+      id: rec.id,
+      quoteId: rec.quoteId,
+      quoteVersionId: rec.quoteVersionId,
+      method: rec.environment === "production" ? "bankid" : "bankid_mock",
+      acceptedAt: rec.signedAt ?? rec.acceptedAt ?? new Date(0).toISOString(),
+      acceptedByName: name,
+      customerNameAtAccept: rec.customerNameAtAccept ?? name,
+      contentHash: rec.contentHash ?? rec.evidence?.contentHash ?? "",
+      statement: rec.statement ?? "",
+      bankid: {
+        orderRef: rec.orderRef ?? "",
+        personalNumberMasked: rec.signerPersonalNumberMasked ?? "",
+        environment: rec.environment ?? "mock",
+        note: rec.evidence?.note ?? "",
+      },
+    };
+    return migrated;
+  });
+  return changed;
+}
+
 export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): DB {
   const persistIfDirty = opts.persistIfDirty ?? true;
   // Fält tillagda efter att filen skapades får sina standardvärden här.
@@ -212,6 +260,7 @@ export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): 
   loaded.inboxItems ??= [];
   loaded.supplierPayments ??= [];
   loaded.paymentFiles ??= [];
+  loaded.bankConnections ??= [];
   loaded.jobWorkEntries ??= [];
   loaded.collaborationInvitations ??= [];
   loaded.clientInformationRequests ??= [];
@@ -232,6 +281,7 @@ export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): 
   // över migreringen.
   const descriptionsMigrated = migrateQuoteDescriptions(loaded);
   const buyerSnapshotsHydrated = hydrateQuoteBuyerSnapshots(loaded);
+  const acceptancesMigrated = migrateLegacyAcceptances(loaded);
   const dirty =
     migrateRequestsToJobs(loaded) ||
     hydrateIssuedInvoices(loaded) ||
@@ -239,7 +289,8 @@ export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): 
     hydrateTaxReductionTerms(loaded) ||
     hydrateTaxReductionDemo(loaded) ||
     hydrateQuotedBaselines(loaded) ||
-    droppedRetired;
+    droppedRetired ||
+    acceptancesMigrated;
   // Persist snapshots so later settings changes cannot rewrite seed/historical docs.
   if (persistIfDirty && (dirty || migrated || domainsChanged || descriptionsMigrated || buyerSnapshotsHydrated)) {
     persist(loaded);
@@ -262,6 +313,8 @@ function schemaNeedsNormalize(data: DB | undefined): boolean {
   if (!Array.isArray(data.clientInformationRequests)) return true;
   if ("requests" in (data as object)) return true;
   if (!data.meta.taxReductionDemoHydrated) return true;
+  // Äldre BankID-formade signaturer i en varm cache → migrera till godkännanden.
+  if ((data.signatures ?? []).some((s) => !("acceptedByName" in s))) return true;
   return false;
 }
 
@@ -367,6 +420,7 @@ export function resetToEmptyCompany(): void {
     payments: [],
     bankAccounts: [],
     bankTransactions: [],
+    bankConnections: [],
     expenses: [],
     receipts: [],
     supplierInvoices: [],

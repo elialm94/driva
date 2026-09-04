@@ -11,6 +11,7 @@ import {
 } from "@/lib/website-form-recipient";
 import { buttonClasses } from "./ui";
 import { Modal } from "./modal";
+import { enqueueWebsiteMutation, useWebsiteEditorSyncOptional } from "./website-editor-sync";
 
 export function WebsiteFormRecipientCard({
   companyEmail,
@@ -80,6 +81,7 @@ function WebsiteFormRecipientModal({
   const [value, setValue] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const sync = useWebsiteEditorSyncOptional();
   const company = companyEmail.trim();
   const showUseCompany =
     Boolean(company) && (hasOverride || value.trim().toLowerCase() !== company.toLowerCase());
@@ -96,7 +98,9 @@ function WebsiteFormRecipientModal({
     }
     setError(null);
     startTransition(async () => {
-      const result = await updateWebsiteFormRecipientAction(trimmed && trimmed.toLowerCase() !== company.toLowerCase() ? trimmed : "");
+      const result = await enqueueWebsiteMutation(sync, () =>
+        updateWebsiteFormRecipientAction(trimmed && trimmed.toLowerCase() !== company.toLowerCase() ? trimmed : ""),
+      );
       if (result.ok === false) {
         setError(result.error);
         return;

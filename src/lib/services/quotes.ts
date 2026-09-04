@@ -143,8 +143,8 @@ function persistQuoteWorkLocation(
 }
 
 /**
- * Uppdatera en offert. Låsta (BankID-signerade) versioner ändras aldrig –
- * i stället skapas en ny version som måste signeras på nytt.
+ * Uppdatera en offert. Låsta (godkända) versioner ändras aldrig –
+ * i stället skapas en ny version som måste skickas och godkännas på nytt.
  */
 export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
   const data = db();
@@ -185,7 +185,7 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
     quote.viewedAt = undefined;
     quote.decidedAt = undefined;
     logActivity(
-      `Ny version (v${newVersion.version}) av offert #${quote.number} skapades. Den behöver signeras med BankID på nytt.`,
+      `Ny version (v${newVersion.version}) av offert #${quote.number} skapades. Den behöver skickas och godkännas av kunden på nytt.`,
       { customerId: quote.customerId, entity: { type: "offert", id: quoteId } }
     );
   } else {
@@ -268,7 +268,7 @@ export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
   if (emailBlocker) {
     blockers.push({
       ...emailBlocker,
-      href: `/kunder/${customer.id}`,
+      href: `/kunder/${customer.id}#kund-epost`,
     });
   }
   blockers.push(

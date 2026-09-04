@@ -8,7 +8,7 @@
  * att intro-texten flyttas in ÖVERST i rik text-dokumentet som vanliga
  * stycken – ingen information får försvinna.
  *
- * VIKTIGT: BankID-låsta versioner är hash-frysta (`quoteVersionHash`
+ * VIKTIGT: godkända (låsta) versioner är hash-frysta (`quoteVersionHash`
  * inkluderar intro) och får ALDRIG muteras – för dem slås fälten i stället
  * ihop vid rendering via `quoteDescriptionDoc`, så dokumentet visar samma
  * innehåll utan att signeringsunderlaget bryts.

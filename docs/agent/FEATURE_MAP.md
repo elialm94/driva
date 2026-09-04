@@ -11,11 +11,11 @@ Use this file to answer, without rediscovering the app:
 
 **Product:** Swedish business app for a one-person trade/service company (carpenter, painter, electrician, plumber, excavation contractor). Live: https://driva-alpha.vercel.app/
 
-**Core chain:** Kund → Uppdrag → Offert (BankID) → Faktura → Betalning → Bokföring.
+**Core chain:** Kund → Uppdrag → Offert (kunden godkänner på länken) → Faktura → Betalning → Bokföring.
 
-**Status vocabulary:** one source — `src/lib/status-labels.ts`. Never show raw enums (`skickad`, `POSTED`, `pending`) as primary UI. BankID is a **method**, not a status.
+**Status vocabulary:** one source — `src/lib/status-labels.ts`. Never show raw enums (`skickad`, `POSTED`, `pending`) as primary UI. The accept method is **not** a status — and the customer accept is **never** called BankID, e-legitimation or avancerad underskrift (see `offer.accept_simple`).
 
-**Unknowns** are marked `UNKNOWN`. Facts below are from code + the live demo on 2026-09-01 unless noted. Updated 2026-09-02 for PR #77 (mock-BankID gate, receipt file storage) from code only.
+**Unknowns** are marked `UNKNOWN`. Facts below are from code + the live demo on 2026-09-01 unless noted. Updated 2026-09-02 for PR #77 (receipt file storage, CI, legacy mock-BankID gate) from code only. Shared address autocomplete ([PR #79](https://github.com/elialm94/driva/pull/79)) verified against main code 2026-09-04.
 
 ---
 
@@ -37,10 +37,36 @@ Bug: *“the quote delete button doesn't work.”*
 ### Layout
 
 - App chrome: `src/app/(app)/layout.tsx` — `Sidebar` + `BottomNav` (`src/components/nav.tsx`) + `main` (`lg:pl-60`, bottom padding for mobile nav).
-- Root wrapper: `data-driva-demo="1"` when JSON demo **or** public demo session (client gates e.g. Places autocomplete stay on local examples).
+- Root wrapper: `data-driva-demo="1"` when JSON demo **or** public demo session. Client gates read it: the shared address autocomplete (`src/components/address-input.tsx`) stays on the local Swedish example list and never calls Google when `[data-driva-demo]` is present — see [Address autocomplete](#address-autocomplete-shared).
 - Back/origin: `tillbaka` + `tillbakaNamn` query params (`src/lib/nav.ts`). `AppLink` stamps origin; `SmartBack` reads it. Browser back is real history.
+- Completing a send-blocker (customer email, company settings, ROT personnummer) must stamp the **document you left**, not that document's parent. Offert #6 → *Lägg till e-post* → customer Back is **Offert #6**. Helpers: `pageOrigin`, `hrefFromOrigin`. Inställningar accepts `tillbaka` even without a default back (`acceptsReturnTo`).
 - Breadcrumbs = structure, never history (`structuralCrumbs`).
 - Support impersonation: `SupportModeBanner` when a Driva Admin support session is active.
+
+### Address autocomplete (shared)
+
+One Places integration for every editable physical address — `AddressAutocomplete` (single input) + `AddressFields` (gata / postnummer / ort) in `src/components/address-input.tsx`; pure helpers in `src/lib/address-autocomplete.ts` (+ `address-autocomplete.test.ts`). **Do not fork another.**
+
+- **Source:** Google Places API (New) when `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is set **and** the surface is not demo. `[data-driva-demo]` → local Swedish example list only, no Google HTTP. Missing key / Google failure → manual typing still works; no raw Google errors, no dead dropdown. Demo suggestions carry a **Demo** tag.
+- **Behaviour:** Sweden-first (`includedRegionCodes: ["se"]`), no map/Street View. Search from **3 meaningful characters** after trim (`"va"` does not fire), debounce 250 ms (`ADDRESS_SEARCH_DEBOUNCE_MS`). One session token per typing session; `fetchFields` only after the user picks a suggestion. Opening an edit form with a saved address does **not** call Places. Picking writes street + postal + city (or one composed line); name / e-mail / phone / personnummer untouched. `composeSelected="street"` (default) vs `"line"` (`gata, postnummer ort`) for single-field forms.
+- **Keyboard:** Arrow/Enter selects; Enter does not submit the parent form while the list is open; Escape closes; Tab moves on.
+- **Selectors:** input `role="combobox"` `aria-expanded` `aria-autocomplete="list"`; menu is portaled + viewport-flipped with `data-address-suggestions`; options `data-address-option={i}`. No `data-testid`.
+
+| Surface | File | Mode |
+|---------|------|------|
+| Ny kund (privat + företag) | `new-customer-modal.tsx` | `AddressFields` |
+| Redigera kund | `customer-details-form.tsx` | `AddressFields` |
+| ROT-bostad / fastighet | `customer-rot-section.tsx` | `AddressFields` |
+| Onboarding företagsadress | `onboarding-form.tsx` | `AddressFields`; ids `ob-address`, `ob-postal`, `ob-city` |
+| Inställningar företagsadress | `settings-form.tsx` | `AddressFields`; ids `installningar-address`, `installningar-postalCode`, `installningar-city`; label **Gatuadress** |
+| Faktura/offert blockers → komplettera adress | `settings-billing-readiness.tsx` | `AddressFields`; ids `komplettera-address`, `komplettera-postalCode`, `komplettera-city` |
+| Nytt uppdrag, ny adress | `uppdrag-form.tsx` | `AddressFields`; names `newAddress`, `newPostalCode`, `newCity` |
+| Redigera uppdrag (one line) | `uppdrag-form.tsx` | `AddressAutocomplete composeSelected="line"` |
+| ROT saknad arbetsadress | `tax-reduction-application.tsx` | `AddressAutocomplete composeSelected="line"` |
+
+**Not autocomplete (do not expect it):** invoice/quote documents and public `/faktura/*` `/offert/*` (read-only); website contact/footer (company address from settings); inbox inbound e-mail address; domain registrant; fastighetsbeteckning; Land/säte fields; search boxes; supplier/kvitto extraction.
+
+**Verify (demo):** `/demo` → Kunder → **Ny kund** → type `Väd` in **Adress** (default label; Inställningar says **Gatuadress**) → list `[data-address-suggestions]` with **Demo** tag (e.g. *Vädursvägen 13*) → pick → adress + postnummer + ort filled, name field untouched. Puppeteer: assert no request to `maps.googleapis.com`.
 
 ### Primary nav (Swedish labels as shown)
 
@@ -74,7 +100,7 @@ Badge aria: `Inbox, {n} öppna` / `Bokföring, {n} bokföringsfrågor att lösa`
 
 Proxy (Next 16 middleware): `src/proxy.ts`. Real auth is always server-side (`ensurePageBusiness` / `withBusiness`).
 
-**Public prefixes** (no login): `/login`, `/signup`, `/verifiera-epost`, `/glomt-losenord`, `/auth/bekrafta`, `/demo`, `/valkommen`, `/villkor`, `/integritet`, `/offert`, `/faktura`, `/sajt`, `/integritetspolicy`, `/inbjudan`, `/api/health`, `/admin/inbjudan`, `/api/bankid`, `/api/inbox`, `/api/dev`.
+**Public prefixes** (no login): `/login`, `/signup`, `/verifiera-epost`, `/glomt-losenord`, `/auth/bekrafta`, `/demo`, `/valkommen`, `/villkor`, `/integritet`, `/offert`, `/faktura`, `/sajt`, `/integritetspolicy`, `/inbjudan`, `/api/health`, `/admin/inbjudan`, `/api/inbox`, `/api/dev`. (`/api/bankid/*` is **removed** — the customer accept is a server action from `/offert/[token]`.)
 
 `/api/kvitto/[receiptId]` is **not** public — it requires a session or demo cookie (`withBusinessRead`).
 
@@ -122,11 +148,11 @@ auth.users
         ├── business_sequences (quote / invoice / verification)
         ├── customers → work_locations
         ├── jobs → job_work_entries
-        ├── quotes → quote_versions; signatures (1:1); bankid_orders
+        ├── quotes → quote_versions; signatures (1:1 = the customer's acceptance record); bankid_orders (legacy, unused by UI)
         ├── invoices → invoice_line_items; invoice_issued_snapshots; payments
         ├── expenses → receipts (file: storage_path in bucket `receipts` XOR content_base64)
         ├── supplier_invoices → supplier_payments → payment_files
-        ├── bank_accounts → bank_transactions
+        ├── bank_accounts → bank_transactions; bank_connections (Tink tokens, server-only RLS)
         ├── inbox_items
         ├── reminders; attention_states
         ├── verifications → accounting_entries
@@ -160,10 +186,10 @@ Platform (not tenant): `platform_admins`, `platform_admin_invitations`, `support
 
 Two layers (`src/lib/demo.ts`):
 
-1. **`isDemoMode()`** — env: `DRIVA_DEMO=1` force on; `=0` force off; production default off; local JSON/dev default on. Gates **fake money** (simulate payment, ROT payout demo, exempelkvitto).
-2. **`isDemoBusiness()`** — `db().meta.demo === true` from `businesses.is_demo`. Public seeded demo company in Supabase. Public `/demo` session clones also set `meta.demo = true` (`demo-session-store.ts`).
+1. **`isDemoMode()`** — env: `DRIVA_DEMO=1` force on; `=0` force off; production default off; local JSON/dev default on. Gates **fake money** (simulate payment, ROT payout demo, exempelkvitto, legacy mock-BankID provider).
+2. **`isDemoBusiness()`** — `db().meta.demo === true` from `businesses.is_demo`. Public seeded demo company in Supabase.
 
-**Mock BankID** is gated server-side by `bankidSigningAvailable()` (`src/lib/services/bankid.ts`): allowed when `isDemoMode() || isDemoBusiness()`; a real provider (`environment === "production"`) is always allowed. A real business in production without a real provider **cannot** sign — the mock throws `BankIDUnavailableError`. See [Offerter](#offerter-quotes).
+**Legacy mock BankID** (`src/lib/services/bankid.ts`; no longer on the customer's accept path — see [Offerter](#offerter-quotes)) is gated server-side by `bankidSigningAvailable()`: allowed when `isDemoMode() || isDemoBusiness()`; a real provider (`environment === "production"`) is always allowed. Outside that gate the mock throws `BankIDUnavailableError` (`demo-login.test.ts`).
 
 Public **Se demo** does **not** use Supabase. `GET /demo` (`src/app/demo/route.ts`) sets httpOnly cookie `driva_demo` (`<expiresMs>.<sessionId>`), clones `buildSeed()` (`src/lib/seed.ts`) to `.data/demo-sessions/<id>.json` (or `/tmp` on serverless). Incognito = new clone.
 
@@ -197,13 +223,15 @@ Local JSON (`npm run dev`, no Supabase): already seeded; **Avsluta demo** hidden
 | id | # | Title | Customer | Status (UI) | Public token |
 |----|---|-------|----------|-------------|--------------|
 | `quote-bokhylla` | 116 | Platsbyggd bokhylla i ek | Eva Holmgren | Utkast | `demo-eva-bokhylla` (not public) |
-| `quote-nord2` | 114 | Kontorsinredning – etapp 2 | Nord Studio AB | Väntar på signering | `demo-nord-etapp2` |
-| `quote-garderob` | 113 | Platsbyggd garderob | Anna Andersson | Väntar på signering | `demo-anna-garderob` |
-| `quote-fasad` | 115 | Fasadarbete och nya fönsterfoder | Bertil Lindqvist | Väntar på signering (öppnad) | `demo-bertil-fasad` |
-| `quote-dorrar` | 112 | Byte av förrådsdörrar | Brf Eken | Väntar på signering | `demo-brf-dorrar` |
-| `quote-altan` | 111 | Altanrenovering | Johan Lindberg | Signerad | `demo-johan-altan` |
-| `quote-kok` | 110 | Köksrenovering | Anna Andersson | Signerad | `demo-anna-kok` |
-| `quote-nord1` | 106 | Kontorsinredning – etapp 1 | Nord Studio AB | Signerad | `demo-nord-etapp1` |
+| `quote-nord2` | 114 | Kontorsinredning – etapp 2 | Nord Studio AB | Väntar på godkännande | `demo-nord-etapp2` |
+| `quote-garderob` | 113 | Platsbyggd garderob | Anna Andersson | Väntar på godkännande | `demo-anna-garderob` |
+| `quote-fasad` | 115 | Fasadarbete och nya fönsterfoder | Bertil Lindqvist | Väntar på godkännande (öppnad) | `demo-bertil-fasad` |
+| `quote-dorrar` | 112 | Byte av förrådsdörrar | Brf Eken | Väntar på godkännande | `demo-brf-dorrar` |
+| `quote-altan` | 111 | Altanrenovering | Johan Lindberg | Godkänd | `demo-johan-altan` |
+| `quote-kok` | 110 | Köksrenovering | Anna Andersson | Godkänd | `demo-anna-kok` |
+| `quote-nord1` | 106 | Kontorsinredning – etapp 1 | Nord Studio AB | Godkänd | `demo-nord-etapp1` |
+
+Seeded acceptances (`signatures`): `sig-nord1`, `sig-kok`, `sig-altan` — all `method: simple_accept` with statement, contentHash, e-mail, ip, userAgent.
 
 **Uppdrag (stable):** `job-kok` (Pågår), `job-altan` (Planerat), `job-fonster` / `job-nord1` / `job-kokso` / `job-racke` (Klart — hidden under Aktiva), plus planned jobs for Sara, Karin, garderob, nord2, fasad.
 
@@ -222,10 +250,10 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications, published 
 | Auth | Cookie / no login | Email + password |
 | Data | Isolated JSON clone | RLS tenant |
 | Outbound mail | Simulated | Resend if configured |
-| BankID | Mock, UI **Demo-signering** | Real RP API if configured; otherwise **no signing** — public quote shows *Godkännande med BankID är inte aktiverat ännu*, `/api/bankid/start` → 503, `/api/bankid/demo` → 404 |
+| Quote accept | Simple accept (name + **Godkänn offert**), no e-mail to the carpenter | Same simple accept; carpenter notified via Resend if configured |
 | Receipt file (Ladda upp kvitto) | Inline `content_base64` (≤ 1,5 MB) | Private bucket `receipts` with `SUPABASE_SERVICE_ROLE_KEY`; inline fallback without it |
-| Bank / payments | Simulated Tink; **Simulera betalning** | Honest “not configured” — never fake success |
-| Places | Local examples | Google Places if key set |
+| Bank / payments | **MockBankProvider** (SEB ···· 4512, synthetic tx, zero HTTP to Tink); **Simulera betalning** | **LiveTinkProvider** if all `TINK_*` set, else honest *Bankkoppling är inte konfigurerad* — never fake success |
+| Places (address autocomplete) | Local Swedish examples with **Demo** tag — **zero Google HTTP** even if a key is set | Google Places API (New) if `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` set; no key / Google failure → manual typing (local examples as fallback). Shared component — see [Address autocomplete](#address-autocomplete-shared) |
 | AI | Optional; honest fallback if no key | Same |
 | Trial | null | 14 days `trialing` |
 | Fake money APIs | Allowed | `DemoModeError` |
@@ -239,7 +267,7 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications, published 
 - **Routes:** `/` (rewrite to `/valkommen` when logged out). File: `src/app/valkommen/page.tsx`. Direct `/valkommen` → `/`.
 - **How to get there:** Open live URL while logged out / no demo cookie. Header **Logga in**, **Testa gratis**.
 - **Main actions:** **Testa gratis i 14 dagar** → `/signup`. **Se demo** → `/demo`. Header **Logga in** → `/login`.
-- **Copy (live):** H1 *Driva ditt företag. Inte administrationen.* Steps: *Få jobbet / Gör jobbet / Få betalt / Slipp administrationen.* Features: ROT/RUT, BankID, Kvitton & bokföring, Egen hemsida. Price: *199 kr/mån efter provperioden · Inget kort krävs*.
+- **Copy (live):** H1 *Driva ditt företag. Inte administrationen.* Steps: *Få jobbet / Gör jobbet / Få betalt / Slipp administrationen.* Features: ROT/RUT, Digitalt godkännande, Kvitton & bokföring, Egen hemsida. Price: *199 kr/mån efter provperioden · Inget kort krävs*.
 - **Related:** `/villkor`, `/integritet` (Driva’s policy). Customer-site policy is `/integritetspolicy`.
 - **Components:** `src/components/home-preview.tsx` (static preview of demo company — does **not** start a demo session).
 - **DB:** none.
@@ -284,7 +312,7 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications, published 
 - **Route:** `/onboarding` — `src/app/onboarding/page.tsx` + `onboarding-form.tsx`
 - **How to get there:** Automatic after first login when `needsCompanyOnboarding(memberships.length)` (`membershipCount === 0`). Demo/JSON → redirect `/`.
 - **Main actions:** submit **Kom igång**.
-- **Fields / ids:** `ob-name`, `ob-orgnr`, `ob-vat`, `ob-address`, `ob-postal`, `ob-city`, `ob-payment-method`, `ob-bankgiro`, `ob-plusgiro`, `ob-bankkonto`, `ob-email`, `ob-phone`. Summary: `#ob-sammanfattning`. Sections: Företag, Adress, Betalning, Kontakt.
+- **Fields / ids:** `ob-name`, `ob-orgnr`, `ob-vat`, `ob-address`, `ob-postal`, `ob-city`, `ob-payment-method`, `ob-bankgiro`, `ob-plusgiro`, `ob-bankkonto`, `ob-email`, `ob-phone`. Summary: `#ob-sammanfattning`. Sections: Företag, Adress, Betalning, Kontakt. **Adress** section is the shared `AddressFields` (autocomplete, `#ob-address` is a `role="combobox"`); ids unchanged.
 - **Related:** Inställningar Företag / Fakturering (same company fields later).
 - **DB:** `businesses`, `business_settings`, `business_sequences`, `business_memberships` (owner). Trial columns set on real businesses.
 - **Invariants:** One company at create. Payment method required (bankgiro / plusgiro / bankkonto).
@@ -372,6 +400,7 @@ Two different systems:
 - **Work locations:** on customer (not on quote). Types: Fastighet/småhus, Bostadsrätt.
 - **Related:** Offerter, Fakturor, Uppdrag, ROT/RUT.
 - **Components:** `customer-list.tsx`, `new-customer-modal.tsx` (`#ny-kund-namn`, `#ny-kund-epost`, …), `customer-details-form.tsx`, `customer-rot-section.tsx`, `customer-picker.tsx`.
+- **Address fields:** Ny kund (privat + företag), Redigera kund and ROT-bostad all use the shared `AddressFields` autocomplete (`address-input.tsx`) — existing field ids unchanged; picking a suggestion fills gata + postnummer + ort only. See [Address autocomplete](#address-autocomplete-shared).
 - **DB:** `customers` (`kind` `privat|foretag`), `work_locations`.
 - **Invariants:** Kind is required. Org.nr for företag. Personnummer for privat ROT.
 - **Desktop/mobile:** table vs cards.
@@ -398,6 +427,7 @@ Two different systems:
   - **Delete vs archive** (`jobRemovalPolicy`): empty → hard delete; if signed quote / issued invoice / payments / posted books / invoiced work → **archive**. Same menu label *Ta bort uppdrag*; modal explains.
 - **Related:** Kunder, Offerter, Fakturor, ROT card on job when relevant.
 - **Components:** `uppdrag-list.tsx`, `uppdrag-form.tsx` (`#nytt-uppdrag-titel`, `#uppdrag-titel`), `job-controls.tsx`, `job-invoice-choice.tsx`, job work section.
+- **Work address:** new uppdrag *ny adress* = shared `AddressFields` (names `newAddress` / `newPostalCode` / `newCity`); edit uppdrag address = single-line `AddressAutocomplete composeSelected="line"` (`gata, postnummer ort`). See [Address autocomplete](#address-autocomplete-shared).
 - **DB:** `jobs`, `job_work_entries`. JSON: `housing`, `tax_reduction_application`, `checklist`.
 - **Invariants:** Job describes **work**, not money. Quote/invoice linked to a job must share `customer_id`.
 - **Desktop/mobile:** table vs cards; row `aria-label={title}`.
@@ -409,7 +439,9 @@ Two different systems:
 ## Offerter (Quotes)
 
 - **User-facing name:** Offerter (tab). Detail: **Offert #{n}**
-- **Purpose:** Price and scope the job; customer signs with BankID. Signing is not payment.
+- **Purpose:** Price and scope the job; the customer accepts it on the public link by typing their name and pressing **Godkänn offert**. Accepting is not payment.
+- **Feature key:** `offer.accept_simple` — **core / icp_loop**. One canonical service `acceptQuote(token, name)` (`src/lib/services/quote-accept.ts`), reached only via the public server action `acceptQuoteByTokenAction`. The AI has no accept tool; the owner cannot accept for the customer.
+- **Tombstone:** customer-facing **BankID accept is removed** (`bankid-flow.tsx`, `/api/bankid/*`, `BankIDApproval`). `src/lib/services/bankid.ts` (MockBankIDProvider) remains as a dead hook: demo-gated, no route calls it, and its `finalizeApproval` delegates to the same `finalizeQuoteAcceptance`. Never re-add a BankID button, "e-legitimation", "avancerad underskrift", a drawn signature or a personnummer gate on the accept path.
 - **Routes:**
   | Route | Page |
   |-------|------|
@@ -418,7 +450,7 @@ Two different systems:
   | `/ekonomi/offerter/[id]` | detail |
   | `/ekonomi/offerter/[id]/redigera` | edit |
   | `/offert/[token]` | public customer |
-  | `/offert/[token]/pdf`, `/underlag` | PDF / BankID evidence |
+  | `/offert/[token]/pdf`, `/underlag` | PDF (shows *Godkänd {datum} av {namn}* once accepted) / acceptance evidence (*Underlag för godkännandet*) |
 - **How to get there:**
   - Nav **Ekonomi** (lands on Offerter).
   - Header **Ny offert** (`aria-label="Ny offert"`).
@@ -428,32 +460,33 @@ Two different systems:
   | Domain | Badge |
   |--------|-------|
   | `utkast` | Utkast |
-  | `skickad` | Väntar på signering (list: *Öppnad · väntar på signering* if viewed) |
-  | `godkand` | Signerad |
+  | `skickad` | Väntar på godkännande (list: *Öppnad · väntar på godkännande* if viewed) |
+  | `godkand` | Godkänd (timeline/underlag: *Godkänd av {namn}* via `acceptedByLabel`) |
   | `avbojd` | Avböjd |
   | `utgangen` | Utgången (**derived** when sent + `validUntil` passed) |
-- **Filters:** Alla, Utkast, Väntar på signering, Signerade, Avböjda, Utgångna.
+- **Filters:** Alla, Utkast, Väntar på godkännande, Godkända, Avböjda, Utgångna.
 - **Main actions — utkast:** Redigera · **Kasta utkast** · **Skicka offert**. Checklist `#quote-send-blockers` *Innan offerten kan skickas*.
 - **Main actions — skickad:** Öppna kundvyn · Kopiera kundlänk · PDF · Skicka påminnelse · chain (Starta uppdrag / Skapa faktura). Owner dismiss from Hem: **Inte aktuell**.
-- **Main actions — signerad/avböjd:** Ny version (new version → utkast) · Öppna kundvyn.
-- **Public `/offert/[token]`:** utkast → **404**. Bottom bar: Offertvärde, **Avböj offerten**, **Ställ en fråga**, **Signera med BankID**. First open → `viewedAt` / *Öppnad av kunden*.
-  - **When signing is unavailable** (`bankidSigningAvailable()` false — real business, production, no real provider): the BankID button is **hidden**, bottom bar still shows Offertvärde + **Ställ en fråga**, and an info card above the document reads *Godkännande med BankID är inte aktiverat ännu* / *Kontakta {företag} på {e-post} för att godkänna offerten.* Decline still works.
-- **BankID:** `src/components/bankid-flow.tsx`, `/api/bankid/*`. Demo = mock (`MockBankIDProvider`), gated by `bankidSigningAvailable()` = `isDemoMode() || isDemoBusiness()` (real provider always allowed). Outside that gate: `POST /api/bankid/start` → **503** *BankID-signering är inte aktiverad för det här företaget ännu.*; `POST /api/bankid/demo` → **404** (gate evaluated inside tenant context). Success locks version (`lockedAt`, `contentHash`), inserts `signatures` (unique per quote).
+- **Main actions — godkänd/avböjd:** Ny version (new version → utkast) · Öppna kundvyn. Godkänd also shows the acceptance card (who, when, customer, e-mail, link recipient, IP + device, method) + **Visa underlag**.
+- **Public `/offert/[token]`:** utkast → **404**. Document ends with section **Godkänn offerten**: field **Ditt namn** (prefilled: person name, or company contact person; editable; button disabled while blank), one sentence *Genom att godkänna accepterar du offerten “{rubrik}” från {företag} daterad {datum} till ett totalt belopp om {totalt}.* (ROT/RUT adds *, varav … preliminärt ROT/RUT-avdrag*), primary **Godkänn offert** (`data-testid=public-quote-accept`), footnote *Godkännandet sparas tillsammans med offertens innehåll och tidpunkt.* Fixed bottom bar: Offertvärde, **Avböj offerten** (`public-quote-decline`), **Ställ en fråga**, **Godkänn offert** (anchor → `#godkann-offert`, focuses the name field if empty). No BankID button, no draw-to-sign, no checkbox. First open → `viewedAt` / *Öppnad av kunden*.
+- **Accept states:** success → inline *Offerten är godkänd* + receipt (who, when, amount) then `router.refresh()` → server banner *Offerten är godkänd* / *Godkänd av {namn}, {tid} · {belopp}* + **Visa underlag för godkännandet**; document shows *Godkänd {datum} av {namn}*; **already accepted** = read-only, no second accept; **avbojd** / **expired** → Swedish explanation, no form; **utkast** → 404 (also for the action: `not_found`).
+- **Accept service (`acceptQuote`):** rate limit (10/token, 40/IP per 10 min) → token lookup (utkast = not_found) → idempotent return if already accepted → `normalizeAcceptName` (trim, collapse, ≤120; empty → `name_required`) → status (`declined` / `expired` / `not_acceptable`) → `expectedContentHash` from the rendered page must equal `quoteVersionHash(version)` (`changed`) → `finalizeQuoteAcceptance`: sets seller/buyer snapshots, `lockedAt`, `contentHash`, pushes the `QuoteAcceptance` (`method: simple_accept`, `acceptedAt`, `acceptedByName`, `customerNameAtAccept`, `acceptedByEmail`, `contentHash`, `statement`, `ip`, `userAgent`, `linkSentTo`), `status = godkand`, `decidedAt`, `createJobFromQuote` (idempotent — never a second job), `logActivity`, one `save()`. Errors are `QuoteAcceptError` with Swedish `QUOTE_ACCEPT_TEXT`.
+- **Carpenter notice:** `prepareQuoteAcceptedNotice` (null in demo / `is_demo` / no mail provider) → sent with `after()` so the customer never waits on Resend; failure never blocks the accept.
 - **Delete rules (critical):**
   - **Kasta utkast** only if `status === "utkast"` and no issued invoices linked.
   - Sent: *Skickade offerter kan inte kastas. Markera dem som inte aktuella i stället.*
-  - `discardQuote` unlinks draft invoices/jobs; deletes versions, signatures, bankid orders.
+  - `discardQuote` unlinks draft invoices/jobs; deletes versions, acceptances (`signatures`), legacy bankid orders.
   - Redirect: `/ekonomi?flik=offerter&kastat=offert` (`DraftDiscardedToast`).
   - There is **no** hard delete for sent/signed quotes.
 - **Related:** ROT on form; job link (`LinkedToBox`); invoices from payment plan.
-- **Components:** `economy-register.tsx`, `doc-form.tsx` (QuoteForm), `discard-draft-button.tsx`, `quote-draft-send.tsx`, `send-checklist.tsx`, `quote-document.tsx`, `quote-chain-actions.tsx`, `bankid-flow.tsx`.
-- **Form ids:** `#offert-saknas`, `#offert-kund`, `#offert-rubrik`, `#offert-rot-rut`, `#offert-betalplan`, `#prisrader`.
-- **DB:** `quotes`, `quote_versions` (payload JSONB is hash-frozen), `signatures`, `bankid_orders`.
-- **Invariants:** Locked versions immutable. Public only via unguessable `token`. Totals panel says **Offertvärde**, not Att betala. Quote↔job same customer. Mock BankID never produces a signed quote for a real business in production (`demo-login.test.ts`).
+- **Components:** `economy-register.tsx`, `doc-form.tsx` (QuoteForm), `discard-draft-button.tsx`, `quote-draft-send.tsx`, `send-checklist.tsx`, `quote-document.tsx` (`acceptance` record + `acceptForm` slot), `quote-chain-actions.tsx`, `quote-accept.tsx` (`QuoteAcceptForm`, `AcceptJumpButton`), `quote-public-actions.tsx` (Avböj / Ställ en fråga).
+- **Form ids:** `#offert-saknas`, `#offert-kund`, `#offert-rubrik`, `#offert-rot-rut`, `#offert-betalplan`, `#prisrader`; public accept: `#godkann-offert`, `#godkann-namn`.
+- **DB:** `quotes`, `quote_versions` (payload JSONB is hash-frozen), `signatures` (= acceptances; migration 28 adds `method`, makes `order_ref` / `signer_personal_number_masked` / `environment` nullable; `evidence` JSONB holds contentHash, statement, customerNameAtAccept, acceptedByEmail, ip, userAgent, linkSentTo; `signatures_quote_uq` keeps one per quote; `apply-pending-schema.ensureQuoteAcceptanceSchema` mirrors it), `bankid_orders` (legacy).
+- **Invariants:** Locked versions immutable — a sent/accepted quote is a snapshot; later edits create a new version and never change what was accepted. Public only via unguessable `token`. Totals panel says **Offertvärde**, not Att betala. Quote↔job same customer. Accept never requires personnummer; ROT fields only when ROT/RUT is on the document. Demo/`is_demo` accept makes zero external HTTP. The legacy mock BankID never produces a signed quote for a real business in production and is not on the customer's accept path (`demo-login.test.ts`).
 - **Desktop/mobile:** register table + cards. Form: sticky save on mobile (`DocStickyActions`). Public: fixed bottom bar + safe-area.
-- **Live draft:** Offert **#116** `/ekonomi/offerter/quote-bokhylla` — ROT blockers: personnummer + bostad. Public `/offert/demo-eva-bokhylla` is **not** viewable. Signable public: `/offert/demo-bertil-fasad`.
+- **Live draft:** Offert **#116** `/ekonomi/offerter/quote-bokhylla` — ROT blockers: personnummer + bostad. Public `/offert/demo-eva-bokhylla` is **not** viewable. Acceptable public: `/offert/demo-bertil-fasad`.
 
-### How an agent verifies (quote delete / send / sign)
+### How an agent verifies (quote delete / send / accept)
 
 **Discard draft**
 
@@ -469,17 +502,24 @@ Two different systems:
 
 1. New offert or fix #116 blockers (add personnummer on Eva + bostad).
 2. *Skicka offert* enabled only when `#quote-send-blockers` empty.
-3. After send: status **Väntar på signering**; demo banner about simulated mail.
+3. After send: status **Väntar på godkännande**; demo banner about simulated mail.
 
-**Sign (demo)**
+**Back from komplettera**
 
-1. Open `/offert/demo-bertil-fasad` (or *Öppna kundvyn* on #115).
-2. *Signera med BankID* → mock complete.
-3. App detail shows *Signerad med BankID av …*.
+1. Open a draft quote from Ekonomi (Back on the quote is **Ekonomi** or **Offerter**).
+2. Click *Lägg till e-post* / *Komplettera företagsuppgifter* in `#quote-send-blockers`.
+3. Customer or Inställningar Back must be **Offert #{n}**, not Ekonomi.
+4. After save, that Back still returns to the same quote.
 
-Works in `/demo` sessions and local JSON (`meta.demo` / `isDemoMode()`). For a **real** Supabase business in production the button is absent and the *inte aktiverat ännu* card shows instead — that is expected, not a bug.
+**Accept (demo, ~3 minutes)**
 
-Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.ts`, `verify-attention-browser.ts`. Tests: `draft-actions.test.ts`, `flows.test.ts`, `quote-terms.test.ts`.
+1. `/demo` → open `/offert/demo-bertil-fasad` (or Ekonomi → Offerter → #115 → *Öppna kundvyn*).
+2. Scroll to **Godkänn offerten** (or tap **Godkänn offert** in the bottom bar → jumps + focuses). **Ditt namn** is prefilled *Bertil Lindqvist* — clear it and the button disables; type a name again.
+3. Read the sentence, press **Godkänn offert** → *Offerten är godkänd* + receipt; page reloads to the read-only state with *Godkänd av …* and **Visa underlag för godkännandet**. Reload → no form, no second accept.
+4. Back in the app: `/ekonomi/offerter/quote-fasad` shows badge **Godkänd**, *Version 1 låst*, the acceptance card (name, time, kund, e-post, IP · device, method) and the timeline row *Godkänd av Bertil Lindqvist*. `/kunder/cust-bertil` chain: Offert → Uppdrag (`job-fasad`, no duplicate) → Faktura.
+5. Negative checks: `/offert/demo-eva-bokhylla` (utkast) → 404. No request to any BankID host. Puppeteer: `[data-testid=public-quote-accept]`, `[data-quote-accepted-banner]`, `[data-quote-acceptance-line]`.
+
+Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.ts`, `verify-attention-browser.ts`. Tests: `quote-accept.test.ts` (happy path, empty name, already accepted, declined/expired/changed hash, rate limit, demo isolation, mail notice, DB mapping), `draft-actions.test.ts`, `flows.test.ts`, `quote-terms.test.ts`.
 
 ---
 
@@ -492,7 +532,7 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **Statuses:** Utkast, Skickad, Delbetald, Betald, Krediterad. Overdue **derived:** *Förfallen* / *Förfallen N dagar*. Credit badge **Kreditfaktura** (never overdue). Types: faktura, delbetalning, slutfaktura, kredit.
 - **Filters:** Alla, Utkast, Obetalda, Förfallna, Betalda, Krediterade.
 - **Main actions — utkast:** Redigera · Kasta utkast · **Skicka faktura** (issues **then** emails — `issueInvoice` + `emailInvoice`). Checklist `#invoice-send-blockers`.
-- **Issued:** Visa kundvy, påminnelse if overdue, overflow: Kreditera (full only), Kopiera kundlänk, PDF, Skicka igen, **Simulera betalning** (demo + bank).
+- **Issued:** Visa kundvy, påminnelse if overdue, overflow: Kreditera (full only), Kopiera kundlänk, PDF, Skicka igen, **Simulera inbetalning** (demo **and** an active mock bank connection — hidden after *Koppla från*).
 - **Paid:** *Betald och bokförd.*
 - **Public:** utkast 404. *Fakturan är betald* / *Fakturan har förfallit*. Ladda ner PDF.
 - **Related:** ROT application card; `DeniedReductionCard`; quote deviation; payments / bank match.
@@ -519,7 +559,7 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **Application statuses:** Preliminär → Redo att ansökas → Väntar på Skatteverket → Godkänd / Delvis godkänd / Nekad.
 - **Main actions:** toggle ROT/RUT; pick bostad; *Skapa ansökningsunderlag*; mark Godkänt / Delvis / Nekat; on nekat create rest invoice.
 - **Related:** customers.personnummer, work_locations, quote/invoice terms snapshot.
-- **Components:** `tax-reduction-fields.tsx`, `tax-reduction-application.tsx`, `denied-reduction-card.tsx`. Logic: `src/lib/services/tax-reduction.ts`, `tax-reduction-gaps.ts`, `tax-reduction-send.ts`.
+- **Components:** `tax-reduction-fields.tsx`, `tax-reduction-application.tsx` (missing `workAddress` fill = `AddressAutocomplete composeSelected="line"`), `denied-reduction-card.tsx`. Logic: `src/lib/services/tax-reduction.ts`, `tax-reduction-gaps.ts`, `tax-reduction-send.ts`. Bostad address on the customer uses `AddressFields` (`customer-rot-section.tsx`).
 - **DB:** `customers.personal_identity_number`; `work_locations` (beteckning / BRF / lägenhet); `jobs.housing`, `jobs.tax_reduction_application`; `invoices.rot`, `tax_reduction_*` JSONB.
 - **Invariants:** Personnummer on **customer only**. Only `arbete` lines reduce. Cap 50 000 kr/person/year (shown in “Hur räknas detta?”). Denied rest invoice is collection, not new sales. Send blockers if ROT selected but PIN/bostad missing.
 - **Live:** #116 draft blocked on PIN + bostad. Public #115 shows *Preliminärt ROT-avdrag − 14 025 kr*, Offertvärde 58 350 kr.
@@ -593,14 +633,33 @@ Not separate nav items; tabs on `/ekonomi`.
 - **DB:** `expenses`, `receipts` (`storage_path`, `content_type`, `size_bytes`, `content_base64` — migration `26_receipt_content`; check `receipts_one_storage_chk`: never both `storage_path` and `content_base64`), `supplier_invoices`, `supplier_payments`. Bucket `receipts`.
 - **Verify:** `/demo` → `/bokforing` (*Behöver lösas*; on Hem it may sit inside the grouped *N bokföringsfrågor* item) → *Kvitto saknas – Clas Ohlson* (`exp-clas`) → **Lägg till kvitto** → pick a small PNG/PDF (< 1,5 MB) → row resolves with *Kvitto sparat och matchat* → Ekonomi → Utgifter → row shows *Kvitto · Bokfört* + **Visa kvitto** → link opens `/api/kvitto/<id>` with the file. Tests: `src/lib/receipt-file.test.ts`; adapter round-trip in `scripts/adapter-validate.ts` (`npm run test:adapter`).
 
-### Bank (`?flik=bank`)
+### Bank (`?flik=bank`) — Open Banking AIS via Tink
 
-- Empty: *Ingen bank kopplad ännu*.
-- Demo: connected SEB, badge *Demo – Tink/riktig bank kopplas senare*. Filters: Alla, Behöver åtgärd, Bokförda. Tx: Ny / Bokförd / Behöver åtgärd (or concrete *Matcha betalning*).
-- **DB:** `bank_accounts`, `bank_transactions`.
-- **Invariant:** production without bank must not fake payments.
+- **Purpose:** Fetch balance + transactions from the business account and run them through payment matching. **Account information only** — Driva never moves money (no PIS/VRP; payments are pain.001 files).
+- **Empty:** *Ingen bank kopplad ännu* + existing explanation + primary **Koppla företagskonto** + line *Du loggar in hos banken via Tink. Driva hämtar saldo och transaktioner för att matcha fakturor. Vi kan inte föra över pengar.*
+- **Connection states** (`BankConnectionStatus`, labels in `status-labels.ts` → `BANK_CONNECTION_STATUS`): `disconnected` *Ingen bank kopplad* · `pending` *Väntar på banken* · `connected` *Kopplad* · `error` *Kopplingen misslyckades* · `revoked` *Frånkopplad*. Card shows bank name + masked account (`SEB · ···· 4512`) + *Senast uppdaterad …* + balance. Demo adds badge *Demo-bank*.
+- **Actions (connected):** **Uppdatera** (fetch new tx → `registerBankTransactions` → matching; shows *N nya transaktioner*; same `externalId` is not re-imported or re-matched but **Motpart/Beskrivning/referens are refreshed** from Tink). **Koppla från** (confirm modal → revokes Tink credentials; **transactions and verifications stay**, status `revoked`, list still visible, **Koppla företagskonto** offered again). Pending: *Fortsätt hos banken* / *Avbryt kopplingen*. Error: *Försök igen*.
+- **Filters:** Alla, Behöver åtgärd, Bokförda. Tx: Ny / Bokförd / Behöver åtgärd (or concrete *Matcha betalning*).
+- **Tx columns:** **Motpart** = `merchantInformation.merchantName` else payer/payee name else `descriptions.display`. **Beskrivning** = `descriptions.original` else `detailed.unstructured` else `display`, omitted when it equals Motpart (Demo Bank often only has one text). `reference` is appended when present. Mapping in `tink/transaction-labels.ts`.
 
-**Verify:** Ekonomi tabs switch via `?flik=`. Register in `economy-register.tsx`. Tests: `economy-list.test.ts`, `supplier-invoice-lifecycle.test.ts`.
+**Three modes (`selectBankProvider`, `src/lib/banking/select.ts`):**
+
+| Mode | When | Behaviour |
+|--|--|--|
+| **Mock** (`MockBankProvider`) | `/demo`, `is_demo` business, JSON store, or `DRIVA_DEMO=1` — regardless of env | Connect is instant, no redirect. Creates account *SEB ···· 4512* (opening balance 48 250 kr) + synthetic tx: OCR payment for the oldest open invoice (auto-booked), a payment without OCR (*Matcha betalning*), a card purchase without receipt (*Behöver åtgärd*). **Zero HTTP to tink.com / link.tink.com.** |
+| **Sandbox / live** (`LiveTinkProvider`) | Real business **and** `TINK_CLIENT_ID`, `TINK_CLIENT_SECRET`, `TINK_REDIRECT_URI` all set (`TINK_MARKET` default `SE`, `TINK_ENV` default `sandbox`) | Server creates a permanent Tink user (`external_user_id` = business id), delegates, builds the Tink Link URL (Transactions · connect-accounts, `market=SE`, `locale=sv_SE`, `state`=nonce.businessFingerprint, `test=true` when sandbox), client does **`window.location.assign`** (full page, never iframe). Callback validates state, exchanges token, imports 90 days of booked tx. **No `financial_services_segments`** — `BUSINESS` routes Link to `business-transactions`, which breaks the permanent-user flow (`REQUEST_FAILED_CREATE_AUTHORIZATION_CODE` after bank login). If a consent already exists on the Tink user (bank approved but the callback never reached us → `INVALID_STATE_DUPLICATE_CREDENTIALS` on retry), **Koppla** adopts it via `GET /api/v1/credentials/list` instead of a new Link round. |
+| **Production-not-enabled** (`UnconfiguredBankProvider`) | Real business, env missing/incomplete | Every action returns *Bankkoppling är inte konfigurerad*; nothing crashes, nothing is faked. `TINK_ENV=production` merely drops `test=true` — Tink production access is a separate commercial step, not enabled by this code. |
+
+- **Routes:** server actions `src/app/bank-actions.ts` (`connectBankAction`, `refreshBankAction`, `disconnectBankAction`, `cancelBankConnectAction`); callback `GET /api/bank/tink/callback` (= `TINK_REDIRECT_URI`, **requires the session cookie** — not a public prefix; proxy bounces to `/login?next=` and back). Callback redirects to `/ekonomi?flik=bank&bank=kopplad|avbrutet|fel` → toast, param stripped.
+- **Files:** `src/lib/banking/provider.ts` (interface + CSRF state), `providers/{mock,tink,unconfigured}.ts`, `select.ts`, `connection-state.ts` (`bankConnectionView()` — the only thing the UI reads; never tokens), `errors.ts` (Swedish texts, no raw Tink JSON), `tink/{config,client,amounts,transaction-labels}.ts` (15 s timeouts, injectable transport for tests, `unscaledValue/scale` → whole kronor at the boundary, ADR-1; Motpart/Beskrivning from distinct Tink fields). UI: `src/components/bank-connection.tsx`, card in `src/app/(app)/ekonomi/page.tsx`.
+- **DB:** `bank_accounts` (+ `external_id` = Tink account id, idempotent re-import), `bank_transactions` (unique `external_id`), **`bank_connections`** (migration 27: status, `tink_user_id`, `credentials_id`, `access_token` + expiry, pending CSRF state, bank name, masked account, `last_sync_at`, `last_error`). RLS grants **`driva_app` only** — no `authenticated` policy, so tokens are unreachable via the Data API. Demo reset deletes the row.
+- **Env:** `TINK_CLIENT_ID`, `TINK_CLIENT_SECRET`, `TINK_REDIRECT_URI` (byte-for-byte equal to the Console redirect URI), `TINK_MARKET`, `TINK_ENV`. Server-only; never `NEXT_PUBLIC_TINK_*`. Demo Bank usernames are never stored in env or repo.
+- **Errors (user-facing only):** *Banken godkände inte kopplingen. Försök igen.* (auth/declined/401/403) · *Tillfälligt fel hos banken. Försök igen.* (network, timeout, 5xx, bad JSON) · *Bankkoppling är inte konfigurerad* · *Kopplingen kunde inte verifieras. Försök igen.* (state mismatch). `USER_CANCELLED` from Tink Link is **not** an error → *Kopplingen avbröts.*
+- **Invariants:** production without bank must not fake payments; **Simulera inbetalning** / demo receipt tx require `hasConnectedBank()` (mock only); a demo business can never reach Tink even if the live provider were selected (`assertNotDemo`); a live business never gets mock data.
+
+**Verify (mock, JSON dev on :3123):** `POST /api/dev/reset {"mode":"empty"}` → `/ekonomi?flik=bank` shows empty state with **Koppla företagskonto** + secondary line → click → card *SEB · ···· 4512* · *Kopplad* · *Senast uppdaterad* · Uppdatera / Koppla från; tx list has *Clas Ohlson* → **Uppdatera** shows *N nya transaktioner* → **Koppla från** → confirm → *Frånkopplad*, list still populated, **Koppla företagskonto** back. Puppeteer request listener: no request to `tink.com`. Tests: `src/lib/bank-connection.test.ts` (selection, CSRF, öre→kr, error mapping, mock + live via fake transport), `economy-list.test.ts`.
+
+**Verify (sandbox, Vercel with env, real non-demo business):** Ekonomi → Bank → **Koppla företagskonto** → full-page redirect to `link.tink.com/1.0/transactions/connect-accounts?…&test=true` → choose **Demo Bank** → log in as Tink's *Demo Bank User 1* (credentials from Tink docs, not stored here) → approve → back on `/ekonomi?flik=bank` with toast *Banken är kopplad* and card *Demo Bank · ···· NNNN* · *Kopplad*. Transactions appear; Motpart and Beskrivning differ when Tink sent both. A matching OCR payment books an invoice. **Uppdatera** re-syncs (7-day overlap, idempotent) and refreshes labels on existing rows. **Koppla från** → `DELETE /api/v1/credentials/{id}` → *Frånkopplad*, history intact. Cancel in Tink Link → *Kopplingen avbröts. Inget har ändrats.*
 
 ---
 
@@ -629,8 +688,8 @@ Not separate nav items; tabs on `/ekonomi`.
 - **Route:** `/installningar?flik=foretag|fakturering|funktioner|konto` (`src/lib/settings-routes.ts`). Legacy `flik=standardval` → fakturering. Deep-link `?falt=name|orgNumber|vatNumber|address|…`.
 - **How to get there:** Sidebar/Mer **Inställningar**. Billing blockers and domain “complete company” deep-link here.
 - **Tabs:** Företag · Fakturering & betalning · Funktioner · Konto.
-- **Företag:** logo, name, org.nr, VAT, address, contact. Save *Spara ändringar*. `#installningar-saknas`.
-- **Fakturering:** payment details (bankgiro/plusgiro/bank/IBAN), invoice defaults, **billing readiness**.
+- **Företag:** logo, name, org.nr, VAT, address, contact. Save *Spara ändringar*. `#installningar-saknas`. Address = shared `AddressFields` (label **Gatuadress**): `#installningar-address`, `#installningar-postalCode`, `#installningar-city`.
+- **Fakturering:** payment details (bankgiro/plusgiro/bank/IBAN), invoice defaults, **billing readiness**. The *komplettera adress* form in `settings-billing-readiness.tsx` uses the same `AddressFields`: `#komplettera-address`, `#komplettera-postalCode`, `#komplettera-city`.
 - **Funktioner:** Hemsida + Samarbeta toggles (`feature-settings.tsx`) — Aktiv/Avstängd, Aktivera/Stäng av.
 - **Konto:** real user email + logout via menu. Demo: *Driva körs just nu utan inloggning…* no password.
 - **Billing readiness testids:** `billing-readiness-banner` | `billing-readiness-ready` | `billing-readiness-success` | `billing-complete-{name|orgnr|vat|address|payment}`. Copy: *Redo att fakturera*.
@@ -704,7 +763,9 @@ The repo has **almost no** `data-testid`. No `data-cy` / `data-qa` / `getByTestI
 
 **Customers / jobs:** `ny-kund-namn`, `ny-kund-epost`, `ny-kund-telefon`, `ny-kund-personnummer`, `ny-kund-orgnr`, `kund-namn`, `kund-epost`, `kund-personnummer`, `nytt-uppdrag-titel`, `uppdrag-titel`.
 
-**Settings:** `installningar-saknas`, `installningar-address`, `installningar-bankgiro`, `komplettera-*`.
+**Settings:** `installningar-saknas`, `installningar-address`, `installningar-postalCode`, `installningar-city`, `installningar-bankgiro`, `komplettera-address`, `komplettera-postalCode`, `komplettera-city`.
+
+**Address autocomplete (all surfaces):** street input `role="combobox"` (`aria-expanded`, `aria-autocomplete="list"`); suggestion menu `data-address-suggestions` (portaled — query from `document`, not the form); options `data-address-option={i}`; demo suggestions show a **Demo** tag.
 
 **Other:** `nekat-belopp`, `invite-email`, `invite-form`, `hemsida-ai-beskrivning`, `doman-sok`, `webbformular-mottagare`, `data-nav="back"`, `data-driva-demo="1"`.
 
@@ -733,11 +794,12 @@ Important UI with **no** `data-testid` (agents must use text, href, or fragile C
 
 - Sidebar / bottom nav / Mer sheet items and badges
 - Command bar input, suggestion rows, confirm cards
+- Address suggestion list / pick flow (use `[data-address-suggestions]`, `[data-address-option]`, the `role="combobox"` input, or the **Demo** tag text instead)
 - Hem attention rows, watching rows, reminder rows + Klar/Snooza
 - Ekonomi / Kunder / Inbox / Bokföring **tabs and filter chips**
 - Register rows (quote/invoice/customer/job/inbox) as clickable units
 - Quote/invoice detail primary actions: Skicka, Redigera, Öppna kundvyn, Kopiera kundlänk (discard button is the exception)
-- Public BankID / Avböj / Ställ en fråga; the *Godkännande med BankID är inte aktiverat ännu* card (text only)
+- Public Godkänn offert (`public-quote-accept`) / Avböj (`public-quote-decline`) / Ställ en fråga
 - Job detail: Skapa faktura, Markera som klart, Ta bort
 - Inbox detail workflow + Skapa bankfil
 - Receipt upload: *Lägg till kvitto* file input (attention item), *Kvitto sparat* / error text, **Visa kvitto** link (only `href^="/api/kvitto/"` is stable)
@@ -761,7 +823,7 @@ Add **only** these. Enough to make the main Swedish flows automatable without a 
 | 3 | `quote-row-{id}` / `invoice-row-{id}` | `economy-register.tsx` | Open #116 / #1042 without matching Swedish status text. |
 | 4 | `quote-send` / `invoice-send` | draft send components | Pair with existing `discard-draft-trigger` + checklists. |
 | 5 | `attention-item-{actionId}` | `attention-list.tsx` | Hem/Bokföring share ids; needed for “Inte aktuell”, remind, bankfil. |
-| 6 | `public-quote-sign` / `public-quote-decline` | `bankid-flow.tsx` / public quote | Customer BankID path is the product’s signature moment. |
+| 6 | `public-quote-accept` / `public-quote-decline` (**added**) | `quote-accept.tsx` / `quote-public-actions.tsx` | Customer accept is the product’s signature moment. |
 | 7 | `demo-menu` + `demo-reset` + `demo-end` | `demo-menu.tsx` | Every live/QA session enters and resets here. |
 | 8 | `job-row-{id}` + `job-create-invoice` | uppdrag list + `job-controls.tsx` | Job → invoice is the core money path. |
 | 9 | `inbox-row-{id}` + `inbox-create-payment-file` | inbox list/detail | Badge/open/pay path; today only address text is asserted. |
@@ -780,10 +842,11 @@ Do **not** add testids to every settings field or design token — those already
 |------|-------|
 | Open Offerter | `/demo` → **Ekonomi** → tab Offerter (default) |
 | Delete a quote | Only #116 → *Kasta utkast* → confirm. Sent quotes: Hem *Inte aktuell* or public *Avböj*. |
-| Sign a quote | `/offert/demo-bertil-fasad` → Signera med BankID |
+| Accept a quote | `/offert/demo-bertil-fasad` → **Godkänn offerten** → name → Godkänn offert |
 | Overdue invoice | `/ekonomi/fakturor/inv-1042` |
 | Inbox badge item | `/inbox/inbox-mail-byggmax` |
 | Upload a receipt file | `/bokforing` → *Kvitto saknas – Clas Ohlson* → **Lägg till kvitto** (file < 1,5 MB) → Ekonomi → Utgifter → **Visa kvitto** |
+| Address autocomplete (demo) | `/demo` → Kunder → **Ny kund** → type `Väd` in **Adress** → `[data-address-suggestions]` with **Demo** tag → pick → adress + postnummer + ort filled |
 | Enable Samarbeta | `/installningar?flik=funktioner` → Aktivera Samarbeta |
 | Accountant UI | Company row → Visa redovisningsvyn |
 | Auth wall | Incognito `/kunder` → login with `next=/kunder` |

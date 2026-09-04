@@ -28,6 +28,7 @@ import {
 import { invoicesForJob, invoicesForJobOrQuote, jobMoney } from "./job-economy";
 import { invoiceHref, jobHref, newInvoiceHref, newQuoteHref, quoteHref } from "../nav";
 import { invoiceNumberLabel } from "../invoices/display";
+import { QUOTE_STATUS } from "../status-labels";
 
 export type { ChainCta, CustomerChainCtas, InvoiceChainLink, QuoteChainState } from "../business-chain-model";
 
@@ -178,8 +179,7 @@ export function quoteChainState(
 ): QuoteChainState {
   const job = jobForQuote(quote);
   const origin = from ?? { href: quoteHref(quote.id), label: `Offert #${quote.number}` };
-  const waitingLabel =
-    quote.status === "skickad" ? "Väntar på signering" : null;
+  const waitingLabel = quote.status === "skickad" ? QUOTE_STATUS.skickad.label : null;
 
   const startJob: ChainCta = {
     kind: "starta_uppdrag",
@@ -362,18 +362,7 @@ export function invoiceChainLink(
 }
 
 function quoteStatusLabel(quote: Quote): string {
-  switch (quote.status) {
-    case "utkast":
-      return "Utkast";
-    case "skickad":
-      return "Väntar på signering";
-    case "godkand":
-      return "Godkänd";
-    case "avbojd":
-      return "Avböjd";
-    case "utgangen":
-      return "Utgången";
-  }
+  return QUOTE_STATUS[quote.status].label;
 }
 
 function invoiceStatusLabel(invoice: Invoice): string {

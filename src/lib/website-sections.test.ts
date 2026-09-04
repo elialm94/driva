@@ -21,7 +21,13 @@ import {
   SECTION_LABELS,
   stripWebsiteSecrets,
 } from "./website-sections";
+import { draftWebsiteSections } from "./website-drafts";
 import { formatAddressLine, resolveSiteContact, telHref } from "./website-contact";
+
+/** Redigeringar på en publicerad sajt hamnar i utkastlagret tills Publicera. */
+function editorSections() {
+  return draftWebsiteSections(db().website!);
+}
 
 function testWebsite(over: Partial<Website> = {}): Website {
   return {
@@ -75,14 +81,16 @@ describe("sektionsbyggaren", () => {
     const b = addWebsiteSection("text");
     assert.equal(a.type, "text");
     assert.equal(b.type, "text");
-    assert.equal(db().website!.sections.filter((s) => s.type === "text" || s.type === "om").length, 3);
+    assert.equal(editorSections().filter((s) => s.type === "text" || s.type === "om").length, 3);
+    // Publika sajten är orörd tills Publicera.
+    assert.equal(db().website!.sections.filter((s) => s.type === "text" || s.type === "om").length, 1);
   });
 
   it("äldres Om oss räknas som text och kan redigeras som text", () => {
     assert.equal(isTextSectionType("om"), true);
     assert.equal(SECTION_LABELS.om, "Text");
     updateSection("s-om", { heading: "Vår historia", imagePosition: "left" });
-    const om = db().website!.sections.find((s) => s.id === "s-om")!;
+    const om = editorSections().find((s) => s.id === "s-om")!;
     assert.equal(om.heading, "Vår historia");
     assert.equal(om.imagePosition, "left");
   });
@@ -111,24 +119,24 @@ describe("sektionsbyggaren", () => {
     const details = addWebsiteSection("kontaktuppgifter");
     const cta = addWebsiteSection("cta");
     setSectionVisible(quotes.id, false);
-    assert.equal(db().website!.sections.find((s) => s.id === quotes.id)?.visible, false);
+    assert.equal(editorSections().find((s) => s.id === quotes.id)?.visible, false);
     removeWebsiteSection(quotes.id);
-    assert.equal(db().website!.sections.some((s) => s.id === quotes.id), false);
-    assert.ok(db().website!.sections.some((s) => s.id === details.id));
-    assert.ok(db().website!.sections.some((s) => s.id === cta.id));
+    assert.equal(editorSections().some((s) => s.id === quotes.id), false);
+    assert.ok(editorSections().some((s) => s.id === details.id));
+    assert.ok(editorSections().some((s) => s.id === cta.id));
   });
 
   it("CTA tillåter bara formulär, telefon och e-post", () => {
     const cta = addWebsiteSection("cta");
     updateSection(cta.id, { ctaDestination: "phone", ctaLabel: "Ring oss" });
-    assert.equal(db().website!.sections.find((s) => s.id === cta.id)?.cta?.destination, "phone");
+    assert.equal(editorSections().find((s) => s.id === cta.id)?.cta?.destination, "phone");
     assert.throws(() => updateSection(cta.id, { ctaDestination: "https://evil" as never }), /formuläret|telefon|e-post/);
   });
 
   it("omdömen är manuella och redo för Google senare", () => {
     const section = addWebsiteSection("omdomen");
     addTestimonialItem(section.id, { title: "Anna", text: "Superjobb.", rating: 5, location: "Stockholm" });
-    const item = db().website!.sections.find((s) => s.id === section.id)!.items![0];
+    const item = editorSections().find((s) => s.id === section.id)!.items![0];
     assert.equal(item.source, "manual");
     assert.equal(item.rating, 5);
     assert.equal(item.location, "Stockholm");
@@ -144,7 +152,7 @@ describe("sektionsbyggaren", () => {
 
   it("nya sektioner läggs in före kontaktformuläret", () => {
     const quotes = addWebsiteSection("omdomen");
-    const types = db().website!.sections.map((s) => s.type);
+    const types = editorSections().map((s) => s.type);
     assert.equal(types.at(-1), "kontakt");
     assert.ok(types.indexOf(quotes.type) < types.lastIndexOf("kontakt"));
   });
@@ -152,7 +160,7 @@ describe("sektionsbyggaren", () => {
   it("kontaktuppgifter kommer från företagets kontakt, inte om-skrivning", () => {
     const section = addWebsiteSection("kontaktuppgifter");
     updateSection(section.id, { hours: "Vardagar 7–16" });
-    const contact = resolveSiteContact(db().settings, db().website, db().website!.sections.find((s) => s.id === section.id));
+    const contact = resolveSiteContact(db().settings, db().website, editorSections().find((s) => s.id === section.id));
     assert.equal(contact.phone, db().settings.phone);
     assert.equal(contact.email, db().settings.email);
     assert.equal(contact.hours, "Vardagar 7–16");
