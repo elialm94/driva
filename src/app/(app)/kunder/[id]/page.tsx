@@ -10,6 +10,7 @@ import { CustomerRotSection } from "@/components/customer-rot-section";
 import { CustomerActivity } from "@/components/customer-activity";
 import { CustomerChainActions } from "@/components/customer-chain-actions";
 import { SmartBack } from "@/components/back-link";
+import { pageOrigin } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Kund" };
@@ -17,10 +18,11 @@ export const metadata = { title: "Kund" };
 export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
   await ensurePageBusiness();
   const { id } = await props.params;
+  const searchParams = await props.searchParams;
   const customer = getCustomer(id);
   if (!customer) notFound();
 
-  const fromHere = { href: `/kunder/${customer.id}`, label: customer.name };
+  const fromHere = pageOrigin(`/kunder/${customer.id}`, searchParams, customer.name);
   const activity = customerActivityFeed(customer.id);
   const money = customerMoneyLine(customer.id);
   const designations = (customer.workLocations ?? [])

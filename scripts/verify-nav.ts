@@ -60,4 +60,18 @@ const backFromNewQuote = resolveBack(
 );
 assert.equal(backFromNewQuote?.href, "/uppdrag/job-kok");
 
+const customerFromQuote = withReturnTo(
+  "/kunder/cust-eli#kund-epost",
+  "/ekonomi/offerter/q1?tillbaka=/ekonomi&tillbakaNamn=Ekonomi",
+  "Offert #6"
+);
+assert.match(customerFromQuote, /#kund-epost$/);
+const backFromCustomer = resolveBack(
+  "/kunder/cust-eli",
+  new URLSearchParams(customerFromQuote.slice(customerFromQuote.indexOf("?") + 1).replace(/#.*$/, "")),
+  { href: "/kunder?flik=kunder", label: "Kunder" }
+);
+assert.equal(backFromCustomer?.href?.startsWith("/ekonomi/offerter/q1"), true);
+assert.equal(backFromCustomer?.label, "Offert #6");
+
 console.log("nav checks ok");

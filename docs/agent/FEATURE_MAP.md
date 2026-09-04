@@ -39,6 +39,7 @@ Bug: *“the quote delete button doesn't work.”*
 - App chrome: `src/app/(app)/layout.tsx` — `Sidebar` + `BottomNav` (`src/components/nav.tsx`) + `main` (`lg:pl-60`, bottom padding for mobile nav).
 - Root wrapper: `data-driva-demo="1"` when JSON demo **or** public demo session (client gates e.g. Places autocomplete stay on local examples).
 - Back/origin: `tillbaka` + `tillbakaNamn` query params (`src/lib/nav.ts`). `AppLink` stamps origin; `SmartBack` reads it. Browser back is real history.
+- Completing a send-blocker (customer email, company settings, ROT personnummer) must stamp the **document you left**, not that document's parent. Offert #6 → *Lägg till e-post* → customer Back is **Offert #6**. Helpers: `pageOrigin`, `hrefFromOrigin`. Inställningar accepts `tillbaka` even without a default back (`acceptsReturnTo`).
 - Breadcrumbs = structure, never history (`structuralCrumbs`).
 - Support impersonation: `SupportModeBanner` when a Driva Admin support session is active.
 
@@ -470,6 +471,13 @@ Two different systems:
 1. New offert or fix #116 blockers (add personnummer on Eva + bostad).
 2. *Skicka offert* enabled only when `#quote-send-blockers` empty.
 3. After send: status **Väntar på godkännande**; demo banner about simulated mail.
+
+**Back from komplettera**
+
+1. Open a draft quote from Ekonomi (Back on the quote is **Ekonomi** or **Offerter**).
+2. Click *Lägg till e-post* / *Komplettera företagsuppgifter* in `#quote-send-blockers`.
+3. Customer or Inställningar Back must be **Offert #{n}**, not Ekonomi.
+4. After save, that Back still returns to the same quote.
 
 **Accept (demo, ~3 minutes)**
 

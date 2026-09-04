@@ -268,7 +268,7 @@ export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
   if (emailBlocker) {
     blockers.push({
       ...emailBlocker,
-      href: `/kunder/${customer.id}`,
+      href: `/kunder/${customer.id}#kund-epost`,
     });
   }
   blockers.push(

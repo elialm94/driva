@@ -19,6 +19,8 @@ import {
   scrollKeyForHref,
   shouldStampOrigin,
   structuralCrumbs,
+  hrefFromOrigin,
+  pageOrigin,
   withReturnTo,
 } from "./nav";
 
@@ -232,5 +234,55 @@ describe("structural crumbs stay hierarchical", () => {
     ]);
     assert.equal(isBackAwarePath("/inbox/req-karin"), true);
     assert.equal(jobHref("job-karin"), "/uppdrag/job-karin");
+  });
+});
+
+describe("komplettera from a document returns to that document", () => {
+  function pathOf(href: string): string {
+    return href.split("?")[0] ?? href;
+  }
+
+  it("customer email from a quote opened via Ekonomi goes back to the quote", () => {
+    const quote = pageOrigin(
+      "/ekonomi/offerter/q1",
+      new URLSearchParams("tillbaka=/ekonomi&tillbakaNamn=Ekonomi"),
+      "Offert #6"
+    );
+    const href = hrefFromOrigin("/kunder/cust-eli#kund-epost", quote);
+    assert.match(href, /#kund-epost$/);
+    const back = resolveBack(
+      "/kunder/cust-eli",
+      new URLSearchParams(href.slice(href.indexOf("?") + 1).replace(/#.*$/, "")),
+      defaultBack("/kunder/cust-eli")!
+    );
+    assert.equal(back?.label, "Offert #6");
+    assert.equal(pathOf(back?.href ?? ""), "/ekonomi/offerter/q1");
+  });
+
+  it("stamps Inställningar from a quote so company blockers return here", () => {
+    const origin = "/ekonomi/offerter/q1?tillbaka=/ekonomi&tillbakaNamn=Ekonomi";
+    assert.equal(shouldStampOrigin(origin, "/installningar?flik=foretag"), true);
+    assert.equal(isBackAwarePath("/installningar"), true);
+    const href = resolveAppHref("/installningar?flik=foretag", origin, "Offert #6");
+    const back = resolveBack("/installningar", new URLSearchParams(href.slice(href.indexOf("?") + 1)), {
+      href: "/",
+      label: "Tillbaka",
+    });
+    assert.equal(pathOf(back?.href ?? ""), "/ekonomi/offerter/q1");
+    assert.equal(back?.label, "Offert #6");
+  });
+
+  it("keeps hash when stamping tillbaka", () => {
+    const href = withReturnTo("/kunder/cust-1#kund-epost", "/ekonomi/offerter/q1", "Offert #6");
+    assert.match(href, /^\/kunder\/cust-1\?tillbaka=/);
+    assert.match(href, /#kund-epost$/);
+  });
+
+  it("maps inbox kontrollera to the inbox item", () => {
+    assert.deepEqual(defaultBack("/inbox/mail-1/kontrollera"), {
+      href: "/inbox/mail-1",
+      label: "Inkorgspost",
+    });
+    assert.equal(shouldStampOrigin("/inbox/mail-1", "/inbox/mail-1/kontrollera"), true);
   });
 });

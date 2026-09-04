@@ -182,7 +182,7 @@ export function getInvoiceSendBlockers(invoiceId: string): IssueBlocker[] {
   if (email && !blockers.some((b) => b.code === email.code)) {
     blockers.push({
       ...email,
-      href: `/kunder/${buyer.id}`,
+      href: `/kunder/${buyer.id}#kund-epost`,
     });
   }
   return blockers;
