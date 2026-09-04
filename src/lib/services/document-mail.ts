@@ -11,6 +11,7 @@ import {
   sendQuoteFollowUp,
   userFacingSendError,
 } from "../email/service";
+import { invoiceEmailRubrik } from "../email/rubrik";
 import { currentVersion, getInvoice, getQuote, invoiceOutstanding, invoiceTotals, quoteTotals, requireCustomer } from "./data";
 import { deliverInvoice, issueInvoice, sendReminder, type Actor } from "./invoices";
 import { publicToken } from "../ids";
@@ -147,6 +148,7 @@ async function emailInvoiceOnce(invoiceId: string, createdBy: Actor): Promise<{ 
     to,
     invoiceId,
     invoiceNumber: invoice.number,
+    title: invoiceEmailRubrik(invoice),
     customerName: customer.name,
     amount: t.toPay,
     dueDate: invoice.dueDate,
@@ -196,6 +198,7 @@ async function remindInvoiceByEmailOnce(invoiceId: string, by: Actor): Promise<{
     to,
     invoiceId,
     invoiceNumber: invoice.number,
+    title: invoiceEmailRubrik(invoice),
     customerName: customer.name,
     amount: t.toPay,
     outstanding: due,

@@ -1,4 +1,5 @@
 import { datumLang, kr } from "../format";
+import { documentFromCompanySubject, reminderFromCompanySubject } from "./rubrik";
 
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
@@ -36,7 +37,7 @@ export interface QuoteEmailInput {
 const QUOTE_ACCEPT_HINT = "Du läser och godkänner offerten direkt via länken.";
 
 export function quoteEmail(input: QuoteEmailInput): { subject: string; text: string; html: string } {
-  const subject = `Offert #${input.quoteNumber} från ${input.businessName}`;
+  const subject = documentFromCompanySubject("Offert", input.businessName, input.title);
   const valid = datumLang(input.validUntil);
   const text = [
     `Hej ${input.customerName},`,
@@ -153,6 +154,8 @@ export interface InvoiceEmailInput {
   businessName: string;
   customerName: string;
   invoiceNumber: number;
+  /** Dokumentets rubrik (offerttitel, första rad, uppdrag) – inte löpnummer. */
+  title: string;
   amount: number;
   dueDate: string;
   ocr?: string;
@@ -171,7 +174,7 @@ function paymentLines(input: Pick<InvoiceEmailInput, "ocr" | "bankgiro" | "plusg
 }
 
 export function invoiceEmail(input: InvoiceEmailInput): { subject: string; text: string; html: string } {
-  const subject = `Faktura #${input.invoiceNumber} från ${input.businessName}`;
+  const subject = documentFromCompanySubject("Faktura", input.businessName, input.title);
   const due = datumLang(input.dueDate);
   const pay = paymentLines(input);
   const text = [
@@ -203,7 +206,7 @@ export interface InvoiceReminderEmailInput extends InvoiceEmailInput {
 }
 
 export function invoiceReminderEmail(input: InvoiceReminderEmailInput): { subject: string; text: string; html: string } {
-  const subject = `Påminnelse om faktura #${input.invoiceNumber}`;
+  const subject = reminderFromCompanySubject("faktura", input.businessName, input.title);
   const due = datumLang(input.dueDate);
   const pay = paymentLines(input);
   const lead = input.partial
@@ -268,7 +271,7 @@ export interface QuoteFollowUpEmailInput {
 }
 
 export function quoteFollowUpEmail(input: QuoteFollowUpEmailInput): { subject: string; text: string; html: string } {
-  const subject = `Påminnelse: offert #${input.quoteNumber} från ${input.businessName}`;
+  const subject = reminderFromCompanySubject("offert", input.businessName, input.title);
   const valid = datumLang(input.validUntil);
   const text = [
     `Hej ${input.customerName},`,
