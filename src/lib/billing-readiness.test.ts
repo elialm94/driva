@@ -11,7 +11,17 @@ import {
   sellerHasPaymentMethod,
   type IssueBlocker,
 } from "./invoices/seller-blockers";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { applyBusinessProfilePatch } from "./services/settings";
 import {
+  applyBillingVatSuggestion,
+  billingCompleteFieldIds,
+  billingCompleteModalOpen,
+  billingCompletionDraftFromSeller,
+  billingCompletionPatchFromDraft,
+  billingCompletionWritesSettings,
   groupBusinessBlockers,
   settingsBillingCopy,
   settingsBillingReadiness,
@@ -279,5 +289,96 @@ describe("Efter komplettering: faktura och offert", () => {
     const readiness = settingsBillingReadiness(db().settings);
     assert.equal(readiness.blocksQuoteSend, false);
     assert.equal(readiness.mentionsQuotes, false);
+  });
+});
+
+describe("Komplettera-modal: persist och stäng", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const modalSrc = readFileSync(join(here, "../components/settings-billing-readiness.tsx"), "utf8");
+
+  it("skriver bara till inställningarna på Spara – inte tangent, blur eller förslag", () => {
+    assert.equal(billingCompletionWritesSettings("keystroke"), false);
+    assert.equal(billingCompletionWritesSettings("blur"), false);
+    assert.equal(billingCompletionWritesSettings("suggestion"), false);
+    assert.equal(billingCompletionWritesSettings("first-field-valid"), false);
+    assert.equal(billingCompletionWritesSettings("draft-ready"), false);
+    assert.equal(billingCompletionWritesSettings("close"), false);
+    assert.equal(billingCompletionWritesSettings("save"), true);
+  });
+
+  it("håller modalen öppen när utkastet blir redo att skicka", () => {
+    assert.equal(billingCompleteModalOpen(true, false), true);
+    assert.equal(billingCompleteModalOpen(true, true), true);
+    assert.equal(billingCompleteModalOpen(false, true), false);
+    assert.equal(billingCompleteModalOpen(false, false), false);
+  });
+
+  it("Använd förslaget fyller bara moms i utkastet", () => {
+    const draft = billingCompletionDraftFromSeller(
+      incompleteBusiness({
+        address: "Gatan 1",
+        postalCode: "111 22",
+        city: "Stockholm",
+        bankgiro: "5678-1234",
+      })
+    );
+    const suggested = suggestedVatForCompletion(draft.orgNumber, draft.vatNumber);
+    assert.equal(suggested, "SE559123456701");
+    const next = applyBillingVatSuggestion(draft, suggested!);
+    assert.equal(next.vatNumber, "SE559123456701");
+    assert.equal(next.bankgiro, "5678-1234");
+    assert.equal(draft.vatNumber, "");
+  });
+
+  it("visar alltid moms och bankgiro – även om bankgiro redan är sparat", () => {
+    const seller = incompleteBusiness({
+      address: "Gatan 1",
+      postalCode: "111 22",
+      city: "Stockholm",
+      bankgiro: "5678-1234",
+    });
+    const items = settingsBillingReadiness(seller).items;
+    assert.deepEqual(
+      items.map((i) => i.id),
+      ["vat"]
+    );
+    assert.deepEqual(billingCompleteFieldIds(items), ["vat", "payment"]);
+    const draft = billingCompletionDraftFromSeller(seller);
+    assert.equal(draft.bankgiro, "5678-1234");
+    const patch = billingCompletionPatchFromDraft(draft, billingCompleteFieldIds(items));
+    assert.equal(patch.bankgiro, "5678-1234");
+    assert.equal(patch.vatNumber, "");
+  });
+
+  it("kopplar inte modalens synlighet till readiness.ready i komponenten", () => {
+    const formSrc = readFileSync(join(here, "../components/settings-form.tsx"), "utf8");
+    assert.match(modalSrc, /billingCompleteModalOpen\(completeOpen, readiness\.ready\)/);
+    assert.match(modalSrc, /<BillingCompleteModal/);
+    assert.doesNotMatch(modalSrc, /if \(readiness\.ready\) \{\s*return/);
+    assert.equal([...modalSrc.matchAll(/await onPersist\(/g)].length, 1);
+    assert.match(modalSrc, /applyBillingVatSuggestion/);
+    assert.match(modalSrc, /Använd förslaget/);
+    assert.doesNotMatch(modalSrc, />Fyll i</);
+    assert.doesNotMatch(modalSrc, /Visa fältet/);
+    assert.doesNotMatch(modalSrc, /<Circle/);
+    assert.doesNotMatch(modalSrc, /onPatch\(/);
+    assert.match(formSrc, /saveBillingCompletionAction/);
+    assert.doesNotMatch(formSrc, /onPatch=/);
+    assert.doesNotMatch(formSrc, /onSave=\{save\}/);
+  });
+});
+
+describe("Komplettera-Spara via applyBusinessProfilePatch", () => {
+  beforeEach(() => reset({ settings: incompleteBusiness({ address: "Gatan 1", postalCode: "111 22", city: "Stockholm" }) }));
+
+  it("Spara skriver moms och bankgiro utan att nollställa redan sparad data", () => {
+    const before = { ...db().settings };
+    applyBusinessProfilePatch({ bankgiro: "5678-1234" });
+    assert.equal(db().settings.bankgiro, "5678-1234");
+    assert.equal(db().settings.address, before.address);
+    applyBusinessProfilePatch({ vatNumber: "SE559123456701" });
+    assert.equal(db().settings.vatNumber, "SE559123456701");
+    assert.equal(db().settings.bankgiro, "5678-1234");
+    assert.equal(settingsBillingReadiness(db().settings).ready, true);
   });
 });

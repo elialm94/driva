@@ -9,7 +9,7 @@ import { BackLink } from "./back-link";
 import { useUnsavedLeave } from "./unsaved-changes";
 import { CompanyLogo } from "./company-logo";
 import { ImageDropzone } from "./image-dropzone";
-import { saveLogoAction, updateCompanySettingsAction } from "@/app/actions";
+import { saveBillingCompletionAction, saveLogoAction, updateCompanySettingsAction } from "@/app/actions";
 import type { CompanySettings, VatRate } from "@/lib/types";
 import type { InvoiceDefaults } from "@/lib/services/settings";
 import { buildCompanySettingsActionInput } from "@/lib/settings-action-input";
@@ -26,7 +26,7 @@ import {
 import { labelForHref, withReturnTo } from "@/lib/nav";
 import type { IssueBlocker } from "@/lib/invoices/validate";
 import type { SellerBlockerInput } from "@/lib/invoices/seller-blockers";
-import { extraPayFieldsNeeded, settingsFieldId } from "@/lib/billing-readiness";
+import { BILLING_COMPLETION_PATCH_KEYS, extraPayFieldsNeeded, settingsFieldId } from "@/lib/billing-readiness";
 import { settingsFieldErrors, type SettingsFieldError, type SettingsTab } from "@/lib/settings-validation";
 import { FieldError, FormValidationSummary, focusField, invalidFieldCls } from "./form-validation";
 import type { MissingRequirement } from "@/lib/form-requirements";
@@ -285,18 +285,34 @@ export function SettingsForm({
 
       <SettingsBillingBanner
         seller={seller}
-        flik={flik}
-        returnTo={returnTo}
-        returnLabel={returnLabel}
         savedReady={readiness.ready}
-        onPatch={(next) => {
-          for (const [key, value] of Object.entries(next)) {
-            if (value !== undefined) patch(key as keyof FormState, value as FormState[keyof FormState]);
+        onPersist={async (next) => {
+          const payload: Partial<Record<(typeof BILLING_COMPLETION_PATCH_KEYS)[number], string>> = {};
+          for (const key of BILLING_COMPLETION_PATCH_KEYS) {
+            const value = next[key];
+            if (typeof value === "string") payload[key] = value;
           }
+          const result = await saveBillingCompletionAction(payload);
+          if (result.ok === false) return result;
+          setForm((prev) => {
+            const updated = { ...prev };
+            for (const key of BILLING_COMPLETION_PATCH_KEYS) {
+              const value = payload[key];
+              if (typeof value === "string") updated[key] = value;
+            }
+            const base = JSON.parse(baseline.current) as FormState;
+            for (const key of BILLING_COMPLETION_PATCH_KEYS) {
+              const value = payload[key];
+              if (typeof value === "string") base[key] = value;
+            }
+            baseline.current = JSON.stringify(base);
+            return updated;
+          });
+          setSaved(true);
+          setError(null);
+          router.refresh();
+          return result;
         }}
-        onRequestExtraPay={() => setExtraPay(true)}
-        onSave={save}
-        saving={isPending}
       />
 
       <div className="mb-5 flex gap-1 overflow-x-auto rounded-2xl bg-ink/4 p-1">

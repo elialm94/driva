@@ -1,12 +1,11 @@
 /**
- * Browserverifiering av Inställningarnas faktureringsstatus.
- * Förväntar ett företag som saknar adress, momsreg.nr och betalning.
+ * Browserverifiering av Komplettera för fakturering: persist/stäng.
  *   npx tsx scripts/verify-billing-readiness-browser.ts
  */
 import fs from "node:fs";
-import puppeteer from "puppeteer-core";
+import puppeteer, { type Page } from "puppeteer-core";
 
-const BASE = process.env.READINESS_VERIFY_URL ?? "http://localhost:3132";
+const BASE = process.env.READINESS_VERIFY_URL ?? "http://localhost:3123";
 const CHROME = process.env.CHROME ?? "/usr/bin/google-chrome";
 const OUT = process.env.READINESS_SHOTS ?? "/tmp/driva-readiness-shots";
 
@@ -15,6 +14,81 @@ fs.mkdirSync(OUT, { recursive: true });
 function fail(msg: string): never {
   console.error("FAIL", msg);
   process.exit(1);
+}
+
+async function bodyText(page: Page): Promise<string> {
+  return page.evaluate(() => document.body.innerText.replace(/\s+/g, " "));
+}
+
+async function setInput(page: Page, selector: string, value: string) {
+  await page.waitForSelector(selector);
+  await page.$eval(
+    selector,
+    (el, next) => {
+      const input = el as HTMLInputElement;
+      const proto = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
+      proto?.set?.call(input, next);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+    value
+  );
+}
+
+async function clickButton(page: Page, label: string) {
+  const handle = await page.evaluateHandle((wanted) => {
+    const buttons = Array.from(document.querySelectorAll("button"));
+    return buttons.find((b) => (b.textContent ?? "").trim() === wanted) ?? null;
+  }, label);
+  const el = handle.asElement();
+  if (!el) fail(`knapp saknas: ${label}`);
+  await el.click();
+}
+
+async function modalOpen(page: Page): Promise<boolean> {
+  return page.evaluate(() => Boolean(document.querySelector("[data-testid='billing-complete-modal']")));
+}
+
+async function saveSettings(page: Page) {
+  const clicked = await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll("button"));
+    const save = buttons.find((b) => /Spara ändringar/.test(b.textContent ?? ""));
+    if (!save || save.disabled) return false;
+    save.click();
+    return true;
+  });
+  if (clicked) {
+    await page.waitForFunction(
+      () => {
+        const t = document.body.innerText;
+        return t.includes("Ändringarna är sparade") || t.includes("Inga osparade ändringar");
+      },
+      { timeout: 15000 }
+    );
+  }
+}
+
+async function ensureIncomplete(page: Page) {
+  await page.goto(`${BASE}/installningar?flik=fakturering`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#installningar-bankgiro");
+  const bankgiro = await page.$eval("#installningar-bankgiro", (el) => (el as HTMLInputElement).value);
+  if (bankgiro.trim()) {
+    await setInput(page, "#installningar-bankgiro", "");
+    await saveSettings(page);
+  }
+
+  await page.goto(`${BASE}/installningar?flik=foretag`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#installningar-vatNumber");
+  const vat = await page.$eval("#installningar-vatNumber", (el) => (el as HTMLInputElement).value);
+  if (vat.trim()) {
+    await setInput(page, "#installningar-vatNumber", "");
+    await saveSettings(page);
+  }
+
+  await page.goto(`${BASE}/installningar?flik=foretag`, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => document.body.innerText.includes("Fakturering kan inte användas än"), {
+    timeout: 15000,
+  });
 }
 
 async function main() {
@@ -27,110 +101,91 @@ async function main() {
   page.setDefaultTimeout(20000);
   await page.setViewport({ width: 1280, height: 900 });
 
-  const bodyText = () => page.evaluate(() => document.body.innerText.replace(/\s+/g, " "));
+  await ensureIncomplete(page);
+  await page.screenshot({ path: `${OUT}/incomplete-banner.png`, fullPage: false });
+
+  await clickButton(page, "Komplettera");
+  await page.waitForSelector("[data-testid='billing-complete-modal']");
+  let text = await bodyText(page);
+  if (!text.includes("Komplettera för fakturering")) fail(`modalrubrik saknas: ${text}`);
+  if (text.includes("Fyll i") || text.includes("Visa fältet")) {
+    fail(`accordion-UI kvar: ${text}`);
+  }
+  const bothFields = await page.evaluate(() => ({
+    vat: Boolean(document.querySelector("#komplettera-vat")),
+    payment: Boolean(document.querySelector("#komplettera-payment")),
+  }));
+  if (!bothFields.vat || !bothFields.payment) fail(`båda fälten syns inte: ${JSON.stringify(bothFields)}`);
+  await page.screenshot({ path: `${OUT}/modal-plain-form.png`, fullPage: false });
+
+  const suggest = await page.$("[data-testid='billing-complete-suggest-vat']");
+  if (!suggest) fail("Använd förslaget saknas");
+  await suggest.click();
+  if (!(await modalOpen(page))) fail("Använd förslaget stängde modalen");
+  const vatAfterSuggest = await page.$eval("#komplettera-vat", (el) => (el as HTMLInputElement).value);
+  if (!vatAfterSuggest.startsWith("SE")) fail(`förslag fyllde inte moms: ${vatAfterSuggest}`);
+  await page.screenshot({ path: `${OUT}/after-suggestion-still-open.png`, fullPage: false });
+
+  await page.click("#komplettera-payment");
+  await page.type("#komplettera-payment", "56781234", { delay: 10 });
+  await clickButton(page, "Stäng");
+  await page.waitForFunction(() => !document.querySelector("[data-testid='billing-complete-modal']"));
+
+  await page.goto(`${BASE}/installningar?flik=fakturering`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#installningar-bankgiro");
+  const bankgiroAfterClose = await page.$eval("#installningar-bankgiro", (el) => (el as HTMLInputElement).value);
+  if (bankgiroAfterClose.replace(/\s/g, "").length > 0) {
+    fail(`Stäng utan Spara sparade bankgiro: ${bankgiroAfterClose}`);
+  }
+  await page.screenshot({ path: `${OUT}/after-stang-no-save.png`, fullPage: false });
 
   await page.goto(`${BASE}/installningar?flik=foretag`, { waitUntil: "domcontentloaded" });
-  await page.screenshot({ path: `${OUT}/after-goto.png`, fullPage: true });
-  const html = await page.content();
-  fs.writeFileSync(`${OUT}/after-goto.html`, html);
-  if (!html.includes("billing-readiness-banner") && !html.includes("Fakturering kan inte användas än")) {
-    fail(`banner saknas i HTML url=${page.url()} title=${await page.title()} snippet=${html.slice(0, 500)}`);
-  }
   await page.waitForFunction(() => document.body.innerText.includes("Fakturering kan inte användas än"));
-  let text = await bodyText();
-  if (!text.includes("Fakturering kan inte användas än")) fail(`saknar konsekvens: ${text}`);
-  if (!text.includes("3 uppgifter behöver kompletteras innan du kan skicka fakturor")) {
-    fail(`fel count/copy: ${text}`);
-  }
-  if (!text.includes("Företagsadress") || !text.includes("Momsregistreringsnummer") || !text.includes("Betalningsuppgifter")) {
-    fail(`saknar exakta poster: ${text}`);
-  }
-  const bannerText = await page.evaluate(() => {
-    const el = document.querySelector("[data-testid='billing-readiness-banner']");
-    return el ? el.textContent ?? "" : "";
+  await clickButton(page, "Komplettera");
+  await page.waitForSelector("[data-testid='billing-complete-modal']");
+  const suggestAgain = await page.$("[data-testid='billing-complete-suggest-vat']");
+  if (suggestAgain) await suggestAgain.click();
+  else await setInput(page, "#komplettera-vat", "SE559123456701");
+  await setInput(page, "#komplettera-payment", "5678-1234");
+  if (!(await modalOpen(page))) fail("modalen stängdes när fälten blev giltiga, innan Spara");
+  await clickButton(page, "Spara");
+  await page.waitForFunction(() => !document.querySelector("[data-testid='billing-complete-modal']"), {
+    timeout: 15000,
   });
-  if (/offert/i.test(bannerText)) fail(`nämner offert i statusbanner: ${bannerText}`);
-  await page.screenshot({ path: `${OUT}/incomplete-desktop.png`, fullPage: false });
+  await page.waitForFunction(
+    () =>
+      Boolean(
+        document.querySelector("[data-testid='billing-readiness-success']") ||
+          document.querySelector("[data-testid='billing-readiness-ready']")
+      ),
+    { timeout: 15000 }
+  );
+  text = await bodyText(page);
+  if (!text.includes("Redo att fakturera")) fail(`saknar redo-status efter Spara: ${text}`);
 
-  await page.setViewport({ width: 390, height: 844 });
-  await page.screenshot({ path: `${OUT}/incomplete-mobile.png`, fullPage: false });
-  await page.setViewport({ width: 1280, height: 900 });
-  const komplettera = await page.evaluateHandle(() => {
+  const vatSaved = await page.$eval("#installningar-vatNumber", (el) => (el as HTMLInputElement).value);
+  if (vatSaved.replace(/\s/g, "") !== "SE559123456701") fail(`moms sparades inte: ${vatSaved}`);
+  await page.goto(`${BASE}/installningar?flik=fakturering`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#installningar-bankgiro");
+  const bankgiroSaved = await page.$eval("#installningar-bankgiro", (el) => (el as HTMLInputElement).value);
+  if (!/5678-?1234/.test(bankgiroSaved.replace(/\s/g, ""))) fail(`bankgiro sparades inte: ${bankgiroSaved}`);
+  await page.screenshot({ path: `${OUT}/after-spara.png`, fullPage: false });
+
+  await page.goto(`${BASE}/ekonomi/fakturor/inv-1048`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("body");
+  const invoiceText = await bodyText(page);
+  if (/Momsregistreringsnummer saknas|Betalningsuppgifter saknas/.test(invoiceText)) {
+    fail(`faktura fortfarande blockerad av säljarfält: ${invoiceText}`);
+  }
+  const sendDisabled = await page.evaluate(() => {
     const buttons = Array.from(document.querySelectorAll("button"));
-    return buttons.find((b) => (b.textContent ?? "").trim() === "Komplettera") ?? null;
+    const send = buttons.find((b) => (b.textContent ?? "").includes("Skicka faktura"));
+    return send ? send.disabled || send.getAttribute("aria-disabled") === "true" : null;
   });
-  const kompletteraEl = komplettera.asElement();
-  if (!kompletteraEl) fail("Komplettera-knappen saknas");
-  await kompletteraEl.click();
-  await page.waitForSelector("[data-testid='billing-complete-address']");
-  text = await bodyText();
-  if (!text.includes("Komplettera för fakturering")) fail(`modalrubrik saknas: ${text}`);
-  if (!text.includes("Lägg till minst ett betalningssätt")) fail("betalningshint saknas i modalen");
-  if (!text.includes("Föreslaget från org.nr")) fail("VAT-förslag saknas i modalen");
-  await page.screenshot({ path: `${OUT}/komplettera-modal.png`, fullPage: false });
-
-  await page.click("#komplettera-address");
-  await page.type("#komplettera-address", "Renstiernas gata 12", { delay: 15 });
-  await page.click("#komplettera-postalCode");
-  await page.type("#komplettera-postalCode", "116 24", { delay: 15 });
-  await page.click("#komplettera-city");
-  await page.type("#komplettera-city", "Stockholm", { delay: 15 });
-  await page.waitForFunction(() => {
-    const row = document.querySelector("[data-testid='billing-complete-address']");
-    return Boolean(row && row.textContent && row.textContent.includes("Klart"));
-  });
-  await page.screenshot({ path: `${OUT}/after-address.png`, fullPage: false });
-
-  const afterAddress = await page.evaluate(() => {
-    const banner = document.querySelector("[data-testid='billing-readiness-banner']");
-    const vat = document.querySelector("[data-testid='billing-complete-vat']");
-    const payment = document.querySelector("[data-testid='billing-complete-payment']");
-    return {
-      banner: banner ? banner.textContent ?? "" : "",
-      vatOpen: Boolean(vat && !(vat.textContent ?? "").includes("Klart")),
-      paymentOpen: Boolean(payment && !(payment.textContent ?? "").includes("Klart")),
-    };
-  });
-  if (!afterAddress.vatOpen || !afterAddress.paymentOpen) {
-    fail(`efter adress skulle moms och betalning vara kvar: ${JSON.stringify(afterAddress)}`);
+  if (sendDisabled === true) {
+    fail(`Skicka faktura fortfarande disabled efter Spara: ${invoiceText.slice(0, 400)}`);
   }
-  if (afterAddress.banner && !afterAddress.banner.includes("2 uppgifter")) {
-    fail(`räknade inte ner efter adress: ${afterAddress.banner}`);
-  }
-
-  const useSuggested = await page.evaluateHandle(() => {
-    const buttons = Array.from(document.querySelectorAll("button"));
-    return buttons.find((b) => (b.textContent ?? "").includes("Använd föreslaget")) ?? null;
-  });
-  const suggestedEl = useSuggested.asElement();
-  if (!suggestedEl) fail("Använd föreslaget saknas");
-  await suggestedEl.click();
-  await page.waitForFunction(() => {
-    const row = document.querySelector("[data-testid='billing-complete-vat']");
-    return Boolean(row && row.textContent && row.textContent.includes("Klart"));
-  });
-
-  await page.type("#komplettera-payment", "56781234");
-  await page.waitForFunction(() => {
-    return Boolean(
-      document.querySelector("[data-testid='billing-readiness-success']") ||
-        document.querySelector("[data-testid='billing-readiness-ready']")
-    );
-  });
-  text = await bodyText();
-  if (!text.includes("Redo att fakturera")) fail(`saknar redo-status: ${text}`);
-  await page.screenshot({ path: `${OUT}/ready-after-fill.png`, fullPage: false });
-
-  await page.goto(`${BASE}/installningar?flik=foretag&falt=vatNumber`, { waitUntil: "domcontentloaded" });
-  try {
-    await page.waitForFunction(
-      () => document.activeElement && document.activeElement.id === "installningar-vatNumber",
-      { timeout: 5000 }
-    );
-  } catch {
-    console.log("warn deeplink-fokus hoppades över (sidan laddade inte om i tid)");
-  }
-  await page.screenshot({ path: `${OUT}/deeplink-vat.png`, fullPage: false });
+  await page.screenshot({ path: `${OUT}/invoice-unblocked.png`, fullPage: false });
 
   console.log("ok billing-readiness browser");
   await browser.close();

@@ -190,3 +190,93 @@ export function settingsBillingReadiness(seller: SellerBlockerInput): SettingsBi
 export function extraPayFieldsNeeded(field: string | null | undefined): boolean {
   return field === "plusgiro" || field === "iban" || field === "bankAccount" || field === "bic";
 }
+
+/** Fält som Komplettera-modalen får skriva vid Spara. */
+export const BILLING_COMPLETION_PATCH_KEYS = [
+  "name",
+  "orgNumber",
+  "vatNumber",
+  "address",
+  "postalCode",
+  "city",
+  "bankgiro",
+] as const;
+
+export type BillingCompletionDraft = Pick<
+  SellerBlockerInput,
+  "name" | "orgNumber" | "vatNumber" | "address" | "postalCode" | "city" | "bankgiro"
+>;
+
+/** Moms och betalning visas alltid – även om ett av dem redan är sparat. */
+export const BILLING_COMPLETE_ALWAYS_VISIBLE: SettingsReadinessItemId[] = ["vat", "payment"];
+
+/**
+ * Vilka fält modalen visar. Moms + bankgiro alltid; övriga bara om de
+ * saknades när användaren öppnade (så en redan sparad bankgiro inte döljs).
+ */
+export function billingCompleteFieldIds(
+  itemsAtOpen: readonly SettingsReadinessItem[]
+): SettingsReadinessItemId[] {
+  const missing = new Set(itemsAtOpen.map((item) => item.id));
+  const order: SettingsReadinessItemId[] = ["name", "orgnr", "address", "vat", "payment"];
+  return order.filter((id) => missing.has(id) || BILLING_COMPLETE_ALWAYS_VISIBLE.includes(id));
+}
+
+export function billingCompletionDraftFromSeller(seller: SellerBlockerInput): BillingCompletionDraft {
+  return {
+    name: seller.name,
+    orgNumber: seller.orgNumber,
+    vatNumber: seller.vatNumber,
+    address: seller.address,
+    postalCode: seller.postalCode,
+    city: seller.city,
+    bankgiro: seller.bankgiro ?? "",
+  };
+}
+
+export function billingCompletionPatchFromDraft(
+  draft: BillingCompletionDraft,
+  fieldIds: readonly SettingsReadinessItemId[]
+): Partial<SellerBlockerInput> {
+  const patch: Partial<SellerBlockerInput> = {};
+  if (fieldIds.includes("name")) patch.name = draft.name;
+  if (fieldIds.includes("orgnr")) patch.orgNumber = draft.orgNumber;
+  if (fieldIds.includes("address")) {
+    patch.address = draft.address;
+    patch.postalCode = draft.postalCode;
+    patch.city = draft.city;
+  }
+  if (fieldIds.includes("vat")) patch.vatNumber = draft.vatNumber;
+  if (fieldIds.includes("payment")) patch.bankgiro = draft.bankgiro;
+  return patch;
+}
+
+/** Förslagschippen fyller bara momsfältet – ingen persist. */
+export function applyBillingVatSuggestion(
+  draft: BillingCompletionDraft,
+  suggested: string
+): BillingCompletionDraft {
+  return { ...draft, vatNumber: suggested };
+}
+
+/**
+ * Modalen styrs av användaren, aldrig av att utkastet/servern blev redo
+ * att skicka (`invoiceCanSend` / settingsBillingReadiness.ready).
+ */
+export function billingCompleteModalOpen(userOpened: boolean, _readyToSend = false): boolean {
+  return userOpened;
+}
+
+export type BillingCompletionUiEvent =
+  | "keystroke"
+  | "blur"
+  | "suggestion"
+  | "first-field-valid"
+  | "draft-ready"
+  | "save"
+  | "close";
+
+/** Endast Spara skriver företagsuppgifter från den här modalen. */
+export function billingCompletionWritesSettings(event: BillingCompletionUiEvent): boolean {
+  return event === "save";
+}
