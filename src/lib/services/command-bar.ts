@@ -160,7 +160,7 @@ export function commandBarPrefetch(): CommandBarPrefetch {
   }));
   const invoices = listInvoicesForTable({ pageSize: PREFETCH_COUNT }).rows.map((r) => ({
     id: r.id,
-    label: r.label === "Utkast" ? "Fakturautkast" : `Faktura ${r.label}`,
+    label: r.isDraft ? r.label : `Faktura ${r.label}`,
     sublabel: [r.customerName, kr(r.amount)].filter(Boolean).join(" · ") || undefined,
     href: invoiceHref(r.id),
   }));

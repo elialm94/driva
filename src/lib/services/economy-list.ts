@@ -1,7 +1,8 @@
 import { db } from "../store";
 import type { Invoice, Quote, Receipt, SupplierInvoice, SupplierPayment } from "../types";
 import { receiptFileStored } from "../receipts/receipt-meta";
-import { currentVersion, effectiveQuoteStatus, invoiceTotals, isOpenReceivable, isOverdue, daysOverdue, quoteTotals } from "./data";
+import { currentVersion, effectiveQuoteStatus, getCurrentVersion, getJob, getQuote, invoiceTotals, isOpenReceivable, isOverdue, daysOverdue, quoteTotals } from "./data";
+import { invoiceListTitle, invoiceListTypeLabel } from "../invoices/display";
 import type { PagedResult } from "./customers";
 import { categoryByKey } from "../bas";
 import { dagarTill, datumKort } from "../format";
@@ -155,7 +156,7 @@ export const INVOICE_STATUS_OPTIONS: [InvoiceStatusFilter, string][] = [
 
 export interface InvoiceTableRow {
   id: string;
-  /** "#1042" eller "Utkast". */
+  /** Utfärdad: "#1042". Utkast: rubrik / första rad / "Faktura till {kund}". */
   label: string;
   /** "Delbetalning"/"Slutfaktura"/"Kredit" – tomt för vanlig faktura. */
   typeLabel: string;
@@ -191,13 +192,6 @@ function invoiceMatchesFilter(inv: Invoice, filter: InvoiceStatusFilter): boolea
   }
 }
 
-const INVOICE_TYPE_LABEL: Record<Invoice["type"], string> = {
-  faktura: "",
-  delbetalning: "Delbetalning",
-  slutfaktura: "Slutfaktura",
-  kredit: "Kredit",
-};
-
 function invoiceSortable(item: { row: InvoiceTableRow; number: number | null }): EconomySortable {
   return {
     documentNumber: item.number,
@@ -220,8 +214,14 @@ export function listInvoicesForTable(
   for (const inv of db().invoices) {
     if (!invoiceMatchesFilter(inv, status)) continue;
     const customerName = names.get(inv.customerId) ?? "";
+    const quote = inv.quoteId ? getQuote(inv.quoteId) : undefined;
+    const quoteTitle = quote ? getCurrentVersion(quote)?.title : undefined;
+    const jobTitle = inv.jobId ? getJob(inv.jobId)?.title : undefined;
+    const label = invoiceListTitle(inv, { customerName, quoteTitle, jobTitle });
     if (q) {
-      const hay = `#${inv.number ?? ""} ${inv.number ?? ""} ${customerName} ${inv.ocr}`.toLowerCase();
+      const lineHay = inv.lines.map((line) => line.description).join(" ");
+      const hay =
+        `#${inv.number ?? ""} ${inv.number ?? ""} ${customerName} ${inv.ocr} ${label} ${quoteTitle ?? ""} ${jobTitle ?? ""} ${lineHay}`.toLowerCase();
       if (!hay.includes(q)) continue;
     }
     const meta = invoiceStatusMeta(inv);
@@ -231,8 +231,8 @@ export function listInvoicesForTable(
       createdAt: inv.createdAt,
       row: {
         id: inv.id,
-        label: inv.number == null ? "Utkast" : `#${inv.number}`,
-        typeLabel: INVOICE_TYPE_LABEL[inv.type],
+        label,
+        typeLabel: invoiceListTypeLabel(inv.type),
         customerName,
         dueDate: inv.dueDate,
         amount: invoiceTotals(inv).toPay,
