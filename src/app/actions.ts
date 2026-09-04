@@ -1820,8 +1820,9 @@ export async function saveLogoAction(
 /* ------------------------------------ Demo ---------------------------------- */
 
 export async function resetDemoAction(): Promise<{ ok: true } | { ok: false; error: string }> {
-  // Publika demosessionen: skriv över sessionens EGEN JSON-fil med färskt
-  // seed. Ingen databas inblandad – Supabase-rader rörs aldrig av demon.
+  // Publika demosessionen: skriv över sessionens EGET tillstånd med färskt
+  // seed (fil lokalt, demo_sessions-raden i Supabase-läget) – riktiga
+  // företags rader rörs aldrig av demon.
   // isDemoSession respekterar att en RIKTIG inloggning alltid vinner över
   // en kvarglömd demokaka – då är detta ingen demosession.
   if (await isDemoSession()) {
