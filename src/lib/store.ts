@@ -313,6 +313,8 @@ function schemaNeedsNormalize(data: DB | undefined): boolean {
   if (!Array.isArray(data.clientInformationRequests)) return true;
   if ("requests" in (data as object)) return true;
   if (!data.meta.taxReductionDemoHydrated) return true;
+  // Äldre BankID-formade signaturer i en varm cache → migrera till godkännanden.
+  if ((data.signatures ?? []).some((s) => !("acceptedByName" in s))) return true;
   return false;
 }
 
