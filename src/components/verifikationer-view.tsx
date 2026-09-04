@@ -11,7 +11,8 @@ import { AccountCombobox } from "./account-combobox";
 import { kr, datumKort, datumTid } from "@/lib/format";
 import { correctVerificationAction } from "@/app/bokforing-actions";
 import type { CorrectionIntent } from "@/lib/services/verification-correction";
-import type { VerificationView } from "@/lib/services/verification-correction";
+import { verificationOverflowItems, type VerificationView } from "@/lib/services/verification-correction";
+import { CreditInvoiceButton } from "@/components/money-widgets";
 import { ReceiptText } from "lucide-react";
 
 type Filter = "alla" | "auto" | "manuella" | "rattade";
@@ -212,6 +213,10 @@ export function VerifikationerView({
                     setOpenId(v.id);
                     setCorrectId(v.id);
                   }}
+                  onCredited={() => {
+                    setSuccess("Fakturan krediterades. Originalverifikationen står kvar.");
+                    router.refresh();
+                  }}
                 />
               </div>
             </div>
@@ -274,6 +279,11 @@ export function VerifikationerView({
             allowCorrection={allowCorrection}
             onOpen={openDetail}
             onCorrect={() => setCorrectId(open.id)}
+            onCredited={() => {
+              setOpenId(null);
+              setSuccess("Fakturan krediterades. Originalverifikationen står kvar.");
+              router.refresh();
+            }}
           />
         ) : null}
       </Modal>
@@ -289,7 +299,7 @@ export function VerifikationerView({
             v={items.find((x) => x.id === correctId)!}
             onCancel={() => setCorrectId(null)}
             onDone={(msg, next) => {
-              merge(next);
+              if (next.length > 0) merge(next);
               setCorrectId(null);
               setSuccess(msg);
               router.refresh();
@@ -305,28 +315,34 @@ function RowMenu({
   v,
   onOpen,
   onCorrect,
+  onCredited,
   allowCorrection = true,
 }: {
   v: VerificationView;
   onOpen: () => void;
   onCorrect: () => void;
+  onCredited: () => void;
   allowCorrection?: boolean;
 }) {
-  const canCorrect =
-    allowCorrection &&
-    (v.flow.kind === "konto" ||
-      v.flow.kind === "avancerad" ||
-      v.flow.kind === "omatcha" ||
-      v.flow.kind === "kreditfaktura" ||
-      v.flow.kind === "moms");
+  const overflow = verificationOverflowItems(v.flow, { allowCorrection });
+  const invoiceWrong = overflow.find((item) => item.kind === "fakturan_ar_fel");
+  const canCorrect = overflow.some((item) => item.kind === "ratta_bokforing");
   return (
     <ActionMenu label="Åtgärder">
       <button type="button" role="menuitem" className={actionMenuItemClassName()} onClick={onOpen}>
         Visa detaljer
       </button>
+      {invoiceWrong ? (
+        <CreditInvoiceButton
+          invoiceId={invoiceWrong.invoiceId}
+          appearance="menu"
+          label="Fakturan är fel"
+          onSuccess={onCredited}
+        />
+      ) : null}
       {canCorrect ? (
         <button type="button" role="menuitem" className={actionMenuItemClassName()} onClick={onCorrect}>
-          {v.flow.kind === "kreditfaktura" ? "Fakturan är fel" : "Rätta bokföring"}
+          Rätta bokföring
         </button>
       ) : null}
     </ActionMenu>
@@ -338,15 +354,19 @@ function VerificationDetail({
   items,
   onOpen,
   onCorrect,
+  onCredited,
   allowCorrection = true,
 }: {
   v: VerificationView;
   items: VerificationView[];
   onOpen: (id: string) => void;
   onCorrect: () => void;
+  onCredited: () => void;
   allowCorrection?: boolean;
 }) {
-  const canCorrect = allowCorrection && v.flow.kind !== "redan_rattad" && v.flow.kind !== "rattelse";
+  const overflow = verificationOverflowItems(v.flow, { allowCorrection });
+  const invoiceWrong = overflow.find((item) => item.kind === "fakturan_ar_fel");
+  const canCorrect = overflow.some((item) => item.kind === "ratta_bokforing");
   return (
     <div className="px-6 py-5">
       <h3 className="text-[17px] font-semibold tracking-tight">{v.description}</h3>
@@ -406,11 +426,20 @@ function VerificationDetail({
           }}
         />
       </div>
-      {canCorrect ? (
+      {invoiceWrong ? (
+        <div className="mt-6 flex justify-end">
+          <CreditInvoiceButton
+            invoiceId={invoiceWrong.invoiceId}
+            label="Fakturan är fel"
+            buttonVariant="secondary"
+            onSuccess={onCredited}
+          />
+        </div>
+      ) : canCorrect ? (
         <div className="mt-6 flex justify-end">
           <button type="button" className={buttonClasses("secondary", "sm")} onClick={onCorrect}>
             <MoreHorizontal className="size-3.5" />
-            {v.flow.kind === "kreditfaktura" ? "Fakturan är fel" : "Rätta bokföring"}
+            Rätta bokföring
           </button>
         </div>
       ) : null}
@@ -475,7 +504,44 @@ function CorrectionSheet({
     });
   }
 
-  if (flow.kind === "kreditfaktura" || flow.kind === "moms") {
+  if (flow.kind === "krediterad") {
+    return (
+      <div className="px-6 py-5">
+        <p className="text-[15px] font-semibold">{flow.title}</p>
+        <p className="mt-2 text-[14px] leading-relaxed text-soft">{flow.hint}</p>
+        <div className="mt-6 flex justify-end">
+          <button type="button" className={buttonClasses("secondary")} onClick={onCancel}>
+            Stäng
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (flow.kind === "kreditfaktura") {
+    return (
+      <div className="px-6 py-5">
+        <p className="text-[15px] font-semibold">{flow.title}</p>
+        <p className="mt-2 text-[14px] leading-relaxed text-soft">{flow.hint}</p>
+        {flow.periodLockMessage ? <p className="mt-3 text-[13px] text-muted">{flow.periodLockMessage}</p> : null}
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" className={buttonClasses("secondary")} onClick={onCancel}>
+            Avbryt
+          </button>
+          {flow.invoiceId ? (
+            <CreditInvoiceButton
+              invoiceId={flow.invoiceId}
+              label="Kreditera fakturan"
+              buttonVariant="secondary"
+              onSuccess={() => onDone("Fakturan krediterades. Originalverifikationen står kvar.", [])}
+            />
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (flow.kind === "moms") {
     return (
       <div className="px-6 py-5">
         <p className="text-[15px] font-semibold">{flow.title}</p>

@@ -268,10 +268,17 @@ export function CreatePartInvoiceButton({
 export function CreditInvoiceButton({
   invoiceId,
   appearance = "button",
+  label = "Kreditera",
+  buttonVariant = "ghost",
+  onSuccess,
 }: {
   invoiceId: string;
   appearance?: ActionAppearance;
+  label?: string;
+  buttonVariant?: "ghost" | "secondary";
+  onSuccess?: () => void;
 }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -287,7 +294,13 @@ export function CreditInvoiceButton({
   function confirm() {
     startTransition(async () => {
       const result = await creditInvoiceAction(invoiceId);
-      if (result && result.ok === false) setError(result.error);
+      if (result && result.ok === false) {
+        setError(result.error);
+        return;
+      }
+      setConfirming(false);
+      onSuccess?.();
+      router.refresh();
     });
   }
 
@@ -295,10 +308,10 @@ export function CreditInvoiceButton({
     <button
       type="button"
       role={inMenu ? "menuitem" : undefined}
-      className={inMenu ? actionMenuItemClassName() : buttonClasses("ghost", "sm")}
+      className={inMenu ? actionMenuItemClassName() : buttonClasses(buttonVariant, "sm")}
       onClick={startConfirm}
     >
-      <Undo2 className="size-3.5 shrink-0" /> Kreditera
+      <Undo2 className="size-3.5 shrink-0" /> {label}
     </button>
   );
 

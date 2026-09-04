@@ -4,7 +4,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { db, replaceDb } from "./store";
 import { emptyTestDb, labor } from "./invoices/test-db";
-import { createInvoice, issueInvoice, markInvoicePaid } from "./services/invoices";
+import { createInvoice, creditInvoice, issueInvoice, markInvoicePaid } from "./services/invoices";
 import { answerExpenseQuestion } from "./services/expenses";
 import { receiveSupplierInvoice } from "./services/suppliers";
 import { PostingError, verificationLabel } from "./accounting/engine";
@@ -18,6 +18,7 @@ import {
   postVerificationCorrection,
   previewCorrection,
   isPaymentLive,
+  verificationOverflowItems,
 } from "./services/verification-correction";
 import type { BankAccount, Expense } from "./types";
 
@@ -184,6 +185,7 @@ describe("Rätta bokföring – fel underlag", () => {
     const ver = db().verifications.find((v) => v.source.type === "kundfaktura")!;
     const flow = inspectCorrectionFlow(ver.id);
     assert.equal(flow.kind, "kreditfaktura");
+    assert.equal(flow.invoiceId, inv.id);
     assert.match(flow.href ?? "", /ekonomi\/fakturor/);
     assert.equal(flow.allowAdvanced, false);
     assert.throws(
@@ -191,6 +193,48 @@ describe("Rätta bokföring – fel underlag", () => {
       /kreditfaktura/i
     );
     assert.equal(ver.correctedByVerificationId, undefined);
+  });
+
+  it("A1 ocrediterad kundfaktura: overflow visar Fakturan är fel", () => {
+    const inv = createInvoice({ customerId: "cust-1", type: "faktura", lines: [labor({ unitPrice: 10_000 })], rot: null });
+    issueInvoice(inv.id);
+    const ver = db().verifications.find((v) => v.source.type === "kundfaktura" && v.source.id === inv.id)!;
+    const items = verificationOverflowItems(inspectCorrectionFlow(ver.id));
+    assert.deepEqual(
+      items.filter((i) => i.kind === "fakturan_ar_fel"),
+      [{ kind: "fakturan_ar_fel", invoiceId: inv.id }]
+    );
+    assert.equal(items.some((i) => i.kind === "ratta_bokforing"), false);
+  });
+
+  it("A1 efter kredit: overflow döljer Fakturan är fel och originalet är orört", () => {
+    const inv = createInvoice({ customerId: "cust-1", type: "faktura", lines: [labor({ unitPrice: 10_000 })], rot: null });
+    issueInvoice(inv.id);
+    const ver = db().verifications.find((v) => v.source.type === "kundfaktura" && v.source.id === inv.id)!;
+    const before = JSON.stringify(ver.entries);
+    creditInvoice(inv.id);
+    const still = db().verifications.find((v) => v.id === ver.id)!;
+    const flow = inspectCorrectionFlow(still.id);
+    const items = verificationOverflowItems(flow);
+    assert.equal(flow.kind, "krediterad");
+    assert.equal(items.some((i) => i.kind === "fakturan_ar_fel"), false);
+    assert.equal(JSON.stringify(still.entries), before);
+    assert.equal(still.correctedByVerificationId, undefined);
+    assert.throws(() => postVerificationCorrection(still.id, { kind: "konto", category: "material" }), /krediterad/i);
+  });
+
+  it("A2 kreditfaktura-verifikation: overflow döljer Fakturan är fel", () => {
+    const inv = createInvoice({ customerId: "cust-1", type: "faktura", lines: [labor({ unitPrice: 10_000 })], rot: null });
+    issueInvoice(inv.id);
+    const credit = creditInvoice(inv.id);
+    const creditVer = db().verifications.find((v) => v.source.type === "kundfaktura" && v.source.id === credit.id)!;
+    assert.ok(creditVer);
+    const flow = inspectCorrectionFlow(creditVer.id);
+    const items = verificationOverflowItems(flow);
+    assert.equal(flow.kind, "krediterad");
+    assert.equal(items.some((i) => i.kind === "fakturan_ar_fel"), false);
+    assert.equal(creditVer.correctedByVerificationId, undefined);
+    assert.throws(() => postVerificationCorrection(creditVer.id, { kind: "konto", category: "material" }), /kreditfaktura/i);
   });
 
   it("fel betalningsmatchning omatchas – ingen rå kontering", () => {

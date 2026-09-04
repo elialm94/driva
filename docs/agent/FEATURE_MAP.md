@@ -602,13 +602,14 @@ Scripts: `scripts/verify.mjs`, `verify-validation-ux.ts`, `verify-tax-reduction.
 - **How to get there:** Nav Bokföring (badge). Hem *Öppna bokföring*. VAT attention → `/bokforing/moms`.
 - **Overview copy:** *Sköts automatiskt i bakgrunden – du behöver bara svara när något är oklart.* Headline *N bokföringsfrågor att lösa*. Section **Behöver lösas**.
 - **Main actions:** answer category questions, add missing receipt, mark VAT declared, close year, generate annual report, export CSV.
+- **Verifikationer overflow** (`verifikationer-view.tsx` → `verificationOverflowItems`): **Visa detaljer**. **Fakturan är fel** only on an uncredited customer-invoice verification (`source.type === kundfaktura`, invoice not `kredit` / not `krediterad`). Click starts the same full-credit confirm as invoice detail (`CreditInvoiceButton` → `creditInvoice`) — not a dead-end “open document” modal. Hidden on credit-note verifications, already-credited originals, supplier/payment/moms/expense rows (those use **Rätta bokföring** or nothing). Posted verifications stay immutable; credit issues a credit note + new verification.
 - **VAT states:** Kommande, Pågår, Att deklarera, Deklarerad. Copy mentions quarterly VAT due the 12th.
 - **Related:** same action ids as Hem. Supplier/customer money stays in Inbox/Ekonomi/Hem — badge **only** `accounting` + `vat`.
 - **Components:** `bokforing-advanced-nav.tsx`, `verifikationer-view.tsx`, `moms-periods.tsx`, layout `bokforing/layout.tsx`.
 - **DB:** `verifications`, `accounting_entries`, `fiscal_years`, `vat_reports`, `assets`, `accruals`, `annual_reports`.
 - **Invariants:** Posted verifications locked; corrections = new verification (`corrected_by_verification_id`). Debit = credit (`app.post_verification`). VAT numbers = huvudbok. Routine exceptions group on Hem when ≥3.
-- **Live:** 4 questions (late VAT 47 108 kr, Grand Hôtel 4 250 kr category, Byggmax amount, Clas Ohlson missing receipt). Resultat före skatt 229 783 kr.
-- **Verify:** `/bokforing` shows *Behöver lösas · 4*. Tabs persist. Tests: `accounting.test.ts`, `verification-correction.test.ts`.
+- **Live:** 4 questions (late VAT 47 108 kr, Grand Hôtel 4 250 kr category, Byggmax amount, Clas Ohlson missing receipt). Resultat före skatt 229 783 kr. Seed has **no** credited invoice pair — A1/A2 are the two oldest dated verifications (typically Faktura #1033 and its payment), not a credit-note pair.
+- **Verify:** `/bokforing` shows *Behöver lösas · 4*. Tabs persist. Verifikationer: overflow on an uncredited kundfaktura (e.g. #1047 / #1042) opens *Kreditera faktura?*; after credit the original and the new credit-note verification hide **Fakturan är fel**. Tests: `accounting.test.ts`, `verification-correction.test.ts` (A1 uncredited / A1 credited / A2 credit note).
 
 ---
 

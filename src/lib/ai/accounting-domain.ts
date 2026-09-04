@@ -239,11 +239,14 @@ export function requestCorrectVerification(query: string, category?: string): Do
       card: {
         kind: "list",
         title: "Fakturan är fel",
-        rows: [{ label: "Nästa steg", value: "Öppna fakturan och kreditera" }],
+        rows: [{ label: "Nästa steg", value: "Kreditera hela fakturan (samma flöde som på fakturan)" }],
         links: [{ label: flow.hrefLabel ?? "Öppna fakturan", href: flow.href ?? "/ekonomi" }],
       },
-      forModel: { flow: flow.kind, verificationId: ver.id, href: flow.href },
+      forModel: { flow: flow.kind, verificationId: ver.id, invoiceId: flow.invoiceId, href: flow.href },
     };
+  }
+  if (flow.kind === "krediterad") {
+    return fail(flow.hint);
   }
   if (flow.kind === "moms") {
     return {
