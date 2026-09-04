@@ -69,6 +69,7 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
             }))}
             defaultWorkLocationId={customer.defaultWorkLocationId}
             ctas={customerChainCtas(customer.id, fromHere)}
+            from={fromHere}
           />
         }
       />

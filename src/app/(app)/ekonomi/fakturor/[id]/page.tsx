@@ -30,7 +30,7 @@ import { TaxReductionApplicationCard } from "@/components/tax-reduction-applicat
 import { taxReductionCaseForInvoice } from "@/lib/services/tax-reduction";
 import { SmartBack } from "@/components/back-link";
 import { AppLink } from "@/components/app-link";
-import { hrefFromOrigin, newQuoteHref, pageOrigin } from "@/lib/nav";
+import { hrefFromOrigin, hrefWithNav, newQuoteHref, pageOrigin, returnNavFromSearch } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { hasConnectedBank } from "@/lib/banking/connection-state";
 import { isDemoBankRequest } from "@/lib/banking/select";
@@ -64,7 +64,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
       )
     : [];
   const canSend = sendBlockers.length === 0;
-  const editHref = hrefFromOrigin(`/ekonomi/fakturor/${invoice.id}/redigera`, fromHere);
+  const editHref = hrefWithNav(`/ekonomi/fakturor/${invoice.id}/redigera`, returnNavFromSearch(searchParams));
   const tillaggHref = deviation?.largeExcess
     ? newQuoteHref({
         kund: invoice.customerId,

@@ -20,7 +20,9 @@ import {
   shouldStampOrigin,
   structuralCrumbs,
   hrefFromOrigin,
+  hrefWithNav,
   pageOrigin,
+  returnNavFromSearch,
   withReturnTo,
 } from "./nav";
 
@@ -294,6 +296,22 @@ describe("komplettera from a document returns to that document", () => {
       defaultBack("/kunder/cust-eva")!
     );
     assert.equal(back?.label, "Offert #6");
+  });
+
+  it("edit href keeps the quote parent so Back after redigera is still Ekonomi", () => {
+    const incoming = returnNavFromSearch(new URLSearchParams("tillbaka=/ekonomi&tillbakaNamn=Ekonomi"));
+    const edit = hrefWithNav("/ekonomi/offerter/q1/redigera", incoming);
+    const quoteAgain = hrefWithNav(
+      "/ekonomi/offerter/q1",
+      returnNavFromSearch(new URLSearchParams(edit.slice(edit.indexOf("?") + 1)))
+    );
+    const back = resolveBack(
+      "/ekonomi/offerter/q1",
+      new URLSearchParams(quoteAgain.slice(quoteAgain.indexOf("?") + 1)),
+      defaultBack("/ekonomi/offerter/q1")!
+    );
+    assert.equal(back?.href, "/ekonomi");
+    assert.equal(back?.label, "Ekonomi");
   });
 
   it("maps inbox kontrollera to the inbox item", () => {
