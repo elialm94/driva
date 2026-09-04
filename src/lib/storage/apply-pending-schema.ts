@@ -299,6 +299,52 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const acceptanceApplied = await ensureQuoteAcceptanceSchema(client);
   applied.push(...acceptanceApplied);
 
+  const demoSessionsApplied = await ensureDemoSessionsSchema(client);
+  applied.push(...demoSessionsApplied);
+
+  return applied;
+}
+
+/**
+ * Publika demosessioner (migration 29): EN jsonb-rad per besökare som alla
+ * serverless-instanser delar. Speglar migrationen exakt. Körs av demo-
+ * lagret före första läsningen så att demon fungerar i en produktion där
+ * `supabase db push` inte körts.
+ */
+export async function ensureDemoSessionsSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  const exists = await client.query(
+    `select exists (
+       select 1 from information_schema.tables
+        where table_schema = 'public' and table_name = 'demo_sessions'
+     ) as present`
+  );
+  if (Boolean(exists[0]?.present)) return applied;
+  await run(
+    client,
+    `create table if not exists public.demo_sessions (
+       id text primary key,
+       state jsonb not null,
+       state_version bigint not null default 1,
+       created_at timestamptz not null default now(),
+       updated_at timestamptz not null default now(),
+       expires_at timestamptz not null
+     )`
+  );
+  await run(client, `alter table public.demo_sessions drop constraint if exists demo_sessions_id_format`);
+  await run(
+    client,
+    `alter table public.demo_sessions
+       add constraint demo_sessions_id_format check (id ~ '^[a-z0-9]{20,64}$')`
+  );
+  await run(client, `create index if not exists demo_sessions_expires_at_idx on public.demo_sessions (expires_at)`);
+  await run(client, `alter table public.demo_sessions enable row level security`);
+  try {
+    await client.query(`revoke all on public.demo_sessions from anon, authenticated, driva_app`);
+  } catch {
+    // Rollerna finns inte i alla miljöer (lokal Postgres utan Supabase-shims).
+  }
+  applied.push("demo_sessions");
   return applied;
 }
 

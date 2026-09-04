@@ -2,11 +2,11 @@
  * E2E-verifiering av den utloggade upplevelsen + publika demosessionen
  * (JSON + cookie-modellen).
  *
- * Kör mot en lokal dev-server (npm run dev, port 3123) i Supabase-läge
- * (miljövariabler i .env.local). Den lokala Supabase-stacken behöver INTE
- * vara igång: demon bor i JSON-filer (.data/demo-sessions/<id>.json), aldrig
- * i databasen – att hela sviten går igenom med stacken avstängd är i sig
- * beviset på att demon inte rör Postgres.
+ * Kör mot en lokal dev-server (npm run dev, port 3123). I JSON-läget bor
+ * demon i JSON-filer (.data/demo-sessions/<id>.json); i Supabase-läge
+ * (miljövariabler i .env.local) bor den i EN jsonb-rad per session i
+ * public.demo_sessions – aldrig i tenanttabellerna – så att alla serverless-
+ * instanser delar samma tillstånd. Filkontrollerna nedan gäller JSON-läget.
  *
  * Varje besökarkontext är en egen inkognitoprofil (egen cookie jar), precis
  * som separata webbläsare. Isoleringen verifieras BÅDE i UI:t och direkt mot

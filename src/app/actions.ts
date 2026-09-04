@@ -1830,7 +1830,7 @@ export async function resetDemoAction(): Promise<{ ok: true } | { ok: false; err
     if (!rateLimitDemoReset()) {
       return { ok: false, error: "Demon återställdes nyss. Vänta en liten stund och försök igen." };
     }
-    resetDemoSessionState(sessionId);
+    await resetDemoSessionState(sessionId);
     refresh();
     return { ok: true };
   }

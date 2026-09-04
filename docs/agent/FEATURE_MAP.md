@@ -189,7 +189,7 @@ Two layers (`src/lib/demo.ts`):
 1. **`isDemoMode()`** — env: `DRIVA_DEMO=1` force on; `=0` force off; production default off; local JSON/dev default on. Gates **fake money** (simulate payment, ROT payout demo, exempelkvitto, legacy mock-BankID provider).
 2. **`isDemoBusiness()`** — `db().meta.demo === true` from `businesses.is_demo`. Public seeded demo company in Supabase. Public `/demo` session clones also set `meta.demo = true` (`src/lib/storage/demo-session-store.ts`).
 
-Public **Se demo** does **not** use Supabase. `GET /demo` (`src/app/demo/route.ts`) sets httpOnly cookie `driva_demo` (`<expiresMs>.<sessionId>`), clones `buildSeed()` (`src/lib/seed.ts`) to `.data/demo-sessions/<id>.json` (or `/tmp` on serverless). Incognito = new clone.
+Public **Se demo** never touches tenant data (no `businesses` / `auth.users` / RLS rows). `GET /demo` (`src/app/demo/route.ts`) sets httpOnly cookie `driva_demo` (`<expiresMs>.<sessionId>`) and clones `buildSeed()` (`src/lib/seed.ts`) into the session's own store (`src/lib/storage/demo-session-store.ts`): local JSON mode → `.data/demo-sessions/<id>.json`; Supabase mode (Vercel) → one jsonb row in `public.demo_sessions` (migration 29, `state_version`-checked per-instance cache) so every serverless instance sees the same session — a file in `/tmp` was per-instance and made the Ekonomi register show stale status after a public accept. Incognito = new clone.
 
 Logged-in real user hitting `/demo` → `/`. Prefetch → 204. Rate limit fail → `/login?demo=upptagen`. Cookie TTL default 24h (1–72). Expired cookie → landing.
 

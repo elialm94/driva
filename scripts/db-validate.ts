@@ -1123,6 +1123,69 @@ async function main() {
   );
 
   // ------------------------------------------------------------------
+  console.log("\nPublika demosessioner (migration 29):");
+  await expectOk(db, "demo_sessions rundresar jsonb och bumpar state_version vid upsert", async () => {
+    const id = "abcdefghij1234567890demo";
+    await db.query(
+      `insert into public.demo_sessions (id, state, expires_at)
+       values ($1, $2::jsonb, now() + interval '1 day')
+       on conflict (id) do update
+         set state = excluded.state, state_version = public.demo_sessions.state_version + 1`,
+      [id, JSON.stringify({ meta: { demo: true }, quotes: [{ id: "quote-fasad", status: "skickad" }] })]
+    );
+    await db.query(
+      `insert into public.demo_sessions (id, state, expires_at)
+       values ($1, $2::jsonb, now() + interval '1 day')
+       on conflict (id) do update
+         set state = excluded.state, state_version = public.demo_sessions.state_version + 1`,
+      [id, JSON.stringify({ meta: { demo: true }, quotes: [{ id: "quote-fasad", status: "godkand" }] })]
+    );
+    const r = await rows<{ state_version: number | string; status: string }>(
+      db,
+      `select state_version, state -> 'quotes' -> 0 ->> 'status' as status from public.demo_sessions where id = $1`,
+      [id]
+    );
+    if (Number(r[0]?.state_version) !== 2) throw new Error(`state_version = ${String(r[0]?.state_version)}, väntade 2`);
+    if (r[0]?.status !== "godkand") throw new Error(`status = ${String(r[0]?.status)}, väntade godkand`);
+  });
+  await expectError(db, "demo_sessions avvisar id:n utanför sessionsalfabetet", "demo_sessions_id_format", () =>
+    db.query(`insert into public.demo_sessions (id, state, expires_at) values ('../etc/passwd', '{}'::jsonb, now())`)
+  );
+  await expectOk(db, "demo_sessions: RLS utan policyer – Data API (authenticated) ser inga rader", async () => {
+    const rls = await rows<{ relrowsecurity: boolean }>(
+      db,
+      `select relrowsecurity from pg_class where oid = 'public.demo_sessions'::regclass`
+    );
+    if (rls[0]?.relrowsecurity !== true) throw new Error("RLS är inte aktiverat på demo_sessions");
+    // Skriptet speglar Supabase-defaulten (grants till authenticated ovan) –
+    // RLS utan policy ska ändå ge noll rader och neka skrivningar.
+    await db.exec(`begin`);
+    try {
+      await db.exec(`set local role authenticated`);
+      const visible = await rows<{ n: number | string }>(db, `select count(*)::int as n from public.demo_sessions`);
+      if (Number(visible[0]?.n) !== 0) throw new Error(`authenticated ser ${String(visible[0]?.n)} demorader`);
+      let denied = false;
+      try {
+        await db.query(
+          `insert into public.demo_sessions (id, state, expires_at) values ('zzzzzzzzzzzzzzzzzzzzzz', '{}'::jsonb, now())`
+        );
+      } catch {
+        denied = true;
+      }
+      if (!denied) throw new Error("authenticated kunde skriva en demorad");
+    } finally {
+      await db.exec(`rollback`);
+    }
+    // Tenantrollen har inga rättigheter alls på tabellen (07:s grant gällde
+    // bara tabeller som fanns då, och migrationen återkallar uttryckligen).
+    const drivaApp = await rows<{ ok: boolean }>(
+      db,
+      `select has_table_privilege('driva_app', 'public.demo_sessions', 'select') as ok`
+    );
+    if (drivaApp[0]?.ok) throw new Error("driva_app har select på demo_sessions");
+  });
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");
