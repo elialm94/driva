@@ -2,6 +2,7 @@ import { db, save } from "../store";
 import { uid } from "../ids";
 import { activateOptionalFeature, clearWebsitePublicPause, isOptionalFeatureExplicitlyDisabled } from "../features";
 import {
+  DEFAULT_PRIMARY_CTA_LABEL,
   PRIMARY_CTA_LABEL_MAX,
   type Customer,
   type Job,
@@ -19,10 +20,11 @@ import {
   WEBSITE_ACCENTS,
   WEBSITE_THEMES,
   assertWebsiteDesign,
+  draftWebsiteDesign,
   publishedWebsiteDesign,
   sameDesign,
 } from "../website-design";
-import { assertWebsiteFooter, publishedWebsiteFooter, sameFooter } from "../website-footer";
+import { assertWebsiteFooter, draftWebsiteFooter, publishedWebsiteFooter, sameFooter } from "../website-footer";
 import {
   addableTypesFor,
   assertCtaDestination,
@@ -36,6 +38,7 @@ import {
 } from "../website-sections";
 import {
   applyPublishedPrivacyPolicy,
+  draftPrivacyPolicyState,
   isPrivacyPolicyMode,
   normalizePrivacyPolicySupplement,
   publishedPrivacyPolicyState,
@@ -49,6 +52,18 @@ import { getBusinessProfile, isEmailFormat } from "./settings";
 import { resolveWebsiteFormRecipient } from "../website-form-recipient";
 import { absoluteAppUrl, mailFromAddress, sendMail, type MailMessage } from "../mail";
 import { newQuoteHref } from "../nav";
+import {
+  acceptWebsiteWrite,
+  type WebsitePublishInput,
+  type WebsiteSectionPublishUpdate,
+  type WebsiteWriteMeta,
+} from "../website-publish";
+import {
+  draftPrimaryCtaLabel,
+  draftWebsiteSections,
+  hasUnpublishedWebsiteDrafts,
+  sameSections,
+} from "../website-drafts";
 
 /**
  * AI-hemsidesgeneratorn är regelbaserad i demon (branschdetektering + mallar).
@@ -219,10 +234,41 @@ const HERO_VARIANTS = [
   () => "Kvalitet i varje detalj, från första mötet till slutbesiktning",
 ];
 
+function cloneSections(sections: WebsiteSection[]): WebsiteSection[] {
+  return structuredClone(sections);
+}
+
+/** Publicerad sajt redigeras i utkast; aldrig-publicerad sajt är utkast i sin helhet. */
+function mutableSections(site: Website): WebsiteSection[] {
+  if (site.status !== "publicerad") return site.sections;
+  if (!site.draftSections) site.draftSections = cloneSections(site.sections);
+  return site.draftSections;
+}
+
+function mutablePrimaryCta(site: Website): { label: string } {
+  if (site.status !== "publicerad") {
+    if (!site.primaryCta) site.primaryCta = { label: DEFAULT_PRIMARY_CTA_LABEL };
+    return site.primaryCta;
+  }
+  if (!site.draftPrimaryCta) {
+    site.draftPrimaryCta = { label: draftPrimaryCtaLabel(site) };
+  }
+  return site.draftPrimaryCta;
+}
+
+function clearMatchingSectionDrafts(site: Website): void {
+  if (site.draftSections && sameSections(site.draftSections, site.sections)) {
+    delete site.draftSections;
+  }
+  if (site.draftPrimaryCta && site.draftPrimaryCta.label === (site.primaryCta?.label ?? DEFAULT_PRIMARY_CTA_LABEL)) {
+    delete site.draftPrimaryCta;
+  }
+}
+
 export function rewriteSectionHeading(sectionId: string): void {
   const site = db().website;
   if (!site) return;
-  const section = site.sections.find((s) => s.id === sectionId);
+  const section = mutableSections(site).find((s) => s.id === sectionId);
   if (!section) return;
   if (section.type === "hero") {
     const idx = (HERO_VARIANTS.findIndex((v) => v(site.businessName) === section.heading) + 1) % HERO_VARIANTS.length;
@@ -244,10 +290,11 @@ export interface UpdateSectionFields {
   ctaLabel?: string;
 }
 
-export function updateSection(sectionId: string, fields: UpdateSectionFields): void {
+export function updateSection(sectionId: string, fields: UpdateSectionFields, meta?: WebsiteWriteMeta): void {
   const site = db().website;
   if (!site) return;
-  const section = site.sections.find((s) => s.id === sectionId);
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
+  const section = mutableSections(site).find((s) => s.id === sectionId);
   if (!section) return;
   if (fields.heading !== undefined) section.heading = fields.heading;
   if (fields.body !== undefined) section.body = fields.body;
@@ -269,7 +316,7 @@ export function updateSection(sectionId: string, fields: UpdateSectionFields): v
     if (section.type !== "hero") {
       throw new Error("Knapptext kan bara ändras i startsektionen.");
     }
-    site.primaryCta = { label: normalizePrimaryCtaLabel(fields.primaryCtaLabel) };
+    mutablePrimaryCta(site).label = normalizePrimaryCtaLabel(fields.primaryCtaLabel);
   }
   if (fields.hours !== undefined) {
     if (section.type !== "kontaktuppgifter") {
@@ -287,35 +334,40 @@ export function updateSection(sectionId: string, fields: UpdateSectionFields): v
     if (label.length > PRIMARY_CTA_LABEL_MAX) throw new Error("Knapptexten är för lång.");
     section.cta = { destination, label };
   }
-  site.status = site.status === "publicerad" ? "publicerad" : "utkast";
-  save();
+  touchSite(site);
 }
 
-export function addWebsiteSection(type: AddableSectionType): WebsiteSection {
+export function addWebsiteSection(type: AddableSectionType, meta?: WebsiteWriteMeta): WebsiteSection {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
-  const allowed = addableTypesFor(site.sections);
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) {
+    throw new Error("Ändringen är för gammal och ignorerades.");
+  }
+  const sections = mutableSections(site);
+  const allowed = addableTypesFor(sections);
   if (!allowed.some((o) => o.type === type)) {
     throw new Error("Den sektionstypen finns redan, eller kan inte läggas till.");
   }
   const section = createSectionDraft(type, uid());
-  const kontaktIndex = site.sections.findIndex((s) => s.type === "kontakt");
-  if (kontaktIndex >= 0) site.sections.splice(kontaktIndex, 0, section);
-  else site.sections.push(section);
+  const kontaktIndex = sections.findIndex((s) => s.type === "kontakt");
+  if (kontaktIndex >= 0) sections.splice(kontaktIndex, 0, section);
+  else sections.push(section);
   touchSite(site);
   return section;
 }
 
-export function removeWebsiteSection(sectionId: string): void {
+export function removeWebsiteSection(sectionId: string, meta?: WebsiteWriteMeta): void {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
-  const index = site.sections.findIndex((s) => s.id === sectionId);
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
+  const sections = mutableSections(site);
+  const index = sections.findIndex((s) => s.id === sectionId);
   if (index < 0) throw new Error("Sektionen hittades inte");
-  const section = site.sections[index];
+  const section = sections[index];
   if (!canDeleteSection(section) || isHeroSection(section)) {
     throw new Error("Startsektionen kan inte tas bort");
   }
-  site.sections.splice(index, 1);
+  sections.splice(index, 1);
   touchSite(site);
 }
 
@@ -359,7 +411,8 @@ function normalizeItem(item: WebsiteSectionItem): WebsiteSectionItem {
  */
 export function sectionImages(sectionId: string): { image?: string; itemImages: (string | null)[] } | null {
   const site = db().website;
-  const section = site?.sections.find((s) => s.id === sectionId);
+  if (!site) return null;
+  const section = draftWebsiteSections(site).find((s) => s.id === sectionId);
   if (!section) return null;
   return {
     image: section.image,
@@ -378,7 +431,7 @@ function requireListSection(
 ): { site: Website; section: WebsiteSection } {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
-  const section = site.sections.find((s) => s.id === sectionId);
+  const section = mutableSections(site).find((s) => s.id === sectionId);
   if (!section || section.type !== type) throw new Error(missing);
   if (!section.items) section.items = [];
   return { site, section };
@@ -386,12 +439,15 @@ function requireListSection(
 
 function touchSite(site: Website): void {
   site.status = site.status === "publicerad" ? "publicerad" : "utkast";
+  // Tillbaka till publicerat läge → inga falska "opublicerade ändringar".
+  clearMatchingSectionDrafts(site);
   save();
 }
 
-export function addServiceItem(sectionId: string, item: WebsiteSectionItem): void {
+export function addServiceItem(sectionId: string, item: WebsiteSectionItem, meta?: WebsiteWriteMeta): void {
   if (!item.title.trim()) throw new Error("Ange ett namn på tjänsten.");
   const { site, section } = requireTjansterSection(sectionId);
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
   section.items!.push(normalizeItem(item));
   touchSite(site);
 }
@@ -400,8 +456,10 @@ export function updateServiceItem(
   sectionId: string,
   index: number,
   fields: { title?: string; text?: string; image?: string | null },
+  meta?: WebsiteWriteMeta,
 ): void {
   const { site, section } = requireTjansterSection(sectionId);
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
   const item = section.items![index];
   if (!item) throw new Error("Tjänsten hittades inte");
   if (fields.title !== undefined) {
@@ -419,8 +477,9 @@ export function updateServiceItem(
   touchSite(site);
 }
 
-export function removeServiceItem(sectionId: string, index: number): { error?: string } {
+export function removeServiceItem(sectionId: string, index: number, meta?: WebsiteWriteMeta): { error?: string } {
   const { site, section } = requireTjansterSection(sectionId);
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) return {};
   if ((section.items?.length ?? 0) <= 1) {
     return { error: "Minst en tjänst behövs" };
   }
@@ -430,14 +489,20 @@ export function removeServiceItem(sectionId: string, index: number): { error?: s
   return {};
 }
 
-export function reorderServiceItems(sectionId: string, fromIndex: number, toIndex: number): void {
-  reorderListItems(sectionId, "tjanster", "Tjänstesektionen hittades inte", fromIndex, toIndex);
+export function reorderServiceItems(
+  sectionId: string,
+  fromIndex: number,
+  toIndex: number,
+  meta?: WebsiteWriteMeta,
+): void {
+  reorderListItems(sectionId, "tjanster", "Tjänstesektionen hittades inte", fromIndex, toIndex, meta);
 }
 
-export function addTestimonialItem(sectionId: string, item: WebsiteSectionItem): void {
+export function addTestimonialItem(sectionId: string, item: WebsiteSectionItem, meta?: WebsiteWriteMeta): void {
   if (!item.title.trim()) throw new Error("Ange namnet på personen.");
   if (!item.text.trim()) throw new Error("Skriv omdömet.");
   const { site, section } = requireListSection(sectionId, "omdomen", "Omdömessektionen hittades inte");
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
   section.items!.push({ ...normalizeItem(item), source: item.source ?? "manual" });
   touchSite(site);
 }
@@ -446,8 +511,10 @@ export function updateTestimonialItem(
   sectionId: string,
   index: number,
   fields: { title?: string; text?: string; location?: string | null; rating?: number | null },
+  meta?: WebsiteWriteMeta,
 ): void {
   const { site, section } = requireListSection(sectionId, "omdomen", "Omdömessektionen hittades inte");
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
   const item = section.items![index];
   if (!item) throw new Error("Omdömet hittades inte");
   if (fields.title !== undefined) {
@@ -478,16 +545,22 @@ export function updateTestimonialItem(
   touchSite(site);
 }
 
-export function removeTestimonialItem(sectionId: string, index: number): { error?: string } {
+export function removeTestimonialItem(sectionId: string, index: number, meta?: WebsiteWriteMeta): { error?: string } {
   const { site, section } = requireListSection(sectionId, "omdomen", "Omdömessektionen hittades inte");
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) return {};
   if (!section.items![index]) return { error: "Omdömet hittades inte" };
   section.items!.splice(index, 1);
   touchSite(site);
   return {};
 }
 
-export function reorderTestimonialItems(sectionId: string, fromIndex: number, toIndex: number): void {
-  reorderListItems(sectionId, "omdomen", "Omdömessektionen hittades inte", fromIndex, toIndex);
+export function reorderTestimonialItems(
+  sectionId: string,
+  fromIndex: number,
+  toIndex: number,
+  meta?: WebsiteWriteMeta,
+): void {
+  reorderListItems(sectionId, "omdomen", "Omdömessektionen hittades inte", fromIndex, toIndex, meta);
 }
 
 function reorderListItems(
@@ -496,8 +569,10 @@ function reorderListItems(
   missing: string,
   fromIndex: number,
   toIndex: number,
+  meta?: WebsiteWriteMeta,
 ): void {
   const { site, section } = requireListSection(sectionId, type, missing);
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
   const items = section.items!;
   if (
     fromIndex === toIndex ||
@@ -514,10 +589,12 @@ function reorderListItems(
 }
 
 /** Arrayordning = visningsordning. Okända id:n ignoreras; saknade sektioner behålls sist. */
-export function reorderSections(orderedIds: string[]): void {
+export function reorderSections(orderedIds: string[], meta?: WebsiteWriteMeta): void {
   const site = db().website;
   if (!site) return;
-  const byId = new Map(site.sections.map((section) => [section.id, section]));
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
+  const current = mutableSections(site);
+  const byId = new Map(current.map((section) => [section.id, section]));
   const next: WebsiteSection[] = [];
   for (const id of orderedIds) {
     const section = byId.get(id);
@@ -526,14 +603,16 @@ export function reorderSections(orderedIds: string[]): void {
     byId.delete(id);
   }
   for (const leftover of byId.values()) next.push(leftover);
-  site.sections = next;
+  if (site.status === "publicerad") site.draftSections = next;
+  else site.sections = next;
   touchSite(site);
 }
 
-export function setSectionVisible(sectionId: string, visible: boolean): void {
+export function setSectionVisible(sectionId: string, visible: boolean, meta?: WebsiteWriteMeta): void {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
-  const section = site.sections.find((s) => s.id === sectionId);
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) return;
+  const section = mutableSections(site).find((s) => s.id === sectionId);
   if (!section) throw new Error("Sektionen hittades inte");
   if (section.type === "hero" && !visible) {
     throw new Error("Startsektionen kan inte döljas");
@@ -547,9 +626,15 @@ export function setSectionVisible(sectionId: string, visible: boolean): void {
  * direkt, den publika sajten först vid "Publicera ändringar". Rör aldrig
  * innehållet – texter, tjänster, bilder, ordning och formulär är opåverkade.
  */
-export function setWebsiteDesign(input: { themeId: unknown; accent: unknown }): WebsiteDesign {
+export function setWebsiteDesign(
+  input: { themeId: unknown; accent: unknown },
+  meta?: WebsiteWriteMeta,
+): WebsiteDesign {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) {
+    return draftWebsiteDesign(site);
+  }
   const design = assertWebsiteDesign(input);
   if (sameDesign(design, publishedWebsiteDesign(site))) {
     // Tillbaka till det publicerade utseendet → inget utkast kvar att publicera.
@@ -566,9 +651,12 @@ export function setWebsiteDesign(input: { themeId: unknown; accent: unknown }): 
  * direkt, den publika sajten först vid "Publicera ändringar". Kontakt,
  * tjänster och logotyp hämtas fortfarande live – de kopieras inte in.
  */
-export function setWebsiteFooter(input: unknown): WebsiteFooter {
+export function setWebsiteFooter(input: unknown, meta?: WebsiteWriteMeta): WebsiteFooter {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) {
+    return draftWebsiteFooter(site);
+  }
   const footer = assertWebsiteFooter((input ?? {}) as Parameters<typeof assertWebsiteFooter>[0]);
   if (sameFooter(footer, publishedWebsiteFooter(site))) {
     delete site.draftFooter;
@@ -583,13 +671,19 @@ export function updatePrivacyPolicySupplement(raw: string): void {
   updateWebsitePrivacyPolicy({ mode: "standard", supplement: raw });
 }
 
-export function updateWebsitePrivacyPolicy(input: {
-  mode: unknown;
-  supplement?: unknown;
-  customBody?: unknown;
-}): PrivacyPolicyState {
+export function updateWebsitePrivacyPolicy(
+  input: {
+    mode: unknown;
+    supplement?: unknown;
+    customBody?: unknown;
+  },
+  meta?: WebsiteWriteMeta,
+): PrivacyPolicyState {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att uppdatera");
+  if (!acceptWebsiteWrite(site, meta?.clientRevision)) {
+    return draftOrPublished(site);
+  }
   if (!isPrivacyPolicyMode(input.mode)) throw new Error("Ogiltigt policyläge.");
   const supplement =
     input.mode === "standard"
@@ -625,33 +719,263 @@ function draftOrPublished(site: Website): PrivacyPolicyState {
   return site.draftPrivacyPolicy ?? publishedPrivacyPolicyState(site);
 }
 
-export function publishWebsite(): Website {
+export function publishWebsite(input?: WebsitePublishInput): Website {
   const site = db().website;
   if (!site) throw new Error("Ingen hemsida att publicera");
-  if (site.draftDesign) {
-    const theme = WEBSITE_THEMES[site.draftDesign.themeId];
-    const accent = WEBSITE_ACCENTS[site.draftDesign.accent];
-    site.design = site.draftDesign;
-    delete site.draftDesign;
-    logActivity(`Hemsidans utseende byttes till ${theme.namn} med accentfärgen ${accent.namn.toLowerCase()}.`, {
-      entity: { type: "hemsida", id: site.id },
-    });
+  const snapshotRev = input?.revision;
+  if (snapshotRev != null && snapshotRev < (site.publishedRevision ?? 0)) {
+    throw new Error("Utkastet är för gammalt. Ladda om sidan och försök igen.");
   }
-  if (site.draftFooter) {
-    site.footer = site.draftFooter;
-    delete site.draftFooter;
+  const keepNewerDrafts = snapshotRev != null && (site.draftRevision ?? 0) > snapshotRev;
+  const snapshot = validatePublishSnapshot(site, input);
+
+  if (snapshot.design) {
+    applyPublishedDesign(site, snapshot.design, keepNewerDrafts);
   }
-  if (site.draftPrivacyPolicy) {
-    applyPublishedPrivacyPolicy(site, site.draftPrivacyPolicy);
-    delete site.draftPrivacyPolicy;
+  if (snapshot.footer !== undefined) {
+    applyPublishedFooter(site, snapshot.footer, keepNewerDrafts);
+  }
+  if (snapshot.privacy) {
+    applyPublishedPrivacyPolicy(site, snapshot.privacy);
+    if (!keepNewerDrafts || !site.draftPrivacyPolicy || samePrivacyPolicyState(site.draftPrivacyPolicy, snapshot.privacy)) {
+      delete site.draftPrivacyPolicy;
+    }
     logActivity("Hemsidans integritetspolicy uppdaterades.", { entity: { type: "hemsida", id: site.id } });
   }
+
+  if (!keepNewerDrafts) {
+    const hasSectionSnapshot = Boolean(
+      input?.sectionOrder ||
+        input?.sectionVisibility ||
+        input?.sectionUpdates ||
+        input?.primaryCtaLabel !== undefined,
+    );
+    if (hasSectionSnapshot) {
+      site.sections = cloneSections(draftWebsiteSections(site));
+      if (site.draftPrimaryCta) site.primaryCta = { ...site.draftPrimaryCta };
+      applyLivePublishFields(site, input);
+    } else {
+      promoteSectionDrafts(site);
+    }
+    delete site.draftSections;
+    delete site.draftPrimaryCta;
+  }
+
+  promotePersistedDrafts(site, {
+    skipDesign: Boolean(input?.design),
+    skipFooter: input?.footer !== undefined,
+    skipPrivacy: Boolean(input?.privacyPolicy),
+    keepNewerDrafts,
+  });
+
   site.status = "publicerad";
   site.publishedAt = new Date().toISOString();
+  const publishedRev = Math.max(site.publishedRevision ?? 0, snapshotRev ?? site.draftRevision ?? 0);
+  site.publishedRevision = publishedRev;
+  if (!keepNewerDrafts) {
+    site.draftRevision = publishedRev;
+    delete site.draftDesign;
+    delete site.draftFooter;
+    delete site.draftPrivacyPolicy;
+    delete site.draftSections;
+    delete site.draftPrimaryCta;
+  }
   clearWebsitePublicPause();
   logActivity(`Hemsidan för ${site.businessName} publicerades.`, { entity: { type: "hemsida", id: site.id } });
   save();
   return site;
+}
+
+export function publishedWebsiteSnapshot(site: Website) {
+  return {
+    publishedRevision: site.publishedRevision ?? 0,
+    publishedAt: site.publishedAt ?? "",
+    design: publishedWebsiteDesign(site),
+    footer: publishedWebsiteFooter(site),
+    privacy: publishedPrivacyPolicyState(site),
+    sectionOrder: site.sections.map((section) => section.id),
+    hasUnpublishedDrafts: hasUnpublishedWebsiteDrafts(site),
+  };
+}
+
+function applyPublishedDesign(site: Website, design: WebsiteDesign, keepNewerDrafts: boolean): void {
+  const previous = publishedWebsiteDesign(site);
+  site.design = design;
+  if (!keepNewerDrafts || !site.draftDesign || sameDesign(site.draftDesign, design)) {
+    delete site.draftDesign;
+  }
+  if (!sameDesign(previous, design)) {
+    const theme = WEBSITE_THEMES[design.themeId];
+    const accent = WEBSITE_ACCENTS[design.accent];
+    logActivity(`Hemsidans utseende byttes till ${theme.namn} med accentfärgen ${accent.namn.toLowerCase()}.`, {
+      entity: { type: "hemsida", id: site.id },
+    });
+  }
+}
+
+function applyPublishedFooter(site: Website, footer: WebsiteFooter, keepNewerDrafts: boolean): void {
+  site.footer = footer;
+  if (!keepNewerDrafts || !site.draftFooter || sameFooter(site.draftFooter, footer)) {
+    delete site.draftFooter;
+  }
+}
+
+function validatePublishSnapshot(
+  site: Website,
+  input?: WebsitePublishInput,
+): {
+  design?: WebsiteDesign;
+  footer?: WebsiteFooter;
+  privacy?: PrivacyPolicyState;
+} {
+  const design = input?.design ? assertWebsiteDesign(input.design) : undefined;
+  const footer = input?.footer !== undefined ? assertWebsiteFooter(input.footer) : undefined;
+  let privacy: PrivacyPolicyState | undefined;
+  if (input?.privacyPolicy) {
+    if (!isPrivacyPolicyMode(input.privacyPolicy.mode)) throw new Error("Ogiltigt policyläge.");
+    const supplement =
+      input.privacyPolicy.mode === "standard"
+        ? normalizePrivacyPolicySupplement(
+            typeof input.privacyPolicy.supplement === "string" ? input.privacyPolicy.supplement : "",
+          )
+        : optionalKeptSupplement(site);
+    const customBody =
+      input.privacyPolicy.mode === "custom" ? sanitizeRichText(input.privacyPolicy.customBody) : undefined;
+    if (input.privacyPolicy.mode === "custom" && !customBody) {
+      throw new Error("Den anpassade policyn saknar innehåll.");
+    }
+    privacy = {
+      mode: input.privacyPolicy.mode,
+      ...(supplement ? { supplement } : {}),
+      ...(customBody ? { customBody } : {}),
+    };
+  }
+  if (input?.primaryCtaLabel !== undefined) {
+    normalizePrimaryCtaLabel(input.primaryCtaLabel);
+  }
+  if (input?.sectionUpdates) {
+    for (const update of input.sectionUpdates) {
+      if (update.image) assertItemImage(update.image);
+      if (update.primaryCtaLabel !== undefined) normalizePrimaryCtaLabel(update.primaryCtaLabel);
+    }
+  }
+  return { design, footer, privacy };
+}
+
+function applyLivePublishFields(site: Website, input?: WebsitePublishInput): void {
+  if (input?.sectionOrder && sectionOrderCoversCurrent(site, input.sectionOrder)) {
+    // Direkt på de publicerade sektionerna – inte via utkastlagret.
+    const byId = new Map(site.sections.map((section) => [section.id, section]));
+    const ordered: WebsiteSection[] = [];
+    for (const id of input.sectionOrder) {
+      const section = byId.get(id);
+      if (!section) continue;
+      ordered.push(section);
+      byId.delete(id);
+    }
+    for (const leftover of byId.values()) ordered.push(leftover);
+    site.sections = ordered;
+  }
+  if (input?.sectionVisibility) {
+    for (const row of input.sectionVisibility) {
+      const section = site.sections.find((s) => s.id === row.id);
+      if (!section) continue;
+      if (section.type === "hero" && !row.visible) continue;
+      section.visible = row.visible;
+    }
+  }
+  if (input?.sectionUpdates) {
+    for (const update of input.sectionUpdates) {
+      applySectionPublishUpdate(site, update);
+    }
+  }
+  if (input?.primaryCtaLabel !== undefined) {
+    site.primaryCta = { label: normalizePrimaryCtaLabel(input.primaryCtaLabel) };
+  }
+}
+
+function sectionOrderCoversCurrent(site: Website, orderedIds: string[]): boolean {
+  const known = new Set(orderedIds);
+  return site.sections.every((section) => known.has(section.id));
+}
+
+function applySectionPublishUpdate(site: Website, update: WebsiteSectionPublishUpdate): void {
+  const { id, ...fields } = update;
+  const section = site.sections.find((s) => s.id === id);
+  if (!section) return;
+  if (fields.heading !== undefined) section.heading = fields.heading;
+  if (fields.body !== undefined) section.body = fields.body;
+  if (fields.image === null || fields.image === "") {
+    delete section.image;
+  } else if (fields.image !== undefined) {
+    assertItemImage(fields.image);
+    section.image = fields.image;
+  }
+  if (fields.imagePosition === null) {
+    delete section.imagePosition;
+  } else if (fields.imagePosition === "left" || fields.imagePosition === "right") {
+    if (isTextSectionType(section.type) || section.type === "hero") {
+      section.imagePosition = fields.imagePosition;
+    }
+  }
+  if (fields.primaryCtaLabel !== undefined && section.type === "hero") {
+    site.primaryCta = { label: normalizePrimaryCtaLabel(fields.primaryCtaLabel) };
+  }
+  if (fields.hours !== undefined && section.type === "kontaktuppgifter") {
+    const hours = (fields.hours ?? "").trim();
+    if (hours) section.hours = hours;
+    else delete section.hours;
+  }
+  if ((fields.ctaDestination !== undefined || fields.ctaLabel !== undefined) && section.type === "cta") {
+    const destination = assertCtaDestination(fields.ctaDestination ?? section.cta?.destination ?? "kontakt");
+    const label = (fields.ctaLabel ?? section.cta?.label ?? defaultCtaLabel(destination)).trim();
+    if (label) section.cta = { destination, label };
+  }
+}
+
+function promoteSectionDrafts(site: Website): void {
+  if (site.draftSections) site.sections = site.draftSections;
+  if (site.draftPrimaryCta) site.primaryCta = site.draftPrimaryCta;
+}
+
+/**
+ * Slänger alla opublicerade utkast och återställer redigeraren till den
+ * publicerade sajten. Höjer revisionen så att en sen autosave inte kan
+ * lägga tillbaka det som just kasserades.
+ */
+export function restorePublishedWebsiteDraft(): Website {
+  const site = db().website;
+  if (!site) throw new Error("Ingen hemsida att återställa");
+  if (site.status !== "publicerad") {
+    throw new Error("Det finns ingen publicerad version att återställa till.");
+  }
+  delete site.draftDesign;
+  delete site.draftFooter;
+  delete site.draftPrivacyPolicy;
+  delete site.draftSections;
+  delete site.draftPrimaryCta;
+  const nextRev = Math.max(site.publishedRevision ?? 0, site.draftRevision ?? 0) + 1;
+  site.publishedRevision = nextRev;
+  site.draftRevision = nextRev;
+  save();
+  return site;
+}
+
+function promotePersistedDrafts(
+  site: Website,
+  skip: { skipDesign: boolean; skipFooter: boolean; skipPrivacy: boolean; keepNewerDrafts: boolean },
+): void {
+  if (!skip.skipDesign && site.draftDesign) {
+    applyPublishedDesign(site, site.draftDesign, skip.keepNewerDrafts);
+  }
+  if (!skip.skipFooter && site.draftFooter) {
+    applyPublishedFooter(site, site.draftFooter, skip.keepNewerDrafts);
+  }
+  if (!skip.skipPrivacy && site.draftPrivacyPolicy) {
+    applyPublishedPrivacyPolicy(site, site.draftPrivacyPolicy);
+    if (!skip.keepNewerDrafts) delete site.draftPrivacyPolicy;
+    logActivity("Hemsidans integritetspolicy uppdaterades.", { entity: { type: "hemsida", id: site.id } });
+  }
 }
 
 const WEB_FORM_RATE_LIMIT = { max: 5, windowMs: 60 * 60 * 1000 };

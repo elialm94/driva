@@ -11,6 +11,7 @@ import type { WebsiteSection, WebsiteSectionItem } from "@/lib/types";
 import type { SiteContact } from "@/lib/website-contact";
 import { formatAddressLine } from "@/lib/website-contact";
 import { SETTINGS_HREF } from "@/lib/settings-routes";
+import { enqueueWebsiteMutation, useWebsiteEditorSyncOptional } from "./website-editor-sync";
 
 export function AddSectionPicker({
   open,
@@ -248,6 +249,7 @@ function TestimonialItemForm({
   const [textError, setTextError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const sync = useWebsiteEditorSyncOptional();
 
   function save() {
     const nextTitle = title.trim();
@@ -273,7 +275,9 @@ function TestimonialItemForm({
     start(async () => {
       setFormError(null);
       if (draft.index === "new") {
-        const result = await addTestimonialItemAction(sectionId, item);
+        const result = await enqueueWebsiteMutation(sync, (clientRevision) =>
+          addTestimonialItemAction(sectionId, item, clientRevision),
+        );
         if (result.ok === false) {
           setFormError(result.error);
           return;
@@ -281,12 +285,20 @@ function TestimonialItemForm({
         onSaved({ index: "new", item });
         return;
       }
-      const result = await updateTestimonialItemAction(sectionId, draft.index, {
-        title: item.title,
-        text: item.text,
-        location: item.location ?? null,
-        rating: item.rating ?? null,
-      });
+      const index = draft.index;
+      const result = await enqueueWebsiteMutation(sync, (clientRevision) =>
+        updateTestimonialItemAction(
+          sectionId,
+          index,
+          {
+            title: item.title,
+            text: item.text,
+            location: item.location ?? null,
+            rating: item.rating ?? null,
+          },
+          clientRevision,
+        ),
+      );
       if (result.ok === false) {
         setFormError(result.error);
         return;

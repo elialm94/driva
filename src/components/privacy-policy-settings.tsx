@@ -18,6 +18,7 @@ import type { CompanySettings } from "@/lib/types";
 import type { RichTextDoc } from "@/lib/richtext";
 import { buttonClasses } from "./ui";
 import { Modal } from "./modal";
+import { enqueueWebsiteMutation, useWebsiteEditorSyncOptional } from "./website-editor-sync";
 
 const RichTextEditor = dynamic(
   () => import("./rich-text-editor").then((m) => m.RichTextEditor),
@@ -104,6 +105,7 @@ function PrivacyPolicyEditModal({
   const [confirmReset, setConfirmReset] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const sync = useWebsiteEditorSyncOptional();
 
   function beginCustomize() {
     setCustomDoc(liveSeed);
@@ -115,10 +117,16 @@ function PrivacyPolicyEditModal({
   function resetToStandard() {
     setError(null);
     startTransition(async () => {
-      const result = await updateWebsitePrivacyPolicyAction({
-        mode: "standard",
-        supplement,
-      });
+      const result = await enqueueWebsiteMutation(
+        sync,
+        (clientRevision) =>
+          updateWebsitePrivacyPolicyAction({
+            mode: "standard",
+            supplement,
+            clientRevision,
+          }),
+        () => sync?.notePrivacy({ mode: "standard", supplement }),
+      );
       if (result.ok === false) {
         setError(result.error);
         return;
@@ -132,18 +140,29 @@ function PrivacyPolicyEditModal({
   function save() {
     setError(null);
     startTransition(async () => {
-      const result =
-        mode === "custom"
-          ? await updateWebsitePrivacyPolicyAction({
-              mode: "custom",
-              customBody: customDoc
-                ? capturePrivacyTokens(customDoc, company, { businessName })
-                : undefined,
-            })
-          : await updateWebsitePrivacyPolicyAction({
-              mode: "standard",
-              supplement,
-            });
+      const result = await enqueueWebsiteMutation(sync, (clientRevision) => {
+        const next =
+          mode === "custom"
+            ? {
+                mode: "custom" as const,
+                customBody: customDoc
+                  ? capturePrivacyTokens(customDoc, company, { businessName })
+                  : undefined,
+                clientRevision,
+              }
+            : { mode: "standard" as const, supplement, clientRevision };
+        sync?.notePrivacy(
+          mode === "custom"
+            ? {
+                mode: "custom",
+                customBody: customDoc
+                  ? capturePrivacyTokens(customDoc, company, { businessName })
+                  : undefined,
+              }
+            : { mode: "standard", supplement },
+        );
+        return updateWebsitePrivacyPolicyAction(next);
+      });
       if (result.ok === false) {
         setError(result.error);
         return;

@@ -11,6 +11,7 @@ import {
   ImagePlus,
   Pencil,
   Plus,
+  RotateCcw,
   Sparkles,
   Trash2,
   WandSparkles,
@@ -24,6 +25,7 @@ import {
   generateWebsiteAction,
   getSectionImagesAction,
   publishWebsiteAction,
+  restoreWebsiteDraftAction,
   removeServiceItemAction,
   removeTestimonialItemAction,
   removeWebsiteSectionAction,
@@ -35,6 +37,10 @@ import {
   updateSectionAction,
   updateServiceItemAction,
 } from "@/app/actions";
+import { enqueueWebsiteMutation, useWebsiteEditorSync, useWebsiteEditorSyncOptional } from "./website-editor-sync";
+import { sameDesign } from "@/lib/website-design";
+import { sameFooter } from "@/lib/website-footer";
+import { samePrivacyPolicyState } from "@/lib/website-privacy";
 import type {
   WebsiteCtaDestination,
   WebsiteImagePosition,
@@ -521,10 +527,16 @@ export function SectionList({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const router = useRouter();
+  const sync = useWebsiteEditorSyncOptional();
 
   useEffect(() => {
     setRows(sections);
   }, [sections]);
+
+  useEffect(() => {
+    sync?.noteSectionOrder(rows.map((s) => s.id));
+    sync?.noteSectionVisibility(rows.map((s) => ({ id: s.id, visible: s.visible !== false })));
+  }, [rows, sync]);
 
   const reorder = usePointerListReorder({
     rowAttr: "data-section-row",
@@ -536,7 +548,9 @@ export function SectionList({
       next.splice(to, 0, moved);
       setRows(next);
       startTransition(async () => {
-        await reorderSectionsAction(next.map((s) => s.id));
+        await enqueueWebsiteMutation(sync, (clientRevision) =>
+          reorderSectionsAction(next.map((s) => s.id), clientRevision),
+        );
         router.refresh();
       });
     },
@@ -549,7 +563,9 @@ export function SectionList({
     next.splice(to, 0, moved);
     setRows(next);
     startTransition(async () => {
-      await reorderSectionsAction(next.map((s) => s.id));
+      await enqueueWebsiteMutation(sync, (clientRevision) =>
+        reorderSectionsAction(next.map((s) => s.id), clientRevision),
+      );
       router.refresh();
     });
   }
@@ -557,7 +573,9 @@ export function SectionList({
   function setVisible(sectionId: string, visible: boolean) {
     setRows((prev) => prev.map((s) => (s.id === sectionId ? { ...s, visible } : s)));
     startTransition(async () => {
-      await setSectionVisibleAction(sectionId, visible);
+      await enqueueWebsiteMutation(sync, (clientRevision) =>
+        setSectionVisibleAction(sectionId, visible, clientRevision),
+      );
       router.refresh();
     });
   }
@@ -565,7 +583,9 @@ export function SectionList({
   function addType(type: AddableSectionType) {
     setAddError(null);
     startTransition(async () => {
-      const result = await addWebsiteSectionAction(type);
+      const result = await enqueueWebsiteMutation(sync, (clientRevision) =>
+        addWebsiteSectionAction(type, clientRevision),
+      );
       if (result.ok === false) {
         setAddError(result.error);
         return;
@@ -578,7 +598,9 @@ export function SectionList({
   function remove(sectionId: string) {
     setRows((prev) => prev.filter((s) => s.id !== sectionId));
     startTransition(async () => {
-      const result = await removeWebsiteSectionAction(sectionId);
+      const result = await enqueueWebsiteMutation(sync, (clientRevision) =>
+        removeWebsiteSectionAction(sectionId, clientRevision),
+      );
       if (result.ok === false) {
         setRows(sections);
         return;
@@ -879,6 +901,7 @@ function SectionEditor({
   const [itemsPending, startItems] = useTransition();
   const [aiPending, startAi] = useTransition();
   const router = useRouter();
+  const sync = useWebsiteEditorSyncOptional();
 
   // Bilddata skickas inte med sidan (tunga data-URL:er) utan hämtas när redigeraren öppnas.
   const needsImages = Boolean(hasImage) || (items?.some((it) => it.hasImage) ?? false);
@@ -928,7 +951,7 @@ function SectionEditor({
                 disabled={aiPending}
                 onClick={() =>
                   startAi(async () => {
-                    await rewriteSectionAction(sectionId);
+                    await enqueueWebsiteMutation(sync, () => rewriteSectionAction(sectionId));
                     router.refresh();
                     closeAll();
                   })
@@ -1074,7 +1097,9 @@ function SectionEditor({
               onAdd={() => setQuoteDraft({ index: "new", title: "", text: "", location: "" })}
               onRemove={(index) => {
                 startItems(async () => {
-                  const result = await removeTestimonialItemAction(sectionId, index);
+                  const result = await enqueueWebsiteMutation(sync, (clientRevision) =>
+                    removeTestimonialItemAction(sectionId, index, clientRevision),
+                  );
                   if (result.error) {
                     setListError(result.error);
                     return;
@@ -1103,7 +1128,9 @@ function SectionEditor({
                   return;
                 }
                 startItems(async () => {
-                  const result = await removeServiceItemAction(sectionId, index);
+                  const result = await enqueueWebsiteMutation(sync, (clientRevision) =>
+                    removeServiceItemAction(sectionId, index, clientRevision),
+                  );
                   if (result.error) {
                     setListError(result.error);
                     return;
@@ -1123,7 +1150,9 @@ function SectionEditor({
                 });
                 setListError(null);
                 startItems(async () => {
-                  await reorderServiceItemsAction(sectionId, from, to);
+                  await enqueueWebsiteMutation(sync, (clientRevision) =>
+                    reorderServiceItemsAction(sectionId, from, to, clientRevision),
+                  );
                   router.refresh();
                 });
               }}
@@ -1154,7 +1183,7 @@ function SectionEditor({
                 startTransition(async () => {
                   try {
                     // Bilden skickas bara om den faktiskt ändrats (data-URL:er är tunga).
-                    const result = await updateSectionAction(sectionId, {
+                    const fields = {
                       heading: h,
                       body: b,
                       ...(isHero ? { primaryCtaLabel: cta.trim() } : {}),
@@ -1162,7 +1191,15 @@ function SectionEditor({
                       ...(isText ? { imagePosition: imgPos } : {}),
                       ...(isContactDetails ? { hours: hoursValue } : {}),
                       ...(isCta ? { ctaDestination: ctaDest, ctaLabel: ctaBtn } : {}),
-                    });
+                    };
+                    const result = await enqueueWebsiteMutation(
+                      sync,
+                      (clientRevision) => updateSectionAction(sectionId, { ...fields, clientRevision }),
+                      () => {
+                        sync?.noteSectionUpdate({ id: sectionId, ...fields });
+                        if (isHero) sync?.notePrimaryCta(cta.trim());
+                      },
+                    );
                     if (result && result.ok === false) {
                       const msg = result.error;
                       if (isHero && /fältet|för lång|knapptext/i.test(msg)) {
@@ -1428,6 +1465,7 @@ function ServiceItemForm({
   const [imageError, setImageError] = useState<string | null>(null);
   const [readingImage, setReadingImage] = useState(false);
   const [pending, startTransition] = useTransition();
+  const sync = useWebsiteEditorSyncOptional();
 
   function save() {
     if (!title.trim()) {
@@ -1441,19 +1479,29 @@ function ServiceItemForm({
     startTransition(async () => {
       try {
         if (draft.index === "new") {
-          const result = await addServiceItemAction(sectionId, item);
+          const result = await enqueueWebsiteMutation(sync, (clientRevision) =>
+            addServiceItemAction(sectionId, item, clientRevision),
+          );
           if (result && result.ok === false) {
             setImageError(humanizeMediaError(result.error, "Kunde inte spara tjänsten."));
             return;
           }
           onSaved({ index: "new", item, imageChanged: true });
         } else {
+          const index = draft.index;
           // Oförändrad bild skickas inte om – data-URL:er är tunga.
-          const result = await updateServiceItemAction(sectionId, draft.index, {
-            title: item.title,
-            text: item.text,
-            ...(imageChanged ? { image: image ?? null } : {}),
-          });
+          const result = await enqueueWebsiteMutation(sync, (clientRevision) =>
+            updateServiceItemAction(
+              sectionId,
+              index,
+              {
+                title: item.title,
+                text: item.text,
+                ...(imageChanged ? { image: image ?? null } : {}),
+              },
+              clientRevision,
+            ),
+          );
           if (result && result.ok === false) {
             setImageError(humanizeMediaError(result.error, "Kunde inte spara tjänsten."));
             return;
@@ -1529,21 +1577,133 @@ function ServiceItemForm({
   );
 }
 
+/* ------------------------------- Återställ --------------------------------- */
+
+/**
+ * Slänger ALLA opublicerade ändringar och återställer redigeraren till den
+ * publicerade versionen. Lätt bekräftelse – inga modaler vid navigering:
+ * utkastet är en trygg arbetsyta som ligger kvar tills man publicerar
+ * eller återställer.
+ */
+export function RestoreWebsiteDraftButton() {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  const sync = useWebsiteEditorSync();
+
+  function restoreNow() {
+    startTransition(async () => {
+      setError(null);
+      const result = await restoreWebsiteDraftAction();
+      if (result.ok === false) {
+        setError(result.error || "Kunde inte återställa. Försök igen.");
+        return;
+      }
+      // Serverns nya revision gör väntande autosaves inaktuella – de ignoreras.
+      sync.resetToServer(result.publishedRevision);
+      setOpen(false);
+      router.refresh();
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className={buttonClasses("ghost")}
+        onClick={() => {
+          setError(null);
+          setOpen(true);
+        }}
+      >
+        <RotateCcw className="size-4" />
+        Återställ
+      </button>
+      <Modal open={open} onClose={() => !pending && setOpen(false)} title="Återställ ändringar?" size="sm">
+        <div className="px-6 py-5">
+          <p className="text-[14px] leading-relaxed text-soft">
+            Alla opublicerade ändringar tas bort och hemsidan återställs till den publicerade versionen.
+          </p>
+          {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
+          <div className="mt-5 flex justify-end gap-2">
+            <button className={buttonClasses("ghost")} onClick={() => setOpen(false)} disabled={pending}>
+              Avbryt
+            </button>
+            <button className={buttonClasses("danger")} onClick={restoreNow} disabled={pending}>
+              {pending ? "Återställer …" : "Återställ"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
+}
+
 /* ------------------------------- Publicering ------------------------------- */
 
 export function PublishWebsiteButton({ published }: { published: boolean }) {
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const sync = useWebsiteEditorSync();
+  const busy = pending || sync.publishing;
+
+  async function publishNow() {
+    if (!sync.beginPublish()) return;
+    setError(null);
+    try {
+      await sync.flushMutations();
+      const snapshot = sync.getSnapshot();
+      const result = await publishWebsiteAction(snapshot);
+      if (result.ok === false) {
+        setError(result.error || "Kunde inte publicera hemsidan. Försök igen.");
+        return;
+      }
+      const latest = sync.getSnapshot();
+      if (latest.revision > result.publishedRevision || result.hasUnpublishedDrafts) {
+        setOpen(false);
+        router.refresh();
+        return;
+      }
+      if (snapshot.design && !sameDesign(result.design, snapshot.design)) {
+        setError("Publiceringen hann inte med senaste ändringen. Försök igen.");
+        return;
+      }
+      if (snapshot.footer && !sameFooter(result.footer, snapshot.footer)) {
+        setError("Publiceringen hann inte med senaste ändringen. Försök igen.");
+        return;
+      }
+      if (snapshot.privacyPolicy && !samePrivacyPolicyState(result.privacy, snapshot.privacyPolicy)) {
+        setError("Publiceringen hann inte med senaste ändringen. Försök igen.");
+        return;
+      }
+      setDone(true);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Kunde inte publicera hemsidan. Försök igen.");
+    } finally {
+      sync.endPublish();
+    }
+  }
 
   return (
     <>
-      <button className={buttonClasses(published ? "secondary" : "primary")} onClick={() => setOpen(true)}>
+      <button
+        className={buttonClasses(published ? "secondary" : "primary")}
+        disabled={busy}
+        onClick={() => {
+          setDone(false);
+          setError(null);
+          setOpen(true);
+        }}
+      >
         <Globe className="size-4" />
         {published ? "Publicera ändringar" : "Publicera hemsidan"}
       </button>
-      <Modal open={open} onClose={() => setOpen(false)} title={done ? undefined : "Publicera hemsidan"} size="sm">
+      <Modal open={open} onClose={() => !busy && setOpen(false)} title={done ? undefined : "Publicera hemsidan"} size="sm">
         {done ? (
           <div className="flex flex-col items-center px-6 py-10 text-center animate-fade-up">
             <CheckCircle2 className="size-10 text-ok" />
@@ -1561,22 +1721,17 @@ export function PublishWebsiteButton({ published }: { published: boolean }) {
               Sajten blir tillgänglig för besökare och kontaktformuläret börjar skapa uppdrag i Driva. En egen
               .se-adress skaffar du under Domän när du vill.
             </p>
+            {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
             <div className="mt-5 flex justify-end gap-2">
-              <button className={buttonClasses("ghost")} onClick={() => setOpen(false)}>
+              <button className={buttonClasses("ghost")} onClick={() => setOpen(false)} disabled={busy}>
                 Avbryt
               </button>
               <button
                 className={buttonClasses("primary")}
-                disabled={pending}
-                onClick={() =>
-                  startTransition(async () => {
-                    await publishWebsiteAction();
-                    setDone(true);
-                    router.refresh();
-                  })
-                }
+                disabled={busy}
+                onClick={() => startTransition(() => publishNow())}
               >
-                {pending ? "Publicerar …" : "Publicera"}
+                {busy ? "Publicerar …" : "Publicera"}
               </button>
             </div>
           </div>

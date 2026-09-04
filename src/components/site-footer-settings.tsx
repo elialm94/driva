@@ -18,6 +18,7 @@ import { formatAddressLine, resolveSiteContact } from "@/lib/website-contact";
 import { SETTINGS_HREF } from "@/lib/settings-routes";
 import { buttonClasses, cx } from "./ui";
 import { Modal } from "./modal";
+import { enqueueWebsiteMutation, useWebsiteEditorSyncOptional } from "./website-editor-sync";
 
 /** Sammanfattning + modal. Ligger under Innehåll, inte bland reorderbara sektioner. */
 export function FooterSettingsCard({
@@ -81,6 +82,7 @@ function FooterEditModal({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const sync = useWebsiteEditorSyncOptional();
 
   const contact = resolveSiteContact(company, website);
   const address = formatAddressLine(contact);
@@ -90,15 +92,21 @@ function FooterEditModal({
   function save() {
     setError(null);
     startTransition(async () => {
-      const result = await setWebsiteFooterAction({
-        showPhone: form.showPhone,
-        showEmail: form.showEmail,
-        showAddress: form.showAddress,
-        showServices: form.showServices,
-        showLogo: form.showLogo,
-        aboutText: form.aboutText ?? "",
-        social: form.social ?? {},
-      });
+      const result = await enqueueWebsiteMutation(
+        sync,
+        (clientRevision) =>
+          setWebsiteFooterAction({
+            showPhone: form.showPhone,
+            showEmail: form.showEmail,
+            showAddress: form.showAddress,
+            showServices: form.showServices,
+            showLogo: form.showLogo,
+            aboutText: form.aboutText ?? "",
+            social: form.social ?? {},
+            clientRevision,
+          }),
+        () => sync?.noteFooter(form),
+      );
       if (result.ok === false) {
         setError(result.error);
         return;
