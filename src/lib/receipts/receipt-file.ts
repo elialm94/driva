@@ -52,14 +52,36 @@ export interface ReceiptFileInput {
   contentType: string;
 }
 
-export function parseReceiptDataUrl(dataUrl: string): ReceiptFileInput | null {
-  const match = /^data:([^;,]+);base64,(.+)$/.exec(dataUrl);
-  if (!match) return null;
-  try {
-    return { bytes: Buffer.from(match[2], "base64"), contentType: match[1].trim().toLowerCase() };
-  } catch {
-    return null;
-  }
+/** Innehållstyp ur webbläsarens uppgift, annars ur filändelsen (HEIC/PDF rapporteras ibland tomt). */
+const EXTENSION_TYPES: Record<string, string> = {
+  pdf: "application/pdf",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  heic: "image/heic",
+};
+
+export function receiptContentTypeFor(filename: string, reported: string | undefined): string {
+  const type = (reported ?? "").trim().toLowerCase();
+  if (type && type !== "application/octet-stream") return type;
+  const ext = /\.([a-z0-9]+)$/i.exec(filename)?.[1]?.toLowerCase();
+  return (ext && EXTENSION_TYPES[ext]) || type;
+}
+
+/**
+ * Läser kvittot ur server actionens FormData ("file" = File/Blob). Returnerar
+ * null om inget läsbart fält finns – anroparen ger ett begripligt fel.
+ */
+export async function receiptFileFromForm(form: FormData): Promise<(ReceiptFileInput & { filename: string }) | null> {
+  const entry = form.get("file");
+  if (!(entry instanceof Blob) || entry.size === 0) return null;
+  const filename = (entry instanceof File && entry.name.trim()) || "kvitto";
+  return {
+    bytes: Buffer.from(await entry.arrayBuffer()),
+    contentType: receiptContentTypeFor(filename, entry.type),
+    filename,
+  };
 }
 
 export function safeReceiptFilename(name: string): string {

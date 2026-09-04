@@ -38,6 +38,20 @@ describe("server actions kraschar inte React-trädet", () => {
     assert.doesNotMatch(block, /e instanceof Error \? e\.message/);
   });
 
+  it("kvittouppladdningen sparar filen FÖRE kvittoraden och lyckas bara med sparad fil", () => {
+    const actions = readFileSync(join(here, "../app/actions.ts"), "utf8");
+    const upload = actions.slice(actions.indexOf("export async function uploadReceiptAction"));
+    const block = upload.slice(0, upload.indexOf("export async function uploadStandaloneReceiptAction"));
+    const precheck = block.indexOf("expenseAwaitingReceipt(expenseId)");
+    const store = block.indexOf("await storeReceiptFile(");
+    const link = block.indexOf("uploadReceiptForExpense(");
+    assert.ok(precheck > 0 && store > precheck && link > store, "ordning: förkontroll → spara fil → koppla kvitto");
+    assert.match(block, /if \(!upload\) throw/);
+    assert.match(block, /receiptFileFromForm\(form\)/);
+    assert.match(block, /receiptFileStored\(receipt\)/);
+    assert.match(block, /fileStored: true as const/);
+  });
+
   it("faktura-utfärdande fångar issue-fel och lämnar utkastet orört vid fel", () => {
     const actions = readFileSync(join(here, "../app/actions.ts"), "utf8");
     const send = actions.slice(actions.indexOf("export async function sendInvoiceAction"));
