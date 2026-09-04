@@ -36,6 +36,7 @@ import {
   taxReductionMissingFields,
   detailsFromPrefill,
 } from "../services/tax-reduction";
+import { isSwedishCountry } from "../invoices/formats";
 import { maskPersonnummer } from "../personnummer";
 import { businessStats, financeOverview, momsForCurrentPeriod } from "../services/finance";
 import {
@@ -1294,7 +1295,8 @@ export function businessProfileResult(): DomainResult {
 export function requestUpdateBusinessProfile(patch: Record<string, string | number | null>): DomainResult {
   // Momsreg.nr härleds ur org.nr för svenska företag. Säg det rakt ut i
   // stället för att visa en bekräftelse på en ändring som tysta kastas bort.
-  if ("vatNumber" in patch && patch.vatNumber !== undefined) {
+  // Utländska företag har inget org.nr att härleda ur – där är fältet vanligt.
+  if ("vatNumber" in patch && patch.vatNumber !== undefined && isSwedishCountry(db().settings.country)) {
     return fail(
       "Momsregistreringsnumret går inte att ändra separat – det räknas ut från organisationsnumret (SE + org.nr + 01). Ändra organisationsnumret i stället om det är fel."
     );

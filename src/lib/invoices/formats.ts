@@ -91,10 +91,15 @@ export interface VatNumberSource {
  * Momsreg.nr för ett företag. Svenska företag: härlett ur org.nr. Utländska:
  * det sparade värdet oförändrat – utländska momsnummerformat varierar och
  * ska inte tvingas in i den svenska mallen.
+ *
+ * Går org.nr inte att härleda ur (tomt eller ofullständigt) behålls ett redan
+ * sparat värde. Härledningen ska äga fältet, inte radera uppgifter vi fått
+ * från någon annanstans – och ett tomt org.nr har inget att glida isär med.
  */
 export function companyVatNumber(company: VatNumberSource): string {
-  if (isSwedishCountry(company.country)) return deriveSwedishVatNumber(company.orgNumber);
-  return normalizeVatNumber(company.vatNumber ?? "");
+  const stored = normalizeVatNumber(company.vatNumber ?? "");
+  if (!isSwedishCountry(company.country)) return stored;
+  return deriveSwedishVatNumber(company.orgNumber) || stored;
 }
 
 export function isBankgiroFormat(value: string): boolean {

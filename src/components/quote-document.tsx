@@ -43,20 +43,6 @@ function paymentBits(company: CompanySettings): string[] {
   return bits;
 }
 
-export function DocFooter({ company }: { company: CompanySettings }) {
-  const sate = company.sate?.trim() || company.city;
-  const pay = paymentBits(company).join(" · ");
-  return (
-    <div className="mt-10 border-t border-line pt-4 text-center text-[12px] leading-relaxed text-muted">
-      {company.name} · Org.nr {company.orgNumber} · Momsreg.nr {company.vatNumber}
-      {sate ? ` · Säte ${sate}` : ""}
-      <br />
-      {pay ? `${pay} · ` : ""}
-      {company.email} · {company.phone} · Godkänd för F-skatt
-    </div>
-  );
-}
-
 /**
  * Offertens företagsuppgifter – läsbar A4-nederdel i stället för en enradig
  * mikrofooter: adress, kontakt, org-/momsnummer, F-skatt och betalningsvägar.

@@ -251,13 +251,14 @@ export function connectedBankSummary(): { label: string; href: string } | null {
 }
 
 /**
- * Fält assistenten får ändra. `vatNumber` ingår INTE: för svenska företag
- * härleds det ur org.nr, så en patch av momsnumret skulle tysta kastas bort.
- * Se DERIVED_SETTINGS_FIELDS i ai/domain.ts.
+ * Fält assistenten får ändra. `vatNumber` biter bara på utländska företag –
+ * applyProfile härleder svenska momsnummer ur org.nr och ignorerar värdet.
+ * requestUpdateBusinessProfile avvisar patchen i förväg för svenska företag.
  */
 const PATCHABLE: (keyof CompanySettingsInput)[] = [
   "name",
   "orgNumber",
+  "vatNumber",
   "email",
   "phone",
   "websiteUrl",
