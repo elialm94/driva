@@ -299,7 +299,7 @@ export function SettingsForm({
         saving={isPending}
       />
 
-      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-line pb-px">
+      <div className="mb-5 flex gap-1 overflow-x-auto rounded-2xl bg-ink/4 p-1">
         {TABS.map((tab) => {
           const active = tab.key === flik;
           return (
@@ -307,8 +307,8 @@ export function SettingsForm({
               key={tab.key}
               href={tabHref(tab.href) as never}
               className={cx(
-                "shrink-0 rounded-t-xl px-3.5 py-2.5 text-[14px] transition-colors",
-                active ? "bg-card font-medium text-ink shadow-[0_-1px_0_#fff,0_1px_0_#e9e6de]" : "text-muted hover:text-ink"
+                "flex min-h-11 flex-1 items-center justify-center whitespace-nowrap rounded-xl px-4 py-2 text-center text-sm font-medium transition-all",
+                active ? "bg-card text-ink shadow-sm" : "text-muted hover:text-ink"
               )}
             >
               {tab.label}

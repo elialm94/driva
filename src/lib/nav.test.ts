@@ -2,6 +2,9 @@ process.env.DRIVA_TEST = "1";
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   BOKFORING_PREFETCH_HREFS,
   bokforingDetailTabForPath,
@@ -10,6 +13,8 @@ import {
   isBackAwarePath,
   isInternalAppPath,
   isSectionActive,
+  isSettingsPath,
+  isSupportPath,
   labelForHref,
   locationHref,
   originNodeMatching,
@@ -121,6 +126,29 @@ describe("section active", () => {
     assert.equal(isSectionActive("/inbox/req-karin", "/inbox"), true);
     assert.equal(isSectionActive("/inbox/req-karin", "/kunder"), false);
     assert.equal(isSectionActive("/kunder", "/kunder"), true);
+  });
+
+  it("marks footer routes without treating them as primary sections", () => {
+    assert.equal(isSettingsPath("/installningar"), true);
+    assert.equal(isSettingsPath("/installningar?flik=konto"), true);
+    assert.equal(isSettingsPath("/foretag"), true);
+    assert.equal(isSettingsPath("/kunder"), false);
+    assert.equal(isSupportPath("/support"), true);
+    assert.equal(isSupportPath("/support?fran=%2Fkunder"), true);
+    assert.equal(isSupportPath("/installningar"), false);
+    assert.equal(isSectionActive("/support", "/kunder"), false);
+    assert.equal(isSectionActive("/installningar", "/kunder"), false);
+  });
+
+  it("keeps sidebar and footer selected styles on the same soft fill", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const nav = readFileSync(join(here, "../components/nav.tsx"), "utf8");
+    const settings = readFileSync(join(here, "../components/settings-form.tsx"), "utf8");
+    assert.match(nav, /SIDEBAR_LINK_ACTIVE = "bg-ink\/5 font-medium text-ink"/);
+    assert.match(nav, /SHEET_LINK_ACTIVE = "bg-ink\/5 font-medium text-ink"/);
+    assert.doesNotMatch(nav, /bg-ink text-white font-medium shadow-sm/);
+    assert.match(settings, /rounded-2xl bg-ink\/4 p-1/);
+    assert.match(settings, /active \? "bg-card text-ink shadow-sm"/);
   });
 });
 

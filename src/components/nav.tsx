@@ -21,7 +21,7 @@ import { CreateAccountRow } from "./demo-controls";
 import { DemoMenu } from "./demo-menu";
 import { LogoutRow } from "./logout-button";
 import { WorkspaceSwitcher } from "./workspace-switcher";
-import { isSectionActive, visibleNavItems, type NavSection } from "@/lib/nav";
+import { isSectionActive, isSettingsPath, isSupportPath, visibleNavItems, type NavSection } from "@/lib/nav";
 import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 
 const NAV_ICONS: Record<NavSection, typeof Home> = {
@@ -63,16 +63,21 @@ function formatNavCount(count: number): string {
   return count > 99 ? "99+" : String(count);
 }
 
+/** Samma valda tillstånd i sidomenyn och foten: mjuk fyllning, inte svart primärknapp. */
+const SIDEBAR_LINK =
+  "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+const SIDEBAR_LINK_ACTIVE = "bg-ink/5 font-medium text-ink";
+const SIDEBAR_LINK_IDLE = "text-soft hover:bg-ink/5 hover:text-ink";
+
+const SHEET_LINK = "flex items-center gap-3 rounded-2xl px-4 py-3.5 text-[15px] hover:bg-canvas";
+const SHEET_LINK_ACTIVE = "bg-ink/5 font-medium text-ink";
+const SHEET_LINK_IDLE = "text-ink";
+
 /** Neutral sidobadge – samma stil för Inbox och Bokföring, inte röd varning. */
-function SidebarCountBadge({ count, active }: { count: number; active: boolean }) {
+function SidebarCountBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <span
-      className={cx(
-        "rounded-full px-1.5 py-px text-[11px] font-medium tabular",
-        active ? "bg-white/15 text-white/80" : "bg-ink/6 text-muted"
-      )}
-    >
+    <span className="rounded-full bg-ink/6 px-1.5 py-px text-[11px] font-medium tabular text-muted">
       {formatNavCount(count)}
     </span>
   );
@@ -111,7 +116,8 @@ export function Sidebar({
   features: ResolvedOptionalFeatures;
 }) {
   const pathname = usePathname();
-  const settingsActive = pathname.startsWith("/installningar") || pathname.startsWith("/foretag");
+  const settingsActive = isSettingsPath(pathname);
+  const supportActive = isSupportPath(pathname);
   const NAV = navWithIcons(features);
 
   return (
@@ -132,17 +138,12 @@ export function Sidebar({
               key={href}
               href={href as never}
               aria-label={navAttentionAriaLabel(href, label, count)}
-              className={cx(
-                "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] transition-colors",
-                active
-                  ? "bg-ink text-white font-medium shadow-sm"
-                  : "text-soft hover:bg-ink/5 hover:text-ink"
-              )}
+              className={cx(SIDEBAR_LINK, active ? SIDEBAR_LINK_ACTIVE : SIDEBAR_LINK_IDLE)}
             >
-              <Icon className={cx("size-[18px]", active ? "text-white" : "text-muted")} strokeWidth={2} />
+              <Icon className="size-[18px] text-muted" strokeWidth={2} />
               <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
                 {label}
-                <SidebarCountBadge count={count} active={active} />
+                <SidebarCountBadge count={count} />
               </span>
             </Link>
           );
@@ -168,19 +169,15 @@ export function Sidebar({
         <Link
           href="/installningar"
           aria-current={settingsActive ? "page" : undefined}
-          className={cx(
-            "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-            settingsActive
-              ? "bg-ink text-white font-medium shadow-sm"
-              : "text-soft hover:bg-ink/5 hover:text-ink"
-          )}
+          className={cx(SIDEBAR_LINK, settingsActive ? SIDEBAR_LINK_ACTIVE : SIDEBAR_LINK_IDLE)}
         >
-          <Settings className={cx("size-[18px]", settingsActive ? "text-white" : "text-muted")} strokeWidth={2} />
+          <Settings className="size-[18px] text-muted" strokeWidth={2} />
           Inställningar
         </Link>
         <Link
           href={(`/support?fran=${encodeURIComponent(pathname)}`) as never}
-          className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] text-soft transition-colors hover:bg-ink/5 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          aria-current={supportActive ? "page" : undefined}
+          className={cx(SIDEBAR_LINK, supportActive ? SIDEBAR_LINK_ACTIVE : SIDEBAR_LINK_IDLE)}
         >
           <LifeBuoy className="size-[18px] text-muted" strokeWidth={2} />
           Hjälp & support
@@ -217,8 +214,9 @@ export function BottomNav({
   const NAV = navWithIcons(features);
   const primary = NAV.slice(0, 4);
   const more = NAV.slice(4);
-  const settingsActive = pathname.startsWith("/installningar") || pathname.startsWith("/foretag");
-  const moreActive = more.some((m) => isSectionActive(pathname, m.href)) || settingsActive;
+  const settingsActive = isSettingsPath(pathname);
+  const supportActive = isSupportPath(pathname);
+  const moreActive = more.some((m) => isSectionActive(pathname, m.href)) || settingsActive || supportActive;
   const moreCount = more.reduce((n, item) => n + navAttentionCount(item.href, inboxCount, bokforingCount), 0);
 
   return (
@@ -252,15 +250,12 @@ export function BottomNav({
                   href={href as never}
                   onClick={() => setMoreOpen(false)}
                   aria-label={navAttentionAriaLabel(href, label, count)}
-                  className={cx(
-                    "flex items-center gap-3 rounded-2xl px-4 py-3.5 text-[15px] hover:bg-canvas",
-                    active ? "bg-ink/5 font-medium text-ink" : "text-ink"
-                  )}
+                  className={cx(SHEET_LINK, active ? SHEET_LINK_ACTIVE : SHEET_LINK_IDLE)}
                 >
                   <Icon className="size-5 text-muted" />
                   <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
                     {label}
-                    <SidebarCountBadge count={count} active={false} />
+                    <SidebarCountBadge count={count} />
                   </span>
                 </Link>
               );
@@ -278,12 +273,8 @@ export function BottomNav({
             <Link
               href="/installningar"
               onClick={() => setMoreOpen(false)}
-              className={cx(
-                "flex items-center gap-3 rounded-2xl px-4 py-3.5 text-[15px] hover:bg-canvas",
-                pathname.startsWith("/installningar") || pathname.startsWith("/foretag")
-                  ? "bg-ink/5 font-medium text-ink"
-                  : "text-ink"
-              )}
+              aria-current={settingsActive ? "page" : undefined}
+              className={cx(SHEET_LINK, settingsActive ? SHEET_LINK_ACTIVE : SHEET_LINK_IDLE)}
             >
               <Settings className="size-5 text-muted" />
               Inställningar
@@ -291,7 +282,8 @@ export function BottomNav({
             <Link
               href={(`/support?fran=${encodeURIComponent(pathname)}`) as never}
               onClick={() => setMoreOpen(false)}
-              className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-[15px] text-ink hover:bg-canvas"
+              aria-current={supportActive ? "page" : undefined}
+              className={cx(SHEET_LINK, supportActive ? SHEET_LINK_ACTIVE : SHEET_LINK_IDLE)}
             >
               <LifeBuoy className="size-5 text-muted" />
               Hjälp & support
