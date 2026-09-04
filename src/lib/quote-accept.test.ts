@@ -15,7 +15,7 @@ process.env.DRIVA_TEST = "1";
 
 import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { db, replaceDb } from "./store";
+import { db, normalize, replaceDb } from "./store";
 import { emptyTestDb, labor, rotReadyCustomer, testCustomer } from "./invoices/test-db";
 import { createQuote, quoteDefaults, sendQuote, updateQuote } from "./services/quotes";
 import { currentVersion, getQuote, quoteAcceptance, quoteTotals } from "./services/data";
@@ -31,6 +31,7 @@ import { acceptanceStatement, describeUserAgent, normalizeAcceptName } from "./q
 import { QUOTE_ACCEPT_METHOD, QUOTE_STATUS, QUOTE_TIMELINE, acceptedByLabel } from "./status-labels";
 import { setMailTransportForTests, type MailMessage } from "./mail";
 import { signaturesSpec } from "./storage/mappers";
+import type { QuoteAcceptance } from "./types";
 import { bankidProvider } from "./services/bankid";
 import { kr } from "./format";
 
@@ -364,6 +365,33 @@ describe("ordförråd och hjälpfunktioner", () => {
     assert.equal(describeUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Version/17.5 Mobile/15E148 Safari/604.1"), "Safari på iPhone");
     assert.equal(describeUserAgent("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/125.0.0.0 Mobile Safari/537.36"), "Chrome på Android");
     assert.equal(describeUserAgent(undefined), undefined);
+  });
+
+  it("JSON-lagret migrerar äldre BankID-formade signaturer till bankid_mock-godkännanden", () => {
+    const legacy = {
+      id: "sig-old",
+      quoteId: "q",
+      quoteVersionId: "v",
+      orderRef: "mock-order-1",
+      signerName: "Elin Nord",
+      signerPersonalNumberMasked: "198104••-••••",
+      signedAt: "2026-01-01T10:00:00.000Z",
+      environment: "mock",
+      evidence: { contentHash: "abc", note: "Demosignatur" },
+    };
+    const state = normalize(emptyTestDb({ signatures: [legacy as unknown as QuoteAcceptance] }), {
+      persistIfDirty: false,
+    });
+    const a = state.signatures[0];
+    assert.equal(a.method, "bankid_mock");
+    assert.equal(a.acceptedByName, "Elin Nord");
+    assert.equal(a.acceptedAt, "2026-01-01T10:00:00.000Z");
+    assert.equal(a.contentHash, "abc");
+    assert.equal(a.bankid?.orderRef, "mock-order-1");
+    assert.equal("signerName" in a, false);
+    // Redan migrerade poster lämnas orörda.
+    const again = normalize(state, { persistIfDirty: false });
+    assert.deepEqual(again.signatures[0], a);
   });
 
   it("databasmappningen gör en exakt rundresa och läser äldre BankID-rader", () => {
