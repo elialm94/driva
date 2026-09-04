@@ -1191,6 +1191,10 @@ export async function submitSupplierPaymentAction(input: {
  * den valideras och sparas (bucket eller inline) INNAN kvittoraden committas;
  * misslyckas lagringen skrivs ingen kvittorad. Utan dataUrl registreras bara
  * uppgifterna (äldre anropare) och raden markeras ärligt som utan fil.
+ *
+ * Felet som returneras är alltid användarsäker svenska – rå Postgres-/RLS-/
+ * Storage-text (t.ex. "new row violates row-level security policy") mappas
+ * via userFacingStorageError.
  */
 export async function uploadReceiptAction(
   expenseId: string,
@@ -1216,7 +1220,7 @@ export async function uploadReceiptAction(
       { capability: "categorize" }
     );
   } catch (e) {
-    return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte spara kvittot." };
+    return { ok: false as const, error: userFacingStorageError(e, "Kunde inte spara kvittot. Försök igen.") };
   }
 }
 
