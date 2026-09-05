@@ -17,6 +17,7 @@ import { bokforingsdatum, getFiscalYear, isDateLocked, lockPeriod, lockedThrough
 import { accountBalance } from "./ledger";
 import { bookAccrual, planAccrual } from "./accruals";
 import { auditTrail } from "./audit";
+import type { AnnualReport } from "../types";
 
 /**
  * Återöppning av ett stängt räkenskapsår.
@@ -376,6 +377,31 @@ describe("återöppning – årsredovisningen", () => {
       resolveAnnualReport("fy-2025", otherYear.id),
       undefined,
       "en rapport för ett annat år hör inte till det här året"
+    );
+  });
+
+  /*
+   * Rapporten är en handling, inte en vy mot böckerna. Läste den ersatta
+   * rapporten sina siffror ur bokföringen skulle den ändra sig när året stängs
+   * om – och då vore den inte längre den handling som undertecknades.
+   */
+  it("den ersatta rapporten behåller sina egna siffror när året stängs om", () => {
+    revenue("2025-06-15", 500_000);
+    closeFiscalYear("fy-2025", "anvandare");
+    const first = generateAnnualReport("fy-2025", "anvandare");
+    const arets = (r: AnnualReport) => r.content.resultatrakning.find((x) => x.label === "Årets resultat")!.amount;
+    assert.equal(arets(first), 397_000);
+
+    reopenFiscalYear("fy-2025", "Ett inköp på 100 000 kr hörde till 2025.", "anvandare");
+    cost("2025-12-20", 100_000);
+    closeFiscalYear("fy-2025", "anvandare");
+    const second = generateAnnualReport("fy-2025", "anvandare");
+
+    assert.equal(arets(second), 317_600, "den nya rapporten ska visa de omräknade siffrorna");
+    assert.equal(
+      arets(resolveAnnualReport("fy-2025", first.id)!),
+      397_000,
+      "den ersatta rapporten ska visa vad den visade när den upprättades"
     );
   });
 
