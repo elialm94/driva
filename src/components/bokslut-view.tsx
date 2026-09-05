@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Check, CircleAlert, FileText, Lock, Wrench } from "lucide-react";
+import { Archive, Check, CircleAlert, FileText, Lock, Wrench } from "lucide-react";
 import { db } from "@/lib/store";
 import { kr, datumKort } from "@/lib/format";
 import { Badge, Card, SectionTitle, buttonClasses, cx } from "./ui";
@@ -16,6 +16,7 @@ import { listAssets, bookValue, assetsNeedingDepreciation, accumulatedDepreciati
 import { pendingAccruals, accrualSuggestions } from "@/lib/accounting/accruals";
 import { computeTaxCalculation } from "@/lib/accounting/tax";
 import { annualReportFor, annualReportHistory } from "@/lib/accounting/annual-report";
+import { retentionPolicyText } from "@/lib/archive/retention";
 
 /**
  * Bokslutet, som det ser ut på både ägarens sida och konsultytan.
@@ -417,6 +418,28 @@ export function BokslutView({ base, hrefFor = (href) => href, businessId, readOn
                     >
                       Visa saldobalans
                     </Link>
+                  </div>
+
+                  {/*
+                    Arkivet ligger för sig, inte som en länk till i raden ovan.
+                    SIE-filen är för nästa bokföringsprogram; arkivet är för
+                    granskaren om sju år, och den skillnaden ska synas.
+                  */}
+                  <div className="mt-4 border-t border-line/60 pt-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-[13px] font-medium">Arkiv {f.label}</p>
+                      <a
+                        href={`/api/bokforing/export?typ=arkiv&ar=${f.label}`}
+                        className={buttonClasses("secondary", "sm")}
+                      >
+                        <Archive className="size-3.5" />
+                        Ladda ner arkivet
+                      </a>
+                    </div>
+                    <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+                      En zip-fil med SIE-filen, rapporterna som CSV och underlagen – kvitton och fakturor i en mapp
+                      per verifikation, plus ett register över var varje underlag ligger. {retentionPolicyText(f)}
+                    </p>
                   </div>
 
                   {/*

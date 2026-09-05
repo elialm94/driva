@@ -11,18 +11,20 @@ import {
   verifikationerCsv,
 } from "@/lib/accounting/export";
 
+import { buildFiscalYearArchive } from "@/lib/archive/export";
 import { withBusinessRead } from "@/lib/auth/session";
 
 /**
- * Export av bokföringsdata: CSV för rapporterna och SIE 4 för hela bokföringen.
- * GET /api/bokforing/export?typ=sie|verifikationer|saldobalans|huvudbok|resultat|balans|moms[&ar=2026][&period=2026-K2]
+ * Export av bokföringsdata: CSV för rapporterna, SIE 4 för hela bokföringen och
+ * arkivet – hela året zippat med underlagen, för sjuårsarkiveringen.
+ * GET /api/bokforing/export?typ=sie|arkiv|verifikationer|saldobalans|huvudbok|resultat|balans|moms[&ar=2026][&period=2026-K2]
  * Kräver inloggning – körs i läsande tenantkontext.
  */
 export async function GET(req: NextRequest) {
   return withBusinessRead(() => handleExport(req));
 }
 
-function handleExport(req: NextRequest) {
+async function handleExport(req: NextRequest) {
   const typ = req.nextUrl.searchParams.get("typ") ?? "";
   const ar = req.nextUrl.searchParams.get("ar");
   const period = req.nextUrl.searchParams.get("period");
@@ -40,6 +42,16 @@ function handleExport(req: NextRequest) {
         headers: {
           "Content-Type": "application/octet-stream",
           "Content-Disposition": `attachment; filename="${slug}-${fy.label}.se"`,
+        },
+      });
+    }
+
+    if (typ === "arkiv") {
+      const archive = await buildFiscalYearArchive(fy.id);
+      return new NextResponse(new Uint8Array(archive.bytes), {
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="${slug ? `${slug}-` : ""}${archive.filename}"`,
         },
       });
     }
