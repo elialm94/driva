@@ -167,7 +167,15 @@ function bostadFor(ctx: HusContext): HusBostad | null {
 function fileNameFor(ctx: HusContext, today: string): string {
   const kind = ctx.type;
   if (ctx.job) {
-    const slug = ctx.job.title.toLowerCase().replace(/[^a-z0-9åäö]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+    // Bara ASCII i filnamnet – Content-Disposition tål inte åäö rakt av.
+    const slug = ctx.job.title
+      .toLowerCase()
+      .replace(/[åä]/g, "a")
+      .replace(/ö/g, "o")
+      .replace(/é/g, "e")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 40);
     return `${kind}-begaran-${slug || ctx.job.id}-${today}.xml`;
   }
   return `${kind}-begaran-faktura-${ctx.primary.number ?? ctx.primary.id}-${today}.xml`;

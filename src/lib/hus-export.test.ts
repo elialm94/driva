@@ -84,7 +84,7 @@ describe("HUS-fil från ROT-ärende", () => {
     assert.equal(row.otherCost, 2_625);
     assert.equal(row.paymentDate, todayDate());
     assert.equal(preview.downloadHref, "/api/skatteverket/hus?jobb=job-kok");
-    assert.match(preview.fileName, /^rot-begaran-.*\.xml$/);
+    assert.equal(preview.fileName, `rot-begaran-koksrenovering-${todayDate()}.xml`, "ASCII-filnamn för Content-Disposition");
 
     const file = buildHusExportFile({ jobId: "job-kok" });
     assert.equal(file.type, "rot");
