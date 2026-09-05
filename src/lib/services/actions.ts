@@ -34,6 +34,12 @@ import { bokforingsdatum, calendarFiscalYear, vatDueDate, vatPeriodsOf, type Per
 import { vatPeriodicity } from "../accounting/fiscal";
 import { computeVatPosition } from "../accounting/vat";
 import { fSkattMonthsAwaitingBooking, vatReportsAwaitingTaxAccount } from "../accounting/tax-account";
+import {
+  currentEmployee,
+  employerDeclarationsAwaitingFiling,
+  monthLabel,
+  payrollMonthsAwaitingRun,
+} from "../accounting/payroll";
 import { datumKort, kr, relativ } from "../format";
 import { invoiceHref, jobHref, newQuoteHref, quoteHref } from "../nav";
 import { isIncomingUnquotedJob, jobSourceLabel } from "./jobs";
@@ -287,6 +293,8 @@ const RANK = {
   quoteFollowUp: 13,
   quoteExpired: 14,
   taxAccount: 15,
+  /** Obokförd lön är bokföringsarbete – deklarationen använder momsens ranker. */
+  payroll: 15,
   missingReceipt: 16,
   clientRequest: 6,
 } as const;
@@ -362,6 +370,7 @@ function collectBookkeepingSources(ranked: Ranked[], watching: WatchingItem[], n
   runCollect("inbox-mail", () => collectInboxMail(ranked));
   runCollect("vat", () => collectVat(ranked, watching, now));
   runCollect("tax-account", () => collectTaxAccount(ranked, now));
+  runCollect("payroll", () => collectPayroll(ranked, watching, now));
 }
 
 /** Snooze/HIDE: dolda tills tidpunkten passerat – sedan synliga igen om saken kvarstår. */
@@ -1463,6 +1472,78 @@ function collectInboxMail(ranked: Ranked[]) {
 function excerpt(text: string, max = 80): string {
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length <= max ? clean : `${clean.slice(0, max - 1)}…`;
+}
+
+/* ----------------------------- Lön och AGI ------------------------------------ */
+
+/**
+ * Lönen är bolagets enda MÅNATLIGA myndighetsskyldighet: tolv tillfällen om året
+ * där en missad arbetsgivardeklaration kostar förseningsavgift. Därför ligger
+ * deklarationen på momsens ranker (samma sorts deadline) medan obokförd lön är
+ * vanligt bokföringsarbete längre ner i kön.
+ */
+function collectPayroll(ranked: Ranked[], watching: WatchingItem[], now: Date) {
+  const today = bokforingsdatum(now.toISOString());
+  if (!currentEmployee()) return;
+
+  const unbooked = payrollMonthsAwaitingRun(today);
+  if (unbooked.length > 0) {
+    const labels = unbooked.map(monthLabel);
+    ranked.push({
+      rank: RANK.payroll,
+      order: 0,
+      action: {
+        id: "payroll-unbooked",
+        priority: "action",
+        category: "accounting",
+        icon: "receipt",
+        title:
+          unbooked.length === 1
+            ? `Lönen för ${labels[0]} är inte bokförd`
+            : `Lönen är inte bokförd för ${unbooked.length} månader`,
+        subtitle: `${labels.join(", ")} · bokför lönen så att skatten och avgifterna hamnar i deklarationen`,
+        href: "/bokforing/lon",
+        cta: { type: "link", label: "Öppna lönen", href: "/bokforing/lon" },
+      },
+    });
+  }
+
+  for (const declaration of employerDeclarationsAwaitingFiling(today)) {
+    const daysTo = daysBetween(today, declaration.dueDate);
+    if (daysTo > VAT_ATTENTION_DAYS) {
+      if (daysTo <= WATCHING.vatDays) {
+        watching.push({
+          id: `agi-${declaration.month}`,
+          category: "vat",
+          title: `Arbetsgivardeklaration ${kr(declaration.attBetala)}`,
+          subtitle: `${declaration.label} · lämnas senast ${datumKort(declaration.dueDate)}`,
+          href: "/bokforing/lon",
+          date: declaration.dueDate,
+          amount: declaration.attBetala,
+        });
+      }
+      continue;
+    }
+    const urgent = daysTo <= VAT_URGENT_DAYS;
+    ranked.push({
+      rank: daysTo < 0 ? RANK.vatOverdue : urgent ? RANK.vatUrgent : RANK.vatSoon,
+      order: daysTo,
+      action: {
+        id: `agi-${declaration.month}`,
+        priority: urgent ? "urgent" : "action",
+        category: "vat",
+        icon: "calendar",
+        title:
+          daysTo < 0
+            ? `Arbetsgivardeklarationen för ${declaration.label} skulle ha lämnats ${datumKort(declaration.dueDate)}`
+            : `Arbetsgivardeklaration ska lämnas ${relativ(declaration.dueDate)}`,
+        subtitle: `${declaration.label} · ${kr(declaration.attBetala)} att betala`,
+        href: "/bokforing/lon",
+        cta: { type: "link", label: "Öppna lönen", href: "/bokforing/lon" },
+        amount: declaration.attBetala,
+      },
+    });
+  }
 }
 
 /* ---------------------------------- Moms -------------------------------------- */

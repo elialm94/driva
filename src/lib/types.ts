@@ -62,7 +62,11 @@ export interface CompanySettings {
   vatPeriodicity?: VatPeriodicity;
   /** Preliminärskatt (F-skatt) som dras varje månad. */
   fSkattPerMonth: number;
-  /** Reserv för arbetsgivaravgifter och personalskatt per månad. */
+  /**
+   * Reserv för arbetsgivaravgifter och personalskatt per månad. Används bara när
+   * ingen anställd är upplagd – finns lönen räknas reserven ur den faktiska
+   * lönen och den åldersberoende avgiften (services/finance.ts).
+   */
   payrollReservePerMonth: number;
   /** Standard betalningsvillkor i dagar. */
   paymentTermsDays: number;

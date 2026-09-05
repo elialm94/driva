@@ -11,6 +11,16 @@ import {
   reconcileTaxAccount,
   type TaxAccountReconciliation,
 } from "@/lib/accounting/tax-account";
+import {
+  employeeById,
+  endEmployment,
+  generateEmployerDeclaration,
+  markEmployerDeclarationDeclared,
+  reversePayrollRun,
+  runPayroll,
+  saveEmployee,
+  type EmployeeInput,
+} from "@/lib/accounting/payroll";
 import { runBokslutAutomation, closeFiscalYear } from "@/lib/accounting/close";
 import { undoExpenseBooking } from "@/lib/services/expenses";
 import {
@@ -86,6 +96,52 @@ export async function bookFSkattAction(month: string): Promise<Result> {
 
 export async function bookTaxAccountDepositAction(txId: string): Promise<Result> {
   return run(() => void bookTaxAccountDeposit(txId, "anvandare"), "write_accounting");
+}
+
+/* ----------------------------------- Lön ---------------------------------- */
+
+export async function saveEmployeeAction(
+  input: EmployeeInput & { id?: string }
+): Promise<Result> {
+  return run(() => void saveEmployee(input, "anvandare"), "write_accounting");
+}
+
+export async function endEmploymentAction(id: string, endDate: string): Promise<Result> {
+  return run(() => void endEmployment(id, endDate, "anvandare"), "write_accounting");
+}
+
+export async function runPayrollAction(month: string): Promise<Result> {
+  return run(() => void runPayroll({ month }, "anvandare"), "write_accounting");
+}
+
+export async function reversePayrollRunAction(runId: string, reason: string): Promise<Result> {
+  return run(() => void reversePayrollRun(runId, reason, "anvandare"), "correct_voucher");
+}
+
+export async function generateEmployerDeclarationAction(month: string): Promise<Result> {
+  return run(() => void generateEmployerDeclaration(month, "anvandare"), "write_accounting");
+}
+
+export async function markEmployerDeclarationDeclaredAction(id: string): Promise<Result> {
+  return run(() => void markEmployerDeclarationDeclared(id, "anvandare"), "vat");
+}
+
+/**
+ * Dedikerad Visa-åtgärd för den anställdes personnummer. Vanliga vyer visar det
+ * maskat; ägaren kan visa hela, konsulten aldrig.
+ */
+export async function revealEmployeePersonnummerAction(
+  employeeId: string
+): Promise<{ ok: true; value: string } | { ok: false }> {
+  try {
+    return await withBusiness(() => {
+      const value = employeeById(employeeId)?.personnummer;
+      if (!value) return { ok: false } as const;
+      return { ok: true as const, value };
+    }, { capability: "reveal_personnummer" });
+  } catch {
+    return { ok: false };
+  }
 }
 
 /**

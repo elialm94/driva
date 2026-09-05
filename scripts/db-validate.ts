@@ -1388,6 +1388,100 @@ async function main() {
   await asSuperuser();
 
   // ------------------------------------------------------------------
+  // Lön och arbetsgivardeklaration (migration 34)
+  // ------------------------------------------------------------------
+  console.log("\nLön och AGI:");
+
+  await asApp(A);
+  await expectOk(db, "den anställde kan läggas upp i egen tenant", () =>
+    db.query(
+      `insert into public.employees
+         (id, business_id, name, personnummer, role, monthly_salary, tax_basis, start_date, status)
+       values ('emp-a', $1, 'Anna Ägare', '19850312-4567', 'foretagsledare', 42000,
+               '{"kind":"tabell","table":34,"monthlyDeduction":9400,"salaryAtLookup":42000}'::jsonb,
+               '2026-01-01', 'anstalld')`,
+      [A]
+    )
+  );
+  await expectError(db, "anställda är tenantisolerade (RLS)", "row-level security", () =>
+    db.query(
+      `insert into public.employees
+         (id, business_id, name, personnummer, role, monthly_salary, tax_basis, start_date, status)
+       values ('emp-b', $1, 'Intrång', '19850312-4567', 'tjansteman', 1000, '{"kind":"procent","percent":30}'::jsonb,
+               '2026-01-01', 'anstalld')`,
+      [B]
+    )
+  );
+  await expectError(db, "okänd roll avvisas", "employees_role_check", () =>
+    db.query(
+      `insert into public.employees
+         (id, business_id, name, personnummer, role, monthly_salary, tax_basis, start_date, status)
+       values ('emp-fel-roll', $1, 'Fel roll', '19850312-4567', 'vd', 1000, '{"kind":"procent","percent":30}'::jsonb,
+               '2026-01-01', 'anstalld')`,
+      [A]
+    )
+  );
+
+  const payrollRun = (id: string, month: string, payDate = "2026-01-25") =>
+    db.query(
+      `insert into public.payroll_runs
+         (id, business_id, employee_id, month, pay_date, gross, tax, net, employer_contribution,
+          contribution_percent, tax_basis, salary_account, verification_id, created_by)
+       values ($1, $2, 'emp-a', $3, $4, 42000, 9400, 32600, 13196, 31.42,
+               '{"kind":"tabell","table":34,"monthlyDeduction":9400,"salaryAtLookup":42000}'::jsonb,
+               7220, 'ver-lon-1', 'anvandare')`,
+      [id, A, month, payDate]
+    );
+  await expectOk(db, "lönekörningen kan bokföras", () => payrollRun("run-a-01", "2026-01"));
+  await expectError(db, "samma månad kan inte lönekörras två gånger", "duplicate key", () =>
+    payrollRun("run-a-01-dubblett", "2026-01")
+  );
+  await expectError(db, "lönemånad måste vara YYYY-MM", "payroll_runs_month_check", () =>
+    payrollRun("run-a-fel-manad", "2026-13", "2026-12-25")
+  );
+
+  const declaration = (id: string, month: string, status: string) =>
+    db.query(
+      `insert into public.employer_declarations
+         (id, business_id, month, label, status, individual_rows, gross, tax, employer_contribution,
+          att_betala, due_date)
+       values ($1, $2, $3, 'januari 2026', $4,
+               '[{"employeeId":"emp-a","name":"Anna Ägare","personnummer":"19850312-4567","gross":42000,"tax":9400,"employerContribution":13196}]'::jsonb,
+               42000, 9400, 13196, 22596, '2026-02-12')`,
+      [id, A, month, status]
+    );
+  await expectOk(db, "arbetsgivardeklarationen kan lämnas", () => declaration("agi-a-01", "2026-01", "deklarerad"));
+  await expectError(db, "en månad har bara en arbetsgivardeklaration", "duplicate key", () =>
+    declaration("agi-a-01-dubblett", "2026-01", "utkast")
+  );
+  await expectError(db, "okänd deklarationsstatus avvisas", "employer_declarations_status_check", () =>
+    declaration("agi-a-fel-status", "2026-02", "inskickad")
+  );
+  {
+    const r = await rows<{ namn: string; brutto: string; pnr: string }>(
+      db,
+      `select e.name as namn, r.gross as brutto,
+              d.individual_rows -> 0 ->> 'personnummer' as pnr
+         from public.payroll_runs r
+         join public.employees e on e.id = r.employee_id
+         join public.employer_declarations d on d.month = r.month and d.business_id = r.business_id
+        where r.id = 'run-a-01'`
+    );
+    if (r[0]?.namn === "Anna Ägare" && Number(r[0]?.brutto) === 42000 && r[0]?.pnr === "19850312-4567") {
+      ok("lön, anställd och individuppgift hänger ihop och rundresar");
+    } else {
+      fail("lön, anställd och individuppgift hänger ihop och rundresar", JSON.stringify(r));
+    }
+  }
+  {
+    await asApp(B);
+    const r = await rows(db, `select id from public.employees`);
+    if (r.length === 0) ok("företag B ser inte A:s anställda");
+    else fail("företag B ser inte A:s anställda", JSON.stringify(r));
+  }
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");

@@ -5,6 +5,8 @@ import { currentVatPosition } from "../accounting/vat";
 import { accountBalance, resultatrapport } from "../accounting/ledger";
 import { todayDate } from "../accounting/dates";
 import { SKATTEKONTO } from "../accounting/tax-account";
+import { birthDateFromPersonnummer } from "../personnummer";
+import { computePayroll, currentEmployee } from "../accounting/payroll";
 
 /** Innevarande momsperiod med deklarations- och betaldatum. */
 export function momsPeriod() {
@@ -43,6 +45,27 @@ export interface FinanceOverview {
   available: number;
 }
 
+/**
+ * En månads personalskatt och arbetsgivaravgifter – det bolaget ska ha kvar när
+ * arbetsgivardeklarationen förfaller. Finns lönen upplagd räknas reserven ur den
+ * anställdes faktiska lön och åldersberoende avgift; annars används den siffra
+ * företaget själv angett.
+ */
+function payrollReservePerMonth(): number {
+  const employee = currentEmployee();
+  const manual = db().settings.payrollReservePerMonth;
+  if (!employee) return manual;
+  const birthDate = birthDateFromPersonnummer(employee.personnummer);
+  if (!birthDate) return manual;
+  const calc = computePayroll({
+    gross: employee.monthlySalary,
+    taxBasis: employee.taxBasis,
+    birthDate,
+    incomeYear: Number(todayDate().slice(0, 4)),
+  });
+  return calc.tax + calc.contribution;
+}
+
 /** Den enkla ekonomiska överblicken: banken, reserverat, kommande, ungefär tillgängligt. */
 export function financeOverview(): FinanceOverview {
   const data = db();
@@ -57,7 +80,7 @@ export function financeOverview(): FinanceOverview {
   const momsDue = momsNu.due;
   // Reserv: kommande två månaders F-skatt + en månads arbetsgivaravgifter/personalskatt.
   const fSkatt = data.settings.fSkattPerMonth * 2;
-  const payrollReserve = data.settings.payrollReservePerMonth;
+  const payrollReserve = payrollReservePerMonth();
   // Skattekontot: pengar som redan lämnat 1930 (och därmed `bank`) behöver inte
   // reserveras en gång till, medan en skuld på kontot är precis vad reserven
   // finns till för. Positivt saldo = tillgodo hos Skatteverket.

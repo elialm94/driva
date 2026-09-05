@@ -79,6 +79,7 @@ export const BOKFORING_DETAIL_TABS = [
   { key: "rapporter", href: "/bokforing/resultat", label: "Rapporter" },
   { key: "moms", href: "/bokforing/moms", label: "Moms" },
   { key: "skattekonto", href: "/bokforing/skattekonto", label: "Skattekonto" },
+  { key: "lon", href: "/bokforing/lon", label: "Lön" },
   { key: "bokslut", href: "/bokforing/bokslut", label: "Bokslut" },
 ] as const;
 
@@ -95,6 +96,7 @@ export const BOKFORING_FLIK_HREF: Record<string, string> = {
   rapporter: "/bokforing/resultat",
   moms: "/bokforing/moms",
   skattekonto: "/bokforing/skattekonto",
+  lon: "/bokforing/lon",
   bokslut: "/bokforing/bokslut",
   saldobalans: "/bokforing/saldobalans",
   resultat: "/bokforing/resultat",
@@ -119,6 +121,7 @@ export function bokforingDetailTabForPath(pathname: string): (typeof BOKFORING_D
   if ((BOKFORING_REPORT_PATHS as readonly string[]).includes(path)) return "rapporter";
   if (path === "/bokforing/moms") return "moms";
   if (path === "/bokforing/skattekonto") return "skattekonto";
+  if (path === "/bokforing/lon" || path.startsWith("/bokforing/lon/")) return "lon";
   if (path === "/bokforing/bokslut") return "bokslut";
   if (path === "/bokforing/detaljer") return "verifikationer";
   return null;
@@ -172,6 +175,8 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/bokforing/balans", section: "bokforing", parent: "/bokforing", label: "Balansrapport", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/moms", section: "bokforing", parent: "/bokforing", label: "Moms", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/skattekonto", section: "bokforing", parent: "/bokforing", label: "Skattekonto", backLabel: "Bokföring", showBack: true },
+  { pattern: "/bokforing/lon/:runId", section: "bokforing", parent: "/bokforing/lon", label: "Lönespecifikation", backLabel: "Lön", showBack: true },
+  { pattern: "/bokforing/lon", section: "bokforing", parent: "/bokforing", label: "Lön", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/bokslut", section: "bokforing", parent: "/bokforing", label: "Bokslut", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/detaljer", section: "bokforing", parent: "/bokforing", label: "Bokföringsdetaljer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing", section: "bokforing", label: "Bokföring" },
@@ -405,6 +410,7 @@ export function structuralCrumbs(
     case "/bokforing/balans":
     case "/bokforing/moms":
     case "/bokforing/skattekonto":
+    case "/bokforing/lon":
     case "/bokforing/bokslut":
     case "/bokforing/detaljer":
       return [{ href: "/bokforing", label: "Bokföring" }, { label: title }];
