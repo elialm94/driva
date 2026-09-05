@@ -38,7 +38,7 @@ describe("inställningsflikar", () => {
   it("har inte Standardval – Fakturering samlar dokumentdefault", () => {
     assert.deepEqual(
       SETTINGS_TABS.map((t) => t.key),
-      ["foretag", "fakturering", "funktioner", "konto"]
+      ["kom-igang", "foretag", "fakturering", "funktioner", "konto"]
     );
     assert.ok(!SETTINGS_TABS.some((t) => t.label === "Standardval"));
     assert.equal(parseSettingsFlik("standardval"), "fakturering");

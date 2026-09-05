@@ -15,6 +15,7 @@ import {
   type OnboardingPaymentTiming,
 } from "@/lib/onboarding";
 import { COMPANY_FORM_OPTIONS } from "@/lib/setup/onboarding-state";
+import { ChoiceChip } from "@/components/choice-chip";
 import { swedishOrgnrInputProps } from "@/lib/validation";
 
 const initialState: CompanyStepState = {};
@@ -29,30 +30,6 @@ const PAYMENT_METHODS: { value: OnboardingPaymentMethod; label: string }[] = [
   { value: "plusgiro", label: "Plusgiro" },
   { value: "bankkonto", label: "Bankkonto" },
 ];
-
-/** Stora, tryckvänliga valknappar (≥ 44 px) – samma mönster som stegets övriga val. */
-export function ChoiceChip({
-  checked,
-  children,
-  className,
-  ...rest
-}: { checked: boolean; children: React.ReactNode; className?: string } & Omit<
-  React.LabelHTMLAttributes<HTMLLabelElement>,
-  "className" | "children"
->) {
-  return (
-    <label
-      className={cx(
-        "flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3.5 py-2.5 text-[15px] transition-colors",
-        checked ? "border-ink bg-ink text-white" : "border-line-strong bg-card text-ink hover:border-muted/60",
-        className,
-      )}
-      {...rest}
-    >
-      {children}
-    </label>
-  );
-}
 
 export function OnboardingForm({
   defaultEmail,

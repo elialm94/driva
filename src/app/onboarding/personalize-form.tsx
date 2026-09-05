@@ -11,7 +11,7 @@ import {
   PAYROLL_OPTIONS,
   validatePersonalization,
 } from "@/lib/setup/onboarding-state";
-import { ChoiceChip } from "./onboarding-form";
+import { ChoiceChip } from "@/components/choice-chip";
 
 const initialState: PersonalizeStepState = {};
 const questionTitle = "text-[16px] font-semibold text-ink";

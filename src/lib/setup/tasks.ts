@@ -17,6 +17,7 @@ import { bankConnectionView } from "../banking/connection-state";
 import { hasCollaborationUsage, resolveOwnerBusinessId, wholesalersEnabled } from "../features";
 import { OPTIONAL_FEATURE_HREF } from "../optional-features";
 import { SETTINGS_HREF } from "../settings-routes";
+import { IMPORT_HREF } from "./routes";
 
 export type SetupTaskStatus = "todo" | "in_progress" | "done" | "later" | "not_needed";
 export type SetupTaskRelevance = "recommended" | "optional" | "hidden";
@@ -38,7 +39,7 @@ export interface SetupTask {
   canDismiss: boolean;
 }
 
-export const IMPORT_HREF = "/kom-igang/importera";
+export { IMPORT_HREF };
 
 export function setupTasks(): SetupTask[] {
   const data = db();

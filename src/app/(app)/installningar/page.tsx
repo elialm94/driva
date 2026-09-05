@@ -19,6 +19,7 @@ import { requestSlot } from "@/lib/storage/request-scope";
 import { db } from "@/lib/store";
 import { redirect } from "next/navigation";
 import { listConnectionOverviews } from "@/lib/services/wholesalers";
+import { setupSummary } from "@/lib/setup/tasks";
 
 export const metadata = { title: "Inställningar" };
 
@@ -62,6 +63,11 @@ export default async function SettingsPage(props: {
         account={{ demo: demoAccount, email: sessionUser?.email ?? null }}
         features={features}
         wholesalers={flik === "grossister" ? listConnectionOverviews() : undefined}
+        setup={
+          flik === "kom-igang"
+            ? { summary: setupSummary(), onboarding: db().onboarding ?? null, imports: db().dataImports ?? [] }
+            : undefined
+        }
       />
       {/* Endast demon: JSON-läget lokalt eller den publika demosessionen.
           Servervägen (resetDemoAction) vaktar dessutom oberoende av UI:t. */}
