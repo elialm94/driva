@@ -78,8 +78,15 @@ export interface BalanceAccountReconciliation {
   source: TieOutSource;
   /** Vad avstämningen kommer fram till, i klartext. */
   detail: string;
-  /** Sant när kontot är förklarat. */
+  /** Sant när kontot är förklarat: delsystemet säger samma sak. */
   ok: boolean;
+  /**
+   * Sant när kontot inte KAN stämmas av automatiskt – ett banklån har ingen
+   * motsvarighet i Driva. Sådana konton stoppar inte bokslutet, för det vore
+   * att kräva något användaren inte kan leverera, men de listas så att de
+   * stäms av mot underlaget för hand i stället för att glömmas.
+   */
+  manual?: boolean;
   href?: string;
   hrefLabel?: string;
 }
@@ -87,8 +94,10 @@ export interface BalanceAccountReconciliation {
 export interface BalanceReconciliation {
   fiscalYearId: string;
   rows: BalanceAccountReconciliation[];
-  /** Konton som inte stämmer eller saknar förklaring. */
+  /** Konton där huvudboken och delsystemet säger olika. Stoppar bokslutet. */
   unexplained: BalanceAccountReconciliation[];
+  /** Konton som måste stämmas av mot ett underlag för hand. */
+  manual: BalanceAccountReconciliation[];
   ok: boolean;
 }
 
@@ -108,7 +117,7 @@ const NO_SUBSYSTEM_EXPECTED = new Set([
 
 export function balanceReconciliation(fiscalYearId: string): BalanceReconciliation {
   const fy = getFiscalYear(fiscalYearId);
-  if (!fy) return { fiscalYearId, rows: [], unexplained: [], ok: true };
+  if (!fy) return { fiscalYearId, rows: [], unexplained: [], manual: [], ok: true };
 
   const sb = saldobalans({ from: fy.startDate, to: fy.endDate });
   const accounts = new Set<number>();
@@ -129,7 +138,8 @@ export function balanceReconciliation(fiscalYearId: string): BalanceReconciliati
     rows.push(row);
   }
   const unexplained = rows.filter((r) => !r.ok);
-  return { fiscalYearId, rows, unexplained, ok: unexplained.length === 0 };
+  const manual = rows.filter((r) => r.manual);
+  return { fiscalYearId, rows, unexplained, manual, ok: unexplained.length === 0 };
 }
 
 /** Balanskonton som har ett delsystem att stämmas av mot. */
@@ -199,6 +209,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
         source: "ingen",
         detail: `Ingen bank är kopplad, så saldot ${ledger} kr går inte att stämma av automatiskt. Jämför mot bankens kontoutdrag.`,
         ok: true,
+        manual: true,
         href: "/ekonomi?flik=bank",
         hrefLabel: "Öppna banken",
       };
@@ -227,6 +238,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       source: "skattekonto",
       detail: `Bokfört saldo ${ledger} kr. Stäm av mot Skatteverkets kontoutdrag på skattekontosidan.`,
       ok: true,
+      manual: true,
       href: "/bokforing/skattekonto",
       hrefLabel: "Öppna skattekontot",
     };
@@ -366,14 +378,19 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
     };
   }
 
-  // Kontot har saldo men inget delsystem. Det är inte fel – men det är inte
-  // avstämt heller, och tystnad om det vore att kalla ett okänt saldo för rätt.
+  /*
+   * Kontot har saldo men inget delsystem – ett banklån, en skuld till en
+   * aktieägare. Driva kan inte avgöra om saldot är rätt, och att stoppa
+   * bokslutet på det vore att kräva ett svar användaren inte kan ge här.
+   * Kontot listas därför som avstämt för hand, inte som en avvikelse.
+   */
   return {
     ...base,
-    difference: ledger,
+    difference: 0,
     source: "ingen",
-    detail: `${accountName(account)} har saldo ${ledger} kr utan delsystem att stämma av mot. Kontrollera saldot mot underlaget och lägg vid en specifikation.`,
-    ok: ledger === 0,
+    detail: `${accountName(account)} har saldo ${ledger} kr utan delsystem i Driva. Stäm av mot underlaget – lånebeskedet, avtalet eller motpartens uppgift – och lägg vid en specifikation.`,
+    ok: true,
+    manual: ledger !== 0,
   };
 }
 

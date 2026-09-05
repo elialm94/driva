@@ -371,7 +371,7 @@ describe("avstämning per balanskonto", () => {
     assert.equal(balanceReconciliation("fy").rows.some((r) => r.account === 1710), false);
   });
 
-  it("ett saldo utan delsystem kallas inte avstämt", () => {
+  it("ett saldo utan delsystem stäms av för hand i stället för att stoppa bokslutet", () => {
     postVerification({
       date: `${YEAR}-05-01`,
       description: "Lån från närstående",
@@ -382,9 +382,17 @@ describe("avstämning per balanskonto", () => {
       source: { type: "manuell" },
       createdBy: "anvandare",
     });
-    const row = balanceReconciliation("fy").rows.find((r) => r.account === 2393);
-    assert.equal(row?.ok, false);
+    const rec = balanceReconciliation("fy");
+    const row = rec.rows.find((r) => r.account === 2393);
+    // Driva har inget lånregister, så saldot går inte att verifiera maskinellt.
+    // Att stoppa bokslutet på det vore att kräva ett svar användaren inte kan
+    // ge i produkten – men det får inte heller tyst passera som avstämt.
+    assert.equal(row?.manual, true);
+    assert.equal(row?.ok, true);
     assert.match(row!.detail, /utan delsystem/);
+    assert.ok(rec.manual.some((r) => r.account === 2393));
+    assert.ok(!rec.unexplained.some((r) => r.account === 2393));
+    assert.equal(rec.ok, true);
   });
 
   it("bilagekontot stäms av mot bilagan", () => {

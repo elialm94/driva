@@ -158,7 +158,12 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
       ok: tieOut.ok,
       blocking: true,
       detail: tieOut.ok
-        ? `${tieOut.rows.length} balanskonto${tieOut.rows.length === 1 ? "" : "n"} stämmer mot sina underlag.`
+        ? `${tieOut.rows.length} balanskonto${tieOut.rows.length === 1 ? "" : "n"} stämmer mot sina underlag.` +
+          (tieOut.manual.length
+            ? ` ${tieOut.manual.length} konto${tieOut.manual.length === 1 ? "" : "n"} saknar delsystem och stäms av mot underlaget för hand: ${tieOut.manual
+                .map((r) => `${r.account} ${r.name}`)
+                .join(", ")}.`
+            : "")
         : `${tieOut.unexplained.length} konto${tieOut.unexplained.length === 1 ? "" : "n"} går inte ihop: ${tieOut.unexplained
             .map((r) => `${r.account} ${r.name}`)
             .join(", ")}.`,

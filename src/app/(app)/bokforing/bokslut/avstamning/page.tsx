@@ -64,6 +64,13 @@ export default async function AvstamningPage() {
                 ? "Bokslutet kan slutföras. Varje saldo har ett underlag utanför bokföringen som säger samma sak."
                 : "Skillnaden nedan måste förklaras innan året kan stängas. Ett saldo som inte stämmer mot sitt underlag är en felkälla som följer med till nästa år."}
             </p>
+            {tieOut.manual.length > 0 ? (
+              <p className="mt-2 text-[13px] leading-relaxed text-soft">
+                {tieOut.manual.length} konto{tieOut.manual.length === 1 ? "" : "n"} saknar delsystem i Driva – ett
+                banklån eller en skuld till en aktieägare har inget register att jämföra mot. De stoppar inte bokslutet,
+                men stäm av dem mot lånebeskedet eller avtalet och lägg vid en specifikation.
+              </p>
+            ) : null}
           </div>
         </div>
       </Card>
@@ -111,7 +118,9 @@ export default async function AvstamningPage() {
                   {row.subsystem === undefined ? <span className="text-muted">–</span> : kr(row.subsystem)}
                 </td>
                 <td className="py-2 text-right align-top">
-                  {row.difference === 0 ? (
+                  {row.manual ? (
+                    <Badge tone="neutral">För hand</Badge>
+                  ) : row.difference === 0 ? (
                     <Badge tone="ok">Stämmer</Badge>
                   ) : (
                     <span className="font-semibold tabular text-warn">{kr(row.difference)}</span>

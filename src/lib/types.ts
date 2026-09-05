@@ -1463,6 +1463,7 @@ export type AuditAction =
   | "bokslutsbilaga_bokford"
   | "arsredovisning_genererad"
   | "arsredovisning_status"
+  | "arsredovisning_andrad"
   | "bokforing_angrad"
   // Affärshändelser (autopiloten): kritiska pengaflöden auditloggas alltid,
   // i samma transaktion som själva händelsen.
@@ -1507,10 +1508,56 @@ export interface AuditEvent {
 export interface ReportRow {
   label: string;
   amount: number;
+  /**
+   * Jämförelsetal för föregående räkenskapsår (ÅRL 3:1). Undefined för det
+   * första året – då finns inget att jämföra med.
+   */
+  prior?: number;
   /** Summeringsrad. */
   bold?: boolean;
   /** Notreferens. */
   note?: number;
+}
+
+/**
+ * Flerårsöversikt enligt ÅRL 6:1. Nyckeltalen räknas ur varje års egna
+ * fastställda siffror – aldrig ur årets siffror med förra årets etikett.
+ */
+export interface MultiYearRow {
+  label: string;
+  nettoomsattning: number;
+  resultatEfterFinansiella: number;
+  soliditetProcent: number;
+  /** Saknas för år Driva inte har bokföring för. */
+  ofullstandig?: boolean;
+}
+
+/**
+ * Den som skriver under årsredovisningen. Enligt ÅRL 2:7 skrivs den under av
+ * samtliga styrelseledamöter och av verkställande direktören.
+ */
+export interface AnnualReportSignatory {
+  name: string;
+  /** Styrelseledamot, styrelsens ordförande, verkställande direktör … */
+  role: string;
+  /** Ort och datum för underskriften. Tomt tills den skrivits under. */
+  signedAt?: string;
+  place?: string;
+}
+
+/**
+ * Fastställelseintyget: bestyrkandet på den kopia som skickas till
+ * Bolagsverket. Intygar att resultat- och balansräkningen fastställts på
+ * årsstämman och att stämman beslutat om resultatdispositionen.
+ */
+export interface AnnualReportCertification {
+  /** Datum för årsstämman. */
+  stammaDate?: string;
+  /** Den styrelseledamot eller VD som bestyrker kopian. */
+  certifiedByName?: string;
+  certifiedByRole?: string;
+  /** Stämmans beslut, i klartext. */
+  dispositionDecision?: string;
 }
 
 export interface AnnualReportContent {
@@ -1519,16 +1566,28 @@ export interface AnnualReportContent {
   fiscalLabel: string;
   periodStart: string;
   periodEnd: string;
+  /** Bolagets säte – ska framgå av årsredovisningen (ÅRL 6:1). */
+  sate?: string;
   forvaltningsberattelse: {
     verksamhet: string;
     vasentligaHandelser: string;
-    flerarsoversikt: { label: string; nettoomsattning: number; resultatEfterFinansiella: number; soliditetProcent: number }[];
-    resultatdisposition: { tillForfogande: number; balanserasINyRakning: number };
+    flerarsoversikt: MultiYearRow[];
+    /** Förändringar i eget kapital under året (ÅRL 6:2). */
+    egetKapitalForandring?: {
+      label: string;
+      aktiekapital: number;
+      balanseratResultat: number;
+      aretsResultat: number;
+      summa: number;
+    }[];
+    resultatdisposition: { tillForfogande: number; balanserasINyRakning: number; utdelning?: number };
   };
   resultatrakning: ReportRow[];
   balansrakningTillgangar: ReportRow[];
   balansrakningEgetKapitalSkulder: ReportRow[];
   noter: { title: string; body: string }[];
+  underskrifter?: AnnualReportSignatory[];
+  fastallelseintyg?: AnnualReportCertification;
 }
 
 export interface AnnualReport {
