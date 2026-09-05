@@ -1585,7 +1585,12 @@ export interface AnnualReportContent {
   resultatrakning: ReportRow[];
   balansrakningTillgangar: ReportRow[];
   balansrakningEgetKapitalSkulder: ReportRow[];
-  noter: { title: string; body: string }[];
+  /**
+   * Noterna, numrerade i uppställningsordning. Numret ligger i datan och inte i
+   * renderingen, för de upphöjda hänvisningarna i resultat- och balansräkningen
+   * pekar på det – räknas det om vid visningen kan de gå isär.
+   */
+  noter: { number: number; title: string; body: string }[];
   underskrifter?: AnnualReportSignatory[];
   fastallelseintyg?: AnnualReportCertification;
 }

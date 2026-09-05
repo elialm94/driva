@@ -276,6 +276,54 @@ describe("årsredovisning – noter", () => {
     assert.ok(not);
     assert.match(not.body, /inte haft några anställda/);
   });
+
+  /*
+   * Notnumret är en hänvisning: en upphöjd 4 i balansräkningen är ett löfte om
+   * att not 4 finns och handlar om just den posten. Noterna är villkorliga –
+   * ett bolag utan inventarier har ingen inventarienot – så numren får inte
+   * vara hårdkodade vid raderna. Då pekar de på hål.
+   */
+  it("noterna numreras löpande utan hål, även när en not utelämnas", () => {
+    revenue(2025, 400_000);
+    // Ingen inventarienot: bolaget har inga anläggningstillgångar. Men en
+    // periodiseringsfond, så noten om obeskattade reserver finns.
+    saveYearEndSchedule("fy-2025", "periodiseringsfond", { fundAllocation: 40_000 }, "anvandare");
+    bookYearEndSchedule(yearEndScheduleFor("fy-2025", "periodiseringsfond")!.id, "anvandare");
+    closeFiscalYear("fy-2025", "anvandare");
+    const content = generateAnnualReport("fy-2025", "anvandare").content;
+
+    assert.ok(
+      !content.noter.some((n) => n.title.includes("Inventarier")),
+      "utan inventarier ska inventarienoten inte finnas"
+    );
+    assert.deepEqual(
+      content.noter.map((n) => n.number),
+      content.noter.map((_, i) => i + 1),
+      "notnumren har hål"
+    );
+
+    // Varje hänvisning i uppställningarna pekar på en not som finns.
+    const numbers = new Set(content.noter.map((n) => n.number));
+    const referenced = [
+      ...content.resultatrakning,
+      ...content.balansrakningTillgangar,
+      ...content.balansrakningEgetKapitalSkulder,
+    ]
+      .map((r) => r.note)
+      .filter((n): n is number => n !== undefined);
+    assert.ok(referenced.length > 0, "inga nothänvisningar alls är misstänkt");
+    for (const ref of referenced) {
+      assert.ok(numbers.has(ref), `raden hänvisar till not ${ref} som inte finns`);
+    }
+
+    // Och hänvisningen pekar på RÄTT not, inte bara på någon not.
+    const obeskattadeRow = content.balansrakningEgetKapitalSkulder.find((r) => r.label === "Obeskattade reserver");
+    const obeskattadeNote = content.noter.find((n) => n.title.includes("Obeskattade reserver"));
+    assert.equal(obeskattadeRow?.note, obeskattadeNote?.number);
+
+    // Titeln bär inte sitt eget nummer – då skulle det tryckas två gånger.
+    for (const n of content.noter) assert.ok(!/^Not\s/.test(n.title), `notrubriken dubblerar numret: ${n.title}`);
+  });
 });
 
 describe("årsredovisning – redigering, underskrifter och fastställelseintyg", () => {

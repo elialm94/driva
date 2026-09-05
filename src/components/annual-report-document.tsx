@@ -141,10 +141,10 @@ export function AnnualReportDocument({
 
       <DocSection title="Noter">
         <ol className="mt-1 space-y-3">
-          {c.noter.map((n, i) => (
+          {c.noter.map((n) => (
             <li key={n.title} className="break-inside-avoid">
               <p className="font-semibold">
-                Not {i + 1} {n.title}
+                Not {n.number} – {n.title}
               </p>
               <Paragraphs text={n.body} />
             </li>

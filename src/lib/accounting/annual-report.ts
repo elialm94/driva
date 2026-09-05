@@ -45,7 +45,18 @@ export function annualReportFor(fiscalYearId: string): AnnualReport | undefined 
  * med de finansiella posterna respektive bokslutsdispositionerna. Ett bolag med
  * banklån eller periodiseringsfond ser skillnaden direkt.
  */
-function resultatrakningRows(rr: Resultatrapport, prior?: Resultatrapport): ReportRow[] {
+/**
+ * Noterna refereras med nyckel, inte med ett nummer i koden. Numret sätts när
+ * det är avgjort VILKA noter årsredovisningen har – en not som utelämnas för
+ * att bolaget saknar inventarier får annars lämna ett hål i numreringen och en
+ * upphöjd siffra i uppställningen som pekar på ingenting.
+ */
+type NoteKey = "principer" | "anstallda" | "inventarier" | "obeskattade";
+
+/** Notnummer per nyckel, eller undefined när noten inte finns i rapporten. */
+type NoteNumbers = (key: NoteKey) => number | undefined;
+
+function resultatrakningRows(rr: Resultatrapport, prior: Resultatrapport | undefined, noteFor: NoteNumbers): ReportRow[] {
   const rows: ReportRow[] = [];
   const row = (label: string, pick: (r: Resultatrapport) => number, opts: { bold?: boolean; note?: number } = {}) => {
     const amount = pick(rr);
@@ -62,12 +73,14 @@ function resultatrakningRows(rr: Resultatrapport, prior?: Resultatrapport): Repo
       .filter((line) => sections.includes(accountSection(line.account)))
       .reduce((s, line) => s + line.amount, 0);
 
-  row("Nettoomsättning", (r) => bySection(r, ["nettoomsattning"], 1), { note: 1 });
+  row("Nettoomsättning", (r) => bySection(r, ["nettoomsattning"], 1), { note: noteFor("principer") });
   row("Övriga rörelseintäkter", (r) => bySection(r, ["ovriga_rorelseintakter"], 1));
   row("Råvaror och förnödenheter", (r) => bySection(r, ["ravaror_och_fornodenheter"], -1));
   row("Övriga externa kostnader", (r) => bySection(r, ["ovriga_externa_kostnader"], -1));
-  row("Personalkostnader", (r) => bySection(r, ["personalkostnader"], -1), { note: 2 });
-  row("Avskrivningar av materiella anläggningstillgångar", (r) => bySection(r, ["avskrivningar"], -1), { note: 3 });
+  row("Personalkostnader", (r) => bySection(r, ["personalkostnader"], -1), { note: noteFor("anstallda") });
+  row("Avskrivningar av materiella anläggningstillgångar", (r) => bySection(r, ["avskrivningar"], -1), {
+    note: noteFor("inventarier"),
+  });
   row("Övriga rörelsekostnader", (r) => bySection(r, ["ovriga_rorelsekostnader"], -1));
   row("Rörelseresultat", (r) => r.rorelseresultat, { bold: true });
 
@@ -75,11 +88,61 @@ function resultatrakningRows(rr: Resultatrapport, prior?: Resultatrapport): Repo
   row("Räntekostnader och liknande resultatposter", (r) => -r.finansiellaKostnader.reduce((s, l) => s + l.amount, 0));
   row("Resultat efter finansiella poster", (r) => r.resultatEfterFinansiellaPoster, { bold: true });
 
-  row("Bokslutsdispositioner", (r) => r.bokslutsdispositionerNetto, { note: 4 });
+  row("Bokslutsdispositioner", (r) => r.bokslutsdispositionerNetto, { note: noteFor("obeskattade") });
   row("Resultat före skatt", (r) => r.resultatForeSkatt, { bold: true });
   row("Skatt på årets resultat", (r) => -r.skatt);
   row("Årets resultat", (r) => r.resultat, { bold: true });
   return rows;
+}
+
+/**
+ * Noterna K2 kräver, i uppställningsordning. Numret sätts efter filtreringen,
+ * så en utelämnad not aldrig lämnar ett hål i numreringen och de upphöjda
+ * hänvisningarna i uppställningarna alltid pekar på en not som finns.
+ */
+function buildNotes(f: {
+  medelantal: number;
+  personalkostnader: number;
+  avskrivningar: number;
+  inventarier: number;
+  obeskattadeReserver: number;
+  bokslutsdispositioner: number;
+}): { key: NoteKey; number: number; title: string; body: string }[] {
+  const candidates: { key: NoteKey; title: string; body: string; include: boolean }[] = [
+    {
+      key: "principer",
+      title: "Redovisningsprinciper",
+      body: "Årsredovisningen är upprättad i enlighet med årsredovisningslagen och Bokföringsnämndens allmänna råd BFNAR 2016:10 (K2). Intäkter redovisas när fakturering skett. Fordringar tas upp till det belopp som beräknas inflyta. Belopp anges i hela kronor.",
+      include: true,
+    },
+    {
+      key: "anstallda",
+      title: "Medelantal anställda",
+      body:
+        f.medelantal > 0
+          ? `Medelantalet anställda under räkenskapsåret uppgick till ${f.medelantal.toLocaleString("sv-SE")}. Personalkostnaderna uppgick till ${kr(f.personalkostnader)}.`
+          : "Bolaget har inte haft några anställda under räkenskapsåret. Medelantalet anställda är därmed 0.",
+      // Noten lämnas inte ut när bolaget saknar anställda: att den saknas läses
+      // som ett förbiseende, medan en nolla är ett svar.
+      include: true,
+    },
+    {
+      key: "inventarier",
+      title: "Inventarier, verktyg och installationer",
+      body: `Inventarier skrivs av linjärt över nyttjandeperioden. Årets avskrivningar uppgår till ${kr(f.avskrivningar)}. Redovisat värde vid årets slut: ${kr(f.inventarier)}.`,
+      include: f.inventarier !== 0 || f.avskrivningar !== 0,
+    },
+    {
+      key: "obeskattade",
+      title: "Obeskattade reserver",
+      body: `Periodiseringsfonder uppgår vid årets slut till ${kr(f.obeskattadeReserver)}. Av detta utgör ${kr(Math.round(f.obeskattadeReserver * 0.206))} uppskjuten skatt, som betalas när fonden återförs. Varje avsättning ska återföras senast sjätte året efter avsättningsåret.`,
+      include: f.obeskattadeReserver !== 0 || f.bokslutsdispositioner !== 0,
+    },
+  ];
+
+  return candidates
+    .filter((c) => c.include)
+    .map((c, i) => ({ key: c.key, number: i + 1, title: c.title, body: c.body }));
 }
 
 /* ------------------------------ Balansräkning ------------------------------ */
@@ -87,12 +150,12 @@ function resultatrakningRows(rr: Resultatrapport, prior?: Resultatrapport): Repo
 interface SectionSum {
   section: string;
   label: string;
-  note?: number;
+  note?: NoteKey;
 }
 
 const TILLGANG_SECTIONS: SectionSum[] = [
   { section: "immateriella_anlaggningstillgangar", label: "Immateriella anläggningstillgångar" },
-  { section: "materiella_anlaggningstillgangar", label: "Inventarier, verktyg och installationer", note: 3 },
+  { section: "materiella_anlaggningstillgangar", label: "Inventarier, verktyg och installationer", note: "inventarier" },
   { section: "finansiella_anlaggningstillgangar", label: "Finansiella anläggningstillgångar" },
   { section: "varulager", label: "Varulager" },
   { section: "kortfristiga_fordringar", label: "Kortfristiga fordringar" },
@@ -100,7 +163,7 @@ const TILLGANG_SECTIONS: SectionSum[] = [
 ];
 
 const SKULD_SECTIONS: SectionSum[] = [
-  { section: "obeskattade_reserver", label: "Obeskattade reserver", note: 4 },
+  { section: "obeskattade_reserver", label: "Obeskattade reserver", note: "obeskattade" },
   { section: "avsattningar", label: "Avsättningar" },
   { section: "langfristiga_skulder", label: "Långfristiga skulder" },
   { section: "kortfristiga_skulder", label: "Kortfristiga skulder" },
@@ -219,7 +282,25 @@ export function generateAnnualReport(fiscalYearId: string, by: "anvandare" | "as
   const sections = sectionBalances(fy.endDate, fy.startDate);
   const priorSections = previous ? sectionBalances(previous.endDate, previous.startDate) : undefined;
 
-  const balansrakningTillgangar = balanceRows(TILLGANG_SECTIONS, sections, priorSections, {
+  const medelantal = averageEmployees(fy);
+  const personalkostnader = rr.kostnader
+    .filter((l) => accountSection(l.account) === "personalkostnader")
+    .reduce((s, l) => s + l.amount, 0);
+  const avskrivningar = rr.avskrivningar.reduce((s, l) => s + l.amount, 0);
+  const inventarier = sections.get("materiella_anlaggningstillgangar") ?? 0;
+  const obeskattadeReserver = sections.get("obeskattade_reserver") ?? 0;
+
+  const noter = buildNotes({
+    medelantal,
+    personalkostnader,
+    avskrivningar,
+    inventarier,
+    obeskattadeReserver,
+    bokslutsdispositioner: rr.bokslutsdispositionerNetto,
+  });
+  const noteFor: NoteNumbers = (key) => noter.find((n) => n.key === key)?.number;
+
+  const balansrakningTillgangar = balanceRows(TILLGANG_SECTIONS, sections, priorSections, noteFor, {
     label: "Summa tillgångar",
     amount: br.sumTillgangar,
     prior: priorBr?.sumTillgangar,
@@ -236,7 +317,7 @@ export function generateAnnualReport(fiscalYearId: string, by: "anvandare" | "as
   ];
   const balansrakningEgetKapitalSkulder = [
     ...egetKapitalRows,
-    ...balanceRows(SKULD_SECTIONS, sections, priorSections),
+    ...balanceRows(SKULD_SECTIONS, sections, priorSections, noteFor),
     {
       label: "Summa eget kapital och skulder",
       amount: br.sumEgetKapital + br.sumSkulder,
@@ -246,13 +327,6 @@ export function generateAnnualReport(fiscalYearId: string, by: "anvandare" | "as
   ];
 
   const tillForfogande = balanserat + aretsResultat;
-  const medelantal = averageEmployees(fy);
-  const personalkostnader = rr.kostnader
-    .filter((l) => accountSection(l.account) === "personalkostnader")
-    .reduce((s, l) => s + l.amount, 0);
-  const avskrivningar = rr.avskrivningar.reduce((s, l) => s + l.amount, 0);
-  const inventarier = sections.get("materiella_anlaggningstillgangar") ?? 0;
-  const obeskattadeReserver = sections.get("obeskattade_reserver") ?? 0;
 
   const content: AnnualReportContent = {
     companyName: data.settings.name,
@@ -288,38 +362,10 @@ export function generateAnnualReport(fiscalYearId: string, by: "anvandare" | "as
       ],
       resultatdisposition: { tillForfogande, balanserasINyRakning: tillForfogande },
     },
-    resultatrakning: resultatrakningRows(rr, priorRr),
+    resultatrakning: resultatrakningRows(rr, priorRr, noteFor),
     balansrakningTillgangar,
     balansrakningEgetKapitalSkulder,
-    noter: [
-      {
-        title: "Not 1 – Redovisningsprinciper",
-        body: "Årsredovisningen är upprättad i enlighet med årsredovisningslagen och Bokföringsnämndens allmänna råd BFNAR 2016:10 (K2). Intäkter redovisas när fakturering skett. Fordringar tas upp till det belopp som beräknas inflyta. Belopp anges i hela kronor.",
-      },
-      {
-        title: "Not 2 – Medelantal anställda",
-        body:
-          medelantal > 0
-            ? `Medelantalet anställda under räkenskapsåret uppgick till ${medelantal.toLocaleString("sv-SE")}. Personalkostnaderna uppgick till ${kr(personalkostnader)}.`
-            : "Bolaget har inte haft några anställda under räkenskapsåret. Medelantalet anställda är därmed 0.",
-      },
-      ...(inventarier !== 0 || avskrivningar !== 0
-        ? [
-            {
-              title: "Not 3 – Inventarier, verktyg och installationer",
-              body: `Inventarier skrivs av linjärt över nyttjandeperioden. Årets avskrivningar uppgår till ${kr(avskrivningar)}. Redovisat värde vid årets slut: ${kr(inventarier)}.`,
-            },
-          ]
-        : []),
-      ...(obeskattadeReserver !== 0 || rr.bokslutsdispositionerNetto !== 0
-        ? [
-            {
-              title: "Not 4 – Obeskattade reserver",
-              body: `Periodiseringsfonder uppgår vid årets slut till ${kr(obeskattadeReserver)}. Av detta utgör ${kr(Math.round(obeskattadeReserver * 0.206))} uppskjuten skatt, som betalas när fonden återförs. Varje avsättning ska återföras senast sjätte året efter avsättningsåret.`,
-            },
-          ]
-        : []),
-    ],
+    noter,
     underskrifter: defaultSignatories(),
     fastallelseintyg: {},
   };
@@ -344,6 +390,7 @@ function balanceRows(
   spec: SectionSum[],
   sections: Map<string, number>,
   prior: Map<string, number> | undefined,
+  noteFor: NoteNumbers,
   total?: ReportRow
 ): ReportRow[] {
   const rows: ReportRow[] = [];
@@ -351,7 +398,12 @@ function balanceRows(
     const amount = sections.get(s.section) ?? 0;
     const priorAmount = prior?.get(s.section);
     if (amount === 0 && !priorAmount) continue;
-    rows.push({ label: s.label, amount, prior: prior ? (priorAmount ?? 0) : undefined, note: s.note });
+    rows.push({
+      label: s.label,
+      amount,
+      prior: prior ? (priorAmount ?? 0) : undefined,
+      note: s.note ? noteFor(s.note) : undefined,
+    });
   }
   if (total) rows.push({ ...total, bold: true });
   return rows;
