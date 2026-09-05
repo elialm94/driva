@@ -1624,6 +1624,12 @@ export interface AnnualReportContent {
    * pekar på det – räknas det om vid visningen kan de gå isär.
    */
   noter: { number: number; title: string; body: string }[];
+  /**
+   * Medelantalet anställda som tal. Står också i noten, men i en mening – och
+   * iXBRL-filen ska bära det som ett taggat tal med egen enhet, inte som text.
+   * Saknas i rapporter upprättade innan Driva sparade det.
+   */
+  medelantalAnstallda?: number;
   underskrifter?: AnnualReportSignatory[];
   fastallelseintyg?: AnnualReportCertification;
 }

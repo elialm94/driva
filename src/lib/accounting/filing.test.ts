@@ -10,6 +10,15 @@ import { generateEmployerDeclaration, runPayroll, saveEmployee } from "./payroll
 import { eskdBytes, eskdForPeriod } from "./eskd";
 import { agiForMonth } from "./agi-xml";
 import { granskningsperiod, sruBytes, sruForFiscalYear } from "./sru";
+import {
+  BALANS_CONCEPT,
+  ixbrlBlockers,
+  ixbrlBytes,
+  ixbrlForAnnualReport,
+  RESULTAT_CONCEPT,
+} from "./ixbrl";
+import { advanceAnnualReportStatus, generateAnnualReport, updateAnnualReport } from "./annual-report";
+import type { AnnualReport } from "../types";
 import { encodeLatin1, FilingDataError, orgNumber12, personnummer12 } from "./filing-format";
 import { INK2R_BALANCE, INK2R_RESULT, ruleForAccount } from "./ink2r-model";
 import { addCustomAccount, standardAccounts } from "./chart";
@@ -42,7 +51,10 @@ function reset() {
   data.settings.address = "Storgatan 1";
   data.settings.postalCode = "123 45";
   data.settings.city = "Stockholm";
-  data.fiscalYears.push({
+  // Migreringen lägger själv upp innevarande år med ett slumpat id. Testerna
+  // slår upp året på id, så det byts ut mot ett förutsägbart – inte läggs till,
+  // för två räkenskapsår över samma datum är inte ett tillstånd produkten har.
+  data.fiscalYears = [{
     id: `fy-${YEAR}`,
     label: String(YEAR),
     startDate: `${YEAR}-01-01`,
@@ -50,7 +62,7 @@ function reset() {
     status: "oppet",
     openingBalances: {},
     openingSource: "migrering",
-  });
+  }];
   // Bankavstämningen ingår inte i det som testas här.
   data.bankAccounts = [];
 }
@@ -480,6 +492,312 @@ describe("inkomstdeklaration 2 som SRU-filer", () => {
   it("enskild firma deklarerar inte på INK2", () => {
     db().settings.companyForm = "enskild";
     assert.throws(() => sruForFiscalYear(`fy-${YEAR}`), /NE-bilagan/);
+  });
+});
+
+/* ---------------------------------- iXBRL ---------------------------------- */
+
+/**
+ * Ett stängt år med föregående år bakom sig, en lönekörning och en
+ * årsredovisning som är ifylld, granskad och signerad – alltså den handling som
+ * faktiskt lämnas in.
+ */
+function reportForIxbrl(opts: { intyg?: boolean; signera?: boolean } = {}): AnnualReport {
+  const data = db();
+  data.fiscalYears.unshift({
+    id: `fy-${YEAR - 1}`,
+    label: String(YEAR - 1),
+    startDate: `${YEAR - 1}-01-01`,
+    endDate: `${YEAR - 1}-12-31`,
+    status: "oppet",
+    openingBalances: {},
+    openingSource: "migrering",
+  });
+  sale(`${YEAR - 1}-05-10`, 600_000);
+  sale(`${YEAR}-03-10`, 800_000);
+  purchase(`${YEAR}-04-12`, 300_000);
+  purchase(`${YEAR}-02-03`, 60_000, 1220);
+  // En räntekostnad gör rörelseresultatet och resultatet efter finansiella
+  // poster till två olika tal – filen ska visa dem som två olika fakta.
+  postVerification({
+    date: `${YEAR}-06-30`,
+    description: "Ränta på banklån",
+    entries: [
+      { account: 8410, debit: 12_000 },
+      { account: BANK, credit: 12_000 },
+    ],
+    source: { type: "manuell" },
+    createdBy: "anvandare",
+  });
+  saveEmployee(
+    {
+      name: "Anna Andersson",
+      personnummer: "19850101-1234",
+      role: "foretagsledare",
+      monthlySalary: 45_000,
+      taxBasis: { kind: "procent", percent: 30 },
+      startDate: `${YEAR}-01-01`,
+    },
+    "anvandare"
+  );
+  for (const month of ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]) {
+    runPayroll({ month: `${YEAR}-${month}` }, "anvandare");
+  }
+  for (const fy of data.fiscalYears) fy.status = "stangt";
+
+  const report = generateAnnualReport(`fy-${YEAR}`, "anvandare");
+  updateAnnualReport(
+    report.id,
+    {
+      underskrifter: [{ name: "Anna Andersson", role: "Styrelseledamot" }],
+      ...(opts.intyg
+        ? {
+            fastallelseintyg: {
+              stammaDate: `${YEAR + 1}-05-14`,
+              certifiedByName: "Anna Andersson",
+              certifiedByRole: "Styrelseledamot",
+            },
+          }
+        : {}),
+    },
+    "anvandare"
+  );
+  if (opts.signera !== false) {
+    advanceAnnualReportStatus(report.id, "granskad", "anvandare");
+    advanceAnnualReportStatus(report.id, "signerad", "anvandare");
+  }
+  return report;
+}
+
+/**
+ * Grov men ärlig kontroll av att dokumentet är välformad XML: taggarna stängs i
+ * rätt ordning, attributen är citerade och inga oskyddade &-tecken finns.
+ * Bolagsverket avvisar allt annat, och ett dokument som ser rätt ut i en
+ * webbläsare kan ändå vara ogiltig XHTML.
+ */
+function xmlProblems(xml: string): string[] {
+  const problems: string[] = [];
+  const stack: string[] = [];
+  const body = xml.replace(/<\?[^?]*\?>/g, "").replace(/<!DOCTYPE[^>]*>/g, "");
+  const tags = body.matchAll(/<(\/?)([A-Za-z][\w:.-]*)((?:\s+[\w:.-]+\s*=\s*"[^"]*")*)\s*(\/?)>/g);
+  let consumed = 0;
+  for (const tag of tags) {
+    const between = body.slice(consumed, tag.index);
+    if (/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;)/.test(between)) {
+      problems.push(`Oskyddat &-tecken före <${tag[2]}>`);
+    }
+    consumed = tag.index + tag[0].length;
+    if (tag[1] === "/") {
+      const open = stack.pop();
+      if (open !== tag[2]) problems.push(`</${tag[2]}> stänger <${open ?? "inget"}>`);
+    } else if (!tag[4]) {
+      stack.push(tag[2]);
+    }
+  }
+  // Varje "<" som inte matchades som en tagg är ett trasigt element.
+  const matchedLength = [...body.matchAll(/<(\/?)([A-Za-z][\w:.-]*)((?:\s+[\w:.-]+\s*=\s*"[^"]*")*)\s*(\/?)>/g)].length;
+  if (matchedLength !== (body.match(/</g) ?? []).length) problems.push("Något element går inte att tolka som XML");
+  if (stack.length) problems.push(`Ostängda element: ${stack.join(", ")}`);
+  return problems;
+}
+
+/** Alla numeriska fakta som begrepp → attributtext och skrivet värde. */
+function facts(xhtml: string): Map<string, { attrs: string; written: string }[]> {
+  const out = new Map<string, { attrs: string; written: string }[]>();
+  for (const m of xhtml.matchAll(/<ix:nonFraction ([^>]*)>([^<]*)<\/ix:nonFraction>/g)) {
+    const name = m[1].match(/name="([^"]+)"/)?.[1] ?? "";
+    const concept = name.split(":")[1] ?? name;
+    const list = out.get(concept) ?? [];
+    list.push({ attrs: m[1], written: m[2] });
+    out.set(concept, list);
+  }
+  return out;
+}
+
+/** Beloppet ett faktum står för, med tecknet ur sign-attributet. */
+function factAmount(fact: { attrs: string; written: string }): number {
+  const value = Number(fact.written.replace(/\s/g, "").replace(",", "."));
+  return /sign="-"/.test(fact.attrs) ? -value : value;
+}
+
+describe("årsredovisning som iXBRL-fil", () => {
+  beforeEach(reset);
+
+  it("är välformad XHTML med iXBRL 1.1-huvud och utan externa beroenden", () => {
+    const file = ixbrlForAnnualReport(reportForIxbrl({ intyg: true }).id);
+
+    assert.deepEqual(xmlProblems(file.xhtml), []);
+    assert.match(file.xhtml, /^<\?xml version="1.0" encoding="UTF-8"\?>/);
+    assert.match(file.xhtml, /xmlns="http:\/\/www.w3.org\/1999\/xhtml"/);
+    assert.match(file.xhtml, /xmlns:ix="http:\/\/www.xbrl.org\/2013\/inlineXBRL"/);
+    assert.match(file.xhtml, /<meta name="generator" content="Driva" \/>/);
+    // Inga script, inga externa stilmallar, inga bilder utifrån (TA 3.4, 3.5, 3.7).
+    assert.doesNotMatch(file.xhtml, /<script|onclick=|<link rel="stylesheet"|<img/i);
+    assert.match(file.xhtml, /<style type="text\/css">/);
+    assert.ok(ixbrlBytes(file).byteLength > 0);
+    assert.equal(new TextDecoder().decode(ixbrlBytes(file)), file.xhtml);
+  });
+
+  it("pekar på K2-taxonomin för aktiebolag med resultat- och balansräkning", () => {
+    const file = ixbrlForAnnualReport(reportForIxbrl({ intyg: true }).id);
+    assert.match(file.xhtml, /se-k2-ab-risbs-2024-09-12\.xsd/);
+    assert.match(file.xhtml, /se-coa-rplc-2020-12-01\.xsd/);
+  });
+
+  it("kontexterna heter period0 och balans0 och saknar segment", () => {
+    const file = ixbrlForAnnualReport(reportForIxbrl().id);
+
+    assert.match(file.xhtml, /<xbrli:context id="period0">/);
+    assert.match(file.xhtml, /<xbrli:context id="balans0">/);
+    assert.match(file.xhtml, new RegExp(`<xbrli:startDate>${YEAR}-01-01</xbrli:startDate>`));
+    assert.match(file.xhtml, new RegExp(`<xbrli:instant>${YEAR}-12-31</xbrli:instant>`));
+    assert.match(file.xhtml, /<xbrli:identifier scheme="http:\/\/www.bolagsverket.se">5566778899</);
+    // Inlämning av enbart årsredovisning: varken segment eller scenario (TA 2.3.1).
+    assert.doesNotMatch(file.xhtml, /xbrli:segment|xbrli:scenario/);
+  });
+
+  it("jämförelseåret får egna kontexter och jämförelsetalen taggas i dem", () => {
+    const file = ixbrlForAnnualReport(reportForIxbrl().id);
+
+    assert.match(file.xhtml, /<xbrli:context id="period1">/);
+    assert.match(file.xhtml, /<xbrli:context id="balans1">/);
+    // Nettoomsättningen står både i resultaträkningens jämförelsekolumn och i
+    // flerårsöversikten. Samma begrepp i samma kontext måste bära samma tal
+    // (TA 2.6.1), och det ska taggas på båda ställena (TA 2.6.2).
+    const iForegaende = (facts(file.xhtml).get("Nettoomsattning") ?? []).filter((f) =>
+      /contextRef="period1"/.test(f.attrs)
+    );
+    assert.equal(iForegaende.length, 2);
+    for (const fact of iForegaende) assert.equal(factAmount(fact), 600_000);
+  });
+
+  it("beloppen är hela kronor med sign för de negativa", () => {
+    const file = ixbrlForAnnualReport(reportForIxbrl().id);
+    const alla = [...facts(file.xhtml).values()].flat();
+
+    for (const fact of alla) {
+      if (!/unitRef="SEK"/.test(fact.attrs)) continue;
+      assert.match(fact.attrs, /decimals="INF"/);
+      assert.match(fact.attrs, /scale="0"/);
+      assert.doesNotMatch(fact.written, /[,.]/, `Beloppet ${fact.written} är inte helt`);
+      assert.doesNotMatch(fact.written, /-/, "Minustecknet hör i sign-attributet, inte i talet");
+    }
+
+    const ranta = facts(file.xhtml).get("RantekostnaderLiknandeResultatposter") ?? [];
+    assert.match(ranta[0].attrs, /sign="-"/);
+    assert.equal(factAmount(ranta[0]), -12_000);
+  });
+
+  it("rörelseresultatet och resultatet efter finansiella poster är två olika fakta", () => {
+    const report = reportForIxbrl();
+    const file = ixbrlForAnnualReport(report.id);
+    const f = facts(file.xhtml);
+
+    const rorelse = factAmount((f.get("Rorelseresultat") ?? [])[0]);
+    const efterFinansiella = factAmount((f.get("ResultatEfterFinansiellaPoster") ?? [])[0]);
+    assert.equal(efterFinansiella, rorelse - 12_000);
+
+    // Samma tal som årsredovisningen visar på skärmen.
+    const row = (label: string) => report.content.resultatrakning.find((r) => r.label === label)?.amount;
+    assert.equal(rorelse, row("Rörelseresultat"));
+    assert.equal(efterFinansiella, row("Resultat efter finansiella poster"));
+  });
+
+  it("varje siffra i uppställningarna är samma siffra som i årsredovisningen", () => {
+    const report = reportForIxbrl();
+    const f = facts(ixbrlForAnnualReport(report.id).xhtml);
+    const c = report.content;
+
+    const check = (rows: typeof c.resultatrakning, concepts: Record<string, string>, contextRef: string) => {
+      for (const row of rows) {
+        const concept = concepts[row.label];
+        if (!concept) continue;
+        const fact = (f.get(concept) ?? []).find((x) => new RegExp(`contextRef="${contextRef}"`).test(x.attrs));
+        assert.ok(fact, `${row.label} saknar faktum i ${contextRef}`);
+        assert.equal(factAmount(fact), Math.round(row.amount) || 0, `${row.label} skiljer sig från rapporten`);
+      }
+    };
+    check(c.resultatrakning, RESULTAT_CONCEPT, "period0");
+    check(c.balansrakningTillgangar, BALANS_CONCEPT, "balans0");
+    check(c.balansrakningEgetKapitalSkulder, BALANS_CONCEPT, "balans0");
+  });
+
+  it("allmän information ligger dold och taggad", () => {
+    const file = ixbrlForAnnualReport(reportForIxbrl().id);
+    const hidden = file.xhtml.match(/<ix:hidden>[\s\S]*?<\/ix:hidden>/)?.[0] ?? "";
+
+    assert.match(hidden, new RegExp(`RakenskapsarForstaDag[^>]*>${YEAR}-01-01<`));
+    assert.match(hidden, new RegExp(`RakenskapsarSistaDag[^>]*>${YEAR}-12-31<`));
+    assert.match(hidden, /SprakHandlingUpprattadList[^>]*>se-mem-base:SprakSvenskaMember</);
+    assert.match(hidden, /RedovisningsvalutaHandlingList[^>]*>se-mem-base:ValutaSvenskaKronorMember</);
+    // Namn och organisationsnummer står synligt i dokumentet.
+    assert.match(file.xhtml, /se-cd-base:ForetagetsNamn"[^>]*>Bygg &amp; Co AB</);
+    assert.match(file.xhtml, /se-cd-base:Organisationsnummer"[^>]*>556677-8899</);
+  });
+
+  it("medelantalet anställda är ett tal med egen enhet, taggat där det står", () => {
+    const file = ixbrlForAnnualReport(reportForIxbrl().id);
+
+    assert.match(file.xhtml, /<xbrli:unit id="antal-anstallda"><xbrli:measure>se-k2type:AntalAnstallda</);
+    const medel = facts(file.xhtml).get("MedelantaletAnstallda") ?? [];
+    assert.equal(medel.length, 1);
+    assert.match(medel[0].attrs, /unitRef="antal-anstallda"/);
+    assert.equal(medel[0].written, "1,0");
+    // Talet står i notens mening, inte i en tabell vid sidan av den.
+    assert.match(file.xhtml, /uppgick till <ix:nonFraction[^>]*>1,0<\/ix:nonFraction>/);
+  });
+
+  it("soliditeten i flerårsöversikten är ett procenttal med scale -2", () => {
+    const file = ixbrlForAnnualReport(reportForIxbrl().id);
+    const soliditet = facts(file.xhtml).get("Soliditet") ?? [];
+
+    assert.ok(soliditet.length >= 1);
+    assert.match(soliditet[0].attrs, /unitRef="procent"/);
+    assert.match(soliditet[0].attrs, /scale="-2"/);
+    assert.match(file.xhtml, /<xbrli:unit id="procent"><xbrli:measure>xbrli:pure</);
+  });
+
+  it("varje företrädare blir en rad i underskriftstabellen med datum", () => {
+    const file = ixbrlForAnnualReport(reportForIxbrl().id);
+
+    assert.match(file.xhtml, /<ix:tuple name="se-gen-base:UnderskriftArsredovisningForetradareTuple" tupleID="underskrift-1" \/>/);
+    assert.match(file.xhtml, /UnderskriftHandlingTilltalsnamn"[^>]*tupleRef="underskrift-1" order="1.0">Anna</);
+    assert.match(file.xhtml, /UnderskriftHandlingEfternamn"[^>]*order="2.0">Andersson</);
+    assert.match(file.xhtml, /UndertecknandeDatum"[^>]*order="4.0">\d{4}-\d{2}-\d{2}</);
+  });
+
+  it("fastställelseintyget tas bara med när stämman har hållits", () => {
+    const utan = ixbrlForAnnualReport(reportForIxbrl().id);
+    assert.doesNotMatch(utan.xhtml, /ArsstammaIntygande/);
+    assert.doesNotMatch(utan.xhtml, /se-coa-rplc/);
+
+    reset();
+    const med = ixbrlForAnnualReport(reportForIxbrl({ intyg: true }).id);
+    assert.match(med.xhtml, /se-bol-base:ArsstammaIntygande/);
+    assert.match(med.xhtml, new RegExp(`se-bol-base:Arsstamma"[^>]*>${YEAR + 1}-05-14<`));
+    assert.match(med.xhtml, /IntygandeOriginalInnehall/);
+    assert.match(med.xhtml, /UnderskriftFaststallelseintygForetradareEfternamn"[^>]*>Andersson</);
+  });
+
+  it("otaggat innehåll räknas upp i stället för att tigas bort", () => {
+    const file = ixbrlForAnnualReport(reportForIxbrl().id);
+    assert.ok(file.warnings.length > 0);
+    assert.ok(file.warnings.some((w) => /Not \d/.test(w)));
+  });
+
+  it("säger vad som saknas innan filen lämnas in", () => {
+    const report = reportForIxbrl({ signera: false });
+    const blockers = ixbrlBlockers(report);
+
+    assert.ok(blockers.some((b) => b.includes("undertecknandet")));
+    assert.ok(blockers.some((b) => b.includes("årsstämman")));
+
+    reset();
+    assert.deepEqual(ixbrlBlockers(reportForIxbrl({ intyg: true })), []);
+  });
+
+  it("en årsredovisning som inte finns går inte att bygga en fil av", () => {
+    assert.throws(() => ixbrlForAnnualReport("finns-inte"), FilingDataError);
   });
 });
 

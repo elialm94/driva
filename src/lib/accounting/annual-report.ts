@@ -411,6 +411,7 @@ export function generateAnnualReport(fiscalYearId: string, by: "anvandare" | "as
     balansrakningTillgangar,
     balansrakningEgetKapitalSkulder,
     noter,
+    medelantalAnstallda: medelantal,
     underskrifter: defaultSignatories(),
     fastallelseintyg: {},
   };
