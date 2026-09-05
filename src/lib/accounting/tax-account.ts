@@ -202,14 +202,19 @@ export function bookEmployerTaxesOnTaxAccount(
     ...(skatt !== 0 ? [{ account: PERSONALSKATT, debit: skatt }] : []),
     { account: SKATTEKONTO, credit: avgift + skatt },
   ];
-  const ver = postVerification({
-    date: `${month}-12`,
-    description: `Arbetsgivaravgifter och personalskatt ${month}`,
-    entries,
-    source: { type: "skattekonto", id: sourceId },
-    createdBy: actor,
-    explanation: `Arbetsgivaravgifter (${avgift} kr) och personalskatt (${skatt} kr) för ${month} drogs från skattekontot. Skuldkontona nollställs och beloppet syns nu där Skatteverket har det.`,
-  });
+  const ver = postVerification(
+    {
+      // Månadens sista dag: skulden till Skatteverket ska stå på skattekontot i
+      // samma månad som lönen, inte i månaden deklarationen lämnas.
+      date: lastDayOfMonth(month),
+      description: `Arbetsgivaravgifter och personalskatt ${month}`,
+      entries,
+      source: { type: "skattekonto", id: sourceId },
+      createdBy: actor,
+      explanation: `Arbetsgivaravgifter (${avgift} kr) och personalskatt (${skatt} kr) för ${month} drogs från skattekontot. Skuldkontona nollställs och beloppet syns nu där Skatteverket har det.`,
+    },
+    { bypassPeriodLock: true }
+  );
   logAudit(
     actor,
     "skattekonto_bokford",
@@ -265,6 +270,12 @@ export function fSkattMonthsAwaitingBooking(through: string = todayDate()): stri
 
 function monthOf(date: string): string {
   return date.slice(0, 7);
+}
+
+function lastDayOfMonth(month: string): string {
+  const y = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7));
+  return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
 }
 
 function nextMonth(month: string): string {

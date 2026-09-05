@@ -1113,6 +1113,7 @@ export type VerificationSource =
   | { type: "periodisering"; id: ID }
   | { type: "moms"; id: ID }
   | { type: "skattekonto"; id: ID }
+  | { type: "lon"; id: ID }
   | { type: "bokslut"; id: ID }
   | { type: "ingaende_balans"; id: ID }
   | { type: "manuell" };
@@ -1226,6 +1227,104 @@ export interface VatReport {
   settleVerificationId?: ID;
 }
 
+/* ------------------------------------ Lön ------------------------------------ */
+
+export type EmployeeRole = "foretagsledare" | "tjansteman";
+
+/**
+ * Grunden för skatteavdraget på lönen. `tabell` bär beloppet som slagits upp i
+ * Skatteverkets skattetabell tillsammans med lönen uppslaget gjordes för, så att
+ * det går att se när uppslaget inte längre gäller. Se accounting/payroll-model.ts.
+ */
+export type TaxBasis =
+  | { kind: "tabell"; table: number; monthlyDeduction: number; salaryAtLookup: number }
+  | { kind: "procent"; percent: number };
+
+/**
+ * Anställd. V1 är en anställd: ägaren med fast månadslön. Personnummret är
+ * känsligt och den enda källan för födelsedatumet som styr arbetsgivaravgiften.
+ */
+export interface Employee {
+  id: ID;
+  name: string;
+  /** YYYYMMDD-NNNN. Maska i vanliga vyer (maskPersonnummer). */
+  personnummer: string;
+  email?: string;
+  role: EmployeeRole;
+  /** Fast månadslön, hela kronor. */
+  monthlySalary: number;
+  taxBasis: TaxBasis;
+  /** Anställningens första dag, YYYY-MM-DD. */
+  startDate: string;
+  /** Sista anställningsdag, YYYY-MM-DD. */
+  endDate?: string;
+  status: "anstalld" | "avslutad";
+  createdAt: string;
+}
+
+/**
+ * En bokförd lönekörning för en månad. Beloppen är frysta här: verifikationen är
+ * oföränderlig, och lönespecifikationen och arbetsgivardeklarationen ska visa
+ * exakt det som bokfördes.
+ */
+export interface PayrollRun {
+  id: ID;
+  employeeId: ID;
+  /** Lönemånad, YYYY-MM. */
+  month: string;
+  /** Utbetalningsdag, YYYY-MM-DD. Bokföringsdatum för lönen. */
+  payDate: string;
+  gross: number;
+  /** Avdragen preliminärskatt. */
+  tax: number;
+  net: number;
+  employerContribution: number;
+  /** Satsen som tillämpades, i procent – historiken ska stå kvar när lagen ändras. */
+  contributionPercent: number;
+  /** Skattegrunden vid körningen, sparad så att specifikationen kan visa den. */
+  taxBasis: TaxBasis;
+  salaryAccount: number;
+  verificationId: ID;
+  createdBy: "anvandare" | "assistent";
+  createdAt: string;
+}
+
+/** En individuppgift i arbetsgivardeklarationen. */
+export interface EmployerDeclarationRow {
+  employeeId: ID;
+  name: string;
+  personnummer: string;
+  gross: number;
+  tax: number;
+  employerContribution: number;
+}
+
+/**
+ * Arbetsgivardeklaration (AGI) för en månad. Samma statusmaskin som
+ * momsrapporten: utkast som genereras ur bokföringen, sedan deklarerad med
+ * frysta siffror, audit och periodlås.
+ */
+export interface EmployerDeclaration {
+  id: ID;
+  /** Redovisningsmånad, YYYY-MM. */
+  month: string;
+  /** T.ex. "mars 2026". */
+  label: string;
+  status: "utkast" | "deklarerad";
+  rows: EmployerDeclarationRow[];
+  gross: number;
+  tax: number;
+  employerContribution: number;
+  /** Summan att betala till skattekontot: avgifter + avdragen skatt. */
+  attBetala: number;
+  /** Förfallodag för deklaration och betalning, YYYY-MM-DD. */
+  dueDate: string;
+  generatedAt: string;
+  declaredAt?: string;
+  /** Verifikationen som förde avgifter och personalskatt till skattekontot. */
+  taxAccountVerificationId?: ID;
+}
+
 /* -------------------------------- Inventarier -------------------------------- */
 
 export interface AssetDepreciation {
@@ -1293,6 +1392,10 @@ export type AuditAction =
   | "momsrapport_deklarerad"
   | "momsperiodicitet_andrad"
   | "skattekonto_bokford"
+  | "anstalld_andrad"
+  | "lon_bokford"
+  | "arbetsgivardeklaration_genererad"
+  | "arbetsgivardeklaration_deklarerad"
   | "rakenskapsar_skapat"
   | "rakenskapsar_stangt"
   | "inventarie_registrerad"
@@ -2094,6 +2197,12 @@ export interface DB {
   /** Bokföringsinställningar. lockedThrough: bokföringen är låst t.o.m. detta datum (YYYY-MM-DD). */
   accounting: { lockedThrough?: string };
   vatReports: VatReport[];
+  /** Anställda. Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  employees?: Employee[];
+  /** Bokförda lönekörningar. Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  payrollRuns?: PayrollRun[];
+  /** Arbetsgivardeklarationer. Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  employerDeclarations?: EmployerDeclaration[];
   assets: Asset[];
   accruals: Accrual[];
   auditTrail: AuditEvent[];

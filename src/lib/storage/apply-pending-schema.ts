@@ -315,6 +315,106 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const vatPeriodicityApplied = await ensureVatPeriodicitySchema(client);
   applied.push(...vatPeriodicityApplied);
 
+  const payrollApplied = await ensurePayrollSchema(client);
+  applied.push(...payrollApplied);
+
+  return applied;
+}
+
+/**
+ * Lön (migration 34): anställd, lönekörningar och arbetsgivardeklaration.
+ * Utan tabellerna kan lönen inte bokföras, och lönen är den första månatliga
+ * myndighetsskyldigheten – därför skapas de här också. Speglar migrationen.
+ */
+export async function ensurePayrollSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  const table = await client.query(`select to_regclass('public.employees') is not null as present`);
+  if (table[0]?.present) return applied;
+  await run(
+    client,
+    `create table if not exists public.employees (
+      id text primary key,
+      business_id uuid not null references public.businesses (id) on delete cascade,
+      name text not null check (length(trim(name)) > 0),
+      personnummer text not null,
+      email text,
+      role text not null check (role in ('foretagsledare', 'tjansteman')),
+      monthly_salary bigint not null check (monthly_salary >= 0),
+      tax_basis jsonb not null,
+      start_date date not null,
+      end_date date,
+      status text not null check (status in ('anstalld', 'avslutad')),
+      created_at timestamptz not null default now()
+    )`
+  );
+  await run(
+    client,
+    `create index if not exists employees_business_idx on public.employees (business_id, created_at, id)`
+  );
+  await run(
+    client,
+    `create table if not exists public.payroll_runs (
+      id text primary key,
+      business_id uuid not null references public.businesses (id) on delete cascade,
+      employee_id text not null references public.employees (id) on delete cascade,
+      month text not null,
+      pay_date date not null,
+      gross bigint not null check (gross >= 0),
+      tax bigint not null check (tax >= 0),
+      net bigint not null,
+      employer_contribution bigint not null check (employer_contribution >= 0),
+      contribution_percent numeric(5, 2) not null check (contribution_percent >= 0),
+      tax_basis jsonb not null,
+      salary_account integer not null,
+      verification_id text not null,
+      created_by text not null check (created_by in ('anvandare', 'assistent')),
+      created_at timestamptz not null default now()
+    )`
+  );
+  await run(
+    client,
+    `create unique index if not exists payroll_runs_employee_month_uq
+       on public.payroll_runs (business_id, employee_id, month)`
+  );
+  await run(
+    client,
+    `create index if not exists payroll_runs_business_idx on public.payroll_runs (business_id, month, id)`
+  );
+  await run(
+    client,
+    `create table if not exists public.employer_declarations (
+      id text primary key,
+      business_id uuid not null references public.businesses (id) on delete cascade,
+      month text not null,
+      label text not null,
+      status text not null check (status in ('utkast', 'deklarerad')),
+      individual_rows jsonb not null default '[]'::jsonb,
+      gross bigint not null default 0,
+      tax bigint not null default 0,
+      employer_contribution bigint not null default 0,
+      att_betala bigint not null default 0,
+      due_date date not null,
+      generated_at timestamptz not null default now(),
+      declared_at timestamptz,
+      tax_account_verification_id text
+    )`
+  );
+  await run(
+    client,
+    `create unique index if not exists employer_declarations_month_uq
+       on public.employer_declarations (business_id, month)`
+  );
+  for (const t of ["employees", "payroll_runs", "employer_declarations"]) {
+    await run(client, `grant select, insert, update, delete on public.${t} to driva_app`);
+    await run(client, `alter table public.${t} enable row level security`);
+    await run(client, `drop policy if exists ${t}_tenant on public.${t}`);
+    await run(
+      client,
+      `create policy ${t}_tenant on public.${t}
+         for all to driva_app, authenticated using (app.is_member(business_id)) with check (app.is_member(business_id))`
+    );
+    applied.push(t);
+  }
   return applied;
 }
 

@@ -38,6 +38,8 @@ import {
   bankidOrdersSpec,
   bankTransactionsSpec,
   customersSpec,
+  employeesSpec,
+  employerDeclarationsSpec,
   domainAuditToAuditRow,
   domainsSpec,
   expensesSpec,
@@ -53,6 +55,7 @@ import {
   jobWorkEntriesSpec,
   paymentFilesSpec,
   paymentsSpec,
+  payrollRunsSpec,
   pendingActionsSpec,
   remindersSpec,
   quotesSpec,
@@ -361,6 +364,13 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
   await applySpec(supplierPaymentsSpec, diffCollection(baseline.supplierPayments ?? [], state.supplierPayments ?? []));
   await applySpec(fiscalYearsSpec, diffCollection(baseline.fiscalYears, state.fiscalYears));
   await applySpec(vatReportsSpec, diffCollection(baseline.vatReports, state.vatReports));
+  // Anställda skrivs före lönekörningarna: payroll_runs.employee_id är FK.
+  await applySpec(employeesSpec, diffCollection(baseline.employees ?? [], state.employees ?? []));
+  await applySpec(payrollRunsSpec, diffCollection(baseline.payrollRuns ?? [], state.payrollRuns ?? []));
+  await applySpec(
+    employerDeclarationsSpec,
+    diffCollection(baseline.employerDeclarations ?? [], state.employerDeclarations ?? [])
+  );
   await applySpec(assetsSpec, diffCollection(baseline.assets, state.assets));
   await applySpec(accrualsSpec, diffCollection(baseline.accruals, state.accruals));
   await applySpec(annualReportsSpec, diffCollection(baseline.annualReports, state.annualReports));

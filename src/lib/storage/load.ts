@@ -26,6 +26,8 @@ import {
   dateOnly,
   domainAuditFromAuditRow,
   domainsSpec,
+  employeesSpec,
+  employerDeclarationsSpec,
   expensesSpec,
   fiscalYearsSpec,
   invoiceLineFromRow,
@@ -40,6 +42,7 @@ import {
   num,
   paymentFilesSpec,
   paymentsSpec,
+  payrollRunsSpec,
   pendingActionsSpec,
   remindersSpec,
   quoteFromRow,
@@ -156,7 +159,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     tx.query(`select * from public.annual_reports where business_id = $1 order by generated_at, id`, b),
   ]);
 
-  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows, bankConnectionRows, chartAccountRows] =
+  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows, bankConnectionRows, chartAccountRows, employeeRows, payrollRunRows, employerDeclarationRows] =
     await Promise.all([
       tx.query(`select * from public.websites where business_id = $1`, b),
       tx.query(`select * from public.domains where business_id = $1 order by created_at, id`, b),
@@ -181,6 +184,14 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
       ),
       queryIfTable(tx, "bank_connections", `select * from public.bank_connections where business_id = $1 order by created_at, id`, b),
       queryIfTable(tx, "chart_accounts", `select * from public.chart_accounts where business_id = $1 order by number`, b),
+      queryIfTable(tx, "employees", `select * from public.employees where business_id = $1 order by created_at, id`, b),
+      queryIfTable(tx, "payroll_runs", `select * from public.payroll_runs where business_id = $1 order by month, id`, b),
+      queryIfTable(
+        tx,
+        "employer_declarations",
+        `select * from public.employer_declarations where business_id = $1 order by month, id`,
+        b
+      ),
     ]);
 
   // Bostäder per kund (position = visningsordning).
@@ -286,6 +297,9 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     fiscalYears: fiscalYearRows.map(fiscalYearsSpec.fromRow),
     accounting: lockedThrough == null ? {} : { lockedThrough: dateOnly(lockedThrough) },
     vatReports: vatReportRows.map(vatReportsSpec.fromRow),
+    employees: employeeRows.map(employeesSpec.fromRow),
+    payrollRuns: payrollRunRows.map(payrollRunsSpec.fromRow),
+    employerDeclarations: employerDeclarationRows.map(employerDeclarationsSpec.fromRow),
     assets: assetRows.map(assetsSpec.fromRow),
     accruals: accrualRows.map(accrualsSpec.fromRow),
     auditTrail: auditRows.filter((r) => r.channel === "accounting").map(auditTrailFromAuditRow),

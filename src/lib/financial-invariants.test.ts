@@ -19,7 +19,9 @@ process.env.DRIVA_TEST = "1";
  *   8. Bankens saldo = huvudbokens 1930; avstämningen är förklarad.
  *   9. Momsrapporten stämmer med en oberoende omräkning ur huvudboken.
  *  10. Skattekontot flyttar momsskulden mellan konton utan att ändra summan.
- *  11. SIE-exporten stämmer med huvudboken (IB + rörelser = UB, RES,
+ *  11. Lönen fördelar bruttolönen i netto och skatt utan att tappa en krona,
+ *      och deklarationen flyttar skulden till skattekontot oförändrad.
+ *  12. SIE-exporten stämmer med huvudboken (IB + rörelser = UB, RES,
  *      varje #VER balanserar).
  */
 
@@ -51,6 +53,15 @@ import {
   MOMS_REDOVISNING,
   SKATTEKONTO,
 } from "./accounting/tax-account";
+import {
+  employerDeclarationFor,
+  markEmployerDeclarationDeclared,
+  runPayroll,
+  saveEmployee,
+  ARBETSGIVARAVGIFT,
+  PERSONALSKATT,
+  SOCIALA_AVGIFTER,
+} from "./accounting/payroll";
 import { quartersOf, ensureFiscalYearFor } from "./accounting/fiscal";
 import { bokforingsdatum } from "./accounting/dates";
 import { generateSie } from "./accounting/sie";
@@ -304,6 +315,50 @@ describe("Demoseedet uppfyller alla finansiella invarianter", () => {
     assert.equal(accountBalance(MOMS_REDOVISNING), 0, "redovisningskontot nollställs inte");
     const ledger = taxAccountLedger();
     assert.equal(ledger.balance, accountBalance(SKATTEKONTO), "skattekontots huvudbok avviker");
+    for (const v of db().verifications) {
+      const debit = v.entries.reduce((s, e) => s + e.debit, 0);
+      const credit = v.entries.reduce((s, e) => s + e.credit, 0);
+      assert.equal(debit, credit, `${verificationLabel(v)} balanserar inte`);
+    }
+  });
+
+  it("lönen fördelar bruttolönen utan att tappa en krona på vägen", () => {
+    seeded();
+    // Föregående månad: avslutad, så deklarationen får lämnas.
+    const now = new Date();
+    const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+    const employee = saveEmployee(
+      {
+        name: "Ägaren",
+        personnummer: "19850612-1234",
+        role: "foretagsledare",
+        monthlySalary: 40_000,
+        taxBasis: { kind: "procent", percent: 30 },
+        startDate: `${month}-01`,
+      },
+      "anvandare"
+    );
+    const run = runPayroll({ employeeId: employee.id, month }, "anvandare");
+
+    // Bruttolönen fördelas i tre delar och ingenting försvinner: den anställde
+    // får nettot, Skatteverket får skatten.
+    assert.equal(run.gross, run.tax + run.net, "brutto ≠ skatt + netto");
+
+    const cost = accountBalance(run.salaryAccount) + accountBalance(SOCIALA_AVGIFTER);
+    const debt = -(accountBalance(PERSONALSKATT) + accountBalance(ARBETSGIVARAVGIFT));
+    assert.equal(cost, run.gross + run.employerContribution, "lönekostnaden avviker");
+    assert.equal(debt, run.tax + run.employerContribution, "skulden till Skatteverket avviker");
+
+    // Deklarationen flyttar skulden till skattekontot – samma summa, nytt konto.
+    const before = accountBalance(PERSONALSKATT) + accountBalance(ARBETSGIVARAVGIFT) + accountBalance(SKATTEKONTO);
+    markEmployerDeclarationDeclared(employerDeclarationFor(month)!.id, "anvandare");
+    assert.equal(
+      accountBalance(PERSONALSKATT) + accountBalance(ARBETSGIVARAVGIFT) + accountBalance(SKATTEKONTO),
+      before,
+      "summan ändras när lönen förs till skattekontot"
+    );
+    assert.equal(accountBalance(PERSONALSKATT), 0, "personalskatten nollställs inte");
+    assert.equal(accountBalance(ARBETSGIVARAVGIFT), 0, "arbetsgivaravgiften nollställs inte");
     for (const v of db().verifications) {
       const debit = v.entries.reduce((s, e) => s + e.debit, 0);
       const credit = v.entries.reduce((s, e) => s + e.credit, 0);
