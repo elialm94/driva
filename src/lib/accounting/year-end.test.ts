@@ -6,6 +6,7 @@ import { db, replaceDb } from "../store";
 import { emptyTestDb, labor, testCustomer } from "../invoices/test-db";
 import type { Invoice } from "../types";
 import { accountBalance } from "./ledger";
+import { postVerification } from "./engine";
 import { runPayroll, saveEmployee } from "./payroll";
 import { planAccrual } from "./accruals";
 import { bokslutChecklist } from "./close";
@@ -84,15 +85,12 @@ function cost(account: number): number {
 
 function sendInvoice(over: Partial<Invoice> & { id: string; number: number; dueDate: string }): Invoice {
   const invoice: Invoice = {
-    id: over.id,
-    number: over.number,
     customerId: "cust-1",
     type: "faktura",
     status: "skickad",
     lines: [labor({ description: "Arbete", unitPrice: 10_000 })],
     rot: null,
     issueDate: `${YEAR}-03-01`,
-    dueDate: over.dueDate,
     paymentTermsDays: 30,
     reminders: [],
     token: over.id,
@@ -204,22 +202,15 @@ describe("periodiseringsfond", () => {
 
   function profit(amount: number) {
     // En intäkt utan motsvarande kostnad ger årets vinst.
-    db().verifications.push({
-      id: `vinst-${amount}`,
-      series: "A",
-      number: db().verifications.length + 1,
+    postVerification({
       date: `${YEAR}-06-30`,
       description: "Vinst",
       entries: [
-        { account: 1930, debit: amount, credit: 0, position: 0 },
-        { account: 3011, debit: 0, credit: amount, position: 1 },
+        { account: 1930, debit: amount },
+        { account: 3001, credit: amount },
       ],
       source: { type: "manuell" },
-      confidence: "hog",
       createdBy: "anvandare",
-      status: "bokford",
-      postedAt: new Date().toISOString(),
-      fiscalYearId: "fy",
     });
   }
 
@@ -338,7 +329,7 @@ describe("avstämning per balanskonto", () => {
       date: `${YEAR}-02-01`,
       amount: 37_500,
       vatAmount: 7_500,
-      status: "ny",
+      status: "saknar_kvitto",
       createdAt: `${YEAR}-02-01`,
     });
     const asset = registerAssetFromExpense("exp-1", { by: "anvandare" });
@@ -366,22 +357,15 @@ describe("avstämning per balanskonto", () => {
   });
 
   it("ett saldo utan delsystem kallas inte avstämt", () => {
-    db().verifications.push({
-      id: "lan",
-      series: "A",
-      number: 1,
+    postVerification({
       date: `${YEAR}-05-01`,
-      description: "Lån",
+      description: "Lån från närstående",
       entries: [
-        { account: 1930, debit: 50_000, credit: 0, position: 0 },
-        { account: 2393, debit: 0, credit: 50_000, position: 1 },
+        { account: 1930, debit: 50_000 },
+        { account: 2393, credit: 50_000 },
       ],
       source: { type: "manuell" },
-      confidence: "hog",
       createdBy: "anvandare",
-      status: "bokford",
-      postedAt: new Date().toISOString(),
-      fiscalYearId: "fy",
     });
     const row = balanceReconciliation("fy").rows.find((r) => r.account === 2393);
     assert.equal(row?.ok, false);

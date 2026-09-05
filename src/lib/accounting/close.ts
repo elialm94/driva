@@ -147,7 +147,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
         : yearEndSchedules(fy.id).length
           ? "Bilagorna är bokförda."
           : "Inga bilagor behövs för året.",
-      href: "/bokforing/bokslut",
+      href: "/bokforing/bokslut/bilagor",
       hrefLabel: "Öppna bilagorna",
     },
     {
@@ -162,7 +162,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
         : `${tieOut.unexplained.length} konto${tieOut.unexplained.length === 1 ? "" : "n"} går inte ihop: ${tieOut.unexplained
             .map((r) => `${r.account} ${r.name}`)
             .join(", ")}.`,
-      href: "/bokforing/bokslut",
+      href: "/bokforing/bokslut/avstamning",
       hrefLabel: "Visa avstämningen",
     },
   ];

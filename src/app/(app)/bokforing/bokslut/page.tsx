@@ -110,7 +110,15 @@ export default async function BokslutPage() {
                 </li>
               ))}
             </ul>
-            <div className="mt-5 border-t border-line/60 pt-4">
+            <div className="mt-4 flex flex-wrap gap-4 border-t border-line/60 pt-3 text-[13px]">
+              <Link href="/bokforing/bokslut/bilagor" className="font-medium text-accent hover:underline">
+                Bokslutsbilagor
+              </Link>
+              <Link href="/bokforing/bokslut/avstamning" className="font-medium text-accent hover:underline">
+                Avstämning per balanskonto
+              </Link>
+            </div>
+            <div className="mt-4 border-t border-line/60 pt-4">
               <CloseFiscalYearButton
                 fiscalYearId={fy.id}
                 label={`Slutför bokslut ${fy.label}`}

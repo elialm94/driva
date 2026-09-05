@@ -30,7 +30,13 @@ import {
   type VerificationView,
 } from "@/lib/services/verification-correction";
 import { generateAnnualReport, advanceAnnualReportStatus } from "@/lib/accounting/annual-report";
-import { planAccrualForSource } from "@/lib/accounting/accruals";
+import { planAccrual, planAccrualForSource } from "@/lib/accounting/accruals";
+import {
+  bookYearEndSchedule,
+  saveYearEndSchedule,
+  scheduleDraft,
+  type ScheduleDraft,
+} from "@/lib/accounting/year-end";
 import {
   confirmCreditRefundMatch,
   confirmPaymentMatch,
@@ -42,7 +48,13 @@ import { storeVerificationAttachment } from "@/lib/receipts/verification-attachm
 import { parseReceiptDataUrl } from "@/lib/receipts/receipt-file";
 import { verificationLabel } from "@/lib/accounting/engine";
 import { db } from "@/lib/store";
-import type { AnnualReport, VerificationAttachment } from "@/lib/types";
+import type {
+  AccrualKind,
+  AnnualReport,
+  VerificationAttachment,
+  YearEndScheduleInputs,
+  YearEndScheduleKind,
+} from "@/lib/types";
 import { withBusiness, withBusinessRead } from "@/lib/auth/session";
 
 /**
@@ -282,6 +294,86 @@ export async function planAccrualAction(input: {
       planAccrualForSource({ type: "leverantorsfaktura", invoice }, { fromDate: input.fromDate, toDate: input.toDate }, input.fiscalYearId, "anvandare");
     }
   }, "write_accounting");
+}
+
+/**
+ * Periodisering utan underlag i systemet. En upplupen kostnad – elräkningen för
+ * december som kommer i januari – har per definition inget bokfört underlag att
+ * utgå från, så beloppet och kontot anges för hand.
+ */
+export async function planManualAccrualAction(input: {
+  kind: AccrualKind;
+  description: string;
+  totalAmount: number;
+  counterAccount: number;
+  fromDate: string;
+  toDate: string;
+  fiscalYearId: string;
+}): Promise<Result> {
+  return run(
+    () =>
+      planAccrual({
+        kind: input.kind,
+        description: input.description,
+        totalAmount: input.totalAmount,
+        counterAccount: input.counterAccount,
+        fromDate: input.fromDate,
+        toDate: input.toDate,
+        fiscalYearId: input.fiscalYearId,
+        by: "anvandare",
+      }),
+    "year_end"
+  );
+}
+
+/* ---------------------------- Bokslutsbilagor ------------------------------ */
+
+/**
+ * Räkna om bilagan utan att spara. Underlaget ligger i bokföringen – sparade
+ * semesterdagar blir ett belopp först när lönen och avgiftssatsen vägts in – så
+ * förhandsberäkningen måste ske på servern. Användaren ser summan innan den bokförs.
+ */
+export async function previewYearEndScheduleAction(input: {
+  fiscalYearId: string;
+  kind: YearEndScheduleKind;
+  inputs: YearEndScheduleInputs;
+}): Promise<{ ok: true; draft: ScheduleDraft } | { ok: false; error: string }> {
+  try {
+    return await withBusinessRead(() => ({
+      ok: true as const,
+      draft: scheduleDraft(input.fiscalYearId, input.kind, input.inputs),
+    }));
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Något gick fel." };
+  }
+}
+
+export async function saveYearEndScheduleAction(input: {
+  fiscalYearId: string;
+  kind: YearEndScheduleKind;
+  inputs: YearEndScheduleInputs;
+}): Promise<Result> {
+  return run(() => saveYearEndSchedule(input.fiscalYearId, input.kind, input.inputs, "anvandare"), "year_end");
+}
+
+export async function bookYearEndScheduleAction(scheduleId: string): Promise<Result> {
+  return run(() => bookYearEndSchedule(scheduleId, "anvandare"), "year_end");
+}
+
+/**
+ * Spara och bokför i ett svep. Bilagan bär ett beslut användaren redan fattat;
+ * att kräva två klick för att få det i böckerna vore att göra ett extra steg
+ * av ingenting.
+ */
+export async function saveAndBookYearEndScheduleAction(input: {
+  fiscalYearId: string;
+  kind: YearEndScheduleKind;
+  inputs: YearEndScheduleInputs;
+}): Promise<Result> {
+  return run(() => {
+    const schedule = saveYearEndSchedule(input.fiscalYearId, input.kind, input.inputs, "anvandare");
+    bookYearEndSchedule(schedule.id, "anvandare");
+  }, "year_end");
 }
 
 /* --------------------------- Manuellt verifikat ---------------------------- */

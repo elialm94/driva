@@ -18,6 +18,22 @@ import { birthDateOf, currentEmployee } from "./payroll";
 import { computeTaxCalculation } from "./tax";
 import { invoiceOutstanding, invoiceTotals, isOpenReceivable } from "../services/data";
 import { bokforingsdatum } from "./dates";
+import {
+  ATERFORING_PERIODISERINGSFOND,
+  AVSATTNING_PERIODISERINGSFOND,
+  BEFARADE_KUNDFORLUSTER,
+  DOUBTFUL_AFTER_DAYS,
+  NEDSKRIVNING_KUNDFORDRINGAR,
+  PERIODISERINGSFOND,
+  PERIODISERINGSFOND_MAX_ANDEL,
+  PERIODISERINGSFOND_MAX_AR,
+  SCHEDULE_LABEL,
+  SEMESTERLONESKULD,
+  SEMESTERLONESKULD_KOSTNAD,
+  SOCIALA_AVGIFTER_SKULD_KOSTNAD,
+  UPPLUPNA_SOCIALA_AVGIFTER,
+  vacationDayValue,
+} from "./year-end-model";
 
 /**
  * Bokslutsbilagor: specifikationen bakom ett balanskonto.
@@ -35,72 +51,37 @@ import { bokforingsdatum } from "./dates";
  * årets bilaga dubbla första årets skuld.
  */
 
-/* ------------------------------- Kontoplan -------------------------------- */
-
-/** Upplupna semesterlöner. */
-export const SEMESTERLONESKULD = 2920;
-/** Förändring av semesterlöneskuld. */
-export const SEMESTERLONESKULD_KOSTNAD = 7290;
-/** Beräknade upplupna lagstadgade sociala avgifter. */
-export const UPPLUPNA_SOCIALA_AVGIFTER = 2941;
-/** Sociala avgifter för semester- och löneskulder. */
-export const SOCIALA_AVGIFTER_SKULD_KOSTNAD = 7519;
-/** Nedskrivning av kundfordringar. */
-export const NEDSKRIVNING_KUNDFORDRINGAR = 1519;
-/** Befarade förluster på kundfordringar. */
-export const BEFARADE_KUNDFORLUSTER = 6352;
-/** Periodiseringsfonder. */
-export const PERIODISERINGSFOND = 2110;
-/** Avsättning till periodiseringsfond. */
-export const AVSATTNING_PERIODISERINGSFOND = 8811;
-/** Återföring från periodiseringsfond. */
-export const ATERFORING_PERIODISERINGSFOND = 8819;
-
-export const SCHEDULE_LABEL: Record<YearEndScheduleKind, string> = {
-  semesterloneskuld: "Semesterlöneskuld",
-  kundfordringar_nedskrivning: "Nedskrivning av kundfordringar",
-  periodiseringsfond: "Periodiseringsfond",
-};
+export {
+  ATERFORING_PERIODISERINGSFOND,
+  AVSATTNING_PERIODISERINGSFOND,
+  BEFARADE_KUNDFORLUSTER,
+  DOUBTFUL_AFTER_DAYS,
+  NEDSKRIVNING_KUNDFORDRINGAR,
+  PERIODISERINGSFOND,
+  PERIODISERINGSFOND_MAX_ANDEL,
+  PERIODISERINGSFOND_MAX_AR,
+  SCHEDULE_LABEL,
+  SCHEDULE_PURPOSE,
+  SEMESTERDAGAR_PER_AR,
+  SEMESTERLON_PER_DAG_PROCENT,
+  SEMESTERLONESKULD,
+  SEMESTERLONESKULD_KOSTNAD,
+  SEMESTERTILLAGG_PER_DAG_PROCENT,
+  SOCIALA_AVGIFTER_SKULD_KOSTNAD,
+  UPPLUPNA_SOCIALA_AVGIFTER,
+  vacationDayValue,
+  type VacationDayValue,
+} from "./year-end-model";
 
 /**
- * Balanskontona varje bilaga specificerar. Avstämningen (balance-sheet.ts)
- * frågar den här tabellen, så en ny bilaga blir avstämd utan följdändringar.
+ * Balanskontona varje bilaga specificerar. Avstämningen frågar den här
+ * tabellen, så en ny bilaga blir avstämd utan följdändringar.
  */
 export const SCHEDULE_ACCOUNTS: Record<YearEndScheduleKind, number[]> = {
   semesterloneskuld: [SEMESTERLONESKULD, UPPLUPNA_SOCIALA_AVGIFTER],
   kundfordringar_nedskrivning: [NEDSKRIVNING_KUNDFORDRINGAR],
   periodiseringsfond: [PERIODISERINGSFOND],
 };
-
-/* --------------------------- Semesterlöneskuld ---------------------------- */
-
-/**
- * Semesterlön för månadsavlönade enligt sammalöneregeln i semesterlagen:
- * den anställde behåller månadslönen under semestern och får dessutom ett
- * semestertillägg. Skulden för en dag som är intjänad men inte uttagen är
- * därför båda delarna.
- *
- * 4,6 % är dagens andel av månadslönen (en månad räknas som 21,75 arbetsdagar),
- * 0,43 % är semestertillägget per betald dag. Satserna är semesterlagens, inte
- * företagets, så de ligger i koden med regeln intill.
- */
-export const SEMESTERLON_PER_DAG_PROCENT = 4.6;
-export const SEMESTERTILLAGG_PER_DAG_PROCENT = 0.43;
-
-export interface VacationDayValue {
-  /** Semesterlön för dagen. */
-  semesterlon: number;
-  /** Semestertillägg för dagen. */
-  tillagg: number;
-  /** Summan – vad en sparad dag är värd. */
-  perDay: number;
-}
-
-export function vacationDayValue(monthlySalary: number): VacationDayValue {
-  const semesterlon = Math.round((monthlySalary * SEMESTERLON_PER_DAG_PROCENT) / 100);
-  const tillagg = Math.round((monthlySalary * SEMESTERTILLAGG_PER_DAG_PROCENT) / 100);
-  return { semesterlon, tillagg, perDay: semesterlon + tillagg };
-}
 
 /* --------------------------------- Register -------------------------------- */
 
@@ -250,10 +231,6 @@ export function doubtfulReceivablesDraft(fiscalYearId: string, invoiceIds: strin
  * Avsättningen är ett VAL, inte en beräkning: Driva räknar ut taket och
  * återföringarna som måste göras, men beloppet är bolagets beslut.
  */
-export const PERIODISERINGSFOND_MAX_ANDEL = 0.25;
-/** Avsättningen ska vara återförd senast sjätte året efter avsättningsåret. */
-export const PERIODISERINGSFOND_MAX_AR = 6;
-
 export interface FundLot {
   year: number;
   amount: number;
@@ -602,9 +579,6 @@ function postLiabilityChange(args: {
 }
 
 /* -------------------------------- Förslag ---------------------------------- */
-
-/** Dagar en förfallen fordran ska ha legat innan Driva föreslår nedskrivning. */
-export const DOUBTFUL_AFTER_DAYS = 90;
 
 export interface DoubtfulSuggestion {
   invoice: Invoice;

@@ -122,7 +122,7 @@ export function bokforingDetailTabForPath(pathname: string): (typeof BOKFORING_D
   if (path === "/bokforing/moms") return "moms";
   if (path === "/bokforing/skattekonto") return "skattekonto";
   if (path === "/bokforing/lon" || path.startsWith("/bokforing/lon/")) return "lon";
-  if (path === "/bokforing/bokslut") return "bokslut";
+  if (path === "/bokforing/bokslut" || path.startsWith("/bokforing/bokslut/")) return "bokslut";
   if (path === "/bokforing/detaljer") return "verifikationer";
   return null;
 }
@@ -177,6 +177,8 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/bokforing/skattekonto", section: "bokforing", parent: "/bokforing", label: "Skattekonto", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/lon/:runId", section: "bokforing", parent: "/bokforing/lon", label: "Lönespecifikation", backLabel: "Lön", showBack: true },
   { pattern: "/bokforing/lon", section: "bokforing", parent: "/bokforing", label: "Lön", backLabel: "Bokföring", showBack: true },
+  { pattern: "/bokforing/bokslut/bilagor", section: "bokforing", parent: "/bokforing/bokslut", label: "Bokslutsbilagor", backLabel: "Bokslut", showBack: true },
+  { pattern: "/bokforing/bokslut/avstamning", section: "bokforing", parent: "/bokforing/bokslut", label: "Avstämning", backLabel: "Bokslut", showBack: true },
   { pattern: "/bokforing/bokslut", section: "bokforing", parent: "/bokforing", label: "Bokslut", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/detaljer", section: "bokforing", parent: "/bokforing", label: "Bokföringsdetaljer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing", section: "bokforing", label: "Bokföring" },
