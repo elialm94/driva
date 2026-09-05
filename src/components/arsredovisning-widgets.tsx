@@ -58,6 +58,7 @@ export function NarrativeForm({
   tillForfogande,
   utdelning,
   locked,
+  businessId,
 }: {
   reportId: string;
   verksamhet: string;
@@ -65,6 +66,8 @@ export function NarrativeForm({
   tillForfogande: number;
   utdelning?: number;
   locked: boolean;
+  /** Klienten rapporten hör till. Konsultytan skickar den; ägaren behöver den inte. */
+  businessId?: string;
 }) {
   const [v, setV] = useState(verksamhet);
   const [h, setH] = useState(vasentligaHandelser);
@@ -150,11 +153,15 @@ export function NarrativeForm({
           className={buttonClasses("primary")}
           onClick={() =>
             save(() =>
-              updateAnnualReportAction(reportId, {
-                verksamhet: v,
-                vasentligaHandelser: h,
-                utdelning: Number(u.replace(/\s/g, "").replace(",", ".")) || 0,
-              })
+              updateAnnualReportAction(
+                reportId,
+                {
+                  verksamhet: v,
+                  vasentligaHandelser: h,
+                  utdelning: Number(u.replace(/\s/g, "").replace(",", ".")) || 0,
+                },
+                businessId
+              )
             )
           }
         >
@@ -176,10 +183,12 @@ export function SignatoriesForm({
   reportId,
   signatories,
   locked,
+  businessId,
 }: {
   reportId: string;
   signatories: AnnualReportSignatory[];
   locked: boolean;
+  businessId?: string;
 }) {
   const [rows, setRows] = useState<{ name: string; role: string }[]>(
     signatories.length > 0
@@ -278,7 +287,7 @@ export function SignatoriesForm({
           type="button"
           disabled={pending}
           className={buttonClasses("primary")}
-          onClick={() => save(() => updateAnnualReportAction(reportId, { underskrifter: rows }))}
+          onClick={() => save(() => updateAnnualReportAction(reportId, { underskrifter: rows }, businessId))}
         >
           {pending ? "Sparar…" : "Spara underskrifterna"}
         </button>
@@ -299,11 +308,13 @@ export function CertificationForm({
   certification,
   signatories,
   locked,
+  businessId,
 }: {
   reportId: string;
   certification?: AnnualReportCertification;
   signatories: AnnualReportSignatory[];
   locked: boolean;
+  businessId?: string;
 }) {
   const [stammaDate, setStammaDate] = useState(certification?.stammaDate ?? "");
   const [name, setName] = useState(certification?.certifiedByName ?? signatories[0]?.name ?? "");
@@ -407,14 +418,18 @@ export function CertificationForm({
           className={buttonClasses("primary")}
           onClick={() =>
             save(() =>
-              updateAnnualReportAction(reportId, {
-                fastallelseintyg: {
-                  stammaDate: stammaDate || undefined,
-                  certifiedByName: name || undefined,
-                  certifiedByRole: role || undefined,
-                  dispositionDecision: decision || undefined,
+              updateAnnualReportAction(
+                reportId,
+                {
+                  fastallelseintyg: {
+                    stammaDate: stammaDate || undefined,
+                    certifiedByName: name || undefined,
+                    certifiedByRole: role || undefined,
+                    dispositionDecision: decision || undefined,
+                  },
                 },
-              })
+                businessId
+              )
             )
           }
         >

@@ -74,15 +74,22 @@ function refresh() {
 
 type Result = { ok: true } | { ok: false; error: string };
 
+/**
+ * businessId skickas av konsultytan, som arbetar i en klients böcker utan att
+ * företaget är konsultens eget: utan det avgör cookien vem som bokförs på, och
+ * en cookie som pekar fel skulle lägga bokslutet hos fel klient. withBusiness
+ * kontrollerar medlemskapet innan något körs.
+ */
 async function run(
   fn: () => void,
-  capability: "vat" | "year_end" | "write_accounting" | "correct_voucher" | "match_payment"
+  capability: "vat" | "year_end" | "write_accounting" | "correct_voucher" | "match_payment",
+  businessId?: string
 ): Promise<Result> {
   try {
     await withBusiness(() => {
       fn();
       refresh();
-    }, { capability });
+    }, { capability, businessId });
     return { ok: true };
   } catch (e) {
     refresh();
@@ -182,14 +189,15 @@ export async function reconcileTaxAccountAction(
 }
 
 export async function runBokslutAutomationAction(
-  fiscalYearId: string
+  fiscalYearId: string,
+  businessId?: string
 ): Promise<Result & { depreciations?: number; accruals?: number; schedules?: number }> {
   try {
     const res = await withBusiness(() => {
       const out = runBokslutAutomation(fiscalYearId, "anvandare");
       refresh();
       return out;
-    }, { capability: "year_end" });
+    }, { capability: "year_end", businessId });
     return { ok: true, ...res };
   } catch (e) {
     refresh();
@@ -197,13 +205,17 @@ export async function runBokslutAutomationAction(
   }
 }
 
-export async function closeFiscalYearAction(fiscalYearId: string): Promise<Result> {
-  return run(() => closeFiscalYear(fiscalYearId, "anvandare"), "year_end");
+export async function closeFiscalYearAction(fiscalYearId: string, businessId?: string): Promise<Result> {
+  return run(() => closeFiscalYear(fiscalYearId, "anvandare"), "year_end", businessId);
 }
 
 /** Öppna ett stängt räkenskapsår igen. Skälet krävs och hamnar i audit-loggen. */
-export async function reopenFiscalYearAction(fiscalYearId: string, reason: string): Promise<Result> {
-  return run(() => reopenFiscalYear(fiscalYearId, reason, "anvandare"), "year_end");
+export async function reopenFiscalYearAction(
+  fiscalYearId: string,
+  reason: string,
+  businessId?: string
+): Promise<Result> {
+  return run(() => reopenFiscalYear(fiscalYearId, reason, "anvandare"), "year_end", businessId);
 }
 
 export async function undoExpenseBookingAction(expenseId: string): Promise<Result> {
@@ -251,20 +263,25 @@ export async function correctVerificationAction(
   }
 }
 
-export async function generateAnnualReportAction(fiscalYearId: string): Promise<Result> {
-  return run(() => generateAnnualReport(fiscalYearId, "anvandare"), "year_end");
+export async function generateAnnualReportAction(fiscalYearId: string, businessId?: string): Promise<Result> {
+  return run(() => generateAnnualReport(fiscalYearId, "anvandare"), "year_end", businessId);
 }
 
 export async function advanceAnnualReportStatusAction(
   reportId: string,
-  to: AnnualReport["status"]
+  to: AnnualReport["status"],
+  businessId?: string
 ): Promise<Result> {
-  return run(() => advanceAnnualReportStatus(reportId, to, "anvandare"), "year_end");
+  return run(() => advanceAnnualReportStatus(reportId, to, "anvandare"), "year_end", businessId);
 }
 
 /** Redigera förvaltningsberättelsen, utdelningsförslaget, underskrifterna eller intyget. */
-export async function updateAnnualReportAction(reportId: string, edit: AnnualReportEdit): Promise<Result> {
-  return run(() => updateAnnualReport(reportId, edit, "anvandare"), "year_end");
+export async function updateAnnualReportAction(
+  reportId: string,
+  edit: AnnualReportEdit,
+  businessId?: string
+): Promise<Result> {
+  return run(() => updateAnnualReport(reportId, edit, "anvandare"), "year_end", businessId);
 }
 
 /* ---------------------- Betalningsmatchning (bekräfta) ---------------------- */
@@ -296,6 +313,7 @@ export async function planAccrualAction(input: {
   fromDate: string;
   toDate: string;
   fiscalYearId: string;
+  businessId?: string;
 }): Promise<Result> {
   return run(() => {
     const data = db();
@@ -308,7 +326,7 @@ export async function planAccrualAction(input: {
       if (!invoice) throw new Error("Leverantörsfakturan finns inte.");
       planAccrualForSource({ type: "leverantorsfaktura", invoice }, { fromDate: input.fromDate, toDate: input.toDate }, input.fiscalYearId, "anvandare");
     }
-  }, "write_accounting");
+  }, "write_accounting", input.businessId);
 }
 
 /**
@@ -324,6 +342,7 @@ export async function planManualAccrualAction(input: {
   fromDate: string;
   toDate: string;
   fiscalYearId: string;
+  businessId?: string;
 }): Promise<Result> {
   return run(
     () =>
@@ -337,7 +356,8 @@ export async function planManualAccrualAction(input: {
         fiscalYearId: input.fiscalYearId,
         by: "anvandare",
       }),
-    "year_end"
+    "year_end",
+    input.businessId
   );
 }
 
@@ -352,12 +372,16 @@ export async function previewYearEndScheduleAction(input: {
   fiscalYearId: string;
   kind: YearEndScheduleKind;
   inputs: YearEndScheduleInputs;
+  businessId?: string;
 }): Promise<{ ok: true; draft: ScheduleDraft } | { ok: false; error: string }> {
   try {
-    return await withBusinessRead(() => ({
-      ok: true as const,
-      draft: scheduleDraft(input.fiscalYearId, input.kind, input.inputs),
-    }));
+    return await withBusinessRead(
+      () => ({
+        ok: true as const,
+        draft: scheduleDraft(input.fiscalYearId, input.kind, input.inputs),
+      }),
+      { businessId: input.businessId }
+    );
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Något gick fel." };
   }
@@ -367,12 +391,17 @@ export async function saveYearEndScheduleAction(input: {
   fiscalYearId: string;
   kind: YearEndScheduleKind;
   inputs: YearEndScheduleInputs;
+  businessId?: string;
 }): Promise<Result> {
-  return run(() => saveYearEndSchedule(input.fiscalYearId, input.kind, input.inputs, "anvandare"), "year_end");
+  return run(
+    () => saveYearEndSchedule(input.fiscalYearId, input.kind, input.inputs, "anvandare"),
+    "year_end",
+    input.businessId
+  );
 }
 
-export async function bookYearEndScheduleAction(scheduleId: string): Promise<Result> {
-  return run(() => bookYearEndSchedule(scheduleId, "anvandare"), "year_end");
+export async function bookYearEndScheduleAction(scheduleId: string, businessId?: string): Promise<Result> {
+  return run(() => bookYearEndSchedule(scheduleId, "anvandare"), "year_end", businessId);
 }
 
 /**
@@ -384,11 +413,16 @@ export async function saveAndBookYearEndScheduleAction(input: {
   fiscalYearId: string;
   kind: YearEndScheduleKind;
   inputs: YearEndScheduleInputs;
+  businessId?: string;
 }): Promise<Result> {
-  return run(() => {
-    const schedule = saveYearEndSchedule(input.fiscalYearId, input.kind, input.inputs, "anvandare");
-    bookYearEndSchedule(schedule.id, "anvandare");
-  }, "year_end");
+  return run(
+    () => {
+      const schedule = saveYearEndSchedule(input.fiscalYearId, input.kind, input.inputs, "anvandare");
+      bookYearEndSchedule(schedule.id, "anvandare");
+    },
+    "year_end",
+    input.businessId
+  );
 }
 
 /* --------------------------- Manuellt verifikat ---------------------------- */

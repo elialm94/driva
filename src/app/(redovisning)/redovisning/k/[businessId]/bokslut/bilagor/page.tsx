@@ -1,30 +1,25 @@
-import { AccountantClientTabs, accountantStatusText } from "@/components/accountant-workspace";
+import { AccountantClientTabs } from "@/components/accountant-workspace";
 import { PageHeader } from "@/components/ui";
-import { BokslutView } from "@/components/bokslut-view";
+import { BokslutsbilagorView, bilagorFiscalYear } from "@/components/bokslutsbilagor-view";
 import { loadAccountantClientPage } from "@/lib/collaboration/client-page";
 import { accountantHref } from "@/lib/collaboration/hrefs";
 import { can } from "@/lib/collaboration/permissions";
 
-export const metadata = { title: "Bokslut" };
+export const metadata = { title: "Bokslutsbilagor" };
 
-export default async function AccountantBokslutPage({ params }: { params: Promise<{ businessId: string }> }) {
+export default async function AccountantBilagorPage({ params }: { params: Promise<{ businessId: string }> }) {
   const { businessId } = await params;
   const { access, snap } = await loadAccountantClientPage(businessId);
+  const fy = bilagorFiscalYear();
 
   return (
     <div className="animate-fade-up">
       <PageHeader
-        title={snap.name}
-        subtitle={accountantStatusText({
-          bookedThrough: snap.bookedThrough,
-          bankOk: snap.bankOk,
-          bankUnexplained: snap.bankUnexplained,
-          nextVatDue: snap.nextVat?.dueDate,
-        })}
+        title={`${snap.name} – bokslutsbilagor${fy ? ` ${fy.label}` : ""}`}
+        subtitle="Ett saldo är ett tal. Bilagan är svaret på vad talet består av – det revisorn och Skatteverket frågar efter."
       />
       <AccountantClientTabs businessId={businessId} active="bokslut" />
-      <BokslutView
-        base={`/redovisning/k/${businessId}/bokslut`}
+      <BokslutsbilagorView
         hrefFor={(href) => accountantHref(businessId, href)}
         businessId={businessId}
         readOnly={!can(access.role, "year_end")}

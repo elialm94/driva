@@ -148,7 +148,7 @@ export function VatPeriodicityPicker({
   );
 }
 
-export function BokslutAutomationButton({ fiscalYearId }: { fiscalYearId: string }) {
+export function BokslutAutomationButton({ fiscalYearId, businessId }: { fiscalYearId: string; businessId?: string }) {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -159,7 +159,7 @@ export function BokslutAutomationButton({ fiscalYearId }: { fiscalYearId: string
         disabled={isPending}
         onClick={() =>
           startTransition(async () => {
-            const res = await runBokslutAutomationAction(fiscalYearId);
+            const res = await runBokslutAutomationAction(fiscalYearId, businessId);
             if (res.ok) {
               setResult(
                 [
@@ -188,7 +188,18 @@ export function BokslutAutomationButton({ fiscalYearId }: { fiscalYearId: string
   );
 }
 
-export function CloseFiscalYearButton({ fiscalYearId, label, disabled }: { fiscalYearId: string; label: string; disabled?: boolean }) {
+export function CloseFiscalYearButton({
+  fiscalYearId,
+  label,
+  disabled,
+  businessId,
+}: {
+  fiscalYearId: string;
+  label: string;
+  disabled?: boolean;
+  /** Klienten bokslutet gäller. Konsultytan skickar den; ägaren behöver den inte. */
+  businessId?: string;
+}) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -206,7 +217,7 @@ export function CloseFiscalYearButton({ fiscalYearId, label, disabled }: { fisca
             disabled={isPending}
             onClick={() =>
               startTransition(async () => {
-                const res = await closeFiscalYearAction(fiscalYearId);
+                const res = await closeFiscalYearAction(fiscalYearId, businessId);
                 setError(res.ok ? null : res.error);
                 if (res.ok) setConfirming(false);
               })
@@ -241,11 +252,13 @@ export function ReopenFiscalYearButton({
   yearLabel,
   hasReport,
   blockers,
+  businessId,
 }: {
   fiscalYearId: string;
   yearLabel: string;
   hasReport: boolean;
   blockers: string[];
+  businessId?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -295,7 +308,7 @@ export function ReopenFiscalYearButton({
           disabled={isPending || reason.trim().length < 5}
           onClick={() =>
             startTransition(async () => {
-              const res = await reopenFiscalYearAction(fiscalYearId, reason);
+              const res = await reopenFiscalYearAction(fiscalYearId, reason, businessId);
               setError(res.ok ? null : res.error);
               if (res.ok) {
                 setOpen(false);
@@ -355,7 +368,13 @@ export function UndoBookingButton({ expenseId }: { expenseId: string }) {
   );
 }
 
-export function GenerateAnnualReportButton({ fiscalYearId }: { fiscalYearId: string }) {
+export function GenerateAnnualReportButton({
+  fiscalYearId,
+  businessId,
+}: {
+  fiscalYearId: string;
+  businessId?: string;
+}) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   return (
@@ -365,7 +384,7 @@ export function GenerateAnnualReportButton({ fiscalYearId }: { fiscalYearId: str
         disabled={isPending}
         onClick={() =>
           startTransition(async () => {
-            const res = await generateAnnualReportAction(fiscalYearId);
+            const res = await generateAnnualReportAction(fiscalYearId, businessId);
             setError(res.ok ? null : res.error);
           })
         }
@@ -397,10 +416,12 @@ export function AnnualReportStatusButton({
   reportId,
   status,
   blockers = [],
+  businessId,
 }: {
   reportId: string;
   status: string;
   blockers?: string[];
+  businessId?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -415,7 +436,7 @@ export function AnnualReportStatusButton({
         disabled={isPending || blocked}
         onClick={() =>
           startTransition(async () => {
-            const res = await advanceAnnualReportStatusAction(reportId, next.to);
+            const res = await advanceAnnualReportStatusAction(reportId, next.to, businessId);
             setError(res.ok ? null : res.error);
             if (res.ok) router.refresh();
           })
@@ -443,12 +464,14 @@ export function PlanAccrualForm({
   fiscalYearId,
   defaultFrom,
   defaultTo,
+  businessId,
 }: {
   sourceType: "utgift" | "leverantorsfaktura";
   sourceId: string;
   fiscalYearId: string;
   defaultFrom: string;
   defaultTo: string;
+  businessId?: string;
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -481,7 +504,14 @@ export function PlanAccrualForm({
           disabled={isPending}
           onClick={() =>
             startTransition(async () => {
-              const res = await planAccrualAction({ sourceType, sourceId, fromDate: from, toDate: to, fiscalYearId });
+              const res = await planAccrualAction({
+                sourceType,
+                sourceId,
+                fromDate: from,
+                toDate: to,
+                fiscalYearId,
+                businessId,
+              });
               if (res.ok) setDone(true);
               else setError(res.error);
             })

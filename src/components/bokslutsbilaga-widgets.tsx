@@ -106,6 +106,7 @@ function ScheduleShell({
   ready,
   children,
   bookLabel = "Bokför bilagan",
+  businessId,
 }: {
   fiscalYearId: string;
   kind: YearEndScheduleKind;
@@ -113,6 +114,8 @@ function ScheduleShell({
   ready: boolean;
   children: React.ReactNode;
   bookLabel?: string;
+  /** Klienten bilagan hör till. Konsultytan skickar den; ägaren behöver den inte. */
+  businessId?: string;
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -124,7 +127,12 @@ function ScheduleShell({
     if (!ready) return;
     let live = true;
     const timer = setTimeout(async () => {
-      const res = await previewYearEndScheduleAction({ fiscalYearId, kind, inputs: JSON.parse(serialized) });
+      const res = await previewYearEndScheduleAction({
+        fiscalYearId,
+        kind,
+        inputs: JSON.parse(serialized),
+        businessId,
+      });
       if (!live) return;
       if (res.ok) {
         setDraft(res.draft);
@@ -139,7 +147,7 @@ function ScheduleShell({
       clearTimeout(timer);
     };
     // serialized fångar inputs; objektet är nytt vid varje rendering.
-  }, [fiscalYearId, kind, serialized, ready]);
+  }, [fiscalYearId, kind, serialized, ready, businessId]);
 
   // Utkastet visas bara när underlaget är ifyllt – annars är det från ett läge användaren lämnat.
   const shown = ready ? draft : null;
@@ -157,7 +165,7 @@ function ScheduleShell({
           disabled={blocked || booking}
           onClick={() =>
             startBooking(async () => {
-              const res = await saveAndBookYearEndScheduleAction({ fiscalYearId, kind, inputs });
+              const res = await saveAndBookYearEndScheduleAction({ fiscalYearId, kind, inputs, businessId });
               if (res.ok) {
                 setError(null);
                 router.refresh();
@@ -189,10 +197,12 @@ export function VacationLiabilityForm({
   fiscalYearId,
   savedDays,
   monthlySalary,
+  businessId,
 }: {
   fiscalYearId: string;
   savedDays: number;
   monthlySalary: number;
+  businessId?: string;
 }) {
   const [days, setDays] = useState(String(savedDays || ""));
   const value = vacationDayValue(monthlySalary);
@@ -204,6 +214,7 @@ export function VacationLiabilityForm({
       kind="semesterloneskuld"
       inputs={{ savedVacationDays: parsed }}
       ready={days.trim() !== ""}
+      businessId={businessId}
     >
       <div className="max-w-[220px]">
         <label className={labelCls} htmlFor="saved-days">
@@ -241,10 +252,12 @@ export function DoubtfulReceivablesForm({
   fiscalYearId,
   suggestions,
   selected,
+  businessId,
 }: {
   fiscalYearId: string;
   suggestions: DoubtfulRow[];
   selected: string[];
+  businessId?: string;
 }) {
   const [picked, setPicked] = useState<string[]>(selected);
   const toggle = (id: string) =>
@@ -268,6 +281,7 @@ export function DoubtfulReceivablesForm({
       kind="kundfordringar_nedskrivning"
       inputs={{ doubtfulInvoiceIds: picked }}
       ready
+      businessId={businessId}
     >
       <ul className="space-y-2">
         {suggestions.map((s) => (
@@ -317,11 +331,13 @@ export function FundForm({
   maxAllocation,
   lots,
   allocation: initialAllocation,
+  businessId,
 }: {
   fiscalYearId: string;
   maxAllocation: number;
   lots: FundLotRow[];
   allocation: number;
+  businessId?: string;
 }) {
   const [allocation, setAllocation] = useState(initialAllocation ? String(initialAllocation) : "");
   const [reversals, setReversals] = useState<Record<number, string>>(() =>
@@ -336,7 +352,7 @@ export function FundForm({
   };
 
   return (
-    <ScheduleShell fiscalYearId={fiscalYearId} kind="periodiseringsfond" inputs={inputs} ready>
+    <ScheduleShell fiscalYearId={fiscalYearId} kind="periodiseringsfond" inputs={inputs} ready businessId={businessId}>
       <div className="max-w-[260px]">
         <label className={labelCls} htmlFor="fund-allocation">
           Avsättning i år
@@ -429,7 +445,15 @@ const ACCRUAL_KINDS: { kind: AccrualKind; label: string; hint: string; counterHi
  * för i år som faktureras nästa år – har ingen faktura att utgå från, så belopp,
  * konto och period anges för hand.
  */
-export function ManualAccrualForm({ fiscalYearId, yearEnd }: { fiscalYearId: string; yearEnd: string }) {
+export function ManualAccrualForm({
+  fiscalYearId,
+  yearEnd,
+  businessId,
+}: {
+  fiscalYearId: string;
+  yearEnd: string;
+  businessId?: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<AccrualKind>("upplupen_kostnad");
@@ -560,6 +584,7 @@ export function ManualAccrualForm({ fiscalYearId, yearEnd }: { fiscalYearId: str
                 fromDate,
                 toDate,
                 fiscalYearId,
+                businessId,
               });
               if (res.ok) {
                 setOpen(false);

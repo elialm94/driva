@@ -52,6 +52,8 @@ export interface InlamningPanelProps {
   signingAvailable: boolean;
   /** Sådant som måste vara klart innan filen bör lämnas in. */
   blockers?: string[];
+  /** Klienten inlämningen gäller. Konsultytan skickar den; ägaren behöver den inte. */
+  businessId?: string;
   demo?: boolean;
   className?: string;
 }
@@ -63,6 +65,7 @@ export function InlamningPanel({
   available,
   signingAvailable,
   blockers = [],
+  businessId,
   demo = false,
   className,
 }: InlamningPanelProps) {
@@ -111,7 +114,7 @@ export function InlamningPanel({
               type="button"
               className={buttonClasses("secondary", "sm")}
               disabled={isPending || blocked}
-              onClick={() => act(() => generateFilingAction(kind, subjectId))}
+              onClick={() => act(() => generateFilingAction(kind, subjectId, businessId))}
             >
               <FileCheck2 className="size-3.5 shrink-0" />
               {isPending ? "Genererar …" : status === "avvisad" ? "Gör ett nytt försök" : "Förbered inlämning"}
@@ -124,7 +127,7 @@ export function InlamningPanel({
                 type="button"
                 className={buttonClasses("secondary", "sm")}
                 disabled={isPending}
-                onClick={() => act(() => generateFilingAction(kind, subjectId))}
+                onClick={() => act(() => generateFilingAction(kind, subjectId, businessId))}
               >
                 <RefreshCw className={cx("size-3.5 shrink-0", isPending && "animate-spin")} />
                 Generera om
@@ -133,7 +136,7 @@ export function InlamningPanel({
                 type="button"
                 className={buttonClasses(signingAvailable ? "bankid" : "secondary", "sm")}
                 disabled={isPending || blocked || !signingAvailable}
-                onClick={() => act(() => signFilingAction(submission!.id))}
+                onClick={() => act(() => signFilingAction(submission!.id, businessId))}
               >
                 <PenLine className="size-3.5 shrink-0" />
                 {isPending ? "Signerar …" : "Signera"}
@@ -146,7 +149,7 @@ export function InlamningPanel({
               type="button"
               className={buttonClasses("primary", "sm")}
               disabled={isPending || blocked}
-              onClick={() => act(() => submitFilingAction(submission!.id))}
+              onClick={() => act(() => submitFilingAction(submission!.id, businessId))}
             >
               <Send className="size-3.5 shrink-0" />
               {isPending ? "Lämnar in …" : `Lämna in till ${authority}`}
@@ -158,7 +161,7 @@ export function InlamningPanel({
               type="button"
               className={buttonClasses("secondary", "sm")}
               disabled={isPending}
-              onClick={() => act(() => fetchFilingReceiptAction(submission!.id))}
+              onClick={() => act(() => fetchFilingReceiptAction(submission!.id, businessId))}
             >
               <RefreshCw className={cx("size-3.5 shrink-0", isPending && "animate-spin")} />
               {isPending ? "Hämtar …" : "Hämta kvittens"}
