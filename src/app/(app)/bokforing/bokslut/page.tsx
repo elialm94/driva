@@ -62,6 +62,24 @@ export default async function BokslutPage() {
         <>
           {/* Checklista */}
           <SectionTitle>Bokslut {fy.label}</SectionTitle>
+          {/*
+            Är året öppnat igen står man här en andra gång. Skälet hör hit: det
+            är svaret på "varför gör jag om det här?".
+          */}
+          {fy.reopenings?.length ? (
+            <Card className="mb-4 border-warn/40 bg-warn-soft/50 px-6 py-4">
+              <p className="text-[13.5px] font-medium">
+                {fy.label} är öppnat igen – bokslutet görs om
+              </p>
+              <p className="mt-1 text-[13px] leading-relaxed text-soft">
+                {fy.reopenings[fy.reopenings.length - 1].reason} Bokslutsposterna från förra stängningen är återförda, så
+                årets resultat och skatten räknas om när året stängs igen.
+                {annualReportHistory(fy.id).length > 0
+                  ? " Den förra årsredovisningen är markerad som ersatt; en ny upprättas efter stängningen."
+                  : ""}
+              </p>
+            </Card>
+          ) : null}
           <Card className="mb-6 px-6 py-5">
             <ul className="space-y-2.5">
               {checklist.map((c) => (

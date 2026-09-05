@@ -6,7 +6,7 @@ import { getFiscalYear } from "./fiscal";
 import { accountBalance, saldobalans } from "./ledger";
 import { accumulatedDepreciation, bookValue } from "./assets";
 import { invoiceOutstanding, isOpenReceivable } from "../services/data";
-import { bankReconciliation } from "./reconciliation";
+import { bankReconciliationAt } from "./reconciliation";
 import { computeVatPosition } from "./vat";
 import { vatPeriodsOf } from "./dates";
 import { vatPeriodicity } from "./fiscal";
@@ -214,8 +214,9 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
         hrefLabel: "Öppna banken",
       };
     }
-    // Ohanterade transaktioner förklarar en skillnad; bara resten är en avvikelse.
-    const bank = bankReconciliation();
+    // Bankens saldo PER BOKSLUTSDAGEN, inte idag. Ohanterade transaktioner
+    // förklarar en skillnad; bara resten är en avvikelse.
+    const bank = bankReconciliationAt(fy.endDate);
     return {
       ...base,
       subsystem: bank.bankBalance,
@@ -223,7 +224,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       source: "bank",
       detail: bank.unhandled.length
         ? `${bank.unhandled.length} banktransaktion${bank.unhandled.length === 1 ? "" : "er"} är inte bokförd${bank.unhandled.length === 1 ? "" : "a"} – de förklarar ${bank.unhandledSum} kr av skillnaden.`
-        : `Bankens saldo är ${bank.bankBalance} kr.`,
+        : `Bankens saldo ${fy.endDate} var ${bank.bankBalance} kr.`,
       ok: bank.unexplained === 0,
       href: "/ekonomi?flik=bank",
       hrefLabel: "Öppna banken",
