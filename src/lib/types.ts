@@ -1325,6 +1325,13 @@ export interface EmployerDeclarationRow {
   gross: number;
   tax: number;
   employerContribution: number;
+  /**
+   * Specifikationsnummer (fältkod 570) i AGI-filen. Måste vara samma nummer
+   * för samma anställd om en lämnad månad rättas – annars läser Skatteverket
+   * rättelsen som en extra individuppgift i stället för en ersättning. Numret
+   * fryses här när deklarationen skapas.
+   */
+  specifikationsnummer?: number;
 }
 
 /**

@@ -382,6 +382,18 @@ export function employerDeclarationById(id: string): EmployerDeclaration | undef
 }
 
 /**
+ * Specifikationsnummer för en anställd, ur anställningsordningen. Numret följer
+ * personen och inte månaden: rättas en lämnad månad ska individuppgiften ha
+ * samma nummer som förra gången, annars blir rättelsen ett extra tillägg hos
+ * Skatteverket. En avslutad anställd behåller därför sin plats i ordningen.
+ */
+function specifikationsnummerFor(employeeId: string): number {
+  const ordered = [...employees()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  const index = ordered.findIndex((e) => e.id === employeeId);
+  return index >= 0 ? index + 1 : 1;
+}
+
+/**
  * Utkast till arbetsgivardeklaration, räknat ur de bokförda lönekörningarna för
  * månaden. Utkastet räknas om varje gång; en lämnad deklaration är låst.
  */
@@ -406,6 +418,9 @@ export function generateEmployerDeclaration(
       gross: r.gross,
       tax: r.tax,
       employerContribution: r.employerContribution,
+      specifikationsnummer:
+        existing?.rows.find((row) => row.employeeId === r.employeeId)?.specifikationsnummer ??
+        specifikationsnummerFor(r.employeeId),
     };
   });
   const gross = sum(rows.map((r) => r.gross));
