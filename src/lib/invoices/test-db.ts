@@ -43,7 +43,21 @@ export function testCustomer(over: Partial<Customer> = {}): Customer {
     personalIdentityNumber: over.personalIdentityNumber,
     workLocations: over.workLocations,
     defaultWorkLocationId: over.defaultWorkLocationId,
+    reverseChargeConstruction: over.reverseChargeConstruction,
   };
+}
+
+/** Företagskund markerad för omvänd byggmoms – momsnummer härleds ur org.nr. */
+export function reverseChargeCustomer(over: Partial<Customer> = {}): Customer {
+  return testCustomer({
+    id: "cust-bygg",
+    kind: "foretag",
+    name: "Bygg & Co AB",
+    email: "faktura@byggco.se",
+    orgNumber: "556677-8899",
+    reverseChargeConstruction: true,
+    ...over,
+  });
 }
 
 export function testWorkLocation(over: Partial<WorkLocation> = {}): WorkLocation {

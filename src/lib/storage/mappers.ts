@@ -160,7 +160,7 @@ export const customersSpec: TableSpec<Customer> = {
   columns: [
     "id", "business_id", "kind", "name", "contact_person", "org_number", "email", "phone",
     "address", "postal_code", "city", "personal_identity_number", "default_work_location_id",
-    "notes", "created_at",
+    "notes", "reverse_charge_construction", "created_at",
   ],
   toRow: (c, businessId) => ({
     id: c.id,
@@ -177,6 +177,7 @@ export const customersSpec: TableSpec<Customer> = {
     personal_identity_number: c.personalIdentityNumber ?? null,
     default_work_location_id: c.defaultWorkLocationId ?? null,
     notes: c.notes,
+    reverse_charge_construction: c.reverseChargeConstruction === true,
     created_at: c.createdAt,
   }),
   fromRow: (r) => ({
@@ -193,6 +194,7 @@ export const customersSpec: TableSpec<Customer> = {
     ...opt("personalIdentityNumber", strOrU(r.personal_identity_number)),
     ...opt("defaultWorkLocationId", strOrU(r.default_work_location_id)),
     notes: str(r.notes),
+    ...(r.reverse_charge_construction === true ? { reverseChargeConstruction: true as const } : {}),
     createdAt: tsIso(r.created_at),
   }),
 };
@@ -578,7 +580,7 @@ export const invoicesSpec: TableSpec<Invoice & { amountToPay: number }> = {
     "issue_date", "due_date", "payment_terms_days", "service_date", "late_interest_rate",
     "issued_at", "sent_at", "last_sent_at", "last_email", "last_send_attempt_at", "paid_at", "reminders", "token", "ocr",
     "credits_invoice_id", "denied_reduction_of", "created_by", "amount_to_pay", "created_at",
-    "refund", "overpayment_credit", "rich_text", "payment_plan_index",
+    "refund", "overpayment_credit", "rich_text", "payment_plan_index", "reverse_charge",
   ],
   toRow: (inv, businessId) => ({
     id: inv.id,
@@ -617,6 +619,7 @@ export const invoicesSpec: TableSpec<Invoice & { amountToPay: number }> = {
     refund: jsonParamOrNull(inv.refund),
     overpayment_credit: inv.overpaymentCredit ?? null,
     payment_plan_index: inv.paymentPlanIndex ?? null,
+    reverse_charge: inv.reverseCharge === true,
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -658,6 +661,7 @@ export const invoicesSpec: TableSpec<Invoice & { amountToPay: number }> = {
     ...opt("refund", jsonOrU<NonNullable<Invoice["refund"]>>(r.refund)),
     ...opt("paymentPlanIndex", numOrU(r.payment_plan_index)),
     ...opt("overpaymentCredit", numOrU(r.overpayment_credit)),
+    ...(r.reverse_charge === true ? { reverseCharge: true as const } : {}),
   }),
 };
 

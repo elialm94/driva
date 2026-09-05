@@ -1263,6 +1263,48 @@ async function main() {
   }
 
   // ------------------------------------------------------------------
+  // Omvänd byggmoms (migration 32)
+  // ------------------------------------------------------------------
+  console.log("\nOmvänd byggmoms:");
+
+  await asApp(A);
+  await expectOk(db, "markeringen kan sättas på en företagskund", () =>
+    db.query(
+      `insert into public.customers
+         (id, business_id, kind, name, email, phone, notes, org_number, reverse_charge_construction, created_at)
+       values ('cust-a-bygg', $1, 'foretag', 'Bygg & Co AB', 'b@x.se', '', '', '556677-8899', true, now())`,
+      [A]
+    )
+  );
+  await expectError(
+    db,
+    "markeringen kan inte sättas på en privatperson",
+    "customers_reverse_charge_kind_check",
+    () =>
+      db.query(
+        `insert into public.customers
+           (id, business_id, kind, name, email, phone, notes, reverse_charge_construction, created_at)
+         values ('cust-a-privat-bygg', $1, 'privat', 'Anna', 'a@x.se', '', '', true, now())`,
+        [A]
+      )
+  );
+  await expectError(
+    db,
+    "en markerad kund kan inte göras om till privatperson",
+    "customers_reverse_charge_kind_check",
+    () => db.query(`update public.customers set kind = 'privat' where id = 'cust-a-bygg'`)
+  );
+  {
+    const r = await rows(
+      db,
+      `select reverse_charge_construction as flag from public.customers where id = 'cust-a-bygg'`
+    );
+    if (r[0]?.flag === true) ok("markeringen rundresar");
+    else fail("markeringen rundresar", JSON.stringify(r));
+  }
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");

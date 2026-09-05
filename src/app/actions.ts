@@ -225,6 +225,7 @@ export async function createCustomerAction(input: {
   city?: string;
   personalIdentityNumber?: string;
   propertyDesignations?: string[];
+  reverseChargeConstruction?: boolean;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string; field?: string }> {
   return withBusiness(() => {
     try {
@@ -259,6 +260,7 @@ export async function updateCustomerDetailsAction(
     orgNumber?: string;
     contactPerson?: string;
     notes?: string;
+    reverseChargeConstruction?: boolean;
   }
 ): Promise<{ ok: true } | { ok: false; error: string; field?: string }> {
   return withBusiness(() => {

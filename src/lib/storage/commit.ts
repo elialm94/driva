@@ -190,6 +190,7 @@ export function invoiceRpcPayload(inv: Invoice, businessId: string): Record<stri
     denied_reduction_of: inv.deniedReductionOf ?? null,
     created_by: inv.createdBy ?? null,
     amount_to_pay: amountToPayForInvoice(inv),
+    reverse_charge: inv.reverseCharge === true,
     created_at: inv.createdAt,
   };
 }

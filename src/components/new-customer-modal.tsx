@@ -91,6 +91,7 @@ export function NewCustomerModal({
         city: String(formData.get("city") ?? "") || undefined,
         personalIdentityNumber: createdKind === "privat" ? personnummer : undefined,
         propertyDesignations: properties.map((row) => row.designation),
+        reverseChargeConstruction: createdKind === "foretag" ? formData.get("reverseChargeConstruction") === "on" : undefined,
       });
       if (!result.ok) {
         if (result.field) setFieldError(result.field, result.error);
@@ -248,6 +249,21 @@ export function NewCustomerModal({
               />
               <FieldError id="ny-kund-orgnr-fel">{errors.orgNumber}</FieldError>
             </div>
+            {/* Omvänd byggmoms är ett val, ingen bedömning – produkten vet inte
+                om köparen bedriver byggverksamhet. */}
+            <label className="flex cursor-pointer items-start gap-2.5 sm:col-span-2">
+              <input
+                type="checkbox"
+                name="reverseChargeConstruction"
+                className="mt-0.5 size-4 shrink-0 rounded border-line-strong accent-accent"
+              />
+              <span className="text-[13px] leading-snug">
+                <span className="font-medium text-ink">Omvänd byggmoms</span>
+                <span className="block text-muted">
+                  Kunden är ett byggföretag som redovisar momsen själv. Fakturor får 0 % moms och laghänvisning.
+                </span>
+              </span>
+            </label>
           </div>
         ) : (
           <button

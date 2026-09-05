@@ -10,8 +10,8 @@ import { logAudit } from "./audit";
  * momskontonas rörelser per period, så att rapporten alltid stämmer med
  * bokföringen (samma siffror som Skatteverket skulle granska mot).
  *
- * Central mappning BAS-konto ↔ momskod ↔ deklarationsruta. Endast rutorna
- * vanliga svenska småföretag behöver (inhemsk moms 0/6/12/25).
+ * Central mappning BAS-konto ↔ momskod ↔ deklarationsruta. Rutorna som
+ * inhemsk handel behöver: moms 0/6/12/25 och omvänd byggmoms åt båda håll.
  */
 
 export interface VatCodeDef {
@@ -21,7 +21,16 @@ export interface VatCodeDef {
   box: string;
   boxLabel: string;
   accounts: number[];
-  kind: "forsaljning" | "utgaende" | "ingaende";
+  /**
+   * forsaljning – omsättning (kreditsaldo på ett intäktskonto).
+   * inkop       – underlag för inköp där KÖPAREN redovisar momsen (debetsaldo
+   *               på ett kostnadskonto). Bara underlag: påverkar varken
+   *               utgående eller ingående moms, och kontot får aldrig
+   *               nollställas mot 2650 vid deklarationen.
+   * utgaende    – utgående moms att betala.
+   * ingaende    – ingående moms att dra av.
+   */
+  kind: "forsaljning" | "inkop" | "utgaende" | "ingaende";
 }
 
 export const VAT_CODES: VatCodeDef[] = [
@@ -29,10 +38,20 @@ export const VAT_CODES: VatCodeDef[] = [
   { code: "MP2", label: "Momspliktig försäljning 12 %", box: "05", boxLabel: "Momspliktig försäljning", accounts: [3002], kind: "forsaljning" },
   { code: "MP3", label: "Momspliktig försäljning 6 %", box: "05", boxLabel: "Momspliktig försäljning", accounts: [3003], kind: "forsaljning" },
   { code: "MF", label: "Momsfri försäljning", box: "42", boxLabel: "Övrig försäljning m.m.", accounts: [3004], kind: "forsaljning" },
+  // Omvänd byggmoms, säljarsidan: omsättning utan moms.
+  { code: "BYGG", label: "Försäljning byggtjänster, omvänd byggmoms", box: "41", boxLabel: "Försäljning när köparen är skattskyldig i Sverige", accounts: [3231], kind: "forsaljning" },
   { code: "U1", label: "Utgående moms 25 %", box: "10", boxLabel: "Utgående moms 25 %", accounts: [2611], kind: "utgaende" },
   { code: "U2", label: "Utgående moms 12 %", box: "11", boxLabel: "Utgående moms 12 %", accounts: [2621], kind: "utgaende" },
   { code: "U3", label: "Utgående moms 6 %", box: "12", boxLabel: "Utgående moms 6 %", accounts: [2631], kind: "utgaende" },
+  // Omvänd byggmoms, köparsidan: underlaget i ruta 23/24 och den moms köparen
+  // både redovisar (ruta 30–32) och drar av (ruta 48).
+  { code: "OSV", label: "Inköp av varor i Sverige, omvänd skattskyldighet", box: "23", boxLabel: "Inköp av varor i Sverige som köparen är skattskyldig för", accounts: [4415], kind: "inkop" },
+  { code: "OST", label: "Inköp av byggtjänster, omvänd byggmoms", box: "24", boxLabel: "Övriga inköp av tjänster", accounts: [4425], kind: "inkop" },
+  { code: "OU1", label: "Utgående moms omvänd skattskyldighet 25 %", box: "30", boxLabel: "Utgående moms 25 % på inköp i ruta 20–24", accounts: [2614], kind: "utgaende" },
+  { code: "OU2", label: "Utgående moms omvänd skattskyldighet 12 %", box: "31", boxLabel: "Utgående moms 12 % på inköp i ruta 20–24", accounts: [2624], kind: "utgaende" },
+  { code: "OU3", label: "Utgående moms omvänd skattskyldighet 6 %", box: "32", boxLabel: "Utgående moms 6 % på inköp i ruta 20–24", accounts: [2634], kind: "utgaende" },
   { code: "I", label: "Ingående moms", box: "48", boxLabel: "Ingående moms att dra av", accounts: [2641], kind: "ingaende" },
+  { code: "IO", label: "Ingående moms omvänd skattskyldighet", box: "48", boxLabel: "Ingående moms att dra av", accounts: [2647], kind: "ingaende" },
 ];
 
 export function vatCodeForAccount(account: number): VatCodeDef | undefined {
@@ -71,6 +90,9 @@ export function computeVatPosition(period: Period): VatPosition {
       if (!def) continue;
       if (def.kind === "forsaljning") {
         box(def.box, def.boxLabel).amount += e.credit - e.debit;
+      } else if (def.kind === "inkop") {
+        // Kostnadskonto: underlaget står på debetsidan.
+        box(def.box, def.boxLabel).amount += e.debit - e.credit;
       } else if (def.kind === "utgaende") {
         const amount = e.credit - e.debit;
         box(def.box, def.boxLabel).amount += amount;
@@ -283,7 +305,9 @@ export function markVatReportDeclared(reportId: string, actor: "anvandare" | "as
     if (d < report.periodStart || d > report.periodEnd) continue;
     for (const e of v.entries) {
       const def = vatCodeForAccount(e.account);
-      if (!def || def.kind === "forsaljning") continue;
+      // Bara momskontona förs om. Omsättning och inköpsunderlag är intäkts-
+      // och kostnadskonton och ska stå kvar i resultaträkningen.
+      if (!def || def.kind === "forsaljning" || def.kind === "inkop") continue;
       perAccount.set(e.account, (perAccount.get(e.account) ?? 0) + e.debit - e.credit);
     }
   }

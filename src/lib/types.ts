@@ -9,7 +9,11 @@ import type { EconomicLineType, LineKind } from "./economic-line-type";
 export type { EconomicLineType, LineKind } from "./economic-line-type";
 
 export type ID = string;
-/** V1: endast inhemsk svensk moms. Omvänd skattskyldighet, EU, export och byggmoms stöds inte. */
+/**
+ * V1: inhemsk svensk moms. Omvänd byggmoms finns (då är radens sats 0 och
+ * köparen redovisar momsen, se lib/invoices/reverse-charge). EU-handel,
+ * export och vinstmarginalbeskattning stöds inte.
+ */
 export type VatRate = 0 | 6 | 12 | 25;
 
 /* ---------------------------------- Företag ---------------------------------- */
@@ -111,6 +115,14 @@ export interface Customer {
    * vila kräver en riktig databas – vi hittar inte på krypto här.
    */
   personalIdentityNumber?: string;
+  /**
+   * Köparen är ett byggföretag som själv redovisar momsen på byggtjänster
+   * (omvänd byggmoms, ML 1 kap. 2 § första stycket 4 b). Sätts som ett
+   * uttryckligt val på kunden – produkten bedömer aldrig själv om köparen är
+   * byggföretag. Gäller bara företagskunder, och fakturor till kunden
+   * faktureras utan moms med laghänvisning på dokumentet.
+   */
+  reverseChargeConstruction?: boolean;
   /** Arbetsplatser/bostäder. En privat kund kan ha hem + fritidshus. */
   workLocations?: WorkLocation[];
   /** Standardadress för nytt uppdrag / ROT-prefill när flera bostäder finns. */
@@ -552,6 +564,12 @@ export interface InvoiceBuyerSnapshot {
   /** "Er referens" på dokumentet. */
   contactPerson?: string;
   /**
+   * Köparens momsregistreringsnummer. Fryses bara när fakturan tillämpar
+   * omvänd byggmoms, där lagen kräver köparens momsnummer på dokumentet.
+   * Härlett ur köparens organisationsnummer vid utfärdandet.
+   */
+  vatNumber?: string;
+  /**
    * Personnummer för den som får skattereduktionen – fryses ENDAST när
    * fakturan har ROT/RUT (känsligt: lagras inte på vanliga fakturor).
    * Historiska dokument renderar härifrån, aldrig via live-uppslag på kunden.
@@ -580,6 +598,11 @@ export interface InvoiceIssuedSnapshot {
   buyer: InvoiceBuyerSnapshot;
   lines: DocLine[];
   rot: RotRut | null;
+  /**
+   * Fakturan utfärdades med omvänd byggmoms. Fryst, för att dokumentet ska
+   * bära laghänvisningen även om kundens markering ändras efteråt.
+   */
+  reverseCharge?: boolean;
   /** Frusen kopia av beskrivningen vid utfärdandet. */
   richText?: RichTextDoc;
   taxReductionTerms?: TaxReductionTermsSnapshot | null;
@@ -616,6 +639,12 @@ export interface Invoice {
   status: InvoiceStatus;
   lines: DocLine[];
   rot: RotRut | null;
+  /**
+   * Omvänd byggmoms på den här fakturan: raderna faktureras utan moms och
+   * köparen redovisar den. Sätts från kundens markering när utkastet skapas
+   * och fryses i issuedSnapshot vid utfärdandet.
+   */
+  reverseCharge?: boolean;
   /**
    * Beskrivning – rik text (strikt vitlistad delmängd, se lib/richtext).
    * Saneras vid varje servergräns. Fryses i issuedSnapshot vid utfärdandet –

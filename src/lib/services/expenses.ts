@@ -2,7 +2,7 @@ import { db, save } from "../store";
 import { uid } from "../ids";
 import type { InboundParsedHint } from "../inbox/inbound-mail";
 import type { Expense, MerchantCategoryRule, Receipt, Verification } from "../types";
-import { categoryByKey, entriesExpense, guessCategory, EXPENSE_CATEGORIES, KNOWN_SUPPLIERS } from "../bas";
+import { categoryByKey, deductibleVat, entriesExpense, guessCategory, EXPENSE_CATEGORIES, KNOWN_SUPPLIERS } from "../bas";
 import { kr } from "../format";
 import { logActivity } from "./activity";
 import { logAudit } from "../accounting/audit";
@@ -107,9 +107,11 @@ function expenseExplanation(
       : createdBy === "assistent"
         ? `Assistenten valde kategorin ${cat.label.toLowerCase()} och du godkände`
         : `Du svarade att köpet gällde ${cat.label.toLowerCase()}`;
-  const vatText = cat.vatFree
-    ? "Kategorin saknar avdragsgill moms, så hela beloppet bokförs som kostnad."
-    : `Momsen (${kr(expense.vatAmount)}) lyfts som ingående moms.`;
+  const vatText = cat.reverseChargeRate
+    ? `Leverantören fakturerar utan moms eftersom du som byggföretag är betalningsskyldig. Momsen (${cat.reverseChargeRate} %) bokförs både som utgående och ingående moms, så nettot mot Skatteverket blir noll men båda leden syns i deklarationen.`
+    : cat.vatFree
+      ? "Kategorin saknar avdragsgill moms, så hela beloppet bokförs som kostnad."
+      : `Momsen (${kr(expense.vatAmount)}) lyfts som ingående moms.`;
   return `${why}. Kostnaden hamnar på konto ${cat.account} (${cat.label}) och betalningen dras från företagskontot. ${vatText}`;
 }
 
@@ -126,7 +128,7 @@ function bookExpense(
     throw new Error(`Köpet hos ${expense.supplier} är redan bokfört.`);
   }
   const cat = categoryByKey(categoryKey);
-  const vat = cat.vatFree ? 0 : expense.vatAmount;
+  const vat = deductibleVat(categoryKey, expense.vatAmount);
   const clamped = clampToOpenDate(expense.date);
   const ver = postVerification({
     date: clamped.date,

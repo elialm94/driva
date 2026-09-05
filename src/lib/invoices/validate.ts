@@ -7,6 +7,7 @@ import { radLabel, validatePriceLine } from "../form-requirements";
 import { taxReductionSendBlockers, taxReductionSendInputFromCustomer } from "../tax-reduction-send";
 import { missingEmailForSend } from "../customer-validation";
 import { collectSellerBlockers, type IssueBlocker } from "./seller-blockers";
+import { buyerVatNumber, invoiceHasReverseCharge, linesWithVat } from "./reverse-charge";
 
 export type { IssueBlocker } from "./seller-blockers";
 export {
@@ -111,6 +112,39 @@ export function collectTotalsBlockers(invoice: Invoice): IssueBlocker[] {
   return blockers;
 }
 
+/**
+ * Omvänd byggmoms: markeringen på fakturan, raderna och köparens uppgifter
+ * måste säga samma sak. En faktura med momsrader och omvänd byggmoms är fel
+ * åt båda hållen – säljaren redovisar moms köparen redan redovisat.
+ */
+export function collectReverseChargeBlockers(invoice: Invoice, buyer: Customer): IssueBlocker[] {
+  if (!invoiceHasReverseCharge(invoice)) return [];
+  const blockers: IssueBlocker[] = [];
+  const withVat = linesWithVat(invoice.lines);
+  if (withVat.length) {
+    blockers.push({
+      code: "reverse_charge_vat_lines",
+      message: `Omvänd byggmoms gäller ${buyer.name}, så alla rader ska ha 0 % moms. ${withVat.length === 1 ? "En rad" : `${withVat.length} rader`} har moms.`,
+    });
+  }
+  // Köparens momsregistreringsnummer är ett fakturakrav vid omvänd
+  // betalningsskyldighet, och det härleds ur organisationsnummret.
+  if (!buyerVatNumber(buyer)) {
+    blockers.push({
+      code: "reverse_charge_buyer_vat",
+      message: `Organisationsnummer saknas för ${buyer.name}. Vid omvänd byggmoms måste köparens momsregistreringsnummer stå på fakturan.`,
+      href: `/kunder/${buyer.id}`,
+    });
+  }
+  if (invoice.rot) {
+    blockers.push({
+      code: "reverse_charge_rot",
+      message: "ROT/RUT och omvänd byggmoms kan inte gälla samma faktura. Skattereduktion gäller privatpersoner, omvänd byggmoms företag.",
+    });
+  }
+  return blockers;
+}
+
 export function collectPaymentBlockers(invoice: Invoice, _seller?: CompanySettings): IssueBlocker[] {
   const blockers: IssueBlocker[] = [];
   if (!invoice.dueDate) {
@@ -140,6 +174,7 @@ export function collectIssueErrors(input: {
     ...collectBuyerBlockers(buyer),
     ...collectLineBlockers(invoice),
     ...collectTotalsBlockers(invoice),
+    ...collectReverseChargeBlockers(invoice, buyer),
     ...collectPaymentBlockers(invoice, seller),
     ...taxReductionSendBlockers(
       taxReductionSendInputFromCustomer(buyer, {

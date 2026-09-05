@@ -2,6 +2,7 @@ import { db, save } from "../store";
 import {
   EXPENSE_CATEGORIES,
   categoryByKey,
+  deductibleVat,
   entriesExpense,
   entriesSupplierInvoiceReceived,
   isCostAccount,
@@ -394,10 +395,11 @@ function replacementForKonto(v: Verification, category: string): { entries: Post
   if (src.source.type === "utgift") {
     const expense = expenseFor(src);
     if (!expense) throw new Error("Utgiften som hör till verifikationen finns inte.");
-    const vat = cat.vatFree ? 0 : expense.vatAmount;
+    const vat = deductibleVat(category, expense.vatAmount);
     const hadVat = src.entries.some((e) => e.account === 2641 && e.debit > 0);
-    const warning =
-      cat.vatFree && (expense.vatAmount > 0 || hadVat)
+    const warning = cat.reverseChargeRate
+      ? `Omvänd byggmoms: hela ${kr(expense.amount)} bokas som kostnad och ${cat.reverseChargeRate} % moms redovisas både som utgående och ingående. Nettot mot Skatteverket blir noll.`
+      : cat.vatFree && (expense.vatAmount > 0 || hadVat)
         ? `Kategorin ${cat.label} saknar avdragsgill moms – ${kr(hadVat ? src.entries.find((e) => e.account === 2641)!.debit : expense.vatAmount)} bokas som kostnad i stället för ingående moms.`
         : !cat.vatFree && vat > 0 && !hadVat
           ? `Moms ${kr(vat)} lyfts som ingående moms på 2641 – originalet var momsfritt.`
@@ -413,9 +415,10 @@ function replacementForKonto(v: Verification, category: string): { entries: Post
   if (src.source.type === "leverantorsfaktura") {
     const sup = supplierFor(src);
     if (!sup) throw new Error("Leverantörsfakturan som hör till verifikationen finns inte.");
-    const vat = cat.vatFree ? 0 : sup.vatAmount;
-    const warning =
-      cat.vatFree && sup.vatAmount > 0
+    const vat = deductibleVat(category, sup.vatAmount);
+    const warning = cat.reverseChargeRate
+      ? `Omvänd byggmoms: hela ${kr(sup.amount)} bokas som kostnad och ${cat.reverseChargeRate} % moms redovisas både som utgående och ingående. Skulden på 2440 är oförändrad.`
+      : cat.vatFree && sup.vatAmount > 0
         ? `Kategorin ${cat.label} saknar avdragsgill moms – ${kr(sup.vatAmount)} bokas som kostnad. Skulden på 2440 är oförändrad.`
         : undefined;
     return {

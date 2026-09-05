@@ -798,6 +798,59 @@ async function main() {
     });
   });
 
+  console.log("\nOmvänd byggmoms genom adaptern:");
+  await check("markering på kunden och fryst markering på fakturan rundresar", async () => {
+    const { createCustomer } = await import("../src/lib/services/customers");
+    const { createInvoice, issueInvoice } = await import("../src/lib/services/invoices");
+    let customerId = "";
+    let invoiceId = "";
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      const customer = createCustomer({
+        kind: "foretag",
+        name: "Adapter Bygg AB",
+        email: "faktura@adapterbygg.se",
+        orgNumber: "556677-8899",
+        address: "Byggvägen 3",
+        postalCode: "121 45",
+        city: "Johanneshov",
+        reverseChargeConstruction: true,
+      });
+      customerId = customer.id;
+      const invoice = createInvoice({
+        customerId: customer.id,
+        type: "faktura",
+        lines: [
+          {
+            id: "adapter-bygg-rad",
+            kind: "arbete",
+            description: "Byggtjänst",
+            qty: 1,
+            unit: "st",
+            unitPrice: 40_000,
+            vatRate: 25,
+          },
+        ],
+        rot: null,
+      });
+      invoiceId = issueInvoice(invoice.id).id;
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const customer = db().customers.find((c) => c.id === customerId);
+      assert.equal(customer?.reverseChargeConstruction, true, "markeringen på kunden rundresar");
+      const invoice = db().invoices.find((i) => i.id === invoiceId);
+      assert.equal(invoice?.reverseCharge, true, "markeringen på fakturan rundresar");
+      assert.deepEqual(invoice?.lines.map((l) => l.vatRate), [0], "raderna är momsfria");
+      assert.equal(
+        invoice?.issuedSnapshot?.buyer.vatNumber,
+        "SE556677889901",
+        "köparens momsnummer ligger fryst i snapshoten"
+      );
+      const ver = db().verifications.find((v) => v.source?.type === "kundfaktura" && v.source.id === invoiceId);
+      assert.ok(ver, "verifikationen laddas tillbaka");
+      assert.equal(ver.entries.find((e) => e.account === 3231)?.credit, 40_000);
+    });
+  });
+
   console.log("\nUppdragsposter genom adaptern:");
   await check("tidregistrering rundresas och isoleras per tenant", async () => {
     const { createJob } = await import("../src/lib/services/jobs");

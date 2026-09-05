@@ -1,7 +1,7 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
 import type { SupplierInvoice } from "../types";
-import { categoryByKey, entriesSupplierInvoiceReceived, guessCategory } from "../bas";
+import { categoryByKey, deductibleVat, entriesSupplierInvoiceReceived, guessCategory } from "../bas";
 import { kr, isoDaysFromNow } from "../format";
 import { logActivity } from "./activity";
 import { postVerification } from "../accounting/engine";
@@ -148,11 +148,11 @@ export function bookSupplierInvoice(
   const ver = postVerification({
     date: clamped.date,
     description: `Leverantörsfaktura ${sup.supplier} ${sup.invoiceNumber}`,
-    entries: entriesSupplierInvoiceReceived(categoryKey, sup.amount, cat.vatFree ? 0 : sup.vatAmount),
+    entries: entriesSupplierInvoiceReceived(categoryKey, sup.amount, deductibleVat(categoryKey, sup.vatAmount)),
     source: { type: "leverantorsfaktura", id: sup.id },
     confidence: opts.category ? "hog" : "medel",
     createdBy: opts.by === "assistent" ? "assistent" : "anvandare",
-    explanation: `Fakturan från ${sup.supplier} bokfördes som ${cat.label.toLowerCase()} med leverantörsskuld – skulden syns i bokföringen tills den betalas.${clamped.adjusted ? ` Bokfört ${clamped.date} eftersom perioden för fakturadatumet är låst.` : ""}`,
+    explanation: `Fakturan från ${sup.supplier} bokfördes som ${cat.label.toLowerCase()} med leverantörsskuld – skulden syns i bokföringen tills den betalas.${cat.reverseChargeRate ? ` Omvänd byggmoms: leverantören fakturerar utan moms och du redovisar ${cat.reverseChargeRate} % både som utgående och ingående moms.` : ""}${clamped.adjusted ? ` Bokfört ${clamped.date} eftersom perioden för fakturadatumet är låst.` : ""}`,
   });
   sup.category = categoryKey;
   sup.verificationId = ver.id;

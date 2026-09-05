@@ -10,6 +10,7 @@ import type {
 import { docTotals, vatBreakdown } from "../calc";
 import { ocrForInvoice } from "../ids";
 import { normalizePersonnummer } from "../personnummer";
+import { buyerVatNumber } from "./reverse-charge";
 
 export function sellerSnapshot(settings: CompanySettings): InvoiceSellerSnapshot {
   return {
@@ -36,10 +37,13 @@ export function sellerSnapshot(settings: CompanySettings): InvoiceSellerSnapshot
 
 export function buyerSnapshot(
   customer: Customer,
-  opts: { includePersonalIdentityNumber?: boolean } = {}
+  opts: { includePersonalIdentityNumber?: boolean; includeVatNumber?: boolean } = {}
 ): InvoiceBuyerSnapshot {
   const pn = customer.personalIdentityNumber?.trim();
+  const vat = opts.includeVatNumber ? buyerVatNumber(customer) : "";
   return {
+    // Omvänd byggmoms: lagen kräver köparens momsnummer på fakturan.
+    ...(vat ? { vatNumber: vat } : {}),
     name: customer.name,
     kind: customer.kind,
     orgNumber: customer.orgNumber,
@@ -148,9 +152,13 @@ export function buildIssuedSnapshot(input: {
     seller: sellerSnapshot(input.seller),
     // Personnummer fryses bara på ROT/RUT-fakturor – dokumentet ska kunna
     // rendera skattereduktionens person utan live-uppslag på kundkortet.
-    buyer: buyerSnapshot(input.buyer, { includePersonalIdentityNumber: Boolean(invoice.rot) }),
+    buyer: buyerSnapshot(input.buyer, {
+      includePersonalIdentityNumber: Boolean(invoice.rot),
+      includeVatNumber: invoice.reverseCharge === true,
+    }),
     lines,
     // Villkorligt: äldre snapshots utan fältet förblir värde-exakta.
+    ...(invoice.reverseCharge ? { reverseCharge: true } : {}),
     ...(invoice.richText ? { richText: invoice.richText } : {}),
     rot: invoice.rot ? { ...invoice.rot } : null,
     taxReductionTerms: invoice.taxReductionTerms ? { ...invoice.taxReductionTerms } : null,
@@ -182,6 +190,7 @@ export function resolveInvoiceView(
       lateInterestRate: snap.lateInterestRate,
       serviceDate: snap.serviceDate,
       lines: snap.lines,
+      reverseCharge: snap.reverseCharge,
       // Alltid från snapshoten: en muterad live-rad får aldrig synas på utfärdat dokument.
       richText: snap.richText,
       rot: snap.rot,

@@ -33,6 +33,7 @@ import { nextPaymentPlanPartForJob, remainingToInvoiceForJob } from "./attention
 import { buildIssuedSnapshot } from "../invoices/snapshot";
 import { assertInvoiceReadyToIssue, collectIssueErrors, InvoiceNotReadyError } from "../invoices/validate";
 import { invoiceNumberLabel } from "../invoices/display";
+import { invoiceHasReverseCharge, reverseChargeAppliesTo, withoutVat } from "../invoices/reverse-charge";
 import { snapshotTaxReductionTerms } from "../tax-reduction-terms";
 import { rotWithAmounts } from "../tax-reduction-amount";
 import { syncDocLineClassification } from "../economic-line-type";
@@ -264,6 +265,9 @@ export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare
   }
   const now = new Date().toISOString();
   const paymentTermsDays = input.dueInDays ?? data.settings.paymentTermsDays;
+  // Omvänd byggmoms styrs av markeringen på kunden. Raderna nollas här så att
+  // den som fakturerar inte behöver hålla momssatsen i huvudet.
+  const reverseCharge = reverseChargeAppliesTo(customer);
   const invoice: Invoice = {
     id: uid(),
     number: null,
@@ -273,7 +277,8 @@ export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare
     workLocationId: input.workLocationId ?? inheritedQuoteWorkLocationId(input.quoteId),
     type: input.type,
     status: "utkast",
-    lines: cloneLines(input.lines),
+    ...(reverseCharge ? { reverseCharge: true } : {}),
+    lines: reverseCharge ? withoutVat(cloneLines(input.lines)) : cloneLines(input.lines),
     richText: sanitizeRichText(input.richText),
     ...invoiceTaxReductionFields(input.rot, input.lines, input.quoteId),
     taxReductionDetails: null,
@@ -321,7 +326,12 @@ export function updateInvoice(invoiceId: string, input: InvoiceUpdateInput, crea
     throw new Error("Bara utkast kan redigeras. Skickade fakturor korrigeras med kreditfaktura.");
   }
 
-  invoice.lines = cloneLines(input.lines);
+  // Markeringen läses om vid varje sparning: kunden kan ha blivit markerad
+  // efter att utkastet skapades.
+  const reverseCharge = reverseChargeAppliesTo(requireCustomer(invoice.customerId));
+  if (reverseCharge) invoice.reverseCharge = true;
+  else delete invoice.reverseCharge;
+  invoice.lines = reverseCharge ? withoutVat(cloneLines(input.lines)) : cloneLines(input.lines);
   invoice.richText = sanitizeRichText(input.richText);
   if (input.workLocationId !== undefined) {
     invoice.workLocationId = input.workLocationId || undefined;
@@ -738,13 +748,15 @@ export function issueInvoice(invoiceId: string, createdBy: Actor = "anvandare"):
     // momsen bokfördes redan på ursprungsfakturan och får inte bokas igen.
     entries: invoice.deniedReductionOf
       ? entriesDeniedReductionInvoice(invoiceTotals(invoice).toPay)
-      : entriesInvoiceSent(invoice.lines, invoice.rot),
+      : entriesInvoiceSent(invoice.lines, invoice.rot, { reverseCharge: invoice.reverseCharge }),
     source: { type: "kundfaktura", id: invoice.id },
     confidence: "hog",
     createdBy: createdBy === "assistent" ? "assistent" : "auto",
     explanation: invoice.deniedReductionOf
       ? "Skatteverket nekade (en del av) ROT/RUT-utbetalningen, så fordran flyttades från Skatteverket till kunden. Ingen ny intäkt eller moms bokförs – de redovisades när ursprungsfakturan utfärdades."
-      : `Fakturan bokfördes när den utfärdades (faktureringsmetoden): kundfordran mot intäkt och utgående moms. Beloppen kommer direkt från fakturan${invoice.rot ? `, och ${invoice.rot.type.toUpperCase()}-delen ligger som fordran på Skatteverket tills den betalas ut` : ""}.`,
+      : invoice.reverseCharge
+        ? "Fakturan bokfördes när den utfärdades: kundfordran mot försäljning av byggtjänster med omvänd byggmoms. Ingen utgående moms bokförs – köparen redovisar momsen. Omsättningen hamnar i ruta 41 i momsdeklarationen."
+        : `Fakturan bokfördes när den utfärdades (faktureringsmetoden): kundfordran mot intäkt och utgående moms. Beloppen kommer direkt från fakturan${invoice.rot ? `, och ${invoice.rot.type.toUpperCase()}-delen ligger som fordran på Skatteverket tills den betalas ut` : ""}.`,
   });
 
   if (allocatedNew) {
@@ -1074,6 +1086,12 @@ export function creditInvoice(invoiceId: string, createdBy: Actor = "anvandare",
   assertUnusedIssuedOcr(ocr, creditId);
   const sourceLines = original.issuedSnapshot?.lines ?? original.lines;
   const sourceRot = original.issuedSnapshot?.rot ?? original.rot;
+  // Krediten ärver originalets markering, inte kundens nuvarande: en faktura
+  // utfärdad med omvänd byggmoms måste krediteras på samma sätt.
+  const reverseCharge = invoiceHasReverseCharge(original);
+  const creditLines = isPartial
+    ? shareLines(sourceLines, sourceRot, partialAmount!, `Delkredit av faktura #${original.number}`, "ovrigt")
+    : cloneLines(sourceLines);
   const credit: Invoice = {
     id: creditId,
     number,
@@ -1082,9 +1100,8 @@ export function creditInvoice(invoiceId: string, createdBy: Actor = "anvandare",
     quoteId: original.quoteId,
     type: "kredit",
     status: "utkast",
-    lines: isPartial
-      ? shareLines(sourceLines, sourceRot, partialAmount!, `Delkredit av faktura #${original.number}`, "ovrigt")
-      : cloneLines(sourceLines),
+    ...(reverseCharge ? { reverseCharge: true } : {}),
+    lines: reverseCharge ? withoutVat(creditLines) : creditLines,
     rot: isPartial ? null : sourceRot,
     taxReductionTerms: isPartial ? null : (original.issuedSnapshot?.taxReductionTerms ?? original.taxReductionTerms ?? null),
     taxReductionDetails: isPartial ? null : (original.issuedSnapshot?.taxReductionDetails ?? original.taxReductionDetails ?? null),
@@ -1157,15 +1174,17 @@ export function creditInvoice(invoiceId: string, createdBy: Actor = "anvandare",
     // krediteringen flyttar tillbaka fordran i stället för att återföra intäkt.
     entries: credit.deniedReductionOf
       ? entriesDeniedReductionCredit(creditToPay)
-      : entriesCredit(credit.lines, credit.rot),
+      : entriesCredit(credit.lines, credit.rot, { reverseCharge }),
     source: { type: "kundfaktura", id: credit.id },
     confidence: "hog",
     createdBy: createdBy === "assistent" ? "assistent" : "auto",
     explanation: credit.deniedReductionOf
       ? `Kreditfakturan återför restfakturan #${original.number} för nekat ROT/RUT: fordran flyttas tillbaka till Skatteverkskontot. Ingen intäkt eller moms påverkas.`
-      : isPartial
-        ? `Delkrediten återför ${kr(creditToPay)} av faktura #${original.number}: intäkt, moms och kundfordran minskas proportionellt. Originalverifikationen står kvar – inget skrivs över.`
-        : `Kreditfakturan återför faktura #${original.number}: intäkten, momsen och kundfordran bokas bort med omvända tecken. Originalverifikationen står kvar – inget skrivs över.`,
+      : reverseCharge
+        ? `Kreditfakturan återför faktura #${original.number} med omvänd byggmoms: försäljning av byggtjänster och kundfordran bokas bort med omvända tecken. Ingen moms berörs – köparen justerar sin egen deklaration.`
+        : isPartial
+          ? `Delkrediten återför ${kr(creditToPay)} av faktura #${original.number}: intäkt, moms och kundfordran minskas proportionellt. Originalverifikationen står kvar – inget skrivs över.`
+          : `Kreditfakturan återför faktura #${original.number}: intäkten, momsen och kundfordran bokas bort med omvända tecken. Originalverifikationen står kvar – inget skrivs över.`,
   });
 
   const refundDue = creditRefundDue(original);

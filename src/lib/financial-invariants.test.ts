@@ -148,6 +148,11 @@ describe("Egenskap: alla kontobyggare balanserar (sum debet = sum kredit)", () =
       const rot: RotRut | null = rnd() < 0.5 ? null : { type: rnd() < 0.5 ? "rot" : "rut" };
       assertBalanced(entriesInvoiceSent(lines, rot), "entriesInvoiceSent");
       assertBalanced(entriesCredit(lines, rot), "entriesCredit");
+      // Omvänd byggmoms flyttar omsättningen till ett annat konto men får
+      // aldrig rubba balansen.
+      const byggLines = lines.map((l) => ({ ...l, vatRate: 0 as const }));
+      assertBalanced(entriesInvoiceSent(byggLines, rot, { reverseCharge: true }), "entriesInvoiceSent byggmoms");
+      assertBalanced(entriesCredit(byggLines, rot, { reverseCharge: true }), "entriesCredit byggmoms");
 
       const outstanding = 1 + Math.floor(rnd() * 100_000);
       // Betalningsscenarier: exakt, öresdiff ±1, delbetalning, överbetalning.

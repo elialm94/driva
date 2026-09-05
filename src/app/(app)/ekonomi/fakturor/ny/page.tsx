@@ -39,7 +39,7 @@ export default async function NewInvoicePage(props: PageProps<"/ekonomi/fakturor
   const quoteRot = quote ? currentVersion(quote).rot : null;
   const customers = [...data.customers]
     .sort((a, b) => a.name.localeCompare(b.name, "sv"))
-    .map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
+    .map((c) => ({ id: c.id, name: c.name, kind: c.kind, reverseChargeConstruction: c.reverseChargeConstruction }));
   const defaultCustomerId = job?.customerId ?? kund ?? customers[0]?.id;
   const rotByCustomer = Object.fromEntries(data.customers.map((c) => [c.id, customerInvoiceRotPrefill(c)]));
   const prefill = defaultCustomerId
