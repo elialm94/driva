@@ -16,10 +16,13 @@ export type CollaborationCapability =
   | "correct_voucher"
   | "vat"
   | "reconcile"
+  | "period_close"
   | "year_end"
   | "export_accounting"
   | "prepare_supplier_payment"
   | "submit_bank_payment"
+  | "prepare_filing"
+  | "submit_filing"
   | "send_invoice"
   | "create_quote"
   | "change_website"
@@ -39,9 +42,13 @@ const CONSULTANT: ReadonlySet<CollaborationCapability> = new Set([
   "correct_voucher",
   "vat",
   "reconcile",
+  "period_close",
   "year_end",
   "export_accounting",
   "prepare_supplier_payment",
+  // Konsulten upprättar och genererar deklarationsfilen. Att signera och lämna
+  // in den är bolagets egen handling och kräver submit_filing.
+  "prepare_filing",
   "request_client_information",
 ]);
 
@@ -58,10 +65,13 @@ const OWNER: ReadonlySet<CollaborationCapability> = new Set([
   "correct_voucher",
   "vat",
   "reconcile",
+  "period_close",
   "year_end",
   "export_accounting",
   "prepare_supplier_payment",
   "submit_bank_payment",
+  "prepare_filing",
+  "submit_filing",
   "send_invoice",
   "create_quote",
   "change_website",
@@ -108,6 +118,34 @@ export function can(role: BusinessRole | null | undefined, capability: Collabora
 export function assertCan(role: BusinessRole | null | undefined, capability: CollaborationCapability): void {
   if (can(role, capability)) return;
   throw new CollaborationDeniedError(capability, role);
+}
+
+/**
+ * Läsvägens grind (withBusinessRead). Redovisningsroller SKA släppas igenom:
+ * SIE-export, kvitton, inkorgens bilagor och betalfiler är läsningar som både
+ * konsult och revisor har rätt till. Skickas en läsning genom skrivgrinden
+ * nedan i stället nekas de rollerna, vilket är fel.
+ */
+export function assertReadAccess(role: BusinessRole | null | undefined): void {
+  assertCan(role, "read_accounting");
+}
+
+/**
+ * Skrivvägens grind (withBusiness). Med capability avgör behörighetsmatrisen.
+ * UTAN capability är åtgärden ägaryteexklusiv – det är standardläget för allt
+ * som inte uttryckligen delats med redovisningsytan.
+ */
+export function assertWriteAccess(
+  role: BusinessRole | null | undefined,
+  capability?: CollaborationCapability
+): void {
+  if (capability) {
+    assertCan(role, capability);
+    return;
+  }
+  if (isAccountingRole(role)) {
+    throw new Error("Den här åtgärden är inte tillgänglig från redovisningsytan.");
+  }
 }
 
 export class CollaborationDeniedError extends Error {

@@ -5,8 +5,8 @@ import { db } from "./store";
  * Demo-/utvecklingsgrind för alla FIKTIVA pengaflöden.
  *
  * Funktioner som hittar på banktransaktioner, saldon eller betalningar
- * (simulateIncomingPayment, paySupplierInvoice, uploadStandaloneReceipt,
- * BankID-simulering, ROT-utbetalningsdemo) får ALDRIG vara nåbara för
+ * (simulateIncomingPayment, paySupplierInvoice, BankID-simulering,
+ * ROT-utbetalningsdemo) får ALDRIG vara nåbara för
  * riktiga företag i produktion. Grinden är en servergrind – inte bara UI.
  *
  * Två vägar in i demoläget:

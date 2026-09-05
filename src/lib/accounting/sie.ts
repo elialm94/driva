@@ -1,5 +1,5 @@
 import { db } from "../store";
-import { BAS } from "../bas";
+import { accountName } from "./chart";
 import type { FiscalYear } from "../types";
 import { bokforingsdatum } from "./dates";
 import { fiscalYears, fiscalYearFor } from "./fiscal";
@@ -53,7 +53,7 @@ export function generateSie(fiscalYearId?: string): string {
   // Kontoplan: alla konton som förekommer i året (eller IB).
   const sb = saldobalans({ from: fy.startDate, to: fy.endDate });
   for (const row of sb.rows) {
-    lines.push(`#KONTO ${row.account} ${sieEscape(BAS[row.account] ?? row.name)}`);
+    lines.push(`#KONTO ${row.account} ${sieEscape(accountName(row.account))}`);
   }
 
   // IB/UB för balanskonton, RES för resultatkonton.
@@ -111,7 +111,11 @@ export function encodeSieToPc8(text: string): Uint8Array {
   return bytes;
 }
 
-/** Design för framtida import: typer och kontrakt, ingen implementation ännu. */
+/**
+ * Import: kontraktet bor här hos formatet, implementationen i sie-import.ts.
+ * Uppdelningen finns för att exporten inte ska dra in importen – exporten körs
+ * i en nedladdningsrutt och behöver ingen tolk.
+ */
 export interface SieImportPreview {
   companyName?: string;
   orgNumber?: string;
@@ -122,6 +126,11 @@ export interface SieImportPreview {
   warnings: string[];
 }
 
+/**
+ * Två steg, inte ett: att läsa filen får aldrig vara samma handling som att
+ * skriva in balanserna. Ingående balanser är den enda punkt i Driva där någon
+ * kan sätta ett saldo utan verifikation, så den ska ingen passera av misstag.
+ */
 export interface SieImportHooks {
   /** Tolka en SIE-fil och visa vad som skulle importeras – utan att röra bokföringen. */
   preview(fileContent: Uint8Array): SieImportPreview;

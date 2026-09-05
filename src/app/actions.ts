@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, resetDemoData, save } from "@/lib/store";
 import { parseReceiptDataUrl, storeReceiptFile, validateReceiptFile } from "@/lib/receipts/receipt-file";
+import { storeInboxAttachment } from "@/lib/inbox/attachment-file";
 import {
   addIgnoredLineDescription,
   collectLineDescriptionVocabulary,
@@ -66,6 +67,7 @@ import { createCustomer, updateCustomer, updateCustomerNotes } from "@/lib/servi
 import {
   approveInboxExtraction,
   ingestUploadedDocument,
+  interpretDocumentFile,
   markInboxMailProcessed,
   type ApproveExtractionInput,
 } from "@/lib/services/inbox";
@@ -130,11 +132,7 @@ import {
   type JobWorkEntryPatch,
 } from "@/lib/services/job-work";
 import { paySupplierInvoice, simulateIncomingPayment } from "@/lib/services/banking";
-import {
-  answerExpenseQuestion,
-  uploadReceiptForExpense,
-  uploadStandaloneReceipt,
-} from "@/lib/services/expenses";
+import { answerExpenseQuestion, uploadReceiptForExpense } from "@/lib/services/expenses";
 import {
   addServiceItem,
   addTestimonialItem,
@@ -229,6 +227,7 @@ export async function createCustomerAction(input: {
   city?: string;
   personalIdentityNumber?: string;
   propertyDesignations?: string[];
+  reverseChargeConstruction?: boolean;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string; field?: string }> {
   return withBusiness(() => {
     try {
@@ -263,6 +262,7 @@ export async function updateCustomerDetailsAction(
     orgNumber?: string;
     contactPerson?: string;
     notes?: string;
+    reverseChargeConstruction?: boolean;
   }
 ): Promise<{ ok: true } | { ok: false; error: string; field?: string }> {
   return withBusiness(() => {
@@ -1188,19 +1188,59 @@ export async function paySupplierInvoiceAction(supplierInvoiceId: string) {
   }, { capability: "submit_bank_payment" });
 }
 
+/**
+ * Lägg till ett dokument i inboxen: kvitto eller leverantörsfaktura.
+ *
+ * `dataUrl` är själva filen (data:<mime>;base64,…). Den valideras, tolkas med
+ * AI-vision och ingestas med innehållet, så underlaget bevaras och uppgifterna
+ * kommer ur dokumentet i stället för från användaren. Är tolkningen inte säker
+ * nog stannar dokumentet i inboxen för kontroll – exakt samma väg som ett
+ * inkommande mejl tar.
+ */
 export async function uploadInboxDocumentAction(input: {
   filename: string;
   contentType?: string;
-}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  return withBusiness(() => {
-    const result = ingestUploadedDocument({
-      filename: input.filename,
-      contentType: input.contentType,
-    });
-    if (!result.ok) return { ok: false as const, error: result.error };
-    refresh();
-    return { ok: true as const, id: result.item.id };
-  }, { capability: "write_accounting" });
+  dataUrl?: string;
+}): Promise<{ ok: true; id: string; autoBooked: boolean } | { ok: false; error: string }> {
+  return withBusiness(
+    async () => {
+      const parsedFile = input.dataUrl ? parseReceiptDataUrl(input.dataUrl) : null;
+      if (input.dataUrl && !parsedFile) return { ok: false as const, error: "Filen kunde inte läsas." };
+      let file: ReturnType<typeof validateReceiptFile> | undefined;
+      if (parsedFile) {
+        try {
+          file = validateReceiptFile(parsedFile);
+        } catch (e) {
+          return { ok: false as const, error: e instanceof Error ? e.message : "Filen kunde inte läsas." };
+        }
+      }
+
+      const contentType = file?.contentType ?? input.contentType ?? "application/pdf";
+      const contentBase64 = file?.bytes.toString("base64");
+      const parsed = contentBase64
+        ? await interpretDocumentFile({ filename: input.filename, contentType, contentBase64 })
+        : undefined;
+
+      // Filen lagras före posten: ett dokument i inboxen utan sitt underlag är
+      // sämre än ett tydligt fel vid uppladdningen.
+      const stored = contentBase64
+        ? await storeInboxAttachment(`upload-${Date.now()}`, input.filename, contentType, contentBase64)
+        : {};
+
+      const result = ingestUploadedDocument({
+        filename: input.filename,
+        contentType,
+        ...(contentBase64 ? { sizeBytes: file!.bytes.length } : {}),
+        ...(stored.storagePath ? { storagePath: stored.storagePath } : {}),
+        ...(stored.contentBase64 ? { contentBase64: stored.contentBase64 } : {}),
+        ...(parsed ? { parsed } : {}),
+      });
+      if (!result.ok) return { ok: false as const, error: result.error };
+      refresh();
+      return { ok: true as const, id: result.item.id, autoBooked: result.autoBooked };
+    },
+    { capability: "write_accounting" }
+  );
 }
 
 export async function submitSupplierPaymentAction(input: {
@@ -1231,6 +1271,10 @@ export async function submitSupplierPaymentAction(input: {
  * den valideras och sparas (bucket eller inline) INNAN kvittoraden committas;
  * misslyckas lagringen skrivs ingen kvittorad. Utan dataUrl registreras bara
  * uppgifterna (äldre anropare) och raden markeras ärligt som utan fil.
+ *
+ * Filen tolkas med AI-vision så kvittoraden bär vad dokumentet faktiskt säger.
+ * Beloppet kommer ändå alltid från banktransaktionen – banken är sanningen om
+ * vad som dragits, och en modell får inte skriva över den.
  */
 export async function uploadReceiptAction(
   expenseId: string,
@@ -1243,7 +1287,14 @@ export async function uploadReceiptAction(
         const parsed = dataUrl ? parseReceiptDataUrl(dataUrl) : null;
         if (dataUrl && !parsed) throw new Error("Kvittofilen kunde inte läsas.");
         const file = parsed ? validateReceiptFile(parsed) : undefined;
-        const { receipt } = uploadReceiptForExpense(expenseId, filename, "uppladdning");
+        const interpreted = file
+          ? await interpretDocumentFile({
+              filename,
+              contentType: file.contentType,
+              contentBase64: file.bytes.toString("base64"),
+            })
+          : undefined;
+        const { receipt } = uploadReceiptForExpense(expenseId, filename, "uppladdning", undefined, interpreted);
         if (file) {
           Object.assign(receipt, await storeReceiptFile(receipt, file));
           save();
@@ -1258,13 +1309,6 @@ export async function uploadReceiptAction(
   } catch (e) {
     return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte spara kvittot." };
   }
-}
-
-export async function uploadStandaloneReceiptAction(filename: string) {
-  await withBusiness(() => {
-    uploadStandaloneReceipt(filename);
-    refresh();
-  }, { capability: "categorize" });
 }
 
 export async function answerExpenseQuestionAction(expenseId: string, answer: string) {

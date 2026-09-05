@@ -1,5 +1,5 @@
-import { ReceiptText } from "lucide-react";
-import { EmptyState, PageHeader } from "@/components/ui";
+import { Plus, ReceiptText } from "lucide-react";
+import { ButtonLink, EmptyState, PageHeader } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { VerifikationerView } from "@/components/verifikationer-view";
 import { listVerificationViews } from "@/lib/services/verification-correction";
@@ -27,13 +27,23 @@ export default async function VerifikationerPage({
         back={<SmartBack />}
         title="Verifikationer"
         subtitle={`${all.length} bokförda händelser. Varje verifikation är låst när den bokförts – rättelser blir nya verifikationer.`}
+        actions={
+          <ButtonLink href="/bokforing/verifikationer/nytt" size="sm">
+            <Plus className="size-3.5" /> Nytt verifikat
+          </ButtonLink>
+        }
       />
 
       {all.length === 0 ? (
         <EmptyState
           icon={ReceiptText}
           title="Inga verifikationer ännu"
-          text="När du skickar fakturor eller får utgifter bokförs de automatiskt här."
+          text="När du skickar fakturor eller får utgifter bokförs de automatiskt här. Något som inte kommer den vägen bokför du som ett manuellt verifikat."
+          action={
+            <ButtonLink href="/bokforing/verifikationer/nytt" size="sm">
+              <Plus className="size-3.5" /> Nytt verifikat
+            </ButtonLink>
+          }
         />
       ) : (
         <VerifikationerView

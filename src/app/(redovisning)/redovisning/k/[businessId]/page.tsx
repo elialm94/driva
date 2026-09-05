@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AccountantFilters } from "@/components/accountant-filters";
 import { AccountantQueue } from "@/components/accountant-queue";
 import { AccountantClientTabs, accountantStatusText } from "@/components/accountant-workspace";
@@ -75,6 +76,21 @@ export default async function ClientWorkspacePage({
       {access.role === "auditor" ? (
         <p className="mt-4 text-[12px] text-muted">Revisor – endast läsning. Ändringar är blockerade.</p>
       ) : null}
+      {/* Månadsstängningen och övertagandet hör till klienten, inte till kön. */}
+      <footer className="mt-8 border-t border-line/70 pt-6">
+        <Link
+          href={`/redovisning/k/${businessId}/periodstangning` as never}
+          className="block text-[13px] font-medium text-accent hover:underline"
+        >
+          Periodstängning och periodlås
+        </Link>
+        <Link
+          href={`/redovisning/k/${businessId}/ingaende-balans` as never}
+          className="mt-2 block text-[13px] font-medium text-accent hover:underline"
+        >
+          Ingående balans och övertagande från annat program
+        </Link>
+      </footer>
     </div>
   );
 }

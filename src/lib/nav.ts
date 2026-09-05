@@ -78,6 +78,8 @@ export const BOKFORING_DETAIL_TABS = [
   { key: "huvudbok", href: "/bokforing/huvudbok", label: "Huvudbok" },
   { key: "rapporter", href: "/bokforing/resultat", label: "Rapporter" },
   { key: "moms", href: "/bokforing/moms", label: "Moms" },
+  { key: "skattekonto", href: "/bokforing/skattekonto", label: "Skattekonto" },
+  { key: "lon", href: "/bokforing/lon", label: "Lön" },
   { key: "bokslut", href: "/bokforing/bokslut", label: "Bokslut" },
 ] as const;
 
@@ -93,6 +95,8 @@ export const BOKFORING_FLIK_HREF: Record<string, string> = {
   huvudbok: "/bokforing/huvudbok",
   rapporter: "/bokforing/resultat",
   moms: "/bokforing/moms",
+  skattekonto: "/bokforing/skattekonto",
+  lon: "/bokforing/lon",
   bokslut: "/bokforing/bokslut",
   saldobalans: "/bokforing/saldobalans",
   resultat: "/bokforing/resultat",
@@ -112,11 +116,13 @@ export const BOKFORING_PREFETCH_HREFS: readonly string[] = Array.from(
 export function bokforingDetailTabForPath(pathname: string): (typeof BOKFORING_DETAIL_TABS)[number]["key"] | null {
   const path = pathname.split("?")[0] ?? pathname;
   if (path === "/bokforing") return "oversikt";
-  if (path === "/bokforing/verifikationer") return "verifikationer";
+  if (path === "/bokforing/verifikationer" || path === "/bokforing/verifikationer/nytt") return "verifikationer";
   if (path === "/bokforing/huvudbok") return "huvudbok";
   if ((BOKFORING_REPORT_PATHS as readonly string[]).includes(path)) return "rapporter";
   if (path === "/bokforing/moms") return "moms";
-  if (path === "/bokforing/bokslut") return "bokslut";
+  if (path === "/bokforing/skattekonto") return "skattekonto";
+  if (path === "/bokforing/lon" || path.startsWith("/bokforing/lon/")) return "lon";
+  if (path === "/bokforing/bokslut" || path.startsWith("/bokforing/bokslut/")) return "bokslut";
   if (path === "/bokforing/detaljer") return "verifikationer";
   return null;
 }
@@ -161,21 +167,40 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/uppdrag/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
   { pattern: "/jobb/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
   { pattern: "/uppdrag", section: "uppdrag", label: "Uppdrag" },
+  { pattern: "/bokforing/verifikationer/nytt", section: "bokforing", parent: "/bokforing/verifikationer", label: "Nytt verifikat", backLabel: "Verifikationer", showBack: true },
   { pattern: "/bokforing/verifikationer", section: "bokforing", parent: "/bokforing", label: "Verifikationer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/huvudbok", section: "bokforing", parent: "/bokforing", label: "Huvudbok", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/saldobalans", section: "bokforing", parent: "/bokforing", label: "Saldobalans", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/resultat", section: "bokforing", parent: "/bokforing", label: "Resultatrapport", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/balans", section: "bokforing", parent: "/bokforing", label: "Balansrapport", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/moms", section: "bokforing", parent: "/bokforing", label: "Moms", backLabel: "Bokföring", showBack: true },
+  { pattern: "/bokforing/skattekonto", section: "bokforing", parent: "/bokforing", label: "Skattekonto", backLabel: "Bokföring", showBack: true },
+  { pattern: "/bokforing/lon/:runId", section: "bokforing", parent: "/bokforing/lon", label: "Lönespecifikation", backLabel: "Lön", showBack: true },
+  { pattern: "/bokforing/lon", section: "bokforing", parent: "/bokforing", label: "Lön", backLabel: "Bokföring", showBack: true },
+  { pattern: "/bokforing/bokslut/arsredovisning/:fiscalYearId/pdf", section: "bokforing", parent: "/bokforing/bokslut/arsredovisning/:fiscalYearId", label: "Årsredovisning A4", backLabel: "Årsredovisning", showBack: true },
+  { pattern: "/bokforing/bokslut/arsredovisning/:fiscalYearId", section: "bokforing", parent: "/bokforing/bokslut", label: "Årsredovisning", backLabel: "Bokslut", showBack: true },
+  { pattern: "/bokforing/bokslut/ink2/:fiscalYearId", section: "bokforing", parent: "/bokforing/bokslut", label: "INK2", backLabel: "Bokslut", showBack: true },
+  { pattern: "/bokforing/bokslut/bilagor", section: "bokforing", parent: "/bokforing/bokslut", label: "Bokslutsbilagor", backLabel: "Bokslut", showBack: true },
+  { pattern: "/bokforing/bokslut/avstamning", section: "bokforing", parent: "/bokforing/bokslut", label: "Avstämning", backLabel: "Bokslut", showBack: true },
   { pattern: "/bokforing/bokslut", section: "bokforing", parent: "/bokforing", label: "Bokslut", backLabel: "Bokföring", showBack: true },
+  { pattern: "/bokforing/periodstangning", section: "bokforing", parent: "/bokforing", label: "Periodstängning", backLabel: "Bokföring", showBack: true },
+  { pattern: "/bokforing/ingaende-balans", section: "bokforing", parent: "/bokforing", label: "Ingående balans", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/detaljer", section: "bokforing", parent: "/bokforing", label: "Bokföringsdetaljer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing", section: "bokforing", label: "Bokföring" },
   { pattern: "/samarbeta", section: "samarbeta", label: "Samarbeta" },
+  { pattern: "/redovisning/k/:businessId/verifikationer/nytt", section: null, parent: "/redovisning/k/:businessId/verifikationer", label: "Nytt verifikat", backLabel: "Verifikationer", showBack: true },
   { pattern: "/redovisning/k/:businessId/verifikationer", section: null, parent: "/redovisning/k/:businessId", label: "Verifikationer", backLabel: "Arbeta", showBack: true },
   { pattern: "/redovisning/k/:businessId/bank", section: null, parent: "/redovisning/k/:businessId", label: "Bank", backLabel: "Arbeta", showBack: true },
   { pattern: "/redovisning/k/:businessId/moms", section: null, parent: "/redovisning/k/:businessId", label: "Moms", backLabel: "Arbeta", showBack: true },
   { pattern: "/redovisning/k/:businessId/rapporter", section: null, parent: "/redovisning/k/:businessId", label: "Rapporter", backLabel: "Arbeta", showBack: true },
+  { pattern: "/redovisning/k/:businessId/bokslut/arsredovisning/:fiscalYearId/pdf", section: null, parent: "/redovisning/k/:businessId/bokslut/arsredovisning/:fiscalYearId", label: "Årsredovisning A4", backLabel: "Årsredovisning", showBack: true },
+  { pattern: "/redovisning/k/:businessId/bokslut/arsredovisning/:fiscalYearId", section: null, parent: "/redovisning/k/:businessId/bokslut", label: "Årsredovisning", backLabel: "Bokslut", showBack: true },
+  { pattern: "/redovisning/k/:businessId/bokslut/ink2/:fiscalYearId", section: null, parent: "/redovisning/k/:businessId/bokslut", label: "INK2", backLabel: "Bokslut", showBack: true },
+  { pattern: "/redovisning/k/:businessId/bokslut/bilagor", section: null, parent: "/redovisning/k/:businessId/bokslut", label: "Bokslutsbilagor", backLabel: "Bokslut", showBack: true },
+  { pattern: "/redovisning/k/:businessId/bokslut/avstamning", section: null, parent: "/redovisning/k/:businessId/bokslut", label: "Avstämning", backLabel: "Bokslut", showBack: true },
   { pattern: "/redovisning/k/:businessId/bokslut", section: null, parent: "/redovisning/k/:businessId", label: "Bokslut", backLabel: "Arbeta", showBack: true },
+  { pattern: "/redovisning/k/:businessId/periodstangning", section: null, parent: "/redovisning/k/:businessId", label: "Periodstängning", backLabel: "Arbeta", showBack: true },
+  { pattern: "/redovisning/k/:businessId/ingaende-balans", section: null, parent: "/redovisning/k/:businessId", label: "Ingående balans", backLabel: "Arbeta", showBack: true },
   { pattern: "/redovisning/k/:businessId", section: null, parent: "/redovisning", label: "Arbeta", backLabel: "Arbeta", showBack: true },
   { pattern: "/redovisning/att-gora", section: null, parent: "/redovisning", label: "Arbeta" },
   { pattern: "/redovisning/klienter", section: null, parent: "/redovisning", label: "Klienter" },
@@ -398,6 +423,8 @@ export function structuralCrumbs(
     case "/bokforing/resultat":
     case "/bokforing/balans":
     case "/bokforing/moms":
+    case "/bokforing/skattekonto":
+    case "/bokforing/lon":
     case "/bokforing/bokslut":
     case "/bokforing/detaljer":
       return [{ href: "/bokforing", label: "Bokföring" }, { label: title }];

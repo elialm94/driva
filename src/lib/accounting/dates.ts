@@ -1,4 +1,6 @@
-import type { FiscalYear } from "../types";
+import type { FiscalYear, VatPeriodicity } from "../types";
+
+export type { VatPeriodicity } from "../types";
 
 /**
  * Rena datum- och periodhjälpare för bokföringen. Inga beroenden på lagret –
@@ -30,6 +32,12 @@ export function todayDate(): string {
 export function nextDay(date: string): string {
   const d = new Date(`${date}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+export function previousDay(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().slice(0, 10);
 }
 
@@ -92,9 +100,85 @@ export function quartersOf(fy: FiscalYear): Period[] {
   }));
 }
 
-/** Deklarations- och betaldatum för en momsperiod: 12:e i andra månaden efter periodens slut. */
+/** Hela räkenskapsåret som en momsperiod (helårsmoms). */
+export function fullYearOf(fy: FiscalYear): Period {
+  return {
+    key: `${fy.label}-H`,
+    label: `helår ${fy.label}`,
+    start: fy.startDate,
+    end: fy.endDate,
+  };
+}
+
+export const VAT_PERIODICITY: Record<VatPeriodicity, { label: string; short: string }> = {
+  manad: { label: "Varje månad", short: "Månadsmoms" },
+  kvartal: { label: "Varje kvartal", short: "Kvartalsmoms" },
+  helar: { label: "En gång per år", short: "Helårsmoms" },
+};
+
+export function isVatPeriodicity(v: unknown): v is VatPeriodicity {
+  return v === "manad" || v === "kvartal" || v === "helar";
+}
+
+/** Momsperioderna i ett räkenskapsår för en given periodicitet. */
+export function vatPeriodsOf(fy: FiscalYear, periodicity: VatPeriodicity): Period[] {
+  if (periodicity === "helar") return [fullYearOf(fy)];
+  if (periodicity === "manad") return monthsOf(fy);
+  return quartersOf(fy);
+}
+
+/** Antal hela månader ett datumintervall täcker (1 för en enskild månad). */
+function monthSpan(start: string, end: string): number {
+  const y = Number(end.slice(0, 4)) - Number(start.slice(0, 4));
+  return y * 12 + (Number(end.slice(5, 7)) - Number(start.slice(5, 7))) + 1;
+}
+
+/**
+ * Periodiciteten ett intervall representerar. Härledd ur längden i stället för
+ * ur företagets aktuella inställning: en momsrapport som redovisades per
+ * kvartal behåller sin förfallodag även om företaget senare byter till månad.
+ */
+export function vatPeriodicityOfRange(start: string, end: string): VatPeriodicity {
+  const months = monthSpan(start, end);
+  if (months >= 12) return "helar";
+  return months >= 2 ? "kvartal" : "manad";
+}
+
+/**
+ * Deklarations- och betaldatum (samma dag) för en momsperiod, enligt
+ * skatteförfarandelagen 26 kap.
+ *
+ * Månad och kvartal: den 12:e i andra månaden efter periodens slut, utom i
+ * januari och augusti där det är den 17:e. Kvartalen för ett kalenderår
+ * hamnar alltså på 12 maj, 17 augusti, 12 november och 12 februari.
+ *
+ * Helår: aktiebolag utan EU-handel deklarerar momsen i anslutning till
+ * inkomstdeklarationen, och datumet styrs av när räkenskapsåret slutar.
+ * Tabellen nedan är Skatteverkets datum för DIGITAL inlämning – produkten
+ * lämnar aldrig på pappersblankett. EU-handel (som i stället ger den 26:e i
+ * andra månaden efter) stöds inte av produkten.
+ *
+ * Datumen är de lagstadgade – ingen justering för helgdag görs här, eftersom
+ * en framflyttning till nästa bankdag kräver en svensk röddagskalender.
+ */
 export function vatDueDate(period: Period): string {
-  const end = new Date(`${period.end}T12:00:00Z`);
-  end.setUTCMonth(end.getUTCMonth() + 2);
-  return `${end.toISOString().slice(0, 8)}12`;
+  if (vatPeriodicityOfRange(period.start, period.end) === "helar") {
+    return fullYearVatDueDate(period.end);
+  }
+  // Räkna på år/månad direkt: Date.setUTCMonth på den 31:a spiller över till
+  // nästa månad (31 december + 2 månader blir 3 mars, inte februari).
+  const shifted = Number(period.end.slice(5, 7)) + 2;
+  const year = Number(period.end.slice(0, 4)) + (shifted > 12 ? 1 : 0);
+  const month = shifted > 12 ? shifted - 12 : shifted;
+  const day = month === 1 || month === 8 ? 17 : 12;
+  return `${year}-${String(month).padStart(2, "0")}-${day}`;
+}
+
+function fullYearVatDueDate(end: string): string {
+  const year = Number(end.slice(0, 4));
+  const month = Number(end.slice(5, 7));
+  if (month <= 4) return `${year}-12-12`;
+  if (month <= 6) return `${year + 1}-01-17`;
+  if (month <= 8) return `${year + 1}-04-12`;
+  return `${year + 1}-08-17`;
 }

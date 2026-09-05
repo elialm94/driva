@@ -11,6 +11,7 @@ import type { DB, Verification } from "@/lib/types";
 import type { SqlExecutor, SqlParam, SqlRow } from "./executor";
 import {
   accrualsSpec,
+  yearEndSchedulesSpec,
   activityFromAuditRow,
   annualReportsSpec,
   assetsSpec,
@@ -21,11 +22,15 @@ import {
   bankConnectionsSpec,
   bankidOrdersSpec,
   bankTransactionsSpec,
+  chartAccountsSpec,
   customersSpec,
   dateOnly,
   domainAuditFromAuditRow,
   domainsSpec,
+  employeesSpec,
+  employerDeclarationsSpec,
   expensesSpec,
+  filingSubmissionsSpec,
   fiscalYearsSpec,
   invoiceLineFromRow,
   attentionStatesSpec,
@@ -39,6 +44,7 @@ import {
   num,
   paymentFilesSpec,
   paymentsSpec,
+  payrollRunsSpec,
   pendingActionsSpec,
   remindersSpec,
   quoteFromRow,
@@ -155,7 +161,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     tx.query(`select * from public.annual_reports where business_id = $1 order by generated_at, id`, b),
   ]);
 
-  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows, bankConnectionRows] =
+  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows, bankConnectionRows, chartAccountRows, employeeRows, payrollRunRows, employerDeclarationRows, yearEndScheduleRows, filingSubmissionRows] =
     await Promise.all([
       tx.query(`select * from public.websites where business_id = $1`, b),
       tx.query(`select * from public.domains where business_id = $1 order by created_at, id`, b),
@@ -179,6 +185,27 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
         b
       ),
       queryIfTable(tx, "bank_connections", `select * from public.bank_connections where business_id = $1 order by created_at, id`, b),
+      queryIfTable(tx, "chart_accounts", `select * from public.chart_accounts where business_id = $1 order by number`, b),
+      queryIfTable(tx, "employees", `select * from public.employees where business_id = $1 order by created_at, id`, b),
+      queryIfTable(tx, "payroll_runs", `select * from public.payroll_runs where business_id = $1 order by month, id`, b),
+      queryIfTable(
+        tx,
+        "employer_declarations",
+        `select * from public.employer_declarations where business_id = $1 order by month, id`,
+        b
+      ),
+      queryIfTable(
+        tx,
+        "year_end_schedules",
+        `select * from public.year_end_schedules where business_id = $1 order by created_at, id`,
+        b
+      ),
+      queryIfTable(
+        tx,
+        "filing_submissions",
+        `select * from public.filing_submissions where business_id = $1 order by created_at, id`,
+        b
+      ),
     ]);
 
   // Bostäder per kund (position = visningsordning).
@@ -236,12 +263,31 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
   const sequences = sequenceRows[0];
   const lockedThrough = business.accounting_locked_through;
 
+  /**
+   * Räknarna per verifikationsserie. Serie A speglas alltid av den
+   * ursprungliga kolumnen, så ett företag som bokförde innan serier fanns får
+   * rätt nästa nummer utan backfill.
+   */
+  function verificationSeriesFromRow(row: SqlRow): Record<string, number> {
+    const raw = row.verification_series;
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const counters: Record<string, number> = { A: num(row.verification) };
+    if (parsed && typeof parsed === "object") {
+      for (const [series, next] of Object.entries(parsed as Record<string, unknown>)) {
+        const value = Number(next);
+        if (Number.isInteger(value) && value >= 1) counters[series] = value;
+      }
+    }
+    return counters;
+  }
+
   const state: DB = {
     settings: settingsFromRow(settingsRows[0]),
     sequences: {
       quote: num(sequences.quote),
       invoice: num(sequences.invoice),
       verification: num(sequences.verification),
+      verificationSeries: verificationSeriesFromRow(sequences),
     },
     customers,
     quotes: quoteRows.map(quoteFromRow),
@@ -261,11 +307,17 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     supplierPayments: supplierPaymentRows.map(supplierPaymentsSpec.fromRow),
     paymentFiles: paymentFileRows.map(paymentFilesSpec.fromRow),
     verifications,
+    chartAccounts: chartAccountRows.map(chartAccountsSpec.fromRow),
     fiscalYears: fiscalYearRows.map(fiscalYearsSpec.fromRow),
     accounting: lockedThrough == null ? {} : { lockedThrough: dateOnly(lockedThrough) },
     vatReports: vatReportRows.map(vatReportsSpec.fromRow),
+    employees: employeeRows.map(employeesSpec.fromRow),
+    payrollRuns: payrollRunRows.map(payrollRunsSpec.fromRow),
+    employerDeclarations: employerDeclarationRows.map(employerDeclarationsSpec.fromRow),
     assets: assetRows.map(assetsSpec.fromRow),
     accruals: accrualRows.map(accrualsSpec.fromRow),
+    yearEndSchedules: yearEndScheduleRows.map(yearEndSchedulesSpec.fromRow),
+    filingSubmissions: filingSubmissionRows.map(filingSubmissionsSpec.fromRow),
     auditTrail: auditRows.filter((r) => r.channel === "accounting").map(auditTrailFromAuditRow),
     annualReports: annualReportRows.map(annualReportsSpec.fromRow),
     activity: activityRows.map(activityFromAuditRow),

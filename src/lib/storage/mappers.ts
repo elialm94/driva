@@ -14,6 +14,8 @@
  *     drivrutinen ger string | number | bigint.
  */
 import type {
+  AccountSection,
+  AccountType,
   ActivityEvent,
   AssistantAuditEntry,
   AssistantMessage,
@@ -30,15 +32,23 @@ import type {
   BankIDEnvironment,
   BankIDOrder,
   BankTransaction,
+  ChartAccountRecord,
   CompanySettings,
   Customer,
   DB,
   DocLine,
   Domain,
   DomainAuditEvent,
+  Employee,
+  EmployerDeclaration,
   Expense,
+  FilingReceipt,
+  FilingSignature,
+  FilingSubmission,
   FiscalYear,
+  FiscalYearReopening,
   Invoice,
+  PayrollRun,
   Job,
   JobWorkEntry,
   Payment,
@@ -53,9 +63,11 @@ import type {
   SupplierPayment,
   VatReport,
   Verification,
+  VerificationAttachment,
   VerificationEntry,
   Website,
   WorkLocation,
+  YearEndSchedule,
 } from "@/lib/types";
 import { syncDocLineClassification } from "@/lib/economic-line-type";
 import { migrateQuoteVersionDescription } from "@/lib/quote-description";
@@ -156,7 +168,7 @@ export const customersSpec: TableSpec<Customer> = {
   columns: [
     "id", "business_id", "kind", "name", "contact_person", "org_number", "email", "phone",
     "address", "postal_code", "city", "personal_identity_number", "default_work_location_id",
-    "notes", "created_at",
+    "notes", "reverse_charge_construction", "created_at",
   ],
   toRow: (c, businessId) => ({
     id: c.id,
@@ -173,6 +185,7 @@ export const customersSpec: TableSpec<Customer> = {
     personal_identity_number: c.personalIdentityNumber ?? null,
     default_work_location_id: c.defaultWorkLocationId ?? null,
     notes: c.notes,
+    reverse_charge_construction: c.reverseChargeConstruction === true,
     created_at: c.createdAt,
   }),
   fromRow: (r) => ({
@@ -189,6 +202,7 @@ export const customersSpec: TableSpec<Customer> = {
     ...opt("personalIdentityNumber", strOrU(r.personal_identity_number)),
     ...opt("defaultWorkLocationId", strOrU(r.default_work_location_id)),
     notes: str(r.notes),
+    ...(r.reverse_charge_construction === true ? { reverseChargeConstruction: true as const } : {}),
     createdAt: tsIso(r.created_at),
   }),
 };
@@ -574,7 +588,7 @@ export const invoicesSpec: TableSpec<Invoice & { amountToPay: number }> = {
     "issue_date", "due_date", "payment_terms_days", "service_date", "late_interest_rate",
     "issued_at", "sent_at", "last_sent_at", "last_email", "last_send_attempt_at", "paid_at", "reminders", "token", "ocr",
     "credits_invoice_id", "denied_reduction_of", "created_by", "amount_to_pay", "created_at",
-    "refund", "overpayment_credit", "rich_text", "payment_plan_index",
+    "refund", "overpayment_credit", "rich_text", "payment_plan_index", "reverse_charge",
   ],
   toRow: (inv, businessId) => ({
     id: inv.id,
@@ -613,6 +627,7 @@ export const invoicesSpec: TableSpec<Invoice & { amountToPay: number }> = {
     refund: jsonParamOrNull(inv.refund),
     overpayment_credit: inv.overpaymentCredit ?? null,
     payment_plan_index: inv.paymentPlanIndex ?? null,
+    reverse_charge: inv.reverseCharge === true,
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -654,6 +669,7 @@ export const invoicesSpec: TableSpec<Invoice & { amountToPay: number }> = {
     ...opt("refund", jsonOrU<NonNullable<Invoice["refund"]>>(r.refund)),
     ...opt("paymentPlanIndex", numOrU(r.payment_plan_index)),
     ...opt("overpaymentCredit", numOrU(r.overpayment_credit)),
+    ...(r.reverse_charge === true ? { reverseCharge: true as const } : {}),
   }),
 };
 
@@ -752,6 +768,35 @@ export const bankAccountsSpec: TableSpec<BankAccount> = {
     balance: num(r.balance),
     connectedAt: tsIso(r.connected_at),
     ...opt("externalId", strOrU(r.external_id)),
+  }),
+};
+
+/* ------------------------------ chart_accounts ----------------------------- */
+
+export const chartAccountsSpec: TableSpec<ChartAccountRecord> = {
+  table: "chart_accounts",
+  pk: ["id"],
+  columns: ["id", "business_id", "number", "name", "type", "section", "custom", "archived", "created_at"],
+  toRow: (a, businessId) => ({
+    id: a.id,
+    business_id: businessId,
+    number: a.number,
+    name: a.name,
+    type: a.type,
+    section: a.section,
+    custom: a.custom,
+    archived: a.archived ?? false,
+    created_at: a.createdAt,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    number: num(r.number),
+    name: str(r.name),
+    type: r.type as AccountType,
+    section: r.section as AccountSection,
+    custom: Boolean(r.custom),
+    ...(r.archived === true ? { archived: true } : {}),
+    createdAt: tsIso(r.created_at),
   }),
 };
 
@@ -1110,13 +1155,28 @@ export const paymentFilesSpec: TableSpec<PaymentFile> = {
  * Skrivs ALDRIG generiskt – endast via app.post_verification (RPC-payload
  * byggs i commit.ts med verificationRpcPayload nedan).
  */
+/** Bilagan ligger i kolumner på verifikationen; utan filnamn finns ingen bilaga. */
+function verificationAttachmentFromRow(head: SqlRow): VerificationAttachment | undefined {
+  const filename = strOrU(head.attachment_filename);
+  if (!filename) return undefined;
+  return {
+    filename,
+    contentType: str(head.attachment_content_type),
+    sizeBytes: num(head.attachment_size_bytes),
+    ...opt("storagePath", strOrU(head.attachment_storage_path)),
+    ...opt("contentBase64", strOrU(head.attachment_content_base64)),
+  };
+}
+
 export function verificationFromRows(head: SqlRow, entryRows: SqlRow[]): Verification {
   return {
     id: str(head.id),
     series: str(head.series),
     number: num(head.number),
     date: str(head.date), // TEXT-kolumn: blandade strängformat rundresas exakt
+    ...opt("transactionDate", head.transaction_date == null ? undefined : dateOnly(head.transaction_date)),
     description: str(head.description),
+    ...opt("attachment", verificationAttachmentFromRow(head)),
     entries: entryRows.map(
       (e): VerificationEntry => ({
         account: num(e.account),
@@ -1149,7 +1209,13 @@ export function verificationRpcPayload(v: Verification): Record<string, unknown>
     series: v.series,
     number: v.number,
     date: v.date,
+    transaction_date: v.transactionDate ?? null,
     description: v.description,
+    attachment_filename: v.attachment?.filename ?? null,
+    attachment_content_type: v.attachment?.contentType ?? null,
+    attachment_size_bytes: v.attachment?.sizeBytes ?? null,
+    attachment_storage_path: v.attachment?.storagePath ?? null,
+    attachment_content_base64: v.attachment?.contentBase64 ?? null,
     source_type: v.source.type,
     source_id: "id" in v.source ? v.source.id : null,
     confidence: v.confidence,
@@ -1177,7 +1243,7 @@ export const fiscalYearsSpec: TableSpec<FiscalYear> = {
   pk: ["id"],
   columns: [
     "id", "business_id", "label", "start_date", "end_date", "status",
-    "opening_balances", "opening_source", "closed_at", "closing_verification_ids",
+    "opening_balances", "opening_source", "closed_at", "closing_verification_ids", "reopenings",
   ],
   toRow: (y, businessId) => ({
     id: y.id,
@@ -1190,6 +1256,7 @@ export const fiscalYearsSpec: TableSpec<FiscalYear> = {
     opening_source: y.openingSource,
     closed_at: y.closedAt ?? null,
     closing_verification_ids: jsonParamOrNull(y.closingVerificationIds),
+    reopenings: jsonParamOrNull(y.reopenings),
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -1201,6 +1268,7 @@ export const fiscalYearsSpec: TableSpec<FiscalYear> = {
     openingSource: r.opening_source as FiscalYear["openingSource"],
     ...opt("closedAt", tsIsoOrU(r.closed_at)),
     ...opt("closingVerificationIds", jsonOrU<string[]>(r.closing_verification_ids)),
+    ...opt("reopenings", jsonOrU<FiscalYearReopening[]>(r.reopenings)),
   }),
 };
 
@@ -1244,6 +1312,132 @@ export const vatReportsSpec: TableSpec<VatReport> = {
     generatedAt: tsIso(r.generated_at),
     ...opt("declaredAt", tsIsoOrU(r.declared_at)),
     ...opt("settleVerificationId", strOrU(r.settle_verification_id)),
+  }),
+};
+
+/* --------------------------------- employees ------------------------------ */
+
+export const employeesSpec: TableSpec<Employee> = {
+  table: "employees",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "name", "personnummer", "email", "role", "monthly_salary",
+    "tax_basis", "start_date", "end_date", "status", "created_at",
+  ],
+  toRow: (e, businessId) => ({
+    id: e.id,
+    business_id: businessId,
+    name: e.name,
+    personnummer: e.personnummer,
+    email: e.email ?? null,
+    role: e.role,
+    monthly_salary: e.monthlySalary,
+    tax_basis: jsonParam(e.taxBasis),
+    start_date: e.startDate,
+    end_date: e.endDate ?? null,
+    status: e.status,
+    created_at: e.createdAt,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    name: str(r.name),
+    personnummer: str(r.personnummer),
+    ...opt("email", strOrU(r.email)),
+    role: r.role as Employee["role"],
+    monthlySalary: num(r.monthly_salary),
+    taxBasis: jsonVal<Employee["taxBasis"]>(r.tax_basis),
+    startDate: dateOnly(r.start_date),
+    ...opt("endDate", dateOnlyOrU(r.end_date)),
+    status: r.status as Employee["status"],
+    createdAt: tsIso(r.created_at),
+  }),
+};
+
+/* ------------------------------- payroll_runs ----------------------------- */
+
+export const payrollRunsSpec: TableSpec<PayrollRun> = {
+  table: "payroll_runs",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "employee_id", "month", "pay_date", "gross", "tax", "net",
+    "employer_contribution", "contribution_percent", "tax_basis", "salary_account",
+    "verification_id", "created_by", "created_at",
+  ],
+  toRow: (r, businessId) => ({
+    id: r.id,
+    business_id: businessId,
+    employee_id: r.employeeId,
+    month: r.month,
+    pay_date: r.payDate,
+    gross: r.gross,
+    tax: r.tax,
+    net: r.net,
+    employer_contribution: r.employerContribution,
+    contribution_percent: r.contributionPercent,
+    tax_basis: jsonParam(r.taxBasis),
+    salary_account: r.salaryAccount,
+    verification_id: r.verificationId,
+    created_by: r.createdBy,
+    created_at: r.createdAt,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    employeeId: str(r.employee_id),
+    month: str(r.month),
+    payDate: dateOnly(r.pay_date),
+    gross: num(r.gross),
+    tax: num(r.tax),
+    net: num(r.net),
+    employerContribution: num(r.employer_contribution),
+    contributionPercent: num(r.contribution_percent),
+    taxBasis: jsonVal<PayrollRun["taxBasis"]>(r.tax_basis),
+    salaryAccount: num(r.salary_account),
+    verificationId: str(r.verification_id),
+    createdBy: r.created_by as PayrollRun["createdBy"],
+    createdAt: tsIso(r.created_at),
+  }),
+};
+
+/* -------------------------- employer_declarations ------------------------- */
+
+export const employerDeclarationsSpec: TableSpec<EmployerDeclaration> = {
+  table: "employer_declarations",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "month", "label", "status", "individual_rows", "gross", "tax",
+    "employer_contribution", "att_betala", "due_date", "generated_at", "declared_at",
+    "tax_account_verification_id",
+  ],
+  toRow: (d, businessId) => ({
+    id: d.id,
+    business_id: businessId,
+    month: d.month,
+    label: d.label,
+    status: d.status,
+    individual_rows: jsonParam(d.rows),
+    gross: d.gross,
+    tax: d.tax,
+    employer_contribution: d.employerContribution,
+    att_betala: d.attBetala,
+    due_date: d.dueDate,
+    generated_at: d.generatedAt,
+    declared_at: d.declaredAt ?? null,
+    tax_account_verification_id: d.taxAccountVerificationId ?? null,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    month: str(r.month),
+    label: str(r.label),
+    status: r.status as EmployerDeclaration["status"],
+    rows: jsonVal<EmployerDeclaration["rows"]>(r.individual_rows),
+    gross: num(r.gross),
+    tax: num(r.tax),
+    employerContribution: num(r.employer_contribution),
+    attBetala: num(r.att_betala),
+    dueDate: dateOnly(r.due_date),
+    generatedAt: tsIso(r.generated_at),
+    ...opt("declaredAt", tsIsoOrU(r.declared_at)),
+    ...opt("taxAccountVerificationId", strOrU(r.tax_account_verification_id)),
   }),
 };
 
@@ -1337,6 +1531,44 @@ export const accrualsSpec: TableSpec<Accrual> = {
   }),
 };
 
+/* --------------------------- year_end_schedules --------------------------- */
+
+export const yearEndSchedulesSpec: TableSpec<YearEndSchedule> = {
+  table: "year_end_schedules",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "kind", "fiscal_year_id", "closing_amount", "lines", "inputs",
+    "status", "verification_ids", "created_by", "created_at", "booked_at",
+  ],
+  toRow: (s, businessId) => ({
+    id: s.id,
+    business_id: businessId,
+    kind: s.kind,
+    fiscal_year_id: s.fiscalYearId,
+    closing_amount: s.closingAmount,
+    lines: jsonParam(s.lines),
+    inputs: jsonParam(s.inputs),
+    status: s.status,
+    verification_ids: jsonParam(s.verificationIds),
+    created_by: s.createdBy,
+    created_at: s.createdAt,
+    booked_at: s.bookedAt ?? null,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    kind: r.kind as YearEndSchedule["kind"],
+    fiscalYearId: str(r.fiscal_year_id),
+    closingAmount: num(r.closing_amount),
+    lines: jsonVal<YearEndSchedule["lines"]>(r.lines),
+    inputs: jsonVal<YearEndSchedule["inputs"]>(r.inputs),
+    status: r.status as YearEndSchedule["status"],
+    verificationIds: jsonVal<string[]>(r.verification_ids),
+    createdBy: r.created_by as YearEndSchedule["createdBy"],
+    createdAt: tsIso(r.created_at),
+    ...opt("bookedAt", tsIsoOrU(r.booked_at)),
+  }),
+};
+
 /* ------------------------------ annual_reports ---------------------------- */
 
 export const annualReportsSpec: TableSpec<AnnualReport> = {
@@ -1344,7 +1576,7 @@ export const annualReportsSpec: TableSpec<AnnualReport> = {
   pk: ["id"],
   columns: [
     "id", "business_id", "fiscal_year_id", "status", "content", "generated_at",
-    "reviewed_at", "signed_at", "marked_filed_at",
+    "reviewed_at", "signed_at", "marked_filed_at", "superseded_at", "superseded_reason",
   ],
   toRow: (a, businessId) => ({
     id: a.id,
@@ -1356,6 +1588,8 @@ export const annualReportsSpec: TableSpec<AnnualReport> = {
     reviewed_at: a.reviewedAt ?? null,
     signed_at: a.signedAt ?? null,
     marked_filed_at: a.markedFiledAt ?? null,
+    superseded_at: a.supersededAt ?? null,
+    superseded_reason: a.supersededReason ?? null,
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -1366,6 +1600,64 @@ export const annualReportsSpec: TableSpec<AnnualReport> = {
     ...opt("reviewedAt", tsIsoOrU(r.reviewed_at)),
     ...opt("signedAt", tsIsoOrU(r.signed_at)),
     ...opt("markedFiledAt", tsIsoOrU(r.marked_filed_at)),
+    ...opt("supersededAt", tsIsoOrU(r.superseded_at)),
+    ...opt("supersededReason", strOrU(r.superseded_reason)),
+  }),
+};
+
+/* ----------------------------- filing_submissions ------------------------- */
+
+export const filingSubmissionsSpec: TableSpec<FilingSubmission> = {
+  table: "filing_submissions",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "kind", "subject_id", "label", "authority", "provider", "status",
+    "files", "generated_at", "signature", "submitted_at", "provider_submission_id",
+    "receipt", "rejection", "last_error", "created_by", "created_at", "updated_at",
+  ],
+  toRow: (s, businessId) => ({
+    id: s.id,
+    business_id: businessId,
+    kind: s.kind,
+    subject_id: s.subjectId,
+    label: s.label,
+    authority: s.authority,
+    provider: s.provider,
+    status: s.status,
+    files: jsonParam(s.files),
+    generated_at: s.generatedAt ?? null,
+    signature: s.signature ? jsonParam(s.signature) : null,
+    submitted_at: s.submittedAt ?? null,
+    provider_submission_id: s.providerSubmissionId ?? null,
+    receipt: s.receipt ? jsonParam(s.receipt) : null,
+    rejection: s.rejection ? jsonParam(s.rejection) : null,
+    last_error: s.lastError ?? null,
+    created_by: s.createdBy,
+    created_at: s.createdAt,
+    updated_at: s.updatedAt,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    kind: r.kind as FilingSubmission["kind"],
+    subjectId: str(r.subject_id),
+    label: str(r.label),
+    authority: r.authority as FilingSubmission["authority"],
+    provider: r.provider as FilingSubmission["provider"],
+    status: r.status as FilingSubmission["status"],
+    files: jsonVal<FilingSubmission["files"]>(r.files),
+    ...opt("generatedAt", tsIsoOrU(r.generated_at)),
+    ...opt("signature", r.signature == null ? undefined : jsonVal<FilingSignature>(r.signature)),
+    ...opt("submittedAt", tsIsoOrU(r.submitted_at)),
+    ...opt("providerSubmissionId", strOrU(r.provider_submission_id)),
+    ...opt("receipt", r.receipt == null ? undefined : jsonVal<FilingReceipt>(r.receipt)),
+    ...opt(
+      "rejection",
+      r.rejection == null ? undefined : jsonVal<NonNullable<FilingSubmission["rejection"]>>(r.rejection)
+    ),
+    ...opt("lastError", strOrU(r.last_error)),
+    createdBy: r.created_by as FilingSubmission["createdBy"],
+    createdAt: tsIso(r.created_at),
+    updatedAt: tsIso(r.updated_at),
   }),
 };
 
@@ -1865,6 +2157,7 @@ export const settingsColumns = [
   "logo_data_url", "f_skatt_per_month", "payroll_reserve_per_month", "payment_terms_days",
   "late_interest_rate", "quote_validity_days", "default_vat_rate", "default_hourly_rate",
   "default_quote_terms", "inbound_mail_slug", "payer_bank_name", "payer_iban", "payer_bic",
+  "vat_periodicity",
 ];
 
 export function settingsToRow(s: CompanySettings, businessId: string): Record<string, unknown> {
@@ -1902,6 +2195,7 @@ export function settingsToRow(s: CompanySettings, businessId: string): Record<st
     payer_bank_name: s.payerBankName ?? null,
     payer_iban: s.payerIban ?? null,
     payer_bic: s.payerBic ?? null,
+    vat_periodicity: s.vatPeriodicity ?? "kvartal",
   };
 }
 
@@ -1939,7 +2233,12 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
     ...opt("payerBankName", strOrU(r.payer_bank_name)),
     ...opt("payerIban", strOrU(r.payer_iban)),
     ...opt("payerBic", strOrU(r.payer_bic)),
+    ...opt("vatPeriodicity", vatPeriodicityOrU(r.vat_periodicity)),
   };
+}
+
+function vatPeriodicityOrU(v: unknown): CompanySettings["vatPeriodicity"] | undefined {
+  return v === "manad" || v === "kvartal" || v === "helar" ? v : undefined;
 }
 
 /* ------------------------------- DB-metadata ------------------------------ */

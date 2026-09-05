@@ -40,35 +40,48 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     // data-driva-demo: klientgrindar (t.ex. adressförslagens Places-laddare)
     // läser attributet och håller sig till lokala exempeldata i demon.
     <div className="min-h-dvh" data-driva-demo={demoBadge ? "1" : undefined}>
-      <SupportModeBanner companyName={settings.name} />
-      <Sidebar
-        companyName={settings.name}
-        inboxCount={navCounts.inbox}
-        bokforingCount={navCounts.bokforing}
-        canLogout={canLogout}
-        accountingClientCount={accountingClientCount}
-        demoBadge={demoBadge}
-        demoSession={demoSession}
-        features={features}
-      />
+      {/*
+        Appens ram följer aldrig med i en utskrift. Utan no-print trycks
+        sidomenyn och bottennavet över dokumentets sidfot på varje ark – och
+        varje sida i appen som går att skriva ut (avstämning, saldobalans,
+        årsredovisningens A4-vy) skulle bära med sig navigeringen.
+      */}
+      <div className="no-print">
+        <SupportModeBanner companyName={settings.name} />
+      </div>
+      <div className="no-print">
+        <Sidebar
+          companyName={settings.name}
+          inboxCount={navCounts.inbox}
+          bokforingCount={navCounts.bokforing}
+          canLogout={canLogout}
+          accountingClientCount={accountingClientCount}
+          demoBadge={demoBadge}
+          demoSession={demoSession}
+          features={features}
+        />
+      </div>
       <Suspense fallback={null}>
         <NavOriginProvider />
       </Suspense>
       {/* Bottenmarginalen rymmer bottennavet + safe area så sista raden aldrig döljs. */}
-      <main className="pb-[calc(var(--bottom-nav-h)+env(safe-area-inset-bottom)+2.5rem)] lg:pb-16 lg:pl-60">
-        <div className="mx-auto w-full max-w-5xl px-4 pt-6 sm:px-8 lg:pt-10 has-[[data-editor-shell]]:max-w-editor has-[[data-site-editor-shell]]:max-w-site-editor">
+      {/* Utskriften får inte bära skärmens marginal för menyerna – den är borta. */}
+      <main className="pb-[calc(var(--bottom-nav-h)+env(safe-area-inset-bottom)+2.5rem)] lg:pb-16 lg:pl-60 print:p-0">
+        <div className="mx-auto w-full max-w-5xl px-4 pt-6 sm:px-8 lg:pt-10 has-[[data-editor-shell]]:max-w-editor has-[[data-site-editor-shell]]:max-w-site-editor print:max-w-none print:p-0">
           {children}
         </div>
       </main>
-      <BottomNav
-        companyName={settings.name}
-        canLogout={canLogout}
-        inboxCount={navCounts.inbox}
-        bokforingCount={navCounts.bokforing}
-        demoBadge={demoBadge}
-        demoSession={demoSession}
-        features={features}
-      />
+      <div className="no-print">
+        <BottomNav
+          companyName={settings.name}
+          canLogout={canLogout}
+          inboxCount={navCounts.inbox}
+          bokforingCount={navCounts.bokforing}
+          demoBadge={demoBadge}
+          demoSession={demoSession}
+          features={features}
+        />
+      </div>
     </div>
   );
 }

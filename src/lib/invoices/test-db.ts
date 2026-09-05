@@ -43,7 +43,21 @@ export function testCustomer(over: Partial<Customer> = {}): Customer {
     personalIdentityNumber: over.personalIdentityNumber,
     workLocations: over.workLocations,
     defaultWorkLocationId: over.defaultWorkLocationId,
+    reverseChargeConstruction: over.reverseChargeConstruction,
   };
+}
+
+/** Företagskund markerad för omvänd byggmoms – momsnummer härleds ur org.nr. */
+export function reverseChargeCustomer(over: Partial<Customer> = {}): Customer {
+  return testCustomer({
+    id: "cust-bygg",
+    kind: "foretag",
+    name: "Bygg & Co AB",
+    email: "faktura@byggco.se",
+    orgNumber: "556677-8899",
+    reverseChargeConstruction: true,
+    ...over,
+  });
 }
 
 export function testWorkLocation(over: Partial<WorkLocation> = {}): WorkLocation {
@@ -108,10 +122,15 @@ export function emptyTestDb(over: Partial<DB> = {}): DB {
     fiscalYears: over.fiscalYears ?? [],
     accounting: over.accounting ?? {},
     vatReports: over.vatReports ?? [],
+    employees: over.employees ?? [],
+    payrollRuns: over.payrollRuns ?? [],
+    employerDeclarations: over.employerDeclarations ?? [],
     assets: over.assets ?? [],
     accruals: over.accruals ?? [],
+    yearEndSchedules: over.yearEndSchedules ?? [],
     auditTrail: over.auditTrail ?? [],
     annualReports: over.annualReports ?? [],
+    filingSubmissions: over.filingSubmissions ?? [],
     activity: over.activity ?? [],
     website: over.website ?? null,
     domains: over.domains ?? [],

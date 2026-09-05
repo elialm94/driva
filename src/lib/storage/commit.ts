@@ -25,6 +25,7 @@ import { issuedOcrForInvoice, ocrForInvoice } from "@/lib/ids";
 import type { SqlExecutor } from "./executor";
 import {
   accrualsSpec,
+  yearEndSchedulesSpec,
   activityToAuditRow,
   annualReportsSpec,
   assetsSpec,
@@ -34,12 +35,16 @@ import {
   auditTrailToAuditRow,
   bankAccountsSpec,
   bankConnectionsSpec,
+  chartAccountsSpec,
   bankidOrdersSpec,
   bankTransactionsSpec,
   customersSpec,
+  employeesSpec,
+  employerDeclarationsSpec,
   domainAuditToAuditRow,
   domainsSpec,
   expensesSpec,
+  filingSubmissionsSpec,
   fiscalYearsSpec,
   attentionStatesSpec,
   clientInformationRequestsSpec,
@@ -52,6 +57,7 @@ import {
   jobWorkEntriesSpec,
   paymentFilesSpec,
   paymentsSpec,
+  payrollRunsSpec,
   pendingActionsSpec,
   remindersSpec,
   quotesSpec,
@@ -189,6 +195,7 @@ export function invoiceRpcPayload(inv: Invoice, businessId: string): Record<stri
     denied_reduction_of: inv.deniedReductionOf ?? null,
     created_by: inv.createdBy ?? null,
     amount_to_pay: amountToPayForInvoice(inv),
+    reverse_charge: inv.reverseCharge === true,
     created_at: inv.createdAt,
   };
 }
@@ -348,6 +355,9 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
   await applySpec(bankAccountsSpec, diffCollection(baseline.bankAccounts, state.bankAccounts));
   await applySpec(bankTransactionsSpec, diffCollection(baseline.bankTransactions, state.bankTransactions));
   await applySpec(bankConnectionsSpec, diffCollection(baseline.bankConnections ?? [], state.bankConnections ?? []));
+  // Kontoregistret före verifikationerna: ett eget konto måste finnas i
+  // registret innan raderna som bokförs på det skrivs.
+  await applySpec(chartAccountsSpec, diffCollection(baseline.chartAccounts ?? [], state.chartAccounts ?? []));
   await applySpec(expensesSpec, diffCollection(baseline.expenses, state.expenses));
   await applySpec(receiptsSpec, diffCollection(baseline.receipts, state.receipts));
   await applySpec(supplierInvoicesSpec, diffCollection(baseline.supplierInvoices, state.supplierInvoices));
@@ -356,9 +366,24 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
   await applySpec(supplierPaymentsSpec, diffCollection(baseline.supplierPayments ?? [], state.supplierPayments ?? []));
   await applySpec(fiscalYearsSpec, diffCollection(baseline.fiscalYears, state.fiscalYears));
   await applySpec(vatReportsSpec, diffCollection(baseline.vatReports, state.vatReports));
+  // Anställda skrivs före lönekörningarna: payroll_runs.employee_id är FK.
+  await applySpec(employeesSpec, diffCollection(baseline.employees ?? [], state.employees ?? []));
+  await applySpec(payrollRunsSpec, diffCollection(baseline.payrollRuns ?? [], state.payrollRuns ?? []));
+  await applySpec(
+    employerDeclarationsSpec,
+    diffCollection(baseline.employerDeclarations ?? [], state.employerDeclarations ?? [])
+  );
   await applySpec(assetsSpec, diffCollection(baseline.assets, state.assets));
   await applySpec(accrualsSpec, diffCollection(baseline.accruals, state.accruals));
+  await applySpec(
+    yearEndSchedulesSpec,
+    diffCollection(baseline.yearEndSchedules ?? [], state.yearEndSchedules ?? [])
+  );
   await applySpec(annualReportsSpec, diffCollection(baseline.annualReports, state.annualReports));
+  await applySpec(
+    filingSubmissionsSpec,
+    diffCollection(baseline.filingSubmissions ?? [], state.filingSubmissions ?? [])
+  );
   await applySpec(
     websitesSpec,
     diffCollection(baseline.website ? [baseline.website] : [], state.website ? [state.website] : [])
@@ -411,8 +436,10 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
 
   /* ----- 4. RPC-pass: verifikationer + utfärdanden + betalningar i nummerordning ----- */
 
+  // Per serie i nummerordning: CAS:en i post_verification kräver att seriens
+  // nästa lediga nummer är exakt det domänen allokerade.
   const newVerifications = newEntries(baseline.verifications, state.verifications).sort(
-    (a, b) => a.number - b.number
+    (a, b) => a.series.localeCompare(b.series) || a.number - b.number
   );
   const newPayments = newEntries(baseline.payments, state.payments);
 

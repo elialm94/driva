@@ -13,11 +13,14 @@ export function AccountCombobox({
   value,
   onChange,
   placeholder = "Sök konto eller namn…",
+  emptyLabel = "Välj kostnadskonto",
 }: {
   options: KontoOption[];
   value: string;
   onChange: (key: string) => void;
   placeholder?: string;
+  /** Texten innan något valts. Kontoväljaren används både för kostnader och hela registret. */
+  emptyLabel?: string;
 }) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -77,7 +80,7 @@ export function AccountCombobox({
         onClick={() => setOpen((v) => !v)}
       >
         <span className={selected ? "text-ink" : "text-muted"}>
-          {selected ? selected.label : "Välj kostnadskonto"}
+          {selected ? selected.label : emptyLabel}
         </span>
         <ChevronDown className="size-4 shrink-0 text-muted" />
       </button>

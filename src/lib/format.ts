@@ -12,6 +12,13 @@ export function kr(n: number): string {
   return krFmt.format(Math.round(n));
 }
 
+const procentFmt = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 2 });
+
+/** Procentsats med svenskt decimaltecken: 2,55 %. */
+export function procent(n: number): string {
+  return `${procentFmt.format(n)} %`;
+}
+
 const DAG_MS = 86_400_000;
 
 // Formatterare återanvänds per options-uppsättning – konstruktorn är dyr och

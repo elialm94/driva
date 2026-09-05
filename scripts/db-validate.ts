@@ -436,6 +436,90 @@ async function main() {
   );
 
   // ------------------------------------------------------------------
+  // 2b. Verifikationsserier, handelsdatum och bilaga
+  // ------------------------------------------------------------------
+  console.log("\nVerifikationsserier, handelsdatum och underlag:");
+
+  const manual = (id: string, number: number, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      id,
+      number,
+      series: "M",
+      date: "2026-03-05T12:00:00.000Z",
+      description: "Manuellt verifikat",
+      source_type: "manuell",
+      confidence: "hog",
+      created_by: "anvandare",
+      posted_at: "2026-03-05T12:00:00.000Z",
+      created_at: "2026-03-05T12:00:00.000Z",
+      entries: [
+        { account: 5010, account_name: "Lokalhyra", debit: 12000, credit: 0 },
+        { account: 1930, account_name: "Företagskonto", debit: 0, credit: 12000 },
+      ],
+      ...extra,
+    });
+
+  await asApp(A);
+  // Serie A står på 3 här. Serie M ska ändå börja på 1 – serierna delar aldrig räknare.
+  await expectOk(db, "serie M börjar på 1 fastän serie A hunnit längre", () =>
+    db.query(`select app.post_verification($1, $2::jsonb)`, [A, manual("ver-m1", 1)])
+  );
+  await expectError(db, "fel nummer i serie M stoppas (CAS per serie)", "sequence_conflict", () =>
+    db.query(`select app.post_verification($1, $2::jsonb)`, [A, manual("ver-m9", 9)])
+  );
+  await expectOk(db, "handelsdatum och underlag skrivs med verifikationen", () =>
+    db.query(`select app.post_verification($1, $2::jsonb)`, [
+      A,
+      manual("ver-m2", 2, {
+        transaction_date: "2026-02-27",
+        attachment_filename: "hyresavi.pdf",
+        attachment_content_type: "application/pdf",
+        attachment_size_bytes: 2048,
+        attachment_storage_path: `${A}/verifikat/ver-m2/hyresavi.pdf`,
+      }),
+    ])
+  );
+  {
+    const r = await rows<{
+      transaction_date: string | null;
+      attachment_filename: string | null;
+      attachment_size_bytes: string | null;
+      attachment_storage_path: string | null;
+    }>(
+      db,
+      `select transaction_date, attachment_filename, attachment_size_bytes, attachment_storage_path
+         from public.verifications where id = 'ver-m2'`
+    );
+    const row = r[0];
+    const isoDate = row?.transaction_date ? new Date(row.transaction_date).toISOString().slice(0, 10) : null;
+    if (
+      isoDate === "2026-02-27" &&
+      row?.attachment_filename === "hyresavi.pdf" &&
+      Number(row?.attachment_size_bytes) === 2048 &&
+      row?.attachment_storage_path === `${A}/verifikat/ver-m2/hyresavi.pdf`
+    ) {
+      ok("handelsdatum och bilagemetadata rundresar");
+    } else {
+      fail("handelsdatum och bilagemetadata rundresar", JSON.stringify(row));
+    }
+  }
+  {
+    // Serie M har tagit två nummer utan att serie A rört sig: A står kvar på 3,
+    // både i serieräknarna och i den ursprungliga kolumnen som äldre kod läser.
+    const r = await rows<{ verification: number; verification_series: Record<string, number> }>(
+      db,
+      `select verification, verification_series from public.business_sequences where business_id = $1`,
+      [A]
+    );
+    const row = r[0];
+    if (row?.verification === 3 && row.verification_series?.A === 3 && row.verification_series?.M === 3) {
+      ok("räknarna hålls per serie, med serie A speglad i den ursprungliga kolumnen");
+    } else {
+      fail("räknarna hålls per serie", JSON.stringify(row));
+    }
+  }
+
+  // ------------------------------------------------------------------
   // 3. Fakturautfärdande: CAS, snapshot, frysning
   // ------------------------------------------------------------------
   console.log("\nFakturor – atomärt utfärdande och frysning:");
@@ -1121,6 +1205,418 @@ async function main() {
        values ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2', 'Trial fel', '556000-0101', 'gratis')`
     )
   );
+
+  // ------------------------------------------------------------------
+  // Kontoregister (migration 30)
+  // ------------------------------------------------------------------
+  console.log("\nKontoregister:");
+
+  await asApp(A);
+  await expectOk(db, "eget konto kan läggas till i egen tenant", () =>
+    db.query(
+      `insert into public.chart_accounts (id, business_id, number, name, type, section, custom)
+       values ('konto-4011', $1, 4011, 'Inköp virke', 'kostnad', 'ravaror_och_fornodenheter', true)`,
+      [A]
+    )
+  );
+  await expectError(db, "kontoregistret är tenantisolerat (RLS)", "row-level security", () =>
+    db.query(
+      `insert into public.chart_accounts (id, business_id, number, name, type, section, custom)
+       values ('konto-b-4011', $1, 4011, 'Intrång', 'kostnad', 'ravaror_och_fornodenheter', true)`,
+      [B]
+    )
+  );
+  await expectError(db, "samma kontonummer kan inte finnas två gånger per företag", "duplicate key", () =>
+    db.query(
+      `insert into public.chart_accounts (id, business_id, number, name, type, section, custom)
+       values ('konto-4011-dubblett', $1, 4011, 'Dubblett', 'kostnad', 'ravaror_och_fornodenheter', true)`,
+      [A]
+    )
+  );
+  await expectError(db, "kontonummer utanför BAS:s nummerrymd avvisas", "chart_accounts_number_check", () =>
+    db.query(
+      `insert into public.chart_accounts (id, business_id, number, name, type, section, custom)
+       values ('konto-999', $1, 999, 'För lågt', 'kostnad', 'ravaror_och_fornodenheter', true)`,
+      [A]
+    )
+  );
+  await expectError(db, "okänd kontotyp avvisas", "chart_accounts_type_check", () =>
+    db.query(
+      `insert into public.chart_accounts (id, business_id, number, name, type, section, custom)
+       values ('konto-4012', $1, 4012, 'Fel typ', 'hittepa', 'ravaror_och_fornodenheter', true)`,
+      [A]
+    )
+  );
+  await expectError(db, "namnlöst konto avvisas", "chart_accounts_name_check", () =>
+    db.query(
+      `insert into public.chart_accounts (id, business_id, number, name, type, section, custom)
+       values ('konto-4013', $1, 4013, '   ', 'kostnad', 'ravaror_och_fornodenheter', true)`,
+      [A]
+    )
+  );
+  {
+    await asApp(B);
+    const r = await rows(db, `select number from public.chart_accounts`);
+    if (r.length === 0) ok("företag B ser inte A:s egna konton");
+    else fail("företag B ser inte A:s egna konton", JSON.stringify(r));
+    await asSuperuser();
+  }
+
+  // ------------------------------------------------------------------
+  // Omvänd byggmoms (migration 32)
+  // ------------------------------------------------------------------
+  console.log("\nOmvänd byggmoms:");
+
+  await asApp(A);
+  await expectOk(db, "markeringen kan sättas på en företagskund", () =>
+    db.query(
+      `insert into public.customers
+         (id, business_id, kind, name, email, phone, notes, org_number, reverse_charge_construction, created_at)
+       values ('cust-a-bygg', $1, 'foretag', 'Bygg & Co AB', 'b@x.se', '', '', '556677-8899', true, now())`,
+      [A]
+    )
+  );
+  await expectError(
+    db,
+    "markeringen kan inte sättas på en privatperson",
+    "customers_reverse_charge_kind_check",
+    () =>
+      db.query(
+        `insert into public.customers
+           (id, business_id, kind, name, email, phone, notes, reverse_charge_construction, created_at)
+         values ('cust-a-privat-bygg', $1, 'privat', 'Anna', 'a@x.se', '', '', true, now())`,
+        [A]
+      )
+  );
+  await expectError(
+    db,
+    "en markerad kund kan inte göras om till privatperson",
+    "customers_reverse_charge_kind_check",
+    () => db.query(`update public.customers set kind = 'privat' where id = 'cust-a-bygg'`)
+  );
+  {
+    const r = await rows(
+      db,
+      `select reverse_charge_construction as flag from public.customers where id = 'cust-a-bygg'`
+    );
+    if (r[0]?.flag === true) ok("markeringen rundresar");
+    else fail("markeringen rundresar", JSON.stringify(r));
+  }
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
+  // Momsperiodicitet (migration 33)
+  // ------------------------------------------------------------------
+  console.log("\nMomsperiodicitet:");
+
+  await asApp(A);
+  {
+    const r = await rows(db, `select vat_periodicity as p from public.business_settings where business_id = $1`, [A]);
+    if (r[0]?.p === "kvartal") ok("default är kvartal – huvudregeln");
+    else fail("default är kvartal – huvudregeln", JSON.stringify(r));
+  }
+  await expectOk(db, "helår kan väljas", () =>
+    db.query(`update public.business_settings set vat_periodicity = 'helar' where business_id = $1`, [A])
+  );
+  await expectOk(db, "månad kan väljas", () =>
+    db.query(`update public.business_settings set vat_periodicity = 'manad' where business_id = $1`, [A])
+  );
+  await expectError(
+    db,
+    "okänd periodicitet avvisas",
+    "business_settings_vat_periodicity_check",
+    () => db.query(`update public.business_settings set vat_periodicity = 'veckovis' where business_id = $1`, [A])
+  );
+  await db.query(`update public.business_settings set vat_periodicity = 'kvartal' where business_id = $1`, [A]);
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
+  // Skattekontot
+  // ------------------------------------------------------------------
+  console.log("\nSkattekonto:");
+
+  const taxAccountVer = (id: string, number: number, sourceId: string) =>
+    JSON.stringify({
+      id,
+      number,
+      series: "A",
+      date: "2026-03-12T12:00:00.000Z",
+      description: "F-skatt 2026-02",
+      source_type: "skattekonto",
+      source_id: sourceId,
+      confidence: "hog",
+      created_by: "anvandare",
+      posted_at: "2026-03-12T12:00:00.000Z",
+      created_at: "2026-03-12T12:00:00.000Z",
+      entries: [
+        { account: 2518, account_name: "Betald F-skatt", debit: 4000, credit: 0 },
+        { account: 1630, account_name: "Skattekonto", debit: 0, credit: 4000 },
+      ],
+    });
+
+  await asApp(A);
+  const nextSeriesA = Number(
+    (
+      await rows<{ verification_series: Record<string, number> }>(
+        db,
+        `select verification_series from public.business_sequences where business_id = $1`,
+        [A]
+      )
+    )[0]?.verification_series?.A ?? 1
+  );
+  await expectOk(db, "kontering mot skattekontot bokförs med källan skattekonto", () =>
+    db.query(`select app.post_verification($1, $2::jsonb)`, [
+      A,
+      taxAccountVer("ver-sk1", nextSeriesA, "fskatt-2026-02"),
+    ])
+  );
+  {
+    const r = await rows(
+      db,
+      `select v.source_type as t, v.source_id as sid, sum(e.credit) as kredit
+         from public.verifications v
+         join public.accounting_entries e on e.verification_id = v.id
+        where v.id = 'ver-sk1' and e.account = 1630
+        group by v.source_type, v.source_id`
+    );
+    if (r[0]?.t === "skattekonto" && r[0]?.sid === "fskatt-2026-02" && Number(r[0]?.kredit) === 4000) {
+      ok("källa och konto 1630 rundresar");
+    } else {
+      fail("källa och konto 1630 rundresar", JSON.stringify(r));
+    }
+  }
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
+  // Lön och arbetsgivardeklaration (migration 34)
+  // ------------------------------------------------------------------
+  console.log("\nLön och AGI:");
+
+  await asApp(A);
+  await expectOk(db, "den anställde kan läggas upp i egen tenant", () =>
+    db.query(
+      `insert into public.employees
+         (id, business_id, name, personnummer, role, monthly_salary, tax_basis, start_date, status)
+       values ('emp-a', $1, 'Anna Ägare', '19850312-4567', 'foretagsledare', 42000,
+               '{"kind":"tabell","table":34,"monthlyDeduction":9400,"salaryAtLookup":42000}'::jsonb,
+               '2026-01-01', 'anstalld')`,
+      [A]
+    )
+  );
+  await expectError(db, "anställda är tenantisolerade (RLS)", "row-level security", () =>
+    db.query(
+      `insert into public.employees
+         (id, business_id, name, personnummer, role, monthly_salary, tax_basis, start_date, status)
+       values ('emp-b', $1, 'Intrång', '19850312-4567', 'tjansteman', 1000, '{"kind":"procent","percent":30}'::jsonb,
+               '2026-01-01', 'anstalld')`,
+      [B]
+    )
+  );
+  await expectError(db, "okänd roll avvisas", "employees_role_check", () =>
+    db.query(
+      `insert into public.employees
+         (id, business_id, name, personnummer, role, monthly_salary, tax_basis, start_date, status)
+       values ('emp-fel-roll', $1, 'Fel roll', '19850312-4567', 'vd', 1000, '{"kind":"procent","percent":30}'::jsonb,
+               '2026-01-01', 'anstalld')`,
+      [A]
+    )
+  );
+
+  const payrollRun = (id: string, month: string, payDate = "2026-01-25") =>
+    db.query(
+      `insert into public.payroll_runs
+         (id, business_id, employee_id, month, pay_date, gross, tax, net, employer_contribution,
+          contribution_percent, tax_basis, salary_account, verification_id, created_by)
+       values ($1, $2, 'emp-a', $3, $4, 42000, 9400, 32600, 13196, 31.42,
+               '{"kind":"tabell","table":34,"monthlyDeduction":9400,"salaryAtLookup":42000}'::jsonb,
+               7220, 'ver-lon-1', 'anvandare')`,
+      [id, A, month, payDate]
+    );
+  await expectOk(db, "lönekörningen kan bokföras", () => payrollRun("run-a-01", "2026-01"));
+  await expectError(db, "samma månad kan inte lönekörras två gånger", "duplicate key", () =>
+    payrollRun("run-a-01-dubblett", "2026-01")
+  );
+  await expectError(db, "lönemånad måste vara YYYY-MM", "payroll_runs_month_check", () =>
+    payrollRun("run-a-fel-manad", "2026-13", "2026-12-25")
+  );
+
+  const declaration = (id: string, month: string, status: string) =>
+    db.query(
+      `insert into public.employer_declarations
+         (id, business_id, month, label, status, individual_rows, gross, tax, employer_contribution,
+          att_betala, due_date)
+       values ($1, $2, $3, 'januari 2026', $4,
+               '[{"employeeId":"emp-a","name":"Anna Ägare","personnummer":"19850312-4567","gross":42000,"tax":9400,"employerContribution":13196}]'::jsonb,
+               42000, 9400, 13196, 22596, '2026-02-12')`,
+      [id, A, month, status]
+    );
+  await expectOk(db, "arbetsgivardeklarationen kan lämnas", () => declaration("agi-a-01", "2026-01", "deklarerad"));
+  await expectError(db, "en månad har bara en arbetsgivardeklaration", "duplicate key", () =>
+    declaration("agi-a-01-dubblett", "2026-01", "utkast")
+  );
+  await expectError(db, "okänd deklarationsstatus avvisas", "employer_declarations_status_check", () =>
+    declaration("agi-a-fel-status", "2026-02", "inskickad")
+  );
+  {
+    const r = await rows<{ namn: string; brutto: string; pnr: string }>(
+      db,
+      `select e.name as namn, r.gross as brutto,
+              d.individual_rows -> 0 ->> 'personnummer' as pnr
+         from public.payroll_runs r
+         join public.employees e on e.id = r.employee_id
+         join public.employer_declarations d on d.month = r.month and d.business_id = r.business_id
+        where r.id = 'run-a-01'`
+    );
+    if (r[0]?.namn === "Anna Ägare" && Number(r[0]?.brutto) === 42000 && r[0]?.pnr === "19850312-4567") {
+      ok("lön, anställd och individuppgift hänger ihop och rundresar");
+    } else {
+      fail("lön, anställd och individuppgift hänger ihop och rundresar", JSON.stringify(r));
+    }
+  }
+  {
+    await asApp(B);
+    const r = await rows(db, `select id from public.employees`);
+    if (r.length === 0) ok("företag B ser inte A:s anställda");
+    else fail("företag B ser inte A:s anställda", JSON.stringify(r));
+  }
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
+  // Bokslutsbilagor (migration 35)
+  // ------------------------------------------------------------------
+  console.log("\nBokslutsbilagor:");
+
+  await asApp(A);
+  const schedule = (
+    id: string,
+    kind: string,
+    over: { businessId?: string; fiscalYearId?: string; status?: string } = {}
+  ) =>
+    db.query(
+      `insert into public.year_end_schedules
+         (id, business_id, kind, fiscal_year_id, closing_amount, lines, inputs, status, verification_ids, created_by)
+       values ($1, $2, $3, $4, 47_150,
+               '[{"label":"12 sparade betalda semesterdagar","amount":47150}]'::jsonb,
+               '{"savedVacationDays":12}'::jsonb, $5, '["ver-bilaga-1"]'::jsonb, 'anvandare')`,
+      [id, over.businessId ?? A, kind, over.fiscalYearId ?? "fy-2026", over.status ?? "bokford"]
+    );
+
+  await expectOk(db, "bilagan kan sparas i egen tenant", () => schedule("bil-a-sem", "semesterloneskuld"));
+  await expectError(db, "bilagor är tenantisolerade (RLS)", "row-level security", () =>
+    schedule("bil-b-sem", "semesterloneskuld", { businessId: B })
+  );
+  await expectError(db, "ett år har bara en bilaga per typ", "duplicate key", () =>
+    schedule("bil-a-sem-dubblett", "semesterloneskuld")
+  );
+  await expectOk(db, "samma typ får finnas för nästa räkenskapsår", () =>
+    schedule("bil-a-sem-2027", "semesterloneskuld", { fiscalYearId: "fy-2027" })
+  );
+  await expectError(db, "okänd bilagetyp avvisas", "year_end_schedules_kind_check", () =>
+    schedule("bil-a-fel-typ", "semesterlon")
+  );
+  await expectError(db, "okänd bilagestatus avvisas", "year_end_schedules_status_check", () =>
+    schedule("bil-a-fel-status", "periodiseringsfond", { status: "granskad" })
+  );
+  {
+    const r = await rows<{ dagar: string; belopp: string }>(
+      db,
+      `select inputs ->> 'savedVacationDays' as dagar, closing_amount as belopp
+         from public.year_end_schedules
+        where id = 'bil-a-sem'`
+    );
+    if (r[0]?.dagar === "12" && Number(r[0]?.belopp) === 47150) {
+      ok("bilagans underlag och belopp rundresar");
+    } else {
+      fail("bilagans underlag och belopp rundresar", JSON.stringify(r));
+    }
+  }
+  {
+    await asApp(B);
+    const r = await rows(db, `select id from public.year_end_schedules`);
+    if (r.length === 0) ok("företag B ser inte A:s bokslutsbilagor");
+    else fail("företag B ser inte A:s bokslutsbilagor", JSON.stringify(r));
+  }
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
+  // Återöppning av räkenskapsår (migration 36)
+  // ------------------------------------------------------------------
+  console.log("\nÅteröppning av räkenskapsår:");
+
+  await asApp(A);
+  const report = (id: string, over: { businessId?: string; fiscalYearId?: string; superseded?: string } = {}) =>
+    db.query(
+      `insert into public.annual_reports
+         (id, business_id, fiscal_year_id, status, content, generated_at, superseded_at, superseded_reason)
+       values ($1, $2, $3, 'genererad', '{"fiscalLabel":"2026"}'::jsonb, now(), $4, $5)`,
+      [
+        id,
+        over.businessId ?? A,
+        over.fiscalYearId ?? "fy-2026",
+        over.superseded ?? null,
+        over.superseded ? "Fakturan hörde till 2026." : null,
+      ]
+    );
+
+  await expectOk(db, "årsredovisningen kan sparas i egen tenant", () => report("ar-a-2026"));
+  await expectError(db, "två gällande årsredovisningar för samma år avvisas", "duplicate key", () =>
+    report("ar-a-2026-dubblett")
+  );
+  await expectOk(db, "en ersatt rapport får ligga vid sidan av den gällande", () =>
+    report("ar-a-2026-ersatt", { superseded: "2027-03-01T10:00:00Z" })
+  );
+  await expectOk(db, "flera ersatta rapporter får finnas – varje omtag lämnar en", () =>
+    report("ar-a-2026-ersatt-2", { superseded: "2027-04-01T10:00:00Z" })
+  );
+
+  {
+    // Återöppningshistoriken är en lista som växer, inte ett fält som skrivs över.
+    await db.query(
+      `insert into public.fiscal_years
+         (id, business_id, label, start_date, end_date, status, opening_source, closed_at)
+       values ('fy-2026', $1, '2026', '2026-01-01', '2026-12-31', 'stangt', 'migrering', now())`,
+      [A]
+    );
+    await db.query(
+      `update public.fiscal_years
+          set reopenings = $2::jsonb
+        where id = 'fy-2026' and business_id = $1`,
+      [
+        A,
+        JSON.stringify([
+          {
+            at: "2027-03-01T10:00:00Z",
+            by: "anvandare",
+            reason: "Fakturan från Elbolaget hörde till 2026.",
+            reversedVerificationIds: ["ver-bokslut-1"],
+            reversalVerificationIds: ["ver-aterforing-1"],
+            previousLockedThrough: "2026-12-31",
+          },
+        ]),
+      ]
+    );
+    const r = await rows<{ skal: string; las: string; antal: string }>(
+      db,
+      `select reopenings -> 0 ->> 'reason' as skal,
+              reopenings -> 0 ->> 'previousLockedThrough' as las,
+              jsonb_array_length(reopenings)::text as antal
+         from public.fiscal_years
+        where id = 'fy-2026' and business_id = $1`,
+      [A]
+    );
+    if (r[0]?.skal?.includes("Elbolaget") && r[0]?.las === "2026-12-31" && r[0]?.antal === "1") {
+      ok("återöppningens skäl och tidigare periodlås rundresar");
+    } else {
+      fail("återöppningens skäl och tidigare periodlås rundresar", JSON.stringify(r));
+    }
+  }
+  {
+    await asApp(B);
+    const r = await rows(db, `select id from public.annual_reports`);
+    if (r.length === 0) ok("företag B ser inte A:s årsredovisningar");
+    else fail("företag B ser inte A:s årsredovisningar", JSON.stringify(r));
+  }
+  await asSuperuser();
 
   // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);

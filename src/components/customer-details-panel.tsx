@@ -52,6 +52,7 @@ export function CustomerDetailsPanel({
         {customer.kind === "foretag" && identity.orgNumber ? <span>Org.nr {identity.orgNumber}</span> : null}
         {customer.kind === "privat" && maskedPersonnummer ? <span>Pers.nr {maskedPersonnummer}</span> : null}
         {customer.kind === "foretag" && identity.contactPerson ? <span>{identity.contactPerson}</span> : null}
+        {customer.reverseChargeConstruction ? <span>Omvänd byggmoms</span> : null}
         {designations.length > 0 ? <span>{designations.join(" · ")}</span> : null}
         {identity.email ? (
           <a href={`mailto:${identity.email}`} className="flex items-center gap-1.5 hover:text-ink">
