@@ -11,7 +11,7 @@ import {
 } from "@/app/inlamning-actions";
 import type { FilingKind, FilingSubmission } from "@/lib/types";
 import { Badge, DemoTag, buttonClasses, cx } from "./ui";
-import { datumKort } from "@/lib/format";
+import { datumLang } from "@/lib/format";
 
 /**
  * Inlämningen av en deklaration: statusen och nästa steg.
@@ -172,17 +172,17 @@ export function InlamningPanel({
           ? "Förbered inlämningen: filen byggs ur bokföringen och låses med en kontrollsumma, signeras och lämnas sedan in."
           : null}
         {status === "genererad" && submission
-          ? `Filen är genererad ${submission.generatedAt ? datumKort(submission.generatedAt) : ""} och låst med en kontrollsumma. Signera den innan den lämnas in.`
+          ? `Filen byggdes${submission.generatedAt ? ` ${datumLang(submission.generatedAt)}` : ""} och är låst med en kontrollsumma. Signera den innan den lämnas in.`
           : null}
         {status === "signerad" && submission?.signature
-          ? `Signerad av ${submission.signature.signedByName} ${datumKort(submission.signature.signedAt)}.` +
+          ? `${submission.signature.signedByName} signerade filen ${datumLang(submission.signature.signedAt)}.` +
             (submission.signature.note ? ` ${submission.signature.note}` : "")
           : null}
         {status === "inlamnad" && submission
-          ? `Mottagen av ${authority}${submission.submittedAt ? ` ${datumKort(submission.submittedAt)}` : ""} med id ${submission.providerSubmissionId}. Kvittensen kommer när deklarationen behandlats.`
+          ? `Mottagen av ${authority}${submission.submittedAt ? ` ${datumLang(submission.submittedAt)}` : ""} med id ${submission.providerSubmissionId}. Kvittensen kommer när deklarationen behandlats.`
           : null}
         {status === "kvitterad" && submission?.receipt
-          ? `Kvittens ${submission.receipt.receiptId} från ${authority} ${datumKort(submission.receipt.receivedAt)}.` +
+          ? `Kvittens ${submission.receipt.receiptId} från ${authority}, ${datumLang(submission.receipt.receivedAt)}.` +
             (submission.receipt.message ? ` ${submission.receipt.message}` : "")
           : null}
         {status === "avvisad" && submission?.rejection ? submission.rejection.reason : null}
@@ -198,7 +198,7 @@ export function InlamningPanel({
       {submission && submission.files.length > 0 && status !== "kvitterad" ? (
         <ul className="mt-2 space-y-0.5">
           {submission.files.map((f) => (
-            <li key={f.filename} className="font-mono text-[11.5px] text-muted">
+            <li key={f.filename} title={`SHA-256 ${f.sha256}`} className="font-mono text-[11.5px] text-muted">
               {f.filename} · {f.size} byte · SHA-256 {f.sha256.slice(0, 16)}…
             </li>
           ))}
