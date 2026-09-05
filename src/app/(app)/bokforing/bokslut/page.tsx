@@ -304,6 +304,25 @@ export default async function BokslutPage() {
           <div className="space-y-4">
             {closedYears.map((f) => {
               const report = annualReportFor(f.id);
+              /*
+               * Ersatta rapporter från tidigare stängningar. Länken hit måste
+               * finnas kvar även när en ny rapport upprättats – den ersatta kan
+               * vara den som skrevs under, och då ska den gå att läsa.
+               */
+              const supersededReports = annualReportHistory(f.id).filter((r) => r.supersededAt);
+              const supersededLink =
+                supersededReports.length > 0 ? (
+                  <p className="mt-3 text-[12.5px] text-muted">
+                    <Link
+                      href={`/bokforing/bokslut/arsredovisning/${f.id}?rapport=${supersededReports[0].id}`}
+                      className="font-medium text-accent hover:underline"
+                    >
+                      {supersededReports.length === 1
+                        ? "Läs den ersatta årsredovisningen"
+                        : `Läs de ${supersededReports.length} ersatta årsredovisningarna`}
+                    </Link>
+                  </p>
+                ) : null;
               return (
                 <Card key={f.id} className="px-6 py-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -345,25 +364,17 @@ export default async function BokslutPage() {
                           Visa som A4
                         </Link>
                       </div>
+                      {supersededLink}
                     </div>
                   ) : (
                     <div className="mt-4">
                       <p className="mb-3 text-[13px] text-soft">
-                        {annualReportHistory(f.id).length > 0
+                        {supersededReports.length > 0
                           ? "Året har öppnats efter att förra årsredovisningen upprättades, så den är ersatt. En ny upprättas ur de nya siffrorna."
                           : "Årsredovisningen genereras ur de fastställda siffrorna – resultaträkning, balansräkning, noter och utkast till förvaltningsberättelse."}
                       </p>
                       <GenerateAnnualReportButton fiscalYearId={f.id} />
-                      {annualReportHistory(f.id).length > 0 ? (
-                        <p className="mt-3 text-[12.5px] text-muted">
-                          <Link
-                            href={`/bokforing/bokslut/arsredovisning/${f.id}`}
-                            className="font-medium text-accent hover:underline"
-                          >
-                            Läs den ersatta årsredovisningen
-                          </Link>
-                        </p>
-                      ) : null}
+                      {supersededLink}
                     </div>
                   )}
 

@@ -4,7 +4,7 @@ import { PdfPrintBar } from "@/components/pdf-print-bar";
 import { db } from "@/lib/store";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { getFiscalYear } from "@/lib/accounting/fiscal";
-import { annualReportFor, annualReportHistory } from "@/lib/accounting/annual-report";
+import { resolveAnnualReport } from "@/lib/accounting/annual-report";
 
 export const dynamic = "force-dynamic";
 
@@ -34,11 +34,12 @@ export default async function ArsredovisningPdfPage(
 ) {
   await ensurePageBusiness();
   const { fiscalYearId } = await props.params;
+  const { rapport } = await props.searchParams;
   const fy = getFiscalYear(fiscalYearId);
   if (!fy) notFound();
   // Även en ersatt rapport ska gå att skriva ut – den kan vara den handling som
   // faktiskt undertecknades. Men då måste utskriften säga det.
-  const report = annualReportFor(fiscalYearId) ?? annualReportHistory(fiscalYearId)[0];
+  const report = resolveAnnualReport(fiscalYearId, typeof rapport === "string" ? rapport : undefined);
   if (!report) notFound();
   const superseded = Boolean(report.supersededAt);
 
@@ -78,7 +79,7 @@ export default async function ArsredovisningPdfPage(
     <div className="min-h-dvh bg-[#eae7df] print:bg-white">
       <style>{printCss}</style>
       <PdfPrintBar
-        backHref={`/bokforing/bokslut/arsredovisning/${fiscalYearId}`}
+        backHref={`/bokforing/bokslut/arsredovisning/${fiscalYearId}${superseded ? `?rapport=${report.id}` : ""}`}
         backLabel="Tillbaka till årsredovisningen"
       />
 

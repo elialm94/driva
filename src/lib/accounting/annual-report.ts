@@ -50,6 +50,18 @@ export function annualReportHistory(fiscalYearId: string): AnnualReport[] {
 }
 
 /**
+ * Rapporten en sida ska visa: den som pekas ut, annars årets gällande, annars
+ * den senaste ersatta. Att kunna peka ut en enskild rapport är vad som gör en
+ * ersatt årsredovisning läsbar även efter att året stängts om och fått en ny –
+ * annars vore den handling som faktiskt undertecknades borta ur gränssnittet.
+ */
+export function resolveAnnualReport(fiscalYearId: string, reportId?: string): AnnualReport | undefined {
+  const history = annualReportHistory(fiscalYearId);
+  if (reportId) return history.find((r) => r.id === reportId);
+  return history.find((r) => !r.supersededAt) ?? history[0];
+}
+
+/**
  * Markera årets rapporter som ersatta. Anropas när räkenskapsåret öppnas igen.
  * Rapporten raderas aldrig – en undertecknad eller inlämnad årsredovisning är
  * en handling som har funnits, och den ska gå att läsa efteråt.

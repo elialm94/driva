@@ -6,7 +6,13 @@ import { db, replaceDb } from "../store";
 import { emptyTestDb, testCustomer } from "../invoices/test-db";
 import { postVerification } from "./engine";
 import { closeFiscalYear, reopenBlockers, reopenFiscalYear } from "./close";
-import { annualReportFor, annualReportHistory, generateAnnualReport, updateAnnualReport } from "./annual-report";
+import {
+  annualReportFor,
+  annualReportHistory,
+  generateAnnualReport,
+  resolveAnnualReport,
+  updateAnnualReport,
+} from "./annual-report";
 import { bokforingsdatum, getFiscalYear, isDateLocked, lockPeriod, lockedThrough } from "./fiscal";
 import { accountBalance } from "./ledger";
 import { bookAccrual, planAccrual } from "./accruals";
@@ -341,6 +347,36 @@ describe("återöppning – årsredovisningen", () => {
     assert.notEqual(second.id, first.id, "en ny rapport ska upprättas, inte den ersatta lämnas tillbaka");
     assert.equal(second.content.resultatrakning.find((r) => r.label === "Årets resultat")!.amount, 317_600);
     assert.equal(annualReportHistory("fy-2025").length, 2);
+  });
+
+  /*
+   * Den ersatta rapporten kan vara den styrelsen skrev under och lämnade in.
+   * Att den finns i databasen räcker inte – den måste gå att peka ut, annars är
+   * handlingen borta ur gränssnittet så snart nästa rapport är upprättad.
+   */
+  it("den ersatta rapporten går att peka ut även när en ny gäller", () => {
+    closeFiscalYear("fy-2024", "anvandare");
+    const otherYear = generateAnnualReport("fy-2024", "anvandare");
+    revenue("2025-06-15", 500_000);
+    closeFiscalYear("fy-2025", "anvandare");
+    const first = generateAnnualReport("fy-2025", "anvandare");
+    reopenFiscalYear("fy-2025", "Ett inköp på 100 000 kr hörde till 2025.", "anvandare");
+    cost("2025-12-20", 100_000);
+    closeFiscalYear("fy-2025", "anvandare");
+    const second = generateAnnualReport("fy-2025", "anvandare");
+
+    assert.equal(resolveAnnualReport("fy-2025")?.id, second.id, "utan utpekad rapport visas den gällande");
+    assert.equal(resolveAnnualReport("fy-2025", first.id)?.id, first.id, "den ersatta ska gå att öppna");
+    assert.equal(
+      resolveAnnualReport("fy-2025", "rapport-som-inte-finns"),
+      undefined,
+      "en okänd rapport ska ge ingenting – inte tysta fram en annan årsredovisning"
+    );
+    assert.equal(
+      resolveAnnualReport("fy-2025", otherYear.id),
+      undefined,
+      "en rapport för ett annat år hör inte till det här året"
+    );
   });
 
   it("även en signerad och inlämnad årsredovisning kan ersättas – felet är inte permanent", () => {

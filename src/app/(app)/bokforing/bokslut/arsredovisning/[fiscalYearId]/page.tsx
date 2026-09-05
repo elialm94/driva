@@ -10,7 +10,7 @@ import { db } from "@/lib/store";
 import { datumKort } from "@/lib/format";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { getFiscalYear } from "@/lib/accounting/fiscal";
-import { annualReportBlockers, annualReportFor, annualReportHistory } from "@/lib/accounting/annual-report";
+import { annualReportBlockers, annualReportHistory, resolveAnnualReport } from "@/lib/accounting/annual-report";
 import type { AnnualReport } from "@/lib/types";
 
 export const metadata = { title: "Årsredovisning" };
@@ -43,6 +43,7 @@ export default async function ArsredovisningPage(
 ) {
   await ensurePageBusiness();
   const { fiscalYearId } = await props.params;
+  const { rapport } = await props.searchParams;
   const fy = getFiscalYear(fiscalYearId);
   if (!fy) notFound();
   /*
@@ -50,9 +51,13 @@ export default async function ArsredovisningPage(
    * och då är den en handling som ska gå att läsa och skriva ut i efterhand –
    * men den är låst och märkt, för den beskriver inte längre böckerna.
    */
-  const report = annualReportFor(fiscalYearId) ?? annualReportHistory(fiscalYearId)[0];
+  const report = resolveAnnualReport(fiscalYearId, typeof rapport === "string" ? rapport : undefined);
   if (!report) notFound();
   const superseded = Boolean(report.supersededAt);
+  const history = annualReportHistory(fiscalYearId);
+  const current = superseded ? history.find((r) => !r.supersededAt) : undefined;
+  const supersededOthers = history.filter((r) => r.supersededAt && r.id !== report.id);
+  const pdfHref = `/bokforing/bokslut/arsredovisning/${fiscalYearId}/pdf${superseded ? `?rapport=${report.id}` : ""}`;
 
   const settings = db().settings;
   const locked = superseded || report.status === "signerad" || report.status === "inlamnad_markerad";
@@ -67,10 +72,7 @@ export default async function ArsredovisningPage(
         title={`Årsredovisning ${fy.label}`}
         subtitle={`${report.content.companyName} · org.nr ${report.content.orgNumber}`}
         actions={
-          <Link
-            href={`/bokforing/bokslut/arsredovisning/${fiscalYearId}/pdf`}
-            className={buttonClasses("secondary", "sm")}
-          >
+          <Link href={pdfHref} className={buttonClasses("secondary", "sm")}>
             <FileText className="mr-1.5 size-4" />
             Visa som A4
           </Link>
@@ -87,18 +89,26 @@ export default async function ArsredovisningPage(
             {report.supersededReason ? ` Skäl till att året öppnades: ${report.supersededReason}` : ""}
           </p>
           <p className="mt-2 text-[13px] leading-relaxed text-soft">
-            {fy.status === "stangt"
-              ? "Året är stängt igen – upprätta en ny årsredovisning från bokslutssidan."
-              : `Stäng ${fy.label} igen på bokslutssidan, då upprättas en ny årsredovisning ur de nya siffrorna.`}
+            {current
+              ? "Året är stängt igen och en ny årsredovisning är upprättad ur de nya siffrorna."
+              : fy.status === "stangt"
+                ? "Året är stängt igen – upprätta en ny årsredovisning från bokslutssidan."
+                : `Stäng ${fy.label} igen på bokslutssidan, då upprättas en ny årsredovisning ur de nya siffrorna.`}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-4">
-            <Link href="/bokforing/bokslut" className={buttonClasses("secondary", "sm")}>
-              Till bokslutet
-            </Link>
-            <Link
-              href={`/bokforing/bokslut/arsredovisning/${fiscalYearId}/pdf`}
-              className="text-[13px] font-medium text-accent hover:underline"
-            >
+            {current ? (
+              <Link
+                href={`/bokforing/bokslut/arsredovisning/${fiscalYearId}`}
+                className={buttonClasses("secondary", "sm")}
+              >
+                Läs den gällande årsredovisningen
+              </Link>
+            ) : (
+              <Link href="/bokforing/bokslut" className={buttonClasses("secondary", "sm")}>
+                Till bokslutet
+              </Link>
+            )}
+            <Link href={pdfHref} className="text-[13px] font-medium text-accent hover:underline">
               Skriv ut den ersatta rapporten
             </Link>
           </div>
@@ -154,6 +164,33 @@ export default async function ArsredovisningPage(
       <Card className="overflow-hidden p-0">
         <AnnualReportDocument report={report} company={settings} />
       </Card>
+
+      {supersededOthers.length > 0 ? (
+        <Card className="mt-6 px-6 py-5">
+          <h2 className="text-[15px] font-semibold">Tidigare årsredovisningar för {fy.label}</h2>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-soft">
+            Året har stängts mer än en gång. De tidigare rapporterna är ersatta men står kvar – en av dem kan vara den
+            som styrelsen skrev under, och då ska den gå att läsa i efterhand.
+          </p>
+          <ul className="mt-3 space-y-1.5">
+            {supersededOthers.map((r) => (
+              <li key={r.id} className="text-[13px] leading-relaxed">
+                <Link
+                  href={`/bokforing/bokslut/arsredovisning/${fiscalYearId}?rapport=${r.id}`}
+                  className="font-medium text-accent hover:underline"
+                >
+                  Upprättad {datumKort(r.generatedAt)}
+                </Link>
+                <span className="text-soft">
+                  {" · "}
+                  {STATUS_LABEL[r.status].toLowerCase()}
+                  {r.supersededAt ? ` · ersatt ${datumKort(r.supersededAt)}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
     </div>
   );
 }

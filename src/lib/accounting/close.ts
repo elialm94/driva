@@ -59,7 +59,12 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
   return [
     {
       key: "aret_slut",
-      label: `Räkenskapsåret ${fy.label} har tagit slut`,
+      /*
+       * Övriga punkter är krav man kan uppfylla, så rubriken kan stå i uppfyllt
+       * läge. Den här går inte att göra något åt, och "har tagit slut" om ett år
+       * som pågår läser som ett påstående som inte är sant.
+       */
+      label: yearEnded ? `Räkenskapsåret ${fy.label} har tagit slut` : `Räkenskapsåret ${fy.label} pågår ännu`,
       ok: yearEnded,
       blocking: true,
       detail: yearEnded
