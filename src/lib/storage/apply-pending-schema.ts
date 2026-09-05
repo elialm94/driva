@@ -303,6 +303,9 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const wholesalerApplied = await ensureWholesalerSchema(client);
   applied.push(...wholesalerApplied);
 
+  const onboardingApplied = await ensureOnboardingSchema(client);
+  applied.push(...onboardingApplied);
+
   const reminted = await remintHexInboundMailSlugs(client);
   if (reminted > 0) applied.push(`inbound_mail_slug.remint:${reminted}`);
 
@@ -1122,3 +1125,188 @@ begin
 end;
 $$;
 `;
+
+/**
+ * Onboarding, Kom igång och dataimport (migration 31). Speglar migrationen
+ * exakt: tabeller + RLS, backfill av befintliga företag som klara,
+ * app.import_verification och reset som även tömmer de nya tabellerna.
+ */
+export async function ensureOnboardingSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  const onboarding = await client.query(`select to_regclass('public.business_onboarding') is not null as present`);
+  const suppliers = await client.query(`select to_regclass('public.suppliers') is not null as present`);
+  const imports = await client.query(`select to_regclass('public.data_imports') is not null as present`);
+  const rpc = await client.query(
+    `select exists (
+       select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'app' and p.proname = 'import_verification'
+     ) as present`,
+  );
+  if (onboarding[0]?.present && suppliers[0]?.present && imports[0]?.present && rpc[0]?.present) {
+    return applied;
+  }
+
+  await run(
+    client,
+    `create table if not exists public.business_onboarding (
+       business_id uuid primary key references public.businesses (id) on delete cascade,
+       status text not null check (status in ('not_started', 'company_done', 'complete')),
+       current_step text check (current_step is null or current_step in ('company', 'personalize')),
+       started_at timestamptz not null default now(),
+       company_completed_at timestamptz,
+       personalization_completed_at timestamptz,
+       completed_at timestamptz,
+       industries jsonb not null default '[]'::jsonb,
+       other_industry text,
+       payroll text check (payroll is null or payroll in ('none', 'owner', 'employees', 'later')),
+       bookkeeping text check (bookkeeping is null or bookkeeping in ('existing', 'new', 'consultant', 'later')),
+       task_overrides jsonb not null default '{}'::jsonb,
+       updated_at timestamptz not null default now()
+     )`,
+  );
+  await run(client, `grant select, insert, update, delete on public.business_onboarding to driva_app`);
+  await ensureTenantPolicies(client, "business_onboarding", ["select", "insert", "update", "delete"]);
+  // Backfill: företag som fanns före onboardingflödet är klara.
+  await run(
+    client,
+    `insert into public.business_onboarding (
+       business_id, status, current_step, started_at, company_completed_at,
+       personalization_completed_at, completed_at, updated_at
+     )
+     select b.id, 'complete', null, b.created_at, b.created_at, b.created_at, b.created_at, now()
+       from public.businesses b
+      where not exists (select 1 from public.business_onboarding o where o.business_id = b.id)`,
+  );
+
+  await run(
+    client,
+    `create table if not exists public.data_imports (
+       id text primary key,
+       business_id uuid not null references public.businesses (id) on delete cascade,
+       kind text not null check (kind in ('bokforing', 'kunder', 'leverantorer', 'artiklar')),
+       status text not null check (status in ('imported', 'failed')),
+       filename text not null default '',
+       file_kind text not null default '',
+       file_hash text not null,
+       file_size integer not null default 0,
+       user_id uuid,
+       choices jsonb,
+       created_count integer not null default 0,
+       updated_count integer not null default 0,
+       ignored_count integer not null default 0,
+       warnings jsonb not null default '[]'::jsonb,
+       summary text not null default '',
+       error text,
+       created_at timestamptz not null default now(),
+       completed_at timestamptz
+     )`,
+  );
+  await run(
+    client,
+    `create unique index if not exists data_imports_business_hash_uq
+       on public.data_imports (business_id, kind, file_hash) where status = 'imported'`,
+  );
+  await run(client, `create index if not exists data_imports_business_idx on public.data_imports (business_id, created_at desc)`);
+  await run(client, `grant select, insert, update, delete on public.data_imports to driva_app`);
+  await ensureTenantPolicies(client, "data_imports", ["select", "insert", "update", "delete"]);
+
+  await run(
+    client,
+    `create table if not exists public.suppliers (
+       id text primary key,
+       business_id uuid not null references public.businesses (id) on delete cascade,
+       name text not null,
+       org_number text,
+       email text,
+       phone text,
+       address text,
+       postal_code text,
+       city text,
+       bankgiro text,
+       plusgiro text,
+       bank_account text,
+       iban text,
+       notes text,
+       source text not null default 'manuell' check (source in ('import', 'manuell')),
+       created_at timestamptz not null default now(),
+       updated_at timestamptz not null default now()
+     )`,
+  );
+  await run(client, `create index if not exists suppliers_business_name_idx on public.suppliers (business_id, lower(name))`);
+  await run(client, `grant select, insert, update, delete on public.suppliers to driva_app`);
+  await ensureTenantPolicies(client, "suppliers", ["select", "insert", "update", "delete"]);
+
+  await run(
+    client,
+    `create or replace function app.import_verification(p_business_id uuid, p_verification jsonb)
+     returns void
+     language plpgsql
+     security definer
+     set search_path = ''
+     as $$
+     declare
+       v_number integer := (p_verification ->> 'number')::integer;
+       v_series text := coalesce(p_verification ->> 'series', 'A');
+       v_entry jsonb;
+       v_pos integer := 0;
+     begin
+       if v_number is null or v_number < 1 then
+         raise exception 'import_ogiltig: verifikationen saknar nummer' using errcode = 'P0001';
+       end if;
+       if coalesce(p_verification ->> 'source_type', '') <> 'sie_import' then
+         raise exception 'import_ogiltig: bara SIE-importer får behålla eget nummer' using errcode = 'P0001';
+       end if;
+       perform app.validate_entries(p_verification -> 'entries');
+       insert into public.verifications (
+         id, business_id, series, number, date, description,
+         source_type, source_id, confidence, created_by, status, posted_at,
+         fiscal_year_id, corrects_verification_id, explanation, created_at
+       ) values (
+         p_verification ->> 'id', p_business_id, v_series, v_number,
+         p_verification ->> 'date', coalesce(p_verification ->> 'description', ''),
+         'sie_import', p_verification ->> 'source_id',
+         coalesce(p_verification ->> 'confidence', 'hog'),
+         coalesce(p_verification ->> 'created_by', 'anvandare'),
+         'bokford', (p_verification ->> 'posted_at')::timestamptz,
+         p_verification ->> 'fiscal_year_id', null, p_verification ->> 'explanation',
+         coalesce((p_verification ->> 'created_at')::timestamptz, now())
+       );
+       for v_entry in select * from jsonb_array_elements(p_verification -> 'entries') loop
+         insert into public.accounting_entries (
+           verification_id, business_id, position, account, account_name, debit, credit, vat_code, note
+         ) values (
+           p_verification ->> 'id', p_business_id, v_pos,
+           (v_entry ->> 'account')::integer, coalesce(v_entry ->> 'account_name', ''),
+           coalesce((v_entry ->> 'debit')::bigint, 0), coalesce((v_entry ->> 'credit')::bigint, 0),
+           v_entry ->> 'vat_code', v_entry ->> 'note'
+         );
+         v_pos := v_pos + 1;
+       end loop;
+       if v_series = 'A' then
+         update public.business_sequences
+            set verification = greatest(verification, v_number + 1)
+          where business_id = p_business_id;
+       end if;
+     end; $$`,
+  );
+  await run(client, `revoke all on function app.import_verification(uuid, jsonb) from public`);
+  await run(client, `grant execute on function app.import_verification(uuid, jsonb) to driva_app`);
+
+  await run(client, RESET_DEMO_BUSINESS_WITH_ONBOARDING_SQL);
+
+  applied.push("onboarding_imports");
+  return applied;
+}
+
+/** Migration 31:s reset – grossistvarianten plus dataimporter, leverantörer och onboarding-raden. */
+const RESET_DEMO_BUSINESS_WITH_ONBOARDING_SQL = RESET_DEMO_BUSINESS_WITH_WHOLESALERS_SQL.replace(
+  "  delete from public.collaboration_invitations where business_id = p_business_id;",
+  `  delete from public.collaboration_invitations where business_id = p_business_id;
+  delete from public.data_imports where business_id = p_business_id;
+  delete from public.suppliers where business_id = p_business_id;
+  update public.business_onboarding
+     set status = 'complete', current_step = null, completed_at = coalesce(completed_at, now()),
+         industries = '[]'::jsonb, other_industry = null, payroll = null, bookkeeping = null,
+         task_overrides = '{}'::jsonb, updated_at = now()
+   where business_id = p_business_id;`,
+);

@@ -7,7 +7,7 @@
 import { headers } from "next/headers";
 import { redirect, RedirectType } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createBusinessForCurrentUser, isDemoSession } from "@/lib/auth/session";
+import { isDemoSession } from "@/lib/auth/session";
 import {
   decideSignupResult,
   isSilentExistingUser,
@@ -19,11 +19,6 @@ import {
 } from "@/lib/auth/signup-flow";
 import { endDemoSession } from "@/lib/auth/demo-request";
 import { isSupabaseMode } from "@/lib/storage/config";
-import {
-  readOnboardingFormData,
-  validateOnboardingFields,
-  type OnboardingField,
-} from "@/lib/onboarding";
 
 export interface AuthFormState {
   error?: string;
@@ -203,37 +198,5 @@ export async function logoutAction(): Promise<void> {
     await supabase.auth.signOut();
   }
   // Utloggad landar på landningssidan (proxyns rewrite på "/").
-  redirect("/");
-}
-
-export interface OnboardingFormState {
-  error?: string;
-  fieldErrors?: Partial<Record<OnboardingField, string>>;
-}
-
-export async function onboardingAction(
-  _prev: OnboardingFormState,
-  formData: FormData
-): Promise<OnboardingFormState> {
-  if (!isSupabaseMode()) return { error: "Onboarding kräver Supabase-miljön." };
-  const result = validateOnboardingFields(readOnboardingFormData(formData));
-  if (Object.keys(result.fieldErrors).length > 0) {
-    const first =
-      result.fieldErrors.name ??
-      result.fieldErrors.orgNumber ??
-      result.fieldErrors.vatNumber ??
-      result.fieldErrors.address ??
-      result.fieldErrors.postalCode ??
-      result.fieldErrors.city ??
-      result.fieldErrors.paymentMethod ??
-      result.fieldErrors.bankgiro ??
-      result.fieldErrors.plusgiro ??
-      result.fieldErrors.bankAccount ??
-      result.fieldErrors.email ??
-      result.fieldErrors.phone;
-    return { error: first, fieldErrors: result.fieldErrors };
-  }
-
-  await createBusinessForCurrentUser(result.values);
   redirect("/");
 }

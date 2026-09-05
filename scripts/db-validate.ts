@@ -1297,6 +1297,157 @@ async function main() {
   }
 
   // ------------------------------------------------------------------
+  // Onboarding, Kom igång och dataimport (migration 31)
+  // ------------------------------------------------------------------
+  console.log("\nOnboarding och dataimport:");
+
+  await asApp(A);
+  await expectOk(db, "tenantkontext A skriver sin onboarding-rad", () =>
+    db.query(
+      `insert into public.business_onboarding (business_id, status, current_step, industries, payroll, bookkeeping)
+       values ($1, 'company_done', 'personalize', '["el"]'::jsonb, null, null)`,
+      [A]
+    )
+  );
+  await expectError(db, "tenantkontext A kan inte skriva onboarding för B", "row-level security", () =>
+    db.query(`insert into public.business_onboarding (business_id, status) values ($1, 'complete')`, [B])
+  );
+  await expectError(db, "ogiltig onboardingstatus stoppas (CHECK)", "check", () =>
+    db.query(`update public.business_onboarding set status = 'halvklar' where business_id = $1`, [A])
+  );
+  await expectOk(db, "dataimport auditeras i A", () =>
+    db.query(
+      `insert into public.data_imports (id, business_id, kind, status, filename, file_kind, file_hash, summary)
+       values ('di-a1', $1, 'kunder', 'imported', 'kunder.csv', 'csv', repeat('a', 64), '3 kunder')`,
+      [A]
+    )
+  );
+  await expectError(db, "samma fil (hash) importeras inte två gånger för samma ändamål", "duplicate key", () =>
+    db.query(
+      `insert into public.data_imports (id, business_id, kind, status, filename, file_kind, file_hash, summary)
+       values ('di-a2', $1, 'kunder', 'imported', 'kunder.csv', 'csv', repeat('a', 64), '3 kunder')`,
+      [A]
+    )
+  );
+  await expectOk(db, "misslyckad import med samma hash får loggas", () =>
+    db.query(
+      `insert into public.data_imports (id, business_id, kind, status, filename, file_kind, file_hash, error)
+       values ('di-a3', $1, 'kunder', 'failed', 'kunder.csv', 'csv', repeat('a', 64), 'fel')`,
+      [A]
+    )
+  );
+  await expectOk(db, "leverantör skrivs i A", () =>
+    db.query(`insert into public.suppliers (id, business_id, name, bankgiro, source) values ('sup-a1', $1, 'Elgrossisten AB', '5678-1234', 'import')`, [A])
+  );
+  await asApp(B);
+  {
+    const r = await rows(db, `select business_id from public.business_onboarding`);
+    const i = await rows(db, `select id from public.data_imports`);
+    const sup = await rows(db, `select id from public.suppliers`);
+    if (r.length === 0 && i.length === 0 && sup.length === 0) ok("B ser inte A:s onboarding, importer eller leverantörer (RLS)");
+    else fail("B ser inte A:s onboarding, importer eller leverantörer (RLS)", JSON.stringify({ r, i, sup }));
+  }
+
+  // app.import_verification: filens serie + nummer, samma radvalidering, nummerserien flyttas fram.
+  await asApp(A);
+  const sieVer = (id: string, series: string, number: number, entries: unknown[], sourceType = "sie_import") =>
+    JSON.stringify({
+      id,
+      series,
+      number,
+      date: "2025-03-10T12:00:00.000Z",
+      description: `SIE ${series}${number}`,
+      source_type: sourceType,
+      source_id: "di-a1",
+      confidence: "hog",
+      created_by: "anvandare",
+      posted_at: "2026-09-01T12:00:00.000Z",
+      created_at: "2026-09-01T12:00:00.000Z",
+      entries,
+    });
+  const balanced = [
+    { account: 4010, account_name: "Material", debit: 801, credit: 0 },
+    { account: 2641, account_name: "Ingående moms", debit: 200, credit: 0 },
+    { account: 2440, account_name: "Leverantörsskulder", debit: 0, credit: 1001 },
+  ];
+  await expectOk(db, "SIE-verifikation bokförs med filens nummer (A900) och flyttar fram nummerserien", async () => {
+    await db.query(`select app.import_verification($1, $2::jsonb)`, [A, sieVer("sie-a900", "A", 900, balanced)]);
+    const seq = await rows<{ verification: number }>(db, `select verification from public.business_sequences where business_id = $1`, [A]);
+    if (Number(seq[0]?.verification) !== 901) throw new Error(`nummerserien är ${seq[0]?.verification}, väntade 901`);
+    const entries = await rows(db, `select account, debit, credit from public.accounting_entries where verification_id = 'sie-a900' order by position`);
+    if (entries.length !== 3) throw new Error(`fel antal rader: ${entries.length}`);
+  });
+  await expectError(db, "obalanserad SIE-verifikation stoppas i SQL", "verifikation_obalanserad", () =>
+    db.query(`select app.import_verification($1, $2::jsonb)`, [
+      A,
+      sieVer("sie-bad", "A", 901, [
+        { account: 4010, account_name: "Material", debit: 100, credit: 0 },
+        { account: 2440, account_name: "Leverantörsskulder", debit: 0, credit: 90 },
+      ]),
+    ])
+  );
+  await expectError(db, "bara källan sie_import får behålla eget nummer", "import_ogiltig", () =>
+    db.query(`select app.import_verification($1, $2::jsonb)`, [A, sieVer("sie-src", "A", 902, balanced, "manuell")])
+  );
+  await expectError(db, "samma serie + nummer två gånger stoppas (unikt index)", "duplicate key", () =>
+    db.query(`select app.import_verification($1, $2::jsonb)`, [A, sieVer("sie-dup", "A", 900, balanced)])
+  );
+  await expectOk(db, "egen serie (SIE) rör inte serie A:s nummerserie", async () => {
+    await db.query(`select app.import_verification($1, $2::jsonb)`, [A, sieVer("sie-s1", "SIE", 1, balanced)]);
+    const seq = await rows<{ verification: number }>(db, `select verification from public.business_sequences where business_id = $1`, [A]);
+    if (Number(seq[0]?.verification) !== 901) throw new Error(`nummerserien ändrades till ${seq[0]?.verification}`);
+  });
+  await expectError(db, "SIE-verifikation kan inte ändras efteråt (immutability)", "denied", () =>
+    db.query(`update public.verifications set description = 'ändrad' where id = 'sie-a900'`)
+  );
+  await asApp(B);
+  {
+    const r = await rows(db, `select id from public.verifications where id like 'sie-%'`);
+    if (r.length === 0) ok("B ser inte A:s importerade verifikationer");
+    else fail("B ser inte A:s importerade verifikationer", JSON.stringify(r));
+  }
+
+  // ------------------------------------------------------------------
+  // Pending schema utan migration 31: tabeller, RLS, backfill, RPC
+  // ------------------------------------------------------------------
+  console.log("\nOnboardingschema via pending schema (utan migration 31):");
+  {
+    const { db: older } = await createMigratedPglite({ skipMigrations: (f) => f.includes("_31_onboarding_imports") });
+    const { pgliteClient } = await import("../src/lib/storage/executor");
+    const { ensureOnboardingSchema } = await import("../src/lib/storage/apply-pending-schema");
+    const client = pgliteClient(older);
+    await older.exec(`
+      insert into public.businesses (id, name, org_number) values ('${A}', 'Företag A', '556000-0001');
+      insert into public.business_sequences (business_id) values ('${A}');
+    `);
+    await expectOk(older, "ensureOnboardingSchema skapar tabeller, RLS och RPC och backfillar befintliga företag som klara", async () => {
+      const applied = await ensureOnboardingSchema(client);
+      if (applied.length === 0) throw new Error("ingenting applicerades");
+      const tables = await rows<{ table_name: string }>(
+        older,
+        `select table_name from information_schema.tables where table_schema = 'public' and table_name in ('business_onboarding', 'data_imports', 'suppliers') order by 1`,
+      );
+      if (tables.length !== 3) throw new Error(`tabeller saknas: ${tables.map((t) => t.table_name).join(", ")}`);
+      const rls = await rows<{ relname: string; relrowsecurity: boolean }>(
+        older,
+        `select c.relname, c.relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname = 'public' and c.relname in ('business_onboarding', 'data_imports', 'suppliers')`,
+      );
+      if (rls.length !== 3 || rls.some((r) => !r.relrowsecurity)) throw new Error("RLS saknas");
+      const backfilled = await rows<{ status: string }>(older, `select status from public.business_onboarding where business_id = '${A}'`);
+      if (backfilled[0]?.status !== "complete") throw new Error(`backfill saknas: ${JSON.stringify(backfilled)}`);
+      const rpc = await rows<{ present: boolean }>(
+        older,
+        `select exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'app' and p.proname = 'import_verification') as present`,
+      );
+      if (!rpc[0]?.present) throw new Error("app.import_verification saknas");
+      const again = await ensureOnboardingSchema(client);
+      if (again.length !== 0) throw new Error(`inte idempotent: ${again.join(", ")}`);
+    });
+    await older.close();
+  }
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");

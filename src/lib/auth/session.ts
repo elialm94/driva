@@ -51,6 +51,7 @@ import {
   userById,
 } from "@/lib/collaboration/registry";
 import { activeSupportContext, type ActiveSupportContext } from "@/lib/platform/auth";
+import { ownerNeedsOnboarding } from "@/lib/setup/onboarding-state";
 import { writeAdminAudit } from "@/lib/platform/audit";
 import { platformRegistry } from "@/lib/platform/registry";
 
@@ -279,6 +280,13 @@ export async function requireBusiness(): Promise<{
     }
     redirect("/onboarding");
   }
+  // Företaget skapas redan efter onboardingens steg 1 – ett medlemskap räcker
+  // inte som "klar". Ägare med ofullständig onboarding fortsätter där de
+  // slutade. /onboarding själv använder aldrig requireBusiness → ingen loop.
+  if (isSupabaseMode() && ownerNeedsOnboarding(memberships, isOwnerRole)) {
+    redirect("/onboarding");
+  }
+
   const preferred = await preferredBusinessFromCookie();
   const workspace = await readWorkspaceCookie();
   const ownerLike = memberships.filter((m) => isOwnerRole(m.role));
@@ -687,6 +695,9 @@ export async function createBusinessForCurrentUser(input: {
   bankgiro?: string;
   plusgiro?: string;
   bankAccount?: string;
+  companyForm?: "ab" | "enskild";
+  /** Onboardingens steg 1 skickar 'company_done' – steg 2 återstår. */
+  onboardingStatus?: "company_done" | "complete";
 }): Promise<string> {
   const user = await requireUser();
   const memberships = await listMemberships(user.id);

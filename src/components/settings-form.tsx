@@ -33,6 +33,9 @@ import type { MissingRequirement } from "@/lib/form-requirements";
 import { DomainSettingsCard } from "./domain-widgets";
 import { FeatureSettingsList } from "./feature-settings";
 import { WholesalerSettings, type WholesalerSettingsConnection } from "./wholesaler-settings";
+import { SetupCenter } from "./setup/setup-center";
+import type { SetupSummary } from "@/lib/setup/tasks";
+import type { DataImport, OnboardingState } from "@/lib/types";
 import { StickyMobileActions } from "./sticky-actions";
 import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 import { SettingsBillingBanner } from "./settings-billing-readiness";
@@ -119,6 +122,7 @@ export function SettingsForm({
   domainSummary = null,
   features,
   wholesalers,
+  setup,
   focusFieldKey = null,
   account,
 }: {
@@ -133,6 +137,8 @@ export function SettingsForm({
   features: ResolvedOptionalFeatures;
   /** Grossister – fliken finns bara när funktionen är aktiv. */
   wholesalers?: WholesalerSettingsConnection[];
+  /** Kom igång – härledda uppgifter, profil och importhistorik. */
+  setup?: { summary: SetupSummary; onboarding: OnboardingState | null; imports: DataImport[] };
   focusFieldKey?: string | null;
   /** Demo-copy bara när appen faktiskt körs i demoläge. */
   account: { demo: boolean; email?: string | null };
@@ -272,6 +278,7 @@ export function SettingsForm({
     if (flik === "fakturering") return "Betalningsuppgifter och standardvärden för nya offerter och fakturor. Befintliga dokument ändras inte.";
     if (flik === "funktioner") return "Grundfunktionerna syns alltid. Valfria funktioner kan du stänga av utan att något raderas.";
     if (flik === "grossister") return "Dina grossister, kundnummer och prislistor. Beställningar görs från uppdragets materialyta.";
+    if (flik === "kom-igang") return "Det som återstår för att Ferva ska vara redo – och det du sköt på. Lämna och fortsätt när du vill.";
     if (flik === "konto") return "Personligt konto är skilt från företagsuppgifterna.";
     return "Uppgifterna används på offerter, fakturor, hemsidan och i mejl. Du fyller i dem en gång.";
   }, [flik]);
@@ -833,7 +840,7 @@ export function SettingsForm({
         </div>
       ) : null}
 
-      {flik !== "konto" && flik !== "funktioner" && flik !== "grossister" ? (
+      {flik !== "konto" && flik !== "funktioner" && flik !== "grossister" && flik !== "kom-igang" ? (
         <div className="mt-6">
           {showErrors ? (
             <FormValidationSummary
@@ -899,8 +906,11 @@ export function SettingsForm({
       ) : null}
       </form>
 
-      {/* Egna formulär (grossist, prisfil) – utanför inställningsformuläret så inget <form> nästlas. */}
+      {/* Egna formulär (grossist, prisfil, Kom igång) – utanför inställningsformuläret så inget <form> nästlas. */}
       {flik === "grossister" ? <WholesalerSettings overviews={wholesalers ?? []} demo={account.demo} /> : null}
+      {flik === "kom-igang" && setup ? (
+        <SetupCenter summary={setup.summary} onboarding={setup.onboarding} imports={setup.imports} />
+      ) : null}
 
       {dialog}
     </div>

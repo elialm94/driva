@@ -279,6 +279,10 @@ export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): 
   loaded.purchaseOrders ??= [];
   loaded.purchaseOrderLines ??= [];
   loaded.purchaseOrderConfirmations ??= [];
+  loaded.dataImports ??= [];
+  loaded.suppliers ??= [];
+  // Saknad onboarding = klar (äldre JSON-filer, demo): ingen tvingas om.
+  if (loaded.onboarding === undefined) loaded.onboarding = null;
   loaded.settings.inboundMailSlug ??= "demo";
   const remintedInbound = remintHexInboundSlugInMemory(loaded);
   for (const sup of loaded.supplierInvoices ?? []) {
@@ -471,6 +475,9 @@ export function resetToEmptyCompany(): void {
     purchaseOrders: [],
     purchaseOrderLines: [],
     purchaseOrderConfirmations: [],
+    onboarding: null,
+    dataImports: [],
+    suppliers: [],
     meta: { seededAt: seeded, taxReductionDemoHydrated: true },
   };
   g.__drivaDb = normalize(empty);

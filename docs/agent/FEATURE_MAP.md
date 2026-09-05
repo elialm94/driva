@@ -167,6 +167,8 @@ auth.users
         ├── fiscal_years; vat_reports; assets; accruals; annual_reports
         ├── websites; domains
         ├── collaboration_invitations; client_information_requests
+        ├── business_onboarding (1:1 – onboarding status + Kom igång profile/task choices)
+        ├── data_imports (audit of file imports, hash-unique per kind); suppliers
         └── assistant_messages; pending_actions; audit_log
 ```
 
@@ -300,7 +302,7 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications, published 
 - **How to get there:** Landing CTAs; login *Har du inget konto? Skapa konto*; signup *Har du redan ett konto? Logga in*; invite `/inbjudan/[token]` may send here with `?next=`.
 - **Main actions:** Logga in / Skapa konto / Skicka igen / Skicka återställningslänk. Login also **Se demo**.
 - **Fields / ids:** `auth-email`, `auth-password`, `signup-email`, `signup-phone`, `signup-password`, `reset-email`, `new-password`, `confirm-password`. Errors: `*-fel`.
-- **Subflows:** Signup without session → `/verifiera-epost`. Confirm → `/` → `requireBusiness` → `/onboarding` if no membership. Reset → `/auth/bekrafta?next=/uppdatera-losenord`. Notices: `?bekraftelse=utgangen|ogiltig`, `?demo=upptagen`.
+- **Subflows:** Signup without session → `/verifiera-epost`. Confirm → `/` → `requireBusiness` → `/onboarding` if no membership **or** the owned company's onboarding is not complete (step 2 resumes). Reset → `/auth/bekrafta?next=/uppdatera-losenord`. Notices: `?bekraftelse=utgangen|ogiltig`, `?demo=upptagen`.
 - **Actions:** `src/app/auth-actions.ts`.
 - **Related:** Onboarding, invitations, demo convert-to-account.
 - **DB:** `auth.users`; memberships created at onboarding.
@@ -313,16 +315,42 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications, published 
 
 ## Onboarding
 
-- **User-facing name:** Välkommen till Driva / Kom igång
-- **Purpose:** Create the first company so the user can invoice.
-- **Route:** `/onboarding` — `src/app/onboarding/page.tsx` + `onboarding-form.tsx`
-- **How to get there:** Automatic after first login when `needsCompanyOnboarding(memberships.length)` (`membershipCount === 0`). Demo/JSON → redirect `/`.
-- **Main actions:** submit **Kom igång**.
-- **Fields / ids:** `ob-name`, `ob-orgnr`, `ob-vat`, `ob-address`, `ob-postal`, `ob-city`, `ob-payment-method`, `ob-bankgiro`, `ob-plusgiro`, `ob-bankkonto`, `ob-email`, `ob-phone`. Summary: `#ob-sammanfattning`. Sections: Företag, Adress, Betalning, Kontakt. **Adress** section is the shared `AddressFields` (autocomplete, `#ob-address` is a `role="combobox"`); ids unchanged.
-- **Related:** Inställningar Företag / Fakturering (same company fields later).
-- **DB:** `businesses`, `business_settings`, `business_sequences`, `business_memberships` (owner). Trial columns set on real businesses.
-- **Invariants:** One company at create. Payment method required (bankgiro / plusgiro / bankkonto). Creating the company allocates `business_settings.inbound_mail_slug` from the company name (readable, unique, reserved-aware — see [Inbox](#inbox)); there is no field for it and the user never picks it.
-- **Verify:** only in Supabase. After submit → `/`. Tests: `src/lib/onboarding.test.ts`.
+- **User-facing name:** Berätta om företaget (1 av 2) · Anpassa Ferva efter företaget (2 av 2)
+- **Purpose:** Create the first company in a few minutes, asking only what is needed right away; personalize suggestions without locking anything.
+- **Route:** `/onboarding` — `src/app/onboarding/page.tsx` (+ `onboarding-form.tsx` step 1, `personalize-form.tsx` step 2, `onboarding-shell.tsx`). Actions: `src/app/onboarding-actions.ts`. Local preview of both steps in JSON mode: `/dev/onboarding?steg=1|2` (Supabase mode → `/`).
+- **How to get there:** After login, `requireBusiness()` redirects owners whose company has **no membership** (step 1) or whose `business_onboarding.status ≠ complete` (step 2) — `ownerNeedsOnboarding()` in `src/lib/setup/onboarding-state.ts`. `/onboarding` never calls `requireBusiness` → no loop. Consultant-only users and demo/JSON → `/`.
+- **Step 1 fields / ids:** `ob-company-form` (Aktiebolag · Enskild firma · Annan företagsform → honest “stöds inte ännu”, Fortsätt disabled), `ob-orgnr` (label becomes *Personnummer* for enskild firma), `ob-name`, `ob-vat` (**read-only, derived** `SE + orgnr + 01`, “Uträknat automatiskt”; hidden input `vatNumber`), `ob-address`/`ob-postal`/`ob-city` (shared `AddressFields`), `ob-email`, `ob-phone`, `ob-payment-timing` (*Lägg till nu* / *Gör det senare*), `ob-payment-method` + `ob-bankgiro|ob-plusgiro|ob-bankkonto` only when “now”. Summary error `#ob-sammanfattning`. Button **Fortsätt** (`data-onboarding-continue`).
+- **Step 2:** `ob-industries` (multi: El · VVS · Bygg och snickeri · Måleri · Mark och anläggning · Annat → `ob-otherIndustry`), `ob-payroll` (Nej, inte idag · Ja, till mig som ägare · Ja, till anställda · Jag tar det senare), `ob-bookkeeping` (Företaget har bokföring som ska flyttas hit · Företaget är nystartat · Min redovisningskonsult sköter bokföringen · Jag tar det senare). Button **Öppna Ferva** (`data-onboarding-open`) → `/`. No system names asked here.
+- **State:** `OnboardingState` (`DB.onboarding`, table `business_onboarding`): `status` not_started | company_done | complete, `currentStep`, `startedAt`, `companyCompletedAt`, `personalizationCompletedAt`, `completedAt`, `industries`, `otherIndustry`, `payroll`, `bookkeeping`, `taskOverrides`. `membershipsForUser` joins `business_onboarding.status` into `MembershipInfo.onboardingStatus` (missing row = complete).
+- **DB:** step 1 → `createBusinessWithOwner({ companyForm, onboardingStatus: "company_done" })` writes `businesses`, `business_settings.company_form`, `business_sequences`, `business_memberships`, `business_onboarding`. Step 2 → `applyPersonalization` in tenant context. Migration `31_onboarding_imports.sql` **backfills every existing business as complete**; `ensureOnboardingSchema` (pending schema) does the same where `db push` has not run.
+- **Invariants:** Company form saved explicitly (no hidden AB default for new companies). VAT never typed — derived from org.nr; a mismatching value is rejected server-side. Payment details optional at create; the **same** `settingsBillingReadiness` blocks invoice sending, drives Kom igång *Lägg till betalningsuppgifter* and the settings banner. Existing companies are never sent back. Resume: an interrupted user lands on the remaining step at next login.
+- **Verify:** JSON: `scripts/verify-onboarding-browser.ts` (forms on 390/320 px, derived VAT, payment later, honest company-form message). Supabase path: `scripts/adapter-validate.ts` (“steg 1 … company_done … steg 2 gör det klart”). Tests: `src/lib/onboarding.test.ts`, `src/lib/setup/setup.test.ts`.
+
+---
+
+## Kom igång (setup center)
+
+- **User-facing name:** Gör Ferva redo (Hem card) · Kom igång (Inställningar tab)
+- **Purpose:** Persistent, resumable list of what remains — derived from real data, never a blocking wizard.
+- **Routes:** Hem card `src/components/setup/setup-home-card.tsx` (`data-setup-home-card`, max 3 open tasks, link *Alla steg*); `/installningar?flik=kom-igang` → `setup-center.tsx` (`data-setup-center`): profile (`setup-profile-form.tsx`, `data-setup-profile-edit|save`), *Att göra*, *Fler saker du kan göra*, *Gör senare*, *Behövs inte*, *Klart*, *Genomförda importer* (`data-setup-imports`), button **Ladda upp filer** → `/kom-igang/importera`.
+- **Tasks (`src/lib/setup/tasks.ts`):** `move_bookkeeping` (done when a `bokforing` import is imported; hidden for *nystartat*), `invite_consultant` (done via `hasCollaborationUsage`), `first_customer`, `first_job`, `payment_details` (done when readiness has no payment blocker), `connect_bank` (done when `bankConnectionView().status === "connected"`), `articles_prices` (done when an active wholesaler price import exists; recommended for El/VVS; when the feature is off the CTA activates it via `activateOptionalFeatureAction` and lands on Grossister). `payroll` is **hidden** (no payroll product yet — the profile shows the honest note instead).
+- **Status:** todo | in_progress | done | later | not_needed. Only `later` / `not_needed` are stored (`taskOverrides`); `done` always wins. Row selectors: `[data-setup-task=<id>][data-setup-status=…]`, actions *Senare*, *Behövs inte* (not for bank/payment/customer), *Ta upp igen* (`data-setup-reactivate`), *Visa*.
+- **Priority:** bookkeeping=existing → *Flytta in bokföringen* first; consultant → *Bjud in din redovisningskonsult* first; new → customer/job; payment details jump first once quotes/invoices exist. Optional (non-recommended) tasks never show on Hem. Card disappears when no recommended task is open, and is never shown to backfilled existing companies without a profile that already have customers/jobs; center stays reachable.
+- **Actions:** `setSetupTaskAction`, `updateSetupProfileAction` (`src/app/onboarding-actions.ts`).
+- **Verify:** `scripts/verify-onboarding-browser.ts` (profile save, Senare/Ta upp igen, Hem card order). Tests: `src/lib/setup/setup.test.ts`.
+
+---
+
+## Flytta dina uppgifter till Ferva (import)
+
+- **User-facing name:** Flytta dina uppgifter till Ferva
+- **Purpose:** Upload what you have (SIE bookkeeping, customer/supplier registers, wholesaler price lists); Ferva identifies each file, previews exactly what will be created/omitted and imports only after an explicit confirmation.
+- **Route:** `/kom-igang/importera` — `src/app/(app)/kom-igang/importera/page.tsx` + `src/components/imports/import-center.tsx`. API: `POST /api/kom-igang/import` (multipart, `mode=analyze|import`, `options` JSON; capability `import_data` = owner/admin; Origin check; max 25 MB; file never stored).
+- **Flow:** dropzone (`data-import-dropzone`, `data-import-file-input`, *Vilka filer fungerar?*) → per-file card (`data-import-card[data-import-state=reading|checking|ready|importing|done|failed]`, `data-import-kind`) with real progress *Läser filen → Kontrollerar innehållet → Redo att granskas* → choices (SIE years `data-import-year`, register mapping “Vi tror att dessa kolumner hör ihop” `data-import-field=<field>`, article connection `data-import-connection`, unknown → `data-import-kind-select`) → **Importera** (`data-import-confirm-open`) → confirmation box (`data-import-confirm`, `data-import-run`) → done card (`data-import-state=done`, `data-import-summary`, link to next view). *Kontrollera detaljer* (`data-import-details`) lists unbalanced verifications, duplicates, review rows, unused columns.
+- **Detection (`src/lib/services/data-imports.ts`):** SIE by content (`looksLikeSieBytes`/`parseSie`); PDF → unsupported (points to Inbox); tables via the wholesaler readers (`parsePriceFile`: CSV/TXT/XLSX/XML/ZIP) then `classifyRegisterTable` (kunder / leverantorer / artiklar / unknown). AI (`src/lib/imports/classify-ai.ts`) only **suggests** kind + mapping when deterministic detection fails and a key exists; result is badged *AI-förslag* and confirmed by the user. Without AI everything works manually.
+- **Imports:** bokföring → `applySieImport` (see docs/onboarding-import.md); kunder → `Customer` rows (+ work locations for fastighetsbeteckning), suppliers → `suppliers` table (listed under Ekonomi → Utgifter, `data-supplier-register`); artiklar → **existing** `importPriceFile` of Grossistbeställningar (needs active feature + connection; no second catalog). Audit row `data_imports` per import (user, hash, counts, warnings, choices, summary); unique `(business, kind, hash)` for imported files → *redan inflyttad*.
+- **Invariants:** nothing is written before confirmation; the confirmation upload must hash-match the analysis; one import per file+kind; SIE never imports an unbalanced verification; year conflicts default to skip; no file content is logged or stored.
+- **Verify:** `scripts/verify-onboarding-browser.ts` (CSV upload → mapping → import → done → duplicate refused → Kunder list → Genomförda importer). Tests: `src/lib/imports/sie.test.ts`, `src/lib/imports/registers.test.ts`, `scripts/db-validate.ts` (import_verification, data_imports index, RLS), `scripts/adapter-validate.ts` (SIE through commit).
 
 ---
 
@@ -332,7 +360,7 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications, published 
 - **Purpose:** Command bar + prioritized work. Not a document register.
 - **Route:** `/` (authenticated or demo). File: `src/app/(app)/page.tsx`. Title *Hem*.
 - **How to get there:** Logo, nav **Hem**, `/assistent` redirect, post-login default.
-- **Layout (live demo):** greeting (*God eftermiddag* etc.) → command bar → **Behöver din uppmärksamhet** (first 5, *Visa N till*) → **På gång** → **Påminnelser**.
+- **Layout (live demo):** greeting (*God eftermiddag* etc.) → command bar → **Gör Ferva redo** (only while recommended Kom igång tasks remain — see [Kom igång](#kom-igång-setup-center)) → **Behöver din uppmärksamhet** (first 5, *Visa N till*) → **På gång** → **Påminnelser**.
 - **Main actions:** type in command bar; click attention CTAs (Skicka påminnelse, Skapa bankfil, Öppna bokföring, **Lägg till kvitto** = file picker that stores the file — see [Utgifter & kvitton](#utgifter--kvitton-flikutgifter), …); reminder Klar / Snooza / Redigera / Ta bort.
 - **Related:** same action engine as Bokföring (`src/lib/services/actions.ts`, `action-views.ts`). Hem shows a **projection** (`projectHomeAttention`), not a second queue.
 - **Components:** `command-bar.tsx`, `attention-list.tsx`, `watching-list.tsx`, `home-reminders.tsx`.
@@ -728,9 +756,9 @@ Not separate nav items; tabs on `/ekonomi`.
 
 - **User-facing name:** Inställningar
 - **Purpose:** Company identity, invoice/payment defaults, optional features, account.
-- **Route:** `/installningar?flik=foretag|fakturering|funktioner|konto` (`src/lib/settings-routes.ts`); `flik=grossister` exists **only** while Grossistbeställningar is active (otherwise → `flik=funktioner`). Legacy `flik=standardval` → fakturering. Deep-link `?falt=name|orgNumber|vatNumber|address|…`.
+- **Route:** `/installningar?flik=kom-igang|foretag|fakturering|funktioner|konto` (`src/lib/settings-routes.ts`); `flik=grossister` exists **only** while Grossistbeställningar is active (otherwise → `flik=funktioner`). Legacy `flik=standardval` → fakturering. Deep-link `?falt=name|orgNumber|vatNumber|address|…`.
 - **How to get there:** Sidebar/Mer **Inställningar**. Billing blockers and domain “complete company” deep-link here.
-- **Tabs:** Företag · Fakturering & betalning · Funktioner · (Grossister) · Konto. `SETTINGS_TABS` is the feature-off list; `settingsTabsFor(features)` inserts **Grossister** after Funktioner when active.
+- **Tabs:** Kom igång · Företag · Fakturering & betalning · Funktioner · (Grossister) · Konto. `SETTINGS_TABS` is the feature-off list; `settingsTabsFor(features)` inserts **Grossister** after Funktioner when active. **Kom igång** = the permanent setup center (profile, tasks, imports) — see [Kom igång](#kom-igång-setup-center).
 - **Företag:** logo, name, org.nr, VAT, address, contact. Save *Spara ändringar*. `#installningar-saknas`. Address = shared `AddressFields` (label **Gatuadress**): `#installningar-address`, `#installningar-postalCode`, `#installningar-city`. Renaming the company does **not** change the inbound mail address — `inbound_mail_slug` is locked at create and not editable here (see [Inbox](#inbox)).
 - **Fakturering:** payment details (bankgiro/plusgiro/bank/IBAN), invoice defaults, **billing readiness**. *Komplettera för fakturering* is a plain form (moms + bankgiro always visible; address via `AddressFields` only if missing at open). Draft local state; persist only on **Spara** (`saveBillingCompletionAction`). **Stäng** discards the draft. **Använd förslaget** fills moms only. Modal visibility is user-controlled (`completeOpen`), not `readiness.ready` / send-blockers.
 - **Funktioner:** Hemsida + Samarbeta + **Grossistbeställningar** toggles (`feature-settings.tsx`) — Aktiv/Avstängd, Aktivera/Stäng av. Activating Grossistbeställningar lands on `?flik=grossister`; in demo contexts it also seeds a fictional wholesaler + price list (see [Grossistbeställningar](#grossistbeställningar-wholesale-orders)).
@@ -738,7 +766,7 @@ Not separate nav items; tabs on `/ekonomi`.
 - **Billing readiness testids:** `billing-readiness-banner` | `billing-readiness-ready` | `billing-readiness-success` | `billing-complete-modal` | `billing-complete-suggest-vat` | `billing-complete-{name|orgnr|vat|address|payment}`. Copy: *Redo att fakturera*. Persist only on Spara.
 - **Related:** `/foretag` is a parent crumb to settings (legacy). Onboarding fields overlap.
 - **Components:** `settings-form.tsx`, `settings-billing-readiness.tsx`, `feature-settings.tsx`, `demo-reset-section.tsx`.
-- **DB:** `business_settings`, `meta.features`.
+- **DB:** `business_settings`, `meta.features`, `business_onboarding` (Kom igång).
 - **Live:** *Redo att fakturera* (demo company complete). Demo reset section at bottom of Företag.
 - **Verify:** `/installningar?flik=fakturering` + testids. Script: `scripts/verify-billing-readiness-browser.ts`. Tests: `billing-readiness.test.ts`, `settings-*.test.ts`.
 

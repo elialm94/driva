@@ -41,6 +41,9 @@ import {
   paymentsSpec,
   pendingActionsSpec,
   purchaseOrderConfirmationsSpec,
+  dataImportsSpec,
+  onboardingFromRow,
+  suppliersSpec,
   purchaseOrderLinesSpec,
   purchaseOrdersSpec,
   remindersSpec,
@@ -197,6 +200,14 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
       queryIfTable(tx, "purchase_order_confirmations", `select * from public.purchase_order_confirmations where business_id = $1 order by received_at, id`, b),
     ]);
 
+  // Onboarding/Kom igång, dataimporter och leverantörsregister. Saknad
+  // onboarding-rad (företag före migration 31 utan backfill) = klar.
+  const [onboardingRows, dataImportRows, supplierRegisterRows] = await Promise.all([
+    queryIfTable(tx, "business_onboarding", `select * from public.business_onboarding where business_id = $1`, b),
+    queryIfTable(tx, "data_imports", `select * from public.data_imports where business_id = $1 order by created_at, id`, b),
+    queryIfTable(tx, "suppliers", `select * from public.suppliers where business_id = $1 order by lower(name), id`, b),
+  ]);
+
   // Bostäder per kund (position = visningsordning).
   const locationsByCustomer = new Map<string, SqlRow[]>();
   for (const row of workLocationRows) {
@@ -301,6 +312,9 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     purchaseOrders: purchaseOrderRows.map(purchaseOrdersSpec.fromRow),
     purchaseOrderLines: purchaseOrderLineRows.map(purchaseOrderLinesSpec.fromRow),
     purchaseOrderConfirmations: purchaseOrderConfirmationRows.map(purchaseOrderConfirmationsSpec.fromRow),
+    onboarding: onboardingRows[0] ? onboardingFromRow(onboardingRows[0]) : null,
+    dataImports: dataImportRows.map(dataImportsSpec.fromRow),
+    suppliers: supplierRegisterRows.map(suppliersSpec.fromRow),
     meta: metaFromBusinessRow(business),
   };
 

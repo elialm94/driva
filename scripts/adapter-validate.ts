@@ -834,7 +834,8 @@ async function main() {
     );
     // Företagsraden, profilen (stabil inkommande-slug), medlemskapen och
     // nummerserierna överlever – exempeldatat spelas upp igen efteråt.
-    const kept = new Set(["business_memberships", "business_sequences", "business_settings"]);
+    // business_onboarding: demoföretaget är alltid klart med onboarding – raden återställs, tas inte bort.
+    const kept = new Set(["business_memberships", "business_sequences", "business_settings", "business_onboarding"]);
     for (const { relname } of tables.rows) {
       if (kept.has(relname)) continue;
       const count = await pg.query<{ n: number }>(
@@ -1038,6 +1039,150 @@ async function main() {
       setMailTransportForTests(undefined);
       __setSqlCatalogForTests(false);
     }
+  });
+
+  console.log("\nOnboarding, Kom igång och dataimport genom adaptern:");
+  await check("steg 1 skapar företaget med status company_done; steg 2 gör det klart – medlemskapet bär statusen", async () => {
+    const USER_F = "77777777-7777-4777-8777-777777777777";
+    await pg.query(`insert into auth.users (id, email) values ($1, 'f@test.se')`, [USER_F]);
+    const bizF = await createBusinessWithOwner({
+      userId: USER_F,
+      name: "Karins Måleri",
+      orgNumber: "850101-1234",
+      email: "karin@maleri.se",
+      phone: "",
+      companyForm: "enskild",
+      onboardingStatus: "company_done",
+    });
+    const before = await membershipsForUser(USER_F);
+    assert.equal(before[0].onboardingStatus, "company_done");
+    const settings = await pg.query<{ company_form: string }>(`select company_form from business_settings where business_id = $1`, [bizF]);
+    assert.equal(settings.rows[0].company_form, "enskild");
+    const { ownerNeedsOnboarding } = await import("../src/lib/setup/onboarding-state");
+    const { isOwnerRole } = await import("../src/lib/collaboration/permissions");
+    assert.equal(ownerNeedsOnboarding(before, isOwnerRole), true);
+
+    const { applyPersonalization, setSetupTaskOverride } = await import("../src/lib/services/onboarding");
+    await runWithTenant({ businessId: bizF, userId: USER_F, access: "write" }, () => {
+      assert.equal(db().onboarding?.status, "company_done");
+      assert.equal(db().settings.companyForm, "enskild");
+      applyPersonalization({ industries: ["maleri", "annat"], otherIndustry: "Tapetsering", payroll: "owner", bookkeeping: "existing" });
+    });
+    const after = await membershipsForUser(USER_F);
+    assert.equal(after[0].onboardingStatus, "complete");
+    assert.equal(ownerNeedsOnboarding(after, isOwnerRole), false);
+    const row = await pg.query<{ status: string; industries: unknown; other_industry: string; bookkeeping: string }>(
+      `select status, industries, other_industry, bookkeeping from business_onboarding where business_id = $1`,
+      [bizF],
+    );
+    assert.equal(row.rows[0].status, "complete");
+    assert.deepEqual(row.rows[0].industries, ["maleri", "annat"]);
+    assert.equal(row.rows[0].other_industry, "Tapetsering");
+    assert.equal(row.rows[0].bookkeeping, "existing");
+
+    // Uppgiftsval rundresas och härledd status läses ur riktig data.
+    await runWithTenant({ businessId: bizF, userId: USER_F, access: "write" }, () => {
+      setSetupTaskOverride("connect_bank", "later");
+    });
+    await runWithTenant({ businessId: bizF, userId: USER_F, access: "read" }, async () => {
+      const { setupSummary } = await import("../src/lib/setup/tasks");
+      const summary = setupSummary();
+      assert.equal(db().onboarding?.taskOverrides.connect_bank?.state, "later");
+      assert.equal(summary.next?.id, "move_bookkeeping", "befintlig bokföring prioriteras");
+      assert.ok(summary.deferred.some((t) => t.id === "connect_bank"));
+    });
+    // Befintliga företag (skapade utan status) räknas som klara.
+    const existing = await membershipsForUser(USER_A);
+    assert.equal(existing[0].onboardingStatus, "complete");
+  });
+
+  await check("SIE-import går via app.import_verification: filens nummer, nummerserien flyttas fram, audit + idempotens, B isolerad", async () => {
+    const { sieBytesPc8, standardSieOptions } = await import("../src/lib/__fixtures__/sie/build");
+    const { analyzeImportFile, runImport, fileHashHex } = await import("../src/lib/services/data-imports");
+    const { postVerification } = await import("../src/lib/accounting/engine");
+    const opts = standardSieOptions();
+    opts.years = [{ index: 0, start: "2023-01-01", end: "2023-12-31" }];
+    opts.orgNumber = "556677-8899";
+    opts.verifications = opts.verifications!.map((v) => ({ ...v, date: v.date.replace("2025", "2023"), number: (v.number as number) + 500 }));
+    const bytes = Buffer.from(sieBytesPc8(opts));
+    const hash = fileHashHex(bytes);
+
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, async () => {
+      const analysis = await analyzeImportFile(bytes, "bokforing-2023.se", { allowAi: false });
+      assert.equal(analysis.kind, "bokforing");
+      assert.equal(analysis.sie?.orgNumberMatches, true);
+      const year = analysis.sie!.years[0];
+      assert.equal(year.selectable, true);
+      const outcome = await runImport(bytes, "bokforing-2023.se", { kind: "bokforing", expectedHash: hash, yearIndexes: [0], userId: USER_A });
+      assert.equal(outcome.created, 3);
+    });
+    const vers = await pg.query<{ series: string; number: number; source_type: string }>(
+      `select series, number, source_type from verifications where business_id = $1 and source_type = 'sie_import' order by number`,
+      [bizA],
+    );
+    assert.deepEqual(vers.rows.map((r) => [r.series, Number(r.number)]), [["A", 501], ["A", 502], ["A", 503]]);
+    const seq = await pg.query<{ verification: number }>(`select verification from business_sequences where business_id = $1`, [bizA]);
+    assert.equal(Number(seq.rows[0].verification), 504, "nummerserien står efter filens högsta nummer");
+    const fy = await pg.query<{ opening_source: string; opening_balances: Record<string, number> }>(
+      `select opening_source, opening_balances from fiscal_years where business_id = $1 and label = '2023'`,
+      [bizA],
+    );
+    assert.equal(fy.rows[0].opening_source, "migrering");
+    assert.equal(fy.rows[0].opening_balances["1930"], 125000);
+    const audit = await pg.query<{ kind: string; status: string; file_hash: string; created_count: number }>(
+      `select kind, status, file_hash, created_count from data_imports where business_id = $1`,
+      [bizA],
+    );
+    assert.equal(audit.rows.length, 1);
+    assert.equal(audit.rows[0].file_hash, hash);
+    assert.equal(Number(audit.rows[0].created_count), 3);
+
+    // Nästa egna verifikation får nästa lediga nummer – CAS:en ser samma sekvens som domänen.
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      assert.equal(db().sequences.verification, 504);
+      const v = postVerification({
+        date: "2026-09-01",
+        description: "Efter importen",
+        entries: [
+          { account: 1930, debit: 10 },
+          { account: 3001, credit: 10 },
+        ],
+        source: { type: "manuell" },
+        createdBy: "anvandare",
+      });
+      assert.equal(v.number, 504);
+    });
+
+    // Samma fil igen → stoppas innan något skrivs.
+    await assert.rejects(
+      runWithTenant({ businessId: bizA, userId: USER_A, access: "write", retry: false }, () =>
+        runImport(bytes, "bokforing-2023.se", { kind: "bokforing", expectedHash: hash, yearIndexes: [0] }),
+      ),
+      /redan importerad/,
+    );
+    await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {
+      assert.equal((db().dataImports ?? []).length, 0, "B ser inte A:s importer");
+      assert.equal(db().verifications.some((v) => v.source.type === "sie_import"), false);
+    });
+  });
+
+  await check("kund- och leverantörsimport rundresas via mappers (suppliers-tabellen)", async () => {
+    const { runImport, fileHashHex } = await import("../src/lib/services/data-imports");
+    const csv = "Leverantör;Organisationsnummer;Bankgiro;E-post\nElgrossisten AB;556123-4567;5678-1234;order@elgrossisten.se\nRörcenter;556987-6543;123-4567;info@rorcenter.se\n";
+    const bytes = Buffer.from(csv, "utf8");
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, async () => {
+      const outcome = await runImport(bytes, "leverantorer.csv", { kind: "leverantorer", expectedHash: fileHashHex(bytes) });
+      assert.equal(outcome.created, 2);
+    });
+    const rows = await pg.query<{ name: string; bankgiro: string; source: string }>(`select name, bankgiro, source from suppliers where business_id = $1 order by name`, [bizA]);
+    assert.deepEqual(rows.rows.map((r) => [r.name, r.bankgiro, r.source]), [["Elgrossisten AB", "5678-1234", "import"], ["Rörcenter", "123-4567", "import"]]);
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      assert.equal(db().suppliers?.length, 2);
+      assert.equal(db().suppliers?.[0].name, "Elgrossisten AB");
+    });
+    await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {
+      assert.equal((db().suppliers ?? []).length, 0);
+    });
   });
 
   await pg.close();

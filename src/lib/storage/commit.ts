@@ -54,6 +54,10 @@ import {
   paymentsSpec,
   pendingActionsSpec,
   purchaseOrderConfirmationsSpec,
+  dataImportsSpec,
+  onboardingColumns,
+  onboardingToRow,
+  suppliersSpec,
   purchaseOrderLinesSpec,
   purchaseOrdersSpec,
   remindersSpec,
@@ -343,6 +347,15 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
     { skipDeletes: true }
   );
 
+  // Onboarding/Kom igång (en rad), dataimporter (historik – inga deletes) och leverantörer.
+  if (state.onboarding && JSON.stringify(baseline.onboarding ?? null) !== JSON.stringify(state.onboarding)) {
+    await upsertRow(tx, "business_onboarding", onboardingColumns, ["business_id"], onboardingToRow(state.onboarding, businessId));
+  }
+  await applySpec(dataImportsSpec, diffCollection(baseline.dataImports ?? [], state.dataImports ?? []), {
+    skipDeletes: true,
+  });
+  await applySpec(suppliersSpec, diffCollection(baseline.suppliers ?? [], state.suppliers ?? []));
+
   // Offerter: diffa på domänobjektet, komplettera med denormaliserat belopp.
   {
     const change = diffCollection(baseline.quotes, state.quotes);
@@ -549,8 +562,21 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
     paymentsViaRpc.add(payment.id);
   };
 
+  // SIE-importerade verifikationer behåller filens serie + nummer och går via
+  // app.import_verification (ingen CAS – men den flyttar fram nummerserien).
+  // De körs FÖRE appens egna så att CAS:en nedan ser samma nästa lediga
+  // nummer som domänen räknade fram.
+  for (const verification of newVerifications) {
+    if (verification.source.type !== "sie_import") continue;
+    await tx.query(`select app.import_verification($1, $2::jsonb)`, [
+      businessId,
+      JSON.stringify(verificationRpcPayload(verification)),
+    ]);
+  }
+
   // Kör i verifikationsnummerordning så att CAS:en alltid ser nästa lediga nummer.
   for (const verification of newVerifications) {
+    if (verification.source.type === "sie_import") continue;
     const issueInvoice = issueByVerificationId.get(verification.id);
     if (issueInvoice) {
       await runIssueRpc(issueInvoice, verification);
