@@ -7,7 +7,14 @@ import { emptyTestDb } from "./invoices/test-db";
 import { getBusinessActions } from "./services/actions";
 import { uploadReceiptForExpense } from "./services/expenses";
 import { executeTool } from "./ai/tools";
-import { can, toolAllowedForRole, assertCan, CollaborationDeniedError } from "./collaboration/permissions";
+import {
+  can,
+  toolAllowedForRole,
+  assertCan,
+  assertReadAccess,
+  assertWriteAccess,
+  CollaborationDeniedError,
+} from "./collaboration/permissions";
 import {
   resetCollaborationRegistry,
   upsertUser,
@@ -223,6 +230,29 @@ describe("behörighet", () => {
     assert.equal(can("auditor", "write_accounting"), false);
     assert.equal(can("auditor", "read_accounting"), true);
     assert.throws(() => assertCan("auditor", "correct_voucher"), CollaborationDeniedError);
+  });
+
+  /**
+   * Läsvägen och skrivvägen är två olika grindar. Buggen som fanns var att
+   * läsningarna gick genom skrivgrinden utan capability, vilket nekar
+   * redovisningsroller – då slutar SIE-export, kvitton, inkorgens bilagor och
+   * betalfiler att fungera för konsult och revisor i skarp drift.
+   */
+  it("läsvägen släpper igenom redovisningsroller, skrivvägen gör det bara med capability", () => {
+    for (const role of ["owner", "admin", "member", "accounting_consultant", "auditor"] as const) {
+      assert.doesNotThrow(() => assertReadAccess(role), `${role} ska få läsa bokföringen`);
+    }
+    assert.throws(() => assertReadAccess(null), CollaborationDeniedError);
+
+    // Utan capability är åtgärden ägaryteexklusiv.
+    assert.doesNotThrow(() => assertWriteAccess("owner"));
+    assert.throws(() => assertWriteAccess("accounting_consultant"), /inte tillgänglig från redovisningsytan/);
+    assert.throws(() => assertWriteAccess("auditor"), /inte tillgänglig från redovisningsytan/);
+
+    // Med capability avgör matrisen.
+    assert.doesNotThrow(() => assertWriteAccess("accounting_consultant", "write_accounting"));
+    assert.throws(() => assertWriteAccess("auditor", "write_accounting"), CollaborationDeniedError);
+    assert.throws(() => assertWriteAccess("accounting_consultant", "send_invoice"), CollaborationDeniedError);
   });
 });
 

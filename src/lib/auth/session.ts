@@ -30,7 +30,13 @@ import {
 } from "@/lib/storage/demo-session-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { BusinessRole, DB } from "@/lib/types";
-import { isAccountingRole, isOwnerRole, type CollaborationCapability, assertCan } from "@/lib/collaboration/permissions";
+import {
+  isAccountingRole,
+  isOwnerRole,
+  type CollaborationCapability,
+  assertReadAccess,
+  assertWriteAccess,
+} from "@/lib/collaboration/permissions";
 import {
   LOCAL_JSON_ACCOUNTANT_NAME,
   LOCAL_JSON_BUSINESS_ID,
@@ -388,11 +394,25 @@ async function authorizeWrite(
     if (!isSupabaseMode() && businessId === LOCAL_JSON_BUSINESS_ID) return "owner";
     throw new Error("Du har inte åtkomst till det företaget.");
   }
-  if (capability) {
-    assertCan(membership.role, capability);
-  } else if (isAccountingRole(membership.role)) {
-    throw new Error("Den här åtgärden är inte tillgänglig från redovisningsytan.");
+  assertWriteAccess(membership.role, capability);
+  return membership.role;
+}
+
+/**
+ * Läsvägens auktorisering. Skiljd från authorizeWrite: en läsning ska släppa
+ * igenom redovisningsroller. Går den genom skrivvakten utan capability kastar
+ * den för konsult och revisor, och då slutar SIE-export, kvitton, inkorgens
+ * bilagor och betalfiler att fungera i skarp drift – trots att de rollerna
+ * uttryckligen får läsa bokföringen.
+ */
+async function authorizeRead(user: SessionUser, businessId: string): Promise<BusinessRole> {
+  const memberships = await listMemberships(user.id);
+  const membership = memberships.find((m) => m.businessId === businessId);
+  if (!membership) {
+    if (!isSupabaseMode() && businessId === LOCAL_JSON_BUSINESS_ID) return "owner";
+    throw new Error("Du har inte åtkomst till det företaget.");
   }
+  assertReadAccess(membership.role);
   return membership.role;
 }
 
@@ -460,16 +480,14 @@ async function withDemoSession<T>(
   const user = await requireUser();
   const role = await demoSessionRole();
   if (opts.access === "write") {
-    if (opts.capability) {
-      assertCan(role, opts.capability);
-    } else if (isAccountingRole(role)) {
-      throw new Error("Den här åtgärden är inte tillgänglig från redovisningsytan.");
-    }
+    assertWriteAccess(role, opts.capability);
     // Skrivtak per demosession (skydd mot skriptad massgenerering) –
     // riktiga företag berörs aldrig av kontrollen.
     if (!rateLimitDemoWrite(businessId)) {
       throw new Error("Demon har ett tempotak för ändringar. Vänta en liten stund och försök igen.");
     }
+  } else {
+    assertReadAccess(role);
   }
   return runInDemoSession(sessionId, { access: opts.access, actor: actorFrom(user, businessId, role) }, fn);
 }
@@ -525,7 +543,7 @@ export async function withBusinessRead<T>(
   if (!isSupabaseMode()) return await fn();
   const user = await requireUser();
   const businessId = await resolveActiveBusiness(user.id, opts.businessId);
-  await authorizeWrite(user, businessId);
+  await authorizeRead(user, businessId);
   return runWithTenant({ businessId, userId: user.id, access: "read" }, fn);
 }
 

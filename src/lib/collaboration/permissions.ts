@@ -110,6 +110,34 @@ export function assertCan(role: BusinessRole | null | undefined, capability: Col
   throw new CollaborationDeniedError(capability, role);
 }
 
+/**
+ * Läsvägens grind (withBusinessRead). Redovisningsroller SKA släppas igenom:
+ * SIE-export, kvitton, inkorgens bilagor och betalfiler är läsningar som både
+ * konsult och revisor har rätt till. Skickas en läsning genom skrivgrinden
+ * nedan i stället nekas de rollerna, vilket är fel.
+ */
+export function assertReadAccess(role: BusinessRole | null | undefined): void {
+  assertCan(role, "read_accounting");
+}
+
+/**
+ * Skrivvägens grind (withBusiness). Med capability avgör behörighetsmatrisen.
+ * UTAN capability är åtgärden ägaryteexklusiv – det är standardläget för allt
+ * som inte uttryckligen delats med redovisningsytan.
+ */
+export function assertWriteAccess(
+  role: BusinessRole | null | undefined,
+  capability?: CollaborationCapability
+): void {
+  if (capability) {
+    assertCan(role, capability);
+    return;
+  }
+  if (isAccountingRole(role)) {
+    throw new Error("Den här åtgärden är inte tillgänglig från redovisningsytan.");
+  }
+}
+
 export class CollaborationDeniedError extends Error {
   readonly capability: CollaborationCapability;
   readonly role: BusinessRole | null;
