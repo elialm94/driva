@@ -272,7 +272,13 @@ function Progress({ phase }: { phase: Phase }) {
     <ol className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]" aria-label="Analys">
       {steps.map((s, i) => (
         <li key={s.key} className={cx("flex items-center gap-1.5", i <= index ? "text-ink" : "text-muted")}>
-          {i < index ? <CheckCircle2 className="size-3.5 text-ok" /> : i === index && index < 2 ? <Loader2 className="size-3.5 animate-spin" /> : <span className={cx("size-1.5 rounded-full", i <= index ? "bg-ink" : "bg-line-strong")} />}
+          {i < index || (i === index && phase === "ready") ? (
+            <CheckCircle2 className="size-3.5 text-ok" />
+          ) : i === index && index < 2 ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <span className={cx("size-1.5 rounded-full", i <= index ? "bg-ink" : "bg-line-strong")} />
+          )}
           {s.label}
         </li>
       ))}

@@ -37,20 +37,32 @@ export function SetupProfileForm({
   const [error, setError] = useState<string | null>(null);
 
   if (!editing) {
-    const summary = industriesSummary({ ...profile, status: "complete", currentStep: null, startedAt: "", taskOverrides: {}, updatedAt: "" });
+    // Läs ur den lokala kopian: direkt efter Spara speglar den det som just sparades,
+    // även innan sidan hunnit laddas om från servern.
+    const summary = industriesSummary({
+      status: "complete",
+      currentStep: null,
+      startedAt: "",
+      taskOverrides: {},
+      updatedAt: "",
+      industries,
+      ...(otherIndustry.trim() ? { otherIndustry: otherIndustry.trim() } : {}),
+      payroll: payroll || null,
+      bookkeeping: bookkeeping || null,
+    });
     return (
-      <dl className="grid gap-x-6 gap-y-2 text-[14px] sm:grid-cols-[auto_1fr]">
+      <dl className="grid gap-x-6 gap-y-2 text-[14px] sm:grid-cols-[auto_1fr]" data-setup-profile>
         <dt className="text-muted">Verksamhet</dt>
         <dd className="text-ink">{summary || "Inte angivet"}</dd>
         <dt className="text-muted">Lön</dt>
         <dd className="text-ink">
-          {PAYROLL_OPTIONS.find((o) => o.value === profile.payroll)?.label ?? "Inte angivet"}
-          {profile.payroll === "owner" || profile.payroll === "employees" ? (
+          {PAYROLL_OPTIONS.find((o) => o.value === payroll)?.label ?? "Inte angivet"}
+          {payroll === "owner" || payroll === "employees" ? (
             <span className="block text-[13px] text-soft">Lönehantering finns inte i Ferva ännu – vi hör av oss när det finns.</span>
           ) : null}
         </dd>
         <dt className="text-muted">Bokföring</dt>
-        <dd className="text-ink">{BOOKKEEPING_OPTIONS.find((o) => o.value === profile.bookkeeping)?.label ?? "Inte angivet"}</dd>
+        <dd className="text-ink">{BOOKKEEPING_OPTIONS.find((o) => o.value === bookkeeping)?.label ?? "Inte angivet"}</dd>
         <dd className="sm:col-start-2">
           <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setEditing(true)} data-setup-profile-edit>
             Ändra

@@ -57,7 +57,14 @@ export function OnboardingForm({
   const [email, setEmail] = useState(defaultEmail);
   const [phone, setPhone] = useState(defaultPhone);
 
-  const errors = { ...state.fieldErrors, ...clientErrors };
+  const errors: NonNullable<CompanyStepState["fieldErrors"]> = { ...state.fieldErrors };
+  for (const [key, value] of Object.entries(clientErrors ?? {})) {
+    errors[key as keyof typeof errors] = value;
+  }
+
+  function clearError(key: keyof NonNullable<CompanyStepState["fieldErrors"]>) {
+    setClientErrors((prev) => (prev && prev[key] ? { ...prev, [key]: undefined } : prev));
+  }
   // Momsregistreringsnumret räknas alltid ut ur organisationsnumret – ingen manuell inmatning.
   const vatNumber = isOrgnrFormat(orgNumber) ? formatVatNumber(orgNumber) : "";
 
@@ -113,7 +120,10 @@ export function OnboardingForm({
                 name="companyForm"
                 value={option.value}
                 checked={companyForm === option.value}
-                onChange={() => setCompanyForm(option.value)}
+                onChange={() => {
+                  setCompanyForm(option.value);
+                  clearError("companyForm");
+                }}
                 className="sr-only"
               />
               {option.label}
@@ -141,7 +151,11 @@ export function OnboardingForm({
           name="orgNumber"
           {...swedishOrgnrInputProps}
           value={orgNumber}
-          onChange={(e) => setOrgNumber(formatOrgnr(e.target.value))}
+          onChange={(e) => {
+            setOrgNumber(formatOrgnr(e.target.value));
+            clearError("orgNumber");
+            clearError("vatNumber");
+          }}
           className={cx(field, errors.orgNumber && invalidFieldCls)}
           placeholder="559123-4567"
         />
@@ -152,7 +166,10 @@ export function OnboardingForm({
           name="name"
           autoComplete="organization"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            setName(e.target.value);
+            clearError("name");
+          }}
           className={cx(field, errors.name && invalidFieldCls)}
           placeholder={companyForm === "enskild" ? "Ekvägens El" : "Ekvägens El AB"}
         />
@@ -240,7 +257,10 @@ export function OnboardingForm({
                     name="paymentMethod"
                     value={method.value}
                     checked={paymentMethod === method.value}
-                    onChange={() => setPaymentMethod(method.value)}
+                    onChange={() => {
+                      setPaymentMethod(method.value);
+                      clearError("paymentMethod");
+                    }}
                     className="sr-only"
                   />
                   {method.label}

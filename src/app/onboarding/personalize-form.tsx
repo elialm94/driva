@@ -34,10 +34,18 @@ export function PersonalizeForm({
   const [payroll, setPayroll] = useState<OnboardingPayroll | "">(defaults?.payroll ?? "");
   const [bookkeeping, setBookkeeping] = useState<OnboardingBookkeeping | "">(defaults?.bookkeeping ?? "");
   const [clientErrors, setClientErrors] = useState<PersonalizeStepState["fieldErrors"]>({});
-  const errors = { ...state.fieldErrors, ...clientErrors };
+  const errors: NonNullable<PersonalizeStepState["fieldErrors"]> = { ...state.fieldErrors };
+  for (const [key, value] of Object.entries(clientErrors ?? {})) {
+    errors[key as keyof typeof errors] = value;
+  }
+
+  function clearError(key: keyof NonNullable<PersonalizeStepState["fieldErrors"]>) {
+    setClientErrors((prev) => (prev && prev[key] ? { ...prev, [key]: undefined } : prev));
+  }
 
   function toggleIndustry(value: OnboardingIndustry) {
     setIndustries((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
+    clearError("industries");
   }
 
   return (
@@ -105,7 +113,17 @@ export function PersonalizeForm({
         <div className="grid gap-2">
           {PAYROLL_OPTIONS.map((option) => (
             <ChoiceChip key={option.value} checked={payroll === option.value}>
-              <input type="radio" name="payroll" value={option.value} checked={payroll === option.value} onChange={() => setPayroll(option.value)} className="sr-only" />
+              <input
+                type="radio"
+                name="payroll"
+                value={option.value}
+                checked={payroll === option.value}
+                onChange={() => {
+                  setPayroll(option.value);
+                  clearError("payroll");
+                }}
+                className="sr-only"
+              />
               {option.label}
             </ChoiceChip>
           ))}
@@ -118,7 +136,17 @@ export function PersonalizeForm({
         <div className="grid gap-2">
           {BOOKKEEPING_OPTIONS.map((option) => (
             <ChoiceChip key={option.value} checked={bookkeeping === option.value}>
-              <input type="radio" name="bookkeeping" value={option.value} checked={bookkeeping === option.value} onChange={() => setBookkeeping(option.value)} className="sr-only" />
+              <input
+                type="radio"
+                name="bookkeeping"
+                value={option.value}
+                checked={bookkeeping === option.value}
+                onChange={() => {
+                  setBookkeeping(option.value);
+                  clearError("bookkeeping");
+                }}
+                className="sr-only"
+              />
               {option.label}
             </ChoiceChip>
           ))}
