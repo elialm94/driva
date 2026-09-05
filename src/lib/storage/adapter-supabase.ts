@@ -258,11 +258,16 @@ export async function membershipsForUser(userId: string): Promise<MembershipInfo
     }));
 }
 
-let onboardingTablePresent: boolean | undefined;
+let onboardingTablePresent = false;
 
-/** business_onboarding finns först efter migration 31 / pending schema – joina bara då. */
+/**
+ * business_onboarding finns först efter migration 31 / pending schema – joina
+ * bara då. Bara "finns" cachas: saknas tabellen kollas den igen varje gång,
+ * så att första skrivningen (som skapar den via pending schema) direkt ger
+ * rätt status utan omstart.
+ */
 async function onboardingTableSql(client: SqlClient): Promise<{ select: string; join: string }> {
-  if (onboardingTablePresent === undefined) {
+  if (!onboardingTablePresent) {
     const rows = await client.query(`select to_regclass('public.business_onboarding') is not null as present`);
     onboardingTablePresent = Boolean(rows[0]?.present);
   }
@@ -271,9 +276,8 @@ async function onboardingTableSql(client: SqlClient): Promise<{ select: string; 
     : { select: "null::text", join: "" };
 }
 
-/** Efter att pending schema skapat tabellen: låt nästa uppslag joina igen. */
 export function __resetOnboardingTableCacheForTests(): void {
-  onboardingTablePresent = undefined;
+  onboardingTablePresent = false;
 }
 
 async function businessesDisabledAtSql(client: SqlClient): Promise<string> {

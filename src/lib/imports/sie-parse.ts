@@ -236,7 +236,8 @@ export interface ParseSieOptions {
 
 export const SIE_LIMITS = {
   maxBytes: 25 * 1024 * 1024,
-  maxVerifications: 200_000,
+  /** Rimlig övre gräns per fil – större bokföringar exporteras ett år i taget. */
+  maxVerifications: 30_000,
 } as const;
 
 export function parseSie(bytes: Uint8Array, options: ParseSieOptions = {}): SieFile {

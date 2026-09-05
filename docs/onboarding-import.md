@@ -147,7 +147,7 @@ och priser*. Ingen parallell katalog skapas.
   största-rest-metoden så att varje verifikation balanserar exakt (ingen rad
   ändras mer än ±1 kr, inget konstgjort konto). Detsamma för IB.
 * Ingående balanser som inte summerar till noll i filen stoppar det årets import.
-* Filer > 25 MB eller > 200 000 verifikationer avvisas (exportera ett år i taget).
+* Filer > 25 MB eller > 30 000 verifikationer avvisas (exportera ett år i taget). Värdplattformens gräns för begärans storlek kan vara lägre än 25 MB.
 
 Importen är transaktionell: allt byggs i staging och skrivs i ett steg; i
 Supabase går verifikationerna via `app.import_verification` (samma
