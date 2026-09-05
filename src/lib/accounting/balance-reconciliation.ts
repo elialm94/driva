@@ -22,6 +22,7 @@ import {
   PERIODISERINGSFOND,
   SEMESTERLONESKULD,
   UPPLUPNA_SOCIALA_AVGIFTER,
+  fundLots,
   yearEndScheduleFor,
 } from "./year-end";
 
@@ -162,6 +163,8 @@ function tieOutAccounts(fy: FiscalYear): number[] {
   for (const [account, spec] of Object.entries(SCHEDULE_ACCOUNT_SUBSYSTEM)) {
     if (yearEndScheduleFor(fy.id, spec.kind)) accounts.add(Number(account));
   }
+  // Fonderna lever vidare utan bilaga de år inget händer med dem.
+  if (fundLots(fy.id).length) accounts.add(PERIODISERINGSFOND);
   return [...accounts];
 }
 
@@ -343,6 +346,32 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
     });
   }
 
+  /*
+   * 2110 Periodiseringsfonder ↔ fonderna per avsättningsår.
+   *
+   * Specifikationen är lotterna, inte årets bilaga. En fond lever i upp till
+   * sex år, och ett år där bolaget varken sätter av eller återför har ingen
+   * bilaga – men saldot är fortfarande fullt förklarat av tidigare års
+   * avsättningar. Att kräva en bilaga per år vore att låsa bokslutet för ett
+   * underlag som redan finns.
+   */
+  if (account === PERIODISERINGSFOND) {
+    const lots = fundLots(fy.id);
+    const subsystem = -lots.reduce((s, lot) => s + lot.amount, 0);
+    return tie({
+      ...base,
+      subsystem,
+      source: "bokslutsbilaga",
+      detail: lots.length
+        ? `${lots.length} fond${lots.length === 1 ? "" : "er"} avsatt${lots.length === 1 ? "" : "a"} ${lots
+            .map((l) => l.year)
+            .join(", ")} på ${-subsystem} kr.`
+        : "Ingen periodiseringsfond är avsatt.",
+      href: "/bokforing/bokslut",
+      hrefLabel: "Öppna bokslutet",
+    });
+  }
+
   // Bilagekontona ↔ bokslutsbilagan.
   const scheduleAccount = SCHEDULE_ACCOUNT_SUBSYSTEM[account];
   if (scheduleAccount) {
@@ -420,7 +449,6 @@ const SCHEDULE_ACCOUNT_SUBSYSTEM: Record<
     amount: (_closing, schedule) => schedule.lines[1]?.amount ?? 0,
   },
   [NEDSKRIVNING_KUNDFORDRINGAR]: { kind: "kundfordringar_nedskrivning", amount: (closing) => closing },
-  [PERIODISERINGSFOND]: { kind: "periodiseringsfond", amount: (closing) => closing },
 };
 
 function isAssetAccount(account: number): boolean {

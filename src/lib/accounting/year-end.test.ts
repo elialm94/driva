@@ -395,6 +395,49 @@ describe("avstämning per balanskonto", () => {
     assert.equal(rec.ok, true);
   });
 
+  it("en fond som ligger kvar är förklarad även året då ingen bilaga upprättas", () => {
+    /*
+     * Fonden avsätts ett år och står stilla i upp till sex. Året därpå finns
+     * ingen bilaga att upprätta – men saldot är fullt förklarat av lotten från
+     * avsättningsåret, och bokslutet får inte fastna på ett underlag som redan
+     * finns.
+     */
+    db().fiscalYears.push({
+      id: "fy-next",
+      label: String(YEAR + 1),
+      startDate: `${YEAR + 1}-01-01`,
+      endDate: `${YEAR + 1}-12-31`,
+      status: "oppet",
+      openingBalances: { [PERIODISERINGSFOND]: -60_000 },
+      openingSource: "foregaende_ar",
+    });
+    postVerification({
+      date: `${YEAR}-06-01`,
+      description: "Försäljning",
+      entries: [
+        { account: 1930, debit: 300_000 },
+        { account: 3001, credit: 300_000 },
+      ],
+      source: { type: "manuell" },
+      createdBy: "anvandare",
+    });
+    const fund = saveYearEndSchedule(
+      "fy",
+      "periodiseringsfond",
+      { fundAllocation: 60_000, fundReversals: [] },
+      "anvandare"
+    );
+    bookYearEndSchedule(fund.id, "anvandare");
+
+    const rec = balanceReconciliation("fy-next");
+    const row = rec.rows.find((r) => r.account === PERIODISERINGSFOND);
+    assert.equal(yearEndScheduleFor("fy-next", "periodiseringsfond"), undefined, "året har ingen egen bilaga");
+    assert.equal(row?.subsystem, -60_000);
+    assert.equal(row?.difference, 0);
+    assert.equal(row?.ok, true);
+    assert.match(row!.detail, new RegExp(`avsatt ${YEAR}`));
+  });
+
   it("bilagekontot stäms av mot bilagan", () => {
     hire();
     saveYearEndSchedule("fy", "semesterloneskuld", { savedVacationDays: 10 }, "anvandare");
