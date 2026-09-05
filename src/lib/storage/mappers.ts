@@ -42,6 +42,9 @@ import type {
   Employee,
   EmployerDeclaration,
   Expense,
+  FilingReceipt,
+  FilingSignature,
+  FilingSubmission,
   FiscalYear,
   FiscalYearReopening,
   Invoice,
@@ -1599,6 +1602,62 @@ export const annualReportsSpec: TableSpec<AnnualReport> = {
     ...opt("markedFiledAt", tsIsoOrU(r.marked_filed_at)),
     ...opt("supersededAt", tsIsoOrU(r.superseded_at)),
     ...opt("supersededReason", strOrU(r.superseded_reason)),
+  }),
+};
+
+/* ----------------------------- filing_submissions ------------------------- */
+
+export const filingSubmissionsSpec: TableSpec<FilingSubmission> = {
+  table: "filing_submissions",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "kind", "subject_id", "label", "authority", "provider", "status",
+    "files", "generated_at", "signature", "submitted_at", "provider_submission_id",
+    "receipt", "rejection", "last_error", "created_by", "created_at", "updated_at",
+  ],
+  toRow: (s, businessId) => ({
+    id: s.id,
+    business_id: businessId,
+    kind: s.kind,
+    subject_id: s.subjectId,
+    label: s.label,
+    authority: s.authority,
+    provider: s.provider,
+    status: s.status,
+    files: jsonParam(s.files),
+    generated_at: s.generatedAt ?? null,
+    signature: s.signature ? jsonParam(s.signature) : null,
+    submitted_at: s.submittedAt ?? null,
+    provider_submission_id: s.providerSubmissionId ?? null,
+    receipt: s.receipt ? jsonParam(s.receipt) : null,
+    rejection: s.rejection ? jsonParam(s.rejection) : null,
+    last_error: s.lastError ?? null,
+    created_by: s.createdBy,
+    created_at: s.createdAt,
+    updated_at: s.updatedAt,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    kind: r.kind as FilingSubmission["kind"],
+    subjectId: str(r.subject_id),
+    label: str(r.label),
+    authority: r.authority as FilingSubmission["authority"],
+    provider: r.provider as FilingSubmission["provider"],
+    status: r.status as FilingSubmission["status"],
+    files: jsonVal<FilingSubmission["files"]>(r.files),
+    ...opt("generatedAt", tsIsoOrU(r.generated_at)),
+    ...opt("signature", r.signature == null ? undefined : jsonVal<FilingSignature>(r.signature)),
+    ...opt("submittedAt", tsIsoOrU(r.submitted_at)),
+    ...opt("providerSubmissionId", strOrU(r.provider_submission_id)),
+    ...opt("receipt", r.receipt == null ? undefined : jsonVal<FilingReceipt>(r.receipt)),
+    ...opt(
+      "rejection",
+      r.rejection == null ? undefined : jsonVal<NonNullable<FilingSubmission["rejection"]>>(r.rejection)
+    ),
+    ...opt("lastError", strOrU(r.last_error)),
+    createdBy: r.created_by as FilingSubmission["createdBy"],
+    createdAt: tsIso(r.created_at),
+    updatedAt: tsIso(r.updated_at),
   }),
 };
 

@@ -274,6 +274,7 @@ export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): 
   // i koden (accounting/chart.ts), så en tom lista är det normala tillståndet.
   loaded.chartAccounts ??= [];
   loaded.jobWorkEntries ??= [];
+  loaded.filingSubmissions ??= [];
   loaded.collaborationInvitations ??= [];
   loaded.clientInformationRequests ??= [];
   loaded.settings.inboundMailSlug ??= "demo";
@@ -464,6 +465,7 @@ export function resetToEmptyCompany(): void {
     yearEndSchedules: [],
     auditTrail: [],
     annualReports: [],
+    filingSubmissions: [],
     activity: [],
     website: null,
     domains: [],

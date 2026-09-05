@@ -30,6 +30,7 @@ import {
   employeesSpec,
   employerDeclarationsSpec,
   expensesSpec,
+  filingSubmissionsSpec,
   fiscalYearsSpec,
   invoiceLineFromRow,
   attentionStatesSpec,
@@ -160,7 +161,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     tx.query(`select * from public.annual_reports where business_id = $1 order by generated_at, id`, b),
   ]);
 
-  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows, bankConnectionRows, chartAccountRows, employeeRows, payrollRunRows, employerDeclarationRows, yearEndScheduleRows] =
+  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows, bankConnectionRows, chartAccountRows, employeeRows, payrollRunRows, employerDeclarationRows, yearEndScheduleRows, filingSubmissionRows] =
     await Promise.all([
       tx.query(`select * from public.websites where business_id = $1`, b),
       tx.query(`select * from public.domains where business_id = $1 order by created_at, id`, b),
@@ -197,6 +198,12 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
         tx,
         "year_end_schedules",
         `select * from public.year_end_schedules where business_id = $1 order by created_at, id`,
+        b
+      ),
+      queryIfTable(
+        tx,
+        "filing_submissions",
+        `select * from public.filing_submissions where business_id = $1 order by created_at, id`,
         b
       ),
     ]);
@@ -310,6 +317,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     assets: assetRows.map(assetsSpec.fromRow),
     accruals: accrualRows.map(accrualsSpec.fromRow),
     yearEndSchedules: yearEndScheduleRows.map(yearEndSchedulesSpec.fromRow),
+    filingSubmissions: filingSubmissionRows.map(filingSubmissionsSpec.fromRow),
     auditTrail: auditRows.filter((r) => r.channel === "accounting").map(auditTrailFromAuditRow),
     annualReports: annualReportRows.map(annualReportsSpec.fromRow),
     activity: activityRows.map(activityFromAuditRow),

@@ -44,6 +44,7 @@ const COUNTED: Array<[keyof DB, string]> = [
   ["yearEndSchedules", "bokslutsbilagor"],
   ["auditTrail", "bokföringsaudit"],
   ["annualReports", "årsredovisningar"],
+  ["filingSubmissions", "inlämningar"],
   ["activity", "aktivitetshändelser"],
   ["website", "hemsida"],
   ["domains", "domäner"],

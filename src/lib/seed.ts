@@ -2073,6 +2073,7 @@ export function buildSeed(): DB {
     yearEndSchedules: [],
     auditTrail: [],
     annualReports: [],
+    filingSubmissions: [],
     activity: activity.sort((a, b) => b.at.localeCompare(a.at)),
     website,
     domains: [],

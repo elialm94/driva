@@ -44,6 +44,7 @@ import {
   domainAuditToAuditRow,
   domainsSpec,
   expensesSpec,
+  filingSubmissionsSpec,
   fiscalYearsSpec,
   attentionStatesSpec,
   clientInformationRequestsSpec,
@@ -379,6 +380,10 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
     diffCollection(baseline.yearEndSchedules ?? [], state.yearEndSchedules ?? [])
   );
   await applySpec(annualReportsSpec, diffCollection(baseline.annualReports, state.annualReports));
+  await applySpec(
+    filingSubmissionsSpec,
+    diffCollection(baseline.filingSubmissions ?? [], state.filingSubmissions ?? [])
+  );
   await applySpec(
     websitesSpec,
     diffCollection(baseline.website ? [baseline.website] : [], state.website ? [state.website] : [])

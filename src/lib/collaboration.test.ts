@@ -218,6 +218,11 @@ describe("behörighet", () => {
     assert.equal(can("accounting_consultant", "categorize"), true);
     assert.equal(can("accounting_consultant", "prepare_supplier_payment"), true);
     assert.equal(can("accounting_consultant", "submit_bank_payment"), false);
+    // Konsulten upprättar deklarationsfilen; signering och inlämning är bolagets egen handling.
+    assert.equal(can("accounting_consultant", "prepare_filing"), true);
+    assert.equal(can("accounting_consultant", "submit_filing"), false);
+    assert.equal(can("auditor", "prepare_filing"), false);
+    assert.equal(can("owner", "submit_filing"), true);
     assert.equal(can("accounting_consultant", "send_invoice"), false);
     assert.equal(can("accounting_consultant", "create_quote"), false);
     assert.equal(can("accounting_consultant", "change_website"), false);

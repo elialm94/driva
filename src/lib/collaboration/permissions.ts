@@ -20,6 +20,8 @@ export type CollaborationCapability =
   | "export_accounting"
   | "prepare_supplier_payment"
   | "submit_bank_payment"
+  | "prepare_filing"
+  | "submit_filing"
   | "send_invoice"
   | "create_quote"
   | "change_website"
@@ -42,6 +44,9 @@ const CONSULTANT: ReadonlySet<CollaborationCapability> = new Set([
   "year_end",
   "export_accounting",
   "prepare_supplier_payment",
+  // Konsulten upprättar och genererar deklarationsfilen. Att signera och lämna
+  // in den är bolagets egen handling och kräver submit_filing.
+  "prepare_filing",
   "request_client_information",
 ]);
 
@@ -62,6 +67,8 @@ const OWNER: ReadonlySet<CollaborationCapability> = new Set([
   "export_accounting",
   "prepare_supplier_payment",
   "submit_bank_payment",
+  "prepare_filing",
+  "submit_filing",
   "send_invoice",
   "create_quote",
   "change_website",
