@@ -214,7 +214,8 @@ export interface CloseResult {
  * Stäng räkenskapsåret:
  *  1. Kontrollera att alla blockerande punkter är klara.
  *  2. AB: bokför beräknad bolagsskatt (8910 → 2512), tydligt preliminär tills deklaration.
- *  3. Bokför årets resultat mot eget kapital (2099 för AB, 2019 för enskild firma).
+ *  3. Omför föregående års resultat till balanserat resultat, och bokför årets
+ *     resultat mot eget kapital (2099 för AB, 2019 för enskild firma).
  *  4. Skapa nästa räkenskapsår med utgående balanser som ingående.
  *  5. Återför periodiseringar i det nya året, lås och stäng.
  */
@@ -265,6 +266,45 @@ export function closeFiscalYear(fiscalYearId: string, by: "anvandare" | "assiste
   }
   const aretsResultat = -resultNet; // positivt = vinst
   const equityAccount = companyForm === "ab" ? 2099 : 2019;
+  const balanceradAccount = companyForm === "ab" ? 2091 : 2010;
+
+  /*
+   * Omföring av föregående års resultat.
+   *
+   * "Årets resultat" får bara innehålla ETT års resultat. Utan omföringen
+   * ackumuleras kontot år för år: balansräkningen skulle säga att årets
+   * resultat är summan av alla år och att balanserat resultat är noll. Summan
+   * eget kapital blir rätt ändå, vilket är precis varför felet är lätt att
+   * missa – men fördelningen är fel, och det är den utomstående läser.
+   *
+   * Omföringen dateras till räkenskapsårets första dag: resultatet tillhörde
+   * det föregående året och ska inte ligga kvar som "årets" när det nya börjar.
+   */
+  const ingaendeResultat = -(sb.rows.find((r) => r.account === equityAccount)?.ib ?? 0);
+  if (ingaendeResultat !== 0) {
+    verifications.push(
+      postVerification(
+        {
+          date: fy.startDate,
+          description: `Omföring av föregående års resultat`,
+          entries:
+            ingaendeResultat > 0
+              ? [
+                  { account: equityAccount, debit: ingaendeResultat },
+                  { account: balanceradAccount, credit: ingaendeResultat },
+                ]
+              : [
+                  { account: balanceradAccount, debit: -ingaendeResultat },
+                  { account: equityAccount, credit: -ingaendeResultat },
+                ],
+          source: { type: "bokslut", id: fy.id },
+          createdBy: by,
+          explanation: `Föregående års resultat ${ingaendeResultat} kr flyttas från Årets resultat till balanserat resultat, så att Årets resultat bara visar ${fy.label}.`,
+        },
+        { bypassPeriodLock: true }
+      )
+    );
+  }
   if (aretsResultat !== 0) {
     verifications.push(
       postVerification(

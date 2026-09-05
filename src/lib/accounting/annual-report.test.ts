@@ -202,6 +202,44 @@ describe("årsredovisning – balansräkning och jämförelsetal", () => {
     assert.ok(content.noter.some((n) => n.title.includes("Obeskattade reserver")));
   });
 
+  /*
+   * "Årets resultat" i balansräkningen ska vara ETT års resultat.
+   *
+   * Utan omföringen av föregående års resultat ackumuleras kontot: summa eget
+   * kapital blir ändå rätt, vilket är precis varför felet är lätt att missa,
+   * men balansräkningen påstår då att hela historiken är årets resultat och att
+   * bolaget aldrig balanserat något. Det är fördelningen läsaren tittar på.
+   */
+  it("årets resultat är årets, inte summan av alla år", () => {
+    revenue(2024, 500_000);
+    closeFiscalYear("fy-2024", "anvandare");
+    const forra = generateAnnualReport("fy-2024", "anvandare").content;
+    const forraResultat = sum(forra.resultatrakning, "Årets resultat");
+
+    revenue(2025, 900_000);
+    closeFiscalYear("fy-2025", "anvandare");
+    const content = generateAnnualReport("fy-2025", "anvandare").content;
+
+    const aretsResultatIResultatrakningen = sum(content.resultatrakning, "Årets resultat");
+    const rows = content.balansrakningEgetKapitalSkulder;
+    assert.equal(
+      sum(rows, "Årets resultat"),
+      aretsResultatIResultatrakningen,
+      "balansräkningens årets resultat stämmer inte med resultaträkningens"
+    );
+    assert.equal(sum(rows, "Balanserat resultat"), forraResultat, "föregående års resultat balanserades inte");
+
+    // Fördelningen ändrades, inte summan.
+    assert.equal(sum(rows, "Summa eget kapital"), forraResultat + aretsResultatIResultatrakningen);
+    assert.equal(sum(content.balansrakningTillgangar, "Summa tillgångar"), sum(rows, "Summa eget kapital och skulder"));
+
+    // Och det stämman har att disponera är båda åren tillsammans.
+    assert.equal(
+      content.forvaltningsberattelse.resultatdisposition.tillForfogande,
+      forraResultat + aretsResultatIResultatrakningen
+    );
+  });
+
   it("jämförelsetalen kommer ur föregående års bokföring", () => {
     revenue(2024, 100_000);
     closeFiscalYear("fy-2024", "anvandare");
