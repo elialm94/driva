@@ -145,21 +145,26 @@ export function PeriodstangningView({
       )}
 
       <SectionTitle>Månaderna i året</SectionTitle>
-      <Card className="mb-6 overflow-x-auto px-5 py-4">
-        <table className="w-full min-w-[420px] text-[13px]">
+      {/*
+        Tabellen får inte tvinga fram sidled-scroll: månaden och statusen är
+        hela poängen, och en smal skärm som visar den ena utan den andra visar
+        ingenting. Tre korta kolumner ryms, så rubriken bryter rad i stället.
+      */}
+      <Card className="mb-6 px-5 py-4">
+        <table className="w-full text-[13px]">
           <thead>
-            <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
+            <tr className="text-left align-bottom text-[11px] font-semibold uppercase tracking-wide text-muted">
               <th className="pb-1.5 font-semibold">Månad</th>
-              <th className="pb-1.5 text-right font-semibold">Verifikationer</th>
-              <th className="pb-1.5 text-right font-semibold">Status</th>
+              <th className="pb-1.5 pl-2 text-right font-semibold">Verifikationer</th>
+              <th className="pb-1.5 pl-2 text-right font-semibold">Status</th>
             </tr>
           </thead>
           <tbody>
             {months.map((m) => (
               <tr key={m.period.key} className="border-t border-line/50">
                 <td className="py-1.5 pr-3">{m.period.label}</td>
-                <td className="py-1.5 text-right tabular text-soft">{m.verifications}</td>
-                <td className="py-1.5 text-right">
+                <td className="py-1.5 pl-2 text-right tabular text-soft">{m.verifications}</td>
+                <td className="py-1.5 pl-2 text-right">
                   <Badge tone={statusTone(m)}>{statusText(m)}</Badge>
                 </td>
               </tr>
@@ -169,8 +174,9 @@ export function PeriodstangningView({
       </Card>
 
       <p className="text-[12px] leading-relaxed text-muted">
-        Kontrollerna är bokslutets, fast per månad: banken, underlagen, momsen och lönen. Kundfordringarnas värde och
-        periodiseringarna hör till bokslutet och kontrolleras inte här – annars vore det tolv bokslut om året.
+        Kontrollerna är samma som bokslutets, gjorda månad för månad: banken, underlagen, momsen och lönen.
+        Kundfordringarnas värde och periodiseringarna hör till bokslutet och kontrolleras inte här – annars vore det
+        tolv bokslut om året.
       </p>
     </>
   );

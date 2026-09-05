@@ -26,6 +26,11 @@ import { logAudit } from "./audit";
 
 export interface PeriodCheckItem {
   key: string;
+  /**
+   * Kravet, inte ett påstående om att det är uppfyllt. "Banken avstämd" läser
+   * rätt både med bock och med varningstriangel; "Banken är avstämd" intill en
+   * varning om tre ohanterade transaktioner motsäger sig själv.
+   */
   label: string;
   ok: boolean;
   /** Blockerar stängning (annars bara upplysning). */
@@ -122,7 +127,7 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
   const checks: PeriodCheckItem[] = [
     {
       key: "manaden_slut",
-      label: state === "att_stanga" || state === "stangd" ? `${period.label} är slut` : `${period.label} pågår ännu`,
+      label: "Månaden avslutad",
       ok: state === "att_stanga" || state === "stangd",
       blocking: true,
       detail:
@@ -134,7 +139,7 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
     },
     {
       key: "bank",
-      label: "Banken är avstämd",
+      label: "Banken avstämd",
       ok: unbookedBank.length === 0 && recon.unexplained === 0,
       blocking: true,
       detail:
@@ -148,7 +153,7 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
     },
     {
       key: "underlag",
-      label: "Alla köp har underlag och är bokförda",
+      label: "Alla köp bokförda med underlag",
       ok: openExpenses.length === 0 && openInbox.length === 0 && unbookedSupplier.length === 0,
       blocking: true,
       detail:
@@ -166,7 +171,7 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
     },
     {
       key: "fakturor",
-      label: "Kundfakturorna är utfärdade",
+      label: "Kundfakturorna utfärdade",
       ok: draftInvoices.length === 0,
       blocking: false,
       detail: draftInvoices.length
@@ -180,7 +185,7 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
   if (employedInMonth) {
     checks.push({
       key: "lon",
-      label: "Lönen är bokförd och deklarerad",
+      label: "Lönen bokförd och deklarerad",
       ok: payrollBooked && declaration?.status === "deklarerad",
       blocking: true,
       detail: !payrollBooked
@@ -196,7 +201,7 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
   if (vatPeriod) {
     checks.push({
       key: "moms",
-      label: `Momsen för ${vatPeriod.label} är deklarerad`,
+      label: `Momsen för ${vatPeriod.label} deklarerad`,
       ok: vatReport?.status === "deklarerad",
       blocking: true,
       detail:
