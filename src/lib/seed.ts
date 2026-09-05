@@ -2088,6 +2088,9 @@ export function buildSeed(): DB {
     purchaseOrders: [],
     purchaseOrderLines: [],
     purchaseOrderConfirmations: [],
+    onboarding: null,
+    dataImports: [],
+    suppliers: [],
     inboxItems: [
       // Fall B: komplett faktura, tolkad med hög konfidens per fält och
       // bokförd av autopiloten. Betalningen är REDO – [Skapa bankfil].

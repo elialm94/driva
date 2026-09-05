@@ -834,7 +834,8 @@ async function main() {
     );
     // Företagsraden, profilen (stabil inkommande-slug), medlemskapen och
     // nummerserierna överlever – exempeldatat spelas upp igen efteråt.
-    const kept = new Set(["business_memberships", "business_sequences", "business_settings"]);
+    // business_onboarding: demoföretaget är alltid klart med onboarding – raden återställs, tas inte bort.
+    const kept = new Set(["business_memberships", "business_sequences", "business_settings", "business_onboarding"]);
     for (const { relname } of tables.rows) {
       if (kept.has(relname)) continue;
       const count = await pg.query<{ n: number }>(

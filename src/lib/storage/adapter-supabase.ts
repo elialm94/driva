@@ -215,6 +215,11 @@ export interface MembershipInfo {
   role: import("../types").BusinessRole;
   lastActiveAt?: string;
   invitedByUserId?: string;
+  /**
+   * Onboardingens tillstånd för företaget (business_onboarding.status).
+   * Saknad rad = klar (backfill). Bara ägare skickas tillbaka till /onboarding.
+   */
+  onboardingStatus?: import("../types").OnboardingStatus;
 }
 
 /**
@@ -228,11 +233,14 @@ export async function membershipsForUser(userId: string): Promise<MembershipInfo
   // Inte b.disabled_at i SQL: kolumnen saknas tills admin-migrationen körts
   // och en saknad kolumn inne i andra tx kan fälla sidladdningen. Filtrera
   // inaktiverade företag i JS när kolumnen finns.
+  const onboardingJoin = await onboardingTableSql(client);
   const rows = await client.query(
     `select m.business_id, m.role, m.last_active_at, m.invited_by_user_id,
-            ${await businessesDisabledAtSql(client)} as disabled_at
+            ${await businessesDisabledAtSql(client)} as disabled_at,
+            ${onboardingJoin.select} as onboarding_status
        from public.business_memberships m
        join public.businesses b on b.id = m.business_id
+       ${onboardingJoin.join}
       where m.user_id = $1 and m.revoked_at is null
       order by m.created_at, m.business_id`,
     [userId]
@@ -244,7 +252,28 @@ export async function membershipsForUser(userId: string): Promise<MembershipInfo
       role: r.role as MembershipInfo["role"],
       lastActiveAt: r.last_active_at ? String(r.last_active_at) : undefined,
       invitedByUserId: r.invited_by_user_id ? String(r.invited_by_user_id) : undefined,
+      // Ingen rad (företag före migration 31, eller innan pending schema
+      // hunnit köras) räknas som klar – ingen befintlig kund tvingas om.
+      onboardingStatus: (r.onboarding_status ? String(r.onboarding_status) : "complete") as MembershipInfo["onboardingStatus"],
     }));
+}
+
+let onboardingTablePresent: boolean | undefined;
+
+/** business_onboarding finns först efter migration 31 / pending schema – joina bara då. */
+async function onboardingTableSql(client: SqlClient): Promise<{ select: string; join: string }> {
+  if (onboardingTablePresent === undefined) {
+    const rows = await client.query(`select to_regclass('public.business_onboarding') is not null as present`);
+    onboardingTablePresent = Boolean(rows[0]?.present);
+  }
+  return onboardingTablePresent
+    ? { select: "o.status", join: "left join public.business_onboarding o on o.business_id = m.business_id" }
+    : { select: "null::text", join: "" };
+}
+
+/** Efter att pending schema skapat tabellen: låt nästa uppslag joina igen. */
+export function __resetOnboardingTableCacheForTests(): void {
+  onboardingTablePresent = undefined;
 }
 
 async function businessesDisabledAtSql(client: SqlClient): Promise<string> {
@@ -329,10 +358,18 @@ export async function createBusinessWithOwner(input: {
    * demoföretag, och den publika demon bor i JSON-filer, inte i databasen.
    */
   isDemo?: boolean;
+  /** Bolagsform från onboardingens steg 1. Default 'ab' (kolumnens default). */
+  companyForm?: "ab" | "enskild";
+  /**
+   * Onboardingens tillstånd efter skapandet. Appens steg 1 skickar
+   * 'company_done' (steg 2 återstår); seed/tester/demo skapar klara företag.
+   */
+  onboardingStatus?: "company_done" | "complete";
 }): Promise<string> {
   const client = await sqlClient();
   await ensurePendingSchema(client);
   const isDemo = input.isDemo === true;
+  const onboardingStatus = input.onboardingStatus ?? "complete";
   return client.transaction(async (tx) => {
     const idRows = await tx.query(`select gen_random_uuid()::text as id`);
     const businessId = String(idRows[0].id);
@@ -358,6 +395,18 @@ export async function createBusinessWithOwner(input: {
     );
     await insertSettingsWithAllocatedSlug(tx, businessId, input);
     await tx.query(`insert into public.business_sequences (business_id) values ($1)`, [businessId]);
+    await tx.query(
+      `insert into public.business_onboarding (
+         business_id, status, current_step, started_at, company_completed_at,
+         personalization_completed_at, completed_at, updated_at
+       ) values (
+         $1, $2, $3, now(), now(),
+         case when $2 = 'complete' then now() end,
+         case when $2 = 'complete' then now() end,
+         now()
+       )`,
+      [businessId, onboardingStatus, onboardingStatus === "complete" ? null : "personalize"]
+    );
     return businessId;
   });
 }
@@ -399,6 +448,7 @@ async function insertSettingsWithAllocatedSlug(
     bankgiro?: string;
     plusgiro?: string;
     bankAccount?: string;
+    companyForm?: "ab" | "enskild";
   },
 ): Promise<string> {
   const skipped = new Set<string>();
@@ -414,8 +464,8 @@ async function insertSettingsWithAllocatedSlug(
            business_id, name, org_number, vat_number, email, phone,
            address, postal_code, city, country,
            bankgiro, plusgiro, bank_account,
-           logo_initials, inbound_mail_slug, default_quote_terms
-         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+           logo_initials, inbound_mail_slug, default_quote_terms, company_form
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
         [
           businessId,
           input.name,
@@ -433,6 +483,7 @@ async function insertSettingsWithAllocatedSlug(
           initialsFor(input.name),
           slug,
           STANDARD_TERMS,
+          input.companyForm ?? "ab",
         ],
       );
       await tx.query("release savepoint inbound_mail_slug_alloc");

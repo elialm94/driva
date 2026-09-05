@@ -32,6 +32,7 @@ import type {
   BankTransaction,
   CompanySettings,
   Customer,
+  DataImport,
   DB,
   DocLine,
   Domain,
@@ -41,6 +42,7 @@ import type {
   Invoice,
   Job,
   JobWorkEntry,
+  OnboardingState,
   Payment,
   PaymentFile,
   PendingAssistantAction,
@@ -52,6 +54,7 @@ import type {
   QuoteAcceptance,
   QuoteVersion,
   Receipt,
+  Supplier,
   SupplierInvoice,
   SupplierPayment,
   VatReport,
@@ -2324,5 +2327,147 @@ export const clientInformationRequestsSpec: TableSpec<ClientInformationRequest> 
     createdAt: tsIso(r.created_at),
     ...opt("resolvedAt", tsIsoOrU(r.resolved_at)),
     ...opt("resolvedByUserId", strOrU(r.resolved_by_user_id)),
+  }),
+};
+
+/* ------------------------------ business_onboarding ------------------------ */
+
+export const onboardingColumns = [
+  "business_id", "status", "current_step", "started_at", "company_completed_at",
+  "personalization_completed_at", "completed_at", "industries", "other_industry", "payroll",
+  "bookkeeping", "task_overrides", "updated_at",
+];
+
+export function onboardingToRow(o: OnboardingState, businessId: string): Record<string, unknown> {
+  return {
+    business_id: businessId,
+    status: o.status,
+    current_step: o.currentStep ?? null,
+    started_at: o.startedAt,
+    company_completed_at: o.companyCompletedAt ?? null,
+    personalization_completed_at: o.personalizationCompletedAt ?? null,
+    completed_at: o.completedAt ?? null,
+    industries: jsonParam(o.industries),
+    other_industry: o.otherIndustry ?? null,
+    payroll: o.payroll ?? null,
+    bookkeeping: o.bookkeeping ?? null,
+    task_overrides: jsonParam(o.taskOverrides ?? {}),
+    updated_at: o.updatedAt,
+  };
+}
+
+export function onboardingFromRow(r: SqlRow): OnboardingState {
+  return {
+    status: r.status as OnboardingState["status"],
+    currentStep: (strOrU(r.current_step) as OnboardingState["currentStep"] | undefined) ?? null,
+    startedAt: tsIso(r.started_at),
+    ...opt("companyCompletedAt", tsIsoOrU(r.company_completed_at)),
+    ...opt("personalizationCompletedAt", tsIsoOrU(r.personalization_completed_at)),
+    ...opt("completedAt", tsIsoOrU(r.completed_at)),
+    industries: jsonVal<OnboardingState["industries"]>(r.industries ?? []),
+    ...opt("otherIndustry", strOrU(r.other_industry)),
+    payroll: (strOrU(r.payroll) as OnboardingState["payroll"] | undefined) ?? null,
+    bookkeeping: (strOrU(r.bookkeeping) as OnboardingState["bookkeeping"] | undefined) ?? null,
+    taskOverrides: jsonVal<OnboardingState["taskOverrides"]>(r.task_overrides ?? {}),
+    updatedAt: tsIso(r.updated_at),
+  };
+}
+
+/* --------------------------------- data_imports ---------------------------- */
+
+export const dataImportsSpec: TableSpec<DataImport> = {
+  table: "data_imports",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "kind", "status", "filename", "file_kind", "file_hash", "file_size", "user_id",
+    "choices", "created_count", "updated_count", "ignored_count", "warnings", "summary", "error",
+    "created_at", "completed_at",
+  ],
+  toRow: (d, businessId) => ({
+    id: d.id,
+    business_id: businessId,
+    kind: d.kind,
+    status: d.status,
+    filename: d.filename,
+    file_kind: d.fileKind,
+    file_hash: d.fileHash,
+    file_size: d.fileSize,
+    user_id: d.userId ?? null,
+    choices: d.choices ? jsonParam(d.choices) : null,
+    created_count: d.created,
+    updated_count: d.updated,
+    ignored_count: d.ignored,
+    warnings: jsonParam(d.warnings),
+    summary: d.summary,
+    error: d.error ?? null,
+    created_at: d.createdAt,
+    completed_at: d.completedAt ?? null,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    kind: r.kind as DataImport["kind"],
+    status: r.status as DataImport["status"],
+    filename: str(r.filename),
+    fileKind: str(r.file_kind),
+    fileHash: str(r.file_hash),
+    fileSize: num(r.file_size),
+    ...opt("userId", strOrU(r.user_id)),
+    ...(r.choices != null ? { choices: jsonVal<Record<string, unknown>>(r.choices) } : {}),
+    created: num(r.created_count),
+    updated: num(r.updated_count),
+    ignored: num(r.ignored_count),
+    warnings: jsonVal<string[]>(r.warnings ?? []),
+    summary: str(r.summary),
+    ...opt("error", strOrU(r.error)),
+    createdAt: tsIso(r.created_at),
+    ...opt("completedAt", tsIsoOrU(r.completed_at)),
+  }),
+};
+
+/* ----------------------------------- suppliers ----------------------------- */
+
+export const suppliersSpec: TableSpec<Supplier> = {
+  table: "suppliers",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "name", "org_number", "email", "phone", "address", "postal_code", "city",
+    "bankgiro", "plusgiro", "bank_account", "iban", "notes", "source", "created_at", "updated_at",
+  ],
+  toRow: (sup, businessId) => ({
+    id: sup.id,
+    business_id: businessId,
+    name: sup.name,
+    org_number: sup.orgNumber ?? null,
+    email: sup.email ?? null,
+    phone: sup.phone ?? null,
+    address: sup.address ?? null,
+    postal_code: sup.postalCode ?? null,
+    city: sup.city ?? null,
+    bankgiro: sup.bankgiro ?? null,
+    plusgiro: sup.plusgiro ?? null,
+    bank_account: sup.bankAccount ?? null,
+    iban: sup.iban ?? null,
+    notes: sup.notes ?? null,
+    source: sup.source,
+    created_at: sup.createdAt,
+    updated_at: sup.updatedAt,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    name: str(r.name),
+    ...opt("orgNumber", strOrU(r.org_number)),
+    ...opt("email", strOrU(r.email)),
+    ...opt("phone", strOrU(r.phone)),
+    ...opt("address", strOrU(r.address)),
+    ...opt("postalCode", strOrU(r.postal_code)),
+    ...opt("city", strOrU(r.city)),
+    ...opt("bankgiro", strOrU(r.bankgiro)),
+    ...opt("plusgiro", strOrU(r.plusgiro)),
+    ...opt("bankAccount", strOrU(r.bank_account)),
+    ...opt("iban", strOrU(r.iban)),
+    ...opt("notes", strOrU(r.notes)),
+    source: r.source as Supplier["source"],
+    createdAt: tsIso(r.created_at),
+    updatedAt: tsIso(r.updated_at),
   }),
 };
