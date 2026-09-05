@@ -1,16 +1,29 @@
 import { db, save } from "../store";
 import type { DB, FiscalYear } from "../types";
 import { logAudit } from "./audit";
-import { bokforingsdatum, calendarFiscalYear, nextDay, quartersOf, todayDate, type Period } from "./dates";
+import {
+  bokforingsdatum,
+  calendarFiscalYear,
+  isVatPeriodicity,
+  nextDay,
+  todayDate,
+  vatPeriodsOf,
+  type Period,
+  type VatPeriodicity,
+} from "./dates";
 
 export {
   bokforingsdatum,
   calendarFiscalYear,
+  fullYearOf,
   monthsOf,
   quartersOf,
   todayDate,
   vatDueDate,
+  vatPeriodsOf,
+  VAT_PERIODICITY,
   type Period,
+  type VatPeriodicity,
 } from "./dates";
 
 /**
@@ -104,11 +117,20 @@ export function lockPeriod(throughDate: string, actor: "anvandare" | "assistent"
   save();
 }
 
-/** Momsperioden (kvartal) som innehåller datumet. */
+/**
+ * Företagets momsperiodicitet. Speglar registreringen hos Skatteverket och är
+ * ett val – kvartal är huvudregeln för ett litet aktiebolag och därför default.
+ */
+export function vatPeriodicity(data: DB = db()): VatPeriodicity {
+  const chosen = data.settings.vatPeriodicity;
+  return isVatPeriodicity(chosen) ? chosen : "kvartal";
+}
+
+/** Momsperioden som innehåller datumet, enligt företagets periodicitet. */
 export function vatPeriodFor(date: string): Period {
   const d = date.length > 10 ? bokforingsdatum(date) : date;
   const fy = ensureFiscalYearFor(d);
-  const q = quartersOf(fy).find((p) => p.start <= d && d <= p.end);
-  if (!q) throw new Error(`Ingen momsperiod för ${d}`);
-  return q;
+  const p = vatPeriodsOf(fy, vatPeriodicity()).find((x) => x.start <= d && d <= x.end);
+  if (!p) throw new Error(`Ingen momsperiod för ${d}`);
+  return p;
 }

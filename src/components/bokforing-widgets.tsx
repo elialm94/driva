@@ -11,8 +11,10 @@ import {
   markVatDeclaredAction,
   planAccrualAction,
   runBokslutAutomationAction,
+  setVatPeriodicityAction,
   undoExpenseBookingAction,
 } from "@/app/bokforing-actions";
+import { VAT_PERIODICITY, type VatPeriodicity } from "@/lib/accounting/dates";
 
 /** Klientwidgets för bokföringen. All logik ligger i domänlagret – här finns bara knappar. */
 
@@ -81,6 +83,63 @@ export function MarkVatDeclaredButton({ reportId, attBetala }: { reportId: strin
       <p className="mt-1.5 text-[12px] text-muted">
         Driva skickar inget till Skatteverket – du deklarerar där som vanligt
         {attBetala >= 0 ? ` och betalar ${attBetala.toLocaleString("sv-SE")} kr` : ""}.
+      </p>
+      <ErrorNote error={error} />
+    </div>
+  );
+}
+
+/**
+ * Företagets momsperiod. Speglar registreringen hos Skatteverket – produkten
+ * gissar aldrig utifrån omsättningen, och bytet gäller framåt.
+ */
+export function VatPeriodicityPicker({
+  value,
+  readOnly,
+}: {
+  value: VatPeriodicity;
+  readOnly?: boolean;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [chosen, setChosen] = useState(value);
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-[13px] text-soft" htmlFor="momsperiod">
+          Momsen redovisas
+        </label>
+        <select
+          id="momsperiod"
+          className="rounded-xl border border-line-strong bg-card px-3 py-1.5 text-[13px] text-ink focus:border-accent disabled:opacity-60"
+          value={chosen}
+          disabled={isPending || readOnly}
+          onChange={(e) => {
+            const next = e.target.value as VatPeriodicity;
+            setChosen(next);
+            startTransition(async () => {
+              const res = await setVatPeriodicityAction(next);
+              if (res.ok) {
+                setError(null);
+                return;
+              }
+              setChosen(value);
+              setError(res.error);
+            });
+          }}
+        >
+          {(Object.keys(VAT_PERIODICITY) as VatPeriodicity[]).map((p) => (
+            <option key={p} value={p}>
+              {VAT_PERIODICITY[p].label.toLowerCase()}
+            </option>
+          ))}
+        </select>
+        {isPending ? <span className="text-[12px] text-muted">Sparar …</span> : null}
+      </div>
+      <p className="mt-1.5 text-[12px] text-muted">
+        Ska stämma med vad Skatteverket registrerat företaget för. Kvartal är huvudregeln för ett litet aktiebolag.
+        Deklarationsdagen följer med: kvartal och månad den 12:e i andra månaden efter perioden (17:e i januari och
+        augusti), helår i samband med inkomstdeklarationen.
       </p>
       <ErrorNote error={error} />
     </div>

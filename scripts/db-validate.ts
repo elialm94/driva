@@ -1305,6 +1305,32 @@ async function main() {
   await asSuperuser();
 
   // ------------------------------------------------------------------
+  // Momsperiodicitet (migration 33)
+  // ------------------------------------------------------------------
+  console.log("\nMomsperiodicitet:");
+
+  await asApp(A);
+  {
+    const r = await rows(db, `select vat_periodicity as p from public.business_settings where business_id = $1`, [A]);
+    if (r[0]?.p === "kvartal") ok("default är kvartal – huvudregeln");
+    else fail("default är kvartal – huvudregeln", JSON.stringify(r));
+  }
+  await expectOk(db, "helår kan väljas", () =>
+    db.query(`update public.business_settings set vat_periodicity = 'helar' where business_id = $1`, [A])
+  );
+  await expectOk(db, "månad kan väljas", () =>
+    db.query(`update public.business_settings set vat_periodicity = 'manad' where business_id = $1`, [A])
+  );
+  await expectError(
+    db,
+    "okänd periodicitet avvisas",
+    "business_settings_vat_periodicity_check",
+    () => db.query(`update public.business_settings set vat_periodicity = 'veckovis' where business_id = $1`, [A])
+  );
+  await db.query(`update public.business_settings set vat_periodicity = 'kvartal' where business_id = $1`, [A]);
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");

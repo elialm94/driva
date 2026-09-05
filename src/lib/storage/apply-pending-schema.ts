@@ -312,7 +312,34 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const reverseChargeApplied = await ensureReverseChargeSchema(client);
   applied.push(...reverseChargeApplied);
 
+  const vatPeriodicityApplied = await ensureVatPeriodicitySchema(client);
+  applied.push(...vatPeriodicityApplied);
+
   return applied;
+}
+
+/**
+ * Momsperiodicitet (migration 33): helår, kvartal eller månad per företag.
+ * Default 'kvartal' – huvudregeln – så befintliga företag inte ändrar period.
+ */
+export async function ensureVatPeriodicitySchema(client: SqlClient): Promise<string[]> {
+  if (await columnExists(client, "business_settings", "vat_periodicity")) return [];
+  await run(
+    client,
+    `alter table public.business_settings
+       add column if not exists vat_periodicity text not null default 'kvartal'`
+  );
+  await run(
+    client,
+    `alter table public.business_settings drop constraint if exists business_settings_vat_periodicity_check`
+  );
+  await run(
+    client,
+    `alter table public.business_settings
+       add constraint business_settings_vat_periodicity_check
+       check (vat_periodicity in ('manad', 'kvartal', 'helar'))`
+  );
+  return ["business_settings.vat_periodicity"];
 }
 
 /**

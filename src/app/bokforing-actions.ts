@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { generateVatReport, markVatReportDeclared } from "@/lib/accounting/vat";
+import { generateVatReport, markVatReportDeclared, setVatPeriodicity } from "@/lib/accounting/vat";
+import { isVatPeriodicity } from "@/lib/accounting/dates";
 import { runBokslutAutomation, closeFiscalYear } from "@/lib/accounting/close";
 import { undoExpenseBooking } from "@/lib/services/expenses";
 import {
@@ -60,6 +61,11 @@ export async function generateVatReportAction(periodKey: string): Promise<Result
 
 export async function markVatDeclaredAction(reportId: string): Promise<Result> {
   return run(() => markVatReportDeclared(reportId, "anvandare"), "vat");
+}
+
+export async function setVatPeriodicityAction(periodicity: string): Promise<Result> {
+  if (!isVatPeriodicity(periodicity)) return { ok: false, error: "Okänd momsperiod." };
+  return run(() => setVatPeriodicity(periodicity, "anvandare"), "vat");
 }
 
 export async function runBokslutAutomationAction(

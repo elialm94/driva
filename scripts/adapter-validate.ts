@@ -851,6 +851,22 @@ async function main() {
     });
   });
 
+  console.log("\nMomsperiodicitet genom adaptern:");
+  await check("valet rundresar och styr perioderna", async () => {
+    const { setVatPeriodicity, vatPeriods } = await import("../src/lib/accounting/vat");
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      assert.equal(vatPeriods().length, 4, "kvartal är default");
+      setVatPeriodicity("manad", "anvandare");
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      assert.equal(db().settings.vatPeriodicity, "manad", "valet rundresar");
+      assert.equal(vatPeriods().length, 12, "tolv perioder efter bytet");
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      setVatPeriodicity("kvartal", "anvandare");
+    });
+  });
+
   console.log("\nUppdragsposter genom adaptern:");
   await check("tidregistrering rundresas och isoleras per tenant", async () => {
     const { createJob } = await import("../src/lib/services/jobs");

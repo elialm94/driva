@@ -1923,6 +1923,7 @@ export const settingsColumns = [
   "logo_data_url", "f_skatt_per_month", "payroll_reserve_per_month", "payment_terms_days",
   "late_interest_rate", "quote_validity_days", "default_vat_rate", "default_hourly_rate",
   "default_quote_terms", "inbound_mail_slug", "payer_bank_name", "payer_iban", "payer_bic",
+  "vat_periodicity",
 ];
 
 export function settingsToRow(s: CompanySettings, businessId: string): Record<string, unknown> {
@@ -1960,6 +1961,7 @@ export function settingsToRow(s: CompanySettings, businessId: string): Record<st
     payer_bank_name: s.payerBankName ?? null,
     payer_iban: s.payerIban ?? null,
     payer_bic: s.payerBic ?? null,
+    vat_periodicity: s.vatPeriodicity ?? "kvartal",
   };
 }
 
@@ -1997,7 +1999,12 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
     ...opt("payerBankName", strOrU(r.payer_bank_name)),
     ...opt("payerIban", strOrU(r.payer_iban)),
     ...opt("payerBic", strOrU(r.payer_bic)),
+    ...opt("vatPeriodicity", vatPeriodicityOrU(r.vat_periodicity)),
   };
+}
+
+function vatPeriodicityOrU(v: unknown): CompanySettings["vatPeriodicity"] | undefined {
+  return v === "manad" || v === "kvartal" || v === "helar" ? v : undefined;
 }
 
 /* ------------------------------- DB-metadata ------------------------------ */

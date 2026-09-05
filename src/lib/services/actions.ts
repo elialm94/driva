@@ -30,7 +30,8 @@ import {
 import { paymentSuggestionForTransaction } from "./payment-matching";
 import { suppressedActionIds } from "./attention-state";
 import { bankReconciliation } from "../accounting/reconciliation";
-import { bokforingsdatum, calendarFiscalYear, quartersOf, vatDueDate, type Period } from "../accounting/dates";
+import { bokforingsdatum, calendarFiscalYear, vatDueDate, vatPeriodsOf, type Period } from "../accounting/dates";
+import { vatPeriodicity } from "../accounting/fiscal";
 import { computeVatPosition } from "../accounting/vat";
 import { datumKort, kr, relativ } from "../format";
 import { invoiceHref, jobHref, newQuoteHref, quoteHref } from "../nav";
@@ -1474,8 +1475,9 @@ function collectVat(ranked: Ranked[], watching: WatchingItem[], now: Date) {
 
   const overdue: { period: Period; amount: number; refund: boolean; dueDate: string; daysTo: number }[] = [];
 
+  const periodicity = vatPeriodicity(data);
   for (const y of [year - 1, year]) {
-    for (const period of quartersOf(calendarFiscalYear(y))) {
+    for (const period of vatPeriodsOf(calendarFiscalYear(y), periodicity)) {
       if (period.start > today) continue; // framtida period
       const report = data.vatReports.find((r) => r.periodStart === period.start && r.periodEnd === period.end);
       if (report?.status === "deklarerad") continue;

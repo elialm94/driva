@@ -5,7 +5,7 @@ import { currentVatPosition } from "../accounting/vat";
 import { accountBalance, resultatrapport } from "../accounting/ledger";
 import { todayDate } from "../accounting/dates";
 
-/** Innevarande momsperiod (kvartal) med deklarations- och betaldatum. */
+/** Innevarande momsperiod med deklarations- och betaldatum. */
 export function momsPeriod() {
   const pos = currentVatPosition();
   return {

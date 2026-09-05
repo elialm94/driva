@@ -15,6 +15,12 @@ export type ID = string;
  * export och vinstmarginalbeskattning stöds inte.
  */
 export type VatRate = 0 | 6 | 12 | 25;
+/**
+ * Redovisningsperiod för moms. Skatteverket registrerar företaget för en av
+ * dessa utifrån beskattningsunderlagets storlek: helår upp till 1 mkr, kvartal
+ * upp till 40 mkr (huvudregel), månad över 40 mkr eller på egen begäran.
+ */
+export type VatPeriodicity = "manad" | "kvartal" | "helar";
 
 /* ---------------------------------- Företag ---------------------------------- */
 
@@ -48,6 +54,12 @@ export interface CompanySettings {
   logoInitials: string;
   /** JPEG data-URL. Saknas = visa initialer. */
   logoDataUrl?: string;
+  /**
+   * Redovisningsperiod för moms – speglar registreringen hos Skatteverket.
+   * Saknas = kvartal, huvudregeln för ett litet aktiebolag. Styr både
+   * periodindelningen på momssidan och förfallodagen.
+   */
+  vatPeriodicity?: VatPeriodicity;
   /** Preliminärskatt (F-skatt) som dras varje månad. */
   fSkattPerMonth: number;
   /** Reserv för arbetsgivaravgifter och personalskatt per månad. */
@@ -1278,6 +1290,7 @@ export type AuditAction =
   | "period_last"
   | "momsrapport_genererad"
   | "momsrapport_deklarerad"
+  | "momsperiodicitet_andrad"
   | "rakenskapsar_skapat"
   | "rakenskapsar_stangt"
   | "inventarie_registrerad"
