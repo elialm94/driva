@@ -22,8 +22,15 @@ export function currentBusinessId(): string {
   return LOCAL_JSON_BUSINESS_ID;
 }
 
+let forceSqlForTests = false;
+
+/** Adaptervalideringen kör Postgres (PGlite) utan Supabase-miljö. */
+export function __setSqlCatalogForTests(on: boolean): void {
+  forceSqlForTests = on;
+}
+
 export async function catalogStoreFor(businessId: string): Promise<WholesalerCatalogStore> {
-  if (usesSqlCatalog(businessId, isSupabaseMode())) {
+  if (usesSqlCatalog(businessId, forceSqlForTests || isSupabaseMode())) {
     const { sqlCatalogStore } = await import("./catalog-store-sql");
     return sqlCatalogStore();
   }

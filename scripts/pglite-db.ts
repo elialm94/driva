@@ -15,7 +15,9 @@ import path from "node:path";
 
 const MIGRATIONS_DIR = path.join(process.cwd(), "supabase", "migrations");
 
-export async function createMigratedPglite(): Promise<{ db: PGlite; migrationFiles: string[] }> {
+export async function createMigratedPglite(
+  options: { skipMigrations?: (file: string) => boolean } = {},
+): Promise<{ db: PGlite; migrationFiles: string[] }> {
   const db = await PGlite.create({ extensions: { pg_trgm, pgcrypto } });
 
   await db.exec(`
@@ -57,6 +59,7 @@ export async function createMigratedPglite(): Promise<{ db: PGlite; migrationFil
   const migrationFiles = fs
     .readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith(".sql"))
+    .filter((f) => !options.skipMigrations?.(f))
     .sort();
   if (migrationFiles.length === 0) {
     throw new Error(`Inga migrationsfiler i ${MIGRATIONS_DIR}`);

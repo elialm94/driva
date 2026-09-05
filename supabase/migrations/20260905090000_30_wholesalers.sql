@@ -439,7 +439,10 @@ begin
         using errcode = 'P0001';
     end if;
   end if;
-  if tg_op = 'INSERT' and v_sent_at is not null and not app.demo_reset_active(new.business_id) then
+  -- Aggregatets commit skriver "insert … on conflict do update": en befintlig
+  -- rad går via UPDATE-grenen ovan, bara en NY rad på en skickad order stoppas.
+  if tg_op = 'INSERT' and v_sent_at is not null and not app.demo_reset_active(new.business_id)
+     and not exists (select 1 from public.purchase_order_lines l where l.id = new.id) then
     raise exception 'immutability: nya rader kan inte läggas på en skickad beställning'
       using errcode = 'P0001';
   end if;

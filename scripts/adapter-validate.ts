@@ -920,6 +920,126 @@ async function main() {
     assert.equal(row.rows[0].revoked_at, null, "ägarrollen omfattas inte av revoke-vägen");
   });
 
+  console.log("\nGrossistbeställningar genom adaptern:");
+  await check("prisfil → SQL-katalog → varukorg → utskick → bekräftelse rundresas och isoleras", async () => {
+    const { __setSqlCatalogForTests } = await import("../src/lib/wholesalers/catalog");
+    const { activateOptionalFeature } = await import("../src/lib/features");
+    const { createWholesalerConnection, importPriceFile, searchWholesalerProducts, connectionOverview } = await import(
+      "../src/lib/services/wholesalers"
+    );
+    const { addCatalogProductToCart, draftCartsForJob, sendPurchaseOrder, getPurchaseOrder, purchaseOrderLines } =
+      await import("../src/lib/services/purchase-orders");
+    const { confirmationsForOrder } = await import("../src/lib/services/purchase-order-confirmations");
+    const { ingestInboundMail } = await import("../src/lib/services/inbox");
+    const { setMailTransportForTests } = await import("../src/lib/mail");
+    const { createJob } = await import("../src/lib/services/jobs");
+    const { CSV_SEMICOLON } = await import("../src/lib/__fixtures__/wholesalers/build");
+    __setSqlCatalogForTests(true);
+    const sentMail: { to: string; replyTo?: string; subject: string }[] = [];
+    setMailTransportForTests(async (msg) => {
+      sentMail.push({ to: msg.to, replyTo: msg.replyTo, subject: msg.subject });
+      return { messageId: "adapter-po-1" };
+    });
+    try {
+      let connectionId = "";
+      let jobId = "";
+      await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+        activateOptionalFeature("wholesalers");
+        const customer = db().customers[0];
+        jobId = createJob({ customerId: customer.id, title: "Elinstallation adapter" }).id;
+        connectionId = createWholesalerConnection({
+          wholesaler: "ahlsell",
+          customerNumber: "123456",
+          orderEmail: "order@ahlsell-test.se",
+          defaultDeliveryMode: "pickup",
+          defaultStore: "Västberga",
+          customerPriceRule: { kind: "markup", percent: 30 },
+        }).id;
+      });
+      // Importen kör varje steg i egen tenantcommit – precis som appen.
+      const outcome = await importPriceFile(
+        { connectionId, filename: "prislista.csv", bytes: Buffer.from(CSV_SEMICOLON, "utf8") },
+        (fn) => runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, fn),
+      );
+      assert.equal(outcome.ok, true, outcome.ok ? "" : outcome.error);
+      assert.equal(outcome.ok && outcome.productCount, 4);
+      const rowsInSql = await pg.query<{ n: string }>(`select count(*)::text as n from wholesaler_products where business_id = $1`, [bizA]);
+      assert.equal(rowsInSql.rows[0].n, "4", "artiklarna ligger i Postgres, inte i aggregatet");
+
+      let productId = "";
+      await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, async () => {
+        const hit = await searchWholesalerProducts({ connectionId, query: "E1780235" });
+        assert.equal(hit.total, 1);
+        assert.equal(hit.rows[0].articleNumber, "300400");
+        assert.equal(hit.rows[0].netPriceOre, 6120);
+        const byName = await searchWholesalerProducts({ connectionId, query: "kabel ekk" });
+        assert.equal(byName.total, 2, "trigram-/nyckelsök på namn");
+        productId = hit.rows[0].productId;
+        assert.equal(connectionOverview(db().wholesalerConnections![0]).priceList?.productCount, 4);
+      });
+      await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, async () => {
+        assert.equal((db().wholesalerConnections ?? []).length, 0, "B ser inte A:s anslutning");
+        const leaked = await pg.query<{ n: string }>(`select count(*)::text as n from wholesaler_products where business_id = $1`, [bizB]);
+        assert.equal(leaked.rows[0].n, "0");
+      });
+
+      let orderId = "";
+      await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, async () => {
+        await addCatalogProductToCart({ jobId, connectionId, productId, qty: 4 });
+        orderId = draftCartsForJob(jobId)[0].id;
+      });
+      await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, async () => {
+        const sent = await sendPurchaseOrder(orderId, "adapter-sendkey-1");
+        assert.equal(sent.ok, true, sent.ok ? "" : sent.error);
+      });
+      assert.equal(sentMail.length, 1);
+      assert.equal(sentMail[0].to, "order@ahlsell-test.se");
+      await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+        const order = getPurchaseOrder(orderId)!;
+        assert.equal(order.status, "sent");
+        assert.equal(order.sentSnapshot?.lines.length, 1);
+        assert.equal(order.lastEmail?.messageId, "adapter-po-1");
+        assert.equal(purchaseOrderLines(orderId)[0].customerUnitPriceOre, 8000); // 61,20 × 1,3 = 79,56 → 80 kr
+      });
+      // Snapshoten är låst även om domänlagret kringgås.
+      await assert.rejects(
+        pg.query(`update purchase_orders set sent_snapshot = '{}'::jsonb where id = $1`, [orderId]),
+        /immutability/,
+      );
+
+      await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+        const reference = getPurchaseOrder(orderId)!.reference;
+        const result = ingestInboundMail({
+          externalId: "adapter-conf-1",
+          to: inboundMailAddress(db().settings.inboundMailSlug!),
+          from: "order@ahlsell-test.se",
+          subject: `Orderbekräftelse 9911 – ${reference}`,
+          text: `Tack för er beställning ${reference}.\n300400 Vägguttag 2-vägs jordat infällt 4 st à 61,20`,
+        });
+        assert.equal(result.ok && result.created, true);
+        if (result.ok) assert.equal(result.item.documentType, "orderbekraftelse");
+      });
+      await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+        const order = getPurchaseOrder(orderId)!;
+        assert.equal(order.status, "confirmed");
+        assert.equal(order.wholesalerOrderNumber, "9911");
+        assert.equal(confirmationsForOrder(orderId).length, 1);
+        const entries = db().jobWorkEntries.filter((e) => e.wholesaler?.purchaseOrderId === orderId);
+        assert.equal(entries.length, 1, "en materialrad per bekräftad orderrad");
+        assert.equal(entries[0].source, "wholesaler");
+        assert.equal(entries[0].unitPrice, 80);
+        assert.equal(entries[0].wholesaler?.unitCostOre, 6120);
+      });
+      await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {
+        assert.equal((db().purchaseOrders ?? []).length, 0, "B ser inga av A:s beställningar");
+        assert.equal((db().purchaseOrderConfirmations ?? []).length, 0);
+      });
+    } finally {
+      setMailTransportForTests(undefined);
+      __setSqlCatalogForTests(false);
+    }
+  });
+
   await pg.close();
 
   console.log(`\n${passed} godkända, ${failed} underkända.`);

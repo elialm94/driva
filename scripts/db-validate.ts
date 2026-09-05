@@ -1123,6 +1123,180 @@ async function main() {
   );
 
   // ------------------------------------------------------------------
+  // Grossistbeställningar: RLS, same-business, immutabel skickad order
+  // ------------------------------------------------------------------
+  console.log("\nGrossistbeställningar:");
+
+  await asSuperuser();
+  await db.exec(`
+    insert into public.jobs (id, business_id, customer_id, title, description, status, checklist, notes, created_at) values
+      ('job-a1', '${A}', 'cust-a1', 'Elinstallation A', '', 'pagar', '[]'::jsonb, '', now()),
+      ('job-b1', '${B}', 'cust-b1', 'Badrum B', '', 'pagar', '[]'::jsonb, '', now());
+  `);
+
+  await asApp(A);
+  await expectOk(db, "tenantkontext A kan skapa grossistanslutning", () =>
+    db.query(
+      `insert into public.wholesaler_connections (id, business_id, wholesaler, customer_number, order_email)
+       values ('wc-a1', '${A}', 'ahlsell', '123456', 'order@ahlsell-test.se')`
+    )
+  );
+  await expectError(db, "tenantkontext A kan inte skapa anslutning för B", "row-level security", () =>
+    db.query(
+      `insert into public.wholesaler_connections (id, business_id, wholesaler, customer_number, order_email)
+       values ('wc-b-fel', '${B}', 'dahl', '1', 'x@y.se')`
+    )
+  );
+  await asApp(B);
+  await db.query(
+    `insert into public.wholesaler_connections (id, business_id, wholesaler, customer_number, order_email)
+     values ('wc-b1', '${B}', 'dahl', '778899', 'order@dahl-test.se')`
+  );
+  {
+    const r = await rows(db, `select id from public.wholesaler_connections order by id`);
+    if (r.length === 1 && (r[0] as { id: string }).id === "wc-b1") ok("tenantkontext B ser bara sin egen anslutning");
+    else fail("tenantkontext B ser bara sin egen anslutning", JSON.stringify(r));
+  }
+
+  await asApp(A);
+  await expectOk(db, "prisimport + artikel skrivs i A", async () => {
+    await db.query(
+      `insert into public.wholesaler_price_imports (id, business_id, connection_id, file_kind, status, price_date)
+       values ('imp-a1', '${A}', 'wc-a1', 'csv', 'active', current_date)`
+    );
+    await db.query(
+      `insert into public.wholesaler_products (id, business_id, connection_id, import_id, article_number, name, article_key, name_key, search_text, net_price_ore)
+       values ('prod-a1', '${A}', 'wc-a1', 'imp-a1', '100200', 'Kabel EKK 3G1,5', '100200', 'kabel ekk 3g1,5', 'kabel ekk 3g1,5 100200', 1250)`
+    );
+  });
+  // RLS döljer B:s rad för A, så vakten svarar "finns inte" – existensen läcker inte.
+  await expectError(db, "import kan inte peka på B:s anslutning från A ('finns inte', ingen läcka)", "finns inte", () =>
+    db.query(
+      `insert into public.wholesaler_price_imports (id, business_id, connection_id, file_kind, status, price_date)
+       values ('imp-fel', '${A}', 'wc-b1', 'csv', 'active', current_date)`
+    )
+  );
+  await expectError(db, "negativt nettopris avvisas (CHECK)", "check", () =>
+    db.query(
+      `insert into public.wholesaler_products (id, business_id, connection_id, import_id, article_number, name, article_key, net_price_ore)
+       values ('prod-neg', '${A}', 'wc-a1', 'imp-a1', 'x', 'x', 'x', -1)`
+    )
+  );
+  await asApp(B);
+  {
+    const r = await rows(db, `select id from public.wholesaler_products`);
+    if (r.length === 0) ok("B ser inte A:s artiklar (RLS på katalogen)");
+    else fail("B ser inte A:s artiklar (RLS på katalogen)", JSON.stringify(r));
+  }
+
+  await asApp(A);
+  await expectOk(db, "beställning + rad i A", async () => {
+    await db.query(
+      `insert into public.purchase_orders (id, business_id, reference, job_id, connection_id, status)
+       values ('po-a1', '${A}', 'FV-1001', 'job-a1', 'wc-a1', 'draft')`
+    );
+    await db.query(
+      `insert into public.purchase_order_lines (id, business_id, order_id, position, name, qty, unit, customer_price_source)
+       values ('pol-a1', '${A}', 'po-a1', 1, 'Kabel EKK 3G1,5', 50, 'm', 'missing')`
+    );
+  });
+  await expectError(db, "beställning kan inte peka på B:s uppdrag ('finns inte', ingen läcka)", "finns inte", () =>
+    db.query(
+      `insert into public.purchase_orders (id, business_id, reference, job_id, connection_id, status)
+       values ('po-fel', '${A}', 'FV-1002', 'job-b1', 'wc-a1', 'draft')`
+    )
+  );
+  await expectError(db, "samma referens två gånger i ett företag stoppas", "purchase_orders_reference_uq", () =>
+    db.query(
+      `insert into public.purchase_orders (id, business_id, reference, job_id, connection_id, status)
+       values ('po-dup', '${A}', 'FV-1001', 'job-a1', 'wc-a1', 'draft')`
+    )
+  );
+  await expectOk(db, "utskick sätter sent_at + snapshot", () =>
+    db.query(
+      `update public.purchase_orders set status = 'sent', sent_at = now(),
+         sent_snapshot = '{"reference":"FV-1001","lines":[]}'::jsonb where id = 'po-a1'`
+    )
+  );
+  await expectError(db, "skickad snapshot kan inte skrivas om", "immutability", () =>
+    db.query(`update public.purchase_orders set sent_snapshot = '{"reference":"FV-9999"}'::jsonb where id = 'po-a1'`)
+  );
+  await expectError(db, "skickad beställning kan inte bli utkast igen", "immutability", () =>
+    db.query(`update public.purchase_orders set status = 'draft' where id = 'po-a1'`)
+  );
+  await expectError(db, "skickad beställning kan inte tas bort", "immutability", () =>
+    db.query(`delete from public.purchase_orders where id = 'po-a1'`)
+  );
+  await expectError(db, "skickad orderrads antal är låst", "immutability", () =>
+    db.query(`update public.purchase_order_lines set qty = 99 where id = 'pol-a1'`)
+  );
+  await expectOk(db, "kundpris får sättas på skickad rad", () =>
+    db.query(`update public.purchase_order_lines set customer_unit_price_ore = 1600, customer_price_source = 'explicit' where id = 'pol-a1'`)
+  );
+  await expectOk(db, "status får gå vidare till bekräftad", () =>
+    db.query(`update public.purchase_orders set status = 'confirmed' where id = 'po-a1'`)
+  );
+  await asApp(B);
+  {
+    const r = await rows(db, `select id from public.purchase_orders`);
+    if (r.length === 0) ok("B ser inte A:s beställningar");
+    else fail("B ser inte A:s beställningar", JSON.stringify(r));
+  }
+  await expectError(db, "B kan inte skriva bekräftelse på A:s order ('finns inte', ingen läcka)", "finns inte", () =>
+    db.query(
+      `insert into public.purchase_order_confirmations (id, business_id, order_id, source, match_method, status, received_at)
+       values ('conf-fel', '${B}', 'po-a1', 'email', 'reference', 'applied', now())`
+    )
+  );
+  await asApp(A);
+  await expectOk(db, "A kan skriva bekräftelse på sin order", () =>
+    db.query(
+      `insert into public.purchase_order_confirmations (id, business_id, order_id, source, match_method, status, received_at)
+       values ('conf-a1', '${A}', 'po-a1', 'email', 'reference', 'applied', now())`
+    )
+  );
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
+  // Pending schema: miljö där migration 30 inte pushats ännu
+  // ------------------------------------------------------------------
+  console.log("\nGrossistschema via pending schema (utan migration 30):");
+  {
+    const { db: older } = await createMigratedPglite({ skipMigrations: (f) => f.includes("_30_wholesalers") });
+    const { pgliteClient } = await import("../src/lib/storage/executor");
+    const { ensureWholesalerSchema } = await import("../src/lib/storage/apply-pending-schema");
+    const client = pgliteClient(older);
+    await expectOk(older, "ensureWholesalerSchema skapar tabeller, RLS och triggers", async () => {
+      const applied = await ensureWholesalerSchema(client);
+      if (applied.length === 0) throw new Error("ingenting applicerades");
+      const tables = await rows<{ table_name: string }>(
+        older,
+        `select table_name from information_schema.tables where table_schema = 'public' and table_name like 'wholesaler_%' or table_name like 'purchase_order%' order by 1`,
+      );
+      const names = tables.map((t) => t.table_name);
+      for (const t of ["wholesaler_connections", "wholesaler_price_imports", "wholesaler_products", "purchase_orders", "purchase_order_lines", "purchase_order_confirmations"]) {
+        if (!names.includes(t)) throw new Error(`tabell saknas: ${t}`);
+      }
+      const rls = await rows<{ relname: string; relrowsecurity: boolean }>(
+        older,
+        `select c.relname, c.relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace
+          where n.nspname = 'public' and c.relname in ('wholesaler_products', 'purchase_orders')`,
+      );
+      if (rls.some((r) => !r.relrowsecurity)) throw new Error("RLS saknas på någon grossisttabell");
+      const again = await ensureWholesalerSchema(client);
+      if (again.length !== 0) throw new Error(`inte idempotent: ${again.join(", ")}`);
+    });
+    await expectOk(older, "job_work_entries.source accepterar 'wholesaler' efter pending schema", async () => {
+      const check = await rows<{ def: string }>(
+        older,
+        `select pg_get_constraintdef(oid) as def from pg_constraint where conname = 'job_work_entries_source_check'`,
+      );
+      if (!check[0]?.def.includes("wholesaler")) throw new Error(check[0]?.def ?? "constraint saknas");
+    });
+    await older.close();
+  }
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");

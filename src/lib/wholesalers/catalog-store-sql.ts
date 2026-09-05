@@ -174,38 +174,45 @@ export class SqlCatalogStore implements WholesalerCatalogStore {
     const limit = Math.max(1, Math.min(input.limit, CATALOG_SEARCH_MAX_PAGE_SIZE));
     const offset = Math.max(0, input.offset);
 
+    // WHERE-parametrarna först (delas av count och select); rankningens
+    // parametrar läggs efter så att count-frågan inte får oanvända $n.
     const params: SqlParam[] = [businessId, input.importId, input.connectionId];
     const conditions: string[] = [];
-    let rankSql = "40";
+    let prefixParam: string | undefined;
 
     const identifierSearch = q.identifier.length >= 3;
     if (identifierSearch) {
-      params.push(q.identifier);
-      const idParam = `$${params.length}`;
       params.push(`${likeEscape(q.identifier)}%`);
-      const prefixParam = `$${params.length}`;
+      prefixParam = `$${params.length}`;
       conditions.push(
         `(article_key like ${prefixParam} or e_key like ${prefixParam} or rsk_key like ${prefixParam} or gtin_key like ${prefixParam})`,
       );
-      rankSql = `case
-        when article_key = ${idParam} or e_key = ${idParam} or rsk_key = ${idParam} or gtin_key = ${idParam} then 100
-        when article_key like ${prefixParam} or e_key like ${prefixParam} or rsk_key like ${prefixParam} or gtin_key like ${prefixParam} then 80
-        else 0 end`;
     }
-
     if (q.tokens.length > 0) {
       const tokenConds = q.tokens.map((t) => {
         params.push(`%${likeEscape(t)}%`);
         return `search_text like $${params.length}`;
       });
       conditions.push(`(${tokenConds.join(" and ")})`);
-      params.push(`${likeEscape(q.tokens.join(" "))}%`);
-      const phraseParam = `$${params.length}`;
-      rankSql = `greatest(${rankSql}, case when name_key like ${phraseParam} then 60 else 40 end)`;
     }
-
     if (conditions.length === 0) return { rows: [], total: 0 };
     const where = `business_id = $1 and import_id = $2 and connection_id = $3 and (${conditions.join(" or ")})`;
+
+    const rankParams: SqlParam[] = [];
+    let rankSql = "40";
+    if (identifierSearch && prefixParam) {
+      rankParams.push(q.identifier);
+      const idParam = `$${params.length + rankParams.length}::text`;
+      rankSql = `case
+        when article_key = ${idParam} or e_key = ${idParam} or rsk_key = ${idParam} or gtin_key = ${idParam} then 100
+        when article_key like ${prefixParam} or e_key like ${prefixParam} or rsk_key like ${prefixParam} or gtin_key like ${prefixParam} then 80
+        else 0 end`;
+    }
+    if (q.tokens.length > 0) {
+      rankParams.push(`${likeEscape(q.tokens.join(" "))}%`);
+      const phraseParam = `$${params.length + rankParams.length}::text`;
+      rankSql = `greatest(${rankSql}, case when name_key like ${phraseParam} then 60 else 40 end)`;
+    }
 
     return inTenantTx(businessId, async (tx) => {
       const countRows = await tx.query(`select count(*)::int as n from public.wholesaler_products where ${where}`, params);
@@ -216,7 +223,7 @@ export class SqlCatalogStore implements WholesalerCatalogStore {
           where ${where}
           order by rank desc, name_key, article_key
           limit ${limit} offset ${offset}`,
-        params,
+        [...params, ...rankParams],
       );
       return { rows: rows.map(productFromRow), total };
     });
