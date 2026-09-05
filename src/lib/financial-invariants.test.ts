@@ -21,7 +21,10 @@ process.env.DRIVA_TEST = "1";
  *  10. Skattekontot flyttar momsskulden mellan konton utan att ändra summan.
  *  11. Lönen fördelar bruttolönen i netto och skatt utan att tappa en krona,
  *      och deklarationen flyttar skulden till skattekontot oförändrad.
- *  12. SIE-exporten stämmer med huvudboken (IB + rörelser = UB, RES,
+ *  12. Bokslutsbilagan bokför förändringen mot kontot, inte totalen: en
+ *      omräkning med samma underlag dubblar aldrig skulden, och kontot är
+ *      avstämt mot bilagan efteråt.
+ *  13. SIE-exporten stämmer med huvudboken (IB + rörelser = UB, RES,
  *      varje #VER balanserar).
  */
 
@@ -62,7 +65,14 @@ import {
   PERSONALSKATT,
   SOCIALA_AVGIFTER,
 } from "./accounting/payroll";
-import { quartersOf, ensureFiscalYearFor } from "./accounting/fiscal";
+import { quartersOf, ensureFiscalYearFor, fiscalYears } from "./accounting/fiscal";
+import {
+  bookYearEndSchedule,
+  saveYearEndSchedule,
+  SEMESTERLONESKULD,
+  UPPLUPNA_SOCIALA_AVGIFTER,
+} from "./accounting/year-end";
+import { balanceReconciliation } from "./accounting/balance-reconciliation";
 import { bokforingsdatum } from "./accounting/dates";
 import { generateSie } from "./accounting/sie";
 import { customerSummary, invoiceOutstanding, invoiceTotals, isOpenReceivable } from "./services/data";
@@ -359,6 +369,64 @@ describe("Demoseedet uppfyller alla finansiella invarianter", () => {
     );
     assert.equal(accountBalance(PERSONALSKATT), 0, "personalskatten nollställs inte");
     assert.equal(accountBalance(ARBETSGIVARAVGIFT), 0, "arbetsgivaravgiften nollställs inte");
+    for (const v of db().verifications) {
+      const debit = v.entries.reduce((s, e) => s + e.debit, 0);
+      const credit = v.entries.reduce((s, e) => s + e.credit, 0);
+      assert.equal(debit, credit, `${verificationLabel(v)} balanserar inte`);
+    }
+  });
+
+  it("bokslutsbilagan bokför förändringen, så en omräkning aldrig dubblar skulden", () => {
+    seeded();
+    const fy = fiscalYears().find((f) => f.status === "oppet")!;
+    const employee = saveEmployee(
+      {
+        name: "Ägaren",
+        personnummer: "19850612-1234",
+        role: "foretagsledare",
+        monthlySalary: 40_000,
+        taxBasis: { kind: "procent", percent: 30 },
+        startDate: `${fy.label}-01-01`,
+      },
+      "anvandare"
+    );
+    assert.ok(employee.id);
+
+    // Bilagan bär ett totalbelopp men bokför skillnaden mot vad kontot visar.
+    // Om den bokförde totalen skulle andra körningen dubbla skulden.
+    // Bilagan bokförs på bokslutsdagen, som ligger framåt i ett öppet år –
+    // saldot måste därför läsas per den dagen, inte per idag.
+    const saldo = (account: number) => -accountBalance(account, fy.endDate);
+    const book = (days: number) => {
+      const schedule = saveYearEndSchedule(fy.id, "semesterloneskuld", { savedVacationDays: days }, "anvandare");
+      return bookYearEndSchedule(schedule.id, "anvandare");
+    };
+
+    const first = book(12).closingAmount;
+    assert.equal(saldo(SEMESTERLONESKULD), first, "skulden avviker från bilagan");
+
+    // Samma underlag igen: inget nytt att bokföra, saldot står still.
+    const again = book(12).closingAmount;
+    assert.equal(saldo(SEMESTERLONESKULD), again, "omräkningen dubblade skulden");
+    assert.equal(again, first, "samma underlag gav olika belopp");
+
+    // Färre dagar: skulden ska ned, inte upp.
+    const fewer = book(5);
+    assert.equal(saldo(SEMESTERLONESKULD), fewer.closingAmount, "minskningen bokfördes inte");
+    assert.ok(fewer.closingAmount < first, "färre dagar gav inte lägre skuld");
+
+    // Sociala avgifterna på skulden följer samma regel.
+    const contribution = fewer.lines.find((l) => l.label.startsWith("Sociala avgifter"))!;
+    assert.equal(saldo(UPPLUPNA_SOCIALA_AVGIFTER), contribution.amount, "avgiftsskulden avviker från bilagan");
+
+    // Och kontot är avstämt mot bilagan – det är hela poängen med en bilaga.
+    const tieOut = balanceReconciliation(fy.id);
+    for (const account of [SEMESTERLONESKULD, UPPLUPNA_SOCIALA_AVGIFTER]) {
+      const row = tieOut.rows.find((r) => r.account === account);
+      assert.ok(row, `konto ${account} saknas i avstämningen`);
+      assert.equal(row.difference, 0, `konto ${account} stämmer inte mot bilagan: ${row.detail}`);
+    }
+
     for (const v of db().verifications) {
       const debit = v.entries.reduce((s, e) => s + e.debit, 0);
       const credit = v.entries.reduce((s, e) => s + e.credit, 0);

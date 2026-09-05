@@ -1482,6 +1482,63 @@ async function main() {
   await asSuperuser();
 
   // ------------------------------------------------------------------
+  // Bokslutsbilagor (migration 35)
+  // ------------------------------------------------------------------
+  console.log("\nBokslutsbilagor:");
+
+  await asApp(A);
+  const schedule = (
+    id: string,
+    kind: string,
+    over: { businessId?: string; fiscalYearId?: string; status?: string } = {}
+  ) =>
+    db.query(
+      `insert into public.year_end_schedules
+         (id, business_id, kind, fiscal_year_id, closing_amount, lines, inputs, status, verification_ids, created_by)
+       values ($1, $2, $3, $4, 47_150,
+               '[{"label":"12 sparade betalda semesterdagar","amount":47150}]'::jsonb,
+               '{"savedVacationDays":12}'::jsonb, $5, '["ver-bilaga-1"]'::jsonb, 'anvandare')`,
+      [id, over.businessId ?? A, kind, over.fiscalYearId ?? "fy-2026", over.status ?? "bokford"]
+    );
+
+  await expectOk(db, "bilagan kan sparas i egen tenant", () => schedule("bil-a-sem", "semesterloneskuld"));
+  await expectError(db, "bilagor är tenantisolerade (RLS)", "row-level security", () =>
+    schedule("bil-b-sem", "semesterloneskuld", { businessId: B })
+  );
+  await expectError(db, "ett år har bara en bilaga per typ", "duplicate key", () =>
+    schedule("bil-a-sem-dubblett", "semesterloneskuld")
+  );
+  await expectOk(db, "samma typ får finnas för nästa räkenskapsår", () =>
+    schedule("bil-a-sem-2027", "semesterloneskuld", { fiscalYearId: "fy-2027" })
+  );
+  await expectError(db, "okänd bilagetyp avvisas", "year_end_schedules_kind_check", () =>
+    schedule("bil-a-fel-typ", "semesterlon")
+  );
+  await expectError(db, "okänd bilagestatus avvisas", "year_end_schedules_status_check", () =>
+    schedule("bil-a-fel-status", "periodiseringsfond", { status: "granskad" })
+  );
+  {
+    const r = await rows<{ dagar: string; belopp: string }>(
+      db,
+      `select inputs ->> 'savedVacationDays' as dagar, closing_amount as belopp
+         from public.year_end_schedules
+        where id = 'bil-a-sem'`
+    );
+    if (r[0]?.dagar === "12" && Number(r[0]?.belopp) === 47150) {
+      ok("bilagans underlag och belopp rundresar");
+    } else {
+      fail("bilagans underlag och belopp rundresar", JSON.stringify(r));
+    }
+  }
+  {
+    await asApp(B);
+    const r = await rows(db, `select id from public.year_end_schedules`);
+    if (r.length === 0) ok("företag B ser inte A:s bokslutsbilagor");
+    else fail("företag B ser inte A:s bokslutsbilagor", JSON.stringify(r));
+  }
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");

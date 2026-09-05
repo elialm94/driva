@@ -131,21 +131,36 @@ describe("semesterlöneskuld", () => {
 
   it("bilagan visar utgående skuld men bokför skillnaden mot kontot", () => {
     hire();
-    // Året innan lämnade 10 dagar kvar på kontot.
     saveYearEndSchedule("fy", "semesterloneskuld", { savedVacationDays: 10 }, "anvandare");
     bookYearEndSchedule(yearEndScheduleFor("fy", "semesterloneskuld")!.id, "anvandare");
-    const efterForstaAret = liability(SEMESTERLONESKULD);
-
-    // Nästa bilaga i samma år vore ett nytt svar på samma fråga.
-    assert.throws(
-      () => saveYearEndSchedule("fy", "semesterloneskuld", { savedVacationDays: 12 }, "anvandare"),
-      /redan bokförd/
-    );
+    const efterTioDagar = liability(SEMESTERLONESKULD);
 
     // Justeringen mot ett konto som redan bär skulden ska vara skillnaden.
     const draft = vacationLiabilityDraft("fy", 12);
-    assert.equal(draft.bookedAmount, efterForstaAret);
+    assert.equal(draft.bookedAmount, efterTioDagar);
     assert.equal(draft.change, 2 * vacationDayValue(MONTHLY).perDay);
+  });
+
+  it("en felräknad bilaga går att rätta så länge året är öppet", () => {
+    hire();
+    saveYearEndSchedule("fy", "semesterloneskuld", { savedVacationDays: 10 }, "anvandare");
+    const forstaVerifikationer = [
+      ...bookYearEndSchedule(yearEndScheduleFor("fy", "semesterloneskuld")!.id, "anvandare").verificationIds,
+    ];
+
+    // Det var 12 dagar, inte 10. Rättelsen sätter bilagan i utkast igen så
+    // ändringen inte blir liggande obokförd.
+    const reviderad = saveYearEndSchedule("fy", "semesterloneskuld", { savedVacationDays: 12 }, "anvandare");
+    assert.equal(reviderad.status, "utkast");
+    assert.ok(schedulesAwaitingBooking("fy").some((s) => s.kind === "semesterloneskuld"));
+
+    const bokford = bookYearEndSchedule(reviderad.id, "anvandare");
+    // Kontot bär bilagans belopp – inte summan av båda bokföringarna.
+    assert.equal(liability(SEMESTERLONESKULD), 12 * vacationDayValue(MONTHLY).perDay);
+    assert.equal(bokford.closingAmount, liability(SEMESTERLONESKULD));
+    // De första verifikationerna står kvar; rättelsen ligger i nya.
+    assert.ok(bokford.verificationIds.length > forstaVerifikationer.length);
+    for (const id of forstaVerifikationer) assert.ok(bokford.verificationIds.includes(id));
   });
 
   it("utan anställd finns ingen semesterlöneskuld att bokföra", () => {

@@ -390,12 +390,22 @@ export function saveYearEndSchedule(
   const data = db();
   data.yearEndSchedules ??= [];
   const existing = yearEndScheduleFor(fiscalYearId, kind);
-  if (existing?.status === "bokford") {
-    throw new Error(`${SCHEDULE_LABEL[kind]} är redan bokförd för ${fy.label}. Rätta genom en ny verifikation.`);
-  }
 
+  /*
+   * En bokförd bilaga får revideras så länge året är öppet. Den som räknat fel
+   * antal sparade semesterdagar ska kunna rätta det – alternativet vore en
+   * bilaga som permanent säger emot verkligheten, alltså precis det bilagan
+   * finns för att förhindra. Verifikationerna står kvar oförändrade; rättelsen
+   * bokförs som skillnaden när bilagan bokförs om, och bilagan går tillbaka
+   * till utkast så ändringen inte blir liggande obokförd i tysthet.
+   */
   const schedule: YearEndSchedule = existing
-    ? Object.assign(existing, { closingAmount: draft.closingAmount, lines: draft.lines, inputs: draft.inputs })
+    ? Object.assign(existing, {
+        closingAmount: draft.closingAmount,
+        lines: draft.lines,
+        inputs: draft.inputs,
+        status: "utkast" as const,
+      })
     : {
         id: uid(),
         kind,
@@ -410,7 +420,12 @@ export function saveYearEndSchedule(
       };
   if (!existing) data.yearEndSchedules.push(schedule);
 
-  logAudit(by, "bokslutsbilaga_andrad", `${SCHEDULE_LABEL[kind]} ${fy.label}: ${draft.closingAmount} kr. ${draft.explanation}`, {
+  const revised = existing?.verificationIds.length ? "Reviderad bilaga – skillnaden bokförs. " : "";
+  logAudit(
+    by,
+    "bokslutsbilaga_andrad",
+    `${SCHEDULE_LABEL[kind]} ${fy.label}: ${draft.closingAmount} kr. ${revised}${draft.explanation}`,
+    {
     targetType: "bokslutsbilaga",
     targetId: schedule.id,
   });
@@ -533,7 +548,9 @@ export function bookYearEndSchedule(id: string, by: "anvandare" | "assistent"): 
   schedule.lines = draft.lines;
   schedule.status = "bokford";
   schedule.bookedAt = new Date().toISOString();
-  schedule.verificationIds = verifications.map((v) => v.id);
+  // En reviderad bilaga behåller sina tidigare verifikationer – de är bokförda
+  // och rättelsen ligger i den nya. Bilagan pekar på hela kedjan.
+  schedule.verificationIds = [...schedule.verificationIds, ...verifications.map((v) => v.id)];
 
   logAudit(by, "bokslutsbilaga_bokford", `${SCHEDULE_LABEL[schedule.kind]} ${fy.label} bokfördes: ${draft.closingAmount} kr.`, {
     targetType: "bokslutsbilaga",
