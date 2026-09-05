@@ -1,0 +1,457 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema
+	targetNamespace="http://xmls.skatteverket.se/se/skatteverket/ht/komponent/begaran/6.0"
+	xmlns="http://xmls.skatteverket.se/se/skatteverket/ht/komponent/begaran/6.0"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified"
+	attributeFormDefault="unqualified">
+	<xs:annotation>
+		<xs:appinfo>
+			<SchemaMetadata xmlns="se/skatteverket/zl/SchemaMetadata/1.0"
+				xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcq="http://purl.org/dc/terms/">
+				<dc:title>BegaranCOMPONENT.xsd</dc:title>
+				<dc:description>Detta xml-schema innehåller publika generella komponenter som rör begäran för rot och rut
+				</dc:description>
+				<dc:publisher>Skatteverket</dc:publisher>
+				<dc:creator>
+					<dcq:contact>Synpunkter eller frågor lämnas till Servicejouren, se
+						http://www.skatteverket.se
+					</dcq:contact>
+					<dcq:owner>Skatteverket</dcq:owner>
+				</dc:creator>
+				<dc:date>
+					<dcq:created>2016-10-03</dcq:created>
+				</dc:date>
+				<dc:subject>Husarbete</dc:subject>
+			</SchemaMetadata>
+		</xs:appinfo>
+	</xs:annotation>
+	<xs:complexType name="ArendeUtfortArbeteRotTYPE">
+		<xs:annotation>
+			<xs:documentation>Uppgifter om utfört arbete för Rot.
+			</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Bygg" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material 
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="El" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GlasPlatarbete" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="MarkDraneringarbete" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Murning" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="MalningTapetsering" minOccurs="0"
+				maxOccurs="1" nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Vvs" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="ArendeUtfortArbeteRutTYPE">
+		<xs:annotation>
+			<xs:documentation>Uppgifter om utfört arbete för Rut.
+			</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Stadning" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="KladOchTextilvard" minOccurs="0"
+				maxOccurs="1" nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Snoskottning" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Tradgardsarbete" minOccurs="0"
+				maxOccurs="1" nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Barnpassning" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Personligomsorg" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Flyttjanster" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ItTjanster" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ReparationAvVitvaror" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Moblering" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TillsynAvBostad" minOccurs="0" maxOccurs="1"
+				nillable="true" type="TimmarMaterialTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar och kostnad för material
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TransportTillForsaljning" minOccurs="0" nillable="true" type="SchablonarbeteTYPE">
+				<xs:annotation>
+					<xs:documentation>Information om schablonsarbetet "transport till försäljning"</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TvattVidTvattinrattning" minOccurs="0" nillable="true" type="SchablonarbeteTYPE">
+				<xs:annotation>
+					<xs:documentation>Information om schablonsarbetet "tvätt till tvättinrättning"</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="ArendeTYPE">
+		<xs:annotation>
+			<xs:documentation>Uppgifter om den du begär utbetalning för
+			</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Kopare" minOccurs="1" maxOccurs="1"
+				nillable="false" block="extension" type="PeOrgNrTYPE">
+				<xs:annotation>
+					<xs:documentation>Köparens personnummer, obligatorisk
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="BetalningsDatum" minOccurs="1"
+				maxOccurs="1" nillable="false" type="DatumTYPE">
+				<xs:annotation>
+					<xs:documentation>Datum för betalning, obligatorisk. Anges enligt följande exempel: 2019-07-01
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PrisForArbete" minOccurs="1"
+				maxOccurs="1" nillable="false">
+				<xs:annotation>
+					<xs:documentation>Pris för arbetet (arbetskostnaden), obligatorisk
+					</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:long">
+						<xs:maxInclusive value="99999999999">
+						</xs:maxInclusive>
+						<xs:minInclusive value="2">
+						</xs:minInclusive>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="BetaltBelopp" minOccurs="1" maxOccurs="1"
+				nillable="false" type="BeloppTYPE">
+				<xs:annotation>
+					<xs:documentation>Belopp du fått betalt för arbetet, obligatorisk
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="BegartBelopp" minOccurs="1" maxOccurs="1"
+				nillable="false" type="BeloppTYPE">
+				<xs:annotation>
+					<xs:documentation>Belopp du begär, obligatorisk	</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FakturaNr" minOccurs="0" maxOccurs="1"
+				block="extension" type="FakturaNrTYPE">
+				<xs:annotation>
+					<xs:documentation>Ärendets fakturanummer</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Ovrigkostnad" minOccurs="0"
+				maxOccurs="1" nillable="true" type="OvrigKostnadTYPE">
+				<xs:annotation>
+					<xs:documentation>Uppgifter om övrig kostnad. Ska fyllas i om timmar eller material angetts för någon tjänst i utfört arbete 
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="RotArendeTYPE">
+		<xs:complexContent>
+			<xs:extension base="ArendeTYPE">
+				<xs:sequence>
+					<xs:element name="Fastighetsbeteckning" minOccurs="0"
+						maxOccurs="1" type="FastighetsbeteckningTYPE">
+						<xs:annotation>
+							<xs:documentation>Fastighetsbeteckning, ska fyllas i om	rot-avdraget avser en fastighet
+							</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="LagenhetsNr" minOccurs="0" maxOccurs="1"
+						type="LagenhetsNrTYPE" nillable="true">
+						<xs:annotation>
+							<xs:documentation>Lägenhetsnummer, ska fyllas i om rot-avdraget	avser en lägenhet
+							</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="BrfOrgNr" minOccurs="0" maxOccurs="1"
+						block="extension" type="BrfOrgNrTYPE" nillable="true">
+						<xs:annotation>
+							<xs:documentation>Bostadsrättsförenings organisationsnummer, ska fyllas i om rot-avdraget avser en lägenhet
+							</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="UtfortArbete" minOccurs="0" maxOccurs="1"
+						nillable="true" type="ArendeUtfortArbeteRotTYPE">
+						<xs:annotation>
+							<xs:documentation>Uppgifter om utfört arbete för Rot
+							</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+				</xs:sequence>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+
+	<xs:complexType name="HushallArendeTYPE">
+		<xs:complexContent>
+			<xs:extension base="ArendeTYPE">
+				<xs:sequence>
+					<xs:element name="UtfortArbete" minOccurs="0" maxOccurs="1"
+						nillable="true" type="ArendeUtfortArbeteRutTYPE">
+						<xs:annotation>
+							<xs:documentation>Uppgifter om utfört arbete för Rut
+							</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+				</xs:sequence>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+
+	<xs:complexType name="HushallBegaranTYPE">
+		<xs:sequence>
+			<xs:element name="Arenden" type="HushallArendeTYPE"
+				minOccurs="1" maxOccurs="unbounded" />
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="RotBegaranTYPE">
+		<xs:sequence>
+			<xs:element name="Arenden" type="RotArendeTYPE" minOccurs="1"
+				maxOccurs="unbounded" />
+		</xs:sequence>
+	</xs:complexType>
+
+	<xs:complexType name="BegaranTYPE">
+		<xs:sequence>
+			<xs:element name="NamnPaBegaran" maxOccurs="1" minOccurs="1"
+				nillable="false" type="NamnPaBegaranTYPE">
+				<xs:annotation>
+					<xs:documentation>Ditt namn på begäran
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:choice maxOccurs="1" minOccurs="0">
+				<xs:element name="RotBegaran" type="RotBegaranTYPE" />
+				<xs:element name="HushallBegaran" type="HushallBegaranTYPE" />
+			</xs:choice>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="TimmarMaterialTYPE">
+		<xs:annotation>
+			<xs:documentation>Uppgifter om utfört arbete, timmar och material
+			</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="AntalTimmar" minOccurs="0" maxOccurs="1"
+				nillable="false" type="AntalTimmarTYPE">
+				<xs:annotation>
+					<xs:documentation>Antal timmar</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Materialkostnad" minOccurs="1"
+				maxOccurs="1" nillable="false" type="MaterialkostnadTYPE">
+				<xs:annotation>
+					<xs:documentation>Materialkostnad</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="SchablonarbeteTYPE">
+		<xs:annotation>
+			<xs:documentation>Uppgifter om utfört schablonarbete</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Utfort" type="xs:boolean">
+				<xs:annotation>
+					<xs:documentation>Om schablonuppgifter har utförts eller inte</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:simpleType name="NamnPaBegaranTYPE">
+		<xs:restriction base="xs:string">
+			<xs:minLength value="1">
+			</xs:minLength>
+			<xs:maxLength value="16">
+			</xs:maxLength>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="FakturaNrTYPE">
+		<xs:restriction base="xs:string">
+			<xs:minLength value="0">
+			</xs:minLength>
+			<xs:maxLength value="20">
+			</xs:maxLength>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="BrfOrgNrTYPE">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="[\d\-]*">
+			</xs:pattern>
+			<xs:minLength value="0">
+			</xs:minLength>
+			<xs:maxLength value="12">
+			</xs:maxLength>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="LagenhetsNrTYPE">
+		<xs:restriction base="xs:string">
+			<xs:minLength value="1">
+			</xs:minLength>
+			<xs:maxLength value="25">
+			</xs:maxLength>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="FastighetsbeteckningTYPE">
+		<xs:annotation>
+			<xs:documentation>Fastighetsbeteckning</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:minLength value="1">
+			</xs:minLength>
+			<xs:maxLength value="40">
+			</xs:maxLength>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="MaterialkostnadTYPE">
+		<xs:restriction base="xs:long">
+			<xs:minInclusive value="0">
+			</xs:minInclusive>
+			<xs:maxInclusive value="9999999">
+			</xs:maxInclusive>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="AntalTimmarTYPE">
+		<xs:restriction base="xs:long">
+			<xs:minInclusive value="0">
+			</xs:minInclusive>
+			<xs:maxInclusive value="999">
+			</xs:maxInclusive>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="OvrigKostnadTYPE">
+		<xs:restriction base="xs:long">
+			<xs:minInclusive value="0">
+			</xs:minInclusive>
+			<xs:maxInclusive value="9999999">
+			</xs:maxInclusive>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="BeloppTYPE">
+		<xs:restriction base="xs:long">
+			<xs:minInclusive value="0">
+			</xs:minInclusive>
+			<xs:maxInclusive value="99999999999">
+			</xs:maxInclusive>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="DatumTYPE">
+		<xs:restriction base="xs:date">
+			<xs:minInclusive value="2009-07-01">
+			</xs:minInclusive>
+			<xs:pattern
+				value="(19|20)\d\d[- /.](0[1-9]|1[012])[- /.](0[1-9]|[12][0-9]|3[01])">
+			</xs:pattern>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="PeOrgNrTYPE">
+		<xs:annotation>
+			<xs:documentation>Organisationsnummer/personnummer
+			</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:length value="12">
+			</xs:length>
+			<xs:pattern value="\d+">
+			</xs:pattern>
+		</xs:restriction>
+	</xs:simpleType>
+</xs:schema>

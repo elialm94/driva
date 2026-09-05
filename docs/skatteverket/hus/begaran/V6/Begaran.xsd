@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema
+	targetNamespace="http://xmls.skatteverket.se/se/skatteverket/ht/begaran/6.0"
+	xmlns:htko="http://xmls.skatteverket.se/se/skatteverket/ht/komponent/begaran/6.0"
+	xmlns="http://xmls.skatteverket.se/se/skatteverket/ht/begaran/6.0"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified"
+	attributeFormDefault="unqualified">
+
+	<xs:import
+		namespace="http://xmls.skatteverket.se/se/skatteverket/ht/komponent/begaran/6.0"
+		schemaLocation="../../komponent/V6/BegaranCOMPONENT.xsd" />
+
+	<xs:annotation>
+		<xs:appinfo>
+			<SchemaMetadata xmlns="se/skatteverket/zl/SchemaMetadata/1.0"
+				xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcq="http://purl.org/dc/terms/">
+				<dc:title>Begaran.xsd</dc:title>
+				<dc:description>Detta xml-schema avser struktur för begäran av rot och rut</dc:description>
+				<dc:publisher>Skatteverket</dc:publisher>
+				<dc:creator>
+					<dcq:contact>Synpunkter eller frågor lämnas till Skatteupplysningen, se
+						http://www.skatteverket.se
+					</dcq:contact>
+					<dcq:owner>Skatteverket</dcq:owner>
+				</dc:creator>
+				<dc:date>
+					<dcq:created>2016-09-28</dcq:created>
+				</dc:date>
+				<dc:subject>Husarbete</dc:subject>
+			</SchemaMetadata>
+		</xs:appinfo>
+		<xs:documentation>2020-11-26: Lägger till valfria ruttjänster enligt lag som börjar gälla 2021-01-01. De nya tjänsterna är: Moblering, TillsynAvBostad, TransportTillForsaljning och TvattVidTvattinrattning.</xs:documentation>
+		<xs:documentation>2020-11-26: Övrig kostnad är valfri uppgift om endast schablontjänst angetts (obligatorisk för övriga tjänster). Ovrigkostnad är därför inte längre obligatoriskt enligt schemat.</xs:documentation>
+	</xs:annotation>
+
+	<xs:element name="Begaran" type="htko:BegaranTYPE">
+		<xs:annotation>
+			<xs:documentation>Uppgifter om utfört arbete för rot och rut.
+			</xs:documentation>
+		</xs:annotation>
+	</xs:element>
+</xs:schema>
+
