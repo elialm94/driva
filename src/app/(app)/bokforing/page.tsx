@@ -63,6 +63,18 @@ export default async function BookkeepingPage({
   const showBokslut =
     openYear != null && (today >= monthsBefore(openYear.endDate, 2) || today > openYear.endDate);
 
+  /*
+   * Ett öppet år utan ingående balanser och utan en enda verifikation är
+   * ögonblicket för ett övertagande: antingen är det bolagets första år, eller
+   * så ligger historiken i ett annat program och måste in innan bokföringen
+   * börjar. Kortet visas bara då – efteråt är det en risk utan nytta.
+   */
+  const emptyStart =
+    openYear != null &&
+    openYear.openingSource !== "foregaende_ar" &&
+    Object.keys(openYear.openingBalances).length === 0 &&
+    !data.verifications.some((v) => v.fiscalYearId === openYear.id);
+
   const recent = [...data.verifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 4);
 
   return (
@@ -176,6 +188,21 @@ export default async function BookkeepingPage({
         </Card>
       </section>
 
+      {emptyStart && openYear ? (
+        <Card className="mb-8 flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div>
+            <p className="text-[15px] font-semibold">Kommer bokföringen från ett annat program?</p>
+            <p className="mt-0.5 text-[13px] text-soft">
+              {openYear.label} börjar på noll. Läs in balansräkningen från Fortnox, Visma eller Björn Lundén så utgår
+              rapporterna från rätt siffror.
+            </p>
+          </div>
+          <ButtonLink href="/bokforing/ingaende-balans" variant="secondary" size="sm">
+            Ingående balans
+          </ButtonLink>
+        </Card>
+      ) : null}
+
       {showBokslut && openYear ? (
         <Card className="mb-8 flex flex-wrap items-center justify-between gap-3 px-5 py-4">
           <div>
@@ -222,6 +249,12 @@ export default async function BookkeepingPage({
           className="mt-2 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline"
         >
           Visa bokföringsdetaljer <ArrowRight className="size-3.5" />
+        </Link>
+        <Link
+          href="/bokforing/ingaende-balans"
+          className="mt-2 block text-[13px] font-medium text-accent hover:underline"
+        >
+          Ingående balans och övertagande från annat program
         </Link>
       </footer>
     </div>

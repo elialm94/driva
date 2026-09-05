@@ -1485,6 +1485,7 @@ export type AuditAction =
   | "arbetsgivardeklaration_genererad"
   | "arbetsgivardeklaration_deklarerad"
   | "rakenskapsar_skapat"
+  | "sie_import"
   | "rakenskapsar_stangt"
   | "rakenskapsar_oppnat"
   | "period_upplast"
