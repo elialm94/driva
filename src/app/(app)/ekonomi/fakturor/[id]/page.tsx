@@ -28,6 +28,7 @@ import { isLiveMailConfigured } from "@/lib/mail";
 import { DeniedReductionCard } from "@/components/denied-reduction-card";
 import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
 import { taxReductionCaseForInvoice } from "@/lib/services/tax-reduction";
+import { husExportPreview } from "@/lib/services/hus-export";
 import { SmartBack } from "@/components/back-link";
 import { AppLink } from "@/components/app-link";
 import { hrefFromOrigin, hrefWithNav, newQuoteHref, pageOrigin, returnNavFromSearch } from "@/lib/nav";
@@ -50,6 +51,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   const publicPath = `/faktura/${invoice.token}`;
   const deviation = invoiceQuoteDeviation(invoice);
   const taxCase = invoice.rot ? taxReductionCaseForInvoice(invoice) : null;
+  const husExport = taxCase?.phase === "underlag" ? husExportPreview({ jobId: taxCase.jobId, invoiceId: invoice.id }) : null;
   const showDeniedFollowUp =
     Boolean(invoice.rot) &&
     totals.deduction > 0 &&
@@ -208,7 +210,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
 
       {isDraft ? <InvoiceIssueChecklist blockers={sendBlockers} /> : null}
 
-      {taxCase ? <TaxReductionApplicationCard cse={taxCase} editHref={isDraft ? editHref : undefined} /> : null}
+      {taxCase ? <TaxReductionApplicationCard cse={taxCase} editHref={isDraft ? editHref : undefined} hus={husExport} /> : null}
 
       {showDeniedFollowUp ? <DeniedReductionCard invoiceId={invoice.id} deduction={totals.deduction} /> : null}
 

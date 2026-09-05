@@ -20,6 +20,7 @@ import { JobNotes } from "@/components/job-notes";
 import { JobWorkSection, type JobWorkViewEntry } from "@/components/job-work";
 import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
 import { taxReductionCaseForJob } from "@/lib/services/tax-reduction";
+import { husExportPreview } from "@/lib/services/hus-export";
 import { getInvoiceDefaults } from "@/lib/services/settings";
 import { AppLink } from "@/components/app-link";
 import { SmartBack } from "@/components/back-link";
@@ -69,6 +70,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
   const fromHere = pageOrigin(`/uppdrag/${job.id}`, searchParams, job.title);
   const notes = parseJobNotes(job.notes);
   const taxCase = taxReductionCaseForJob(job);
+  const husExport = taxCase.phase === "underlag" ? husExportPreview({ jobId: job.id }) : null;
   const actuals = actualEntries(job.id);
   const comparison = jobWorkComparison(job.id);
   const invoiceChoice = jobInvoiceChoice(job.id);
@@ -235,6 +237,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
           <TaxReductionApplicationCard
             cse={taxCase}
             editHref={taxCase.invoiceId ? invoiceHref(taxCase.invoiceId, fromHere) : undefined}
+            hus={husExport}
           />
         </div>
       ) : null}

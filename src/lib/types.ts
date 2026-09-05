@@ -233,12 +233,54 @@ export type TaxReductionApplicationStatus =
   | "delvis_godkant"
   | "nekat";
 
+/** Arbetsområden i Skatteverkets HUS-schema (Begäran v6). ROT-områden först, sedan RUT. */
+export type HusRotWorkCategory =
+  | "Bygg"
+  | "El"
+  | "GlasPlatarbete"
+  | "MarkDraneringarbete"
+  | "Murning"
+  | "MalningTapetsering"
+  | "Vvs";
+export type HusRutWorkCategory =
+  | "Stadning"
+  | "KladOchTextilvard"
+  | "Snoskottning"
+  | "Tradgardsarbete"
+  | "Barnpassning"
+  | "Personligomsorg"
+  | "Flyttjanster"
+  | "ItTjanster"
+  | "ReparationAvVitvaror"
+  | "Moblering"
+  | "TillsynAvBostad";
+export type HusWorkCategory = HusRotWorkCategory | HusRutWorkCategory;
+
+/**
+ * Uppgifter som bara behövs för Skatteverkets HUS-fil (XML-import i e-tjänsten
+ * "Rot och rut – företag"). Filen laddas ner och importeras av användaren själv –
+ * Driva skickar aldrig något till Skatteverket.
+ */
+export interface TaxReductionHusDetails {
+  /** Arbetsområde enligt schemat. ROT utan val = Bygg (snickardefault). RUT måste väljas. */
+  workCategory?: HusWorkCategory;
+  /**
+   * Arbetade timmar per faktura när fakturaraderna inte är timprisade
+   * (fast pris). Anges av användaren – räknas aldrig fram ur beloppet.
+   */
+  laborHoursByInvoice?: Record<ID, number>;
+  /** Senaste nedladdning av HUS-filen. Ingen inlämning – bara att filen hämtats. */
+  fileDownloadedAt?: string;
+}
+
 /** Manuellt ansökningssteg – ingen Skatteverket-API i V1. */
 export interface TaxReductionApplication {
   status: TaxReductionApplicationStatus;
   underlagCreatedAt?: string;
   /** Sammanfattning för export. Innehåller inte personnummer i aktivitetsloggen. */
   underlagSummary?: string;
+  /** Kompletterande uppgifter för HUS-filen till Skatteverket. */
+  hus?: TaxReductionHusDetails;
   decision?: {
     outcome: "godkant" | "delvis_godkant" | "nekat";
     decidedAt: string;
@@ -1514,6 +1556,7 @@ export type AuditAction =
   | "utgift_bokford"
   | "banktransaktion_bokford"
   | "rot_underlag_skapat"
+  | "rot_fil_nedladdad"
   | "rot_beslut"
   | "rot_utbetalning_mottagen"
   | "taxreduktion_uppgift_andrad"

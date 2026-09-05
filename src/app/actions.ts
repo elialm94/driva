@@ -52,6 +52,7 @@ import {
   patchTaxReductionFields,
   setTaxReductionDecision,
 } from "@/lib/services/tax-reduction";
+import { patchHusExportFields } from "@/lib/services/hus-export";
 import type { DwellingType, LineKind, PaymentDetailsMethod, TaxReductionDetails } from "@/lib/types";
 import {
   applyBusinessProfilePatch,
@@ -1147,6 +1148,24 @@ export async function patchTaxReductionFieldsAction(input: {
   return withBusiness(() => {
     try {
       patchTaxReductionFields(input);
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara uppgiften." } as const;
+    }
+  });
+}
+
+/** Arbetsområde och arbetade timmar för HUS-filen till Skatteverket. */
+export async function patchHusExportFieldsAction(input: {
+  jobId?: string;
+  invoiceId?: string;
+  workCategory?: string;
+  laborHoursByInvoice?: Record<string, number | null>;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      patchHusExportFields(input);
       refresh();
       return { ok: true } as const;
     } catch (e) {
