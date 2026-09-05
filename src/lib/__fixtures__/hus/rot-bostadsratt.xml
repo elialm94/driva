@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Begaran xmlns="http://xmls.skatteverket.se/se/skatteverket/ht/begaran/6.0">
+  <NamnPaBegaran xmlns="http://xmls.skatteverket.se/se/skatteverket/ht/komponent/begaran/6.0">ROT 2026-09-05</NamnPaBegaran>
+  <RotBegaran xmlns="http://xmls.skatteverket.se/se/skatteverket/ht/komponent/begaran/6.0">
+    <Arenden>
+      <Kopare>197307245428</Kopare>
+      <BetalningsDatum>2026-08-20</BetalningsDatum>
+      <PrisForArbete>12500</PrisForArbete>
+      <BetaltBelopp>8750</BetaltBelopp>
+      <BegartBelopp>3750</BegartBelopp>
+      <FakturaNr>1046</FakturaNr>
+      <Ovrigkostnad>0</Ovrigkostnad>
+      <LagenhetsNr>1201</LagenhetsNr>
+      <BrfOrgNr>769612-3456</BrfOrgNr>
+      <UtfortArbete>
+        <Bygg>
+          <AntalTimmar>12</AntalTimmar>
+          <Materialkostnad>0</Materialkostnad>
+        </Bygg>
+        <Vvs>
+          <AntalTimmar>3</AntalTimmar>
+          <Materialkostnad>1200</Materialkostnad>
+        </Vvs>
+      </UtfortArbete>
+    </Arenden>
+  </RotBegaran>
+</Begaran>
