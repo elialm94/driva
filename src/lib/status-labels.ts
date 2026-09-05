@@ -28,11 +28,14 @@ import type {
   ExpenseStatus,
   InboxItemStatus,
   Invoice,
+  PurchaseOrderConfirmationStatus,
+  PurchaseOrderStatus,
   Quote,
   QuoteAcceptance,
   SupplierPaymentStatus,
   TaxReductionApplicationStatus,
   TxStatus,
+  WholesalerPriceImportStatus,
 } from "./types";
 
 /** Samma toner som Badge i UI:t (delmängd av BadgeTone) – hålls som data. */
@@ -330,6 +333,39 @@ export const COLLABORATION_STATUS: Record<CollaborationInviteStatus, StatusLabel
   accepted: { label: "Ansluten", tone: "ok" },
   revoked: { label: "Åtkomst borttagen", tone: "neutral" },
   expired: { label: "Inbjudan har gått ut", tone: "neutral" },
+};
+
+/* ---------------------------- Grossistbeställningar --------------------------- */
+
+/**
+ * Materialbeställningens status. "sent" betyder att mejlet gick iväg – vi
+ * väntar på grossistens bekräftelse; ordern är INTE bekräftad bara för att
+ * den skickats. Avvikelser (pris/antal/rest) kräver kontroll av användaren.
+ */
+export const PURCHASE_ORDER_STATUS: Record<PurchaseOrderStatus, StatusLabel> = {
+  draft: { label: "Utkast", tone: "neutral" },
+  sent: { label: "Skickad – inväntar bekräftelse", tone: "info" },
+  confirmed: { label: "Bekräftad", tone: "ok" },
+  partially_confirmed: { label: "Delvis bekräftad", tone: "warn" },
+  needs_review: { label: "Avvikelse kräver kontroll", tone: "warn" },
+  rejected: { label: "Avvisad", tone: "danger" },
+  cancelled: { label: "Avbruten", tone: "neutral" },
+};
+
+/** Bekräftelsepostens läge – bara i orderns historik. */
+export const PURCHASE_ORDER_CONFIRMATION_STATUS: Record<PurchaseOrderConfirmationStatus, StatusLabel> = {
+  applied: { label: "Matchad", tone: "ok" },
+  needs_review: { label: "Kontrollera", tone: "warn" },
+  approved: { label: "Godkänd av dig", tone: "ok" },
+  dismissed: { label: "Bortsedd", tone: "neutral" },
+};
+
+/** Prisimportens läge under Inställningar → Grossister. */
+export const WHOLESALER_IMPORT_STATUS: Record<WholesalerPriceImportStatus, StatusLabel> = {
+  processing: { label: "Importeras", tone: "info" },
+  active: { label: "Aktiv prislista", tone: "ok" },
+  superseded: { label: "Ersatt", tone: "neutral" },
+  failed: { label: "Misslyckades", tone: "danger" },
 };
 
 /* -------------------------------- Support/Admin ------------------------------- */

@@ -13,6 +13,7 @@ import { requestTenantState } from "./storage/request-scope";
 import { hydrateQuotedBaselines } from "./services/job-work-baseline";
 import { withoutRetiredSections } from "./website-sections";
 import { allocateInboundMailSlug, shouldRemintHexInboundSlug } from "./inbox/inbound-slug";
+import { fileCatalogStore } from "./wholesalers/catalog-store";
 
 /**
  * Lagringsfasad: all domänkod läser/skriver via db() + save().
@@ -273,6 +274,11 @@ export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): 
   loaded.jobWorkEntries ??= [];
   loaded.collaborationInvitations ??= [];
   loaded.clientInformationRequests ??= [];
+  loaded.wholesalerConnections ??= [];
+  loaded.wholesalerPriceImports ??= [];
+  loaded.purchaseOrders ??= [];
+  loaded.purchaseOrderLines ??= [];
+  loaded.purchaseOrderConfirmations ??= [];
   loaded.settings.inboundMailSlug ??= "demo";
   const remintedInbound = remintHexInboundSlugInMemory(loaded);
   for (const sup of loaded.supplierInvoices ?? []) {
@@ -322,6 +328,8 @@ function schemaNeedsNormalize(data: DB | undefined): boolean {
   if (!Array.isArray(data.jobWorkEntries)) return true;
   if (!Array.isArray(data.collaborationInvitations)) return true;
   if (!Array.isArray(data.clientInformationRequests)) return true;
+  if (!Array.isArray(data.wholesalerConnections)) return true;
+  if (!Array.isArray(data.purchaseOrders)) return true;
   if ("requests" in (data as object)) return true;
   if (!data.meta.taxReductionDemoHydrated) return true;
   // Äldre BankID-formade signaturer i en varm cache → migrera till godkännanden.
@@ -406,6 +414,7 @@ export function resetDemoData(): void {
   assertJsonMode("resetDemoData");
   g.__drivaDb = freshSeed();
   persist(g.__drivaDb);
+  clearLocalCatalog();
 }
 
 /**
@@ -457,11 +466,34 @@ export function resetToEmptyCompany(): void {
     paymentFiles: [],
     collaborationInvitations: [],
     clientInformationRequests: [],
+    wholesalerConnections: [],
+    wholesalerPriceImports: [],
+    purchaseOrders: [],
+    purchaseOrderLines: [],
+    purchaseOrderConfirmations: [],
     meta: { seededAt: seeded, taxReductionDemoHydrated: true },
   };
   g.__drivaDb = normalize(empty);
   persist(g.__drivaDb);
+  clearLocalCatalog();
 }
+
+/**
+ * Grossistkatalogen (artiklar) bor utanför aggregatet (lib/wholesalers/
+ * catalog-store.ts, ett fs-blad utan store-beroende). Nollställs ihop med
+ * det lokala JSON-företaget så att en återställning aldrig lämnar gamla
+ * artiklar kvar.
+ */
+function clearLocalCatalog(): void {
+  try {
+    fileCatalogStore().deleteBusiness(LOCAL_CATALOG_BUSINESS_ID);
+  } catch {
+    // Katalogen är sekundär – återställningen får aldrig fastna på den.
+  }
+}
+
+/** Samma id som collaboration/actor.LOCAL_JSON_BUSINESS_ID – dupliceras för att undvika importcykel. */
+const LOCAL_CATALOG_BUSINESS_ID = "local";
 
 function assertJsonMode(operation: string): void {
   if (storageMode() === "supabase") {

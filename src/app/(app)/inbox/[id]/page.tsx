@@ -30,6 +30,7 @@ import { DocumentViewerButton } from "@/components/document-viewer";
 import { CreatePaymentFileButton } from "@/components/payment-file-actions";
 import { RegeneratePaymentFileButton } from "@/components/payment-file-actions";
 import { InboxOverflowMenu } from "@/components/inbox-overflow";
+import { InboxOrderConfirmationBody } from "@/components/inbox-order-confirmation";
 import {
   SupplierPaymentDetailsPanel,
   type PaymentDetailsPanelProps,
@@ -58,6 +59,24 @@ export default async function InboxDetailPage(props: { params: Promise<{ id: str
 
   const { item, display } = view;
   const data = db();
+
+  // Orderbekräftelser är inte leverantörsfakturor: egen vy utan belopp,
+  // förfallodatum och betalningsuppgifter.
+  if (item.documentType === "orderbekraftelse") {
+    const confirmationSteps = inboxWorkflowSteps({ item });
+    return (
+      <div className="animate-fade-up">
+        <PageHeader
+          back={<SmartBack />}
+          crumbs={[{ href: kunderInboxHref(), label: "Inbox" }, { label: item.subject || "Orderbekräftelse" }]}
+          title={inboxDocumentTitle(item)}
+          subtitle={`${item.fromAddress} · inkommen ${datumTid(item.createdAt)}`}
+          actions={<InboxOverflowMenu itemId={item.id} canIgnore={item.status === "ny"} />}
+        />
+        <InboxOrderConfirmationBody item={item} steps={confirmationSteps} display={display} />
+      </div>
+    );
+  }
   const invoice = item.supplierInvoiceId
     ? data.supplierInvoices.find((s) => s.id === item.supplierInvoiceId)
     : undefined;

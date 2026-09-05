@@ -29,7 +29,11 @@ export type CollaborationCapability =
   | "revoke_collaborator"
   | "request_client_information"
   | "manage_customers"
-  | "reveal_personnummer";
+  | "reveal_personnummer"
+  /** Konfigurera grossister och prisfiler (ägare/admin). */
+  | "manage_wholesalers"
+  /** Bygga varukorg och skicka materialbeställningar (ägare/admin/medlem). */
+  | "order_materials";
 
 const CONSULTANT: ReadonlySet<CollaborationCapability> = new Set([
   "read_accounting",
@@ -72,13 +76,17 @@ const OWNER: ReadonlySet<CollaborationCapability> = new Set([
   "request_client_information",
   "manage_customers",
   "reveal_personnummer",
+  "manage_wholesalers",
+  "order_materials",
 ]);
 
 const BY_ROLE: Record<BusinessRole, ReadonlySet<CollaborationCapability>> = {
   owner: OWNER,
   admin: OWNER,
   member: new Set(
-    [...OWNER].filter((c) => c !== "invite_collaborator" && c !== "revoke_collaborator")
+    [...OWNER].filter(
+      (c) => c !== "invite_collaborator" && c !== "revoke_collaborator" && c !== "manage_wholesalers"
+    )
   ),
   accounting_consultant: CONSULTANT,
   auditor: AUDITOR,
@@ -151,6 +159,7 @@ export const CONSULTANT_FORBIDDEN_TOOLS: readonly string[] = [
   "purchase_domain",
   "submit_supplier_payment",
   "update_business_profile",
+  "activate_wholesalers",
 ];
 
 export const AUDITOR_FORBIDDEN_TOOLS: readonly string[] = [

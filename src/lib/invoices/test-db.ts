@@ -124,6 +124,11 @@ export function emptyTestDb(over: Partial<DB> = {}): DB {
     inboxItems: over.inboxItems ?? [],
     collaborationInvitations: over.collaborationInvitations ?? [],
     clientInformationRequests: over.clientInformationRequests ?? [],
+    wholesalerConnections: over.wholesalerConnections ?? [],
+    wholesalerPriceImports: over.wholesalerPriceImports ?? [],
+    purchaseOrders: over.purchaseOrders ?? [],
+    purchaseOrderLines: over.purchaseOrderLines ?? [],
+    purchaseOrderConfirmations: over.purchaseOrderConfirmations ?? [],
     meta: over.meta ?? { seededAt: new Date().toISOString() },
   };
 }

@@ -26,13 +26,28 @@ export const UNVERIFIED_DOMAIN_ERROR =
 export const MAIL_SENDER_NOT_CONFIGURED =
   "Avsändaradressen för e-post saknas. Sätt RESEND_FROM_EMAIL till en verifierad adress.";
 
+/** Bilaga i utgående mejl (beställningsunderlag m.m.). Innehåll som bytes eller base64. */
+export interface MailAttachment {
+  filename: string;
+  content: Buffer | string;
+  contentType?: string;
+}
+
 export interface MailMessage {
   to: string;
+  /**
+   * Avsändare. Live-vägen skickar ALLTID från den verifierade adressen
+   * (RESEND_FROM_EMAIL); ett eget visningsnamn ("Företaget via Ferva") tas
+   * bara med om adressen i `from` är just den – aldrig en främmande domän.
+   */
   from: string;
   replyTo?: string;
+  /** Kopior, t.ex. användarens egen adress vid beställning. */
+  cc?: string[];
   subject: string;
   text: string;
   html: string;
+  attachments?: MailAttachment[];
 }
 
 export type MailMode = "mock" | "live" | "test" | "demo";
@@ -74,9 +89,36 @@ function formatFromAddress(email: string, name?: string): string {
   return name ? `${name} <${email}>` : email;
 }
 
+/** Bara e-postadressen ur "Namn <adress>" (eller adressen som den är). */
+export function bareEmailAddress(address: string): string {
+  const angle = /<([^>]+)>/.exec(address);
+  return (angle ? angle[1] : address).trim().toLowerCase();
+}
+
 /** Avsändare för kuvertet. Live-sändning kräver configuredFromAddress(). */
 export function mailFromAddress(): string {
   return configuredFromAddress() ?? `${RESEND_TEST_FROM_NAME} <${RESEND_TEST_FROM_EMAIL}>`;
+}
+
+/**
+ * Verifierad avsändaradress med eget visningsnamn, t.ex. "Södermalms Snickeri AB
+ * via Ferva <order@ferva.se>". Adressen är alltid den konfigurerade – kundens
+ * egen domän spoofas aldrig. Namnet städas från tecken som bryter headern.
+ */
+export function mailFromWithDisplayName(displayName: string): string {
+  const email = bareEmailAddress(mailFromAddress());
+  const safe = displayName.replace(/[<>"\r\n]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+  return safe ? `${safe} <${email}>` : mailFromAddress();
+}
+
+/** Avsändaren transporten faktiskt använder: konfigurerad adress, ev. med meddelandets visningsnamn. */
+function transportFrom(messageFrom: string): string {
+  const configured = configuredFromAddress();
+  if (!configured) throw new Error(MAIL_SENDER_NOT_CONFIGURED);
+  if (bareEmailAddress(messageFrom) === bareEmailAddress(configured) && messageFrom.includes("<")) {
+    return messageFrom;
+  }
+  return configured;
 }
 
 /** Riktig Resend-väg: nyckel OCH uttalad From. Testdefault räcker inte. */
@@ -268,7 +310,8 @@ async function sendDemoMail(message: MailMessage, meta?: MailSendMeta): Promise<
     logSend("demo_simulated", meta);
     return { ok: true, mode: "demo" };
   }
-  const redirected: MailMessage = { ...message, to: sink, subject: `[Demo] ${message.subject}` };
+  // Kopior stryks: demon får aldrig nå någon annan adress än sinken.
+  const redirected: MailMessage = { ...message, to: sink, cc: [], subject: `[Demo] ${message.subject}` };
   try {
     if (testTransport) {
       const extra = await testTransport(redirected);
@@ -291,8 +334,8 @@ const RESEND_TIMEOUT_MS = 20_000;
 async function sendViaResend(message: MailMessage): Promise<string | undefined> {
   const key = resendApiKey();
   if (!key) throw new Error(MAIL_NOT_CONFIGURED);
-  const from = configuredFromAddress();
-  if (!from) throw new Error(MAIL_SENDER_NOT_CONFIGURED);
+  if (!configuredFromAddress()) throw new Error(MAIL_SENDER_NOT_CONFIGURED);
+  const from = transportFrom(message.from);
   const resend = new Resend(key);
   // Resend-SDK:t har ingen egen timeout; ett hängt anrop skulle annars låsa
   // server actionen (och användarens knapp) tills plattformen dödar requesten.
@@ -300,14 +343,22 @@ async function sendViaResend(message: MailMessage): Promise<string | undefined> 
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error("E-posttjänsten svarade inte i tid.")), RESEND_TIMEOUT_MS);
   });
+  const cc = (message.cc ?? []).map((c) => c.trim()).filter(Boolean);
+  const attachments = (message.attachments ?? []).map((a) => ({
+    filename: a.filename,
+    content: a.content,
+    ...(a.contentType ? { contentType: a.contentType } : {}),
+  }));
   const { data, error } = await Promise.race([
     resend.emails.send({
       from,
       to: [message.to],
+      ...(cc.length > 0 ? { cc } : {}),
       ...(message.replyTo ? { replyTo: message.replyTo } : {}),
       subject: message.subject,
       html: message.html,
       text: message.text,
+      ...(attachments.length > 0 ? { attachments } : {}),
     }),
     timeout,
   ]).finally(() => clearTimeout(timer));

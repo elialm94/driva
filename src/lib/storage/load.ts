@@ -40,6 +40,9 @@ import {
   paymentFilesSpec,
   paymentsSpec,
   pendingActionsSpec,
+  purchaseOrderConfirmationsSpec,
+  purchaseOrderLinesSpec,
+  purchaseOrdersSpec,
   remindersSpec,
   quoteFromRow,
   quoteVersionsSpec,
@@ -51,6 +54,8 @@ import {
   verificationFromRows,
   vatReportsSpec,
   websitesSpec,
+  wholesalerConnectionsSpec,
+  wholesalerPriceImportsSpec,
   workLocationFromRow,
 } from "./mappers";
 
@@ -181,6 +186,17 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
       queryIfTable(tx, "bank_connections", `select * from public.bank_connections where business_id = $1 order by created_at, id`, b),
     ]);
 
+  // Grossistbeställningar (valfri funktion). Artiklarna (wholesaler_products)
+  // laddas ALDRIG hit – de söks per fråga via katalogstoren.
+  const [wholesalerConnectionRows, wholesalerImportRows, purchaseOrderRows, purchaseOrderLineRows, purchaseOrderConfirmationRows] =
+    await Promise.all([
+      queryIfTable(tx, "wholesaler_connections", `select * from public.wholesaler_connections where business_id = $1 order by created_at, id`, b),
+      queryIfTable(tx, "wholesaler_price_imports", `select * from public.wholesaler_price_imports where business_id = $1 order by created_at, id`, b),
+      queryIfTable(tx, "purchase_orders", `select * from public.purchase_orders where business_id = $1 order by created_at, id`, b),
+      queryIfTable(tx, "purchase_order_lines", `select * from public.purchase_order_lines where business_id = $1 order by order_id, position, id`, b),
+      queryIfTable(tx, "purchase_order_confirmations", `select * from public.purchase_order_confirmations where business_id = $1 order by received_at, id`, b),
+    ]);
+
   // Bostäder per kund (position = visningsordning).
   const locationsByCustomer = new Map<string, SqlRow[]>();
   for (const row of workLocationRows) {
@@ -280,6 +296,11 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     inboxItems: inboxItemRows.map(inboxItemsSpec.fromRow),
     collaborationInvitations: invitationRows.map(collaborationInvitationsSpec.fromRow),
     clientInformationRequests: clientRequestRows.map(clientInformationRequestsSpec.fromRow),
+    wholesalerConnections: wholesalerConnectionRows.map(wholesalerConnectionsSpec.fromRow),
+    wholesalerPriceImports: wholesalerImportRows.map(wholesalerPriceImportsSpec.fromRow),
+    purchaseOrders: purchaseOrderRows.map(purchaseOrdersSpec.fromRow),
+    purchaseOrderLines: purchaseOrderLineRows.map(purchaseOrderLinesSpec.fromRow),
+    purchaseOrderConfirmations: purchaseOrderConfirmationRows.map(purchaseOrderConfirmationsSpec.fromRow),
     meta: metaFromBusinessRow(business),
   };
 

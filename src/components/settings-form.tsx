@@ -14,7 +14,7 @@ import type { CompanySettings, VatRate } from "@/lib/types";
 import type { InvoiceDefaults } from "@/lib/services/settings";
 import { buildCompanySettingsActionInput } from "@/lib/settings-action-input";
 import { STANDARD_TERMS } from "@/lib/standard-quote-terms";
-import { SETTINGS_HREF, SETTINGS_TABS, type SettingsFlik } from "@/lib/settings-routes";
+import { SETTINGS_HREF, settingsTabsFor, type SettingsFlik } from "@/lib/settings-routes";
 import { formatOrgnr, formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "@/lib/invoices/formats";
 import {
   normalizeSwedishBankgiro,
@@ -32,6 +32,7 @@ import { FieldError, FormValidationSummary, focusField, invalidFieldCls } from "
 import type { MissingRequirement } from "@/lib/form-requirements";
 import { DomainSettingsCard } from "./domain-widgets";
 import { FeatureSettingsList } from "./feature-settings";
+import { WholesalerSettings, type WholesalerSettingsConnection } from "./wholesaler-settings";
 import { StickyMobileActions } from "./sticky-actions";
 import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 import { SettingsBillingBanner } from "./settings-billing-readiness";
@@ -42,7 +43,6 @@ const inputCls =
 const labelCls = "mb-1 block text-[13px] font-medium text-soft";
 const hintCls = "mt-1 text-[12px] text-muted";
 
-const TABS = SETTINGS_TABS;
 
 type FormState = {
   name: string;
@@ -118,6 +118,7 @@ export function SettingsForm({
   returnLabel,
   domainSummary = null,
   features,
+  wholesalers,
   focusFieldKey = null,
   account,
 }: {
@@ -130,10 +131,13 @@ export function SettingsForm({
   returnLabel?: string | null;
   domainSummary?: { hostname: string; live: boolean } | null;
   features: ResolvedOptionalFeatures;
+  /** Grossister – fliken finns bara när funktionen är aktiv. */
+  wholesalers?: WholesalerSettingsConnection[];
   focusFieldKey?: string | null;
   /** Demo-copy bara när appen faktiskt körs i demoläge. */
   account: { demo: boolean; email?: string | null };
 }) {
+  const TABS = settingsTabsFor(features);
   const router = useRouter();
   const [form, setForm] = useState(() => fromInitial(initial, defaults));
   const [error, setError] = useState<string | null>(null);
@@ -266,7 +270,8 @@ export function SettingsForm({
 
   const subtitle = useMemo(() => {
     if (flik === "fakturering") return "Betalningsuppgifter och standardvärden för nya offerter och fakturor. Befintliga dokument ändras inte.";
-    if (flik === "funktioner") return "Grundfunktionerna syns alltid. Hemsida och Samarbeta kan du stänga av utan att något raderas.";
+    if (flik === "funktioner") return "Grundfunktionerna syns alltid. Valfria funktioner kan du stänga av utan att något raderas.";
+    if (flik === "grossister") return "Dina grossister, kundnummer och prislistor. Beställningar görs från uppdragets materialyta.";
     if (flik === "konto") return "Personligt konto är skilt från företagsuppgifterna.";
     return "Uppgifterna används på offerter, fakturor, hemsidan och i mejl. Du fyller i dem en gång.";
   }, [flik]);
@@ -795,6 +800,8 @@ export function SettingsForm({
         </Card>
       ) : null}
 
+      {flik === "grossister" ? <WholesalerSettings overviews={wholesalers ?? []} demo={account.demo} /> : null}
+
 
       {flik === "konto" ? (
         <div className="space-y-5">
@@ -827,7 +834,7 @@ export function SettingsForm({
         </div>
       ) : null}
 
-      {flik !== "konto" && flik !== "funktioner" ? (
+      {flik !== "konto" && flik !== "funktioner" && flik !== "grossister" ? (
         <div className="mt-6">
           {showErrors ? (
             <FormValidationSummary

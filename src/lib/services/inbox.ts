@@ -33,6 +33,8 @@ import { type PagedResult } from "./customers";
 import { attachExtractedPaymentDetails, bookSupplierInvoice, receiveSupplierInvoice } from "./suppliers";
 import { latestPaymentForInvoice, prepareSupplierPayment } from "./supplier-payments";
 import { paymentDetailsInfo, type PaymentDetailsCause } from "./payment-details";
+import { looksLikeOrderConfirmation } from "../wholesalers/confirmation-parse";
+import { enrichConfirmationWithAi, processInboxOrderConfirmation } from "./purchase-order-confirmations";
 
 export type { PagedResult };
 
@@ -348,11 +350,36 @@ function tryCompleteAwaitingDetails(item: InboxItem): boolean {
   return true;
 }
 
+/**
+ * Orderbekräftelser från grossister är inte leverantörsfakturor: de matchas
+ * mot en skickad materialbeställning i stället för att gå genom faktura-/
+ * kvittopipelinen. Klassas bara så när företaget faktiskt har skickade
+ * beställningar – annars kan inget mejl vara en bekräftelse.
+ */
+function isOrderConfirmationMail(payload: InboundMailPayload): boolean {
+  const hasSentOrders = (db().purchaseOrders ?? []).some((o) => o.status !== "draft" && o.status !== "cancelled");
+  if (!hasSentOrders) return false;
+  const parsed = payload.parsed;
+  const invoiceHints = Boolean(parsed?.invoiceNumber || parsed?.ocr || parsed?.bankgiro || parsed?.dueDate);
+  return looksLikeOrderConfirmation({
+    subject: payload.subject,
+    text: payload.text,
+    html: payload.html,
+    invoiceHints,
+  });
+}
+
 function runDocumentPipeline(item: InboxItem): { autoBooked: boolean } {
   let autoBooked = false;
   const conf = item.confidence ?? 0;
   // Mänskligt godkända uppgifter (reviewedAt) väger som säker läsning.
   const auto = item.reviewedAt != null || decideFromConfidence(conf) === "AUTO_EXECUTE";
+
+  if (item.documentType === "orderbekraftelse") {
+    // Aldrig faktura/utgift/betalning här – bara koppling till beställningen.
+    processInboxOrderConfirmation(item);
+    return { autoBooked: false };
+  }
 
   if (item.documentType === "kvitto") {
     if (auto && amountIsCertain(item) && item.parsedAmount != null && item.parsedVatAmount != null && item.parsedSupplier) {
@@ -453,15 +480,18 @@ export function ingestEconomicDocument(
     };
   });
 
-  const documentType = classifyEconomicDocument({
-    subject: payload.subject,
-    text: payload.text,
-    invoiceNumber: parsed?.invoiceNumber,
-    dueDate: parsed?.dueDate,
-    ocr: parsed?.ocr,
-    bankgiro: parsed?.bankgiro,
-    documentType: parsed?.documentType,
-  });
+  const documentType: InboxDocumentType =
+    parsed?.documentType == null && isOrderConfirmationMail(payload)
+      ? "orderbekraftelse"
+      : classifyEconomicDocument({
+          subject: payload.subject,
+          text: payload.text,
+          invoiceNumber: parsed?.invoiceNumber,
+          dueDate: parsed?.dueDate,
+          ocr: parsed?.ocr,
+          bankgiro: parsed?.bankgiro,
+          documentType: parsed?.documentType,
+        });
 
   const item: InboxItem = {
     id: `inbox-${uid()}`,
@@ -491,6 +521,19 @@ export function ingestInboundMail(payload: InboundMailPayload): IngestResult {
     return { ok: false, error: "Okänd inkommande adress", status: 404 };
   }
   return ingestEconomicDocument(payload, { source: "email", kind: "mail" });
+}
+
+/**
+ * Efter ingest: en matchad orderbekräftelse utan strukturerade rader får
+ * AI-kandidater (om AI är konfigurerad). Körs asynkront efter den synkrona
+ * pipelinen; misslyckas anropet står posten kvar som "kontrollera".
+ * Idempotent: bara bekräftelser som skapades i DENNA ingest berikas.
+ */
+export async function completeOrderConfirmationAfterIngest(result: IngestResult): Promise<void> {
+  if (!result.ok || !result.created) return;
+  const item = result.item;
+  if (item.documentType !== "orderbekraftelse" || !item.purchaseOrderConfirmationId) return;
+  await enrichConfirmationWithAi(item.purchaseOrderConfirmationId);
 }
 
 export function ingestUploadedDocument(input: {
