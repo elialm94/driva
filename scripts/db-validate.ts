@@ -1539,6 +1539,86 @@ async function main() {
   await asSuperuser();
 
   // ------------------------------------------------------------------
+  // Återöppning av räkenskapsår (migration 36)
+  // ------------------------------------------------------------------
+  console.log("\nÅteröppning av räkenskapsår:");
+
+  await asApp(A);
+  const report = (id: string, over: { businessId?: string; fiscalYearId?: string; superseded?: string } = {}) =>
+    db.query(
+      `insert into public.annual_reports
+         (id, business_id, fiscal_year_id, status, content, generated_at, superseded_at, superseded_reason)
+       values ($1, $2, $3, 'genererad', '{"fiscalLabel":"2026"}'::jsonb, now(), $4, $5)`,
+      [
+        id,
+        over.businessId ?? A,
+        over.fiscalYearId ?? "fy-2026",
+        over.superseded ?? null,
+        over.superseded ? "Fakturan hörde till 2026." : null,
+      ]
+    );
+
+  await expectOk(db, "årsredovisningen kan sparas i egen tenant", () => report("ar-a-2026"));
+  await expectError(db, "två gällande årsredovisningar för samma år avvisas", "duplicate key", () =>
+    report("ar-a-2026-dubblett")
+  );
+  await expectOk(db, "en ersatt rapport får ligga vid sidan av den gällande", () =>
+    report("ar-a-2026-ersatt", { superseded: "2027-03-01T10:00:00Z" })
+  );
+  await expectOk(db, "flera ersatta rapporter får finnas – varje omtag lämnar en", () =>
+    report("ar-a-2026-ersatt-2", { superseded: "2027-04-01T10:00:00Z" })
+  );
+
+  {
+    // Återöppningshistoriken är en lista som växer, inte ett fält som skrivs över.
+    await db.query(
+      `insert into public.fiscal_years
+         (id, business_id, label, start_date, end_date, status, opening_source, closed_at)
+       values ('fy-2026', $1, '2026', '2026-01-01', '2026-12-31', 'stangt', 'migrering', now())`,
+      [A]
+    );
+    await db.query(
+      `update public.fiscal_years
+          set reopenings = $2::jsonb
+        where id = 'fy-2026' and business_id = $1`,
+      [
+        A,
+        JSON.stringify([
+          {
+            at: "2027-03-01T10:00:00Z",
+            by: "anvandare",
+            reason: "Fakturan från Elbolaget hörde till 2026.",
+            reversedVerificationIds: ["ver-bokslut-1"],
+            reversalVerificationIds: ["ver-aterforing-1"],
+            previousLockedThrough: "2026-12-31",
+          },
+        ]),
+      ]
+    );
+    const r = await rows<{ skal: string; las: string; antal: string }>(
+      db,
+      `select reopenings -> 0 ->> 'reason' as skal,
+              reopenings -> 0 ->> 'previousLockedThrough' as las,
+              jsonb_array_length(reopenings)::text as antal
+         from public.fiscal_years
+        where id = 'fy-2026' and business_id = $1`,
+      [A]
+    );
+    if (r[0]?.skal?.includes("Elbolaget") && r[0]?.las === "2026-12-31" && r[0]?.antal === "1") {
+      ok("återöppningens skäl och tidigare periodlås rundresar");
+    } else {
+      fail("återöppningens skäl och tidigare periodlås rundresar", JSON.stringify(r));
+    }
+  }
+  {
+    await asApp(B);
+    const r = await rows(db, `select id from public.annual_reports`);
+    if (r.length === 0) ok("företag B ser inte A:s årsredovisningar");
+    else fail("företag B ser inte A:s årsredovisningar", JSON.stringify(r));
+  }
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");
