@@ -84,6 +84,8 @@ export type BusinessProfileInput = Omit<
 > & {
   /** null = rensa. Aldrig `undefined` över server-action-gränsen. */
   logoDataUrl?: string | null;
+  /** Bolagsform (styr bokslut/skatt). Utelämnad = oförändrad. */
+  companyForm?: CompanySettings["companyForm"];
 };
 
 export interface InvoiceDefaults {
@@ -138,6 +140,7 @@ function validateProfile(input: SettingsProfileFields): string[] {
 
 function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
   s.name = input.name.trim();
+  if (input.companyForm === "ab" || input.companyForm === "enskild") s.companyForm = input.companyForm;
   s.orgNumber = input.orgNumber.trim() ? normalizeOrgnr(input.orgNumber) : "";
   s.vatNumber = input.vatNumber.trim().toUpperCase().replace(/\s/g, "");
   s.email = input.email.trim();
