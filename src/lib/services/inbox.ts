@@ -34,6 +34,7 @@ import { attachExtractedPaymentDetails, bookSupplierInvoice, receiveSupplierInvo
 import { latestPaymentForInvoice, prepareSupplierPayment } from "./supplier-payments";
 import { paymentDetailsInfo, type PaymentDetailsCause } from "./payment-details";
 import { looksLikeOrderConfirmation } from "../wholesalers/confirmation-parse";
+import { connectionLabel } from "../wholesalers/labels";
 import { enrichConfirmationWithAi, processInboxOrderConfirmation } from "./purchase-order-confirmations";
 
 export type { PagedResult };
@@ -146,17 +147,27 @@ function mailMatchesQuery(item: InboxItem, q: string): boolean {
   return hay.includes(q);
 }
 
+/** Kopplad beställning för en orderbekräftelse – för rubriken i listan/detaljen. */
+export function linkedOrderForItem(item: InboxItem): { reference: string; wholesalerName: string } | null {
+  if (item.documentType !== "orderbekraftelse" || !item.purchaseOrderId) return null;
+  const order = (db().purchaseOrders ?? []).find((o) => o.id === item.purchaseOrderId);
+  if (!order) return null;
+  const connection = (db().wholesalerConnections ?? []).find((c) => c.id === order.connectionId);
+  return { reference: order.reference, wholesalerName: connection ? connectionLabel(connection) : "Grossist" };
+}
+
 function toMailRow(item: InboxItem): InboxListRow {
   const invoice = invoiceForItem(item);
   const payment = paymentForItem(item);
   const display = inboxDisplayStatus({ item, invoice, payment, detailsCause: detailsCauseForItem(invoice) });
-  const amount = invoice?.amount ?? item.parsedAmount;
-  const due = invoice?.dueDate ?? item.parsedDueDate;
+  const amount = item.documentType === "orderbekraftelse" ? undefined : (invoice?.amount ?? item.parsedAmount);
+  const due = item.documentType === "orderbekraftelse" ? undefined : (invoice?.dueDate ?? item.parsedDueDate);
+  const linkedOrder = linkedOrderForItem(item);
   return {
     id: item.id,
     documentType: item.documentType,
-    fromLabel: invoice?.supplier ?? item.parsedSupplier ?? item.fromAddress,
-    documentLabel: inboxDocumentTitle(item, invoice),
+    fromLabel: linkedOrder?.wholesalerName ?? invoice?.supplier ?? item.parsedSupplier ?? item.fromAddress,
+    documentLabel: inboxDocumentTitle(item, invoice, linkedOrder),
     dueDate: due,
     createdAt: item.createdAt,
     amount,

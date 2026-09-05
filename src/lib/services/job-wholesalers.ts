@@ -50,7 +50,12 @@ export interface JobPurchaseOrderRow {
  * funktionen på + varukorg/order, eller historiska order (även avstängd).
  */
 export function jobPurchaseOrderRows(jobId: string): JobPurchaseOrderRow[] {
-  const orders = ordersForJob(jobId).filter((o) => o.status !== "cancelled" || confirmationsExist(o));
+  const enabled = wholesalersEnabled(db());
+  const orders = ordersForJob(jobId).filter((o) => {
+    // Avstängd funktion: bara historiken (skickade order) – inte kvarglömda varukorgar.
+    if (!enabled && o.status === "draft") return false;
+    return o.status !== "cancelled" || confirmationsExist(o);
+  });
   return orders
     .slice()
     .sort((a, b) => (b.sentAt ?? b.createdAt).localeCompare(a.sentAt ?? a.createdAt))

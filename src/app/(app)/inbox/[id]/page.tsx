@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { CheckCircle2, Circle, Download, Minus } from "lucide-react";
-import { getInboxView } from "@/lib/services/inbox";
+import { getInboxView, linkedOrderForItem } from "@/lib/services/inbox";
 import { getJob } from "@/lib/services/data";
 import { latestPaymentForInvoice } from "@/lib/services/supplier-payments";
 import {
@@ -69,7 +69,7 @@ export default async function InboxDetailPage(props: { params: Promise<{ id: str
         <PageHeader
           back={<SmartBack />}
           crumbs={[{ href: kunderInboxHref(), label: "Inbox" }, { label: item.subject || "Orderbekräftelse" }]}
-          title={inboxDocumentTitle(item)}
+          title={inboxDocumentTitle(item, undefined, linkedOrderForItem(item))}
           subtitle={`${item.fromAddress} · inkommen ${datumTid(item.createdAt)}`}
           actions={<InboxOverflowMenu itemId={item.id} canIgnore={item.status === "ny"} />}
         />

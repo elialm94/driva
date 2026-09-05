@@ -27,6 +27,9 @@ import { DateField } from "./date-field";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
+/** Smala fält (antal, pris) – utan w-full så bredden kan sättas per fält. */
+const compactInputCls =
+  "rounded-xl border border-line-strong bg-card px-2 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
 const labelCls = "mb-1 block text-[13px] text-muted";
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -378,6 +381,7 @@ function SearchView({
           aria-label="Sök artikel, E-nummer eller RSK-nummer"
           aria-busy={searching}
           autoComplete="off"
+          autoFocus
           data-wholesaler-search
         />
       </div>
@@ -527,7 +531,7 @@ function ResultRow({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <input
-          className={cx(inputCls, "h-11 w-20 text-center")}
+          className={cx(compactInputCls, "h-11 w-20 text-center")}
           inputMode="decimal"
           value={qty}
           onChange={(e) => setQty(e.target.value)}
@@ -862,7 +866,7 @@ function CartLineRow({
               <Minus className="size-4" />
             </button>
             <input
-              className={cx(inputCls, "h-11 w-20 text-center")}
+              className={cx(compactInputCls, "h-11 w-20 text-center")}
               inputMode="decimal"
               value={qty}
               onChange={(e) => setQty(e.target.value)}
@@ -879,7 +883,7 @@ function CartLineRow({
         <label className="block">
           <span className={labelCls}>Kundpris (kr/{line.unit})</span>
           <input
-            className={cx(inputCls, "h-11 w-28")}
+            className={cx(compactInputCls, "h-11 w-28")}
             inputMode="numeric"
             value={price}
             placeholder="Saknas"

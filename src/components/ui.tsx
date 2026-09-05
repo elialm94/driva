@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, HTMLAttributes, ReactNode } from "react";
 import { AppLink } from "./app-link";
 import { buttonClasses, cx, type ButtonSize, type ButtonVariant } from "./ui-classes";
 
@@ -163,8 +163,17 @@ export function SectionTitle({ children, right }: { children: ReactNode; right?:
   );
 }
 
-export function Card({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cx("card", className)}>{children}</div>;
+/** Vidarebefordrar övriga attribut (data-*, aria-*) så testhookar på kort faktiskt renderas. */
+export function Card({
+  className,
+  children,
+  ...rest
+}: { className?: string; children: ReactNode } & Omit<HTMLAttributes<HTMLDivElement>, "className" | "children">) {
+  return (
+    <div className={cx("card", className)} {...rest}>
+      {children}
+    </div>
+  );
 }
 
 /* --------------------------------- EmptyState -------------------------------- */
