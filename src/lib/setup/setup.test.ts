@@ -231,15 +231,18 @@ describe("Kom igång-uppgifter härleds ur verklig data", () => {
     let order = setupSummary().open.map((t) => t.id);
     assert.ok(order.indexOf("first_customer") < order.indexOf("payment_details"));
     db().customers.push(testCustomer({ id: "c1" }));
+    // En offert räcker för att fakturering ska vara "på gång".
     db().quotes.push({
       id: "q1",
       number: 1,
       customerId: "c1",
       status: "utkast",
       currentVersionId: "v1",
+      token: "tok",
+      followUps: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    } as (typeof db extends () => infer D ? (D extends { quotes: (infer Q)[] } ? Q : never) : never));
+    } as unknown as (typeof db extends () => { quotes: (infer Q)[] } ? Q : never));
     order = setupSummary().open.map((t) => t.id);
     assert.equal(order[0], "payment_details");
   });
