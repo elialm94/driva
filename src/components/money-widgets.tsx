@@ -19,7 +19,7 @@ import {
   uploadStandaloneReceiptAction,
 } from "@/app/actions";
 import { invoiceHref } from "@/lib/nav";
-import { receiptFileToDataUrl } from "@/lib/receipts/read-file";
+import { receiptUploadForm } from "@/lib/receipts/read-file";
 
 export function UploadReceiptButton({ expenseId, label = "Lägg till kvitto" }: { expenseId?: string; label?: string }) {
   const [isPending, startTransition] = useTransition();
@@ -52,13 +52,14 @@ export function UploadReceiptButton({ expenseId, label = "Lägg till kvitto" }: 
         disabled={isPending}
         onChange={(e) => {
           const file = e.target.files?.[0];
+          if (expenseId && !file) return;
           const name = file?.name ?? "kvitto.jpg";
           setError(null);
           startTransition(async () => {
-            if (expenseId) {
+            if (expenseId && file) {
               try {
-                const dataUrl = file ? await receiptFileToDataUrl(file) : undefined;
-                const result = await uploadReceiptAction(expenseId, name, dataUrl);
+                const result = await uploadReceiptAction(receiptUploadForm(expenseId, file));
+                // ok ⇒ filen är sparad (receiptFileStored) – aldrig bara uppgifterna.
                 if (result.ok === false) setError(result.error);
                 else setDone(true);
               } catch (err) {

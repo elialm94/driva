@@ -5,17 +5,23 @@ import assert from "node:assert/strict";
 import { db, replaceDb } from "./store";
 import { emptyTestDb } from "./invoices/test-db";
 import type { Expense } from "./types";
-import { uploadReceiptForExpense } from "./services/expenses";
+import { expenseAwaitingReceipt, uploadReceiptForExpense } from "./services/expenses";
+import { uid } from "./ids";
 import { listExpensesForTable } from "./services/economy-list";
 import {
   MAX_RECEIPT_BYTES,
-  parseReceiptDataUrl,
+  RECEIPT_STORAGE_UNAVAILABLE,
+  RECEIPT_TOO_LARGE_FOR_DEMO,
+  receiptContentTypeFor,
+  receiptFileFromForm,
   receiptFileContent,
   receiptFileStored,
   storeReceiptFile,
+  storeReceiptFileWith,
   validateReceiptFile,
 } from "./receipts/receipt-file";
 import { MAX_INLINE_ATTACHMENT_BYTES } from "./inbox/attachment-content";
+import { userFacingStorageError } from "./storage/sql-errors";
 
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 
@@ -37,12 +43,30 @@ function seedExpense(): Expense {
 }
 
 describe("kvittofil – validering", () => {
-  it("tolkar data-URL och avvisar annat än bild/PDF", () => {
-    const parsed = parseReceiptDataUrl(`data:image/png;base64,${PNG.toString("base64")}`);
+  it("läser File ur FormData (även 2 MB – inget strängtak) och avvisar annat än bild/PDF", async () => {
+    const form = new FormData();
+    form.set("expenseId", "exp-clas");
+    form.set("file", new File([PNG], "kvitto.png", { type: "image/png" }));
+    const parsed = await receiptFileFromForm(form);
     assert.ok(parsed);
     assert.equal(parsed.contentType, "image/png");
-    assert.equal(parsed.bytes.length, PNG.length);
-    assert.equal(parseReceiptDataUrl("inte-en-data-url"), null);
+    assert.equal(parsed.filename, "kvitto.png");
+    assert.deepEqual(parsed.bytes, PNG);
+
+    const big = new FormData();
+    big.set("file", new File([Buffer.alloc(2_000_000)], "stor.pdf", { type: "" }));
+    const bigParsed = await receiptFileFromForm(big);
+    assert.equal(bigParsed?.bytes.length, 2_000_000);
+    assert.equal(bigParsed?.contentType, "application/pdf", "tom typ → filändelsen avgör");
+
+    const empty = new FormData();
+    empty.set("file", "inte-en-fil");
+    assert.equal(await receiptFileFromForm(empty), null);
+    assert.equal(await receiptFileFromForm(new FormData()), null);
+
+    assert.equal(receiptContentTypeFor("bild.HEIC", "application/octet-stream"), "image/heic");
+    assert.equal(receiptContentTypeFor("bild.png", "image/png"), "image/png");
+    assert.equal(receiptContentTypeFor("okänd.bin", ""), "");
     assert.throws(
       () => validateReceiptFile({ bytes: PNG, contentType: "text/html" }),
       /bild .* eller PDF/
@@ -87,6 +111,171 @@ describe("kvittofil – lagring utan bucket (JSON-läge)", () => {
       ),
       /utan fillagring/
     );
+  });
+});
+
+const RLS_DENIED = "new row violates row-level security policy";
+
+function silenced<T>(fn: () => Promise<T>): Promise<T> {
+  const original = console.error;
+  console.error = () => {};
+  return fn().finally(() => {
+    console.error = original;
+  });
+}
+
+describe("kvittofil – vägval (demo, bucket, fallback)", () => {
+  const receipt = { id: "r-clas", filename: "kvitto.png" };
+  const png = { bytes: PNG, contentType: "image/png" };
+
+  it("demosession: alltid inline, bucketen rörs aldrig", async () => {
+    let bucketCalls = 0;
+    const meta = await storeReceiptFileWith(receipt, png, {
+      demo: true,
+      businessId: "demo-abc123",
+      bucket: async () => {
+        bucketCalls += 1;
+        return RLS_DENIED;
+      },
+    });
+    assert.equal(bucketCalls, 0);
+    assert.equal(meta.storagePath, undefined);
+    assert.equal(meta.contentBase64, PNG.toString("base64"));
+    assert.equal(receiptFileStored(meta), true);
+  });
+
+  it("demosession: för stor fil ger demotext utan miljövariabler", async () => {
+    await assert.rejects(
+      storeReceiptFileWith(
+        receipt,
+        { bytes: Buffer.alloc(MAX_INLINE_ATTACHMENT_BYTES + 1), contentType: "image/png" },
+        { demo: true, businessId: "demo-abc123", bucket: null }
+      ),
+      (e: unknown) => e instanceof Error && e.message === RECEIPT_TOO_LARGE_FOR_DEMO && !/SUPABASE/.test(e.message)
+    );
+  });
+
+  it("riktigt företag: bucketen tar filen → storage_path, ingen inline-kopia", async () => {
+    const seen: string[] = [];
+    const meta = await storeReceiptFileWith(receipt, png, {
+      demo: false,
+      businessId: "11111111-1111-4111-8111-111111111111",
+      bucket: async (path) => {
+        seen.push(path);
+        return null;
+      },
+    });
+    assert.deepEqual(seen, ["11111111-1111-4111-8111-111111111111/r-clas/kvitto.png"]);
+    assert.equal(meta.storagePath, seen[0]);
+    assert.equal(meta.contentBase64, undefined);
+  });
+
+  it("riktigt företag: nekad bucket (RLS) → filen sparas inline, aldrig rå feltext", async () => {
+    const meta = await silenced(() =>
+      storeReceiptFileWith(receipt, png, {
+        demo: false,
+        businessId: "11111111-1111-4111-8111-111111111111",
+        bucket: async () => RLS_DENIED,
+      })
+    );
+    assert.equal(meta.storagePath, undefined);
+    assert.equal(meta.contentBase64, PNG.toString("base64"));
+    assert.equal(receiptFileStored(meta), true);
+  });
+
+  it("riktigt företag: nekad bucket och för stor för inline → svensk användarsäker text", async () => {
+    await assert.rejects(
+      silenced(() =>
+        storeReceiptFileWith(
+          receipt,
+          { bytes: Buffer.alloc(MAX_INLINE_ATTACHMENT_BYTES + 1), contentType: "application/pdf" },
+          { demo: false, businessId: "11111111-1111-4111-8111-111111111111", bucket: async () => RLS_DENIED }
+        )
+      ),
+      (e: unknown) =>
+        e instanceof Error && e.message === RECEIPT_STORAGE_UNAVAILABLE && !/row-level|policy/i.test(e.message)
+    );
+  });
+
+  it("bucket som kastar (nätverk) behandlas som nekad – inline-fallback", async () => {
+    const meta = await silenced(() =>
+      storeReceiptFileWith(receipt, png, {
+        demo: false,
+        businessId: "11111111-1111-4111-8111-111111111111",
+        bucket: async () => "fetch failed",
+      })
+    );
+    assert.ok(meta.contentBase64);
+  });
+
+  it("actionens felmappning döljer RLS-/Storage-text bakom svenska", () => {
+    const fallback = "Kunde inte spara kvittot. Försök igen.";
+    assert.equal(userFacingStorageError(new Error(`Kvittot kunde inte sparas: ${RLS_DENIED}.`), fallback), fallback);
+    assert.equal(userFacingStorageError(new Error("StorageApiError: Bucket not found"), fallback), fallback);
+    assert.equal(userFacingStorageError(new Error("permission denied for table receipts"), fallback), fallback);
+    assert.equal(userFacingStorageError(new Error("invalid JWT"), fallback), fallback);
+    assert.equal(userFacingStorageError(new Error(RECEIPT_STORAGE_UNAVAILABLE), fallback), RECEIPT_STORAGE_UNAVAILABLE);
+    assert.equal(userFacingStorageError(new Error(RECEIPT_TOO_LARGE_FOR_DEMO), fallback), RECEIPT_TOO_LARGE_FOR_DEMO);
+    assert.equal(
+      userFacingStorageError(new Error("Kvittot måste vara en bild (JPEG/PNG/WebP/HEIC) eller PDF."), fallback),
+      "Kvittot måste vara en bild (JPEG/PNG/WebP/HEIC) eller PDF."
+    );
+  });
+});
+
+describe("kvitto på köp – filen först, mutationen sedan (uploadReceiptAction-ordningen)", () => {
+  const REAL_BIZ = "11111111-1111-4111-8111-111111111111";
+
+  it("misslyckat filspar lämnar köpet orört: Saknar kvitto kvarstår, ingen kvittorad", async () => {
+    const expense = seedExpense();
+    const tooLarge = { bytes: Buffer.alloc(MAX_INLINE_ATTACHMENT_BYTES + 1), contentType: "image/png" };
+    await assert.rejects(async () => {
+      expenseAwaitingReceipt(expense.id);
+      const receiptId = uid();
+      const stored = await silenced(() =>
+        storeReceiptFileWith({ id: receiptId, filename: "stor.png" }, tooLarge, {
+          demo: false,
+          businessId: REAL_BIZ,
+          bucket: async () => RLS_DENIED,
+        })
+      );
+      uploadReceiptForExpense(expense.id, "stor.png", "uppladdning", { id: receiptId, ...stored });
+    }, /fillagringen/);
+    assert.equal(db().receipts.length, 0);
+    const after = db().expenses.find((e) => e.id === expense.id);
+    assert.equal(after?.status, "saknar_kvitto");
+    assert.equal(after?.receiptId, undefined);
+    const row = listExpensesForTable().rows.find((r) => r.id === expense.id);
+    assert.equal(row?.receiptId, undefined);
+  });
+
+  it("lyckat filspar: kvittoraden får det förgenererade id:t och bär filen → Visa kvitto", async () => {
+    const expense = seedExpense();
+    expenseAwaitingReceipt(expense.id);
+    const receiptId = uid();
+    const stored = await storeReceiptFileWith({ id: receiptId, filename: "kvitto.png" }, { bytes: PNG, contentType: "image/png" }, {
+      demo: true,
+      businessId: "demo-abc123",
+      bucket: null,
+    });
+    assert.equal(receiptFileStored(stored), true);
+    const { receipt } = uploadReceiptForExpense(expense.id, "kvitto.png", "uppladdning", { id: receiptId, ...stored });
+    assert.equal(receipt.id, receiptId);
+    assert.equal(receiptFileStored(receipt), true);
+    const row = listExpensesForTable().rows.find((r) => r.id === expense.id);
+    assert.equal(row?.receiptId, receiptId);
+    assert.notEqual(db().expenses.find((e) => e.id === expense.id)?.status, "saknar_kvitto");
+  });
+
+  it("förkontrollen stoppar dubbel uppladdning INNAN någon fil sparas", () => {
+    const expense = seedExpense();
+    uploadReceiptForExpense(expense.id, "kvitto.png", "uppladdning", {
+      contentType: "image/png",
+      sizeBytes: PNG.length,
+      contentBase64: PNG.toString("base64"),
+    });
+    assert.throws(() => expenseAwaitingReceipt(expense.id), /redan ett kvitto/);
+    assert.throws(() => expenseAwaitingReceipt("finns-inte"), /Utgiften finns inte/);
   });
 });
 

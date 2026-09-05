@@ -31,14 +31,23 @@ function looksLikeEngineError(message: string): boolean {
     /relation ".+"/i.test(message) ||
     /syntax error/i.test(message) ||
     /violates .+ constraint/i.test(message) ||
+    /row-level security/i.test(message) ||
+    /permission denied/i.test(message) ||
     /\bPGRST/i.test(message) ||
     /\bpostgres\b/i.test(message) ||
-    /^[0-9A-Z]{5}:/.test(message)
+    /^[0-9A-Z]{5}:/.test(message) ||
+    // Supabase Storage-API:t (StorageApiError) – engelska drifttexter.
+    /\bStorageApiError\b/i.test(message) ||
+    /\bBucket not found\b/i.test(message) ||
+    /\binvalid (jwt|signature|api ?key)\b/i.test(message) ||
+    /\b(unauthorized|forbidden)\b/i.test(message) ||
+    /\bfetch failed\b/i.test(message)
   );
 }
 
 /**
- * End-user-text. Rå SQL/Postgres (t.ex. saknad websites.footer) läcker aldrig.
+ * End-user-text. Rå SQL/Postgres/Storage (t.ex. saknad websites.footer,
+ * "new row violates row-level security policy") läcker aldrig.
  * Domänfel på svenska (Okänt tema) lämnas orörda.
  */
 export function userFacingStorageError(err: unknown, fallback = STORAGE_SAVE_FAILED): string {
