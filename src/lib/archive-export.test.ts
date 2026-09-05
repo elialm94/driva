@@ -7,6 +7,8 @@ import { db, replaceDb } from "./store";
 import { emptyTestDb } from "./invoices/test-db";
 import { calendarFiscalYear } from "./accounting/dates";
 import { postVerification } from "./accounting/engine";
+import { runPayroll, saveEmployee } from "./accounting/payroll";
+import { kr } from "./format";
 import { buildFiscalYearArchive, archiveFilename } from "./archive/export";
 import { retentionUntil, retentionPolicyText } from "./archive/retention";
 import { buildZip } from "./archive/zip";
@@ -238,6 +240,38 @@ describe("arkivexport", () => {
 
     assert.match(register, /underlag\/kundfakturor\.csv/);
     assert.equal(archive.summary.missing, 1);
+  });
+
+  it("skriver lönespecifikationen ur den bokförda lönekörningen", async () => {
+    saveEmployee(
+      {
+        name: "Anna Ägare",
+        personnummer: "19850515-1234",
+        role: "foretagsledare",
+        monthlySalary: 40_000,
+        taxBasis: { kind: "procent", percent: 30 },
+        startDate: `${FY}-01-01`,
+      },
+      "anvandare"
+    );
+    const run = runPayroll({ month: `${FY}-01` }, "anvandare");
+    const fy = db().fiscalYears[0];
+
+    const archive = await buildFiscalYearArchive(fy.id);
+    const files = readZip(archive.bytes);
+    const [path, bytes] = [...files.entries()].find(([p]) => p.endsWith(".txt") && p.startsWith("underlag/"))!;
+    const text = bytes.toString("utf8");
+
+    assert.match(path, /lonespecifikation-2026-01\.txt$/);
+    assert.match(text, /LÖNESPECIFIKATION – januari 2026/);
+    assert.match(text, /Anna Ägare/);
+    // Specifikationen får aldrig visa andra tal än de bokförda.
+    assert.ok(text.includes(kr(run.gross)), "bruttolönen står inte i specifikationen");
+    assert.ok(text.includes(kr(run.net)), "nettolönen står inte i specifikationen");
+    assert.ok(text.includes(kr(run.employerContribution)));
+    // Personnummer maskas även i arkivet – namnet identifierar den anställde.
+    assert.ok(!text.includes("19850515-1234"));
+    assert.equal(archive.summary.documents, 1);
   });
 
   it("namnger arkivet med året först", () => {

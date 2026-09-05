@@ -19,7 +19,9 @@ import { verificationAttachmentContent } from "../receipts/verification-attachme
 import { attachmentBytes } from "../inbox/attachment-content";
 import { invoiceTotals } from "../services/data";
 import { invoiceNumberLabel } from "../invoices/display";
-import { datumLang } from "../format";
+import { payslip } from "../accounting/payroll";
+import { maskPersonnummer } from "../personnummer";
+import { datumLang, kr, procent } from "../format";
 import { buildZip, safeZipPath, type ZipEntry } from "./zip";
 import { retentionPolicyText, retentionUntil } from "./retention";
 import type { FiscalYear, Verification } from "../types";
@@ -39,8 +41,12 @@ import type { FiscalYear, Verification } from "../types";
  * varför, för det är den uppgiften en granskare behöver.
  */
 
-/** Vad ett underlag kom ifrån – bestämmer var i arkivet det hamnar. */
-export type UnderlagKind = "verifikat" | "kvitto" | "inbox";
+/**
+ * Vad ett underlag kom ifrån. "genererad" är det enda som skrivs av arkivet
+ * själv, och bara när uppgifterna redan är bokförda: en lönespecifikation kan
+ * inte visa andra tal än lönekörningen som den härleds ur.
+ */
+export type UnderlagKind = "verifikat" | "kvitto" | "inbox" | "genererad";
 
 export interface UnderlagRow {
   verification: string;
@@ -156,6 +162,22 @@ async function underlagFor(
     return { kind: "inbox", filename: attachment.filename, bytes: content.bytes };
   }
 
+  if (source.type === "lon") {
+    // Lönens källa är "anställd-månad", inte körningens id – verifikationen är
+    // den säkra vägen tillbaka till körningen.
+    const run = (data.payrollRuns ?? []).find((r) => r.verificationId === v.id);
+    if (!run) return { missing: "Lönekörningen finns inte längre – bara verifikationen." };
+    return {
+      kind: "genererad",
+      filename: `lonespecifikation-${run.month}.txt`,
+      bytes: Buffer.from(payslipText(run.id), "utf8"),
+    };
+  }
+
+  if (source.type === "manuell") {
+    return { missing: "Manuellt verifikat utan bilaga – underlaget är beskrivningen och konteringen." };
+  }
+
   if (source.type === "kundfaktura") {
     // Fakturan är vårt eget dokument och finns i sin helhet i kundfakturaregistret
     // som packas med. Att generera en PDF här hade skapat ett andra original.
@@ -166,6 +188,40 @@ async function underlagFor(
     return { missing: "Behöver inget separat underlag – verifikationen vilar på bokföringen." };
   }
   return { missing: "Inget underlag är kopplat till verifikationen." };
+}
+
+/**
+ * Lönespecifikationen som text. Appen visar samma tal på lönesidan, men den
+ * anställdes specifikation finns inte som fil någonstans – och en lön utan
+ * specifikation är svår att granska. Texten härleds ur den bokförda körningen,
+ * så den kan aldrig säga något annat än verifikationen.
+ */
+function payslipText(runId: string): string {
+  const slip = payslip(runId);
+  const { run, employee } = slip;
+  const rows: [string, string][] = [
+    ["Bruttolön", kr(run.gross)],
+    [`Preliminärskatt (${slip.taxLabel})`, `-${kr(run.tax)}`],
+    ["Nettolön", kr(run.net)],
+    [`Arbetsgivaravgift ${procent(run.contributionPercent)}`, kr(run.employerContribution)],
+  ];
+  const width = Math.max(...rows.map(([label]) => label.length));
+  return [
+    `LÖNESPECIFIKATION – ${slip.monthLabel}`,
+    "",
+    `${employee.name} · ${maskPersonnummer(employee.personnummer)}`,
+    `${db().settings.name}${db().settings.orgNumber ? ` · ${db().settings.orgNumber}` : ""}`,
+    `Utbetalningsdag ${run.payDate}`,
+    "",
+    ...rows.map(([label, amount]) => `${label.padEnd(width)}  ${amount}`),
+    "",
+    slip.contributionReason,
+    `Ackumulerat i år: brutto ${kr(slip.yearToDate.gross)}, skatt ${kr(slip.yearToDate.tax)}, netto ${kr(slip.yearToDate.net)}.`,
+    "",
+    "Skatten och arbetsgivaravgiften redovisas i arbetsgivardeklarationen för",
+    `${run.month} och betalas från skattekontot. Uppgifterna är härledda ur den`,
+    "bokförda lönekörningen.",
+  ].join("\n") + "\n";
 }
 
 function csvOf(rows: (string | number)[][]): string {
@@ -212,11 +268,11 @@ function underlagCsv(rows: UnderlagRow[]): string {
 
 function readme(fy: FiscalYear, summary: Omit<ArchiveSummary, "sizeBytes">, createdAt: Date): string {
   const settings = db().settings;
-  const lines = [
+  const lines: (string | null)[] = [
     `ARKIV – ${settings.name || "Företaget"} – räkenskapsåret ${fy.label}`,
     "",
     `Skapat ${datumLang(createdAt.toISOString().slice(0, 10))} ur Driva.`,
-    settings.orgNumber ? `Organisationsnummer: ${settings.orgNumber}` : "",
+    settings.orgNumber ? `Organisationsnummer: ${settings.orgNumber}` : null,
     `Räkenskapsår: ${fy.startDate} – ${fy.endDate} (${fy.status === "stangt" ? "stängt" : "öppet"})`,
     "",
     "ARKIVERINGSTID",
@@ -235,6 +291,9 @@ function readme(fy: FiscalYear, summary: Omit<ArchiveSummary, "sizeBytes">, crea
     "  underlag/kundfakturor.csv       Utfärdade kundfakturor under året",
     "  underlag/<verifikation>/…       Kvitton och fakturor, en mapp per verifikation",
     "",
+    "Lönespecifikationerna är skrivna av arkivet ur de bokförda lönekörningarna.",
+    "Övriga underlag är originalfilerna som de kom in.",
+    "",
     "OMFATTNING",
     `  Verifikationer: ${summary.verifications}`,
     `  Underlag i arkivet: ${summary.documents}`,
@@ -247,7 +306,7 @@ function readme(fy: FiscalYear, summary: Omit<ArchiveSummary, "sizeBytes">, crea
     "CSV-filerna är semikolonseparerade med UTF-8 BOM och öppnas direkt i Excel.",
     "SIE-filen är kodad som PC8 (CP437), vilket standarden föreskriver.",
   ];
-  return lines.filter((l) => l !== "").join("\n") + "\n";
+  return lines.filter((l) => l !== null).join("\n") + "\n";
 }
 
 /**
