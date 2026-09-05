@@ -29,7 +29,12 @@ import {
   type CorrectionIntent,
   type VerificationView,
 } from "@/lib/services/verification-correction";
-import { generateAnnualReport, advanceAnnualReportStatus } from "@/lib/accounting/annual-report";
+import {
+  generateAnnualReport,
+  advanceAnnualReportStatus,
+  updateAnnualReport,
+  type AnnualReportEdit,
+} from "@/lib/accounting/annual-report";
 import { planAccrual, planAccrualForSource } from "@/lib/accounting/accruals";
 import {
   bookYearEndSchedule,
@@ -250,6 +255,11 @@ export async function advanceAnnualReportStatusAction(
   to: AnnualReport["status"]
 ): Promise<Result> {
   return run(() => advanceAnnualReportStatus(reportId, to, "anvandare"), "year_end");
+}
+
+/** Redigera förvaltningsberättelsen, utdelningsförslaget, underskrifterna eller intyget. */
+export async function updateAnnualReportAction(reportId: string, edit: AnnualReportEdit): Promise<Result> {
+  return run(() => updateAnnualReport(reportId, edit, "anvandare"), "year_end");
 }
 
 /* ---------------------- Betalningsmatchning (bekräfta) ---------------------- */

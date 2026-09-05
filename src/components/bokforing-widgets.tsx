@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Check, FileCheck2, Landmark, Lock, Play, Printer, Undo2, CalendarClock } from "lucide-react";
 import { buttonClasses, cx } from "./ui";
 import {
@@ -290,26 +291,50 @@ const NEXT_STATUS: Record<string, { to: "granskad" | "signerad" | "inlamnad_mark
   },
 };
 
-export function AnnualReportStatusButton({ reportId, status }: { reportId: string; status: string }) {
+/**
+ * Nästa steg i årsredovisningens gång. Blockeringarna visas i förväg – att
+ * upptäcka att underskrifterna saknas först när knappen vägrar är att låta
+ * användaren gå in i en vägg.
+ */
+export function AnnualReportStatusButton({
+  reportId,
+  status,
+  blockers = [],
+}: {
+  reportId: string;
+  status: string;
+  blockers?: string[];
+}) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const next = NEXT_STATUS[status];
   if (!next) return null;
+  const blocked = blockers.length > 0;
   return (
     <div>
       <button
         className={buttonClasses("secondary", "sm")}
-        disabled={isPending}
+        disabled={isPending || blocked}
         onClick={() =>
           startTransition(async () => {
             const res = await advanceAnnualReportStatusAction(reportId, next.to);
             setError(res.ok ? null : res.error);
+            if (res.ok) router.refresh();
           })
         }
       >
-        {isPending ? "Sparar …" : next.label}
+        {isPending ? "Sparar \u2026" : next.label}
       </button>
-      <p className="mt-1.5 text-[12px] text-muted">{next.hint}</p>
+      {blocked ? (
+        <ul className="mt-1.5 space-y-1 text-[12px] text-warn">
+          {blockers.map((b) => (
+            <li key={b}>{b}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1.5 text-[12px] text-muted">{next.hint}</p>
+      )}
       <ErrorNote error={error} />
     </div>
   );

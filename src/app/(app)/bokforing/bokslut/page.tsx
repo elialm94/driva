@@ -2,13 +2,12 @@ import Link from "next/link";
 import { Check, CircleAlert, FileText, Lock, Wrench } from "lucide-react";
 import { db } from "@/lib/store";
 import { kr, datumKort } from "@/lib/format";
-import { Badge, Card, PageHeader, SectionTitle, cx } from "@/components/ui";
+import { Badge, Card, PageHeader, SectionTitle, buttonClasses, cx } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import {
   BokslutAutomationButton,
   CloseFiscalYearButton,
   GenerateAnnualReportButton,
-  AnnualReportStatusButton,
   PlanAccrualForm,
   PrintButton,
 } from "@/components/bokforing-widgets";
@@ -18,7 +17,6 @@ import { listAssets, bookValue, assetsNeedingDepreciation, accumulatedDepreciati
 import { pendingAccruals, accrualSuggestions } from "@/lib/accounting/accruals";
 import { computeTaxCalculation } from "@/lib/accounting/tax";
 import { annualReportFor } from "@/lib/accounting/annual-report";
-import type { ReportRow } from "@/lib/types";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Bokslut" };
@@ -30,24 +28,6 @@ const AR_STATUS_LABEL: Record<string, string> = {
   signerad: "Signerad",
   inlamnad_markerad: "Markerad som inlämnad",
 };
-
-function ReportTable({ rows }: { rows: ReportRow[] }) {
-  return (
-    <table className="w-full text-[13px]">
-      <tbody>
-        {rows.map((r, i) => (
-          <tr key={i} className={cx("border-t border-line/50", r.bold && "font-semibold")}>
-            <td className="py-1.5 pr-3">
-              {r.label}
-              {r.note ? <sup className="ml-1 text-[10px] text-muted">{r.note}</sup> : null}
-            </td>
-            <td className="py-1.5 text-right tabular">{kr(r.amount)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
 
 export default async function BokslutPage() {
   await ensurePageBusiness();
@@ -327,89 +307,24 @@ export default async function BokslutPage() {
                     </p>
                   ) : report ? (
                     <div className="mt-4">
-                      <details className="group">
-                        <summary className="cursor-pointer list-none text-[13px] font-medium text-accent hover:underline">
-                          Visa årsredovisning {f.label}
-                        </summary>
-                        <div className="mt-4 space-y-5 rounded-xl bg-canvas/70 px-5 py-4">
-                          <div>
-                            <h4 className="text-[14px] font-semibold">Förvaltningsberättelse</h4>
-                            <p className="mt-1.5 text-[13px] leading-relaxed text-soft">{report.content.forvaltningsberattelse.verksamhet}</p>
-                            <p className="mt-1.5 text-[13px] leading-relaxed text-soft">
-                              {report.content.forvaltningsberattelse.vasentligaHandelser}
-                            </p>
-                            <table className="mt-3 w-full max-w-md text-[13px]">
-                              <thead>
-                                <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
-                                  <th className="pb-1 font-semibold">Flerårsöversikt</th>
-                                  {report.content.forvaltningsberattelse.flerarsoversikt.map((r) => (
-                                    <th key={r.label} className="pb-1 text-right font-semibold">
-                                      {r.label}
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                <tr className="border-t border-line/50">
-                                  <td className="py-1">Nettoomsättning</td>
-                                  {report.content.forvaltningsberattelse.flerarsoversikt.map((r) => (
-                                    <td key={r.label} className="py-1 text-right tabular">
-                                      {kr(r.nettoomsattning)}
-                                    </td>
-                                  ))}
-                                </tr>
-                                <tr className="border-t border-line/50">
-                                  <td className="py-1">Resultat efter finansiella poster</td>
-                                  {report.content.forvaltningsberattelse.flerarsoversikt.map((r) => (
-                                    <td key={r.label} className="py-1 text-right tabular">
-                                      {kr(r.resultatEfterFinansiella)}
-                                    </td>
-                                  ))}
-                                </tr>
-                                <tr className="border-t border-line/50">
-                                  <td className="py-1">Soliditet</td>
-                                  {report.content.forvaltningsberattelse.flerarsoversikt.map((r) => (
-                                    <td key={r.label} className="py-1 text-right tabular">
-                                      {r.soliditetProcent} %
-                                    </td>
-                                  ))}
-                                </tr>
-                              </tbody>
-                            </table>
-                          </div>
-                          <div className="grid gap-5 lg:grid-cols-2">
-                            <div>
-                              <h4 className="text-[14px] font-semibold">Resultaträkning</h4>
-                              <ReportTable rows={report.content.resultatrakning} />
-                            </div>
-                            <div>
-                              <h4 className="text-[14px] font-semibold">Balansräkning</h4>
-                              <p className="mt-1 text-[12px] font-medium text-muted">Tillgångar</p>
-                              <ReportTable rows={report.content.balansrakningTillgangar} />
-                              <p className="mt-3 text-[12px] font-medium text-muted">Eget kapital och skulder</p>
-                              <ReportTable rows={report.content.balansrakningEgetKapitalSkulder} />
-                            </div>
-                          </div>
-                          <div>
-                            <h4 className="text-[14px] font-semibold">Noter</h4>
-                            {report.content.noter.map((n) => (
-                              <p key={n.title} className="mt-1.5 text-[13px] leading-relaxed text-soft">
-                                <span className="font-medium text-ink">{n.title}.</span> {n.body}
-                              </p>
-                            ))}
-                          </div>
-                          <div>
-                            <h4 className="text-[14px] font-semibold">Resultatdisposition</h4>
-                            <p className="mt-1.5 text-[13px] text-soft">
-                              Till förfogande: {kr(report.content.forvaltningsberattelse.resultatdisposition.tillForfogande)} ·
-                              balanseras i ny räkning:{" "}
-                              {kr(report.content.forvaltningsberattelse.resultatdisposition.balanserasINyRakning)}
-                            </p>
-                          </div>
-                        </div>
-                      </details>
-                      <div className="mt-3">
-                        <AnnualReportStatusButton reportId={report.id} status={report.status} />
+                      <p className="text-[13px] leading-relaxed text-soft">
+                        Resultaträkning, balansräkning, noter och förvaltningsberättelse är upprättade. Texterna,
+                        underskrifterna och fastställelseintyget fylls i på årsredovisningens egen sida.
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-4">
+                        <Link
+                          href={`/bokforing/bokslut/arsredovisning/${f.id}`}
+                          className={buttonClasses("secondary", "sm")}
+                        >
+                          Öppna årsredovisningen
+                        </Link>
+                        <Link
+                          href={`/bokforing/bokslut/arsredovisning/${f.id}/pdf`}
+                          className="text-[13px] font-medium text-accent hover:underline"
+                        >
+                          <FileText className="mr-1 inline size-3.5" />
+                          Visa som A4
+                        </Link>
                       </div>
                     </div>
                   ) : (
