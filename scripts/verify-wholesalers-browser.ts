@@ -178,12 +178,71 @@ async function main() {
   ok("demogrossisten med prislista är seedad (Dina priser uppdaterades … artiklar importerades)");
   await shot(page, "grossister-installningar");
 
+  console.log("\nLägg till grossist + prisfil via UI:");
+  await clickButton(page, /^Lägg till grossist$/);
+  await page.waitForSelector("[role='dialog']");
+  await page.select("[role='dialog'] select", "dahl");
+  await page.type("[role='dialog'] input[id$='-kundnummer']", "778899");
+  await page.type("[role='dialog'] input[id$='-ordermejl']", "order@dahl-test.example");
+  await clickButton(page, /^Spara grossist$/, "[role='dialog']");
+  await waitText(page, /Kundnummer 778899/);
+  ok("ny grossist (Dahl) sparas och visas med kundnummer och ordermejl");
+  expect(/Ingen prislista ännu/.test(await bodyText(page)), "utan prislista visas 'Ingen prislista ännu'");
+  // Öppna uppladdningen för Dahl-kortet (det utan prislista).
+  const openedUpload = await page.evaluate(() => {
+    const cards = Array.from(document.querySelectorAll("[data-wholesaler-connection]"));
+    const card = cards.find((c) => /778899/.test(c.textContent ?? ""));
+    const btn = card ? Array.from(card.querySelectorAll("button")).find((b) => /Ladda upp prisfil/.test(b.textContent ?? "")) : undefined;
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+  expect(openedUpload, "Ladda upp prisfil finns på kortet");
+  await page.waitForSelector("[data-price-file-input]", { timeout: 20000 });
+  const csvPath = `${OUT}/prislista-test.csv`;
+  fs.writeFileSync(
+    csvPath,
+    [
+      "Artikelnr;Benämning;E-nummer;RSK;Enhet;Förp;Listpris;Nettopris",
+      "100200;Kabel EKK 3G1,5 vit;0010012;;m;100;18,90;12,50",
+      "300400;Vägguttag 2-vägs jordat infällt;1780235;;st;1;89,00;61,20",
+      "500600;Rörkoppling 15 mm;;8103567;st;10;45,00;30,00",
+    ].join("\r\n"),
+    "utf8",
+  );
+  const fileInput = await page.$("[data-price-file-input]");
+  await fileInput!.uploadFile(csvPath);
+  await waitText(page, /Artikelnummer|Benämning/, 30000);
+  const preview = await bodyText(page);
+  expect(/3 rader|rader/.test(preview) && /Importera prislistan/.test(preview), "förhandsgranskningen visar kolumner, rader och Importera prislistan");
+  expect(!/parser|mappning|XML|EDI/i.test(preview.replace(/XML eller ZIP/, "")), "förhandsgranskningen använder enkel svenska (inga tekniska ord)");
+  await shot(page, "prisfil-forhandsgranskning");
+  await clickButton(page, /^Importera prislistan$/, "[role='dialog']");
+  await waitText(page, /3 artiklar importerades|artiklar importerades/, 30000);
+  ok("importen går igenom och rapporterar antal artiklar");
+  await clickButton(page, /^Klar$/, "[role='dialog']");
+  await page.waitForFunction(() => !document.querySelector("[role='dialog']"), { timeout: 10000 });
+  await waitText(page, /Dina priser uppdaterades/);
+  const settingsAfter = await bodyText(page);
+  expect((settingsAfter.match(/artiklar importerades/g) ?? []).length >= 2, "båda grossisterna har nu prislistestatus");
+  await shot(page, "grossister-tva-anslutningar");
+
   console.log("\nSök → varukorg → skicka (desktop):");
   await page.goto(`${BASE}/uppdrag/${JOB}`, { waitUntil: "domcontentloaded" });
   await openMaterial(page);
   await page.waitForSelector("[data-wholesaler-search]");
   const focused = await page.evaluate(() => document.activeElement?.hasAttribute("data-wholesaler-search"));
   expect(focused, "sökfältet får fokus när materialytan öppnas");
+  // Två grossister → väljare. Välj demogrossisten uttryckligen.
+  const pickerValue = await page.evaluate(() => {
+    const select = document.querySelector("select[aria-label='Välj grossist']") as HTMLSelectElement | null;
+    if (!select) return null;
+    const option = Array.from(select.options).find((o) => /Demo-grossisten/.test(o.textContent ?? ""));
+    return option?.value ?? null;
+  });
+  expect(pickerValue, "grossistväljaren visas när flera grossister är kopplade");
+  await page.select("select[aria-label='Välj grossist']", pickerValue!);
+  await page.focus("[data-wholesaler-search]");
   await page.type("[data-wholesaler-search]", "kabel");
   await page.waitForSelector("[data-wholesaler-result]", { timeout: 20000 });
   const firstResult = await page.$eval("[data-wholesaler-result]", (el) => el.textContent ?? "");
@@ -253,6 +312,12 @@ async function main() {
   await mobile.goto(`${BASE}/uppdrag/${JOB}`, { waitUntil: "domcontentloaded" });
   await openMaterial(mobile);
   await mobile.waitForSelector("[data-wholesaler-search]");
+  const mobilePicker = await mobile.evaluate(() => {
+    const select = document.querySelector("select[aria-label='Välj grossist']") as HTMLSelectElement | null;
+    return select ? (Array.from(select.options).find((o) => /Demo-grossisten/.test(o.textContent ?? ""))?.value ?? null) : null;
+  });
+  if (mobilePicker) await mobile.select("select[aria-label='Välj grossist']", mobilePicker);
+  await mobile.focus("[data-wholesaler-search]");
   await mobile.type("[data-wholesaler-search]", "dosa");
   await mobile.waitForSelector("[data-wholesaler-result]", { timeout: 20000 });
   const small = await mobile.evaluate(() => {

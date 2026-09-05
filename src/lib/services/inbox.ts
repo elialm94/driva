@@ -35,7 +35,7 @@ import { latestPaymentForInvoice, prepareSupplierPayment } from "./supplier-paym
 import { paymentDetailsInfo, type PaymentDetailsCause } from "./payment-details";
 import { looksLikeOrderConfirmation } from "../wholesalers/confirmation-parse";
 import { connectionLabel } from "../wholesalers/labels";
-import { enrichConfirmationWithAi, processInboxOrderConfirmation } from "./purchase-order-confirmations";
+import { processInboxOrderConfirmation } from "./purchase-order-confirmations";
 
 export type { PagedResult };
 
@@ -532,19 +532,6 @@ export function ingestInboundMail(payload: InboundMailPayload): IngestResult {
     return { ok: false, error: "Okänd inkommande adress", status: 404 };
   }
   return ingestEconomicDocument(payload, { source: "email", kind: "mail" });
-}
-
-/**
- * Efter ingest: en matchad orderbekräftelse utan strukturerade rader får
- * AI-kandidater (om AI är konfigurerad). Körs asynkront efter den synkrona
- * pipelinen; misslyckas anropet står posten kvar som "kontrollera".
- * Idempotent: bara bekräftelser som skapades i DENNA ingest berikas.
- */
-export async function completeOrderConfirmationAfterIngest(result: IngestResult): Promise<void> {
-  if (!result.ok || !result.created) return;
-  const item = result.item;
-  if (item.documentType !== "orderbekraftelse" || !item.purchaseOrderConfirmationId) return;
-  await enrichConfirmationWithAi(item.purchaseOrderConfirmationId);
 }
 
 export function ingestUploadedDocument(input: {

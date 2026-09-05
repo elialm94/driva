@@ -800,7 +800,6 @@ export function SettingsForm({
         </Card>
       ) : null}
 
-      {flik === "grossister" ? <WholesalerSettings overviews={wholesalers ?? []} demo={account.demo} /> : null}
 
 
       {flik === "konto" ? (
@@ -899,6 +898,9 @@ export function SettingsForm({
         </div>
       ) : null}
       </form>
+
+      {/* Egna formulär (grossist, prisfil) – utanför inställningsformuläret så inget <form> nästlas. */}
+      {flik === "grossister" ? <WholesalerSettings overviews={wholesalers ?? []} demo={account.demo} /> : null}
 
       {dialog}
     </div>

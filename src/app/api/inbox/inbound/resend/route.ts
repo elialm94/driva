@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { inboundSlugFromTo } from "@/lib/inbox/inbound-mail";
+import { followUpInboundConfirmation } from "@/lib/inbox/confirmation-followup";
 import {
   handleResendInboundWebhook,
   ingestInboundPayloadLocal,
@@ -27,9 +28,14 @@ export async function POST(req: NextRequest) {
       ingest: async (payload) => {
         const slug = inboundSlugFromTo(payload.to);
         if (!slug) return { status: 400, error: "Kunde inte läsa tenant från To-adressen" };
-        if (!isSupabaseMode()) return ingestInboundPayloadLocal(payload);
-        const scoped = await withPublicBusiness("inbound", slug, () => ingestInboundPayloadLocal(payload));
+        const scoped = isSupabaseMode()
+          ? await withPublicBusiness("inbound", slug, () => ingestInboundPayloadLocal(payload))
+          : ingestInboundPayloadLocal(payload);
         if (!scoped) return { status: 404, error: "Okänd inkommande adress" };
+        // Orderbekräftelse utan tolkade rader: AI-fallback efter svaret, i egen tenantkörning.
+        if (scoped.status === 200 && scoped.confirmationFollowUp) {
+          after(() => followUpInboundConfirmation(slug, scoped.payload.id));
+        }
         return scoped;
       },
     }
