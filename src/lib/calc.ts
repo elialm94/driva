@@ -29,7 +29,11 @@ export function taxReductionCap(type: RotRut["type"]): number {
 
 /**
  * V1-moms: svensk säljare → svensk kund, SEK, dessa satser.
- * Omvänd skattskyldighet, EU-försäljning, export, byggmoms och vinstmarginal stöds inte.
+ *
+ * Omvänd byggmoms finns: raden får då sats 0 och köparen redovisar momsen.
+ * Beräkningen är densamma – skillnaden ligger i kontering, momsruta och
+ * laghänvisning på fakturan (lib/invoices/reverse-charge).
+ * EU-försäljning, export och vinstmarginalbeskattning stöds inte.
  */
 export const SUPPORTED_VAT_RATES: readonly VatRate[] = [0, 6, 12, 25];
 

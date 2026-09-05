@@ -31,8 +31,10 @@ export function createCustomer(input: {
   city?: string;
   personalIdentityNumber?: string;
   propertyDesignations?: string[];
+  /** Omvänd byggmoms. Ignoreras för privatpersoner – de kan aldrig vara betalningsskyldiga. */
+  reverseChargeConstruction?: boolean;
 }): Customer {
-  const { personalIdentityNumber, propertyDesignations, ...rest } = input;
+  const { personalIdentityNumber, propertyDesignations, reverseChargeConstruction, ...rest } = input;
   const fieldErrors = customerContactFieldErrors({
     name: rest.name,
     email: rest.email,
@@ -67,6 +69,7 @@ export function createCustomer(input: {
     ...(rest.orgNumber?.trim() ? { orgNumber: normalizeSwedishOrganizationNumber(rest.orgNumber) } : {}),
     ...(rest.postalCode?.trim() ? { postalCode: normalizeSwedishPostalCode(rest.postalCode) } : {}),
     ...(storedPn ? { personalIdentityNumber: storedPn } : {}),
+    ...(reverseChargeConstruction && rest.kind === "foretag" ? { reverseChargeConstruction: true } : {}),
   };
   db().customers.push(customer);
   save();
@@ -93,7 +96,22 @@ export function updateCustomerNotes(customerId: string, notes: string): void {
 
 export function updateCustomer(
   customerId: string,
-  patch: Partial<Pick<Customer, "name" | "email" | "phone" | "address" | "postalCode" | "city" | "orgNumber" | "contactPerson" | "personalIdentityNumber" | "notes">>
+  patch: Partial<
+    Pick<
+      Customer,
+      | "name"
+      | "email"
+      | "phone"
+      | "address"
+      | "postalCode"
+      | "city"
+      | "orgNumber"
+      | "contactPerson"
+      | "personalIdentityNumber"
+      | "notes"
+      | "reverseChargeConstruction"
+    >
+  >
 ): Customer {
   const c = db().customers.find((x) => x.id === customerId);
   if (!c) throw new Error("Kunden finns inte");
@@ -115,6 +133,17 @@ export function updateCustomer(
   }
   if (patch.contactPerson !== undefined) c.contactPerson = patch.contactPerson.trim() || undefined;
   if (patch.notes !== undefined) c.notes = patch.notes;
+  if (patch.reverseChargeConstruction !== undefined) {
+    // Bara företagskunder. Ett påslag på en privatperson skulle ge en faktura
+    // utan moms som ingen redovisar.
+    if (patch.reverseChargeConstruction && c.kind !== "foretag") {
+      throw new CustomerValidationError([
+        { field: "reverseChargeConstruction", message: "Omvänd byggmoms gäller bara företagskunder." },
+      ]);
+    }
+    if (patch.reverseChargeConstruction) c.reverseChargeConstruction = true;
+    else delete c.reverseChargeConstruction;
+  }
   if (patch.personalIdentityNumber !== undefined) {
     const pnError = personnummerFieldError(patch.personalIdentityNumber);
     if (pnError) throw new CustomerValidationError([{ field: "personalIdentityNumber", message: pnError }]);

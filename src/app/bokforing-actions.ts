@@ -1,8 +1,27 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { generateVatReport, markVatReportDeclared } from "@/lib/accounting/vat";
-import { runBokslutAutomation, closeFiscalYear } from "@/lib/accounting/close";
+import { generateVatReport, markVatReportDeclared, setVatPeriodicity } from "@/lib/accounting/vat";
+import { isVatPeriodicity } from "@/lib/accounting/dates";
+import {
+  bookFSkatt,
+  bookTaxAccountDeposit,
+  bookVatOnTaxAccount,
+  parseTaxAccountStatement,
+  reconcileTaxAccount,
+  type TaxAccountReconciliation,
+} from "@/lib/accounting/tax-account";
+import {
+  employeeById,
+  endEmployment,
+  generateEmployerDeclaration,
+  markEmployerDeclarationDeclared,
+  reversePayrollRun,
+  runPayroll,
+  saveEmployee,
+  type EmployeeInput,
+} from "@/lib/accounting/payroll";
+import { runBokslutAutomation, closeFiscalYear, reopenFiscalYear } from "@/lib/accounting/close";
 import { undoExpenseBooking } from "@/lib/services/expenses";
 import {
   listVerificationViews,
@@ -10,17 +29,38 @@ import {
   type CorrectionIntent,
   type VerificationView,
 } from "@/lib/services/verification-correction";
-import { generateAnnualReport, advanceAnnualReportStatus } from "@/lib/accounting/annual-report";
-import { planAccrualForSource } from "@/lib/accounting/accruals";
+import {
+  generateAnnualReport,
+  advanceAnnualReportStatus,
+  updateAnnualReport,
+  type AnnualReportEdit,
+} from "@/lib/accounting/annual-report";
+import { planAccrual, planAccrualForSource } from "@/lib/accounting/accruals";
+import {
+  bookYearEndSchedule,
+  saveYearEndSchedule,
+  scheduleDraft,
+  type ScheduleDraft,
+} from "@/lib/accounting/year-end";
 import {
   confirmCreditRefundMatch,
   confirmPaymentMatch,
   confirmTaxReductionPayoutMatch,
 } from "@/lib/services/payment-matching";
 import { registerCreditRefund } from "@/lib/services/invoices";
+import { newAttachmentKey, postManualVerification } from "@/lib/services/manual-verification";
+import { storeVerificationAttachment } from "@/lib/receipts/verification-attachment";
+import { parseReceiptDataUrl } from "@/lib/receipts/receipt-file";
+import { verificationLabel } from "@/lib/accounting/engine";
 import { db } from "@/lib/store";
-import type { AnnualReport } from "@/lib/types";
-import { withBusiness } from "@/lib/auth/session";
+import type {
+  AccrualKind,
+  AnnualReport,
+  VerificationAttachment,
+  YearEndScheduleInputs,
+  YearEndScheduleKind,
+} from "@/lib/types";
+import { withBusiness, withBusinessRead } from "@/lib/auth/session";
 
 /**
  * Serveråtgärder för bokföringen. Tunna omslag runt domänlagret –
@@ -34,15 +74,22 @@ function refresh() {
 
 type Result = { ok: true } | { ok: false; error: string };
 
+/**
+ * businessId skickas av konsultytan, som arbetar i en klients böcker utan att
+ * företaget är konsultens eget: utan det avgör cookien vem som bokförs på, och
+ * en cookie som pekar fel skulle lägga bokslutet hos fel klient. withBusiness
+ * kontrollerar medlemskapet innan något körs.
+ */
 async function run(
   fn: () => void,
-  capability: "vat" | "year_end" | "write_accounting" | "correct_voucher" | "match_payment"
+  capability: "vat" | "year_end" | "write_accounting" | "correct_voucher" | "match_payment",
+  businessId?: string
 ): Promise<Result> {
   try {
     await withBusiness(() => {
       fn();
       refresh();
-    }, { capability });
+    }, { capability, businessId });
     return { ok: true };
   } catch (e) {
     refresh();
@@ -58,15 +105,99 @@ export async function markVatDeclaredAction(reportId: string): Promise<Result> {
   return run(() => markVatReportDeclared(reportId, "anvandare"), "vat");
 }
 
+export async function setVatPeriodicityAction(periodicity: string): Promise<Result> {
+  if (!isVatPeriodicity(periodicity)) return { ok: false, error: "Okänd momsperiod." };
+  return run(() => setVatPeriodicity(periodicity, "anvandare"), "vat");
+}
+
+export async function bookVatOnTaxAccountAction(reportId: string): Promise<Result> {
+  return run(() => void bookVatOnTaxAccount(reportId, "anvandare"), "vat");
+}
+
+export async function bookFSkattAction(month: string): Promise<Result> {
+  return run(() => void bookFSkatt(month, "anvandare"), "write_accounting");
+}
+
+export async function bookTaxAccountDepositAction(txId: string): Promise<Result> {
+  return run(() => void bookTaxAccountDeposit(txId, "anvandare"), "write_accounting");
+}
+
+/* ----------------------------------- Lön ---------------------------------- */
+
+export async function saveEmployeeAction(
+  input: EmployeeInput & { id?: string }
+): Promise<Result> {
+  return run(() => void saveEmployee(input, "anvandare"), "write_accounting");
+}
+
+export async function endEmploymentAction(id: string, endDate: string): Promise<Result> {
+  return run(() => void endEmployment(id, endDate, "anvandare"), "write_accounting");
+}
+
+export async function runPayrollAction(month: string): Promise<Result> {
+  return run(() => void runPayroll({ month }, "anvandare"), "write_accounting");
+}
+
+export async function reversePayrollRunAction(runId: string, reason: string): Promise<Result> {
+  return run(() => void reversePayrollRun(runId, reason, "anvandare"), "correct_voucher");
+}
+
+export async function generateEmployerDeclarationAction(month: string): Promise<Result> {
+  return run(() => void generateEmployerDeclaration(month, "anvandare"), "write_accounting");
+}
+
+export async function markEmployerDeclarationDeclaredAction(id: string): Promise<Result> {
+  return run(() => void markEmployerDeclarationDeclared(id, "anvandare"), "vat");
+}
+
+/**
+ * Dedikerad Visa-åtgärd för den anställdes personnummer. Vanliga vyer visar det
+ * maskat; ägaren kan visa hela, konsulten aldrig.
+ */
+export async function revealEmployeePersonnummerAction(
+  employeeId: string
+): Promise<{ ok: true; value: string } | { ok: false }> {
+  try {
+    return await withBusiness(() => {
+      const value = employeeById(employeeId)?.personnummer;
+      if (!value) return { ok: false } as const;
+      return { ok: true as const, value };
+    }, { capability: "reveal_personnummer" });
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * Avstämning mot skattekontoutdraget. Läser bara – utdraget lagras aldrig, på
+ * samma sätt som bankavstämningen härleds i stället för att sparas.
+ */
+export async function reconcileTaxAccountAction(
+  text: string
+): Promise<{ ok: true; result: TaxAccountReconciliation; parsed: number } | { ok: false; error: string }> {
+  try {
+    return await withBusinessRead(() => {
+      const statement = parseTaxAccountStatement(text);
+      if (statement.length === 0) {
+        return { ok: false as const, error: "Hittade inga rader. Varje rad ska börja med datum (2026-05-12) och sluta med belopp." };
+      }
+      return { ok: true as const, result: reconcileTaxAccount(statement), parsed: statement.length };
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Något gick fel." };
+  }
+}
+
 export async function runBokslutAutomationAction(
-  fiscalYearId: string
-): Promise<Result & { depreciations?: number; accruals?: number }> {
+  fiscalYearId: string,
+  businessId?: string
+): Promise<Result & { depreciations?: number; accruals?: number; schedules?: number }> {
   try {
     const res = await withBusiness(() => {
       const out = runBokslutAutomation(fiscalYearId, "anvandare");
       refresh();
       return out;
-    }, { capability: "year_end" });
+    }, { capability: "year_end", businessId });
     return { ok: true, ...res };
   } catch (e) {
     refresh();
@@ -74,8 +205,17 @@ export async function runBokslutAutomationAction(
   }
 }
 
-export async function closeFiscalYearAction(fiscalYearId: string): Promise<Result> {
-  return run(() => closeFiscalYear(fiscalYearId, "anvandare"), "year_end");
+export async function closeFiscalYearAction(fiscalYearId: string, businessId?: string): Promise<Result> {
+  return run(() => closeFiscalYear(fiscalYearId, "anvandare"), "year_end", businessId);
+}
+
+/** Öppna ett stängt räkenskapsår igen. Skälet krävs och hamnar i audit-loggen. */
+export async function reopenFiscalYearAction(
+  fiscalYearId: string,
+  reason: string,
+  businessId?: string
+): Promise<Result> {
+  return run(() => reopenFiscalYear(fiscalYearId, reason, "anvandare"), "year_end", businessId);
 }
 
 export async function undoExpenseBookingAction(expenseId: string): Promise<Result> {
@@ -123,15 +263,25 @@ export async function correctVerificationAction(
   }
 }
 
-export async function generateAnnualReportAction(fiscalYearId: string): Promise<Result> {
-  return run(() => generateAnnualReport(fiscalYearId, "anvandare"), "year_end");
+export async function generateAnnualReportAction(fiscalYearId: string, businessId?: string): Promise<Result> {
+  return run(() => generateAnnualReport(fiscalYearId, "anvandare"), "year_end", businessId);
 }
 
 export async function advanceAnnualReportStatusAction(
   reportId: string,
-  to: AnnualReport["status"]
+  to: AnnualReport["status"],
+  businessId?: string
 ): Promise<Result> {
-  return run(() => advanceAnnualReportStatus(reportId, to, "anvandare"), "year_end");
+  return run(() => advanceAnnualReportStatus(reportId, to, "anvandare"), "year_end", businessId);
+}
+
+/** Redigera förvaltningsberättelsen, utdelningsförslaget, underskrifterna eller intyget. */
+export async function updateAnnualReportAction(
+  reportId: string,
+  edit: AnnualReportEdit,
+  businessId?: string
+): Promise<Result> {
+  return run(() => updateAnnualReport(reportId, edit, "anvandare"), "year_end", businessId);
 }
 
 /* ---------------------- Betalningsmatchning (bekräfta) ---------------------- */
@@ -163,6 +313,7 @@ export async function planAccrualAction(input: {
   fromDate: string;
   toDate: string;
   fiscalYearId: string;
+  businessId?: string;
 }): Promise<Result> {
   return run(() => {
     const data = db();
@@ -175,5 +326,181 @@ export async function planAccrualAction(input: {
       if (!invoice) throw new Error("Leverantörsfakturan finns inte.");
       planAccrualForSource({ type: "leverantorsfaktura", invoice }, { fromDate: input.fromDate, toDate: input.toDate }, input.fiscalYearId, "anvandare");
     }
-  }, "write_accounting");
+  }, "write_accounting", input.businessId);
+}
+
+/**
+ * Periodisering utan underlag i systemet. En upplupen kostnad – elräkningen för
+ * december som kommer i januari – har per definition inget bokfört underlag att
+ * utgå från, så beloppet och kontot anges för hand.
+ */
+export async function planManualAccrualAction(input: {
+  kind: AccrualKind;
+  description: string;
+  totalAmount: number;
+  counterAccount: number;
+  fromDate: string;
+  toDate: string;
+  fiscalYearId: string;
+  businessId?: string;
+}): Promise<Result> {
+  return run(
+    () =>
+      planAccrual({
+        kind: input.kind,
+        description: input.description,
+        totalAmount: input.totalAmount,
+        counterAccount: input.counterAccount,
+        fromDate: input.fromDate,
+        toDate: input.toDate,
+        fiscalYearId: input.fiscalYearId,
+        by: "anvandare",
+      }),
+    "year_end",
+    input.businessId
+  );
+}
+
+/* ---------------------------- Bokslutsbilagor ------------------------------ */
+
+/**
+ * Räkna om bilagan utan att spara. Underlaget ligger i bokföringen – sparade
+ * semesterdagar blir ett belopp först när lönen och avgiftssatsen vägts in – så
+ * förhandsberäkningen måste ske på servern. Användaren ser summan innan den bokförs.
+ */
+export async function previewYearEndScheduleAction(input: {
+  fiscalYearId: string;
+  kind: YearEndScheduleKind;
+  inputs: YearEndScheduleInputs;
+  businessId?: string;
+}): Promise<{ ok: true; draft: ScheduleDraft } | { ok: false; error: string }> {
+  try {
+    return await withBusinessRead(
+      () => ({
+        ok: true as const,
+        draft: scheduleDraft(input.fiscalYearId, input.kind, input.inputs),
+      }),
+      { businessId: input.businessId }
+    );
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Något gick fel." };
+  }
+}
+
+export async function saveYearEndScheduleAction(input: {
+  fiscalYearId: string;
+  kind: YearEndScheduleKind;
+  inputs: YearEndScheduleInputs;
+  businessId?: string;
+}): Promise<Result> {
+  return run(
+    () => saveYearEndSchedule(input.fiscalYearId, input.kind, input.inputs, "anvandare"),
+    "year_end",
+    input.businessId
+  );
+}
+
+export async function bookYearEndScheduleAction(scheduleId: string, businessId?: string): Promise<Result> {
+  return run(() => bookYearEndSchedule(scheduleId, "anvandare"), "year_end", businessId);
+}
+
+/**
+ * Spara och bokför i ett svep. Bilagan bär ett beslut användaren redan fattat;
+ * att kräva två klick för att få det i böckerna vore att göra ett extra steg
+ * av ingenting.
+ */
+export async function saveAndBookYearEndScheduleAction(input: {
+  fiscalYearId: string;
+  kind: YearEndScheduleKind;
+  inputs: YearEndScheduleInputs;
+  businessId?: string;
+}): Promise<Result> {
+  return run(
+    () => {
+      const schedule = saveYearEndSchedule(input.fiscalYearId, input.kind, input.inputs, "anvandare");
+      bookYearEndSchedule(schedule.id, "anvandare");
+    },
+    "year_end",
+    input.businessId
+  );
+}
+
+/* --------------------------- Manuellt verifikat ---------------------------- */
+
+export interface ManualVerificationFormLine {
+  account: number;
+  debit?: number;
+  credit?: number;
+  note?: string;
+}
+
+export interface ManualVerificationFormInput {
+  date?: string;
+  transactionDate?: string;
+  description: string;
+  explanation?: string;
+  lines: ManualVerificationFormLine[];
+  /** Underlaget som data-URL (bild eller PDF). Lagras innan verifikationen bokförs. */
+  attachmentDataUrl?: string;
+  attachmentFilename?: string;
+  /**
+   * Klienten som bokföringen gäller. Konsultytan skickar den uttryckligen så
+   * att verifikatet aldrig hamnar hos fel klient om cookien pekar någon annanstans;
+   * withBusiness kontrollerar medlemskapet innan något bokförs.
+   */
+  businessId?: string;
+}
+
+export type ManualVerificationResult =
+  | { ok: true; id: string; label: string; total: number }
+  | { ok: false; error: string };
+
+/**
+ * Bokför ett manuellt verifikat. Samma väg som all annan bokföring
+ * (postVerification), med serie M och underlaget som bilaga. Bilagan lagras
+ * FÖRE bokföringen: går lagringen fel bokförs ingenting, så en verifikation
+ * pekar aldrig på ett underlag som inte finns.
+ */
+export async function postManualVerificationAction(
+  input: ManualVerificationFormInput
+): Promise<ManualVerificationResult> {
+  try {
+    const posted = await withBusiness(
+      async () => {
+        let attachment: VerificationAttachment | undefined;
+        if (input.attachmentDataUrl) {
+          const file = parseReceiptDataUrl(input.attachmentDataUrl);
+          if (!file) throw new Error("Underlaget kunde inte läsas. Försök ladda upp filen igen.");
+          attachment = await storeVerificationAttachment(
+            newAttachmentKey(),
+            input.attachmentFilename?.trim() || "underlag",
+            file
+          );
+        }
+        const verification = postManualVerification(
+          {
+            date: input.date,
+            transactionDate: input.transactionDate,
+            description: input.description,
+            explanation: input.explanation,
+            lines: input.lines,
+            attachment,
+          },
+          "anvandare"
+        );
+        refresh();
+        return verification;
+      },
+      { capability: "write_accounting", businessId: input.businessId }
+    );
+    return {
+      ok: true,
+      id: posted.id,
+      label: verificationLabel(posted),
+      total: posted.entries.reduce((s, e) => s + e.debit, 0),
+    };
+  } catch (e) {
+    refresh();
+    return { ok: false, error: e instanceof Error ? e.message : "Verifikatet kunde inte bokföras." };
+  }
 }

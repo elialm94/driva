@@ -42,7 +42,13 @@ export interface AttachmentContent {
   contentType: string;
 }
 
-/** Bilagans bytes, eller undefined när innehållet inte finns lagrat. */
+/**
+ * Bilagans bytes utan nätanrop: demodokument och inline-lagrade poster.
+ *
+ * En bilaga som ligger i bucketen kräver en nedladdning och kommer därför bara
+ * ur `attachmentBytes` nedan. Den här synkrona vägen finns kvar för det som
+ * läser innehåll utan att kunna vänta – tolkningen och demovisaren.
+ */
 export function attachmentContent(attachment: InboxAttachment): AttachmentContent | undefined {
   if (isDemoDocumentKey(attachment.storageKey)) {
     const bytes = demoDocumentPdf(attachment.storageKey);
@@ -58,8 +64,23 @@ export function attachmentContent(attachment: InboxAttachment): AttachmentConten
   return undefined;
 }
 
+/**
+ * Bilagans bytes oavsett var de ligger: demodokument, inline eller bucketen.
+ * Det här är vägen routen och arkivexporten går.
+ */
+export async function attachmentBytes(attachment: InboxAttachment): Promise<AttachmentContent | undefined> {
+  const direct = attachmentContent(attachment);
+  if (direct) return direct;
+  if (!attachment.storagePath) return undefined;
+  // Import här: bucketmodulen drar in Supabase-klienten, och den här filen
+  // läses även av klientkod via attachmentIsViewable.
+  const { downloadInboxAttachment } = await import("./attachment-file");
+  return downloadInboxAttachment(attachment.storagePath, attachment.contentType);
+}
+
 /** Kan [Visa PDF]/dokumentvisaren öppna bilagan? */
 export function attachmentIsViewable(attachment: InboxAttachment): boolean {
   if (isDemoDocumentKey(attachment.storageKey)) return true;
-  return Boolean(attachment.contentBase64) && isViewableContentType(attachment.contentType);
+  if (!isViewableContentType(attachment.contentType)) return false;
+  return Boolean(attachment.contentBase64 || attachment.storagePath);
 }

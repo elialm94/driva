@@ -28,6 +28,7 @@ const COUNTED: Array<[keyof DB, string]> = [
   ["bankAccounts", "bankkonton"],
   ["bankTransactions", "banktransaktioner"],
   ["bankConnections", "bankkopplingar"],
+  ["chartAccounts", "kontoplan"],
   ["expenses", "utgifter"],
   ["receipts", "kvitton"],
   ["supplierInvoices", "leverantörsfakturor"],
@@ -35,10 +36,15 @@ const COUNTED: Array<[keyof DB, string]> = [
   ["verifications", "verifikationer"],
   ["fiscalYears", "räkenskapsår"],
   ["vatReports", "momsrapporter"],
+  ["employees", "anställda"],
+  ["payrollRuns", "lönekörningar"],
+  ["employerDeclarations", "arbetsgivardeklarationer"],
   ["assets", "tillgångar"],
   ["accruals", "periodiseringar"],
+  ["yearEndSchedules", "bokslutsbilagor"],
   ["auditTrail", "bokföringsaudit"],
   ["annualReports", "årsredovisningar"],
+  ["filingSubmissions", "inlämningar"],
   ["activity", "aktivitetshändelser"],
   ["website", "hemsida"],
   ["domains", "domäner"],
@@ -134,9 +140,19 @@ async function finalizeSequences(businessId: string, source: DB): Promise<void> 
       `update public.business_sequences
           set quote = greatest(quote, $2),
               invoice = greatest(invoice, $3),
-              verification = greatest(verification, $4)
+              verification = greatest(verification, $4),
+              -- Serieräknarna kommer med importen. Importen skriver till ett
+              -- tomt företag, så källans räknare är sanningen för de serier
+              -- den känner; övriga lämnas orörda.
+              verification_series = coalesce(verification_series, '{}'::jsonb) || $5::jsonb
         where business_id = $1`,
-      [businessId, source.sequences.quote, source.sequences.invoice, source.sequences.verification]
+      [
+        businessId,
+        source.sequences.quote,
+        source.sequences.invoice,
+        source.sequences.verification,
+        JSON.stringify(source.sequences.verificationSeries ?? {}),
+      ]
     );
   });
 }

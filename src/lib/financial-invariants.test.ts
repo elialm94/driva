@@ -18,7 +18,13 @@ process.env.DRIVA_TEST = "1";
  *   7. Kundens utestående = summan av öppna fordringar.
  *   8. Bankens saldo = huvudbokens 1930; avstämningen är förklarad.
  *   9. Momsrapporten stämmer med en oberoende omräkning ur huvudboken.
- *  10. SIE-exporten stämmer med huvudboken (IB + rörelser = UB, RES,
+ *  10. Skattekontot flyttar momsskulden mellan konton utan att ändra summan.
+ *  11. Lönen fördelar bruttolönen i netto och skatt utan att tappa en krona,
+ *      och deklarationen flyttar skulden till skattekontot oförändrad.
+ *  12. Bokslutsbilagan bokför förändringen mot kontot, inte totalen: en
+ *      omräkning med samma underlag dubblar aldrig skulden, och kontot är
+ *      avstämt mot bilagan efteråt.
+ *  13. SIE-exporten stämmer med huvudboken (IB + rörelser = UB, RES,
  *      varje #VER balanserar).
  */
 
@@ -42,8 +48,31 @@ import {
 } from "./bas";
 import { accountBalance, isResultAccount, ledgerIntegrity, saldobalans } from "./accounting/ledger";
 import { bankReconciliation } from "./accounting/reconciliation";
-import { computeVatPosition } from "./accounting/vat";
-import { quartersOf, ensureFiscalYearFor } from "./accounting/fiscal";
+import { computeVatPosition, generateVatReport, markVatReportDeclared, vatPeriods } from "./accounting/vat";
+import { verificationLabel } from "./accounting/engine";
+import {
+  bookVatOnTaxAccount,
+  taxAccountLedger,
+  MOMS_REDOVISNING,
+  SKATTEKONTO,
+} from "./accounting/tax-account";
+import {
+  employerDeclarationFor,
+  markEmployerDeclarationDeclared,
+  runPayroll,
+  saveEmployee,
+  ARBETSGIVARAVGIFT,
+  PERSONALSKATT,
+  SOCIALA_AVGIFTER,
+} from "./accounting/payroll";
+import { quartersOf, ensureFiscalYearFor, fiscalYears } from "./accounting/fiscal";
+import {
+  bookYearEndSchedule,
+  saveYearEndSchedule,
+  SEMESTERLONESKULD,
+  UPPLUPNA_SOCIALA_AVGIFTER,
+} from "./accounting/year-end";
+import { balanceReconciliation } from "./accounting/balance-reconciliation";
 import { bokforingsdatum } from "./accounting/dates";
 import { generateSie } from "./accounting/sie";
 import { customerSummary, invoiceOutstanding, invoiceTotals, isOpenReceivable } from "./services/data";
@@ -148,6 +177,11 @@ describe("Egenskap: alla kontobyggare balanserar (sum debet = sum kredit)", () =
       const rot: RotRut | null = rnd() < 0.5 ? null : { type: rnd() < 0.5 ? "rot" : "rut" };
       assertBalanced(entriesInvoiceSent(lines, rot), "entriesInvoiceSent");
       assertBalanced(entriesCredit(lines, rot), "entriesCredit");
+      // Omvänd byggmoms flyttar omsättningen till ett annat konto men får
+      // aldrig rubba balansen.
+      const byggLines = lines.map((l) => ({ ...l, vatRate: 0 as const }));
+      assertBalanced(entriesInvoiceSent(byggLines, rot, { reverseCharge: true }), "entriesInvoiceSent byggmoms");
+      assertBalanced(entriesCredit(byggLines, rot, { reverseCharge: true }), "entriesCredit byggmoms");
 
       const outstanding = 1 + Math.floor(rnd() * 100_000);
       // Betalningsscenarier: exakt, öresdiff ±1, delbetalning, överbetalning.
@@ -270,6 +304,133 @@ describe("Demoseedet uppfyller alla finansiella invarianter", () => {
       assert.equal(pos.utgaende, utgaende, `${period.label}: utgående moms`);
       assert.equal(pos.ingaende, ingaende, `${period.label}: ingående moms`);
       assert.equal(pos.attBetala, utgaende - ingaende, `${period.label}: att betala`);
+    }
+  });
+
+  it("skattekontot flyttar skulden utan att skapa eller tappa pengar", () => {
+    seeded();
+    const period = vatPeriods().find((p) => p.state === "att_deklarera" && p.position.attBetala !== 0);
+    assert.ok(period, "demoseedet har en period som väntar på deklaration");
+
+    const report = generateVatReport(period.period.key);
+    markVatReportDeclared(report.id, "anvandare");
+    const before = accountBalance(MOMS_REDOVISNING) + accountBalance(SKATTEKONTO);
+    const declared = db().vatReports.find((r) => r.id === report.id)!;
+
+    bookVatOnTaxAccount(declared.id, "anvandare");
+
+    // Skulden byter konto, aldrig storlek: summan av redovisningskontot och
+    // skattekontot är densamma före och efter, och 2650 är nollställt.
+    assert.equal(accountBalance(MOMS_REDOVISNING) + accountBalance(SKATTEKONTO), before, "summan ändras");
+    assert.equal(accountBalance(MOMS_REDOVISNING), 0, "redovisningskontot nollställs inte");
+    const ledger = taxAccountLedger();
+    assert.equal(ledger.balance, accountBalance(SKATTEKONTO), "skattekontots huvudbok avviker");
+    for (const v of db().verifications) {
+      const debit = v.entries.reduce((s, e) => s + e.debit, 0);
+      const credit = v.entries.reduce((s, e) => s + e.credit, 0);
+      assert.equal(debit, credit, `${verificationLabel(v)} balanserar inte`);
+    }
+  });
+
+  it("lönen fördelar bruttolönen utan att tappa en krona på vägen", () => {
+    seeded();
+    // Föregående månad: avslutad, så deklarationen får lämnas.
+    const now = new Date();
+    const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+    const employee = saveEmployee(
+      {
+        name: "Ägaren",
+        personnummer: "19850612-1234",
+        role: "foretagsledare",
+        monthlySalary: 40_000,
+        taxBasis: { kind: "procent", percent: 30 },
+        startDate: `${month}-01`,
+      },
+      "anvandare"
+    );
+    const run = runPayroll({ employeeId: employee.id, month }, "anvandare");
+
+    // Bruttolönen fördelas i tre delar och ingenting försvinner: den anställde
+    // får nettot, Skatteverket får skatten.
+    assert.equal(run.gross, run.tax + run.net, "brutto ≠ skatt + netto");
+
+    const cost = accountBalance(run.salaryAccount) + accountBalance(SOCIALA_AVGIFTER);
+    const debt = -(accountBalance(PERSONALSKATT) + accountBalance(ARBETSGIVARAVGIFT));
+    assert.equal(cost, run.gross + run.employerContribution, "lönekostnaden avviker");
+    assert.equal(debt, run.tax + run.employerContribution, "skulden till Skatteverket avviker");
+
+    // Deklarationen flyttar skulden till skattekontot – samma summa, nytt konto.
+    const before = accountBalance(PERSONALSKATT) + accountBalance(ARBETSGIVARAVGIFT) + accountBalance(SKATTEKONTO);
+    markEmployerDeclarationDeclared(employerDeclarationFor(month)!.id, "anvandare");
+    assert.equal(
+      accountBalance(PERSONALSKATT) + accountBalance(ARBETSGIVARAVGIFT) + accountBalance(SKATTEKONTO),
+      before,
+      "summan ändras när lönen förs till skattekontot"
+    );
+    assert.equal(accountBalance(PERSONALSKATT), 0, "personalskatten nollställs inte");
+    assert.equal(accountBalance(ARBETSGIVARAVGIFT), 0, "arbetsgivaravgiften nollställs inte");
+    for (const v of db().verifications) {
+      const debit = v.entries.reduce((s, e) => s + e.debit, 0);
+      const credit = v.entries.reduce((s, e) => s + e.credit, 0);
+      assert.equal(debit, credit, `${verificationLabel(v)} balanserar inte`);
+    }
+  });
+
+  it("bokslutsbilagan bokför förändringen, så en omräkning aldrig dubblar skulden", () => {
+    seeded();
+    const fy = fiscalYears().find((f) => f.status === "oppet")!;
+    const employee = saveEmployee(
+      {
+        name: "Ägaren",
+        personnummer: "19850612-1234",
+        role: "foretagsledare",
+        monthlySalary: 40_000,
+        taxBasis: { kind: "procent", percent: 30 },
+        startDate: `${fy.label}-01-01`,
+      },
+      "anvandare"
+    );
+    assert.ok(employee.id);
+
+    // Bilagan bär ett totalbelopp men bokför skillnaden mot vad kontot visar.
+    // Om den bokförde totalen skulle andra körningen dubbla skulden.
+    // Bilagan bokförs på bokslutsdagen, som ligger framåt i ett öppet år –
+    // saldot måste därför läsas per den dagen, inte per idag.
+    const saldo = (account: number) => -accountBalance(account, fy.endDate);
+    const book = (days: number) => {
+      const schedule = saveYearEndSchedule(fy.id, "semesterloneskuld", { savedVacationDays: days }, "anvandare");
+      return bookYearEndSchedule(schedule.id, "anvandare");
+    };
+
+    const first = book(12).closingAmount;
+    assert.equal(saldo(SEMESTERLONESKULD), first, "skulden avviker från bilagan");
+
+    // Samma underlag igen: inget nytt att bokföra, saldot står still.
+    const again = book(12).closingAmount;
+    assert.equal(saldo(SEMESTERLONESKULD), again, "omräkningen dubblade skulden");
+    assert.equal(again, first, "samma underlag gav olika belopp");
+
+    // Färre dagar: skulden ska ned, inte upp.
+    const fewer = book(5);
+    assert.equal(saldo(SEMESTERLONESKULD), fewer.closingAmount, "minskningen bokfördes inte");
+    assert.ok(fewer.closingAmount < first, "färre dagar gav inte lägre skuld");
+
+    // Sociala avgifterna på skulden följer samma regel.
+    const contribution = fewer.lines.find((l) => l.label.startsWith("Sociala avgifter"))!;
+    assert.equal(saldo(UPPLUPNA_SOCIALA_AVGIFTER), contribution.amount, "avgiftsskulden avviker från bilagan");
+
+    // Och kontot är avstämt mot bilagan – det är hela poängen med en bilaga.
+    const tieOut = balanceReconciliation(fy.id);
+    for (const account of [SEMESTERLONESKULD, UPPLUPNA_SOCIALA_AVGIFTER]) {
+      const row = tieOut.rows.find((r) => r.account === account);
+      assert.ok(row, `konto ${account} saknas i avstämningen`);
+      assert.equal(row.difference, 0, `konto ${account} stämmer inte mot bilagan: ${row.detail}`);
+    }
+
+    for (const v of db().verifications) {
+      const debit = v.entries.reduce((s, e) => s + e.debit, 0);
+      const credit = v.entries.reduce((s, e) => s + e.credit, 0);
+      assert.equal(debit, credit, `${verificationLabel(v)} balanserar inte`);
     }
   });
 

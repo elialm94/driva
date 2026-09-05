@@ -21,7 +21,8 @@ import {
   MAX_INLINE_ATTACHMENT_BYTES,
   storableAttachmentContent,
 } from "./attachment-content";
-import { ingestInboundMail, inboundSlugMatches } from "../services/inbox";
+import { ingestInboundMail, inboundSlugMatches, interpretInboundPayload } from "../services/inbox";
+import { persistInboundAttachments } from "./attachment-file";
 import {
   resendWebhookSecret,
   verifyResendWebhookSignature,
@@ -158,13 +159,16 @@ export function mapResendReceivedToPayload(input: {
   });
 }
 
-export function ingestInboundPayloadLocal(payload: InboundMailPayload): InboundWebhookResult {
+export async function ingestInboundPayloadLocal(payload: InboundMailPayload): Promise<InboundWebhookResult> {
   const slug = inboundSlugFromTo(payload.to);
   if (!slug) return { status: 400, error: "Kunde inte läsa tenant från To-adressen" };
   if (!inboundSlugMatches(payload.to)) {
     return { status: 404, error: "Okänd inkommande adress" };
   }
-  const result = ingestInboundMail(payload);
+  // Tolka bilagan först – tenanten är känd här, och en post som redan bär
+  // uppgifter från avsändaren tolkas inte om.
+  const interpreted = await interpretInboundPayload(payload);
+  const result = ingestInboundMail(await persistInboundAttachments(interpreted));
   if (!result.ok) return { status: result.status as 400 | 404, error: result.error };
   return {
     status: 200,

@@ -303,8 +303,395 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const reminted = await remintHexInboundMailSlugs(client);
   if (reminted > 0) applied.push(`inbound_mail_slug.remint:${reminted}`);
 
+  const chartApplied = await ensureChartAccountsSchema(client);
+  applied.push(...chartApplied);
+
+  const manualApplied = await ensureManualVerificationSchema(client);
+  applied.push(...manualApplied);
+
+  const reverseChargeApplied = await ensureReverseChargeSchema(client);
+  applied.push(...reverseChargeApplied);
+
+  const vatPeriodicityApplied = await ensureVatPeriodicitySchema(client);
+  applied.push(...vatPeriodicityApplied);
+
+  const payrollApplied = await ensurePayrollSchema(client);
+  applied.push(...payrollApplied);
+
+  const yearEndApplied = await ensureYearEndSchedulesSchema(client);
+  applied.push(...yearEndApplied);
+
   return applied;
 }
+
+/**
+ * Lön (migration 34): anställd, lönekörningar och arbetsgivardeklaration.
+ * Utan tabellerna kan lönen inte bokföras, och lönen är den första månatliga
+ * myndighetsskyldigheten – därför skapas de här också. Speglar migrationen.
+ */
+export async function ensurePayrollSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  const table = await client.query(`select to_regclass('public.employees') is not null as present`);
+  if (table[0]?.present) return applied;
+  await run(
+    client,
+    `create table if not exists public.employees (
+      id text primary key,
+      business_id uuid not null references public.businesses (id) on delete cascade,
+      name text not null check (length(trim(name)) > 0),
+      personnummer text not null,
+      email text,
+      role text not null check (role in ('foretagsledare', 'tjansteman')),
+      monthly_salary bigint not null check (monthly_salary >= 0),
+      tax_basis jsonb not null,
+      start_date date not null,
+      end_date date,
+      status text not null check (status in ('anstalld', 'avslutad')),
+      created_at timestamptz not null default now()
+    )`
+  );
+  await run(
+    client,
+    `create index if not exists employees_business_idx on public.employees (business_id, created_at, id)`
+  );
+  await run(
+    client,
+    `create table if not exists public.payroll_runs (
+      id text primary key,
+      business_id uuid not null references public.businesses (id) on delete cascade,
+      employee_id text not null references public.employees (id) on delete cascade,
+      month text not null,
+      pay_date date not null,
+      gross bigint not null check (gross >= 0),
+      tax bigint not null check (tax >= 0),
+      net bigint not null,
+      employer_contribution bigint not null check (employer_contribution >= 0),
+      contribution_percent numeric(5, 2) not null check (contribution_percent >= 0),
+      tax_basis jsonb not null,
+      salary_account integer not null,
+      verification_id text not null,
+      created_by text not null check (created_by in ('anvandare', 'assistent')),
+      created_at timestamptz not null default now()
+    )`
+  );
+  await run(
+    client,
+    `create unique index if not exists payroll_runs_employee_month_uq
+       on public.payroll_runs (business_id, employee_id, month)`
+  );
+  await run(
+    client,
+    `create index if not exists payroll_runs_business_idx on public.payroll_runs (business_id, month, id)`
+  );
+  await run(
+    client,
+    `create table if not exists public.employer_declarations (
+      id text primary key,
+      business_id uuid not null references public.businesses (id) on delete cascade,
+      month text not null,
+      label text not null,
+      status text not null check (status in ('utkast', 'deklarerad')),
+      individual_rows jsonb not null default '[]'::jsonb,
+      gross bigint not null default 0,
+      tax bigint not null default 0,
+      employer_contribution bigint not null default 0,
+      att_betala bigint not null default 0,
+      due_date date not null,
+      generated_at timestamptz not null default now(),
+      declared_at timestamptz,
+      tax_account_verification_id text
+    )`
+  );
+  await run(
+    client,
+    `create unique index if not exists employer_declarations_month_uq
+       on public.employer_declarations (business_id, month)`
+  );
+  for (const t of ["employees", "payroll_runs", "employer_declarations"]) {
+    await run(client, `grant select, insert, update, delete on public.${t} to driva_app`);
+    await run(client, `alter table public.${t} enable row level security`);
+    await run(client, `drop policy if exists ${t}_tenant on public.${t}`);
+    await run(
+      client,
+      `create policy ${t}_tenant on public.${t}
+         for all to driva_app, authenticated using (app.is_member(business_id)) with check (app.is_member(business_id))`
+    );
+    applied.push(t);
+  }
+  return applied;
+}
+
+/**
+ * Bokslutsbilagor (migration 35): specifikationen bakom semesterlöneskulden,
+ * nedskrivningen av kundfordringar och periodiseringsfonden. Bilagan bär
+ * uppgifter som inte går att räkna fram, så utan tabellen går bokslutet inte
+ * att slutföra.
+ */
+export async function ensureYearEndSchedulesSchema(client: SqlClient): Promise<string[]> {
+  const table = await client.query(`select to_regclass('public.year_end_schedules') is not null as present`);
+  if (table[0]?.present) return [];
+  await run(
+    client,
+    `create table if not exists public.year_end_schedules (
+      id text primary key,
+      business_id uuid not null references public.businesses (id) on delete cascade,
+      kind text not null check (
+        kind in ('semesterloneskuld', 'kundfordringar_nedskrivning', 'periodiseringsfond')
+      ),
+      fiscal_year_id text not null,
+      closing_amount bigint not null default 0,
+      lines jsonb not null default '[]'::jsonb,
+      inputs jsonb not null default '{}'::jsonb,
+      status text not null check (status in ('utkast', 'bokford')),
+      verification_ids jsonb not null default '[]'::jsonb,
+      created_by text not null check (created_by in ('anvandare', 'assistent')),
+      created_at timestamptz not null default now(),
+      booked_at timestamptz
+    )`
+  );
+  await run(
+    client,
+    `create unique index if not exists year_end_schedules_kind_uq
+       on public.year_end_schedules (business_id, fiscal_year_id, kind)`
+  );
+  await run(
+    client,
+    `create index if not exists year_end_schedules_business_idx
+       on public.year_end_schedules (business_id, fiscal_year_id, id)`
+  );
+  await run(client, `grant select, insert, update, delete on public.year_end_schedules to driva_app`);
+  await run(client, `alter table public.year_end_schedules enable row level security`);
+  await run(client, `drop policy if exists year_end_schedules_tenant on public.year_end_schedules`);
+  await run(
+    client,
+    `create policy year_end_schedules_tenant on public.year_end_schedules
+       for all to driva_app, authenticated using (app.is_member(business_id)) with check (app.is_member(business_id))`
+  );
+  return ["year_end_schedules"];
+}
+
+/**
+ * Momsperiodicitet (migration 33): helår, kvartal eller månad per företag.
+ * Default 'kvartal' – huvudregeln – så befintliga företag inte ändrar period.
+ */
+export async function ensureVatPeriodicitySchema(client: SqlClient): Promise<string[]> {
+  if (await columnExists(client, "business_settings", "vat_periodicity")) return [];
+  await run(
+    client,
+    `alter table public.business_settings
+       add column if not exists vat_periodicity text not null default 'kvartal'`
+  );
+  await run(
+    client,
+    `alter table public.business_settings drop constraint if exists business_settings_vat_periodicity_check`
+  );
+  await run(
+    client,
+    `alter table public.business_settings
+       add constraint business_settings_vat_periodicity_check
+       check (vat_periodicity in ('manad', 'kvartal', 'helar'))`
+  );
+  return ["business_settings.vat_periodicity"];
+}
+
+/**
+ * Omvänd byggmoms (migration 32): markeringen på kunden och den frusna
+ * markeringen på fakturan. Speglar migrationen exakt.
+ */
+export async function ensureReverseChargeSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  if (!(await columnExists(client, "customers", "reverse_charge_construction"))) {
+    await run(
+      client,
+      `alter table public.customers
+         add column if not exists reverse_charge_construction boolean not null default false`
+    );
+    await run(client, `alter table public.customers drop constraint if exists customers_reverse_charge_kind_check`);
+    await run(
+      client,
+      `alter table public.customers
+         add constraint customers_reverse_charge_kind_check
+         check (not reverse_charge_construction or kind = 'foretag')`
+    );
+    applied.push("customers.reverse_charge_construction");
+  }
+  if (!(await columnExists(client, "invoices", "reverse_charge"))) {
+    await run(
+      client,
+      `alter table public.invoices add column if not exists reverse_charge boolean not null default false`
+    );
+    // app.issue_invoice skriver fakturaraden själv; utan detta tappar en
+    // utfärdad faktura sin markering.
+    await run(client, ISSUE_INVOICE_WITH_REVERSE_CHARGE);
+    applied.push("invoices.reverse_charge");
+  }
+  return applied;
+}
+
+const ISSUE_INVOICE_WITH_REVERSE_CHARGE = `create or replace function app.issue_invoice(
+  p_business_id uuid,
+  p_invoice jsonb,
+  p_lines jsonb,
+  p_snapshot jsonb,
+  p_verification jsonb,
+  p_allocate_number boolean
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $fn$
+declare
+  v_id text := p_invoice ->> 'id';
+  v_number integer := (p_invoice ->> 'number')::integer;
+  v_ocr text := coalesce(p_invoice ->> 'ocr', '');
+  v_snapshot jsonb := p_snapshot;
+  v_reverse_charge boolean := coalesce((p_invoice ->> 'reverse_charge')::boolean, false);
+  v_line jsonb;
+  v_pos integer := 0;
+begin
+  if v_id is null or v_id = '' then
+    raise exception 'issue_invalid: faktura-id krävs' using errcode = 'P0001';
+  end if;
+
+  if v_number is null then
+    update public.business_sequences
+       set invoice = invoice + 1
+     where business_id = p_business_id
+     returning invoice - 1 into v_number;
+    if v_number is null then
+      raise exception 'sequence_conflict: företaget saknar sekvensrad'
+        using errcode = '40001';
+    end if;
+  elsif p_allocate_number then
+    if exists (
+      select 1 from public.invoices i
+       where i.business_id = p_business_id and i.number = v_number and i.id <> v_id
+    ) then
+      raise exception 'sequence_conflict: fakturanummer % är redan använt', v_number
+        using errcode = '40001';
+    end if;
+
+    update public.business_sequences
+       set invoice = greatest(invoice, v_number + 1)
+     where business_id = p_business_id;
+    if not found then
+      raise exception 'sequence_conflict: företaget saknar sekvensrad'
+        using errcode = '40001';
+    end if;
+  end if;
+
+  if v_ocr is null or v_ocr = '' then
+    v_ocr := app.ocr_for_invoice(v_number);
+  end if;
+
+  if v_snapshot is not null then
+    v_snapshot := jsonb_set(v_snapshot, '{number}', to_jsonb(v_number), true);
+    if v_snapshot ->> 'ocr' is null or v_snapshot ->> 'ocr' = '' then
+      v_snapshot := jsonb_set(v_snapshot, '{ocr}', to_jsonb(v_ocr), true);
+    end if;
+  end if;
+
+  perform set_config('app.allow_issue', v_id, true);
+
+  if exists (select 1 from public.invoices where id = v_id and business_id = p_business_id) then
+    update public.invoices set
+      number = v_number,
+      status = coalesce(p_invoice ->> 'status', 'skickad'),
+      ocr = v_ocr,
+      issued_at = (p_invoice ->> 'issued_at')::timestamptz,
+      issue_date = p_invoice ->> 'issue_date',
+      due_date = p_invoice ->> 'due_date',
+      sent_at = (p_invoice ->> 'sent_at')::timestamptz,
+      last_sent_at = (p_invoice ->> 'last_sent_at')::timestamptz,
+      rot = nullif(p_invoice -> 'rot', 'null'::jsonb),
+      rich_text = nullif(p_invoice -> 'rich_text', 'null'::jsonb),
+      tax_reduction_terms = nullif(p_invoice -> 'tax_reduction_terms', 'null'::jsonb),
+      tax_reduction_details = nullif(p_invoice -> 'tax_reduction_details', 'null'::jsonb),
+      service_date = (p_invoice ->> 'service_date')::date,
+      reverse_charge = v_reverse_charge,
+      amount_to_pay = coalesce((p_invoice ->> 'amount_to_pay')::bigint, 0)
+    where id = v_id
+      and business_id = p_business_id
+      and status = 'utkast'
+      and (number is null or number = v_number);
+    if not found then
+      raise exception 'issue_conflict: fakturan är redan utfärdad eller ändrad'
+        using errcode = '40001';
+    end if;
+  else
+    insert into public.invoices (
+      id, business_id, number, customer_id, job_id, quote_id, type, status,
+      rot, rich_text, tax_reduction_terms, tax_reduction_details, tax_reduction_application,
+      issue_date, due_date, payment_terms_days, service_date, late_interest_rate,
+      issued_at, sent_at, last_sent_at, paid_at, reminders, token, ocr,
+      credits_invoice_id, denied_reduction_of, created_by, amount_to_pay, reverse_charge, created_at
+    ) values (
+      v_id,
+      p_business_id,
+      v_number,
+      p_invoice ->> 'customer_id',
+      p_invoice ->> 'job_id',
+      p_invoice ->> 'quote_id',
+      p_invoice ->> 'type',
+      coalesce(p_invoice ->> 'status', 'skickad'),
+      nullif(p_invoice -> 'rot', 'null'::jsonb),
+      nullif(p_invoice -> 'rich_text', 'null'::jsonb),
+      nullif(p_invoice -> 'tax_reduction_terms', 'null'::jsonb),
+      nullif(p_invoice -> 'tax_reduction_details', 'null'::jsonb),
+      nullif(p_invoice -> 'tax_reduction_application', 'null'::jsonb),
+      p_invoice ->> 'issue_date',
+      p_invoice ->> 'due_date',
+      coalesce((p_invoice ->> 'payment_terms_days')::integer, 30),
+      (p_invoice ->> 'service_date')::date,
+      (p_invoice ->> 'late_interest_rate')::numeric,
+      (p_invoice ->> 'issued_at')::timestamptz,
+      (p_invoice ->> 'sent_at')::timestamptz,
+      (p_invoice ->> 'last_sent_at')::timestamptz,
+      (p_invoice ->> 'paid_at')::timestamptz,
+      coalesce(nullif(p_invoice -> 'reminders', 'null'::jsonb), '[]'::jsonb),
+      p_invoice ->> 'token',
+      v_ocr,
+      p_invoice ->> 'credits_invoice_id',
+      p_invoice ->> 'denied_reduction_of',
+      p_invoice ->> 'created_by',
+      coalesce((p_invoice ->> 'amount_to_pay')::bigint, 0),
+      v_reverse_charge,
+      coalesce((p_invoice ->> 'created_at')::timestamptz, now())
+    );
+  end if;
+
+  delete from public.invoice_line_items where invoice_id = v_id and business_id = p_business_id;
+  if p_lines is not null then
+    for v_line in select * from jsonb_array_elements(p_lines) loop
+      insert into public.invoice_line_items (
+        id, business_id, invoice_id, position, kind, description, qty, unit, unit_price, vat_rate
+      ) values (
+        v_line ->> 'id',
+        p_business_id,
+        v_id,
+        v_pos,
+        coalesce(v_line ->> 'kind', 'ovrigt'),
+        coalesce(v_line ->> 'description', ''),
+        coalesce((v_line ->> 'qty')::numeric, 1),
+        coalesce(v_line ->> 'unit', ''),
+        coalesce((v_line ->> 'unit_price')::bigint, 0),
+        coalesce((v_line ->> 'vat_rate')::integer, 25)
+      );
+      v_pos := v_pos + 1;
+    end loop;
+  end if;
+
+  insert into public.invoice_issued_snapshots (invoice_id, business_id, snapshot)
+  values (v_id, p_business_id, v_snapshot);
+
+  perform set_config('app.allow_issue', '', true);
+
+  if p_verification is not null then
+    perform app.post_verification(p_business_id, p_verification);
+  end if;
+end;
+$fn$`;
 
 /**
  * Engångs-remint: hex-sluggar (12 tecken a-f0-9) utan inbound-mejl får
@@ -448,6 +835,160 @@ export async function ensureBankConnectionSchema(client: SqlClient): Promise<str
     );
     applied.push("bank_connections");
   }
+  return applied;
+}
+
+/**
+ * Kontoregister (migration 30): chart_accounts. Bara företagets avvikelser
+ * från standardplanen lagras – standardplanen ligger i koden. Utan tabellen
+ * kan företaget inte lägga till egna konton, så den skapas här med
+ * IF NOT EXISTS i miljöer där `supabase db push` inte körts.
+ */
+export async function ensureChartAccountsSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  const table = await client.query(`select to_regclass('public.chart_accounts') is not null as present`);
+  if (table[0]?.present) return applied;
+  await run(
+    client,
+    `create table if not exists public.chart_accounts (
+      id text primary key,
+      business_id uuid not null references public.businesses (id) on delete cascade,
+      number integer not null check (number between 1000 and 8999),
+      name text not null check (length(trim(name)) > 0),
+      type text not null check (type in ('tillgang', 'eget_kapital', 'skuld', 'intakt', 'kostnad')),
+      section text not null,
+      custom boolean not null default false,
+      archived boolean not null default false,
+      created_at timestamptz not null default now()
+    )`
+  );
+  await run(
+    client,
+    `create unique index if not exists chart_accounts_business_number_uq
+       on public.chart_accounts (business_id, number)`
+  );
+  await run(client, `grant select, insert, update, delete on public.chart_accounts to driva_app`);
+  await run(client, `alter table public.chart_accounts enable row level security`);
+  await run(client, `drop policy if exists chart_accounts_server on public.chart_accounts`);
+  await run(
+    client,
+    `create policy chart_accounts_server on public.chart_accounts
+       for all to driva_app using (app.is_member(business_id)) with check (app.is_member(business_id))`
+  );
+  applied.push("chart_accounts");
+  return applied;
+}
+
+/**
+ * Manuella verifikat (migration 31): serieräknare, handelsdatum och bilaga på
+ * verifikationen. Kolumnerna räcker inte – app.post_verification måste också
+ * CAS:a mot seriens egen räknare, annars går ett manuellt verifikat i serie M
+ * aldrig igenom. Speglar migrationen.
+ */
+export async function ensureManualVerificationSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  if (await columnExists(client, "verifications", "attachment_filename")) return applied;
+
+  await run(
+    client,
+    `alter table public.business_sequences
+       add column if not exists verification_series jsonb not null default '{}'::jsonb`
+  );
+  await run(
+    client,
+    `alter table public.verifications
+       add column if not exists transaction_date date,
+       add column if not exists attachment_filename text,
+       add column if not exists attachment_content_type text,
+       add column if not exists attachment_size_bytes bigint,
+       add column if not exists attachment_storage_path text,
+       add column if not exists attachment_content_base64 text`
+  );
+  await run(
+    client,
+    `create or replace function app.post_verification(p_business_id uuid, p_verification jsonb)
+     returns void
+     language plpgsql
+     security definer
+     set search_path = ''
+     as $fn$
+     declare
+       v_number integer := (p_verification ->> 'number')::integer;
+       v_series text := coalesce(p_verification ->> 'series', 'A');
+       v_entry jsonb;
+       v_pos integer := 0;
+     begin
+       perform app.validate_entries(p_verification -> 'entries');
+
+       update public.business_sequences
+          set verification_series = jsonb_set(
+                coalesce(verification_series, '{}'::jsonb),
+                array[v_series],
+                to_jsonb(v_number + 1)
+              ),
+              verification = case when v_series = 'A' then v_number + 1 else verification end
+        where business_id = p_business_id
+          and coalesce(
+                (verification_series ->> v_series)::integer,
+                case when v_series = 'A' then verification else 1 end
+              ) = v_number;
+       if not found then
+         raise exception 'sequence_conflict: verifikationsnummer % i serie % är inte nästa lediga', v_number, v_series
+           using errcode = '40001';
+       end if;
+
+       insert into public.verifications (
+         id, business_id, series, number, date, transaction_date, description,
+         source_type, source_id, confidence, created_by, status, posted_at,
+         fiscal_year_id, corrects_verification_id, explanation, created_at,
+         attachment_filename, attachment_content_type, attachment_size_bytes,
+         attachment_storage_path, attachment_content_base64
+       ) values (
+         p_verification ->> 'id',
+         p_business_id,
+         v_series,
+         v_number,
+         p_verification ->> 'date',
+         (p_verification ->> 'transaction_date')::date,
+         coalesce(p_verification ->> 'description', ''),
+         coalesce(p_verification ->> 'source_type', 'manuell'),
+         p_verification ->> 'source_id',
+         coalesce(p_verification ->> 'confidence', 'hog'),
+         coalesce(p_verification ->> 'created_by', 'auto'),
+         'bokford',
+         (p_verification ->> 'posted_at')::timestamptz,
+         p_verification ->> 'fiscal_year_id',
+         p_verification ->> 'corrects_verification_id',
+         p_verification ->> 'explanation',
+         coalesce((p_verification ->> 'created_at')::timestamptz, now()),
+         p_verification ->> 'attachment_filename',
+         p_verification ->> 'attachment_content_type',
+         (p_verification ->> 'attachment_size_bytes')::bigint,
+         p_verification ->> 'attachment_storage_path',
+         p_verification ->> 'attachment_content_base64'
+       );
+
+       for v_entry in select * from jsonb_array_elements(p_verification -> 'entries') loop
+         insert into public.accounting_entries (
+           verification_id, business_id, position, account, account_name,
+           debit, credit, vat_code, note
+         ) values (
+           p_verification ->> 'id',
+           p_business_id,
+           v_pos,
+           (v_entry ->> 'account')::integer,
+           coalesce(v_entry ->> 'account_name', ''),
+           coalesce((v_entry ->> 'debit')::bigint, 0),
+           coalesce((v_entry ->> 'credit')::bigint, 0),
+           v_entry ->> 'vat_code',
+           v_entry ->> 'note'
+         );
+         v_pos := v_pos + 1;
+       end loop;
+     end;
+     $fn$`
+  );
+  applied.push("verifications.attachment");
   return applied;
 }
 

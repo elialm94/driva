@@ -5,7 +5,10 @@ import {
   inboundMailAddress,
   inboundSlugFromTo,
   type InboundMailPayload,
+  type InboundParsedHint,
 } from "../inbox/inbound-mail";
+import { extractReceipt, isInterpretableDocument } from "../ai/extract-document";
+import { corroborateHint } from "../inbox/corroborate";
 import {
   amountIsCertain,
   classifyEconomicDocument,
@@ -28,7 +31,7 @@ import type {
   SupplierInvoice,
 } from "../types";
 import { storableAttachmentContent } from "../inbox/attachment-content";
-import { createExpenseFromKnownReceipt, merchantRuleKey } from "./expenses";
+import { createExpenseFromKnownReceipt, matchReceiptToTransaction, merchantRuleKey } from "./expenses";
 import { type PagedResult } from "./customers";
 import { attachExtractedPaymentDetails, bookSupplierInvoice, receiveSupplierInvoice } from "./suppliers";
 import { latestPaymentForInvoice, prepareSupplierPayment } from "./supplier-payments";
@@ -442,13 +445,16 @@ export function ingestEconomicDocument(
 
   const parsed = payload.parsed;
   const attachments: InboxAttachment[] = (payload.attachments ?? []).map((a) => {
-    const content = storableAttachmentContent(a.contentType, a.contentBase64);
+    // Bytes är redan lagrade när payloaden gick genom persistInboundAttachments;
+    // inline-vägen finns kvar för JSON-läget och för tester som ingestar direkt.
+    const content = a.storagePath ? undefined : storableAttachmentContent(a.contentType, a.contentBase64);
     return {
       id: uid(),
       filename: a.filename,
       contentType: a.contentType,
       size: a.size ?? (content ? Math.floor((content.length * 3) / 4) : 0),
       storageKey: `inbox/${payload.externalId}/${a.filename}`,
+      ...(a.storagePath ? { storagePath: a.storagePath } : {}),
       ...(content ? { contentBase64: content } : {}),
     };
   });
@@ -498,6 +504,11 @@ export function ingestUploadedDocument(input: {
   contentType?: string;
   text?: string;
   parsed?: InboundMailPayload["parsed"];
+  /** Själva filen, så underlaget bevaras och går att tolka. */
+  contentBase64?: string;
+  /** Sökväg i bucketen när filen redan lagrats där (storeInboxAttachment). */
+  storagePath?: string;
+  sizeBytes?: number;
 }): IngestResult {
   const address = inboundAddressForBusiness();
   return ingestEconomicDocument(
@@ -511,12 +522,74 @@ export function ingestUploadedDocument(input: {
         {
           filename: input.filename || "dokument.pdf",
           contentType: input.contentType || "application/pdf",
+          ...(input.sizeBytes != null ? { size: input.sizeBytes } : {}),
+          ...(input.storagePath ? { storagePath: input.storagePath } : {}),
+          ...(input.contentBase64 && !input.storagePath ? { contentBase64: input.contentBase64 } : {}),
         },
       ],
       parsed: input.parsed,
     },
     { source: "uppladdning", kind: "uppladdning" }
   );
+}
+
+/* ------------------------------ Kvittotolkning ------------------------------ */
+
+/**
+ * Tolka dokumentets bilaga med AI-vision och fyll `parsed`, så avsändaren
+ * aldrig behöver skicka uppgifterna själv.
+ *
+ * Körs FÖRE ingest, i tenantkontexten, och är avsiktligt tandlös: en tolkning
+ * som misslyckas eller uteblir lämnar payloaden orörd, och dokumentet hamnar
+ * i inboxen för mänsklig kontroll precis som förut. Uppgifter som avsändaren
+ * redan skickat vinner alltid – vi tolkar inte om det som är känt.
+ *
+ * Tolkningens konfidens hålls under AUTO-tröskeln av modellens tak, och lyfts
+ * bara av bevis utanför modellen (inbox/corroborate.ts).
+ */
+export async function interpretInboundPayload(payload: InboundMailPayload): Promise<InboundMailPayload> {
+  if (payload.parsed) return payload;
+  const attachment = (payload.attachments ?? []).find(
+    (a) => a.contentBase64 && isInterpretableDocument(a.contentType)
+  );
+  if (!attachment?.contentBase64) return payload;
+
+  const parsed = await interpretDocumentFile({
+    filename: attachment.filename,
+    contentType: attachment.contentType,
+    contentBase64: attachment.contentBase64,
+    subject: payload.subject,
+    text: payload.text,
+  });
+  return parsed ? { ...payload, parsed } : payload;
+}
+
+/**
+ * Tolka en enskild fil. Samma väg som mejlbilagor tar, så en uppladdning i
+ * inboxen och ett inkommande mejl läses av samma modell med samma bevisregler.
+ */
+export async function interpretDocumentFile(input: {
+  filename: string;
+  contentType: string;
+  contentBase64: string;
+  subject?: string;
+  text?: string;
+}): Promise<InboundParsedHint | undefined> {
+  const extracted = await extractReceipt(input);
+  if (!extracted) return undefined;
+  const bankMatch = bankSupportFor(extracted.hint);
+  const { hint } = corroborateHint(extracted.hint, bankMatch ? { bankMatch } : {});
+  return hint;
+}
+
+/** Bankens stöd för läsningen: obokat kortköp på exakt beloppet, och hur säkert. */
+function bankSupportFor(hint: InboundParsedHint): "hog" | "medel" | undefined {
+  if (hint.amount === undefined || !hint.supplier) return undefined;
+  return matchReceiptToTransaction({
+    supplier: hint.supplier,
+    amount: hint.amount,
+    date: hint.date ?? new Date().toISOString().slice(0, 10),
+  })?.confidence;
 }
 
 /* --------------------- Kontrollera & godkänn tolkningen --------------------- */

@@ -9,8 +9,18 @@ import type { EconomicLineType, LineKind } from "./economic-line-type";
 export type { EconomicLineType, LineKind } from "./economic-line-type";
 
 export type ID = string;
-/** V1: endast inhemsk svensk moms. Omvänd skattskyldighet, EU, export och byggmoms stöds inte. */
+/**
+ * V1: inhemsk svensk moms. Omvänd byggmoms finns (då är radens sats 0 och
+ * köparen redovisar momsen, se lib/invoices/reverse-charge). EU-handel,
+ * export och vinstmarginalbeskattning stöds inte.
+ */
 export type VatRate = 0 | 6 | 12 | 25;
+/**
+ * Redovisningsperiod för moms. Skatteverket registrerar företaget för en av
+ * dessa utifrån beskattningsunderlagets storlek: helår upp till 1 mkr, kvartal
+ * upp till 40 mkr (huvudregel), månad över 40 mkr eller på egen begäran.
+ */
+export type VatPeriodicity = "manad" | "kvartal" | "helar";
 
 /* ---------------------------------- Företag ---------------------------------- */
 
@@ -44,9 +54,19 @@ export interface CompanySettings {
   logoInitials: string;
   /** JPEG data-URL. Saknas = visa initialer. */
   logoDataUrl?: string;
+  /**
+   * Redovisningsperiod för moms – speglar registreringen hos Skatteverket.
+   * Saknas = kvartal, huvudregeln för ett litet aktiebolag. Styr både
+   * periodindelningen på momssidan och förfallodagen.
+   */
+  vatPeriodicity?: VatPeriodicity;
   /** Preliminärskatt (F-skatt) som dras varje månad. */
   fSkattPerMonth: number;
-  /** Reserv för arbetsgivaravgifter och personalskatt per månad. */
+  /**
+   * Reserv för arbetsgivaravgifter och personalskatt per månad. Används bara när
+   * ingen anställd är upplagd – finns lönen räknas reserven ur den faktiska
+   * lönen och den åldersberoende avgiften (services/finance.ts).
+   */
   payrollReservePerMonth: number;
   /** Standard betalningsvillkor i dagar. */
   paymentTermsDays: number;
@@ -111,6 +131,14 @@ export interface Customer {
    * vila kräver en riktig databas – vi hittar inte på krypto här.
    */
   personalIdentityNumber?: string;
+  /**
+   * Köparen är ett byggföretag som själv redovisar momsen på byggtjänster
+   * (omvänd byggmoms, ML 1 kap. 2 § första stycket 4 b). Sätts som ett
+   * uttryckligt val på kunden – produkten bedömer aldrig själv om köparen är
+   * byggföretag. Gäller bara företagskunder, och fakturor till kunden
+   * faktureras utan moms med laghänvisning på dokumentet.
+   */
+  reverseChargeConstruction?: boolean;
   /** Arbetsplatser/bostäder. En privat kund kan ha hem + fritidshus. */
   workLocations?: WorkLocation[];
   /** Standardadress för nytt uppdrag / ROT-prefill när flera bostäder finns. */
@@ -594,6 +622,12 @@ export interface InvoiceBuyerSnapshot {
   /** "Er referens" på dokumentet. */
   contactPerson?: string;
   /**
+   * Köparens momsregistreringsnummer. Fryses bara när fakturan tillämpar
+   * omvänd byggmoms, där lagen kräver köparens momsnummer på dokumentet.
+   * Härlett ur köparens organisationsnummer vid utfärdandet.
+   */
+  vatNumber?: string;
+  /**
    * Personnummer för den som får skattereduktionen – fryses ENDAST när
    * fakturan har ROT/RUT (känsligt: lagras inte på vanliga fakturor).
    * Historiska dokument renderar härifrån, aldrig via live-uppslag på kunden.
@@ -622,6 +656,11 @@ export interface InvoiceIssuedSnapshot {
   buyer: InvoiceBuyerSnapshot;
   lines: DocLine[];
   rot: RotRut | null;
+  /**
+   * Fakturan utfärdades med omvänd byggmoms. Fryst, för att dokumentet ska
+   * bära laghänvisningen även om kundens markering ändras efteråt.
+   */
+  reverseCharge?: boolean;
   /** Frusen kopia av beskrivningen vid utfärdandet. */
   richText?: RichTextDoc;
   taxReductionTerms?: TaxReductionTermsSnapshot | null;
@@ -658,6 +697,12 @@ export interface Invoice {
   status: InvoiceStatus;
   lines: DocLine[];
   rot: RotRut | null;
+  /**
+   * Omvänd byggmoms på den här fakturan: raderna faktureras utan moms och
+   * köparen redovisar den. Sätts från kundens markering när utkastet skapas
+   * och fryses i issuedSnapshot vid utfärdandet.
+   */
+  reverseCharge?: boolean;
   /**
    * Beskrivning – rik text (strikt vitlistad delmängd, se lib/richtext).
    * Saneras vid varje servergräns. Fryses i issuedSnapshot vid utfärdandet –
@@ -1038,6 +1083,60 @@ export interface PaymentFile {
 
 /* ---------------------------------- Bokföring -------------------------------- */
 
+/** Kontotyp. Styr om kontot hör till balans- eller resultaträkningen. */
+export type AccountType = "tillgang" | "eget_kapital" | "skuld" | "intakt" | "kostnad";
+
+/** Post i balansräkningen enligt K2. */
+export type BalanceSection =
+  | "immateriella_anlaggningstillgangar"
+  | "materiella_anlaggningstillgangar"
+  | "finansiella_anlaggningstillgangar"
+  | "varulager"
+  | "kortfristiga_fordringar"
+  | "kassa_och_bank"
+  | "bundet_eget_kapital"
+  | "fritt_eget_kapital"
+  | "obeskattade_reserver"
+  | "avsattningar"
+  | "langfristiga_skulder"
+  | "kortfristiga_skulder";
+
+/** Post i resultaträkningen enligt K2 (kostnadsslagsindelad). */
+export type ResultSection =
+  | "nettoomsattning"
+  | "ovriga_rorelseintakter"
+  | "ravaror_och_fornodenheter"
+  | "ovriga_externa_kostnader"
+  | "personalkostnader"
+  | "avskrivningar"
+  | "ovriga_rorelsekostnader"
+  | "finansiella_intakter"
+  | "finansiella_kostnader"
+  | "bokslutsdispositioner"
+  | "skatt"
+  | "arets_resultat";
+
+export type AccountSection = BalanceSection | ResultSection;
+
+/**
+ * Företagets avvikelse från den levererade BAS-kontoplanen: ett eget konto,
+ * ett omdöpt konto eller ett arkiverat konto. Bara avvikelser lagras –
+ * standardplanen ligger i koden (accounting/chart.ts) och kopieras inte per
+ * företag. Se `chartAccounts()` för det sammanslagna registret.
+ */
+export interface ChartAccountRecord {
+  id: ID;
+  number: number;
+  name: string;
+  type: AccountType;
+  section: AccountSection;
+  /** Sant när kontot inte finns i standardplanen. */
+  custom: boolean;
+  /** Avstängt för nya konteringar. Befintlig bokföring påverkas aldrig. */
+  archived?: boolean;
+  createdAt: string;
+}
+
 export interface VerificationEntry {
   account: number;
   accountName: string;
@@ -1059,6 +1158,8 @@ export type VerificationSource =
   | { type: "avskrivning"; id: ID }
   | { type: "periodisering"; id: ID }
   | { type: "moms"; id: ID }
+  | { type: "skattekonto"; id: ID }
+  | { type: "lon"; id: ID }
   | { type: "bokslut"; id: ID }
   | { type: "ingaende_balans"; id: ID }
   | { type: "manuell" };
@@ -1068,15 +1169,40 @@ export type VerificationSource =
  * oföränderliga: rättelser görs alltid som ny rättelseverifikation
  * (se accounting/engine.ts), aldrig genom att ändra eller ta bort.
  */
+/**
+ * Bilagan på verifikationen: fakturan, kvittot eller avtalet som verifikationen
+ * vilar på. Bokföringslagen kräver att underlaget bevaras och går att koppla
+ * till verifikationen, så en granskare ska kunna öppna det från raden.
+ * Lagras som kvitton (se receipts/receipt-file.ts): bucket när fillagring finns,
+ * annars inline.
+ */
+export interface VerificationAttachment {
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  /** Sökväg i privata bucketen `receipts`. */
+  storagePath?: string;
+  /** Inline base64 (JSON-läge/demo, eller utan fillagring). Aldrig båda satta. */
+  contentBase64?: string;
+}
+
 export interface Verification {
   id: ID;
-  /** Verifikationsserie. V1 använder "A"; arkitekturen tillåter fler. */
+  /** Verifikationsserie, se accounting/series.ts. Automatiken bokför i A, manuella verifikat i M. */
   series: string;
   number: number;
   /** Bokföringsdatum (styr period, momsperiod och räkenskapsår). */
   date: string;
+  /**
+   * Handelsdatum: när affärshändelsen faktiskt inträffade, när det avviker från
+   * bokföringsdatumet. Styr ingenting i bokföringen – det är en uppgift om
+   * händelsen, inte om perioden.
+   */
+  transactionDate?: string;
   description: string;
   entries: VerificationEntry[];
+  /** Underlaget bakom verifikationen. */
+  attachment?: VerificationAttachment;
   source: VerificationSource;
   confidence: "hog" | "medel" | "lag";
   createdBy: "auto" | "anvandare" | "assistent";
@@ -1116,6 +1242,30 @@ export interface FiscalYear {
   closedAt?: string;
   /** Bokslutsverifikationer som skapades när året stängdes. */
   closingVerificationIds?: ID[];
+  /** Varje gång året öppnats igen efter ett bokslut. Raderas aldrig. */
+  reopenings?: FiscalYearReopening[];
+}
+
+/**
+ * En återöppning av ett stängt räkenskapsår. Bokslutet är inte permanent – ett
+ * fel som upptäcks efteråt ska gå att rätta – men varje återöppning är en
+ * ingripande händelse och lämnar därför ett spår som inte går att sudda ut.
+ */
+export interface FiscalYearReopening {
+  at: string;
+  by: "anvandare" | "assistent" | "system";
+  /** Varför året öppnades. Krävs. */
+  reason: string;
+  /** Bokslutsverifikationerna som återfördes, i den ordning de bokfördes. */
+  reversedVerificationIds: ID[];
+  /** Återföringarna som bokfördes vid återöppningen. */
+  reversalVerificationIds: ID[];
+  /**
+   * Periodlåset som gällde innan året öppnades. Låset måste flyttas bakåt för
+   * att året ska gå att rätta, och återställs hit när året stängs igen – annars
+   * skulle senare deklarerade perioder ligga olåsta efteråt.
+   */
+  previousLockedThrough?: string;
 }
 
 /* ----------------------------------- Moms ------------------------------------ */
@@ -1145,6 +1295,111 @@ export interface VatReport {
   declaredAt?: string;
   /** Omföringsverifikation till 2650 när rapporten markerats deklarerad. */
   settleVerificationId?: ID;
+}
+
+/* ------------------------------------ Lön ------------------------------------ */
+
+export type EmployeeRole = "foretagsledare" | "tjansteman";
+
+/**
+ * Grunden för skatteavdraget på lönen. `tabell` bär beloppet som slagits upp i
+ * Skatteverkets skattetabell tillsammans med lönen uppslaget gjordes för, så att
+ * det går att se när uppslaget inte längre gäller. Se accounting/payroll-model.ts.
+ */
+export type TaxBasis =
+  | { kind: "tabell"; table: number; monthlyDeduction: number; salaryAtLookup: number }
+  | { kind: "procent"; percent: number };
+
+/**
+ * Anställd. V1 är en anställd: ägaren med fast månadslön. Personnummret är
+ * känsligt och den enda källan för födelsedatumet som styr arbetsgivaravgiften.
+ */
+export interface Employee {
+  id: ID;
+  name: string;
+  /** YYYYMMDD-NNNN. Maska i vanliga vyer (maskPersonnummer). */
+  personnummer: string;
+  email?: string;
+  role: EmployeeRole;
+  /** Fast månadslön, hela kronor. */
+  monthlySalary: number;
+  taxBasis: TaxBasis;
+  /** Anställningens första dag, YYYY-MM-DD. */
+  startDate: string;
+  /** Sista anställningsdag, YYYY-MM-DD. */
+  endDate?: string;
+  status: "anstalld" | "avslutad";
+  createdAt: string;
+}
+
+/**
+ * En bokförd lönekörning för en månad. Beloppen är frysta här: verifikationen är
+ * oföränderlig, och lönespecifikationen och arbetsgivardeklarationen ska visa
+ * exakt det som bokfördes.
+ */
+export interface PayrollRun {
+  id: ID;
+  employeeId: ID;
+  /** Lönemånad, YYYY-MM. */
+  month: string;
+  /** Utbetalningsdag, YYYY-MM-DD. Bokföringsdatum för lönen. */
+  payDate: string;
+  gross: number;
+  /** Avdragen preliminärskatt. */
+  tax: number;
+  net: number;
+  employerContribution: number;
+  /** Satsen som tillämpades, i procent – historiken ska stå kvar när lagen ändras. */
+  contributionPercent: number;
+  /** Skattegrunden vid körningen, sparad så att specifikationen kan visa den. */
+  taxBasis: TaxBasis;
+  salaryAccount: number;
+  verificationId: ID;
+  createdBy: "anvandare" | "assistent";
+  createdAt: string;
+}
+
+/** En individuppgift i arbetsgivardeklarationen. */
+export interface EmployerDeclarationRow {
+  employeeId: ID;
+  name: string;
+  personnummer: string;
+  gross: number;
+  tax: number;
+  employerContribution: number;
+  /**
+   * Specifikationsnummer (fältkod 570) i AGI-filen. Måste vara samma nummer
+   * för samma anställd om en lämnad månad rättas – annars läser Skatteverket
+   * rättelsen som en extra individuppgift i stället för en ersättning. Numret
+   * fryses här när deklarationen skapas.
+   */
+  specifikationsnummer?: number;
+}
+
+/**
+ * Arbetsgivardeklaration (AGI) för en månad. Samma statusmaskin som
+ * momsrapporten: utkast som genereras ur bokföringen, sedan deklarerad med
+ * frysta siffror, audit och periodlås.
+ */
+export interface EmployerDeclaration {
+  id: ID;
+  /** Redovisningsmånad, YYYY-MM. */
+  month: string;
+  /** T.ex. "mars 2026". */
+  label: string;
+  status: "utkast" | "deklarerad";
+  rows: EmployerDeclarationRow[];
+  gross: number;
+  tax: number;
+  employerContribution: number;
+  /** Summan att betala till skattekontot: avgifter + avdragen skatt. */
+  attBetala: number;
+  /** Förfallodag för deklaration och betalning, YYYY-MM-DD. */
+  dueDate: string;
+  generatedAt: string;
+  declaredAt?: string;
+  /** Verifikationen som förde avgifter och personalskatt till skattekontot. */
+  taxAccountVerificationId?: ID;
 }
 
 /* -------------------------------- Inventarier -------------------------------- */
@@ -1204,22 +1459,93 @@ export interface Accrual {
   createdAt: string;
 }
 
+/* ------------------------------ Bokslutsbilagor ------------------------------ */
+
+/**
+ * En bokslutsbilaga är specifikationen bakom ett balanskonto: vad saldot
+ * BESTÅR av, inte bara vad det är. Revisorn och Skatteverket frågar efter
+ * bilagan, inte efter kontot.
+ *
+ * Tre bilagor kräver uppgifter som inte finns i bokföringen och därför måste
+ * anges: sparade semesterdagar, bedömningen av vilka kundfordringar som är
+ * osäkra, och hur stor avsättning till periodiseringsfond bolaget vill göra.
+ */
+export type YearEndScheduleKind =
+  | "semesterloneskuld"
+  | "kundfordringar_nedskrivning"
+  | "periodiseringsfond";
+
+/** En rad i specifikationen. Raderna summerar till bilagans utgående belopp. */
+export interface YearEndScheduleLine {
+  label: string;
+  amount: number;
+  /** Hur raden räknats fram, i klartext. */
+  note?: string;
+}
+
+/** Uppgifter som inte går att härleda ur bokföringen utan måste anges. */
+export interface YearEndScheduleInputs {
+  /** Semesterlöneskuld: sparade betalda semesterdagar vid årets slut. */
+  savedVacationDays?: number;
+  /** Nedskrivning: kundfakturor som bedöms som osäkra. */
+  doubtfulInvoiceIds?: ID[];
+  /** Periodiseringsfond: årets avsättning. */
+  fundAllocation?: number;
+  /** Periodiseringsfond: återföringar, per det år fonden avsattes. */
+  fundReversals?: { year: number; amount: number }[];
+}
+
+export interface YearEndSchedule {
+  id: ID;
+  kind: YearEndScheduleKind;
+  fiscalYearId: ID;
+  /** Vad bilagan kommer fram till att kontot ska visa vid årets slut. */
+  closingAmount: number;
+  /** Specifikationen bakom beloppet. */
+  lines: YearEndScheduleLine[];
+  inputs: YearEndScheduleInputs;
+  status: "utkast" | "bokford";
+  /** Verifikationerna bilagan gett upphov till (justering och ev. avgifter). */
+  verificationIds: ID[];
+  createdBy: "anvandare" | "assistent";
+  createdAt: string;
+  bookedAt?: string;
+}
+
 /* --------------------------------- Audit trail -------------------------------- */
 
 export type AuditAction =
   | "verifikation_bokford"
   | "verifikation_rattad"
   | "period_last"
+  | "period_stangd"
   | "momsrapport_genererad"
   | "momsrapport_deklarerad"
+  | "momsperiodicitet_andrad"
+  | "skattekonto_bokford"
+  | "anstalld_andrad"
+  | "lon_bokford"
+  | "arbetsgivardeklaration_genererad"
+  | "arbetsgivardeklaration_deklarerad"
   | "rakenskapsar_skapat"
+  | "sie_import"
   | "rakenskapsar_stangt"
+  | "rakenskapsar_oppnat"
+  | "period_upplast"
   | "inventarie_registrerad"
   | "avskrivning_bokford"
   | "periodisering_planerad"
   | "periodisering_bokford"
+  | "bokslutsbilaga_andrad"
+  | "bokslutsbilaga_bokford"
   | "arsredovisning_genererad"
   | "arsredovisning_status"
+  | "arsredovisning_andrad"
+  | "inlamning_genererad"
+  | "inlamning_signerad"
+  | "inlamning_inlamnad"
+  | "inlamning_kvitterad"
+  | "inlamning_avvisad"
   | "bokforing_angrad"
   // Affärshändelser (autopiloten): kritiska pengaflöden auditloggas alltid,
   // i samma transaktion som själva händelsen.
@@ -1265,10 +1591,56 @@ export interface AuditEvent {
 export interface ReportRow {
   label: string;
   amount: number;
+  /**
+   * Jämförelsetal för föregående räkenskapsår (ÅRL 3:1). Undefined för det
+   * första året – då finns inget att jämföra med.
+   */
+  prior?: number;
   /** Summeringsrad. */
   bold?: boolean;
   /** Notreferens. */
   note?: number;
+}
+
+/**
+ * Flerårsöversikt enligt ÅRL 6:1. Nyckeltalen räknas ur varje års egna
+ * fastställda siffror – aldrig ur årets siffror med förra årets etikett.
+ */
+export interface MultiYearRow {
+  label: string;
+  nettoomsattning: number;
+  resultatEfterFinansiella: number;
+  soliditetProcent: number;
+  /** Saknas för år Driva inte har bokföring för. */
+  ofullstandig?: boolean;
+}
+
+/**
+ * Den som skriver under årsredovisningen. Enligt ÅRL 2:7 skrivs den under av
+ * samtliga styrelseledamöter och av verkställande direktören.
+ */
+export interface AnnualReportSignatory {
+  name: string;
+  /** Styrelseledamot, styrelsens ordförande, verkställande direktör … */
+  role: string;
+  /** Ort och datum för underskriften. Tomt tills den skrivits under. */
+  signedAt?: string;
+  place?: string;
+}
+
+/**
+ * Fastställelseintyget: bestyrkandet på den kopia som skickas till
+ * Bolagsverket. Intygar att resultat- och balansräkningen fastställts på
+ * årsstämman och att stämman beslutat om resultatdispositionen.
+ */
+export interface AnnualReportCertification {
+  /** Datum för årsstämman. */
+  stammaDate?: string;
+  /** Den styrelseledamot eller VD som bestyrker kopian. */
+  certifiedByName?: string;
+  certifiedByRole?: string;
+  /** Stämmans beslut, i klartext. */
+  dispositionDecision?: string;
 }
 
 export interface AnnualReportContent {
@@ -1277,16 +1649,39 @@ export interface AnnualReportContent {
   fiscalLabel: string;
   periodStart: string;
   periodEnd: string;
+  /** Bolagets säte – ska framgå av årsredovisningen (ÅRL 6:1). */
+  sate?: string;
   forvaltningsberattelse: {
     verksamhet: string;
     vasentligaHandelser: string;
-    flerarsoversikt: { label: string; nettoomsattning: number; resultatEfterFinansiella: number; soliditetProcent: number }[];
-    resultatdisposition: { tillForfogande: number; balanserasINyRakning: number };
+    flerarsoversikt: MultiYearRow[];
+    /** Förändringar i eget kapital under året (ÅRL 6:2). */
+    egetKapitalForandring?: {
+      label: string;
+      aktiekapital: number;
+      balanseratResultat: number;
+      aretsResultat: number;
+      summa: number;
+    }[];
+    resultatdisposition: { tillForfogande: number; balanserasINyRakning: number; utdelning?: number };
   };
   resultatrakning: ReportRow[];
   balansrakningTillgangar: ReportRow[];
   balansrakningEgetKapitalSkulder: ReportRow[];
-  noter: { title: string; body: string }[];
+  /**
+   * Noterna, numrerade i uppställningsordning. Numret ligger i datan och inte i
+   * renderingen, för de upphöjda hänvisningarna i resultat- och balansräkningen
+   * pekar på det – räknas det om vid visningen kan de gå isär.
+   */
+  noter: { number: number; title: string; body: string }[];
+  /**
+   * Medelantalet anställda som tal. Står också i noten, men i en mening – och
+   * iXBRL-filen ska bära det som ett taggat tal med egen enhet, inte som text.
+   * Saknas i rapporter upprättade innan Driva sparade det.
+   */
+  medelantalAnstallda?: number;
+  underskrifter?: AnnualReportSignatory[];
+  fastallelseintyg?: AnnualReportCertification;
 }
 
 export interface AnnualReport {
@@ -1299,6 +1694,101 @@ export interface AnnualReport {
   reviewedAt?: string;
   signedAt?: string;
   markedFiledAt?: string;
+  /**
+   * Satt när räkenskapsåret öppnats igen efter att rapporten upprättades.
+   * Rapporten står kvar – den kan vara undertecknad och inlämnad, och då är den
+   * en historisk handling – men den beskriver inte längre böckerna.
+   */
+  supersededAt?: string;
+  supersededReason?: string;
+}
+
+/* --------------------------------- Inlämning --------------------------------- */
+
+/** Vilken deklaration inlämningen gäller. En kind = en filgenerator. */
+export type FilingKind = "moms" | "agi" | "ink2" | "arsredovisning";
+
+export type FilingAuthority = "skatteverket" | "bolagsverket";
+
+/**
+ * Inlämningens livscykel:
+ *   utkast → genererad (filen är byggd och dess innehåll fryst med sha256)
+ *   → signerad (behörig firmatecknare har signerat filen)
+ *   → inlamnad (myndigheten har tagit emot den och gett ett id)
+ *   → kvitterad (kvittensen är hämtad) | avvisad (myndigheten sa nej)
+ *
+ * Statusen säger vad som HÄNT, aldrig vad Driva hoppas har hänt: "inlamnad"
+ * kräver ett id från myndigheten och "kvitterad" en kvittens.
+ */
+export type FilingSubmissionStatus = "utkast" | "genererad" | "signerad" | "inlamnad" | "kvitterad" | "avvisad";
+
+/**
+ * En genererad fil i inlämningen. sha256 är beviset: kvittensen gäller exakt
+ * det innehållet, så en fil som genereras om efter signering upptäcks.
+ */
+export interface FilingFileRef {
+  filename: string;
+  /** MIME-typ, t.ex. "application/xml". */
+  contentType: string;
+  /** Filens storlek i byte. */
+  size: number;
+  /** Hexadecimal SHA-256 av filens byte. */
+  sha256: string;
+}
+
+export interface FilingSignature {
+  /** bankid_mock = demosignatur. Aldrig ett påstående om riktig BankID-signering. */
+  method: "bankid" | "bankid_mock";
+  signedAt: string;
+  signedByName: string;
+  /** Maskerat personnummer – hela numret sparas aldrig i signaturen. */
+  personalNumberMasked?: string;
+  orderRef?: string;
+  /** Förtydligande som visas i UI:t, t.ex. att signaturen är en demosignatur. */
+  note?: string;
+}
+
+/** Myndighetens kvittens: att filen är mottagen, med myndighetens eget id. */
+export interface FilingReceipt {
+  /** Kvittensnummer hos myndigheten. */
+  receiptId: string;
+  receivedAt: string;
+  message?: string;
+}
+
+/**
+ * En inlämning av en deklaration till en myndighet. En rad per försök: en
+ * avvisad inlämning står kvar och en ny rad skapas för nästa försök, så
+ * historiken visar vad som lämnades in och när.
+ */
+export interface FilingSubmission {
+  id: ID;
+  kind: FilingKind;
+  /**
+   * Vad inlämningen gäller i Drivas data: momsrapportens id, AGI-månaden
+   * (YYYY-MM), räkenskapsårets id för INK2, årsredovisningens id.
+   */
+  subjectId: string;
+  /** Perioden i klartext, t.ex. "april–juni 2026". */
+  label: string;
+  authority: FilingAuthority;
+  /** Leverantören raden skapades mot – mock i demo, live mot riktigt avtal. */
+  provider: "mock" | "live";
+  status: FilingSubmissionStatus;
+  /** Filerna som genererades. INK2 har två: BLANKETTER.SRU och INFO.SRU. */
+  files: FilingFileRef[];
+  generatedAt?: string;
+  signature?: FilingSignature;
+  submittedAt?: string;
+  /** Myndighetens id för inlämningen. Finns så snart den togs emot. */
+  providerSubmissionId?: string;
+  receipt?: FilingReceipt;
+  rejection?: { reason: string; at: string };
+  /** Senaste användarvända felet. Nollställs vid nästa lyckade steg. */
+  lastError?: string;
+  createdBy: "anvandare" | "assistent";
+  createdAt: string;
+  updatedAt: string;
 }
 
 /* ---------------------------------- Aktivitet -------------------------------- */
@@ -1860,9 +2350,16 @@ export interface InboxAttachment {
   size: number;
   storageKey: string;
   /**
-   * Små dokument (≤ ~1,5 MB, pdf/bild) lagras inline så att båda
-   * lagringslägena kan servera innehållet. Demobilagor (storageKey "demo/…")
-   * genereras i stället deterministiskt och lagrar aldrig bytes.
+   * Sökväg i den privata bucketen `inbox_attachments`
+   * (<business_id>/<dokumentnyckel>/<filnamn>). Sätts i Supabase-läge med
+   * service-nyckel – det är den vägen ett flersidigt inskannat underlag tar.
+   */
+  storagePath?: string;
+  /**
+   * Små dokument (≤ ~1,5 MB, pdf/bild) lagras inline när fillagring saknas
+   * (JSON-läge/demo), så att båda lagringslägena kan servera innehållet.
+   * Demobilagor (storageKey "demo/…") genereras i stället deterministiskt och
+   * lagrar aldrig bytes. Aldrig både storagePath och contentBase64.
    */
   contentBase64?: string;
 }
@@ -1969,7 +2466,18 @@ export interface AssistantAuditEntry {
 
 export interface DB {
   settings: CompanySettings;
-  sequences: { quote: number; invoice: number; verification: number };
+  sequences: {
+    quote: number;
+    invoice: number;
+    /** Nästa nummer i verifikationsserie A. Speglas i verificationSeries. */
+    verification: number;
+    /**
+     * Nästa nummer per verifikationsserie. Varje serie har en egen obruten
+     * nummerföljd, vilket är hela poängen med serier – A och M får inte dela
+     * räknare och lämna hål i varandras nummerföljd.
+     */
+    verificationSeries?: Record<string, number>;
+  };
   customers: Customer[];
   quotes: Quote[];
   quoteVersions: QuoteVersion[];
@@ -1992,15 +2500,31 @@ export interface DB {
   /** Genererade bankfiler (pain.001). Äldre JSON-filer saknar fältet – guardera med ?? []. */
   paymentFiles: PaymentFile[];
   verifications: Verification[];
+  /**
+   * Företagets avvikelser från den levererade BAS-kontoplanen (egna konton,
+   * omdöpta och arkiverade). Standardplanen ligger i koden. Äldre JSON-filer
+   * saknar fältet – guardera med ?? [].
+   */
+  chartAccounts?: ChartAccountRecord[];
   /** Räkenskapsår. Skapas automatiskt (kalenderår) av bokföringsmotorn. */
   fiscalYears: FiscalYear[];
   /** Bokföringsinställningar. lockedThrough: bokföringen är låst t.o.m. detta datum (YYYY-MM-DD). */
   accounting: { lockedThrough?: string };
   vatReports: VatReport[];
+  /** Anställda. Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  employees?: Employee[];
+  /** Bokförda lönekörningar. Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  payrollRuns?: PayrollRun[];
+  /** Arbetsgivardeklarationer. Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  employerDeclarations?: EmployerDeclaration[];
   assets: Asset[];
   accruals: Accrual[];
+  /** Bokslutsbilagor. Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  yearEndSchedules?: YearEndSchedule[];
   auditTrail: AuditEvent[];
   annualReports: AnnualReport[];
+  /** Inlämningar av deklarationer till myndighet. Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  filingSubmissions?: FilingSubmission[];
   activity: ActivityEvent[];
   website: Website | null;
   domains: Domain[];

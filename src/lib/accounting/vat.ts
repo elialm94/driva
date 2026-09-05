@@ -1,7 +1,18 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
 import type { VatBox, VatReport } from "../types";
-import { bokforingsdatum, ensureFiscalYearFor, lockPeriod, quartersOf, todayDate, vatDueDate, type Period } from "./fiscal";
+import {
+  bokforingsdatum,
+  ensureFiscalYearFor,
+  lockPeriod,
+  todayDate,
+  vatDueDate,
+  vatPeriodicity,
+  vatPeriodsOf,
+  VAT_PERIODICITY,
+  type Period,
+  type VatPeriodicity,
+} from "./fiscal";
 import { postVerification } from "./engine";
 import { logAudit } from "./audit";
 
@@ -10,8 +21,8 @@ import { logAudit } from "./audit";
  * momskontonas rörelser per period, så att rapporten alltid stämmer med
  * bokföringen (samma siffror som Skatteverket skulle granska mot).
  *
- * Central mappning BAS-konto ↔ momskod ↔ deklarationsruta. Endast rutorna
- * vanliga svenska småföretag behöver (inhemsk moms 0/6/12/25).
+ * Central mappning BAS-konto ↔ momskod ↔ deklarationsruta. Rutorna som
+ * inhemsk handel behöver: moms 0/6/12/25 och omvänd byggmoms åt båda håll.
  */
 
 export interface VatCodeDef {
@@ -21,7 +32,16 @@ export interface VatCodeDef {
   box: string;
   boxLabel: string;
   accounts: number[];
-  kind: "forsaljning" | "utgaende" | "ingaende";
+  /**
+   * forsaljning – omsättning (kreditsaldo på ett intäktskonto).
+   * inkop       – underlag för inköp där KÖPAREN redovisar momsen (debetsaldo
+   *               på ett kostnadskonto). Bara underlag: påverkar varken
+   *               utgående eller ingående moms, och kontot får aldrig
+   *               nollställas mot 2650 vid deklarationen.
+   * utgaende    – utgående moms att betala.
+   * ingaende    – ingående moms att dra av.
+   */
+  kind: "forsaljning" | "inkop" | "utgaende" | "ingaende";
 }
 
 export const VAT_CODES: VatCodeDef[] = [
@@ -29,14 +49,58 @@ export const VAT_CODES: VatCodeDef[] = [
   { code: "MP2", label: "Momspliktig försäljning 12 %", box: "05", boxLabel: "Momspliktig försäljning", accounts: [3002], kind: "forsaljning" },
   { code: "MP3", label: "Momspliktig försäljning 6 %", box: "05", boxLabel: "Momspliktig försäljning", accounts: [3003], kind: "forsaljning" },
   { code: "MF", label: "Momsfri försäljning", box: "42", boxLabel: "Övrig försäljning m.m.", accounts: [3004], kind: "forsaljning" },
+  // Omvänd byggmoms, säljarsidan: omsättning utan moms.
+  { code: "BYGG", label: "Försäljning byggtjänster, omvänd byggmoms", box: "41", boxLabel: "Försäljning när köparen är skattskyldig i Sverige", accounts: [3231], kind: "forsaljning" },
   { code: "U1", label: "Utgående moms 25 %", box: "10", boxLabel: "Utgående moms 25 %", accounts: [2611], kind: "utgaende" },
   { code: "U2", label: "Utgående moms 12 %", box: "11", boxLabel: "Utgående moms 12 %", accounts: [2621], kind: "utgaende" },
   { code: "U3", label: "Utgående moms 6 %", box: "12", boxLabel: "Utgående moms 6 %", accounts: [2631], kind: "utgaende" },
+  // Omvänd byggmoms, köparsidan: underlaget i ruta 23/24 och den moms köparen
+  // både redovisar (ruta 30–32) och drar av (ruta 48).
+  { code: "OSV", label: "Inköp av varor i Sverige, omvänd skattskyldighet", box: "23", boxLabel: "Inköp av varor i Sverige som köparen är skattskyldig för", accounts: [4415], kind: "inkop" },
+  { code: "OST", label: "Inköp av byggtjänster, omvänd byggmoms", box: "24", boxLabel: "Övriga inköp av tjänster", accounts: [4425], kind: "inkop" },
+  { code: "OU1", label: "Utgående moms omvänd skattskyldighet 25 %", box: "30", boxLabel: "Utgående moms 25 % på inköp i ruta 20–24", accounts: [2614], kind: "utgaende" },
+  { code: "OU2", label: "Utgående moms omvänd skattskyldighet 12 %", box: "31", boxLabel: "Utgående moms 12 % på inköp i ruta 20–24", accounts: [2624], kind: "utgaende" },
+  { code: "OU3", label: "Utgående moms omvänd skattskyldighet 6 %", box: "32", boxLabel: "Utgående moms 6 % på inköp i ruta 20–24", accounts: [2634], kind: "utgaende" },
   { code: "I", label: "Ingående moms", box: "48", boxLabel: "Ingående moms att dra av", accounts: [2641], kind: "ingaende" },
+  { code: "IO", label: "Ingående moms omvänd skattskyldighet", box: "48", boxLabel: "Ingående moms att dra av", accounts: [2647], kind: "ingaende" },
 ];
 
 export function vatCodeForAccount(account: number): VatCodeDef | undefined {
   return VAT_CODES.find((c) => c.accounts.includes(account));
+}
+
+/**
+ * Byt redovisningsperiod för moms. Gäller framåt från innevarande
+ * räkenskapsår: en deklarerad period är låst och får aldrig delas upp eller
+ * slås samman i efterhand, så bytet vägras om året redan har en deklaration.
+ * Utkast för året hör till den gamla indelningen och tas bort – de är härledda
+ * och genereras om mot de nya perioderna.
+ */
+export function setVatPeriodicity(next: VatPeriodicity, actor: "anvandare" | "assistent"): void {
+  const data = db();
+  const current = vatPeriodicity(data);
+  if (current === next) return;
+
+  const fy = ensureFiscalYearFor(todayDate());
+  const declared = data.vatReports.filter((r) => r.status === "deklarerad" && r.periodEnd >= fy.startDate);
+  if (declared.length) {
+    throw new Error(
+      `Momsen för ${declared.map((r) => r.label).join(", ")} är redan deklarerad – byt period från nästa räkenskapsår i stället.`
+    );
+  }
+
+  for (let i = data.vatReports.length - 1; i >= 0; i--) {
+    const r = data.vatReports[i];
+    if (r.status !== "deklarerad" && r.periodEnd >= fy.startDate) data.vatReports.splice(i, 1);
+  }
+
+  data.settings.vatPeriodicity = next;
+  logAudit(
+    actor,
+    "momsperiodicitet_andrad",
+    `Momsen redovisas nu ${VAT_PERIODICITY[next].label.toLowerCase()} (tidigare ${VAT_PERIODICITY[current].label.toLowerCase()}).`
+  );
+  save();
 }
 
 export interface VatPosition {
@@ -71,6 +135,9 @@ export function computeVatPosition(period: Period): VatPosition {
       if (!def) continue;
       if (def.kind === "forsaljning") {
         box(def.box, def.boxLabel).amount += e.credit - e.debit;
+      } else if (def.kind === "inkop") {
+        // Kostnadskonto: underlaget står på debetsidan.
+        box(def.box, def.boxLabel).amount += e.debit - e.credit;
       } else if (def.kind === "utgaende") {
         const amount = e.credit - e.debit;
         box(def.box, def.boxLabel).amount += amount;
@@ -89,12 +156,29 @@ export function computeVatPosition(period: Period): VatPosition {
   return { period, dueDate: vatDueDate(period), boxes, utgaende, ingaende, attBetala };
 }
 
-export function vatReportForPeriod(periodKey: string): VatReport | undefined {
-  return db().vatReports.find((r) => r.id === `moms-${periodKey}` || labelKey(r) === periodKey);
+/**
+ * Momsperioden bakom en nyckel. Nyckeln söks mot ALLA periodiciteter, inte
+ * bara företagets aktuella: en rapport som skapades per kvartal måste gå att
+ * öppna även efter ett byte till månadsmoms.
+ */
+export function vatPeriodByKey(periodKey: string): Period | undefined {
+  const year = Number(periodKey.slice(0, 4));
+  if (!Number.isInteger(year)) return undefined;
+  const fy = ensureFiscalYearFor(`${year}-06-15`);
+  for (const p of [...vatPeriodsOf(fy, "helar"), ...vatPeriodsOf(fy, "kvartal"), ...vatPeriodsOf(fy, "manad")]) {
+    if (p.key === periodKey) return p;
+  }
+  return undefined;
 }
 
-function labelKey(report: VatReport): string {
-  return `${report.periodStart.slice(0, 4)}-K${Math.floor(Number(report.periodStart.slice(5, 7)) / 3) + 1}`;
+export function vatReportForPeriod(periodKey: string): VatReport | undefined {
+  const period = vatPeriodByKey(periodKey);
+  const reports = db().vatReports;
+  if (period) {
+    const match = reports.find((r) => r.periodStart === period.start && r.periodEnd === period.end);
+    if (match) return match;
+  }
+  return reports.find((r) => r.id === `moms-${periodKey}`);
 }
 
 export interface VatPeriodSummary {
@@ -106,12 +190,12 @@ export interface VatPeriodSummary {
   state: "kommande" | "pagaende" | "att_deklarera" | "deklarerad";
 }
 
-/** Momsperioder (kvartal) för ett år med status – underlag för momssidan. */
+/** Momsperioder för ett år med status – underlag för momssidan. */
 export function vatPeriods(year?: number): VatPeriodSummary[] {
   const today = todayDate();
   const y = year ?? Number(today.slice(0, 4));
   const fy = ensureFiscalYearFor(`${y}-06-15`);
-  return quartersOf(fy).map((period) => {
+  return vatPeriodsOf(fy, vatPeriodicity()).map((period) => {
     const report = db().vatReports.find((r) => r.periodStart === period.start && r.periodEnd === period.end);
     const position = computeVatPosition(period);
     let state: VatPeriodSummary["state"];
@@ -164,10 +248,9 @@ export function vatChecklist(period: Period): VatChecklistItem[] {
 
 /** Generera (eller uppdatera utkast till) momsrapport för en period. */
 export function generateVatReport(periodKey: string, actor: "anvandare" | "assistent" | "system" = "anvandare"): VatReport {
-  const year = Number(periodKey.slice(0, 4));
-  const fy = ensureFiscalYearFor(`${year}-06-15`);
-  const period = quartersOf(fy).find((p) => p.key === periodKey);
+  const period = vatPeriodByKey(periodKey);
   if (!period) throw new Error(`Okänd momsperiod: ${periodKey}`);
+  const fy = ensureFiscalYearFor(period.start);
 
   const existing = db().vatReports.find((r) => r.periodStart === period.start && r.periodEnd === period.end);
   if (existing?.status === "deklarerad") return existing;
@@ -205,15 +288,16 @@ export function generateVatReport(periodKey: string, actor: "anvandare" | "assis
   return report;
 }
 
-/** Tidigare kvartal med momsaktivitet som inte deklarerats – de måste tas i ordning. */
+/** Tidigare perioder med momsaktivitet som inte deklarerats – de måste tas i ordning. */
 function undeclaredEarlierPeriods(report: VatReport): Period[] {
   const data = db();
   const years = new Set<number>();
   for (const v of data.verifications) years.add(Number(bokforingsdatum(v.date).slice(0, 4)));
   const out: Period[] = [];
+  const periodicity = vatPeriodicity(data);
   for (const y of [...years].sort((a, b) => a - b)) {
     const fy = ensureFiscalYearFor(`${y}-06-15`);
-    for (const p of quartersOf(fy)) {
+    for (const p of vatPeriodsOf(fy, periodicity)) {
       if (p.end >= report.periodStart) continue;
       const declared = data.vatReports.some(
         (r) => r.periodStart === p.start && r.periodEnd === p.end && r.status === "deklarerad"
@@ -283,7 +367,9 @@ export function markVatReportDeclared(reportId: string, actor: "anvandare" | "as
     if (d < report.periodStart || d > report.periodEnd) continue;
     for (const e of v.entries) {
       const def = vatCodeForAccount(e.account);
-      if (!def || def.kind === "forsaljning") continue;
+      // Bara momskontona förs om. Omsättning och inköpsunderlag är intäkts-
+      // och kostnadskonton och ska stå kvar i resultaträkningen.
+      if (!def || def.kind === "forsaljning" || def.kind === "inkop") continue;
       perAccount.set(e.account, (perAccount.get(e.account) ?? 0) + e.debit - e.credit);
     }
   }
@@ -328,6 +414,6 @@ export function markVatReportDeclared(reportId: string, actor: "anvandare" | "as
 export function currentVatPosition(): VatPosition {
   const today = todayDate();
   const fy = ensureFiscalYearFor(today);
-  const period = quartersOf(fy).find((p) => p.start <= today && today <= p.end)!;
+  const period = vatPeriodsOf(fy, vatPeriodicity()).find((p) => p.start <= today && today <= p.end)!;
   return computeVatPosition(period);
 }

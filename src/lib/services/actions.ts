@@ -30,8 +30,20 @@ import {
 import { paymentSuggestionForTransaction } from "./payment-matching";
 import { suppressedActionIds } from "./attention-state";
 import { bankReconciliation } from "../accounting/reconciliation";
-import { bokforingsdatum, calendarFiscalYear, quartersOf, vatDueDate, type Period } from "../accounting/dates";
+import { bokforingsdatum, calendarFiscalYear, vatDueDate, vatPeriodsOf, type Period } from "../accounting/dates";
+import { fiscalYears, vatPeriodicity } from "../accounting/fiscal";
 import { computeVatPosition } from "../accounting/vat";
+import { annualReportDueDate, ink2DueDate } from "../accounting/deadlines";
+import { bokslutChecklist } from "../accounting/close";
+import { annualReportFor } from "../accounting/annual-report";
+import { nextMonthToClose } from "../accounting/period-close";
+import { fSkattMonthsAwaitingBooking, vatReportsAwaitingTaxAccount } from "../accounting/tax-account";
+import {
+  currentEmployee,
+  employerDeclarationsAwaitingFiling,
+  monthLabel,
+  payrollMonthsAwaitingRun,
+} from "../accounting/payroll";
 import { datumKort, kr, relativ } from "../format";
 import { invoiceHref, jobHref, newQuoteHref, quoteHref } from "../nav";
 import { isIncomingUnquotedJob, jobSourceLabel } from "./jobs";
@@ -284,8 +296,18 @@ const RANK = {
   vatSoon: 12,
   quoteFollowUp: 13,
   quoteExpired: 14,
-  missingReceipt: 15,
+  taxAccount: 15,
+  /** Obokförd lön är bokföringsarbete – deklarationen använder momsens ranker. */
+  payroll: 15,
+  missingReceipt: 16,
   clientRequest: 6,
+  /**
+   * Bokslut och periodstängning ligger sist. Båda har lång framförhållning och
+   * ska inte tränga undan en faktura som är sen idag; blir de brådskande lånar
+   * de momsens ranker i stället.
+   */
+  yearEnd: 17,
+  periodClose: 18,
 } as const;
 
 interface Ranked {
@@ -358,6 +380,14 @@ function collectBookkeepingSources(ranked: Ranked[], watching: WatchingItem[], n
   runCollect("client-requests", () => collectClientRequests(ranked));
   runCollect("inbox-mail", () => collectInboxMail(ranked));
   runCollect("vat", () => collectVat(ranked, watching, now));
+  runCollect("tax-account", () => collectTaxAccount(ranked, now));
+  runCollect("payroll", () => collectPayroll(ranked, watching, now));
+  runCollect("year-end", () => collectYearEnd(ranked, watching, now));
+  /*
+   * Sist av alla: periodstängningen frågar om resten av kön är tom, så den
+   * måste se vad de andra samlarna hittade.
+   */
+  runCollect("period-close", () => collectPeriodClose(ranked, now));
 }
 
 /** Snooze/HIDE: dolda tills tidpunkten passerat – sedan synliga igen om saken kvarstår. */
@@ -1461,6 +1491,78 @@ function excerpt(text: string, max = 80): string {
   return clean.length <= max ? clean : `${clean.slice(0, max - 1)}…`;
 }
 
+/* ----------------------------- Lön och AGI ------------------------------------ */
+
+/**
+ * Lönen är bolagets enda MÅNATLIGA myndighetsskyldighet: tolv tillfällen om året
+ * där en missad arbetsgivardeklaration kostar förseningsavgift. Därför ligger
+ * deklarationen på momsens ranker (samma sorts deadline) medan obokförd lön är
+ * vanligt bokföringsarbete längre ner i kön.
+ */
+function collectPayroll(ranked: Ranked[], watching: WatchingItem[], now: Date) {
+  const today = bokforingsdatum(now.toISOString());
+  if (!currentEmployee()) return;
+
+  const unbooked = payrollMonthsAwaitingRun(today);
+  if (unbooked.length > 0) {
+    const labels = unbooked.map(monthLabel);
+    ranked.push({
+      rank: RANK.payroll,
+      order: 0,
+      action: {
+        id: "payroll-unbooked",
+        priority: "action",
+        category: "accounting",
+        icon: "receipt",
+        title:
+          unbooked.length === 1
+            ? `Lönen för ${labels[0]} är inte bokförd`
+            : `Lönen är inte bokförd för ${unbooked.length} månader`,
+        subtitle: `${labels.join(", ")} · bokför lönen så att skatten och avgifterna hamnar i deklarationen`,
+        href: "/bokforing/lon",
+        cta: { type: "link", label: "Öppna lönen", href: "/bokforing/lon" },
+      },
+    });
+  }
+
+  for (const declaration of employerDeclarationsAwaitingFiling(today)) {
+    const daysTo = daysBetween(today, declaration.dueDate);
+    if (daysTo > VAT_ATTENTION_DAYS) {
+      if (daysTo <= WATCHING.vatDays) {
+        watching.push({
+          id: `agi-${declaration.month}`,
+          category: "vat",
+          title: `Arbetsgivardeklaration ${kr(declaration.attBetala)}`,
+          subtitle: `${declaration.label} · lämnas senast ${datumKort(declaration.dueDate)}`,
+          href: "/bokforing/lon",
+          date: declaration.dueDate,
+          amount: declaration.attBetala,
+        });
+      }
+      continue;
+    }
+    const urgent = daysTo <= VAT_URGENT_DAYS;
+    ranked.push({
+      rank: daysTo < 0 ? RANK.vatOverdue : urgent ? RANK.vatUrgent : RANK.vatSoon,
+      order: daysTo,
+      action: {
+        id: `agi-${declaration.month}`,
+        priority: urgent ? "urgent" : "action",
+        category: "vat",
+        icon: "calendar",
+        title:
+          daysTo < 0
+            ? `Arbetsgivardeklarationen för ${declaration.label} skulle ha lämnats ${datumKort(declaration.dueDate)}`
+            : `Arbetsgivardeklaration ska lämnas ${relativ(declaration.dueDate)}`,
+        subtitle: `${declaration.label} · ${kr(declaration.attBetala)} att betala`,
+        href: "/bokforing/lon",
+        cta: { type: "link", label: "Öppna lönen", href: "/bokforing/lon" },
+        amount: declaration.attBetala,
+      },
+    });
+  }
+}
+
 /* ---------------------------------- Moms -------------------------------------- */
 
 function daysBetween(fromDate: string, toDate: string): number {
@@ -1474,8 +1576,9 @@ function collectVat(ranked: Ranked[], watching: WatchingItem[], now: Date) {
 
   const overdue: { period: Period; amount: number; refund: boolean; dueDate: string; daysTo: number }[] = [];
 
+  const periodicity = vatPeriodicity(data);
   for (const y of [year - 1, year]) {
-    for (const period of quartersOf(calendarFiscalYear(y))) {
+    for (const period of vatPeriodsOf(calendarFiscalYear(y), periodicity)) {
       if (period.start > today) continue; // framtida period
       const report = data.vatReports.find((r) => r.periodStart === period.start && r.periodEnd === period.end);
       if (report?.status === "deklarerad") continue;
@@ -1555,6 +1658,183 @@ function collectVat(ranked: Ranked[], watching: WatchingItem[], now: Date) {
       href: "/bokforing/moms",
       cta: { type: "link", label: "Öppna momsöversikten", href: "/bokforing/moms" },
       amount: Math.abs(net),
+    },
+  });
+}
+
+/* ------------------------------- Skattekonto ---------------------------------- */
+
+/**
+ * Skattekontot har två sorters efterhängsna poster: deklarationer som ännu inte
+ * flyttats dit från redovisningskontot, och F-skatt som Skatteverket redan
+ * dragit men som inte är bokförd. Båda gör saldot fel, så de hör i kön – men
+ * de är bokföringsarbete, inte en myndighetsdeadline, och rankas därefter.
+ */
+function collectTaxAccount(ranked: Ranked[], now: Date) {
+  const today = bokforingsdatum(now.toISOString());
+  const awaitingVat = vatReportsAwaitingTaxAccount();
+  const awaitingFSkatt = fSkattMonthsAwaitingBooking(today);
+  const total = awaitingVat.length + awaitingFSkatt.length;
+  if (total === 0) return;
+
+  const amount =
+    awaitingVat.reduce((s, r) => s + Math.abs(r.attBetala), 0) +
+    awaitingFSkatt.length * db().settings.fSkattPerMonth;
+  const parts = [
+    awaitingVat.length > 0
+      ? `${awaitingVat.length} momsperiod${awaitingVat.length === 1 ? "" : "er"}`
+      : null,
+    awaitingFSkatt.length > 0
+      ? `F-skatt för ${awaitingFSkatt.length} månad${awaitingFSkatt.length === 1 ? "" : "er"}`
+      : null,
+  ].filter(Boolean);
+
+  ranked.push({
+    rank: RANK.taxAccount,
+    order: 0,
+    action: {
+      id: "tax-account-pending",
+      priority: "action",
+      // Bokföringsarbete, inte en myndighetsdeadline: kategorin "vat" är
+      // reserverad för deklarationen som sådan.
+      category: "accounting",
+      icon: "bank",
+      title:
+        total === 1 && awaitingVat.length === 1
+          ? `Moms ${awaitingVat[0].label} ska föras till skattekontot`
+          : "Skattekontot är inte à jour",
+      subtitle: `${parts.join(" och ")} · ${kr(amount)}`,
+      href: "/bokforing/skattekonto",
+      cta: { type: "link", label: "Öppna skattekontot", href: "/bokforing/skattekonto" },
+      amount,
+    },
+  });
+}
+
+/* --------------------------- Bokslut och periodstängning ---------------------- */
+
+/**
+ * Bokslutet har två myndighetsdeadlines efter årets slut – Bolagsverkets sju
+ * månader och Skatteverkets deklarationsdag – och de kommer så långt efteråt att
+ * de är lätta att glömma. Utan de här raderna var bokslutet en uppgift utan
+ * förfallodag, som ingen påminner om innan förseningsavgiften kommer.
+ *
+ * Åtgärds-id:t börjar på `year-end-` så redovisningskön märker raden som
+ * YEAR_END_REVIEW (se collaboration/issues.ts).
+ */
+function collectYearEnd(ranked: Ranked[], watching: WatchingItem[], now: Date) {
+  const today = bokforingsdatum(now.toISOString());
+  const isAb = (db().settings.companyForm ?? "ab") === "ab";
+
+  for (const fy of fiscalYears()) {
+    if (fy.endDate >= today) continue;
+
+    // 1. Året är slut men inte stängt: bokslutet ska göras.
+    if (fy.status !== "stangt") {
+      const due = isAb ? ink2DueDate(fy) : undefined;
+      const daysTo = due ? daysBetween(today, due) : undefined;
+      const blockers = bokslutChecklist(fy.id).filter((c) => c.blocking && !c.ok);
+      ranked.push({
+        rank: daysTo != null && daysTo < 0 ? RANK.vatOverdue : RANK.yearEnd,
+        order: Date.parse(fy.endDate) || 0,
+        action: {
+          id: `year-end-close-${fy.id}`,
+          priority: daysTo != null && daysTo <= VAT_URGENT_DAYS ? "urgent" : "action",
+          category: "accounting",
+          icon: "calendar",
+          title:
+            daysTo != null && daysTo < 0
+              ? `Bokslutet för ${fy.label} är försenat`
+              : `Bokslut ${fy.label} ska göras`,
+          subtitle: blockers.length
+            ? `${blockers.length} punkt${blockers.length === 1 ? "" : "er"} kvar${due ? ` · deklarationen ska lämnas ${datumKort(due)}` : ""}`
+            : `Allt är klart att stänga${due ? ` · deklarationen ska lämnas ${datumKort(due)}` : ""}`,
+          href: "/bokforing/bokslut",
+          cta: { type: "link", label: "Öppna bokslutet", href: "/bokforing/bokslut" },
+        },
+      });
+      continue;
+    }
+
+    // 2. Året är stängt men årsredovisningen är inte inlämnad hos Bolagsverket.
+    if (!isAb) continue;
+    const report = annualReportFor(fy.id);
+    if (report?.status === "inlamnad_markerad") continue;
+    const due = annualReportDueDate(fy);
+    const daysTo = daysBetween(today, due);
+    if (daysTo > WATCHING.vatDays) continue;
+    if (daysTo > VAT_ATTENTION_DAYS) {
+      watching.push({
+        id: `year-end-report-${fy.id}`,
+        category: "accounting",
+        title: `Årsredovisning ${fy.label}`,
+        subtitle: `Ska ha kommit in till Bolagsverket senast ${datumKort(due)}`,
+        href: `/bokforing/bokslut/arsredovisning/${fy.id}`,
+        date: due,
+      });
+      continue;
+    }
+    const step = !report
+      ? "upprättas"
+      : report.status === "genererad"
+        ? "granskas"
+        : report.status === "granskad"
+          ? "skrivas under"
+          : "lämnas in";
+    ranked.push({
+      rank: daysTo < 0 ? RANK.vatOverdue : daysTo <= VAT_URGENT_DAYS ? RANK.vatUrgent : RANK.yearEnd,
+      order: daysTo,
+      action: {
+        id: `year-end-report-${fy.id}`,
+        priority: daysTo <= VAT_URGENT_DAYS ? "urgent" : "action",
+        category: "accounting",
+        icon: "calendar",
+        title:
+          daysTo < 0
+            ? `Årsredovisningen för ${fy.label} skulle ha lämnats ${datumKort(due)}`
+            : `Årsredovisningen för ${fy.label} ska ${step}`,
+        subtitle: `Bolagsverket senast ${datumKort(due)}`,
+        href: `/bokforing/bokslut/arsredovisning/${fy.id}`,
+        cta: { type: "link", label: "Öppna årsredovisningen", href: `/bokforing/bokslut/arsredovisning/${fy.id}` },
+      },
+    });
+  }
+}
+
+/**
+ * Periodstängning: den äldsta avslutade månaden som är olåst.
+ *
+ * Raden visas bara när den går att göra något åt, alltså när månadens egna
+ * kontroller är uppfyllda. En stängning som ändå skulle vägras är inte en
+ * uppmaning, den är brus – och blockerarna ligger redan i kön som egna rader
+ * (kvittot, banken, momsen), så ingenting går förlorat genom att tiga här.
+ *
+ * En månad utan bokföring hoppas också över. Ett nystartat eller vilande bolag
+ * har inget att intyga i en tom månad, och en uppmaning att låsa den vore en
+ * ceremoni utan innehåll som dessutom skulle stå i kön varje månadsskifte.
+ *
+ * Id:t börjar på `period-close-` så redovisningskön märker raden som
+ * PERIOD_CLOSE (se collaboration/issues.ts).
+ */
+function collectPeriodClose(ranked: Ranked[], now: Date) {
+  const today = bokforingsdatum(now.toISOString());
+  const next = nextMonthToClose(today);
+  if (!next || next.blockers.length > 0 || next.verifications === 0) return;
+
+  ranked.push({
+    rank: RANK.periodClose,
+    order: Date.parse(next.period.end) || 0,
+    action: {
+      id: `period-close-${next.period.key}`,
+      priority: "action",
+      category: "accounting",
+      icon: "calendar",
+      title: `${next.period.label} är klar att stängas`,
+      subtitle: next.endsVatPeriod
+        ? `${next.verifications} verifikation${next.verifications === 1 ? "" : "er"} · momsperioden är deklarerad, månaden kan låsas`
+        : `${next.verifications} verifikation${next.verifications === 1 ? "" : "er"} · avstämd och klar att låsa`,
+      href: "/bokforing/periodstangning",
+      cta: { type: "link", label: "Öppna periodstängningen", href: "/bokforing/periodstangning" },
     },
   });
 }

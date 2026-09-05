@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseInboundPayload, verifyInboundSignature } from "@/lib/inbox/inbound-mail";
-import { ingestInboundMail, inboundSlugMatches } from "@/lib/services/inbox";
+import { ingestInboundMail, inboundSlugMatches, interpretInboundPayload } from "@/lib/services/inbox";
+import { persistInboundAttachments } from "@/lib/inbox/attachment-file";
 import { inboundSlugFromTo } from "@/lib/inbox/inbound-mail";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { withPublicBusiness } from "@/lib/auth/session";
@@ -31,11 +32,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Kunde inte läsa tenant från To-adressen" }, { status: 400 });
   }
 
-  const run = () => {
+  const run = async () => {
     if (!isSupabaseMode() && !inboundSlugMatches(payload.to)) {
       return { status: 404 as const, error: "Okänd inkommande adress" };
     }
-    const result = ingestInboundMail(payload);
+    // Tolka bilagan innan posten skrivs, så uppgifterna finns från början.
+    // Avsändarens egna `parsed` vinner – då sker ingen tolkning. Bytes lagras
+    // efter tolkningen (som behöver dem) och före posten, så en post aldrig
+    // finns utan sitt underlag.
+    const interpreted = await interpretInboundPayload(payload);
+    const result = ingestInboundMail(await persistInboundAttachments(interpreted));
     if (!result.ok) return { status: result.status as 400 | 404, error: result.error };
     return {
       status: 200 as const,
@@ -44,7 +50,7 @@ export async function POST(req: NextRequest) {
   };
 
   if (!isSupabaseMode()) {
-    const result = run();
+    const result = await run();
     if (result.status !== 200) return NextResponse.json({ error: result.error }, { status: result.status });
     return NextResponse.json(result.payload);
   }
