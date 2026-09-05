@@ -42,7 +42,7 @@ import { aiConfirmationCandidates } from "../wholesalers/confirmation-ai";
 import { connectionLabel, DEVIATION_LABELS } from "../wholesalers/labels";
 import { formatOre, oreToWholeKronor } from "../wholesalers/money";
 import { lineCustomerPrice } from "../wholesalers/pricing";
-import { normalizeText } from "../wholesalers/catalog-search";
+import { normalizeIdentifier, normalizeText } from "../wholesalers/catalog-search";
 import { datumLang } from "../format";
 import { getJob, requireCustomer } from "./data";
 import { logActivity } from "./activity";
@@ -97,10 +97,16 @@ export interface LineConfirmationState {
   latestReceivedAt?: string;
 }
 
-/** Bekräftat läge per orderrad – summerat över tillämpade/godkända bekräftelser. */
-export function lineStates(orderId: string): LineConfirmationState[] {
+/**
+ * Bekräftat läge per orderrad – summerat över tillämpade/godkända
+ * bekräftelser. Med includePending räknas även bekräftelser som väntar på
+ * kontroll (för sammanfattningen – aldrig för materialraderna).
+ */
+export function lineStates(orderId: string, options: { includePending?: boolean } = {}): LineConfirmationState[] {
   const lines = purchaseOrderLines(orderId);
-  const active = activeConfirmations(orderId);
+  const active = options.includePending
+    ? confirmationsForOrder(orderId).filter((c) => c.status !== "dismissed")
+    : activeConfirmations(orderId);
   return lines.map((line) => {
     let confirmed = 0;
     let backordered = 0;
@@ -110,10 +116,13 @@ export function lineStates(orderId: string): LineConfirmationState[] {
     for (const c of active) {
       for (const cl of c.lines) {
         if (cl.orderLineId !== line.id) continue;
-        if (cl.confirmedQty != null) confirmed += cl.confirmedQty;
         if (cl.backordered) {
-          const rest = cl.confirmedQty != null ? Math.max(0, line.qty - cl.confirmedQty) : line.qty;
-          backordered = Math.max(backordered, rest);
+          // Restnoterat antal är inte bekräftat för leverans än – det räknas
+          // först när restordern bekräftas/levereras i en senare bekräftelse.
+          const rest = cl.confirmedQty != null && cl.confirmedQty > 0 ? cl.confirmedQty : line.qty;
+          backordered = Math.max(backordered, Math.min(rest, line.qty));
+        } else if (cl.confirmedQty != null) {
+          confirmed += cl.confirmedQty;
         }
         if (cl.unitCostOre != null) cost = cl.unitCostOre;
         latestId = c.id;
@@ -211,8 +220,13 @@ export function matchOrderForMail(input: {
 
 /* --------------------------------- avstämning ------------------------------ */
 
+/**
+ * Avvikelser som kräver en människa. Restnotering och ändrat leveransdatum
+ * ändrar inte vad som beställts eller vad det kostar – de visas, men
+ * bekräftelsen tillämpas (ordern blir Delvis bekräftad).
+ */
 function significant(kind: PurchaseOrderDeviationKind): boolean {
-  return kind !== "delivery_date";
+  return kind !== "delivery_date" && kind !== "backorder";
 }
 
 /**
@@ -241,7 +255,9 @@ export function reconcileConfirmation(input: {
       const before = input.previouslyConfirmed.get(snap.lineId) ?? 0;
       if (p.confirmedQty != null) {
         const cumulative = before + p.confirmedQty;
-        if (Math.abs(cumulative - snap.qty) > 0.0005 && !(p.backordered && cumulative < snap.qty)) {
+        // Restnoterad rad: antalet är det som väntar, inte ett ändrat antal –
+        // bara mer än beställt är en avvikelse.
+        if (p.backordered ? cumulative - snap.qty > 0.0005 : Math.abs(cumulative - snap.qty) > 0.0005) {
           lineDeviations.add("qty");
         }
       }
@@ -252,7 +268,18 @@ export function reconcileConfirmation(input: {
       }
     }
     for (const d of lineDeviations) deviations.add(d);
-    return { ...base, deviations: [...lineDeviations] };
+    // Exakt radmatchning: raden pekar på ett skickat artikelnummer, antalet
+    // stämmer och inget avviker. En sådan textrad är lika säker som en
+    // tabellrad och får tillämpas automatiskt. AI-kandidater höjs aldrig.
+    const exactMatch =
+      snap != null &&
+      p.source !== "ai" &&
+      lineDeviations.size === 0 &&
+      p.confirmedQty != null &&
+      Boolean(snap.articleNumber) &&
+      normalizeIdentifier(p.articleNumber) === normalizeIdentifier(snap.articleNumber);
+    const confidence = exactMatch ? Math.max(base.confidence, CONFIDENCE_THRESHOLDS.AUTO) : base.confidence;
+    return { ...base, confidence, deviations: [...lineDeviations] };
   });
 
   if (lines.length > 0) {
@@ -771,7 +798,8 @@ export function orderReview(orderId: string): OrderReview {
   const order = requirePurchaseOrder(orderId);
   const connection = requireWholesalerConnection(order.connectionId);
   const who = connectionLabel(connection);
-  const states = lineStates(orderId);
+  // Sammanfattningen visar även vad en bekräftelse som väntar på kontroll säger.
+  const states = lineStates(orderId, { includePending: true });
   const confirmations = confirmationsForOrder(orderId);
   const pending = confirmations.filter((c) => c.status === "needs_review");
   const considered = confirmations.filter((c) => c.status !== "dismissed");
@@ -793,19 +821,19 @@ export function orderReview(orderId: string): OrderReview {
   const backordered = states.filter((s) => s.backorderedQty > 0).length;
   if (backordered > 0) bullets.push(backordered === 1 ? "1 artikel är restnoterad" : `${backordered} artiklar är restnoterade`);
 
+  // Prisjämförelsen görs på de rader där både förväntat och bekräftat pris
+  // är kända – en restnoterad rad utan pris döljer inte en prishöjning på övriga.
   let expected = 0;
   let actual = 0;
-  let priceable = true;
+  let priced = 0;
   for (const s of states) {
     if (s.confirmedQty <= 0) continue;
-    if (s.line.unitCostOre == null || s.confirmedUnitCostOre == null) {
-      priceable = false;
-      continue;
-    }
+    if (s.line.unitCostOre == null || s.confirmedUnitCostOre == null) continue;
+    priced += 1;
     expected += Math.round(s.confirmedQty * s.line.unitCostOre);
     actual += Math.round(s.confirmedQty * s.confirmedUnitCostOre);
   }
-  if (priceable && Math.abs(actual - expected) >= PRICE_TOLERANCE_ORE) {
+  if (priced > 0 && Math.abs(actual - expected) >= PRICE_TOLERANCE_ORE) {
     const diff = actual - expected;
     bullets.push(
       diff > 0
@@ -835,7 +863,12 @@ export function orderReview(orderId: string): OrderReview {
     bullets.push("Redan fakturerat material skiljer sig från bekräftelsen – kontrollera raderna");
   }
 
-  const confirmedCost = priceable && states.some((s) => s.confirmedQty > 0) ? actual : undefined;
+  // Verklig inköpskostnad bara när alla bekräftade rader har ett bekräftat pris.
+  const confirmedRows = states.filter((s) => s.confirmedQty > 0);
+  const fullyPriced = confirmedRows.length > 0 && confirmedRows.every((s) => s.confirmedUnitCostOre != null);
+  const confirmedCost = fullyPriced
+    ? confirmedRows.reduce((sum, s) => sum + Math.round(s.confirmedQty * (s.confirmedUnitCostOre ?? 0)), 0)
+    : undefined;
   const expectedCost = order.sentSnapshot?.expectedCostOre;
   return {
     headline,

@@ -9,20 +9,24 @@ export const SETTINGS_HREF = {
 
 export type SettingsFlik = "foretag" | "fakturering" | "funktioner" | "grossister" | "konto";
 
+/** Standardflikarna – exakt som innan Grossistbeställningar fanns. */
 export const SETTINGS_TABS: { key: SettingsFlik; label: string; href: string }[] = [
   { key: "foretag", label: "Företag", href: SETTINGS_HREF.foretag },
   { key: "fakturering", label: "Fakturering & betalning", href: SETTINGS_HREF.fakturering },
   { key: "funktioner", label: "Funktioner", href: SETTINGS_HREF.funktioner },
-  { key: "grossister", label: "Grossister", href: SETTINGS_HREF.grossister },
   { key: "konto", label: "Konto", href: SETTINGS_HREF.konto },
 ];
+
+const GROSSISTER_TAB = { key: "grossister", label: "Grossister", href: SETTINGS_HREF.grossister } as const;
 
 /**
  * Fliken Grossister finns bara när funktionen Grossistbeställningar är aktiv –
  * för alla andra ser Inställningar ut precis som förut.
  */
 export function settingsTabsFor(features: { wholesalers: boolean }): typeof SETTINGS_TABS {
-  return SETTINGS_TABS.filter((tab) => tab.key !== "grossister" || features.wholesalers);
+  if (!features.wholesalers) return SETTINGS_TABS;
+  const index = SETTINGS_TABS.findIndex((t) => t.key === "funktioner") + 1;
+  return [...SETTINGS_TABS.slice(0, index), GROSSISTER_TAB, ...SETTINGS_TABS.slice(index)];
 }
 
 export const SETTINGS_FALT_PARAM = "falt";

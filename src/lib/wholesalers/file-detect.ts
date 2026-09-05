@@ -123,8 +123,8 @@ export function detectPriceFile(bytes: Buffer, filename: string): DetectedPriceF
   if (ext === "xml" || looksLikeXml(text)) {
     return { kind: "xml", text, innerFilename: filename, encoding };
   }
-  if (ext === "csv" || ext === "txt" || ext === "") {
-    return { kind: ext === "txt" ? "txt" : "csv", text, innerFilename: filename, encoding };
+  if (ext === "csv" || ext === "txt" || ext === "tsv" || ext === "") {
+    return { kind: ext === "txt" || ext === "tsv" ? "txt" : "csv", text, innerFilename: filename, encoding };
   }
   throw new PriceFileError("Filformatet stöds inte. Ladda upp CSV, TXT, XLSX, XML eller ett ZIP med någon av dem.");
 }
