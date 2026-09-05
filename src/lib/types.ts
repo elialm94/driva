@@ -1476,6 +1476,7 @@ export type AuditAction =
   | "verifikation_bokford"
   | "verifikation_rattad"
   | "period_last"
+  | "period_stangd"
   | "momsrapport_genererad"
   | "momsrapport_deklarerad"
   | "momsperiodicitet_andrad"

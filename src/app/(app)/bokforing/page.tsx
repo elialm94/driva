@@ -251,6 +251,12 @@ export default async function BookkeepingPage({
           Visa bokföringsdetaljer <ArrowRight className="size-3.5" />
         </Link>
         <Link
+          href="/bokforing/periodstangning"
+          className="mt-2 block text-[13px] font-medium text-accent hover:underline"
+        >
+          Periodstängning och periodlås
+        </Link>
+        <Link
           href="/bokforing/ingaende-balans"
           className="mt-2 block text-[13px] font-medium text-accent hover:underline"
         >

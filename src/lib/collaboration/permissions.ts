@@ -16,6 +16,7 @@ export type CollaborationCapability =
   | "correct_voucher"
   | "vat"
   | "reconcile"
+  | "period_close"
   | "year_end"
   | "export_accounting"
   | "prepare_supplier_payment"
@@ -41,6 +42,7 @@ const CONSULTANT: ReadonlySet<CollaborationCapability> = new Set([
   "correct_voucher",
   "vat",
   "reconcile",
+  "period_close",
   "year_end",
   "export_accounting",
   "prepare_supplier_payment",
@@ -63,6 +65,7 @@ const OWNER: ReadonlySet<CollaborationCapability> = new Set([
   "correct_voucher",
   "vat",
   "reconcile",
+  "period_close",
   "year_end",
   "export_accounting",
   "prepare_supplier_payment",

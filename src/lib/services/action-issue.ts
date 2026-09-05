@@ -64,6 +64,9 @@ export function issueForAction(action: BusinessAction): string {
   if (action.id.startsWith("rot-ready-")) return "Ansök ROT";
   if (action.id.startsWith("rot-denied-")) return "Fakturera resten";
   if (action.id === "tax-account-pending") return "Bokför mot skattekontot";
+  if (action.id.startsWith("period-close-")) return "Stäng perioden";
+  if (action.id.startsWith("year-end-close-")) return "Gör bokslutet";
+  if (action.id.startsWith("year-end-")) return "Lämna årsredovisningen";
   if (action.id.startsWith("vat-")) return "Kontrollera moms";
   if (action.id.startsWith("job-new-")) return "Nytt uppdrag";
   if (action.id.startsWith("inbox-mail-")) return "Inkommande mejl";
@@ -166,6 +169,8 @@ export type AttentionKind =
   | "inboxMail"
   | "vat"
   | "taxAccount"
+  | "periodClose"
+  | "yearEnd"
   | "clientRequest";
 
 export function attentionKind(action: Pick<BusinessAction, "id">): AttentionKind | null {
@@ -186,6 +191,8 @@ export function attentionKind(action: Pick<BusinessAction, "id">): AttentionKind
   if (id.startsWith("job-new-")) return "newJob";
   if (id.startsWith("inbox-mail-")) return "inboxMail";
   if (id === "tax-account-pending") return "taxAccount";
+  if (id.startsWith("period-close-")) return "periodClose";
+  if (id.startsWith("year-end-")) return "yearEnd";
   if (id.startsWith("vat-")) return "vat";
   if (id.startsWith("client-request-")) return "clientRequest";
   return null;
@@ -364,6 +371,23 @@ const CONTROLS: Record<AttentionKind, Omit<ActionControls, "kind">> = {
   },
   taxAccount: {
     viewLabel: "Öppna skattekontot",
+    canSnooze: true,
+    canDismiss: false,
+    dismissBehavior: "none",
+    requiresConfirmation: false,
+  },
+  periodClose: {
+    viewLabel: "Öppna periodstängningen",
+    canSnooze: true,
+    canDismiss: false,
+    dismissBehavior: "none",
+    // Låset sätts i vyn efter en egen bekräftelse – radklicket öppnar bara den.
+    requiresConfirmation: false,
+  },
+  yearEnd: {
+    // Myndighetens förfallodag går inte att avfärda, men den får skjutas fram
+    // i listan: bokslutet görs sällan samma dag som påminnelsen syns.
+    viewLabel: "Öppna bokslutet",
     canSnooze: true,
     canDismiss: false,
     dismissBehavior: "none",

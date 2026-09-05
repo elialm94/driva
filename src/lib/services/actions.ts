@@ -31,8 +31,12 @@ import { paymentSuggestionForTransaction } from "./payment-matching";
 import { suppressedActionIds } from "./attention-state";
 import { bankReconciliation } from "../accounting/reconciliation";
 import { bokforingsdatum, calendarFiscalYear, vatDueDate, vatPeriodsOf, type Period } from "../accounting/dates";
-import { vatPeriodicity } from "../accounting/fiscal";
+import { fiscalYears, vatPeriodicity } from "../accounting/fiscal";
 import { computeVatPosition } from "../accounting/vat";
+import { annualReportDueDate, ink2DueDate } from "../accounting/deadlines";
+import { bokslutChecklist } from "../accounting/close";
+import { annualReportFor } from "../accounting/annual-report";
+import { nextMonthToClose } from "../accounting/period-close";
 import { fSkattMonthsAwaitingBooking, vatReportsAwaitingTaxAccount } from "../accounting/tax-account";
 import {
   currentEmployee,
@@ -297,6 +301,13 @@ const RANK = {
   payroll: 15,
   missingReceipt: 16,
   clientRequest: 6,
+  /**
+   * Bokslut och periodstängning ligger sist. Båda har lång framförhållning och
+   * ska inte tränga undan en faktura som är sen idag; blir de brådskande lånar
+   * de momsens ranker i stället.
+   */
+  yearEnd: 17,
+  periodClose: 18,
 } as const;
 
 interface Ranked {
@@ -371,6 +382,12 @@ function collectBookkeepingSources(ranked: Ranked[], watching: WatchingItem[], n
   runCollect("vat", () => collectVat(ranked, watching, now));
   runCollect("tax-account", () => collectTaxAccount(ranked, now));
   runCollect("payroll", () => collectPayroll(ranked, watching, now));
+  runCollect("year-end", () => collectYearEnd(ranked, watching, now));
+  /*
+   * Sist av alla: periodstängningen frågar om resten av kön är tom, så den
+   * måste se vad de andra samlarna hittade.
+   */
+  runCollect("period-close", () => collectPeriodClose(ranked, now));
 }
 
 /** Snooze/HIDE: dolda tills tidpunkten passerat – sedan synliga igen om saken kvarstår. */
@@ -1690,6 +1707,134 @@ function collectTaxAccount(ranked: Ranked[], now: Date) {
       href: "/bokforing/skattekonto",
       cta: { type: "link", label: "Öppna skattekontot", href: "/bokforing/skattekonto" },
       amount,
+    },
+  });
+}
+
+/* --------------------------- Bokslut och periodstängning ---------------------- */
+
+/**
+ * Bokslutet har två myndighetsdeadlines efter årets slut – Bolagsverkets sju
+ * månader och Skatteverkets deklarationsdag – och de kommer så långt efteråt att
+ * de är lätta att glömma. Utan de här raderna var bokslutet en uppgift utan
+ * förfallodag, som ingen påminner om innan förseningsavgiften kommer.
+ *
+ * Åtgärds-id:t börjar på `year-end-` så redovisningskön märker raden som
+ * YEAR_END_REVIEW (se collaboration/issues.ts).
+ */
+function collectYearEnd(ranked: Ranked[], watching: WatchingItem[], now: Date) {
+  const today = bokforingsdatum(now.toISOString());
+  const isAb = (db().settings.companyForm ?? "ab") === "ab";
+
+  for (const fy of fiscalYears()) {
+    if (fy.endDate >= today) continue;
+
+    // 1. Året är slut men inte stängt: bokslutet ska göras.
+    if (fy.status !== "stangt") {
+      const due = isAb ? ink2DueDate(fy) : undefined;
+      const daysTo = due ? daysBetween(today, due) : undefined;
+      const blockers = bokslutChecklist(fy.id).filter((c) => c.blocking && !c.ok);
+      ranked.push({
+        rank: daysTo != null && daysTo < 0 ? RANK.vatOverdue : RANK.yearEnd,
+        order: Date.parse(fy.endDate) || 0,
+        action: {
+          id: `year-end-close-${fy.id}`,
+          priority: daysTo != null && daysTo <= VAT_URGENT_DAYS ? "urgent" : "action",
+          category: "accounting",
+          icon: "calendar",
+          title:
+            daysTo != null && daysTo < 0
+              ? `Bokslutet för ${fy.label} är försenat`
+              : `Bokslut ${fy.label} ska göras`,
+          subtitle: blockers.length
+            ? `${blockers.length} punkt${blockers.length === 1 ? "" : "er"} kvar${due ? ` · deklarationen ska lämnas ${datumKort(due)}` : ""}`
+            : `Allt är klart att stänga${due ? ` · deklarationen ska lämnas ${datumKort(due)}` : ""}`,
+          href: "/bokforing/bokslut",
+          cta: { type: "link", label: "Öppna bokslutet", href: "/bokforing/bokslut" },
+        },
+      });
+      continue;
+    }
+
+    // 2. Året är stängt men årsredovisningen är inte inlämnad hos Bolagsverket.
+    if (!isAb) continue;
+    const report = annualReportFor(fy.id);
+    if (report?.status === "inlamnad_markerad") continue;
+    const due = annualReportDueDate(fy);
+    const daysTo = daysBetween(today, due);
+    if (daysTo > WATCHING.vatDays) continue;
+    if (daysTo > VAT_ATTENTION_DAYS) {
+      watching.push({
+        id: `year-end-report-${fy.id}`,
+        category: "accounting",
+        title: `Årsredovisning ${fy.label}`,
+        subtitle: `Ska ha kommit in till Bolagsverket senast ${datumKort(due)}`,
+        href: `/bokforing/bokslut/arsredovisning/${fy.id}`,
+        date: due,
+      });
+      continue;
+    }
+    const step = !report
+      ? "upprättas"
+      : report.status === "genererad"
+        ? "granskas"
+        : report.status === "granskad"
+          ? "skrivas under"
+          : "lämnas in";
+    ranked.push({
+      rank: daysTo < 0 ? RANK.vatOverdue : daysTo <= VAT_URGENT_DAYS ? RANK.vatUrgent : RANK.yearEnd,
+      order: daysTo,
+      action: {
+        id: `year-end-report-${fy.id}`,
+        priority: daysTo <= VAT_URGENT_DAYS ? "urgent" : "action",
+        category: "accounting",
+        icon: "calendar",
+        title:
+          daysTo < 0
+            ? `Årsredovisningen för ${fy.label} skulle ha lämnats ${datumKort(due)}`
+            : `Årsredovisningen för ${fy.label} ska ${step}`,
+        subtitle: `Bolagsverket senast ${datumKort(due)}`,
+        href: `/bokforing/bokslut/arsredovisning/${fy.id}`,
+        cta: { type: "link", label: "Öppna årsredovisningen", href: `/bokforing/bokslut/arsredovisning/${fy.id}` },
+      },
+    });
+  }
+}
+
+/**
+ * Periodstängning: den äldsta avslutade månaden som är olåst.
+ *
+ * Raden visas bara när den går att göra något åt, alltså när månadens egna
+ * kontroller är uppfyllda. En stängning som ändå skulle vägras är inte en
+ * uppmaning, den är brus – och blockerarna ligger redan i kön som egna rader
+ * (kvittot, banken, momsen), så ingenting går förlorat genom att tiga här.
+ *
+ * En månad utan bokföring hoppas också över. Ett nystartat eller vilande bolag
+ * har inget att intyga i en tom månad, och en uppmaning att låsa den vore en
+ * ceremoni utan innehåll som dessutom skulle stå i kön varje månadsskifte.
+ *
+ * Id:t börjar på `period-close-` så redovisningskön märker raden som
+ * PERIOD_CLOSE (se collaboration/issues.ts).
+ */
+function collectPeriodClose(ranked: Ranked[], now: Date) {
+  const today = bokforingsdatum(now.toISOString());
+  const next = nextMonthToClose(today);
+  if (!next || next.blockers.length > 0 || next.verifications === 0) return;
+
+  ranked.push({
+    rank: RANK.periodClose,
+    order: Date.parse(next.period.end) || 0,
+    action: {
+      id: `period-close-${next.period.key}`,
+      priority: "action",
+      category: "accounting",
+      icon: "calendar",
+      title: `${next.period.label} är klar att stängas`,
+      subtitle: next.endsVatPeriod
+        ? `${next.verifications} verifikation${next.verifications === 1 ? "" : "er"} · momsperioden är deklarerad, månaden kan låsas`
+        : `${next.verifications} verifikation${next.verifications === 1 ? "" : "er"} · avstämd och klar att låsa`,
+      href: "/bokforing/periodstangning",
+      cta: { type: "link", label: "Öppna periodstängningen", href: "/bokforing/periodstangning" },
     },
   });
 }

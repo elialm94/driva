@@ -15,6 +15,8 @@ const TAB_BY_OWNER_PATH: [prefix: string, tab: string][] = [
   ["/bokforing/saldobalans", "/rapporter"],
   ["/bokforing/rapporter", "/rapporter"],
   ["/bokforing/verifikationer", "/verifikationer"],
+  ["/bokforing/periodstangning", "/periodstangning"],
+  ["/bokforing/ingaende-balans", "/ingaende-balans"],
   ["/bokforing", "/verifikationer"],
   ["/ekonomi", "/bank"],
 ];
