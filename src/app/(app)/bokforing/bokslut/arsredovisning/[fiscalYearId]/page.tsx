@@ -10,7 +10,7 @@ import { db } from "@/lib/store";
 import { datumKort } from "@/lib/format";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { getFiscalYear } from "@/lib/accounting/fiscal";
-import { annualReportBlockers, annualReportFor } from "@/lib/accounting/annual-report";
+import { annualReportBlockers, annualReportFor, annualReportHistory } from "@/lib/accounting/annual-report";
 import type { AnnualReport } from "@/lib/types";
 
 export const metadata = { title: "Årsredovisning" };
@@ -45,12 +45,18 @@ export default async function ArsredovisningPage(
   const { fiscalYearId } = await props.params;
   const fy = getFiscalYear(fiscalYearId);
   if (!fy) notFound();
-  const report = annualReportFor(fiscalYearId);
+  /*
+   * En ersatt rapport visas fortfarande. Den kan vara undertecknad och inlämnad,
+   * och då är den en handling som ska gå att läsa och skriva ut i efterhand –
+   * men den är låst och märkt, för den beskriver inte längre böckerna.
+   */
+  const report = annualReportFor(fiscalYearId) ?? annualReportHistory(fiscalYearId)[0];
   if (!report) notFound();
+  const superseded = Boolean(report.supersededAt);
 
   const settings = db().settings;
-  const locked = report.status === "signerad" || report.status === "inlamnad_markerad";
-  const next = NEXT_STATUS[report.status];
+  const locked = superseded || report.status === "signerad" || report.status === "inlamnad_markerad";
+  const next = superseded ? undefined : NEXT_STATUS[report.status];
   const blockers = next ? annualReportBlockers(report, next) : [];
   const fb = report.content.forvaltningsberattelse;
 
@@ -71,12 +77,42 @@ export default async function ArsredovisningPage(
         }
       />
 
+      {superseded ? (
+        <Card className="mb-6 border-warn/40 bg-warn-soft/50 px-6 py-5">
+          <h2 className="text-[15px] font-semibold">Den här årsredovisningen är ersatt</h2>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-soft">
+            Räkenskapsåret {fy.label} öppnades igen {report.supersededAt ? datumKort(report.supersededAt) : ""} efter att
+            rapporten upprättades, så siffrorna här är inte längre bolagets bokföring. Rapporten står kvar oförändrad –
+            den kan ha undertecknats och lämnats in, och då är den en handling som ska gå att läsa i efterhand.
+            {report.supersededReason ? ` Skäl till att året öppnades: ${report.supersededReason}` : ""}
+          </p>
+          <p className="mt-2 text-[13px] leading-relaxed text-soft">
+            {fy.status === "stangt"
+              ? "Året är stängt igen – upprätta en ny årsredovisning från bokslutssidan."
+              : `Stäng ${fy.label} igen på bokslutssidan, då upprättas en ny årsredovisning ur de nya siffrorna.`}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-4">
+            <Link href="/bokforing/bokslut" className={buttonClasses("secondary", "sm")}>
+              Till bokslutet
+            </Link>
+            <Link
+              href={`/bokforing/bokslut/arsredovisning/${fiscalYearId}/pdf`}
+              className="text-[13px] font-medium text-accent hover:underline"
+            >
+              Skriv ut den ersatta rapporten
+            </Link>
+          </div>
+        </Card>
+      ) : null}
+
       <Card className="mb-6 px-6 py-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
               <h2 className="text-[15px] font-semibold">Status</h2>
-              <Badge tone={report.status === "inlamnad_markerad" ? "ok" : "info"}>{STATUS_LABEL[report.status]}</Badge>
+              <Badge tone={superseded ? "neutral" : report.status === "inlamnad_markerad" ? "ok" : "info"}>
+                {superseded ? `Ersatt · ${STATUS_LABEL[report.status].toLowerCase()}` : STATUS_LABEL[report.status]}
+              </Badge>
             </div>
             <p className="mt-1.5 text-[13px] leading-relaxed text-soft">
               Skapad {datumKort(report.generatedAt)}
@@ -85,7 +121,9 @@ export default async function ArsredovisningPage(
               {report.markedFiledAt ? ` · markerad som inlämnad ${datumKort(report.markedFiledAt)}` : ""}
             </p>
           </div>
-          <AnnualReportStatusButton reportId={report.id} status={report.status} blockers={blockers} />
+          {superseded ? null : (
+            <AnnualReportStatusButton reportId={report.id} status={report.status} blockers={blockers} />
+          )}
         </div>
         <p className="mt-4 border-t border-line/60 pt-3 text-[12px] leading-relaxed text-muted">
           Driva lämnar inte in årsredovisningen. Skriv ut A4-vyn, låt styrelsen skriva under, låt stämman fastställa
@@ -93,23 +131,25 @@ export default async function ArsredovisningPage(
         </p>
       </Card>
 
-      <div className="mb-6 space-y-4">
-        <NarrativeForm
-          reportId={report.id}
-          verksamhet={fb.verksamhet}
-          vasentligaHandelser={fb.vasentligaHandelser}
-          tillForfogande={fb.resultatdisposition.tillForfogande}
-          utdelning={fb.resultatdisposition.utdelning}
-          locked={locked}
-        />
-        <SignatoriesForm reportId={report.id} signatories={report.content.underskrifter ?? []} locked={locked} />
-        <CertificationForm
-          reportId={report.id}
-          certification={report.content.fastallelseintyg}
-          signatories={report.content.underskrifter ?? []}
-          locked={locked}
-        />
-      </div>
+      {superseded ? null : (
+        <div className="mb-6 space-y-4">
+          <NarrativeForm
+            reportId={report.id}
+            verksamhet={fb.verksamhet}
+            vasentligaHandelser={fb.vasentligaHandelser}
+            tillForfogande={fb.resultatdisposition.tillForfogande}
+            utdelning={fb.resultatdisposition.utdelning}
+            locked={locked}
+          />
+          <SignatoriesForm reportId={report.id} signatories={report.content.underskrifter ?? []} locked={locked} />
+          <CertificationForm
+            reportId={report.id}
+            certification={report.content.fastallelseintyg}
+            signatories={report.content.underskrifter ?? []}
+            locked={locked}
+          />
+        </div>
+      )}
 
       <Card className="overflow-hidden p-0">
         <AnnualReportDocument report={report} company={settings} />

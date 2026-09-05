@@ -10,13 +10,14 @@ import {
   GenerateAnnualReportButton,
   PlanAccrualForm,
   PrintButton,
+  ReopenFiscalYearButton,
 } from "@/components/bokforing-widgets";
 import { fiscalYears } from "@/lib/accounting/fiscal";
-import { bokslutChecklist } from "@/lib/accounting/close";
+import { bokslutChecklist, reopenBlockers } from "@/lib/accounting/close";
 import { listAssets, bookValue, assetsNeedingDepreciation, accumulatedDepreciation } from "@/lib/accounting/assets";
 import { pendingAccruals, accrualSuggestions } from "@/lib/accounting/accruals";
 import { computeTaxCalculation } from "@/lib/accounting/tax";
-import { annualReportFor } from "@/lib/accounting/annual-report";
+import { annualReportFor, annualReportHistory } from "@/lib/accounting/annual-report";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Bokslut" };
@@ -330,10 +331,21 @@ export default async function BokslutPage() {
                   ) : (
                     <div className="mt-4">
                       <p className="mb-3 text-[13px] text-soft">
-                        Årsredovisningen genereras ur de fastställda siffrorna – resultaträkning, balansräkning, noter och
-                        utkast till förvaltningsberättelse.
+                        {annualReportHistory(f.id).length > 0
+                          ? "Året har öppnats efter att förra årsredovisningen upprättades, så den är ersatt. En ny upprättas ur de nya siffrorna."
+                          : "Årsredovisningen genereras ur de fastställda siffrorna – resultaträkning, balansräkning, noter och utkast till förvaltningsberättelse."}
                       </p>
                       <GenerateAnnualReportButton fiscalYearId={f.id} />
+                      {annualReportHistory(f.id).length > 0 ? (
+                        <p className="mt-3 text-[12.5px] text-muted">
+                          <Link
+                            href={`/bokforing/bokslut/arsredovisning/${f.id}`}
+                            className="font-medium text-accent hover:underline"
+                          >
+                            Läs den ersatta årsredovisningen
+                          </Link>
+                        </p>
+                      ) : null}
                     </div>
                   )}
 
@@ -351,6 +363,34 @@ export default async function BokslutPage() {
                     <Link href={`/bokforing/saldobalans?ar=${f.label}`} className="font-medium text-accent hover:underline">
                       Visa saldobalans
                     </Link>
+                  </div>
+
+                  {/*
+                    Ett fel i ett stängt år ska inte vara permanent. Vägen tillbaka
+                    ligger sist och lågmält: den ska finnas, inte inbjuda.
+                  */}
+                  {f.reopenings?.length ? (
+                    <div className="mt-4 border-t border-line/60 pt-3">
+                      <p className="text-[12.5px] font-medium text-soft">
+                        Året har öppnats {f.reopenings.length === 1 ? "en gång" : `${f.reopenings.length} gånger`}
+                      </p>
+                      <ul className="mt-1 space-y-1">
+                        {f.reopenings.map((r, i) => (
+                          <li key={i} className="text-[12px] leading-relaxed text-muted">
+                            {datumKort(r.at)}: {r.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-3 flex">
+                    <ReopenFiscalYearButton
+                      fiscalYearId={f.id}
+                      yearLabel={f.label}
+                      hasReport={Boolean(report)}
+                      blockers={reopenBlockers(f.id).map((b) => b.detail)}
+                    />
                   </div>
                 </Card>
               );

@@ -21,7 +21,7 @@ import {
   saveEmployee,
   type EmployeeInput,
 } from "@/lib/accounting/payroll";
-import { runBokslutAutomation, closeFiscalYear } from "@/lib/accounting/close";
+import { runBokslutAutomation, closeFiscalYear, reopenFiscalYear } from "@/lib/accounting/close";
 import { undoExpenseBooking } from "@/lib/services/expenses";
 import {
   listVerificationViews,
@@ -199,6 +199,11 @@ export async function runBokslutAutomationAction(
 
 export async function closeFiscalYearAction(fiscalYearId: string): Promise<Result> {
   return run(() => closeFiscalYear(fiscalYearId, "anvandare"), "year_end");
+}
+
+/** Öppna ett stängt räkenskapsår igen. Skälet krävs och hamnar i audit-loggen. */
+export async function reopenFiscalYearAction(fiscalYearId: string, reason: string): Promise<Result> {
+  return run(() => reopenFiscalYear(fiscalYearId, reason, "anvandare"), "year_end");
 }
 
 export async function undoExpenseBookingAction(expenseId: string): Promise<Result> {
