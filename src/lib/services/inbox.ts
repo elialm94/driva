@@ -445,13 +445,16 @@ export function ingestEconomicDocument(
 
   const parsed = payload.parsed;
   const attachments: InboxAttachment[] = (payload.attachments ?? []).map((a) => {
-    const content = storableAttachmentContent(a.contentType, a.contentBase64);
+    // Bytes är redan lagrade när payloaden gick genom persistInboundAttachments;
+    // inline-vägen finns kvar för JSON-läget och för tester som ingestar direkt.
+    const content = a.storagePath ? undefined : storableAttachmentContent(a.contentType, a.contentBase64);
     return {
       id: uid(),
       filename: a.filename,
       contentType: a.contentType,
       size: a.size ?? (content ? Math.floor((content.length * 3) / 4) : 0),
       storageKey: `inbox/${payload.externalId}/${a.filename}`,
+      ...(a.storagePath ? { storagePath: a.storagePath } : {}),
       ...(content ? { contentBase64: content } : {}),
     };
   });
@@ -503,6 +506,8 @@ export function ingestUploadedDocument(input: {
   parsed?: InboundMailPayload["parsed"];
   /** Själva filen, så underlaget bevaras och går att tolka. */
   contentBase64?: string;
+  /** Sökväg i bucketen när filen redan lagrats där (storeInboxAttachment). */
+  storagePath?: string;
   sizeBytes?: number;
 }): IngestResult {
   const address = inboundAddressForBusiness();
@@ -518,7 +523,8 @@ export function ingestUploadedDocument(input: {
           filename: input.filename || "dokument.pdf",
           contentType: input.contentType || "application/pdf",
           ...(input.sizeBytes != null ? { size: input.sizeBytes } : {}),
-          ...(input.contentBase64 ? { contentBase64: input.contentBase64 } : {}),
+          ...(input.storagePath ? { storagePath: input.storagePath } : {}),
+          ...(input.contentBase64 && !input.storagePath ? { contentBase64: input.contentBase64 } : {}),
         },
       ],
       parsed: input.parsed,

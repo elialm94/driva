@@ -22,6 +22,7 @@ import {
   storableAttachmentContent,
 } from "./attachment-content";
 import { ingestInboundMail, inboundSlugMatches, interpretInboundPayload } from "../services/inbox";
+import { persistInboundAttachments } from "./attachment-file";
 import {
   resendWebhookSecret,
   verifyResendWebhookSignature,
@@ -166,7 +167,8 @@ export async function ingestInboundPayloadLocal(payload: InboundMailPayload): Pr
   }
   // Tolka bilagan först – tenanten är känd här, och en post som redan bär
   // uppgifter från avsändaren tolkas inte om.
-  const result = ingestInboundMail(await interpretInboundPayload(payload));
+  const interpreted = await interpretInboundPayload(payload);
+  const result = ingestInboundMail(await persistInboundAttachments(interpreted));
   if (!result.ok) return { status: result.status as 400 | 404, error: result.error };
   return {
     status: 200,

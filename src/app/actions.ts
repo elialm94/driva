@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, resetDemoData, save } from "@/lib/store";
 import { parseReceiptDataUrl, storeReceiptFile, validateReceiptFile } from "@/lib/receipts/receipt-file";
+import { storeInboxAttachment } from "@/lib/inbox/attachment-file";
 import {
   addIgnoredLineDescription,
   collectLineDescriptionVocabulary,
@@ -1201,10 +1202,18 @@ export async function uploadInboxDocumentAction(input: {
         ? await interpretDocumentFile({ filename: input.filename, contentType, contentBase64 })
         : undefined;
 
+      // Filen lagras före posten: ett dokument i inboxen utan sitt underlag är
+      // sämre än ett tydligt fel vid uppladdningen.
+      const stored = contentBase64
+        ? await storeInboxAttachment(`upload-${Date.now()}`, input.filename, contentType, contentBase64)
+        : {};
+
       const result = ingestUploadedDocument({
         filename: input.filename,
         contentType,
-        ...(contentBase64 ? { contentBase64, sizeBytes: file!.bytes.length } : {}),
+        ...(contentBase64 ? { sizeBytes: file!.bytes.length } : {}),
+        ...(stored.storagePath ? { storagePath: stored.storagePath } : {}),
+        ...(stored.contentBase64 ? { contentBase64: stored.contentBase64 } : {}),
         ...(parsed ? { parsed } : {}),
       });
       if (!result.ok) return { ok: false as const, error: result.error };

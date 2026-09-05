@@ -2307,9 +2307,16 @@ export interface InboxAttachment {
   size: number;
   storageKey: string;
   /**
-   * Små dokument (≤ ~1,5 MB, pdf/bild) lagras inline så att båda
-   * lagringslägena kan servera innehållet. Demobilagor (storageKey "demo/…")
-   * genereras i stället deterministiskt och lagrar aldrig bytes.
+   * Sökväg i den privata bucketen `inbox_attachments`
+   * (<business_id>/<dokumentnyckel>/<filnamn>). Sätts i Supabase-läge med
+   * service-nyckel – det är den vägen ett flersidigt inskannat underlag tar.
+   */
+  storagePath?: string;
+  /**
+   * Små dokument (≤ ~1,5 MB, pdf/bild) lagras inline när fillagring saknas
+   * (JSON-läge/demo), så att båda lagringslägena kan servera innehållet.
+   * Demobilagor (storageKey "demo/…") genereras i stället deterministiskt och
+   * lagrar aldrig bytes. Aldrig både storagePath och contentBase64.
    */
   contentBase64?: string;
 }
