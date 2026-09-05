@@ -1,4 +1,5 @@
 import { db } from "../store";
+import { kr, procent } from "../format";
 import type { Asset, FiscalYear } from "../types";
 import { resultatrapport, accountBalance } from "./ledger";
 import { bokforingsdatum, fiscalYears } from "./fiscal";
@@ -239,14 +240,14 @@ function adjustmentsExcludingDeficit(fy: FiscalYear): AdjustmentResult {
     const rate = schablonranta(taxYear);
     if (rate === undefined) {
       notes.push(
-        `Statslåneräntan för beskattningsår ${taxYear} finns inte i Driva ännu, så schablonintäkten på periodiseringsfonderna (${fundsAtStart} kr) är inte beräknad. Den ska tas upp i ruta 4.6a.`
+        `Statslåneräntan för beskattningsår ${taxYear} finns inte i Driva ännu, så schablonintäkten på periodiseringsfonderna (${kr(fundsAtStart)}) är inte beräknad. Den ska tas upp i ruta 4.6a.`
       );
     } else {
       adjustments.push({
         key: "schablonintakt-periodiseringsfond",
         label: "Schablonintäkt på periodiseringsfonder",
         amount: schablonintakt(fundsAtStart, rate),
-        explanation: `${fundsAtStart} kr i periodiseringsfond vid årets ingång × ${rate} % (statslåneräntan 30 november ${taxYear - 1}, lägst 0,5 %). Räntan på att ha skjutit upp skatten. Den bokförs inte – den finns bara i deklarationen.`,
+        explanation: `${kr(fundsAtStart)} i periodiseringsfond vid årets ingång × ${procent(rate)} (statslåneräntan den 30 november ${taxYear - 1}, lägst 0,5 %). Räntan på att ha skjutit upp skatten. Den bokförs inte – den finns bara i deklarationen.`,
         field: "4.6a",
       });
     }
@@ -266,7 +267,7 @@ function adjustmentsExcludingDeficit(fy: FiscalYear): AdjustmentResult {
         key: "avskrivning-over-tak",
         label: "Avskrivning över skattemässigt tak",
         amount: excess,
-        explanation: `Bokföringen har skrivit av ${booked} kr på inventarierna. Skattemässigt får högst ${depreciation.limits.maxDepreciation} kr dras av i år, så ${excess} kr läggs tillbaka. Avdraget är inte förlorat – det kommer senare år, när planen hunnit ikapp.`,
+        explanation: `Bokföringen har skrivit av ${kr(booked)} på inventarierna. Skattemässigt får högst ${kr(depreciation.limits.maxDepreciation)} dras av i år, så ${kr(excess)} läggs tillbaka. Avdraget är inte förlorat – det kommer senare år, när planen hunnit ikapp.`,
         field: "4.9",
       });
     }
@@ -328,12 +329,12 @@ export function computeTaxCalculation(fy: FiscalYear): TaxCalculation {
   }
   if (skattemassigtResultat < 0) {
     manualReviewNotes.push(
-      `Året går med skattemässig förlust. Underskottet på ${-skattemassigtResultat} kr sparas till kommande år utan tidsgräns – vid ägarförändringar kan rätten begränsas, och det behöver granskas manuellt.`
+      `Året går med skattemässig förlust. Underskottet på ${kr(-skattemassigtResultat)} sparas till kommande år utan tidsgräns – vid ägarförändringar kan rätten begränsas, och det behöver granskas manuellt.`
     );
   }
   if (base.depreciation && base.depreciation.unusedHeadroom > 0) {
     manualReviewNotes.push(
-      `Inventarierna får skrivas av med ytterligare ${base.depreciation.unusedHeadroom} kr skattemässigt i år. Det kräver en bokförd överavskrivning – bokföringen och avdraget måste vara lika stora vid räkenskapsenlig avskrivning. Driva bokför den inte av sig själv, för det är ett val om bolaget vill skjuta upp skatt.`
+      `Inventarierna får skrivas av med ytterligare ${kr(base.depreciation.unusedHeadroom)} skattemässigt i år. Det kräver en bokförd överavskrivning – bokföringen och avdraget måste vara lika stora vid räkenskapsenlig avskrivning. Driva bokför den inte av sig själv, för det är ett val om bolaget vill skjuta upp skatt.`
     );
   }
 

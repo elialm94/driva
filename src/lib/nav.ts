@@ -179,6 +179,7 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/bokforing/lon", section: "bokforing", parent: "/bokforing", label: "Lön", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/bokslut/arsredovisning/:fiscalYearId/pdf", section: "bokforing", parent: "/bokforing/bokslut/arsredovisning/:fiscalYearId", label: "Årsredovisning A4", backLabel: "Årsredovisning", showBack: true },
   { pattern: "/bokforing/bokslut/arsredovisning/:fiscalYearId", section: "bokforing", parent: "/bokforing/bokslut", label: "Årsredovisning", backLabel: "Bokslut", showBack: true },
+  { pattern: "/bokforing/bokslut/ink2/:fiscalYearId", section: "bokforing", parent: "/bokforing/bokslut", label: "INK2", backLabel: "Bokslut", showBack: true },
   { pattern: "/bokforing/bokslut/bilagor", section: "bokforing", parent: "/bokforing/bokslut", label: "Bokslutsbilagor", backLabel: "Bokslut", showBack: true },
   { pattern: "/bokforing/bokslut/avstamning", section: "bokforing", parent: "/bokforing/bokslut", label: "Avstämning", backLabel: "Bokslut", showBack: true },
   { pattern: "/bokforing/bokslut", section: "bokforing", parent: "/bokforing", label: "Bokslut", backLabel: "Bokföring", showBack: true },

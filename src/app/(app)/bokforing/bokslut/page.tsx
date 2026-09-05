@@ -208,10 +208,18 @@ export default async function BokslutPage() {
                 </div>
                 {tax.adjustments.map((a) => (
                   <div key={a.key} className="flex justify-between">
-                    <span className="text-soft">+ {a.label}</span>
+                    <span className="text-soft">
+                      {a.amount < 0 ? "−" : "+"} {a.label}
+                    </span>
                     <span className="font-medium tabular">{kr(a.amount)}</span>
                   </div>
                 ))}
+                {tax.utnyttjatUnderskott > 0 ? (
+                  <div className="flex justify-between">
+                    <span className="text-soft">− Underskott från tidigare år</span>
+                    <span className="font-medium tabular">{kr(-tax.utnyttjatUnderskott)}</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between border-t border-line pt-1.5">
                   <span className="font-medium">Beskattningsbart resultat</span>
                   <span className="font-semibold tabular">{kr(tax.beskattningsbartResultat)}</span>
@@ -221,33 +229,22 @@ export default async function BokslutPage() {
                   <span className="font-semibold tabular">{kr(tax.beraknadSkatt)}</span>
                 </div>
               </div>
-              {tax.adjustments.length > 0 ? (
-                <details className="group mt-3">
-                  <summary className="cursor-pointer list-none text-[13px] font-medium text-accent hover:underline">
-                    Visa detaljer om justeringarna
-                  </summary>
-                  <ul className="mt-2 space-y-1.5 text-[12.5px] text-soft">
-                    {tax.adjustments.map((a) => (
-                      <li key={a.key}>
-                        <span className="font-medium text-ink">{a.label}:</span> {a.explanation}
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              ) : null}
               {tax.manualReviewNotes.length > 0 ? (
                 <div className="mt-3 rounded-xl bg-warn-soft/60 px-4 py-3">
-                  {tax.manualReviewNotes.map((n, i) => (
-                    <p key={i} className="text-[12.5px] text-ink">
-                      ⚠ {n}
-                    </p>
-                  ))}
+                  <p className="text-[12.5px] leading-relaxed text-ink">
+                    ⚠ {tax.manualReviewNotes.length} post{tax.manualReviewNotes.length === 1 ? "" : "er"} i
+                    skatteberäkningen behöver granskas för hand. Driva räknar inte fram dem, för de kräver en bedömning.
+                  </p>
                 </div>
               ) : null}
-              <p className="mt-3 text-[12px] text-muted">
-                Skatten bokförs automatiskt när bokslutet slutförs. Siffran är preliminär tills inkomstdeklarationen (INK2)
-                är lämnad.
-              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-4">
+                <Link href={`/bokforing/bokslut/ink2/${fy.id}`} className={buttonClasses("secondary", "sm")}>
+                  Öppna INK2
+                </Link>
+                <span className="text-[12px] leading-relaxed text-muted">
+                  Skatten bokförs automatiskt när bokslutet slutförs. Siffran är preliminär tills deklarationen är lämnad.
+                </span>
+              </div>
             </Card>
           ) : null}
         </>
