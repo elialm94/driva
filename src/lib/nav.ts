@@ -182,6 +182,7 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/redovisning/klienter", section: null, parent: "/redovisning", label: "Klienter" },
   { pattern: "/redovisning", section: null, label: "Redovisning" },
   { pattern: "/inbjudan/:token", section: null, label: "Inbjudan" },
+  { pattern: "/kom-igang/importera", section: null, parent: "/installningar?flik=kom-igang", label: "Flytta dina uppgifter", backLabel: "Kom igång", showBack: true },
   { pattern: "/installningar", section: null, label: "Inställningar", acceptsReturnTo: true },
   { pattern: "/foretag", section: null, parent: "/installningar", label: "Företagsuppgifter", acceptsReturnTo: true },
   { pattern: "/hemsida/doman", section: "hemsida", parent: "/hemsida", label: "Domän", backLabel: "Hemsida", showBack: true },
@@ -210,6 +211,7 @@ const APP_PATH_PREFIXES = [
   "/inbjudan",
   "/assistent",
   "/installningar",
+  "/kom-igang",
   "/foretag",
   "/offert",
   "/faktura",
@@ -248,7 +250,13 @@ export function isSectionActive(pathname: string, href: string): boolean {
 /** Sidofotens Inställningar – ingen egen NavSection. */
 export function isSettingsPath(pathname: string): boolean {
   const path = splitHref(pathname).pathname;
-  return path === "/installningar" || path.startsWith("/installningar/") || path === "/foretag" || path.startsWith("/foretag/");
+  return (
+    path === "/installningar" ||
+    path.startsWith("/installningar/") ||
+    path === "/foretag" ||
+    path.startsWith("/foretag/") ||
+    path.startsWith("/kom-igang")
+  );
 }
 
 /** Sidofotens Hjälp & support – ingen egen NavSection. */

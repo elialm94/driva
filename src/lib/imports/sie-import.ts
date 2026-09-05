@@ -390,6 +390,13 @@ export function applySieImport(
     if (!y.selectable) throw new Error(`Räkenskapsåret ${y.label} kan inte importeras: ${y.omitted[0] ?? "konflikt med befintlig bokföring."}`);
   }
 
+  // Allt byggs först i staging och skrivs till data i ETT steg när varje
+  // valt år har validerats – ett fel halvvägs lämnar bokföringen orörd även
+  // i JSON-läget (Supabase rullar dessutom tillbaka transaktionen).
+  const stagedYears: FiscalYear[] = [];
+  const stagedOpening: { fy: FiscalYear; openingBalances: Record<string, number> }[] = [];
+  const stagedVerifications: Verification[] = [];
+  const allYears = () => [...data.fiscalYears, ...stagedYears];
   const existingKeys = new Set(data.verifications.map((v) => verificationKey(v.series, v.number)));
   const result: SieImportResult = {
     fiscalYearsCreated: 0,
@@ -409,7 +416,7 @@ export function applySieImport(
 
   for (const y of selected.sort((a, b) => a.startDate.localeCompare(b.startDate))) {
     // Räkenskapsår
-    let fy = data.fiscalYears.find((f) => f.startDate === y.startDate && f.endDate === y.endDate);
+    let fy = allYears().find((f) => f.startDate === y.startDate && f.endDate === y.endDate);
     const ib = file.openingBalances.filter((b) => b.yearIndex === y.index);
     const ibEntries = roundOrePreservingSum(ib.map((b) => b.amountOre));
     const openingBalances: Record<string, number> = {};
@@ -423,19 +430,18 @@ export function applySieImport(
     if (!fy) {
       fy = {
         id: `fy-${y.startDate.slice(0, 4)}-${uid().slice(0, 8)}`,
-        label: uniqueLabel(data.fiscalYears, y.label),
+        label: uniqueLabel(allYears(), y.label),
         startDate: y.startDate,
         endDate: y.endDate,
         status: "oppet",
         openingBalances,
         openingSource: "migrering",
       };
-      data.fiscalYears.push(fy);
+      stagedYears.push(fy);
       result.fiscalYearsCreated++;
       if (ib.length > 0) result.openingBalanceYears++;
     } else if (ib.length > 0 && Object.keys(fy.openingBalances).length === 0) {
-      fy.openingBalances = openingBalances;
-      fy.openingSource = "migrering";
+      stagedOpening.push({ fy, openingBalances });
       result.fiscalYearsUpdated++;
       result.openingBalanceYears++;
     }
@@ -492,7 +498,7 @@ export function applySieImport(
         explanation: `Importerad från SIE-fil${file.program ? ` (${file.program})` : ""}. Belopp i hela kronor.`,
         createdAt: now,
       };
-      data.verifications.push(verification);
+      stagedVerifications.push(verification);
       result.verificationsCreated++;
     }
 
@@ -505,7 +511,7 @@ export function applySieImport(
           throw new Error(`Saldona för ${y.label} går inte ihop i filen (utgående minus ingående balans är inte noll). Året kan inte importeras som samlad post.`);
         }
         const number = sieNext++;
-        data.verifications.push({
+        stagedVerifications.push({
           id: uid(),
           series: "SIE",
           number,
@@ -526,6 +532,13 @@ export function applySieImport(
     }
   }
 
+  // Allt validerat – skriv i ett steg.
+  data.fiscalYears.push(...stagedYears);
+  for (const { fy, openingBalances } of stagedOpening) {
+    fy.openingBalances = openingBalances;
+    fy.openingSource = "migrering";
+  }
+  data.verifications.push(...stagedVerifications);
   // Serie A delar nummerserie med appens egna verifikationer.
   if (maxSeriesA >= data.sequences.verification) data.sequences.verification = maxSeriesA + 1;
 

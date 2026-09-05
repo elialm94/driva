@@ -33,7 +33,9 @@ export type CollaborationCapability =
   /** Konfigurera grossister och prisfiler (ägare/admin). */
   | "manage_wholesalers"
   /** Bygga varukorg och skicka materialbeställningar (ägare/admin/medlem). */
-  | "order_materials";
+  | "order_materials"
+  /** Flytta in bokföring och register (Kom igång → importera). Ägare/admin. */
+  | "import_data";
 
 const CONSULTANT: ReadonlySet<CollaborationCapability> = new Set([
   "read_accounting",
@@ -78,6 +80,7 @@ const OWNER: ReadonlySet<CollaborationCapability> = new Set([
   "reveal_personnummer",
   "manage_wholesalers",
   "order_materials",
+  "import_data",
 ]);
 
 const BY_ROLE: Record<BusinessRole, ReadonlySet<CollaborationCapability>> = {
@@ -85,7 +88,7 @@ const BY_ROLE: Record<BusinessRole, ReadonlySet<CollaborationCapability>> = {
   admin: OWNER,
   member: new Set(
     [...OWNER].filter(
-      (c) => c !== "invite_collaborator" && c !== "revoke_collaborator" && c !== "manage_wholesalers"
+      (c) => c !== "invite_collaborator" && c !== "revoke_collaborator" && c !== "manage_wholesalers" && c !== "import_data"
     )
   ),
   accounting_consultant: CONSULTANT,
