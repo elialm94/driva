@@ -2080,6 +2080,14 @@ export function buildSeed(): DB {
     attentionStates: [],
     collaborationInvitations: [],
     clientInformationRequests: [],
+    // Grossistfunktionen är avstängd för snickeriföretaget: standardupplevelsen
+    // förblir ren. Den fiktiva demogrossisten seedas först vid aktivering
+    // (lib/wholesalers/demo.ts).
+    wholesalerConnections: [],
+    wholesalerPriceImports: [],
+    purchaseOrders: [],
+    purchaseOrderLines: [],
+    purchaseOrderConfirmations: [],
     inboxItems: [
       // Fall B: komplett faktura, tolkad med hög konfidens per fält och
       // bokförd av autopiloten. Betalningen är REDO – [Skapa bankfil].

@@ -18,6 +18,8 @@ import { InvoiceStatusBadge, JobStatusBadge, QuoteStatusBadge } from "@/componen
 import { JobActions } from "@/components/job-controls";
 import { JobNotes } from "@/components/job-notes";
 import { JobWorkSection, type JobWorkViewEntry } from "@/components/job-work";
+import { PurchaseOrdersSection } from "@/components/purchase-orders-section";
+import { jobPurchaseOrderRows, jobWholesalerContext } from "@/lib/services/job-wholesalers";
 import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
 import { taxReductionCaseForJob } from "@/lib/services/tax-reduction";
 import { husExportPreview } from "@/lib/services/hus-export";
@@ -76,6 +78,9 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
   const invoiceChoice = jobInvoiceChoice(job.id);
   const laborPrefill = quotedLaborPrefill(job.id);
   const hasEconomy = Boolean(quote) || invoices.length > 0 || money.registeredUninvoiced > 0;
+  // Grossistbeställningar: avstängd funktion = materialytan ser ut som idag.
+  const wholesalers = jobWholesalerContext(job.id);
+  const purchaseOrderRows = jobPurchaseOrderRows(job.id);
 
   return (
     <div className="animate-fade-up">
@@ -230,7 +235,10 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         laborPrefill={laborPrefill}
         defaultHourlyRate={getInvoiceDefaults().defaultHourlyRate}
         invoiceChoice={invoiceChoice}
+        wholesalers={wholesalers.enabled ? wholesalers : undefined}
       />
+
+      <PurchaseOrdersSection jobId={job.id} jobTitle={job.title} rows={purchaseOrderRows} />
 
       {taxCase.phase !== "none" && taxCase.phase !== "preliminar" && taxCase.phase !== "waiting_payment" && taxCase.phase !== "waiting_work" ? (
         <div className="mb-8">

@@ -17,6 +17,8 @@ import { hydrateInvitationsFromTenant } from "@/lib/collaboration/service";
 import { tenantContext } from "@/lib/storage/context";
 import { requestSlot } from "@/lib/storage/request-scope";
 import { db } from "@/lib/store";
+import { redirect } from "next/navigation";
+import { listConnectionOverviews } from "@/lib/services/wholesalers";
 
 export const metadata = { title: "Inställningar" };
 
@@ -27,6 +29,14 @@ export default async function SettingsPage(props: {
   const searchParams = await props.searchParams;
   const flik = parseSettingsFlik(typeof searchParams.flik === "string" ? searchParams.flik : undefined);
   const focusFieldKey = parseSettingsFalt(typeof searchParams.falt === "string" ? searchParams.falt : undefined);
+  const businessId = requestSlot().businessId ?? tenantContext()?.businessId ?? LOCAL_JSON_BUSINESS_ID;
+  hydrateInvitationsFromTenant(businessId);
+  const features = resolveOptionalFeatures(db(), businessId);
+  // Fliken Grossister finns bara när funktionen är på – samma redirect som
+  // Hemsida/Samarbeta: direktlänk landar på Funktioner för återaktivering.
+  if (flik === "grossister" && !features.wholesalers) {
+    redirect("/installningar?flik=funktioner");
+  }
   const profile = getBusinessProfile();
   const demoAccount = isJsonDemoStore() || (await isDemoSession());
   const sessionUser = await getSessionUser();
@@ -50,12 +60,8 @@ export default async function SettingsPage(props: {
           return d ? { hostname: d.hostname, live: d.status === "active" } : null;
         })()}
         account={{ demo: demoAccount, email: sessionUser?.email ?? null }}
-        features={(() => {
-          const businessId =
-            requestSlot().businessId ?? tenantContext()?.businessId ?? LOCAL_JSON_BUSINESS_ID;
-          hydrateInvitationsFromTenant(businessId);
-          return resolveOptionalFeatures(db(), businessId);
-        })()}
+        features={features}
+        wholesalers={flik === "grossister" ? listConnectionOverviews() : undefined}
       />
       {/* Endast demon: JSON-läget lokalt eller den publika demosessionen.
           Servervägen (resetDemoAction) vaktar dessutom oberoende av UI:t. */}

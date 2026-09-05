@@ -1,5 +1,5 @@
 /**
- * Valfria funktioner i Driva: Hemsida och Samarbeta.
+ * Valfria funktioner i Driva: Hemsida, Samarbeta och Grossistbeställningar.
  *
  * Core-nav (Hem, Kunder, Ekonomi, Inbox, Bokföring) syns alltid.
  * Optional-nav syns bara när funktionen är explicit aktiv. Befintlig
@@ -7,11 +7,11 @@
  * försvinner. Explicit false vinner över att data finns – Stäng av ≠ Ta bort.
  *
  * Aktivering/avstängning sätter bara flaggan (+ pausar publika sajten /
- * återkallar konsultåtkomst). Ingen hemsida, domän, inbjudan eller
- * konsult raderas här.
+ * återkallar konsultåtkomst). Ingen hemsida, domän, inbjudan, konsult,
+ * grossistanslutning, prisfil eller beställning raderas här.
  */
 
-import type { CollaborationInvitation, DB, Domain, Website } from "./types";
+import type { CollaborationInvitation, DB, Domain, PurchaseOrder, Website, WholesalerConnection } from "./types";
 import { db, save } from "./store";
 import { LOCAL_JSON_BUSINESS_ID, currentActor } from "./collaboration/actor";
 import { activeMembershipsForBusiness, invitationsForBusiness } from "./collaboration/registry";
@@ -35,7 +35,21 @@ export function storedOptionalFeatures(meta: DB["meta"] | undefined): OptionalFe
   else if (raw.website === false) next.website = false;
   if (raw.collaboration === true) next.collaboration = true;
   else if (raw.collaboration === false) next.collaboration = false;
+  if (raw.wholesalers === true) next.wholesalers = true;
+  else if (raw.wholesalers === false) next.wholesalers = false;
   return next;
+}
+
+/**
+ * Befintlig grossistanvändning – anslutning eller beställning. Räknas som
+ * aktiv utan sparad flagga (backfill) så att ett företag med order aldrig
+ * tappar sin historik ur vyn.
+ */
+export function hasWholesalerUsage(input: {
+  wholesalerConnections?: WholesalerConnection[] | null;
+  purchaseOrders?: PurchaseOrder[] | null;
+}): boolean {
+  return (input.wholesalerConnections ?? []).length > 0 || (input.purchaseOrders ?? []).length > 0;
 }
 
 /** Befintlig hemsidedata – utkast, publicerad sajt eller kopplad domän. */
@@ -74,8 +88,13 @@ export function resolveOwnerBusinessId(explicit?: string): string {
  * Canonical synlighet: explicit false vinner, explicit true vinner,
  * saknad flagga backfillas från användning så befintliga företag inte tappar menyn.
  */
+export type OptionalFeatureData = Pick<
+  DB,
+  "website" | "domains" | "collaborationInvitations" | "meta" | "wholesalerConnections" | "purchaseOrders"
+>;
+
 export function resolveOptionalFeatures(
-  data: Pick<DB, "website" | "domains" | "collaborationInvitations" | "meta"> = db(),
+  data: OptionalFeatureData = db(),
   businessId?: string,
 ): ResolvedOptionalFeatures {
   const stored = storedOptionalFeatures(data.meta);
@@ -84,7 +103,14 @@ export function resolveOptionalFeatures(
     website: stored.website === false ? false : stored.website === true || hasWebsiteUsage(data),
     collaboration:
       stored.collaboration === false ? false : stored.collaboration === true || hasCollaborationUsage(data, id),
+    wholesalers:
+      stored.wholesalers === false ? false : stored.wholesalers === true || hasWholesalerUsage(data),
   };
+}
+
+/** Är grossistbeställningar på för requestens företag? */
+export function wholesalersEnabled(data: OptionalFeatureData = db()): boolean {
+  return resolveOptionalFeatures(data).wholesalers;
 }
 
 export function isOptionalFeatureExplicitlyDisabled(
@@ -154,7 +180,7 @@ export function clearWebsitePublicPause(): void {
  * Disabled = ingen meny + publik sida pausad.
  */
 export function isWebsitePubliclyLive(
-  data: Pick<DB, "website" | "domains" | "collaborationInvitations" | "meta"> = db(),
+  data: OptionalFeatureData = db(),
   businessId?: string,
 ): boolean {
   const site = data.website;

@@ -25,6 +25,12 @@ import type { DB } from "../types";
 import { buildSeed } from "../seed";
 import { normalize } from "../store";
 import { demoSessionMaxAgeSeconds, isValidDemoSessionId } from "../auth/demo-session";
+import { deleteCatalogFileFor } from "../wholesalers/catalog-store";
+
+/** Speglar auth/demo-request.demoBusinessIdFor – dupliceras för att undvika importcykel (next/headers). */
+function demoCatalogBusinessId(sessionId: string): string {
+  return `demo-${sessionId}`;
+}
 
 const onServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
@@ -108,6 +114,9 @@ export function ensureDemoSessionState(id: string): DB {
 export function resetDemoSessionState(id: string): DB {
   const state = buildDemoSessionSeed();
   persistDemoSessionState(id, state);
+  // Grossistkatalogen (artiklar) bor i en egen fil per session – nollställs
+  // ihop med sessionen så att återställningen aldrig lämnar gamla artiklar.
+  deleteCatalogFileFor(demoCatalogBusinessId(id));
   return state;
 }
 
@@ -119,6 +128,7 @@ export function deleteDemoSessionState(id: string): void {
   } catch {
     // Filen städas annars av katalogstädningen.
   }
+  deleteCatalogFileFor(demoCatalogBusinessId(id));
 }
 
 /**
@@ -143,7 +153,9 @@ export function cleanupExpiredDemoSessions(now = Date.now()): number {
       const stat = fs.statSync(file);
       if (now - stat.mtimeMs <= maxAgeMs) continue;
       fs.rmSync(file, { force: true });
-      cache().delete(name.replace(/\.json(\.tmp)?$/, ""));
+      const sessionId = name.replace(/\.json(\.tmp)?$/, "");
+      cache().delete(sessionId);
+      deleteCatalogFileFor(demoCatalogBusinessId(sessionId));
       removed += 1;
     } catch {
       // Fil försvann under städningen – nästa körning tar resten.

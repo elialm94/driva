@@ -53,6 +53,9 @@ import {
   paymentFilesSpec,
   paymentsSpec,
   pendingActionsSpec,
+  purchaseOrderConfirmationsSpec,
+  purchaseOrderLinesSpec,
+  purchaseOrdersSpec,
   remindersSpec,
   quotesSpec,
   quoteVersionsSpec,
@@ -65,6 +68,8 @@ import {
   verificationRpcPayload,
   vatReportsSpec,
   websitesSpec,
+  wholesalerConnectionsSpec,
+  wholesalerPriceImportsSpec,
   workLocationsSpec,
   type TableSpec,
 } from "./mappers";
@@ -314,6 +319,29 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
   // länkar offerten i samma commit. jobs.quote_id saknar FK, så ordningen
   // är säker åt andra hållet.
   await applySpec(jobsSpec, diffCollection(baseline.jobs, state.jobs));
+
+  // Grossist: anslutningar → importer → order (FK till jobs + connections) →
+  // rader → bekräftelser. Artiklarna (wholesaler_products) skrivs aldrig här –
+  // de går via katalogstoren utanför aggregatet.
+  await applySpec(
+    wholesalerConnectionsSpec,
+    diffCollection(baseline.wholesalerConnections ?? [], state.wholesalerConnections ?? [])
+  );
+  await applySpec(
+    wholesalerPriceImportsSpec,
+    diffCollection(baseline.wholesalerPriceImports ?? [], state.wholesalerPriceImports ?? [])
+  );
+  await applySpec(purchaseOrdersSpec, diffCollection(baseline.purchaseOrders ?? [], state.purchaseOrders ?? []));
+  await applySpec(
+    purchaseOrderLinesSpec,
+    diffCollection(baseline.purchaseOrderLines ?? [], state.purchaseOrderLines ?? [])
+  );
+  // Bekräftelser är historik: ingen DELETE-väg i databasen.
+  await applySpec(
+    purchaseOrderConfirmationsSpec,
+    diffCollection(baseline.purchaseOrderConfirmations ?? [], state.purchaseOrderConfirmations ?? []),
+    { skipDeletes: true }
+  );
 
   // Offerter: diffa på domänobjektet, komplettera med denormaliserat belopp.
   {

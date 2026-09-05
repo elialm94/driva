@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { parseInboundPayload, verifyInboundSignature } from "@/lib/inbox/inbound-mail";
+import { followUpInboundConfirmation } from "@/lib/inbox/confirmation-followup";
 import { ingestInboundMail, inboundSlugMatches } from "@/lib/services/inbox";
 import { inboundSlugFromTo } from "@/lib/inbox/inbound-mail";
 import { isSupabaseMode } from "@/lib/storage/config";
@@ -40,17 +41,21 @@ export async function POST(req: NextRequest) {
     return {
       status: 200 as const,
       payload: { id: result.item.id, created: result.created, autoBooked: result.autoBooked },
+      confirmationFollowUp: result.created && result.item.documentType === "orderbekraftelse",
     };
   };
 
   if (!isSupabaseMode()) {
     const result = run();
     if (result.status !== 200) return NextResponse.json({ error: result.error }, { status: result.status });
+    if (result.confirmationFollowUp) after(() => followUpInboundConfirmation(slug, result.payload.id));
     return NextResponse.json(result.payload);
   }
 
   const result = await withPublicBusiness("inbound", slug, run);
   if (!result) return NextResponse.json({ error: "Okänd inkommande adress" }, { status: 404 });
   if (result.status !== 200) return NextResponse.json({ error: result.error }, { status: result.status });
+  // AI-fallbacken körs efter svaret – webhooken väntar aldrig på en LLM.
+  if (result.confirmationFollowUp) after(() => followUpInboundConfirmation(slug, result.payload.id));
   return NextResponse.json(result.payload);
 }

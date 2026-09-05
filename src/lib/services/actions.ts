@@ -1418,6 +1418,27 @@ function collectInboxMail(ranked: Ranked[]) {
     if (invoice && invoice.status !== "betald" && paymentDetailsInfo(invoice).cause === "CHANGED") continue;
     if (invoice && isReadyToApproveNow({ invoice, payment })) continue;
 
+    if (item.documentType === "orderbekraftelse") {
+      // Osäkert matchad bekräftelse: användaren väljer beställning i inboxen.
+      if (item.status !== "ny" || item.purchaseOrderId) continue;
+      ranked.push({
+        rank: RANK.newJob,
+        order: -(Date.parse(item.createdAt) || 0),
+        action: {
+          id: `inbox-mail-${item.id}`,
+          priority: "action",
+          category: "accounting",
+          icon: "inbox",
+          title: `Välj beställning för orderbekräftelsen från ${item.parsedSupplier ?? item.fromAddress}`,
+          subtitle: excerpt(item.subject || item.textBody),
+          href: `/inbox/${item.id}`,
+          cta: { type: "link", label: "Öppna i inboxen", href: `/inbox/${item.id}` },
+          secondary: { label: "Visa posten", href: `/inbox/${item.id}` },
+        },
+      });
+      continue;
+    }
+
     const needsReview =
       item.status === "ny" &&
       (!amountIsCertain(item) ||

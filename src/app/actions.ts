@@ -1377,7 +1377,7 @@ export async function activateOptionalFeatureAction(
   id: OptionalFeatureId,
 ): Promise<{ ok: true; href: string } | { ok: false; error: string }> {
   try {
-    return await withBusiness(async () => {
+    const result = await withBusiness(async () => {
       if (!isOptionalFeatureId(id)) {
         return { ok: false, error: "Okänd funktion." } as const;
       }
@@ -1390,13 +1390,27 @@ export async function activateOptionalFeatureAction(
         const actor = actorForFeatureChange();
         logCollaborationFeatureEnabled(actor.name, actor.userId);
       }
+      // Demon: en fiktiv grossist med prislista seedas EFTER aktiveringen
+      // (egna commits – importen skriver katalogen utanför aggregatet).
+      const { demoWholesalerSeeded, isWholesalerDemoContext } = await import("@/lib/wholesalers/demo");
+      const seedDemoWholesaler = id === "wholesalers" && isWholesalerDemoContext() && !demoWholesalerSeeded();
       refresh();
       const href =
         id === "website" && (wasPaused || shouldShowWebsiteRestoreNotice())
           ? websiteRestoreNoticeHref()
           : optionalFeatureHref(id);
-      return { ok: true, href } as const;
+      return { ok: true, href, seedDemoWholesaler } as const;
     });
+    if (result.ok && result.seedDemoWholesaler) {
+      const { seedDemoWholesaler } = await import("@/lib/wholesalers/demo");
+      try {
+        await seedDemoWholesaler((fn) => withBusiness(fn, { retry: false }));
+        refresh();
+      } catch (e) {
+        console.error("[grossist] demoseed misslyckades:", e instanceof Error ? e.message : e);
+      }
+    }
+    return result.ok ? { ok: true, href: result.href } : result;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Kunde inte aktivera funktionen." };
   }

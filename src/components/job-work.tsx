@@ -17,7 +17,9 @@ import {
 } from "@/app/actions";
 import type { JobInvoiceChoice, JobWorkComparison } from "@/lib/job-ui-types";
 import type { JobWorkEntry, VatRate } from "@/lib/types";
+import type { JobWholesalerContext } from "@/lib/wholesalers/views";
 import { LineDescriptionInput, LineDescriptionVocabProvider } from "./line-description-input";
+import { WholesalerMaterialSheet } from "./wholesaler-material-sheet";
 
 function hoursLabel(n: number): string {
   return `${Number(n.toFixed(2)).toLocaleString("sv-SE")} tim`;
@@ -73,6 +75,7 @@ export function JobWorkSection({
   laborPrefill,
   defaultHourlyRate,
   invoiceChoice,
+  wholesalers,
 }: {
   jobId: string;
   jobTitle: string;
@@ -83,8 +86,14 @@ export function JobWorkSection({
   laborPrefill: JobWorkPrefill | null;
   defaultHourlyRate?: number;
   invoiceChoice: JobInvoiceChoice;
+  /**
+   * Grossistbeställningar (valfri funktion). Saknas/avstängd eller utan
+   * konfigurerad grossist → dagens manuella materialformulär, oförändrat.
+   */
+  wholesalers?: JobWholesalerContext;
 }) {
-  const [sheet, setSheet] = useState<"tid" | "material" | null>(null);
+  const [sheet, setSheet] = useState<"tid" | "material" | "grossist" | null>(null);
+  const wholesalerSearch = Boolean(wholesalers?.enabled && wholesalers.connections.length > 0);
   const [edit, setEdit] = useState<JobWorkViewEntry | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -109,7 +118,12 @@ export function JobWorkSection({
               <span className="sm:hidden">Tid</span>
               <span className="hidden sm:inline">Registrera tid</span>
             </button>
-            <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setSheet("material")}>
+            <button
+              type="button"
+              className={buttonClasses("secondary", "sm")}
+              onClick={() => setSheet(wholesalerSearch ? "grossist" : "material")}
+              data-job-add-material
+            >
               <Plus className="size-3.5" />
               <span className="sm:hidden">Material</span>
               <span className="hidden sm:inline">Lägg till material</span>
@@ -173,6 +187,15 @@ export function JobWorkSection({
         defaultHourlyRate={defaultHourlyRate}
       />
       <MaterialSheet open={sheet === "material"} onClose={() => setSheet(null)} jobId={jobId} />
+      {wholesalerSearch && wholesalers ? (
+        <WholesalerMaterialSheet
+          open={sheet === "grossist"}
+          onClose={() => setSheet(null)}
+          jobId={jobId}
+          context={wholesalers}
+          onManual={() => setSheet("material")}
+        />
+      ) : null}
       {edit ? (
         <EditSheet
           entry={edit}

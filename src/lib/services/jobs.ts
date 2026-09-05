@@ -396,7 +396,13 @@ export function jobRemovalPolicy(jobId: string): JobRemovalPolicy {
   if (jobHasPayments(jobId)) reasons.push("Betalningar");
   if (jobHasAccountingRefs(jobId)) reasons.push("Bokföring");
   if (jobHasInvoicedWork(jobId)) reasons.push("Fakturerat arbete");
+  if (jobHasSentPurchaseOrders(jobId)) reasons.push("Skickad materialbeställning");
   return { kind: reasons.length === 0 ? "delete" : "archive", reasons };
+}
+
+/** Skickade grossistbeställningar är extern historik – uppdraget arkiveras i stället för att raderas. */
+function jobHasSentPurchaseOrders(jobId: string): boolean {
+  return (db().purchaseOrders ?? []).some((o) => o.jobId === jobId && o.status !== "draft");
 }
 
 function archiveJob(job: Job): { kind: "archived"; jobId: string } {
@@ -418,6 +424,12 @@ function hardDeleteJob(job: Job): { kind: "deleted"; jobId: string } {
     discardInvoice(inv.id);
   }
   data.jobWorkEntries = (data.jobWorkEntries ?? []).filter((e) => e.jobId !== job.id);
+  // Osända varukorgar följer med uppdraget (skickade order gör uppdraget arkiverbart).
+  const cartIds = new Set((data.purchaseOrders ?? []).filter((o) => o.jobId === job.id).map((o) => o.id));
+  if (cartIds.size > 0) {
+    data.purchaseOrderLines = (data.purchaseOrderLines ?? []).filter((l) => !cartIds.has(l.orderId));
+    data.purchaseOrders = (data.purchaseOrders ?? []).filter((o) => !cartIds.has(o.id));
+  }
   for (const quote of data.quotes) {
     if (quote.jobId === job.id) quote.jobId = undefined;
   }

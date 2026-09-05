@@ -33,6 +33,9 @@ import { type PagedResult } from "./customers";
 import { attachExtractedPaymentDetails, bookSupplierInvoice, receiveSupplierInvoice } from "./suppliers";
 import { latestPaymentForInvoice, prepareSupplierPayment } from "./supplier-payments";
 import { paymentDetailsInfo, type PaymentDetailsCause } from "./payment-details";
+import { looksLikeOrderConfirmation } from "../wholesalers/confirmation-parse";
+import { connectionLabel } from "../wholesalers/labels";
+import { processInboxOrderConfirmation } from "./purchase-order-confirmations";
 
 export type { PagedResult };
 
@@ -144,17 +147,27 @@ function mailMatchesQuery(item: InboxItem, q: string): boolean {
   return hay.includes(q);
 }
 
+/** Kopplad beställning för en orderbekräftelse – för rubriken i listan/detaljen. */
+export function linkedOrderForItem(item: InboxItem): { reference: string; wholesalerName: string } | null {
+  if (item.documentType !== "orderbekraftelse" || !item.purchaseOrderId) return null;
+  const order = (db().purchaseOrders ?? []).find((o) => o.id === item.purchaseOrderId);
+  if (!order) return null;
+  const connection = (db().wholesalerConnections ?? []).find((c) => c.id === order.connectionId);
+  return { reference: order.reference, wholesalerName: connection ? connectionLabel(connection) : "Grossist" };
+}
+
 function toMailRow(item: InboxItem): InboxListRow {
   const invoice = invoiceForItem(item);
   const payment = paymentForItem(item);
   const display = inboxDisplayStatus({ item, invoice, payment, detailsCause: detailsCauseForItem(invoice) });
-  const amount = invoice?.amount ?? item.parsedAmount;
-  const due = invoice?.dueDate ?? item.parsedDueDate;
+  const amount = item.documentType === "orderbekraftelse" ? undefined : (invoice?.amount ?? item.parsedAmount);
+  const due = item.documentType === "orderbekraftelse" ? undefined : (invoice?.dueDate ?? item.parsedDueDate);
+  const linkedOrder = linkedOrderForItem(item);
   return {
     id: item.id,
     documentType: item.documentType,
-    fromLabel: invoice?.supplier ?? item.parsedSupplier ?? item.fromAddress,
-    documentLabel: inboxDocumentTitle(item, invoice),
+    fromLabel: linkedOrder?.wholesalerName ?? invoice?.supplier ?? item.parsedSupplier ?? item.fromAddress,
+    documentLabel: inboxDocumentTitle(item, invoice, linkedOrder),
     dueDate: due,
     createdAt: item.createdAt,
     amount,
@@ -348,11 +361,36 @@ function tryCompleteAwaitingDetails(item: InboxItem): boolean {
   return true;
 }
 
+/**
+ * Orderbekräftelser från grossister är inte leverantörsfakturor: de matchas
+ * mot en skickad materialbeställning i stället för att gå genom faktura-/
+ * kvittopipelinen. Klassas bara så när företaget faktiskt har skickade
+ * beställningar – annars kan inget mejl vara en bekräftelse.
+ */
+function isOrderConfirmationMail(payload: InboundMailPayload): boolean {
+  const hasSentOrders = (db().purchaseOrders ?? []).some((o) => o.status !== "draft" && o.status !== "cancelled");
+  if (!hasSentOrders) return false;
+  const parsed = payload.parsed;
+  const invoiceHints = Boolean(parsed?.invoiceNumber || parsed?.ocr || parsed?.bankgiro || parsed?.dueDate);
+  return looksLikeOrderConfirmation({
+    subject: payload.subject,
+    text: payload.text,
+    html: payload.html,
+    invoiceHints,
+  });
+}
+
 function runDocumentPipeline(item: InboxItem): { autoBooked: boolean } {
   let autoBooked = false;
   const conf = item.confidence ?? 0;
   // Mänskligt godkända uppgifter (reviewedAt) väger som säker läsning.
   const auto = item.reviewedAt != null || decideFromConfidence(conf) === "AUTO_EXECUTE";
+
+  if (item.documentType === "orderbekraftelse") {
+    // Aldrig faktura/utgift/betalning här – bara koppling till beställningen.
+    processInboxOrderConfirmation(item);
+    return { autoBooked: false };
+  }
 
   if (item.documentType === "kvitto") {
     if (auto && amountIsCertain(item) && item.parsedAmount != null && item.parsedVatAmount != null && item.parsedSupplier) {
@@ -453,15 +491,18 @@ export function ingestEconomicDocument(
     };
   });
 
-  const documentType = classifyEconomicDocument({
-    subject: payload.subject,
-    text: payload.text,
-    invoiceNumber: parsed?.invoiceNumber,
-    dueDate: parsed?.dueDate,
-    ocr: parsed?.ocr,
-    bankgiro: parsed?.bankgiro,
-    documentType: parsed?.documentType,
-  });
+  const documentType: InboxDocumentType =
+    parsed?.documentType == null && isOrderConfirmationMail(payload)
+      ? "orderbekraftelse"
+      : classifyEconomicDocument({
+          subject: payload.subject,
+          text: payload.text,
+          invoiceNumber: parsed?.invoiceNumber,
+          dueDate: parsed?.dueDate,
+          ocr: parsed?.ocr,
+          bankgiro: parsed?.bankgiro,
+          documentType: parsed?.documentType,
+        });
 
   const item: InboxItem = {
     id: `inbox-${uid()}`,
