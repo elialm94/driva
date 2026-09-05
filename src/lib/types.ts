@@ -1080,15 +1080,40 @@ export type VerificationSource =
  * oföränderliga: rättelser görs alltid som ny rättelseverifikation
  * (se accounting/engine.ts), aldrig genom att ändra eller ta bort.
  */
+/**
+ * Bilagan på verifikationen: fakturan, kvittot eller avtalet som verifikationen
+ * vilar på. Bokföringslagen kräver att underlaget bevaras och går att koppla
+ * till verifikationen, så en granskare ska kunna öppna det från raden.
+ * Lagras som kvitton (se receipts/receipt-file.ts): bucket när fillagring finns,
+ * annars inline.
+ */
+export interface VerificationAttachment {
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  /** Sökväg i privata bucketen `receipts`. */
+  storagePath?: string;
+  /** Inline base64 (JSON-läge/demo, eller utan fillagring). Aldrig båda satta. */
+  contentBase64?: string;
+}
+
 export interface Verification {
   id: ID;
-  /** Verifikationsserie. V1 använder "A"; arkitekturen tillåter fler. */
+  /** Verifikationsserie, se accounting/series.ts. Automatiken bokför i A, manuella verifikat i M. */
   series: string;
   number: number;
   /** Bokföringsdatum (styr period, momsperiod och räkenskapsår). */
   date: string;
+  /**
+   * Handelsdatum: när affärshändelsen faktiskt inträffade, när det avviker från
+   * bokföringsdatumet. Styr ingenting i bokföringen – det är en uppgift om
+   * händelsen, inte om perioden.
+   */
+  transactionDate?: string;
   description: string;
   entries: VerificationEntry[];
+  /** Underlaget bakom verifikationen. */
+  attachment?: VerificationAttachment;
   source: VerificationSource;
   confidence: "hog" | "medel" | "lag";
   createdBy: "auto" | "anvandare" | "assistent";
@@ -1980,7 +2005,18 @@ export interface AssistantAuditEntry {
 
 export interface DB {
   settings: CompanySettings;
-  sequences: { quote: number; invoice: number; verification: number };
+  sequences: {
+    quote: number;
+    invoice: number;
+    /** Nästa nummer i verifikationsserie A. Speglas i verificationSeries. */
+    verification: number;
+    /**
+     * Nästa nummer per verifikationsserie. Varje serie har en egen obruten
+     * nummerföljd, vilket är hela poängen med serier – A och M får inte dela
+     * räknare och lämna hål i varandras nummerföljd.
+     */
+    verificationSeries?: Record<string, number>;
+  };
   customers: Customer[];
   quotes: Quote[];
   quoteVersions: QuoteVersion[];

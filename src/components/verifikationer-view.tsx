@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, ChevronLeft, MoreHorizontal, ShieldCheck, Undo2 } from "lucide-react";
+import { Check, ChevronLeft, MoreHorizontal, Paperclip, ShieldCheck, Undo2 } from "lucide-react";
 import { Badge, Card, EmptyState, buttonClasses, cx } from "./ui";
 import { Modal } from "./modal";
 import { ActionMenu, actionMenuItemClassName, useActionMenu } from "./action-menu";
@@ -185,6 +185,9 @@ export function VerifikationerView({
                     {v.label}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[14px] font-medium">
+                    {v.attachment ? (
+                      <Paperclip className="mr-1.5 inline size-3.5 shrink-0 align-[-2px] text-muted" aria-label="Har underlag" />
+                    ) : null}
                     {v.description}
                     {v.correctedByLabel ? (
                       <span className="ml-2 text-[12px] font-normal text-warn">Rättad · {v.correctedByLabel}</span>
@@ -394,11 +397,27 @@ function VerificationDetail({
       <p className="mt-1 text-[13px] text-soft">
         {v.creatorPhrase} {datumTid(v.postedAt)}.
       </p>
+      {v.transactionDate ? (
+        <p className="mt-0.5 text-[13px] text-soft">
+          Handelsdatum {datumKort(v.transactionDate)}, bokförd {datumKort(v.date)}.
+        </p>
+      ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
         <Badge tone={v.badge.tone}>{v.badge.text}</Badge>
         <Badge tone="neutral">Underlag: {v.sourceLabel}</Badge>
         <Badge tone="neutral">Säkerhet: {v.confidenceLabel}</Badge>
       </div>
+      {v.attachment ? (
+        <a
+          href={v.attachment.href}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent hover:underline"
+        >
+          <Paperclip className="size-3.5" />
+          {v.attachment.filename}
+        </a>
+      ) : null}
       {v.explanation ? (
         <p className="mt-4 rounded-xl bg-accent-soft/60 px-4 py-2.5 text-[13px] leading-relaxed text-ink">
           {v.explanation}

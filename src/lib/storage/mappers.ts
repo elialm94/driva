@@ -56,6 +56,7 @@ import type {
   SupplierPayment,
   VatReport,
   Verification,
+  VerificationAttachment,
   VerificationEntry,
   Website,
   WorkLocation,
@@ -1142,13 +1143,28 @@ export const paymentFilesSpec: TableSpec<PaymentFile> = {
  * Skrivs ALDRIG generiskt – endast via app.post_verification (RPC-payload
  * byggs i commit.ts med verificationRpcPayload nedan).
  */
+/** Bilagan ligger i kolumner på verifikationen; utan filnamn finns ingen bilaga. */
+function verificationAttachmentFromRow(head: SqlRow): VerificationAttachment | undefined {
+  const filename = strOrU(head.attachment_filename);
+  if (!filename) return undefined;
+  return {
+    filename,
+    contentType: str(head.attachment_content_type),
+    sizeBytes: num(head.attachment_size_bytes),
+    ...opt("storagePath", strOrU(head.attachment_storage_path)),
+    ...opt("contentBase64", strOrU(head.attachment_content_base64)),
+  };
+}
+
 export function verificationFromRows(head: SqlRow, entryRows: SqlRow[]): Verification {
   return {
     id: str(head.id),
     series: str(head.series),
     number: num(head.number),
     date: str(head.date), // TEXT-kolumn: blandade strängformat rundresas exakt
+    ...opt("transactionDate", head.transaction_date == null ? undefined : dateOnly(head.transaction_date)),
     description: str(head.description),
+    ...opt("attachment", verificationAttachmentFromRow(head)),
     entries: entryRows.map(
       (e): VerificationEntry => ({
         account: num(e.account),
@@ -1181,7 +1197,13 @@ export function verificationRpcPayload(v: Verification): Record<string, unknown>
     series: v.series,
     number: v.number,
     date: v.date,
+    transaction_date: v.transactionDate ?? null,
     description: v.description,
+    attachment_filename: v.attachment?.filename ?? null,
+    attachment_content_type: v.attachment?.contentType ?? null,
+    attachment_size_bytes: v.attachment?.sizeBytes ?? null,
+    attachment_storage_path: v.attachment?.storagePath ?? null,
+    attachment_content_base64: v.attachment?.contentBase64 ?? null,
     source_type: v.source.type,
     source_id: "id" in v.source ? v.source.id : null,
     confidence: v.confidence,

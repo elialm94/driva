@@ -238,12 +238,31 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
   const sequences = sequenceRows[0];
   const lockedThrough = business.accounting_locked_through;
 
+  /**
+   * Räknarna per verifikationsserie. Serie A speglas alltid av den
+   * ursprungliga kolumnen, så ett företag som bokförde innan serier fanns får
+   * rätt nästa nummer utan backfill.
+   */
+  function verificationSeriesFromRow(row: SqlRow): Record<string, number> {
+    const raw = row.verification_series;
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const counters: Record<string, number> = { A: num(row.verification) };
+    if (parsed && typeof parsed === "object") {
+      for (const [series, next] of Object.entries(parsed as Record<string, unknown>)) {
+        const value = Number(next);
+        if (Number.isInteger(value) && value >= 1) counters[series] = value;
+      }
+    }
+    return counters;
+  }
+
   const state: DB = {
     settings: settingsFromRow(settingsRows[0]),
     sequences: {
       quote: num(sequences.quote),
       invoice: num(sequences.invoice),
       verification: num(sequences.verification),
+      verificationSeries: verificationSeriesFromRow(sequences),
     },
     customers,
     quotes: quoteRows.map(quoteFromRow),

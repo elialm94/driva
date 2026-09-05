@@ -18,8 +18,12 @@ import {
   confirmTaxReductionPayoutMatch,
 } from "@/lib/services/payment-matching";
 import { registerCreditRefund } from "@/lib/services/invoices";
+import { newAttachmentKey, postManualVerification } from "@/lib/services/manual-verification";
+import { storeVerificationAttachment } from "@/lib/receipts/verification-attachment";
+import { parseReceiptDataUrl } from "@/lib/receipts/receipt-file";
+import { verificationLabel } from "@/lib/accounting/engine";
 import { db } from "@/lib/store";
-import type { AnnualReport } from "@/lib/types";
+import type { AnnualReport, VerificationAttachment } from "@/lib/types";
 import { withBusiness } from "@/lib/auth/session";
 
 /**
@@ -176,4 +180,84 @@ export async function planAccrualAction(input: {
       planAccrualForSource({ type: "leverantorsfaktura", invoice }, { fromDate: input.fromDate, toDate: input.toDate }, input.fiscalYearId, "anvandare");
     }
   }, "write_accounting");
+}
+
+/* --------------------------- Manuellt verifikat ---------------------------- */
+
+export interface ManualVerificationFormLine {
+  account: number;
+  debit?: number;
+  credit?: number;
+  note?: string;
+}
+
+export interface ManualVerificationFormInput {
+  date?: string;
+  transactionDate?: string;
+  description: string;
+  explanation?: string;
+  lines: ManualVerificationFormLine[];
+  /** Underlaget som data-URL (bild eller PDF). Lagras innan verifikationen bokförs. */
+  attachmentDataUrl?: string;
+  attachmentFilename?: string;
+  /**
+   * Klienten som bokföringen gäller. Konsultytan skickar den uttryckligen så
+   * att verifikatet aldrig hamnar hos fel klient om cookien pekar någon annanstans;
+   * withBusiness kontrollerar medlemskapet innan något bokförs.
+   */
+  businessId?: string;
+}
+
+export type ManualVerificationResult =
+  | { ok: true; id: string; label: string; total: number }
+  | { ok: false; error: string };
+
+/**
+ * Bokför ett manuellt verifikat. Samma väg som all annan bokföring
+ * (postVerification), med serie M och underlaget som bilaga. Bilagan lagras
+ * FÖRE bokföringen: går lagringen fel bokförs ingenting, så en verifikation
+ * pekar aldrig på ett underlag som inte finns.
+ */
+export async function postManualVerificationAction(
+  input: ManualVerificationFormInput
+): Promise<ManualVerificationResult> {
+  try {
+    const posted = await withBusiness(
+      async () => {
+        let attachment: VerificationAttachment | undefined;
+        if (input.attachmentDataUrl) {
+          const file = parseReceiptDataUrl(input.attachmentDataUrl);
+          if (!file) throw new Error("Underlaget kunde inte läsas. Försök ladda upp filen igen.");
+          attachment = await storeVerificationAttachment(
+            newAttachmentKey(),
+            input.attachmentFilename?.trim() || "underlag",
+            file
+          );
+        }
+        const verification = postManualVerification(
+          {
+            date: input.date,
+            transactionDate: input.transactionDate,
+            description: input.description,
+            explanation: input.explanation,
+            lines: input.lines,
+            attachment,
+          },
+          "anvandare"
+        );
+        refresh();
+        return verification;
+      },
+      { capability: "write_accounting", businessId: input.businessId }
+    );
+    return {
+      ok: true,
+      id: posted.id,
+      label: verificationLabel(posted),
+      total: posted.entries.reduce((s, e) => s + e.debit, 0),
+    };
+  } catch (e) {
+    refresh();
+    return { ok: false, error: e instanceof Error ? e.message : "Verifikatet kunde inte bokföras." };
+  }
 }

@@ -306,6 +306,9 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const chartApplied = await ensureChartAccountsSchema(client);
   applied.push(...chartApplied);
 
+  const manualApplied = await ensureManualVerificationSchema(client);
+  applied.push(...manualApplied);
+
   return applied;
 }
 
@@ -492,6 +495,119 @@ export async function ensureChartAccountsSchema(client: SqlClient): Promise<stri
        for all to driva_app using (app.is_member(business_id)) with check (app.is_member(business_id))`
   );
   applied.push("chart_accounts");
+  return applied;
+}
+
+/**
+ * Manuella verifikat (migration 31): serieräknare, handelsdatum och bilaga på
+ * verifikationen. Kolumnerna räcker inte – app.post_verification måste också
+ * CAS:a mot seriens egen räknare, annars går ett manuellt verifikat i serie M
+ * aldrig igenom. Speglar migrationen.
+ */
+export async function ensureManualVerificationSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  if (await columnExists(client, "verifications", "attachment_filename")) return applied;
+
+  await run(
+    client,
+    `alter table public.business_sequences
+       add column if not exists verification_series jsonb not null default '{}'::jsonb`
+  );
+  await run(
+    client,
+    `alter table public.verifications
+       add column if not exists transaction_date date,
+       add column if not exists attachment_filename text,
+       add column if not exists attachment_content_type text,
+       add column if not exists attachment_size_bytes bigint,
+       add column if not exists attachment_storage_path text,
+       add column if not exists attachment_content_base64 text`
+  );
+  await run(
+    client,
+    `create or replace function app.post_verification(p_business_id uuid, p_verification jsonb)
+     returns void
+     language plpgsql
+     security definer
+     set search_path = ''
+     as $fn$
+     declare
+       v_number integer := (p_verification ->> 'number')::integer;
+       v_series text := coalesce(p_verification ->> 'series', 'A');
+       v_entry jsonb;
+       v_pos integer := 0;
+     begin
+       perform app.validate_entries(p_verification -> 'entries');
+
+       update public.business_sequences
+          set verification_series = jsonb_set(
+                coalesce(verification_series, '{}'::jsonb),
+                array[v_series],
+                to_jsonb(v_number + 1)
+              ),
+              verification = case when v_series = 'A' then v_number + 1 else verification end
+        where business_id = p_business_id
+          and coalesce(
+                (verification_series ->> v_series)::integer,
+                case when v_series = 'A' then verification else 1 end
+              ) = v_number;
+       if not found then
+         raise exception 'sequence_conflict: verifikationsnummer % i serie % är inte nästa lediga', v_number, v_series
+           using errcode = '40001';
+       end if;
+
+       insert into public.verifications (
+         id, business_id, series, number, date, transaction_date, description,
+         source_type, source_id, confidence, created_by, status, posted_at,
+         fiscal_year_id, corrects_verification_id, explanation, created_at,
+         attachment_filename, attachment_content_type, attachment_size_bytes,
+         attachment_storage_path, attachment_content_base64
+       ) values (
+         p_verification ->> 'id',
+         p_business_id,
+         v_series,
+         v_number,
+         p_verification ->> 'date',
+         (p_verification ->> 'transaction_date')::date,
+         coalesce(p_verification ->> 'description', ''),
+         coalesce(p_verification ->> 'source_type', 'manuell'),
+         p_verification ->> 'source_id',
+         coalesce(p_verification ->> 'confidence', 'hog'),
+         coalesce(p_verification ->> 'created_by', 'auto'),
+         'bokford',
+         (p_verification ->> 'posted_at')::timestamptz,
+         p_verification ->> 'fiscal_year_id',
+         p_verification ->> 'corrects_verification_id',
+         p_verification ->> 'explanation',
+         coalesce((p_verification ->> 'created_at')::timestamptz, now()),
+         p_verification ->> 'attachment_filename',
+         p_verification ->> 'attachment_content_type',
+         (p_verification ->> 'attachment_size_bytes')::bigint,
+         p_verification ->> 'attachment_storage_path',
+         p_verification ->> 'attachment_content_base64'
+       );
+
+       for v_entry in select * from jsonb_array_elements(p_verification -> 'entries') loop
+         insert into public.accounting_entries (
+           verification_id, business_id, position, account, account_name,
+           debit, credit, vat_code, note
+         ) values (
+           p_verification ->> 'id',
+           p_business_id,
+           v_pos,
+           (v_entry ->> 'account')::integer,
+           coalesce(v_entry ->> 'account_name', ''),
+           coalesce((v_entry ->> 'debit')::bigint, 0),
+           coalesce((v_entry ->> 'credit')::bigint, 0),
+           v_entry ->> 'vat_code',
+           v_entry ->> 'note'
+         );
+         v_pos := v_pos + 1;
+       end loop;
+     end;
+     $fn$`
+  );
+  applied.push("verifications.attachment");
   return applied;
 }
 

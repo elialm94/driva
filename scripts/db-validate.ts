@@ -436,6 +436,90 @@ async function main() {
   );
 
   // ------------------------------------------------------------------
+  // 2b. Verifikationsserier, handelsdatum och bilaga
+  // ------------------------------------------------------------------
+  console.log("\nVerifikationsserier, handelsdatum och underlag:");
+
+  const manual = (id: string, number: number, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      id,
+      number,
+      series: "M",
+      date: "2026-03-05T12:00:00.000Z",
+      description: "Manuellt verifikat",
+      source_type: "manuell",
+      confidence: "hog",
+      created_by: "anvandare",
+      posted_at: "2026-03-05T12:00:00.000Z",
+      created_at: "2026-03-05T12:00:00.000Z",
+      entries: [
+        { account: 5010, account_name: "Lokalhyra", debit: 12000, credit: 0 },
+        { account: 1930, account_name: "Företagskonto", debit: 0, credit: 12000 },
+      ],
+      ...extra,
+    });
+
+  await asApp(A);
+  // Serie A står på 3 här. Serie M ska ändå börja på 1 – serierna delar aldrig räknare.
+  await expectOk(db, "serie M börjar på 1 fastän serie A hunnit längre", () =>
+    db.query(`select app.post_verification($1, $2::jsonb)`, [A, manual("ver-m1", 1)])
+  );
+  await expectError(db, "fel nummer i serie M stoppas (CAS per serie)", "sequence_conflict", () =>
+    db.query(`select app.post_verification($1, $2::jsonb)`, [A, manual("ver-m9", 9)])
+  );
+  await expectOk(db, "handelsdatum och underlag skrivs med verifikationen", () =>
+    db.query(`select app.post_verification($1, $2::jsonb)`, [
+      A,
+      manual("ver-m2", 2, {
+        transaction_date: "2026-02-27",
+        attachment_filename: "hyresavi.pdf",
+        attachment_content_type: "application/pdf",
+        attachment_size_bytes: 2048,
+        attachment_storage_path: `${A}/verifikat/ver-m2/hyresavi.pdf`,
+      }),
+    ])
+  );
+  {
+    const r = await rows<{
+      transaction_date: string | null;
+      attachment_filename: string | null;
+      attachment_size_bytes: string | null;
+      attachment_storage_path: string | null;
+    }>(
+      db,
+      `select transaction_date, attachment_filename, attachment_size_bytes, attachment_storage_path
+         from public.verifications where id = 'ver-m2'`
+    );
+    const row = r[0];
+    const isoDate = row?.transaction_date ? new Date(row.transaction_date).toISOString().slice(0, 10) : null;
+    if (
+      isoDate === "2026-02-27" &&
+      row?.attachment_filename === "hyresavi.pdf" &&
+      Number(row?.attachment_size_bytes) === 2048 &&
+      row?.attachment_storage_path === `${A}/verifikat/ver-m2/hyresavi.pdf`
+    ) {
+      ok("handelsdatum och bilagemetadata rundresar");
+    } else {
+      fail("handelsdatum och bilagemetadata rundresar", JSON.stringify(row));
+    }
+  }
+  {
+    // Serie M har tagit två nummer utan att serie A rört sig: A står kvar på 3,
+    // både i serieräknarna och i den ursprungliga kolumnen som äldre kod läser.
+    const r = await rows<{ verification: number; verification_series: Record<string, number> }>(
+      db,
+      `select verification, verification_series from public.business_sequences where business_id = $1`,
+      [A]
+    );
+    const row = r[0];
+    if (row?.verification === 3 && row.verification_series?.A === 3 && row.verification_series?.M === 3) {
+      ok("räknarna hålls per serie, med serie A speglad i den ursprungliga kolumnen");
+    } else {
+      fail("räknarna hålls per serie", JSON.stringify(row));
+    }
+  }
+
+  // ------------------------------------------------------------------
   // 3. Fakturautfärdande: CAS, snapshot, frysning
   // ------------------------------------------------------------------
   console.log("\nFakturor – atomärt utfärdande och frysning:");

@@ -135,9 +135,19 @@ async function finalizeSequences(businessId: string, source: DB): Promise<void> 
       `update public.business_sequences
           set quote = greatest(quote, $2),
               invoice = greatest(invoice, $3),
-              verification = greatest(verification, $4)
+              verification = greatest(verification, $4),
+              -- Serieräknarna kommer med importen. Importen skriver till ett
+              -- tomt företag, så källans räknare är sanningen för de serier
+              -- den känner; övriga lämnas orörda.
+              verification_series = coalesce(verification_series, '{}'::jsonb) || $5::jsonb
         where business_id = $1`,
-      [businessId, source.sequences.quote, source.sequences.invoice, source.sequences.verification]
+      [
+        businessId,
+        source.sequences.quote,
+        source.sequences.invoice,
+        source.sequences.verification,
+        JSON.stringify(source.sequences.verificationSeries ?? {}),
+      ]
     );
   });
 }

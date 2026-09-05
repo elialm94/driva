@@ -722,6 +722,8 @@ export interface VerificationView {
   id: string;
   label: string;
   date: string;
+  /** Handelsdatum, bara när det avviker från bokföringsdatumet. */
+  transactionDate?: string;
   postedAt: string;
   description: string;
   explanation?: string;
@@ -740,6 +742,8 @@ export interface VerificationView {
   replacementLabel?: string;
   badge: { text: string; tone: "accent" | "warn" | "neutral" };
   creatorPhrase: string;
+  /** Underlaget på verifikationen, med länk som granskaren kan öppna från raden. */
+  attachment?: { filename: string; contentType: string; href: string };
   flow: CorrectionFlow;
   chain: { id: string; label: string; role: "original" | "rattelse" | "ny" }[];
 }
@@ -752,6 +756,7 @@ export function toVerificationView(v: Verification, byId: Map<string, Verificati
     id: v.id,
     label: verificationLabel(v),
     date: v.date,
+    transactionDate: v.transactionDate && v.transactionDate !== v.date.slice(0, 10) ? v.transactionDate : undefined,
     postedAt: v.postedAt ?? v.createdAt,
     description: v.description,
     explanation: v.explanation,
@@ -770,13 +775,27 @@ export function toVerificationView(v: Verification, byId: Map<string, Verificati
     replacementLabel: replacement ? verificationLabel(replacement) : undefined,
     badge: listBadge(v),
     creatorPhrase: creatorPhrase(v),
+    attachment: v.attachment
+      ? {
+          filename: v.attachment.filename,
+          contentType: v.attachment.contentType,
+          href: `/api/verifikat/${v.id}/bilaga`,
+        }
+      : undefined,
     flow: inspectCorrectionFlow(v.id),
     chain: correctionChain(v),
   };
 }
 
+/**
+ * Nyast först. Numret räcker inte som ordning sedan serierna blev flera – A102
+ * och M3 är samtida händelser – så listan ordnas på bokföringsdatum och faller
+ * tillbaka på serie och nummer inom samma dag.
+ */
 export function listVerificationViews(): VerificationView[] {
-  const all = [...db().verifications].sort((a, b) => b.number - a.number);
+  const all = [...db().verifications].sort(
+    (a, b) => b.date.localeCompare(a.date) || a.series.localeCompare(b.series) || b.number - a.number
+  );
   const byId = new Map(all.map((v) => [v.id, v]));
   return all.map((v) => toVerificationView(v, byId));
 }

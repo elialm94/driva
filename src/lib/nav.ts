@@ -112,7 +112,7 @@ export const BOKFORING_PREFETCH_HREFS: readonly string[] = Array.from(
 export function bokforingDetailTabForPath(pathname: string): (typeof BOKFORING_DETAIL_TABS)[number]["key"] | null {
   const path = pathname.split("?")[0] ?? pathname;
   if (path === "/bokforing") return "oversikt";
-  if (path === "/bokforing/verifikationer") return "verifikationer";
+  if (path === "/bokforing/verifikationer" || path === "/bokforing/verifikationer/nytt") return "verifikationer";
   if (path === "/bokforing/huvudbok") return "huvudbok";
   if ((BOKFORING_REPORT_PATHS as readonly string[]).includes(path)) return "rapporter";
   if (path === "/bokforing/moms") return "moms";
@@ -161,6 +161,7 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/uppdrag/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
   { pattern: "/jobb/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
   { pattern: "/uppdrag", section: "uppdrag", label: "Uppdrag" },
+  { pattern: "/bokforing/verifikationer/nytt", section: "bokforing", parent: "/bokforing/verifikationer", label: "Nytt verifikat", backLabel: "Verifikationer", showBack: true },
   { pattern: "/bokforing/verifikationer", section: "bokforing", parent: "/bokforing", label: "Verifikationer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/huvudbok", section: "bokforing", parent: "/bokforing", label: "Huvudbok", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/saldobalans", section: "bokforing", parent: "/bokforing", label: "Saldobalans", backLabel: "Bokföring", showBack: true },
@@ -171,6 +172,7 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/bokforing/detaljer", section: "bokforing", parent: "/bokforing", label: "Bokföringsdetaljer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing", section: "bokforing", label: "Bokföring" },
   { pattern: "/samarbeta", section: "samarbeta", label: "Samarbeta" },
+  { pattern: "/redovisning/k/:businessId/verifikationer/nytt", section: null, parent: "/redovisning/k/:businessId/verifikationer", label: "Nytt verifikat", backLabel: "Verifikationer", showBack: true },
   { pattern: "/redovisning/k/:businessId/verifikationer", section: null, parent: "/redovisning/k/:businessId", label: "Verifikationer", backLabel: "Arbeta", showBack: true },
   { pattern: "/redovisning/k/:businessId/bank", section: null, parent: "/redovisning/k/:businessId", label: "Bank", backLabel: "Arbeta", showBack: true },
   { pattern: "/redovisning/k/:businessId/moms", section: null, parent: "/redovisning/k/:businessId", label: "Moms", backLabel: "Arbeta", showBack: true },

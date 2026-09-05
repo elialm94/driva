@@ -415,8 +415,10 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
 
   /* ----- 4. RPC-pass: verifikationer + utfärdanden + betalningar i nummerordning ----- */
 
+  // Per serie i nummerordning: CAS:en i post_verification kräver att seriens
+  // nästa lediga nummer är exakt det domänen allokerade.
   const newVerifications = newEntries(baseline.verifications, state.verifications).sort(
-    (a, b) => a.number - b.number
+    (a, b) => a.series.localeCompare(b.series) || a.number - b.number
   );
   const newPayments = newEntries(baseline.payments, state.payments);
 

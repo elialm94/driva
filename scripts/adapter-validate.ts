@@ -695,6 +695,75 @@ async function main() {
     });
   });
 
+  console.log("\nManuellt verifikat genom adaptern:");
+  await check("serie M, handelsdatum och bilaga rundresar och delar inte räknare med serie A", async () => {
+    const { postManualVerification } = await import("../src/lib/services/manual-verification");
+    const { postVerification } = await import("../src/lib/accounting/engine");
+    let manualId = "";
+    let autoNumberBefore = 0;
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      autoNumberBefore = db().sequences.verification;
+      const v = postManualVerification({
+        date: "2026-04-02",
+        transactionDate: "2026-03-28",
+        description: "Manuellt verifikat genom adaptern",
+        explanation: "Underlaget är hyresavin.",
+        lines: [
+          { account: 5010, debit: 12_000, note: "Mars" },
+          { account: 1930, credit: 12_000 },
+        ],
+        attachment: {
+          filename: "hyresavi.pdf",
+          contentType: "application/pdf",
+          sizeBytes: 8,
+          contentBase64: Buffer.from("underlag").toString("base64"),
+        },
+      });
+      manualId = v.id;
+      save();
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const posted = db().verifications.find((v) => v.id === manualId);
+      assert.ok(posted, "det manuella verifikatet sparades");
+      assert.equal(posted.series, "M");
+      assert.equal(posted.number, 1, "serie M börjar på sitt eget nummer");
+      assert.equal(posted.transactionDate, "2026-03-28");
+      assert.equal(posted.entries[0].note, "Mars");
+      assert.equal(posted.attachment?.filename, "hyresavi.pdf");
+      assert.equal(posted.attachment?.sizeBytes, 8);
+      assert.equal(
+        Buffer.from(posted.attachment?.contentBase64 ?? "", "base64").toString(),
+        "underlag",
+        "underlaget läses tillbaka byte för byte"
+      );
+      assert.equal(db().sequences.verificationSeries?.M, 2);
+      assert.equal(db().sequences.verification, autoNumberBefore, "serie A rörde sig inte");
+    });
+    // Nästa automatiska bokning tar det A-nummer som stod på tur.
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      const auto = postVerification({
+        date: "2026-04-03",
+        description: "Automatik efter manuellt verifikat",
+        entries: [
+          { account: 5010, debit: 100 },
+          { account: 1930, credit: 100 },
+        ],
+        source: { type: "manuell" },
+        createdBy: "auto",
+      });
+      assert.equal(auto.series, "A");
+      assert.equal(auto.number, autoNumberBefore);
+      save();
+    });
+    await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {
+      assert.equal(
+        db().verifications.some((v) => v.series === "M"),
+        false,
+        "B ser inte A:s manuella verifikat"
+      );
+    });
+  });
+
   console.log("\nKvittofil genom adaptern:");
   await check("kvitto med inline-fil rundresas (content_base64, content_type, size_bytes)", async () => {
     const { uploadReceiptForExpense } = await import("../src/lib/services/expenses");
