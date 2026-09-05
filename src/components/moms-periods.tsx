@@ -5,6 +5,9 @@ import { GenerateVatReportButton, MarkVatDeclaredButton } from "./bokforing-widg
 import { BookVatOnTaxAccountButton } from "./skattekonto-widgets";
 import { vatChecklist, type VatPeriodSummary } from "@/lib/accounting/vat";
 import { VAT_PERIOD_STATE } from "@/lib/status-labels";
+import { InlamningPanel } from "./inlamning";
+import { filingPanelData } from "@/lib/filing/view";
+import { filingSubmissionAvailable } from "@/lib/filing/select";
 
 export function MomsPeriods({
   periods,
@@ -135,13 +138,20 @@ export function MomsPeriods({
                 ) : null}
               </div>
             ) : null}
+
+            {/* Inlämningen är nästa steg efter att perioden är deklarerad i Driva. */}
+            {readOnly || p.state === "pagaende" ? null : (
+              <InlamningPanel {...filingPanelData("moms", p.period.key)} className="mt-4" />
+            )}
           </Card>
         );
       })}
       <p className="text-[12px] leading-relaxed text-muted">
-        Driva skickar aldrig något till Skatteverket. Du deklarerar som vanligt på skatteverket.se – antingen genom att
-        fylla i rutorna ovan eller genom att ladda upp deklarationsfilen (eSKD) i e-tjänsten. Driva ger dig exakta
-        siffror per ruta och håller ordning på vad som är deklarerat.
+        {filingSubmissionAvailable()
+          ? "Deklarationsfilen (eSKD) går att lämna in härifrån, och då står kvittensen kvar på perioden. Du kan lika " +
+            "gärna hämta filen och ladda upp den i e-tjänsten själv, eller fylla i rutorna ovan för hand – siffrorna är desamma."
+          : "Driva skickar inget till Skatteverket för det här företaget. Du deklarerar som vanligt på skatteverket.se – " +
+            "antingen genom att fylla i rutorna ovan eller genom att ladda upp deklarationsfilen (eSKD) i e-tjänsten."}
       </p>
     </div>
   );

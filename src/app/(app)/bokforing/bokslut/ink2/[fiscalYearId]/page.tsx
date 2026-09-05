@@ -9,6 +9,8 @@ import { getFiscalYear } from "@/lib/accounting/fiscal";
 import { computeTaxCalculation, ink2Rows } from "@/lib/accounting/tax";
 import { DEPRECIATION_RULE_LABEL, schablonranta } from "@/lib/accounting/ink2-model";
 import { sruForFiscalYear, type SruFiling } from "@/lib/accounting/sru";
+import { InlamningPanel } from "@/components/inlamning";
+import { filingPanelData } from "@/lib/filing/view";
 import { db } from "@/lib/store";
 
 export const metadata = { title: "INK2" };
@@ -309,6 +311,7 @@ function SruCard({ fiscalYearId, label }: { fiscalYearId: string; label: string 
           </p>
         </div>
       ) : null}
+      <InlamningPanel {...filingPanelData("ink2", fiscalYearId)} className="mt-4" />
     </Card>
   );
 }

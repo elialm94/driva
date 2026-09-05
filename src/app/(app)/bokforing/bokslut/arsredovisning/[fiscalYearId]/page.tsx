@@ -12,6 +12,8 @@ import { ensurePageBusiness } from "@/lib/auth/session";
 import { getFiscalYear } from "@/lib/accounting/fiscal";
 import { annualReportBlockers, annualReportHistory, resolveAnnualReport } from "@/lib/accounting/annual-report";
 import { ixbrlBlockers, ixbrlForAnnualReport } from "@/lib/accounting/ixbrl";
+import { InlamningPanel } from "@/components/inlamning";
+import { filingPanelData } from "@/lib/filing/view";
 import type { AnnualReport } from "@/lib/types";
 
 export const metadata = { title: "Årsredovisning" };
@@ -257,6 +259,10 @@ function IxbrlCard({ report }: { report: AnnualReport }) {
           </ul>
         </div>
       ) : null}
+      {/* Panelen visas först när filen går att bygga: annars är blockerarna ovan svaret. */}
+      {error || blockers.length > 0 ? null : (
+        <InlamningPanel {...filingPanelData("arsredovisning", report.id)} className="mt-4" />
+      )}
     </Card>
   );
 }

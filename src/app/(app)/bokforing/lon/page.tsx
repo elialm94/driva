@@ -12,6 +12,9 @@ import {
   RevealPersonnummer,
   RunPayrollButton,
 } from "@/components/lon-widgets";
+import { InlamningPanel } from "@/components/inlamning";
+import { filingPanelData } from "@/lib/filing/view";
+import { filingSubmissionAvailable } from "@/lib/filing/select";
 import { kr, datumKort } from "@/lib/format";
 import { maskPersonnummer } from "@/lib/personnummer";
 import { ensurePageBusiness } from "@/lib/auth/session";
@@ -263,6 +266,7 @@ export default async function LonPage() {
                     Hämta deklarationsfil (XML)
                   </a>
                 </div>
+                <InlamningPanel {...filingPanelData("agi", d.month)} className="mt-3" />
               </Card>
             ))}
           </div>
@@ -278,9 +282,11 @@ export default async function LonPage() {
       </div>
 
       <p className="mt-6 text-[12px] leading-relaxed text-muted">
-        Driva skickar aldrig något till Skatteverket. Deklarationen tas fram ur bokföringen och markeras som lämnad här –
-        då fryses siffrorna, beloppet förs till skattekontot och månaden låses. Filen går att ladda upp i e-tjänsten
-        Arbetsgivardeklaration, med en individuppgift per anställd.
+        Deklarationen tas fram ur bokföringen och markeras som lämnad här – då fryses siffrorna, beloppet förs till
+        skattekontot och månaden låses.{" "}
+        {filingSubmissionAvailable()
+          ? "Filen går att lämna in härifrån, eller att hämta och ladda upp i e-tjänsten Arbetsgivardeklaration själv."
+          : "Filen går att ladda upp i e-tjänsten Arbetsgivardeklaration, med en individuppgift per anställd. Driva skickar inget till Skatteverket för det här företaget."}
       </p>
     </div>
   );
