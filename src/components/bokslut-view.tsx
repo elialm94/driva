@@ -16,7 +16,7 @@ import { listAssets, bookValue, assetsNeedingDepreciation, accumulatedDepreciati
 import { pendingAccruals, accrualSuggestions } from "@/lib/accounting/accruals";
 import { computeTaxCalculation } from "@/lib/accounting/tax";
 import { annualReportFor, annualReportHistory } from "@/lib/accounting/annual-report";
-import { retentionPolicyText } from "@/lib/archive/retention";
+import { retentionShortText } from "@/lib/archive/retention";
 
 /**
  * Bokslutet, som det ser ut på både ägarens sida och konsultytan.
@@ -438,7 +438,7 @@ export function BokslutView({ base, hrefFor = (href) => href, businessId, readOn
                     </div>
                     <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
                       En zip-fil med SIE-filen, rapporterna som CSV och underlagen – kvitton och fakturor i en mapp
-                      per verifikation, plus ett register över var varje underlag ligger. {retentionPolicyText(f)}
+                      per verifikation, plus ett register över var varje underlag ligger. {retentionShortText(f)}
                     </p>
                   </div>
 

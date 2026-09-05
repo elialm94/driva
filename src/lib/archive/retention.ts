@@ -35,9 +35,17 @@ export function retentionYearsLeft(fy: Pick<FiscalYear, "endDate">, today: strin
 }
 
 /**
- * Policytexten som följer med i arkivet och visas i gränssnittet. En och samma
- * formulering på båda ställena, för att den som öppnar zip-filen 2033 ska läsa
- * exakt det som stod i appen när filen skapades.
+ * Kortformen för gränssnittet. Hela lagtexten på varje stängt räkenskapsår blir
+ * en vägg som ingen läser; datumet är det som ska gå att se utan att leta, och
+ * regeln bakom det står i sin helhet i arkivets läsmig-fil.
+ */
+export function retentionShortText(fy: Pick<FiscalYear, "endDate" | "label">): string {
+  return `Bevaras till och med ${retentionUntil(fy)} – sju år efter utgången av det kalenderår då räkenskapsåret avslutades (${fy.endDate.slice(0, 4)}).`;
+}
+
+/**
+ * Hela policytexten, som följer med i arkivet. Den som öppnar zip-filen 2033
+ * har ingen app att fråga, så där står regeln och skälet fullt ut.
  */
 export function retentionPolicyText(fy: Pick<FiscalYear, "endDate" | "label">): string {
   const until = retentionUntil(fy);
