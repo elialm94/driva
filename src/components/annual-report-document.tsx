@@ -260,7 +260,8 @@ function Signatures({ report, company }: { report: AnnualReport; company: Compan
 
   return (
     <section className="mt-10 break-inside-avoid">
-      <p className="text-[12.5px] text-soft">
+      <h2 className="border-b border-ink/50 pb-1.5 text-[15px] font-semibold">Underskrifter</h2>
+      <p className="mt-3 text-[12.5px] text-soft">
         {place ? `${place}, ` : ""}
         {signedAt ? datumLang(signedAt) : "den ……………………………………"}
       </p>
