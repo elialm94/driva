@@ -63,7 +63,10 @@ Statusen **härleds** ur verklig data (`src/lib/setup/tasks.ts`); bara
 | Ställ in lön | – | **dold**: lön finns inte i Ferva; behovet sparas i profilen och visas ärligt där |
 
 Hem-kortet visar högst tre öppna rekommenderade uppgifter, den mest värdefulla
-först, och försvinner när inga återstår. Centret i Inställningar är permanent.
+först, och försvinner när inga återstår. Det visas bara för nya eller
+ofullständigt uppsatta företag: de som svarat i steg 2 eller gjort ett
+uppgiftsval, samt företag utan kunder och uppdrag. Befintliga företag som
+backfillats som klara får inget kort. Centret i Inställningar är permanent.
 
 ## Importflödet
 

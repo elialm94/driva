@@ -258,6 +258,23 @@ describe("Kom igång-uppgifter härleds ur verklig data", () => {
     assert.throws(() => updateSetupProfile({ industries: [], payroll: "none", bookkeeping: "new" }), /minst ett område/);
   });
 
+  it("befintliga företag som backfillats (ingen profil) får inget Hem-kort – centret finns kvar", () => {
+    db().customers.push(testCustomer({ id: "c1" }));
+    db().jobs.push({ id: "j1", customerId: "c1", title: "Tak", description: "", status: "pagar", checklist: [], notes: "", createdAt: new Date().toISOString() });
+    assert.equal(db().onboarding, null);
+    const summary = setupSummary();
+    assert.ok(summary.open.length > 0, "det finns öppna uppgifter (bank, betalning)");
+    assert.equal(summary.showHomeCard, false);
+    // Ett helt tomt företag utan profil visar kortet ändå.
+    db().customers.length = 0;
+    db().jobs.length = 0;
+    assert.equal(setupSummary().showHomeCard, true);
+    // …och ett företag som svarat i steg 2 likaså.
+    db().customers.push(testCustomer({ id: "c2" }));
+    applyPersonalization({ industries: ["el"], payroll: "none", bookkeeping: "new" });
+    assert.equal(setupSummary().showHomeCard, true);
+  });
+
   it("bokföringsflytten är klar först när en import har genomförts", () => {
     applyPersonalization({ industries: ["el"], payroll: "none", bookkeeping: "existing" });
     assert.equal(setupTasks().find((t) => t.id === "move_bookkeeping")?.status, "todo");

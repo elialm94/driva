@@ -211,8 +211,22 @@ export function setupSummary(): SetupSummary {
     deferred: tasks.filter((t) => t.status === "later"),
     dismissed: tasks.filter((t) => t.status === "not_needed"),
     optional,
-    showHomeCard: open.length > 0,
+    showHomeCard: open.length > 0 && homeCardApplies(),
   };
+}
+
+/**
+ * Hem-kortet gäller nya eller ofullständigt uppsatta företag: de som gått
+ * igenom onboardingens steg 2 (profil finns) eller gjort ett uppgiftsval, samt
+ * företag utan kunder och uppdrag. Befintliga företag som backfillats som klara
+ * och redan arbetar i Ferva får inget kort – centret finns kvar i Inställningar.
+ */
+function homeCardApplies(): boolean {
+  const data = db();
+  const o = data.onboarding;
+  if (o && (o.industries.length > 0 || o.bookkeeping !== null || o.payroll !== null)) return true;
+  if (o && Object.keys(o.taskOverrides ?? {}).length > 0) return true;
+  return data.customers.length === 0 && data.jobs.length === 0;
 }
 
 function latestImportSummary(kind: "bokforing" | "kunder" | "leverantorer" | "artiklar"): string | undefined {
