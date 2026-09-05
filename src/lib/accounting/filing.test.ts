@@ -1,0 +1,514 @@
+process.env.DRIVA_TEST = "1";
+
+import { describe, it, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { db, replaceDb } from "../store";
+import { emptyTestDb } from "../invoices/test-db";
+import { postVerification } from "./engine";
+import { generateVatReport, markVatReportDeclared, setVatPeriodicity } from "./vat";
+import { generateEmployerDeclaration, runPayroll, saveEmployee } from "./payroll";
+import { eskdBytes, eskdForPeriod } from "./eskd";
+import { agiForMonth } from "./agi-xml";
+import { granskningsperiod, sruBytes, sruForFiscalYear } from "./sru";
+import { encodeLatin1, FilingDataError, orgNumber12, personnummer12 } from "./filing-format";
+import { INK2R_BALANCE, INK2R_RESULT, ruleForAccount } from "./ink2r-model";
+import { addCustomAccount, standardAccounts } from "./chart";
+
+/**
+ * Myndighetsfilerna: momsdeklaration (eSKD), arbetsgivardeklaration (AGI) och
+ * inkomstdeklaration (SRU).
+ *
+ * En fil som avvisas vid uppladdning är värdelös, och felen som gör att den
+ * avvisas är just de som inte syns när man läser filen: fel teckenuppsättning,
+ * fel form på organisationsnummret, decimaler i ett belopp, poster i fel
+ * ordning. Testerna håller fast formatens hårda krav – och att siffrorna i
+ * filen är samma siffror som produkten visar på skärmen.
+ */
+
+const YEAR = 2026;
+const BANK = 1930;
+const FORSALJNING = 3001;
+const UTGAENDE_MOMS = 2611;
+const INGAENDE_MOMS = 2641;
+const INKOP = 5410;
+
+function reset() {
+  replaceDb(emptyTestDb());
+  const data = db();
+  data.settings.name = "Bygg & Co AB";
+  data.settings.orgNumber = "556677-8899";
+  data.settings.email = "hej@byggco.se";
+  data.settings.phone = "08-123 45 67";
+  data.settings.address = "Storgatan 1";
+  data.settings.postalCode = "123 45";
+  data.settings.city = "Stockholm";
+  data.fiscalYears.push({
+    id: `fy-${YEAR}`,
+    label: String(YEAR),
+    startDate: `${YEAR}-01-01`,
+    endDate: `${YEAR}-12-31`,
+    status: "oppet",
+    openingBalances: {},
+    openingSource: "migrering",
+  });
+  // Bankavstämningen ingår inte i det som testas här.
+  data.bankAccounts = [];
+}
+
+function sale(date: string, net: number) {
+  const vat = Math.round(net * 0.25);
+  postVerification({
+    date,
+    description: "Fakturerat arbete",
+    entries: [
+      { account: BANK, debit: net + vat },
+      { account: FORSALJNING, credit: net },
+      { account: UTGAENDE_MOMS, credit: vat },
+    ],
+    source: { type: "manuell" },
+    createdBy: "anvandare",
+  });
+}
+
+function purchase(date: string, net: number, account = INKOP) {
+  const vat = Math.round(net * 0.25);
+  postVerification({
+    date,
+    description: "Inköp",
+    entries: [
+      { account, debit: net },
+      { account: INGAENDE_MOMS, debit: vat },
+      { account: BANK, credit: net + vat },
+    ],
+    source: { type: "manuell" },
+    createdBy: "anvandare",
+  });
+}
+
+/* ------------------------------ Gemensamma regler -------------------------- */
+
+describe("formatens gemensamma regler", () => {
+  it("kodar text till ISO 8859-1 och tappar inte de svenska tecknen", () => {
+    const bytes = encodeLatin1("Bygg & Co AB, Åsa Öberg i Växjö");
+    assert.equal(bytes.byteLength, "Bygg & Co AB, Åsa Öberg i Växjö".length);
+    assert.equal(bytes[14], 0xc5); // Å
+    assert.equal(bytes[18], 0xd6); // Ö
+    assert.ok(bytes.every((b) => b <= 0xff));
+  });
+
+  it("ersätter tecken som inte finns i ISO 8859-1 i stället för att kasta", () => {
+    const text = new TextDecoder("latin1").decode(encodeLatin1("Firma – Škoda"));
+    assert.equal(text, "Firma - Skoda");
+  });
+
+  it("organisationsnummer blir tolvsiffrigt med sekelprefix för juridiska personer", () => {
+    assert.equal(orgNumber12("556677-8899"), "165566778899");
+    assert.equal(orgNumber12("165566778899"), "165566778899");
+    assert.throws(() => orgNumber12("55667"), FilingDataError);
+  });
+
+  it("personnummer blir tolvsiffrigt utan bindestreck", () => {
+    assert.equal(personnummer12("850101-1234"), "198501011234");
+    assert.equal(personnummer12("050101-1234"), "200501011234");
+  });
+});
+
+/* ---------------------------------- eSKD ----------------------------------- */
+
+describe("momsdeklaration som eSKD-fil", () => {
+  beforeEach(() => {
+    reset();
+    setVatPeriodicity("kvartal", "anvandare");
+  });
+
+  it("skriver rutorna som taggar med hela kronor och rätt period", () => {
+    sale(`${YEAR}-04-10`, 100_000);
+    purchase(`${YEAR}-05-12`, 20_000);
+
+    const file = eskdForPeriod(`${YEAR}-K2`);
+
+    assert.match(file.xml, /^<\?xml version="1.0" encoding="ISO-8859-1"\?>/);
+    assert.match(file.xml, /<OrgNr>556677-8899<\/OrgNr>/);
+    assert.match(file.xml, new RegExp(`<Period>${YEAR}06</Period>`));
+    assert.match(file.xml, /<ForsMomsEjAnnan>100000<\/ForsMomsEjAnnan>/);
+    assert.match(file.xml, /<MomsUtgHog>25000<\/MomsUtgHog>/);
+    assert.match(file.xml, /<MomsIngAvdr>5000<\/MomsIngAvdr>/);
+    assert.match(file.xml, /<MomsBetala>20000<\/MomsBetala>/);
+    assert.equal(file.attBetala, 20_000);
+
+    // Beloppen är heltal: inga decimaler och inga tusenavgränsare.
+    for (const line of file.xml.split("\r\n")) {
+      const amount = line.match(/^<[A-Za-z]+>(-?[\d\s.,]+)<\/[A-Za-z]+>$/)?.[1];
+      if (amount === undefined) continue;
+      assert.match(amount, /^-?\d+$/, `Beloppet ${amount} är inte ett heltal`);
+    }
+  });
+
+  it("radbryter med CRLF och kodas till ISO 8859-1", () => {
+    sale(`${YEAR}-04-10`, 1_000);
+    const file = eskdForPeriod(`${YEAR}-K2`);
+    assert.ok(file.xml.includes("\r\n"));
+    assert.ok(file.xml.endsWith("\r\n"));
+    assert.ok(eskdBytes(file).byteLength > 0);
+  });
+
+  it("tomma rutor utelämnas men summeringen skrivs alltid", () => {
+    const file = eskdForPeriod(`${YEAR}-K1`);
+    assert.doesNotMatch(file.xml, /<ForsMomsEjAnnan>/);
+    assert.match(file.xml, /<MomsBetala>0<\/MomsBetala>/);
+  });
+
+  it("moms att få tillbaka skrivs med minustecken", () => {
+    purchase(`${YEAR}-02-12`, 40_000);
+    const file = eskdForPeriod(`${YEAR}-K1`);
+    assert.match(file.xml, /<MomsBetala>-10000<\/MomsBetala>/);
+  });
+
+  it("en deklarerad period ger filen som deklarerades, inte dagens bokföring", () => {
+    sale(`${YEAR}-01-15`, 100_000);
+    const report = generateVatReport(`${YEAR}-K1`, "anvandare");
+    markVatReportDeclared(report.id, "anvandare");
+
+    // En rättelse i efterhand hör till en senare period, inte till filen.
+    postVerification({
+      date: `${YEAR}-04-02`,
+      description: "Rättelse",
+      entries: [
+        { account: BANK, debit: 1_250 },
+        { account: FORSALJNING, credit: 1_000 },
+        { account: UTGAENDE_MOMS, credit: 250 },
+      ],
+      source: { type: "manuell" },
+      createdBy: "anvandare",
+    });
+
+    const file = eskdForPeriod(`${YEAR}-K1`);
+    assert.equal(file.fromDeclaredReport, true);
+    assert.match(file.xml, /<MomsUtgHog>25000<\/MomsUtgHog>/);
+  });
+
+  it("okänd period går inte att bygga en fil av", () => {
+    assert.throws(() => eskdForPeriod("2026-K9"), FilingDataError);
+  });
+});
+
+/* ----------------------------------- AGI ----------------------------------- */
+
+describe("arbetsgivardeklaration som XML-fil", () => {
+  beforeEach(() => {
+    reset();
+    saveEmployee(
+      {
+        name: "Anna Andersson",
+        personnummer: "19850101-1234",
+        role: "foretagsledare",
+        monthlySalary: 45_000,
+        taxBasis: { kind: "procent", percent: 30 },
+        startDate: `${YEAR}-01-01`,
+      },
+      "anvandare"
+    );
+    runPayroll({ month: `${YEAR}-01` }, "anvandare");
+  });
+
+  it("innehåller en huvuduppgift och en individuppgift per anställd", () => {
+    const declaration = generateEmployerDeclaration(`${YEAR}-01`, "anvandare");
+    const file = agiForMonth(`${YEAR}-01`);
+
+    assert.equal(file.individualCount, 1);
+    assert.match(file.xml, /omrade="Arbetsgivardeklaration"/);
+    assert.match(file.xml, /<agd:AgRegistreradId faltkod="201">165566778899<\/agd:AgRegistreradId>/);
+    assert.match(file.xml, new RegExp(`<agd:RedovisningsPeriod faltkod="006">${YEAR}01</agd:RedovisningsPeriod>`));
+    assert.match(
+      file.xml,
+      new RegExp(`<agd:SummaArbAvgSlf faltkod="487">${declaration.employerContribution}</agd:SummaArbAvgSlf>`)
+    );
+    assert.match(file.xml, new RegExp(`<agd:SummaSkatteavdr faltkod="497">${declaration.tax}</agd:SummaSkatteavdr>`));
+    assert.match(file.xml, /<agd:BetalningsmottagarId faltkod="215">198501011234<\/agd:BetalningsmottagarId>/);
+    assert.match(file.xml, /<agd:Specifikationsnummer faltkod="570">1<\/agd:Specifikationsnummer>/);
+    assert.match(file.xml, new RegExp(`<agd:KontantErsattningUlagAG faltkod="011">${declaration.gross}</agd:`));
+    assert.match(file.xml, new RegExp(`<agd:AvdrPrelSkatt faltkod="001">${declaration.tax}</agd:AvdrPrelSkatt>`));
+  });
+
+  it("individuppgiftens specifikationsnummer står still mellan månaderna", () => {
+    generateEmployerDeclaration(`${YEAR}-01`, "anvandare");
+    runPayroll({ month: `${YEAR}-02` }, "anvandare");
+    generateEmployerDeclaration(`${YEAR}-02`, "anvandare");
+
+    const januari = agiForMonth(`${YEAR}-01`).xml;
+    const februari = agiForMonth(`${YEAR}-02`).xml;
+    const nummer = (xml: string) => xml.match(/faltkod="570">(\d+)</)?.[1];
+    assert.equal(nummer(januari), nummer(februari));
+  });
+
+  it("en månad utan deklaration går inte att bygga en fil av", () => {
+    assert.throws(() => agiForMonth(`${YEAR}-03`), FilingDataError);
+  });
+
+  it("kontaktuppgifter måste finnas – filen kräver dem", () => {
+    generateEmployerDeclaration(`${YEAR}-01`, "anvandare");
+    db().settings.phone = "";
+    assert.throws(() => agiForMonth(`${YEAR}-01`), /telefon/);
+  });
+});
+
+/* ----------------------------------- SRU ----------------------------------- */
+
+describe("inkomstdeklaration 2 som SRU-filer", () => {
+  beforeEach(() => {
+    reset();
+    sale(`${YEAR}-03-10`, 800_000);
+    purchase(`${YEAR}-04-12`, 300_000);
+  });
+
+  it("INFO.SRU har de obligatoriska posterna i föreskriven ordning", () => {
+    const filing = sruForFiscalYear(`fy-${YEAR}`);
+    const posts = filing.info
+      .trim()
+      .split("\r\n")
+      .map((line) => line.split(" ")[0]);
+
+    assert.deepEqual(posts, [
+      "#DATABESKRIVNING_START",
+      "#PRODUKT",
+      "#SKAPAD",
+      "#PROGRAM",
+      "#FILNAMN",
+      "#DATABESKRIVNING_SLUT",
+      "#MEDIELEV_START",
+      "#ORGNR",
+      "#NAMN",
+      "#ADRESS",
+      "#POSTNR",
+      "#POSTORT",
+      "#EMAIL",
+      "#TELEFON",
+      "#MEDIELEV_SLUT",
+    ]);
+    assert.match(filing.info, /#FILNAMN BLANKETTER\.SRU/);
+    assert.match(filing.info, /#ORGNR 165566778899/);
+  });
+
+  it("BLANKETTER.SRU innehåller de tre blocken i rätt ordning och avslutas", () => {
+    const filing = sruForFiscalYear(`fy-${YEAR}`);
+    assert.deepEqual(
+      filing.blocks.map((b) => b.blankett),
+      [`INK2-${YEAR}P4`, `INK2R-${YEAR}P4`, `INK2S-${YEAR}P4`]
+    );
+
+    const lines = filing.blanketter.trim().split("\r\n");
+    assert.equal(lines[0], `#BLANKETT INK2-${YEAR}P4`);
+    assert.match(lines[1], /^#IDENTITET 165566778899 \d{8} \d{6}$/);
+    assert.equal(lines[2], "#NAMN Bygg & Co AB");
+    assert.equal(lines.at(-1), "#FIL_SLUT");
+    assert.equal(lines.filter((l) => l === "#BLANKETTSLUT").length, 3);
+    assert.ok(filing.blanketter.endsWith("\r\n"));
+    assert.ok(sruBytes(filing.blanketter).byteLength > 0);
+  });
+
+  it("varje block börjar med räkenskapsåret och varje fältkod förekommer en gång", () => {
+    const filing = sruForFiscalYear(`fy-${YEAR}`);
+    for (const block of filing.blocks) {
+      assert.equal(block.uppgifter[0].code, "7011");
+      assert.equal(block.uppgifter[0].value, `${YEAR}0101`);
+      assert.equal(block.uppgifter[1].code, "7012");
+      assert.equal(block.uppgifter[1].value, `${YEAR}1231`);
+
+      const codes = block.uppgifter.map((u) => u.code);
+      assert.equal(new Set(codes).size, codes.length, `Dubblerad fältkod i ${block.blankett}`);
+    }
+  });
+
+  it("alla belopp är heltal utan tecken för blankettens riktning", () => {
+    const filing = sruForFiscalYear(`fy-${YEAR}`);
+    for (const line of filing.blanketter.split("\r\n")) {
+      if (!line.startsWith("#UPPGIFT")) continue;
+      const value = line.split(" ")[2];
+      assert.match(value, /^-?\d+$/, `Beloppet ${value} är inte ett heltal`);
+    }
+  });
+
+  it("räkenskapsschemat lägger kostnader i kostnadsrutor som positiva belopp", () => {
+    const filing = sruForFiscalYear(`fy-${YEAR}`);
+    const ink2r = new Map(filing.blocks[1].uppgifter.map((u) => [u.code, Number(u.value)]));
+
+    assert.equal(ink2r.get("7410"), 800_000); // Nettoomsättning
+    assert.equal(ink2r.get("7513"), 300_000); // Övriga externa kostnader, positiv i kostnadsrutan
+    assert.equal(ink2r.get("7450"), 500_000); // Årets resultat, vinst
+    assert.equal(ink2r.has("7550"), false);
+  });
+
+  it("räkenskapsschemat balanserar: tillgångar möter eget kapital och skulder", () => {
+    const filing = sruForFiscalYear(`fy-${YEAR}`);
+    const ink2r = new Map(filing.blocks[1].uppgifter.map((u) => [u.code, Number(u.value)]));
+    const sum = (codes: string[]) => codes.reduce((s, c) => s + (ink2r.get(c) ?? 0), 0);
+
+    const tillgangar = sum(["7281", "7251"]);
+    const egetKapitalOchSkulder = sum(["7301", "7302", "7369"]);
+    assert.equal(tillgangar, egetKapitalOchSkulder);
+  });
+
+  it("en förlust hamnar i förlustrutan, inte som negativ vinst", () => {
+    purchase(`${YEAR}-06-12`, 700_000);
+    const filing = sruForFiscalYear(`fy-${YEAR}`);
+    const ink2r = new Map(filing.blocks[1].uppgifter.map((u) => [u.code, Number(u.value)]));
+    assert.equal(ink2r.get("7550"), 200_000);
+    assert.equal(ink2r.has("7450"), false);
+  });
+
+  it("de skattemässiga justeringarna är samma tal som skattemotorns", () => {
+    // Ej avdragsgill representation och skattefri ränteintäkt.
+    postVerification({
+      date: `${YEAR}-09-04`,
+      description: "Restaurangbesök med kund",
+      entries: [
+        { account: 6072, debit: 4_800 },
+        { account: BANK, credit: 4_800 },
+      ],
+      source: { type: "manuell" },
+      createdBy: "anvandare",
+    });
+    postVerification({
+      date: `${YEAR}-12-20`,
+      description: "Intäktsränta skattekonto",
+      entries: [
+        { account: BANK, debit: 600 },
+        { account: 8314, credit: 600 },
+      ],
+      source: { type: "manuell" },
+      createdBy: "anvandare",
+    });
+
+    const filing = sruForFiscalYear(`fy-${YEAR}`);
+    const ink2s = new Map(filing.blocks[2].uppgifter.map((u) => [u.code, Number(u.value)]));
+
+    assert.equal(ink2s.get("7653"), 4_800); // 4.3c ej avdragsgilla kostnader
+    assert.equal(ink2s.get("7754"), 600); // 4.5c ej skattepliktiga intäkter, positiv i minusrutan
+    assert.equal(ink2s.get("7650"), 495_800); // 4.1 årets resultat, vinst
+
+    // 1.1 på huvudblanketten är samma tal som 4.15 på INK2S.
+    const ink2 = new Map(filing.blocks[0].uppgifter.map((u) => [u.code, Number(u.value)]));
+    assert.equal(ink2.get("7104"), ink2s.get("8020"));
+    assert.equal(ink2s.get("8020"), 495_800 + 4_800 - 600);
+  });
+
+  it("bokslutets omföring dubbelräknar inte årets resultat", () => {
+    const foreBokslut = new Map(
+      sruForFiscalYear(`fy-${YEAR}`).blocks[1].uppgifter.map((u) => [u.code, Number(u.value)])
+    );
+    // Före bokslutet ligger resultatet inte i eget kapital i bokföringen, men
+    // räkenskapsschemat ska ändå visa det där – annars balanserar det inte.
+    assert.equal(foreBokslut.get("7450"), 500_000);
+    assert.equal(foreBokslut.get("7302"), 500_000);
+
+    // Bokslutets två verifikationer: skatten och omföringen till eget kapital.
+    postVerification({
+      date: `${YEAR}-12-31`,
+      description: "Beräknad bolagsskatt",
+      entries: [
+        { account: 8910, debit: 103_000 },
+        { account: 2512, credit: 103_000 },
+      ],
+      source: { type: "bokslut", id: `fy-${YEAR}` },
+      createdBy: "anvandare",
+    });
+    postVerification({
+      date: `${YEAR}-12-31`,
+      description: "Årets resultat",
+      entries: [
+        { account: 8999, debit: 397_000 },
+        { account: 2099, credit: 397_000 },
+      ],
+      source: { type: "bokslut", id: `fy-${YEAR}` },
+      createdBy: "anvandare",
+    });
+
+    const efterBokslut = new Map(
+      sruForFiscalYear(`fy-${YEAR}`).blocks[1].uppgifter.map((u) => [u.code, Number(u.value)])
+    );
+    assert.equal(efterBokslut.get("7528"), 103_000); // Skatt på årets resultat
+    assert.equal(efterBokslut.get("7450"), 397_000); // Årets resultat efter skatt
+    assert.equal(efterBokslut.get("7302"), 397_000); // Räknas en gång, inte två
+  });
+
+  it("ett öppet räkenskapsår varnar för att siffrorna kan ändras", () => {
+    const filing = sruForFiscalYear(`fy-${YEAR}`);
+    assert.ok(filing.warnings.some((w) => w.includes("inte stängt")));
+  });
+
+  it("konton utan koppling till en ruta varnas för i stället för att tigas bort", () => {
+    // Ett eget konto i en serie kopplingstabellen inte känner.
+    addCustomAccount({ number: 4810, name: "Eget kostnadskonto" });
+    postVerification({
+      date: `${YEAR}-05-02`,
+      description: "Bokfört på ett konto utan koppling",
+      entries: [
+        { account: 4810, debit: 5_000 },
+        { account: BANK, credit: 5_000 },
+      ],
+      source: { type: "manuell" },
+      createdBy: "anvandare",
+    });
+
+    const filing = sruForFiscalYear(`fy-${YEAR}`);
+    assert.deepEqual(
+      filing.unmappedAccounts.map((u) => u.account),
+      [4810]
+    );
+    assert.ok(filing.warnings.some((w) => w.includes("4810")));
+  });
+
+  it("granskningsperioden följer räkenskapsårets sista månad", () => {
+    const period = (start: string, end: string) =>
+      granskningsperiod({
+        id: "fy",
+        label: "test",
+        startDate: start,
+        endDate: end,
+        status: "oppet",
+        openingBalances: {},
+        openingSource: "migrering",
+      });
+
+    assert.equal(period("2026-01-01", "2026-12-31").period, "2026P4");
+    assert.equal(period("2025-05-01", "2026-04-30").period, "2026P1");
+    assert.equal(period("2025-09-01", "2026-08-31").period, "2026P2");
+    // Ett brutet år som inte är tolv månader kan tillhöra en annan period.
+    assert.ok(period("2026-07-01", "2026-12-31").warning);
+  });
+
+  it("enskild firma deklarerar inte på INK2", () => {
+    db().settings.companyForm = "enskild";
+    assert.throws(() => sruForFiscalYear(`fy-${YEAR}`), /NE-bilagan/);
+  });
+});
+
+/* ---------------------------- Kopplingstabellen ---------------------------- */
+
+describe("kopplingen mellan kontoplanen och räkenskapsschemat", () => {
+  it("varje konto i Drivas kontoplan har en ruta", () => {
+    const utan: number[] = [];
+    for (const { number: account } of standardAccounts()) {
+      // Årets resultat och enskild firmas eget kapital hör inte till INK2R.
+      if (account >= 8990 || (account >= 2010 && account <= 2019)) continue;
+      const rules = account < 3000 ? INK2R_BALANCE : INK2R_RESULT;
+      if (!ruleForAccount(account, rules)) utan.push(account);
+    }
+    assert.deepEqual(utan, []);
+  });
+
+  it("ingen ruta överlappar en annan – ett konto hör till ett fält", () => {
+    for (const rules of [INK2R_BALANCE, INK2R_RESULT]) {
+      const seen = new Map<number, string>();
+      for (const rule of rules) {
+        for (const [from, to] of rule.ranges) {
+          for (let account = from; account <= to; account++) {
+            const other = seen.get(account);
+            assert.equal(other, undefined, `Konto ${account} finns i både ${other} och ${rule.code}`);
+            seen.set(account, rule.code);
+          }
+        }
+      }
+    }
+  });
+});
