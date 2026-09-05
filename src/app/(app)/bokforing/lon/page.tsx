@@ -252,11 +252,17 @@ export default async function LonPage() {
                     <p className="text-[20px] font-semibold tabular">{kr(d.attBetala)}</p>
                   </div>
                 </div>
-                {d.status === "utkast" ? (
-                  <div className="mt-3 border-t border-line/60 pt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-line/60 pt-3">
+                  {d.status === "utkast" ? (
                     <DeclareEmployerDeclarationButton id={d.id} label={d.label} attBetala={d.attBetala} />
-                  </div>
-                ) : null}
+                  ) : null}
+                  <a
+                    href={`/api/bokforing/deklaration?typ=agi&manad=${d.month}`}
+                    className="text-[13px] font-medium text-accent hover:underline"
+                  >
+                    Hämta deklarationsfil (XML)
+                  </a>
+                </div>
               </Card>
             ))}
           </div>
@@ -273,7 +279,8 @@ export default async function LonPage() {
 
       <p className="mt-6 text-[12px] leading-relaxed text-muted">
         Driva skickar aldrig något till Skatteverket. Deklarationen tas fram ur bokföringen och markeras som lämnad här –
-        då fryses siffrorna, beloppet förs till skattekontot och månaden låses.
+        då fryses siffrorna, beloppet förs till skattekontot och månaden låses. Filen går att ladda upp i e-tjänsten
+        Arbetsgivardeklaration, med en individuppgift per anställd.
       </p>
     </div>
   );

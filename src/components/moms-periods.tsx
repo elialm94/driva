@@ -74,6 +74,14 @@ export function MomsPeriods({
                   >
                     Exportera underlag (CSV)
                   </a>
+                  {p.state === "pagaende" ? null : (
+                    <a
+                      href={`/api/bokforing/deklaration?typ=moms&period=${p.period.key}`}
+                      className="text-[13px] font-medium text-accent hover:underline"
+                    >
+                      Hämta deklarationsfil (eSKD)
+                    </a>
+                  )}
                 </div>
               </div>
             </details>
@@ -131,7 +139,8 @@ export function MomsPeriods({
         );
       })}
       <p className="text-[12px] leading-relaxed text-muted">
-        Driva skickar aldrig något till Skatteverket. Du deklarerar som vanligt på skatteverket.se – Driva ger dig exakta
+        Driva skickar aldrig något till Skatteverket. Du deklarerar som vanligt på skatteverket.se – antingen genom att
+        fylla i rutorna ovan eller genom att ladda upp deklarationsfilen (eSKD) i e-tjänsten. Driva ger dig exakta
         siffror per ruta och håller ordning på vad som är deklarerat.
       </p>
     </div>

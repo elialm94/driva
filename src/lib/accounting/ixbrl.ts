@@ -182,6 +182,28 @@ class FactWriter {
   }
 
   /**
+   * Kontexten för en period respektive en balansdag, återanvänd när den redan
+   * finns. Flerårsöversikten går längre bak än jämförelseåret och namnger inte
+   * sina kontexter själv: två år får aldrig dela id, och samma år får aldrig
+   * två kontexter (TA 2.3.1).
+   */
+  durationFor(start: string, end: string): string {
+    for (const c of this.contexts.values()) if (c.start === start && c.end === end) return c.id;
+    return this.duration(`period${this.freeIndex("period")}`, start, end);
+  }
+
+  instantFor(date: string): string {
+    for (const c of this.contexts.values()) if (c.instant === date) return c.id;
+    return this.instant(`balans${this.freeIndex("balans")}`, date);
+  }
+
+  private freeIndex(prefix: string): number {
+    let n = 0;
+    while (this.contexts.has(`${prefix}${n}`)) n++;
+    return n;
+  }
+
+  /**
    * Belopp i hela kronor. Talet skrivs som läsaren ser det – med tusenmellanslag
    * och utan minustecken – och tecknet bärs av attributet sign (TA 2.9.6).
    */
@@ -481,7 +503,7 @@ function forvaltningsberattelse(
   // kontext. Åren identifieras av sin etikett och datumen hämtas ur
   // räkenskapsårsregistret – ett år Driva inte har bokföring för kan inte taggas.
   const years = new Map(fiscalYears().map((f) => [f.label, f]));
-  const overviewRows = fb.flerarsoversikt.map((row, index) => {
+  const overviewRows = fb.flerarsoversikt.map((row) => {
     const fy = years.get(row.label);
     if (!fy || row.ofullstandig) {
       if (!fy) w.warnings.push(`Flerårsöversiktens rad ${row.label} kunde inte taggas: räkenskapsåret finns inte kvar.`);
@@ -492,8 +514,8 @@ function forvaltningsberattelse(
         tag("td", { class: "num" }, esc(`${row.soliditetProcent} %`)),
       ].join(""));
     }
-    const period = index === 0 ? ctx.period0 : w.duration(`period${index}`, fy.startDate, fy.endDate);
-    const balans = index === 0 ? ctx.balans0 : w.instant(`balans${index}`, fy.endDate);
+    const period = w.durationFor(fy.startDate, fy.endDate);
+    const balans = w.instantFor(fy.endDate);
     return tag("tr", {}, [
       tag("th", {}, esc(row.label)),
       tag("td", { class: "num" }, w.money("Nettoomsattning", period, row.nettoomsattning)),
@@ -650,28 +672,32 @@ function noter(w: FactWriter, c: AnnualReportContent, period0: string): string {
 /**
  * Medelantalet anställda ska vara ett taggat tal, men Drivas notext skriver det
  * i en mening. Talet taggas där det står, så presentationen och datat är samma
- * uppgift (TA 4.1.1). Saknas talet i rapporten – den skrevs innan Driva sparade
- * det – läggs faktumet dolt och användaren får veta att noten bör göras om.
+ * uppgift (TA 4.1.1).
+ *
+ * Rapporter upprättade innan Driva sparade talet separat bär det bara i
+ * meningen. Då läses det därifrån: meningen är skriven av Driva och siffran i
+ * den är rapportens egen, och alternativet vore en årsredovisning som inte går
+ * att lämna in digitalt förrän året öppnas och stängs om.
  */
 function medelantalBody(w: FactWriter, c: AnnualReportContent, body: string, period0: string): string {
-  const value = c.medelantalAnstallda;
+  const iMeningen = /\d+(?:,\d+)?/.exec(body);
+  const value = c.medelantalAnstallda ?? (iMeningen ? Number(iMeningen[0].replace(",", ".")) : undefined);
   if (value === undefined) {
-    w.warnings.push(
-      "Medelantalet anställda saknas som tal i årsredovisningen och kunde inte taggas. Generera om årsredovisningen."
-    );
+    w.warnings.push("Medelantalet anställda står inte som ett tal i noten och kunde inte taggas.");
     return esc(body);
   }
-  const written = value.toLocaleString("sv-SE");
-  const at = body.indexOf(written);
-  if (at === -1) {
-    w.hiddenAntalAnstallda("MedelantaletAnstallda", period0, value);
-    return esc(body);
-  }
-  return (
+
+  const tagga = (at: number, length: number) =>
     esc(body.slice(0, at)) +
     w.antalAnstallda("MedelantaletAnstallda", period0, value) +
-    esc(body.slice(at + written.length))
-  );
+    esc(body.slice(at + length));
+
+  const written = value.toLocaleString("sv-SE");
+  const at = body.indexOf(written);
+  if (at !== -1) return tagga(at, written.length);
+  if (iMeningen) return tagga(iMeningen.index, iMeningen[0].length);
+  w.hiddenAntalAnstallda("MedelantaletAnstallda", period0, value);
+  return esc(body);
 }
 
 /**

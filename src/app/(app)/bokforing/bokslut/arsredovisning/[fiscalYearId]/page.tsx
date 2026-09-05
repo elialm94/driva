@@ -11,6 +11,7 @@ import { datumKort } from "@/lib/format";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { getFiscalYear } from "@/lib/accounting/fiscal";
 import { annualReportBlockers, annualReportHistory, resolveAnnualReport } from "@/lib/accounting/annual-report";
+import { ixbrlBlockers, ixbrlForAnnualReport } from "@/lib/accounting/ixbrl";
 import type { AnnualReport } from "@/lib/types";
 
 export const metadata = { title: "Årsredovisning" };
@@ -141,6 +142,8 @@ export default async function ArsredovisningPage(
         </p>
       </Card>
 
+      <IxbrlCard report={report} />
+
       {superseded ? null : (
         <div className="mb-6 space-y-4">
           <NarrativeForm
@@ -192,5 +195,68 @@ export default async function ArsredovisningPage(
         </Card>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Filen till Bolagsverkets e-tjänst: årsredovisningen som iXBRL. Det som saknas
+ * för att den ska tas emot står här och inte först i e-tjänsten – en handling
+ * utan underskrifter eller fastställelseintyg avvisas, och det är en uppgift
+ * Driva redan känner.
+ */
+function IxbrlCard({ report }: { report: AnnualReport }) {
+  const blockers = ixbrlBlockers(report);
+  let warnings: string[] = [];
+  let error: string | undefined;
+  try {
+    warnings = ixbrlForAnnualReport(report.id).warnings;
+  } catch (e) {
+    error = e instanceof Error ? e.message : "Filen kunde inte skapas.";
+  }
+
+  return (
+    <Card className="mb-6 px-6 py-5">
+      <h2 className="text-[15px] font-semibold">Digital inlämning (iXBRL)</h2>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-soft">
+        Bolagsverket tar emot årsredovisningen som en fil där varje siffra är märkt med sitt begrepp i K2-taxonomin för
+        aktiebolag. Filen innehåller samma dokument som A4-vyn – förvaltningsberättelse, resultat- och balansräkning,
+        noter, underskrifter och fastställelseintyget.
+      </p>
+      {error ? (
+        <p className="mt-3 text-[13px] leading-relaxed text-warn">{error}</p>
+      ) : blockers.length > 0 ? (
+        <div className="mt-3 rounded-xl border border-warn/40 bg-warn/5 px-4 py-3">
+          <p className="text-[13px] font-medium">Innan filen går att lämna in</p>
+          <ul className="mt-1.5 space-y-1">
+            {blockers.map((b, i) => (
+              <li key={i} className="text-[13px] leading-relaxed text-soft">
+                {b}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="mt-3">
+          <a
+            href={`/api/bokforing/deklaration?typ=arsredovisning&rapport=${report.id}`}
+            className="text-[13px] font-medium text-accent hover:underline"
+          >
+            Hämta iXBRL-filen
+          </a>
+        </div>
+      )}
+      {warnings.length > 0 ? (
+        <div className="mt-3 border-t border-line/60 pt-3">
+          <p className="text-[12px] font-medium text-muted">Innehåll som lämnades otaggat</p>
+          <ul className="mt-1 space-y-1">
+            {warnings.map((w, i) => (
+              <li key={i} className="text-[12px] leading-relaxed text-muted">
+                {w}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </Card>
   );
 }

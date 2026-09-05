@@ -8,6 +8,7 @@ import { ensurePageBusiness } from "@/lib/auth/session";
 import { getFiscalYear } from "@/lib/accounting/fiscal";
 import { computeTaxCalculation, ink2Rows } from "@/lib/accounting/tax";
 import { DEPRECIATION_RULE_LABEL, schablonranta } from "@/lib/accounting/ink2-model";
+import { sruForFiscalYear, type SruFiling } from "@/lib/accounting/sru";
 import { db } from "@/lib/store";
 
 export const metadata = { title: "INK2" };
@@ -210,6 +211,8 @@ export default async function Ink2Page(props: { params: Promise<{ fiscalYearId: 
         </Card>
       ) : null}
 
+      <SruCard fiscalYearId={fy.id} label={fy.label} />
+
       {tax.manualReviewNotes.length > 0 ? (
         <Card className="mb-6 border-warn/40 px-6 py-5">
           <div className="flex items-start gap-2.5">
@@ -237,5 +240,75 @@ export default async function Ink2Page(props: { params: Promise<{ fiscalYearId: 
         inte gör, och de saknas hellre än att fyllas i på en gissning.
       </p>
     </div>
+  );
+}
+
+/**
+ * Filerna till Skatteverkets e-tjänst Filöverföring. Kortet visar vad filen
+ * innehåller innan den hämtas – granskningsperiod, rutor och de konton som
+ * saknar koppling till räkenskapsschemat – för ett fel i filen märks annars
+ * först vid uppladdningen, och då utan att säga vilket konto det gäller.
+ */
+function SruCard({ fiscalYearId, label }: { fiscalYearId: string; label: string }) {
+  let filing: SruFiling;
+  try {
+    filing = sruForFiscalYear(fiscalYearId);
+  } catch (e) {
+    return (
+      <Card className="mb-6 border-warn/40 px-6 py-5">
+        <h3 className="text-[15px] font-semibold">Deklarationsfil (SRU)</h3>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-soft">
+          {e instanceof Error ? e.message : "Filen kunde inte skapas."}
+        </p>
+      </Card>
+    );
+  }
+
+  const rutor = filing.blocks.reduce((n, b) => n + b.uppgifter.length, 0);
+  return (
+    <Card className="mb-6 px-6 py-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-[15px] font-semibold">Deklarationsfil (SRU)</h3>
+        <Badge tone="neutral">{filing.period}</Badge>
+      </div>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-soft">
+        Två filer med samma innehåll som blanketten: INFO.SRU säger vem som lämnar uppgifterna, BLANKETTER.SRU bär INK2,
+        räkenskapsschemat (INK2R) och de skattemässiga justeringarna (INK2S) – {rutor} ifyllda rutor. Lägg båda filerna i
+        Skatteverkets e-tjänst Filöverföring.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-4">
+        <a
+          href={`/api/bokforing/deklaration?typ=ink2&fil=blanketter&rakenskapsar=${fiscalYearId}`}
+          className="text-[13px] font-medium text-accent hover:underline"
+        >
+          Hämta BLANKETTER.SRU
+        </a>
+        <a
+          href={`/api/bokforing/deklaration?typ=ink2&fil=info&rakenskapsar=${fiscalYearId}`}
+          className="text-[13px] font-medium text-accent hover:underline"
+        >
+          Hämta INFO.SRU
+        </a>
+      </div>
+      {filing.unmappedAccounts.length > 0 ? (
+        <div className="mt-4 rounded-xl border border-warn/40 bg-warn/5 px-4 py-3">
+          <p className="text-[13px] font-medium">Konton som inte kom med i filen</p>
+          <ul className="mt-1.5 space-y-1">
+            {filing.unmappedAccounts.map((u) => (
+              <li key={u.account} className="flex justify-between gap-4 text-[13px] text-soft">
+                <span>
+                  {u.account} {u.name}
+                </span>
+                <span className="tabular">{kr(u.amount)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[12px] leading-relaxed text-muted">
+            Räkenskapsschemat har ingen ruta för de här kontona. Beloppen måste fyllas i för hand i e-tjänsten, annars
+            stämmer inte filen mot bokslutet – {label} är inte komplett förrän de är med.
+          </p>
+        </div>
+      ) : null}
+    </Card>
   );
 }

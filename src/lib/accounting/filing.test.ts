@@ -502,8 +502,20 @@ describe("inkomstdeklaration 2 som SRU-filer", () => {
  * årsredovisning som är ifylld, granskad och signerad – alltså den handling som
  * faktiskt lämnas in.
  */
-function reportForIxbrl(opts: { intyg?: boolean; signera?: boolean } = {}): AnnualReport {
+function reportForIxbrl(opts: { intyg?: boolean; signera?: boolean; treAr?: boolean } = {}): AnnualReport {
   const data = db();
+  if (opts.treAr) {
+    data.fiscalYears.unshift({
+      id: `fy-${YEAR - 2}`,
+      label: String(YEAR - 2),
+      startDate: `${YEAR - 2}-01-01`,
+      endDate: `${YEAR - 2}-12-31`,
+      status: "oppet",
+      openingBalances: {},
+      openingSource: "migrering",
+    });
+    sale(`${YEAR - 2}-08-20`, 450_000);
+  }
   data.fiscalYears.unshift({
     id: `fy-${YEAR - 1}`,
     label: String(YEAR - 1),
@@ -671,6 +683,21 @@ describe("årsredovisning som iXBRL-fil", () => {
     for (const fact of iForegaende) assert.equal(factAmount(fact), 600_000);
   });
 
+  it("flerårsöversiktens tredje år får en egen kontext i stället för jämförelseårets", () => {
+    const file = ixbrlForAnnualReport(reportForIxbrl({ treAr: true }).id);
+
+    assert.match(file.xhtml, new RegExp(`<xbrli:context id="period2">[\\s\\S]*?${YEAR - 2}-01-01`));
+    const belopp = new Map(
+      (facts(file.xhtml).get("Nettoomsattning") ?? []).map((f) => [
+        /contextRef="([^"]+)"/.exec(f.attrs)![1],
+        factAmount(f),
+      ])
+    );
+    assert.equal(belopp.get("period0"), 800_000);
+    assert.equal(belopp.get("period1"), 600_000);
+    assert.equal(belopp.get("period2"), 450_000);
+  });
+
   it("beloppen är hela kronor med sign för de negativa", () => {
     const file = ixbrlForAnnualReport(reportForIxbrl().id);
     const alla = [...facts(file.xhtml).values()].flat();
@@ -745,6 +772,21 @@ describe("årsredovisning som iXBRL-fil", () => {
     assert.equal(medel[0].written, "1,0");
     // Talet står i notens mening, inte i en tabell vid sidan av den.
     assert.match(file.xhtml, /uppgick till <ix:nonFraction[^>]*>1,0<\/ix:nonFraction>/);
+  });
+
+  it("medelantalet taggas även i en rapport som upprättades innan talet sparades", () => {
+    const report = reportForIxbrl();
+    // Rapporter från tidigare versioner bär talet bara i notens mening.
+    delete db().annualReports.find((r) => r.id === report.id)!.content.medelantalAnstallda;
+
+    const file = ixbrlForAnnualReport(report.id);
+    const medel = facts(file.xhtml).get("MedelantaletAnstallda") ?? [];
+    assert.equal(medel.length, 1);
+    assert.equal(medel[0].written, "1,0");
+    assert.deepEqual(
+      file.warnings.filter((w) => /medelantal/i.test(w)),
+      []
+    );
   });
 
   it("soliditeten i flerårsöversikten är ett procenttal med scale -2", () => {
