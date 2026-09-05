@@ -843,14 +843,27 @@ export function unpaidInvoicesResult(): DomainResult {
 
 export function spendingRoomResult(): DomainResult {
   const f = financeOverview();
+  const taxAccountNote =
+    f.taxAccount > 0
+      ? ` Du har redan ${kr(f.taxAccount)} på skattekontot, så mycket mindre behöver ligga kvar på banken.`
+      : f.taxAccount < 0
+        ? ` Skattekontot ligger på ${kr(f.taxAccount)} – den skulden räknar jag med i reserven.`
+        : "";
   return {
     ok: true,
     text: `Du har ${kr(f.bank)} på banken. Jag reserverar ${kr(f.moms)} för moms (betalas ${datumLang(f.momsDue)}), ${kr(
       f.fSkatt
-    )} för F-skatt och ${kr(f.payrollReserve)} för löneskatter. Kommande räkningar ligger på ${kr(
+    )} för F-skatt och ${kr(f.payrollReserve)} för löneskatter.${taxAccountNote} Kommande räkningar ligger på ${kr(
       f.upcoming
     )}. Ungefär ${kr(f.available)} är tryggt att spendera utan att riskera momsen.`,
-    forModel: { bank: f.bank, available: f.available, reserved: f.reserved, moms: f.moms, upcoming: f.upcoming },
+    forModel: {
+      bank: f.bank,
+      available: f.available,
+      reserved: f.reserved,
+      moms: f.moms,
+      taxAccount: f.taxAccount,
+      upcoming: f.upcoming,
+    },
   };
 }
 

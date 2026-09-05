@@ -63,6 +63,7 @@ export function issueForAction(action: BusinessAction): string {
   if (action.id.startsWith("rot-missing-")) return "Komplettera ROT";
   if (action.id.startsWith("rot-ready-")) return "Ansök ROT";
   if (action.id.startsWith("rot-denied-")) return "Fakturera resten";
+  if (action.id === "tax-account-pending") return "Bokför mot skattekontot";
   if (action.id.startsWith("vat-")) return "Kontrollera moms";
   if (action.id.startsWith("job-new-")) return "Nytt uppdrag";
   if (action.id.startsWith("inbox-mail-")) return "Inkommande mejl";
@@ -164,6 +165,7 @@ export type AttentionKind =
   | "newJob"
   | "inboxMail"
   | "vat"
+  | "taxAccount"
   | "clientRequest";
 
 export function attentionKind(action: Pick<BusinessAction, "id">): AttentionKind | null {
@@ -183,6 +185,7 @@ export function attentionKind(action: Pick<BusinessAction, "id">): AttentionKind
   if (id.startsWith("supplier-")) return "supplierOverdue";
   if (id.startsWith("job-new-")) return "newJob";
   if (id.startsWith("inbox-mail-")) return "inboxMail";
+  if (id === "tax-account-pending") return "taxAccount";
   if (id.startsWith("vat-")) return "vat";
   if (id.startsWith("client-request-")) return "clientRequest";
   return null;
@@ -354,6 +357,13 @@ const CONTROLS: Record<AttentionKind, Omit<ActionControls, "kind">> = {
   },
   vat: {
     viewLabel: "Öppna momsöversikten",
+    canSnooze: true,
+    canDismiss: false,
+    dismissBehavior: "none",
+    requiresConfirmation: false,
+  },
+  taxAccount: {
+    viewLabel: "Öppna skattekontot",
     canSnooze: true,
     canDismiss: false,
     dismissBehavior: "none",

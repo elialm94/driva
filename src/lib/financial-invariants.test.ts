@@ -18,7 +18,8 @@ process.env.DRIVA_TEST = "1";
  *   7. Kundens utestående = summan av öppna fordringar.
  *   8. Bankens saldo = huvudbokens 1930; avstämningen är förklarad.
  *   9. Momsrapporten stämmer med en oberoende omräkning ur huvudboken.
- *  10. SIE-exporten stämmer med huvudboken (IB + rörelser = UB, RES,
+ *  10. Skattekontot flyttar momsskulden mellan konton utan att ändra summan.
+ *  11. SIE-exporten stämmer med huvudboken (IB + rörelser = UB, RES,
  *      varje #VER balanserar).
  */
 
@@ -42,7 +43,14 @@ import {
 } from "./bas";
 import { accountBalance, isResultAccount, ledgerIntegrity, saldobalans } from "./accounting/ledger";
 import { bankReconciliation } from "./accounting/reconciliation";
-import { computeVatPosition } from "./accounting/vat";
+import { computeVatPosition, generateVatReport, markVatReportDeclared, vatPeriods } from "./accounting/vat";
+import { verificationLabel } from "./accounting/engine";
+import {
+  bookVatOnTaxAccount,
+  taxAccountLedger,
+  MOMS_REDOVISNING,
+  SKATTEKONTO,
+} from "./accounting/tax-account";
 import { quartersOf, ensureFiscalYearFor } from "./accounting/fiscal";
 import { bokforingsdatum } from "./accounting/dates";
 import { generateSie } from "./accounting/sie";
@@ -275,6 +283,31 @@ describe("Demoseedet uppfyller alla finansiella invarianter", () => {
       assert.equal(pos.utgaende, utgaende, `${period.label}: utgående moms`);
       assert.equal(pos.ingaende, ingaende, `${period.label}: ingående moms`);
       assert.equal(pos.attBetala, utgaende - ingaende, `${period.label}: att betala`);
+    }
+  });
+
+  it("skattekontot flyttar skulden utan att skapa eller tappa pengar", () => {
+    seeded();
+    const period = vatPeriods().find((p) => p.state === "att_deklarera" && p.position.attBetala !== 0);
+    assert.ok(period, "demoseedet har en period som väntar på deklaration");
+
+    const report = generateVatReport(period.period.key);
+    markVatReportDeclared(report.id, "anvandare");
+    const before = accountBalance(MOMS_REDOVISNING) + accountBalance(SKATTEKONTO);
+    const declared = db().vatReports.find((r) => r.id === report.id)!;
+
+    bookVatOnTaxAccount(declared.id, "anvandare");
+
+    // Skulden byter konto, aldrig storlek: summan av redovisningskontot och
+    // skattekontot är densamma före och efter, och 2650 är nollställt.
+    assert.equal(accountBalance(MOMS_REDOVISNING) + accountBalance(SKATTEKONTO), before, "summan ändras");
+    assert.equal(accountBalance(MOMS_REDOVISNING), 0, "redovisningskontot nollställs inte");
+    const ledger = taxAccountLedger();
+    assert.equal(ledger.balance, accountBalance(SKATTEKONTO), "skattekontots huvudbok avviker");
+    for (const v of db().verifications) {
+      const debit = v.entries.reduce((s, e) => s + e.debit, 0);
+      const credit = v.entries.reduce((s, e) => s + e.credit, 0);
+      assert.equal(debit, credit, `${verificationLabel(v)} balanserar inte`);
     }
   });
 

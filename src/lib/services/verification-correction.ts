@@ -41,6 +41,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   avskrivning: "avskrivning",
   periodisering: "periodisering",
   moms: "momsredovisning",
+  skattekonto: "skattekonto",
   bokslut: "bokslut",
   ingaende_balans: "ingående balans",
   manuell: "manuell",

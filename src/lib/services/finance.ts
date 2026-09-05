@@ -4,6 +4,7 @@ import { countsTowardInvoiced, invoiceOutstanding, invoiceTotals, isOpenReceivab
 import { currentVatPosition } from "../accounting/vat";
 import { accountBalance, resultatrapport } from "../accounting/ledger";
 import { todayDate } from "../accounting/dates";
+import { SKATTEKONTO } from "../accounting/tax-account";
 
 /** Innevarande momsperiod med deklarations- och betaldatum. */
 export function momsPeriod() {
@@ -34,6 +35,8 @@ export interface FinanceOverview {
   momsDue: string;
   fSkatt: number;
   payrollReserve: number;
+  /** Saldo på skattekontot. Positivt = tillgodo hos Skatteverket, negativt = skuld. */
+  taxAccount: number;
   reserved: number;
   upcoming: number;
   upcomingRows: { label: string; amount: number; due: string }[];
@@ -55,7 +58,12 @@ export function financeOverview(): FinanceOverview {
   // Reserv: kommande två månaders F-skatt + en månads arbetsgivaravgifter/personalskatt.
   const fSkatt = data.settings.fSkattPerMonth * 2;
   const payrollReserve = data.settings.payrollReservePerMonth;
-  const reserved = moms + fSkatt + payrollReserve;
+  // Skattekontot: pengar som redan lämnat 1930 (och därmed `bank`) behöver inte
+  // reserveras en gång till, medan en skuld på kontot är precis vad reserven
+  // finns till för. Positivt saldo = tillgodo hos Skatteverket.
+  const taxAccount = accountBalance(SKATTEKONTO, todayDate());
+  const behov = moms + fSkatt + payrollReserve;
+  const reserved = Math.max(0, behov - Math.max(0, taxAccount)) + Math.max(0, -taxAccount);
   const upcomingRows = data.supplierInvoices
     .filter((s) => s.status === "obetald")
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
@@ -67,6 +75,7 @@ export function financeOverview(): FinanceOverview {
     momsDue,
     fSkatt,
     payrollReserve,
+    taxAccount,
     reserved,
     upcoming,
     upcomingRows,

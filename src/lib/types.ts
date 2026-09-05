@@ -1112,6 +1112,7 @@ export type VerificationSource =
   | { type: "avskrivning"; id: ID }
   | { type: "periodisering"; id: ID }
   | { type: "moms"; id: ID }
+  | { type: "skattekonto"; id: ID }
   | { type: "bokslut"; id: ID }
   | { type: "ingaende_balans"; id: ID }
   | { type: "manuell" };
@@ -1291,6 +1292,7 @@ export type AuditAction =
   | "momsrapport_genererad"
   | "momsrapport_deklarerad"
   | "momsperiodicitet_andrad"
+  | "skattekonto_bokford"
   | "rakenskapsar_skapat"
   | "rakenskapsar_stangt"
   | "inventarie_registrerad"

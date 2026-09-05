@@ -33,6 +33,7 @@ import { bankReconciliation } from "../accounting/reconciliation";
 import { bokforingsdatum, calendarFiscalYear, vatDueDate, vatPeriodsOf, type Period } from "../accounting/dates";
 import { vatPeriodicity } from "../accounting/fiscal";
 import { computeVatPosition } from "../accounting/vat";
+import { fSkattMonthsAwaitingBooking, vatReportsAwaitingTaxAccount } from "../accounting/tax-account";
 import { datumKort, kr, relativ } from "../format";
 import { invoiceHref, jobHref, newQuoteHref, quoteHref } from "../nav";
 import { isIncomingUnquotedJob, jobSourceLabel } from "./jobs";
@@ -285,7 +286,8 @@ const RANK = {
   vatSoon: 12,
   quoteFollowUp: 13,
   quoteExpired: 14,
-  missingReceipt: 15,
+  taxAccount: 15,
+  missingReceipt: 16,
   clientRequest: 6,
 } as const;
 
@@ -359,6 +361,7 @@ function collectBookkeepingSources(ranked: Ranked[], watching: WatchingItem[], n
   runCollect("client-requests", () => collectClientRequests(ranked));
   runCollect("inbox-mail", () => collectInboxMail(ranked));
   runCollect("vat", () => collectVat(ranked, watching, now));
+  runCollect("tax-account", () => collectTaxAccount(ranked, now));
 }
 
 /** Snooze/HIDE: dolda tills tidpunkten passerat – sedan synliga igen om saken kvarstår. */
@@ -1557,6 +1560,55 @@ function collectVat(ranked: Ranked[], watching: WatchingItem[], now: Date) {
       href: "/bokforing/moms",
       cta: { type: "link", label: "Öppna momsöversikten", href: "/bokforing/moms" },
       amount: Math.abs(net),
+    },
+  });
+}
+
+/* ------------------------------- Skattekonto ---------------------------------- */
+
+/**
+ * Skattekontot har två sorters efterhängsna poster: deklarationer som ännu inte
+ * flyttats dit från redovisningskontot, och F-skatt som Skatteverket redan
+ * dragit men som inte är bokförd. Båda gör saldot fel, så de hör i kön – men
+ * de är bokföringsarbete, inte en myndighetsdeadline, och rankas därefter.
+ */
+function collectTaxAccount(ranked: Ranked[], now: Date) {
+  const today = bokforingsdatum(now.toISOString());
+  const awaitingVat = vatReportsAwaitingTaxAccount();
+  const awaitingFSkatt = fSkattMonthsAwaitingBooking(today);
+  const total = awaitingVat.length + awaitingFSkatt.length;
+  if (total === 0) return;
+
+  const amount =
+    awaitingVat.reduce((s, r) => s + Math.abs(r.attBetala), 0) +
+    awaitingFSkatt.length * db().settings.fSkattPerMonth;
+  const parts = [
+    awaitingVat.length > 0
+      ? `${awaitingVat.length} momsperiod${awaitingVat.length === 1 ? "" : "er"}`
+      : null,
+    awaitingFSkatt.length > 0
+      ? `F-skatt för ${awaitingFSkatt.length} månad${awaitingFSkatt.length === 1 ? "" : "er"}`
+      : null,
+  ].filter(Boolean);
+
+  ranked.push({
+    rank: RANK.taxAccount,
+    order: 0,
+    action: {
+      id: "tax-account-pending",
+      priority: "action",
+      // Bokföringsarbete, inte en myndighetsdeadline: kategorin "vat" är
+      // reserverad för deklarationen som sådan.
+      category: "accounting",
+      icon: "bank",
+      title:
+        total === 1 && awaitingVat.length === 1
+          ? `Moms ${awaitingVat[0].label} ska föras till skattekontot`
+          : "Skattekontot är inte à jour",
+      subtitle: `${parts.join(" och ")} · ${kr(amount)}`,
+      href: "/bokforing/skattekonto",
+      cta: { type: "link", label: "Öppna skattekontot", href: "/bokforing/skattekonto" },
+      amount,
     },
   });
 }

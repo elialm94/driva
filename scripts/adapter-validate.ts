@@ -867,6 +867,42 @@ async function main() {
     });
   });
 
+  console.log("\nSkattekontot genom adaptern:");
+  await check("kontering rundresar och saldot härleds ur huvudboken", async () => {
+    const { bookFSkatt, taxAccountLedger, SKATTEKONTO, F_SKATT } = await import(
+      "../src/lib/accounting/tax-account"
+    );
+    const { accountBalance } = await import("../src/lib/accounting/ledger");
+    const { todayDate } = await import("../src/lib/accounting/fiscal");
+    const month = `${new Date().getUTCFullYear()}-02`;
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      db().settings.fSkattPerMonth = 4_000;
+      bookFSkatt(month, "anvandare");
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const today = todayDate();
+      const ledger = taxAccountLedger(today);
+      const row = ledger.rows.find((r) => r.description === `F-skatt ${month}`);
+      assert.ok(row, "F-skattraden finns i skattekontots huvudbok efter rundresa");
+      assert.equal(row.amount, -4_000, "F-skatten drar från kontot");
+      assert.equal(row.kind, "f_skatt", "källan känns igen efter rundresa");
+      assert.equal(ledger.balance, accountBalance(SKATTEKONTO, today), "saldot är huvudbokens");
+      assert.equal(accountBalance(F_SKATT, today), 4_000, "2518 debiteras");
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      const again = bookFSkatt(month, "anvandare");
+      assert.ok(again, "samma månad är idempotent även genom adaptern");
+      assert.equal(
+        db().verifications.filter((v) => v.description === `F-skatt ${month}`).length,
+        1,
+        "ingen dubblett"
+      );
+    });
+    await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {
+      assert.equal(taxAccountLedger(todayDate()).rows.length, 0, "B ser inget av A:s skattekonto");
+    });
+  });
+
   console.log("\nUppdragsposter genom adaptern:");
   await check("tidregistrering rundresas och isoleras per tenant", async () => {
     const { createJob } = await import("../src/lib/services/jobs");

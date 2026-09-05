@@ -38,6 +38,7 @@ const DEFAULT_ROUTES = [
   "/bokforing/saldobalans",
   "/bokforing/resultat",
   "/bokforing/moms",
+  "/bokforing/skattekonto",
   "/hemsida",
   "/hemsida/doman",
   "/assistent",

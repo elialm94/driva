@@ -1331,6 +1331,63 @@ async function main() {
   await asSuperuser();
 
   // ------------------------------------------------------------------
+  // Skattekontot
+  // ------------------------------------------------------------------
+  console.log("\nSkattekonto:");
+
+  const taxAccountVer = (id: string, number: number, sourceId: string) =>
+    JSON.stringify({
+      id,
+      number,
+      series: "A",
+      date: "2026-03-12T12:00:00.000Z",
+      description: "F-skatt 2026-02",
+      source_type: "skattekonto",
+      source_id: sourceId,
+      confidence: "hog",
+      created_by: "anvandare",
+      posted_at: "2026-03-12T12:00:00.000Z",
+      created_at: "2026-03-12T12:00:00.000Z",
+      entries: [
+        { account: 2518, account_name: "Betald F-skatt", debit: 4000, credit: 0 },
+        { account: 1630, account_name: "Skattekonto", debit: 0, credit: 4000 },
+      ],
+    });
+
+  await asApp(A);
+  const nextSeriesA = Number(
+    (
+      await rows<{ verification_series: Record<string, number> }>(
+        db,
+        `select verification_series from public.business_sequences where business_id = $1`,
+        [A]
+      )
+    )[0]?.verification_series?.A ?? 1
+  );
+  await expectOk(db, "kontering mot skattekontot bokförs med källan skattekonto", () =>
+    db.query(`select app.post_verification($1, $2::jsonb)`, [
+      A,
+      taxAccountVer("ver-sk1", nextSeriesA, "fskatt-2026-02"),
+    ])
+  );
+  {
+    const r = await rows(
+      db,
+      `select v.source_type as t, v.source_id as sid, sum(e.credit) as kredit
+         from public.verifications v
+         join public.accounting_entries e on e.verification_id = v.id
+        where v.id = 'ver-sk1' and e.account = 1630
+        group by v.source_type, v.source_id`
+    );
+    if (r[0]?.t === "skattekonto" && r[0]?.sid === "fskatt-2026-02" && Number(r[0]?.kredit) === 4000) {
+      ok("källa och konto 1630 rundresar");
+    } else {
+      fail("källa och konto 1630 rundresar", JSON.stringify(r));
+    }
+  }
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");

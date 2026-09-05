@@ -3,6 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { generateVatReport, markVatReportDeclared, setVatPeriodicity } from "@/lib/accounting/vat";
 import { isVatPeriodicity } from "@/lib/accounting/dates";
+import {
+  bookFSkatt,
+  bookTaxAccountDeposit,
+  bookVatOnTaxAccount,
+  parseTaxAccountStatement,
+  reconcileTaxAccount,
+  type TaxAccountReconciliation,
+} from "@/lib/accounting/tax-account";
 import { runBokslutAutomation, closeFiscalYear } from "@/lib/accounting/close";
 import { undoExpenseBooking } from "@/lib/services/expenses";
 import {
@@ -25,7 +33,7 @@ import { parseReceiptDataUrl } from "@/lib/receipts/receipt-file";
 import { verificationLabel } from "@/lib/accounting/engine";
 import { db } from "@/lib/store";
 import type { AnnualReport, VerificationAttachment } from "@/lib/types";
-import { withBusiness } from "@/lib/auth/session";
+import { withBusiness, withBusinessRead } from "@/lib/auth/session";
 
 /**
  * Serveråtgärder för bokföringen. Tunna omslag runt domänlagret –
@@ -66,6 +74,38 @@ export async function markVatDeclaredAction(reportId: string): Promise<Result> {
 export async function setVatPeriodicityAction(periodicity: string): Promise<Result> {
   if (!isVatPeriodicity(periodicity)) return { ok: false, error: "Okänd momsperiod." };
   return run(() => setVatPeriodicity(periodicity, "anvandare"), "vat");
+}
+
+export async function bookVatOnTaxAccountAction(reportId: string): Promise<Result> {
+  return run(() => void bookVatOnTaxAccount(reportId, "anvandare"), "vat");
+}
+
+export async function bookFSkattAction(month: string): Promise<Result> {
+  return run(() => void bookFSkatt(month, "anvandare"), "write_accounting");
+}
+
+export async function bookTaxAccountDepositAction(txId: string): Promise<Result> {
+  return run(() => void bookTaxAccountDeposit(txId, "anvandare"), "write_accounting");
+}
+
+/**
+ * Avstämning mot skattekontoutdraget. Läser bara – utdraget lagras aldrig, på
+ * samma sätt som bankavstämningen härleds i stället för att sparas.
+ */
+export async function reconcileTaxAccountAction(
+  text: string
+): Promise<{ ok: true; result: TaxAccountReconciliation; parsed: number } | { ok: false; error: string }> {
+  try {
+    return await withBusinessRead(() => {
+      const statement = parseTaxAccountStatement(text);
+      if (statement.length === 0) {
+        return { ok: false as const, error: "Hittade inga rader. Varje rad ska börja med datum (2026-05-12) och sluta med belopp." };
+      }
+      return { ok: true as const, result: reconcileTaxAccount(statement), parsed: statement.length };
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Något gick fel." };
+  }
 }
 
 export async function runBokslutAutomationAction(

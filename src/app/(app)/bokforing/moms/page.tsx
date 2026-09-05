@@ -5,6 +5,7 @@ import { MomsPeriods } from "@/components/moms-periods";
 import { vatPeriods } from "@/lib/accounting/vat";
 import { vatPeriodicity, VAT_PERIODICITY } from "@/lib/accounting/fiscal";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { vatReportsAwaitingTaxAccount } from "@/lib/accounting/tax-account";
 
 export const metadata = { title: "Moms" };
 
@@ -12,6 +13,7 @@ export default async function MomsPage() {
   await ensurePageBusiness();
   const periodicity = vatPeriodicity();
   const periods = vatPeriods().filter((p) => p.state !== "kommande");
+  const awaitingTaxAccount = vatReportsAwaitingTaxAccount().map((r) => r.id);
 
   return (
     <div>
@@ -24,7 +26,7 @@ export default async function MomsPage() {
       <div className="mb-4">
         <VatPeriodicityPicker value={periodicity} />
       </div>
-      <MomsPeriods periods={periods} />
+      <MomsPeriods periods={periods} awaitingTaxAccount={awaitingTaxAccount} />
     </div>
   );
 }
