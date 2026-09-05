@@ -106,10 +106,12 @@ export function updateSetupProfile(raw: {
   const now = new Date().toISOString();
   const current = data.onboarding ?? onboardingAfterPersonalizationForLegacy(now);
   const v = validated.values;
+  const { otherIndustry: _previousOther, ...rest } = current;
+  void _previousOther;
   data.onboarding = {
-    ...current,
+    ...rest,
     industries: v.industries,
-    otherIndustry: v.industries.includes("annat") ? v.otherIndustry : undefined,
+    ...(v.industries.includes("annat") && v.otherIndustry ? { otherIndustry: v.otherIndustry } : {}),
     payroll: v.payroll,
     bookkeeping: v.bookkeeping,
     updatedAt: now,

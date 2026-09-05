@@ -397,12 +397,13 @@ export function previewCustomerImport(
       if (duplicates.length < MAX_ISSUES) duplicates.push({ line, name, matchedOn: match.on });
       return;
     }
-    const fileKey = orgKey || pnKey || emailKey || nameKey;
-    if (seenInFile.has(fileKey)) {
+    // Samma kund två gånger i filen (på något av nyckelfälten).
+    const fileKeys = [orgKey && `org:${orgKey}`, pnKey && `pn:${pnKey}`, emailKey && `email:${emailKey}`, `name:${nameKey}`].filter(Boolean) as string[];
+    if (fileKeys.some((k) => seenInFile.has(k))) {
       if (duplicates.length < MAX_ISSUES) duplicates.push({ line, name, matchedOn: "samma rad två gånger i filen" });
       return;
     }
-    seenInFile.add(fileKey);
+    fileKeys.forEach((k) => seenInFile.add(k));
 
     // Validering: samma regler som "Ny kund". Fel på frivilliga fält → fältet lämnas tomt och raden flaggas.
     const errors = customerContactFieldErrors({ name, email, phone, orgNumber: kind === "foretag" ? orgNumber : undefined, contactPerson });
@@ -498,12 +499,12 @@ export function previewSupplierImport(
       if (duplicates.length < MAX_ISSUES) duplicates.push({ line, name, matchedOn: match.on });
       return;
     }
-    const fileKey = orgKey || nameKey;
-    if (seenInFile.has(fileKey)) {
+    const fileKeys = [orgKey && `org:${orgKey}`, `name:${nameKey}`].filter(Boolean) as string[];
+    if (fileKeys.some((k) => seenInFile.has(k))) {
       if (duplicates.length < MAX_ISSUES) duplicates.push({ line, name, matchedOn: "samma rad två gånger i filen" });
       return;
     }
-    seenInFile.add(fileKey);
+    fileKeys.forEach((k) => seenInFile.add(k));
 
     let orgNumber: string | undefined;
     if (orgRaw) {

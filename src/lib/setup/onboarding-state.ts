@@ -105,17 +105,18 @@ export function onboardingAfterPersonalization(
   now = new Date().toISOString(),
 ): OnboardingState {
   const base = state ?? onboardingAfterCompany(null, now);
+  const { otherIndustry: _previousOther, ...rest } = base;
+  void _previousOther;
+  const other = answers.industries.includes("annat") ? answers.otherIndustry?.trim().slice(0, 80) : undefined;
   return {
-    ...base,
+    ...rest,
     status: "complete",
     currentStep: null,
     companyCompletedAt: base.companyCompletedAt ?? now,
     personalizationCompletedAt: now,
     completedAt: now,
     industries: answers.industries,
-    ...(answers.industries.includes("annat") && answers.otherIndustry?.trim()
-      ? { otherIndustry: answers.otherIndustry.trim().slice(0, 80) }
-      : { otherIndustry: undefined }),
+    ...(other ? { otherIndustry: other } : {}),
     payroll: answers.payroll,
     bookkeeping: answers.bookkeeping,
     updatedAt: now,
