@@ -1,6 +1,8 @@
 import { db, save } from "../store";
-import type { FiscalYear, Verification } from "../types";
-import { bokforingsdatum, calendarFiscalYear, getFiscalYear, lockPeriod } from "./fiscal";
+import type { FiscalYear, FiscalYearReopening, Verification } from "../types";
+import { bokforingsdatum, calendarFiscalYear, getFiscalYear, lockPeriod, unlockPeriodThrough } from "./fiscal";
+import { previousDay } from "./dates";
+import { supersedeAnnualReports } from "./annual-report";
 import { postVerification } from "./engine";
 import { isResultAccount, saldobalans } from "./ledger";
 import { assetsNeedingDepreciation, createDepreciationEntry } from "./assets";
@@ -354,6 +356,11 @@ export function closeFiscalYear(fiscalYearId: string, by: "anvandare" | "assiste
   fy.closedAt = new Date().toISOString();
   fy.closingVerificationIds = verifications.map((v) => v.id);
   lockPeriod(fy.endDate, by);
+  // Har året varit öppnat igen låg låset längre fram än årets slut när det
+  // öppnades – senare deklarerade perioder. Det låset sätts tillbaka nu, annars
+  // vore de perioderna olåsta efter omtaget.
+  const lastReopening = fy.reopenings?.at(-1);
+  if (lastReopening?.previousLockedThrough) lockPeriod(lastReopening.previousLockedThrough, by);
   reverseAccrualsInto(nextYear.startDate, fy.id, "auto");
 
   logAudit(by, "rakenskapsar_stangt", `Räkenskapsåret ${fy.label} stängdes. Årets resultat: ${aretsResultat} kr${skatt ? `, beräknad skatt ${skatt} kr` : ""}. ${nextYear.label} fick utgående balanser som ingående.`, {
@@ -362,4 +369,189 @@ export function closeFiscalYear(fiscalYearId: string, by: "anvandare" | "assiste
   });
   save();
   return { fiscalYear: fy, nextYear, resultatForeSkatt: taxCalc.redovisningsresultat, skatt, aretsResultat, verifications };
+}
+
+/* -------------------------------- Återöppning ------------------------------- */
+
+/**
+ * Återöppning av ett stängt räkenskapsår.
+ *
+ * Ett bokslut är en slutsats, inte en sanning: en glömd faktura eller ett fel
+ * konto kan dyka upp efteråt. Är bokslutet permanent finns bara dåliga utvägar –
+ * bokföra fjolårets fel i år, eller leva med en årsredovisning man vet är
+ * felaktig. Därför går året att öppna igen. Men det är ett ingrepp, så det är
+ * kontrollerat: ett skäl krävs, bokslutsverifikationerna återförs så att nästa
+ * stängning räknar om från grunden i stället för att lägga ovanpå, en redan
+ * upprättad årsredovisning markeras som ersatt, och allt hamnar i audit-loggen.
+ */
+
+export interface ReopenBlocker {
+  key: string;
+  detail: string;
+}
+
+/** Varför året inte kan öppnas igen. Tom lista = det går. */
+export function reopenBlockers(fiscalYearId: string): ReopenBlocker[] {
+  const data = db();
+  const fy = getFiscalYear(fiscalYearId);
+  if (!fy) return [{ key: "finns_inte", detail: "Räkenskapsåret finns inte." }];
+  const out: ReopenBlocker[] = [];
+  if (fy.status !== "stangt") {
+    out.push({ key: "inte_stangt", detail: `Räkenskapsåret ${fy.label} är redan öppet.` });
+    return out;
+  }
+  /*
+   * Åren öppnas i omvänd ordning. Ett senare stängt år vilar på det här årets
+   * utgående balanser: ändras de medan det senare året är stängt går ingående
+   * och utgående balanser isär utan att någon ser det. Att öppna 2026 först är
+   * dessutom vad användaren ändå måste göra för att rätta 2025.
+   */
+  const laterClosed = data.fiscalYears
+    .filter((f) => f.status === "stangt" && f.startDate > fy.startDate)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+  if (laterClosed.length) {
+    out.push({
+      key: "senare_ar_stangt",
+      detail: `${laterClosed.map((f) => f.label).join(", ")} är stängt${laterClosed.length > 1 ? "a" : ""} och bygger på ${fy.label}:s utgående balanser. Öppna ${laterClosed[laterClosed.length - 1].label} först.`,
+    });
+  }
+  return out;
+}
+
+export interface ReopenResult {
+  fiscalYear: FiscalYear;
+  /** Återföringarna av bokslutsverifikationerna. */
+  reversals: Verification[];
+  /** Periodiseringar som återgick till bokförda för året. */
+  restoredAccruals: number;
+  /** Årsredovisningar som markerades som ersatta. */
+  supersededReports: number;
+  /** Periodlåset efter återöppningen (odefinierat = inget lås). */
+  lockedThrough?: string;
+  /** Nästa år, som har kvar sina ingående balanser tills året stängs igen. */
+  nextYear?: FiscalYear;
+}
+
+/** Speglad verifikation: samma konton och belopp, debet och kredit bytta. */
+function mirrorEntries(original: Verification) {
+  return original.entries.map((e) => ({
+    account: e.account,
+    debit: e.credit,
+    credit: e.debit,
+    vatCode: e.vatCode,
+  }));
+}
+
+export function reopenFiscalYear(fiscalYearId: string, reason: string, by: "anvandare" | "assistent"): ReopenResult {
+  const data = db();
+  const fy = getFiscalYear(fiscalYearId);
+  if (!fy) throw new Error("Räkenskapsåret finns inte.");
+  const trimmedReason = reason.trim();
+  if (trimmedReason.length < 5) {
+    throw new Error(
+      "Skriv varför året öppnas igen. Skälet följer med i audit-loggen och är det en granskare läser för att förstå varför bokslutet gjordes om."
+    );
+  }
+  const blockers = reopenBlockers(fy.id);
+  if (blockers.length) throw new Error(`Räkenskapsåret kan inte öppnas: ${blockers.map((b) => b.detail).join(" ")}`);
+
+  const at = new Date().toISOString();
+  const previousLockedThrough = data.accounting.lockedThrough;
+
+  /*
+   * Ordningen spelar roll: året måste vara öppet och låset flyttat innan
+   * återföringarna kan bokföras på sina ursprungsdatum. Att återföra dem på
+   * första öppna dag i stället – som en vanlig rättelse – vore fel här, för då
+   * skulle det öppnade året behålla ett halvt bokslut i sina siffror.
+   */
+  fy.status = "oppet";
+  const openBefore = previousDay(fy.startDate);
+  unlockPeriodThrough(
+    previousLockedThrough && previousLockedThrough < openBefore ? previousLockedThrough : openBefore,
+    by,
+    `Räkenskapsåret ${fy.label} öppnades igen: ${trimmedReason}`
+  );
+
+  // 1. Återför bokslutsverifikationerna: skatt, omföring och årets resultat.
+  const reversals: Verification[] = [];
+  const reversedIds: string[] = [];
+  for (const id of fy.closingVerificationIds ?? []) {
+    const original = data.verifications.find((v) => v.id === id);
+    if (!original || original.correctedByVerificationId) continue;
+    const reversal = postVerification({
+      date: original.date,
+      description: `Återföring av bokslut ${fy.label}: ${original.description}`,
+      entries: mirrorEntries(original),
+      source: { type: "bokslut", id: fy.id },
+      confidence: "hog",
+      createdBy: by,
+      correctsVerificationId: original.id,
+      explanation: `Räkenskapsåret ${fy.label} öppnades igen, så bokslutsposten återförs och räknas om vid nästa stängning. Originalet står kvar – bokföring skrivs aldrig om. Skäl: ${trimmedReason}`,
+    });
+    original.correctedByVerificationId = reversal.id;
+    reversals.push(reversal);
+    reversedIds.push(original.id);
+  }
+  fy.closingVerificationIds = undefined;
+  delete fy.closedAt;
+
+  /*
+   * 2. Periodiseringarna som stängningen återförde in i nästa år. De ligger
+   * kvar i nästa års bokföring och skulle bokföras en gång till vid nästa
+   * stängning, så återföringen återförs och periodiseringen blir bokförd igen.
+   */
+  let restoredAccruals = 0;
+  for (const accrual of data.accruals) {
+    if (accrual.fiscalYearId !== fy.id || accrual.status !== "aterford" || !accrual.reverseVerificationId) continue;
+    const original = data.verifications.find((v) => v.id === accrual.reverseVerificationId);
+    if (!original) continue;
+    if (!original.correctedByVerificationId) {
+      const reversal = postVerification({
+        date: original.date,
+        description: `Återföring av bokslut ${fy.label}: ${original.description}`,
+        entries: mirrorEntries(original),
+        source: { type: "periodisering", id: accrual.id },
+        confidence: "hog",
+        createdBy: by,
+        correctsVerificationId: original.id,
+        explanation: `Periodiseringen återfördes automatiskt när ${fy.label} stängdes. Året är öppnat igen, så återföringen tas tillbaka och periodiseringen ligger kvar i ${fy.label}.`,
+      });
+      original.correctedByVerificationId = reversal.id;
+      reversals.push(reversal);
+    }
+    accrual.status = "bokford";
+    accrual.reverseVerificationId = undefined;
+    restoredAccruals++;
+  }
+
+  // 3. En upprättad årsredovisning beskriver inte längre böckerna.
+  const superseded = supersedeAnnualReports(fy.id, trimmedReason, at);
+
+  const reopening: FiscalYearReopening = {
+    at,
+    by,
+    reason: trimmedReason,
+    reversedVerificationIds: reversedIds,
+    reversalVerificationIds: reversals.map((v) => v.id),
+    previousLockedThrough,
+  };
+  fy.reopenings = [...(fy.reopenings ?? []), reopening];
+
+  const nextYear = data.fiscalYears.find((f) => f.label === String(Number(fy.label) + 1));
+
+  logAudit(
+    by,
+    "rakenskapsar_oppnat",
+    `Räkenskapsåret ${fy.label} öppnades igen. Skäl: ${trimmedReason} ${reversals.length} bokslutsverifikation${reversals.length === 1 ? "" : "er"} återfördes${superseded.length ? `, årsredovisningen markerades som ersatt` : ""}${nextYear ? `. ${nextYear.label} har kvar sina ingående balanser tills ${fy.label} stängs igen` : ""}.`,
+    { targetType: "rakenskapsar", targetId: fy.id }
+  );
+  save();
+  return {
+    fiscalYear: fy,
+    reversals,
+    restoredAccruals,
+    supersededReports: superseded.length,
+    lockedThrough: data.accounting.lockedThrough,
+    nextYear,
+  };
 }

@@ -35,6 +35,12 @@ export function nextDay(date: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+export function previousDay(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 /**
  * Ren fabrik för ett kalenderår – används av både motorn och migreringen.
  * Id:t bär en slumpdel: id-kolumnen är en global text-PK i Postgres, så ett

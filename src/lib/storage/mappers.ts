@@ -43,6 +43,7 @@ import type {
   EmployerDeclaration,
   Expense,
   FiscalYear,
+  FiscalYearReopening,
   Invoice,
   PayrollRun,
   Job,
@@ -1239,7 +1240,7 @@ export const fiscalYearsSpec: TableSpec<FiscalYear> = {
   pk: ["id"],
   columns: [
     "id", "business_id", "label", "start_date", "end_date", "status",
-    "opening_balances", "opening_source", "closed_at", "closing_verification_ids",
+    "opening_balances", "opening_source", "closed_at", "closing_verification_ids", "reopenings",
   ],
   toRow: (y, businessId) => ({
     id: y.id,
@@ -1252,6 +1253,7 @@ export const fiscalYearsSpec: TableSpec<FiscalYear> = {
     opening_source: y.openingSource,
     closed_at: y.closedAt ?? null,
     closing_verification_ids: jsonParamOrNull(y.closingVerificationIds),
+    reopenings: jsonParamOrNull(y.reopenings),
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -1263,6 +1265,7 @@ export const fiscalYearsSpec: TableSpec<FiscalYear> = {
     openingSource: r.opening_source as FiscalYear["openingSource"],
     ...opt("closedAt", tsIsoOrU(r.closed_at)),
     ...opt("closingVerificationIds", jsonOrU<string[]>(r.closing_verification_ids)),
+    ...opt("reopenings", jsonOrU<FiscalYearReopening[]>(r.reopenings)),
   }),
 };
 
@@ -1570,7 +1573,7 @@ export const annualReportsSpec: TableSpec<AnnualReport> = {
   pk: ["id"],
   columns: [
     "id", "business_id", "fiscal_year_id", "status", "content", "generated_at",
-    "reviewed_at", "signed_at", "marked_filed_at",
+    "reviewed_at", "signed_at", "marked_filed_at", "superseded_at", "superseded_reason",
   ],
   toRow: (a, businessId) => ({
     id: a.id,
@@ -1582,6 +1585,8 @@ export const annualReportsSpec: TableSpec<AnnualReport> = {
     reviewed_at: a.reviewedAt ?? null,
     signed_at: a.signedAt ?? null,
     marked_filed_at: a.markedFiledAt ?? null,
+    superseded_at: a.supersededAt ?? null,
+    superseded_reason: a.supersededReason ?? null,
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -1592,6 +1597,8 @@ export const annualReportsSpec: TableSpec<AnnualReport> = {
     ...opt("reviewedAt", tsIsoOrU(r.reviewed_at)),
     ...opt("signedAt", tsIsoOrU(r.signed_at)),
     ...opt("markedFiledAt", tsIsoOrU(r.marked_filed_at)),
+    ...opt("supersededAt", tsIsoOrU(r.superseded_at)),
+    ...opt("supersededReason", strOrU(r.superseded_reason)),
   }),
 };
 

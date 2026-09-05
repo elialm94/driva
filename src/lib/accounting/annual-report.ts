@@ -33,8 +33,41 @@ import { payrollRuns } from "./payroll";
  * med audit trail – aldrig ett påstående om att Bolagsverket tagit emot något.
  */
 
+/**
+ * Den gällande årsredovisningen för året. En ersatt rapport räknas inte: när
+ * året öppnats igen beskriver den inte längre böckerna, och nästa bokslut ska
+ * ge en ny rapport i stället för att lämna tillbaka den gamla.
+ */
 export function annualReportFor(fiscalYearId: string): AnnualReport | undefined {
-  return db().annualReports.find((r) => r.fiscalYearId === fiscalYearId);
+  return db().annualReports.find((r) => r.fiscalYearId === fiscalYearId && !r.supersededAt);
+}
+
+/** Alla årsredovisningar för året, nyast först – inklusive de ersatta. */
+export function annualReportHistory(fiscalYearId: string): AnnualReport[] {
+  return db()
+    .annualReports.filter((r) => r.fiscalYearId === fiscalYearId)
+    .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
+}
+
+/**
+ * Markera årets rapporter som ersatta. Anropas när räkenskapsåret öppnas igen.
+ * Rapporten raderas aldrig – en undertecknad eller inlämnad årsredovisning är
+ * en handling som har funnits, och den ska gå att läsa efteråt.
+ */
+export function supersedeAnnualReports(fiscalYearId: string, reason: string, at: string): AnnualReport[] {
+  const superseded = db().annualReports.filter((r) => r.fiscalYearId === fiscalYearId && !r.supersededAt);
+  for (const report of superseded) {
+    report.supersededAt = at;
+    report.supersededReason = reason;
+    logAudit(
+      "system",
+      "arsredovisning_status",
+      `Årsredovisningen för ${report.content.fiscalLabel} markerades som ersatt: räkenskapsåret öppnades igen. ${reason}`,
+      { targetType: "arsredovisning", targetId: report.id }
+    );
+  }
+  if (superseded.length) save();
+  return superseded;
 }
 
 /* ----------------------------- Resultaträkning ----------------------------- */
@@ -442,6 +475,7 @@ export interface AnnualReportEdit {
 export function updateAnnualReport(reportId: string, edit: AnnualReportEdit, by: "anvandare"): AnnualReport {
   const report = db().annualReports.find((r) => r.id === reportId);
   if (!report) throw new Error("Årsredovisningen finns inte.");
+  if (report.supersededAt) throw new Error(SUPERSEDED_MESSAGE);
   if (report.status === "signerad" || report.status === "inlamnad_markerad") {
     throw new Error(
       "Årsredovisningen är signerad och kan inte ändras. Skapa en ny årsredovisning om något är fel – den signerade versionen står kvar."
@@ -487,6 +521,9 @@ export function updateAnnualReport(reportId: string, edit: AnnualReportEdit, by:
 
 /* ---------------------------------- Status --------------------------------- */
 
+const SUPERSEDED_MESSAGE =
+  "Årsredovisningen är ersatt: räkenskapsåret öppnades igen efter att den upprättades. Stäng året igen och arbeta vidare i den nya årsredovisningen – den här står kvar som historik.";
+
 const STATUS_ORDER: AnnualReport["status"][] = ["genererad", "granskad", "signerad", "inlamnad_markerad"];
 
 /**
@@ -518,6 +555,7 @@ export function annualReportBlockers(report: AnnualReport, to: AnnualReport["sta
 export function advanceAnnualReportStatus(reportId: string, to: AnnualReport["status"], by: "anvandare"): AnnualReport {
   const report = db().annualReports.find((r) => r.id === reportId);
   if (!report) throw new Error("Årsredovisningen finns inte.");
+  if (report.supersededAt) throw new Error(SUPERSEDED_MESSAGE);
   const fromIdx = STATUS_ORDER.indexOf(report.status);
   const toIdx = STATUS_ORDER.indexOf(to);
   if (toIdx !== fromIdx + 1)

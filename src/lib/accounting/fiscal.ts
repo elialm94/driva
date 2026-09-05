@@ -118,6 +118,38 @@ export function lockPeriod(throughDate: string, actor: "anvandare" | "assistent"
 }
 
 /**
+ * Flytta periodlåset bakåt. Enda vägen bakåt, och den finns bara för
+ * återöppning av ett räkenskapsår (se accounting/close.ts): ett år som är
+ * öppet men låst går inte att rätta, och då vore återöppningen bara på papperet.
+ *
+ * Låset är ett enda vattenmärke, så en återöppning av 2025 låser också upp
+ * början av 2026. Det är inte gratis, men det är inte heller farligt: en
+ * deklarerad momsperiod och en lämnad arbetsgivardeklaration vaktas av sin egen
+ * status, inte av låset. Ursprungslåset sparas på återöppningen och sätts
+ * tillbaka när året stängs igen.
+ */
+export function unlockPeriodThrough(
+  throughDate: string | undefined,
+  actor: "anvandare" | "assistent" | "system",
+  reason: string
+): void {
+  const data = db();
+  const current = data.accounting.lockedThrough;
+  const d = throughDate && throughDate.length > 10 ? bokforingsdatum(throughDate) : throughDate;
+  if (current === d) return;
+  if (d) data.accounting.lockedThrough = d;
+  else delete data.accounting.lockedThrough;
+  logAudit(
+    actor,
+    "period_upplast",
+    d
+      ? `Periodlåset flyttades bakåt från ${current ?? "inget lås"} till ${d}. ${reason}`
+      : `Periodlåset togs bort (var ${current ?? "inget lås"}). ${reason}`
+  );
+  save();
+}
+
+/**
  * Företagets momsperiodicitet. Speglar registreringen hos Skatteverket och är
  * ett val – kvartal är huvudregeln för ett litet aktiebolag och därför default.
  */

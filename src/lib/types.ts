@@ -1200,6 +1200,30 @@ export interface FiscalYear {
   closedAt?: string;
   /** Bokslutsverifikationer som skapades när året stängdes. */
   closingVerificationIds?: ID[];
+  /** Varje gång året öppnats igen efter ett bokslut. Raderas aldrig. */
+  reopenings?: FiscalYearReopening[];
+}
+
+/**
+ * En återöppning av ett stängt räkenskapsår. Bokslutet är inte permanent – ett
+ * fel som upptäcks efteråt ska gå att rätta – men varje återöppning är en
+ * ingripande händelse och lämnar därför ett spår som inte går att sudda ut.
+ */
+export interface FiscalYearReopening {
+  at: string;
+  by: "anvandare" | "assistent" | "system";
+  /** Varför året öppnades. Krävs. */
+  reason: string;
+  /** Bokslutsverifikationerna som återfördes, i den ordning de bokfördes. */
+  reversedVerificationIds: ID[];
+  /** Återföringarna som bokfördes vid återöppningen. */
+  reversalVerificationIds: ID[];
+  /**
+   * Periodlåset som gällde innan året öppnades. Låset måste flyttas bakåt för
+   * att året ska gå att rätta, och återställs hit när året stängs igen – annars
+   * skulle senare deklarerade perioder ligga olåsta efteråt.
+   */
+  previousLockedThrough?: string;
 }
 
 /* ----------------------------------- Moms ------------------------------------ */
@@ -1455,6 +1479,8 @@ export type AuditAction =
   | "arbetsgivardeklaration_deklarerad"
   | "rakenskapsar_skapat"
   | "rakenskapsar_stangt"
+  | "rakenskapsar_oppnat"
+  | "period_upplast"
   | "inventarie_registrerad"
   | "avskrivning_bokford"
   | "periodisering_planerad"
@@ -1605,6 +1631,13 @@ export interface AnnualReport {
   reviewedAt?: string;
   signedAt?: string;
   markedFiledAt?: string;
+  /**
+   * Satt när räkenskapsåret öppnats igen efter att rapporten upprättades.
+   * Rapporten står kvar – den kan vara undertecknad och inlämnad, och då är den
+   * en historisk handling – men den beskriver inte längre böckerna.
+   */
+  supersededAt?: string;
+  supersededReason?: string;
 }
 
 /* ---------------------------------- Aktivitet -------------------------------- */
