@@ -190,7 +190,7 @@ export interface TaxReductionCase {
   prefill: TaxReductionPrefill | null;
 }
 
-function rotInvoicesForJob(jobId: string): Invoice[] {
+export function rotInvoicesForJob(jobId: string): Invoice[] {
   return invoicesForJob(jobId).filter((i) => i.rot && i.type !== "kredit" && i.status !== "krediterad");
 }
 
