@@ -270,6 +270,9 @@ export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): 
   loaded.supplierPayments ??= [];
   loaded.paymentFiles ??= [];
   loaded.bankConnections ??= [];
+  // Kontoregistret lagrar bara företagets avvikelser – standardplanen ligger
+  // i koden (accounting/chart.ts), så en tom lista är det normala tillståndet.
+  loaded.chartAccounts ??= [];
   loaded.jobWorkEntries ??= [];
   loaded.collaborationInvitations ??= [];
   loaded.clientInformationRequests ??= [];
@@ -359,6 +362,20 @@ export function db(): DB {
     // HMR / äldre in-memory cache saknar nya fält – kör migration igen.
     g.__drivaDb = normalize(g.__drivaDb);
   }
+  return g.__drivaDb;
+}
+
+/**
+ * Tillståndet om det redan är laddat, annars undefined. Till skillnad från
+ * `db()` seedar den aldrig fram ett tillstånd. Används av kontoregistret, som
+ * anropas medan seedet byggs – `db()` där skulle bli en oändlig rekursion.
+ */
+export function loadedDb(): DB | undefined {
+  const ctx = tenantContext();
+  if (ctx) return ctx.state;
+  const pageState = requestTenantState();
+  if (pageState) return pageState;
+  if (storageMode() === "supabase") return undefined;
   return g.__drivaDb;
 }
 

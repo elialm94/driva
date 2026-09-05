@@ -303,6 +303,9 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const reminted = await remintHexInboundMailSlugs(client);
   if (reminted > 0) applied.push(`inbound_mail_slug.remint:${reminted}`);
 
+  const chartApplied = await ensureChartAccountsSchema(client);
+  applied.push(...chartApplied);
+
   return applied;
 }
 
@@ -448,6 +451,47 @@ export async function ensureBankConnectionSchema(client: SqlClient): Promise<str
     );
     applied.push("bank_connections");
   }
+  return applied;
+}
+
+/**
+ * Kontoregister (migration 30): chart_accounts. Bara företagets avvikelser
+ * från standardplanen lagras – standardplanen ligger i koden. Utan tabellen
+ * kan företaget inte lägga till egna konton, så den skapas här med
+ * IF NOT EXISTS i miljöer där `supabase db push` inte körts.
+ */
+export async function ensureChartAccountsSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  const table = await client.query(`select to_regclass('public.chart_accounts') is not null as present`);
+  if (table[0]?.present) return applied;
+  await run(
+    client,
+    `create table if not exists public.chart_accounts (
+      id text primary key,
+      business_id uuid not null references public.businesses (id) on delete cascade,
+      number integer not null check (number between 1000 and 8999),
+      name text not null check (length(trim(name)) > 0),
+      type text not null check (type in ('tillgang', 'eget_kapital', 'skuld', 'intakt', 'kostnad')),
+      section text not null,
+      custom boolean not null default false,
+      archived boolean not null default false,
+      created_at timestamptz not null default now()
+    )`
+  );
+  await run(
+    client,
+    `create unique index if not exists chart_accounts_business_number_uq
+       on public.chart_accounts (business_id, number)`
+  );
+  await run(client, `grant select, insert, update, delete on public.chart_accounts to driva_app`);
+  await run(client, `alter table public.chart_accounts enable row level security`);
+  await run(client, `drop policy if exists chart_accounts_server on public.chart_accounts`);
+  await run(
+    client,
+    `create policy chart_accounts_server on public.chart_accounts
+       for all to driva_app using (app.is_member(business_id)) with check (app.is_member(business_id))`
+  );
+  applied.push("chart_accounts");
   return applied;
 }
 

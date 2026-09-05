@@ -14,6 +14,8 @@
  *     drivrutinen ger string | number | bigint.
  */
 import type {
+  AccountSection,
+  AccountType,
   ActivityEvent,
   AssistantAuditEntry,
   AssistantMessage,
@@ -30,6 +32,7 @@ import type {
   BankIDEnvironment,
   BankIDOrder,
   BankTransaction,
+  ChartAccountRecord,
   CompanySettings,
   Customer,
   DB,
@@ -752,6 +755,35 @@ export const bankAccountsSpec: TableSpec<BankAccount> = {
     balance: num(r.balance),
     connectedAt: tsIso(r.connected_at),
     ...opt("externalId", strOrU(r.external_id)),
+  }),
+};
+
+/* ------------------------------ chart_accounts ----------------------------- */
+
+export const chartAccountsSpec: TableSpec<ChartAccountRecord> = {
+  table: "chart_accounts",
+  pk: ["id"],
+  columns: ["id", "business_id", "number", "name", "type", "section", "custom", "archived", "created_at"],
+  toRow: (a, businessId) => ({
+    id: a.id,
+    business_id: businessId,
+    number: a.number,
+    name: a.name,
+    type: a.type,
+    section: a.section,
+    custom: a.custom,
+    archived: a.archived ?? false,
+    created_at: a.createdAt,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    number: num(r.number),
+    name: str(r.name),
+    type: r.type as AccountType,
+    section: r.section as AccountSection,
+    custom: Boolean(r.custom),
+    ...(r.archived === true ? { archived: true } : {}),
+    createdAt: tsIso(r.created_at),
   }),
 };
 

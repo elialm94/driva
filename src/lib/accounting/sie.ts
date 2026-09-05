@@ -1,5 +1,5 @@
 import { db } from "../store";
-import { BAS } from "../bas";
+import { accountName } from "./chart";
 import type { FiscalYear } from "../types";
 import { bokforingsdatum } from "./dates";
 import { fiscalYears, fiscalYearFor } from "./fiscal";
@@ -53,7 +53,7 @@ export function generateSie(fiscalYearId?: string): string {
   // Kontoplan: alla konton som förekommer i året (eller IB).
   const sb = saldobalans({ from: fy.startDate, to: fy.endDate });
   for (const row of sb.rows) {
-    lines.push(`#KONTO ${row.account} ${sieEscape(BAS[row.account] ?? row.name)}`);
+    lines.push(`#KONTO ${row.account} ${sieEscape(accountName(row.account))}`);
   }
 
   // IB/UB för balanskonton, RES för resultatkonton.

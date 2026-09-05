@@ -1,12 +1,12 @@
 import { db, save } from "../store";
 import {
-  BAS,
   EXPENSE_CATEGORIES,
   categoryByKey,
   entriesExpense,
   entriesSupplierInvoiceReceived,
   isCostAccount,
 } from "../bas";
+import { accountName } from "../accounting/chart";
 import type { PostLineInput } from "../accounting/engine";
 import {
   createCorrection,
@@ -80,7 +80,7 @@ export interface CorrectionFlow {
   invoiceId?: string;
   currentCategory?: string;
   currentAccount?: number;
-  /** Sökbar lista – inte hela BAS-registret. */
+  /** Sökbar lista med de vanliga kostnadskontona – inte hela kontoregistret. */
   accountOptions?: KontoOption[];
   allowAdvanced: boolean;
   periodLocked: boolean;
@@ -236,7 +236,7 @@ export function expenseAccountOptions(): KontoOption[] {
     out.push({
       key: c.key,
       account: c.account,
-      label: `${c.account} ${BAS[c.account] ?? c.label}`,
+      label: `${c.account} ${accountName(c.account)}`,
       vatFree: c.vatFree,
     });
   }
@@ -372,7 +372,7 @@ function toPreview(entries: VerificationEntry[] | PostLineInput[]): CorrectionPr
   return entries
     .map((e) => ({
       account: e.account,
-      accountName: "accountName" in e && e.accountName ? e.accountName : (BAS[e.account] ?? `Konto ${e.account}`),
+      accountName: "accountName" in e && e.accountName ? e.accountName : accountName(e.account),
       debit: e.debit ?? 0,
       credit: e.credit ?? 0,
     }))

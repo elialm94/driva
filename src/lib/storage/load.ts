@@ -21,6 +21,7 @@ import {
   bankConnectionsSpec,
   bankidOrdersSpec,
   bankTransactionsSpec,
+  chartAccountsSpec,
   customersSpec,
   dateOnly,
   domainAuditFromAuditRow,
@@ -155,7 +156,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     tx.query(`select * from public.annual_reports where business_id = $1 order by generated_at, id`, b),
   ]);
 
-  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows, bankConnectionRows] =
+  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows, bankConnectionRows, chartAccountRows] =
     await Promise.all([
       tx.query(`select * from public.websites where business_id = $1`, b),
       tx.query(`select * from public.domains where business_id = $1 order by created_at, id`, b),
@@ -179,6 +180,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
         b
       ),
       queryIfTable(tx, "bank_connections", `select * from public.bank_connections where business_id = $1 order by created_at, id`, b),
+      queryIfTable(tx, "chart_accounts", `select * from public.chart_accounts where business_id = $1 order by number`, b),
     ]);
 
   // Bostäder per kund (position = visningsordning).
@@ -261,6 +263,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     supplierPayments: supplierPaymentRows.map(supplierPaymentsSpec.fromRow),
     paymentFiles: paymentFileRows.map(paymentFilesSpec.fromRow),
     verifications,
+    chartAccounts: chartAccountRows.map(chartAccountsSpec.fromRow),
     fiscalYears: fiscalYearRows.map(fiscalYearsSpec.fromRow),
     accounting: lockedThrough == null ? {} : { lockedThrough: dateOnly(lockedThrough) },
     vatReports: vatReportRows.map(vatReportsSpec.fromRow),

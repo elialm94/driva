@@ -1123,6 +1123,62 @@ async function main() {
   );
 
   // ------------------------------------------------------------------
+  // Kontoregister (migration 30)
+  // ------------------------------------------------------------------
+  console.log("\nKontoregister:");
+
+  await asApp(A);
+  await expectOk(db, "eget konto kan läggas till i egen tenant", () =>
+    db.query(
+      `insert into public.chart_accounts (id, business_id, number, name, type, section, custom)
+       values ('konto-4011', $1, 4011, 'Inköp virke', 'kostnad', 'ravaror_och_fornodenheter', true)`,
+      [A]
+    )
+  );
+  await expectError(db, "kontoregistret är tenantisolerat (RLS)", "row-level security", () =>
+    db.query(
+      `insert into public.chart_accounts (id, business_id, number, name, type, section, custom)
+       values ('konto-b-4011', $1, 4011, 'Intrång', 'kostnad', 'ravaror_och_fornodenheter', true)`,
+      [B]
+    )
+  );
+  await expectError(db, "samma kontonummer kan inte finnas två gånger per företag", "duplicate key", () =>
+    db.query(
+      `insert into public.chart_accounts (id, business_id, number, name, type, section, custom)
+       values ('konto-4011-dubblett', $1, 4011, 'Dubblett', 'kostnad', 'ravaror_och_fornodenheter', true)`,
+      [A]
+    )
+  );
+  await expectError(db, "kontonummer utanför BAS:s nummerrymd avvisas", "chart_accounts_number_check", () =>
+    db.query(
+      `insert into public.chart_accounts (id, business_id, number, name, type, section, custom)
+       values ('konto-999', $1, 999, 'För lågt', 'kostnad', 'ravaror_och_fornodenheter', true)`,
+      [A]
+    )
+  );
+  await expectError(db, "okänd kontotyp avvisas", "chart_accounts_type_check", () =>
+    db.query(
+      `insert into public.chart_accounts (id, business_id, number, name, type, section, custom)
+       values ('konto-4012', $1, 4012, 'Fel typ', 'hittepa', 'ravaror_och_fornodenheter', true)`,
+      [A]
+    )
+  );
+  await expectError(db, "namnlöst konto avvisas", "chart_accounts_name_check", () =>
+    db.query(
+      `insert into public.chart_accounts (id, business_id, number, name, type, section, custom)
+       values ('konto-4013', $1, 4013, '   ', 'kostnad', 'ravaror_och_fornodenheter', true)`,
+      [A]
+    )
+  );
+  {
+    await asApp(B);
+    const r = await rows(db, `select number from public.chart_accounts`);
+    if (r.length === 0) ok("företag B ser inte A:s egna konton");
+    else fail("företag B ser inte A:s egna konton", JSON.stringify(r));
+    await asSuperuser();
+  }
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");

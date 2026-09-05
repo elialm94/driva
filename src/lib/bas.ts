@@ -1,56 +1,15 @@
 import type { DocLine, RotRut, VerificationEntry } from "./types";
 import { docTotals, vatBreakdown } from "./calc";
+import { accountName } from "./accounting/chart";
 
 const SALES_BY_VAT: Record<number, number> = { 25: 3001, 12: 3002, 6: 3003, 0: 3004 };
 const VAT_OUT_BY_RATE: Record<number, number> = { 25: 2611, 12: 2621, 6: 2631 };
 
-/** Utdrag ur BAS-kontoplanen – det som produkten använder. Utökas vid behov, aldrig hela registret. */
-export const BAS: Record<number, string> = {
-  1220: "Inventarier och verktyg",
-  1229: "Ack. avskrivningar inventarier",
-  1510: "Kundfordringar",
-  1513: "Kundfordringar ROT/RUT",
-  1710: "Förutbetalda kostnader",
-  1790: "Upplupna intäkter",
-  1930: "Företagskonto",
-  2010: "Eget kapital (enskild firma)",
-  2013: "Egna uttag",
-  2018: "Egna insättningar",
-  2019: "Årets resultat (enskild firma)",
-  2081: "Aktiekapital",
-  2091: "Balanserad vinst eller förlust",
-  2099: "Årets resultat",
-  2420: "Förskott från kunder",
-  2440: "Leverantörsskulder",
-  2510: "Skatteskulder",
-  2512: "Beräknad inkomstskatt",
-  2611: "Utgående moms 25 %",
-  2621: "Utgående moms 12 %",
-  2631: "Utgående moms 6 %",
-  2641: "Ingående moms",
-  2650: "Redovisningskonto för moms",
-  2970: "Förutbetalda intäkter",
-  2990: "Upplupna kostnader",
-  3001: "Försäljning 25 %",
-  3002: "Försäljning 12 %",
-  3003: "Försäljning 6 %",
-  3004: "Försäljning 0 %",
-  3740: "Öres- och kronutjämning",
-  4010: "Material och varor",
-  5010: "Lokalhyra",
-  5410: "Förbrukningsinventarier",
-  5420: "Programvaror och licenser",
-  5611: "Drivmedel",
-  5831: "Kost och logi",
-  6072: "Representation",
-  6310: "Företagsförsäkringar",
-  6212: "Telefon och internet",
-  6991: "Övriga externa kostnader",
-  7832: "Avskrivningar inventarier och verktyg",
-  8910: "Skatt på årets resultat",
-  8999: "Årets resultat",
-};
-
+/**
+ * Utgiftskategori: en genväg i UI:t till ett konto i registret. Kategorin äger
+ * bara sitt visningsnamn och sin momsregel – kontonamnet kommer alltid ur
+ * kontoregistret via `categoryAccountName`, så kontoplanen har en sanning.
+ */
 export interface ExpenseCategory {
   key: string;
   label: string;
@@ -75,6 +34,11 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
 
 export function categoryByKey(key: string): ExpenseCategory {
   return EXPENSE_CATEGORIES.find((c) => c.key === key) ?? EXPENSE_CATEGORIES[EXPENSE_CATEGORIES.length - 1];
+}
+
+/** Kontots namn ur kontoregistret, för "5410 Förbrukningsinventarier" i UI. */
+export function categoryAccountName(key: string): string {
+  return accountName(categoryByKey(key).account);
 }
 
 /** Leverantörer som produkten känner igen → hög säkerhet vid klassificering. */
@@ -108,7 +72,7 @@ export function guessCategory(supplier: string): { key: string; confidence: "hog
 }
 
 function e(account: number, debit: number, credit: number): VerificationEntry {
-  return { account, accountName: BAS[account] ?? `Konto ${account}`, debit, credit };
+  return { account, accountName: accountName(account), debit, credit };
 }
 
 /* ------------------------- Verifikationsbyggare (rena) ------------------------- */
@@ -246,13 +210,5 @@ export function entriesTaxPayment(amount: number): VerificationEntry[] {
   return [e(2510, amount, 0), e(1930, 0, amount)];
 }
 
-/* ------------------------------- Rapportberäkning ------------------------------ */
-
-export function isRevenueAccount(account: number): boolean {
-  return account >= 3000 && account < 4000;
-}
-
-export function isCostAccount(account: number): boolean {
-  return account >= 4000 && account < 8000;
-}
+export { isCostAccount, isRevenueAccount } from "./accounting/chart";
 

@@ -651,6 +651,50 @@ async function main() {
     assert.equal(resolved, null);
   });
 
+  console.log("\nKontoregistret genom adaptern:");
+  await check("eget konto rundresas, blir bokföringsbart och isoleras per tenant", async () => {
+    const { addCustomAccount, chartAccount } = await import("../src/lib/accounting/chart");
+    const { postVerification } = await import("../src/lib/accounting/engine");
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      addCustomAccount({ number: 4011, name: "Inköp virke" });
+      save();
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const account = chartAccount(4011);
+      assert.deepEqual(account, {
+        number: 4011,
+        name: "Inköp virke",
+        type: "kostnad",
+        section: "ravaror_och_fornodenheter",
+        custom: true,
+      });
+      // Standardplanen ligger i koden och lagras inte per företag.
+      assert.equal((db().chartAccounts ?? []).length, 1, "bara avvikelsen lagras");
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      postVerification({
+        date: "2026-03-10",
+        description: "Virke från adaptertestet",
+        entries: [
+          { account: 4011, debit: 400 },
+          { account: 1930, credit: 400 },
+        ],
+        source: { type: "manuell" },
+        createdBy: "anvandare",
+      });
+      save();
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const posted = db().verifications.find((v) => v.description === "Virke från adaptertestet");
+      assert.ok(posted, "verifikationen på det egna kontot sparades");
+      assert.equal(posted.entries[0].accountName, "Inköp virke");
+    });
+    await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {
+      assert.equal((db().chartAccounts ?? []).length, 0, "B ser inte A:s egna konton");
+      assert.equal(chartAccount(4011), undefined, "B kan inte bokföra på A:s konto");
+    });
+  });
+
   console.log("\nKvittofil genom adaptern:");
   await check("kvitto med inline-fil rundresas (content_base64, content_type, size_bytes)", async () => {
     const { uploadReceiptForExpense } = await import("../src/lib/services/expenses");

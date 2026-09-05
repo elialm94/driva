@@ -34,6 +34,7 @@ import {
   auditTrailToAuditRow,
   bankAccountsSpec,
   bankConnectionsSpec,
+  chartAccountsSpec,
   bankidOrdersSpec,
   bankTransactionsSpec,
   customersSpec,
@@ -348,6 +349,9 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
   await applySpec(bankAccountsSpec, diffCollection(baseline.bankAccounts, state.bankAccounts));
   await applySpec(bankTransactionsSpec, diffCollection(baseline.bankTransactions, state.bankTransactions));
   await applySpec(bankConnectionsSpec, diffCollection(baseline.bankConnections ?? [], state.bankConnections ?? []));
+  // Kontoregistret före verifikationerna: ett eget konto måste finnas i
+  // registret innan raderna som bokförs på det skrivs.
+  await applySpec(chartAccountsSpec, diffCollection(baseline.chartAccounts ?? [], state.chartAccounts ?? []));
   await applySpec(expensesSpec, diffCollection(baseline.expenses, state.expenses));
   await applySpec(receiptsSpec, diffCollection(baseline.receipts, state.receipts));
   await applySpec(supplierInvoicesSpec, diffCollection(baseline.supplierInvoices, state.supplierInvoices));

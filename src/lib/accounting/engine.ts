@@ -1,6 +1,6 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
-import { BAS } from "../bas";
+import { chartAccount } from "./chart";
 import type { Verification, VerificationEntry, VerificationSource } from "../types";
 import { bokforingsdatum, ensureFiscalYearFor, isDateLocked, lockedThrough } from "./fiscal";
 import { logAudit } from "./audit";
@@ -10,7 +10,8 @@ import { logAudit } from "./audit";
  * UI, AI och automatik använder samma väg. Motorn garanterar:
  *
  *  1. Balans: summa debet = summa kredit (annars PostingError, inget sparas).
- *  2. Endast konton ur BAS-registret, heltalskronor, inga negativa belopp.
+ *  2. Endast aktiva konton ur kontoregistret (accounting/chart.ts), hela
+ *     kronor, inga negativa belopp.
  *  3. Atomär nummertilldelning per serie (synkron read-modify-write).
  *  4. Periodlås: inget bokförs i låst period eller stängt räkenskapsår.
  *  5. Oföränderlighet: bokförda verifikationer ändras/tas aldrig bort –
@@ -74,12 +75,19 @@ export function validateEntries(input: PostLineInput[]): VerificationEntry[] {
       throw new PostingError("ogiltigt_belopp", `Konto ${line.account} har både debet och kredit på samma rad. Dela upp i två rader.`);
     }
     if (debit === 0 && credit === 0) continue; // nollrader ignoreras
-    if (!BAS[line.account]) {
+    const account = chartAccount(line.account);
+    if (!account) {
       throw new PostingError("okant_konto", `Konto ${line.account} finns inte i kontoplanen. Bokföringen hittar inte på konton.`);
+    }
+    if (account.archived) {
+      throw new PostingError(
+        "okant_konto",
+        `Konto ${line.account} ${account.name} är arkiverat och tar inte emot nya konteringar. Välj ett aktivt konto.`
+      );
     }
     entries.push({
       account: line.account,
-      accountName: BAS[line.account],
+      accountName: account.name,
       debit,
       credit,
       vatCode: line.vatCode,

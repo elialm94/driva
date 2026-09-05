@@ -28,6 +28,7 @@ const COUNTED: Array<[keyof DB, string]> = [
   ["bankAccounts", "bankkonton"],
   ["bankTransactions", "banktransaktioner"],
   ["bankConnections", "bankkopplingar"],
+  ["chartAccounts", "kontoplan"],
   ["expenses", "utgifter"],
   ["receipts", "kvitton"],
   ["supplierInvoices", "leverantörsfakturor"],

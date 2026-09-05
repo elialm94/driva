@@ -1,5 +1,5 @@
 import { db } from "../store";
-import { BAS, isCostAccount, isRevenueAccount } from "../bas";
+import { accountName, accountSection, accountType, isResultAccount } from "./chart";
 import type { FiscalYear, Verification } from "../types";
 import { bokforingsdatum, fiscalYearFor, todayDate } from "./fiscal";
 import { verificationLabel } from "./engine";
@@ -100,7 +100,7 @@ export function saldobalans(range?: Partial<DateRange>): Saldobalans {
   const row = (account: number): SaldobalansRow => {
     let r = accounts.get(account);
     if (!r) {
-      r = { account, name: BAS[account] ?? `Konto ${account}`, ib: 0, debit: 0, credit: 0, ub: 0 };
+      r = { account, name: accountName(account), ib: 0, debit: 0, credit: 0, ub: 0 };
       accounts.set(account, r);
     }
     return r;
@@ -172,7 +172,7 @@ export function huvudbok(range?: Partial<DateRange> & { account?: number }): Huv
   const acc = (account: number): HuvudbokAccount => {
     let a = accounts.get(account);
     if (!a) {
-      a = { account, name: BAS[account] ?? `Konto ${account}`, ib: 0, rows: [], ub: 0 };
+      a = { account, name: accountName(account), ib: 0, rows: [], ub: 0 };
       accounts.set(account, a);
     }
     return a;
@@ -221,10 +221,7 @@ export function huvudbok(range?: Partial<DateRange> & { account?: number }): Huv
 
 /* ------------------------------ Resultatrapport ------------------------------ */
 
-/** Resultatkonton (3xxx–8xxx utom 8999 Årets resultat). */
-export function isResultAccount(account: number): boolean {
-  return account >= 3000 && account < 8999;
-}
+export { isResultAccount };
 
 export interface ResultatRad {
   account: number;
@@ -239,9 +236,23 @@ export interface Resultatrapport {
   /** Positivt = kostnad. */
   kostnader: ResultatRad[];
   avskrivningar: ResultatRad[];
+  /** Finansiella intäkter och kostnader. Positivt = intäkt. */
+  finansiellaIntakter: ResultatRad[];
+  finansiellaKostnader: ResultatRad[];
+  /** Bokslutsdispositioner. Positivt = ökar resultatet (återföring). */
+  bokslutsdispositioner: ResultatRad[];
   skatt: number;
   omsattning: number;
   kostnaderSumma: number;
+  /** Rörelseresultat: omsättning minus rörelsekostnader. */
+  rorelseresultat: number;
+  /** Netto av finansiella poster (positivt = intäktsöverskott). */
+  finansiellaPosterNetto: number;
+  /** Resultat efter finansiella poster. */
+  resultatEfterFinansiellaPoster: number;
+  /** Netto av bokslutsdispositioner. */
+  bokslutsdispositionerNetto: number;
+  /** Resultat före skatt (efter bokslutsdispositioner). */
   resultatForeSkatt: number;
   resultat: number;
 }
@@ -264,32 +275,63 @@ export function resultatrapport(range?: Partial<DateRange>): Resultatrapport {
   const intakter: ResultatRad[] = [];
   const kostnader: ResultatRad[] = [];
   const avskrivningar: ResultatRad[] = [];
+  const finansiellaIntakter: ResultatRad[] = [];
+  const finansiellaKostnader: ResultatRad[] = [];
+  const bokslutsdispositioner: ResultatRad[] = [];
   let skatt = 0;
+  // Klassificeringen följer kontots post i resultaträkningen, inte dess
+  // nummerintervall – ett eget konto hamnar därför rätt utan specialfall.
   for (const [account, net] of [...perAccount.entries()].sort((a, b) => a[0] - b[0])) {
     if (net === 0) continue;
-    const name = BAS[account] ?? `Konto ${account}`;
-    if (isRevenueAccount(account)) {
-      intakter.push({ account, name, amount: -net });
-    } else if (account >= 7800 && account < 7900) {
-      avskrivningar.push({ account, name, amount: net });
-    } else if (account >= 8900) {
-      skatt += net;
-    } else if (isCostAccount(account) || account >= 8000) {
-      kostnader.push({ account, name, amount: net });
+    const name = accountName(account);
+    switch (accountSection(account)) {
+      case "nettoomsattning":
+      case "ovriga_rorelseintakter":
+        intakter.push({ account, name, amount: -net });
+        break;
+      case "avskrivningar":
+        avskrivningar.push({ account, name, amount: net });
+        break;
+      case "finansiella_intakter":
+        finansiellaIntakter.push({ account, name, amount: -net });
+        break;
+      case "finansiella_kostnader":
+        finansiellaKostnader.push({ account, name, amount: net });
+        break;
+      case "bokslutsdispositioner":
+        bokslutsdispositioner.push({ account, name, amount: -net });
+        break;
+      case "skatt":
+        skatt += net;
+        break;
+      default:
+        kostnader.push({ account, name, amount: net });
     }
   }
 
   const omsattning = intakter.reduce((s, r) => s + r.amount, 0);
   const kostnaderSumma = kostnader.reduce((s, r) => s + r.amount, 0) + avskrivningar.reduce((s, r) => s + r.amount, 0);
-  const resultatForeSkatt = omsattning - kostnaderSumma;
+  const rorelseresultat = omsattning - kostnaderSumma;
+  const finansiellaPosterNetto =
+    finansiellaIntakter.reduce((s, r) => s + r.amount, 0) - finansiellaKostnader.reduce((s, r) => s + r.amount, 0);
+  const resultatEfterFinansiellaPoster = rorelseresultat + finansiellaPosterNetto;
+  const bokslutsdispositionerNetto = bokslutsdispositioner.reduce((s, r) => s + r.amount, 0);
+  const resultatForeSkatt = resultatEfterFinansiellaPoster + bokslutsdispositionerNetto;
   return {
     range: { from, to },
     intakter,
     kostnader,
     avskrivningar,
+    finansiellaIntakter,
+    finansiellaKostnader,
+    bokslutsdispositioner,
     skatt,
     omsattning,
     kostnaderSumma,
+    rorelseresultat,
+    finansiellaPosterNetto,
+    resultatEfterFinansiellaPoster,
+    bokslutsdispositionerNetto,
     resultatForeSkatt,
     resultat: resultatForeSkatt - skatt,
   };
@@ -327,18 +369,20 @@ export function balansrapport(atDate: string = todayDate()): Balansrapport {
 
   for (const r of sb.rows) {
     if (r.ub === 0) continue;
-    if (r.account < 2000) {
-      tillgangar.push({ account: r.account, name: r.name, amount: r.ub });
-    } else if (r.account < 3000) {
-      const rad = { account: r.account, name: r.name, amount: -r.ub };
-      if (r.account < 2100) egetKapital.push(rad);
-      else skulder.push(rad);
-    } else if (isResultAccount(r.account)) {
-      // Resultatkonton påverkar beräknat resultat tills året stängs.
-      resultatEffekt += r.ub;
-    } else if (r.account === 8999) {
-      // Årets resultat-konto: redan omfört till eget kapital.
-      resultatEffekt += r.ub;
+    switch (accountType(r.account)) {
+      case "tillgang":
+        tillgangar.push({ account: r.account, name: r.name, amount: r.ub });
+        break;
+      case "eget_kapital":
+        egetKapital.push({ account: r.account, name: r.name, amount: -r.ub });
+        break;
+      case "skuld":
+        skulder.push({ account: r.account, name: r.name, amount: -r.ub });
+        break;
+      default:
+        // Resultatkonton påverkar beräknat resultat tills året stängs, och
+        // kontot årets resultat (8999) räknas med tills det är omfört.
+        resultatEffekt += r.ub;
     }
   }
 

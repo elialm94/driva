@@ -996,6 +996,60 @@ export interface PaymentFile {
 
 /* ---------------------------------- Bokföring -------------------------------- */
 
+/** Kontotyp. Styr om kontot hör till balans- eller resultaträkningen. */
+export type AccountType = "tillgang" | "eget_kapital" | "skuld" | "intakt" | "kostnad";
+
+/** Post i balansräkningen enligt K2. */
+export type BalanceSection =
+  | "immateriella_anlaggningstillgangar"
+  | "materiella_anlaggningstillgangar"
+  | "finansiella_anlaggningstillgangar"
+  | "varulager"
+  | "kortfristiga_fordringar"
+  | "kassa_och_bank"
+  | "bundet_eget_kapital"
+  | "fritt_eget_kapital"
+  | "obeskattade_reserver"
+  | "avsattningar"
+  | "langfristiga_skulder"
+  | "kortfristiga_skulder";
+
+/** Post i resultaträkningen enligt K2 (kostnadsslagsindelad). */
+export type ResultSection =
+  | "nettoomsattning"
+  | "ovriga_rorelseintakter"
+  | "ravaror_och_fornodenheter"
+  | "ovriga_externa_kostnader"
+  | "personalkostnader"
+  | "avskrivningar"
+  | "ovriga_rorelsekostnader"
+  | "finansiella_intakter"
+  | "finansiella_kostnader"
+  | "bokslutsdispositioner"
+  | "skatt"
+  | "arets_resultat";
+
+export type AccountSection = BalanceSection | ResultSection;
+
+/**
+ * Företagets avvikelse från den levererade BAS-kontoplanen: ett eget konto,
+ * ett omdöpt konto eller ett arkiverat konto. Bara avvikelser lagras –
+ * standardplanen ligger i koden (accounting/chart.ts) och kopieras inte per
+ * företag. Se `chartAccounts()` för det sammanslagna registret.
+ */
+export interface ChartAccountRecord {
+  id: ID;
+  number: number;
+  name: string;
+  type: AccountType;
+  section: AccountSection;
+  /** Sant när kontot inte finns i standardplanen. */
+  custom: boolean;
+  /** Avstängt för nya konteringar. Befintlig bokföring påverkas aldrig. */
+  archived?: boolean;
+  createdAt: string;
+}
+
 export interface VerificationEntry {
   account: number;
   accountName: string;
@@ -1949,6 +2003,12 @@ export interface DB {
   /** Genererade bankfiler (pain.001). Äldre JSON-filer saknar fältet – guardera med ?? []. */
   paymentFiles: PaymentFile[];
   verifications: Verification[];
+  /**
+   * Företagets avvikelser från den levererade BAS-kontoplanen (egna konton,
+   * omdöpta och arkiverade). Standardplanen ligger i koden. Äldre JSON-filer
+   * saknar fältet – guardera med ?? [].
+   */
+  chartAccounts?: ChartAccountRecord[];
   /** Räkenskapsår. Skapas automatiskt (kalenderår) av bokföringsmotorn. */
   fiscalYears: FiscalYear[];
   /** Bokföringsinställningar. lockedThrough: bokföringen är låst t.o.m. detta datum (YYYY-MM-DD). */
