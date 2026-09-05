@@ -127,6 +127,7 @@ export function emptyTestDb(over: Partial<DB> = {}): DB {
     employerDeclarations: over.employerDeclarations ?? [],
     assets: over.assets ?? [],
     accruals: over.accruals ?? [],
+    yearEndSchedules: over.yearEndSchedules ?? [],
     auditTrail: over.auditTrail ?? [],
     annualReports: over.annualReports ?? [],
     activity: over.activity ?? [],

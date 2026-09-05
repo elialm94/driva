@@ -63,6 +63,7 @@ import type {
   VerificationEntry,
   Website,
   WorkLocation,
+  YearEndSchedule,
 } from "@/lib/types";
 import { syncDocLineClassification } from "@/lib/economic-line-type";
 import { migrateQuoteVersionDescription } from "@/lib/quote-description";
@@ -1521,6 +1522,44 @@ export const accrualsSpec: TableSpec<Accrual> = {
     ...opt("bookVerificationId", strOrU(r.book_verification_id)),
     ...opt("reverseVerificationId", strOrU(r.reverse_verification_id)),
     createdAt: tsIso(r.created_at),
+  }),
+};
+
+/* --------------------------- year_end_schedules --------------------------- */
+
+export const yearEndSchedulesSpec: TableSpec<YearEndSchedule> = {
+  table: "year_end_schedules",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "kind", "fiscal_year_id", "closing_amount", "lines", "inputs",
+    "status", "verification_ids", "created_by", "created_at", "booked_at",
+  ],
+  toRow: (s, businessId) => ({
+    id: s.id,
+    business_id: businessId,
+    kind: s.kind,
+    fiscal_year_id: s.fiscalYearId,
+    closing_amount: s.closingAmount,
+    lines: jsonParam(s.lines),
+    inputs: jsonParam(s.inputs),
+    status: s.status,
+    verification_ids: jsonParam(s.verificationIds),
+    created_by: s.createdBy,
+    created_at: s.createdAt,
+    booked_at: s.bookedAt ?? null,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    kind: r.kind as YearEndSchedule["kind"],
+    fiscalYearId: str(r.fiscal_year_id),
+    closingAmount: num(r.closing_amount),
+    lines: jsonVal<YearEndSchedule["lines"]>(r.lines),
+    inputs: jsonVal<YearEndSchedule["inputs"]>(r.inputs),
+    status: r.status as YearEndSchedule["status"],
+    verificationIds: jsonVal<string[]>(r.verification_ids),
+    createdBy: r.created_by as YearEndSchedule["createdBy"],
+    createdAt: tsIso(r.created_at),
+    ...opt("bookedAt", tsIsoOrU(r.booked_at)),
   }),
 };
 

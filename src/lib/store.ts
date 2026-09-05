@@ -461,6 +461,7 @@ export function resetToEmptyCompany(): void {
     employerDeclarations: [],
     assets: [],
     accruals: [],
+    yearEndSchedules: [],
     auditTrail: [],
     annualReports: [],
     activity: [],

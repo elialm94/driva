@@ -25,6 +25,7 @@ import { issuedOcrForInvoice, ocrForInvoice } from "@/lib/ids";
 import type { SqlExecutor } from "./executor";
 import {
   accrualsSpec,
+  yearEndSchedulesSpec,
   activityToAuditRow,
   annualReportsSpec,
   assetsSpec,
@@ -373,6 +374,10 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
   );
   await applySpec(assetsSpec, diffCollection(baseline.assets, state.assets));
   await applySpec(accrualsSpec, diffCollection(baseline.accruals, state.accruals));
+  await applySpec(
+    yearEndSchedulesSpec,
+    diffCollection(baseline.yearEndSchedules ?? [], state.yearEndSchedules ?? [])
+  );
   await applySpec(annualReportsSpec, diffCollection(baseline.annualReports, state.annualReports));
   await applySpec(
     websitesSpec,

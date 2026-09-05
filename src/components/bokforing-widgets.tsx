@@ -160,7 +160,11 @@ export function BokslutAutomationButton({ fiscalYearId }: { fiscalYearId: string
             const res = await runBokslutAutomationAction(fiscalYearId);
             if (res.ok) {
               setResult(
-                `${res.depreciations ?? 0} avskrivning${(res.depreciations ?? 0) === 1 ? "" : "ar"} och ${res.accruals ?? 0} periodisering${(res.accruals ?? 0) === 1 ? "" : "ar"} bokfördes.`
+                [
+                  `${res.depreciations ?? 0} avskrivning${(res.depreciations ?? 0) === 1 ? "" : "ar"}`,
+                  `${res.accruals ?? 0} periodisering${(res.accruals ?? 0) === 1 ? "" : "ar"}`,
+                  `${res.schedules ?? 0} bokslutsbilag${(res.schedules ?? 0) === 1 ? "a" : "or"}`,
+                ].join(", ") + " bokfördes."
               );
               setError(null);
             } else {
@@ -170,7 +174,7 @@ export function BokslutAutomationButton({ fiscalYearId }: { fiscalYearId: string
         }
       >
         <Play className="size-3.5" />
-        {isPending ? "Bokför …" : "Bokför avskrivningar & periodiseringar"}
+        {isPending ? "Bokför …" : "Bokför bokslutsposterna"}
       </button>
       {result ? (
         <p className="mt-2 flex items-center gap-1.5 text-[13px] font-medium text-ok">

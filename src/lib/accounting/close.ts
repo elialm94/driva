@@ -9,6 +9,8 @@ import { computeTaxCalculation } from "./tax";
 import { logAudit } from "./audit";
 import { vatPeriods } from "./vat";
 import { isOverdue } from "../services/data";
+import { balanceReconciliation } from "./balance-reconciliation";
+import { SCHEDULE_LABEL, bookYearEndSchedule, schedulesAwaitingBooking, yearEndSchedules } from "./year-end";
 
 /**
  * Bokslut. Deterministiskt: alla kontroller körs på servern, bara riktiga
@@ -47,6 +49,8 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
   );
   const missingDepreciation = assetsNeedingDepreciation(fy.id);
   const accrualsPending = pendingAccruals(fy.id);
+  const schedulesPending = schedulesAwaitingBooking(fy.id);
+  const tieOut = balanceReconciliation(fy.id);
   const today = bokforingsdatum(new Date().toISOString());
   const yearEnded = today > fy.endDate;
 
@@ -133,11 +137,46 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
         : "Inga väntande periodiseringar.",
       href: "/bokforing/bokslut",
     },
+    {
+      key: "bokslutsbilagor",
+      label: "Bokslutsbilagorna är bokförda",
+      ok: schedulesPending.length === 0,
+      blocking: true,
+      detail: schedulesPending.length
+        ? schedulesPending.map((s) => `${SCHEDULE_LABEL[s.kind]}: ${s.reason}`).join(" ")
+        : yearEndSchedules(fy.id).length
+          ? "Bilagorna är bokförda."
+          : "Inga bilagor behövs för året.",
+      href: "/bokforing/bokslut",
+      hrefLabel: "Öppna bilagorna",
+    },
+    {
+      // Debet lika med kredit räcker inte: varje balanspost ska gå att förklara
+      // mot något utanför huvudboken.
+      key: "avstamning",
+      label: "Balanskontona är avstämda mot delsystemen",
+      ok: tieOut.ok,
+      blocking: true,
+      detail: tieOut.ok
+        ? `${tieOut.rows.length} balanskonto${tieOut.rows.length === 1 ? "" : "n"} stämmer mot sina underlag.`
+        : `${tieOut.unexplained.length} konto${tieOut.unexplained.length === 1 ? "" : "n"} går inte ihop: ${tieOut.unexplained
+            .map((r) => `${r.account} ${r.name}`)
+            .join(", ")}.`,
+      href: "/bokforing/bokslut",
+      hrefLabel: "Visa avstämningen",
+    },
   ];
 }
 
-/** Bokför alla årets avskrivningar och planerade periodiseringar i ett svep. */
-export function runBokslutAutomation(fiscalYearId: string, by: "anvandare" | "assistent"): { depreciations: number; accruals: number } {
+/**
+ * Bokför allt i bokslutet som redan är bestämt: avskrivningar, planerade
+ * periodiseringar och de bilagor användaren fyllt i. Bilagor som saknas
+ * bokförs inte – de kräver en uppgift bara användaren har.
+ */
+export function runBokslutAutomation(
+  fiscalYearId: string,
+  by: "anvandare" | "assistent"
+): { depreciations: number; accruals: number; schedules: number } {
   let depreciations = 0;
   for (const { asset } of assetsNeedingDepreciation(fiscalYearId)) {
     const result = createDepreciationEntry(asset.id, fiscalYearId, by);
@@ -148,7 +187,13 @@ export function runBokslutAutomation(fiscalYearId: string, by: "anvandare" | "as
     bookAccrual(accrual.id, by);
     accruals++;
   }
-  return { depreciations, accruals };
+  let schedules = 0;
+  for (const schedule of yearEndSchedules(fiscalYearId)) {
+    if (schedule.status !== "utkast") continue;
+    bookYearEndSchedule(schedule.id, by);
+    schedules++;
+  }
+  return { depreciations, accruals, schedules };
 }
 
 export interface CloseResult {

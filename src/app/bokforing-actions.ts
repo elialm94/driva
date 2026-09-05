@@ -166,7 +166,7 @@ export async function reconcileTaxAccountAction(
 
 export async function runBokslutAutomationAction(
   fiscalYearId: string
-): Promise<Result & { depreciations?: number; accruals?: number }> {
+): Promise<Result & { depreciations?: number; accruals?: number; schedules?: number }> {
   try {
     const res = await withBusiness(() => {
       const out = runBokslutAutomation(fiscalYearId, "anvandare");

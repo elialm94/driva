@@ -11,6 +11,7 @@ import type { DB, Verification } from "@/lib/types";
 import type { SqlExecutor, SqlParam, SqlRow } from "./executor";
 import {
   accrualsSpec,
+  yearEndSchedulesSpec,
   activityFromAuditRow,
   annualReportsSpec,
   assetsSpec,
@@ -159,7 +160,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     tx.query(`select * from public.annual_reports where business_id = $1 order by generated_at, id`, b),
   ]);
 
-  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows, bankConnectionRows, chartAccountRows, employeeRows, payrollRunRows, employerDeclarationRows] =
+  const [websiteRows, domainRows, assistantMessageRows, pendingActionRows, reminderRows, attentionStateRows, inboxItemRows, supplierPaymentRows, paymentFileRows, invitationRows, clientRequestRows, activityRows, auditRows, bankConnectionRows, chartAccountRows, employeeRows, payrollRunRows, employerDeclarationRows, yearEndScheduleRows] =
     await Promise.all([
       tx.query(`select * from public.websites where business_id = $1`, b),
       tx.query(`select * from public.domains where business_id = $1 order by created_at, id`, b),
@@ -190,6 +191,12 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
         tx,
         "employer_declarations",
         `select * from public.employer_declarations where business_id = $1 order by month, id`,
+        b
+      ),
+      queryIfTable(
+        tx,
+        "year_end_schedules",
+        `select * from public.year_end_schedules where business_id = $1 order by created_at, id`,
         b
       ),
     ]);
@@ -302,6 +309,7 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
     employerDeclarations: employerDeclarationRows.map(employerDeclarationsSpec.fromRow),
     assets: assetRows.map(assetsSpec.fromRow),
     accruals: accrualRows.map(accrualsSpec.fromRow),
+    yearEndSchedules: yearEndScheduleRows.map(yearEndSchedulesSpec.fromRow),
     auditTrail: auditRows.filter((r) => r.channel === "accounting").map(auditTrailFromAuditRow),
     annualReports: annualReportRows.map(annualReportsSpec.fromRow),
     activity: activityRows.map(activityFromAuditRow),

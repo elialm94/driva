@@ -2070,6 +2070,7 @@ export function buildSeed(): DB {
     employerDeclarations: [],
     assets: [],
     accruals: [],
+    yearEndSchedules: [],
     auditTrail: [],
     annualReports: [],
     activity: activity.sort((a, b) => b.at.localeCompare(a.at)),

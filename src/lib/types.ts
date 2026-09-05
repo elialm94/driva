@@ -1386,6 +1386,59 @@ export interface Accrual {
   createdAt: string;
 }
 
+/* ------------------------------ Bokslutsbilagor ------------------------------ */
+
+/**
+ * En bokslutsbilaga är specifikationen bakom ett balanskonto: vad saldot
+ * BESTÅR av, inte bara vad det är. Revisorn och Skatteverket frågar efter
+ * bilagan, inte efter kontot.
+ *
+ * Tre bilagor kräver uppgifter som inte finns i bokföringen och därför måste
+ * anges: sparade semesterdagar, bedömningen av vilka kundfordringar som är
+ * osäkra, och hur stor avsättning till periodiseringsfond bolaget vill göra.
+ */
+export type YearEndScheduleKind =
+  | "semesterloneskuld"
+  | "kundfordringar_nedskrivning"
+  | "periodiseringsfond";
+
+/** En rad i specifikationen. Raderna summerar till bilagans utgående belopp. */
+export interface YearEndScheduleLine {
+  label: string;
+  amount: number;
+  /** Hur raden räknats fram, i klartext. */
+  note?: string;
+}
+
+/** Uppgifter som inte går att härleda ur bokföringen utan måste anges. */
+export interface YearEndScheduleInputs {
+  /** Semesterlöneskuld: sparade betalda semesterdagar vid årets slut. */
+  savedVacationDays?: number;
+  /** Nedskrivning: kundfakturor som bedöms som osäkra. */
+  doubtfulInvoiceIds?: ID[];
+  /** Periodiseringsfond: årets avsättning. */
+  fundAllocation?: number;
+  /** Periodiseringsfond: återföringar, per det år fonden avsattes. */
+  fundReversals?: { year: number; amount: number }[];
+}
+
+export interface YearEndSchedule {
+  id: ID;
+  kind: YearEndScheduleKind;
+  fiscalYearId: ID;
+  /** Vad bilagan kommer fram till att kontot ska visa vid årets slut. */
+  closingAmount: number;
+  /** Specifikationen bakom beloppet. */
+  lines: YearEndScheduleLine[];
+  inputs: YearEndScheduleInputs;
+  status: "utkast" | "bokford";
+  /** Verifikationerna bilagan gett upphov till (justering och ev. avgifter). */
+  verificationIds: ID[];
+  createdBy: "anvandare" | "assistent";
+  createdAt: string;
+  bookedAt?: string;
+}
+
 /* --------------------------------- Audit trail -------------------------------- */
 
 export type AuditAction =
@@ -1406,6 +1459,8 @@ export type AuditAction =
   | "avskrivning_bokford"
   | "periodisering_planerad"
   | "periodisering_bokford"
+  | "bokslutsbilaga_andrad"
+  | "bokslutsbilaga_bokford"
   | "arsredovisning_genererad"
   | "arsredovisning_status"
   | "bokforing_angrad"
@@ -2209,6 +2264,8 @@ export interface DB {
   employerDeclarations?: EmployerDeclaration[];
   assets: Asset[];
   accruals: Accrual[];
+  /** Bokslutsbilagor. Äldre JSON-filer saknar fältet – guardera med ?? []. */
+  yearEndSchedules?: YearEndSchedule[];
   auditTrail: AuditEvent[];
   annualReports: AnnualReport[];
   activity: ActivityEvent[];

@@ -318,6 +318,9 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const payrollApplied = await ensurePayrollSchema(client);
   applied.push(...payrollApplied);
 
+  const yearEndApplied = await ensureYearEndSchedulesSchema(client);
+  applied.push(...yearEndApplied);
+
   return applied;
 }
 
@@ -416,6 +419,55 @@ export async function ensurePayrollSchema(client: SqlClient): Promise<string[]> 
     applied.push(t);
   }
   return applied;
+}
+
+/**
+ * Bokslutsbilagor (migration 35): specifikationen bakom semesterlöneskulden,
+ * nedskrivningen av kundfordringar och periodiseringsfonden. Bilagan bär
+ * uppgifter som inte går att räkna fram, så utan tabellen går bokslutet inte
+ * att slutföra.
+ */
+export async function ensureYearEndSchedulesSchema(client: SqlClient): Promise<string[]> {
+  const table = await client.query(`select to_regclass('public.year_end_schedules') is not null as present`);
+  if (table[0]?.present) return [];
+  await run(
+    client,
+    `create table if not exists public.year_end_schedules (
+      id text primary key,
+      business_id uuid not null references public.businesses (id) on delete cascade,
+      kind text not null check (
+        kind in ('semesterloneskuld', 'kundfordringar_nedskrivning', 'periodiseringsfond')
+      ),
+      fiscal_year_id text not null,
+      closing_amount bigint not null default 0,
+      lines jsonb not null default '[]'::jsonb,
+      inputs jsonb not null default '{}'::jsonb,
+      status text not null check (status in ('utkast', 'bokford')),
+      verification_ids jsonb not null default '[]'::jsonb,
+      created_by text not null check (created_by in ('anvandare', 'assistent')),
+      created_at timestamptz not null default now(),
+      booked_at timestamptz
+    )`
+  );
+  await run(
+    client,
+    `create unique index if not exists year_end_schedules_kind_uq
+       on public.year_end_schedules (business_id, fiscal_year_id, kind)`
+  );
+  await run(
+    client,
+    `create index if not exists year_end_schedules_business_idx
+       on public.year_end_schedules (business_id, fiscal_year_id, id)`
+  );
+  await run(client, `grant select, insert, update, delete on public.year_end_schedules to driva_app`);
+  await run(client, `alter table public.year_end_schedules enable row level security`);
+  await run(client, `drop policy if exists year_end_schedules_tenant on public.year_end_schedules`);
+  await run(
+    client,
+    `create policy year_end_schedules_tenant on public.year_end_schedules
+       for all to driva_app, authenticated using (app.is_member(business_id)) with check (app.is_member(business_id))`
+  );
+  return ["year_end_schedules"];
 }
 
 /**
