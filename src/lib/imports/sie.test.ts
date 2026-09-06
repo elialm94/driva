@@ -283,25 +283,28 @@ describe("SIE-import", () => {
   it("konton utanför Fervas standardkontoplan tas med med namnet från filen", () => {
     const data = freshDb();
     const opts = standardSieOptions();
-    opts.accounts = { ...opts.accounts, 1910: "Kassa", 6250: "Porto" };
+    // 1688 och 4011 finns inte i den levererade BAS-planen – namnet ska
+    // komma från filen, inte från ett fallback-namn i registret.
+    opts.accounts = { ...opts.accounts, 1688: "Depositioner hos hyresvärd", 4011: "Inköp specialkabel" };
     opts.verifications = [
       {
         number: 1,
         date: "2025-01-10",
-        text: "Frimärken",
+        text: "Deposition",
         lines: [
-          { account: 6250, amount: "60.00" },
-          { account: 1910, amount: "-60.00" },
+          { account: 1688, amount: "60.00" },
+          { account: 4011, amount: "-60.00" },
         ],
       },
     ];
     const file = parseSie(sieBytesPc8(opts));
     const preview = previewSie(file, data);
-    assert.ok(preview.unknownAccounts.includes(6250));
+    assert.ok(preview.unknownAccounts.includes(1688));
+    assert.ok(preview.unknownAccounts.includes(4011));
     applySieImport(file, data, { yearIndexes: [0], importId: "imp-2" });
     const v = data.verifications[0];
-    assert.equal(v.entries[0].accountName, "Porto");
-    assert.equal(v.entries[1].accountName, "Kassa");
+    assert.equal(v.entries[0].accountName, "Depositioner hos hyresvärd");
+    assert.equal(v.entries[1].accountName, "Inköp specialkabel");
   });
 
   it("flera räkenskapsår importeras i ordning med egna IB och verifikationer", () => {
