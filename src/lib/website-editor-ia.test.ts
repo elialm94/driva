@@ -36,6 +36,31 @@ describe("Hemsida-editorns informationsarkitektur", () => {
     assert.match(installningar, /DomainSidebarCard/);
   });
 
+  it("Publicera/Återställ (även i sidhuvudet) ligger inuti WebsiteEditorSyncProvider", () => {
+    // Regression: knapparna kräver useWebsiteEditorSync. Låg sidhuvudet
+    // utanför providern kastade SSR och /hemsida visade bara felkortet
+    // "Sidan kunde inte laddas" i den hostade demon.
+    const page = readFileSync(join(here, "../app/(app)/hemsida/page.tsx"), "utf8");
+    const open = page.indexOf("<WebsiteEditorSyncProvider");
+    const close = page.indexOf("</WebsiteEditorSyncProvider>");
+    assert.ok(open > 0 && close > open, "providern ska finnas i sidan");
+    for (const button of ["<PublishWebsiteButton", "<RestoreWebsiteDraftButton"]) {
+      let from = 0;
+      let seen = 0;
+      for (;;) {
+        const at = page.indexOf(button, from);
+        if (at === -1) break;
+        seen += 1;
+        assert.ok(at > open && at < close, `${button} på index ${at} ligger utanför WebsiteEditorSyncProvider`);
+        from = at + button.length;
+      }
+      assert.ok(seen >= 2, `${button} ska finnas både i sidhuvudet och i den mobila åtgärdsraden`);
+    }
+    // Första PageHeader är tomläget (ingen sajt); byggarens sidhuvud är det sista.
+    const header = page.lastIndexOf("<PageHeader");
+    assert.ok(header > open && header < close, "byggarens sidhuvud måste ligga inuti providern");
+  });
+
   it("skalet har tillgängliga flikar och Förhandsvisa/Redigera på smal yta", () => {
     const shell = readFileSync(join(here, "../components/site-editor-shell.tsx"), "utf8");
     assert.match(shell, /role="tablist"/);
