@@ -540,8 +540,15 @@ export function applySieImport(
     fy.openingSource = "migrering";
   }
   data.verifications.push(...stagedVerifications);
-  // Serie A delar nummerserie med appens egna verifikationer.
+  // Serie A delar nummerserie med appens egna verifikationer. Både den
+  // ursprungliga räknaren och verificationSeries.A måste flyttas fram –
+  // postVerification läser serieräknaren först.
   if (maxSeriesA >= data.sequences.verification) data.sequences.verification = maxSeriesA + 1;
+  const nextA = data.sequences.verification;
+  const seriesA = data.sequences.verificationSeries?.A ?? 0;
+  if (nextA > seriesA) {
+    data.sequences.verificationSeries = { ...(data.sequences.verificationSeries ?? {}), A: nextA };
+  }
 
   const parts = [
     `${result.verificationsCreated.toLocaleString("sv-SE")} ${result.verificationsCreated === 1 ? "verifikation" : "verifikationer"}`,
