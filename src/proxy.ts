@@ -46,6 +46,7 @@ const PUBLIC_PREFIXES = [
   "/inbjudan",
   "/api/health", // driftdiagnostik: måste nås utan inloggning när appen är trasig
   "/admin/inbjudan", // admin-invitationens acceptsida: mottagaren saknar ofta konto ännu
+  "/api/auth/send-email", // Supabase Send Email-hook (Resend). Vaktas av webhook-signatur.
   "/api/inbox",
   "/api/dev", // vaktas internt: endast utveckling
 ];

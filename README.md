@@ -142,9 +142,10 @@ Skriptet skapar auth-användaren (service role), företaget med ägarmedlemskap 
 ### 7. Manuella steg i dashboarden
 
 1. **Auth → Providers → Email:** ha *Email* på (standard). Bestäm *Confirm email* – med bekräftelse på måste användaren klicka mejllänken innan inloggning (signup-flödet hanterar båda lägena).
-2. **Auth → URL Configuration:** sätt *Site URL* till produktions-URL:en (t.ex. `https://driva-alpha.vercel.app`) och lägg till ev. preview-URL:er under *Redirect URLs*.
-3. **Buckets:** skapas av migrationerna (`receipts` privat, `website-images` publik) – inget manuellt steg om `db push` körts.
-4. **Auth → Rate limits:** standardvärdena räcker för start.
+2. **Auth → Hooks → Send Email:** HTTPS `https://<prod-host>/api/auth/send-email`. Generera hemlighet och sätt `SEND_EMAIL_HOOK_SECRET` i Vercel (samma värde, inklusive ev. `v1,whsec_`-prefix). Utan hooken skickas fortfarande standardmejlet från "Supabase Auth". Med hooken krävs `RESEND_API_KEY` + `RESEND_FROM_EMAIL` – annars misslyckas utskicket ärligt.
+3. **Auth → URL Configuration:** sätt *Site URL* till produktions-URL:en (t.ex. `https://driva-alpha.vercel.app`) och lägg till ev. preview-URL:er under *Redirect URLs*.
+4. **Buckets:** skapas av migrationerna (`receipts` privat, `website-images` publik) – inget manuellt steg om `db push` körts.
+5. **Auth → Rate limits:** standardvärdena räcker för start.
 
 ### Publik demo (`/demo`)
 
@@ -221,6 +222,8 @@ Driva utfärdar **vanliga svenska småföretagsfakturor**: svensk säljare → s
 ### E-post (Resend)
 
 Offerter, fakturor, betalningspåminnelser och samarbetsinbjudningar skickas via Resend när **både** `RESEND_API_KEY` och avsändare (`RESEND_FROM_EMAIL` / `MAIL_FROM`) är satta. Testdefault `beth.t@example.com` används aldrig som tyst live-From (Resend avvisar då kundens adress). Utan nyckel eller From: offerten markeras som skickad och kundlänken delas – vi låtsas inte att ett mejl gick iväg. Misslyckad Resend lämnar status utkast.
+
+**Auth-mejl** (bekräfta e-post, återställ lösenord) går samma väg när Supabase Send Email-hooken pekar på `POST /api/auth/send-email`. Mallarna är Drivas (samma krom som offert/faktura), avsändare `RESEND_FROM_NAME` / `RESEND_FROM_EMAIL`. Länken landar på `/auth/bekrafta?token_hash&type` så den fungerar i valfri webbläsare. Auth-utskick låtsas aldrig: saknas nyckel+From svarar hooken 503 och registreringen får ett ärligt fel. Dashboard-steget finns under "Manuella steg" ovan.
 
 ### Inkommande mejl (`@in.ferva.se`)
 

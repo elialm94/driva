@@ -105,7 +105,7 @@ Badge aria: `Inbox, {n} öppna` / `Bokföring, {n} bokföringsfrågor att lösa`
 
 Proxy (Next 16 middleware): `src/proxy.ts`. Real auth is always server-side (`ensurePageBusiness` / `withBusiness`).
 
-**Public prefixes** (no login): `/login`, `/signup`, `/verifiera-epost`, `/glomt-losenord`, `/auth/bekrafta`, `/demo`, `/valkommen`, `/villkor`, `/integritet`, `/offert`, `/faktura`, `/sajt`, `/integritetspolicy`, `/inbjudan`, `/api/health`, `/admin/inbjudan`, `/api/inbox`, `/api/dev`. (`/api/bankid/*` is **removed** — the customer accept is a server action from `/offert/[token]`.)
+**Public prefixes** (no login): `/login`, `/signup`, `/verifiera-epost`, `/glomt-losenord`, `/auth/bekrafta`, `/demo`, `/valkommen`, `/villkor`, `/integritet`, `/offert`, `/faktura`, `/sajt`, `/integritetspolicy`, `/inbjudan`, `/api/health`, `/admin/inbjudan`, `/api/auth/send-email`, `/api/inbox`, `/api/dev`. (`/api/bankid/*` is **removed** — the customer accept is a server action from `/offert/[token]`.)
 
 `/api/kvitto/[receiptId]` is **not** public — it requires a session or demo cookie (`withBusinessRead`); without one the proxy redirects to `/login?next=/api/kvitto/…`. Same for `/api/verifikat/[id]/bilaga`, `/api/bokforing/export`, `/api/bokforing/deklaration`, `/api/inbox/bilaga/...` and `/api/betalfil/[id]`.
 
@@ -308,17 +308,18 @@ Also: bank (SEB …4512), expenses, supplier invoices, verifications (all serie 
   - `/verifiera-epost?email=` — post-signup “check your mail”
   - `/auth/bekrafta` — Supabase OTP/PKCE
   - `/glomt-losenord`, `/uppdatera-losenord`
+  - `POST /api/auth/send-email` — Supabase Send Email-hook → Resend (Driva-mall)
 - **How to get there:** Landing CTAs; login *Har du inget konto? Skapa konto*; signup *Har du redan ett konto? Logga in*; invite `/inbjudan/[token]` may send here with `?next=`.
 - **Main actions:** Logga in / Skapa konto / Skicka igen / Skicka återställningslänk. Login also **Se demo**.
 - **Fields / ids:** `auth-email`, `auth-password`, `signup-email`, `signup-phone`, `signup-password`, `reset-email`, `new-password`, `confirm-password`. Errors: `*-fel`.
-- **Subflows:** Signup without session → `/verifiera-epost`. Confirm → `/` → `requireBusiness` → `/onboarding` if no membership **or** the owned company's onboarding is not complete (step 2 resumes). Reset → `/auth/bekrafta?next=/uppdatera-losenord`. Notices: `?bekraftelse=utgangen|ogiltig`, `?demo=upptagen`.
-- **Actions:** `src/app/auth-actions.ts`.
+- **Subflows:** Signup without session → `/verifiera-epost`. Confirm → `/` → `requireBusiness` → `/onboarding` if no membership **or** the owned company's onboarding is not complete (step 2 resumes). Reset → `/auth/bekrafta?next=/uppdatera-losenord`. Notices: `?bekraftelse=utgangen|ogiltig`, `?demo=upptagen`. Auth mail: GoTrue calls the hook; `token_hash` + `type` land on `/auth/bekrafta`. Without the dashboard hook, default “Supabase Auth” mail is still sent.
+- **Actions:** `src/app/auth-actions.ts`. Hook: `src/lib/auth/send-email-hook.ts`, templates `src/lib/email/auth-templates.ts`.
 - **Related:** Onboarding, invitations, demo convert-to-account.
 - **DB:** `auth.users`; memberships created at onboarding.
-- **Invariants:** Password never in URL. `safeAuthNext` blocks open redirects. JSON mode: login/signup return Swedish “requires Supabase” errors.
+- **Invariants:** Password never in URL. `safeAuthNext` blocks open redirects. JSON mode: login/signup return Swedish “requires Supabase” errors. Auth hook requires `SEND_EMAIL_HOOK_SECRET` + live Resend (no mock “sent”).
 - **Desktop/mobile:** centered card, same form.
 - **Live:** login and signup are reachable without auth. `/ekonomi` without session = login with `next`.
-- **Verify:** fill `#auth-email` / `#auth-password`; submit *Logga in*. Signup: `#signup-email`, `#signup-phone`, `#signup-password`. Full signup→verify→onboarding needs real Supabase + email (`verify-logged-out-demo.ts` explicitly skips it). Tests: `src/lib/signup-flow.test.ts`.
+- **Verify:** fill `#auth-email` / `#auth-password`; submit *Logga in*. Signup: `#signup-email`, `#signup-phone`, `#signup-password`. Full signup→verify→onboarding needs real Supabase + email (`verify-logged-out-demo.ts` explicitly skips it). Tests: `src/lib/signup-flow.test.ts`, `src/lib/auth-email.test.ts`.
 
 ---
 

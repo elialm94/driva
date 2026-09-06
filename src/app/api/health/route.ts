@@ -111,6 +111,11 @@ export async function GET() {
     // Täcker SUPABASE_DB_URL / DATABASE_URL / POSTGRES_URL*.
     databaseUrl: Boolean(supabaseDbUrl()),
     SUPABASE_SERVICE_ROLE_KEY: Boolean(supabaseServiceRoleKey()),
+    RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY?.trim()),
+    RESEND_FROM_EMAIL: Boolean(
+      process.env.RESEND_FROM_EMAIL?.trim() || process.env.MAIL_FROM?.trim() || process.env.RESEND_FROM?.trim()
+    ),
+    SEND_EMAIL_HOOK_SECRET: Boolean(process.env.SEND_EMAIL_HOOK_SECRET?.trim()),
   };
 
   const complete = hasSupabaseEnv();
