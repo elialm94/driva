@@ -174,38 +174,46 @@ function askAssetQuestion(expense: Expense): void {
 }
 
 /**
- * Ladda upp kvitto för ett köp som saknar kvitto.
- *
- * `file` är var själva filen ligger (lib/receipts/receipt-file.ts). Utan den
- * registreras bara uppgifterna – kvittoraden får då varken storagePath eller
- * contentBase64 och UI:t visar det ärligt i stället för ett "Visa kvitto".
- *
- * `interpreted` är kvittotolkningens läsning av dokumentet (ai/extract-document).
- * Den fyller kvittoradens uppgifter, men beloppet kommer alltid från
- * banktransaktionen: banken är sanningen om vad som dragits från kontot, och
- * en modell får inte skriva över den.
+ * Köpet som ett kvitto får kopplas till – kastar begripliga fel annars.
+ * Ren läsning (ingen mutation): anropas av uppladdningsflödet INNAN filen
+ * sparas, så att en fil aldrig laddas upp för ett köp som redan har kvitto.
  */
-export function uploadReceiptForExpense(
-  expenseId: string,
-  filename: string,
-  source: Receipt["source"],
-  file?: Pick<Receipt, "contentType" | "sizeBytes" | "storagePath" | "contentBase64">,
-  interpreted?: InboundParsedHint
-): { receipt: Receipt; autoBooked: boolean } {
-  const data = db();
-  const expense = data.expenses.find((e) => e.id === expenseId);
+export function expenseAwaitingReceipt(expenseId: string): Expense {
+  const expense = db().expenses.find((e) => e.id === expenseId);
   if (!expense) throw new Error("Utgiften finns inte");
   if (expense.receiptId) {
     // Idempotens: ett köp har ETT kvitto – dubbel uppladdning kopplar aldrig två.
     throw new Error(`Köpet hos ${expense.supplier} har redan ett kvitto kopplat.`);
   }
+  return expense;
+}
+
+/**
+ * Ladda upp kvitto för ett köp som saknar kvitto.
+ *
+ * `file` är var själva filen ligger (lib/receipts/receipt-file.ts). Utan den
+ * registreras bara uppgifterna – kvittoraden får då varken storagePath eller
+ * contentBase64 och UI:t visar det ärligt i stället för ett "Visa kvitto".
+ * `file.id` låter anroparen spara filen FÖRE den här mutationen (bucket-
+ * sökvägen behöver kvittots id) – misslyckas lagringen rörs aldrig tillståndet.
+ * `interpreted` fyller kvittoradens uppgifter; beloppet kommer alltid från banken.
+ */
+export function uploadReceiptForExpense(
+  expenseId: string,
+  filename: string,
+  source: Receipt["source"],
+  file?: Pick<Receipt, "contentType" | "sizeBytes" | "storagePath" | "contentBase64"> & { id?: string },
+  interpreted?: InboundParsedHint
+): { receipt: Receipt; autoBooked: boolean } {
+  const data = db();
+  const expense = expenseAwaitingReceipt(expenseId);
 
   // Kategorin gissas på leverantören: kvittots eget namn om tolkningen läste
   // ett, annars banktransaktionens motpart.
   const supplierOnReceipt = interpreted?.supplier?.trim() || expense.supplier;
   const guess = categorizeMerchant(supplierOnReceipt) ?? categorizeMerchant(expense.supplier);
   const receipt: Receipt = {
-    id: uid(),
+    id: file?.id ?? uid(),
     expenseId,
     filename: filename || `kvitto-${expense.supplier.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.jpg`,
     source,

@@ -19,7 +19,7 @@ import {
   uploadReceiptAction,
 } from "@/app/actions";
 import { invoiceHref } from "@/lib/nav";
-import { receiptFileToDataUrl } from "@/lib/receipts/read-file";
+import { receiptFileToDataUrl, receiptUploadForm } from "@/lib/receipts/read-file";
 
 /**
  * Ladda upp ett kvitto. Med `expenseId` kopplas det till ett känt bankköp –
@@ -55,12 +55,12 @@ export function UploadReceiptButton({ expenseId, label = "Lägg till kvitto" }: 
           setError(null);
           startTransition(async () => {
             try {
-              const dataUrl = await receiptFileToDataUrl(file);
               if (expenseId) {
-                const result = await uploadReceiptAction(expenseId, name, dataUrl);
+                const result = await uploadReceiptAction(receiptUploadForm(expenseId, file));
                 if (result.ok === false) setError(result.error);
                 else setDone("Kvitto sparat");
               } else {
+                const dataUrl = await receiptFileToDataUrl(file);
                 const result = await uploadInboxDocumentAction({
                   filename: name,
                   contentType: file.type || undefined,

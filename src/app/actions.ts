@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, resetDemoData, save } from "@/lib/store";
-import { parseReceiptDataUrl, storeReceiptFile, validateReceiptFile } from "@/lib/receipts/receipt-file";
+import {
+  receiptFileFromForm,
+  receiptFileStored,
+  storeReceiptFile,
+  validateReceiptFile,
+} from "@/lib/receipts/receipt-file";
 import { storeInboxAttachment } from "@/lib/inbox/attachment-file";
 import {
   addIgnoredLineDescription,
@@ -132,7 +137,12 @@ import {
   type JobWorkEntryPatch,
 } from "@/lib/services/job-work";
 import { paySupplierInvoice, simulateIncomingPayment } from "@/lib/services/banking";
-import { answerExpenseQuestion, uploadReceiptForExpense } from "@/lib/services/expenses";
+import {
+  answerExpenseQuestion,
+  expenseAwaitingReceipt,
+  uploadReceiptForExpense,
+} from "@/lib/services/expenses";
+import { uid } from "@/lib/ids";
 import {
   addServiceItem,
   addTestimonialItem,
@@ -1267,47 +1277,49 @@ export async function submitSupplierPaymentAction(input: {
 /* ------------------------------ Utgifter/kvitton ---------------------------- */
 
 /**
- * Kvitto för ett bankköp. `dataUrl` är själva filen (data:<mime>;base64,…) –
- * den valideras och sparas (bucket eller inline) INNAN kvittoraden committas;
- * misslyckas lagringen skrivs ingen kvittorad. Utan dataUrl registreras bara
- * uppgifterna (äldre anropare) och raden markeras ärligt som utan fil.
+ * Kvitto för ett bankköp. `form` bär "expenseId" och "file" (File/Blob) –
+ * se lib/receipts/read-file.ts för varför filen inte skickas som data-URL.
  *
- * Filen tolkas med AI-vision så kvittoraden bär vad dokumentet faktiskt säger.
- * Beloppet kommer ändå alltid från banktransaktionen – banken är sanningen om
- * vad som dragits, och en modell får inte skriva över den.
+ * Ordningen är avgörande: filen valideras och sparas (bucket eller inline)
+ * FÖRE någon mutation av tillståndet. uploadReceiptForExpense anropar save()
+ * och bokför köpet – hade den körts först hade ett misslyckat filspar lämnat
+ * en filnamnsrad kvar. Därför: förkontroll → spara fil mot ett förgenererat
+ * kvitto-id → tolka dokumentet → koppla kvittot. Beloppet kommer alltid från
+ * banktransaktionen. Felet är alltid användarsäker svenska via
+ * userFacingStorageError.
  */
 export async function uploadReceiptAction(
-  expenseId: string,
-  filename: string,
-  dataUrl?: string
-): Promise<{ ok: true; fileStored: boolean } | { ok: false; error: string }> {
+  form: FormData
+): Promise<{ ok: true; fileStored: true; receiptId: string } | { ok: false; error: string }> {
   try {
+    const expenseId = form.get("expenseId");
+    if (typeof expenseId !== "string" || !expenseId) throw new Error("Köpet kunde inte identifieras. Ladda om sidan.");
+    const upload = await receiptFileFromForm(form);
+    if (!upload) throw new Error("Kvittofilen kunde inte läsas. Välj filen igen.");
+    const { filename, ...file } = upload;
+    validateReceiptFile(file);
     return await withBusiness(
       async () => {
-        const parsed = dataUrl ? parseReceiptDataUrl(dataUrl) : null;
-        if (dataUrl && !parsed) throw new Error("Kvittofilen kunde inte läsas.");
-        const file = parsed ? validateReceiptFile(parsed) : undefined;
-        const interpreted = file
-          ? await interpretDocumentFile({
-              filename,
-              contentType: file.contentType,
-              contentBase64: file.bytes.toString("base64"),
-            })
-          : undefined;
-        const { receipt } = uploadReceiptForExpense(expenseId, filename, "uppladdning", undefined, interpreted);
-        if (file) {
-          Object.assign(receipt, await storeReceiptFile(receipt, file));
-          save();
-        }
+        expenseAwaitingReceipt(expenseId);
+        const receiptId = uid();
+        const stored = await storeReceiptFile({ id: receiptId, filename }, file);
+        if (!receiptFileStored(stored)) throw new Error("Kvittofilen kunde inte sparas. Försök igen.");
+        const interpreted = await interpretDocumentFile({
+          filename,
+          contentType: file.contentType,
+          contentBase64: file.bytes.toString("base64"),
+        });
+        const { receipt } = uploadReceiptForExpense(expenseId, filename, "uppladdning", { id: receiptId, ...stored }, interpreted);
+        if (!receiptFileStored(receipt)) throw new Error("Kvittofilen kunde inte sparas. Försök igen.");
         refresh();
-        return { ok: true as const, fileStored: Boolean(file) };
+        return { ok: true as const, fileStored: true as const, receiptId: receipt.id };
       },
       // Retry vid samtidighetskonflikt är säkert: bucket-upload är upsert och
       // ett ev. övergivet objekt från första försöket är harmlöst.
       { capability: "categorize" }
     );
   } catch (e) {
-    return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte spara kvittot." };
+    return { ok: false as const, error: userFacingStorageError(e, "Kunde inte spara kvittot. Försök igen.") };
   }
 }
 
