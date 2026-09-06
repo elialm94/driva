@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { replaceDb } from "./store";
 import { buildSeed } from "./seed";
 import { emptyTestDb, testCustomer } from "./invoices/test-db";
-import { derivedJobStatus, isPaymentPlanPartDue, jobEconomyLine, jobWhenLabel } from "./services/job-lifecycle";
+import { derivedJobStatus, isPaymentPlanPartDue, jobEconomyLine, jobWhenLabel, visibleJobStatus } from "./services/job-lifecycle";
 import { jobAdminState } from "./services/job-admin";
 import { listJobsForTable, reconcileJobListFilters } from "./services/job-list";
 import { jobsThisWeek } from "./services/attention";
@@ -58,6 +58,12 @@ describe("derivedJobStatus", () => {
     assert.equal(derivedJobStatus(job({ status: "kommande" })), "planerat");
     assert.equal(derivedJobStatus(job({ status: "pagar" })), "pagar");
   });
+
+  it("UI visar Planerat som Pågår", () => {
+    assert.equal(visibleJobStatus("planerat"), "pagar");
+    assert.equal(visibleJobStatus("pagar"), "pagar");
+    assert.equal(visibleJobStatus("klart"), "klart");
+  });
 });
 
 describe("betalningsplan", () => {
@@ -71,12 +77,13 @@ describe("betalningsplan", () => {
 });
 
 describe("jobWhenLabel och ekonomi", () => {
-  it("formaterar period och klart-datum", () => {
-    const when = jobWhenLabel(
-      job({ startDate: "2026-09-01T09:00:00.000Z", endDate: "2026-09-08T17:00:00.000Z", status: "kommande" })
+  it("visar bara klart-datum, inte planerad period", () => {
+    assert.equal(
+      jobWhenLabel(
+        job({ startDate: "2026-09-01T09:00:00.000Z", endDate: "2026-09-08T17:00:00.000Z", status: "kommande" })
+      ),
+      ""
     );
-    assert.match(when, /1–8/);
-    assert.match(when, /sep/i);
     assert.match(
       jobWhenLabel(job({ status: "klart", completedAt: "2026-08-18T16:00:00.000Z" })),
       /Klart 18/
@@ -93,15 +100,17 @@ describe("jobWhenLabel och ekonomi", () => {
 describe("seedade uppdrag", () => {
   beforeEach(() => replaceDb(buildSeed()));
 
-  it("Altanrenovering är Planerat och kan faktureras när något är kvar", () => {
+  it("Altanrenovering är internt Planerat men kan markeras klart och faktureras när något är kvar", () => {
     const altan = getJob("job-altan");
     assert.ok(altan);
     assert.equal(derivedJobStatus(altan), "planerat");
+    assert.equal(visibleJobStatus(derivedJobStatus(altan)), "pagar");
     const admin = jobAdminState(altan);
     assert.equal(admin.lifecycle, "planerat");
     assert.equal(admin.primary, "skapa_faktura");
     assert.equal(admin.secondary, "visa_offert");
-    assert.equal(admin.canMarkDone, false);
+    assert.equal(admin.canMarkDone, true);
+    assert.equal(admin.nextStep?.includes("startdatum"), false);
   });
 
   it("nytt uppdrag utan offert kan både offereras och faktureras – offert är inte ett krav", () => {
@@ -124,13 +133,9 @@ describe("seedade uppdrag", () => {
     assert.equal(admin.secondary, "visa_offert");
   });
 
-  it("Betalt släpper Aktiva/Planerade så listan inte blir tom", () => {
+  it("Betalt släpper Aktiva så listan inte blir tom", () => {
     assert.deepEqual(
       reconcileJobListFilters({ lifecycle: "aktiva", economy: "alla", patch: { economy: "betalt" } }),
-      { lifecycle: "alla", economy: "betalt" },
-    );
-    assert.deepEqual(
-      reconcileJobListFilters({ lifecycle: "planerade", economy: "alla", patch: { economy: "betalt" } }),
       { lifecycle: "alla", economy: "betalt" },
     );
     assert.deepEqual(
@@ -147,12 +152,10 @@ describe("seedade uppdrag", () => {
     );
   });
 
-  it("arkiverade uppdrag döljs från Aktiva och Planerade", () => {
+  it("arkiverade uppdrag döljs från Aktiva", () => {
     deleteOrArchiveJob("job-altan");
     const aktiva = listJobsForTable({ lifecycle: "aktiva" });
     assert.equal(aktiva.rows.some((r) => r.id === "job-altan"), false);
-    const planerade = listJobsForTable({ lifecycle: "planerade" });
-    assert.equal(planerade.rows.some((r) => r.id === "job-altan"), false);
     const alla = listJobsForTable({ lifecycle: "alla" });
     assert.equal(alla.rows.some((r) => r.id === "job-altan"), true);
     const arkiv = listJobsForTable({ lifecycle: "arkiverade" });

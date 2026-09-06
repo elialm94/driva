@@ -3,13 +3,13 @@
  * Ligger i egen modul (utan store-/fs-beroenden) eftersom klientkomponenten
  * uppdrag-list.tsx behöver funktionen – resten av job-list är serverkod.
  */
-export type JobLifecycleFilter = "aktiva" | "planerade" | "klart" | "alla" | "arkiverade";
+export type JobLifecycleFilter = "aktiva" | "klart" | "alla" | "arkiverade";
 export type JobEconomyFilter = "alla" | "kvar" | "vantar" | "betalt";
 export type JobSort = "standard" | "datum" | "kund" | "belopp";
 
 /**
- * Betalt uppdrag är i praktiken klara. "Aktiva"/"Planerade" + "Betalt"
- * ger en tom lista – när användaren väljer den ena släpper vi den andra.
+ * Betalt uppdrag är i praktiken klara. "Aktiva" + "Betalt" ger en tom lista –
+ * när användaren väljer den ena släpper vi den andra.
  */
 export function reconcileJobListFilters(input: {
   lifecycle: JobLifecycleFilter;
@@ -21,7 +21,7 @@ export function reconcileJobListFilters(input: {
     economy: input.patch.economy ?? input.economy,
   };
   if (next.economy !== "betalt") return next;
-  if (next.lifecycle !== "aktiva" && next.lifecycle !== "planerade") return next;
+  if (next.lifecycle !== "aktiva") return next;
   if ("economy" in input.patch) return { ...next, lifecycle: "alla" };
   if ("lifecycle" in input.patch) return { ...next, economy: "alla" };
   return next;

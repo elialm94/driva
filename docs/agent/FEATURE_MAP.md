@@ -250,7 +250,7 @@ Local JSON (`npm run dev`, no Supabase): already seeded; **Avsluta demo** hidden
 
 Seeded acceptances (`signatures`): `sig-nord1`, `sig-kok`, `sig-altan` — all `method: simple_accept` with statement, contentHash, e-mail, ip, userAgent.
 
-**Uppdrag (stable):** `job-kok` (Pågår), `job-altan` (Planerat), `job-fonster` / `job-nord1` / `job-kokso` / `job-racke` (Klart — hidden under Aktiva), plus planned jobs for Sara, Karin, garderob, nord2, fasad.
+**Uppdrag (stable):** `job-kok` (Pågår), `job-altan` (Pågår — future `startDate` in data only), `job-fonster` / `job-nord1` / `job-kokso` / `job-racke` (Klart — hidden under Aktiva), plus other open jobs for Sara, Karin, garderob, nord2, fasad.
 
 **Fakturor:** paid `#1033`–`#1041`/`#1045`; `#1042` slutfaktura Brf Eken **Förfallen**; `#1047` delbetalning Johan **Skickad**; `inv-1048` **Utkast** Brf Eken (list title is the first line “Lagning av portparti, entré Åsögatan 114”, no number — status chip stays Utkast). Two 0 kr **Utkast** for Eli (`inv-eli-luckor` “Luckor i ek”, `inv-eli-bankskiva` “Bänkskiva i ask”). Tokens e.g. `demo-f1048`.
 
@@ -457,13 +457,13 @@ Two different systems:
 ## Uppdrag
 
 - **User-facing name:** Uppdrag
-- **Purpose:** The work — dates, registered time/material, invoicing left. Economy status is **not** baked into “Klart”.
+- **Purpose:** The work — registered time/material, invoicing left. Economy status is **not** baked into “Klart”. Jobs are not a project plan: no planned-start field or calendar.
 - **Routes:** list `/uppdrag` (`src/app/(app)/uppdrag/page.tsx`, renders `UppdragList` — same filters/business logic as the former Kunder tab). Detail `/uppdrag/[id]` (`src/app/(app)/uppdrag/[id]/page.tsx`). Aliases `/jobb`, `/jobb/[id]`, `/kunder?flik=uppdrag` → redirect. Nav section `uppdrag` is active on both list and detail; crumbs *Uppdrag / {title}*; default back **Uppdrag** → `/uppdrag`.
 - **How to get there:** Nav **Uppdrag** (primary, desktop + mobile). Customer *Starta uppdrag*. Quote *Starta uppdrag*. Command *Skapa uppdrag*.
-- **Subtitle:** *Vad som är beställt, när det sker, vad som är fakturerat och vad som är kvar.*
-- **Stored status:** `kommande | pagar | klart`. **UI:** Planerat / Pågår / Klart / Arkiverat (`archivedAt`, not an enum).
+- **Subtitle:** *Vad som är beställt, vad som är fakturerat och vad som är kvar.*
+- **Stored status:** `kommande | pagar | klart`. **UI:** Pågår / Klart / Arkiverat (`archivedAt`, not an enum). `startDate` / derived `planerat` stay in the data model for payment-plan gating only — never a list filter, badge, or create-form field.
 - **Economy line:** *X kr kvar att fakturera* · *X kr väntar på betalning* · *Betalt ✓*
-- **List chips:** Aktiva, Planerade, Klart, Alla, Arkiverade + Kvar att fakturera / Väntar på betalning / Betalt. Search: *Sök uppdrag, kund, företag eller adress …*
+- **List chips:** Aktiva, Klart, Alla, Arkiverade + Kvar att fakturera / Väntar på betalning / Betalt. Search: *Sök uppdrag, kund, företag eller adress …*
 - **Detail actions** (`job-controls.tsx`): Skapa/Fortsätt/Visa offert; Skapa faktura / delfaktura / slutfaktura; Redigera; Markera som klart; Återöppna; **Ta bort uppdrag**.
 - **Subflows:**
   - Invoice from job: `JobInvoiceModal` + `createInvoiceForJobAction`.
@@ -477,7 +477,7 @@ Two different systems:
 - **DB:** `jobs`, `job_work_entries`. JSON: `housing`, `tax_reduction_application`, `checklist`.
 - **Invariants:** Job describes **work**, not money. Quote/invoice linked to a job must share `customer_id`.
 - **Desktop/mobile:** table vs cards; row `aria-label={title}`.
-- **Live:** Aktiva includes Köksrenovering (Pågår, 59 500 kr kvar) and several Planerat. Klart jobs (fönster, etapp 1, …) under **Klart**.
+- **Live:** Aktiva includes Köksrenovering (Pågår, 59 500 kr kvar) and other open jobs (including Altanrenovering). Klart jobs (fönster, etapp 1, …) under **Klart**.
 - **Verify:** `/uppdrag` → click *Köksrenovering* → `/uppdrag/job-kok`; sidebar/bottom **Uppdrag** has `aria-current="page"` on both. Create from header **Uppdrag**. Tests: `job-lifecycle.test.ts`, `job-work.test.ts`, `nav.test.ts` (huvudnavigation). Browser: `scripts/verify-nav-browser.ts`, `scripts/verify-origin-back.ts`.
 
 ---
@@ -521,7 +521,7 @@ Two different systems:
   | `godkand`, no job | **Starta uppdrag** | Kopiera kundlänk · Skriv ut/PDF · Ny version · Visa intyg |
   | `godkand`, job linked | **Fakturera** (`createInvoiceFromQuote`; hidden when fully invoiced) | Kopiera kundlänk · Skriv ut/PDF · Ny version · Visa intyg |
   | `avbojd` | — | Kopiera kundlänk · Skriv ut/PDF · Ny version |
-- Never show **Starta uppdrag** and **Skapa faktura/Fakturera** together. No **Nästa steg** card that repeats the job or a second invoice CTA. **Kopplat till** is the only job card (name + Planerat/Pågår/Klart). Unlinked draft: Inte kopplat + Koppla / Skapa uppdrag (`documentLinkView`).
+- Never show **Starta uppdrag** and **Skapa faktura/Fakturera** together. No **Nästa steg** card that repeats the job or a second invoice CTA. **Kopplat till** is the only job card (name + Pågår/Klart). Unlinked draft: Inte kopplat + Koppla / Skapa uppdrag (`documentLinkView`).
 - **Dra tillbaka** (`withdrawQuote`): allowed only when `status === "skickad"` (viewed or not) and not accepted. Reuses domain status **`avbojd`** with `declineReason = "Tillbakadragen"` (Hem **Inte aktuell** uses `"Inte längre aktuell"`). Confirm dialog; overflow item; idempotent if already owner-withdrawn. Does not delete versions/snapshots. No email required. Public: *Offerten är tillbakadragen* (not “Avböjd” — that word is the customer’s decline). Owner list leaves *Väntar på godkännande* (badge Avböjd). Accept blocked (`declined`). Not allowed on `godkand`.
 - **Ny version / supersede-on-accept:** overflow when a sent or accepted version exists. Editing a **sent, not accepted** quote still reverts to utkast and must be resent (replacing the waiting snapshot is OK). Editing an **accepted** quote creates/updates a pending unlocked version **without** changing `currentVersionId`, `status`, or the acceptance — the locked snapshot stays governing (hash, job, intyg). Sending the pending draft snapshots it; public then shows that waiting version + one Godkänn form (not the old accepted banner). When the new version is accepted, `finalizeQuoteAcceptance` locks it, replaces the one `signatures` row, sets `currentVersionId`, `createJobFromQuote` (idempotent — no second job).
 - **Acceptance banner (owner):** compact one line: *Godkänd av {namn} · {tid} · Visa intyg* (`/offert/[token]/underlag`). No IP, user-agent, SHA-256, method essay, emails, or “Version N är låst…” paragraph. Header may still show a small *Version N låst* badge. Forensics live on the intyg page / PDF.

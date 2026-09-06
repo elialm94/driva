@@ -120,8 +120,6 @@ export function jobAdminState(job: Job): JobAdminState {
     nextStep = "Offerten avböjdes. Skapa en ny om ni går vidare.";
   } else if (quote?.status === "utgangen") {
     nextStep = "Offerten har gått ut. Skapa en ny om ni går vidare.";
-  } else if (lifecycle === "planerat" && nextPart && !dueNow) {
-    nextStep = `När startdatumet infaller: fakturera ${nextPart.percent} % ${nextPart.label.toLowerCase()} (${kr(nextPart.amount)}).`;
   } else if (dueNow && nextPart && remaining > 0) {
     nextStep = `${kr(nextPart.amount)} kan faktureras enligt offerten.`;
   } else if (remaining > 0 && approved) {
@@ -157,7 +155,7 @@ export function jobAdminState(job: Job): JobAdminState {
     waitingLabel,
     doneLabel,
     nextStep,
-    canMarkDone: lifecycle === "pagar",
+    canMarkDone: lifecycle !== "klart",
     canReopen: lifecycle === "klart",
     hasBillable,
     completeWarning: jobCompleteWarning(job.id, {

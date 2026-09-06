@@ -39,7 +39,6 @@ export function uppdragListHref(query: Partial<UppdragListQuery>): string {
 
 const LIFECYCLE_CHIPS: [JobLifecycleFilter, string][] = [
   ["aktiva", "Aktiva"],
-  ["planerade", "Planerade"],
   ["klart", "Klart"],
   ["alla", "Alla"],
   ["arkiverade", "Arkiverade"],
@@ -156,11 +155,6 @@ export function UppdragList({
                       onClick={() => go({ sort: query.sort === "kund" ? "standard" : "kund", page: 1 })}
                     />
                     <SortTh
-                      label="När"
-                      active={query.sort === "datum"}
-                      onClick={() => go({ sort: query.sort === "datum" ? "standard" : "datum", page: 1 })}
-                    />
-                    <SortTh
                       label="Ekonomi"
                       active={query.sort === "belopp"}
                       onClick={() => go({ sort: query.sort === "belopp" ? "standard" : "belopp", page: 1 })}
@@ -179,7 +173,6 @@ export function UppdragList({
                         ) : null}
                       </td>
                       <td className="px-3 py-2.5 text-soft">{job.customerName}</td>
-                      <td className="px-3 py-2.5 text-soft">{job.whenLabel}</td>
                       <td className="px-3 py-2.5 tabular text-ink">{job.economyLabel}</td>
                       <td className="px-3 py-2.5">
                         <JobStatusBadge
@@ -204,10 +197,7 @@ export function UppdragList({
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-medium">{job.title}</p>
-                  <p className="mt-0.5 truncate text-[13px] text-muted">
-                    {job.customerName}
-                    {job.whenLabel ? ` · ${job.whenLabel}` : ""}
-                  </p>
+                  <p className="mt-0.5 truncate text-[13px] text-muted">{job.customerName}</p>
                   <p className="mt-0.5 text-[13px] tabular text-soft">{job.economyLabel}</p>
                 </div>
                 <JobStatusBadge
