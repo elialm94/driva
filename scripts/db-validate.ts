@@ -1868,6 +1868,12 @@ async function main() {
     await db.query(`select app.import_verification($1, $2::jsonb)`, [A, sieVer("sie-a900", "A", 900, balanced)]);
     const seq = await rows<{ verification: number }>(db, `select verification from public.business_sequences where business_id = $1`, [A]);
     if (Number(seq[0]?.verification) !== 901) throw new Error(`nummerserien är ${seq[0]?.verification}, väntade 901`);
+    const seriesA = await rows<{ a: number | string }>(
+      db,
+      `select (verification_series ->> 'A')::int as a from public.business_sequences where business_id = $1`,
+      [A],
+    );
+    if (Number(seriesA[0]?.a) !== 901) throw new Error(`verification_series.A är ${String(seriesA[0]?.a)}, väntade 901`);
     const entries = await rows(db, `select account, debit, credit from public.accounting_entries where verification_id = 'sie-a900' order by position`);
     if (entries.length !== 3) throw new Error(`fel antal rader: ${entries.length}`);
   });

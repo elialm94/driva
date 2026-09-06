@@ -262,6 +262,7 @@ describe("SIE-import", () => {
     const a1 = data.verifications.find((v) => v.number === 1)!;
     assert.equal(a1.entries[1].note, "Projekt: Villa Ekbacken");
     assert.equal(data.sequences.verification, 4);
+    assert.equal(data.sequences.verificationSeries?.A, 4);
     // Nästa egna verifikation kolliderar inte med filens nummer.
     const next = postVerification({
       date: "2025-06-01",
