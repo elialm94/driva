@@ -238,8 +238,6 @@ export const VAT_URGENT_DAYS = 3;
 export const WATCHING = {
   /** Öppen faktura: visa när förfallodatum är inom så här många dagar. */
   invoiceDays: 14,
-  /** Planerat uppdrag: visa så här många dagar före start. */
-  jobDays: 14,
   /** Obetald leverantörsfaktura: visa så här många dagar före förfall. */
   supplierDays: 14,
   /**
@@ -714,21 +712,6 @@ function collectJobs(ranked: Ranked[], watching: WatchingItem[], now: Date) {
     }
 
     const derived = derivedJobStatus(job, now);
-
-    if (
-      derived === "planerat" &&
-      job.startDate &&
-      withinWatchingWindow(now, job.startDate, WATCHING.jobDays)
-    ) {
-      watching.push({
-        id: `job-start-${job.id}`,
-        category: "job",
-        title: `${job.title} startar ${relativ(job.startDate)}`,
-        subtitle: customer.name,
-        href: jobHref(job.id),
-        date: job.startDate.slice(0, 10),
-      });
-    }
 
     const quote = jobQuote(job);
     if (!quote || quote.status !== "godkand") continue;

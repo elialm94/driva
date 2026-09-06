@@ -90,8 +90,6 @@ export function JobActions({
     title: string;
     description: string;
     address?: string;
-    startDate?: string;
-    endDate?: string;
   };
 }) {
   const router = useRouter();

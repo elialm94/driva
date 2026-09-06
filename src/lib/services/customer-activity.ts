@@ -29,8 +29,7 @@ function invoiceStatusLabel(invoice: Invoice): string {
 
 function jobStatusLabel(job: Job): string {
   if (job.status === "klart") return JOB_STATUS.klart.label;
-  if (job.status === "pagar") return JOB_STATUS.pagar.label;
-  return JOB_STATUS.planerat.label;
+  return JOB_STATUS.pagar.label;
 }
 
 /**

@@ -534,7 +534,7 @@ export interface Job {
   /** Avisering till företagaren vid webbformulär – kan retrys utan nytt uppdrag. */
   notification?: JobNotification;
   /**
-   * Arkiverat (mjuk borttagning). Döljs från Aktiva/Planerade. Fakturor,
+   * Arkiverat (mjuk borttagning). Döljs från Aktiva. Fakturor,
    * offerter och bokföring rörs inte.
    */
   archivedAt?: string;

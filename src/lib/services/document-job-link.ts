@@ -25,7 +25,7 @@ import { JOB_STATUS } from "../status-labels";
 import { getInvoice, getJob, getQuote, requireCustomer } from "./data";
 import { jobForQuote } from "./business-chain";
 import { createJob } from "./jobs";
-import { derivedJobStatus } from "./job-lifecycle";
+import { derivedJobStatus, visibleJobStatus } from "./job-lifecycle";
 import { logActivity } from "./activity";
 
 export type { DocumentLinkKind, DocumentLinkResult, DocumentLinkView } from "../document-job-link-model";
@@ -39,7 +39,7 @@ export class DocumentJobLinkError extends Error {
 
 function jobStatusLabel(job: Job): string {
   if (job.archivedAt) return JOB_STATUS.arkiverat.label;
-  return JOB_STATUS[derivedJobStatus(job)].label;
+  return JOB_STATUS[visibleJobStatus(derivedJobStatus(job))].label;
 }
 
 function isQuoteDraft(quote: Quote): boolean {
