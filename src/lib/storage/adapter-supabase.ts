@@ -23,6 +23,7 @@ import { isUndefinedColumn, isUniqueViolation } from "./sql-errors";
 import { cachedStateIfFresh, clearSnapshotCache, invalidateSnapshot, putSnapshot } from "./snapshot-cache";
 import { markCacheHit, withPerfSpan } from "../perf/telemetry";
 import { STANDARD_TERMS } from "../standard-quote-terms";
+import { calendarFiscalYear, todayDate } from "../accounting/dates";
 import { allocateInboundMailSlugAsync } from "../inbox/inbound-slug";
 
 const MAX_ATTEMPTS = 3;
@@ -398,6 +399,13 @@ export async function createBusinessWithOwner(input: {
       [businessId, input.userId]
     );
     await insertSettingsWithAllocatedSlug(tx, businessId, input);
+    const fy = calendarFiscalYear(Number(todayDate().slice(0, 4)));
+    await tx.query(
+      `insert into public.fiscal_years (
+         id, business_id, label, start_date, end_date, status, opening_balances, opening_source
+       ) values ($1, $2, $3, $4::date, $5::date, 'oppet', '{}'::jsonb, 'manuell')`,
+      [fy.id, businessId, fy.label, fy.startDate, fy.endDate]
+    );
     await tx.query(`insert into public.business_sequences (business_id) values ($1)`, [businessId]);
     await tx.query(
       `insert into public.business_onboarding (

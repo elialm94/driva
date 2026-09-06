@@ -7,8 +7,15 @@ import { can } from "@/lib/collaboration/permissions";
 
 export const metadata = { title: "Bokslut" };
 
-export default async function AccountantBokslutPage({ params }: { params: Promise<{ businessId: string }> }) {
+export default async function AccountantBokslutPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ businessId: string }>;
+  searchParams: Promise<{ ar?: string }>;
+}) {
   const { businessId } = await params;
+  const { ar } = await searchParams;
   const { access, snap } = await loadAccountantClientPage(businessId);
 
   return (
@@ -28,6 +35,7 @@ export default async function AccountantBokslutPage({ params }: { params: Promis
         hrefFor={(href) => accountantHref(businessId, href)}
         businessId={businessId}
         readOnly={!can(access.role, "year_end")}
+        selectedYearParam={ar}
       />
     </div>
   );

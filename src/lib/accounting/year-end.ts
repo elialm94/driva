@@ -11,7 +11,7 @@ import type {
 } from "../types";
 import { logAudit } from "./audit";
 import { postVerification } from "./engine";
-import { getFiscalYear, todayDate } from "./fiscal";
+import { getFiscalYear, taxYearOf, todayDate } from "./fiscal";
 import { accountBalance } from "./ledger";
 import { contributionRateFor } from "./payroll-model";
 import { birthDateOf, currentEmployee } from "./payroll";
@@ -136,7 +136,7 @@ export function vacationLiabilityDraft(fiscalYearId: string, savedDays: number):
   let percent = 0;
   if (employee) {
     try {
-      percent = contributionRateFor(birthDateOf(employee), Number(fy.label)).percent;
+      percent = contributionRateFor(birthDateOf(employee), taxYearOf(fy)).percent;
     } catch (err) {
       errors.push(err instanceof Error ? err.message : String(err));
     }
@@ -241,11 +241,12 @@ export interface FundLot {
 /** Fonderna per avsättningsår, ur bilagorna – kontot visar bara totalen. */
 export function fundLots(throughFiscalYearId: string): FundLot[] {
   const fy = requireYear(throughFiscalYearId);
-  const through = Number(fy.label);
+  const through = taxYearOf(fy);
   const byYear = new Map<number, number>();
   for (const schedule of yearEndSchedules()) {
     if (schedule.kind !== "periodiseringsfond" || schedule.status !== "bokford") continue;
-    const year = Number(getFiscalYear(schedule.fiscalYearId)?.label ?? 0);
+    const scheduled = getFiscalYear(schedule.fiscalYearId);
+    const year = scheduled ? taxYearOf(scheduled) : 0;
     if (!year || year > through) continue;
     const allocation = schedule.inputs.fundAllocation ?? 0;
     if (allocation > 0) byYear.set(year, (byYear.get(year) ?? 0) + allocation);
@@ -262,7 +263,7 @@ export function fundLots(throughFiscalYearId: string): FundLot[] {
 /** Fonder som MÅSTE återföras i året – sjätte året efter avsättningen har passerat. */
 export function fundReversalsDue(fiscalYearId: string): FundLot[] {
   const fy = requireYear(fiscalYearId);
-  const year = Number(fy.label);
+  const year = taxYearOf(fy);
   return fundLots(fiscalYearId).filter((lot) => lot.lastYear <= year);
 }
 
@@ -338,7 +339,7 @@ export function fundDraft(
     lines.push({
       label: `Fond avsatt ${fy.label}`,
       amount: allocation,
-      note: `Högst ${max} kr fick sättas av – 25 % av det skattemässiga resultatet före avsättning. Ska vara återförd senast ${Number(fy.label) + PERIODISERINGSFOND_MAX_AR}.`,
+      note: `Högst ${max} kr fick sättas av – 25 % av det skattemässiga resultatet före avsättning. Ska vara återförd senast ${taxYearOf(fy) + PERIODISERINGSFOND_MAX_AR}.`,
     });
   }
 
@@ -515,7 +516,7 @@ export function bookYearEndSchedule(id: string, by: "anvandare" | "assistent"): 
               ],
               source: { type: "bokslut", id: schedule.id },
               createdBy: by,
-              explanation: `${allocation} kr sätts av till periodiseringsfond och sänker årets skatt. Skatten är uppskjuten, inte borta: fonden ska återföras senast räkenskapsåret ${Number(fy.label) + PERIODISERINGSFOND_MAX_AR}.`,
+              explanation: `${allocation} kr sätts av till periodiseringsfond och sänker årets skatt. Skatten är uppskjuten, inte borta: fonden ska återföras senast räkenskapsåret ${taxYearOf(fy) + PERIODISERINGSFOND_MAX_AR}.`,
             },
             { bypassPeriodLock: true }
           )

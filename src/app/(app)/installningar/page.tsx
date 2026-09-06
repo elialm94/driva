@@ -20,6 +20,7 @@ import { db } from "@/lib/store";
 import { redirect } from "next/navigation";
 import { listConnectionOverviews } from "@/lib/services/wholesalers";
 import { setupSummary } from "@/lib/setup/tasks";
+import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
 
 export const metadata = { title: "Inställningar" };
 
@@ -68,6 +69,14 @@ export default async function SettingsPage(props: {
             ? { summary: setupSummary(), onboarding: db().onboarding ?? null, imports: db().dataImports ?? [] }
             : undefined
         }
+        fiscalYears={fiscalYears().map((y) => ({
+          id: y.id,
+          label: y.label,
+          startDate: y.startDate,
+          endDate: y.endDate,
+          status: y.status,
+        }))}
+        today={todayDate()}
       />
       {/* Endast demon: JSON-läget lokalt eller den publika demosessionen.
           Servervägen (resetDemoAction) vaktar dessutom oberoende av UI:t. */}

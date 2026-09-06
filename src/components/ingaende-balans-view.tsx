@@ -1,7 +1,7 @@
 import { Check, Lock } from "lucide-react";
 import { db } from "@/lib/store";
 import { kr } from "@/lib/format";
-import { fiscalYears } from "@/lib/accounting/fiscal";
+import { fiscalYears, taxYearOf } from "@/lib/accounting/fiscal";
 import { Badge, Card, SectionTitle, cx } from "./ui";
 import { SieImportPanel } from "./sie-import";
 
@@ -87,8 +87,8 @@ function SourceSummary({ fiscalYearId }: { fiscalYearId: string }) {
       <div className="flex items-start gap-2.5">
         <Lock className="mt-0.5 size-4.5 shrink-0 text-muted" />
         <p className="text-[13.5px] leading-relaxed text-soft">
-          {fy.label} har ingående balanser från bokslutet för {Number(fy.label) - 1}. De är räknade ur en stängd
-          bokföring och går inte att skriva över med en fil – ska de ändras görs det genom att öppna {Number(fy.label) - 1}{" "}
+          {fy.label} har ingående balanser från bokslutet för {taxYearOf(fy) - 1}. De är räknade ur en stängd
+          bokföring och går inte att skriva över med en fil – ska de ändras görs det genom att öppna föregående år
           igen.
         </p>
       </div>
