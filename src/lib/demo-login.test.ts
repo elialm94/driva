@@ -5,8 +5,9 @@ process.env.DRIVA_TEST = "1";
  * isolering per session, rate limits, tenantgrindarna, den centrala
  * e-postgrinden och AI-budgeten.
  *
- * Demon bor ALDRIG i databasen – fil-storen testas här mot en tillfällig
- * katalog, precis som E2E-verifieringen testar den mot .data/demo-sessions.
+ * Demon rör aldrig riktiga företags data. Fil-lagret (JSON-läget) testas här
+ * mot en tillfällig katalog; SQL-lagret (Supabase-läget, en jsonb-rad per
+ * session delad mellan instanser) testas i storage/demo-session-sql.test.ts.
  */
 import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -159,70 +160,70 @@ describe("fil-storen: en JSON-fil per demosession", () => {
     assert.ok(seed.customers.length > 0);
   });
 
-  it("första träffen klonar seedet till sessionens fil; reload läser samma fil", () => {
+  it("första träffen klonar seedet till sessionens fil; reload läser samma fil", async () => {
     const id = newDemoSessionId();
-    const state = ensureDemoSessionState(id);
+    const state = await ensureDemoSessionState(id);
     assert.ok(fs.existsSync(path.join(demoSessionsDir(), `${id}.json`)));
     // Samma objekt inom instansen (parallella requests delar tillstånd).
-    assert.equal(ensureDemoSessionState(id), state);
+    assert.equal(await ensureDemoSessionState(id), state);
     // Kall instans (tom cache) läser filen – ändringar överlever.
     state.customers.push(testCustomer({ id: "cust-e2e", name: "Fil-Kund" }));
-    persistDemoSessionState(id, state);
+    await persistDemoSessionState(id, state);
     __resetDemoSessionCacheForTests();
-    const reloaded = ensureDemoSessionState(id);
+    const reloaded = await ensureDemoSessionState(id);
     assert.ok(reloaded.customers.some((c) => c.name === "Fil-Kund"));
   });
 
-  it("två sessioner är helt isolerade: egna filer, egna kloner", () => {
+  it("två sessioner är helt isolerade: egna filer, egna kloner", async () => {
     const a = newDemoSessionId();
     const b = newDemoSessionId();
-    const stateA = ensureDemoSessionState(a);
-    ensureDemoSessionState(b);
+    const stateA = await ensureDemoSessionState(a);
+    await ensureDemoSessionState(b);
     stateA.customers.push(testCustomer({ id: "cust-a", name: "Bara hos A" }));
-    persistDemoSessionState(a, stateA);
+    await persistDemoSessionState(a, stateA);
     __resetDemoSessionCacheForTests();
-    assert.ok(ensureDemoSessionState(a).customers.some((c) => c.name === "Bara hos A"));
-    assert.ok(!ensureDemoSessionState(b).customers.some((c) => c.name === "Bara hos A"));
+    assert.ok((await ensureDemoSessionState(a)).customers.some((c) => c.name === "Bara hos A"));
+    assert.ok(!(await ensureDemoSessionState(b)).customers.some((c) => c.name === "Bara hos A"));
   });
 
-  it("återställning skriver över sessionens fil med färskt seed", () => {
+  it("återställning skriver över sessionens fil med färskt seed", async () => {
     const id = newDemoSessionId();
-    const state = ensureDemoSessionState(id);
+    const state = await ensureDemoSessionState(id);
     state.customers.push(testCustomer({ id: "cust-x", name: "Försvinner" }));
-    persistDemoSessionState(id, state);
-    const fresh = resetDemoSessionState(id);
+    await persistDemoSessionState(id, state);
+    const fresh = await resetDemoSessionState(id);
     assert.ok(!fresh.customers.some((c) => c.name === "Försvinner"));
     __resetDemoSessionCacheForTests();
-    assert.ok(!ensureDemoSessionState(id).customers.some((c) => c.name === "Försvinner"));
+    assert.ok(!(await ensureDemoSessionState(id)).customers.some((c) => c.name === "Försvinner"));
   });
 
-  it("avsluta tar bort sessionens fil – och bara den", () => {
+  it("avsluta tar bort sessionens fil – och bara den", async () => {
     const a = newDemoSessionId();
     const b = newDemoSessionId();
-    ensureDemoSessionState(a);
-    ensureDemoSessionState(b);
-    deleteDemoSessionState(a);
-    assert.equal(loadDemoSessionState(a), null);
+    await ensureDemoSessionState(a);
+    await ensureDemoSessionState(b);
+    await deleteDemoSessionState(a);
+    assert.equal(await loadDemoSessionState(a), null);
     assert.equal(fs.existsSync(path.join(demoSessionsDir(), `${a}.json`)), false);
     assert.equal(fs.existsSync(path.join(demoSessionsDir(), `${b}.json`)), true);
   });
 
-  it("katalogstädningen tar utgångna filer men rör inte färska", () => {
+  it("katalogstädningen tar utgångna filer men rör inte färska", async () => {
     const gammal = newDemoSessionId();
     const farsk = newDemoSessionId();
-    ensureDemoSessionState(gammal);
-    ensureDemoSessionState(farsk);
+    await ensureDemoSessionState(gammal);
+    await ensureDemoSessionState(farsk);
     const old = new Date(Date.now() - 26 * 3_600_000);
     fs.utimesSync(path.join(demoSessionsDir(), `${gammal}.json`), old, old);
-    const removed = cleanupExpiredDemoSessions();
+    const removed = await cleanupExpiredDemoSessions();
     assert.equal(removed, 1);
     assert.equal(fs.existsSync(path.join(demoSessionsDir(), `${gammal}.json`)), false);
     assert.equal(fs.existsSync(path.join(demoSessionsDir(), `${farsk}.json`)), true);
   });
 
-  it("ogiltiga session-id:n blir aldrig filnamn", () => {
-    assert.throws(() => ensureDemoSessionState("../../../etc/passwd"), /Ogiltigt/);
-    assert.throws(() => ensureDemoSessionState("KORT"), /Ogiltigt/);
+  it("ogiltiga session-id:n blir aldrig filnamn", async () => {
+    await assert.rejects(() => ensureDemoSessionState("../../../etc/passwd"), /Ogiltigt/);
+    await assert.rejects(() => ensureDemoSessionState("KORT"), /Ogiltigt/);
     assert.equal(isValidDemoSessionId("abc"), false);
     assert.equal(isValidDemoSessionId("a".repeat(65)), false);
   });

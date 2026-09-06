@@ -1,22 +1,25 @@
 /**
- * Publik demosession: JSON + cookie – aldrig databasen.
+ * Publik demosession: cookie + ett eget JSON-tillstånd per besökare – aldrig
+ * ett riktigt företag.
  *
  * Modellen:
  *   * "Se demo" (GET /demo) sätter en httpOnly-cookie (driva_demo) vars
  *     värde bär ett KRYPTOGRAFISKT slumpat session-id och sessionens
  *     utgångstid. Vid första träffen klonas det kanoniska exempeldatat
- *     (Södermalms Snickeri AB) till sessionens EGEN JSON-fil,
- *     .data/demo-sessions/<id>.json (se storage/demo-session-store.ts).
- *   * db()/save() i en demorequest läser/skriver BARA den filen – samma
- *     JSON-lager som den lokala utvecklingen använder, request-skopat.
- *     Supabase (riktiga företag) berörs aldrig av demon: inga rader skapas,
- *     läses eller raderas där.
- *   * Reload inom livslängden → samma fil. Annan cookie/incognito → egen
- *     färsk klon. Återställ → filen skrivs över med färskt seed. Utgångna
- *     filer städas bort med enkel katalogstädning (aldrig SQL).
+ *     (Södermalms Snickeri AB) till sessionens EGET tillstånd: en JSON-fil
+ *     (.data/demo-sessions/<id>.json) i JSON-läget, EN jsonb-rad i
+ *     public.demo_sessions i Supabase-läget så att alla serverless-instanser
+ *     ser samma session (se storage/demo-session-store.ts).
+ *   * db()/save() i en demorequest läser/skriver BARA det tillståndet – samma
+ *     JSON-form som den lokala utvecklingen använder, request-skopat.
+ *     Riktiga företag berörs aldrig av demon: inga businesses-, auth- eller
+ *     tenantrader skapas, läses eller raderas.
+ *   * Reload inom livslängden → samma tillstånd. Annan cookie/incognito →
+ *     egen färsk klon. Återställ → skrivs över med färskt seed. Utgångna
+ *     sessioner städas bort opportunistiskt (ingen cron).
  *   * Isoleringen är per session-id: utan cookien (ogissbart id) finns ingen
- *     väg till en annan besökares fil, och en demosession kan aldrig nå
- *     riktiga företag eftersom demorequests aldrig rör Supabase-lagret.
+ *     väg till en annan besökares tillstånd, och en demosession kan aldrig
+ *     nå riktiga företag eftersom demorequests aldrig rör tenantlagret.
  *
  * Den här modulen är de RENA hjälparna (cookievärde, livslängd, rate limits)
  * – importeras även av proxyn och måste därför vara fri från Node-API:er
