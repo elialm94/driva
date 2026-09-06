@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, BadgeCheck, Check, CircleAlert, CircleHelp } from "lucide-react";
+import { BadgeCheck, Check, CircleAlert, CircleHelp } from "lucide-react";
 import { db } from "@/lib/store";
 import { kr, datumKort } from "@/lib/format";
 import { ButtonLink, Card, PageHeader, SectionTitle } from "@/components/ui";
@@ -16,12 +16,15 @@ import {
 } from "@/lib/services/action-views";
 import { bankReconciliation } from "@/lib/accounting/reconciliation";
 import { vatChecklist, vatPeriods } from "@/lib/accounting/vat";
-import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
+import { fiscalYears, lockedThrough, todayDate } from "@/lib/accounting/fiscal";
 import { resultatrapport } from "@/lib/accounting/ledger";
 import { verificationLabel } from "@/lib/accounting/engine";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Bokföring" };
+
+/** Så många olösta rader visas direkt – resten bakom "Visa N till", som på Hem. */
+const BOOKKEEPING_ATTENTION_VISIBLE = 8;
 
 function datumDagManad(iso: string): string {
   return new Intl.DateTimeFormat("sv-SE", { day: "numeric", month: "long" }).format(new Date(iso));
@@ -76,6 +79,7 @@ export default async function BookkeepingPage({
     !data.verifications.some((v) => v.fiscalYearId === openYear.id);
 
   const recent = [...data.verifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 4);
+  const lock = lockedThrough();
 
   return (
     <div>
@@ -109,7 +113,11 @@ export default async function BookkeepingPage({
       {/* 2. Komplett bokföringskö – samma åtgärds-id:n som Hem, aldrig en andra inbox. */}
       {needsHelp > 0 ? (
         <section id={BOOKKEEPING_UNRESOLVED_ANCHOR} className="mb-8 scroll-mt-6">
-          <AttentionSection title={BOOKKEEPING_SECTION_TITLE} items={bookkeepingActions} />
+          <AttentionSection
+            title={BOOKKEEPING_SECTION_TITLE}
+            items={bookkeepingActions}
+            initialVisible={BOOKKEEPING_ATTENTION_VISIBLE}
+          />
         </section>
       ) : focusUnresolved ? (
         <section id={BOOKKEEPING_UNRESOLVED_ANCHOR} className="mb-8 scroll-mt-6" />
@@ -185,6 +193,13 @@ export default async function BookkeepingPage({
               {recon.reconciledThrough ? ` till ${datumKort(recon.reconciledThrough)}` : ""}
             </p>
           ) : null}
+          <p className="mt-3 text-[13px] text-soft">
+            {lock ? `Bokföringen är låst till och med ${datumKort(lock)}` : "Ingen period är låst"}
+            {" · "}
+            <Link href="/bokforing/periodstangning" className="font-medium text-accent hover:underline">
+              Periodstängning
+            </Link>
+          </p>
         </Card>
       </section>
 
@@ -240,29 +255,6 @@ export default async function BookkeepingPage({
           </ul>
         </section>
       ) : null}
-
-      <footer className="border-t border-line/70 pt-6">
-        <p className="text-[13px] font-medium text-ink">Bokföringsdetaljer</p>
-        <p className="mt-0.5 text-[13px] text-muted">Behöver du se konton, verifikationer eller rapporter?</p>
-        <Link
-          href="/bokforing/verifikationer"
-          className="mt-2 inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline"
-        >
-          Visa bokföringsdetaljer <ArrowRight className="size-3.5" />
-        </Link>
-        <Link
-          href="/bokforing/periodstangning"
-          className="mt-2 block text-[13px] font-medium text-accent hover:underline"
-        >
-          Periodstängning och periodlås
-        </Link>
-        <Link
-          href="/bokforing/ingaende-balans"
-          className="mt-2 block text-[13px] font-medium text-accent hover:underline"
-        >
-          Ingående balans och övertagande från annat program
-        </Link>
-      </footer>
     </div>
   );
 }
