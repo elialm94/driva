@@ -23,8 +23,10 @@ import {
 function filled(over: Partial<OnboardingValues> = {}): OnboardingValues {
   return {
     name: "Söders Snickeri AB",
+    companyForm: "ab",
     orgNumber: "5591234567",
     vatNumber: "",
+    paymentTiming: "now",
     address: "Renstiernas gata 12",
     postalCode: "11624",
     city: "Stockholm",
@@ -143,6 +145,52 @@ describe("Kom igång-validering", () => {
     assert.equal(result.values.vatNumber, "SE559123456701");
     assert.equal(result.values.postalCode, "116 24");
     assert.equal(result.values.bankgiro, "5678-1234");
+  });
+});
+
+describe("Kom igång – bolagsform, betalning senare och härlett momsnummer", () => {
+  it("bolagsformen krävs och sparas – enskild firma får personnummer som organisationsnummer", () => {
+    const missing = validateOnboardingFields(filled({ companyForm: "" }));
+    assert.equal(missing.fieldErrors.companyForm, "Välj företagsform.");
+    assert.equal(missing.firstField, "ob-company-form");
+
+    const enskild = validateOnboardingFields(filled({ companyForm: "enskild", orgNumber: "8501011234", name: "Karins Måleri" }));
+    assert.deepEqual(enskild.fieldErrors, {});
+    assert.equal(enskild.values.companyForm, "enskild");
+    assert.equal(enskild.values.orgNumber, "850101-1234");
+    assert.equal(enskild.values.vatNumber, "SE850101123401");
+    assert.equal(companySettingsFromOnboarding(enskild.values).companyForm, "enskild");
+    assert.equal(companySettingsFromOnboarding(validateOnboardingFields(filled()).values).companyForm, "ab");
+    assert.equal(settingsToRow(companySettingsFromOnboarding(enskild.values), "biz-1").company_form, "enskild");
+  });
+
+  it("företagsformer som inte stöds avvisas ärligt – vi gissar inte redovisningsregler", () => {
+    const result = validateOnboardingFields(filled({ companyForm: "annan" }));
+    assert.match(result.fieldErrors.companyForm ?? "", /aktiebolag och enskild firma/);
+    assert.equal(result.firstField, "ob-company-form");
+  });
+
+  it("momsregistreringsnumret härleds ur organisationsnumret och ett avvikande värde avvisas", () => {
+    const derived = validateOnboardingFields(filled({ vatNumber: "" }));
+    assert.equal(derived.values.vatNumber, "SE559123456701");
+    const wrong = validateOnboardingFields(filled({ vatNumber: "SE559999999901" }));
+    assert.match(wrong.fieldErrors.vatNumber ?? "", /stämmer inte/);
+    // Fel organisationsnummer ger inte ett andra fel för momsnumret.
+    const badOrg = validateOnboardingFields(filled({ orgNumber: "123" }));
+    assert.ok(badOrg.fieldErrors.orgNumber);
+    assert.equal(badOrg.fieldErrors.vatNumber, undefined);
+  });
+
+  it("betalningsuppgifter kan läggas till senare – företaget skapas men fakturor blockeras av samma readiness", () => {
+    const later = validateOnboardingFields(filled({ paymentTiming: "later", paymentMethod: "", bankgiro: "" }));
+    assert.deepEqual(later.fieldErrors, {});
+    assert.equal(later.values.bankgiro, "");
+    const settings = companySettingsFromOnboarding(later.values);
+    assert.equal(billingReadiness(settings).ready, false);
+    assert.ok(billingReadiness(settings).blockers.some((b) => b.code === "seller_bankgiro"));
+    // "Lägg till nu" kräver fortfarande ett betalningssätt.
+    const now = validateOnboardingFields(filled({ paymentTiming: "now", paymentMethod: "", bankgiro: "" }));
+    assert.equal(now.fieldErrors.paymentMethod, "Välj ett betalningssätt.");
   });
 });
 

@@ -23,8 +23,10 @@ import { allocateInboundMailSlug } from "./inbox/inbound-slug";
 
 export const ONBOARDING_FIELD_IDS = {
   name: "ob-name",
+  companyForm: "ob-company-form",
   orgNumber: "ob-orgnr",
   vatNumber: "ob-vat",
+  paymentTiming: "ob-payment-timing",
   address: "ob-address",
   postalCode: "ob-postal",
   city: "ob-city",
@@ -39,11 +41,19 @@ export const ONBOARDING_FIELD_IDS = {
 export type OnboardingField = keyof typeof ONBOARDING_FIELD_IDS;
 
 export type OnboardingPaymentMethod = "bankgiro" | "plusgiro" | "bankkonto";
+/** Bolagsformer i nuvarande scope. "annan" ger ett ärligt "stöds inte ännu". */
+export type OnboardingCompanyForm = "ab" | "enskild" | "annan";
+/** Betalningsuppgifter kan läggas till nu eller senare – företaget skapas ändå. */
+export type OnboardingPaymentTiming = "now" | "later";
 
 export type OnboardingValues = {
   name: string;
+  /** "ab" | "enskild" | "annan". Tomt = inte valt. */
+  companyForm: string;
   orgNumber: string;
   vatNumber: string;
+  /** "now" | "later". Tomt behandlas som "now" (äldre formulär). */
+  paymentTiming: string;
   address: string;
   postalCode: string;
   city: string;
@@ -64,6 +74,7 @@ export type OnboardingValidation = {
 /** Det som sparas i CompanySettings – samma källa som Inställningar. */
 export type OnboardingPersistInput = {
   name: string;
+  companyForm: "ab" | "enskild";
   orgNumber: string;
   vatNumber: string;
   address: string;
@@ -78,11 +89,13 @@ export type OnboardingPersistInput = {
 
 const FIELD_ORDER: OnboardingField[] = [
   "name",
+  "companyForm",
   "orgNumber",
   "vatNumber",
   "address",
   "postalCode",
   "city",
+  "paymentTiming",
   "paymentMethod",
   "bankgiro",
   "plusgiro",
@@ -95,6 +108,14 @@ function isPaymentMethod(value: string): value is OnboardingPaymentMethod {
   return value === "bankgiro" || value === "plusgiro" || value === "bankkonto";
 }
 
+export function isSupportedCompanyForm(value: string): value is "ab" | "enskild" {
+  return value === "ab" || value === "enskild";
+}
+
+/** Ärligt besked när företagsformen inte stöds – vi gissar inte redovisningsregler. */
+export const UNSUPPORTED_COMPANY_FORM_ERROR =
+  "Ferva stödjer just nu aktiebolag och enskild firma. Andra företagsformer kan inte skapas ännu.";
+
 export function looksLikePhone(value: string): boolean {
   if (/[a-zA-ZåäöÅÄÖ]/.test(value)) return false;
   const digits = value.replace(/\D/g, "");
@@ -104,8 +125,10 @@ export function looksLikePhone(value: string): boolean {
 export function readOnboardingFormData(formData: FormData): OnboardingValues {
   return {
     name: String(formData.get("name") ?? ""),
+    companyForm: String(formData.get("companyForm") ?? ""),
     orgNumber: String(formData.get("orgNumber") ?? ""),
     vatNumber: String(formData.get("vatNumber") ?? ""),
+    paymentTiming: String(formData.get("paymentTiming") ?? ""),
     address: String(formData.get("address") ?? ""),
     postalCode: String(formData.get("postalCode") ?? ""),
     city: String(formData.get("city") ?? ""),
@@ -127,6 +150,14 @@ export function validateOnboardingFields(input: OnboardingValues): OnboardingVal
   const name = input.name.trim();
   if (name.length < 2) fieldErrors.name = "Ange företagets namn.";
 
+  const companyFormRaw = input.companyForm.trim();
+  if (!companyFormRaw) {
+    fieldErrors.companyForm = "Välj företagsform.";
+  } else if (!isSupportedCompanyForm(companyFormRaw)) {
+    fieldErrors.companyForm = UNSUPPORTED_COMPANY_FORM_ERROR;
+  }
+  const companyForm: "ab" | "enskild" = isSupportedCompanyForm(companyFormRaw) ? companyFormRaw : "ab";
+
   const orgTrimmed = input.orgNumber.trim();
   if (!orgTrimmed) {
     fieldErrors.orgNumber = "Ange företagets organisationsnummer.";
@@ -136,10 +167,12 @@ export function validateOnboardingFields(input: OnboardingValues): OnboardingVal
   }
 
   const orgNumber = isOrgnrFormat(orgTrimmed) ? normalizeOrgnr(orgTrimmed) : orgTrimmed;
+  // Momsregistreringsnumret härleds deterministiskt ur organisationsnumret
+  // (SE + 10 siffror + 01). Ett ifyllt värde accepteras bara om det stämmer.
   const vatRaw = input.vatNumber.trim().toUpperCase().replace(/\s/g, "");
   const vatNumber = vatRaw || (isOrgnrFormat(orgNumber) ? formatVatNumber(orgNumber) : "");
   if (!vatNumber) {
-    fieldErrors.vatNumber = "Ange företagets momsregistreringsnummer.";
+    if (!fieldErrors.orgNumber) fieldErrors.vatNumber = "Ange företagets momsregistreringsnummer.";
   } else if (!isVatNumberFormat(vatNumber)) {
     fieldErrors.vatNumber = "Momsregistreringsnumret ska anges som SE följt av 12 siffror.";
   } else if (isOrgnrFormat(orgNumber) && !vatMatchesOrgnr(vatNumber, orgNumber)) {
@@ -161,11 +194,15 @@ export function validateOnboardingFields(input: OnboardingValues): OnboardingVal
   if (!city) fieldErrors.city = "Ange ort.";
 
   const paymentMethod = input.paymentMethod.trim();
+  const paymentTiming: OnboardingPaymentTiming = input.paymentTiming.trim() === "later" ? "later" : "now";
   let bankgiro = "";
   let plusgiro: string | undefined;
   let bankAccount: string | undefined;
 
-  if (!isPaymentMethod(paymentMethod)) {
+  if (paymentTiming === "later") {
+    // Företaget skapas utan betalningsuppgifter. Fakturachecklistan (samma
+    // readiness-logik som Inställningar) stoppar utskick tills de finns.
+  } else if (!isPaymentMethod(paymentMethod)) {
     fieldErrors.paymentMethod = "Välj ett betalningssätt.";
   } else if (paymentMethod === "bankgiro") {
     const raw = input.bankgiro.trim();
@@ -212,6 +249,7 @@ export function validateOnboardingFields(input: OnboardingValues): OnboardingVal
     firstField: first ? ONBOARDING_FIELD_IDS[first] : undefined,
     values: {
       name,
+      companyForm,
       orgNumber,
       vatNumber,
       address,
@@ -250,6 +288,7 @@ function initialsFromName(name: string): string {
 export function onboardingToBusinessProfile(input: OnboardingPersistInput) {
   return {
     name: input.name,
+    companyForm: input.companyForm,
     orgNumber: input.orgNumber,
     vatNumber: input.vatNumber,
     email: input.email,
@@ -270,6 +309,7 @@ export function companySettingsFromOnboarding(input: OnboardingPersistInput): Co
   const profile = onboardingToBusinessProfile(input);
   return {
     name: profile.name,
+    companyForm: profile.companyForm,
     orgNumber: normalizeOrgnr(profile.orgNumber),
     vatNumber: profile.vatNumber.trim().toUpperCase().replace(/\s/g, ""),
     email: profile.email.trim(),

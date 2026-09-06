@@ -132,6 +132,19 @@ knapptryck (server action) utför åtgärden. Modellen kan inte bekräfta.
 - Tenantisolering: alla anrop går genom `withBusiness` (tenantkontext) och i
   Supabase-läget RLS. Främmande id:n i argument ger "finns inte".
 
+## Import av uppgifter (Kom igång → Flytta dina uppgifter)
+
+Filimporten är deterministisk först: SIE känns igen på innehållet, tabeller på
+rubriker (`classifyRegisterTable` + synonymmappning). AI används **bara** som
+fallback när rubrikerna inte känns igen, och bara för att FÖRESLÅ vad tabellen
+innehåller (kunder/leverantörer/artiklar) och vilka kolumner som hör ihop
+(`src/lib/imports/classify-ai.ts`). Skickas: rubriker + två avkortade
+exempelrader – aldrig hela filen. Förslaget märks *AI-förslag* i kortet och
+bekräftas av användaren i mappningsvyn. AI bokför aldrig, skapar aldrig
+verifikationer, ändrar aldrig belopp och tolkar aldrig SIE. Utan nyckel eller
+vid fel returneras `null` och det manuella flödet fortsätter oförändrat. Se
+`docs/onboarding-import.md`.
+
 ## Kostnadskontroll
 
 - Deterministiska kommandon gör noll LLM-anrop (testat).

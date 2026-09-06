@@ -161,7 +161,7 @@ describe("grossistbeställningar: valfri funktion", () => {
     assert.equal(wholesalersEnabled(db()), false);
     assert.deepEqual(
       settingsTabsFor(features).map((t) => t.key),
-      ["foretag", "fakturering", "funktioner", "konto"],
+      ["kom-igang", "foretag", "fakturering", "funktioner", "konto"],
     );
     const ctx = jobWholesalerContext("job-1");
     assert.equal(ctx.enabled, false);

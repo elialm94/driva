@@ -1,3 +1,4 @@
+import { SupplierRegister } from "@/components/supplier-register";
 import Link from "next/link";
 import { Plus, Landmark } from "lucide-react";
 import { db } from "@/lib/store";
@@ -279,6 +280,7 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
             query={{ q, status: statusParam<ExpenseStatusFilter>(searchParams.status, EXPENSE_STATUS_OPTIONS), page, sort }}
             options={EXPENSE_STATUS_OPTIONS}
           />
+          <SupplierRegister suppliers={db().suppliers ?? []} />
         </div>
       ) : null}
 

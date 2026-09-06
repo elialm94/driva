@@ -8,6 +8,8 @@ import { WatchingList } from "@/components/watching-list";
 import { CommandBar } from "@/components/command-bar";
 import { commandBarPrefetch } from "@/lib/services/command-bar";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { setupSummary, type SetupSummary } from "@/lib/setup/tasks";
+import { SetupHomeCard } from "@/components/setup/setup-home-card";
 
 export const metadata = { title: "Hem" };
 
@@ -20,6 +22,15 @@ function safeHomeActions() {
   } catch (err) {
     console.error("[hem] åtgärdsmotorn:", err instanceof Error ? err.message : err);
     return { attention: [], watching: [], reminders: [] } satisfies BusinessActions;
+  }
+}
+
+function safeSetupSummary(): SetupSummary | null {
+  try {
+    return setupSummary();
+  } catch (err) {
+    console.error("[hem] kom igång:", err instanceof Error ? err.message : err);
+    return null;
   }
 }
 
@@ -38,6 +49,8 @@ export default async function HomePage() {
   // Prioriterad vy – samma åtgärds-id:n som Bokföring, inte en komplett kö.
   const attention = projectHomeAttention(actions.attention);
   const now = isoNow();
+  // Nytt/ofullständigt företag: "Gör Ferva redo" högt upp – härlett ur verklig data.
+  const setup = safeSetupSummary();
 
   return (
     <div className="animate-fade-up">
@@ -47,6 +60,8 @@ export default async function HomePage() {
       <h1 className="mt-1 text-[28px] font-semibold tracking-tight">{halsning()}</h1>
 
       <CommandBar prefetch={safeCommandPrefetch()} variant="hem" />
+
+      {setup ? <SetupHomeCard summary={setup} /> : null}
 
       <div className="mt-10">
         <AttentionSection
