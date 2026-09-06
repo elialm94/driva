@@ -2,8 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, Check, Banknote, FilePlus2, Undo2, Send } from "lucide-react";
+import { Check, Banknote, FilePlus2, Undo2, Send } from "lucide-react";
 import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
+import { FileDropzone } from "./file-dropzone";
 import { Modal } from "./modal";
 import { buttonClasses, cx, DemoTag } from "./ui";
 import {
@@ -19,7 +20,7 @@ import {
   uploadReceiptAction,
 } from "@/app/actions";
 import { invoiceHref } from "@/lib/nav";
-import { receiptFileToDataUrl, receiptUploadForm } from "@/lib/receipts/read-file";
+import { RECEIPT_MAX_BYTES, receiptFileToDataUrl, receiptUploadForm } from "@/lib/receipts/read-file";
 
 /**
  * Ladda upp ett kvitto. Med `expenseId` kopplas det till ett känt bankköp –
@@ -27,11 +28,21 @@ import { receiptFileToDataUrl, receiptUploadForm } from "@/lib/receipts/read-fil
  * kvittotolkningen och bokförs när läsningen är säker nog; annars hamnar det i
  * Kontrollera-vyn. Ingen väg hittar på uppgifter.
  */
-export function UploadReceiptButton({ expenseId, label = "Lägg till kvitto" }: { expenseId?: string; label?: string }) {
+export function UploadReceiptButton({
+  expenseId,
+  label = "Lägg till kvitto",
+  variant,
+}: {
+  expenseId?: string;
+  label?: string;
+  variant?: "landing" | "inline" | "compact";
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const zone = variant ?? (expenseId ? "compact" : "landing");
+
   if (done) {
     return (
       <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
@@ -39,47 +50,56 @@ export function UploadReceiptButton({ expenseId, label = "Lägg till kvitto" }: 
       </span>
     );
   }
-  return (
-    <label className={cx(buttonClasses("primary", "sm"), "cursor-pointer")}>
-      <Upload className="size-3.5" />
-      {isPending ? "Läser av …" : label}
-      <input
-        type="file"
-        accept="image/*,.pdf"
-        className="hidden"
-        disabled={isPending}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-          const name = file.name || "kvitto.jpg";
-          setError(null);
-          startTransition(async () => {
-            try {
-              if (expenseId) {
-                const result = await uploadReceiptAction(receiptUploadForm(expenseId, file));
-                if (result.ok === false) setError(result.error);
-                else setDone("Kvitto sparat");
-              } else {
-                const dataUrl = await receiptFileToDataUrl(file);
-                const result = await uploadInboxDocumentAction({
-                  filename: name,
-                  contentType: file.type || undefined,
-                  dataUrl,
-                });
-                if (result.ok === false) setError(result.error);
-                else {
-                  setDone(result.autoBooked ? "Kvitto bokfört" : "Kvitto i inboxen");
-                  router.refresh();
-                }
-              }
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Kunde inte spara kvittot.");
+
+  function onFiles(files: File[]) {
+    setError(null);
+    startTransition(async () => {
+      for (const file of files) {
+        const name = file.name || "kvitto.jpg";
+        try {
+          if (expenseId) {
+            const result = await uploadReceiptAction(receiptUploadForm(expenseId, file));
+            if (result.ok === false) {
+              setError(result.error);
+              return;
             }
+            setDone("Kvitto sparat");
+            return;
+          }
+          const dataUrl = await receiptFileToDataUrl(file);
+          const result = await uploadInboxDocumentAction({
+            filename: name,
+            contentType: file.type || undefined,
+            dataUrl,
           });
-        }}
-      />
-      {error ? <span className="ml-2 text-[13px] font-medium text-danger">{error}</span> : null}
-    </label>
+          if (result.ok === false) {
+            setError(result.error);
+            return;
+          }
+          setDone(result.autoBooked ? "Kvitto bokfört" : "Kvitto i inboxen");
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Kunde inte spara kvittot.");
+          return;
+        }
+      }
+      if (!expenseId) router.refresh();
+    });
+  }
+
+  return (
+    <FileDropzone
+      variant={zone}
+      accept="image/*,.pdf,.heic,.heif"
+      multiple={!expenseId}
+      busy={isPending}
+      error={error}
+      maxBytes={RECEIPT_MAX_BYTES}
+      title={label}
+      subtitle={expenseId ? undefined : "Eller tryck för att välja. Kvittot läses av och bokförs när uppgifterna räcker."}
+      formats="PDF, JPG, PNG, HEIC · max 5 MB"
+      className={zone === "compact" ? "min-w-[12rem] sm:w-64" : undefined}
+      onFiles={onFiles}
+    />
   );
 }
 

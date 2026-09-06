@@ -284,21 +284,23 @@ export function ImageDropzone({
   );
 
   const surfaceClass = cx(
-    "relative overflow-hidden rounded-xl border border-dashed transition-colors",
-    dragging ? "border-accent bg-accent-soft/50" : "border-line-strong bg-canvas/50",
+    "relative overflow-hidden rounded-2xl border border-dashed transition-colors",
+    dragging ? "border-accent bg-accent-soft/50" : "border-line-strong bg-card",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-    busy ? "pointer-events-none opacity-70" : "cursor-pointer",
+    busy ? "pointer-events-none opacity-70" : "cursor-pointer hover:border-accent/70 hover:bg-accent-soft/25",
   );
 
   const emptyCopy = (
-    <div className="flex flex-col items-center justify-center gap-0.5 px-3 text-center">
-      <ImagePlus className={cx("text-muted", variant === "banner" ? "size-5" : "size-4")} />
+    <div className="flex flex-col items-center justify-center gap-1.5 px-3 text-center">
+      <span className="flex size-10 items-center justify-center rounded-2xl bg-accent-soft text-accent-deep">
+        <ImagePlus className="size-4" />
+      </span>
       {/* Mobil har ingen dra-och-släpp – där är ytan en tryckyta för att välja bild. */}
-      <p className="text-[13px] font-medium text-soft">
+      <p className="text-[13px] font-medium text-ink">
         {dropLabel ?? (
           <>
             <span className="sm:hidden">Tryck för att välja bild</span>
-            <span className="hidden sm:inline">Släpp en bild här</span>
+            <span className="hidden sm:inline">Släpp en bild här eller klicka</span>
           </>
         )}
       </p>
@@ -375,9 +377,11 @@ export function ImageDropzone({
               onPaste={onPaste}
             >
               <div className="flex min-w-0 items-center gap-2.5">
-                <ImagePlus className="size-4 shrink-0 text-muted" />
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-deep">
+                  <ImagePlus className="size-4" />
+                </span>
                 <div className="min-w-0 text-left">
-                  <p className="truncate text-[13px] font-medium text-soft">{compactMain}</p>
+                  <p className="truncate text-[13px] font-medium text-ink">{compactMain}</p>
                   {compactSub ? <p className="truncate text-[12px] text-muted">{compactSub}</p> : null}
                 </div>
               </div>
@@ -440,7 +444,7 @@ export function ImageDropzone({
             tabIndex={busy ? -1 : 0}
             aria-label={hasImage ? replaceLabel : "Välj bild"}
             aria-disabled={busy || undefined}
-            className={cx(surfaceClass, "flex h-28 w-full items-center justify-center")}
+            className={cx(surfaceClass, "flex min-h-28 w-full items-center justify-center py-5")}
             onClick={openPicker}
             onKeyDown={onKeyDown}
             onDragEnter={onDragEnter}

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
+import { useId, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, FileUp, Pencil, Plus, Store } from "lucide-react";
+import { FileDropzone } from "./file-dropzone";
 import type {
   WholesalerColumnKey,
   WholesalerColumnMapping,
@@ -490,15 +491,7 @@ function PriceFileModal({ connection, onClose }: { connection: WholesalerConnect
   const [state, setState] = useState<UploadState>({ step: "pick" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
   const label = connectionLabel(connection);
-
-  useEffect(() => {
-    if (state.step === "pick") {
-      const t = window.setTimeout(() => fileRef.current?.focus(), 50);
-      return () => window.clearTimeout(t);
-    }
-  }, [state.step]);
 
   async function pick(file: File | undefined) {
     if (!file) return;
@@ -596,21 +589,18 @@ function PriceFileModal({ connection, onClose }: { connection: WholesalerConnect
               (.xlsx), XML eller ZIP fungerar – vi känner igen kolumnerna åt dig och du får kontrollera innan
               något ersätts.
             </p>
-            <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-line-strong px-6 py-8 text-center hover:border-accent">
-              <FileUp className="size-6 text-accent" />
-              <span className="text-[14px] font-medium text-ink">{busy ? "Läser filen …" : "Välj prisfil"}</span>
-              <span className="text-[12.5px] text-muted">Max 8 MB. Den nuvarande prislistan påverkas inte förrän du bekräftar.</span>
-              <input
-                ref={fileRef}
-                type="file"
-                className="sr-only"
-                accept=".csv,.txt,.xlsx,.xml,.zip,text/csv,text/plain,application/xml,text/xml,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                disabled={busy}
-                onChange={(e) => pick(e.target.files?.[0])}
-                data-price-file-input
-              />
-            </label>
-            {error ? <p className="text-[14px] font-medium text-danger">{error}</p> : null}
+            <FileDropzone
+              variant="landing"
+              autoFocus
+              busy={busy}
+              error={error}
+              fileInputAttr="price"
+              accept=".csv,.txt,.xlsx,.xml,.zip,text/csv,text/plain,application/xml,text/xml,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              title="Släpp prisfilen här"
+              subtitle="Eller tryck för att välja. Den nuvarande prislistan påverkas inte förrän du bekräftar."
+              formats="CSV, TXT, Excel, XML eller ZIP · max 8 MB"
+              onFiles={(files) => pick(files[0])}
+            />
           </div>
         ) : null}
 
