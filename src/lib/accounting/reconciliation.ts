@@ -30,16 +30,36 @@ export interface BankReconciliation {
 }
 
 export function bankReconciliation(): BankReconciliation {
-  const data = db();
-  const bankBalance = data.bankAccounts.reduce((s, a) => s + a.balance, 0);
-  const ledgerBalance = accountBalance(1930, todayDate());
+  return bankReconciliationAt(todayDate());
+}
 
-  const unhandled = data.bankTransactions.filter((t) => t.status === "ny" || t.status === "behover_atgard");
+/**
+ * Bankavstämning per ett datum bakåt i tiden – bokslutet stämmer av 31 december,
+ * inte idag.
+ *
+ * Banken lämnar ett saldo just nu, inte ett saldo per årsskiftet. Det saldot
+ * härleds i stället: rulla tillbaka de transaktioner som ligger efter datumet,
+ * så är det som återstår saldot den dagen. Utan det jämfördes ett utgående saldo
+ * i huvudboken med bankens saldo idag, och två tal från olika dagar går aldrig
+ * ihop – bokslutet blev omöjligt att stänga så snart en bank var kopplad.
+ */
+export function bankReconciliationAt(date: string): BankReconciliation {
+  const data = db();
+  const asOf = date.length > 10 ? bokforingsdatum(date) : date;
+  const after = data.bankTransactions
+    .filter((t) => bokforingsdatum(t.date) > asOf)
+    .reduce((s, t) => s + t.amount, 0);
+  const bankBalance = data.bankAccounts.reduce((s, a) => s + a.balance, 0) - after;
+  const ledgerBalance = accountBalance(1930, asOf);
+
+  const unhandled = data.bankTransactions.filter(
+    (t) => (t.status === "ny" || t.status === "behover_atgard") && bokforingsdatum(t.date) <= asOf
+  );
   const unhandledSum = unhandled.reduce((s, t) => s + t.amount, 0);
   const difference = bankBalance - ledgerBalance;
   const unexplained = difference - unhandledSum;
 
-  const booked = data.bankTransactions.filter((t) => t.status === "bokford");
+  const booked = data.bankTransactions.filter((t) => t.status === "bokford" && bokforingsdatum(t.date) <= asOf);
   const reconciledThrough = booked.length
     ? booked.map((t) => bokforingsdatum(t.date)).sort((a, b) => b.localeCompare(a))[0]
     : undefined;

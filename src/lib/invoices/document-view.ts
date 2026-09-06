@@ -6,6 +6,13 @@ import { normalizePersonnummer } from "../personnummer";
 import { taxReductionDeductionLabel } from "../tax-reduction-terms";
 import { lineKindLabel } from "../economic-line-type";
 import { getWorkLocation, workLocationToHousing } from "../services/work-locations";
+import {
+  buyerVatNumber,
+  invoiceHasReverseCharge,
+  REVERSE_CHARGE_CONSTRUCTION_NOTE,
+  REVERSE_CHARGE_HEADING,
+  REVERSE_CHARGE_VAT_RATE,
+} from "./reverse-charge";
 
 /**
  * Vy-modell för fakturadokumentet – delas av webbvyn och PDF/A4.
@@ -103,6 +110,38 @@ export function invoiceTaxReductionView(
     laborInclVat: totals.laborInclVat,
     deduction: totals.deduction,
     deductionLabel: taxReductionDeductionLabel(rot.type),
+  };
+}
+
+export interface InvoiceReverseChargeDocView {
+  heading: string;
+  /** Laghänvisningen. Utan den är fakturan inte fullständig. */
+  note: string;
+  /** Köparens momsregistreringsnummer. Saknas → raden visas inte. */
+  buyerVatNumber?: string;
+  /** Momsen köparen ska redovisa, som en upplysning. */
+  buyerVatToReport: number;
+}
+
+/**
+ * Omvänd byggmoms på dokumentet. Utfärdad faktura läser den frusna
+ * markeringen och det frusna momsnummret; utkast räknar fram dem live från
+ * kunden. Returnerar null när omvänd byggmoms inte gäller.
+ */
+export function invoiceReverseChargeView(
+  invoice: Invoice,
+  live: { buyer: Customer }
+): InvoiceReverseChargeDocView | null {
+  if (!invoiceHasReverseCharge(invoice)) return null;
+  const snap = invoice.status !== "utkast" ? invoice.issuedSnapshot : undefined;
+  const lines = snap?.lines ?? invoice.lines;
+  const base = docTotals(lines, null).subtotal;
+  const vatNumber = snap ? snap.buyer.vatNumber : buyerVatNumber(live.buyer);
+  return {
+    heading: REVERSE_CHARGE_HEADING,
+    note: REVERSE_CHARGE_CONSTRUCTION_NOTE,
+    buyerVatNumber: vatNumber?.trim() || undefined,
+    buyerVatToReport: Math.round(base * (REVERSE_CHARGE_VAT_RATE / 100)),
   };
 }
 

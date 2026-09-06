@@ -48,6 +48,7 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
             ? maskPersonnummer(customer.personalIdentityNumber)
             : "",
           hasPersonnummer: Boolean(customer.personalIdentityNumber),
+          reverseChargeConstruction: customer.reverseChargeConstruction,
           properties: (customer.workLocations ?? [])
             .filter((location) => location.propertyDesignation?.trim() || isDesignationOnlyLocation(location))
             .map((location) => ({ id: location.id, designation: location.propertyDesignation ?? "" })),

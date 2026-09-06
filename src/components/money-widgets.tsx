@@ -15,36 +15,34 @@ import {
   paySupplierInvoiceAction,
   simulatePaymentAction,
   sendReminderAction,
+  uploadInboxDocumentAction,
   uploadReceiptAction,
-  uploadStandaloneReceiptAction,
 } from "@/app/actions";
 import { invoiceHref } from "@/lib/nav";
 import { receiptFileToDataUrl } from "@/lib/receipts/read-file";
 
+/**
+ * Ladda upp ett kvitto. Med `expenseId` kopplas det till ett känt bankköp –
+ * banken bär då beloppet. Utan `expenseId` går kvittot in i inboxen, tolkas av
+ * kvittotolkningen och bokförs när läsningen är säker nog; annars hamnar det i
+ * Kontrollera-vyn. Ingen väg hittar på uppgifter.
+ */
 export function UploadReceiptButton({ expenseId, label = "Lägg till kvitto" }: { expenseId?: string; label?: string }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   if (done) {
     return (
       <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
-        <Check className="size-4" /> Kvitto sparat
+        <Check className="size-4" /> {done}
       </span>
     );
   }
-  // Utan expenseId finns ingen banktransaktion att läsa fakta ur – i demon
-  // skapas då ett exempelköp. Det får aldrig se ut som riktig kvittotolkning.
   return (
-    <label
-      className={cx(buttonClasses(expenseId ? "primary" : "secondary", "sm"), "cursor-pointer")}
-      title={
-        expenseId
-          ? undefined
-          : "Demo: ett exempelköp skapas och bokförs. Riktig kvittotolkning är inte inkopplad ännu."
-      }
-    >
-      {expenseId ? <Upload className="size-3.5" /> : <DemoTag>DEMO</DemoTag>}
-      {isPending ? "Läser av …" : expenseId ? label : "Läs av exempelkvitto"}
+    <label className={cx(buttonClasses("primary", "sm"), "cursor-pointer")}>
+      <Upload className="size-3.5" />
+      {isPending ? "Läser av …" : label}
       <input
         type="file"
         accept="image/*,.pdf"
@@ -52,20 +50,30 @@ export function UploadReceiptButton({ expenseId, label = "Lägg till kvitto" }: 
         disabled={isPending}
         onChange={(e) => {
           const file = e.target.files?.[0];
-          const name = file?.name ?? "kvitto.jpg";
+          if (!file) return;
+          const name = file.name || "kvitto.jpg";
           setError(null);
           startTransition(async () => {
-            if (expenseId) {
-              try {
-                const dataUrl = file ? await receiptFileToDataUrl(file) : undefined;
+            try {
+              const dataUrl = await receiptFileToDataUrl(file);
+              if (expenseId) {
                 const result = await uploadReceiptAction(expenseId, name, dataUrl);
                 if (result.ok === false) setError(result.error);
-                else setDone(true);
-              } catch (err) {
-                setError(err instanceof Error ? err.message : "Kunde inte spara kvittot.");
+                else setDone("Kvitto sparat");
+              } else {
+                const result = await uploadInboxDocumentAction({
+                  filename: name,
+                  contentType: file.type || undefined,
+                  dataUrl,
+                });
+                if (result.ok === false) setError(result.error);
+                else {
+                  setDone(result.autoBooked ? "Kvitto bokfört" : "Kvitto i inboxen");
+                  router.refresh();
+                }
               }
-            } else {
-              await uploadStandaloneReceiptAction(name);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Kunde inte spara kvittot.");
             }
           });
         }}

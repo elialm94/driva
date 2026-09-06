@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/store";
-import { attachmentContent, isViewableContentType } from "@/lib/inbox/attachment-content";
+import { attachmentBytes, isViewableContentType } from "@/lib/inbox/attachment-content";
 import { withBusinessRead } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -15,13 +15,13 @@ export async function GET(
   ctx: { params: Promise<{ itemId: string; attachmentId: string }> }
 ) {
   const { itemId, attachmentId } = await ctx.params;
-  return withBusinessRead(() => {
+  return withBusinessRead(async () => {
     const item = (db().inboxItems ?? []).find((i) => i.id === itemId);
     const attachment = item?.attachments.find((a) => a.id === attachmentId);
     if (!item || !attachment) {
       return NextResponse.json({ error: "Bilagan finns inte." }, { status: 404 });
     }
-    const content = attachmentContent(attachment);
+    const content = await attachmentBytes(attachment);
     if (!content) {
       return NextResponse.json(
         { error: "Dokumentets innehåll finns inte lagrat – endast uppgifterna om det." },

@@ -1,5 +1,5 @@
 -- ============================================================================
--- 31 · Onboarding, Kom igång och dataimport
+-- 39 · Onboarding, Kom igång och dataimport
 -- ----------------------------------------------------------------------------
 --   * business_onboarding: onboardingens tillstånd per företag (steg 1 skapar
 --     företaget, steg 2 personaliserar) + Kom igång-profilen (bransch, lön,
@@ -275,9 +275,15 @@ begin
   delete from public.supplier_invoices where business_id = p_business_id;
   delete from public.payment_files where business_id = p_business_id;
   delete from public.vat_reports where business_id = p_business_id;
+  delete from public.payroll_runs where business_id = p_business_id;
+  delete from public.employer_declarations where business_id = p_business_id;
+  delete from public.employees where business_id = p_business_id;
   delete from public.assets where business_id = p_business_id;
   delete from public.accruals where business_id = p_business_id;
+  delete from public.year_end_schedules where business_id = p_business_id;
+  delete from public.filing_submissions where business_id = p_business_id;
   delete from public.annual_reports where business_id = p_business_id;
+  delete from public.chart_accounts where business_id = p_business_id;
   delete from public.fiscal_years where business_id = p_business_id;
   delete from public.websites where business_id = p_business_id;
   delete from public.domains where business_id = p_business_id;
@@ -307,7 +313,7 @@ begin
   end if;
 
   update public.business_sequences
-     set quote = 1, invoice = 1, verification = 1
+     set quote = 1, invoice = 1, verification = 1, verification_series = '{}'::jsonb
    where business_id = p_business_id;
 
   update public.businesses

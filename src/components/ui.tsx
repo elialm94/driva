@@ -83,7 +83,7 @@ export function PageHeader({
 }) {
   return (
     <div className="mb-6">
-      {back ? <div className="mb-2.5">{back}</div> : null}
+      {back ? <div className="no-print mb-2.5">{back}</div> : null}
       {crumbs && crumbs.length > 0 ? <Breadcrumbs items={crumbs} /> : null}
       <div
         className={cx(
@@ -99,7 +99,7 @@ export function PageHeader({
         {actions ? (
           <div
             className={cx(
-              "flex min-w-0 flex-wrap items-center gap-2",
+              "no-print flex min-w-0 flex-wrap items-center gap-2",
               stackActions && "w-full md:w-auto md:justify-end",
             )}
           >

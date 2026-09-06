@@ -180,6 +180,14 @@ html:has([data-public-site]) {
   .no-print {
     display: none !important;
   }
+  /*
+   * En vågrät rullningslist på skärmen ritas som ett streck på papperet.
+   * På papper finns inget att rulla – tabellen ska bara få sin fulla bredd.
+   */
+  .overflow-x-auto,
+  .overflow-auto {
+    overflow: visible !important;
+  }
 }
 
 /*

@@ -22,6 +22,7 @@ import {
 import { TaxReductionEditorHint, TaxReductionCalcHint } from "./tax-reduction-terms";
 import { EditorWorkspace } from "./editor-workspace";
 import { LinesEditor, newLine } from "./lines-editor";
+import { withoutVat } from "@/lib/invoices/reverse-charge";
 import {
   TaxReductionFields,
   TaxReductionAmountPanel,
@@ -851,6 +852,7 @@ export function InvoiceForm({
     () => invoiceMissingRequirements({ customerId, lines, dueInDays: dueDays }),
     [customerId, lines, dueDays]
   );
+  const reverseCharge = Boolean(customerOptions.find((c) => c.id === customerId)?.reverseChargeConstruction);
   const [attempted, setAttempted] = useState(false);
   const showErrors = attempted && missing.length > 0;
   const missingIds = useMemo(() => new Set(showErrors ? missing.map((m) => m.id) : []), [missing, showErrors]);
@@ -889,7 +891,9 @@ export function InvoiceForm({
   const rotLiveTotals = rot ? liveTotals : null;
 
   function changeInvoiceLines(next: DocLine[]) {
-    setLines(next);
+    // Omvänd byggmoms: momsen är låst till 0 %, även på rader som kom in från
+    // en offert eller ett uppdrag.
+    setLines(reverseCharge ? withoutVat(next) : next);
     if (!rot) return;
     const synced = syncRotWithLines(rot, finiteLines(next));
     setRot(synced.rot);
@@ -1012,6 +1016,9 @@ export function InvoiceForm({
                   value={customerId}
                   onChange={(id) => {
                     setCustomerId(id);
+                    if (customerOptions.find((c) => c.id === id)?.reverseChargeConstruction) {
+                      setLines((prev) => withoutVat(prev));
+                    }
                     if (!jobId) applyCustomerRot(id, Boolean(rot));
                   }}
                   onCreated={(customer) => setCustomerOptions((prev) => addCustomerOption(prev, customer))}
@@ -1058,13 +1065,21 @@ export function InvoiceForm({
         </Card>
         <Card className="p-6">
           <p className="mb-4 text-[15px] font-semibold">Fakturarader</p>
+          {reverseCharge ? (
+            <p className="mb-4 rounded-xl border border-line bg-canvas/50 px-3.5 py-2.5 text-[13px] leading-relaxed text-soft">
+              <span className="font-medium text-ink">Omvänd byggmoms.</span> Kunden är markerad som byggföretag, så
+              fakturan skickas utan moms och köparen redovisar den. Laghänvisningen och kundens momsregistreringsnummer
+              hamnar automatiskt på fakturan.
+            </p>
+          ) : null}
           <LinesEditor
             lines={lines}
             onChange={changeInvoiceLines}
-            defaultVatRate={defaultVatRate}
+            defaultVatRate={reverseCharge ? 0 : defaultVatRate}
             defaultHourlyRate={defaultHourlyRate}
             showErrors={attempted}
             rotActive={Boolean(rot)}
+            reverseCharge={reverseCharge}
           />
           <div className="mt-5">
             <label className={labelCls}>Skattereduktion</label>

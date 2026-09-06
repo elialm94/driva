@@ -16,7 +16,7 @@ import { todayDate } from "./dates";
 import { registerAssetFromExpense, createDepreciationEntry, depreciationForYear, INVENTARIE_GRANS, bookValue } from "./assets";
 import { planAccrual, bookAccrual, reverseAccrualsInto, amountAfterYearEnd } from "./accruals";
 import { bokslutChecklist, closeFiscalYear, runBokslutAutomation } from "./close";
-import { bankReconciliation } from "./reconciliation";
+import { bankReconciliation, bankReconciliationAt } from "./reconciliation";
 import { computeTaxCalculation } from "./tax";
 import { generateSie, encodeSieToPc8 } from "./sie";
 import type { BankAccount, Expense } from "../types";
@@ -553,6 +553,10 @@ describe("Bokslut", () => {
         createdBy: "anvandare",
       });
     }
+    // Pengarna gick in på och ut från kontot, så banken säger samma sak.
+    // Annars stämmer 1930 inte mot banken, och det är rätt att bokslutet
+    // stoppas på det.
+    db().bankAccounts[0].balance += Math.round(revenue * 1.25) - cost;
   }
 
   function declareAllVat(year: number) {
@@ -693,6 +697,73 @@ describe("Bankavstämning", () => {
     assert.equal(recon.unhandledSum, 10_000);
     assert.equal(recon.unexplained, 0);
     assert.equal(recon.ok, false);
+  });
+
+  /*
+   * Bokslutet stämmer av 31 december, inte idag. Banken lämnar bara ett saldo
+   * just nu, så saldot per bokslutsdagen måste härledas genom att rulla tillbaka
+   * det som hänt efteråt – annars jämförs två tal från olika dagar.
+   */
+  it("saldot per ett datum bakåt härleds genom att rulla tillbaka senare transaktioner", () => {
+    db().bankAccounts[0].balance = 30_000;
+    postVerification({
+      date: `${LAST_YEAR}-11-20T12:00:00Z`,
+      description: "Betald faktura",
+      entries: [
+        { account: 1930, debit: 25_000 },
+        { account: 1510, credit: 25_000 },
+      ],
+      source: { type: "manuell" },
+      createdBy: "anvandare",
+    });
+    db().bankTransactions.push(
+      {
+        id: "tx-in",
+        accountId: "bank-1",
+        date: `${LAST_YEAR}-11-20T12:00:00Z`,
+        amount: 25_000,
+        counterpart: "Kund AB",
+        description: "Betald faktura",
+        status: "bokford",
+      },
+      {
+        id: "tx-efter",
+        accountId: "bank-1",
+        date: `${THIS_YEAR}-02-10T12:00:00Z`,
+        amount: 5_000,
+        counterpart: "Kund AB",
+        description: "Nästa års inbetalning",
+        status: "bokford",
+      }
+    );
+
+    // Idag: 30 000 på banken, 30 000 bokfört – men bara 25 000 av det tillhör
+    // det gamla året.
+    const yearEnd = bankReconciliationAt(`${LAST_YEAR}-12-31`);
+    assert.equal(yearEnd.bankBalance, 25_000, "inbetalningen i februari ska rullas tillbaka");
+    assert.equal(yearEnd.ledgerBalance, 25_000);
+    assert.equal(yearEnd.difference, 0);
+    assert.equal(yearEnd.unexplained, 0);
+    assert.equal(yearEnd.ok, true);
+  });
+
+  it("en ohanterad transaktion efter bokslutsdagen påverkar inte bokslutsdagens avstämning", () => {
+    db().bankAccounts[0].balance = 8_000;
+    db().bankTransactions.push({
+      id: "tx-nasta-ar",
+      accountId: "bank-1",
+      date: `${THIS_YEAR}-03-01T12:00:00Z`,
+      amount: 8_000,
+      counterpart: "Okänd",
+      description: "Insättning i år",
+      status: "ny",
+    });
+    const yearEnd = bankReconciliationAt(`${LAST_YEAR}-12-31`);
+    assert.equal(yearEnd.bankBalance, 0);
+    assert.equal(yearEnd.unhandled.length, 0, "transaktionen hör till nästa år, inte till bokslutet");
+    assert.equal(yearEnd.ok, true);
+    // Men idag är den ohanterad.
+    assert.equal(bankReconciliation().unhandled.length, 1);
   });
 });
 

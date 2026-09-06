@@ -2,10 +2,23 @@ import { Check, CircleAlert, Landmark } from "lucide-react";
 import { kr, datumLang } from "@/lib/format";
 import { Badge, Card, cx } from "./ui";
 import { GenerateVatReportButton, MarkVatDeclaredButton } from "./bokforing-widgets";
+import { BookVatOnTaxAccountButton } from "./skattekonto-widgets";
 import { vatChecklist, type VatPeriodSummary } from "@/lib/accounting/vat";
 import { VAT_PERIOD_STATE } from "@/lib/status-labels";
+import { InlamningPanel } from "./inlamning";
+import { filingPanelData } from "@/lib/filing/view";
+import { filingSubmissionAvailable } from "@/lib/filing/select";
 
-export function MomsPeriods({ periods, readOnly }: { periods: VatPeriodSummary[]; readOnly?: boolean }) {
+export function MomsPeriods({
+  periods,
+  readOnly,
+  awaitingTaxAccount,
+}: {
+  periods: VatPeriodSummary[];
+  readOnly?: boolean;
+  /** Id på deklarerade rapporter som ännu inte förts över till skattekontot. */
+  awaitingTaxAccount?: readonly string[];
+}) {
   return (
     <div className="space-y-4">
       {periods.map((p) => {
@@ -64,6 +77,14 @@ export function MomsPeriods({ periods, readOnly }: { periods: VatPeriodSummary[]
                   >
                     Exportera underlag (CSV)
                   </a>
+                  {p.state === "pagaende" ? null : (
+                    <a
+                      href={`/api/bokforing/deklaration?typ=moms&period=${p.period.key}`}
+                      className="text-[13px] font-medium text-accent hover:underline"
+                    >
+                      Hämta deklarationsfil (eSKD)
+                    </a>
+                  )}
                 </div>
               </div>
             </details>
@@ -101,17 +122,36 @@ export function MomsPeriods({ periods, readOnly }: { periods: VatPeriodSummary[]
             ) : null}
 
             {p.state === "deklarerad" && p.report ? (
-              <p className="mt-3 text-[12px] text-muted">
-                Momsen fördes om till redovisningskontot (2650) och perioden låstes. Siffrorna är frysta som de såg ut vid
-                deklarationen.
-              </p>
+              <div className="mt-3">
+                <p className="text-[12px] text-muted">
+                  Momsen fördes om till redovisningskontot (2650) och perioden låstes. Siffrorna är frysta som de såg ut
+                  vid deklarationen.
+                </p>
+                {!readOnly && awaitingTaxAccount?.includes(p.report.id) ? (
+                  <div className="mt-3 border-t border-line/60 pt-3">
+                    <BookVatOnTaxAccountButton
+                      reportId={p.report.id}
+                      label={p.period.label}
+                      attBetala={p.report.attBetala}
+                    />
+                  </div>
+                ) : null}
+              </div>
             ) : null}
+
+            {/* Inlämningen är nästa steg efter att perioden är deklarerad i Driva. */}
+            {readOnly || p.state === "pagaende" ? null : (
+              <InlamningPanel {...filingPanelData("moms", p.period.key)} className="mt-4" />
+            )}
           </Card>
         );
       })}
       <p className="text-[12px] leading-relaxed text-muted">
-        Driva skickar aldrig något till Skatteverket. Du deklarerar som vanligt på skatteverket.se – Driva ger dig exakta
-        siffror per ruta och håller ordning på vad som är deklarerat.
+        {filingSubmissionAvailable()
+          ? "Deklarationsfilen (eSKD) går att lämna in härifrån, och då står kvittensen kvar på perioden. Du kan lika " +
+            "gärna hämta filen och ladda upp den i e-tjänsten själv, eller fylla i rutorna ovan för hand – siffrorna är desamma."
+          : "Driva skickar inget till Skatteverket för det här företaget. Du deklarerar som vanligt på skatteverket.se – " +
+            "antingen genom att fylla i rutorna ovan eller genom att ladda upp deklarationsfilen (eSKD) i e-tjänsten."}
       </p>
     </div>
   );

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { EmptyState, PageHeader } from "@/components/ui";
+import { Plus } from "lucide-react";
+import { ButtonLink, EmptyState, PageHeader } from "@/components/ui";
 import { AccountantClientTabs, accountantStatusText } from "@/components/accountant-workspace";
 import { AccountantVerifikationer } from "@/components/accountant-verifikationer";
 import { ReceiptText } from "lucide-react";
@@ -29,6 +30,12 @@ export default async function AccountantVerifikationerPage({
       })()
     : listVerificationViews();
   if (!access) notFound();
+  const canWrite = can(access.role, "write_accounting");
+  const newVerification = canWrite ? (
+    <ButtonLink href={`/redovisning/k/${businessId}/verifikationer/nytt`} size="sm">
+      <Plus className="size-3.5" /> Nytt verifikat
+    </ButtonLink>
+  ) : null;
 
   return (
     <div className="animate-fade-up">
@@ -40,10 +47,16 @@ export default async function AccountantVerifikationerPage({
           bankUnexplained: snap.bankUnexplained,
           nextVatDue: snap.nextVat?.dueDate,
         })}
+        actions={newVerification}
       />
       <AccountantClientTabs businessId={businessId} active="verifikationer" />
       {views.length === 0 ? (
-        <EmptyState icon={ReceiptText} title="Inga verifikationer" text="När händelser bokförs syns de här." />
+        <EmptyState
+          icon={ReceiptText}
+          title="Inga verifikationer"
+          text="När händelser bokförs syns de här."
+          action={newVerification}
+        />
       ) : (
         <AccountantVerifikationer
           initial={views.slice(0, 200)}

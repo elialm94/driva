@@ -26,7 +26,7 @@ export default async function EditInvoicePage(props: { params: Promise<{ id: str
   const customer = requireCustomer(invoice.customerId);
   const customers = [...db().customers]
     .sort((a, b) => a.name.localeCompare(b.name, "sv"))
-    .map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
+    .map((c) => ({ id: c.id, name: c.name, kind: c.kind, reverseChargeConstruction: c.reverseChargeConstruction }));
   const rotByCustomer = Object.fromEntries(db().customers.map((c) => [c.id, customerInvoiceRotPrefill(c)]));
   const prefill = resolveTaxReductionPrefill({
     customerId: invoice.customerId,

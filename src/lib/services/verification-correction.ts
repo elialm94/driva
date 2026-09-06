@@ -1,12 +1,13 @@
 import { db, save } from "../store";
 import {
-  BAS,
   EXPENSE_CATEGORIES,
   categoryByKey,
+  deductibleVat,
   entriesExpense,
   entriesSupplierInvoiceReceived,
   isCostAccount,
 } from "../bas";
+import { accountName } from "../accounting/chart";
 import type { PostLineInput } from "../accounting/engine";
 import {
   createCorrection,
@@ -40,6 +41,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   avskrivning: "avskrivning",
   periodisering: "periodisering",
   moms: "momsredovisning",
+  skattekonto: "skattekonto",
   bokslut: "bokslut",
   ingaende_balans: "ingående balans",
   manuell: "manuell",
@@ -80,7 +82,7 @@ export interface CorrectionFlow {
   invoiceId?: string;
   currentCategory?: string;
   currentAccount?: number;
-  /** Sökbar lista – inte hela BAS-registret. */
+  /** Sökbar lista med de vanliga kostnadskontona – inte hela kontoregistret. */
   accountOptions?: KontoOption[];
   allowAdvanced: boolean;
   periodLocked: boolean;
@@ -236,7 +238,7 @@ export function expenseAccountOptions(): KontoOption[] {
     out.push({
       key: c.key,
       account: c.account,
-      label: `${c.account} ${BAS[c.account] ?? c.label}`,
+      label: `${c.account} ${accountName(c.account)}`,
       vatFree: c.vatFree,
     });
   }
@@ -372,7 +374,7 @@ function toPreview(entries: VerificationEntry[] | PostLineInput[]): CorrectionPr
   return entries
     .map((e) => ({
       account: e.account,
-      accountName: "accountName" in e && e.accountName ? e.accountName : (BAS[e.account] ?? `Konto ${e.account}`),
+      accountName: "accountName" in e && e.accountName ? e.accountName : accountName(e.account),
       debit: e.debit ?? 0,
       credit: e.credit ?? 0,
     }))
@@ -394,10 +396,11 @@ function replacementForKonto(v: Verification, category: string): { entries: Post
   if (src.source.type === "utgift") {
     const expense = expenseFor(src);
     if (!expense) throw new Error("Utgiften som hör till verifikationen finns inte.");
-    const vat = cat.vatFree ? 0 : expense.vatAmount;
+    const vat = deductibleVat(category, expense.vatAmount);
     const hadVat = src.entries.some((e) => e.account === 2641 && e.debit > 0);
-    const warning =
-      cat.vatFree && (expense.vatAmount > 0 || hadVat)
+    const warning = cat.reverseChargeRate
+      ? `Omvänd byggmoms: hela ${kr(expense.amount)} bokas som kostnad och ${cat.reverseChargeRate} % moms redovisas både som utgående och ingående. Nettot mot Skatteverket blir noll.`
+      : cat.vatFree && (expense.vatAmount > 0 || hadVat)
         ? `Kategorin ${cat.label} saknar avdragsgill moms – ${kr(hadVat ? src.entries.find((e) => e.account === 2641)!.debit : expense.vatAmount)} bokas som kostnad i stället för ingående moms.`
         : !cat.vatFree && vat > 0 && !hadVat
           ? `Moms ${kr(vat)} lyfts som ingående moms på 2641 – originalet var momsfritt.`
@@ -413,9 +416,10 @@ function replacementForKonto(v: Verification, category: string): { entries: Post
   if (src.source.type === "leverantorsfaktura") {
     const sup = supplierFor(src);
     if (!sup) throw new Error("Leverantörsfakturan som hör till verifikationen finns inte.");
-    const vat = cat.vatFree ? 0 : sup.vatAmount;
-    const warning =
-      cat.vatFree && sup.vatAmount > 0
+    const vat = deductibleVat(category, sup.vatAmount);
+    const warning = cat.reverseChargeRate
+      ? `Omvänd byggmoms: hela ${kr(sup.amount)} bokas som kostnad och ${cat.reverseChargeRate} % moms redovisas både som utgående och ingående. Skulden på 2440 är oförändrad.`
+      : cat.vatFree && sup.vatAmount > 0
         ? `Kategorin ${cat.label} saknar avdragsgill moms – ${kr(sup.vatAmount)} bokas som kostnad. Skulden på 2440 är oförändrad.`
         : undefined;
     return {
@@ -722,6 +726,8 @@ export interface VerificationView {
   id: string;
   label: string;
   date: string;
+  /** Handelsdatum, bara när det avviker från bokföringsdatumet. */
+  transactionDate?: string;
   postedAt: string;
   description: string;
   explanation?: string;
@@ -740,6 +746,8 @@ export interface VerificationView {
   replacementLabel?: string;
   badge: { text: string; tone: "accent" | "warn" | "neutral" };
   creatorPhrase: string;
+  /** Underlaget på verifikationen, med länk som granskaren kan öppna från raden. */
+  attachment?: { filename: string; contentType: string; href: string };
   flow: CorrectionFlow;
   chain: { id: string; label: string; role: "original" | "rattelse" | "ny" }[];
 }
@@ -752,6 +760,7 @@ export function toVerificationView(v: Verification, byId: Map<string, Verificati
     id: v.id,
     label: verificationLabel(v),
     date: v.date,
+    transactionDate: v.transactionDate && v.transactionDate !== v.date.slice(0, 10) ? v.transactionDate : undefined,
     postedAt: v.postedAt ?? v.createdAt,
     description: v.description,
     explanation: v.explanation,
@@ -770,13 +779,27 @@ export function toVerificationView(v: Verification, byId: Map<string, Verificati
     replacementLabel: replacement ? verificationLabel(replacement) : undefined,
     badge: listBadge(v),
     creatorPhrase: creatorPhrase(v),
+    attachment: v.attachment
+      ? {
+          filename: v.attachment.filename,
+          contentType: v.attachment.contentType,
+          href: `/api/verifikat/${v.id}/bilaga`,
+        }
+      : undefined,
     flow: inspectCorrectionFlow(v.id),
     chain: correctionChain(v),
   };
 }
 
+/**
+ * Nyast först. Numret räcker inte som ordning sedan serierna blev flera – A102
+ * och M3 är samtida händelser – så listan ordnas på bokföringsdatum och faller
+ * tillbaka på serie och nummer inom samma dag.
+ */
 export function listVerificationViews(): VerificationView[] {
-  const all = [...db().verifications].sort((a, b) => b.number - a.number);
+  const all = [...db().verifications].sort(
+    (a, b) => b.date.localeCompare(a.date) || a.series.localeCompare(b.series) || b.number - a.number
+  );
   const byId = new Map(all.map((v) => [v.id, v]));
   return all.map((v) => toVerificationView(v, byId));
 }

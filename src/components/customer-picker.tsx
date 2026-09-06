@@ -13,6 +13,8 @@ export interface CustomerOption {
   id: string;
   name: string;
   kind?: "privat" | "foretag";
+  /** Omvänd byggmoms – fakturaformuläret låser momsen till 0 % för kunden. */
+  reverseChargeConstruction?: boolean;
 }
 
 export function addCustomerOption(list: CustomerOption[], customer: CustomerOption): CustomerOption[] {

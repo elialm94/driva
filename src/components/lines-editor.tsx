@@ -231,6 +231,7 @@ export function LinesEditor({
   defaultHourlyRate,
   showErrors = false,
   rotActive = false,
+  reverseCharge = false,
 }: {
   lines: DocLine[];
   onChange: (lines: DocLine[]) => void;
@@ -239,6 +240,8 @@ export function LinesEditor({
   /** Efter ett sparförsök: markera ofullständiga rader tills de är ifyllda. */
   showErrors?: boolean;
   rotActive?: boolean;
+  /** Omvänd byggmoms: momssatsen är låst till 0 % på alla rader. */
+  reverseCharge?: boolean;
 }) {
   const linesRef = useRef(lines);
   const onChangeRef = useRef(onChange);
@@ -510,16 +513,26 @@ export function LinesEditor({
               </label>
               <LineSelect
                 id={lineFieldId(line.id, "moms")}
-                value={line.vatRate}
+                value={reverseCharge ? 0 : line.vatRate}
                 onEnter={() => goFrom(line, "moms")}
                 onChange={(e) => update(line.id, { vatRate: Number(e.target.value) as VatRate })}
                 aria-label="Moms"
-                className={inputCls}
+                // Vid omvänd byggmoms är momssatsen inte ett val: köparen
+                // redovisar momsen, så säljarens rader måste vara 0 %.
+                disabled={reverseCharge}
+                title={reverseCharge ? "Omvänd byggmoms – köparen redovisar momsen" : undefined}
+                className={cx(inputCls, reverseCharge && "cursor-not-allowed text-muted")}
               >
-                <option value={25}>25 %</option>
-                <option value={12}>12 %</option>
-                <option value={6}>6 %</option>
-                <option value={0}>0 %</option>
+                {reverseCharge ? (
+                  <option value={0}>0 % · omvänd byggmoms</option>
+                ) : (
+                  <>
+                    <option value={25}>25 %</option>
+                    <option value={12}>12 %</option>
+                    <option value={6}>6 %</option>
+                    <option value={0}>0 %</option>
+                  </>
+                )}
               </LineSelect>
             </div>
             <button
