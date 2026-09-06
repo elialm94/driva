@@ -11,6 +11,7 @@ import { buildSeed } from "../seed";
 import { largeSieOptions, sieBytesPc8, sieBytesUtf8, sieText, standardSieOptions } from "../__fixtures__/sie/build";
 import { decodeSieBytes, looksLikeSieBytes, parseSie, parseSieAmountOre, SieParseError, tokenizeSieLine } from "./sie-parse";
 import { applySieImport, previewSie, roundOrePreservingSum } from "./sie-import";
+import { isStandardAccount } from "../accounting/chart";
 
 function freshDb() {
   replaceDb(emptyTestDb({ settings: testCompany({ orgNumber: "559123-4567" }), fiscalYears: [], verifications: [] }));
@@ -285,7 +286,13 @@ describe("SIE-import", () => {
     const data = freshDb();
     const opts = standardSieOptions();
     // 1688 och 4011 finns inte i den levererade BAS-planen – namnet ska
-    // komma från filen, inte från ett fallback-namn i registret.
+    // komma från filen, inte från ett fallback-namn i registret. Växer planen
+    // så att de tas med (så försvann 1910/6250 ur testet) ska fixturen byta
+    // konto, inte förväntningen.
+    const nonStandard = [1688, 4011];
+    for (const account of nonStandard) {
+      assert.ok(!isStandardAccount(account), `fixturkonto ${account} ska ligga utanför standardkontoplanen`);
+    }
     opts.accounts = { ...opts.accounts, 1688: "Depositioner hos hyresvärd", 4011: "Inköp specialkabel" };
     opts.verifications = [
       {
@@ -300,8 +307,7 @@ describe("SIE-import", () => {
     ];
     const file = parseSie(sieBytesPc8(opts));
     const preview = previewSie(file, data);
-    assert.ok(preview.unknownAccounts.includes(1688));
-    assert.ok(preview.unknownAccounts.includes(4011));
+    assert.deepEqual(preview.unknownAccounts, nonStandard);
     applySieImport(file, data, { yearIndexes: [0], importId: "imp-2" });
     const v = data.verifications[0];
     assert.equal(v.entries[0].accountName, "Depositioner hos hyresvärd");
