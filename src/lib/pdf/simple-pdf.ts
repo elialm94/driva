@@ -74,15 +74,33 @@ function contentStream(spec: SimplePdfSpec): string {
 
 /** Serialisera dokumentet till giltiga PDF-bytes (Latin-1-buffert). */
 export function buildSimplePdf(spec: SimplePdfSpec): Buffer {
-  const content = contentStream(spec);
+  return buildSimplePdfPages([spec]);
+}
+
+/** Sidhöjd i punkter – för sidbrytning i flersidiga dokument (beställningar). */
+export const SIMPLE_PDF_PAGE_HEIGHT = PAGE_HEIGHT;
+
+/**
+ * Flersidigt dokument: en spec per sida, samma typsnitt. Objektordning:
+ * katalog, sidträd, fonter, därefter (sida, innehåll) per sida.
+ */
+export function buildSimplePdfPages(pages: SimplePdfSpec[]): Buffer {
+  const specs = pages.length > 0 ? pages : [{ lines: [] }];
+  const pageObjectIds = specs.map((_, i) => 5 + i * 2);
   const objects: string[] = [
     "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>`,
+    `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${specs.length} >>`,
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
-    `<< /Length ${Buffer.byteLength(content, "latin1")} >>\nstream\n${content}\nendstream`,
   ];
+  specs.forEach((spec, i) => {
+    const contentId = pageObjectIds[i] + 1;
+    const content = contentStream(spec);
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`,
+    );
+    objects.push(`<< /Length ${Buffer.byteLength(content, "latin1")} >>\nstream\n${content}\nendstream`);
+  });
 
   let body = "%PDF-1.4\n";
   const offsets: number[] = [];

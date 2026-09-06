@@ -64,10 +64,18 @@ export function classifyEconomicDocument(input: {
   return "ekonomiskt_dokument";
 }
 
-export function inboxDocumentTitle(item: InboxItem, invoice?: SupplierInvoice): string {
+export function inboxDocumentTitle(
+  item: InboxItem,
+  invoice?: SupplierInvoice,
+  order?: { reference: string; wholesalerName: string } | null,
+): string {
   const supplier = invoice?.supplier ?? item.parsedSupplier;
   const number = invoice?.invoiceNumber ?? item.parsedInvoiceNumber;
   const amount = invoice?.amount ?? item.parsedAmount;
+  if (item.documentType === "orderbekraftelse") {
+    if (order) return `Orderbekräftelse ${order.wholesalerName} · ${order.reference}`;
+    return item.subject?.trim() ? `Orderbekräftelse · ${item.subject.trim()}` : "Orderbekräftelse";
+  }
   if (item.documentType === "kvitto") {
     const who = supplier ?? item.fromAddress;
     return amount != null ? `Kvitto ${who} · ${kr(amount)}` : `Kvitto ${who}`;
@@ -118,6 +126,12 @@ export function inboxDisplayStatus(input: {
   detailsCause?: PaymentDetailsCause;
 }): InboxDisplayStatus {
   const { item, invoice, payment, detailsCause } = input;
+
+  if (item.documentType === "orderbekraftelse") {
+    if (item.purchaseOrderId) return { label: "Kopplad till beställning", tone: "ok" };
+    if ((item.purchaseOrderCandidateIds ?? []).length > 0) return { label: "Välj beställning", tone: "warn" };
+    return { label: "Orderbekräftelse", tone: "info" };
+  }
 
   if (payment?.status === "FAILED") {
     return supplierPaymentStatus("FAILED");
@@ -282,6 +296,25 @@ export function inboxWorkflowSteps(input: {
 }): WorkflowStep[] {
   const { item, invoice, payment, expense, paymentFile, detailsCause } = input;
   const steps: WorkflowStep[] = [];
+
+  if (item.documentType === "orderbekraftelse") {
+    const linked = Boolean(item.purchaseOrderId);
+    steps.push({ key: "tolkat", label: "Dokument tolkat", state: "done", detail: "Läst som orderbekräftelse." });
+    steps.push({
+      key: "kopplad",
+      label: "Kopplad till beställning",
+      state: linked ? "done" : "todo",
+      ...(linked ? {} : { detail: "Välj vilken beställning bekräftelsen gäller." }),
+    });
+    steps.push({
+      key: "avstamd",
+      label: "Avstämd mot beställningen",
+      state: linked ? "done" : "todo",
+      detail: linked ? "Avvikelser visas på beställningen." : "Stäms av när den kopplats.",
+    });
+    steps.push({ key: "betalning", label: "Betalning", state: "na", detail: "Ingen betalning – fakturan kommer separat." });
+    return steps;
+  }
 
   const parsed = item.parsedAmount != null || item.extraction != null || Boolean(invoice) || Boolean(expense);
   steps.push({

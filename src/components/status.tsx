@@ -1,8 +1,27 @@
-import type { Invoice, Job, Quote, TxStatus } from "@/lib/types";
+import type { Invoice, Job, PurchaseOrderStatus, Quote, TxStatus } from "@/lib/types";
 import { Badge, StatusDot } from "./ui";
 import { dagarTill } from "@/lib/format";
 import { derivedJobStatus, type DerivedJobStatus } from "@/lib/services/job-lifecycle";
-import { INVOICE_CREDIT_NOTE, INVOICE_STATUS, JOB_STATUS, QUOTE_STATUS, TX_STATUS, invoiceOverdueLabel } from "@/lib/status-labels";
+import {
+  INVOICE_CREDIT_NOTE,
+  INVOICE_STATUS,
+  JOB_STATUS,
+  PURCHASE_ORDER_STATUS,
+  QUOTE_STATUS,
+  TX_STATUS,
+  invoiceOverdueLabel,
+} from "@/lib/status-labels";
+
+/** Materialbeställningens status – svenska etiketter, aldrig råa enumvärden. */
+export function PurchaseOrderStatusBadge({ status }: { status: PurchaseOrderStatus }) {
+  const { tone, label } = PURCHASE_ORDER_STATUS[status];
+  return (
+    <Badge tone={tone}>
+      <StatusDot tone={tone} />
+      {label}
+    </Badge>
+  );
+}
 
 export function QuoteStatusBadge({ quote, status }: { quote: Quote; status?: Quote["status"] }) {
   const { tone, label } = QUOTE_STATUS[status ?? quote.status];

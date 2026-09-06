@@ -72,7 +72,12 @@ export interface ResendReceivingClient {
 }
 
 export type InboundWebhookResult =
-  | { status: 200; payload: { id: string; created: boolean; autoBooked: boolean } }
+  | {
+      status: 200;
+      payload: { id: string; created: boolean; autoBooked: boolean };
+      /** Ny orderbekräftelse – AI-fallbacken körs efter webhooksvaret. */
+      confirmationFollowUp?: boolean;
+    }
   | { status: 400 | 404; error: string };
 
 export interface ResendEmailReceivedFixture {
@@ -173,6 +178,7 @@ export async function ingestInboundPayloadLocal(payload: InboundMailPayload): Pr
   return {
     status: 200,
     payload: { id: result.item.id, created: result.created, autoBooked: result.autoBooked },
+    ...(result.created && result.item.documentType === "orderbekraftelse" ? { confirmationFollowUp: true } : {}),
   };
 }
 

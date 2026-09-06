@@ -27,7 +27,9 @@ export default async function KontrolleraPage(props: { params: Promise<{ id: str
   } catch {
     notFound();
   }
-  if (!review.editable) redirect(`/inbox/${id}`);
+  // Orderbekräftelser går aldrig genom faktura-/kvittogranskningen –
+  // avstämningen bor på beställningen.
+  if (!review.editable || item.documentType === "orderbekraftelse") redirect(`/inbox/${id}`);
 
   const attachment = item.attachments.find((a) => attachmentIsViewable(a));
   const who = item.parsedSupplier ?? item.subject ?? "dokument";
@@ -75,7 +77,7 @@ export default async function KontrolleraPage(props: { params: Promise<{ id: str
 
         <ExtractionReviewForm
           itemId={item.id}
-          documentType={item.documentType}
+          documentType={review.documentType === "orderbekraftelse" ? "ekonomiskt_dokument" : review.documentType}
           fields={review.fields}
           backHref={`/inbox/${item.id}`}
         />

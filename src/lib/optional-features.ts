@@ -3,22 +3,30 @@
  * Aktivering, avstängning och backfill bor i features.ts (server).
  */
 
-export const OPTIONAL_FEATURE_IDS = ["website", "collaboration"] as const;
+export const OPTIONAL_FEATURE_IDS = ["website", "collaboration", "wholesalers"] as const;
 export type OptionalFeatureId = (typeof OPTIONAL_FEATURE_IDS)[number];
 
 export type OptionalFeatures = {
   website?: boolean;
   collaboration?: boolean;
+  wholesalers?: boolean;
 };
 
 export type ResolvedOptionalFeatures = {
   website: boolean;
   collaboration: boolean;
+  wholesalers: boolean;
 };
 
+/**
+ * Dit användaren landar efter Aktivera. Grossistbeställningar har ingen egen
+ * meny eller sida – funktionen bor i uppdragets materialyta och under
+ * Inställningar → Grossister.
+ */
 export const OPTIONAL_FEATURE_HREF: Record<OptionalFeatureId, string> = {
   website: "/hemsida",
   collaboration: "/samarbeta",
+  wholesalers: "/installningar?flik=grossister",
 };
 
 export const OPTIONAL_FEATURE_COPY: Record<
@@ -65,10 +73,24 @@ export const OPTIONAL_FEATURE_COPY: Record<
     disabledHint: "Samarbeta är avstängd.",
     activateCta: "Aktivera Samarbeta",
   },
+  wholesalers: {
+    title: "Grossistbeställningar",
+    description: "Sök material med dina priser och skicka beställningar till grossisten.",
+    activate: "Aktivera",
+    deactivate: "Stäng av",
+    statusActive: "Aktiv",
+    statusInactive: "Avstängd",
+    deactivateConfirmTitle: "Stänga av Grossistbeställningar?",
+    deactivateConfirmBody:
+      "Grossistsöket försvinner från uppdragens materialyta och fliken Grossister döljs. Anslutningar, prisfiler, artiklar och beställningshistorik sparas så att du kan aktivera funktionen igen senare.",
+    deactivateConfirmAction: "Stäng av Grossistbeställningar",
+    disabledHint: "Grossistbeställningar är avstängd.",
+    activateCta: "Aktivera Grossistbeställningar",
+  },
 };
 
 export function isOptionalFeatureId(value: unknown): value is OptionalFeatureId {
-  return value === "website" || value === "collaboration";
+  return value === "website" || value === "collaboration" || value === "wholesalers";
 }
 
 export function optionalFeatureHref(id: OptionalFeatureId): string {
