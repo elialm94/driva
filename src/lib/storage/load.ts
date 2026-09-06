@@ -298,13 +298,17 @@ export async function loadTenantState(tx: SqlExecutor, businessId: string): Prom
   function verificationSeriesFromRow(row: SqlRow): Record<string, number> {
     const raw = row.verification_series;
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    const counters: Record<string, number> = { A: num(row.verification) };
+    const columnA = num(row.verification);
+    const counters: Record<string, number> = { A: columnA };
     if (parsed && typeof parsed === "object") {
       for (const [series, next] of Object.entries(parsed as Record<string, unknown>)) {
         const value = Number(next);
         if (Number.isInteger(value) && value >= 1) counters[series] = value;
       }
     }
+    // Kolumnen är sanningen för serie A. jsonb får aldrig backa A bakom den
+    // (SIE-import skrev länge bara kolumnen).
+    counters.A = Math.max(counters.A ?? 1, columnA);
     return counters;
   }
 

@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
         if (!slug) return { status: 400, error: "Kunde inte läsa tenant från To-adressen" };
         const scoped = isSupabaseMode()
           ? await withPublicBusiness("inbound", slug, () => ingestInboundPayloadLocal(payload))
-          : ingestInboundPayloadLocal(payload);
+          : await ingestInboundPayloadLocal(payload);
         if (!scoped) return { status: 404, error: "Okänd inkommande adress" };
         // Orderbekräftelse utan tolkade rader: AI-fallback efter svaret, i egen tenantkörning.
         if (scoped.status === 200 && scoped.confirmationFollowUp) {

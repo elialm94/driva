@@ -1875,11 +1875,25 @@ export async function ensureOnboardingSchema(client: SqlClient): Promise<string[
          );
          v_pos := v_pos + 1;
        end loop;
-       if v_series = 'A' then
-         update public.business_sequences
-            set verification = greatest(verification, v_number + 1)
-          where business_id = p_business_id;
-       end if;
+       update public.business_sequences
+          set verification = case
+                when v_series = 'A' then greatest(verification, v_number + 1)
+                else verification
+              end,
+              verification_series = jsonb_set(
+                coalesce(verification_series, '{}'::jsonb),
+                array[v_series],
+                to_jsonb(
+                  greatest(
+                    coalesce(
+                      (verification_series ->> v_series)::integer,
+                      case when v_series = 'A' then verification else 1 end
+                    ),
+                    v_number + 1
+                  )
+                )
+              )
+        where business_id = p_business_id;
      end; $$`,
   );
   await run(client, `revoke all on function app.import_verification(uuid, jsonb) from public`);
