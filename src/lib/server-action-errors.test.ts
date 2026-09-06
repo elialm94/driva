@@ -29,19 +29,25 @@ describe("server actions kraschar inte React-trädet", () => {
     assert.match(ui, /setError\(result\.error\)/);
   });
 
+  /** Källtexten för en exporterad server action, fram till nästa export. */
+  function actionBlock(file: string, name: string): string {
+    const source = readFileSync(join(here, file), "utf8");
+    const start = source.indexOf(`export async function ${name}`);
+    assert.ok(start >= 0, `${name} finns i ${file}`);
+    const rest = source.slice(start);
+    const next = rest.indexOf("\nexport ", 1);
+    return next > 0 ? rest.slice(0, next) : rest;
+  }
+
   it("kvittouppladdningen returnerar aldrig rå Postgres-/RLS-/Storage-text", () => {
-    const actions = readFileSync(join(here, "../app/actions.ts"), "utf8");
-    const upload = actions.slice(actions.indexOf("export async function uploadReceiptAction"));
-    const block = upload.slice(0, upload.indexOf("export async function answerExpenseQuestionAction"));
+    const block = actionBlock("../app/actions.ts", "uploadReceiptAction");
     assert.match(block, /try \{[\s\S]*return await withBusiness/);
     assert.match(block, /userFacingStorageError\(e, "Kunde inte spara kvittot/);
     assert.doesNotMatch(block, /e instanceof Error \? e\.message/);
   });
 
   it("kvittouppladdningen sparar filen FÖRE kvittoraden och lyckas bara med sparad fil", () => {
-    const actions = readFileSync(join(here, "../app/actions.ts"), "utf8");
-    const upload = actions.slice(actions.indexOf("export async function uploadReceiptAction"));
-    const block = upload.slice(0, upload.indexOf("export async function answerExpenseQuestionAction"));
+    const block = actionBlock("../app/actions.ts", "uploadReceiptAction");
     const precheck = block.indexOf("expenseAwaitingReceipt(expenseId)");
     const store = block.indexOf("await storeReceiptFile(");
     const link = block.indexOf("uploadReceiptForExpense(");
