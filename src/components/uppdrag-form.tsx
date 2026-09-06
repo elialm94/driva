@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import { useAppNavigate } from "./app-link";
 import { Plus } from "lucide-react";
-import { DateField } from "./date-field";
 import { Modal } from "./modal";
 import { buttonClasses, cx } from "./ui";
 import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
@@ -72,9 +71,6 @@ export function NewUppdragButton({
         customerId: selectedId,
         title,
         description: String(formData.get("description") ?? "") || undefined,
-        startDate: String(formData.get("startDate") ?? "")
-          ? new Date(`${formData.get("startDate")}T09:00:00`).toISOString()
-          : undefined,
         workLocationId: !newAddress && workLocationId ? workLocationId : undefined,
         newWorkLocation: newAddress && newStreet
           ? {
@@ -194,10 +190,6 @@ export function NewUppdragButton({
               placeholder="Kort vad som ska göras, så du känner igen uppdraget …"
             />
           </div>
-          <div>
-            <label className="mb-1 block text-[13px] font-medium text-soft">Planerad start</label>
-            <DateField name="startDate" className={inputCls} />
-          </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className={buttonClasses("ghost")} onClick={() => setOpen(false)}>
               Avbryt
@@ -210,10 +202,6 @@ export function NewUppdragButton({
       </Modal>
     </>
   );
-}
-
-function isoDate(iso?: string) {
-  return iso ? iso.slice(0, 10) : "";
 }
 
 export function EditUppdragModal({
@@ -229,7 +217,7 @@ export function EditUppdragModal({
   jobId: string;
   customerId: string;
   customerName: string;
-  initial: { title: string; description: string; address?: string; startDate?: string; endDate?: string };
+  initial: { title: string; description: string; address?: string };
 }) {
   const [isPending, startTransition] = useTransition();
   const { errors, formProps, fieldProps } = useNativeFieldErrors({
@@ -244,12 +232,6 @@ export function EditUppdragModal({
         title,
         description: String(formData.get("description") ?? ""),
         address: String(formData.get("address") ?? ""),
-        startDate: String(formData.get("startDate") ?? "")
-          ? new Date(`${formData.get("startDate")}T09:00:00`).toISOString()
-          : "",
-        endDate: String(formData.get("endDate") ?? "")
-          ? new Date(`${formData.get("endDate")}T17:00:00`).toISOString()
-          : "",
       });
       onClose();
     });
@@ -287,16 +269,6 @@ export function EditUppdragModal({
           composeSelected="line"
           inputClassName={inputCls}
         />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-[13px] font-medium text-soft">Planerad start</label>
-            <DateField name="startDate" defaultValue={isoDate(initial.startDate)} className={inputCls} />
-          </div>
-          <div>
-            <label className="mb-1 block text-[13px] font-medium text-soft">Planerat klart</label>
-            <DateField name="endDate" defaultValue={isoDate(initial.endDate)} className={inputCls} />
-          </div>
-        </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" className={buttonClasses("ghost")} onClick={onClose}>
             Avbryt

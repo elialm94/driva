@@ -249,7 +249,7 @@ describe("åtgärdsmotorn: uppdrag och fakturering", () => {
     assert.ok(!actions.attention.some((a) => a.category === "job"));
   });
 
-  it("”vid arbetets start”-del är inte fakturerbar före start – uppdraget syns som På gång nära start", () => {
+  it("”vid arbetets start”-del är inte fakturerbar före start – ingen Hem-rad för startdatum", () => {
     replaceDb(emptyTestDb());
     const start = isoDaysFromNow(4).slice(0, 10);
     const job = createJob({ customerId: "cust-1", title: "Altan", startDate: start });
@@ -263,9 +263,7 @@ describe("åtgärdsmotorn: uppdrag och fakturering", () => {
     });
     const actions = getBusinessActions();
     assert.ok(!actions.attention.some((a) => a.category === "job"), "inget att fakturera före start");
-    const watching = actions.watching.find((u) => u.id === `job-start-${job.id}`);
-    assert.ok(watching, "planerat uppdrag nära start ska ligga under På gång");
-    assert.equal(watching.date, start);
+    assert.ok(!actions.watching.some((u) => u.id === `job-start-${job.id}`));
   });
 
   it("uppdrag som startar om flera månader syns inte på Hem", () => {

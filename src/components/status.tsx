@@ -1,7 +1,7 @@
 import type { Invoice, Job, PurchaseOrderStatus, Quote, TxStatus } from "@/lib/types";
 import { Badge, StatusDot } from "./ui";
 import { dagarTill } from "@/lib/format";
-import { derivedJobStatus, type DerivedJobStatus } from "@/lib/services/job-lifecycle";
+import { derivedJobStatus, visibleJobStatus, type DerivedJobStatus } from "@/lib/services/job-lifecycle";
 import {
   INVOICE_CREDIT_NOTE,
   INVOICE_STATUS,
@@ -72,7 +72,8 @@ export function JobStatusBadge({
 }) {
   const stored: Job["status"] = status === "planerat" ? "kommande" : status;
   const derived: DerivedJobStatus = derivedJobStatus({ status: stored, startDate, completedAt });
-  const { tone, label } = JOB_STATUS[derived];
+  const visible = visibleJobStatus(derived);
+  const { tone, label } = JOB_STATUS[visible];
   return (
     <Badge tone={tone}>
       <StatusDot tone={tone} />

@@ -33,7 +33,7 @@ export default async function UppdragPage(props: {
     <div className="animate-fade-up">
       <PageHeader
         title="Uppdrag"
-        subtitle="Vad som är beställt, när det sker, vad som är fakturerat och vad som är kvar."
+        subtitle="Vad som är beställt, vad som är fakturerat och vad som är kvar."
         stackActions
         actions={<KunderHeaderActions customers={customers} />}
       />
@@ -53,9 +53,8 @@ export default async function UppdragPage(props: {
 }
 
 function parseLifecycle(value: string): JobLifecycleFilter {
-  return value === "planerade" || value === "klart" || value === "alla" || value === "arkiverade"
-    ? value
-    : "aktiva";
+  if (value === "planerade") return "aktiva";
+  return value === "klart" || value === "alla" || value === "arkiverade" ? value : "aktiva";
 }
 
 function parseEconomy(value: string): JobEconomyFilter {

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MapPin, CalendarDays, FileText, ReceiptText, BadgeCheck } from "lucide-react";
+import { MapPin, FileText, ReceiptText, BadgeCheck } from "lucide-react";
 import { getJob, getInvoice, currentVersion, effectiveQuoteStatus, quoteStatusLabel, requireCustomer, invoiceTotals } from "@/lib/services/data";
 import { acceptedByLabel } from "@/lib/status-labels";
 import { jobAdminState } from "@/lib/services/job-admin";
@@ -12,7 +12,7 @@ import {
   quotedLaborPrefill,
   workEntryInvoiceStatus,
 } from "@/lib/services/job-work";
-import { kr, datumKort, datumTid } from "@/lib/format";
+import { kr, datumTid } from "@/lib/format";
 import { Avatar, Breadcrumbs, SectionTitle } from "@/components/ui";
 import { InvoiceStatusBadge, JobStatusBadge, QuoteStatusBadge } from "@/components/status";
 import { JobActions } from "@/components/job-controls";
@@ -106,13 +106,6 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
               <MapPin className="size-3.5 text-muted" /> {job.address}
             </p>
           ) : null}
-          {job.startDate ? (
-            <p className="flex items-center gap-1.5 text-[14px] text-muted">
-              <CalendarDays className="size-3.5" />
-              {datumKort(job.startDate)}
-              {job.endDate ? ` – ${datumKort(job.endDate)}` : ""}
-            </p>
-          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <JobStatusBadge status={job.status} startDate={job.startDate} completedAt={job.completedAt} />
             {job.archivedAt ? <span className="text-[13px] font-medium text-muted">Arkiverat</span> : null}
@@ -144,8 +137,6 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
             title: job.title,
             description: job.description,
             address: job.address,
-            startDate: job.startDate,
-            endDate: job.endDate,
           }}
         />
       </div>

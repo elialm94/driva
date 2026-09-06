@@ -123,7 +123,6 @@ export function listJobsForTable(input: {
     if (lifecycleFilter !== "arkiverade" && lifecycleFilter !== "alla" && archived) continue;
     const row = toRow(job, jm, customer);
     if (lifecycleFilter === "aktiva" && row.lifecycle === "klart") continue;
-    if (lifecycleFilter === "planerade" && row.lifecycle !== "planerat") continue;
     if (lifecycleFilter === "klart" && row.lifecycle !== "klart") continue;
     if (economyFilter !== "alla" && row.economyKind !== economyFilter) continue;
     if (!matchesQuery(row, job, customer, q)) continue;

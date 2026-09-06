@@ -370,8 +370,7 @@ function invoiceStatusLabel(invoice: Invoice): string {
 
 function jobStatusLabel(job: Job): string {
   if (job.status === "klart") return "Klart";
-  if (job.status === "pagar") return "Pågår";
-  return "Kommande";
+  return "Pågår";
 }
 
 function eventTime(iso: string): string {
