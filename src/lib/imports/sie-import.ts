@@ -20,7 +20,7 @@
  * API-route) kör dem i withBusiness så att Supabase-commiten blir atomär.
  */
 import type { DB, FiscalYear, Verification, VerificationEntry } from "../types";
-import { BAS } from "../bas";
+import { accountName as chartAccountName, isStandardAccount } from "../accounting/chart";
 import { uid } from "../ids";
 import { isOrgnrFormat, normalizeOrgnr } from "../invoices/formats";
 import { logAudit } from "../accounting/audit";
@@ -137,7 +137,7 @@ function verificationKey(series: string, number: number): string {
 export function previewSie(file: SieFile, data: Pick<DB, "fiscalYears" | "verifications" | "settings">): SiePreview {
   const existingKeys = new Set(data.verifications.map((v) => verificationKey(v.series, v.number)));
   const years = [...file.years].sort((a, b) => a.startDate.localeCompare(b.startDate));
-  const unknownAccounts = [...file.accounts.keys()].filter((a) => !BAS[a]).sort((a, b) => a - b);
+  const unknownAccounts = [...file.accounts.keys()].filter((a) => !isStandardAccount(a)).sort((a, b) => a - b);
 
   const yearPreviews: SieYearPreview[] = years.map((year) => {
     const label = fiscalYearLabelFor(year.startDate, year.endDate);
@@ -335,7 +335,8 @@ export interface SieImportResult {
 }
 
 function accountName(file: SieFile, account: number): string {
-  return BAS[account] ?? file.accounts.get(account) ?? `Konto ${account}`;
+  if (isStandardAccount(account)) return chartAccountName(account);
+  return file.accounts.get(account) ?? `Konto ${account}`;
 }
 
 function objectNote(file: SieFile, objects: { dimension: number; code: string }[]): string | undefined {

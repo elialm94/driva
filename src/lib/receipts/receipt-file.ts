@@ -52,6 +52,16 @@ export interface ReceiptFileInput {
   contentType: string;
 }
 
+export function parseReceiptDataUrl(dataUrl: string): ReceiptFileInput | null {
+  const match = /^data:([^;,]+);base64,(.+)$/.exec(dataUrl);
+  if (!match) return null;
+  try {
+    return { bytes: Buffer.from(match[2], "base64"), contentType: match[1].trim().toLowerCase() };
+  } catch {
+    return null;
+  }
+}
+
 /** Innehållstyp ur webbläsarens uppgift, annars ur filändelsen (HEIC/PDF rapporteras ibland tomt). */
 const EXTENSION_TYPES: Record<string, string> = {
   pdf: "application/pdf",
