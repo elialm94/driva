@@ -18,6 +18,19 @@
 
 export type AiRoleMessage = { role: "system" | "user" | "assistant"; content: string };
 
+/**
+ * Multimodala delar i ett användarmeddelande (kvittotolkning). Formatet är
+ * OpenAI-kompatibelt: `image_url` för bilder, `file` för PDF. PDF-delen är
+ * OpenRouters filtillägg – en generisk OpenAI-kompatibel endpoint kan avvisa
+ * den, och anroparen ska då degradera ärligt i stället för att gissa.
+ */
+export type AiContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } }
+  | { type: "file"; file: { filename: string; file_data: string } };
+
+export type AiMultimodalUserMessage = { role: "user"; content: AiContentPart[] };
+
 export type AiToolCall = {
   id: string;
   type: "function";
@@ -36,7 +49,11 @@ export type AiToolResultMessage = {
   content: string;
 };
 
-export type AiChatMessage = AiRoleMessage | AiAssistantToolMessage | AiToolResultMessage;
+export type AiChatMessage =
+  | AiRoleMessage
+  | AiMultimodalUserMessage
+  | AiAssistantToolMessage
+  | AiToolResultMessage;
 
 export type AiToolDef = {
   type: "function";

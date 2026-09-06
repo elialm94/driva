@@ -91,6 +91,9 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
         : publishedLabel
       : "Utkast – publicera när du är nöjd";
 
+  // Providern måste omsluta ÄVEN sidhuvudets Publicera/Återställ: knapparna
+  // läser redigerarens snapshot via useWebsiteEditorSync (kastar utan
+  // provider → hela sidan fastnar i segmentets felkort).
   return (
     <div className="animate-fade-up">
       {restored ? (
@@ -101,31 +104,6 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
           Din tidigare hemsida är återställd. Publicera när du är redo.
         </div>
       ) : null}
-      <PageHeader
-        title="Hemsida"
-        subtitle={subtitle}
-        actions={
-          <div className="flex items-center gap-2">
-            <a
-              href={live ? "/sajt" : "/sajt?preview=1"}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line-strong bg-card px-3.5 text-[13px] font-medium text-soft transition-colors hover:text-ink"
-            >
-              <ExternalLink className="size-3.5" /> Öppna i ny flik
-            </a>
-            {live && unpublishedDrafts ? (
-              <div className="max-lg:hidden">
-                <RestoreWebsiteDraftButton />
-              </div>
-            ) : null}
-            <div className={dirty ? "max-lg:hidden" : undefined}>
-              <PublishWebsiteButton published={live} />
-            </div>
-          </div>
-        }
-      />
-
       <WebsiteDesignProvider initial={draftWebsiteDesign(site)}>
         <WebsiteEditorSyncProvider
           initialRevision={Math.max(site.draftRevision ?? 0, site.publishedRevision ?? 0)}
@@ -139,6 +117,30 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
           }))}
           initialPrimaryCtaLabel={draftPrimaryCtaLabel(site)}
         >
+        <PageHeader
+          title="Hemsida"
+          subtitle={subtitle}
+          actions={
+            <div className="flex items-center gap-2">
+              <a
+                href={live ? "/sajt" : "/sajt?preview=1"}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line-strong bg-card px-3.5 text-[13px] font-medium text-soft transition-colors hover:text-ink"
+              >
+                <ExternalLink className="size-3.5" /> Öppna i ny flik
+              </a>
+              {live && unpublishedDrafts ? (
+                <div className="max-lg:hidden">
+                  <RestoreWebsiteDraftButton />
+                </div>
+              ) : null}
+              <div className={dirty ? "max-lg:hidden" : undefined}>
+                <PublishWebsiteButton published={live} />
+              </div>
+            </div>
+          }
+        />
         <SiteEditorShell
           preview={
             <div className="min-w-0">

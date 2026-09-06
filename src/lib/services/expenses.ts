@@ -1,26 +1,25 @@
-import { connectedBankAccount } from "../banking/connection-state";
 import { db, save } from "../store";
 import { uid } from "../ids";
-import type { BankTransaction, Expense, MerchantCategoryRule, Receipt, Verification } from "../types";
-import { categoryByKey, entriesExpense, guessCategory, EXPENSE_CATEGORIES, KNOWN_SUPPLIERS } from "../bas";
+import type { InboundParsedHint } from "../inbox/inbound-mail";
+import type { Expense, MerchantCategoryRule, Receipt, Verification } from "../types";
+import { categoryByKey, deductibleVat, entriesExpense, guessCategory, EXPENSE_CATEGORIES, KNOWN_SUPPLIERS } from "../bas";
 import { kr } from "../format";
 import { logActivity } from "./activity";
 import { logAudit } from "../accounting/audit";
 import { postVerification, createCorrection } from "../accounting/engine";
 import { clampToOpenDate } from "../accounting/fiscal";
 import { assetSuggestionForExpense, registerAssetFromExpense, INVENTARIE_GRANS } from "../accounting/assets";
-import { assertDemoMode } from "../demo";
 import { resolveClientRequestsForExpense } from "../collaboration/requests";
 import { currentActor } from "../collaboration/actor";
 
 /**
- * Kvittotolkning ("AI-extraktion") är mockad i demon: när ett kvitto laddas upp
- * mot en känd banktransaktion läses leverantör/belopp/moms därifrån, precis som
- * en riktig OCR/LLM-tjänst hade returnerat. Gränssnittet är byggt så att en
- * riktig extraktionstjänst kan kopplas in i `extractReceipt`.
+ * Kvittotolkningen bor i ai/extract-document.ts (`extractReceipt`) och läser
+ * dokumentet med vision-modell. Den här modulen tar emot läsningen som
+ * uppgifter och gör bokföringen av dem.
  *
- * AI:n klassificerar VAD köpet var – den deterministiska motorn avgör konton,
- * moms och kontering. Inga debet/kredit-rader utan central validering.
+ * AI:n läser VAD köpet var – den deterministiska motorn avgör konton, moms och
+ * kontering. Inga debet/kredit-rader utan central validering. Finns ett känt
+ * bankköp bakom kvittot är banken sanningen om beloppet, aldrig modellen.
  */
 
 export const ASSET_QUESTION_OPTIONS = ["Registrera som inventarie", "Bokför som vanlig kostnad"] as const;
@@ -108,9 +107,11 @@ function expenseExplanation(
       : createdBy === "assistent"
         ? `Assistenten valde kategorin ${cat.label.toLowerCase()} och du godkände`
         : `Du svarade att köpet gällde ${cat.label.toLowerCase()}`;
-  const vatText = cat.vatFree
-    ? "Kategorin saknar avdragsgill moms, så hela beloppet bokförs som kostnad."
-    : `Momsen (${kr(expense.vatAmount)}) lyfts som ingående moms.`;
+  const vatText = cat.reverseChargeRate
+    ? `Leverantören fakturerar utan moms eftersom du som byggföretag är betalningsskyldig. Momsen (${cat.reverseChargeRate} %) bokförs både som utgående och ingående moms, så nettot mot Skatteverket blir noll men båda leden syns i deklarationen.`
+    : cat.vatFree
+      ? "Kategorin saknar avdragsgill moms, så hela beloppet bokförs som kostnad."
+      : `Momsen (${kr(expense.vatAmount)}) lyfts som ingående moms.`;
   return `${why}. Kostnaden hamnar på konto ${cat.account} (${cat.label}) och betalningen dras från företagskontot. ${vatText}`;
 }
 
@@ -127,7 +128,7 @@ function bookExpense(
     throw new Error(`Köpet hos ${expense.supplier} är redan bokfört.`);
   }
   const cat = categoryByKey(categoryKey);
-  const vat = cat.vatFree ? 0 : expense.vatAmount;
+  const vat = deductibleVat(categoryKey, expense.vatAmount);
   const clamped = clampToOpenDate(expense.date);
   const ver = postVerification({
     date: clamped.date,
@@ -178,12 +179,18 @@ function askAssetQuestion(expense: Expense): void {
  * `file` är var själva filen ligger (lib/receipts/receipt-file.ts). Utan den
  * registreras bara uppgifterna – kvittoraden får då varken storagePath eller
  * contentBase64 och UI:t visar det ärligt i stället för ett "Visa kvitto".
+ *
+ * `interpreted` är kvittotolkningens läsning av dokumentet (ai/extract-document).
+ * Den fyller kvittoradens uppgifter, men beloppet kommer alltid från
+ * banktransaktionen: banken är sanningen om vad som dragits från kontot, och
+ * en modell får inte skriva över den.
  */
 export function uploadReceiptForExpense(
   expenseId: string,
   filename: string,
   source: Receipt["source"],
-  file?: Pick<Receipt, "contentType" | "sizeBytes" | "storagePath" | "contentBase64">
+  file?: Pick<Receipt, "contentType" | "sizeBytes" | "storagePath" | "contentBase64">,
+  interpreted?: InboundParsedHint
 ): { receipt: Receipt; autoBooked: boolean } {
   const data = db();
   const expense = data.expenses.find((e) => e.id === expenseId);
@@ -193,8 +200,10 @@ export function uploadReceiptForExpense(
     throw new Error(`Köpet hos ${expense.supplier} har redan ett kvitto kopplat.`);
   }
 
-  // "AI-extraktion" – i demon speglar den banktransaktionens fakta.
-  const guess = categorizeMerchant(expense.supplier);
+  // Kategorin gissas på leverantören: kvittots eget namn om tolkningen läste
+  // ett, annars banktransaktionens motpart.
+  const supplierOnReceipt = interpreted?.supplier?.trim() || expense.supplier;
+  const guess = categorizeMerchant(supplierOnReceipt) ?? categorizeMerchant(expense.supplier);
   const receipt: Receipt = {
     id: uid(),
     expenseId,
@@ -206,8 +215,8 @@ export function uploadReceiptForExpense(
     ...(file?.storagePath ? { storagePath: file.storagePath } : {}),
     ...(file?.contentBase64 ? { contentBase64: file.contentBase64 } : {}),
     extracted: {
-      supplier: expense.supplier,
-      date: expense.date,
+      supplier: supplierOnReceipt,
+      date: interpreted?.date ?? expense.date,
       amount: expense.amount,
       vatAmount: expense.vatAmount,
       description: guess ? categoryByKey(guess.key).label : "Inköp",
@@ -494,82 +503,9 @@ export function createExpenseFromKnownReceipt(input: {
   return { expense, autoBooked };
 }
 
-/** Fristående kvittouppladdning utan känd banktransaktion (demo-exempel). */
-const STANDALONE_TEMPLATES = [
-  { supplier: "Byggmax", amount: 1240, vatAmount: 248, category: "material", description: "Reglar och skruv" },
-  { supplier: "Jula", amount: 489, vatAmount: 98, category: "verktyg", description: "Borrset och bits" },
-  { supplier: "OKQ8", amount: 745, vatAmount: 149, category: "drivmedel", description: "Diesel, servicebil" },
-];
-
-/**
- * Demo: skapa ett exempelkvitto. Kvittot matchas mot en obokad banktransaktion
- * om en passar; annars skapas motsvarande (demo-)kortköp i banken så att
- * huvudboken (1930) aldrig glider ifrån bankens saldo – även demodata måste
- * följa bokföringens invarianter.
+/*
+ * Ett fristående kvitto (utan känt bankköp) laddas upp via inboxen:
+ * uploadInboxDocumentAction → interpretDocumentFile → ingestUploadedDocument.
+ * Filen bevaras, uppgifterna kommer ur dokumentet, och är läsningen inte säker
+ * nog stannar kvittot i Kontrollera-vyn. Ingen egen väg behövs här.
  */
-export function uploadStandaloneReceipt(filename: string): Expense {
-  assertDemoMode("Exempelkvitto");
-  const data = db();
-  const tpl = STANDALONE_TEMPLATES[data.receipts.length % STANDALONE_TEMPLATES.length];
-  const now = new Date().toISOString();
-  const expense: Expense = {
-    id: uid(),
-    supplier: tpl.supplier,
-    date: now,
-    amount: tpl.amount,
-    vatAmount: tpl.vatAmount,
-    description: tpl.description,
-    status: "saknar_kvitto",
-    createdAt: now,
-  };
-
-  // Kvitto ↔ transaktion: återanvänd en obokad transaktion om den matchar.
-  const match = matchReceiptToTransaction({ supplier: tpl.supplier, amount: tpl.amount, date: now });
-  if (match) {
-    expense.bankTransactionId = match.transactionId;
-  } else {
-    const account = connectedBankAccount();
-    if (account) {
-      const tx: BankTransaction = {
-        id: uid(),
-        accountId: account.id,
-        externalId: `demo-${uid()}`,
-        date: now,
-        amount: -tpl.amount,
-        counterpart: tpl.supplier,
-        description: `Kortköp ${tpl.supplier.toUpperCase()}`,
-        status: "ny",
-      };
-      data.bankTransactions.unshift(tx);
-      account.balance -= tpl.amount;
-      expense.bankTransactionId = tx.id;
-    }
-  }
-
-  data.expenses.push(expense);
-  const receipt: Receipt = {
-    id: uid(),
-    expenseId: expense.id,
-    filename: filename || `kvitto-${tpl.supplier.toLowerCase()}.jpg`,
-    source: "uppladdning",
-    uploadedAt: now,
-    extracted: {
-      supplier: tpl.supplier,
-      date: now,
-      amount: tpl.amount,
-      vatAmount: tpl.vatAmount,
-      description: tpl.description,
-      category: tpl.category,
-      confidence: "hog",
-    },
-  };
-  data.receipts.push(receipt);
-  expense.receiptId = receipt.id;
-  bookExpense(expense, tpl.category, "hog", "auto", match ? `Kvittot matchades mot bankköpet (${match.reason})` : undefined);
-  logActivity(
-    `Exempelkvitto (demo) från ${tpl.supplier} (${kr(tpl.amount)}) skapades och bokfördes som ${categoryByKey(tpl.category).label.toLowerCase()}.`,
-    { entity: { type: "utgift", id: expense.id } }
-  );
-  save();
-  return expense;
-}

@@ -1,16 +1,18 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
-import { BAS } from "../bas";
-import type { Verification, VerificationEntry, VerificationSource } from "../types";
+import { chartAccount } from "./chart";
+import type { Verification, VerificationAttachment, VerificationEntry, VerificationSource } from "../types";
 import { bokforingsdatum, ensureFiscalYearFor, isDateLocked, lockedThrough } from "./fiscal";
 import { logAudit } from "./audit";
+import { allocateNumberInSeries, isVerificationSeries, MAIN_SERIES } from "./series";
 
 /**
  * Central verifikationsmotor. ALL bokföring går genom `postVerification` –
  * UI, AI och automatik använder samma väg. Motorn garanterar:
  *
  *  1. Balans: summa debet = summa kredit (annars PostingError, inget sparas).
- *  2. Endast konton ur BAS-registret, heltalskronor, inga negativa belopp.
+ *  2. Endast aktiva konton ur kontoregistret (accounting/chart.ts), hela
+ *     kronor, inga negativa belopp.
  *  3. Atomär nummertilldelning per serie (synkron read-modify-write).
  *  4. Periodlås: inget bokförs i låst period eller stängt räkenskapsår.
  *  5. Oföränderlighet: bokförda verifikationer ändras/tas aldrig bort –
@@ -26,7 +28,8 @@ export type PostingErrorCode =
   | "okant_konto"
   | "period_last"
   | "rakenskapsar_stangt"
-  | "redan_rattad";
+  | "redan_rattad"
+  | "okand_serie";
 
 export class PostingError extends Error {
   code: PostingErrorCode;
@@ -56,6 +59,12 @@ export interface PostVerificationInput {
   /** Klarspråksförklaring som visas för användaren ("Varför bokfördes detta?"). */
   explanation?: string;
   correctsVerificationId?: string;
+  /** Verifikationsserie. Utan angiven serie bokförs händelsen i A (löpande). */
+  series?: string;
+  /** Handelsdatum, när affärshändelsen inträffade ett annat datum än den bokförs. */
+  transactionDate?: string;
+  /** Underlaget bakom verifikationen (redan lagrat, se receipts/verification-attachment.ts). */
+  attachment?: VerificationAttachment;
 }
 
 /** Normalisera och validera rader. Kastar PostingError vid fel – inget sparas. */
@@ -74,12 +83,19 @@ export function validateEntries(input: PostLineInput[]): VerificationEntry[] {
       throw new PostingError("ogiltigt_belopp", `Konto ${line.account} har både debet och kredit på samma rad. Dela upp i två rader.`);
     }
     if (debit === 0 && credit === 0) continue; // nollrader ignoreras
-    if (!BAS[line.account]) {
+    const account = chartAccount(line.account);
+    if (!account) {
       throw new PostingError("okant_konto", `Konto ${line.account} finns inte i kontoplanen. Bokföringen hittar inte på konton.`);
+    }
+    if (account.archived) {
+      throw new PostingError(
+        "okant_konto",
+        `Konto ${line.account} ${account.name} är arkiverat och tar inte emot nya konteringar. Välj ett aktivt konto.`
+      );
     }
     entries.push({
       account: line.account,
-      accountName: BAS[line.account],
+      accountName: account.name,
       debit,
       credit,
       vatCode: line.vatCode,
@@ -104,12 +120,14 @@ export function isBalanced(entries: { debit: number; credit: number }[]): boolea
   return entries.reduce((s, e) => s + e.debit - e.credit, 0) === 0 && entries.some((e) => e.debit > 0);
 }
 
-/** Atomär nummertilldelning för serie A – en enda synkron inkrementering, aldrig från klienten. */
-function allocateVerificationNumber(): number {
-  const data = db();
-  const number = data.sequences.verification;
-  data.sequences.verification = number + 1;
-  return number;
+/** Serien måste vara känd: ett okänt seriebokstav skulle starta en nummerföljd ingen läser. */
+function resolveSeries(series: string | undefined): string {
+  if (!series) return MAIN_SERIES;
+  const upper = series.trim().toUpperCase();
+  if (!isVerificationSeries(upper)) {
+    throw new PostingError("okand_serie", `Verifikationsserie ${series} finns inte.`);
+  }
+  return upper;
 }
 
 export interface PostOptions {
@@ -128,6 +146,7 @@ export interface PostOptions {
  */
 export function postVerification(input: PostVerificationInput, opts?: PostOptions): Verification {
   const entries = validateEntries(input.entries);
+  const series = resolveSeries(input.series);
   const date = bokforingsdatum(input.date.length > 10 ? input.date : `${input.date}T12:00:00`);
 
   const existingFy = db().fiscalYears.find((f) => f.startDate <= date && date <= f.endDate);
@@ -149,11 +168,13 @@ export function postVerification(input: PostVerificationInput, opts?: PostOption
   const now = new Date().toISOString();
   const verification: Verification = {
     id: uid(),
-    series: "A",
-    number: allocateVerificationNumber(),
+    series,
+    number: allocateNumberInSeries(series),
     date: input.date.length > 10 ? input.date : `${input.date}T12:00:00.000Z`,
+    ...(input.transactionDate ? { transactionDate: bokforingsdatum(input.transactionDate) } : {}),
     description: input.description,
     entries,
+    ...(input.attachment ? { attachment: input.attachment } : {}),
     source: input.source,
     confidence: input.confidence ?? "hog",
     createdBy: input.createdBy,

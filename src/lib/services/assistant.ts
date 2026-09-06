@@ -754,7 +754,7 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
         const res = runBokslutAutomation(action.fiscalYearId, "assistent");
         updateConfirmCard(actionId, "utford", "Bokslutsposterna är bokförda.");
         reply(
-          `Klart – ${res.depreciations} avskrivning${res.depreciations === 1 ? "" : "ar"} och ${res.accruals} periodisering${res.accruals === 1 ? "" : "ar"} bokfördes som bokslutsverifikationer.`,
+          `Klart – ${res.depreciations} avskrivning${res.depreciations === 1 ? "" : "ar"}, ${res.accruals} periodisering${res.accruals === 1 ? "" : "ar"} och ${res.schedules} bokslutsbilag${res.schedules === 1 ? "a" : "or"} bokfördes som bokslutsverifikationer.`,
           { kind: "links", links: [{ label: "Öppna bokslutet", href: "/bokforing/bokslut" }] }
         );
       } catch (e) {

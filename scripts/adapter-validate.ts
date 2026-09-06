@@ -651,6 +651,119 @@ async function main() {
     assert.equal(resolved, null);
   });
 
+  console.log("\nKontoregistret genom adaptern:");
+  await check("eget konto rundresas, blir bokföringsbart och isoleras per tenant", async () => {
+    const { addCustomAccount, chartAccount } = await import("../src/lib/accounting/chart");
+    const { postVerification } = await import("../src/lib/accounting/engine");
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      addCustomAccount({ number: 4011, name: "Inköp virke" });
+      save();
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const account = chartAccount(4011);
+      assert.deepEqual(account, {
+        number: 4011,
+        name: "Inköp virke",
+        type: "kostnad",
+        section: "ravaror_och_fornodenheter",
+        custom: true,
+      });
+      // Standardplanen ligger i koden och lagras inte per företag.
+      assert.equal((db().chartAccounts ?? []).length, 1, "bara avvikelsen lagras");
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      postVerification({
+        date: "2026-03-10",
+        description: "Virke från adaptertestet",
+        entries: [
+          { account: 4011, debit: 400 },
+          { account: 1930, credit: 400 },
+        ],
+        source: { type: "manuell" },
+        createdBy: "anvandare",
+      });
+      save();
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const posted = db().verifications.find((v) => v.description === "Virke från adaptertestet");
+      assert.ok(posted, "verifikationen på det egna kontot sparades");
+      assert.equal(posted.entries[0].accountName, "Inköp virke");
+    });
+    await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {
+      assert.equal((db().chartAccounts ?? []).length, 0, "B ser inte A:s egna konton");
+      assert.equal(chartAccount(4011), undefined, "B kan inte bokföra på A:s konto");
+    });
+  });
+
+  console.log("\nManuellt verifikat genom adaptern:");
+  await check("serie M, handelsdatum och bilaga rundresar och delar inte räknare med serie A", async () => {
+    const { postManualVerification } = await import("../src/lib/services/manual-verification");
+    const { postVerification } = await import("../src/lib/accounting/engine");
+    let manualId = "";
+    let autoNumberBefore = 0;
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      autoNumberBefore = db().sequences.verification;
+      const v = postManualVerification({
+        date: "2026-04-02",
+        transactionDate: "2026-03-28",
+        description: "Manuellt verifikat genom adaptern",
+        explanation: "Underlaget är hyresavin.",
+        lines: [
+          { account: 5010, debit: 12_000, note: "Mars" },
+          { account: 1930, credit: 12_000 },
+        ],
+        attachment: {
+          filename: "hyresavi.pdf",
+          contentType: "application/pdf",
+          sizeBytes: 8,
+          contentBase64: Buffer.from("underlag").toString("base64"),
+        },
+      });
+      manualId = v.id;
+      save();
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const posted = db().verifications.find((v) => v.id === manualId);
+      assert.ok(posted, "det manuella verifikatet sparades");
+      assert.equal(posted.series, "M");
+      assert.equal(posted.number, 1, "serie M börjar på sitt eget nummer");
+      assert.equal(posted.transactionDate, "2026-03-28");
+      assert.equal(posted.entries[0].note, "Mars");
+      assert.equal(posted.attachment?.filename, "hyresavi.pdf");
+      assert.equal(posted.attachment?.sizeBytes, 8);
+      assert.equal(
+        Buffer.from(posted.attachment?.contentBase64 ?? "", "base64").toString(),
+        "underlag",
+        "underlaget läses tillbaka byte för byte"
+      );
+      assert.equal(db().sequences.verificationSeries?.M, 2);
+      assert.equal(db().sequences.verification, autoNumberBefore, "serie A rörde sig inte");
+    });
+    // Nästa automatiska bokning tar det A-nummer som stod på tur.
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      const auto = postVerification({
+        date: "2026-04-03",
+        description: "Automatik efter manuellt verifikat",
+        entries: [
+          { account: 5010, debit: 100 },
+          { account: 1930, credit: 100 },
+        ],
+        source: { type: "manuell" },
+        createdBy: "auto",
+      });
+      assert.equal(auto.series, "A");
+      assert.equal(auto.number, autoNumberBefore);
+      save();
+    });
+    await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {
+      assert.equal(
+        db().verifications.some((v) => v.series === "M"),
+        false,
+        "B ser inte A:s manuella verifikat"
+      );
+    });
+  });
+
   console.log("\nKvittofil genom adaptern:");
   await check("kvitto med inline-fil rundresas (content_base64, content_type, size_bytes)", async () => {
     const { uploadReceiptForExpense } = await import("../src/lib/services/expenses");
@@ -682,6 +795,111 @@ async function main() {
       assert.equal(receipt.sizeBytes, png.length);
       assert.equal(receipt.contentBase64, png.toString("base64"));
       assert.equal(receipt.storagePath, undefined);
+    });
+  });
+
+  console.log("\nOmvänd byggmoms genom adaptern:");
+  await check("markering på kunden och fryst markering på fakturan rundresar", async () => {
+    const { createCustomer } = await import("../src/lib/services/customers");
+    const { createInvoice, issueInvoice } = await import("../src/lib/services/invoices");
+    let customerId = "";
+    let invoiceId = "";
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      const customer = createCustomer({
+        kind: "foretag",
+        name: "Adapter Bygg AB",
+        email: "faktura@adapterbygg.se",
+        orgNumber: "556677-8899",
+        address: "Byggvägen 3",
+        postalCode: "121 45",
+        city: "Johanneshov",
+        reverseChargeConstruction: true,
+      });
+      customerId = customer.id;
+      const invoice = createInvoice({
+        customerId: customer.id,
+        type: "faktura",
+        lines: [
+          {
+            id: "adapter-bygg-rad",
+            kind: "arbete",
+            description: "Byggtjänst",
+            qty: 1,
+            unit: "st",
+            unitPrice: 40_000,
+            vatRate: 25,
+          },
+        ],
+        rot: null,
+      });
+      invoiceId = issueInvoice(invoice.id).id;
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const customer = db().customers.find((c) => c.id === customerId);
+      assert.equal(customer?.reverseChargeConstruction, true, "markeringen på kunden rundresar");
+      const invoice = db().invoices.find((i) => i.id === invoiceId);
+      assert.equal(invoice?.reverseCharge, true, "markeringen på fakturan rundresar");
+      assert.deepEqual(invoice?.lines.map((l) => l.vatRate), [0], "raderna är momsfria");
+      assert.equal(
+        invoice?.issuedSnapshot?.buyer.vatNumber,
+        "SE556677889901",
+        "köparens momsnummer ligger fryst i snapshoten"
+      );
+      const ver = db().verifications.find((v) => v.source?.type === "kundfaktura" && v.source.id === invoiceId);
+      assert.ok(ver, "verifikationen laddas tillbaka");
+      assert.equal(ver.entries.find((e) => e.account === 3231)?.credit, 40_000);
+    });
+  });
+
+  console.log("\nMomsperiodicitet genom adaptern:");
+  await check("valet rundresar och styr perioderna", async () => {
+    const { setVatPeriodicity, vatPeriods } = await import("../src/lib/accounting/vat");
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      assert.equal(vatPeriods().length, 4, "kvartal är default");
+      setVatPeriodicity("manad", "anvandare");
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      assert.equal(db().settings.vatPeriodicity, "manad", "valet rundresar");
+      assert.equal(vatPeriods().length, 12, "tolv perioder efter bytet");
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      setVatPeriodicity("kvartal", "anvandare");
+    });
+  });
+
+  console.log("\nSkattekontot genom adaptern:");
+  await check("kontering rundresar och saldot härleds ur huvudboken", async () => {
+    const { bookFSkatt, taxAccountLedger, SKATTEKONTO, F_SKATT } = await import(
+      "../src/lib/accounting/tax-account"
+    );
+    const { accountBalance } = await import("../src/lib/accounting/ledger");
+    const { todayDate } = await import("../src/lib/accounting/fiscal");
+    const month = `${new Date().getUTCFullYear()}-02`;
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      db().settings.fSkattPerMonth = 4_000;
+      bookFSkatt(month, "anvandare");
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const today = todayDate();
+      const ledger = taxAccountLedger(today);
+      const row = ledger.rows.find((r) => r.description === `F-skatt ${month}`);
+      assert.ok(row, "F-skattraden finns i skattekontots huvudbok efter rundresa");
+      assert.equal(row.amount, -4_000, "F-skatten drar från kontot");
+      assert.equal(row.kind, "f_skatt", "källan känns igen efter rundresa");
+      assert.equal(ledger.balance, accountBalance(SKATTEKONTO, today), "saldot är huvudbokens");
+      assert.equal(accountBalance(F_SKATT, today), 4_000, "2518 debiteras");
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      const again = bookFSkatt(month, "anvandare");
+      assert.ok(again, "samma månad är idempotent även genom adaptern");
+      assert.equal(
+        db().verifications.filter((v) => v.description === `F-skatt ${month}`).length,
+        1,
+        "ingen dubblett"
+      );
+    });
+    await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {
+      assert.equal(taxAccountLedger(todayDate()).rows.length, 0, "B ser inget av A:s skattekonto");
     });
   });
 

@@ -1,5 +1,5 @@
 -- ============================================================================
--- 30 · Grossistbeställningar (valfri funktion `wholesalers`)
+-- 38 · Grossistbeställningar (valfri funktion `wholesalers`)
 -- ----------------------------------------------------------------------------
 --   * wholesaler_connections: företagets grossister (kundnummer, ordermejl,
 --     standardval, kundprisregel). Inaktivering är en flagga – aldrig radering.
@@ -521,7 +521,7 @@ create trigger purchase_order_confirmations_same_business
   for each row execute function app.assert_confirmation_same_business();
 
 -- ---------------------------------------------------------------------------
--- reset_demo_business: full kropp från 27 + grossisttabellerna.
+-- reset_demo_business: full kropp från 37 + grossisttabellerna.
 -- ---------------------------------------------------------------------------
 create or replace function app.reset_demo_business(p_business_id uuid, p_keep_user_id uuid default null)
 returns void
@@ -577,9 +577,15 @@ begin
   delete from public.supplier_invoices where business_id = p_business_id;
   delete from public.payment_files where business_id = p_business_id;
   delete from public.vat_reports where business_id = p_business_id;
+  delete from public.payroll_runs where business_id = p_business_id;
+  delete from public.employer_declarations where business_id = p_business_id;
+  delete from public.employees where business_id = p_business_id;
   delete from public.assets where business_id = p_business_id;
   delete from public.accruals where business_id = p_business_id;
+  delete from public.year_end_schedules where business_id = p_business_id;
+  delete from public.filing_submissions where business_id = p_business_id;
   delete from public.annual_reports where business_id = p_business_id;
+  delete from public.chart_accounts where business_id = p_business_id;
   delete from public.fiscal_years where business_id = p_business_id;
   delete from public.websites where business_id = p_business_id;
   delete from public.domains where business_id = p_business_id;
@@ -603,7 +609,7 @@ begin
   end if;
 
   update public.business_sequences
-     set quote = 1, invoice = 1, verification = 1
+     set quote = 1, invoice = 1, verification = 1, verification_series = '{}'::jsonb
    where business_id = p_business_id;
 
   update public.businesses

@@ -40,6 +40,7 @@ export type CustomerContactDraft = {
   personalIdentityNumberMasked?: string;
   hasPersonnummer?: boolean;
   properties?: PropertyDesignationDraft[];
+  reverseChargeConstruction?: boolean;
 };
 
 export type CustomerIdentityDraft = {
@@ -143,6 +144,7 @@ export function CustomerAutosaveFields({
         orgNumber: next.orgNumber,
         contactPerson: next.contactPerson,
         notes: next.notes,
+        reverseChargeConstruction: Boolean(next.reverseChargeConstruction),
       });
       if (!result.ok) {
         if (result.field === "email") setFieldError(result.error);
@@ -224,6 +226,13 @@ export function CustomerAutosaveFields({
               className={inputCls}
             />
           </div>
+          <ReverseChargeField
+            checked={Boolean(values.reverseChargeConstruction)}
+            onChange={(next) => {
+              patch({ reverseChargeConstruction: next });
+              flush();
+            }}
+          />
         </div>
       )}
       <div className="grid gap-3 sm:grid-cols-2">
@@ -302,7 +311,32 @@ function snap(c: CustomerContactDraft): string {
     orgNumber: c.orgNumber ?? "",
     contactPerson: c.contactPerson ?? "",
     notes: c.notes,
+    reverseChargeConstruction: Boolean(c.reverseChargeConstruction),
   });
+}
+
+/**
+ * Omvänd byggmoms är ett uttryckligt val, inte en bedömning: produkten vet
+ * inte om köparen bedriver byggverksamhet. Slås den på faktureras kunden utan
+ * moms och laghänvisningen hamnar på fakturan.
+ */
+function ReverseChargeField({ checked, onChange }: { checked: boolean; onChange: (next: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-2.5 sm:col-span-2">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 size-4 shrink-0 rounded border-line-strong accent-accent"
+      />
+      <span className="text-[13px] leading-snug">
+        <span className="font-medium text-ink">Omvänd byggmoms</span>
+        <span className="block text-muted">
+          Kunden är ett byggföretag som redovisar momsen själv. Fakturor till kunden får 0 % moms och laghänvisning.
+        </span>
+      </span>
+    </label>
+  );
 }
 
 function propertySnap(rows: PropertyDesignationDraft[]): string {

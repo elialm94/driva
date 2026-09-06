@@ -21,6 +21,13 @@ const BALANCE_ACCOUNTS: Record<AccrualKind, number> = {
   upplupen_intakt: 1790,
 };
 
+export const ACCRUAL_LABEL: Record<AccrualKind, string> = {
+  forutbetald_kostnad: "Förutbetald kostnad",
+  upplupen_kostnad: "Upplupen kostnad",
+  forutbetald_intakt: "Förutbetald intäkt",
+  upplupen_intakt: "Upplupen intäkt",
+};
+
 function monthKey(date: string): number {
   return Number(date.slice(0, 7).replace("-", ""));
 }
@@ -195,6 +202,11 @@ export function reverseAccrualsInto(nextYearFirstDate: string, fiscalYearId: str
 /** Planerade periodiseringar för ett år (att hantera i bokslutet). */
 export function pendingAccruals(fiscalYearId: string): Accrual[] {
   return db().accruals.filter((a) => a.fiscalYearId === fiscalYearId && a.status === "planerad");
+}
+
+/** Periodiseringar som redan ligger i böckerna för året. */
+export function bookedAccruals(fiscalYearId: string): Accrual[] {
+  return db().accruals.filter((a) => a.fiscalYearId === fiscalYearId && a.status !== "planerad");
 }
 
 /**

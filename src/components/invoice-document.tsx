@@ -9,10 +9,12 @@ import {
   invoicePaymentRows,
   invoicePaymentTermsLine,
   invoiceQuoteReference,
+  invoiceReverseChargeView,
   invoiceTaxReductionView,
   lineTypeNote,
   sellerIdentityFooter,
   type DocInfoRow,
+  type InvoiceReverseChargeDocView,
   type InvoiceTaxReductionDocView,
   type SellerIdentityToken,
 } from "@/lib/invoices/document-view";
@@ -68,7 +70,7 @@ function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
 }
 
 /** Normala totaler – ROT/RUT-detaljer bor i sin egen sektion, aldrig här. */
-function InvoiceTotals({ lines }: { lines: Invoice["lines"] }) {
+function InvoiceTotals({ lines, reverseCharge }: { lines: Invoice["lines"]; reverseCharge: boolean }) {
   const t = docTotals(lines, null);
   const vat = vatBreakdown(lines);
   return (
@@ -80,7 +82,8 @@ function InvoiceTotals({ lines }: { lines: Invoice["lines"] }) {
         </div>
         {vat.map((v) => (
           <div key={v.rate} className="flex justify-between text-soft">
-            <span>Moms {v.rate} %</span>
+            {/* Omvänd byggmoms: "Moms 0 %" skulle antyda momsfri försäljning. */}
+            <span>{reverseCharge && v.rate === 0 ? "Moms – omvänd byggmoms" : `Moms ${v.rate} %`}</span>
             <span className="tabular">{kr(v.vat)}</span>
           </div>
         ))}
@@ -145,6 +148,34 @@ function InvoiceTaxReductionSection({
         </div>
       </div>
       <TaxReductionInvoiceDisclaimer version={termsVersion} />
+    </section>
+  );
+}
+
+/**
+ * Omvänd byggmoms: laghänvisningen är obligatorisk på fakturan, och köparens
+ * momsregistreringsnummer måste framgå. Båda kommer frusna från
+ * issuedSnapshot på en utfärdad faktura.
+ */
+function InvoiceReverseChargeSection({ view }: { view: InvoiceReverseChargeDocView }) {
+  return (
+    <section className="break-inside-avoid mt-5 border-t border-line pt-3.5">
+      <DocSectionLabel>{view.heading}</DocSectionLabel>
+      <div className="mt-2.5 grid gap-x-8 gap-y-3 sm:grid-cols-[minmax(0,1fr)_300px] print:grid-cols-[minmax(0,1fr)_300px]">
+        <p className="text-[13.5px] leading-relaxed text-soft">{view.note}</p>
+        <div className="w-full max-w-[300px] space-y-1.5 self-start text-[13.5px] sm:justify-self-end print:justify-self-end">
+          {view.buyerVatNumber ? (
+            <div className="flex justify-between text-soft">
+              <span>Köparens momsreg.nr</span>
+              <span className="tabular">{view.buyerVatNumber}</span>
+            </div>
+          ) : null}
+          <div className="flex justify-between text-soft">
+            <span>Moms att redovisa av köparen</span>
+            <span className="tabular">{kr(view.buyerVatToReport)}</span>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
@@ -237,6 +268,7 @@ export function InvoiceDocument({
   const originalNumber = doc.issuedSnapshot?.creditsInvoiceNumber ?? invoice.issuedSnapshot?.creditsInvoiceNumber;
   // ROT/RUT-vyn binder mot rådatan (snapshot för utfärdad, live för utkast).
   const rotView = invoiceTaxReductionView(invoice, { buyer: customer });
+  const reverseChargeView = invoiceReverseChargeView(invoice, { buyer: customer });
   const quoteRef = invoiceQuoteReference(doc.lines);
 
   const metaRows: DocInfoRow[] = [
@@ -314,7 +346,9 @@ export function InvoiceDocument({
         <InvoiceLinesTable lines={doc.lines} />
       </div>
 
-      <InvoiceTotals lines={doc.lines} />
+      <InvoiceTotals lines={doc.lines} reverseCharge={reverseChargeView != null} />
+
+      {reverseChargeView ? <InvoiceReverseChargeSection view={reverseChargeView} /> : null}
 
       {rotView ? <InvoiceTaxReductionSection view={rotView} termsVersion={doc.taxReductionTerms?.version} /> : null}
 

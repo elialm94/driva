@@ -4,8 +4,11 @@ import { countsTowardInvoiced, invoiceOutstanding, invoiceTotals, isOpenReceivab
 import { currentVatPosition } from "../accounting/vat";
 import { accountBalance, resultatrapport } from "../accounting/ledger";
 import { todayDate } from "../accounting/dates";
+import { SKATTEKONTO } from "../accounting/tax-account";
+import { birthDateFromPersonnummer } from "../personnummer";
+import { computePayroll, currentEmployee } from "../accounting/payroll";
 
-/** Innevarande momsperiod (kvartal) med deklarations- och betaldatum. */
+/** Innevarande momsperiod med deklarations- och betaldatum. */
 export function momsPeriod() {
   const pos = currentVatPosition();
   return {
@@ -34,10 +37,33 @@ export interface FinanceOverview {
   momsDue: string;
   fSkatt: number;
   payrollReserve: number;
+  /** Saldo på skattekontot. Positivt = tillgodo hos Skatteverket, negativt = skuld. */
+  taxAccount: number;
   reserved: number;
   upcoming: number;
   upcomingRows: { label: string; amount: number; due: string }[];
   available: number;
+}
+
+/**
+ * En månads personalskatt och arbetsgivaravgifter – det bolaget ska ha kvar när
+ * arbetsgivardeklarationen förfaller. Finns lönen upplagd räknas reserven ur den
+ * anställdes faktiska lön och åldersberoende avgift; annars används den siffra
+ * företaget själv angett.
+ */
+function payrollReservePerMonth(): number {
+  const employee = currentEmployee();
+  const manual = db().settings.payrollReservePerMonth;
+  if (!employee) return manual;
+  const birthDate = birthDateFromPersonnummer(employee.personnummer);
+  if (!birthDate) return manual;
+  const calc = computePayroll({
+    gross: employee.monthlySalary,
+    taxBasis: employee.taxBasis,
+    birthDate,
+    incomeYear: Number(todayDate().slice(0, 4)),
+  });
+  return calc.tax + calc.contribution;
 }
 
 /** Den enkla ekonomiska överblicken: banken, reserverat, kommande, ungefär tillgängligt. */
@@ -54,8 +80,13 @@ export function financeOverview(): FinanceOverview {
   const momsDue = momsNu.due;
   // Reserv: kommande två månaders F-skatt + en månads arbetsgivaravgifter/personalskatt.
   const fSkatt = data.settings.fSkattPerMonth * 2;
-  const payrollReserve = data.settings.payrollReservePerMonth;
-  const reserved = moms + fSkatt + payrollReserve;
+  const payrollReserve = payrollReservePerMonth();
+  // Skattekontot: pengar som redan lämnat 1930 (och därmed `bank`) behöver inte
+  // reserveras en gång till, medan en skuld på kontot är precis vad reserven
+  // finns till för. Positivt saldo = tillgodo hos Skatteverket.
+  const taxAccount = accountBalance(SKATTEKONTO, todayDate());
+  const behov = moms + fSkatt + payrollReserve;
+  const reserved = Math.max(0, behov - Math.max(0, taxAccount)) + Math.max(0, -taxAccount);
   const upcomingRows = data.supplierInvoices
     .filter((s) => s.status === "obetald")
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
@@ -67,6 +98,7 @@ export function financeOverview(): FinanceOverview {
     momsDue,
     fSkatt,
     payrollReserve,
+    taxAccount,
     reserved,
     upcoming,
     upcomingRows,

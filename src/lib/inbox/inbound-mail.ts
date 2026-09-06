@@ -45,8 +45,10 @@ export interface InboundAttachmentPayload {
   filename: string;
   contentType: string;
   size?: number;
-  /** Valfri base64 – lagras inte i JSON-läget, bara metadata. */
+  /** Bilagans bytes. Byts mot storagePath när filen lagrats (attachment-file.ts). */
   contentBase64?: string;
+  /** Sökväg i bucketen `inbox_attachments`, satt av persistInboundAttachments. */
+  storagePath?: string;
 }
 
 /** Fält som kan bära egen konfidens från tolken. */
