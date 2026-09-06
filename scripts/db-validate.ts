@@ -1940,7 +1940,10 @@ async function main() {
     });
     await older.close();
   }
-  console.log("\nPublika demosessioner (migration 29):");
+  console.log("\nPublika demosessioner (migration 40):");
+  // Endast tabellägaren (SUPABASE_DB_URL / service role) får läsa och skriva.
+  // Föregående block lämnar sessionen som driva_app, som medvetet saknar grants.
+  await asSuperuser();
   await expectOk(db, "demo_sessions rundresar jsonb och bumpar state_version vid upsert", async () => {
     const id = "abcdefghij1234567890demo";
     await db.query(
