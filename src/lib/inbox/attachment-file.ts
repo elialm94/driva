@@ -37,9 +37,15 @@ export function safeAttachmentFilename(name: string): string {
   return base || "dokument";
 }
 
-/** Bucketlagring är möjlig och påslagen. */
+/**
+ * Bucketlagring är möjlig och påslagen. Demosessioner och demoföretaget
+ * (state.meta.demo) rör aldrig bucketen – samma regel som för kvitton: deras
+ * tenant-id (`demo-<session>`) är inget uuid och sessionens tillstånd lever i
+ * en JSON-fil, så filen hör hemma inline på posten.
+ */
 export function inboxBucketAvailable(): boolean {
-  return isSupabaseMode() && tenantContext()?.businessId != null && supabaseAuthAdminClient() != null;
+  const ctx = tenantContext();
+  return isSupabaseMode() && ctx?.businessId != null && ctx.state.meta.demo !== true && supabaseAuthAdminClient() != null;
 }
 
 export interface StoredAttachment {

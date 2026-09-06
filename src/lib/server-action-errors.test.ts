@@ -29,19 +29,25 @@ describe("server actions kraschar inte React-trädet", () => {
     assert.match(ui, /setError\(result\.error\)/);
   });
 
+  /** Källtexten för en exporterad server action, fram till nästa export. */
+  function actionBlock(file: string, name: string): string {
+    const source = readFileSync(join(here, file), "utf8");
+    const start = source.indexOf(`export async function ${name}`);
+    assert.ok(start >= 0, `${name} finns i ${file}`);
+    const rest = source.slice(start);
+    const next = rest.indexOf("\nexport ", 1);
+    return next > 0 ? rest.slice(0, next) : rest;
+  }
+
   it("kvittouppladdningen returnerar aldrig rå Postgres-/RLS-/Storage-text", () => {
-    const actions = readFileSync(join(here, "../app/actions.ts"), "utf8");
-    const upload = actions.slice(actions.indexOf("export async function uploadReceiptAction"));
-    const block = upload.slice(0, upload.indexOf("export async function uploadStandaloneReceiptAction"));
+    const block = actionBlock("../app/actions.ts", "uploadReceiptAction");
     assert.match(block, /try \{[\s\S]*return await withBusiness/);
     assert.match(block, /userFacingStorageError\(e, "Kunde inte spara kvittot/);
     assert.doesNotMatch(block, /e instanceof Error \? e\.message/);
   });
 
   it("kvittouppladdningen sparar filen FÖRE kvittoraden och lyckas bara med sparad fil", () => {
-    const actions = readFileSync(join(here, "../app/actions.ts"), "utf8");
-    const upload = actions.slice(actions.indexOf("export async function uploadReceiptAction"));
-    const block = upload.slice(0, upload.indexOf("export async function uploadStandaloneReceiptAction"));
+    const block = actionBlock("../app/actions.ts", "uploadReceiptAction");
     const precheck = block.indexOf("expenseAwaitingReceipt(expenseId)");
     const store = block.indexOf("await storeReceiptFile(");
     const link = block.indexOf("uploadReceiptForExpense(");
@@ -50,6 +56,50 @@ describe("server actions kraschar inte React-trädet", () => {
     assert.match(block, /receiptFileFromForm\(form\)/);
     assert.match(block, /receiptFileStored\(receipt\)/);
     assert.match(block, /fileStored: true as const/);
+  });
+
+  it("inboxuppladdningen tar filen som File i FormData, lagrar den före posten och svarar på svenska", () => {
+    const block = actionBlock("../app/actions.ts", "uploadInboxDocumentAction");
+    assert.match(block, /uploadInboxDocumentAction\(\s*form: FormData\s*\)/);
+    assert.match(block, /receiptFileFromForm\(form\)/);
+    assert.match(block, /validateReceiptFile\(file\)/);
+    assert.match(block, /try \{[\s\S]*return await withBusiness/);
+    assert.match(block, /userFacingStorageError\(e, "Kunde inte spara dokumentet/);
+    assert.doesNotMatch(block, /e instanceof Error \? e\.message/);
+    assert.doesNotMatch(block, /dataUrl|parseReceiptDataUrl/i, "ingen data-URL-sidodörr (React Flight-taket)");
+    const interpret = block.indexOf("await interpretDocumentFile(");
+    const store = block.indexOf("await storeInboxAttachment(");
+    const ingest = block.indexOf("ingestUploadedDocument(");
+    assert.ok(interpret > 0 && store > interpret && ingest > store, "ordning: tolka → lagra fil → ingest");
+  });
+
+  it("manuellt verifikat tar underlaget som File i FormData och lagrar det före bokföringen", () => {
+    const block = actionBlock("../app/bokforing-actions.ts", "postManualVerificationAction");
+    assert.match(block, /attachmentForm\?: FormData/);
+    assert.match(block, /receiptFileFromForm\(attachmentForm\)/);
+    assert.match(block, /userFacingStorageError\(e, "Verifikatet kunde inte bokföras/);
+    assert.doesNotMatch(block, /e instanceof Error \? e\.message/);
+    assert.doesNotMatch(block, /dataUrl|parseReceiptDataUrl/i);
+    const store = block.indexOf("await storeVerificationAttachment(");
+    const post = block.indexOf("postManualVerification(");
+    assert.ok(store > 0 && post > store, "ordning: lagra underlag → bokför");
+    const source = readFileSync(join(here, "../app/bokforing-actions.ts"), "utf8");
+    assert.doesNotMatch(source, /attachmentDataUrl/);
+  });
+
+  it("klienterna skickar File i FormData – ingen läses som data-URL", () => {
+    for (const file of [
+      "../components/money-widgets.tsx",
+      "../components/inbox-upload.tsx",
+      "../components/attention-list.tsx",
+      "../components/manual-verification-form.tsx",
+    ]) {
+      const source = readFileSync(join(here, file), "utf8");
+      assert.match(source, /from "@\/lib\/receipts\/read-file"/, `${file} paketerar filen via read-file.ts`);
+      assert.doesNotMatch(source, /readAsDataURL|receiptFileToDataUrl|dataUrl/i, `${file} skickar ingen data-URL`);
+    }
+    const readFile = readFileSync(join(here, "../lib/receipts/read-file.ts"), "utf8");
+    assert.doesNotMatch(readFile, /FileReader|readAsDataURL/);
   });
 
   it("faktura-utfärdande fångar issue-fel och lämnar utkastet orört vid fel", () => {

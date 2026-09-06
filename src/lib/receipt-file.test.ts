@@ -22,6 +22,14 @@ import {
 } from "./receipts/receipt-file";
 import { MAX_INLINE_ATTACHMENT_BYTES } from "./inbox/attachment-content";
 import { userFacingStorageError } from "./storage/sql-errors";
+import {
+  RECEIPT_MAX_BYTES,
+  VERIFICATION_ATTACHMENT_MAX_BYTES,
+  inboxDocumentForm,
+  receiptUploadForm,
+  verificationAttachmentForm,
+} from "./receipts/read-file";
+import { MAX_VERIFICATION_ATTACHMENT_BYTES } from "./receipts/verification-attachment";
 
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 
@@ -76,6 +84,39 @@ describe("kvittofil – validering", () => {
       () => validateReceiptFile({ bytes: Buffer.alloc(MAX_RECEIPT_BYTES + 1), contentType: "image/png" }),
       /för stort/
     );
+  });
+
+  it("klientens FormData-paket (kvitto, inboxdokument, underlag) läses tillbaka av receiptFileFromForm", async () => {
+    const png = new File([PNG], "kvitto.png", { type: "image/png" });
+
+    const receipt = await receiptFileFromForm(receiptUploadForm("exp-clas", png));
+    assert.equal(receiptUploadForm("exp-clas", png).get("expenseId"), "exp-clas");
+    assert.equal(receipt?.filename, "kvitto.png");
+    assert.deepEqual(receipt?.bytes, PNG);
+
+    const inbox = await receiptFileFromForm(inboxDocumentForm(png));
+    assert.equal(inbox?.filename, "kvitto.png");
+    assert.equal(inbox?.contentType, "image/png");
+    assert.deepEqual(inbox?.bytes, PNG);
+    assert.equal(inboxDocumentForm(png).get("expenseId"), null, "inboxdokument hör inte till ett köp");
+
+    const attachment = await receiptFileFromForm(verificationAttachmentForm(new File([PNG], "", { type: "image/png" })));
+    assert.equal(attachment?.filename, "underlag", "namnlös fil får ett namn");
+    assert.deepEqual(attachment?.bytes, PNG);
+  });
+
+  it("klientens storlekstak svarar på svenska innan filen skickas och speglar serverns tak", () => {
+    assert.equal(RECEIPT_MAX_BYTES, MAX_RECEIPT_BYTES);
+    assert.equal(VERIFICATION_ATTACHMENT_MAX_BYTES, MAX_VERIFICATION_ATTACHMENT_BYTES);
+    const tooBig = new File([Buffer.alloc(RECEIPT_MAX_BYTES + 1)], "stor.pdf", { type: "application/pdf" });
+    assert.throws(() => receiptUploadForm("exp-clas", tooBig), /Kvittot är för stort \(max 5 MB\)/);
+    assert.throws(() => inboxDocumentForm(tooBig), /Filen är för stor \(max 5 MB\)/);
+    // Underlaget tillåter 10 MB – ett 5 MB-dokument går igenom där.
+    assert.ok(verificationAttachmentForm(tooBig).get("file") instanceof Blob);
+    const wayTooBig = new File([Buffer.alloc(VERIFICATION_ATTACHMENT_MAX_BYTES + 1)], "stor.pdf", {
+      type: "application/pdf",
+    });
+    assert.throws(() => verificationAttachmentForm(wayTooBig), /Underlaget är för stort \(max 10 MB\)/);
   });
 });
 

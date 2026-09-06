@@ -50,7 +50,8 @@ import {
 import { registerCreditRefund } from "@/lib/services/invoices";
 import { newAttachmentKey, postManualVerification } from "@/lib/services/manual-verification";
 import { storeVerificationAttachment } from "@/lib/receipts/verification-attachment";
-import { parseReceiptDataUrl } from "@/lib/receipts/receipt-file";
+import { receiptFileFromForm } from "@/lib/receipts/receipt-file";
+import { userFacingStorageError } from "@/lib/storage/sql-errors";
 import { verificationLabel } from "@/lib/accounting/engine";
 import { db } from "@/lib/store";
 import type {
@@ -440,9 +441,6 @@ export interface ManualVerificationFormInput {
   description: string;
   explanation?: string;
   lines: ManualVerificationFormLine[];
-  /** Underlaget som data-URL (bild eller PDF). Lagras innan verifikationen bokförs. */
-  attachmentDataUrl?: string;
-  attachmentFilename?: string;
   /**
    * Klienten som bokföringen gäller. Konsultytan skickar den uttryckligen så
    * att verifikatet aldrig hamnar hos fel klient om cookien pekar någon annanstans;
@@ -460,22 +458,25 @@ export type ManualVerificationResult =
  * (postVerification), med serie M och underlaget som bilaga. Bilagan lagras
  * FÖRE bokföringen: går lagringen fel bokförs ingenting, så en verifikation
  * pekar aldrig på ett underlag som inte finns.
+ *
+ * `attachmentForm` bär underlaget som "file" (File/Blob) – se
+ * lib/receipts/read-file.ts för varför filen inte skickas som data-URL.
+ * Felet är alltid användarsäker svenska: rå Storage-/Postgres-text mappas via
+ * userFacingStorageError, domänfel (obalans, låst period) lämnas orörda.
  */
 export async function postManualVerificationAction(
-  input: ManualVerificationFormInput
+  input: ManualVerificationFormInput,
+  attachmentForm?: FormData
 ): Promise<ManualVerificationResult> {
   try {
+    const upload = attachmentForm ? await receiptFileFromForm(attachmentForm) : null;
+    if (attachmentForm && !upload) throw new Error("Underlaget kunde inte läsas. Välj filen igen.");
     const posted = await withBusiness(
       async () => {
         let attachment: VerificationAttachment | undefined;
-        if (input.attachmentDataUrl) {
-          const file = parseReceiptDataUrl(input.attachmentDataUrl);
-          if (!file) throw new Error("Underlaget kunde inte läsas. Försök ladda upp filen igen.");
-          attachment = await storeVerificationAttachment(
-            newAttachmentKey(),
-            input.attachmentFilename?.trim() || "underlag",
-            file
-          );
+        if (upload) {
+          const { filename, ...file } = upload;
+          attachment = await storeVerificationAttachment(newAttachmentKey(), filename, file);
         }
         const verification = postManualVerification(
           {
@@ -501,6 +502,6 @@ export async function postManualVerificationAction(
     };
   } catch (e) {
     refresh();
-    return { ok: false, error: e instanceof Error ? e.message : "Verifikatet kunde inte bokföras." };
+    return { ok: false, error: userFacingStorageError(e, "Verifikatet kunde inte bokföras.") };
   }
 }
