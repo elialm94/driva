@@ -5,7 +5,7 @@ export function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 }
 
-function layout(opts: { title: string; bodyHtml: string; footer: string }): string {
+export function emailLayout(opts: { title: string; bodyHtml: string; footer: string }): string {
   return `<!DOCTYPE html>
 <html lang="sv">
 <body style="margin:0;padding:0;background:#f6f5f2;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;color:#1a1916;">
@@ -18,7 +18,7 @@ function layout(opts: { title: string; bodyHtml: string; footer: string }): stri
 </html>`;
 }
 
-function cta(href: string, label: string): string {
+export function emailCta(href: string, label: string): string {
   return `<p style="margin:24px 0 0;"><a href="${escapeHtml(href)}" style="display:inline-block;background:#1a1916;color:#fff;text-decoration:none;padding:12px 18px;border-radius:12px;font-size:15px;font-weight:600;">${escapeHtml(label)}</a></p>`;
 }
 
@@ -49,14 +49,14 @@ export function quoteEmail(input: QuoteEmailInput): { subject: string; text: str
     "Visa offert:",
     input.url,
   ].join("\n");
-  const html = layout({
+  const html = emailLayout({
     title: input.businessName,
     footer: input.footer,
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:16px;">Hej ${escapeHtml(input.customerName)},</p>
       <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">Här är offert <strong>#${input.quoteNumber}</strong> för ${escapeHtml(input.title)} på <strong>${escapeHtml(kr(input.amount))}</strong>.</p>
       <p style="margin:0;font-size:15px;color:#6b665c;">Giltig till ${escapeHtml(valid)}. ${escapeHtml(QUOTE_ACCEPT_HINT)}</p>
-      ${cta(input.url, "Visa offert")}
+      ${emailCta(input.url, "Visa offert")}
     `,
   });
   return { subject, text, html };
@@ -88,14 +88,14 @@ export function quoteAcceptedEmail(input: QuoteAcceptedEmailInput): { subject: s
     "Öppna offerten:",
     input.url,
   ].join("\n");
-  const html = layout({
+  const html = emailLayout({
     title: input.businessName,
     footer: input.footer,
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:16px;">Hej,</p>
       <p style="margin:0 0 12px;font-size:15px;line-height:1.55;"><strong>${escapeHtml(input.acceptedByName)}</strong> godkände offert <strong>#${input.quoteNumber}</strong> (${escapeHtml(input.title)}) på <strong>${escapeHtml(kr(input.amount))}</strong> ${escapeHtml(input.acceptedAtLabel)}.</p>
       <p style="margin:0;font-size:15px;color:#6b665c;">Uppdraget finns nu i Driva och kan startas. Godkännandet är sparat tillsammans med offertens innehåll och tidpunkt.</p>
-      ${cta(input.url, "Öppna offerten")}
+      ${emailCta(input.url, "Öppna offerten")}
     `,
   });
   return { subject, text, html };
@@ -136,14 +136,14 @@ export function quoteAcceptedCustomerEmail(
     "Intyg om godkännande:",
     input.certificateUrl,
   ].join("\n");
-  const html = layout({
+  const html = emailLayout({
     title: input.businessName,
     footer: input.footer,
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:16px;">Hej ${escapeHtml(input.customerName)},</p>
       <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">${escapeHtml(lead)}</p>
       <p style="margin:0;font-size:15px;color:#6b665c;">${escapeHtml(method)}</p>
-      ${cta(input.url, "Visa den godkända offerten")}
+      ${emailCta(input.url, "Visa den godkända offerten")}
       <p style="margin:16px 0 0;font-size:14px;"><a href="${escapeHtml(input.certificateUrl)}" style="color:#1a1916;">Intyg om godkännande</a></p>
     `,
   });
@@ -187,14 +187,14 @@ export function invoiceEmail(input: InvoiceEmailInput): { subject: string; text:
     "Visa faktura:",
     input.url,
   ].join("\n");
-  const html = layout({
+  const html = emailLayout({
     title: input.businessName,
     footer: input.footer,
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:16px;">Hej ${escapeHtml(input.customerName)},</p>
       <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">Här kommer faktura <strong>#${input.invoiceNumber}</strong> på <strong>${escapeHtml(kr(input.amount))}</strong>.</p>
       <p style="margin:0;font-size:15px;color:#6b665c;">Förfallodatum: ${escapeHtml(due)}${pay.length ? `. ${escapeHtml(pay.join(" · "))}` : "."}</p>
-      ${cta(input.url, "Visa faktura")}
+      ${emailCta(input.url, "Visa faktura")}
     `,
   });
   return { subject, text, html };
@@ -213,14 +213,14 @@ export function invoiceReminderEmail(input: InvoiceReminderEmailInput): { subjec
     ? `En vänlig påminnelse om faktura #${input.invoiceNumber}: ${kr(input.outstanding)} återstår att betala (förföll ${due}).`
     : `En vänlig påminnelse om faktura #${input.invoiceNumber} på ${kr(input.outstanding)} som förföll ${due}.`;
   const text = [`Hej ${input.customerName},`, "", lead, ...pay, "", input.url].join("\n");
-  const html = layout({
+  const html = emailLayout({
     title: input.businessName,
     footer: input.footer,
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:16px;">Hej ${escapeHtml(input.customerName)},</p>
       <p style="margin:0;font-size:15px;line-height:1.55;">${escapeHtml(lead)}</p>
       ${pay.length ? `<p style="margin:12px 0 0;font-size:15px;color:#6b665c;">${escapeHtml(pay.join(" · "))}</p>` : ""}
-      ${cta(input.url, "Visa faktura")}
+      ${emailCta(input.url, "Visa faktura")}
     `,
   });
   return { subject, text, html };
@@ -248,13 +248,13 @@ export function creditInvoiceEmail(input: CreditInvoiceEmailInput): { subject: s
     lead,
     ...(input.url ? ["", "Visa kreditfakturan:", input.url] : []),
   ].join("\n");
-  const html = layout({
+  const html = emailLayout({
     title: input.businessName,
     footer: input.footer,
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:16px;">Hej ${escapeHtml(input.customerName)},</p>
       <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">${escapeHtml(lead)}</p>
-      ${input.url ? cta(input.url, "Visa kreditfakturan") : ""}
+      ${input.url ? emailCta(input.url, "Visa kreditfakturan") : ""}
     `,
   });
   return { subject, text, html };
@@ -280,13 +280,13 @@ export function quoteFollowUpEmail(input: QuoteFollowUpEmailInput): { subject: s
     `Du kan läsa och godkänna den här (giltig till ${valid}):`,
     input.url,
   ].join("\n");
-  const html = layout({
+  const html = emailLayout({
     title: input.businessName,
     footer: input.footer,
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:16px;">Hej ${escapeHtml(input.customerName)},</p>
       <p style="margin:0;font-size:15px;line-height:1.55;">Har du hunnit titta på vår offert för ${escapeHtml(input.title)}? Giltig till ${escapeHtml(valid)}.</p>
-      ${cta(input.url, "Visa offert")}
+      ${emailCta(input.url, "Visa offert")}
     `,
   });
   return { subject, text, html };
@@ -314,12 +314,12 @@ export function collaborationInviteEmail(input: CollaborationInviteEmailInput): 
     "",
     `Länken kan bara användas en gång och slutar gälla om ${input.expiresDays} dagar.`,
   ].join("\n");
-  const html = layout({
+  const html = emailLayout({
     title: "Driva",
     footer: `Länken kan bara användas en gång och slutar gälla om ${input.expiresDays} dagar.`,
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">${escapeHtml(input.invitedByName)} bjuder in dig som ${escapeHtml(input.roleLabel.toLowerCase())} för <strong>${escapeHtml(input.companyName)}</strong> i Driva.</p>
-      ${cta(input.url, "Acceptera inbjudan")}
+      ${emailCta(input.url, "Acceptera inbjudan")}
     `,
   });
   return { subject, text, html };

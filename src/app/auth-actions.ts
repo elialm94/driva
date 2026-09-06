@@ -106,6 +106,8 @@ export async function signupAction(_prev: AuthFormState, formData: FormData): Pr
 
   const supabase = await createSupabaseServerClient();
   const emailRedirectTo = await confirmationRedirectUrl(next);
+  // GoTrue triggar mejlet. I produktion tar POST /api/auth/send-email
+  // (Resend, Driva-mall) över via Auth → Hooks → Send Email.
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
