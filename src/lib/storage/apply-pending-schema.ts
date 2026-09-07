@@ -272,6 +272,12 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     "payer_bic",
     `alter table public.business_settings add column if not exists payer_bic text`
   );
+  // Notiser till företagaren (migration 43) – settings-upserten skriver alltid kolumnen.
+  await ensureColumn(
+    "business_settings",
+    "notices",
+    `alter table public.business_settings add column if not exists notices jsonb`
+  );
 
   await run(
     client,

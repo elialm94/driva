@@ -21,6 +21,9 @@ import { redirect } from "next/navigation";
 import { listConnectionOverviews } from "@/lib/services/wholesalers";
 import { setupSummary } from "@/lib/setup/tasks";
 import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
+import { getOwnerNoticeSettings } from "@/lib/services/owner-notices";
+import { websiteFormRecipientOverride } from "@/lib/website-form-recipient";
+import { isLiveMailConfigured } from "@/lib/mail";
 
 export const metadata = { title: "Inställningar" };
 
@@ -78,6 +81,18 @@ export default async function SettingsPage(props: {
           status: y.status,
         }))}
         today={todayDate()}
+        notices={
+          flik === "notiser"
+            ? {
+                companyEmail: profile.email,
+                email: getOwnerNoticeSettings().email,
+                off: getOwnerNoticeSettings().off,
+                websiteRecipientOverride: websiteFormRecipientOverride(profile, profile),
+                mailLive: isLiveMailConfigured(),
+                demo: demoAccount,
+              }
+            : undefined
+        }
       />
       {/* Endast demon: JSON-läget lokalt eller den publika demosessionen.
           Servervägen (resetDemoAction) vaktar dessutom oberoende av UI:t. */}

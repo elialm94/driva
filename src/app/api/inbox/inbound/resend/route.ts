@@ -7,6 +7,7 @@ import {
   resendWebhookHeadersFromRequest,
 } from "@/lib/inbox/resend-receiving";
 import { isSupabaseMode } from "@/lib/storage/config";
+import { sendOwnerNotices } from "@/lib/services/owner-notices";
 import { withPublicBusiness } from "@/lib/auth/session";
 
 /**
@@ -35,6 +36,10 @@ export async function POST(req: NextRequest) {
         // Orderbekräftelse utan tolkade rader: AI-fallback efter svaret, i egen tenantkörning.
         if (scoped.status === 200 && scoped.confirmationFollowUp) {
           after(() => followUpInboundConfirmation(slug, scoped.payload.id));
+        }
+        if (scoped.status === 200 && scoped.ownerNotice) {
+          const notice = scoped.ownerNotice;
+          after(() => sendOwnerNotices([notice]));
         }
         return scoped;
       },

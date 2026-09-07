@@ -104,6 +104,25 @@ export interface CompanySettings {
   payerIban?: string;
   /** Debiteringsbankens BIC, t.ex. ESSESESS. */
   payerBic?: string;
+  /**
+   * Notiser till företagaren (Inställningar → Notiser). Saknas = allt på,
+   * till företagets e-post. Se `lib/notices/owner-notices.ts`.
+   */
+  notices?: OwnerNoticeSettings;
+}
+
+/**
+ * Händelser som sker UTANFÖR appen och därför mejlas till företagaren:
+ * kundens svar på offerten, förfrågningar från hemsidan och dokument som
+ * landar i inkorgen via mejl. Det användaren själv gör i appen notifieras aldrig.
+ */
+export type OwnerNoticeKind = "offert_godkand" | "offert_avbojd" | "forfragan" | "inkorg" | "orderbekraftelse";
+
+export interface OwnerNoticeSettings {
+  /** Egen mottagare. Tom/saknas/samma som företagets e-post = företagets e-post. */
+  email?: string;
+  /** Avstängda händelser – allt annat är på så att nya händelser når fram utan inställning. */
+  off?: OwnerNoticeKind[];
 }
 
 /* ---------------------------------- Kunder ---------------------------------- */
@@ -493,7 +512,8 @@ export type JobStatus = "kommande" | "pagar" | "klart";
 export type JobSource = "manual" | "web_form" | "email" | "import" | "phone" | "other";
 
 export interface JobNotification {
-  status: "pending" | "sent" | "failed";
+  /** `off` = företagaren har stängt av notisen (Inställningar → Notiser); inget att skicka om. */
+  status: "pending" | "sent" | "failed" | "off";
   sentAt?: string;
   lastError?: string;
   attempts: number;

@@ -43,6 +43,16 @@ import { userFacingInvoiceSendError, userFacingIssueError } from "@/lib/invoices
 import { QuoteNotReadyError } from "@/lib/services/quotes";
 import { getQuoteByToken } from "@/lib/services/data";
 import {
+  getOwnerNoticeSettings,
+  prepareOwnerNoticeTest,
+  prepareQuoteDeclinedNotice,
+  sendOwnerNotices,
+  updateOwnerNoticeSettings,
+  type OwnerNoticeSettingsInput,
+} from "@/lib/services/owner-notices";
+import { isOwnerNoticeKind } from "@/lib/notices/owner-notices";
+import { userFacingSendError } from "@/lib/email/service";
+import {
   completeReminder,
   describeSnoozeUntil,
   dismissReminder,
@@ -495,12 +505,15 @@ export async function followUpQuoteAction(
  * offerter än den hen faktiskt fått länken till.
  */
 export async function declineQuoteByTokenAction(token: string, reason?: string) {
-  await withPublicBusiness("quote", token, () => {
+  const notice = await withPublicBusiness("quote", token, () => {
     const quote = getQuoteByToken(token);
-    if (!quote || quote.status !== "skickad") return;
+    if (!quote || quote.status !== "skickad") return undefined;
     declineQuote(quote.id, typeof reason === "string" ? reason.slice(0, 2000) : undefined);
     refresh();
+    // Företagarens notis byggs här (tenantkontext) och skickas efter svaret.
+    return prepareQuoteDeclinedNotice(quote.id);
   });
+  if (notice) after(() => sendOwnerNotices([notice]));
 }
 
 export type AcceptQuoteActionResult =
@@ -1956,6 +1969,38 @@ export async function updateCompanySettingsAction(
     });
   } catch (e) {
     return { ok: false, error: userFacingStorageError(e, "Kunde inte spara.") };
+  }
+}
+
+/** Inställningar → Notiser: mottagare och av/på per händelse. Sparas direkt, utanför stora formuläret. */
+export async function updateOwnerNoticeSettingsAction(
+  input: OwnerNoticeSettingsInput
+): Promise<{ ok: true; recipient?: string } | { ok: false; error: string }> {
+  try {
+    return await withBusiness(() => {
+      const off = Array.isArray(input.off) ? input.off.filter(isOwnerNoticeKind) : [];
+      updateOwnerNoticeSettings({ email: typeof input.email === "string" ? input.email : "", off });
+      refresh();
+      return { ok: true, recipient: getOwnerNoticeSettings().recipient } as const;
+    });
+  } catch (e) {
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte spara.") };
+  }
+}
+
+/** Skickar ett testmejl till notismottagaren så att företagaren ser att adressen fungerar. */
+export async function sendOwnerNoticeTestAction(): Promise<{ ok: true; to: string } | { ok: false; error: string }> {
+  try {
+    const prepared = await withBusiness(() => prepareOwnerNoticeTest(), { retry: false });
+    if (!prepared.ok) return prepared;
+    const result = await sendMail(prepared.notice.message, prepared.notice.meta);
+    if (!result.ok) return { ok: false, error: userFacingSendError(result, "Testmejlet kunde inte skickas. Försök igen.") };
+    if (result.mode === "mock") {
+      return { ok: false, error: "E-posttjänsten är inte konfigurerad i den här miljön – inget mejl skickades." };
+    }
+    return { ok: true, to: prepared.to };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Testmejlet kunde inte skickas." };
   }
 }
 

@@ -77,6 +77,7 @@ import type {
   WorkLocation,
   YearEndSchedule,
 } from "@/lib/types";
+import { isOwnerNoticeKind } from "@/lib/notices/owner-notices";
 import { syncDocLineClassification } from "@/lib/economic-line-type";
 import { migrateQuoteVersionDescription } from "@/lib/quote-description";
 import { withoutRetiredSections } from "@/lib/website-sections";
@@ -2450,7 +2451,7 @@ export const settingsColumns = [
   "logo_data_url", "f_skatt_per_month", "payroll_reserve_per_month", "payment_terms_days",
   "late_interest_rate", "quote_validity_days", "default_vat_rate", "default_hourly_rate",
   "default_quote_terms", "inbound_mail_slug", "payer_bank_name", "payer_iban", "payer_bic",
-  "vat_periodicity",
+  "vat_periodicity", "notices",
 ];
 
 export function settingsToRow(s: CompanySettings, businessId: string): Record<string, unknown> {
@@ -2489,6 +2490,7 @@ export function settingsToRow(s: CompanySettings, businessId: string): Record<st
     payer_iban: s.payerIban ?? null,
     payer_bic: s.payerBic ?? null,
     vat_periodicity: s.vatPeriodicity ?? "kvartal",
+    notices: jsonParamOrNull(s.notices),
   };
 }
 
@@ -2527,7 +2529,17 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
     ...opt("payerIban", strOrU(r.payer_iban)),
     ...opt("payerBic", strOrU(r.payer_bic)),
     ...opt("vatPeriodicity", vatPeriodicityOrU(r.vat_periodicity)),
+    ...opt("notices", ownerNoticesOrU(r.notices)),
   };
+}
+
+function ownerNoticesOrU(v: unknown): CompanySettings["notices"] | undefined {
+  const parsed = v == null ? undefined : jsonVal<{ email?: unknown; off?: unknown }>(v);
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const email = typeof parsed.email === "string" && parsed.email.trim() ? parsed.email.trim() : undefined;
+  const off = Array.isArray(parsed.off) ? parsed.off.filter(isOwnerNoticeKind) : [];
+  if (!email && off.length === 0) return undefined;
+  return { ...(email ? { email } : {}), ...(off.length > 0 ? { off } : {}) };
 }
 
 function vatPeriodicityOrU(v: unknown): CompanySettings["vatPeriodicity"] | undefined {

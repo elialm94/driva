@@ -22,6 +22,7 @@ import {
   storableAttachmentContent,
 } from "./attachment-content";
 import { ingestInboundMail, inboundSlugMatches, interpretInboundPayload } from "../services/inbox";
+import { prepareInboxArrivalNotice, type PreparedOwnerNotice } from "../services/owner-notices";
 import { persistInboundAttachments } from "./attachment-file";
 import {
   resendWebhookSecret,
@@ -77,6 +78,8 @@ export type InboundWebhookResult =
       payload: { id: string; created: boolean; autoBooked: boolean };
       /** Ny orderbekräftelse – AI-fallbacken körs efter webhooksvaret. */
       confirmationFollowUp?: boolean;
+      /** Företagarens notis, byggd i tenantkontexten – skickas efter webhooksvaret. */
+      ownerNotice?: PreparedOwnerNotice;
     }
   | { status: 400 | 404; error: string };
 
@@ -175,10 +178,12 @@ export async function ingestInboundPayloadLocal(payload: InboundMailPayload): Pr
   const interpreted = await interpretInboundPayload(payload);
   const result = ingestInboundMail(await persistInboundAttachments(interpreted));
   if (!result.ok) return { status: result.status as 400 | 404, error: result.error };
+  const ownerNotice = prepareInboxArrivalNotice(result.item, { created: result.created });
   return {
     status: 200,
     payload: { id: result.item.id, created: result.created, autoBooked: result.autoBooked },
     ...(result.created && result.item.documentType === "orderbekraftelse" ? { confirmationFollowUp: true } : {}),
+    ...(ownerNotice ? { ownerNotice } : {}),
   };
 }
 

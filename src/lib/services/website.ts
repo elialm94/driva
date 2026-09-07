@@ -49,7 +49,8 @@ import { logActivity } from "./activity";
 import { findOrCreateCustomerByEmail } from "./customers";
 import { createJob, titleFromIncomingMessage } from "./jobs";
 import { getBusinessProfile, isEmailFormat } from "./settings";
-import { resolveWebsiteFormRecipient } from "../website-form-recipient";
+import { hasWebsiteFormRecipientOverride, resolveWebsiteFormRecipient } from "../website-form-recipient";
+import { ownerNoticeEnabled, ownerNoticeRecipient } from "../notices/owner-notices";
 import { absoluteAppUrl, mailFromAddress, sendMail, type MailMessage } from "../mail";
 import { newQuoteHref } from "../nav";
 import {
@@ -1119,7 +1120,16 @@ export async function deliverWebsiteJobNotification(jobId: string): Promise<bool
   const customer = db().customers.find((c) => c.id === job.customerId);
   if (!customer) return false;
   const settings = getBusinessProfile();
-  const to = resolveWebsiteFormRecipient(settings, settings);
+  if (!ownerNoticeEnabled(settings, "forfragan")) {
+    // Avstängd i Inställningar → Notiser: uppdraget finns ändå i Driva, inget mejl.
+    job.notification = { status: "off", attempts: job.notification?.attempts ?? 0 };
+    save();
+    return false;
+  }
+  // Hemsidans egen mottagare (Hemsida → Webbformulär) vinner; annars notismottagaren.
+  const to = hasWebsiteFormRecipientOverride(settings, settings)
+    ? resolveWebsiteFormRecipient(settings, settings)
+    : ownerNoticeRecipient(settings) ?? resolveWebsiteFormRecipient(settings, settings);
   if (!to) {
     markJobNotification(job, { ok: false, error: "Ingen e-postadress att skicka till." });
     return false;
