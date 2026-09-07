@@ -52,8 +52,10 @@ import { FileDropzone } from "./file-dropzone";
 import { requestClientInformationAction } from "@/app/collaboration-actions";
 import { isPaymentDetailsCta, PaymentDetailsCta } from "./payment-details-actions";
 import {
+  bookBankTransactionAsAction,
   confirmPaymentMatchAction,
   confirmRotPayoutAction,
+  confirmSupplierPaymentMatchAction,
   registerCreditRefundAction,
 } from "@/app/bokforing-actions";
 import type { ActionConfirm, BusinessAction } from "@/lib/services/actions";
@@ -833,6 +835,46 @@ function AttentionRow({
                     const result = await confirmRotPayoutAction(cta.txId);
                     if (result.ok === false) setError(result.error);
                     else finish("Bokförd");
+                    router.refresh();
+                  })
+                }
+              >
+                {isPending ? "Bokför …" : cta.label}
+              </button>
+            ) : null}
+            {cta?.type === "confirmSupplierPayment" ? (
+              <button
+                className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
+                disabled={isPending}
+                aria-label={`${cta.label} – ${item.title}`}
+                onClick={() =>
+                  startTransition(async () => {
+                    const result = await confirmSupplierPaymentMatchAction(cta.txId, cta.supplierPaymentId);
+                    if (result.ok === false) setError(result.error);
+                    else finish("Bokförd");
+                    router.refresh();
+                  })
+                }
+              >
+                {isPending ? "Bokför …" : cta.label}
+              </button>
+            ) : null}
+            {cta?.type === "bookBankKind" ? (
+              // Motorns förslag (regel, redan bokfört belopp eller mönster) – ett
+              // klick bokför och motparten sparas så det sker automatiskt nästa gång.
+              <button
+                className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
+                disabled={isPending}
+                aria-label={`${cta.label} – ${item.title}`}
+                data-book-bank-kind={cta.bankKind}
+                onClick={() =>
+                  startTransition(async () => {
+                    const result = await bookBankTransactionAsAction(cta.txId, cta.bankKind, {
+                      verificationId: cta.verificationId,
+                      remember: true,
+                    });
+                    if (result.ok === false) setError(result.error);
+                    else finish(result.learned === "auto" ? "Bokförd – sker automatiskt nästa gång" : "Bokförd");
                     router.refresh();
                   })
                 }

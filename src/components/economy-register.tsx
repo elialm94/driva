@@ -763,6 +763,7 @@ export function BankRegister({
                       txId={r.id}
                       amount={r.amount}
                       action={r.action}
+                      picker={r.picker}
                       receivables={receivables}
                       defaultOpen={highlighted === r.id}
                     />
@@ -818,6 +819,7 @@ function BankTableRows({
                 txId={r.id}
                 amount={r.amount}
                 action={r.action}
+                picker={r.picker}
                 receivables={receivables}
                 defaultOpen={highlighted}
               />

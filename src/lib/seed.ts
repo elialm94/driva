@@ -1742,6 +1742,10 @@ export function buildSeed(): DB {
   addTx({ id: "tx-fskatt-aug", date: d(15), amount: -12400, counterpart: "Skatteverket", description: "Preliminärskatt augusti", status: "bokford", matchedType: "skatt", verificationId: "ver-skatt-aug" });
   addTx({ id: "tx-fskatt-jul", date: d(45), amount: -12400, counterpart: "Skatteverket", description: "Preliminärskatt juli", status: "bokford", matchedType: "skatt", verificationId: "ver-skatt-jul" });
 
+  // Bankens månadsavgift – obokad: motorn känner igen den på texten och
+  // föreslår "Bankavgift" i bankvyn (första gången ett förslag, sedan regel).
+  addTx({ id: "tx-bankavgift", date: d(2), amount: -79, counterpart: "SEB", description: "Månadsavgift Företagspaket", status: "behover_atgard" });
+
   /* ------------------------------ Betalningar ---------------------------- */
 
   const payments = paidInvoiceTx.map(([invId, txId]) => {

@@ -572,9 +572,16 @@ export function provisionalVatFor(amountInclVat: number): number {
  * bankens; momsen är preliminär tills kvittot lästs. Idempotent per transaktion
  * och sparar aldrig själv – anroparen (matchningsmotorn) gör det.
  */
-export function createExpenseFromBankPurchase(tx: BankTransaction): Expense | null {
+export function createExpenseFromBankPurchase(
+  tx: BankTransaction,
+  opts: {
+    /** Användaren (eller en lärd regel) säger att det är ett köp – hoppa över heuristiken. */
+    force?: boolean;
+  } = {}
+): Expense | null {
   const data = db();
-  if (!looksLikeCardPurchase(tx)) return null;
+  if (!(tx.amount < 0)) return null;
+  if (!opts.force && !looksLikeCardPurchase(tx)) return null;
   if (tx.status === "bokford") return null;
   if (data.expenses.some((e) => e.bankTransactionId === tx.id)) return null;
   const amount = Math.abs(tx.amount);

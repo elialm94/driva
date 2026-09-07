@@ -14,7 +14,11 @@ import {
   daysOverdue,
   quoteTotals,
 } from "./data";
-import { paymentSuggestionForTransaction } from "./payment-matching";
+import { paymentSuggestionForTransaction, suggestedBankBookings } from "./payment-matching";
+import { alreadyBookedCandidates, bankCounterpartRuleFor, type AlreadyBookedOption, type BankKindSuggestionSource } from "./bank-booking";
+import { bankKindByKey, directionOf, type BankDirection, type BankKindKey } from "../banking/bank-kinds";
+import { bankReconciliation } from "../accounting/reconciliation";
+import { supplierPayments } from "./supplier-payments";
 import { invoiceListTitle, invoiceListTypeLabel } from "../invoices/display";
 import type { PagedResult } from "./customers";
 import { categoryByKey } from "../bas";
@@ -523,10 +527,40 @@ export type BankRowAction =
     }
   | { kind: "confirm_rot_payout"; label: string; reason: string }
   | { kind: "confirm_refund"; label: string; reason: string; invoiceId: string; invoiceNumber: number | null }
+  | { kind: "confirm_supplier_payment"; label: string; reason: string; supplierPaymentId: string; supplier: string }
+  | {
+      /** Motorn vet vad det är (regel, redan bokfört belopp eller mönster) – ett klick bokför. */
+      kind: "book_kind";
+      label: string;
+      reason: string;
+      bankKind: BankKindKey;
+      kindLabel: string;
+      source: BankKindSuggestionSource;
+      verificationId?: string;
+      verificationLabel?: string;
+    }
   | { kind: "pick_invoice"; reason: string }
   | { kind: "receipt"; expenseId: string; reason: string }
   | { kind: "question"; expenseId: string; text: string; options: string[] }
-  | { kind: "review"; reason: string };
+  | {
+      /** Ingen säker gissning – användaren väljer typ i väljaren (eller följer länken, t.ex. till Lön). */
+      kind: "categorize";
+      reason: string;
+      href?: string;
+      hrefLabel?: string;
+    };
+
+/**
+ * Underlag för "Vad är det här?"-väljaren på en obokad rad: riktningen avgör
+ * vilka typer som visas, redan bokförda belopp kan kopplas, och en befintlig
+ * regel visas så den går att glömma.
+ */
+export interface BankKindPickerData {
+  counterpart: string;
+  direction: BankDirection;
+  alreadyBooked: AlreadyBookedOption[];
+  rule?: { kind: BankKindKey; label: string; count: number };
+}
 
 export interface BankTableRow {
   id: string;
@@ -541,6 +575,8 @@ export interface BankTableRow {
   statusTone: StatusTone;
   /** Finns bara på obokade rader. */
   action?: BankRowAction;
+  /** Finns bara på obokade rader – alltid, så ingen rad saknar en utväg. */
+  picker?: BankKindPickerData;
 }
 
 /** Öppen kundfordran som en inbetalning kan matchas mot för hand. */
@@ -601,7 +637,7 @@ function bankRowAction(tx: BankTransaction): BankRowAction | undefined {
     case "tax_reduction_payout":
       return suggestion.payout
         ? { kind: "confirm_rot_payout", label: "Boka utbetalningen", reason: suggestion.reason }
-        : { kind: "review", reason: suggestion.reason };
+        : { kind: "pick_invoice", reason: suggestion.reason };
     case "credit_refund":
       return {
         kind: "confirm_refund",
@@ -612,11 +648,130 @@ function bankRowAction(tx: BankTransaction): BankRowAction | undefined {
       };
     case "duplicate":
       return { kind: "pick_invoice", reason: suggestion.reason };
-    case "supplier_payment":
-      return { kind: "review", reason: suggestion.reason };
+    case "supplier_payment": {
+      const payment = suggestion.supplierPaymentId
+        ? supplierPayments().find((p) => p.id === suggestion.supplierPaymentId)
+        : undefined;
+      if (!payment) return { kind: "categorize", reason: suggestion.reason };
+      return {
+        kind: "confirm_supplier_payment",
+        label: "Boka betalningen",
+        reason: suggestion.reason,
+        supplierPaymentId: payment.id,
+        supplier: payment.recipientName,
+      };
+    }
+    case "bank_kind": {
+      const def = suggestion.bankKind ? bankKindByKey(suggestion.bankKind) : undefined;
+      if (!def) return { kind: "categorize", reason: suggestion.reason };
+      // Lön utan körd lönekörning, "redan bokförd" utan träff: människan väljer.
+      if (suggestion.outcome === "REQUIRES_USER" || def.href || def.key === "kundbetalning" || def.key === "kortkop") {
+        return {
+          kind: "categorize",
+          reason: suggestion.reason,
+          ...(def.href ? { href: def.href, hrefLabel: def.key === "lon" ? "Öppna Lön" : "Bokför manuellt" } : {}),
+        };
+      }
+      return {
+        kind: "book_kind",
+        label: def.key === "redan_bokford" ? `Koppla till ${suggestion.verificationLabel ?? "verifikationen"}` : `Bokför som ${def.label.toLowerCase()}`,
+        reason: suggestion.reason,
+        bankKind: def.key,
+        kindLabel: def.label,
+        source: suggestion.bankKindSource ?? "monster",
+        ...(suggestion.verificationId
+          ? { verificationId: suggestion.verificationId, verificationLabel: suggestion.verificationLabel }
+          : {}),
+      };
+    }
     default:
-      return tx.amount > 0 ? { kind: "pick_invoice", reason: suggestion.reason } : { kind: "review", reason: suggestion.reason };
+      return tx.amount > 0 ? { kind: "pick_invoice", reason: suggestion.reason } : { kind: "categorize", reason: suggestion.reason };
   }
+}
+
+function bankKindPicker(tx: BankTransaction): BankKindPickerData {
+  const rule = bankCounterpartRuleFor(tx.counterpart);
+  const ruleDef = rule ? bankKindByKey(rule.kind) : undefined;
+  return {
+    counterpart: tx.counterpart.trim() || "Okänd motpart",
+    direction: directionOf(tx.amount),
+    alreadyBooked: alreadyBookedCandidates(tx),
+    ...(rule && ruleDef ? { rule: { kind: ruleDef.key, label: ruleDef.label, count: rule.count } } : {}),
+  };
+}
+
+/* ------------------------------ Bankinkorgen ---------------------------------- */
+
+export interface BankInboxSuggestedRow {
+  txId: string;
+  date: string;
+  counterpart: string;
+  amount: number;
+  label: string;
+}
+
+export interface BankInboxSummary {
+  /** Obokade transaktioner (ny + behöver åtgärd). */
+  open: number;
+  /** Varav kortköp som väntar på kvitto eller kategorisvar (löses via kvittot). */
+  awaitingReceipt: number;
+  /** Förslag som går att bekräfta med ett klick – underlag för "Bokför alla föreslagna". */
+  suggested: BankInboxSuggestedRow[];
+  /** Summa obokade in- respektive utbetalningar. */
+  openIn: number;
+  openOut: number;
+  reconciliation: {
+    ok: boolean;
+    unexplained: number;
+    reconciledThrough?: string;
+    bankBalance: number;
+    ledgerBalance: number;
+  };
+}
+
+/**
+ * Bankvyns huvud: hur mycket som väntar, vad som kan bokföras direkt och om
+ * banken stämmer mot bokföringen. Härleds varje gång – lagras aldrig.
+ */
+export function bankInboxSummary(): BankInboxSummary {
+  const data = db();
+  let open = 0;
+  let awaitingReceipt = 0;
+  let openIn = 0;
+  let openOut = 0;
+  for (const tx of data.bankTransactions) {
+    if (tx.status === "bokford") continue;
+    open++;
+    if (tx.amount > 0) openIn += tx.amount;
+    else openOut += -tx.amount;
+    if (data.expenses.some((e) => e.bankTransactionId === tx.id && e.status !== "bokford")) awaitingReceipt++;
+  }
+  const recon = bankReconciliation();
+  return {
+    open,
+    awaitingReceipt,
+    suggested: suggestedBankBookings().map((s) => ({
+      txId: s.txId,
+      date: s.date,
+      counterpart: s.counterpart,
+      amount: s.amount,
+      label: s.label,
+    })),
+    openIn,
+    openOut,
+    reconciliation: {
+      ok: recon.ok,
+      unexplained: recon.unexplained,
+      reconciledThrough: recon.reconciledThrough,
+      bankBalance: recon.bankBalance,
+      ledgerBalance: recon.ledgerBalance,
+    },
+  };
+}
+
+/** Antal obokade transaktioner – styr standardfiltret i bankvyn. */
+export function openBankTransactionCount(): number {
+  return db().bankTransactions.filter((t) => t.status !== "bokford").length;
 }
 
 /** Beskrivning och referens – hoppar över tomma så kolumnen inte upprepar motparten. */
@@ -629,6 +784,35 @@ const TX_STATUS_META: Record<string, { label: string; tone: StatusTone }> = {
   ...TX_STATUS,
   matchad: { label: "Matchad", tone: "info" },
 };
+
+/**
+ * Statusetiketten säger vad som väntar – aldrig ett generiskt "Behöver åtgärd"
+ * när raden vet mer: "Förslag: Bankavgift", "Kvitto saknas", "Välj typ".
+ */
+function bankRowStatus(
+  tx: BankTransaction,
+  rowAction: BankRowAction | undefined,
+  action: BusinessAction | undefined
+): { label: string; tone: StatusTone } {
+  switch (rowAction?.kind) {
+    case "book_kind":
+      return { label: `Förslag: ${rowAction.kindLabel}`, tone: "info" };
+    case "confirm_supplier_payment":
+      return { label: "Förslag: Leverantörsbetalning", tone: "info" };
+    case "receipt":
+      return { label: "Kvitto saknas", tone: "warn" };
+    case "question":
+      return { label: "Välj kategori", tone: "warn" };
+    case "categorize":
+      return { label: "Välj typ", tone: "warn" };
+    default:
+      break;
+  }
+  // Motorn vet den konkreta åtgärden ("Matcha betalning" osv.) – visa den
+  // i stället för generiska "Behöver åtgärd" när transaktionen har en rad.
+  if (action) return { label: issueForAction(action), tone: "warn" };
+  return TX_STATUS_META[tx.status];
+}
 
 function bankSortable(row: BankTableRow): EconomySortable {
   return {
@@ -657,15 +841,10 @@ export function listBankForTable(
     }
     // Motorn vet den konkreta åtgärden ("Matcha betalning" osv.) – visa den
     // i stället för generiska "Behöver åtgärd" när transaktionen har en rad.
-    const action = tx.status === "behover_atgard" || tx.status === "ny" ? attention.get(`bank:${tx.id}`) : undefined;
-    const rowAction = tx.status === "behover_atgard" || tx.status === "ny" ? bankRowAction(tx) : undefined;
-    const meta = action
-      ? { label: issueForAction(action), tone: "warn" as StatusTone }
-      : rowAction?.kind === "receipt"
-        ? { label: "Kvitto saknas", tone: "warn" as StatusTone }
-        : rowAction?.kind === "question"
-          ? { label: "Välj kategori", tone: "warn" as StatusTone }
-          : TX_STATUS_META[tx.status];
+    const unbooked = tx.status === "behover_atgard" || tx.status === "ny";
+    const action = unbooked ? attention.get(`bank:${tx.id}`) : undefined;
+    const rowAction = unbooked ? bankRowAction(tx) : undefined;
+    const meta = bankRowStatus(tx, rowAction, action);
     rows.push({
       id: tx.id,
       date: tx.date,
@@ -677,6 +856,7 @@ export function listBankForTable(
       statusLabel: meta.label,
       statusTone: meta.tone,
       ...(rowAction ? { action: rowAction } : {}),
+      ...(unbooked ? { picker: bankKindPicker(tx) } : {}),
     });
   }
 

@@ -28,6 +28,7 @@ import {
   reminderVisibleFrom,
 } from "./reminders";
 import { paymentSuggestionForTransaction } from "./payment-matching";
+import { bankKindByKey } from "../banking/bank-kinds";
 import { suppressedActionIds } from "./attention-state";
 import { bankReconciliation } from "../accounting/reconciliation";
 import { bokforingsdatum, calendarFiscalYear, vatDueDate, vatPeriodsOf, type Period } from "../accounting/dates";
@@ -131,6 +132,10 @@ export type ActionCta =
   | { type: "pickPaymentMatch"; txId: string }
   | { type: "confirmRotPayout"; label: string; txId: string }
   | { type: "registerCreditRefund"; label: string; invoiceId: string; txId?: string }
+  /** Bekräfta en föreslagen leverantörsbetalning i banken (bokförs som betald). */
+  | { type: "confirmSupplierPayment"; label: string; txId: string; supplierPaymentId: string }
+  /** Bokför/koppla en banktransaktion som en typ ur katalogen (bankavgift, redan bokförd lön …). */
+  | { type: "bookBankKind"; label: string; txId: string; bankKind: string; verificationId?: string }
   | { type: "reminderActions"; reminderId: string; dueAt?: string; timezone: string }
   // Betalningsuppgifter för leverantörsfakturor – konkreta lösningsflöden,
   // aldrig ett generiskt "öppna dokumentet" som låtsas vara en åtgärd.
@@ -1057,7 +1062,55 @@ function collectAccounting(ranked: Ranked[]) {
         subtitle = `${kr(Math.abs(tx.amount))} · ${suggestion.reason}`;
         cta = { type: "registerCreditRefund", label: "Boka återbetalningen", invoiceId: suggestion.invoiceId!, txId: tx.id };
         break;
+      case "supplier_payment": {
+        const payment = suggestion.supplierPaymentId
+          ? (data.supplierPayments ?? []).find((p) => p.id === suggestion.supplierPaymentId)
+          : undefined;
+        if (payment) {
+          title = `Bekräfta leverantörsbetalning: ${tx.counterpart} → ${payment.recipientName}`;
+          subtitle = `${kr(Math.abs(tx.amount))} · ${suggestion.reason}`;
+          cta = { type: "confirmSupplierPayment", label: "Boka betalningen", txId: tx.id, supplierPaymentId: payment.id };
+        } else {
+          subtitle = `${kr(Math.abs(tx.amount))} · ${datumKort(tx.date)} · ${suggestion.reason}`;
+        }
+        break;
+      }
+      case "bank_kind": {
+        const def = suggestion.bankKind ? bankKindByKey(suggestion.bankKind) : undefined;
+        const oneClick =
+          def &&
+          suggestion.outcome !== "REQUIRES_USER" &&
+          !def.href &&
+          def.key !== "kortkop" &&
+          def.key !== "kundbetalning" &&
+          (def.key !== "redan_bokford" || suggestion.verificationId);
+        if (def && oneClick) {
+          title =
+            def.key === "redan_bokford"
+              ? `${tx.counterpart} ${kr(Math.abs(tx.amount))} är redan bokförd – koppla till ${suggestion.verificationLabel ?? "verifikationen"}`
+              : `Bokför ${tx.counterpart} ${kr(Math.abs(tx.amount))} som ${def.label.toLowerCase()}?`;
+          subtitle = `${datumKort(tx.date)} · ${suggestion.reason}`;
+          cta = {
+            type: "bookBankKind",
+            label: def.key === "redan_bokford" ? "Koppla" : `Bokför som ${def.label.toLowerCase()}`,
+            txId: tx.id,
+            bankKind: def.key,
+            ...(suggestion.verificationId ? { verificationId: suggestion.verificationId } : {}),
+          };
+        } else {
+          title = incoming
+            ? `Inbetalning från ${tx.counterpart} – vad är det?`
+            : `Utbetalning till ${tx.counterpart} – vad är det?`;
+          subtitle = `${kr(Math.abs(tx.amount))} · ${datumKort(tx.date)} · ${suggestion.reason}`;
+          cta = { type: "link", label: def?.key === "lon" ? "Öppna Lön" : "Välj typ", href: def?.href ?? txHref };
+        }
+        break;
+      }
       default:
+        if (!incoming) {
+          title = `Utbetalning till ${tx.counterpart} – vad är det?`;
+          cta = { type: "link", label: "Välj typ", href: txHref };
+        }
         subtitle = `${kr(Math.abs(tx.amount))} · ${datumKort(tx.date)} · ${suggestion.reason}`;
         break;
     }

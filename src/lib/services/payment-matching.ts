@@ -23,6 +23,8 @@ import {
   registerTaxReductionPayout,
   type ExpectedTaxReductionPayout,
 } from "./tax-reduction";
+import { bankKindSuggestion, bookBankTransactionAs, type BankKindSuggestionSource } from "./bank-booking";
+import { bankKindByKey, type BankKindKey } from "../banking/bank-kinds";
 
 /**
  * Betalningsmatchning – hjärtat i autopiloten för inbetalningar.
@@ -180,6 +182,7 @@ export type PaymentSuggestionKind =
   | "tax_reduction_payout" // Skatteverket-utbetalning mot ROT/RUT-fordran
   | "credit_refund" // utgående betalning som ser ut som återbetalning av kredit
   | "supplier_payment" // utgående betalning mot leverantörsinstruktion
+  | "bank_kind" // bankavgift, skattekonto, lön (redan bokförd), amortering … (services/bank-booking.ts)
   | "none";
 
 export interface PaymentSuggestion {
@@ -195,6 +198,27 @@ export interface PaymentSuggestion {
   payout?: ExpectedTaxReductionPayout;
   amount: number;
   diff?: number;
+  /** För bank_kind: typen ur katalogen, var förslaget kom ifrån och ev. verifikation att koppla till. */
+  bankKind?: BankKindKey;
+  bankKindLabel?: string;
+  bankKindSource?: BankKindSuggestionSource;
+  verificationId?: string;
+  verificationLabel?: string;
+}
+
+function kindSuggestion(tx: BankTransaction): PaymentSuggestion | null {
+  const hit = bankKindSuggestion(tx);
+  if (!hit) return null;
+  return {
+    kind: "bank_kind",
+    outcome: hit.outcome,
+    reason: hit.reason,
+    amount: tx.amount,
+    bankKind: hit.kind,
+    bankKindLabel: hit.label,
+    bankKindSource: hit.source,
+    ...(hit.verificationId ? { verificationId: hit.verificationId, verificationLabel: hit.verificationLabel } : {}),
+  };
 }
 
 function scoreOutgoingSupplierPayments(tx: BankTransaction): PaymentSuggestion | null {
@@ -302,7 +326,15 @@ export function paymentSuggestionForTransaction(tx: BankTransaction): PaymentSug
         amount: tx.amount,
       };
     }
-    return { kind: "none", outcome: "REQUIRES_USER", reason: "Utbetalning från Skatteverket utan öppen ROT/RUT-fordran", amount: tx.amount };
+    // Ingen ROT/RUT-fordran: troligen överskott från skattekontot (regel/mönster).
+    return (
+      kindSuggestion(tx) ?? {
+        kind: "none",
+        outcome: "REQUIRES_USER",
+        reason: "Utbetalning från Skatteverket utan öppen ROT/RUT-fordran",
+        amount: tx.amount,
+      }
+    );
   }
 
   if (tx.amount > 0) {
@@ -325,7 +357,15 @@ export function paymentSuggestionForTransaction(tx: BankTransaction): PaymentSug
           amount: tx.amount,
         };
       }
-      return { kind: "none", outcome: "REQUIRES_USER", reason: "Ingen faktura matchar referens, belopp eller avsändare", amount: tx.amount };
+      // Ingen faktura: ägarens insättning, lån, ränta, återbäring … (regel/mönster).
+      return (
+        kindSuggestion(tx) ?? {
+          kind: "none",
+          outcome: "REQUIRES_USER",
+          reason: "Ingen faktura matchar referens, belopp eller avsändare",
+          amount: tx.amount,
+        }
+      );
     }
 
     const outcome = decideFromConfidence(best.confidence);
@@ -377,7 +417,16 @@ export function paymentSuggestionForTransaction(tx: BankTransaction): PaymentSug
       amount: tx.amount,
     };
   }
-  return { kind: "none", outcome: "REQUIRES_USER", reason: "Utgående betalning utan känd motpart", amount: tx.amount };
+  // Bankavgift, skattekonto, lön som lönekörningen redan bokfört, amortering …
+  // – lärda regler först, sedan redan bokförda belopp, sist mönster i texten.
+  return (
+    kindSuggestion(tx) ?? {
+      kind: "none",
+      outcome: "REQUIRES_USER",
+      reason: "Utgående betalning utan känd motpart",
+      amount: tx.amount,
+    }
+  );
 }
 
 /* -------------------------------- Utförande -------------------------------- */
@@ -437,6 +486,28 @@ export function processIncomingTransaction(txId: string): ProcessTransactionResu
         matchReason: suggestion.reason,
       });
       return { outcome: "booked", suggestion };
+    }
+    if (suggestion.kind === "bank_kind" && suggestion.bankKind) {
+      if (suggestion.bankKind === "kortkop") {
+        // Regeln säger "köp" fast texten inte ser ut så – kvittoflödet tar över.
+        tx.status = "behover_atgard";
+        createExpenseFromBankPurchase(tx, { force: true });
+        save();
+        return { outcome: "unmatched", suggestion };
+      }
+      try {
+        bookBankTransactionAs(tx.id, {
+          kind: suggestion.bankKind,
+          verificationId: suggestion.verificationId,
+          by: "auto",
+          matchReason: suggestion.reason,
+          remember: false,
+        });
+        return { outcome: "booked", suggestion };
+      } catch {
+        // T.ex. låst period eller verifikationen hann kopplas av något annat –
+        // parkera som förslag i stället för att tappa transaktionen.
+      }
     }
   }
 
@@ -511,4 +582,151 @@ export function confirmCreditRefundMatch(txId: string, invoiceId: string): void 
   if (tx.status === "bokford") throw new Error("Banktransaktionen är redan bokförd.");
   if (tx.amount >= 0) throw new Error("Endast utgående betalningar kan registreras som återbetalning.");
   registerCreditRefund(invoiceId, { bankTransactionId: txId, amount: -tx.amount });
+}
+
+/**
+ * Bekräfta en föreslagen leverantörsbetalning (SUGGEST/REQUIRES_USER) – samma
+ * bokning som autopiloten gör vid hög konfidens, men med människan som beslutar.
+ */
+export function confirmSupplierPaymentMatch(txId: string, supplierPaymentId: string): void {
+  const data = db();
+  const tx = data.bankTransactions.find((t) => t.id === txId);
+  if (!tx) throw new Error("Banktransaktionen finns inte.");
+  if (tx.status === "bokford") throw new Error("Banktransaktionen är redan bokförd.");
+  if (tx.amount >= 0) throw new Error("Endast utgående betalningar kan matchas mot leverantörsbetalningar.");
+  const payment = supplierPayments().find((p) => p.id === supplierPaymentId);
+  if (!payment) throw new Error("Leverantörsbetalningen finns inte.");
+  if (payment.status === "PAID") throw new Error("Leverantörsbetalningen är redan bokförd som betald.");
+  if (Math.abs(tx.amount) !== payment.amount) {
+    throw new Error(`Beloppet stämmer inte: banken visar ${kr(Math.abs(tx.amount))}, betalningen är på ${kr(payment.amount)}.`);
+  }
+  bookSupplierPaymentFromBank({
+    payment,
+    bankTransactionId: tx.id,
+    matchReason: "Bekräftad manuellt mot föreslagen leverantörsbetalning.",
+  });
+}
+
+/* --------------------------- Bokför alla föreslagna --------------------------- */
+
+export interface SuggestedBankBooking {
+  txId: string;
+  date: string;
+  counterpart: string;
+  amount: number;
+  /** Vad som kommer att hända: "Faktura #1042 · Bygg & Co" / "Bankavgift". */
+  label: string;
+  suggestion: PaymentSuggestion;
+}
+
+/**
+ * Obokade transaktioner där motorn har ett konkret förslag som går att
+ * bekräfta med ett klick. Underlag för "Bokför alla föreslagna" i bankvyn –
+ * listan visas i bekräftelsen, så användaren ser exakt vad som bokförs.
+ */
+export function suggestedBankBookings(): SuggestedBankBooking[] {
+  const data = db();
+  const rows: SuggestedBankBooking[] = [];
+  for (const tx of data.bankTransactions) {
+    if (tx.status === "bokford") continue;
+    // Kortköp som väntar på kvitto/kategori har sin egen väg (kvittot).
+    if (data.expenses.some((e) => e.bankTransactionId === tx.id && e.status !== "bokford")) continue;
+    const suggestion = paymentSuggestionForTransaction(tx);
+    const label = oneClickLabel(suggestion);
+    if (!label) continue;
+    rows.push({ txId: tx.id, date: tx.date, counterpart: tx.counterpart, amount: tx.amount, label, suggestion });
+  }
+  return rows.sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/** Etiketten för ett förslag som kan bekräftas direkt; null om det kräver ett val. */
+function oneClickLabel(s: PaymentSuggestion): string | null {
+  if (s.outcome === "BLOCKED") return null;
+  switch (s.kind) {
+    case "match":
+      return `Faktura #${s.invoiceNumber ?? "?"} · ${s.customerName ?? ""}`.trim();
+    case "tax_reduction_payout":
+      return s.payout ? `${s.payout.label} · ${s.payout.customerName}` : null;
+    case "credit_refund":
+      return `Återbetalning · faktura #${s.invoiceNumber ?? "?"}`;
+    case "supplier_payment": {
+      const payment = s.supplierPaymentId ? supplierPayments().find((p) => p.id === s.supplierPaymentId) : undefined;
+      return payment ? `Leverantörsbetalning · ${payment.recipientName}` : null;
+    }
+    case "bank_kind": {
+      if (s.outcome === "REQUIRES_USER" || !s.bankKind) return null;
+      const def = bankKindByKey(s.bankKind);
+      if (!def || def.key === "kortkop" || def.key === "kundbetalning" || def.href) return null;
+      if (def.key === "redan_bokford" && !s.verificationId) return null;
+      return s.verificationLabel ? `${def.label} · ${s.verificationLabel}` : def.label;
+    }
+    default:
+      return null;
+  }
+}
+
+export interface BulkBookingResult {
+  booked: number;
+  failed: { txId: string; counterpart: string; error: string }[];
+}
+
+/**
+ * Bekräfta alla förslag på en gång. Varje transaktion bokförs för sig med
+ * samma domänvägar som ett klick på raden – ett fel stoppar inte de andra.
+ * Typvalen sparas som motpartsregler: nästa gång sker det automatiskt.
+ */
+export function bookSuggestedBankTransactions(
+  by: "anvandare" | "assistent" = "anvandare",
+  onlyTxIds?: string[]
+): BulkBookingResult {
+  const wanted = onlyTxIds ? new Set(onlyTxIds) : null;
+  const result: BulkBookingResult = { booked: 0, failed: [] };
+  for (const row of suggestedBankBookings()) {
+    if (wanted && !wanted.has(row.txId)) continue;
+    const s = row.suggestion;
+    try {
+      switch (s.kind) {
+        case "match":
+          confirmPaymentMatch(row.txId, s.invoiceId!, by);
+          break;
+        case "tax_reduction_payout":
+          confirmTaxReductionPayoutMatch(row.txId);
+          break;
+        case "credit_refund":
+          confirmCreditRefundMatch(row.txId, s.invoiceId!);
+          break;
+        case "supplier_payment":
+          confirmSupplierPaymentMatch(row.txId, s.supplierPaymentId!);
+          break;
+        case "bank_kind":
+          bookBankTransactionAs(row.txId, {
+            kind: s.bankKind!,
+            verificationId: s.verificationId,
+            remember: true,
+            by,
+            matchReason: s.reason,
+          });
+          break;
+        default:
+          continue;
+      }
+      result.booked++;
+    } catch (err) {
+      result.failed.push({
+        txId: row.txId,
+        counterpart: row.counterpart,
+        error: err instanceof Error ? err.message : "Något gick fel.",
+      });
+    }
+  }
+  if (result.booked > 0) {
+    logActivity(
+      result.booked === 1
+        ? `1 föreslagen banktransaktion bokfördes efter bekräftelse.`
+        : `${result.booked} föreslagna banktransaktioner bokfördes efter bekräftelse${result.failed.length ? ` (${result.failed.length} gick inte)` : ""}.`,
+      { createdBy: by }
+    );
+    save();
+  }
+  return result;
 }

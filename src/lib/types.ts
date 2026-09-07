@@ -3077,6 +3077,13 @@ export interface DB {
      */
     merchantCategoryRules?: Record<string, MerchantCategoryRule>;
     /**
+     * Lärda motpartsregler för banktransaktioner som inte är köp eller kund-
+     * betalningar (bankavgift, skattekonto, lön, amortering …). Nyckeln är det
+     * normaliserade motpartsnamnet. Första bokningen ger ett förslag nästa gång,
+     * den andra gör att transaktionen bokförs automatiskt med förklaring.
+     */
+    bankCounterpartRules?: Record<string, BankCounterpartRule>;
+    /**
      * Explicit tillstånd för valfria funktioner (Hemsida, Samarbeta).
      * true = på, false = avstängd (data finns kvar). Saknas flaggan men
      * data finns → backfill som aktiv så inget försvinner för befintliga.
@@ -3116,4 +3123,15 @@ export interface MerchantCategoryRule {
   /** Antal gånger användaren bekräftat/valt kategorin för leverantören. */
   count: number;
   lastUsedAt: string;
+}
+
+/** Lärd regel för vad en banktransaktion från en motpart är (nyckel ur banking/bank-kinds.ts). */
+export interface BankCounterpartRule {
+  /** Typ ur BANK_KINDS, t.ex. "bankavgift" eller "redan_bokford". */
+  kind: string;
+  /** Antal gånger användaren bokfört motparten som typen. */
+  count: number;
+  lastUsedAt: string;
+  /** Motpartsnamnet som det såg ut senast – för inställningar och förklaringar. */
+  counterpart: string;
 }

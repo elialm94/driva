@@ -44,10 +44,20 @@ import {
   type ScheduleDraft,
 } from "@/lib/accounting/year-end";
 import {
+  bookSuggestedBankTransactions,
   confirmCreditRefundMatch,
   confirmPaymentMatch,
+  confirmSupplierPaymentMatch,
   confirmTaxReductionPayoutMatch,
+  type BulkBookingResult,
 } from "@/lib/services/payment-matching";
+import {
+  bookBankTransactionAs,
+  forgetBankCounterpartRule,
+  RULE_AUTO_THRESHOLD,
+  type BookBankTransactionResult,
+} from "@/lib/services/bank-booking";
+import { isBankKindKey } from "@/lib/banking/bank-kinds";
 import { registerCreditRefund } from "@/lib/services/invoices";
 import { newAttachmentKey, postManualVerification } from "@/lib/services/manual-verification";
 import { storeVerificationAttachment } from "@/lib/receipts/verification-attachment";
@@ -311,6 +321,71 @@ export async function registerCreditRefundAction(invoiceId: string, txId?: strin
     if (txId) confirmCreditRefundMatch(txId, invoiceId);
     else registerCreditRefund(invoiceId, {});
   }, "match_payment");
+}
+
+/** Bekräfta en föreslagen leverantörsbetalning i banken. */
+export async function confirmSupplierPaymentMatchAction(txId: string, supplierPaymentId: string): Promise<Result> {
+  return run(() => confirmSupplierPaymentMatch(txId, supplierPaymentId), "match_payment");
+}
+
+/* --------------------- Bankinkorgen: typ, regler, alla ----------------------- */
+
+type BookBankKindResult = { ok: true; summary: string; learned?: "suggest" | "auto" } | { ok: false; error: string };
+
+/**
+ * Bokför/koppla en banktransaktion som en typ ur katalogen (bankavgift,
+ * skattekonto, redan bokförd lön …). `remember` sparar motpartsregeln så nästa
+ * transaktion från samma motpart föreslås – och från andra gången bokförs själv.
+ */
+export async function bookBankTransactionAsAction(
+  txId: string,
+  kind: string,
+  opts: { verificationId?: string; remember?: boolean } = {}
+): Promise<BookBankKindResult> {
+  if (!isBankKindKey(kind)) return { ok: false, error: "Okänd transaktionstyp." };
+  try {
+    let result: BookBankTransactionResult | undefined;
+    await withBusiness(() => {
+      result = bookBankTransactionAs(txId, {
+        kind,
+        verificationId: opts.verificationId,
+        remember: opts.remember,
+        by: "anvandare",
+      });
+      refresh();
+    }, { capability: "write_accounting" });
+    const rule = result?.rule;
+    return {
+      ok: true,
+      summary: result?.summary ?? "Bokfört.",
+      ...(rule ? { learned: rule.count >= RULE_AUTO_THRESHOLD || rule.kind === "redan_bokford" || rule.kind === "kortkop" ? "auto" : "suggest" } : {}),
+    };
+  } catch (e) {
+    refresh();
+    return { ok: false, error: e instanceof Error ? e.message : "Något gick fel." };
+  }
+}
+
+/** Glöm motpartsregeln – transaktioner från motparten föreslås inte längre automatiskt. */
+export async function forgetBankCounterpartRuleAction(counterpart: string): Promise<Result> {
+  return run(() => void forgetBankCounterpartRule(counterpart), "write_accounting");
+}
+
+type BulkResult = { ok: true; booked: number; failed: { counterpart: string; error: string }[] } | { ok: false; error: string };
+
+/** Bekräfta alla förslag i bankvyn på en gång (listan visades i bekräftelsen). */
+export async function bookSuggestedBankTransactionsAction(txIds?: string[]): Promise<BulkResult> {
+  try {
+    let result: BulkBookingResult = { booked: 0, failed: [] };
+    await withBusiness(() => {
+      result = bookSuggestedBankTransactions("anvandare", txIds);
+      refresh();
+    }, { capability: "write_accounting" });
+    return { ok: true, booked: result.booked, failed: result.failed.map((f) => ({ counterpart: f.counterpart, error: f.error })) };
+  } catch (e) {
+    refresh();
+    return { ok: false, error: e instanceof Error ? e.message : "Något gick fel." };
+  }
 }
 
 export async function planAccrualAction(input: {

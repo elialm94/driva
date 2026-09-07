@@ -47,6 +47,8 @@ const CTA_ISSUE: Partial<Record<ActionCta["type"], string>> = {
   paySupplier: "Skicka till banken",
   createPaymentFile: "Skapa bankfil",
   confirmRotPayout: "Bekräfta utbetalning",
+  confirmSupplierPayment: "Bekräfta betalning",
+  bookBankKind: "Bekräfta bokföring",
   registerCreditRefund: "Återbetala",
   reminderActions: "Påminnelse",
   verifyPaymentDetails: "Kontrollera uppgifter",
@@ -80,7 +82,11 @@ export function issueForAction(action: BusinessAction): string {
   if (action.id.startsWith("invoice-refund-")) return "Återbetala";
   if (action.id.startsWith("quote-expired-")) return "Utgången offert";
   if (action.id.startsWith("bank-unexplained")) return "Stäm av banken";
-  if (action.id.startsWith("bank-")) return action.title.includes("avviker") ? "Betalningen avviker" : FALLBACK_ISSUE_LABEL;
+  if (action.id.startsWith("bank-")) {
+    if (action.title.includes("avviker")) return "Betalningen avviker";
+    if (action.title.includes("vad är det")) return "Välj typ";
+    return FALLBACK_ISSUE_LABEL;
+  }
   return FALLBACK_ISSUE_LABEL;
 }
 
@@ -88,7 +94,13 @@ export function issueForAction(action: BusinessAction): string {
 export function sourceForAction(action: BusinessAction): ActionSource | null {
   const cta = action.cta;
   if (cta?.type === "uploadReceipt" || cta?.type === "answerQuestion") return { kind: "expense", id: cta.expenseId };
-  if (cta?.type === "confirmPaymentMatch" || cta?.type === "confirmRotPayout" || cta?.type === "pickPaymentMatch") {
+  if (
+    cta?.type === "confirmPaymentMatch" ||
+    cta?.type === "confirmRotPayout" ||
+    cta?.type === "pickPaymentMatch" ||
+    cta?.type === "confirmSupplierPayment" ||
+    cta?.type === "bookBankKind"
+  ) {
     return { kind: "bank", id: cta.txId };
   }
   if (cta?.type === "retryInvoiceEmail" || cta?.type === "remindInvoice") return { kind: "invoice", id: cta.invoiceId };

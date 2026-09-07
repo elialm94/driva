@@ -32,15 +32,20 @@ import {
   InvoiceRegister,
   QuoteRegister,
 } from "@/components/economy-register";
+import { BankInboxStrip } from "@/components/bank-inbox-strip";
+import { BankRulesCard } from "@/components/bank-rules-card";
+import { listBankCounterpartRules } from "@/lib/services/bank-booking";
 import {
   BANK_STATUS_OPTIONS,
   EXPENSE_STATUS_OPTIONS,
   INVOICE_STATUS_OPTIONS,
   QUOTE_STATUS_OPTIONS,
+  bankInboxSummary,
   listBankForTable,
   listExpensesForTable,
   listInvoicesForTable,
   listQuotesForTable,
+  openBankTransactionCount,
   openReceivablesForMatching,
   readyToPayBatch,
   type BankStatusFilter,
@@ -195,6 +200,14 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
   const highlightId = highlightFromAtgard(param(searchParams.atgard), tab);
   const bank = tab === "bank" ? bankConnectionView() : null;
   const bankDemo = tab === "bank" ? bankProviderKind() === "mock" : false;
+  // Banken är en inkorg: utan valt filter visas det som väntar – finns inget
+  // obokat (eller söker man) visas allt, så listan aldrig är tom i onödan.
+  const bankStatus: BankStatusFilter =
+    tab === "bank"
+      ? param(searchParams.status) === "" && !q && !highlightId && openBankTransactionCount() > 0
+        ? "atgard"
+        : statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS)
+      : "alla";
 
   return (
     <div className="animate-fade-up">
@@ -307,18 +320,15 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
             {bank.status !== "connected" ? (
               <p className="text-[13px] text-muted">{BANK_SECONDARY_LINE}</p>
             ) : null}
+            <BankInboxStrip summary={bankInboxSummary()} filterHref="/ekonomi?flik=bank&status=atgard" />
             <BankRegister
-              result={listBankForTable({
-                q,
-                status: statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS),
-                page,
-                sort,
-              })}
-              query={{ q, status: statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS), page, sort }}
+              result={listBankForTable({ q, status: bankStatus, page, sort })}
+              query={{ q, status: bankStatus, page, sort }}
               options={BANK_STATUS_OPTIONS}
               receivables={openReceivablesForMatching()}
               highlightId={highlightId}
             />
+            <BankRulesCard rules={listBankCounterpartRules()} />
           </div>
         )
       ) : null}
