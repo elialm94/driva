@@ -4,7 +4,6 @@ import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Banknote, FilePlus2, Undo2, Send } from "lucide-react";
 import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
-import { FileDropzone } from "./file-dropzone";
 import { Modal } from "./modal";
 import { buttonClasses, cx, DemoTag } from "./ui";
 import {
@@ -23,7 +22,8 @@ import {
 import { invoiceHref } from "@/lib/nav";
 import { kr } from "@/lib/format";
 import type { CreditInvoiceContext } from "@/lib/services/invoices";
-import { RECEIPT_MAX_BYTES, inboxDocumentForm, receiptUploadForm } from "@/lib/receipts/read-file";
+import { inboxDocumentForm, receiptUploadForm } from "@/lib/receipts/read-file";
+import { ReceiptUpload } from "./receipt-upload";
 
 /**
  * Ladda upp ett kvitto. Med `expenseId` kopplas det till ett känt bankköp –
@@ -40,63 +40,36 @@ export function UploadReceiptButton({
   label?: string;
   variant?: "landing" | "inline" | "compact";
 }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [done, setDone] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const zone = variant ?? (expenseId ? "compact" : "landing");
 
-  if (done) {
+  if (expenseId) {
     return (
-      <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
-        <Check className="size-4" /> {done}
-      </span>
+      <ReceiptUpload
+        variant={zone}
+        multiple={false}
+        title={label}
+        formats="PDF, JPG, PNG, HEIC · max 5 MB"
+        upload={async (file) => {
+          // Filen följer med som File i en FormData – aldrig som data-URL (read-file.ts).
+          const result = await uploadReceiptAction(receiptUploadForm(expenseId, file));
+          if (result.ok === false) return { ok: false, error: result.error };
+          return { ok: true, note: "Kvitto sparat" };
+        }}
+      />
     );
   }
 
-  function onFiles(files: File[]) {
-    setError(null);
-    startTransition(async () => {
-      for (const file of files) {
-        try {
-          if (expenseId) {
-            // Filen följer med som File i en FormData – aldrig som data-URL (read-file.ts).
-            const result = await uploadReceiptAction(receiptUploadForm(expenseId, file));
-            if (result.ok === false) {
-              setError(result.error);
-              return;
-            }
-            setDone("Kvitto sparat");
-            return;
-          }
-          const result = await uploadInboxDocumentAction(inboxDocumentForm(file));
-          if (result.ok === false) {
-            setError(result.error);
-            return;
-          }
-          setDone(result.autoBooked ? "Kvitto bokfört" : "Kvitto i inboxen");
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Kunde inte spara kvittot.");
-          return;
-        }
-      }
-      if (!expenseId) router.refresh();
-    });
-  }
-
   return (
-    <FileDropzone
+    <ReceiptUpload
       variant={zone}
-      accept="image/*,.pdf,.heic,.heif"
-      multiple={!expenseId}
-      busy={isPending}
-      error={error}
-      maxBytes={RECEIPT_MAX_BYTES}
       title={label}
-      subtitle={expenseId ? undefined : "Eller tryck för att välja. Kvittot läses av och bokförs när uppgifterna räcker."}
-      formats="PDF, JPG, PNG, HEIC · max 5 MB"
-      className={zone === "compact" ? "min-w-[12rem] sm:w-64" : undefined}
-      onFiles={onFiles}
+      subtitle="Eller tryck för att välja, fota med kameran eller klistra in en skärmdump. Kvittot läses av och bokförs när uppgifterna räcker."
+      pasteAnywhere={zone === "landing"}
+      upload={async (file) => {
+        const result = await uploadInboxDocumentAction(inboxDocumentForm(file));
+        if (result.ok === false) return { ok: false, error: result.error };
+        return { ok: true, note: result.autoBooked ? "Bokfört" : "I inboxen – kontrollera uppgifterna" };
+      }}
     />
   );
 }

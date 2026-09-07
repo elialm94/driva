@@ -1,7 +1,17 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode, type Ref } from "react";
-import { FileUp, X, type LucideIcon } from "lucide-react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type Ref,
+} from "react";
+import { Camera, FileUp, X, type LucideIcon } from "lucide-react";
 import { cx } from "./ui";
 
 export type FileDropzoneVariant = "landing" | "inline" | "compact";
@@ -33,10 +43,43 @@ export type FileDropzoneProps = {
   fileInputAttr?: "import" | "price";
   maxBytes?: number;
   autoFocus?: boolean;
+  /**
+   * Visar "Fota" på pekskärmar: öppnar kameran direkt (capture=environment)
+   * i stället för filväljaren. Ett kvitto på byggplatsen fotas – det letas
+   * inte fram i en filhanterare.
+   */
+  camera?: boolean;
+  /**
+   * Tar emot inklistrade filer/bilder (Ctrl/Cmd+V) på hela sidan så länge
+   * zonen är monterad – inte bara när den har fokus. Kvitton kommer ofta som
+   * skärmdumpar. Fält och redigerbara ytor lämnas ifred.
+   */
+  pasteAnywhere?: boolean;
 };
 
 function filesFromList(list: FileList | File[] | null | undefined): File[] {
   return list ? Array.from(list) : [];
+}
+
+/** Filer ur urklipp: riktiga filer först, annars bilddata (skärmdump). */
+function filesFromClipboard(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const direct = filesFromList(data.files);
+  if (direct.length) return direct;
+  const out: File[] = [];
+  for (const item of Array.from(data.items ?? [])) {
+    if (item.kind !== "file") continue;
+    const file = item.getAsFile();
+    if (file) out.push(file);
+  }
+  return out;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
 function assignInputFiles(input: HTMLInputElement, files: File[]) {
@@ -74,10 +117,13 @@ export function FileDropzone({
   fileInputAttr,
   maxBytes,
   autoFocus,
+  camera,
+  pasteAnywhere,
 }: FileDropzoneProps) {
   const autoId = useId();
   const id = inputId ?? autoId;
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const zoneRef = useRef<HTMLDivElement>(null);
   const dragDepth = useRef(0);
   const [dragging, setDragging] = useState(false);
@@ -86,6 +132,21 @@ export function FileDropzone({
   useEffect(() => {
     if (autoFocus) zoneRef.current?.focus();
   }, [autoFocus]);
+
+  useEffect(() => {
+    if (!pasteAnywhere || locked) return;
+    const onDocPaste = (e: globalThis.ClipboardEvent) => {
+      if (isEditableTarget(e.target)) return;
+      // Öppna dialoger äger sin egen inklistring.
+      if (document.querySelector("[role='dialog'][aria-modal='true']")) return;
+      const files = filesFromClipboard(e.clipboardData);
+      if (files.length === 0) return;
+      e.preventDefault();
+      onFiles(multiple ? files : files.slice(0, 1));
+    };
+    document.addEventListener("paste", onDocPaste);
+    return () => document.removeEventListener("paste", onDocPaste);
+  }, [pasteAnywhere, locked, multiple, onFiles]);
 
   const defaultTitle =
     variant === "landing"
@@ -150,6 +211,21 @@ export function FileDropzone({
     }
   }
 
+  function onPaste(e: ClipboardEvent) {
+    if (locked) return;
+    const files = filesFromClipboard(e.clipboardData);
+    if (files.length === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    deliver(files);
+  }
+
+  function openCamera(e: { stopPropagation(): void }) {
+    e.stopPropagation();
+    if (locked) return;
+    cameraRef.current?.click();
+  }
+
   function clearFile(e: { stopPropagation(): void }) {
     e.stopPropagation();
     onClear?.();
@@ -190,6 +266,43 @@ export function FileDropzone({
     />
   );
 
+  // Kamerainputen är separat: `capture` på huvudinputen skulle ta bort
+  // valet "Välj fil" i vissa mobilwebbläsare.
+  const cameraInput = camera ? (
+    <input
+      ref={cameraRef}
+      type="file"
+      accept="image/*"
+      capture="environment"
+      disabled={locked}
+      className="sr-only"
+      tabIndex={-1}
+      aria-hidden
+      onChange={(e) => {
+        const files = filesFromList(e.target.files);
+        if (files.length) deliver(files);
+        e.target.value = "";
+      }}
+    />
+  ) : null;
+
+  const cameraButton = camera ? (
+    <button
+      type="button"
+      onClick={openCamera}
+      disabled={locked}
+      data-dropzone-camera
+      className={cx(
+        "hidden items-center gap-1.5 rounded-xl border border-line-strong bg-card px-3.5 text-[13px] font-medium text-ink transition-colors hover:border-accent/70 hover:bg-accent-soft/40",
+        "pointer-coarse:inline-flex",
+        variant === "compact" ? "h-9" : "h-10"
+      )}
+    >
+      <Camera className="size-4" />
+      Fota kvitto
+    </button>
+  ) : null;
+
   const zoneProps = {
     ref: zoneRef,
     role: children ? undefined : ("button" as const),
@@ -201,6 +314,7 @@ export function FileDropzone({
     "data-import-dropzone": dropzoneAttr === "import" ? "" : undefined,
     onClick: openPicker,
     onKeyDown,
+    onPaste,
     onDragEnter,
     onDragOver,
     onDragLeave,
@@ -211,6 +325,7 @@ export function FileDropzone({
     return (
       <div>
         {fileInput}
+        {cameraInput}
         <div {...zoneProps} className={cx(surface, "flex min-h-11 items-center gap-2.5 px-3 py-2")}>
           <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-deep">
             <Icon className="size-4" />
@@ -227,6 +342,15 @@ export function FileDropzone({
             <button type="button" aria-label="Ta bort fil" className="rounded-md p-1 text-muted hover:bg-canvas hover:text-ink" onClick={clearFile}>
               <X className="size-3.5" />
             </button>
+          ) : camera && !dragging && !busy ? (
+            <button
+              type="button"
+              aria-label="Fota kvitto"
+              onClick={openCamera}
+              className="hidden rounded-md p-1.5 text-muted hover:bg-canvas hover:text-ink pointer-coarse:inline-flex"
+            >
+              <Camera className="size-4" />
+            </button>
           ) : null}
         </div>
         {error ? <p className="mt-1.5 text-[13px] text-danger">{error}</p> : null}
@@ -237,6 +361,7 @@ export function FileDropzone({
   return (
     <div>
       {fileInput}
+      {cameraInput}
       <div
         {...zoneProps}
         className={cx(surface, variant === "landing" ? "px-6 py-8 text-center sm:px-10 sm:py-10" : "px-5 py-6 text-center")}
@@ -263,6 +388,11 @@ export function FileDropzone({
               </button>
             ) : null}
           </p>
+        ) : null}
+        {cameraButton && !dragging ? (
+          <div className="mt-4 flex justify-center" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+            {cameraButton}
+          </div>
         ) : null}
         {children ? (
           <div className="mt-4" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
