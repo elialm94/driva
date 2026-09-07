@@ -3,12 +3,14 @@
 /**
  * Kundens supportformulär. Kontext (konto, företag, rutt) bifogas av servern.
  */
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Plus, X } from "lucide-react";
 import { createSupportTicketAction, type SupportFormState } from "@/app/support-actions";
+import { FileDropzone } from "@/components/file-dropzone";
 import { buttonClasses, cx } from "@/components/ui";
+
+const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -57,7 +59,6 @@ function TicketForm({
   state: SupportFormState;
   route: string;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -90,58 +91,36 @@ function TicketForm({
 
       <div className="flex flex-col gap-1.5">
         <p className="text-sm text-soft">Bifoga bild eller PDF (valfritt)</p>
-        <input
-          ref={fileRef}
-          type="file"
+        <FileDropzone
           name="attachment"
+          variant="inline"
           accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
-          className="sr-only"
-          onChange={(e) => {
-            const next = e.target.files?.[0] ?? null;
+          maxBytes={ATTACHMENT_MAX_BYTES}
+          title="Släpp en bild eller PDF här"
+          subtitle="Eller tryck för att välja från enheten."
+          formats="PNG, JPG, WebP, GIF eller PDF · max 5 MB"
+          fileName={file?.name}
+          error={fileError || (state.field === "attachment" ? state.error : null)}
+          onClear={() => {
+            chooseFile(null);
             setFileError(null);
-            if (next && next.size > 5 * 1024 * 1024) {
+          }}
+          onFiles={(files) => {
+            const next = files[0] ?? null;
+            setFileError(null);
+            if (next && next.size > ATTACHMENT_MAX_BYTES) {
               setFileError("Bilagan är för stor (max 5 MB).");
-              e.target.value = "";
               chooseFile(null);
               return;
             }
             chooseFile(next);
           }}
-        />
-        {file ? (
-          <div className="flex items-center gap-2 rounded-xl border border-line bg-card px-3 py-2">
-            {preview ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt="" className="size-9 rounded-md object-cover" />
-            ) : (
-              <span className="text-[11px] font-medium uppercase tracking-wide text-muted">PDF</span>
-            )}
-            <span className="min-w-0 flex-1 truncate text-sm text-ink">{file.name}</span>
-            <button
-              type="button"
-              aria-label="Ta bort fil"
-              className="rounded-md p-1 text-muted hover:bg-canvas hover:text-ink"
-              onClick={() => {
-                chooseFile(null);
-                setFileError(null);
-                if (fileRef.current) fileRef.current.value = "";
-              }}
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className={buttonClasses("secondary", "sm", "self-start")}
-          >
-            <Plus className="size-3.5" /> Lägg till fil
-          </button>
-        )}
-        {fileError || (state.field === "attachment" && state.error) ? (
-          <p className="text-sm text-danger">{fileError || state.error}</p>
-        ) : null}
+        >
+          {preview ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={preview} alt="" className="mx-auto size-16 rounded-xl object-cover" />
+          ) : null}
+        </FileDropzone>
       </div>
 
       {state.error && state.field !== "attachment" ? <p className="text-sm text-danger">{state.error}</p> : null}

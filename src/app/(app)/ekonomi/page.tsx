@@ -266,11 +266,11 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
 
       {tab === "utgifter" ? (
         <div>
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="mb-4 space-y-4">
             <p className="text-[13px] text-muted">
               Kvitton och leverantörsfakturor. Åtgärder som behövs dyker upp på Hem och Bokföring.
             </p>
-            <UploadReceiptButton label="Ladda upp kvitto" />
+            <UploadReceiptButton label="Släpp kvitton här" />
           </div>
           <ReadyToPayBanner />
           <ExpenseRegister

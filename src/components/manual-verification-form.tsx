@@ -1,14 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Paperclip, Plus, Trash2 } from "lucide-react";
+import { FileDropzone } from "./file-dropzone";
 import { Card, buttonClasses, cx } from "./ui";
+import { VERIFICATION_ATTACHMENT_MAX_BYTES, verificationAttachmentForm } from "@/lib/receipts/read-file";
 import { DateField } from "./date-field";
 import { AccountCombobox } from "./account-combobox";
 import { kr } from "@/lib/format";
 import { postManualVerificationAction } from "@/app/bokforing-actions";
-import { verificationAttachmentForm } from "@/lib/receipts/read-file";
 import type { AccountPickerOption } from "@/lib/services/manual-verification";
 
 /**
@@ -70,7 +71,6 @@ export function ManualVerificationForm({
   const [attachment, setAttachment] = useState<{ name: string; form: FormData } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [posted, setPosted] = useState<{ label: string; total: number; id: string } | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const comboOptions = useMemo(
     () => accounts.map((a) => ({ key: String(a.account), account: a.account, label: a.label })),
@@ -246,51 +246,34 @@ export function ManualVerificationForm({
       </Card>
 
       <Card className="space-y-4 p-5">
-        <label className="block">
+        <div>
           <span className="mb-1.5 block text-[13px] font-medium text-soft">
             Underlag <span className="font-normal text-muted">(rekommenderas)</span>
           </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className={buttonClasses("secondary", "sm") + " cursor-pointer"}>
-              <Paperclip className="size-3.5" />
-              {attachment ? "Byt fil" : "Välj fil"}
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*,.pdf"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  try {
-                    setAttachment({ name: file.name, form: verificationAttachmentForm(file) });
-                    setError(null);
-                  } catch (err) {
-                    setAttachment(null);
-                    setError(err instanceof Error ? err.message : "Filen kunde inte läsas.");
-                  }
-                }}
-              />
-            </label>
-            {attachment ? (
-              <span className="text-[13px] text-soft">
-                {attachment.name}
-                <button
-                  type="button"
-                  className="ml-2 text-muted underline hover:text-ink"
-                  onClick={() => {
-                    setAttachment(null);
-                    if (fileRef.current) fileRef.current.value = "";
-                  }}
-                >
-                  Ta bort
-                </button>
-              </span>
-            ) : (
-              <span className="text-[13px] text-muted">Fakturan, kvittot eller avtalet bakom bokningen.</span>
-            )}
-          </div>
-        </label>
+          <FileDropzone
+            variant="inline"
+            accept="image/*,.pdf,.heic,.heif"
+            icon={Paperclip}
+            maxBytes={VERIFICATION_ATTACHMENT_MAX_BYTES}
+            title="Släpp underlaget här"
+            subtitle="Fakturan, kvittot eller avtalet bakom bokningen."
+            formats="PDF, JPG, PNG, HEIC · max 10 MB"
+            fileName={attachment?.name}
+            onClear={() => setAttachment(null)}
+            onFiles={(files) => {
+              const file = files[0];
+              if (!file) return;
+              try {
+                // Paketeras som File i en FormData redan här – se read-file.ts.
+                setAttachment({ name: file.name, form: verificationAttachmentForm(file) });
+                setError(null);
+              } catch (err) {
+                setAttachment(null);
+                setError(err instanceof Error ? err.message : "Filen kunde inte läsas.");
+              }
+            }}
+          />
+        </div>
 
         <label className="block">
           <span className="mb-1.5 block text-[13px] font-medium text-soft">
