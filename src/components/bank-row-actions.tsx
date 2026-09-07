@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, Link2, Search } from "lucide-react";
 import { buttonClasses, cx } from "./ui";
 import { ExpenseQuestionButtons, UploadReceiptButton } from "./money-widgets";
+import { useToast } from "./toast";
 import { confirmPaymentMatchAction, confirmRotPayoutAction, registerCreditRefundAction } from "@/app/bokforing-actions";
 import { kr, datumKort } from "@/lib/format";
 import type { BankRowAction, OpenReceivableOption } from "@/lib/services/economy-list";
@@ -29,6 +30,7 @@ export function BankRowActions({
   defaultOpen?: boolean;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -41,6 +43,8 @@ export function BankRowActions({
         const result = await fn();
         if (result.ok) {
           setDone(label);
+          // Raden lämnar listan över obokade när sidan laddats om – toasten står kvar.
+          toast({ title: label, text: "Transaktionen är avstämd och borta från att-göra-listan.", tone: "ok" });
           router.refresh();
         } else {
           setError(result.error);

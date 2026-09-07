@@ -24,6 +24,7 @@ import { kr } from "@/lib/format";
 import type { CreditInvoiceContext } from "@/lib/services/invoices";
 import { inboxDocumentForm, receiptUploadForm } from "@/lib/receipts/read-file";
 import { ReceiptUpload } from "./receipt-upload";
+import { useToast } from "./toast";
 
 /**
  * Ladda upp ett kvitto. Med `expenseId` kopplas det till ett känt bankköp –
@@ -107,11 +108,17 @@ export function ExpenseQuestionButtons({ expenseId, options }: { expenseId: stri
 
 export function PaySupplierButton({ supplierInvoiceId }: { supplierInvoiceId: string }) {
   const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
   return (
     <button
       className={buttonClasses("secondary", "sm")}
       disabled={isPending}
-      onClick={() => startTransition(async () => paySupplierInvoiceAction(supplierInvoiceId))}
+      onClick={() =>
+        startTransition(async () => {
+          await paySupplierInvoiceAction(supplierInvoiceId);
+          toast({ title: "Leverantörsfakturan är betald och bokförd", tone: "ok" });
+        })
+      }
       title="Demoläge: simulerar att banken redan har dragit pengarna"
     >
       <Banknote className="size-3.5" />
@@ -130,6 +137,7 @@ export function SimulatePaymentButton({
 }) {
   const [isPending, startTransition] = useTransition();
   const menu = useActionMenu();
+  const { toast } = useToast();
   const inMenu = appearance === "menu";
   return (
     <button
@@ -141,6 +149,11 @@ export function SimulatePaymentButton({
         startTransition(async () => {
           menu?.close();
           await simulatePaymentAction(invoiceId);
+          toast({
+            title: "Inbetalningen finns på banken",
+            text: "Matchningen mot fakturan och bokföringen körs som på riktigt.",
+            tone: "ok",
+          });
         })
       }
       title="Simulerar att betalningen dyker upp på banken – matchning och bokföring körs på riktigt"
@@ -530,10 +543,12 @@ export function ResendInvoiceButton({
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const menu = useActionMenu();
+  const { toast } = useToast();
   const inMenu = appearance === "menu";
   const label = isPending ? "Skickar …" : retry ? "Försök skicka igen" : "Skicka igen";
 
-  if (done) {
+  if (done && !inMenu) {
     return (
       <span
         className={cx(
@@ -555,8 +570,16 @@ export function ResendInvoiceButton({
       onClick={() =>
         startTransition(async () => {
           const result = await deliverInvoiceAction(invoiceId);
-          if (result.ok === false) setError(result.errors.join(" "));
-          else setDone(true);
+          if (result.ok === false) {
+            setError(result.errors.join(" "));
+            return;
+          }
+          setDone(true);
+          // Menyn stängs – bekräftelsen syns i toasten i stället.
+          if (inMenu) {
+            menu?.close();
+            toast({ title: retry ? "Fakturan skickades" : "Fakturan skickades igen", text: "Kunden får mejlet med länken för att betala.", tone: "ok" });
+          }
         })
       }
     >

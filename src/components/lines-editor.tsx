@@ -35,6 +35,9 @@ import {
 } from "@/lib/line-editor-nav";
 import { FieldError, invalidFieldCls } from "./form-validation";
 import { LineDescriptionInput } from "./line-description-input";
+import { useToast } from "./toast";
+
+const LINE_DELETED_TOAST_ID = "line-deleted";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -251,8 +254,7 @@ export function LinesEditor({
   const focusMovedRef = useRef(false);
   const lastDeletedIdRef = useRef<string | null>(null);
   const pendingFocusRef = useRef<string | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
-  const [toastOpen, setToastOpen] = useState(false);
+  const { toast, dismiss } = useToast();
 
   linesRef.current = lines;
   onChangeRef.current = onChange;
@@ -283,10 +285,11 @@ export function LinesEditor({
     onChange([...lines, created]);
   }
 
+  // Samma id varje gång: upprepade raderingar staplar inte toasts utan
+  // förlänger den som redan visas. Ångra går via refs och fungerar därför
+  // även från en toast som utlöstes av en tidigare rendering.
   function showToast() {
-    setToastOpen(true);
-    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToastOpen(false), 8000);
+    toast({ id: LINE_DELETED_TOAST_ID, title: LINE_DELETED_TOAST, action: { label: "Ångra", onClick: undoDelete } });
   }
 
   function deleteLine(id: string) {
@@ -307,7 +310,7 @@ export function LinesEditor({
     undoRef.current = result.undo;
     redoRef.current = result.redo;
     onChangeRef.current(result.lines);
-    if (result.undo.length === 0) setToastOpen(false);
+    if (result.undo.length === 0) dismiss(LINE_DELETED_TOAST_ID);
     const activeId = lineIdFromElement(document.activeElement);
     if (
       shouldRefocusRestoredLine({
@@ -361,12 +364,6 @@ export function LinesEditor({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
-    };
   }, []);
 
   const allBlank = showErrors && lines.every(lineIsBlank);
@@ -589,22 +586,6 @@ export function LinesEditor({
           </button>
         ))}
       </div>
-      {toastOpen ? (
-        <div
-          role="status"
-          data-line-delete-toast
-          className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl bg-ink px-4 py-2.5 text-[14px] font-medium text-white shadow-pop"
-        >
-          <span>{LINE_DELETED_TOAST}</span>
-          <button
-            type="button"
-            className="rounded-lg bg-white/15 px-2.5 py-1 text-[13px] font-semibold hover:bg-white/25"
-            onClick={undoDelete}
-          >
-            Ångra
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }

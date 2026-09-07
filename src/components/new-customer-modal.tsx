@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { Plus } from "lucide-react";
 import { buttonClasses, cx } from "./ui";
 import { Modal } from "./modal";
+import { useToast } from "./toast";
 import { AddressFields } from "./address-input";
 import { createCustomerAction } from "@/app/actions";
 import { FieldError, focusField, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
@@ -49,6 +50,7 @@ export function NewCustomerModal({
   const [showProperties, setShowProperties] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
   const { errors, formProps, fieldProps, reset, setFieldError } = useNativeFieldErrors({
     name: kind === "privat" ? "Ange kundens namn." : "Ange företagsnamnet.",
   });
@@ -109,6 +111,7 @@ export function NewCustomerModal({
         return;
       }
       onClose();
+      toast({ title: `${name.trim()} finns nu som kund`, tone: "ok" });
       onCreated?.({ id: result.id, name, kind: createdKind });
     });
   }

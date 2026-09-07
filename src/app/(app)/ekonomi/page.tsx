@@ -16,7 +16,6 @@ import {
 } from "@/components/ui";
 import { UploadReceiptButton } from "@/components/money-widgets";
 import {
-  BankNoticeToast,
   CancelPendingBankButton,
   ConnectBankButton,
   DisconnectBankButton,
@@ -53,8 +52,6 @@ import { EKONOMI_TABS, type EkonomiTab } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { parseEconomySort } from "@/lib/economy-sort";
 import { highlightFromAtgard } from "@/lib/economy-atgard";
-import { Suspense } from "react";
-import { DraftDiscardedToast } from "@/components/draft-discarded-toast";
 
 export const metadata = { title: "Ekonomi" };
 
@@ -201,10 +198,6 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
 
   return (
     <div className="animate-fade-up">
-      <Suspense>
-        <DraftDiscardedToast />
-        {tab === "bank" ? <BankNoticeToast /> : null}
-      </Suspense>
       <PageHeader
         title="Ekonomi"
         subtitle="Alla offerter, fakturor, utgifter och banktransaktioner – sök och hitta."
