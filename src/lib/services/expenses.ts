@@ -1,7 +1,7 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
 import type { InboundParsedHint } from "../inbox/inbound-mail";
-import type { BankTransaction, Expense, MerchantCategoryRule, Receipt, Verification } from "../types";
+import type { BankTransaction, Expense, InboxAttachment, MerchantCategoryRule, Receipt, Verification } from "../types";
 import { categoryByKey, deductibleVat, entriesExpense, guessCategory, EXPENSE_CATEGORIES, KNOWN_SUPPLIERS } from "../bas";
 import { kr } from "../format";
 import { logActivity } from "./activity";
@@ -446,6 +446,12 @@ export function createExpenseFromKnownReceipt(input: {
   description?: string;
   filename?: string;
   source?: Receipt["source"];
+  /**
+   * Inboxbilagan kvittot kom från. Inline-lagrade bytes kopieras till kvitto-
+   * raden så den bär underlaget själv; bucket-lagrade och demogenererade
+   * dokument nås via inboxposten (receipts/receipt-source.ts).
+   */
+  attachment?: Pick<InboxAttachment, "contentType" | "size" | "contentBase64">;
 }): { expense: Expense; autoBooked: boolean } {
   if (!Number.isInteger(input.amount) || input.amount < 1) {
     throw new Error("Belopp saknas – kan inte skapa utgift utan belopp i hela kronor.");
@@ -483,6 +489,9 @@ export function createExpenseFromKnownReceipt(input: {
     filename: input.filename || `kvitto-${supplier.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`,
     source: input.source ?? "email",
     uploadedAt: now,
+    ...(input.attachment?.contentType ? { contentType: input.attachment.contentType } : {}),
+    ...(input.attachment && input.attachment.size > 0 ? { sizeBytes: input.attachment.size } : {}),
+    ...(input.attachment?.contentBase64 ? { contentBase64: input.attachment.contentBase64 } : {}),
     extracted: {
       supplier,
       date: expense.date,

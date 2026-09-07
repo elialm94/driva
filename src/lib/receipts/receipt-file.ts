@@ -2,9 +2,11 @@ import type { Receipt } from "../types";
 import { isSupabaseMode } from "../storage/config";
 import { tenantContext } from "../storage/context";
 import { supabaseAuthAdminClient } from "../platform/supabase-admin";
-import { MAX_INLINE_ATTACHMENT_BYTES } from "../inbox/attachment-content";
+import { MAX_INLINE_ATTACHMENT_BYTES, attachmentBytes } from "../inbox/attachment-content";
+import { inboxAttachmentForReceipt } from "./receipt-source";
 
 export { receiptFileStored } from "./receipt-meta";
+export { receiptFileAvailable, inboxAttachmentForReceipt } from "./receipt-source";
 
 /**
  * Kvittofilen bakom en Receipt-rad.
@@ -173,7 +175,11 @@ function bucketUploader(admin: NonNullable<ReturnType<typeof supabaseAuthAdminCl
   };
 }
 
-/** Filens bytes, eller undefined när bara uppgifterna finns lagrade. */
+/**
+ * Filens bytes, eller undefined när bara uppgifterna finns lagrade. Kvitton
+ * som bokförts från inboxen läses ur inboxbilagan när raden själv inte bär
+ * filen (se receipt-source.ts).
+ */
 export async function receiptFileContent(receipt: Receipt): Promise<ReceiptFileInput | undefined> {
   const contentType = receipt.contentType || "application/octet-stream";
   if (receipt.contentBase64) {
@@ -190,5 +196,7 @@ export async function receiptFileContent(receipt: Receipt): Promise<ReceiptFileI
     if (error || !data) return undefined;
     return { bytes: Buffer.from(await data.arrayBuffer()), contentType: data.type || contentType };
   }
+  const attachment = inboxAttachmentForReceipt(receipt);
+  if (attachment) return attachmentBytes(attachment);
   return undefined;
 }

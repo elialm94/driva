@@ -1,6 +1,6 @@
 import { db } from "../store";
-import type { BankTransaction, Expense, Invoice, Quote, Receipt, SupplierInvoice, SupplierPayment } from "../types";
-import { receiptFileStored } from "../receipts/receipt-meta";
+import type { BankTransaction, Expense, Invoice, Quote, SupplierInvoice, SupplierPayment } from "../types";
+import { receiptsWithAvailableFile } from "../receipts/receipt-source";
 import {
   currentVersion,
   effectiveQuoteStatus,
@@ -403,8 +403,7 @@ export function listExpensesForTable(
   const rows: ExpenseTableRow[] = [];
   const attention = attentionBySource();
 
-  const receiptsWithFile = new Map<string, Receipt>();
-  for (const r of db().receipts) if (receiptFileStored(r)) receiptsWithFile.set(r.id, r);
+  const receiptsWithFile = receiptsWithAvailableFile(db().receipts);
 
   for (const e of db().expenses) {
     const bucket: ExpenseBucket = e.status === "bokford" ? "klar" : "atgard";

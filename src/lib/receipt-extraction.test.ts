@@ -22,6 +22,8 @@ import {
 import { corroborateHint, vatArithmeticHolds } from "./inbox/corroborate";
 import { CONFIDENCE_THRESHOLDS } from "./autopilot";
 import { getInboxMail, ingestUploadedDocument, interpretDocumentFile, interpretInboundPayload } from "./services/inbox";
+import { receiptFileContent } from "./receipts/receipt-file";
+import { receiptFileAvailable, receiptsWithAvailableFile } from "./receipts/receipt-source";
 import type { InboundMailPayload } from "./inbox/inbound-mail";
 
 const PNG_BASE64 = Buffer.from("inte-en-riktig-bild-transporten-ar-mockad").toString("base64");
@@ -341,6 +343,45 @@ describe("tolkningen i inkorgens pipeline", () => {
       ver.entries.reduce((s, e) => s + e.credit, 0),
       "verifikationen balanserar som all annan bokföring"
     );
+
+    // Underlaget följer med: kvittoraden bär filen (inte bara filnamnet), så
+    // Utgifter kan visa kvittot och arkivexporten får med bytes.
+    const receipt = db().receipts.find((r) => r.id === expense.receiptId)!;
+    assert.equal(receipt.filename, "kvitto.png");
+    assert.equal(receipt.contentType, "image/png");
+    assert.equal(receipt.contentBase64, PNG_BASE64, "inline-lagrad bilaga kopieras till kvittoraden");
+    assert.equal(receiptFileAvailable(receipt), true);
+    const served = await receiptFileContent(receipt);
+    assert.equal(served?.bytes.toString("base64"), PNG_BASE64);
+  });
+
+  it("kvittofilen nås via inboxbilagan när kvittoraden bara har uppgifterna", async () => {
+    const data = db();
+    data.bankTransactions.unshift({
+      id: "tx-byggmax-kvitto-2",
+      accountId: data.bankAccounts[0]!.id,
+      externalId: "tx-byggmax-kvitto-2",
+      date: "2026-03-04",
+      amount: -1240,
+      counterpart: "Byggmax",
+      description: "Kortköp BYGGMAX",
+      status: "ny",
+    });
+    respondWith(receiptJson());
+    const parsed = await interpretDocumentFile({ filename: "kvitto.png", contentType: "image/png", contentBase64: PNG_BASE64 });
+    const result = ingestUploadedDocument({ filename: "kvitto.png", contentType: "image/png", contentBase64: PNG_BASE64, parsed });
+    assert.equal(result.ok, true);
+    const item = getInboxMail(result.item.id)!;
+    assert.ok(item.expenseId);
+    const expense = db().expenses.find((e) => e.id === item.expenseId)!;
+    const receipt = db().receipts.find((r) => r.id === expense.receiptId)!;
+    // Äldre kvittorader (före kopieringen) saknar fil på raden – då gäller inboxposten.
+    delete receipt.contentBase64;
+    delete receipt.storagePath;
+    assert.equal(receiptFileAvailable(receipt), true, "filen finns på inboxposten som aldrig tas bort");
+    assert.equal(receiptsWithAvailableFile(db().receipts).has(receipt.id), true);
+    const served = await receiptFileContent(receipt);
+    assert.equal(served?.bytes.toString("base64"), PNG_BASE64);
   });
 
   it("en leverantörsfaktura tolkas som faktura och blir aldrig en utbetalning", async () => {

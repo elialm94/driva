@@ -405,6 +405,7 @@ function runDocumentPipeline(item: InboxItem): { autoBooked: boolean } {
         description: item.subject,
         filename: item.attachments[0]?.filename,
         source: item.source === "uppladdning" ? "uppladdning" : "email",
+        attachment: item.attachments[0],
       });
       item.expenseId = expense.id;
       autoBooked = booked;
