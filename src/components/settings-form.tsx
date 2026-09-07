@@ -41,6 +41,7 @@ import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 import { SettingsBillingBanner } from "./settings-billing-readiness";
 import { AddressFields } from "./address-input";
 import { FSkattSettingCard } from "./skattekonto-widgets";
+import { FiscalYearSettings, type FiscalYearSettingsYear } from "./fiscal-year-settings";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -127,6 +128,8 @@ export function SettingsForm({
   focusFieldKey = null,
   account,
   fSkattPerMonth,
+  fiscalYears = [],
+  today,
 }: {
   initial: CompanySettings;
   defaults: InvoiceDefaults;
@@ -146,6 +149,8 @@ export function SettingsForm({
   account: { demo: boolean; email?: string | null };
   /** Preliminärskatt per månad – sparas direkt via eget kort, inte med formuläret. */
   fSkattPerMonth?: number;
+  fiscalYears?: FiscalYearSettingsYear[];
+  today: string;
 }) {
   const TABS = settingsTabsFor(features);
   const router = useRouter();
@@ -528,6 +533,8 @@ export function SettingsForm({
               />
             </div>
           </Card>
+
+          <FiscalYearSettings years={fiscalYears} today={today} />
         </div>
       ) : null}
 

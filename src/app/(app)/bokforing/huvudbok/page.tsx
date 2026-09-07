@@ -5,6 +5,8 @@ import { Card, EmptyState, PageHeader, cx } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { huvudbok } from "@/lib/accounting/ledger";
 import { PrintButton } from "@/components/bokforing-widgets";
+import { FiscalYearPicker, fiscalYearHref } from "@/components/fiscal-year-picker";
+import { fiscalYears, resolveViewFiscalYear } from "@/lib/accounting/fiscal";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Huvudbok" };
@@ -15,23 +17,26 @@ const PAGE_SIZE = 200;
 export default async function HuvudbokPage({
   searchParams,
 }: {
-  searchParams: Promise<{ konto?: string; sida?: string }>;
+  searchParams: Promise<{ konto?: string; sida?: string; ar?: string }>;
 }) {
   await ensurePageBusiness();
   const params = await searchParams;
+  const years = fiscalYears();
+  const fy = resolveViewFiscalYear(params.ar);
   const selected = params.konto ? Number(params.konto) : undefined;
-  const accounts = huvudbok();
+  const accounts = huvudbok({ from: fy.startDate, to: fy.endDate });
   const account = selected ? accounts.find((a) => a.account === selected) : undefined;
+  const extra = selected ? { konto: String(selected) } : undefined;
 
   return (
     <div>
       <PageHeader
         back={<SmartBack />}
         title="Huvudbok"
-        subtitle="Alla händelser konto för konto, med ingående saldo, rader och utgående saldo."
+        subtitle={`Alla händelser konto för konto ${fy.startDate} till ${fy.endDate}, med ingående saldo, rader och utgående saldo.`}
         actions={
           <div className="flex items-center gap-2">
-            <a href="/api/bokforing/export?typ=huvudbok" className="text-[13px] font-medium text-accent hover:underline">
+            <a href={`/api/bokforing/export?typ=huvudbok&ar=${encodeURIComponent(fy.label)}`} className="text-[13px] font-medium text-accent hover:underline">
               Exportera CSV
             </a>
             <PrintButton />
@@ -39,10 +44,16 @@ export default async function HuvudbokPage({
         }
       />
 
+      <FiscalYearPicker
+        years={years}
+        activeLabel={fy.label}
+        hrefFor={(y) => fiscalYearHref("/bokforing/huvudbok", y, extra)}
+      />
+
       {/* Kontoväljare */}
       <div className="mb-6 flex flex-wrap gap-1.5 print:hidden">
         <Link
-          href="/bokforing/huvudbok"
+          href={fiscalYearHref("/bokforing/huvudbok", fy)}
           className={cx(
             "rounded-full px-3 py-1 text-[12.5px] font-medium transition-colors",
             !selected ? "bg-ink text-white" : "bg-canvas text-soft hover:bg-line/60"
@@ -53,7 +64,7 @@ export default async function HuvudbokPage({
         {accounts.map((a) => (
           <Link
             key={a.account}
-            href={`/bokforing/huvudbok?konto=${a.account}`}
+            href={fiscalYearHref("/bokforing/huvudbok", fy, { konto: String(a.account) })}
             className={cx(
               "rounded-full px-3 py-1 font-mono text-[12.5px] font-medium transition-colors",
               selected === a.account ? "bg-ink text-white" : "bg-canvas text-soft hover:bg-line/60"
@@ -65,7 +76,7 @@ export default async function HuvudbokPage({
       </div>
 
       {accounts.length === 0 ? (
-        <EmptyState icon={BookOpenText} title="Inget att visa" text="Det finns inga bokförda händelser på kontot i år." />
+        <EmptyState icon={BookOpenText} title="Inget att visa" text="Det finns inga bokförda händelser i räkenskapsåret." />
       ) : !selected ? (
         /* Översikt: en rad per konto – detaljrader visas per konto (skalar till stora huvudböcker). */
         <Card className="overflow-x-auto px-5 py-4">
@@ -87,7 +98,7 @@ export default async function HuvudbokPage({
                 return (
                   <tr key={a.account} className="border-t border-line/50">
                     <td className="py-1.5 pr-3">
-                      <Link href={`/bokforing/huvudbok?konto=${a.account}`} className="hover:underline">
+                      <Link href={fiscalYearHref("/bokforing/huvudbok", fy, { konto: String(a.account) })} className="hover:underline">
                         <span className="font-mono text-[12px] text-muted">{a.account}</span>{" "}
                         <span className="font-medium">{a.name}</span>
                       </Link>
@@ -104,13 +115,14 @@ export default async function HuvudbokPage({
           </table>
         </Card>
       ) : !account ? (
-        <EmptyState icon={BookOpenText} title="Inget att visa" text="Det finns inga bokförda händelser på kontot i år." />
+        <EmptyState icon={BookOpenText} title="Inget att visa" text="Det finns inga bokförda händelser på kontot i räkenskapsåret." />
       ) : (
         (() => {
           const totalPages = Math.max(1, Math.ceil(account.rows.length / PAGE_SIZE));
           const page = Math.min(Math.max(1, Number(params.sida) || 1), totalPages);
           const rows = account.rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-          const pageHref = (p: number) => `/bokforing/huvudbok?konto=${account.account}&sida=${p}`;
+          const pageHref = (p: number) =>
+            fiscalYearHref("/bokforing/huvudbok", fy, { konto: String(account.account), sida: String(p) });
           return (
             <div className="space-y-4">
               <Card className="overflow-x-auto px-5 py-4">

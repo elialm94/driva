@@ -3,11 +3,15 @@ import type { DB, FiscalYear } from "../types";
 import { logAudit } from "./audit";
 import {
   bokforingsdatum,
-  calendarFiscalYear,
+  fiscalYearFollowing,
+  fiscalYearLabel,
+  fiscalYearToExtend,
+  isIsoDate,
   isVatPeriodicity,
   nextDay,
   todayDate,
   vatPeriodsOf,
+  yearsToCoverDate,
   type Period,
   type VatPeriodicity,
 } from "./dates";
@@ -15,9 +19,15 @@ import {
 export {
   bokforingsdatum,
   calendarFiscalYear,
+  fiscalYearFollowing,
+  fiscalYearLabel,
+  fiscalYearPreceding,
+  fiscalYearToExtend,
   fullYearOf,
+  makeFiscalYear,
   monthsOf,
   quartersOf,
+  taxYearOf,
   todayDate,
   vatDueDate,
   vatPeriodsOf,
@@ -29,9 +39,9 @@ export {
 /**
  * Räkenskapsår och periodlås.
  *
- * V1: kalenderår (1 jan–31 dec). Åren skapas automatiskt när något ska
- * bokföras i dem – användaren behöver aldrig "sätta upp" ett räkenskapsår.
- * Månader och kvartal härleds deterministiskt ur året (ingen lagrad kopia).
+ * Default är kalenderår (1 jan–31 dec), skapat utan setup-wizard. Företaget
+ * kan byta till ett brutet år i Inställningar → Företag. Nästa år följer
+ * samma mönster. Månader och kvartal härleds ur årets start/slut.
  *
  * Periodlås: `db().accounting.lockedThrough` (YYYY-MM-DD). Allt till och med
  * det datumet är låst – inga nya verifikationer får bokföringsdatum där och
@@ -53,26 +63,111 @@ export function fiscalYearFor(date: string, data: DB = db()): FiscalYear | undef
 }
 
 /**
- * Hämta eller skapa räkenskapsåret för ett datum. Skapar kalenderår.
+ * Hämta eller skapa räkenskapsåret för ett datum. Utan befintliga år skapas
+ * ett kalenderår. Finns redan år följs deras mönster (brutet år ger brutet år).
  * Nya år får IB från föregående års UB först när det året stängs.
  */
 export function ensureFiscalYearFor(date: string, actor: "anvandare" | "assistent" | "system" = "system"): FiscalYear {
   const data = db();
-  const existing = fiscalYearFor(date, data);
+  const d = date.length > 10 ? bokforingsdatum(date) : date;
+  const existing = fiscalYearFor(d, data);
   if (existing) return existing;
-  const year = Number((date.length > 10 ? bokforingsdatum(date) : date).slice(0, 4));
-  const fy = calendarFiscalYear(year);
-  data.fiscalYears.push(fy);
-  logAudit(actor, "rakenskapsar_skapat", `Räkenskapsåret ${fy.label} skapades automatiskt.`, {
-    targetType: "rakenskapsar",
-    targetId: fy.id,
-  });
-  return fy;
+  const created = yearsToCoverDate(data.fiscalYears, d);
+  for (const fy of created) {
+    data.fiscalYears.push(fy);
+    logAudit(actor, "rakenskapsar_skapat", `Räkenskapsåret ${fy.label} skapades automatiskt.`, {
+      targetType: "rakenskapsar",
+      targetId: fy.id,
+    });
+  }
+  const found = fiscalYearFor(d, data);
+  if (!found) throw new Error(`Kunde inte skapa räkenskapsår för ${d}.`);
+  return found;
 }
 
 /** Det räkenskapsår som "pågår nu" (skapas vid behov). */
 export function currentFiscalYear(): FiscalYear {
   return ensureFiscalYearFor(todayDate());
+}
+
+/** År som vyerna ska visa: query-param `ar` (label eller id), annars innevarande. */
+export function resolveViewFiscalYear(param?: string | null): FiscalYear {
+  if (param) {
+    const found = fiscalYears().find((f) => f.id === param || f.label === param);
+    if (found) return found;
+  }
+  return currentFiscalYear();
+}
+
+export function findFiscalYearByParam(param: string | null | undefined, data: DB = db()): FiscalYear | undefined {
+  if (!param) return undefined;
+  return fiscalYears(data).find((f) => f.id === param || f.label === param);
+}
+
+/** Datum att visa balans för: idag om året pågår, annars årets slut (eller start om det inte börjat). */
+export function fiscalYearAsOf(fy: FiscalYear, today: string = todayDate()): string {
+  if (today < fy.startDate) return fy.startDate;
+  if (today > fy.endDate) return fy.endDate;
+  return today;
+}
+
+/** Året som kommer efter `fy`, om det redan finns. */
+export function fiscalYearAfter(fy: FiscalYear, data: DB = db()): FiscalYear | undefined {
+  const start = nextDay(fy.endDate);
+  return data.fiscalYears.find((f) => f.startDate === start);
+}
+
+export class FiscalYearError extends Error {}
+
+/**
+ * Ändra start och slut för ett öppet år. Verifikationernas bokföringsdatum
+ * rörs inte – perioden är ett filter, inte en omskrivning.
+ */
+export function updateFiscalYearPeriod(
+  fiscalYearId: string,
+  startDate: string,
+  endDate: string,
+  actor: "anvandare" | "assistent" | "system" = "anvandare"
+): FiscalYear {
+  const fy = getFiscalYear(fiscalYearId);
+  if (!fy) throw new FiscalYearError("Räkenskapsåret finns inte.");
+  if (fy.status === "stangt") throw new FiscalYearError("Ett stängt räkenskapsår kan inte ändras.");
+  if (!isIsoDate(startDate) || !isIsoDate(endDate)) {
+    throw new FiscalYearError("Ange start- och slutdatum.");
+  }
+  if (endDate <= startDate) throw new FiscalYearError("Slutdatum måste vara efter startdatum.");
+  const previous = `${fy.startDate}–${fy.endDate}`;
+  fy.startDate = startDate;
+  fy.endDate = endDate;
+  fy.label = fiscalYearLabel(startDate, endDate);
+  logAudit(actor, "rakenskapsar_andrat", `Räkenskapsåret ändrades från ${previous} till ${startDate}–${endDate}.`, {
+    targetType: "rakenskapsar",
+    targetId: fy.id,
+  });
+  save();
+  return fy;
+}
+
+/** Skapa nästa räkenskapsår efter innevarande (eller det som just tagit slut). */
+export function createNextFiscalYear(actor: "anvandare" | "assistent" | "system" = "anvandare"): FiscalYear {
+  const data = db();
+  const years = fiscalYears(data);
+  if (years.length === 0) {
+    const fy = ensureFiscalYearFor(todayDate(), actor);
+    save();
+    return fy;
+  }
+  const base = fiscalYearToExtend(years, todayDate()) ?? years[years.length - 1];
+  const existing = fiscalYearAfter(base, data);
+  if (existing) return existing;
+  const next = fiscalYearFollowing(base);
+  data.fiscalYears.push(next);
+  logAudit(actor, "rakenskapsar_skapat", `Räkenskapsåret ${next.label} skapades (${next.startDate}–${next.endDate}).`, {
+    targetType: "rakenskapsar",
+    targetId: next.id,
+  });
+  save();
+  return next;
 }
 
 export function lockedThrough(): string | undefined {

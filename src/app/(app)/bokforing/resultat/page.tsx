@@ -3,13 +3,22 @@ import { Card, PageHeader } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
 import { resultatrapport } from "@/lib/accounting/ledger";
+import { FiscalYearPicker, fiscalYearHref } from "@/components/fiscal-year-picker";
+import { fiscalYears, resolveViewFiscalYear } from "@/lib/accounting/fiscal";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Resultatrapport" };
 
-export default async function ResultatPage() {
+export default async function ResultatPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ar?: string }>;
+}) {
   await ensurePageBusiness();
-  const rr = resultatrapport();
+  const params = await searchParams;
+  const years = fiscalYears();
+  const fy = resolveViewFiscalYear(params.ar);
+  const rr = resultatrapport({ from: fy.startDate, to: fy.endDate });
 
   return (
     <div>
@@ -19,12 +28,18 @@ export default async function ResultatPage() {
         subtitle={`Hur det går för företaget ${rr.range.from} till ${rr.range.to} – direkt ur bokföringen.`}
         actions={
           <div className="flex items-center gap-2">
-            <a href="/api/bokforing/export?typ=resultat" className="text-[13px] font-medium text-accent hover:underline">
+            <a href={`/api/bokforing/export?typ=resultat&ar=${encodeURIComponent(fy.label)}`} className="text-[13px] font-medium text-accent hover:underline">
               Exportera CSV
             </a>
             <PrintButton />
           </div>
         }
+      />
+
+      <FiscalYearPicker
+        years={years}
+        activeLabel={fy.label}
+        hrefFor={(y) => fiscalYearHref("/bokforing/resultat", y)}
       />
 
       {/* Ägarvänlig sammanfattning */}

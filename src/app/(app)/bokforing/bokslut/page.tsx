@@ -6,8 +6,13 @@ import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Bokslut" };
 
-export default async function BokslutPage() {
+export default async function BokslutPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ar?: string }>;
+}) {
   await ensurePageBusiness();
+  const params = await searchParams;
   return (
     <div>
       <PageHeader
@@ -16,7 +21,7 @@ export default async function BokslutPage() {
         subtitle="Driva kontrollerar allt som går att kontrollera automatiskt – du ser bara det som faktiskt behöver dig."
         actions={<PrintButton />}
       />
-      <BokslutView base="/bokforing/bokslut" />
+      <BokslutView base="/bokforing/bokslut" selectedYearParam={params.ar} />
     </div>
   );
 }

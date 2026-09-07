@@ -69,6 +69,11 @@ import {
 } from "@/lib/services/settings";
 import { normalizeCompanySettingsInput } from "@/lib/settings-action-input";
 import { BILLING_COMPLETION_PATCH_KEYS } from "@/lib/billing-readiness";
+import {
+  createNextFiscalYear,
+  currentFiscalYear,
+  updateFiscalYearPeriod,
+} from "@/lib/accounting/fiscal";
 import { userFacingStorageError } from "@/lib/storage/sql-errors";
 import { createCustomer, updateCustomer, updateCustomerNotes } from "@/lib/services/customers";
 import {
@@ -1910,6 +1915,35 @@ export async function completeAssistantCustomerAction(actionId: string, customer
 }
 
 /* ------------------------------ Företagsuppgifter --------------------------- */
+
+export async function updateFiscalYearPeriodAction(input: {
+  fiscalYearId?: string;
+  startDate: string;
+  endDate: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    return await withBusiness(() => {
+      const id = input.fiscalYearId || currentFiscalYear().id;
+      updateFiscalYearPeriod(id, input.startDate, input.endDate);
+      refresh();
+      return { ok: true } as const;
+    });
+  } catch (e) {
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte spara räkenskapsåret.") };
+  }
+}
+
+export async function createNextFiscalYearAction(): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    return await withBusiness(() => {
+      createNextFiscalYear();
+      refresh();
+      return { ok: true } as const;
+    });
+  } catch (e) {
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte skapa nästa räkenskapsår.") };
+  }
+}
 
 export async function updateCompanySettingsAction(
   input: CompanySettingsInput

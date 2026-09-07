@@ -1549,6 +1549,7 @@ export type AuditAction =
   | "arbetsgivardeklaration_genererad"
   | "arbetsgivardeklaration_deklarerad"
   | "rakenskapsar_skapat"
+  | "rakenskapsar_andrat"
   | "sie_import"
   | "rakenskapsar_stangt"
   | "rakenskapsar_oppnat"

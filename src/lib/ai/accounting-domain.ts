@@ -9,7 +9,7 @@ import { resultatrapport, balansrapport } from "../accounting/ledger";
 import { bokslutChecklist } from "../accounting/close";
 import { assetsNeedingDepreciation } from "../accounting/assets";
 import { pendingAccruals } from "../accounting/accruals";
-import { fiscalYears, lockedThrough } from "../accounting/fiscal";
+import { fiscalYearFollowing, fiscalYears, lockedThrough } from "../accounting/fiscal";
 import { getVerification, verificationLabel } from "../accounting/engine";
 import { computeTaxCalculation } from "../accounting/tax";
 import {
@@ -398,7 +398,7 @@ export function requestCloseFiscalYear(): DomainResult {
     card: {
       kind: "confirm",
       actionId: action.id,
-      summary: `Skatt och årets resultat bokförs, ${Number(fy.label) + 1} får ingående balanser och året låses.`,
+      summary: `Skatt och årets resultat bokförs, ${fiscalYearFollowing(fy).label} får ingående balanser och året låses.`,
       rows: [
         ...(tax ? [{ label: "Beräknad bolagsskatt (preliminär)", value: kr(tax.beraknadSkatt) }] : []),
         { label: "Resultat före skatt", value: kr(tax?.redovisningsresultat ?? 0) },

@@ -1,6 +1,13 @@
 import { db, save } from "../store";
 import type { FiscalYear, FiscalYearReopening, Verification } from "../types";
-import { bokforingsdatum, calendarFiscalYear, getFiscalYear, lockPeriod, unlockPeriodThrough } from "./fiscal";
+import {
+  bokforingsdatum,
+  fiscalYearAfter,
+  fiscalYearFollowing,
+  getFiscalYear,
+  lockPeriod,
+  unlockPeriodThrough,
+} from "./fiscal";
 import { previousDay } from "./dates";
 import { supersedeAnnualReports } from "./annual-report";
 import { postVerification } from "./engine";
@@ -9,7 +16,7 @@ import { assetsNeedingDepreciation, createDepreciationEntry } from "./assets";
 import { pendingAccruals, bookAccrual, reverseAccrualsInto } from "./accruals";
 import { computeTaxCalculation } from "./tax";
 import { logAudit } from "./audit";
-import { vatPeriods } from "./vat";
+import { vatPeriodsFor } from "./vat";
 import { isOverdue } from "../services/data";
 import { balanceReconciliation } from "./balance-reconciliation";
 import { SCHEDULE_LABEL, bookYearEndSchedule, schedulesAwaitingBooking, yearEndSchedules } from "./year-end";
@@ -46,7 +53,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
   const draftInvoices = data.invoices.filter((i) => i.status === "utkast");
   const overdue = data.invoices.filter(isOverdue);
   // Momsperioder som passerat med aktivitet men inte deklarerats blockerar.
-  const vatUndeclared = vatPeriods(Number(fy.label)).filter(
+  const vatUndeclared = vatPeriodsFor(fy).filter(
     (p) => p.state === "att_deklarera" && (p.position.utgaende !== 0 || p.position.ingaende !== 0)
   );
   const missingDepreciation = assetsNeedingDepreciation(fy.id);
@@ -342,10 +349,9 @@ export function closeFiscalYear(fiscalYearId: string, by: "anvandare" | "assiste
 
   // 4. Nästa år: UB → IB för balanskonton (1xxx–2xxx).
   const closing = saldobalans({ from: fy.startDate, to: fy.endDate });
-  const nextYearNumber = Number(fy.label) + 1;
-  let nextYear = data.fiscalYears.find((f) => f.label === String(nextYearNumber));
+  let nextYear = fiscalYearAfter(fy, data);
   if (!nextYear) {
-    nextYear = calendarFiscalYear(nextYearNumber);
+    nextYear = fiscalYearFollowing(fy);
     data.fiscalYears.push(nextYear);
   }
   const opening: Record<string, number> = {};
@@ -542,7 +548,7 @@ export function reopenFiscalYear(fiscalYearId: string, reason: string, by: "anva
   };
   fy.reopenings = [...(fy.reopenings ?? []), reopening];
 
-  const nextYear = data.fiscalYears.find((f) => f.label === String(Number(fy.label) + 1));
+  const nextYear = fiscalYearAfter(fy, data);
 
   logAudit(
     by,

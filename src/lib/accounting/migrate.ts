@@ -1,5 +1,5 @@
 import type { DB } from "../types";
-import { bokforingsdatum, calendarFiscalYear } from "./dates";
+import { bokforingsdatum, yearsToCoverDate } from "./dates";
 
 /**
  * Migrering/backfill för bokföringsmotorn. Körs i store.normalize() – på
@@ -7,7 +7,8 @@ import { bokforingsdatum, calendarFiscalYear } from "./dates";
  *
  *  1. Nya samlingar och fält får sina standardvärden.
  *  2. Verifikationer får status/postedAt/fiscalYearId (alla historiska är bokförda).
- *  3. Räkenskapsår (kalenderår) skapas för alla år som har verifikationer.
+ *  3. Räkenskapsår skapas så att idag och alla verifikationsdatum täcks
+ *     (kalenderår om inget finns, annars samma mönster som befintliga år).
  *  4. Första årets ingående balans härleds så att banken stämmer mot 1930:
  *     IB(1930) = bankens saldo − bokförda 1930-rörelser − ohanterade banktransaktioner.
  *     Motposten läggs på eget kapital (2081 Aktiekapital + 2091 Balanserat resultat),
@@ -50,16 +51,15 @@ export function migrateAccounting(data: DB): boolean {
     }
   }
 
-  // Räkenskapsår för alla år med verifikationer + innevarande år.
-  const years = new Set<number>();
-  for (const v of data.verifications) years.add(Number(bokforingsdatum(v.date).slice(0, 4)));
-  years.add(Number(bokforingsdatum(new Date().toISOString()).slice(0, 4)));
+  // Räkenskapsår så att idag och alla verifikationsdatum täcks.
+  const dates = new Set<string>([bokforingsdatum(new Date().toISOString())]);
+  for (const v of data.verifications) dates.add(bokforingsdatum(v.date));
   const firstMigration = data.fiscalYears.length === 0;
-  for (const year of [...years].sort()) {
-    if (!data.fiscalYears.some((f) => f.startDate <= `${year}-06-15` && `${year}-06-15` <= f.endDate)) {
-      data.fiscalYears.push(calendarFiscalYear(year));
-      changed = true;
-    }
+  for (const date of [...dates].sort()) {
+    const extra = yearsToCoverDate(data.fiscalYears, date);
+    if (extra.length === 0) continue;
+    data.fiscalYears.push(...extra);
+    changed = true;
   }
   data.fiscalYears.sort((a, b) => a.startDate.localeCompare(b.startDate));
 

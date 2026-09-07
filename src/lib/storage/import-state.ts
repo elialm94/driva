@@ -11,6 +11,7 @@ import { db, normalize, save } from "../store";
 import { quoteVersionHash } from "../hash";
 import { loadStateSnapshot, runWithTenant, sqlClient } from "./adapter-supabase";
 import { bindTransaction } from "./load";
+import { invalidateSnapshot } from "./snapshot-cache";
 
 export class ImportPreconditionError extends Error {}
 
@@ -96,6 +97,12 @@ export async function importStateIntoBusiness(
   // källans FÖRSTA nummer innan uppspelningen, så att serien replayas exakt.
   await presetSequences(businessId, source);
 
+  // createBusinessWithOwner lägger in default-kalenderåret (1 jan–31 dec)
+  // så att nya företag inte behöver en wizard. Commit upsertar före delete,
+  // så seedets år med samma label krockar mot unique (business_id, label)
+  // om platshållaren får stå kvar. Tomt företag: ta bort den.
+  await dropPlaceholderFiscalYears(businessId);
+
   await runWithTenant({ businessId, userId, access: "write", retry: false }, () => {
     const target = db();
     if (target.customers.length || target.invoices.length || target.verifications.length) {
@@ -112,6 +119,22 @@ export async function importStateIntoBusiness(
   // Räknarna ska sluta exakt där källan slutade (aldrig bakåt) – annars kan
   // nästa dokument återanvända ett nummer som källan redan förbrukat.
   await finalizeSequences(businessId, source);
+}
+
+async function dropPlaceholderFiscalYears(businessId: string): Promise<void> {
+  const client = await sqlClient();
+  await client.transaction(async (tx) => {
+    await bindTransaction(tx, businessId);
+    await tx.query(
+      `delete from public.fiscal_years
+        where business_id = $1
+          and not exists (select 1 from public.verifications where business_id = $1)
+          and not exists (select 1 from public.invoices where business_id = $1)
+          and not exists (select 1 from public.customers where business_id = $1)`,
+      [businessId]
+    );
+  });
+  invalidateSnapshot(businessId);
 }
 
 async function presetSequences(businessId: string, source: DB): Promise<void> {
