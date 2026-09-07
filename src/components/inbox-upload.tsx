@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { buttonClasses } from "./ui";
 import { uploadInboxDocumentAction } from "@/app/actions";
-import { receiptFileToDataUrl } from "@/lib/receipts/read-file";
+import { inboxDocumentForm } from "@/lib/receipts/read-file";
 
 export function InboxUploadButton() {
   const router = useRouter();
@@ -28,12 +28,8 @@ export function InboxUploadButton() {
             setError(null);
             startTransition(async () => {
               try {
-                const result = await uploadInboxDocumentAction({
-                  filename: file.name,
-                  contentType: file.type || "application/pdf",
-                  // Filen följer med: underlaget bevaras och tolkas.
-                  dataUrl: await receiptFileToDataUrl(file),
-                });
+                // Filen följer med som File i en FormData: underlaget bevaras och tolkas.
+                const result = await uploadInboxDocumentAction(inboxDocumentForm(file));
                 if (!result.ok) setError(result.error);
                 else router.refresh();
               } catch (err) {

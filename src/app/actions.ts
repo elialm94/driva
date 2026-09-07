@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, resetDemoData, save } from "@/lib/store";
 import {
-  parseReceiptDataUrl,
   receiptFileFromForm,
   receiptFileStored,
   storeReceiptFile,
@@ -1202,56 +1201,48 @@ export async function paySupplierInvoiceAction(supplierInvoiceId: string) {
 /**
  * Lägg till ett dokument i inboxen: kvitto eller leverantörsfaktura.
  *
- * `dataUrl` är själva filen (data:<mime>;base64,…). Den valideras, tolkas med
+ * `form` bär själva filen som "file" (File/Blob) – se lib/receipts/read-file.ts
+ * för varför den inte skickas som data-URL. Filen valideras, tolkas med
  * AI-vision och ingestas med innehållet, så underlaget bevaras och uppgifterna
  * kommer ur dokumentet i stället för från användaren. Är tolkningen inte säker
  * nog stannar dokumentet i inboxen för kontroll – exakt samma väg som ett
- * inkommande mejl tar.
+ * inkommande mejl tar. Felet är alltid användarsäker svenska via
+ * userFacingStorageError.
  */
-export async function uploadInboxDocumentAction(input: {
-  filename: string;
-  contentType?: string;
-  dataUrl?: string;
-}): Promise<{ ok: true; id: string; autoBooked: boolean } | { ok: false; error: string }> {
-  return withBusiness(
-    async () => {
-      const parsedFile = input.dataUrl ? parseReceiptDataUrl(input.dataUrl) : null;
-      if (input.dataUrl && !parsedFile) return { ok: false as const, error: "Filen kunde inte läsas." };
-      let file: ReturnType<typeof validateReceiptFile> | undefined;
-      if (parsedFile) {
-        try {
-          file = validateReceiptFile(parsedFile);
-        } catch (e) {
-          return { ok: false as const, error: e instanceof Error ? e.message : "Filen kunde inte läsas." };
-        }
-      }
+export async function uploadInboxDocumentAction(
+  form: FormData
+): Promise<{ ok: true; id: string; autoBooked: boolean } | { ok: false; error: string }> {
+  try {
+    const upload = await receiptFileFromForm(form);
+    if (!upload) throw new Error("Filen kunde inte läsas. Välj filen igen.");
+    const { filename, ...file } = upload;
+    validateReceiptFile(file);
+    return await withBusiness(
+      async () => {
+        const contentBase64 = file.bytes.toString("base64");
+        const parsed = await interpretDocumentFile({ filename, contentType: file.contentType, contentBase64 });
 
-      const contentType = file?.contentType ?? input.contentType ?? "application/pdf";
-      const contentBase64 = file?.bytes.toString("base64");
-      const parsed = contentBase64
-        ? await interpretDocumentFile({ filename: input.filename, contentType, contentBase64 })
-        : undefined;
+        // Filen lagras före posten: ett dokument i inboxen utan sitt underlag är
+        // sämre än ett tydligt fel vid uppladdningen.
+        const stored = await storeInboxAttachment(`upload-${Date.now()}`, filename, file.contentType, contentBase64);
 
-      // Filen lagras före posten: ett dokument i inboxen utan sitt underlag är
-      // sämre än ett tydligt fel vid uppladdningen.
-      const stored = contentBase64
-        ? await storeInboxAttachment(`upload-${Date.now()}`, input.filename, contentType, contentBase64)
-        : {};
-
-      const result = ingestUploadedDocument({
-        filename: input.filename,
-        contentType,
-        ...(contentBase64 ? { sizeBytes: file!.bytes.length } : {}),
-        ...(stored.storagePath ? { storagePath: stored.storagePath } : {}),
-        ...(stored.contentBase64 ? { contentBase64: stored.contentBase64 } : {}),
-        ...(parsed ? { parsed } : {}),
-      });
-      if (!result.ok) return { ok: false as const, error: result.error };
-      refresh();
-      return { ok: true as const, id: result.item.id, autoBooked: result.autoBooked };
-    },
-    { capability: "write_accounting" }
-  );
+        const result = ingestUploadedDocument({
+          filename,
+          contentType: file.contentType,
+          sizeBytes: file.bytes.length,
+          ...(stored.storagePath ? { storagePath: stored.storagePath } : {}),
+          ...(stored.contentBase64 ? { contentBase64: stored.contentBase64 } : {}),
+          ...(parsed ? { parsed } : {}),
+        });
+        if (!result.ok) return { ok: false as const, error: result.error };
+        refresh();
+        return { ok: true as const, id: result.item.id, autoBooked: result.autoBooked };
+      },
+      { capability: "write_accounting" }
+    );
+  } catch (e) {
+    return { ok: false as const, error: userFacingStorageError(e, "Kunde inte spara dokumentet. Försök igen.") };
+  }
 }
 
 export async function submitSupplierPaymentAction(input: {

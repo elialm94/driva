@@ -8,6 +8,7 @@ import { DateField } from "./date-field";
 import { AccountCombobox } from "./account-combobox";
 import { kr } from "@/lib/format";
 import { postManualVerificationAction } from "@/app/bokforing-actions";
+import { verificationAttachmentForm } from "@/lib/receipts/read-file";
 import type { AccountPickerOption } from "@/lib/services/manual-verification";
 
 /**
@@ -64,7 +65,9 @@ export function ManualVerificationForm({
   const [transactionDate, setTransactionDate] = useState("");
   const [description, setDescription] = useState("");
   const [explanation, setExplanation] = useState("");
-  const [attachment, setAttachment] = useState<{ name: string; dataUrl: string; size: number } | null>(null);
+  // Filen paketeras redan vid valet (storlekskontroll på svenska direkt) och
+  // skickas som File i en FormData, inte som data-URL – se read-file.ts.
+  const [attachment, setAttachment] = useState<{ name: string; form: FormData } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [posted, setPosted] = useState<{ label: string; total: number; id: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -94,16 +97,17 @@ export function ManualVerificationForm({
         note: r.note.trim() || undefined,
       }));
     startTransition(async () => {
-      const result = await postManualVerificationAction({
-        date,
-        transactionDate: transactionDate || undefined,
-        description,
-        explanation: explanation || undefined,
-        lines,
-        attachmentDataUrl: attachment?.dataUrl,
-        attachmentFilename: attachment?.name,
-        businessId,
-      });
+      const result = await postManualVerificationAction(
+        {
+          date,
+          transactionDate: transactionDate || undefined,
+          description,
+          explanation: explanation || undefined,
+          lines,
+          businessId,
+        },
+        attachment?.form
+      ).catch(() => ({ ok: false as const, error: "Verifikatet kunde inte bokföras. Försök igen." }));
       if (!result.ok) {
         setError(result.error);
         return;
@@ -258,11 +262,13 @@ export function ManualVerificationForm({
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = () =>
-                    setAttachment({ name: file.name, dataUrl: String(reader.result), size: file.size });
-                  reader.onerror = () => setError("Filen kunde inte läsas.");
-                  reader.readAsDataURL(file);
+                  try {
+                    setAttachment({ name: file.name, form: verificationAttachmentForm(file) });
+                    setError(null);
+                  } catch (err) {
+                    setAttachment(null);
+                    setError(err instanceof Error ? err.message : "Filen kunde inte läsas.");
+                  }
                 }}
               />
             </label>
