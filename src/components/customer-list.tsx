@@ -122,15 +122,33 @@ export function CustomerRegister({
       </div>
 
       {result.total === 0 ? (
-        <EmptyState
-          icon={UserRound}
-          title={query.q || filterCount ? "Inga kunder matchar" : "Inga kunder ännu"}
-          text={
-            query.q || filterCount
-              ? "Prova ett annat sökord eller ta bort ett filter."
-              : "Lägg till din första kund så håller Driva ordning på allt kring den."
-          }
-        />
+        query.q || filterCount ? (
+          <EmptyState
+            icon={UserRound}
+            title="Inga kunder matchar"
+            text="Prova ett annat sökord eller ta bort ett filter."
+            action={
+              <button
+                type="button"
+                className={buttonClasses("secondary", "sm")}
+                onClick={() => {
+                  setQ("");
+                  go({ q: "", kind: "alla", activity: "alla", payment: "alla", page: 1 });
+                }}
+                data-clear-filters
+              >
+                Rensa sök och filter
+              </button>
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={UserRound}
+            title="Inga kunder ännu"
+            text="Lägg till din första kund så håller Driva ordning på allt kring den."
+            action={<NewCustomerButton />}
+          />
+        )
       ) : (
         <>
           <div className="hidden md:block">

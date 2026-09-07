@@ -21,7 +21,7 @@ import {
   DisconnectBankButton,
   RefreshBankButton,
 } from "@/components/bank-connection";
-import { bankConnectionView, type BankConnectionView } from "@/lib/banking/connection-state";
+import { bankConnectionView, hasConnectedBank, type BankConnectionView } from "@/lib/banking/connection-state";
 import { bankProviderKind } from "@/lib/banking/select";
 import { BANK_CONNECTION_STATUS } from "@/lib/status-labels";
 import { CreatePaymentFileButton } from "@/components/payment-file-actions";
@@ -276,6 +276,13 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
             query={{ q, status: statusParam<ExpenseStatusFilter>(searchParams.status, EXPENSE_STATUS_OPTIONS), page, sort }}
             options={EXPENSE_STATUS_OPTIONS}
             highlightId={highlightId}
+            emptyAction={
+              hasConnectedBank() ? undefined : (
+                <ButtonLink href="/ekonomi?flik=bank" variant="secondary">
+                  <Landmark className="size-4" /> Koppla företagskontot
+                </ButtonLink>
+              )
+            }
           />
           <SupplierRegister suppliers={db().suppliers ?? []} />
         </div>

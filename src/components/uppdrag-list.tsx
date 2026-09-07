@@ -3,9 +3,11 @@
 import { useEffect, useState, useTransition } from "react";
 import { AppLink } from "./app-link";
 import { useRouter } from "next/navigation";
-import { Hammer, Search } from "lucide-react";
-import { Card, EmptyState, cx } from "./ui";
+import { FileText, Hammer, Search } from "lucide-react";
+import { ButtonLink, Card, EmptyState, buttonClasses, cx } from "./ui";
 import { Pagination } from "./customer-list";
+import { NewUppdragButton } from "./uppdrag-form";
+import type { CustomerOption } from "./customer-picker";
 import { JobStatusBadge } from "./status";
 import {
   reconcileJobListFilters,
@@ -54,9 +56,12 @@ const ECONOMY_CHIPS: [JobEconomyFilter, string][] = [
 export function UppdragList({
   result,
   query,
+  customers = [],
 }: {
   result: PagedResult<JobListRow>;
   query: UppdragListQuery;
+  /** För "Skapa uppdrag" i tomläget – samma dialog som i sidhuvudet. */
+  customers?: CustomerOption[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -73,6 +78,8 @@ export function UppdragList({
     }, 200);
     return () => clearTimeout(handle);
   }, [q, query, router]);
+
+  const filtered = Boolean(query.q) || query.lifecycle !== "aktiva" || query.economy !== "alla";
 
   function go(patch: Partial<UppdragListQuery>) {
     const filters = reconcileJobListFilters({
@@ -132,15 +139,40 @@ export function UppdragList({
       </div>
 
       {result.total === 0 ? (
-        <EmptyState
-          icon={Hammer}
-          title={query.q || query.lifecycle !== "aktiva" || query.economy !== "alla" ? "Inga uppdrag matchar" : "Inga uppdrag ännu"}
-          text={
-            query.q || query.lifecycle !== "aktiva" || query.economy !== "alla"
-              ? "Prova ett annat sökord eller ta bort ett filter."
-              : "När en kund godkänner en offert dyker uppdraget upp här. Du kan också skapa ett själv."
-          }
-        />
+        filtered ? (
+          <EmptyState
+            icon={Hammer}
+            title="Inga uppdrag matchar"
+            text="Prova ett annat sökord eller ta bort ett filter."
+            action={
+              <button
+                type="button"
+                className={buttonClasses("secondary", "sm")}
+                onClick={() => {
+                  setQ("");
+                  go({ q: "", lifecycle: "aktiva", economy: "alla", page: 1 });
+                }}
+                data-clear-filters
+              >
+                Rensa sök och filter
+              </button>
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={Hammer}
+            title="Inga uppdrag ännu"
+            text="När en kund godkänner en offert dyker uppdraget upp här. Du kan också skapa ett själv."
+            action={
+              <div className="flex flex-col items-center gap-2 sm:flex-row">
+                <ButtonLink href="/ekonomi/offerter/ny">
+                  <FileText className="size-4" /> Ny offert
+                </ButtonLink>
+                <NewUppdragButton customers={customers} variant="secondary" label="Skapa uppdrag" />
+              </div>
+            }
+          />
+        )
       ) : (
         <>
           <div className="hidden md:block">

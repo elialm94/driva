@@ -1,5 +1,5 @@
 import { ArrowDownLeft, ArrowUpRight, Landmark } from "lucide-react";
-import { Badge, Card, EmptyState, PageHeader, SectionTitle } from "@/components/ui";
+import { Badge, ButtonLink, Card, EmptyState, PageHeader, SectionTitle } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
 import {
@@ -116,6 +116,13 @@ export default async function SkattekontoPage() {
             icon={Landmark}
             title="Inga rörelser på skattekontot ännu"
             text="Så snart moms deklareras eller F-skatt bokförs syns rörelserna här, med löpande saldo."
+            action={
+              todo === 0 ? (
+                <ButtonLink href="/bokforing/moms" variant="secondary">
+                  Till momsdeklarationen
+                </ButtonLink>
+              ) : undefined
+            }
           />
         ) : (
           <Card className="overflow-x-auto px-6 py-5">

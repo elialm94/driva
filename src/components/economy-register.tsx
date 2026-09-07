@@ -3,9 +3,9 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AppLink } from "./app-link";
-import { ArrowUpDown, ChevronDown, ChevronUp, FileText, Landmark, Pencil, ReceiptText, Search, ShoppingBag } from "lucide-react";
+import { ArrowUpDown, ChevronDown, ChevronUp, FileText, Landmark, Pencil, Plus, ReceiptText, Search, ShoppingBag } from "lucide-react";
 import { DiscardDraftButton } from "./discard-draft-button";
-import { Badge, Card, EmptyState, cx, type BadgeTone } from "./ui";
+import { Badge, ButtonLink, Card, EmptyState, buttonClasses, cx, type BadgeTone } from "./ui";
 import { Pagination } from "./customer-list";
 import { BankRowActions } from "./bank-row-actions";
 import { ExpenseQuestionButtons, UploadReceiptButton } from "./money-widgets";
@@ -74,7 +74,13 @@ function useRegisterNav<S extends string>(tab: EkonomiTab, query: EconomyQuery<S
     );
   }
 
-  return { q, setQ, go, pending };
+  /** Tillbaka till hela registret: tom sökning, status "alla", första sidan. */
+  function clear(allStatus: S) {
+    setQ("");
+    go({ q: "", status: allStatus, page: 1 });
+  }
+
+  return { q, setQ, go, clear, pending };
 }
 
 function Toolbar<S extends string>({
@@ -194,26 +200,47 @@ function SortTh({
   );
 }
 
+/**
+ * Tomt register. Med filter aktivt: ett klick tar bort sök och status så att
+ * användaren inte behöver leta efter vad som döljer raderna. Utan filter: den
+ * naturliga första handlingen ("Ny offert"), inte bara en förklaring.
+ */
 function NoMatches({
   icon,
   filtered,
   title,
   text,
   action,
+  onClear,
 }: {
   icon: typeof FileText;
   filtered: boolean;
   title: string;
   text: string;
   action?: React.ReactNode;
+  onClear?: () => void;
 }) {
   return (
     <EmptyState
       icon={icon}
       title={filtered ? "Inget matchar" : title}
       text={filtered ? "Prova ett annat sökord eller ta bort ett filter." : text}
-      action={filtered ? undefined : action}
+      action={
+        filtered ? (
+          onClear ? <ClearFiltersButton onClick={onClear} /> : undefined
+        ) : (
+          action
+        )
+      }
     />
+  );
+}
+
+export function ClearFiltersButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className={buttonClasses("secondary", "sm")} onClick={onClick} data-clear-filters>
+      Rensa sök och filter
+    </button>
   );
 }
 
@@ -254,7 +281,7 @@ export function QuoteRegister({
   query: EconomyQuery<QuoteStatusFilter>;
   options: readonly [QuoteStatusFilter, string][];
 }) {
-  const { q, setQ, go, pending } = useRegisterNav("offerter", query);
+  const { q, setQ, go, clear, pending } = useRegisterNav("offerter", query);
   const filtered = Boolean(query.q) || query.status !== "alla";
 
   return (
@@ -276,6 +303,12 @@ export function QuoteRegister({
           filtered={filtered}
           title="Inga offerter ännu"
           text="Skapa din första offert – kunden godkänner den direkt i länken."
+          onClear={() => clear("alla")}
+          action={
+            <ButtonLink href="/ekonomi/offerter/ny">
+              <Plus className="size-4" /> Ny offert
+            </ButtonLink>
+          }
         />
       ) : (
         <>
@@ -360,7 +393,7 @@ export function InvoiceRegister({
   query: EconomyQuery<InvoiceStatusFilter>;
   options: readonly [InvoiceStatusFilter, string][];
 }) {
-  const { q, setQ, go, pending } = useRegisterNav("fakturor", query);
+  const { q, setQ, go, clear, pending } = useRegisterNav("fakturor", query);
   const filtered = Boolean(query.q) || query.status !== "alla";
 
   return (
@@ -382,6 +415,12 @@ export function InvoiceRegister({
           filtered={filtered}
           title="Inga fakturor ännu"
           text="Fakturor skapas oftast direkt från ett klart uppdrag – eller manuellt här."
+          onClear={() => clear("alla")}
+          action={
+            <ButtonLink href="/ekonomi/fakturor/ny">
+              <Plus className="size-4" /> Ny faktura
+            </ButtonLink>
+          }
         />
       ) : (
         <>
@@ -497,14 +536,17 @@ export function ExpenseRegister({
   query,
   options,
   highlightId,
+  emptyAction,
 }: {
   result: PagedResult<ExpenseTableRow>;
   query: EconomyQuery<ExpenseStatusFilter>;
   options: readonly [ExpenseStatusFilter, string][];
   /** Utgift/leverantörsfaktura som djuplänken pekar på – markeras och scrollas fram. */
   highlightId?: string;
+  /** Första steget när registret är tomt – t.ex. koppla banken om den inte är kopplad. */
+  emptyAction?: React.ReactNode;
 }) {
-  const { q, setQ, go, pending } = useRegisterNav("utgifter", query);
+  const { q, setQ, go, clear, pending } = useRegisterNav("utgifter", query);
   const filtered = Boolean(query.q) || query.status !== "alla";
   const highlighted = highlightId && result.rows.some((r) => r.id === highlightId) ? highlightId : undefined;
 
@@ -527,7 +569,9 @@ export function ExpenseRegister({
           icon={ShoppingBag}
           filtered={filtered}
           title="Inga utgifter ännu"
-          text="Köp från banken dyker upp här automatiskt och matchas mot kvitton."
+          text="Släpp ett kvitto i rutan ovan – eller koppla banken så dyker kortköpen upp här av sig själva."
+          onClear={() => clear("alla")}
+          action={emptyAction}
         />
       ) : (
         <>
@@ -633,7 +677,7 @@ export function BankRegister({
   /** Transaktionen som djuplänken (?atgard=bank-<id>) pekar på. */
   highlightId?: string;
 }) {
-  const { q, setQ, go, pending } = useRegisterNav("bank", query);
+  const { q, setQ, go, clear, pending } = useRegisterNav("bank", query);
   const filtered = Boolean(query.q) || query.status !== "alla";
   const highlighted = highlightId && result.rows.some((r) => r.id === highlightId) ? highlightId : undefined;
 
@@ -656,7 +700,8 @@ export function BankRegister({
           icon={Landmark}
           filtered={filtered}
           title="Inga transaktioner ännu"
-          text="När företagskontot är kopplat dyker transaktionerna upp här."
+          text="Banken är kopplad – transaktionerna hämtas och visas här så fort de finns."
+          onClear={() => clear("alla")}
         />
       ) : (
         <>

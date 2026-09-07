@@ -139,6 +139,7 @@ export function JobWorkSection({
       <WorkList
         title="Arbete"
         empty="Ingen tid registrerad än."
+        emptyAction={{ label: "Registrera första timmarna", onClick: () => setSheet("tid") }}
         entries={labor}
         from={fromHere}
         onEdit={setEdit}
@@ -147,6 +148,10 @@ export function JobWorkSection({
       <WorkList
         title="Material"
         empty="Inget material registrerat än."
+        emptyAction={{
+          label: wholesalerSearch ? "Hämta från grossisten" : "Lägg till material",
+          onClick: () => setSheet(wholesalerSearch ? "grossist" : "material"),
+        }}
         entries={material}
         from={fromHere}
         onEdit={setEdit}
@@ -277,6 +282,7 @@ function ComparisonBlock({ comparison }: { comparison: JobWorkComparison }) {
 function WorkList({
   title,
   empty,
+  emptyAction,
   entries,
   from,
   onEdit,
@@ -285,6 +291,8 @@ function WorkList({
 }: {
   title: string;
   empty: string;
+  /** Första handlingen direkt i tomraden – samma ark som knappen i rubriken öppnar. */
+  emptyAction?: { label: string; onClick: () => void };
   entries: JobWorkViewEntry[];
   from: { href: string; label: string };
   onEdit: (e: JobWorkViewEntry) => void;
@@ -295,7 +303,21 @@ function WorkList({
     <div className={className}>
       <h3 className="mb-2 text-[13px] font-medium text-muted">{title}</h3>
       {entries.length === 0 ? (
-        <p className="text-[14px] text-muted">{empty}</p>
+        <p className="text-[14px] text-muted">
+          {empty}
+          {emptyAction ? (
+            <>
+              {" "}
+              <button
+                type="button"
+                className="font-medium text-accent-deep underline-offset-2 hover:underline"
+                onClick={emptyAction.onClick}
+              >
+                {emptyAction.label}
+              </button>
+            </>
+          ) : null}
+        </p>
       ) : (
         <ul className="divide-y divide-line/70 rounded-2xl border border-line/80">
           {entries.map((entry) => (

@@ -170,6 +170,13 @@ export function VerifikationerView({
               ? "När du skickar fakturor eller får utgifter bokförs de automatiskt här."
               : "Prova Alla om du saknar något."
           }
+          action={
+            items.length > 0 ? (
+              <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setFilter("alla")}>
+                Visa alla verifikationer
+              </button>
+            ) : undefined
+          }
         />
       ) : (
         <Card className="divide-y divide-line/70">

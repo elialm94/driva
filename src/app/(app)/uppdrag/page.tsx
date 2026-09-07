@@ -47,6 +47,7 @@ export default async function UppdragPage(props: {
           page: query.page,
         })}
         query={query}
+        customers={customers}
       />
     </div>
   );
