@@ -409,6 +409,26 @@ describe("Uppdrag: avtalat vs registrerat vs fakturerat", () => {
     assert.equal(arkiv.rows.some((r) => r.id === job.id), true);
   });
 
+  it("inkomna förfrågningar utan offert ligger överst med chip och 'Väntar på offert'", () => {
+    const manual = createJob({ customerId: "cust-1", title: "Altan", startDate: "2020-01-01" });
+    const lead = createJob({
+      customerId: "cust-1",
+      title: "Byta kök",
+      description: "Hej! Vi vill byta köket i vår lägenhet.",
+      source: "web_form",
+      originalMessage: "Hej! Vi vill byta köket i vår lägenhet.",
+    });
+    const rows = listJobsForTable({ lifecycle: "aktiva" }).rows;
+    assert.equal(rows[0]?.id, lead.id);
+    assert.equal(rows[0]?.incoming, true);
+    assert.equal(rows[0]?.sourceLabel, "Via webbformulär");
+    assert.equal(rows[0]?.economyLabel, "Väntar på offert");
+    const manualRow = rows.find((r) => r.id === manual.id)!;
+    assert.equal(manualRow.incoming, false);
+    assert.equal(manualRow.sourceLabel, undefined);
+    assert.equal(manualRow.economyLabel, "—");
+  });
+
   it("AI complete/reopen/delete använder samma tjänster, bekräftelse för borttagning", async () => {
     const job = createJob({ customerId: "cust-1", title: "AI-liv" });
     const done = completeJobDraft(job.id);

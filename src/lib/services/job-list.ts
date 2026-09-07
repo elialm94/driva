@@ -9,6 +9,7 @@ import {
   type JobEconomyKind,
 } from "./job-lifecycle";
 import { jobMoneyForAll, type JobMoney } from "./job-economy";
+import { isIncomingUnquotedJob, jobSourceLabel } from "./jobs";
 import type { PagedResult } from "./customers";
 
 export const JOB_PAGE_SIZE = 50;
@@ -40,6 +41,11 @@ export interface JobListRow {
   lifecycle: DerivedJobStatus;
   startDate?: string;
   completedAt?: string;
+  /** Inkommen förfrågan (webbformulär/e-post/telefon) som ännu inte fått en offert. */
+  incoming: boolean;
+  /** "Via webbformulär" osv. – bara för inkommande uppdrag. */
+  sourceLabel?: string;
+  createdAt: string;
 }
 
 function paginate<T>(items: T[], page: number, pageSize: number): PagedResult<T> {
@@ -59,7 +65,11 @@ function paginate<T>(items: T[], page: number, pageSize: number): PagedResult<T>
 
 function toRow(job: Job, money: JobMoney, customer: { name: string; kind: "privat" | "foretag" }): JobListRow {
   const lifecycle = derivedJobStatus(job);
-  const economy = jobEconomyLine(money);
+  const incoming = isIncomingUnquotedJob(job);
+  // En förfrågan utan offert har ingen ekonomi än – säg vad som väntar i stället för "—".
+  const economy = incoming && money.quoteAmount === 0 && money.remaining === 0 && money.unpaid === 0 && money.paid === 0
+    ? { label: "Väntar på offert", kind: "tom" as const }
+    : jobEconomyLine(money);
   return {
     id: job.id,
     title: job.title,
@@ -77,6 +87,9 @@ function toRow(job: Job, money: JobMoney, customer: { name: string; kind: "priva
     lifecycle,
     startDate: job.startDate,
     completedAt: job.completedAt,
+    incoming,
+    sourceLabel: incoming ? jobSourceLabel(job.source) : undefined,
+    createdAt: job.createdAt,
   };
 }
 
@@ -133,6 +146,9 @@ export function listJobsForTable(input: {
     if (sort === "kund") return a.customerName.localeCompare(b.customerName, "sv");
     if (sort === "belopp") return b.quoteAmount - a.quoteAmount;
     if (sort === "datum") return (a.whenSort || "9").localeCompare(b.whenSort || "9");
+    // Nya förfrågningar överst – de väntar på ett svar, nyast först.
+    if (a.incoming !== b.incoming) return a.incoming ? -1 : 1;
+    if (a.incoming && b.incoming) return b.createdAt.localeCompare(a.createdAt);
     return compareJobsDefault(a, b);
   });
 

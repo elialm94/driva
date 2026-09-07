@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MapPin, FileText, ReceiptText, BadgeCheck } from "lucide-react";
+import { MapPin, FileText, ReceiptText, BadgeCheck, Inbox, Mail, Phone } from "lucide-react";
 import { getJob, getInvoice, currentVersion, effectiveQuoteStatus, quoteStatusLabel, requireCustomer, invoiceTotals } from "@/lib/services/data";
 import { acceptedByLabel } from "@/lib/status-labels";
 import { jobAdminState } from "@/lib/services/job-admin";
-import { parseJobNotes } from "@/lib/services/jobs";
+import { isIncomingUnquotedJob, jobSourceLabel, parseJobNotes } from "@/lib/services/jobs";
 import {
   actualEntries,
   jobInvoiceChoice,
@@ -13,7 +13,7 @@ import {
   workEntryInvoiceStatus,
 } from "@/lib/services/job-work";
 import { kr, datumTid } from "@/lib/format";
-import { Avatar, Breadcrumbs, SectionTitle } from "@/components/ui";
+import { Avatar, Breadcrumbs, Card, SectionTitle, buttonClasses } from "@/components/ui";
 import { InvoiceStatusBadge, JobStatusBadge, QuoteStatusBadge } from "@/components/status";
 import { JobActions } from "@/components/job-controls";
 import { JobNotes } from "@/components/job-notes";
@@ -81,6 +81,13 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
   // Grossistbeställningar: avstängd funktion = materialytan ser ut som idag.
   const wholesalers = jobWholesalerContext(job.id);
   const purchaseOrderRows = jobPurchaseOrderRows(job.id);
+  const incoming = isIncomingUnquotedJob(job);
+  const sourceLabel = jobSourceLabel(job.source);
+  const message = job.originalMessage?.trim() || "";
+  // Beskrivningen visas bara när den säger något mer än rubriken/meddelandet.
+  const description = job.description.trim();
+  const showDescription = description.length > 0 && description !== message && description !== job.title;
+  const newQuote = newQuoteHref({ kund: customer.id, job: job.id, from: fromHere });
 
   return (
     <div className="animate-fade-up">
@@ -113,6 +120,57 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         </div>
         {admin.nextStep ? <p className="mt-2 text-[14px] text-soft">{admin.nextStep}</p> : null}
       </div>
+
+      {message ? (
+        <Card
+          className={
+            incoming ? "mb-8 border-accent/30 bg-accent-soft/20 px-6 py-5" : "mb-8 px-6 py-5"
+          }
+          data-testid="job-incoming-message"
+        >
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <div className="flex items-center gap-2">
+              <Inbox className="size-4 text-accent" />
+              <h2 className="text-[15px] font-semibold">{incoming ? "Ny förfrågan från kunden" : "Kundens förfrågan"}</h2>
+            </div>
+            <p className="text-[13px] text-muted">
+              {[sourceLabel, datumTid(job.createdAt)].filter(Boolean).join(" · ")}
+            </p>
+          </div>
+          <blockquote className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-ink">{message}</blockquote>
+          {customer.email || customer.phone ? (
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-[13px]">
+              {customer.phone ? (
+                <a href={`tel:${customer.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 text-soft hover:text-ink">
+                  <Phone className="size-3.5 text-muted" /> {customer.phone}
+                </a>
+              ) : null}
+              {customer.email ? (
+                <a href={`mailto:${customer.email}`} className="inline-flex items-center gap-1.5 text-soft hover:text-ink">
+                  <Mail className="size-3.5 text-muted" /> {customer.email}
+                </a>
+              ) : null}
+            </div>
+          ) : null}
+          {incoming ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link href={newQuote as never} className={buttonClasses("primary", "sm")}>
+                <FileText className="size-3.5" /> Skapa offert
+              </Link>
+              <p className="self-center text-[12px] text-muted">
+                Meddelandet följer med som beskrivning i offerten.
+              </p>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {showDescription ? (
+        <div className="mb-8">
+          <SectionTitle>Beskrivning</SectionTitle>
+          <p className="whitespace-pre-line text-[15px] leading-relaxed text-soft">{description}</p>
+        </div>
+      ) : null}
 
       <div className="mb-8">
         <JobActions

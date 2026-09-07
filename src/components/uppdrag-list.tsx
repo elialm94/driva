@@ -167,8 +167,13 @@ export function UppdragList({
                     <tr key={job.id} className={LIST_BODY_ROW_CLASS}>
                       <td className="px-3 py-2.5">
                         <AppLink href={`/uppdrag/${job.id}`} className={LIST_ROW_LINK_CLASS} aria-label={job.title} />
-                        <span className="block truncate font-medium text-ink">{job.title}</span>
-                        {job.address ? (
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate font-medium text-ink">{job.title}</span>
+                          {job.incoming ? <IncomingChip /> : null}
+                        </span>
+                        {job.incoming && job.sourceLabel ? (
+                          <span className="mt-0.5 block truncate text-[12px] text-muted">{job.sourceLabel}</span>
+                        ) : job.address ? (
                           <span className="mt-0.5 block truncate text-[12px] text-muted">{job.address}</span>
                         ) : null}
                       </td>
@@ -196,8 +201,14 @@ export function UppdragList({
                 className="flex items-start justify-between gap-3 px-4 py-3 hover:bg-canvas/70"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-medium">{job.title}</p>
-                  <p className="mt-0.5 truncate text-[13px] text-muted">{job.customerName}</p>
+                  <p className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-[15px] font-medium">{job.title}</span>
+                    {job.incoming ? <IncomingChip /> : null}
+                  </p>
+                  <p className="mt-0.5 truncate text-[13px] text-muted">
+                    {job.customerName}
+                    {job.incoming && job.sourceLabel ? ` · ${job.sourceLabel.toLowerCase()}` : ""}
+                  </p>
                   <p className="mt-0.5 text-[13px] tabular text-soft">{job.economyLabel}</p>
                 </div>
                 <JobStatusBadge
@@ -213,6 +224,15 @@ export function UppdragList({
         </>
       )}
     </div>
+  );
+}
+
+/** Inkommen förfrågan utan offert – samma ord som Hem-raden "Nytt uppdrag". */
+function IncomingChip() {
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">
+      Ny förfrågan
+    </span>
   );
 }
 
