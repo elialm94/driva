@@ -281,7 +281,7 @@ export function CreditInvoiceConfirmDialog({
   open,
   onClose,
   onSuccess,
-  context: initialContext,
+  context,
 }: {
   invoiceId: string;
   open: boolean;
@@ -290,24 +290,50 @@ export function CreditInvoiceConfirmDialog({
   /** Känd på fakturasidan; hämtas annars när dialogen öppnas. */
   context?: CreditInvoiceContext | null;
 }) {
+  const [isPending, setPending] = useState(false);
+  // Formuläret monteras om varje gång dialogen öppnas – då börjar valet om från "hela".
+  return (
+    <Modal open={open} onClose={() => !isPending && onClose()} size="sm" title="Kreditera faktura">
+      {open ? (
+        <CreditInvoiceForm
+          invoiceId={invoiceId}
+          initialContext={context ?? null}
+          onClose={onClose}
+          onSuccess={onSuccess}
+          onPendingChange={setPending}
+        />
+      ) : null}
+    </Modal>
+  );
+}
+
+function CreditInvoiceForm({
+  invoiceId,
+  initialContext,
+  onClose,
+  onSuccess,
+  onPendingChange,
+}: {
+  invoiceId: string;
+  initialContext: CreditInvoiceContext | null;
+  onClose: () => void;
+  onSuccess?: () => void;
+  onPendingChange: (pending: boolean) => void;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [context, setContext] = useState<CreditInvoiceContext | null>(initialContext ?? null);
+  const [context, setContext] = useState<CreditInvoiceContext | null>(initialContext);
   const [mode, setMode] = useState<"hel" | "del">("hel");
   const [amount, setAmount] = useState("");
   const amountId = useId();
 
   useEffect(() => {
-    if (!open) return;
-    setMode("hel");
-    setAmount("");
-    setError(null);
-    if (initialContext) {
-      setContext(initialContext);
-      return;
-    }
-    if (!invoiceId) return;
+    onPendingChange(isPending);
+  }, [isPending, onPendingChange]);
+
+  useEffect(() => {
+    if (initialContext || !invoiceId) return;
     let cancelled = false;
     creditInvoiceContextAction(invoiceId).then((res) => {
       if (cancelled) return;
@@ -317,7 +343,7 @@ export function CreditInvoiceConfirmDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, invoiceId, initialContext]);
+  }, [invoiceId, initialContext]);
 
   const partialAllowed = context?.partialAllowed ?? true;
   const remaining = context?.remainingToCredit ?? null;
@@ -351,109 +377,105 @@ export function CreditInvoiceConfirmDialog({
     );
 
   return (
-    <Modal
-      open={open}
-      onClose={() => !isPending && onClose()}
-      size="sm"
-      title={context?.number != null ? `Kreditera faktura #${context.number}` : "Kreditera faktura"}
-    >
-      <div className="px-6 py-5">
-        <p className="text-[14px] leading-relaxed text-soft">
-          Kunden får en kreditfaktura med eget nummer. Originalet och dess verifikation står kvar – krediten bokförs som
-          en egen händelse.
-        </p>
+    <div className="px-6 py-5">
+      {context?.number != null ? (
+        <p className="text-[17px] font-semibold tracking-tight text-ink">Faktura #{context.number}</p>
+      ) : null}
+      <p className={cx("text-[14px] leading-relaxed text-soft", context?.number != null && "mt-1")}>
+        Kunden får en kreditfaktura med eget nummer. Originalet och dess verifikation står kvar – krediten bokförs som en
+        egen händelse.
+      </p>
 
-        <div className="mt-4 space-y-2" role="radiogroup" aria-label="Vad ska krediteras">
-          <label className={optionCls(mode === "hel")}>
+      <div className="mt-4 space-y-2" role="radiogroup" aria-label="Vad ska krediteras">
+        <label className={optionCls(mode === "hel")}>
+          <input
+            type="radio"
+            name="kredit-lage"
+            className="mt-1 accent-accent"
+            checked={mode === "hel"}
+            onChange={() => setMode("hel")}
+          />
+          <span className="min-w-0">
+            <span className="block text-[14px] font-medium text-ink">
+              Hela fakturan{remaining != null ? ` · ${kr(remaining)}` : ""}
+            </span>
+            <span className="block text-[13px] text-soft">
+              {context && context.paid > 0
+                ? `Kunden har redan betalat ${kr(context.paid)} – det blir en återbetalning att bokföra.`
+                : "Fakturan markeras som krediterad och räknas inte längre som en fordran."}
+            </span>
+          </span>
+        </label>
+
+        {partialAllowed ? (
+          <label className={optionCls(mode === "del")}>
             <input
               type="radio"
               name="kredit-lage"
               className="mt-1 accent-accent"
-              checked={mode === "hel"}
-              onChange={() => setMode("hel")}
+              checked={mode === "del"}
+              onChange={() => setMode("del")}
             />
-            <span className="min-w-0">
-              <span className="block text-[14px] font-medium text-ink">
-                Hela fakturan{remaining != null ? ` · ${kr(remaining)}` : ""}
-              </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-medium text-ink">En del av beloppet</span>
               <span className="block text-[13px] text-soft">
-                {context && context.paid > 0
-                  ? `Kunden har redan betalat ${kr(context.paid)} – det blir en återbetalning att bokföra.`
-                  : "Fakturan markeras som krediterad och räknas inte längre som en fordran."}
+                Raderna krediteras proportionellt per momssats. Fakturan fortsätter gälla för resten.
               </span>
-            </span>
-          </label>
-
-          {partialAllowed ? (
-            <label className={optionCls(mode === "del")}>
-              <input
-                type="radio"
-                name="kredit-lage"
-                className="mt-1 accent-accent"
-                checked={mode === "del"}
-                onChange={() => setMode("del")}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[14px] font-medium text-ink">En del av beloppet</span>
-                <span className="block text-[13px] text-soft">
-                  Raderna krediteras proportionellt per momssats. Fakturan fortsätter gälla för resten.
-                </span>
-                {mode === "del" ? (
-                  <span className="mt-3 block">
-                    <label htmlFor={amountId} className="mb-1 block text-[12px] font-medium text-soft">
-                      Belopp att kreditera, inkl. moms
-                    </label>
-                    <span className="relative block w-44">
-                      <input
-                        id={amountId}
-                        type="text"
-                        inputMode="numeric"
-                        autoFocus
-                        placeholder={remaining != null ? `högst ${remaining.toLocaleString("sv-SE")}` : "t.ex. 2 500"}
-                        value={amount}
-                        onChange={(e) => {
-                          setAmount(e.target.value);
-                          setError(null);
-                        }}
-                        className="h-10 w-full rounded-xl border border-line bg-card px-3 pr-9 text-[14px] tabular outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
-                      />
-                      <span
-                        aria-hidden
-                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-muted"
-                      >
-                        kr
-                      </span>
+              {mode === "del" ? (
+                <span className="mt-3 block">
+                  <label htmlFor={amountId} className="mb-1 block text-[12px] font-medium text-soft">
+                    Belopp att kreditera, inkl. moms
+                  </label>
+                  <span className="relative block w-44">
+                    <input
+                      id={amountId}
+                      type="text"
+                      inputMode="numeric"
+                      autoFocus
+                      placeholder={remaining != null ? `högst ${remaining.toLocaleString("sv-SE")}` : "t.ex. 2 500"}
+                      value={amount}
+                      onChange={(e) => {
+                        setAmount(e.target.value);
+                        setError(null);
+                      }}
+                      className="h-10 w-full rounded-xl border border-line bg-card px-3 pr-9 text-[14px] tabular outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                    />
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-muted"
+                    >
+                      kr
                     </span>
                   </span>
-                ) : null}
-              </span>
-            </label>
-          ) : (
-            <p className="px-1 text-[12px] text-muted">
-              Fakturor med ROT/RUT-avdrag krediteras alltid i sin helhet – avdraget hos Skatteverket kan inte delas.
-            </p>
-          )}
-        </div>
-
-        {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button className={buttonClasses("secondary")} disabled={isPending} onClick={onClose}>
-            Avbryt
-          </button>
-          <button
-            className={buttonClasses("danger")}
-            disabled={isPending || (mode === "del" && !partialValid)}
-            onClick={confirm}
-          >
-            {isPending
-              ? "Krediterar …"
-              : mode === "del" && partialValid
-                ? `Kreditera ${kr(Math.round(parsedAmount))}`
-                : "Kreditera hela fakturan"}
-          </button>
-        </div>
+                </span>
+              ) : null}
+            </span>
+          </label>
+        ) : (
+          <p className="px-1 text-[12px] text-muted">
+            Fakturor med ROT/RUT-avdrag krediteras alltid i sin helhet – avdraget hos Skatteverket kan inte delas.
+          </p>
+        )}
       </div>
-    </Modal>
+
+      {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
+      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <button className={buttonClasses("secondary")} disabled={isPending} onClick={onClose}>
+          Avbryt
+        </button>
+        <button
+          className={buttonClasses("danger")}
+          disabled={isPending || (mode === "del" && !partialValid)}
+          onClick={confirm}
+        >
+          {isPending
+            ? "Krediterar …"
+            : mode === "del" && partialValid
+              ? `Kreditera ${kr(Math.round(parsedAmount))}`
+              : "Kreditera hela fakturan"}
+        </button>
+      </div>
+    </div>
   );
 }
 
