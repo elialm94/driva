@@ -42,6 +42,7 @@ import {
   listExpensesForTable,
   listInvoicesForTable,
   listQuotesForTable,
+  openReceivablesForMatching,
   readyToPayBatch,
   type BankStatusFilter,
   type ExpenseStatusFilter,
@@ -51,6 +52,7 @@ import {
 import { EKONOMI_TABS, type EkonomiTab } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { parseEconomySort } from "@/lib/economy-sort";
+import { highlightFromAtgard } from "@/lib/economy-atgard";
 import { Suspense } from "react";
 import { DraftDiscardedToast } from "@/components/draft-discarded-toast";
 
@@ -193,6 +195,7 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
   const q = param(searchParams.q);
   const page = pageParam(searchParams.sida);
   const sort = parseEconomySort(searchParams.sort, searchParams.direction);
+  const highlightId = highlightFromAtgard(param(searchParams.atgard), tab);
   const bank = tab === "bank" ? bankConnectionView() : null;
   const bankDemo = tab === "bank" ? bankProviderKind() === "mock" : false;
 
@@ -279,6 +282,7 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
             })}
             query={{ q, status: statusParam<ExpenseStatusFilter>(searchParams.status, EXPENSE_STATUS_OPTIONS), page, sort }}
             options={EXPENSE_STATUS_OPTIONS}
+            highlightId={highlightId}
           />
           <SupplierRegister suppliers={db().suppliers ?? []} />
         </div>
@@ -312,6 +316,8 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
               })}
               query={{ q, status: statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS), page, sort }}
               options={BANK_STATUS_OPTIONS}
+              receivables={openReceivablesForMatching()}
+              highlightId={highlightId}
             />
           </div>
         )
