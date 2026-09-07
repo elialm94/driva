@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 import { Modal } from "./modal";
 import { buttonClasses } from "./ui";
 import { declineQuoteByTokenAction } from "@/app/actions";
+import { announceLiveRefresh } from "@/lib/live-refresh";
 
 /**
  * Avböj på /offert/[token]. Godkännandet bor i quote-accept.tsx.
@@ -33,6 +34,7 @@ export function DeclineQuoteButton({ token }: { token: string }) {
             await declineQuoteByTokenAction(token, reason.trim() || undefined);
             setOpen(false);
             router.refresh();
+            announceLiveRefresh("quote-declined");
           }}
         >
           <p className="text-[14px] leading-relaxed text-soft">

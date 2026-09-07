@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Suspense } from "react";
 import { Sidebar, BottomNav } from "@/components/nav";
 import { NavOriginProvider } from "@/components/nav-origin";
+import { LiveRefresh } from "@/components/live-refresh";
 import { SupportModeBanner } from "@/components/support-mode-banner";
 import { db } from "@/lib/store";
 import { getNavAttentionCounts } from "@/lib/services/nav-counts";
@@ -64,6 +65,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <Suspense fallback={null}>
         <NavOriginProvider />
       </Suspense>
+      <LiveRefresh />
       {/* Bottenmarginalen rymmer bottennavet + safe area så sista raden aldrig döljs. */}
       {/* Utskriften får inte bära skärmens marginal för menyerna – den är borta. */}
       <main className="pb-[calc(var(--bottom-nav-h)+env(safe-area-inset-bottom)+2.5rem)] lg:pb-16 lg:pl-60 print:p-0">

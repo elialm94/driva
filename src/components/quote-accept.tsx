@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { acceptQuoteByTokenAction, type AcceptQuoteActionResult } from "@/app/actions";
+import { announceLiveRefresh } from "@/lib/live-refresh";
 import { datumLang, datumTid, kr } from "@/lib/format";
 import { ACCEPTANCE_FOOTNOTE } from "@/lib/quote-acceptance";
 import { buttonClasses, cx } from "./ui-classes";
@@ -42,7 +43,11 @@ export function QuoteAcceptForm({
   const nameEmpty = name.trim().length === 0;
 
   useEffect(() => {
-    if (done) router.refresh();
+    if (!done) return;
+    router.refresh();
+    // Ägarens öppna flik i samma webbläsare (demon) ska visa Godkänd direkt –
+    // den får inget av revalidatePath i actionen och läser inte om av sig själv.
+    announceLiveRefresh("quote-accepted");
   }, [done, router]);
 
   function submit() {
