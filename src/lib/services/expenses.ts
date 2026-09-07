@@ -1,7 +1,7 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
 import type { InboundParsedHint } from "../inbox/inbound-mail";
-import type { Expense, MerchantCategoryRule, Receipt, Verification } from "../types";
+import type { BankTransaction, Expense, MerchantCategoryRule, Receipt, Verification } from "../types";
 import { categoryByKey, deductibleVat, entriesExpense, guessCategory, EXPENSE_CATEGORIES, KNOWN_SUPPLIERS } from "../bas";
 import { kr } from "../format";
 import { logActivity } from "./activity";
@@ -207,6 +207,23 @@ export function uploadReceiptForExpense(
 ): { receipt: Receipt; autoBooked: boolean } {
   const data = db();
   const expense = expenseAwaitingReceipt(expenseId);
+
+  // Banken är sanningen om totalbeloppet, kvittot om momsdelningen: ett köp
+  // som skapades ur en banktransaktion har bara en schablonmoms (25 %) tills
+  // kvittot lästs. Momsen från tolkningen används bara när kvittots total
+  // stämmer med bankens (annars är det sannolikt fel kvitto).
+  const interpretedVat = interpreted?.vatAmount;
+  const interpretedTotalAgrees =
+    interpreted?.amount == null || Math.abs(Math.round(interpreted.amount) - expense.amount) <= 1;
+  if (
+    interpretedVat != null &&
+    Number.isFinite(interpretedVat) &&
+    interpretedTotalAgrees &&
+    Math.round(interpretedVat) >= 0 &&
+    Math.round(interpretedVat) <= expense.amount
+  ) {
+    expense.vatAmount = Math.round(interpretedVat);
+  }
 
   // Kategorin gissas på leverantören: kvittots eget namn om tolkningen läste
   // ett, annars banktransaktionens motpart.
@@ -517,3 +534,56 @@ export function createExpenseFromKnownReceipt(input: {
  * Filen bevaras, uppgifterna kommer ur dokumentet, och är läsningen inte säker
  * nog stannar kvittot i Kontrollera-vyn. Ingen egen väg behövs här.
  */
+
+/* ----------------------- Kortköp i banken → utgift utan kvitto ----------------------- */
+
+/**
+ * Utgående transaktioner som INTE är köp med kvitto: skatt, egna överföringar,
+ * lön, ränta/amortering och bankens egna avgifter hanteras på sina egna ytor
+ * (Skattekonto, Lön, bankvyn). Allt annat utgående är i praktiken ett köp.
+ */
+const NOT_A_PURCHASE =
+  /skatteverk|skattekonto|överföring|overforing|egen insättning|eget uttag|\blön\b|\blon\b|utdelning|amortering|\bränta\b|bankavgift|månadsavgift|kortavgift|aviavgift/i;
+
+export function looksLikeCardPurchase(tx: Pick<BankTransaction, "amount" | "counterpart" | "description" | "reference">): boolean {
+  if (!(tx.amount < 0)) return false;
+  const text = `${tx.counterpart} ${tx.description} ${tx.reference ?? ""}`;
+  return !NOT_A_PURCHASE.test(text);
+}
+
+/** Schablonmoms 25 % inkl. – gäller tills kvittot lästs. */
+export function provisionalVatFor(amountInclVat: number): number {
+  return Math.round(amountInclVat - amountInclVat / 1.25);
+}
+
+/**
+ * Ett obokat kortköp i banken blir ett köp som saknar kvitto. Då får Hem raden
+ * "Kvitto saknas – Circle K, 812 kr" med Lägg till kvitto i stället för en stum
+ * bankrad, och kvittot bokför köpet mot just den transaktionen. Beloppet är
+ * bankens; momsen är preliminär tills kvittot lästs. Idempotent per transaktion
+ * och sparar aldrig själv – anroparen (matchningsmotorn) gör det.
+ */
+export function createExpenseFromBankPurchase(tx: BankTransaction): Expense | null {
+  const data = db();
+  if (!looksLikeCardPurchase(tx)) return null;
+  if (tx.status === "bokford") return null;
+  if (data.expenses.some((e) => e.bankTransactionId === tx.id)) return null;
+  const amount = Math.abs(tx.amount);
+  if (!Number.isInteger(amount) || amount < 1) return null;
+  const supplier = tx.counterpart.trim() || "Okänd motpart";
+  const expense: Expense = {
+    id: uid(),
+    supplier,
+    date: tx.date.slice(0, 10),
+    amount,
+    vatAmount: provisionalVatFor(amount),
+    status: "saknar_kvitto",
+    bankTransactionId: tx.id,
+    createdAt: new Date().toISOString(),
+  };
+  data.expenses.push(expense);
+  logActivity(`Kortköpet hos ${supplier} (${kr(amount)}) väntar på kvitto.`, {
+    entity: { type: "utgift", id: expense.id },
+  });
+  return expense;
+}

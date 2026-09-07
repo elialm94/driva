@@ -15,7 +15,7 @@ import {
 import { kr } from "../format";
 import { logActivity } from "./activity";
 import { isValidBankgirotOcr } from "../ids";
-import { merchantRuleKey } from "./expenses";
+import { createExpenseFromBankPurchase, merchantRuleKey } from "./expenses";
 import { bookSupplierPaymentFromBank, supplierPayments } from "./supplier-payments";
 import { normalizeRecipientAccount } from "../inbox/workflow";
 import {
@@ -447,6 +447,16 @@ export function processIncomingTransaction(txId: string): ProcessTransactionResu
     );
     save();
     return { outcome: "suggested", suggestion };
+  }
+  if (tx.amount < 0) {
+    // Ett okänt kortköp blir ett köp som saknar kvitto – "Kvitto saknas" på Hem
+    // med Lägg till kvitto, i stället för en bankrad utan åtgärd.
+    const expense = createExpenseFromBankPurchase(tx);
+    if (!expense) {
+      logActivity(`En utbetalning på ${kr(Math.abs(tx.amount))} till ${tx.counterpart} behöver hanteras i bankvyn.`);
+    }
+    save();
+    return { outcome: "unmatched", suggestion };
   }
   logActivity(`En inbetalning på ${kr(tx.amount)} från ${tx.counterpart} kunde inte matchas mot någon faktura.`);
   save();
