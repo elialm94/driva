@@ -25,7 +25,7 @@ import { logActivity } from "./activity";
 import { logAudit } from "../accounting/audit";
 import { postVerification } from "../accounting/engine";
 import { entriesTaxReductionPayout } from "../bas";
-import { docTotals } from "../calc";
+import { docTotals, taxReductionRate, taxReductionRateOn } from "../calc";
 import {
   taxReductionMissingFields,
   type TaxReductionMissingField,
@@ -389,6 +389,8 @@ function underlagText(input: {
   laborInclVat: number;
   deduction: number;
   toPay: number;
+  /** Kundens betalningsdag – avgör vilken sats Skatteverket tillämpar. */
+  paidAt?: string;
 }): string {
   const kind = input.type.toUpperCase();
   const housing = input.details.housing;
@@ -416,6 +418,17 @@ function underlagText(input: {
   lines.push(`Arbetskostnad inkl. moms: ${kr(input.laborInclVat)}`);
   lines.push(`Preliminärt ${kind}-avdrag: ${kr(input.deduction)}`);
   lines.push(`Kunden har betalat: ${kr(input.toPay)}`);
+  if (input.paidAt) {
+    lines.push(`Betalningsdag: ${datumKort(input.paidAt)}`);
+    const applies = taxReductionRateOn(input.type, input.paidAt);
+    if (applies !== taxReductionRate(input.type)) {
+      lines.push(
+        `Obs: på betalningsdagen gällde ${Math.round(applies * 100)} % ${kind} (dokumentet räknade ${Math.round(
+          taxReductionRate(input.type) * 100
+        )} %). Skatteverket utgår från betalningsdagen – räkna med att beslutet avviker från det preliminära avdraget.`
+      );
+    }
+  }
   lines.push("Ingen ansökan har skickats till Skatteverket – det här är underlag att använda manuellt.");
   return lines.join("\n");
 }
@@ -467,6 +480,7 @@ export function createTaxReductionUnderlag(input: { jobId?: string; invoiceId?: 
     laborInclVat: totals.laborInclVat,
     deduction: totals.deduction,
     toPay: totals.toPay,
+    paidAt: taxInvoice.paidAt,
   });
 
   const app: TaxReductionApplication = {

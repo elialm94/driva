@@ -14,8 +14,33 @@ import { logAudit } from "./audit";
  * beräknad per månad, bokförd som bokslutsverifikation per räkenskapsår.
  */
 
-/** Prisbasbelopp (2025: 58 800 kr). Gräns för direktavdrag: ett halvt prisbasbelopp. */
-export const PRISBASBELOPP = 58_800;
+/**
+ * Prisbasbelopp per inkomstår (SCB/regeringen fastställer i höstas för nästa år).
+ * Gränsen för direktavdrag av inventarier av mindre värde är ett halvt
+ * prisbasbelopp exkl. moms det år köpet görs – därför slås beloppet upp per år.
+ */
+const PRISBASBELOPP_PER_AR: Record<number, number> = {
+  2023: 52_500,
+  2024: 57_300,
+  2025: 58_800,
+  2026: 59_200,
+};
+
+export function prisbasbeloppFor(year: number): number {
+  const known = Object.keys(PRISBASBELOPP_PER_AR).map(Number);
+  if (PRISBASBELOPP_PER_AR[year]) return PRISBASBELOPP_PER_AR[year];
+  // Okänt år: närmaste kända (framtida år får senaste, äldre år får första).
+  const clamped = Math.min(Math.max(year, Math.min(...known)), Math.max(...known));
+  return PRISBASBELOPP_PER_AR[clamped];
+}
+
+/** Gräns för direktavdrag (halvt prisbasbelopp) det år köpet gjordes. */
+export function inventarieGransFor(date: string | Date = new Date()): number {
+  const year = typeof date === "string" ? Number(date.slice(0, 4)) : date.getFullYear();
+  return Math.round(prisbasbeloppFor(Number.isFinite(year) && year > 0 ? year : new Date().getFullYear()) / 2);
+}
+
+export const PRISBASBELOPP = prisbasbeloppFor(new Date().getFullYear());
 export const INVENTARIE_GRANS = Math.round(PRISBASBELOPP / 2);
 
 export const DEFAULT_USEFUL_LIFE_YEARS = 5;
@@ -27,9 +52,9 @@ const ASSET_LIKELY_CATEGORIES = new Set(["verktyg", "ovrigt", "programvara", "ma
  * Ser köpet ut som en inventarie? Ren heuristik för att STÄLLA FRÅGAN –
  * beslutet fattas alltid av användaren.
  */
-export function assetSuggestionForExpense(expense: Pick<Expense, "amount" | "vatAmount" | "category" | "supplier">): boolean {
+export function assetSuggestionForExpense(expense: Pick<Expense, "amount" | "vatAmount" | "category" | "supplier"> & { date?: string }): boolean {
   const net = expense.amount - expense.vatAmount;
-  if (net < INVENTARIE_GRANS) return false;
+  if (net < inventarieGransFor(expense.date ?? new Date())) return false;
   if (expense.category && !ASSET_LIKELY_CATEGORIES.has(expense.category)) return false;
   return true;
 }

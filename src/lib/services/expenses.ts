@@ -8,7 +8,7 @@ import { logActivity } from "./activity";
 import { logAudit } from "../accounting/audit";
 import { postVerification, createCorrection } from "../accounting/engine";
 import { clampToOpenDate } from "../accounting/fiscal";
-import { assetSuggestionForExpense, registerAssetFromExpense, INVENTARIE_GRANS } from "../accounting/assets";
+import { assetSuggestionForExpense, registerAssetFromExpense, inventarieGransFor } from "../accounting/assets";
 import { resolveClientRequestsForExpense } from "../collaboration/requests";
 import { currentActor } from "../collaboration/actor";
 
@@ -168,7 +168,7 @@ function bookExpense(
 function askAssetQuestion(expense: Expense): void {
   expense.status = "behover_svar";
   expense.question = {
-    text: `Köpet på ${kr(expense.amount)} hos ${expense.supplier} ser ut som något som används i flera år (över ${kr(INVENTARIE_GRANS)}). Hur vill du bokföra det?`,
+    text: `Köpet på ${kr(expense.amount)} hos ${expense.supplier} ser ut som något som används i flera år (över ${kr(inventarieGransFor(expense.date))} exkl. moms). Hur vill du bokföra det?`,
     options: [...ASSET_QUESTION_OPTIONS],
   };
 }

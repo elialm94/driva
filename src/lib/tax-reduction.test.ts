@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { replaceDb } from "./store";
 import { buildSeed } from "./seed";
 import { formatPersonnummer, isPersonnummerFormat, maskPersonnummer, normalizePersonnummer } from "./personnummer";
-import { docTotals, ROT_ANDEL, RUT_ANDEL, ROT_TAK, RUT_TAK } from "./calc";
+import { docTotals, ROT_ANDEL, RUT_ANDEL, ROT_TAK, RUT_TAK, ROT_RUT_GEMENSAMT_TAK, taxReductionRateOn } from "./calc";
 import { createInvoice, issueInvoice, markInvoicePaid, sendInvoice, updateInvoice } from "./services/invoices";
 import { createQuote, STANDARD_TERMS, quoteDefaults } from "./services/quotes";
 import { currentVersion, getInvoice, getJob, requireCustomer } from "./services/data";

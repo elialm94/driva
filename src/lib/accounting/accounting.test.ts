@@ -13,7 +13,7 @@ import { accountBalance, balansrapport, ledgerIntegrity, saldobalans, huvudbok }
 import { computeVatPosition, generateVatReport, markVatReportDeclared, vatPeriods } from "./vat";
 import { lockPeriod, isDateLocked, clampToOpenDate, fiscalYears, ensureFiscalYearFor } from "./fiscal";
 import { todayDate } from "./dates";
-import { registerAssetFromExpense, createDepreciationEntry, depreciationForYear, INVENTARIE_GRANS, bookValue } from "./assets";
+import { registerAssetFromExpense, createDepreciationEntry, depreciationForYear, INVENTARIE_GRANS, bookValue, prisbasbeloppFor, inventarieGransFor, assetSuggestionForExpense } from "./assets";
 import { planAccrual, bookAccrual, reverseAccrualsInto, amountAfterYearEnd } from "./accruals";
 import { bokslutChecklist, closeFiscalYear, runBokslutAutomation } from "./close";
 import { bankReconciliation, bankReconciliationAt } from "./reconciliation";
@@ -485,6 +485,19 @@ describe("Inventarier och avskrivningar", () => {
     assert.equal(bookValue(asset), 35_000 - 5_833);
     // Samma år skrivs inte av två gånger.
     assert.equal(createDepreciationEntry(asset.id, fy.id, "anvandare").amount, 0);
+  });
+
+  it("inventariegränsen följer prisbasbeloppet det år köpet gjordes", () => {
+    assert.equal(prisbasbeloppFor(2025), 58_800);
+    assert.equal(prisbasbeloppFor(2026), 59_200);
+    assert.equal(inventarieGransFor("2025-06-01"), 29_400);
+    assert.equal(inventarieGransFor("2026-01-15"), 29_600);
+    // Okänt framtida år faller tillbaka på senast kända beloppet i stället för att krascha.
+    assert.equal(prisbasbeloppFor(2099), prisbasbeloppFor(2026));
+    // 29 500 kr exkl. moms är över gränsen 2025 men under gränsen 2026.
+    const base = { amount: 36_875, vatAmount: 7_375, category: "verktyg" as const, supplier: "Bauhaus" };
+    assert.equal(assetSuggestionForExpense({ ...base, date: "2025-06-01T10:00:00Z" }), true);
+    assert.equal(assetSuggestionForExpense({ ...base, date: "2026-06-01T10:00:00Z" }), false);
   });
 });
 
