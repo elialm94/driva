@@ -2513,6 +2513,8 @@ export type WholesalerColumnKey =
   | "rskNumber"
   | "gtin"
   | "category"
+  | "brand"
+  | "imageUrl"
   | "discountGroup"
   | "unit"
   | "packSize"
@@ -2552,6 +2554,11 @@ export interface WholesalerConnection {
    * nettopris. Nyckeln är normaliserad (trimmad, versaler).
    */
   discountGroups?: Record<string, number>;
+  /**
+   * Favoritartiklar i materialbutiken, nycklade på grossistens artikelnummer
+   * (artikel-id byts vid varje prisimport – artikelnumret består).
+   */
+  favoriteArticleNumbers?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -2610,6 +2617,10 @@ export interface WholesalerProduct {
   rskNumber?: string;
   gtin?: string;
   category?: string;
+  /** Fabrikat/varumärke om filen anger det – visas på artikelkortet. */
+  brand?: string;
+  /** Länk (https) till grossistens produktbild – bara om filen innehåller en. */
+  imageUrl?: string;
   discountGroup?: string;
   unit: string;
   packSize?: number;

@@ -31,8 +31,10 @@ export function normalizeText(raw: string | undefined | null): string {
     .trim();
 }
 
-/** Texten som indexeras per artikel (namn + identifierare + kategori). */
-export function productSearchText(p: Pick<WholesalerProduct, "name" | "articleNumber" | "eNumber" | "rskNumber" | "gtin" | "category">): string {
+/** Texten som indexeras per artikel (namn + identifierare + kategori + varumärke). */
+export function productSearchText(
+  p: Pick<WholesalerProduct, "name" | "articleNumber" | "eNumber" | "rskNumber" | "gtin" | "category" | "brand">,
+): string {
   return [
     normalizeText(p.name),
     normalizeIdentifier(p.articleNumber),
@@ -40,9 +42,38 @@ export function productSearchText(p: Pick<WholesalerProduct, "name" | "articleNu
     normalizeIdentifier(p.rskNumber),
     normalizeIdentifier(p.gtin),
     normalizeText(p.category),
+    normalizeText(p.brand),
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+/** Kategorinyckel för filtrering/gruppering – grossistens text trimmad, skiftlägesokänslig. */
+export function categoryKey(category: string | undefined | null): string {
+  return normalizeText(category);
+}
+
+export interface CatalogCategory {
+  /** Grossistens egen benämning (första förekomsten). */
+  name: string;
+  count: number;
+}
+
+export const CATALOG_MAX_CATEGORIES = 200;
+
+/** Kategorier med antal artiklar, störst först (minneslagringen). */
+export function categoriesInMemory(products: readonly WholesalerProduct[]): CatalogCategory[] {
+  const byKey = new Map<string, CatalogCategory>();
+  for (const p of products) {
+    const key = categoryKey(p.category);
+    if (!key) continue;
+    const entry = byKey.get(key);
+    if (entry) entry.count += 1;
+    else byKey.set(key, { name: p.category!.trim(), count: 1 });
+  }
+  return [...byKey.values()]
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "sv"))
+    .slice(0, CATALOG_MAX_CATEGORIES);
 }
 
 export interface ParsedCatalogQuery {
@@ -87,21 +118,32 @@ export function compareRanked(a: { rank: number; product: WholesalerProduct }, b
   return a.product.name.localeCompare(b.product.name, "sv") || a.product.articleNumber.localeCompare(b.product.articleNumber, "sv");
 }
 
-/** Filtrera + ranka i minnet (fil-/minneslagringen och tester). */
+/**
+ * Filtrera + ranka i minnet (fil-/minneslagringen och tester). Med en
+ * kategori och tom fråga bläddras kategorin i namnordning – det är butikens
+ * "visa alla i Kabel". Utan kategori krävs fortfarande en sökfråga.
+ */
 export function searchInMemory(
   products: readonly WholesalerProduct[],
   raw: string,
   page: { limit: number; offset: number },
+  filter: { category?: string } = {},
 ): { rows: WholesalerProduct[]; total: number } {
   const q = parseCatalogQuery(raw);
-  if (q.empty) return { rows: [], total: 0 };
+  const wantedCategory = categoryKey(filter.category);
+  const scope = wantedCategory ? products.filter((p) => categoryKey(p.category) === wantedCategory) : products;
+  const limit = Math.max(1, Math.min(page.limit, CATALOG_SEARCH_MAX_PAGE_SIZE));
+  const offset = Math.max(0, page.offset);
+  if (q.empty) {
+    if (!wantedCategory) return { rows: [], total: 0 };
+    const sorted = scope.slice().sort((a, b) => compareRanked({ rank: 0, product: a }, { rank: 0, product: b }));
+    return { rows: sorted.slice(offset, offset + limit), total: sorted.length };
+  }
   const ranked: { rank: number; product: WholesalerProduct }[] = [];
-  for (const product of products) {
+  for (const product of scope) {
     const rank = rankProduct(product, q);
     if (rank > 0) ranked.push({ rank, product });
   }
   ranked.sort(compareRanked);
-  const limit = Math.max(1, Math.min(page.limit, CATALOG_SEARCH_MAX_PAGE_SIZE));
-  const offset = Math.max(0, page.offset);
   return { rows: ranked.slice(offset, offset + limit).map((r) => r.product), total: ranked.length };
 }

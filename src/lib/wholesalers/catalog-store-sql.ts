@@ -12,11 +12,14 @@ import { sqlClient } from "../storage/adapter-supabase";
 import { bindTransaction } from "../storage/load";
 import { num } from "../storage/mappers";
 import {
+  CATALOG_MAX_CATEGORIES,
   CATALOG_SEARCH_MAX_PAGE_SIZE,
+  categoryKey,
   normalizeIdentifier,
   normalizeText,
   parseCatalogQuery,
   productSearchText,
+  type CatalogCategory,
 } from "./catalog-search";
 import type { CatalogSearchInput, CatalogSearchResult, WholesalerCatalogStore } from "./catalog-store";
 
@@ -33,6 +36,8 @@ export const WHOLESALER_PRODUCT_COLUMNS = [
   "rsk_number",
   "gtin",
   "category",
+  "brand",
+  "image_url",
   "discount_group",
   "unit",
   "pack_size",
@@ -45,6 +50,7 @@ export const WHOLESALER_PRODUCT_COLUMNS = [
   "e_key",
   "rsk_key",
   "gtin_key",
+  "category_key",
   "name_key",
   "search_text",
 ] as const;
@@ -61,6 +67,8 @@ export function productToRow(p: WholesalerProduct, businessId: string): SqlParam
     p.rskNumber ?? null,
     p.gtin ?? null,
     p.category ?? null,
+    p.brand ?? null,
+    p.imageUrl ?? null,
     p.discountGroup ?? null,
     p.unit,
     p.packSize ?? null,
@@ -73,6 +81,7 @@ export function productToRow(p: WholesalerProduct, businessId: string): SqlParam
     normalizeIdentifier(p.eNumber) || null,
     normalizeIdentifier(p.rskNumber) || null,
     normalizeIdentifier(p.gtin) || null,
+    categoryKey(p.category) || null,
     normalizeText(p.name),
     productSearchText(p),
   ];
@@ -99,6 +108,8 @@ export function productFromRow(r: SqlRow): WholesalerProduct {
     ...opt("rskNumber", strOrU(r.rsk_number)),
     ...opt("gtin", strOrU(r.gtin)),
     ...opt("category", strOrU(r.category)),
+    ...opt("brand", strOrU(r.brand)),
+    ...opt("imageUrl", strOrU(r.image_url)),
     ...opt("discountGroup", strOrU(r.discount_group)),
     unit: String(r.unit ?? "st"),
     ...opt("packSize", numOrU(r.pack_size)),
@@ -170,13 +181,33 @@ export class SqlCatalogStore implements WholesalerCatalogStore {
 
   async search(businessId: string, input: CatalogSearchInput): Promise<CatalogSearchResult> {
     const q = parseCatalogQuery(input.query);
-    if (q.empty) return { rows: [], total: 0 };
+    const wantedCategory = categoryKey(input.category);
+    if (q.empty && !wantedCategory) return { rows: [], total: 0 };
     const limit = Math.max(1, Math.min(input.limit, CATALOG_SEARCH_MAX_PAGE_SIZE));
     const offset = Math.max(0, input.offset);
 
     // WHERE-parametrarna först (delas av count och select); rankningens
     // parametrar läggs efter så att count-frågan inte får oanvända $n.
     const params: SqlParam[] = [businessId, input.importId, input.connectionId];
+    let scope = `business_id = $1 and import_id = $2 and connection_id = $3`;
+    if (wantedCategory) {
+      params.push(wantedCategory);
+      scope += ` and category_key = $${params.length}`;
+    }
+
+    if (q.empty) {
+      // Bläddra kategorin: inget att ranka – namnordning, som en hylla.
+      return inTenantTx(businessId, async (tx) => {
+        const countRows = await tx.query(`select count(*)::int as n from public.wholesaler_products where ${scope}`, params);
+        const rows = await tx.query(
+          `select * from public.wholesaler_products where ${scope}
+            order by name_key, article_key limit ${limit} offset ${offset}`,
+          params,
+        );
+        return { rows: rows.map(productFromRow), total: num(countRows[0]?.n) };
+      });
+    }
+
     const conditions: string[] = [];
     let prefixParam: string | undefined;
 
@@ -196,7 +227,7 @@ export class SqlCatalogStore implements WholesalerCatalogStore {
       conditions.push(`(${tokenConds.join(" and ")})`);
     }
     if (conditions.length === 0) return { rows: [], total: 0 };
-    const where = `business_id = $1 and import_id = $2 and connection_id = $3 and (${conditions.join(" or ")})`;
+    const where = `${scope} and (${conditions.join(" or ")})`;
 
     const rankParams: SqlParam[] = [];
     let rankSql = "40";
@@ -227,6 +258,21 @@ export class SqlCatalogStore implements WholesalerCatalogStore {
       );
       return { rows: rows.map(productFromRow), total };
     });
+  }
+
+  async categories(businessId: string, connectionId: string, importId: string): Promise<CatalogCategory[]> {
+    const rows = await inTenantTx(businessId, (tx) =>
+      tx.query(
+        `select min(category) as name, count(*)::int as n
+           from public.wholesaler_products
+          where business_id = $1 and import_id = $2 and connection_id = $3 and category_key is not null
+          group by category_key
+          order by n desc, min(category)
+          limit ${CATALOG_MAX_CATEGORIES}`,
+        [businessId, importId, connectionId],
+      ),
+    );
+    return rows.map((r) => ({ name: String(r.name ?? "").trim(), count: num(r.n) })).filter((c) => c.name);
   }
 
   async getByIds(businessId: string, importId: string, ids: string[]): Promise<WholesalerProduct[]> {

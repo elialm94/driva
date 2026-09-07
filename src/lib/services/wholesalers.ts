@@ -19,7 +19,7 @@ import type {
   WholesalerProduct,
 } from "../types";
 import { catalogStore, catalogStoreFor, currentBusinessId } from "../wholesalers/catalog";
-import { CATALOG_SEARCH_PAGE_SIZE } from "../wholesalers/catalog-search";
+import { CATALOG_SEARCH_PAGE_SIZE, normalizeIdentifier, type CatalogCategory } from "../wholesalers/catalog-search";
 import { connectionLabel, isDeliveryMode, isWholesalerKey, priceListIsStale } from "../wholesalers/labels";
 import {
   buildProducts,
@@ -493,6 +493,10 @@ export interface WholesalerSearchRow {
   name: string;
   eNumber?: string;
   rskNumber?: string;
+  gtin?: string;
+  category?: string;
+  brand?: string;
+  imageUrl?: string;
   unit: string;
   packSize?: number;
   /** Eget inköpspris per enhet i ören, om känt. */
@@ -518,6 +522,10 @@ export function toSearchRow(product: WholesalerProduct, rule: WholesalerCustomer
     name: product.name,
     ...(product.eNumber ? { eNumber: product.eNumber } : {}),
     ...(product.rskNumber ? { rskNumber: product.rskNumber } : {}),
+    ...(product.gtin ? { gtin: product.gtin } : {}),
+    ...(product.category ? { category: product.category } : {}),
+    ...(product.brand ? { brand: product.brand } : {}),
+    ...(product.imageUrl ? { imageUrl: product.imageUrl } : {}),
     unit: product.unit,
     ...(product.packSize != null ? { packSize: product.packSize } : {}),
     ...(product.netPriceOre != null ? { netPriceOre: product.netPriceOre } : {}),
@@ -526,9 +534,14 @@ export function toSearchRow(product: WholesalerProduct, rule: WholesalerCustomer
   };
 }
 
+/**
+ * Sök – eller bläddra en kategori när frågan är tom. Kategorin är grossistens
+ * eget namn ur wholesalerCategories(); okänd kategori ger noll träffar.
+ */
 export async function searchWholesalerProducts(input: {
   connectionId: string;
   query: string;
+  category?: string;
   page?: number;
 }): Promise<WholesalerSearchResult> {
   const connection = requireWholesalerConnection(input.connectionId);
@@ -537,10 +550,12 @@ export async function searchWholesalerProducts(input: {
   const pageSize = CATALOG_SEARCH_PAGE_SIZE;
   if (!active) return { rows: [], total: 0, page, pageSize, priceDate: null, stale: false };
   const { businessId, store } = await catalogStore();
+  const category = typeof input.category === "string" ? input.category.trim().slice(0, 80) : "";
   const result = await store.search(businessId, {
     connectionId: connection.id,
     importId: active.id,
     query: input.query.slice(0, 120),
+    ...(category ? { category } : {}),
     limit: pageSize,
     offset: (page - 1) * pageSize,
   });
@@ -552,6 +567,107 @@ export async function searchWholesalerProducts(input: {
     priceDate: active.priceDate,
     stale: priceListIsStale(active.priceDate),
   };
+}
+
+/* ---------------------------------- butiken -------------------------------- */
+
+export const SHOP_RECENT_LIMIT = 12;
+export const MAX_FAVORITE_ARTICLES = 200;
+
+export interface WholesalerShopContext {
+  categories: CatalogCategory[];
+  /** Favoritartiklar som finns i den aktiva prislistan, i favoritordning (senast tillagd först). */
+  favorites: WholesalerSearchRow[];
+  favoriteArticleNumbers: string[];
+  /** Artiklar från tidigare skickade beställningar hos grossisten, senast först. */
+  recent: WholesalerSearchRow[];
+}
+
+export async function wholesalerCategories(connectionId: string): Promise<CatalogCategory[]> {
+  const connection = requireWholesalerConnection(connectionId);
+  const active = activeImportFor(connection);
+  if (!active) return [];
+  const { businessId, store } = await catalogStore();
+  return store.categories(businessId, connection.id, active.id);
+}
+
+/**
+ * Artikelnummer ur tidigare skickade beställningar hos grossisten (alla
+ * uppdrag), senast beställd först. Varukorgar och avbrutna order räknas inte –
+ * "beställt tidigare" ska betyda att det faktiskt gick iväg.
+ */
+export function recentlyOrderedArticleNumbers(connectionId: string, limit = SHOP_RECENT_LIMIT): string[] {
+  const data = db();
+  const orders = (data.purchaseOrders ?? [])
+    .filter((o) => o.connectionId === connectionId && o.status !== "draft" && o.status !== "cancelled" && o.sentAt)
+    .sort((a, b) => (b.sentAt ?? "").localeCompare(a.sentAt ?? ""));
+  if (orders.length === 0) return [];
+  const orderRank = new Map(orders.map((o, i) => [o.id, i] as const));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const lines = (data.purchaseOrderLines ?? [])
+    .filter((l) => orderRank.has(l.orderId) && l.articleNumber && !l.isFreeText)
+    .sort((a, b) => (orderRank.get(a.orderId) ?? 0) - (orderRank.get(b.orderId) ?? 0) || a.position - b.position);
+  for (const line of lines) {
+    const key = normalizeIdentifier(line.articleNumber);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(line.articleNumber!);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Ordna produkter i samma ordning som artikelnumren de slogs upp med. */
+function inArticleOrder(products: WholesalerProduct[], articleNumbers: string[]): WholesalerProduct[] {
+  const byKey = new Map(products.map((p) => [normalizeIdentifier(p.articleNumber), p] as const));
+  const out: WholesalerProduct[] = [];
+  for (const n of articleNumbers) {
+    const p = byKey.get(normalizeIdentifier(n));
+    if (p) out.push(p);
+  }
+  return out;
+}
+
+export async function wholesalerShopContext(connectionId: string): Promise<WholesalerShopContext> {
+  const connection = requireWholesalerConnection(connectionId);
+  const favoriteArticleNumbers = connection.favoriteArticleNumbers ?? [];
+  const active = activeImportFor(connection);
+  if (!active) return { categories: [], favorites: [], favoriteArticleNumbers, recent: [] };
+  const { businessId, store } = await catalogStore();
+  const recentNumbers = recentlyOrderedArticleNumbers(connection.id);
+  const [categories, favoriteProducts, recentProducts] = await Promise.all([
+    store.categories(businessId, connection.id, active.id),
+    favoriteArticleNumbers.length ? store.findByArticleNumbers(businessId, active.id, favoriteArticleNumbers) : [],
+    recentNumbers.length ? store.findByArticleNumbers(businessId, active.id, recentNumbers) : [],
+  ]);
+  const rule = connection.customerPriceRule;
+  return {
+    categories,
+    favorites: inArticleOrder(favoriteProducts, favoriteArticleNumbers).map((p) => toSearchRow(p, rule)),
+    favoriteArticleNumbers,
+    recent: inArticleOrder(recentProducts, recentNumbers).map((p) => toSearchRow(p, rule)),
+  };
+}
+
+/**
+ * Växla favorit. Nycklad på artikelnummer så att favoriten överlever nästa
+ * prisimport. Senast tillagd först; listan är begränsad så att aggregatet
+ * inte växer okontrollerat.
+ */
+export function toggleFavoriteArticle(connectionId: string, articleNumber: string): { favorite: boolean } {
+  const connection = requireWholesalerConnection(connectionId);
+  const value = text(articleNumber, 64);
+  if (!value) throw new Error("Artikelnummer saknas.");
+  const key = normalizeIdentifier(value);
+  const current = connection.favoriteArticleNumbers ?? [];
+  const without = current.filter((n) => normalizeIdentifier(n) !== key);
+  const favorite = without.length === current.length;
+  connection.favoriteArticleNumbers = favorite ? [value, ...without].slice(0, MAX_FAVORITE_ARTICLES) : without;
+  if (connection.favoriteArticleNumbers.length === 0) delete connection.favoriteArticleNumbers;
+  connection.updatedAt = new Date().toISOString();
+  save();
+  return { favorite };
 }
 
 /** Artiklar per id ur den aktiva prislistan (varukorgens tillägg). */

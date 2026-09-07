@@ -19,12 +19,14 @@
 import fs from "fs";
 import path from "path";
 import type { WholesalerProduct } from "../types";
-import { searchInMemory } from "./catalog-search";
+import { categoriesInMemory, searchInMemory, type CatalogCategory } from "./catalog-search";
 
 export interface CatalogSearchInput {
   connectionId: string;
   importId: string;
   query: string;
+  /** Begränsa till grossistens kategori (exakt namn från categories()). Tom fråga + kategori = bläddra. */
+  category?: string;
   limit: number;
   offset: number;
 }
@@ -39,6 +41,8 @@ export interface WholesalerCatalogStore {
   deleteImport(businessId: string, importId: string): Promise<void>;
   countImport(businessId: string, importId: string): Promise<number>;
   search(businessId: string, input: CatalogSearchInput): Promise<CatalogSearchResult>;
+  /** Grossistens kategorier i den aktiva prislistan med antal artiklar, störst först. */
+  categories(businessId: string, connectionId: string, importId: string): Promise<CatalogCategory[]>;
   getByIds(businessId: string, importId: string, ids: string[]): Promise<WholesalerProduct[]>;
   findByArticleNumbers(businessId: string, importId: string, articleNumbers: string[]): Promise<WholesalerProduct[]>;
   /** Demo-/dev-återställning: släng allt för företaget. */
@@ -129,7 +133,12 @@ class FileCatalogStore implements WholesalerCatalogStore {
     const scope = loadFile(businessId).filter(
       (p) => p.importId === input.importId && p.connectionId === input.connectionId,
     );
-    return searchInMemory(scope, input.query, { limit: input.limit, offset: input.offset });
+    return searchInMemory(scope, input.query, { limit: input.limit, offset: input.offset }, { category: input.category });
+  }
+  async categories(businessId: string, connectionId: string, importId: string): Promise<CatalogCategory[]> {
+    return categoriesInMemory(
+      loadFile(businessId).filter((p) => p.importId === importId && p.connectionId === connectionId),
+    );
   }
   async getByIds(businessId: string, importId: string, ids: string[]): Promise<WholesalerProduct[]> {
     const wanted = new Set(ids);

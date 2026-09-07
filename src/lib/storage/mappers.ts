@@ -2010,7 +2010,8 @@ export const wholesalerConnectionsSpec: TableSpec<WholesalerConnection> = {
   columns: [
     "id", "business_id", "wholesaler", "display_name", "customer_number", "order_email", "cc_self",
     "default_delivery_mode", "default_store", "default_delivery_address", "contact_person", "phone",
-    "customer_price_rule", "active", "active_import_id", "column_mapping", "discount_groups", "created_at", "updated_at",
+    "customer_price_rule", "active", "active_import_id", "column_mapping", "discount_groups", "favorite_articles",
+    "created_at", "updated_at",
   ],
   toRow: (c, businessId) => ({
     id: c.id,
@@ -2030,6 +2031,7 @@ export const wholesalerConnectionsSpec: TableSpec<WholesalerConnection> = {
     active_import_id: c.activeImportId ?? null,
     column_mapping: jsonParamOrNull(c.columnMapping),
     discount_groups: jsonParamOrNull(c.discountGroups),
+    favorite_articles: jsonParamOrNull(c.favoriteArticleNumbers),
     created_at: c.createdAt,
     updated_at: c.updatedAt,
   }),
@@ -2050,6 +2052,7 @@ export const wholesalerConnectionsSpec: TableSpec<WholesalerConnection> = {
     ...opt("activeImportId", strOrU(r.active_import_id)),
     ...opt("columnMapping", jsonOrU<WholesalerConnection["columnMapping"]>(r.column_mapping)),
     ...opt("discountGroups", jsonOrU<WholesalerConnection["discountGroups"]>(r.discount_groups)),
+    ...opt("favoriteArticleNumbers", jsonOrU<WholesalerConnection["favoriteArticleNumbers"]>(r.favorite_articles)),
     createdAt: tsIso(r.created_at),
     updatedAt: tsIso(r.updated_at),
   }),

@@ -20,8 +20,11 @@ import {
   createWholesalerConnection,
   searchWholesalerProducts,
   setWholesalerConnectionActive,
+  toggleFavoriteArticle,
   updateWholesalerConnection,
+  wholesalerShopContext,
   type WholesalerSearchResult,
+  type WholesalerShopContext,
 } from "@/lib/services/wholesalers";
 import {
   addCatalogProductToCart,
@@ -113,6 +116,7 @@ export async function setWholesalerConnectionActiveAction(id: string, active: bo
 export async function searchWholesalerProductsAction(input: {
   connectionId: string;
   query: string;
+  category?: string;
   page?: number;
 }): Promise<WholesalerActionResult<{ result: WholesalerSearchResult }>> {
   try {
@@ -121,12 +125,45 @@ export async function searchWholesalerProductsAction(input: {
       return searchWholesalerProducts({
         connectionId: String(input.connectionId ?? ""),
         query: String(input.query ?? ""),
+        ...(typeof input.category === "string" && input.category ? { category: input.category } : {}),
         page: typeof input.page === "number" ? input.page : 1,
       });
     });
     return { ok: true, result };
   } catch (e) {
     return fail(e, "Sökningen kunde inte genomföras.");
+  }
+}
+
+/* --------------------------------- butiken --------------------------------- */
+
+/** Butikens startsida: kategorier, favoriter och tidigare beställt för en grossist. */
+export async function wholesalerShopContextAction(
+  connectionId: string,
+): Promise<WholesalerActionResult<{ shop: WholesalerShopContext }>> {
+  try {
+    const shop = await withBusinessRead(async () => {
+      assertEnabled();
+      return wholesalerShopContext(String(connectionId ?? ""));
+    });
+    return { ok: true, shop };
+  } catch (e) {
+    return fail(e, "Butiken kunde inte läsas in.");
+  }
+}
+
+export async function toggleWholesalerFavoriteAction(
+  connectionId: string,
+  articleNumber: string,
+): Promise<WholesalerActionResult<{ favorite: boolean }>> {
+  try {
+    return await withBusiness(() => {
+      assertEnabled();
+      const { favorite } = toggleFavoriteArticle(String(connectionId ?? ""), String(articleNumber ?? ""));
+      return { ok: true, favorite } as const;
+    }, ORDER);
+  } catch (e) {
+    return fail(e, "Favoriten kunde inte sparas.");
   }
 }
 

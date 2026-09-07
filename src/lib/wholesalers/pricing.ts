@@ -55,3 +55,21 @@ export function lineCustomerPrice(
 export function hasCustomerPrice(line: Pick<PurchaseOrderLine, "customerUnitPriceOre" | "customerPriceSource">): boolean {
   return lineCustomerPrice(line).ore != null;
 }
+
+export interface GrossMargin {
+  /** Kundpris − inköpspris per enhet, i ören (kan vara negativt). */
+  ore: number;
+  /** Marginal i procent av kundpriset, avrundat till heltal. */
+  percent: number;
+}
+
+/**
+ * Bruttomarginal per enhet – det hantverkaren tjänar på materialet. Visas
+ * som badge på artikelkortet så att ett för lågt kundpris syns innan
+ * artikeln hamnar på fakturan. Saknas något av priserna finns ingen marginal.
+ */
+export function grossMargin(netPriceOre: number | undefined, customerPriceOre: number | undefined): GrossMargin | undefined {
+  if (netPriceOre == null || customerPriceOre == null || customerPriceOre <= 0) return undefined;
+  const ore = customerPriceOre - netPriceOre;
+  return { ore, percent: Math.round((ore / customerPriceOre) * 100) };
+}

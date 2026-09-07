@@ -1215,7 +1215,35 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
   }
 
   const connections = await client.query(`select to_regclass('public.wholesaler_connections') is not null as present`);
-  if (connections[0]?.present) return applied;
+  if (connections[0]?.present) {
+    // Migration 42 (materialbutiken) på en databas som redan har tabellerna.
+    if (!(await columnExists(client, "wholesaler_products", "image_url"))) {
+      await run(
+        client,
+        `alter table public.wholesaler_products
+           add column if not exists brand text,
+           add column if not exists image_url text,
+           add column if not exists category_key text`,
+      );
+      await run(
+        client,
+        `update public.wholesaler_products
+            set category_key = nullif(trim(regexp_replace(lower(category), '[^[:alnum:]]+', ' ', 'g')), '')
+          where category is not null and category_key is null`,
+      );
+      await run(
+        client,
+        `create index if not exists wholesaler_products_import_category_idx
+           on public.wholesaler_products (business_id, import_id, category_key) where category_key is not null`,
+      );
+      applied.push("wholesaler_products.image_url");
+    }
+    if (!(await columnExists(client, "wholesaler_connections", "favorite_articles"))) {
+      await run(client, `alter table public.wholesaler_connections add column if not exists favorite_articles jsonb`);
+      applied.push("wholesaler_connections.favorite_articles");
+    }
+    return applied;
+  }
 
   await run(
     client,
@@ -1238,6 +1266,7 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
       active_import_id text,
       column_mapping jsonb,
       discount_groups jsonb,
+      favorite_articles jsonb,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     )`,
@@ -1293,6 +1322,8 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
       rsk_number text,
       gtin text,
       category text,
+      brand text,
+      image_url text,
       discount_group text,
       unit text not null default 'st',
       pack_size numeric check (pack_size is null or pack_size > 0),
@@ -1305,9 +1336,15 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
       e_key text,
       rsk_key text,
       gtin_key text,
+      category_key text,
       name_key text not null default '',
       search_text text not null default ''
     )`,
+  );
+  await run(
+    client,
+    `create index if not exists wholesaler_products_import_category_idx
+       on public.wholesaler_products (business_id, import_id, category_key) where category_key is not null`,
   );
   await run(
     client,
