@@ -253,6 +253,20 @@ describe("ROT-beräkning och villkor", () => {
     assert.equal(rot.deduction, ROT_TAK);
     assert.equal(Math.round(rot.laborInclVat * ROT_ANDEL) > ROT_TAK, true);
   });
+
+  it("ROT-satsen styrs av betalningsdagen: 50 % 12 maj–31 dec 2025, annars 30 %", () => {
+    assert.equal(taxReductionRateOn("rot", "2025-05-11"), ROT_ANDEL);
+    assert.equal(taxReductionRateOn("rot", "2025-05-12"), 0.5);
+    assert.equal(taxReductionRateOn("rot", "2025-12-31T23:59:00+01:00"), 0.5);
+    assert.equal(taxReductionRateOn("rot", "2026-01-01"), ROT_ANDEL);
+    assert.equal(taxReductionRateOn("rut", "2025-08-01"), RUT_ANDEL);
+  });
+
+  it("ROT och RUT delar ett gemensamt tak på 75 000 kr per person och år", () => {
+    assert.equal(ROT_RUT_GEMENSAMT_TAK, 75_000);
+    assert.equal(ROT_RUT_GEMENSAMT_TAK, RUT_TAK);
+    assert.ok(ROT_TAK < ROT_RUT_GEMENSAMT_TAK);
+  });
 });
 
 describe("validering och ansökan", () => {
