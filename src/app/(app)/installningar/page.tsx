@@ -61,6 +61,7 @@ export default async function SettingsPage(props: {
           return d ? { hostname: d.hostname, live: d.status === "active" } : null;
         })()}
         account={{ demo: demoAccount, email: sessionUser?.email ?? null }}
+        fSkattPerMonth={flik === "fakturering" ? db().settings.fSkattPerMonth : undefined}
         features={features}
         wholesalers={flik === "grossister" ? listConnectionOverviews() : undefined}
         setup={

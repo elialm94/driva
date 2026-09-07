@@ -9,6 +9,7 @@ import {
   bookVatOnTaxAccount,
   parseTaxAccountStatement,
   reconcileTaxAccount,
+  setFSkattPerMonth,
   type TaxAccountReconciliation,
 } from "@/lib/accounting/tax-account";
 import {
@@ -117,6 +118,10 @@ export async function bookVatOnTaxAccountAction(reportId: string): Promise<Resul
 
 export async function bookFSkattAction(month: string): Promise<Result> {
   return run(() => void bookFSkatt(month, "anvandare"), "write_accounting");
+}
+
+export async function setFSkattPerMonthAction(amount: number): Promise<Result> {
+  return run(() => void setFSkattPerMonth(Number(amount), "anvandare"), "write_accounting");
 }
 
 export async function bookTaxAccountDepositAction(txId: string): Promise<Result> {

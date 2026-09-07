@@ -58,7 +58,7 @@ export function SetupProfileForm({
         <dd className="text-ink">
           {PAYROLL_OPTIONS.find((o) => o.value === payroll)?.label ?? "Inte angivet"}
           {payroll === "owner" || payroll === "employees" ? (
-            <span className="block text-[13px] text-soft">Lönehantering finns inte i Ferva ännu – vi hör av oss när det finns.</span>
+            <span className="block text-[13px] text-soft">Lön hanteras under Bokföring → Lön: lägg in anställda så räknas skatt och avgifter automatiskt.</span>
           ) : null}
         </dd>
         <dt className="text-muted">Bokföring</dt>

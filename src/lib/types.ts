@@ -1543,6 +1543,7 @@ export type AuditAction =
   | "momsrapport_deklarerad"
   | "momsperiodicitet_andrad"
   | "skattekonto_bokford"
+  | "fskatt_andrad"
   | "anstalld_andrad"
   | "lon_bokford"
   | "arbetsgivardeklaration_genererad"
@@ -2845,6 +2846,7 @@ export type SetupTaskId =
   | "first_job"
   | "invite_consultant"
   | "payroll"
+  | "f_skatt"
   | "articles_prices";
 
 /** Bara det som inte kan härledas sparas: "gör senare" och "behövs inte". */

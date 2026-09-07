@@ -6,6 +6,7 @@ import {
   BookFSkattButton,
   BookTaxAccountDepositButton,
   BookVatOnTaxAccountButton,
+  FSkattSettingCard,
   TaxAccountReconcileForm,
 } from "@/components/skattekonto-widgets";
 import { kr, datumKort, datumLang } from "@/lib/format";
@@ -61,6 +62,8 @@ export default async function SkattekontoPage() {
           </p>
         ) : null}
       </Card>
+
+      {fSkattPerMonth <= 0 ? <FSkattSettingCard amount={fSkattPerMonth} className="mb-8" /> : null}
 
       {todo > 0 ? (
         <div className="mb-8">
@@ -154,6 +157,13 @@ export default async function SkattekontoPage() {
       </div>
 
       <TaxAccountReconcileForm />
+
+      {fSkattPerMonth > 0 ? (
+        <div className="mt-8">
+          <SectionTitle>Inställning</SectionTitle>
+          <FSkattSettingCard amount={fSkattPerMonth} />
+        </div>
+      ) : null}
 
       <p className="mt-6 text-[12px] leading-relaxed text-muted">
         Driva skickar aldrig något till Skatteverket. Skattekontot i bokföringen är bolagets egen bild av vad myndigheten

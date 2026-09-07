@@ -18,7 +18,7 @@ export default async function DevOnboardingPreview({ searchParams }: { searchPar
     return (
       <OnboardingShell
         step={2}
-        title="Anpassa Ferva efter företaget"
+        title="Anpassa Driva efter företaget"
         lead="Några snabba val hjälper oss att visa rätt saker från början. Inget val låser dig."
         eyebrow="Ekvägens El AB"
       >

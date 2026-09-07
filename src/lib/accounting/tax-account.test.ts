@@ -15,6 +15,7 @@ import {
   fSkattMonthsAwaitingBooking,
   parseTaxAccountStatement,
   reconcileTaxAccount,
+  setFSkattPerMonth,
   taxAccountDepositCandidates,
   taxAccountLedger,
   vatReportsAwaitingTaxAccount,
@@ -211,6 +212,29 @@ describe("F-skatt", () => {
   it("ingen kö när F-skatten inte är satt", () => {
     db().settings.fSkattPerMonth = 0;
     assert.deepEqual(fSkattMonthsAwaitingBooking(`${YEAR}-04-20`), []);
+  });
+
+  it("beloppet sätts från Skattekontot, auditloggas och öppnar kön", () => {
+    db().settings.fSkattPerMonth = 0;
+    assert.equal(setFSkattPerMonth(12_400.4, "anvandare"), 12_400);
+    assert.equal(db().settings.fSkattPerMonth, 12_400);
+    assert.deepEqual(fSkattMonthsAwaitingBooking(`${YEAR}-03-20`), [`${YEAR}-01`, `${YEAR}-02`]);
+    const audit = db().auditTrail.filter((e) => e.action === "fskatt_andrad");
+    assert.equal(audit.length, 1);
+    assert.match(audit[0].details, /12400 kr/);
+    // Oförändrat belopp skriver inget nytt i audit trail.
+    setFSkattPerMonth(12_400, "anvandare");
+    assert.equal(db().auditTrail.filter((e) => e.action === "fskatt_andrad").length, 1);
+    // Tillbaka till 0 stänger kön igen; redan bokförda månader rörs inte.
+    bookFSkatt(`${YEAR}-01`, "anvandare");
+    setFSkattPerMonth(0, "anvandare");
+    assert.deepEqual(fSkattMonthsAwaitingBooking(`${YEAR}-03-20`), []);
+    assert.equal(accountBalance(SKATTEKONTO, `${YEAR}-12-31`), -12_400);
+  });
+
+  it("avvisar negativa och orimliga belopp", () => {
+    assert.throws(() => setFSkattPerMonth(-1, "anvandare"), /hela kronor/);
+    assert.throws(() => setFSkattPerMonth(Number.NaN, "anvandare"), /hela kronor/);
   });
 });
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { ArrowRightLeft, Check, CircleAlert, Landmark, Scale } from "lucide-react";
+import { useId, useState, useTransition } from "react";
+import { ArrowRightLeft, Check, CircleAlert, Landmark, Pencil, Scale } from "lucide-react";
 import { buttonClasses, Card, cx } from "./ui";
 import { kr, datumKort } from "@/lib/format";
 import {
@@ -9,6 +9,7 @@ import {
   bookTaxAccountDepositAction,
   bookVatOnTaxAccountAction,
   reconcileTaxAccountAction,
+  setFSkattPerMonthAction,
 } from "@/app/bokforing-actions";
 import { TAX_ACCOUNT_KIND_LABEL, type TaxAccountReconciliation } from "@/lib/accounting/tax-account-model";
 
@@ -70,6 +71,132 @@ export function BookFSkattButton({ month, amount }: { month: string; amount: num
       </p>
       <ErrorNote error={error} />
     </div>
+  );
+}
+
+/**
+ * Preliminärskatten per månad – beloppet från Skatteverkets beslut om debiterad
+ * preliminärskatt. Utan det kan Driva inte föreslå F-skattdragningarna, så
+ * kortet är framhävt tills beloppet är satt och blir en stillsam rad därefter.
+ */
+export function FSkattSettingCard({ amount, className }: { amount: number; className?: string }) {
+  const [isPending, startTransition] = useTransition();
+  const [editing, setEditing] = useState(amount <= 0);
+  const [value, setValue] = useState(amount > 0 ? String(amount) : "");
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const inputId = useId();
+  const unset = amount <= 0;
+
+  function submit() {
+    const parsed = Number(value.replace(/\s/g, "").replace(",", "."));
+    if (!value.trim() || !Number.isFinite(parsed) || parsed < 0) {
+      setError("Ange beloppet i hela kronor, t.ex. 12 400.");
+      return;
+    }
+    startTransition(async () => {
+      const res = await setFSkattPerMonthAction(Math.round(parsed));
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setError(null);
+      setSaved(true);
+      setEditing(false);
+    });
+  }
+
+  return (
+    <Card className={cx("px-6 py-5", unset && "border-warn/40 bg-warn-soft/30", className)}>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2.5">
+            <Landmark className={cx("size-4.5", unset ? "text-warn" : "text-muted")} />
+            <h3 className="text-[15px] font-semibold">Preliminärskatt (F-skatt) per månad</h3>
+          </div>
+          <p className="mt-1 max-w-prose text-[13px] text-soft">
+            {unset
+              ? "Skatteverket drar preliminärskatten från skattekontot den 12:e varje månad. Fyll i beloppet från beslutet om debiterad preliminärskatt så föreslår Driva dragningarna och skattekontots saldo stämmer."
+              : "Beloppet från Skatteverkets beslut om debiterad preliminärskatt. Ändra när du får ett nytt beslut – redan bokförda månader påverkas inte."}
+          </p>
+        </div>
+        {!editing ? (
+          <div className="flex items-center gap-3">
+            <p className="text-[20px] font-semibold tracking-tight tabular">{kr(amount)}</p>
+            <button
+              type="button"
+              className={buttonClasses("ghost", "sm")}
+              onClick={() => {
+                setSaved(false);
+                setEditing(true);
+              }}
+            >
+              <Pencil className="size-3.5" /> Ändra
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {editing ? (
+        <form
+          className="mt-4 flex flex-wrap items-end gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <div>
+            <label htmlFor={inputId} className="mb-1.5 block text-[13px] font-medium text-soft">
+              Belopp per månad
+            </label>
+            <div className="relative">
+              <input
+                id={inputId}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="t.ex. 12 400"
+                value={value}
+                onChange={(e) => {
+                  setValue(e.target.value);
+                  setError(null);
+                }}
+                aria-invalid={error ? true : undefined}
+                className="h-10 w-48 rounded-xl border border-line bg-card px-3 pr-10 text-[14px] tabular outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-muted"
+              >
+                kr
+              </span>
+            </div>
+          </div>
+          <button type="submit" className={buttonClasses("primary", "sm")} disabled={isPending}>
+            {isPending ? "Sparar …" : "Spara"}
+          </button>
+          {!unset ? (
+            <button
+              type="button"
+              className={buttonClasses("ghost", "sm")}
+              disabled={isPending}
+              onClick={() => {
+                setValue(String(amount));
+                setError(null);
+                setEditing(false);
+              }}
+            >
+              Avbryt
+            </button>
+          ) : null}
+        </form>
+      ) : null}
+      {saved && !editing ? (
+        <p className="mt-2 flex items-center gap-1.5 text-[13px] font-medium text-ok">
+          <Check className="size-3.5" /> Sparat. Månader som väntar på bokföring visas under Att bokföra.
+        </p>
+      ) : null}
+      <ErrorNote error={error} />
+    </Card>
   );
 }
 

@@ -40,6 +40,7 @@ import { StickyMobileActions } from "./sticky-actions";
 import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 import { SettingsBillingBanner } from "./settings-billing-readiness";
 import { AddressFields } from "./address-input";
+import { FSkattSettingCard } from "./skattekonto-widgets";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -125,6 +126,7 @@ export function SettingsForm({
   setup,
   focusFieldKey = null,
   account,
+  fSkattPerMonth,
 }: {
   initial: CompanySettings;
   defaults: InvoiceDefaults;
@@ -142,6 +144,8 @@ export function SettingsForm({
   focusFieldKey?: string | null;
   /** Demo-copy bara när appen faktiskt körs i demoläge. */
   account: { demo: boolean; email?: string | null };
+  /** Preliminärskatt per månad – sparas direkt via eget kort, inte med formuläret. */
+  fSkattPerMonth?: number;
 }) {
   const TABS = settingsTabsFor(features);
   const router = useRouter();
@@ -798,6 +802,8 @@ export function SettingsForm({
               </Link>
             </Card>
           ) : null}
+
+          {typeof fSkattPerMonth === "number" ? <FSkattSettingCard amount={fSkattPerMonth} /> : null}
         </div>
       ) : null}
 

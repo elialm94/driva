@@ -144,6 +144,32 @@ export function bookVatOnTaxAccount(reportId: string, actor: "anvandare" | "assi
 }
 
 /**
+ * Preliminärskatten per månad enligt Skatteverkets beslut om debiterad
+ * preliminärskatt. 0 = inte satt (Driva föreslår då inga F-skattdragningar).
+ * Heltal kronor precis som allt annat i bokföringen.
+ */
+export function setFSkattPerMonth(amount: number, actor: "anvandare" | "assistent"): number {
+  if (!Number.isFinite(amount) || amount < 0 || amount > 10_000_000) {
+    throw new Error("Ange preliminärskatten per månad i hela kronor (0 om bolaget inte har någon debiterad F-skatt).");
+  }
+  const rounded = Math.round(amount);
+  const s = db().settings;
+  const previous = s.fSkattPerMonth;
+  if (previous === rounded) return rounded;
+  s.fSkattPerMonth = rounded;
+  logAudit(
+    actor,
+    "fskatt_andrad",
+    rounded > 0
+      ? `Preliminärskatten per månad sattes till ${rounded} kr (var ${previous} kr).`
+      : `Preliminärskatten per månad togs bort (var ${previous} kr).`,
+    { targetType: "skattekonto", targetId: "fskatt" }
+  );
+  save();
+  return rounded;
+}
+
+/**
  * Preliminärskatten (F-skatt) dras varje månad enligt Skatteverkets beslut.
  * Beloppet är en inställning på företaget; en månad bokförs bara en gång.
  */
@@ -151,7 +177,9 @@ export function bookFSkatt(month: string, actor: "anvandare" | "assistent", amou
   if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("Månaden anges som YYYY-MM.");
   const amount = amountOverride ?? db().settings.fSkattPerMonth;
   if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error("F-skatten per månad är inte satt – fyll i den under Inställningar först.");
+    throw new Error(
+      "Preliminärskatten per månad är inte satt – fyll i beloppet från Skatteverkets beslut här på Skattekontot först."
+    );
   }
   const sourceId = `fskatt-${month}`;
   const existing = alreadyBooked(sourceId);
