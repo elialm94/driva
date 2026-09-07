@@ -409,8 +409,9 @@ describe("Uppdrag: avtalat vs registrerat vs fakturerat", () => {
     assert.equal(arkiv.rows.some((r) => r.id === job.id), true);
   });
 
-  it("inkomna förfrågningar utan offert ligger överst med chip och 'Väntar på offert'", () => {
-    const manual = createJob({ customerId: "cust-1", title: "Altan", startDate: "2020-01-01" });
+  it("inkomna förfrågningar utan offert ligger efter pågående, före planerat, med chip och 'Väntar på offert'", () => {
+    const running = createJob({ customerId: "cust-1", title: "Altan", startDate: "2020-01-01" });
+    const manual = createJob({ customerId: "cust-1", title: "Garage", startDate: "2099-01-01" });
     const lead = createJob({
       customerId: "cust-1",
       title: "Byta kök",
@@ -419,10 +420,14 @@ describe("Uppdrag: avtalat vs registrerat vs fakturerat", () => {
       originalMessage: "Hej! Vi vill byta köket i vår lägenhet.",
     });
     const rows = listJobsForTable({ lifecycle: "aktiva" }).rows;
-    assert.equal(rows[0]?.id, lead.id);
-    assert.equal(rows[0]?.incoming, true);
-    assert.equal(rows[0]?.sourceLabel, "Via webbformulär");
-    assert.equal(rows[0]?.economyLabel, "Väntar på offert");
+    const runningRow = rows.find((r) => r.id === running.id)!;
+    assert.equal(runningRow.lifecycle, "pagar");
+    const leadIndex = rows.findIndex((r) => r.id === lead.id);
+    assert.ok(rows.indexOf(runningRow) < leadIndex, "pågående arbete ligger före förfrågan");
+    assert.ok(leadIndex < rows.findIndex((r) => r.id === manual.id), "förfrågan ligger före planerat utan svar");
+    assert.equal(rows[leadIndex].incoming, true);
+    assert.equal(rows[leadIndex].sourceLabel, "Via webbformulär");
+    assert.equal(rows[leadIndex].economyLabel, "Väntar på offert");
     const manualRow = rows.find((r) => r.id === manual.id)!;
     assert.equal(manualRow.incoming, false);
     assert.equal(manualRow.sourceLabel, undefined);

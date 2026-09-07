@@ -168,6 +168,14 @@ describe("seedade uppdrag", () => {
     assert.ok(aktiva.rows.some((r) => r.title === "Altanrenovering"));
     assert.ok(aktiva.rows.some((r) => r.title === "Köksrenovering"));
     assert.ok(aktiva.rows[0].lifecycle === "pagar");
+    // Nya förfrågningar direkt efter det pågående – aldrig gömda längst ner.
+    const firstNotRunning = aktiva.rows.findIndex((r) => r.lifecycle !== "pagar");
+    assert.ok(firstNotRunning > 0);
+    assert.equal(aktiva.rows[firstNotRunning].incoming, true);
+    const incomingRows = aktiva.rows.filter((r) => r.incoming);
+    for (let i = 1; i < incomingRows.length; i++) {
+      assert.ok(incomingRows[i - 1].createdAt >= incomingRows[i].createdAt, "nyaste förfrågan först");
+    }
 
     const altan = aktiva.rows.find((r) => r.id === "job-altan");
     assert.equal(altan?.lifecycle, "planerat");

@@ -146,9 +146,13 @@ export function listJobsForTable(input: {
     if (sort === "kund") return a.customerName.localeCompare(b.customerName, "sv");
     if (sort === "belopp") return b.quoteAmount - a.quoteAmount;
     if (sort === "datum") return (a.whenSort || "9").localeCompare(b.whenSort || "9");
-    // Nya förfrågningar överst – de väntar på ett svar, nyast först.
-    if (a.incoming !== b.incoming) return a.incoming ? -1 : 1;
-    if (a.incoming && b.incoming) return b.createdAt.localeCompare(a.createdAt);
+    // Pågående arbete överst (det är där tid registreras i dag), därefter nya
+    // förfrågningar som väntar på svar (nyast först) – de ska inte gömmas
+    // längst ner bara för att de saknar startdatum. Resten som förut.
+    const rank = (r: JobListRow) => (r.lifecycle === "pagar" ? 0 : r.incoming && r.lifecycle !== "klart" ? 1 : 2);
+    const byRank = rank(a) - rank(b);
+    if (byRank !== 0) return byRank;
+    if (rank(a) === 1) return b.createdAt.localeCompare(a.createdAt);
     return compareJobsDefault(a, b);
   });
 
