@@ -22,6 +22,7 @@ import { supplierPayments } from "./supplier-payments";
 import { invoiceListTitle, invoiceListTypeLabel } from "../invoices/display";
 import type { PagedResult } from "./customers";
 import { categoryByKey } from "../bas";
+import { expenseCategoryLabel } from "./expenses";
 import { dagarTill, datumKort } from "../format";
 import { getBusinessActions, type BusinessAction } from "./actions";
 import { indexActionsBySource, issueForAction } from "./action-issue";
@@ -318,6 +319,10 @@ export interface ExpenseTableRow {
   /** Kvittofilen är sparad och kan öppnas via /api/kvitto/<receiptId>. */
   receiptId?: string;
   inlineAction?: ExpenseInlineAction;
+  /** Handregistrerad och bokförd: går att ångra (rättelse + borttagen) om uppgifterna var fel. */
+  undoable?: boolean;
+  /** Betalt privat – bolaget är skyldigt ägaren beloppet tills det förs över. */
+  paidPrivately?: boolean;
 }
 
 function expenseInlineAction(e: Expense): ExpenseInlineAction | undefined {
@@ -412,7 +417,7 @@ export function listExpensesForTable(
   for (const e of db().expenses) {
     const bucket: ExpenseBucket = e.status === "bokford" ? "klar" : "atgard";
     if (status !== "alla" && bucket !== status) continue;
-    const categoryLabel = e.category ? categoryByKey(e.category).label : "—";
+    const categoryLabel = expenseCategoryLabel(e);
     if (q) {
       const hay = `${e.supplier} ${e.description ?? ""} ${categoryLabel}`.toLowerCase();
       if (!hay.includes(q)) continue;
@@ -420,13 +425,19 @@ export function listExpensesForTable(
     // Konkret åtgärdsetikett från motorn ("Kvitto saknas", "Välj kategori").
     const action = bucket === "atgard" ? attention.get(`expense:${e.id}`) : undefined;
     const receiptFile = e.receiptId ? receiptsWithFile.get(e.receiptId) : undefined;
+    const manual = Boolean(e.kind);
+    const privately = e.paidBy === "privat";
     const meta: { label: string; tone: StatusTone } =
       e.status === "bokford"
-        ? e.receiptId
-          ? receiptFile
-            ? { label: "Kvitto · Bokfört", tone: "ok" }
-            : { label: "Bokfört · kvittouppgifter utan fil", tone: "ok" }
-          : EXPENSE_STATUS.bokford
+        ? privately
+          ? { label: "Bokfört · betalt privat", tone: "ok" }
+          : e.receiptId
+            ? receiptFile
+              ? { label: "Kvitto · Bokfört", tone: "ok" }
+              : { label: "Bokfört · kvittouppgifter utan fil", tone: "ok" }
+            : manual
+              ? { label: "Bokfört · utan kvitto", tone: "ok" }
+              : EXPENSE_STATUS.bokford
         : action
           ? { label: issueForAction(action), tone: "warn" }
           : EXPENSE_STATUS[e.status];
@@ -435,6 +446,7 @@ export function listExpensesForTable(
       kind: "utgift",
       date: e.date,
       supplier: e.supplier,
+      ...(manual && e.description ? { reference: e.description } : {}),
       categoryLabel,
       amount: e.amount,
       statusLabel: meta.label,
@@ -442,6 +454,8 @@ export function listExpensesForTable(
       hasReceipt: Boolean(e.receiptId),
       ...(receiptFile ? { receiptId: receiptFile.id } : {}),
       ...(bucket === "atgard" ? { inlineAction: expenseInlineAction(e) } : {}),
+      ...(manual && e.status === "bokford" && !e.bankTransactionId ? { undoable: true } : {}),
+      ...(privately ? { paidPrivately: true } : {}),
     });
   }
 

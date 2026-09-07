@@ -21,6 +21,7 @@ import { kr } from "../format";
 import type { Expense, Invoice, SupplierInvoice, Verification, VerificationEntry } from "../types";
 import { getInvoice, invoiceOutstanding, invoiceTotals } from "./data";
 import { recordMerchantRule } from "./expenses";
+import { settlementAccountFor } from "../expenses/manual-expense";
 import { logActivity } from "./activity";
 
 /**
@@ -342,6 +343,19 @@ export function inspectCorrectionFlow(verificationId: string): CorrectionFlow {
   const src = underlyingSource(v);
   const supplierReceive =
     src.source.type === "leverantorsfaktura" && !isSupplierPaymentVerification(src) && !isSupplierPaymentVerification(v);
+  const schablonExpense = src.source.type === "utgift" ? expenseFor(src) : undefined;
+  if (schablonExpense?.kind && schablonExpense.kind !== "kop") {
+    // Milersättning, traktamente och representation har ingen kategori att
+    // byta – konteringen följer av schablonen. Fel uppgifter rättas genom att
+    // ångra utgiften och registrera den igen med rätt siffror.
+    return {
+      kind: "avancerad",
+      title: "Avancerad rättelse",
+      hint: "Konteringen följer Skatteverkets schablon och går inte att byta kategori på. Blev sträckan, dagarna eller personerna fel: ångra utgiften under Ekonomi → Utgifter och registrera den igen.",
+      allowAdvanced: true,
+      ...period,
+    };
+  }
   if (src.source.type === "utgift" || supplierReceive) {
     const account = currentCostAccount(v);
     const expense = expenseFor(src);
@@ -408,7 +422,7 @@ function replacementForKonto(v: Verification, category: string): { entries: Post
             ? `Köpet saknar momsbelopp. Hela ${kr(expense.amount)} bokas som kostnad på ${cat.account}.`
             : undefined;
     return {
-      entries: entriesExpense(category, expense.amount, vat),
+      entries: entriesExpense(category, expense.amount, vat, settlementAccountFor(expense.paidBy)),
       description: `${expense.supplier} – ${expense.description ?? cat.label.toLowerCase()}`,
       warning,
     };

@@ -913,7 +913,7 @@ export const expensesSpec: TableSpec<Expense> = {
   columns: [
     "id", "business_id", "supplier", "date", "amount", "vat_amount", "category",
     "description", "job_id", "receipt_id", "bank_transaction_id", "status", "question",
-    "verification_id", "created_at",
+    "verification_id", "created_at", "paid_by", "kind", "details",
   ],
   toRow: (e, businessId) => ({
     id: e.id,
@@ -931,6 +931,9 @@ export const expensesSpec: TableSpec<Expense> = {
     question: jsonParamOrNull(e.question),
     verification_id: e.verificationId ?? null,
     created_at: e.createdAt,
+    paid_by: e.paidBy ?? null,
+    kind: e.kind ?? null,
+    details: jsonParamOrNull(e.details),
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -947,6 +950,9 @@ export const expensesSpec: TableSpec<Expense> = {
     ...opt("question", jsonOrU<NonNullable<Expense["question"]>>(r.question)),
     ...opt("verificationId", strOrU(r.verification_id)),
     createdAt: tsIso(r.created_at),
+    ...opt("paidBy", r.paid_by == null ? undefined : (r.paid_by as Expense["paidBy"])),
+    ...opt("kind", r.kind == null ? undefined : (r.kind as Expense["kind"])),
+    ...opt("details", jsonOrU<NonNullable<Expense["details"]>>(r.details)),
   }),
 };
 

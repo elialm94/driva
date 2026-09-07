@@ -1,6 +1,6 @@
 import { SupplierRegister } from "@/components/supplier-register";
 import Link from "next/link";
-import { Plus, Landmark } from "lucide-react";
+import { BedDouble, Car, Coffee, Landmark, Plus, Wallet } from "lucide-react";
 import { db } from "@/lib/store";
 import { kr, datumKort, datumTid } from "@/lib/format";
 import {
@@ -35,6 +35,7 @@ import {
 import { BankInboxStrip } from "@/components/bank-inbox-strip";
 import { BankRulesCard } from "@/components/bank-rules-card";
 import { listBankCounterpartRules } from "@/lib/services/bank-booking";
+import { ownerLiability } from "@/lib/services/manual-expense";
 import {
   BANK_STATUS_OPTIONS,
   EXPENSE_STATUS_OPTIONS,
@@ -106,6 +107,57 @@ function ReadyToPayBanner() {
         title={batch.count === 1 ? `Betala ${batch.rows[0].supplier}?` : `Betala ${batch.count} fakturor?`}
         confirmRows={confirmRows}
       />
+    </Card>
+  );
+}
+
+/** Det som inte kommer via kvitto eller bank: utlägg, mil, traktamente, representation. */
+function ManualExpenseShortcuts() {
+  const shortcuts: { typ: string; label: string; icon: typeof Plus }[] = [
+    { typ: "utlagg", label: "Utlägg", icon: Wallet },
+    { typ: "milersattning", label: "Milersättning", icon: Car },
+    { typ: "traktamente", label: "Traktamente", icon: BedDouble },
+    { typ: "representation", label: "Representation", icon: Coffee },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[13px]">
+      <span className="text-muted">Registrera för hand:</span>
+      {shortcuts.map((s) => {
+        const Icon = s.icon;
+        return (
+          <Link
+            key={s.typ}
+            href={`/ekonomi/utgifter/ny?typ=${s.typ}` as never}
+            className="inline-flex items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1 font-medium text-soft transition-colors hover:border-line-strong hover:text-ink"
+          >
+            <Icon className="size-3.5 text-muted" />
+            {s.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Bolagets skuld till ägaren för utlägg och ersättningar – med nästa steg. */
+function OwnerLiabilityBanner() {
+  const owed = ownerLiability();
+  if (owed.balance <= 0) return null;
+  return (
+    <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+      <div className="min-w-0">
+        <p className="text-[14px] font-semibold text-ink">
+          Bolaget är skyldigt dig {kr(owed.balance)}
+          <span className="ml-2 font-normal text-muted">utlägg och ersättningar som inte förts över</span>
+        </p>
+        <p className="mt-0.5 text-[13px] text-muted">
+          För över beloppet från företagskontot till ditt privata konto. När överföringen syns i banken känns den igen
+          och bockar av skulden.
+        </p>
+      </div>
+      <ButtonLink href="/ekonomi?flik=bank" variant="secondary">
+        <Landmark className="size-4" /> Till banken
+      </ButtonLink>
     </Card>
   );
 }
@@ -217,6 +269,10 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
         stackActions
         actions={
           <PageHeaderCreateActions>
+            <ButtonLink href="/ekonomi/utgifter/ny" variant="secondary" aria-label="Ny utgift">
+              <Plus className="size-4 shrink-0" />
+              <CreateActionLabel label="Ny utgift" shortLabel="Utgift" />
+            </ButtonLink>
             <ButtonLink href="/ekonomi/fakturor/ny" variant="secondary" aria-label="Ny faktura">
               <Plus className="size-4 shrink-0" />
               <CreateActionLabel label="Ny faktura" shortLabel="Faktura" />
@@ -277,7 +333,9 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
               Kvitton och leverantörsfakturor. Åtgärder som behövs dyker upp på Hem och Bokföring.
             </p>
             <UploadReceiptButton label="Släpp kvitton här" />
+            <ManualExpenseShortcuts />
           </div>
+          <OwnerLiabilityBanner />
           <ReadyToPayBanner />
           <ExpenseRegister
             result={listExpensesForTable({

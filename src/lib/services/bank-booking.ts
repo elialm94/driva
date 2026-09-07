@@ -13,6 +13,7 @@ import { postVerification, verificationLabel } from "../accounting/engine";
 import { clampToOpenDate } from "../accounting/fiscal";
 import { bokforingsdatum } from "../accounting/dates";
 import { logAudit } from "../accounting/audit";
+import { accountBalance } from "../accounting/ledger";
 import { logActivity } from "./activity";
 import { createExpenseFromBankPurchase, merchantRuleKey } from "./expenses";
 import { datumKort, kr } from "../format";
@@ -34,6 +35,7 @@ import { datumKort, kr } from "../format";
  */
 
 const FORETAGSKONTO = 1930;
+const SKULD_TILL_AGARE = 2893;
 /** Så många dagar får bank och bokföring skilja för "redan bokförd". */
 const ALREADY_BOOKED_WINDOW_DAYS = 10;
 /** Hur många bekräftelser en regel behöver innan den bokför själv. */
@@ -195,6 +197,44 @@ function ruleReason(rule: BankCounterpartRule, def: BankKind, counterpart: strin
 }
 
 /**
+ * Ägaren får tillbaka pengar: privata utlägg, milersättning och traktamente
+ * bokförs som skuld till ägaren (2893) när de registreras, och överföringen
+ * som sedan syns i banken ska minska skulden – inte bli en ny kostnad. Två
+ * träffar räcker för ett förslag: hela skulden på en gång, eller exakt
+ * beloppet för en enskild privat utgift.
+ */
+function ownerReimbursementSuggestion(tx: BankTransaction): BankKindSuggestion | null {
+  if (!(tx.amount < 0)) return null;
+  const amount = -tx.amount;
+  const owed = -accountBalance(SKULD_TILL_AGARE, tx.date);
+  if (owed <= 0 || amount > owed) return null;
+  const def = bankKindByKey("aterbetalning_agare")!;
+  if (amount === owed) {
+    return {
+      kind: def.key,
+      label: def.label,
+      outcome: "SUGGEST",
+      reason: `${kr(amount)} är exakt vad bolaget är skyldigt dig (2893) för utlägg och ersättningar som väntar på utbetalning`,
+      source: "verifikation",
+    };
+  }
+  const single = db().expenses.filter(
+    (e) => e.paidBy === "privat" && e.status === "bokford" && e.amount === amount && e.date <= tx.date
+  );
+  if (single.length === 1) {
+    const e = single[0];
+    return {
+      kind: def.key,
+      label: def.label,
+      outcome: "SUGGEST",
+      reason: `${kr(amount)} matchar ${e.supplier} (${e.description ?? "utlägg"}) som du la ut privat ${datumKort(e.date)}`,
+      source: "verifikation",
+    };
+  }
+  return null;
+}
+
+/**
  * Vad transaktionen troligen är, utöver faktura-/leverantörsmatchningen som
  * payment-matching.ts redan gjort. null = ingen aning; då får användaren välja.
  */
@@ -253,6 +293,9 @@ export function bankKindSuggestion(tx: BankTransaction): BankKindSuggestion | nu
       verificationLabel: c.label,
     };
   }
+
+  const reimbursement = ownerReimbursementSuggestion(tx);
+  if (reimbursement) return reimbursement;
 
   const byPattern = bankKindByPattern(tx);
   if (byPattern) {

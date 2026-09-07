@@ -6,6 +6,7 @@ import type { EkonomiTab } from "./nav";
  * scrollas fram – aldrig till en åtgärd som utförs bara av att länken öppnas.
  *   bank-<txId>            → banktransaktionen (fliken Bank)
  *   question-/receipt-<id> → utgiften (fliken Utgifter)
+ *   utgift-<id>            → en nyss registrerad utgift (fliken Utgifter)
  *   supplier-<id>          → leverantörsfakturan (fliken Utgifter)
  */
 export function highlightFromAtgard(atgard: string | undefined, tab: EkonomiTab): string | undefined {
@@ -15,7 +16,7 @@ export function highlightFromAtgard(atgard: string | undefined, tab: EkonomiTab)
     return id.startsWith("bank-") && id !== "bank-unexplained" ? id.slice("bank-".length) : undefined;
   }
   if (tab === "utgifter") {
-    for (const prefix of ["question-", "receipt-", "supplier-"]) {
+    for (const prefix of ["question-", "receipt-", "utgift-", "supplier-"]) {
       if (id.startsWith(prefix)) return id.slice(prefix.length) || undefined;
     }
   }

@@ -40,6 +40,14 @@ export function inboxDocumentForm(file: File): FormData {
   return fileForm(file, "dokument");
 }
 
+/** Kvittot till en handregistrerad utgift (createManualExpenseAction). */
+export function manualExpenseReceiptForm(file: File): FormData {
+  if (file.size > RECEIPT_MAX_BYTES) {
+    throw new Error("Kvittot är för stort (max 5 MB).");
+  }
+  return fileForm(file, "kvitto");
+}
+
 /** Underlaget till ett manuellt verifikat (postManualVerificationAction). */
 export function verificationAttachmentForm(file: File): FormData {
   if (file.size > VERIFICATION_ATTACHMENT_MAX_BYTES) {

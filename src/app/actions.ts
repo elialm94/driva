@@ -159,6 +159,8 @@ import {
   expenseAwaitingReceipt,
   uploadReceiptForExpense,
 } from "@/lib/services/expenses";
+import { createManualExpense, type ManualReceiptFile } from "@/lib/services/manual-expense";
+import type { ManualExpenseDraft } from "@/lib/expenses/manual-expense";
 import { uid } from "@/lib/ids";
 import {
   addServiceItem,
@@ -1359,6 +1361,64 @@ export async function answerExpenseQuestionAction(expenseId: string, answer: str
     answerExpenseQuestion(expenseId, answer);
     refresh();
   }, { capability: "categorize" });
+}
+
+export type ManualExpenseActionResult =
+  | {
+      ok: true;
+      expenseId: string;
+      verificationId?: string;
+      /** Köp över inventariegränsen – frågan ligger på Hem i stället för en bokning. */
+      askedAssetQuestion: boolean;
+      title: string;
+      amount: number;
+      paidBy: ManualExpenseDraft["paidBy"];
+    }
+  | { ok: false; error: string };
+
+/**
+ * Registrera en utgift för hand: köp, privat utlägg, milersättning, traktamente
+ * eller representation. `receiptForm` bär ett valfritt kvitto som "file"
+ * (File/Blob, se lib/receipts/read-file.ts). Filen valideras och sparas mot
+ * ett förgenererat kvitto-id FÖRE utgiften skrivs, så ett misslyckat filspar
+ * aldrig lämnar en bokförd utgift utan sitt underlag. Reglerna och felen
+ * kommer ur domänlagret (svenska, samma som formuläret visar).
+ */
+export async function createManualExpenseAction(
+  draft: ManualExpenseDraft,
+  receiptForm?: FormData
+): Promise<ManualExpenseActionResult> {
+  try {
+    const upload = receiptForm ? await receiptFileFromForm(receiptForm) : null;
+    if (receiptForm && !upload) throw new Error("Kvittofilen kunde inte läsas. Välj filen igen.");
+    if (upload) validateReceiptFile(upload);
+    return await withBusiness(
+      async () => {
+        let receipt: ManualReceiptFile | undefined;
+        if (upload) {
+          const { filename, ...file } = upload;
+          const receiptId = uid();
+          const stored = await storeReceiptFile({ id: receiptId, filename }, file);
+          if (!receiptFileStored(stored)) throw new Error("Kvittofilen kunde inte sparas. Försök igen.");
+          receipt = { id: receiptId, filename, ...stored };
+        }
+        const result = createManualExpense(draft, { by: "anvandare", receipt });
+        refresh();
+        return {
+          ok: true as const,
+          expenseId: result.expense.id,
+          verificationId: result.verificationId,
+          askedAssetQuestion: result.askedAssetQuestion,
+          title: result.plan.title,
+          amount: result.plan.amount,
+          paidBy: result.expense.paidBy ?? "foretagskonto",
+        };
+      },
+      { capability: "write_accounting" }
+    );
+  } catch (e) {
+    return { ok: false as const, error: userFacingStorageError(e, "Utgiften kunde inte sparas. Försök igen.") };
+  }
 }
 
 export async function prepareSupplierPaymentAction(input: {

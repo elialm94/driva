@@ -899,6 +899,57 @@ export interface BankTransaction {
 
 export type ExpenseStatus = "saknar_kvitto" | "behover_svar" | "bokford";
 
+/**
+ * Vem som la ut pengarna. Företagskontot krediterar 1930; ett privat utlägg
+ * blir en skuld till ägaren (2893) tills bolaget för över pengarna.
+ * Saknas fältet är det företagskontot (alla köp från banken och kvitton).
+ */
+export type ExpensePaidBy = "foretagskonto" | "privat";
+
+/**
+ * Utgiftens slag när den registrerats för hand. Saknas = vanligt köp.
+ * Milersättning och traktamente är skattefria schablonersättningar till
+ * ägaren (ingen moms, ingen leverantör); representation har egna avdrags-
+ * och momsregler.
+ */
+export type ExpenseKind = "kop" | "milersattning" | "traktamente" | "representation";
+
+export type VehicleKind = "egen" | "formansbil" | "formansbil_el";
+
+/**
+ * Representationens slag styr både konto och avdrag: måltider är aldrig
+ * avdragsgilla (momsen får lyftas till en schablon per person), enklare
+ * förtäring är avdragsgill upp till 60 kr per person. Kund- och personal-
+ * representation bokförs på olika konton (60xx respektive 76xx).
+ */
+export type RepresentationKind = "kundmaltid" | "kundfika" | "personalmaltid" | "personalfika";
+
+/** Uppgifterna bakom en schablon- eller representationsutgift, som de såg ut när den bokfördes. */
+export interface ExpenseDetails {
+  mileage?: {
+    km: number;
+    vehicle: VehicleKind;
+    /** Skatteverkets schablon det år resan gjordes, kr per mil. */
+    ratePerMil: number;
+    route?: string;
+  };
+  perDiem?: {
+    fullDays: number;
+    halfDays: number;
+    nights: number;
+    destination?: string;
+    /** Schablonen det år resan gjordes. */
+    rates: { heldag: number; halvdag: number; natt: number };
+  };
+  representation?: {
+    kind: RepresentationKind;
+    persons: number;
+    alcohol: boolean;
+    participants?: string;
+    purpose?: string;
+  };
+}
+
 export interface Expense {
   id: ID;
   supplier: string;
@@ -915,6 +966,9 @@ export interface Expense {
   question?: { text: string; options: string[] };
   verificationId?: ID;
   createdAt: string;
+  paidBy?: ExpensePaidBy;
+  kind?: ExpenseKind;
+  details?: ExpenseDetails;
 }
 
 export interface Receipt {

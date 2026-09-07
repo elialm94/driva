@@ -2,7 +2,21 @@ import { db, save } from "../store";
 import { uid } from "../ids";
 import type { InboundParsedHint } from "../inbox/inbound-mail";
 import type { BankTransaction, Expense, InboxAttachment, MerchantCategoryRule, Receipt, Verification } from "../types";
-import { categoryByKey, deductibleVat, entriesExpense, guessCategory, EXPENSE_CATEGORIES, KNOWN_SUPPLIERS } from "../bas";
+import {
+  categoryByKey,
+  deductibleVat,
+  entriesExpense,
+  entriesFromPostingLines,
+  guessCategory,
+  EXPENSE_CATEGORIES,
+  KNOWN_SUPPLIERS,
+} from "../bas";
+import {
+  REPRESENTATION_LABELS,
+  planManualExpense,
+  settlementAccountFor,
+  type ManualExpenseDraft,
+} from "../expenses/manual-expense";
 import { kr } from "../format";
 import { logActivity } from "./activity";
 import { logAudit } from "../accounting/audit";
@@ -112,10 +126,56 @@ function expenseExplanation(
     : cat.vatFree
       ? "Kategorin saknar avdragsgill moms, så hela beloppet bokförs som kostnad."
       : `Momsen (${kr(expense.vatAmount)}) lyfts som ingående moms.`;
-  return `${why}. Kostnaden hamnar på konto ${cat.account} (${cat.label}) och betalningen dras från företagskontot. ${vatText}`;
+  const paidText =
+    expense.paidBy === "privat"
+      ? "Du betalade privat, så bolaget har en skuld till dig (2893) tills pengarna förs över."
+      : "Betalningen dras från företagskontot.";
+  return `${why}. Kostnaden hamnar på konto ${cat.account} (${cat.label}). ${paidText} ${vatText}`;
 }
 
-function bookExpense(
+/**
+ * Milersättning, traktamente och representation konteras efter schablon –
+ * planen räknas om ur utgiftens sparade uppgifter så att bokföringen alltid
+ * är exakt det formuläret visade.
+ */
+function schablonPlan(expense: Expense) {
+  if (!expense.kind || expense.kind === "kop") return null;
+  const d = expense.details ?? {};
+  const draft: ManualExpenseDraft = {
+    kind: expense.kind,
+    date: expense.date,
+    paidBy: expense.paidBy ?? "privat",
+    supplier: expense.supplier,
+    amount: expense.amount,
+    vatAmount: expense.vatAmount,
+    description: expense.description,
+    ...(d.mileage ? { mileage: { km: d.mileage.km, vehicle: d.mileage.vehicle, route: d.mileage.route } } : {}),
+    ...(d.perDiem
+      ? {
+          perDiem: {
+            fullDays: d.perDiem.fullDays,
+            halfDays: d.perDiem.halfDays,
+            nights: d.perDiem.nights,
+            destination: d.perDiem.destination,
+          },
+        }
+      : {}),
+    ...(d.representation ? { representation: d.representation } : {}),
+  };
+  const result = planManualExpense(draft);
+  if (!result.ok) throw new Error(result.error);
+  return result.plan;
+}
+
+/** Konteringen för utgiften – schablonplan för manuella slag, annars kategori + moms mot betalkontot. */
+export function expenseEntries(expense: Expense, categoryKey: string): { entries: Verification["entries"]; explanation?: string } {
+  const plan = schablonPlan(expense);
+  if (plan) return { entries: entriesFromPostingLines(plan.lines), explanation: plan.explanation };
+  const vat = deductibleVat(categoryKey, expense.vatAmount);
+  return { entries: entriesExpense(categoryKey, expense.amount, vat, settlementAccountFor(expense.paidBy)) };
+}
+
+export function bookExpense(
   expense: Expense,
   categoryKey: string,
   confidence: Verification["confidence"],
@@ -128,17 +188,17 @@ function bookExpense(
     throw new Error(`Köpet hos ${expense.supplier} är redan bokfört.`);
   }
   const cat = categoryByKey(categoryKey);
-  const vat = deductibleVat(categoryKey, expense.vatAmount);
+  const posting = expenseEntries(expense, categoryKey);
   const clamped = clampToOpenDate(expense.date);
   const ver = postVerification({
     date: clamped.date,
     description: `${expense.supplier} – ${expense.description ?? cat.label.toLowerCase()}${clamped.adjusted ? ` (avser ${clamped.originalDate})` : ""}`,
-    entries: entriesExpense(categoryKey, expense.amount, vat),
+    entries: posting.entries,
     source: { type: "utgift", id: expense.id },
     confidence,
     createdBy,
     explanation:
-      expenseExplanation(expense, categoryKey, createdBy, matchReason) +
+      (posting.explanation ?? expenseExplanation(expense, categoryKey, createdBy, matchReason)) +
       (clamped.adjusted ? ` Bokfört ${clamped.date} eftersom perioden för ${clamped.originalDate} är låst.` : ""),
   });
   expense.category = categoryKey;
@@ -155,17 +215,42 @@ function bookExpense(
     }
   }
   // Mänskliga val bygger regelbutiken – autobokningar gör det inte
-  // (annars skulle en felgissning förstärka sig själv).
-  if (createdBy !== "auto") recordMerchantRule(expense.supplier, categoryKey);
-  logAudit(createdBy === "auto" ? "system" : createdBy, "utgift_bokford", `Köp hos ${expense.supplier} (${kr(expense.amount)}) bokfördes som ${cat.label}.`, {
-    targetType: "utgift",
-    targetId: expense.id,
-  });
+  // (annars skulle en felgissning förstärka sig själv). Schablonersättningar
+  // har ingen leverantör att lära sig.
+  const isAllowance = expense.kind === "milersattning" || expense.kind === "traktamente";
+  if (createdBy !== "auto" && !isAllowance) recordMerchantRule(expense.supplier, categoryKey);
+  logAudit(
+    createdBy === "auto" ? "system" : createdBy,
+    "utgift_bokford",
+    posting.explanation
+      ? `${expense.supplier} (${kr(expense.amount)}) bokfördes${expense.paidBy === "privat" ? " som skuld till ägaren" : ""}.`
+      : `Köp hos ${expense.supplier} (${kr(expense.amount)}) bokfördes som ${cat.label}.`,
+    {
+      targetType: "utgift",
+      targetId: expense.id,
+    }
+  );
   return ver;
 }
 
+/** Visningsnamn för utgiftens slag: kategorin för köp, schablonens namn annars. */
+export function expenseCategoryLabel(expense: Pick<Expense, "kind" | "category" | "details">): string {
+  switch (expense.kind) {
+    case "milersattning":
+      return "Milersättning";
+    case "traktamente":
+      return "Traktamente";
+    case "representation":
+      return expense.details?.representation
+        ? REPRESENTATION_LABELS[expense.details.representation.kind].label
+        : "Representation";
+    default:
+      return expense.category ? categoryByKey(expense.category).label : "—";
+  }
+}
+
 /** Ställ inventariefrågan i stället för att bokföra direkt – användaren avgör. */
-function askAssetQuestion(expense: Expense): void {
+export function askAssetQuestion(expense: Expense): void {
   expense.status = "behover_svar";
   expense.question = {
     text: `Köpet på ${kr(expense.amount)} hos ${expense.supplier} ser ut som något som används i flera år (över ${kr(inventarieGransFor(expense.date))} exkl. moms). Hur vill du bokföra det?`,
@@ -356,6 +441,9 @@ export function bookExpenseToJob(expenseId: string, categoryKey: string, jobId?:
 /**
  * Ångra en bokförd utgift. Historiken skrivs aldrig om: en rättelseverifikation
  * återför originalet, och utgiften öppnas igen så att den kan bokföras rätt.
+ * En handregistrerad utgift (utlägg, milersättning, traktamente, representation)
+ * har inget att öppna igen – uppgifterna var fel – så den tas bort och kan
+ * registreras på nytt; rättelsen står kvar i bokföringen.
  */
 export function undoExpenseBooking(expenseId: string, by: "anvandare" | "assistent" = "anvandare"): void {
   const data = db();
@@ -365,9 +453,18 @@ export function undoExpenseBooking(expenseId: string, by: "anvandare" | "assiste
   }
   createCorrection({
     verificationId: expense.verificationId,
-    reason: `Användaren ångrade bokningen av köpet hos ${expense.supplier}`,
+    reason: `Användaren ångrade bokningen av ${expense.kind && expense.kind !== "kop" ? expense.supplier.toLowerCase() : `köpet hos ${expense.supplier}`}`,
     by: by === "assistent" ? "assistent" : "anvandare",
   });
+  if (expense.kind && !expense.bankTransactionId) {
+    data.expenses = data.expenses.filter((e) => e.id !== expenseId);
+    data.receipts = data.receipts.filter((r) => r.expenseId !== expenseId);
+    logActivity(`${expense.supplier} (${kr(expense.amount)}) ångrades och togs bort – en rättelseverifikation skapades. Registrera utgiften igen med rätt uppgifter.`, {
+      entity: { type: "utgift", id: expenseId },
+    });
+    save();
+    return;
+  }
   expense.verificationId = undefined;
   expense.status = "behover_svar";
   expense.question = {

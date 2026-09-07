@@ -9,6 +9,7 @@ import { Badge, ButtonLink, Card, EmptyState, buttonClasses, cx, type BadgeTone 
 import { Pagination } from "./customer-list";
 import { BankRowActions } from "./bank-row-actions";
 import { ExpenseQuestionButtons, UploadReceiptButton } from "./money-widgets";
+import { UndoBookingButton } from "./bokforing-widgets";
 import { ScrollToId } from "./scroll-to-id";
 import { kr, datumKort } from "@/lib/format";
 import type { EkonomiTab } from "@/lib/nav";
@@ -618,6 +619,7 @@ export function ExpenseRegister({
                           <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
                           {r.receiptId ? <ReceiptFileLink receiptId={r.receiptId} /> : null}
                           {r.inlineAction ? <ExpenseInlineActions action={r.inlineAction} /> : null}
+                          {r.undoable ? <UndoBookingButton expenseId={r.id} /> : null}
                         </div>
                       </td>
                     </tr>
@@ -644,6 +646,7 @@ export function ExpenseRegister({
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
                   <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
                   {r.receiptId ? <ReceiptFileLink receiptId={r.receiptId} /> : null}
+                  {r.undoable ? <UndoBookingButton expenseId={r.id} /> : null}
                 </div>
                 {r.inlineAction ? (
                   <div className="mt-2.5">
