@@ -1,5 +1,5 @@
 /**
- * Kundmejl efter hel kredit. Förbereds i tenantkontext (företag, mottagare,
+ * Kundmejl efter kredit – hel eller del. Förbereds i tenantkontext (företag, mottagare,
  * rubrik) och skickas av actionen via next/server after() så att krediteringen
  * aldrig väntar på e-posttjänsten.
  *
@@ -15,7 +15,7 @@ import { isEmailFormat } from "../settings-validation";
 import { db } from "../store";
 import { mailProviderAvailable, sendMail, type MailMessage, type MailSendMeta } from "../mail";
 import type { Invoice } from "../types";
-import { getInvoice, requireCustomer } from "./data";
+import { getInvoice, invoiceOutstanding, invoiceTotals, requireCustomer } from "./data";
 
 export interface PreparedCreditMail {
   message: MailMessage;
@@ -40,7 +40,13 @@ export function prepareCreditInvoiceNotice(credit: Invoice): PreparedCreditMail 
     if (credit.type !== "kredit" || credit.number == null) return null;
     if (!credit.creditsInvoiceId) return null;
     const original = getInvoice(credit.creditsInvoiceId);
-    if (!original || original.number == null || original.status !== "krediterad") return null;
+    if (!original || original.number == null) return null;
+    // Delkredit: originalet lever kvar med lägre utestående – kunden får veta
+    // vad som krediterats och vad som är kvar att betala.
+    const partial =
+      original.status !== "krediterad"
+        ? { amount: invoiceTotals(credit).toPay, remaining: invoiceOutstanding(original) }
+        : undefined;
     const to = customerRecipient(credit, original);
     if (!to) return null;
     const company = credit.issuedSnapshot?.seller.name?.trim() || db().settings.name?.trim();
@@ -55,6 +61,7 @@ export function prepareCreditInvoiceNotice(credit: Invoice): PreparedCreditMail 
       originalNumber: original.number,
       creditNumber: credit.number,
       token: credit.token?.trim() || undefined,
+      partial,
     });
   } catch {
     return null;

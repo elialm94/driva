@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { ExternalLink, BadgeCheck, FileDown, Pencil } from "lucide-react";
 import { db } from "@/lib/store";
 import { getInvoice, invoiceTotals, requireCustomer, isOverdue } from "@/lib/services/data";
+import { creditInvoiceContext } from "@/lib/services/invoices";
 import { invoiceQuoteDeviation } from "@/lib/services/invoice-quote-deviation";
 import { getInvoiceSendBlockers } from "@/lib/invoices/validate";
 import { invoiceHeading } from "@/lib/invoices/display";
@@ -103,7 +104,9 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
 
   const moreMenu = isDraft ? null : (
     <ActionMenu>
-      {canCredit ? <CreditInvoiceButton invoiceId={invoice.id} appearance="menu" /> : null}
+      {canCredit ? (
+        <CreditInvoiceButton invoiceId={invoice.id} appearance="menu" context={creditInvoiceContext(invoice.id)} />
+      ) : null}
       {canCopyLink ? (
         <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
       ) : null}

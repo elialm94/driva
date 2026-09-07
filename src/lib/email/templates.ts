@@ -235,13 +235,24 @@ export interface CreditInvoiceEmailInput {
   creditNumber: number;
   /** Publik kreditfaktura `/faktura/[token]` – utelämnas om länken saknas. */
   url?: string;
+  /**
+   * Delkredit: krediterat belopp och vad som är kvar att betala på originalet.
+   * Utelämnad = hel kredit (kunden ska inte betala originalet alls).
+   */
+  partial?: { amount: number; remaining: number };
   footer: string;
 }
 
 /** Till fakturakunden efter hel kredit – inte till snickaren. */
 export function creditInvoiceEmail(input: CreditInvoiceEmailInput): { subject: string; text: string; html: string } {
   const subject = `Kreditfaktura från ${input.businessName} – ${input.title}`;
-  const lead = `Faktura #${input.originalNumber} är krediterad i sin helhet med kreditfaktura #${input.creditNumber}. Du ska inte betala faktura #${input.originalNumber}.`;
+  const lead = input.partial
+    ? `Faktura #${input.originalNumber} är delvis krediterad med kreditfaktura #${input.creditNumber} på ${kr(input.partial.amount)}. ${
+        input.partial.remaining > 0
+          ? `Kvar att betala på faktura #${input.originalNumber}: ${kr(input.partial.remaining)}.`
+          : `Faktura #${input.originalNumber} är därmed slutreglerad – inget mer att betala.`
+      }`
+    : `Faktura #${input.originalNumber} är krediterad i sin helhet med kreditfaktura #${input.creditNumber}. Du ska inte betala faktura #${input.originalNumber}.`;
   const text = [
     `Hej ${input.customerName},`,
     "",

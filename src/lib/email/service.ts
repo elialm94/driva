@@ -191,6 +191,7 @@ export function prepareCreditInvoiceMail(input: {
   originalNumber: number;
   creditNumber: number;
   token?: string;
+  partial?: { amount: number; remaining: number };
 }): { message: MailMessage; meta: MailSendMeta } {
   const built = creditInvoiceEmail({
     businessName: input.company,
@@ -199,6 +200,7 @@ export function prepareCreditInvoiceMail(input: {
     originalNumber: input.originalNumber,
     creditNumber: input.creditNumber,
     url: input.token ? absoluteAppUrl(`/faktura/${input.token}`) : undefined,
+    partial: input.partial,
     footer: footer(),
   });
   return {

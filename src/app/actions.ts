@@ -23,6 +23,8 @@ import {
   createPartInvoiceForQuote,
   createDeniedReductionInvoice,
   creditInvoice,
+  creditInvoiceContext,
+  type CreditInvoiceContext,
   discardInvoice,
   updateInvoice,
   type InvoiceInput,
@@ -1072,10 +1074,29 @@ export async function markQuoteNotRelevantAction(quoteId: string) {
   );
 }
 
-export async function creditInvoiceAction(invoiceId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function creditInvoiceContextAction(
+  invoiceId: string
+): Promise<{ ok: true; context: CreditInvoiceContext } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      return { ok: true as const, context: creditInvoiceContext(invoiceId) };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte läsa fakturan." };
+    }
+  });
+}
+
+export async function creditInvoiceAction(
+  invoiceId: string,
+  opts?: { amountInclVat?: number }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const amountInclVat =
+    opts && typeof opts.amountInclVat === "number" && Number.isFinite(opts.amountInclVat)
+      ? Math.round(opts.amountInclVat)
+      : undefined;
   const result = await withBusiness(() => {
     try {
-      const credit = creditInvoice(invoiceId);
+      const credit = creditInvoice(invoiceId, "anvandare", amountInclVat != null ? { amountInclVat } : {});
       const notice = prepareCreditInvoiceNotice(credit);
       refresh();
       return { ok: true as const, notice };
