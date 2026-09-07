@@ -63,6 +63,12 @@ export interface CompanySettings {
   /** Preliminärskatt (F-skatt) som dras varje månad. */
   fSkattPerMonth: number;
   /**
+   * Referensnummer (OCR) för inbetalningar till skattekontot, hämtat av
+   * användaren från Skatteverkets e-tjänst. Driva räknar det aldrig fram
+   * själv. Saknas = visa länken till OCR-beräkningen i betalsteget.
+   */
+  taxAccountOcr?: string;
+  /**
    * Reserv för arbetsgivaravgifter och personalskatt per månad. Används bara när
    * ingen anställd är upplagd – finns lönen räknas reserven ur den faktiska
    * lönen och den åldersberoende avgiften (services/finance.ts).
@@ -1617,6 +1623,7 @@ export type AuditAction =
   | "momsrapport_deklarerad"
   | "momsperiodicitet_andrad"
   | "skattekonto_bokford"
+  | "skattekonto_ocr_andrad"
   | "fskatt_andrad"
   | "anstalld_andrad"
   | "lon_bokford"

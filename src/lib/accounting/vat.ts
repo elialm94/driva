@@ -302,12 +302,17 @@ export function generateVatReport(periodKey: string, actor: "anvandare" | "assis
 
 /** Tidigare perioder med momsaktivitet som inte deklarerats – de måste tas i ordning. */
 function undeclaredEarlierPeriods(report: VatReport): Period[] {
+  return undeclaredVatPeriodsBefore(report.periodStart);
+}
+
+/** Samma spärr som vid deklarationen, för flödet: perioder före `periodStart` som inte är deklarerade. */
+export function undeclaredVatPeriodsBefore(periodStart: string): Period[] {
   const data = db();
   const out: Period[] = [];
   const periodicity = vatPeriodicity(data);
   for (const fy of fiscalYears(data)) {
     for (const p of vatPeriodsOf(fy, periodicity)) {
-      if (p.end >= report.periodStart) continue;
+      if (p.end >= periodStart) continue;
       const declared = data.vatReports.some(
         (r) => r.periodStart === p.start && r.periodEnd === p.end && r.status === "deklarerad"
       );

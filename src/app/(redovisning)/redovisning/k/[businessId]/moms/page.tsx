@@ -3,7 +3,8 @@ import { MomsPeriods } from "@/components/moms-periods";
 import { Card, PageHeader } from "@/components/ui";
 import { loadAccountantClientPage } from "@/lib/collaboration/client-page";
 import { can } from "@/lib/collaboration/permissions";
-import { vatChecklist, vatPeriodsFor } from "@/lib/accounting/vat";
+import { vatPeriodsFor } from "@/lib/accounting/vat";
+import { vatFlowFocus, vatPeriodFlow, type VatPeriodFlow } from "@/lib/accounting/vat-flow";
 import { fiscalYears, resolveViewFiscalYear } from "@/lib/accounting/fiscal";
 import { FiscalYearPicker, fiscalYearHref } from "@/components/fiscal-year-picker";
 import { kr } from "@/lib/format";
@@ -25,18 +26,20 @@ export default async function AccountantMomsPage({
   searchParams,
 }: {
   params: Promise<{ businessId: string }>;
-  searchParams: Promise<{ ar?: string }>;
+  searchParams: Promise<{ ar?: string; fokus?: string }>;
 }) {
   const { businessId } = await params;
-  const { ar } = await searchParams;
+  const { ar, fokus } = await searchParams;
   const { access, snap } = await loadAccountantClientPage(businessId);
 
-  const loadView = () => {
+  const loadView = (): { fy: ReturnType<typeof resolveViewFiscalYear>; years: ReturnType<typeof fiscalYears>; flows: VatPeriodFlow[] } => {
     const fy = resolveViewFiscalYear(ar);
     return {
       fy,
       years: fiscalYears(),
-      periods: vatPeriodsFor(fy).filter((p) => p.state !== "kommande"),
+      flows: vatPeriodsFor(fy)
+        .filter((p) => p.state !== "kommande")
+        .map((p) => vatPeriodFlow(p)),
     };
   };
   const view = isSupabaseMode()
@@ -48,10 +51,13 @@ export default async function AccountantMomsPage({
         );
       })()
     : loadView();
-  const { fy, years, periods } = view;
+  const { fy, years, flows } = view;
 
-  const current = periods.find((p) => p.state === "att_deklarera") ?? periods.find((p) => p.state === "pagaende");
-  const blockers = current ? vatChecklist(current.period).filter((c) => !c.ok).length : 0;
+  const currentFlow =
+    flows.find((f) => f.summary.state === "att_deklarera") ?? flows.find((f) => f.summary.state === "pagaende");
+  const current = currentFlow?.summary;
+  const blockers = currentFlow?.blockers.length ?? 0;
+  const focusKey = flows.some((f) => f.summary.period.key === fokus) ? fokus : vatFlowFocus(flows);
 
   return (
     <div className="animate-fade-up">
@@ -92,7 +98,12 @@ export default async function AccountantMomsPage({
           </Card>
         </div>
       ) : null}
-      <MomsPeriods periods={periods} readOnly={!can(access.role, "vat")} />
+      <MomsPeriods
+        flows={flows}
+        focusKey={focusKey}
+        readOnly={!can(access.role, "vat")}
+        basePath={`/redovisning/k/${businessId}/moms`}
+      />
     </div>
   );
 }

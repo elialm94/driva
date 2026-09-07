@@ -3,25 +3,27 @@ import { SmartBack } from "@/components/back-link";
 import { PrintButton, VatPeriodicityPicker } from "@/components/bokforing-widgets";
 import { MomsPeriods } from "@/components/moms-periods";
 import { vatPeriodsFor } from "@/lib/accounting/vat";
+import { vatFlowFocus, vatPeriodFlow } from "@/lib/accounting/vat-flow";
 import { fiscalYears, resolveViewFiscalYear, vatPeriodicity, VAT_PERIODICITY } from "@/lib/accounting/fiscal";
 import { FiscalYearPicker, fiscalYearHref } from "@/components/fiscal-year-picker";
 import { ensurePageBusiness } from "@/lib/auth/session";
-import { vatReportsAwaitingTaxAccount } from "@/lib/accounting/tax-account";
 
 export const metadata = { title: "Moms" };
 
 export default async function MomsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ar?: string }>;
+  searchParams: Promise<{ ar?: string; fokus?: string }>;
 }) {
   await ensurePageBusiness();
   const params = await searchParams;
   const years = fiscalYears();
   const fy = resolveViewFiscalYear(params.ar);
   const periodicity = vatPeriodicity();
-  const periods = vatPeriodsFor(fy).filter((p) => p.state !== "kommande");
-  const awaitingTaxAccount = vatReportsAwaitingTaxAccount().map((r) => r.id);
+  const flows = vatPeriodsFor(fy)
+    .filter((p) => p.state !== "kommande")
+    .map((p) => vatPeriodFlow(p));
+  const focusKey = flows.some((f) => f.summary.period.key === params.fokus) ? params.fokus : vatFlowFocus(flows);
 
   return (
     <div>
@@ -39,7 +41,7 @@ export default async function MomsPage({
       <div className="mb-4">
         <VatPeriodicityPicker value={periodicity} />
       </div>
-      <MomsPeriods periods={periods} awaitingTaxAccount={awaitingTaxAccount} />
+      <MomsPeriods flows={flows} focusKey={focusKey} />
     </div>
   );
 }

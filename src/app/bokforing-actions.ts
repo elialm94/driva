@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { generateVatReport, markVatReportDeclared, setVatPeriodicity } from "@/lib/accounting/vat";
+import { declareVatPeriod } from "@/lib/accounting/vat-flow";
 import { isVatPeriodicity } from "@/lib/accounting/dates";
 import {
   bookFSkatt,
@@ -10,6 +11,7 @@ import {
   parseTaxAccountStatement,
   reconcileTaxAccount,
   setFSkattPerMonth,
+  setTaxAccountOcr,
   type TaxAccountReconciliation,
 } from "@/lib/accounting/tax-account";
 import {
@@ -115,6 +117,16 @@ export async function generateVatReportAction(periodKey: string): Promise<Result
 
 export async function markVatDeclaredAction(reportId: string): Promise<Result> {
   return run(() => markVatReportDeclared(reportId, "anvandare"), "vat");
+}
+
+/** Momsflödets steg 2: rapporten skapas ur bokföringen och markeras som deklarerad i ett klick. */
+export async function declareVatPeriodAction(periodKey: string): Promise<Result> {
+  return run(() => void declareVatPeriod(periodKey, "anvandare"), "vat");
+}
+
+/** Momsflödets steg 3: användarens OCR-nummer för skattekontot (tomt tar bort det). */
+export async function setTaxAccountOcrAction(value: string): Promise<Result> {
+  return run(() => void setTaxAccountOcr(String(value ?? ""), "anvandare"), "write_accounting");
 }
 
 export async function setVatPeriodicityAction(periodicity: string): Promise<Result> {

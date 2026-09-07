@@ -1,4 +1,5 @@
 import { db, save } from "../store";
+import { isValidBankgirotOcr } from "../ids";
 import type { BankTransaction, Verification, VatReport } from "../types";
 import { bokforingsdatum, todayDate } from "./dates";
 import { fiscalYearFor } from "./fiscal";
@@ -141,6 +142,47 @@ export function bookVatOnTaxAccount(reportId: string, actor: "anvandare" | "assi
   });
   save();
   return ver;
+}
+
+/** Verifikationen som förde momsen för rapporten till skattekontot, om den finns. */
+export function vatOnTaxAccountVerification(reportId: string): Verification | undefined {
+  return alreadyBooked(`moms-${reportId}`);
+}
+
+/**
+ * Referensnumret (OCR) för inbetalningar till skattekontot. Skatteverket
+ * räknar fram det ur organisationsnumret i sin e-tjänst; Driva räknar det
+ * inte själv – ett fel nummer hamnar på någon annans skattekonto. Vi sparar
+ * det användaren hämtat och kontrollerar bara kontrollsiffran (OCR-10, som
+ * alla Bankgirot-referenser). Tomt tar bort numret.
+ */
+export function setTaxAccountOcr(value: string, actor: "anvandare" | "assistent"): string | undefined {
+  const digits = value.replace(/\s/g, "");
+  const s = db().settings;
+  if (!digits) {
+    if (!s.taxAccountOcr) return undefined;
+    delete s.taxAccountOcr;
+    logAudit(actor, "skattekonto_ocr_andrad", "OCR-numret för skattekontot togs bort.", {
+      targetType: "skattekonto",
+      targetId: "ocr",
+    });
+    save();
+    return undefined;
+  }
+  if (!/^\d{10,25}$/.test(digits)) {
+    throw new Error("OCR-numret består bara av siffror – kopiera det från Skatteverkets e-tjänst OCR-beräkning.");
+  }
+  if (!isValidBankgirotOcr(digits)) {
+    throw new Error("Kontrollsiffran stämmer inte – kontrollera numret mot Skatteverkets OCR-beräkning innan du sparar.");
+  }
+  if (s.taxAccountOcr === digits) return digits;
+  s.taxAccountOcr = digits;
+  logAudit(actor, "skattekonto_ocr_andrad", `OCR-numret för skattekontot sparades (${digits}).`, {
+    targetType: "skattekonto",
+    targetId: "ocr",
+  });
+  save();
+  return digits;
 }
 
 /**
