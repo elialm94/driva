@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { AccountantScopeSync } from "@/components/accountant-scope-sync";
+import { LiveRefresh } from "@/components/live-refresh";
 import { RedovisningMobileHeader, RedovisningMobileNav, RedovisningSidebar } from "@/components/redovisning-shell";
 import { getSessionUser, isDemoSession, listMemberships } from "@/lib/auth/session";
 import { LOCAL_JSON_ACCOUNTANT_ID } from "@/lib/collaboration/actor";
@@ -40,6 +41,7 @@ export default async function RedovisningLayout({ children }: { children: ReactN
       <Suspense fallback={null}>
         <AccountantScopeSync />
       </Suspense>
+      <LiveRefresh />
       <RedovisningSidebar
         userName={profile?.name || user.name || user.email}
         clientCount={clients.length}
