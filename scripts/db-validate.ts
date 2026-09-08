@@ -1756,7 +1756,9 @@ async function main() {
   // ------------------------------------------------------------------
   console.log("\nGrossistschema via pending schema (utan migration 30):");
   {
-    const { db: older } = await createMigratedPglite({ skipMigrations: (f) => f.includes("_38_wholesalers") });
+    const { db: older } = await createMigratedPglite({
+      skipMigrations: (f) => f.includes("_38_wholesalers") || f.includes("_42_wholesaler_shop"),
+    });
     const { pgliteClient } = await import("../src/lib/storage/executor");
     const { ensureWholesalerSchema } = await import("../src/lib/storage/apply-pending-schema");
     const client = pgliteClient(older);

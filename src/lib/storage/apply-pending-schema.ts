@@ -38,6 +38,17 @@ async function run(client: SqlClient, sql: string): Promise<void> {
   }
 }
 
+async function tableExists(client: SqlExecutor, table: string): Promise<boolean> {
+  const rows = await client.query(
+    `select exists (
+       select 1 from information_schema.tables
+        where table_schema = 'public' and table_name = $1
+     ) as present`,
+    [table]
+  );
+  return Boolean(rows[0]?.present);
+}
+
 async function columnExists(client: SqlExecutor, table: string, column: string): Promise<boolean> {
   const rows = await client.query(
     `select exists (
@@ -53,6 +64,7 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const applied: string[] = [];
 
   async function ensureColumn(table: string, column: string, ddl: string): Promise<void> {
+    if (!(await tableExists(client, table))) return;
     if (await columnExists(client, table, column)) return;
     await run(client, ddl);
     applied.push(`${table}.${column}`);
