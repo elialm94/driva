@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BadgeCheck, Check, CircleAlert, CircleHelp } from "lucide-react";
+import { BadgeCheck, Check, CircleHelp } from "lucide-react";
 import { db } from "@/lib/store";
 import { kr, datumKort } from "@/lib/format";
 import { ButtonLink, Card, PageHeader, SectionTitle } from "@/components/ui";
@@ -15,7 +15,8 @@ import {
   isBookkeepingUnresolvedVisa,
 } from "@/lib/services/action-views";
 import { bankReconciliation } from "@/lib/accounting/reconciliation";
-import { vatChecklist, vatPeriods } from "@/lib/accounting/vat";
+import { upcomingAuthorityEvents } from "@/lib/accounting/skatteverket-calendar";
+import { SkatteverketCalendar } from "@/components/skatteverket-calendar";
 import { fiscalYears, lockedThrough, todayDate } from "@/lib/accounting/fiscal";
 import { resultatrapport } from "@/lib/accounting/ledger";
 import { verificationLabel } from "@/lib/accounting/engine";
@@ -25,10 +26,6 @@ export const metadata = { title: "Bokföring" };
 
 /** Så många olösta rader visas direkt – resten bakom "Visa N till", som på Hem. */
 const BOOKKEEPING_ATTENTION_VISIBLE = 8;
-
-function datumDagManad(iso: string): string {
-  return new Intl.DateTimeFormat("sv-SE", { day: "numeric", month: "long" }).format(new Date(iso));
-}
 
 function monthsBefore(date: string, months: number): string {
   const d = new Date(`${date}T12:00:00Z`);
@@ -51,16 +48,9 @@ export default async function BookkeepingPage({
 
   // Samma åtgärdsmotor som Hem – komplett bokföringskö, ingen gruppering.
   const bookkeepingActions = bookkeepingQueue(getBusinessActions().attention);
-  const vatIsAttention = bookkeepingActions.some((a) => a.category === "vat");
   const needsHelp = bookkeepingActions.length;
   const allGood = needsHelp === 0;
-
-  const vatPeriodsNow = vatPeriods().filter((p) => p.state !== "kommande");
-  const vat =
-    vatPeriodsNow.find((p) => p.state === "att_deklarera") ??
-    vatPeriodsNow.find((p) => p.state === "pagaende") ??
-    vatPeriodsNow[vatPeriodsNow.length - 1];
-  const vatBlockers = vat ? vatChecklist(vat.period).filter((c) => !c.ok) : [];
+  const upcoming = upcomingAuthorityEvents();
 
   const openYear = fiscalYears().find((f) => f.status === "oppet");
   const showBokslut =
@@ -123,59 +113,7 @@ export default async function BookkeepingPage({
         <section id={BOOKKEEPING_UNRESOLVED_ANCHOR} className="mb-8 scroll-mt-6" />
       ) : null}
 
-      {/* 3. Vad behöver jag snart betala/deklarera? (Om momsen redan ligger som åtgärd ovan visas den inte dubbelt.) */}
-      {vat && !vatIsAttention ? (
-        <section className="mb-8">
-          <SectionTitle>Kommande</SectionTitle>
-          <Card className="px-5 py-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-[15px] font-semibold">
-                  Moms {vat.position.attBetala >= 0 ? "att betala" : "att få tillbaka"}
-                </p>
-                <p className="mt-0.5 text-[13px] text-soft">
-                  {vat.position.attBetala >= 0 ? "Att betala senast" : "Deklareras senast"} {datumDagManad(vat.dueDate)}
-                </p>
-                <p className="mt-1.5 flex items-center gap-1.5 text-[13px]">
-                  {vatBlockers.length === 0 ? (
-                    <>
-                      <Check className="size-3.5 text-ok" />
-                      <span className="text-ok">underlag komplett</span>
-                    </>
-                  ) : (
-                    <>
-                      <CircleAlert className="size-3.5 text-warn" />
-                      <span className="text-warn">
-                        {vatBlockers.length} sak{vatBlockers.length > 1 ? "er" : ""} behöver lösas
-                      </span>
-                    </>
-                  )}
-                </p>
-              </div>
-              <p className="text-[22px] font-semibold tracking-tight tabular">{kr(Math.abs(vat.position.attBetala))}</p>
-            </div>
-            <details className="mt-3">
-              <summary className="cursor-pointer list-none text-[13px] font-medium text-accent hover:underline">
-                Visa hur det räknats
-              </summary>
-              <div className="mt-2.5 space-y-1.5 rounded-xl bg-canvas/70 px-4 py-3 text-[13px]">
-                <div className="flex justify-between">
-                  <span className="text-soft">Utgående moms</span>
-                  <span className="font-medium tabular">{kr(vat.position.utgaende)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-soft">Ingående moms</span>
-                  <span className="font-medium tabular">−{kr(vat.position.ingaende)}</span>
-                </div>
-                <div className="flex justify-between border-t border-line pt-1.5">
-                  <span className="font-medium">{vat.position.attBetala >= 0 ? "Att betala" : "Att få tillbaka"}</span>
-                  <span className="font-semibold tabular">{kr(Math.abs(vat.position.attBetala))}</span>
-                </div>
-              </div>
-            </details>
-          </Card>
-        </section>
-      ) : null}
+      <SkatteverketCalendar events={upcoming} />
 
       {/* Företaget i år: resultat + tyst bank */}
       <section className="mb-8">

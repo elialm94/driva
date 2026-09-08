@@ -10,6 +10,7 @@
 import type { WholesalerColumnKey, WholesalerColumnMapping } from "../types";
 import { cell, positionalHeader, type RawTable } from "./table";
 import { parseDecimal } from "./money";
+import { looksLikeImageUrl } from "./product-image";
 
 export const COLUMN_KEYS: WholesalerColumnKey[] = [
   "articleNumber",
@@ -18,6 +19,8 @@ export const COLUMN_KEYS: WholesalerColumnKey[] = [
   "rskNumber",
   "gtin",
   "category",
+  "brand",
+  "imageUrl",
   "discountGroup",
   "unit",
   "packSize",
@@ -35,6 +38,8 @@ export const COLUMN_LABELS: Record<WholesalerColumnKey, string> = {
   rskNumber: "RSK-nummer",
   gtin: "EAN/GTIN",
   category: "Kategori",
+  brand: "Varumärke",
+  imageUrl: "Bildlänk",
   discountGroup: "Rabattgrupp",
   unit: "Enhet",
   packSize: "Förpackning (antal)",
@@ -49,6 +54,8 @@ export const COLUMN_HINTS: Partial<Record<WholesalerColumnKey, string>> = {
   netPrice: "Ert avtalade pris exkl. moms. Vinner alltid över listpris × rabatt.",
   discountPercent: "Rabatt i procent på listpriset, per rad eller per rabattgrupp.",
   salesPrice: "Rekommenderat eller avtalat pris mot din kund. Används bara om du valt det i inställningarna.",
+  category: "Grossistens varugrupp. Blir bläddringsbara kategorier i materialbutiken.",
+  imageUrl: "Länk (https://…) till produktbilden. Visas som miniatyr på artikelkortet – utan länk får kortet en ikon.",
 };
 
 type Synonyms = { exact: string[]; contains?: string[] };
@@ -85,6 +92,17 @@ const SYNONYMS: Record<WholesalerColumnKey, Synonyms> = {
   category: {
     exact: ["kategori", "varugrupp", "produktgrupp", "grupp", "category", "productgroup", "huvudgrupp", "sortiment", "kategorinamn"],
     contains: ["kategori", "varugrupp", "produktgrupp", "category"],
+  },
+  brand: {
+    exact: ["varumarke", "fabrikat", "tillverkare", "brand", "marke", "manufacturer", "producent", "varumarkesnamn", "fabrikant"],
+    contains: ["varumarke", "fabrikat", "tillverkare", "brand", "manufacturer"],
+  },
+  imageUrl: {
+    exact: [
+      "bild", "bildlank", "bildurl", "bildadress", "produktbild", "produktbildurl", "image", "imageurl", "imagelink",
+      "picture", "pictureurl", "foto", "bilder", "imgurl", "img", "thumbnail", "bild1", "bildlank1", "imageurl1",
+    ],
+    contains: ["bildlank", "bildurl", "imageurl", "imagelink", "produktbild", "pictureurl", "bildadress"],
   },
   discountGroup: {
     exact: ["rabattgrupp", "rabattkod", "rabgrp", "rabgr", "rabattklass", "discountgroup", "rabattgruppkod", "prisgrupp", "rabattgruppnr"],
@@ -250,6 +268,12 @@ export function detectColumnMapping(table: RawTable, remembered?: WholesalerColu
     if (used.has(idx)) continue;
     const values = sampleColumn(table, idx);
     if (values.length < 3) continue;
+    // Bildlänkar är omisskännliga – ta dem före allt annat så att en
+    // https-kolumn aldrig gissas som benämning ("lång text").
+    if (!mapping.imageUrl && ratio(values, looksLikeImageUrl) >= 0.8) {
+      take("imageUrl", idx);
+      continue;
+    }
     if (!mapping.gtin && ratio(values, isGtin) >= 0.8) {
       take("gtin", idx);
       continue;

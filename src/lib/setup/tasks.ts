@@ -60,6 +60,10 @@ export function setupTasks(): SetupTask[] {
   const consultant = hasCollaborationUsage(data, businessId);
   const hasPriceList = (data.wholesalerPriceImports ?? []).some((i) => i.status === "active");
   const hasInvoicing = data.invoices.length > 0 || data.quotes.length > 0;
+  const payroll = onboarding?.payroll ?? null;
+  const employeeCount = (data.employees ?? []).filter((e) => e.status === "anstalld").length;
+  const hasEmployee = employeeCount > 0;
+  const fSkatt = data.settings.fSkattPerMonth;
 
   const withOverride = (id: SetupTaskId, derived: SetupTaskStatus): SetupTaskStatus => {
     if (derived === "done") return "done";
@@ -146,16 +150,32 @@ export function setupTasks(): SetupTask[] {
       canDismiss: true,
     },
     {
-      // Lön finns inte i Ferva ännu – behovet sparas i profilen och visas
-      // ärligt där, men blir ingen uppgift med en död knapp.
       id: "payroll",
       title: "Ställ in lön",
-      description: "Lön finns inte i Ferva ännu.",
-      status: "todo",
-      relevance: "hidden",
-      href: SETTINGS_HREF.funktioner,
-      cta: "",
-      canDismiss: false,
+      description: "Lägg in dig själv (och eventuella anställda) så räknar Driva skatt och arbetsgivaravgifter och bokför lönen varje månad.",
+      status: withOverride("payroll", hasEmployee ? "done" : "todo"),
+      // "Inga löner" i profilen döljer uppgiften helt – men finns det anställda
+      // i böckerna visas den som klar oavsett.
+      relevance:
+        payroll === "owner" || payroll === "employees" ? "recommended" : payroll === "none" && !hasEmployee ? "hidden" : "optional",
+      href: "/bokforing/lon",
+      cta: hasEmployee ? "Visa" : "Lägg till anställd",
+      doneDetail: hasEmployee ? `${employeeCount} ${employeeCount === 1 ? "anställd" : "anställda"}` : undefined,
+      canDismiss: true,
+    },
+    {
+      // Beloppet kommer från Skatteverkets beslut om debiterad preliminärskatt.
+      // Utan det kan Driva inte föreslå månadsdragningarna på skattekontot.
+      id: "f_skatt",
+      title: "Ange preliminärskatten",
+      description: "Beloppet i Skatteverkets beslut om debiterad preliminärskatt. Då bokförs månadsdragningen och skattekontot stämmer.",
+      status: withOverride("f_skatt", fSkatt > 0 ? "done" : "todo"),
+      // Sköter en konsult bokföringen är skattekontot dennes bord – valfritt då.
+      relevance: bookkeeping === "consultant" ? "optional" : "recommended",
+      href: "/bokforing/skattekonto",
+      cta: fSkatt > 0 ? "Visa" : "Fyll i belopp",
+      doneDetail: fSkatt > 0 ? `${fSkatt.toLocaleString("sv-SE")} kr/mån` : undefined,
+      canDismiss: true,
     },
   ];
 
@@ -173,7 +193,8 @@ function priority(task: SetupTask, ctx: { bookkeeping: OnboardingState["bookkeep
     payment_details: ctx.hasInvoicing ? 5 : 50,
     connect_bank: 60,
     articles_prices: 55,
-    payroll: 90,
+    payroll: 65,
+    f_skatt: 70,
   };
   let score = base[task.id];
   if (ctx.bookkeeping === "existing" && task.id === "move_bookkeeping") score = 1;

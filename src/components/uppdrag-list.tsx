@@ -3,9 +3,11 @@
 import { useEffect, useState, useTransition } from "react";
 import { AppLink } from "./app-link";
 import { useRouter } from "next/navigation";
-import { Hammer, Search } from "lucide-react";
-import { Card, EmptyState, cx } from "./ui";
+import { FileText, Hammer, Search } from "lucide-react";
+import { ButtonLink, Card, EmptyState, buttonClasses, cx } from "./ui";
 import { Pagination } from "./customer-list";
+import { NewUppdragButton } from "./uppdrag-form";
+import type { CustomerOption } from "./customer-picker";
 import { JobStatusBadge } from "./status";
 import {
   reconcileJobListFilters,
@@ -54,9 +56,12 @@ const ECONOMY_CHIPS: [JobEconomyFilter, string][] = [
 export function UppdragList({
   result,
   query,
+  customers = [],
 }: {
   result: PagedResult<JobListRow>;
   query: UppdragListQuery;
+  /** För "Skapa uppdrag" i tomläget – samma dialog som i sidhuvudet. */
+  customers?: CustomerOption[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -73,6 +78,8 @@ export function UppdragList({
     }, 200);
     return () => clearTimeout(handle);
   }, [q, query, router]);
+
+  const filtered = Boolean(query.q) || query.lifecycle !== "aktiva" || query.economy !== "alla";
 
   function go(patch: Partial<UppdragListQuery>) {
     const filters = reconcileJobListFilters({
@@ -132,15 +139,40 @@ export function UppdragList({
       </div>
 
       {result.total === 0 ? (
-        <EmptyState
-          icon={Hammer}
-          title={query.q || query.lifecycle !== "aktiva" || query.economy !== "alla" ? "Inga uppdrag matchar" : "Inga uppdrag ännu"}
-          text={
-            query.q || query.lifecycle !== "aktiva" || query.economy !== "alla"
-              ? "Prova ett annat sökord eller ta bort ett filter."
-              : "När en kund godkänner en offert dyker uppdraget upp här. Du kan också skapa ett själv."
-          }
-        />
+        filtered ? (
+          <EmptyState
+            icon={Hammer}
+            title="Inga uppdrag matchar"
+            text="Prova ett annat sökord eller ta bort ett filter."
+            action={
+              <button
+                type="button"
+                className={buttonClasses("secondary", "sm")}
+                onClick={() => {
+                  setQ("");
+                  go({ q: "", lifecycle: "aktiva", economy: "alla", page: 1 });
+                }}
+                data-clear-filters
+              >
+                Rensa sök och filter
+              </button>
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={Hammer}
+            title="Inga uppdrag ännu"
+            text="När en kund godkänner en offert dyker uppdraget upp här. Du kan också skapa ett själv."
+            action={
+              <div className="flex flex-col items-center gap-2 sm:flex-row">
+                <ButtonLink href="/ekonomi/offerter/ny">
+                  <FileText className="size-4" /> Ny offert
+                </ButtonLink>
+                <NewUppdragButton customers={customers} variant="secondary" label="Skapa uppdrag" />
+              </div>
+            }
+          />
+        )
       ) : (
         <>
           <div className="hidden md:block">
@@ -167,8 +199,13 @@ export function UppdragList({
                     <tr key={job.id} className={LIST_BODY_ROW_CLASS}>
                       <td className="px-3 py-2.5">
                         <AppLink href={`/uppdrag/${job.id}`} className={LIST_ROW_LINK_CLASS} aria-label={job.title} />
-                        <span className="block truncate font-medium text-ink">{job.title}</span>
-                        {job.address ? (
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate font-medium text-ink">{job.title}</span>
+                          {job.incoming ? <IncomingChip /> : null}
+                        </span>
+                        {job.incoming && job.sourceLabel ? (
+                          <span className="mt-0.5 block truncate text-[12px] text-muted">{job.sourceLabel}</span>
+                        ) : job.address ? (
                           <span className="mt-0.5 block truncate text-[12px] text-muted">{job.address}</span>
                         ) : null}
                       </td>
@@ -196,8 +233,14 @@ export function UppdragList({
                 className="flex items-start justify-between gap-3 px-4 py-3 hover:bg-canvas/70"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-medium">{job.title}</p>
-                  <p className="mt-0.5 truncate text-[13px] text-muted">{job.customerName}</p>
+                  <p className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-[15px] font-medium">{job.title}</span>
+                    {job.incoming ? <IncomingChip /> : null}
+                  </p>
+                  <p className="mt-0.5 truncate text-[13px] text-muted">
+                    {job.customerName}
+                    {job.incoming && job.sourceLabel ? ` · ${job.sourceLabel.toLowerCase()}` : ""}
+                  </p>
                   <p className="mt-0.5 text-[13px] tabular text-soft">{job.economyLabel}</p>
                 </div>
                 <JobStatusBadge
@@ -213,6 +256,15 @@ export function UppdragList({
         </>
       )}
     </div>
+  );
+}
+
+/** Inkommen förfrågan utan offert – samma ord som Hem-raden "Nytt uppdrag". */
+function IncomingChip() {
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">
+      Ny förfrågan
+    </span>
   );
 }
 

@@ -46,6 +46,13 @@ export interface JobMoney {
   registeredUninvoiced: number;
   /** Allt registrerat arbete/material inkl. moms (fakturerat + ofakturerat). */
   registered: number;
+  /**
+   * Inköpskostnad: material med inköpspris från grossist + bokförda utgifter
+   * kopplade till uppdraget. Saknas inköpspris räknas inte raden.
+   */
+  cost: number;
+  /** Fakturerat (utfärdat) minus kostnad. */
+  profit: number;
   invoices: Invoice[];
 }
 
@@ -102,6 +109,21 @@ export function invoicesForJobOrQuote(jobId: string, quoteId?: string): Invoice[
   return [...byJob, ...byQuote.filter((i) => !seen.has(i.id))];
 }
 
+/** Inköpskostnad i hela kronor: grossist-unitCostOre / 100 + bokförda utgifter på uppdraget. */
+export function jobCost(jobId: string): number {
+  const data = db();
+  let ore = 0;
+  for (const e of data.jobWorkEntries ?? []) {
+    if (e.jobId !== jobId || e.role !== "actual") continue;
+    const unitCostOre = e.wholesaler?.unitCostOre;
+    if (unitCostOre != null) ore += Math.round(e.qty * unitCostOre);
+  }
+  const expenses = (data.expenses ?? [])
+    .filter((x) => x.jobId === jobId && x.status === "bokford")
+    .reduce((s, x) => s + (x.amount ?? 0), 0);
+  return Math.round(ore / 100) + expenses;
+}
+
 function actualsInclVat(jobId: string, onlyUninvoiced: boolean, invoices: Invoice[]): number {
   const live = new Set(
     invoices.filter((i) => i.status !== "krediterad" && i.type !== "kredit").map((i) => i.id)
@@ -137,6 +159,7 @@ function moneyFor(jobId: string, quote: Quote | undefined, invoices: Invoice[]):
 
   const remaining =
     quote?.status === "godkand" && quoteTotals ? Math.max(0, quoteTotals.total - invoiced) : 0;
+  const cost = jobCost(jobId);
 
   return {
     quote,
@@ -148,6 +171,8 @@ function moneyFor(jobId: string, quote: Quote | undefined, invoices: Invoice[]):
     paid,
     registeredUninvoiced: actualsInclVat(jobId, true, invoices),
     registered: actualsInclVat(jobId, false, invoices),
+    cost,
+    profit: invoicedIssued - cost,
     // Samma lista som tidigare jobMoneySummary: original som räknas – inte
     // kreditfakturor eller fullkrediterade par.
     invoices: invoices.filter(countsTowardInvoiced),

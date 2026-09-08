@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Landmark, RefreshCw, Unlink } from "lucide-react";
 import {
   cancelBankConnectAction,
@@ -203,63 +203,6 @@ export function CancelPendingBankButton() {
         {isPending ? "Avbryter …" : "Avbryt kopplingen"}
       </button>
       <ErrorLine text={error} />
-    </div>
-  );
-}
-
-/**
- * Statusord från callbacken (?bank=kopplad|avbrutet|fel&meddelande=…) visas
- * som en kort toast och tas bort ur URL:en så att omladdning inte upprepar den.
- */
-const NOTICES: Record<string, string> = {
-  kopplad: "Banken är kopplad. Transaktionerna hämtas och matchas mot dina fakturor.",
-  avbrutet: "Kopplingen avbröts. Inget har ändrats.",
-  fel: "Banken godkände inte kopplingen. Försök igen.",
-};
-
-export function BankNoticeToast() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
-  const [notice, setNotice] = useState<{ kind: string; text: string } | null>(null);
-
-  const kind = searchParams.get("bank");
-  const incoming = kind && NOTICES[kind] ? kind : null;
-  // Statusordet i URL:en fångas i state under rendern (så att toasten överlever
-  // att parametern tas bort) och URL:en städas direkt – omladdning upprepar inget.
-  if (incoming && notice?.kind !== incoming) {
-    const custom = searchParams.get("meddelande");
-    setNotice({ kind: incoming, text: incoming === "fel" && custom ? custom : NOTICES[incoming] });
-  }
-
-  useEffect(() => {
-    if (!incoming) return;
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("bank");
-    params.delete("meddelande");
-    const query = params.toString();
-    router.replace((query ? `${pathname}?${query}` : pathname) as never, { scroll: false });
-  }, [incoming, pathname, router, searchParams]);
-
-  useEffect(() => {
-    if (!notice) return;
-    const timeout = window.setTimeout(() => setNotice(null), 6000);
-    return () => window.clearTimeout(timeout);
-  }, [notice]);
-
-  const text = notice?.text ?? null;
-  const tone = notice?.kind === "kopplad" ? "ok" : notice?.kind === "fel" ? "danger" : "neutral";
-
-  if (!text) return null;
-  return (
-    <div
-      role="status"
-      className={cx(
-        "fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-xl px-4 py-2.5 text-[14px] font-medium text-white shadow-pop",
-        tone === "danger" ? "bg-danger" : tone === "ok" ? "bg-ok" : "bg-ink"
-      )}
-    >
-      {text}
     </div>
   );
 }

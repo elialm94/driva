@@ -10,7 +10,8 @@ import assert from "node:assert/strict";
 import { db, replaceDb } from "./store";
 import { emptyTestDb, labor, testCustomer } from "./invoices/test-db";
 import { createInvoice, creditInvoice, issueInvoice } from "./services/invoices";
-import { getInvoice } from "./services/data";
+import { getInvoice, invoiceTotals } from "./services/data";
+import { kr } from "./format";
 import { creditInvoiceEmail } from "./email/templates";
 import { prepareCreditInvoiceMail } from "./email/service";
 import {
@@ -184,13 +185,20 @@ describe("prepareCreditInvoiceNotice", () => {
     assert.doesNotMatch(notice.message.text, /info@test\.se/);
   });
 
-  it("delkredit ger inget kundmejl", () => {
+  it("delkredit mejlar krediterat belopp och vad som är kvar att betala", () => {
     process.env.DRIVA_DEMO = "0";
     setMailTransportForTests(async () => ({ messageId: "resend-1" }));
     const original = issuedInvoice();
+    const total = invoiceTotals(original).toPay;
     const credit = creditInvoice(original.id, "anvandare", { amountInclVat: 2_500 });
     assert.notEqual(getInvoice(original.id)!.status, "krediterad");
-    assert.equal(prepareCreditInvoiceNotice(credit), null);
+    const notice = prepareCreditInvoiceNotice(credit);
+    assert.ok(notice);
+    assert.equal(notice.message.to, "anna@test.se");
+    assert.match(notice.message.text, /delvis krediterad/);
+    assert.ok(notice.message.text.includes(`på ${kr(2_500)}`));
+    assert.ok(notice.message.text.includes(`Kvar att betala på faktura #${original.number}: ${kr(total - 2_500)}`));
+    assert.doesNotMatch(notice.message.text, /i sin helhet/);
   });
 });
 

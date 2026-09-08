@@ -4,6 +4,7 @@ import type { Asset, Expense, FiscalYear } from "../types";
 import { bokforingsdatum, clampToOpenDate, getFiscalYear } from "./fiscal";
 import { postVerification } from "./engine";
 import { logAudit } from "./audit";
+import { prisbasbeloppFor, yearOf } from "./prisbasbelopp";
 
 /**
  * Inventarier och avskrivningar.
@@ -14,8 +15,19 @@ import { logAudit } from "./audit";
  * beräknad per månad, bokförd som bokslutsverifikation per räkenskapsår.
  */
 
-/** Prisbasbelopp (2025: 58 800 kr). Gräns för direktavdrag: ett halvt prisbasbelopp. */
-export const PRISBASBELOPP = 58_800;
+/**
+ * Gränsen för direktavdrag av inventarier av mindre värde är ett halvt
+ * prisbasbelopp exkl. moms det år köpet görs – därför slås beloppet upp per år
+ * (tabellen bor i prisbasbelopp.ts, som även traktamentet räknas på).
+ */
+export { prisbasbeloppFor } from "./prisbasbelopp";
+
+/** Gräns för direktavdrag (halvt prisbasbelopp) det år köpet gjordes. */
+export function inventarieGransFor(date: string | Date = new Date()): number {
+  return Math.round(prisbasbeloppFor(yearOf(date)) / 2);
+}
+
+export const PRISBASBELOPP = prisbasbeloppFor(new Date().getFullYear());
 export const INVENTARIE_GRANS = Math.round(PRISBASBELOPP / 2);
 
 export const DEFAULT_USEFUL_LIFE_YEARS = 5;
@@ -27,9 +39,9 @@ const ASSET_LIKELY_CATEGORIES = new Set(["verktyg", "ovrigt", "programvara", "ma
  * Ser köpet ut som en inventarie? Ren heuristik för att STÄLLA FRÅGAN –
  * beslutet fattas alltid av användaren.
  */
-export function assetSuggestionForExpense(expense: Pick<Expense, "amount" | "vatAmount" | "category" | "supplier">): boolean {
+export function assetSuggestionForExpense(expense: Pick<Expense, "amount" | "vatAmount" | "category" | "supplier"> & { date?: string }): boolean {
   const net = expense.amount - expense.vatAmount;
-  if (net < INVENTARIE_GRANS) return false;
+  if (net < inventarieGransFor(expense.date ?? new Date())) return false;
   if (expense.category && !ASSET_LIKELY_CATEGORIES.has(expense.category)) return false;
   return true;
 }
@@ -66,10 +78,12 @@ export function registerAssetFromExpense(expenseId: string, opts: { name?: strin
   const clamped = clampToOpenDate(expense.date);
   const name = opts.name?.trim() || `${expense.supplier} – ${expense.description ?? "inventarie"}`;
 
+  // Privata utlägg blir skuld till ägaren (2893) i stället för uttag från kontot.
+  const paidPrivately = expense.paidBy === "privat";
   const entries = [
     { account: 1220, debit: net },
     ...(expense.vatAmount > 0 ? [{ account: 2641, debit: expense.vatAmount }] : []),
-    { account: 1930, credit: expense.amount },
+    { account: paidPrivately ? 2893 : 1930, credit: expense.amount },
   ];
   const ver = postVerification({
     date: clamped.date,
@@ -78,7 +92,7 @@ export function registerAssetFromExpense(expenseId: string, opts: { name?: strin
     source: { type: "utgift", id: expense.id },
     createdBy: opts.by,
     confidence: "hog",
-    explanation: `Köpet på ${expense.amount} kr hos ${expense.supplier} registrerades som inventarie eftersom det används i flera år. Kostnaden fördelas över nyttjandeperioden genom avskrivningar i stället för att tas direkt.${clamped.adjusted ? ` Bokfört ${clamped.date} eftersom perioden för ${clamped.originalDate} är låst.` : ""}`,
+    explanation: `Köpet på ${expense.amount} kr hos ${expense.supplier} registrerades som inventarie eftersom det används i flera år. Kostnaden fördelas över nyttjandeperioden genom avskrivningar i stället för att tas direkt.${paidPrivately ? " Du betalade privat, så bolaget har en skuld till dig (2893) tills pengarna förs över." : ""}${clamped.adjusted ? ` Bokfört ${clamped.date} eftersom perioden för ${clamped.originalDate} är låst.` : ""}`,
   });
 
   const asset: Asset = {

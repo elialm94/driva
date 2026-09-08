@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { generateVatReport, markVatReportDeclared, setVatPeriodicity } from "@/lib/accounting/vat";
+import { declareVatPeriod } from "@/lib/accounting/vat-flow";
+import { setBookkeepingMode, type BookkeepingMode } from "@/lib/accounting/bookkeeping-mode";
 import { isVatPeriodicity } from "@/lib/accounting/dates";
 import {
   bookFSkatt,
@@ -9,6 +11,8 @@ import {
   bookVatOnTaxAccount,
   parseTaxAccountStatement,
   reconcileTaxAccount,
+  setFSkattPerMonth,
+  setTaxAccountOcr,
   type TaxAccountReconciliation,
 } from "@/lib/accounting/tax-account";
 import {
@@ -43,10 +47,20 @@ import {
   type ScheduleDraft,
 } from "@/lib/accounting/year-end";
 import {
+  bookSuggestedBankTransactions,
   confirmCreditRefundMatch,
   confirmPaymentMatch,
+  confirmSupplierPaymentMatch,
   confirmTaxReductionPayoutMatch,
+  type BulkBookingResult,
 } from "@/lib/services/payment-matching";
+import {
+  bookBankTransactionAs,
+  forgetBankCounterpartRule,
+  RULE_AUTO_THRESHOLD,
+  type BookBankTransactionResult,
+} from "@/lib/services/bank-booking";
+import { isBankKindKey } from "@/lib/banking/bank-kinds";
 import { registerCreditRefund } from "@/lib/services/invoices";
 import { newAttachmentKey, postManualVerification } from "@/lib/services/manual-verification";
 import { storeVerificationAttachment } from "@/lib/receipts/verification-attachment";
@@ -106,6 +120,21 @@ export async function markVatDeclaredAction(reportId: string): Promise<Result> {
   return run(() => markVatReportDeclared(reportId, "anvandare"), "vat");
 }
 
+/** Momsflödets steg 2: rapporten skapas ur bokföringen och markeras som deklarerad i ett klick. */
+export async function declareVatPeriodAction(periodKey: string): Promise<Result> {
+  return run(() => void declareVatPeriod(periodKey, "anvandare"), "vat");
+}
+
+/** Momsflödets steg 3: användarens OCR-nummer för skattekontot (tomt tar bort det). */
+export async function setTaxAccountOcrAction(value: string): Promise<Result> {
+  return run(() => void setTaxAccountOcr(String(value ?? ""), "anvandare"), "write_accounting");
+}
+
+/** Enkelt döljer huvudbok och rapporter; avancerat visar allt. */
+export async function setBookkeepingModeAction(mode: BookkeepingMode): Promise<Result> {
+  return run(() => void setBookkeepingMode(mode), "write_accounting");
+}
+
 export async function setVatPeriodicityAction(periodicity: string): Promise<Result> {
   if (!isVatPeriodicity(periodicity)) return { ok: false, error: "Okänd momsperiod." };
   return run(() => setVatPeriodicity(periodicity, "anvandare"), "vat");
@@ -117,6 +146,10 @@ export async function bookVatOnTaxAccountAction(reportId: string): Promise<Resul
 
 export async function bookFSkattAction(month: string): Promise<Result> {
   return run(() => void bookFSkatt(month, "anvandare"), "write_accounting");
+}
+
+export async function setFSkattPerMonthAction(amount: number): Promise<Result> {
+  return run(() => void setFSkattPerMonth(Number(amount), "anvandare"), "write_accounting");
 }
 
 export async function bookTaxAccountDepositAction(txId: string): Promise<Result> {
@@ -306,6 +339,71 @@ export async function registerCreditRefundAction(invoiceId: string, txId?: strin
     if (txId) confirmCreditRefundMatch(txId, invoiceId);
     else registerCreditRefund(invoiceId, {});
   }, "match_payment");
+}
+
+/** Bekräfta en föreslagen leverantörsbetalning i banken. */
+export async function confirmSupplierPaymentMatchAction(txId: string, supplierPaymentId: string): Promise<Result> {
+  return run(() => confirmSupplierPaymentMatch(txId, supplierPaymentId), "match_payment");
+}
+
+/* --------------------- Bankinkorgen: typ, regler, alla ----------------------- */
+
+type BookBankKindResult = { ok: true; summary: string; learned?: "suggest" | "auto" } | { ok: false; error: string };
+
+/**
+ * Bokför/koppla en banktransaktion som en typ ur katalogen (bankavgift,
+ * skattekonto, redan bokförd lön …). `remember` sparar motpartsregeln så nästa
+ * transaktion från samma motpart föreslås – och från andra gången bokförs själv.
+ */
+export async function bookBankTransactionAsAction(
+  txId: string,
+  kind: string,
+  opts: { verificationId?: string; remember?: boolean } = {}
+): Promise<BookBankKindResult> {
+  if (!isBankKindKey(kind)) return { ok: false, error: "Okänd transaktionstyp." };
+  try {
+    let result: BookBankTransactionResult | undefined;
+    await withBusiness(() => {
+      result = bookBankTransactionAs(txId, {
+        kind,
+        verificationId: opts.verificationId,
+        remember: opts.remember,
+        by: "anvandare",
+      });
+      refresh();
+    }, { capability: "write_accounting" });
+    const rule = result?.rule;
+    return {
+      ok: true,
+      summary: result?.summary ?? "Bokfört.",
+      ...(rule ? { learned: rule.count >= RULE_AUTO_THRESHOLD || rule.kind === "redan_bokford" || rule.kind === "kortkop" ? "auto" : "suggest" } : {}),
+    };
+  } catch (e) {
+    refresh();
+    return { ok: false, error: e instanceof Error ? e.message : "Något gick fel." };
+  }
+}
+
+/** Glöm motpartsregeln – transaktioner från motparten föreslås inte längre automatiskt. */
+export async function forgetBankCounterpartRuleAction(counterpart: string): Promise<Result> {
+  return run(() => void forgetBankCounterpartRule(counterpart), "write_accounting");
+}
+
+type BulkResult = { ok: true; booked: number; failed: { counterpart: string; error: string }[] } | { ok: false; error: string };
+
+/** Bekräfta alla förslag i bankvyn på en gång (listan visades i bekräftelsen). */
+export async function bookSuggestedBankTransactionsAction(txIds?: string[]): Promise<BulkResult> {
+  try {
+    let result: BulkBookingResult = { booked: 0, failed: [] };
+    await withBusiness(() => {
+      result = bookSuggestedBankTransactions("anvandare", txIds);
+      refresh();
+    }, { capability: "write_accounting" });
+    return { ok: true, booked: result.booked, failed: result.failed.map((f) => ({ counterpart: f.counterpart, error: f.error })) };
+  } catch (e) {
+    refresh();
+    return { ok: false, error: e instanceof Error ? e.message : "Något gick fel." };
+  }
 }
 
 export async function planAccrualAction(input: {

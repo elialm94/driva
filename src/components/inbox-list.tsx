@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { AppLink } from "./app-link";
 import { useRouter } from "next/navigation";
 import { Inbox, Search } from "lucide-react";
-import { Avatar, Badge, Card, EmptyState, cx } from "./ui";
+import { Avatar, Badge, Card, EmptyState, buttonClasses, cx } from "./ui";
 import { Pagination } from "./customer-list";
 import { datumKort, relativ } from "@/lib/format";
 import type { InboxListFilter, InboxListRow, PagedResult } from "@/lib/services/inbox";
@@ -98,8 +98,27 @@ export function InboxList({
             query.q
               ? "Prova leverantör, fakturanummer, belopp eller OCR."
               : query.filter === "oppna"
-                ? "Leverantörsfakturor och kvitton som behöver kompletteras eller godkännas landar här."
-                : "När någon skickar eller vidarebefordrar fakturor och kvitton till er inkommande adress syns det här."
+                ? "Allt som kommit in är hanterat. Leverantörsfakturor och kvitton som behöver kompletteras eller godkännas landar här."
+                : "När någon skickar eller vidarebefordrar fakturor och kvitton till er inkommande adress syns det här. Du kan också släppa filer i rutan ovan."
+          }
+          action={
+            query.q ? (
+              <button
+                type="button"
+                className={buttonClasses("secondary", "sm")}
+                onClick={() => {
+                  setQ("");
+                  go({ q: "", page: 1 });
+                }}
+                data-clear-filters
+              >
+                Rensa sökningen
+              </button>
+            ) : query.filter === "oppna" ? (
+              <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => go({ filter: "alla", page: 1 })}>
+                Visa allt som kommit in
+              </button>
+            ) : undefined
           }
         />
       ) : (

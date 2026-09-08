@@ -1,6 +1,6 @@
 # Driva
 
-**AI-native business-in-a-box för svenska småföretag.** Du gör jobbet – Driva sköter administrationen: offerter med BankID-godkännande, jobb, fakturor, betalningsmatchning, kvitton och automatisk bokföring.
+**AI-native business-in-a-box för svenska småföretag.** Du gör jobbet – Driva sköter administrationen: offerter som kunden godkänner med ett klick, jobb, fakturor, betalningsmatchning, kvitton och automatisk bokföring.
 
 ## Kom igång
 
@@ -53,10 +53,10 @@ npm run test:assistant
 
 ## Kärnflödet
 
-**Kund → Uppdrag → Offert → BankID-godkännande → Faktura → Betalning → Bokföring**
+**Kund → Uppdrag → Offert → Kundens godkännande → Faktura → Betalning → Bokföring**
 
 - Offert- och fakturautkast visas som dokumentet på detaljsidan. Skicka bekräftas i en liten dialog – ingen extra förhandsgranskning.
-- Kundens offertsida (`/offert/[token]`) är mobil-först med **Godkänn med BankID** som primär handling.
+- Kundens offertsida (`/offert/[token]`) är mobil-först: kunden skriver sitt namn och trycker **Godkänn offert** (ingen BankID, ingen inloggning). Godkännandet sparas som signaturbevis (`simple_accept`) med tidpunkt och versionshash.
 - Vid godkännande låses offertversionen, en SHA-256-hash av innehållet sparas med signaturen, och jobbet skapas automatiskt. Signeringsunderlaget kan öppnas och verifieras i efterhand.
 - Betalningar matchas mot fakturor (OCR/belopp) och bokförs automatiskt enligt BAS-kontoplanen.
 - Bokföringen är confidence-styrd: hög säkerhet bokförs direkt, låg säkerhet blir en enkel fråga ("Vad gällde köpet på Grand Hôtel?").
@@ -65,9 +65,9 @@ npm run test:assistant
 
 | Del | Var | Anteckning |
 | --- | --- | --- |
-| Domänmodell | `src/lib/types.ts` | Customer, Request, Quote, QuoteVersion, BankIDSignature, Job, Invoice, Payment, Expense, Receipt, SupplierInvoice, Verification … |
+| Domänmodell | `src/lib/types.ts` | Customer, Request, Quote, QuoteVersion, QuoteAcceptance, Job, Invoice, Payment, Expense, Receipt, SupplierInvoice, Verification … |
 | Tjänstelager | `src/lib/services/` | All affärslogik; UI:t och AI-assistenten anropar samma funktioner |
-| BankID | `src/lib/services/bankid.ts` | `BankIDProvider`-interface; demon kör `MockBankIDProvider` (tydligt markerat i UI). Mocken är servergrindad: den signerar bara i demoläge/för demoföretaget – riktiga företag i produktion får ett ärligt "inte aktiverat" tills en riktig RP-API-integration kopplas in här |
+| BankID | `src/lib/services/bankid.ts` | `BankIDProvider`-interface – används **inte** för offertgodkännande (kunden godkänner med namn + knapp). Finns kvar för signering av inlämningar till myndigheter: demon kör `MockBankIDProvider` (tydligt markerat i UI), servergrindad så att den bara signerar i demoläge – riktiga företag får ett ärligt "inte aktiverat" med nedladdning för hand tills en riktig RP-API-integration kopplas in |
 | Open Banking | `src/lib/services/banking.ts` | `BankProvider`-abstraktion förberedd för t.ex. Tink; matchningsmotorn är riktig |
 | Bokföring | `src/lib/bas.ts` | BAS-konton, momssatser, konteringsregler, verifikationer |
 | AI-assistent | `src/lib/services/assistant.ts`, `src/lib/ai/` | LLM med tool calling mot samma tjänster som UI:t; regelbaserad fallback utan `AI_API_KEY` |
@@ -157,7 +157,7 @@ Så fungerar den:
 * **Request-skopad specialväg i Supabase-läget.** En demorequest kör `db()`/`save()` mot sessionens fil via samma tenantkontext som Supabase-vägen använder; riktiga inloggade användare fortsätter mot Supabase som vanligt, och en riktig inloggning vinner alltid över en kvarglömd demokaka. Demon skapar, läser eller raderar **aldrig** Supabase-rader.
 * **Reload inom livslängden → samma fil.** Annan webbläsare/incognito → egen färsk klon. **Inställningar → Återställ demo** skriver över filen med färskt seed. **Avsluta demo** och **Skapa ditt eget konto** i menyn slänger filen och rensar kakorna; ett diskret **Demo**-märke visas vid företagsnamnet.
 * **Städning utan cron:** demosessionen lever `DEMO_SESSION_HOURS` (standard 24 h). Utgångna filer tas bort med enkel katalogstädning som körs opportunistiskt när nya sessioner klonas – ingen SQL, inga riktiga tabeller.
-* **Inga externa sidoeffekter:** demons mejl går aldrig till riktiga mottagare – centralvakten i `sendMail` simulerar utskicket (UI:t visar "Demo: mejlet simulerades och skickades inte externt") eller skickar till `DEMO_EMAIL_SINK` med `[Demo]`-prefix om den är satt. BankID är mocken, bankflöden är simulerade, Places-förslag är lokala exempeldata, och AI:n kör alltid den snabba modellen med dygnstak + per-sessionsfönster (ärligt gränsbesked, resten av demon fungerar vidare).
+* **Inga externa sidoeffekter:** demons mejl går aldrig till riktiga mottagare – centralvakten i `sendMail` simulerar utskicket (UI:t visar "Demo: mejlet simulerades och skickades inte externt") eller skickar till `DEMO_EMAIL_SINK` med `[Demo]`-prefix om den är satt. BankID-signering av inlämningar är mocken, bankflöden är simulerade, Places-förslag är lokala exempeldata, och AI:n kör alltid den snabba modellen med dygnstak + per-sessionsfönster (ärligt gränsbesked, resten av demon fungerar vidare).
 * **Rate limits:** demostarter stryps per IP och instans, skrivningar per session (60/min) och återställningen per instans. Fönstren är i minnet per serverless-instans (bäst ansträngning); i botten gäller katalogstädningen.
 
 Ingen seedning eller extra miljö krävs – demon fungerar direkt efter deploy. Valfria variabler (endast servermiljö):
@@ -177,7 +177,7 @@ npm run migrate:local-to-supabase -- --user-email du@x.se        # förhandsvisn
 npm run migrate:local-to-supabase -- --user-email du@x.se --yes  # utför
 ```
 
-Läser `.data/db.json` (eller `--file <sökväg>`), skapar företaget och spelar upp hela historiken genom appens commit-väg: entitets-id:n bevaras exakt (offert-/fakturalänkar överlever), fakturanummer/verifikationsnummer replayas genom databasens sekvensvakter, och till sist valideras antal per samling plus att offertversioner **hashar identiskt** (BankID-signaturer förblir verifierbara) och att utfärdade fakturasnapshots är värde-exakta. Avbryter hellre än halvimporterar.
+Läser `.data/db.json` (eller `--file <sökväg>`), skapar företaget och spelar upp hela historiken genom appens commit-väg: entitets-id:n bevaras exakt (offert-/fakturalänkar överlever), fakturanummer/verifikationsnummer replayas genom databasens sekvensvakter, och till sist valideras antal per samling plus att offertversioner **hashar identiskt** (godkännandebevisen förblir verifierbara) och att utfärdade fakturasnapshots är värde-exakta. Avbryter hellre än halvimporterar.
 
 ### Säkerhetsmodellen i korthet
 

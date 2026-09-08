@@ -2,11 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CircleAlert, FileUp, Upload } from "lucide-react";
+import { CircleAlert, Upload } from "lucide-react";
 import { importSieOpeningBalancesAction, previewSieImportAction } from "@/app/sie-import-actions";
 import type { SieImportPreview } from "@/lib/accounting/sie";
 import type { SieImportResult } from "@/lib/accounting/sie-import";
 import { kr } from "@/lib/format";
+import { FileDropzone } from "./file-dropzone";
 import { Badge, buttonClasses, cx } from "./ui";
 
 /**
@@ -123,24 +124,18 @@ export function SieImportPanel({ fiscalYearId, fiscalYearLabel, businessId }: Si
 
   return (
     <div>
-      <label className={cx(buttonClasses("secondary", "sm"), "cursor-pointer")}>
-        <FileUp className="size-3.5" />
-        {isPending && !preview ? "Läser filen …" : preview ? "Välj en annan fil" : "Välj SIE-fil"}
-        <input
-          type="file"
-          accept=".se,.si,.sie,.SE,.SI,.SIE,text/plain"
-          className="hidden"
-          disabled={isPending}
-          onChange={(e) => choose(e.target.files?.[0] ?? null)}
-        />
-      </label>
-
-      {error ? (
-        <p className="mt-2.5 flex items-start gap-1.5 text-[13px] text-danger">
-          <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-          {error}
-        </p>
-      ) : null}
+      <FileDropzone
+        variant="inline"
+        accept=".se,.si,.sie,.SE,.SI,.SIE,text/plain"
+        busy={isPending && !preview}
+        error={error}
+        title={preview ? "Släpp en annan SIE-fil här" : "Släpp SIE-filen här"}
+        subtitle="Eller tryck för att välja från enheten. Du ser konton och belopp innan något sparas."
+        formats="SIE 4 · .se, .si, .sie · max 8 MB"
+        fileName={file?.name}
+        maxBytes={MAX_BYTES}
+        onFiles={(files) => choose(files[0] ?? null)}
+      />
 
       {preview ? (
         <div className="mt-4 rounded-2xl bg-canvas/70 px-5 py-4">

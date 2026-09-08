@@ -3,36 +3,64 @@
 import Link from "next/link";
 import { useLinkStatus } from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import {
   BOKFORING_DETAIL_TABS,
   BOKFORING_PREFETCH_HREFS,
   BOKFORING_REPORT_TABS,
   bokforingDetailTabForPath,
 } from "@/lib/nav";
+import { simpleBookkeepingKeys, type BookkeepingMode } from "@/lib/accounting/bookkeeping-mode-keys";
+import { setBookkeepingModeAction } from "@/app/bokforing-actions";
 import { cx } from "./ui";
 
 /**
- * Flikrad i den delade bokföringslayouten. prefetch={true} hämtar hela
- * dynamiska RSC-sidan (inte bara loading-skalet). Klick markerar fliken
- * direkt; innehållet byts när nästa vy är klar.
+ * Flikrad i den delade bokföringslayouten. I enkelt läge syns bara det
+ * hantverkaren behöver (översikt, moms, skattekonto – lön och bokslut när
+ * de är aktuella). Avancerat visar allt. prefetch={true} hämtar hela
+ * dynamiska RSC-sidan. Klick markerar fliken direkt; innehållet byts när
+ * nästa vy är klar.
  */
-export function BokforingAdvancedTabs() {
+export function BokforingAdvancedTabs({
+  mode,
+  hasPayroll,
+  showYearEnd,
+}: {
+  mode: BookkeepingMode;
+  hasPayroll: boolean;
+  showYearEnd: boolean;
+}) {
   const pathname = usePathname();
   const active = bokforingDetailTabForPath(pathname);
-  const reportsOpen = active === "rapporter";
+  const reportsOpen = active === "rapporter" && mode === "avancerat";
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
   useEffect(() => {
     setPendingKey(null);
   }, [pathname]);
 
+  const simpleKeys = simpleBookkeepingKeys({ hasPayroll, showYearEnd });
+  const tabs =
+    mode === "avancerat"
+      ? BOKFORING_DETAIL_TABS
+      : BOKFORING_DETAIL_TABS.filter((t) => simpleKeys.includes(t.key) || t.key === active);
+
   const selected = pendingKey ?? active;
+
+  function toggleMode() {
+    const next = mode === "enkelt" ? "avancerat" : "enkelt";
+    startTransition(async () => {
+      await setBookkeepingModeAction(next);
+      router.refresh();
+    });
+  }
 
   return (
     <div className="mb-6 print:hidden">
       <div className="flex gap-1 overflow-x-auto rounded-2xl bg-ink/4 p-1">
-        {BOKFORING_DETAIL_TABS.map((t) => (
+        {tabs.map((t) => (
           <Link
             key={t.key}
             href={t.href as never}
@@ -67,6 +95,17 @@ export function BokforingAdvancedTabs() {
           ))}
         </div>
       ) : null}
+      <div className="mt-2 flex justify-end">
+        <button
+          type="button"
+          onClick={toggleMode}
+          disabled={isPending}
+          data-bokforing-mode={mode}
+          className="text-[12.5px] font-medium text-muted hover:text-ink"
+        >
+          {mode === "enkelt" ? "Visa avancerat" : "Visa enkelt"}
+        </button>
+      </div>
       <BokforingRoutePrefetch />
     </div>
   );

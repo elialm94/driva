@@ -10,8 +10,11 @@ import {
   applyLineRedo,
   applyLineUndo,
   createFollowUpLine,
+  createHeadingLine,
+  duplicateDocLine,
   followUpLineKind,
   insertLineAfter,
+  moveLine,
   isEditableTextTarget,
   isInsideLineEditor,
   lineFieldId,
@@ -39,17 +42,18 @@ function line(over: Partial<DocLine> & { id: string }): DocLine {
 }
 
 describe("Enter-flow: nästa fält åt höger", () => {
-  it("går Typ → Beskrivning → Antal → Enhet → À-pris → Moms → ny rad", () => {
+  it("går Typ → Beskrivning → Antal → Enhet → À-pris → Rabatt → Moms → ny rad", () => {
     assert.deepEqual(nextLineField("typ"), { kind: "field", field: "beskrivning" });
     assert.deepEqual(nextLineField("beskrivning"), { kind: "field", field: "antal" });
     assert.deepEqual(nextLineField("antal"), { kind: "field", field: "enhet" });
     assert.deepEqual(nextLineField("enhet"), { kind: "field", field: "pris" });
-    assert.deepEqual(nextLineField("pris"), { kind: "field", field: "moms" });
+    assert.deepEqual(nextLineField("pris"), { kind: "field", field: "rabatt" });
+    assert.deepEqual(nextLineField("rabatt"), { kind: "field", field: "moms" });
     assert.deepEqual(nextLineField("moms"), { kind: "new-row" });
   });
 
   it("papperskorgen ingår inte i fältordningen", () => {
-    assert.deepEqual([...LINE_EDITOR_FIELDS], ["typ", "beskrivning", "antal", "enhet", "pris", "moms"]);
+    assert.deepEqual([...LINE_EDITOR_FIELDS], ["typ", "beskrivning", "antal", "enhet", "pris", "rabatt", "moms"]);
   });
 
   it("fält-id:n matchar DOM-id:n i editorn", () => {
@@ -140,6 +144,23 @@ describe("Enter på Moms: ny rad med samma typ, canonical defaults", () => {
     const hourly = 650;
     assert.equal(explicitZero ?? hourly, 0);
     assert.equal(explicitZero || hourly, 650);
+  });
+});
+
+describe("rubrik, kopiera och flytta", () => {
+  it("kopierar raden med nytt id", () => {
+    const src = line({ id: "a", description: "Luckor", unitPrice: 800 });
+    const copy = duplicateDocLine(src);
+    assert.notEqual(copy.id, src.id);
+    assert.equal(copy.description, "Luckor");
+    const heading = createHeadingLine("Arbete");
+    assert.equal(heading.isHeading, true);
+    assert.equal(heading.description, "Arbete");
+    const moved = moveLine([src, line({ id: "b", description: "B" })], "a", 1);
+    assert.deepEqual(
+      moved.map((l) => l.id),
+      ["b", "a"]
+    );
   });
 });
 

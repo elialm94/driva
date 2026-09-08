@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/ui";
 import { InboxList } from "@/components/inbox-list";
 import { InboxAddressCard } from "@/components/inbox-address";
-import { InboxUploadButton } from "@/components/inbox-upload";
+import { InboxUploadZone } from "@/components/inbox-upload";
 import { inboundAddressForBusiness, listInbox } from "@/lib/services/inbox";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
@@ -23,8 +23,10 @@ export default async function InboxPage(props: {
       <PageHeader
         title="Inbox"
         subtitle="Leverantörsfakturor, kvitton och andra ekonomiska dokument samlas här."
-        actions={<InboxUploadButton />}
       />
+      <div className="mb-5">
+        <InboxUploadZone />
+      </div>
       <InboxAddressCard address={address} />
       <InboxList
         result={listInbox({

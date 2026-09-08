@@ -2,7 +2,7 @@ import { db, save } from "../store";
 import { chartAccount, ensureAccount } from "./chart";
 import { logAudit } from "./audit";
 import { nextDay } from "./dates";
-import { getFiscalYear } from "./fiscal";
+import { getFiscalYear, taxYearOf } from "./fiscal";
 import type { SieImportPreview } from "./sie";
 
 /**
@@ -288,7 +288,7 @@ export function importSieOpeningBalances(
   }
   if (fy.openingSource === "foregaende_ar") {
     throw new SieImportError(
-      `${fy.label} har redan ingående balanser från bokslutet för ${Number(fy.label) - 1}. De är beräknade ur en stängd bokföring och ska inte skrivas över av en fil.`
+      `${fy.label} har redan ingående balanser från bokslutet för ${taxYearOf(fy) - 1}. De är beräknade ur en stängd bokföring och ska inte skrivas över av en fil.`
     );
   }
   const booked = db().verifications.filter((v) => v.fiscalYearId === fy.id);

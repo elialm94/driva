@@ -29,6 +29,7 @@ import { detectPriceFile, PriceFileError, type DetectedPriceFile } from "./file-
 import { TableLimitError, cell, neutralizeFormula, type RawTable } from "./table";
 import { columnIndexFor, detectColumnMapping, mappingProblems, type DetectedMapping } from "./column-mapping";
 import { netFromDiscountOre, parseDecimal, parseOre, parsePercent } from "./money";
+import { sanitizeImageUrl } from "./product-image";
 import { ZipError } from "./zip";
 
 export const MAX_IMPORT_ERRORS = 50;
@@ -208,6 +209,8 @@ export function buildProducts(
     rskNumber: columnIndexFor(table, mapping.rskNumber),
     gtin: columnIndexFor(table, mapping.gtin),
     category: columnIndexFor(table, mapping.category),
+    brand: columnIndexFor(table, mapping.brand),
+    imageUrl: columnIndexFor(table, mapping.imageUrl),
     discountGroup: columnIndexFor(table, mapping.discountGroup),
     unit: columnIndexFor(table, mapping.unit),
     packSize: columnIndexFor(table, mapping.packSize),
@@ -311,10 +314,16 @@ export function buildProducts(
     const rskNumber = optionalText(row, idx.rskNumber, 32);
     const gtin = optionalText(row, idx.gtin, 32);
     const category = optionalText(row, idx.category, 80);
+    const brand = optionalText(row, idx.brand, 60);
+    // Bildlänken går aldrig genom neutralizeFormula-trunkeringen på 120 –
+    // den saneras separat (bara http/https, max 500 tecken).
+    const imageUrl = idx.imageUrl >= 0 ? sanitizeImageUrl(cell(row, idx.imageUrl)) : undefined;
     if (eNumber) product.eNumber = eNumber;
     if (rskNumber) product.rskNumber = rskNumber;
     if (gtin) product.gtin = gtin;
     if (category) product.category = category;
+    if (brand) product.brand = brand;
+    if (imageUrl) product.imageUrl = imageUrl;
     if (discountGroup) product.discountGroup = discountGroup;
     if (packSize != null) product.packSize = packSize;
     if (listPriceOre != null) product.listPriceOre = listPriceOre;

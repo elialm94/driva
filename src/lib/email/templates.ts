@@ -1,5 +1,6 @@
 import { datumLang, kr } from "../format";
 import { documentFromCompanySubject, reminderFromCompanySubject } from "./rubrik";
+import { paymentBlockHtml, paymentBlockText } from "../invoices/payment-copy";
 
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
@@ -31,6 +32,8 @@ export interface QuoteEmailInput {
   validUntil: string;
   url: string;
   footer: string;
+  /** Personligt meddelande från företagaren, valfritt. */
+  message?: string;
 }
 
 /** Hur kunden svarar – samma formulering i mejl och på offertlänken. */
@@ -39,21 +42,26 @@ const QUOTE_ACCEPT_HINT = "Du läser och godkänner offerten direkt via länken.
 export function quoteEmail(input: QuoteEmailInput): { subject: string; text: string; html: string } {
   const subject = documentFromCompanySubject("Offert", input.businessName, input.title);
   const valid = datumLang(input.validUntil);
+  const personal = input.message?.trim();
   const text = [
     `Hej ${input.customerName},`,
     "",
-    `Här är offert #${input.quoteNumber} från ${input.businessName} för ${input.title} på ${kr(input.amount)}.`,
+    personal || `Här är offert #${input.quoteNumber} från ${input.businessName} för ${input.title} på ${kr(input.amount)}.`,
+    personal ? `Offert #${input.quoteNumber} för ${input.title} på ${kr(input.amount)}.` : undefined,
     `Giltig till ${valid}.`,
     QUOTE_ACCEPT_HINT,
     "",
     "Visa offert:",
     input.url,
-  ].join("\n");
+  ]
+    .filter((line) => line !== undefined)
+    .join("\n");
   const html = emailLayout({
     title: input.businessName,
     footer: input.footer,
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:16px;">Hej ${escapeHtml(input.customerName)},</p>
+      ${personal ? `<p style="margin:0 0 12px;font-size:15px;line-height:1.55;white-space:pre-wrap;">${escapeHtml(personal)}</p>` : ""}
       <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">Här är offert <strong>#${input.quoteNumber}</strong> för ${escapeHtml(input.title)} på <strong>${escapeHtml(kr(input.amount))}</strong>.</p>
       <p style="margin:0;font-size:15px;color:#6b665c;">Giltig till ${escapeHtml(valid)}. ${escapeHtml(QUOTE_ACCEPT_HINT)}</p>
       ${emailCta(input.url, "Visa offert")}
@@ -161,16 +169,31 @@ export interface InvoiceEmailInput {
   ocr?: string;
   bankgiro?: string;
   plusgiro?: string;
+  bankAccount?: string;
+  iban?: string;
+  bic?: string;
   url: string;
   footer: string;
+  message?: string;
 }
 
-function paymentLines(input: Pick<InvoiceEmailInput, "ocr" | "bankgiro" | "plusgiro">): string[] {
-  const lines: string[] = [];
-  if (input.ocr?.trim()) lines.push(`OCR: ${input.ocr.trim()}`);
-  if (input.bankgiro?.trim()) lines.push(`Bankgiro: ${input.bankgiro.trim()}`);
-  if (input.plusgiro?.trim()) lines.push(`PlusGiro: ${input.plusgiro.trim()}`);
-  return lines;
+function paymentSeller(input: InvoiceEmailInput) {
+  return {
+    bankgiro: input.bankgiro ?? "",
+    plusgiro: input.plusgiro,
+    bankAccount: input.bankAccount,
+    iban: input.iban,
+    bic: input.bic,
+  };
+}
+
+function paymentLines(input: InvoiceEmailInput): string[] {
+  return paymentBlockText({
+    seller: paymentSeller(input),
+    ocr: input.ocr,
+    dueDate: input.dueDate,
+    amount: input.amount,
+  }).split("\n");
 }
 
 export function invoiceEmail(input: InvoiceEmailInput): { subject: string; text: string; html: string } {
@@ -193,7 +216,8 @@ export function invoiceEmail(input: InvoiceEmailInput): { subject: string; text:
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:16px;">Hej ${escapeHtml(input.customerName)},</p>
       <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">Här kommer faktura <strong>#${input.invoiceNumber}</strong> på <strong>${escapeHtml(kr(input.amount))}</strong>.</p>
-      <p style="margin:0;font-size:15px;color:#6b665c;">Förfallodatum: ${escapeHtml(due)}${pay.length ? `. ${escapeHtml(pay.join(" · "))}` : "."}</p>
+      <p style="margin:0;font-size:15px;color:#6b665c;">Förfallodatum: ${escapeHtml(due)}.</p>
+      ${paymentBlockHtml({ seller: paymentSeller(input), ocr: input.ocr, dueDate: input.dueDate, amount: input.amount })}
       ${emailCta(input.url, "Visa faktura")}
     `,
   });
@@ -219,7 +243,7 @@ export function invoiceReminderEmail(input: InvoiceReminderEmailInput): { subjec
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:16px;">Hej ${escapeHtml(input.customerName)},</p>
       <p style="margin:0;font-size:15px;line-height:1.55;">${escapeHtml(lead)}</p>
-      ${pay.length ? `<p style="margin:12px 0 0;font-size:15px;color:#6b665c;">${escapeHtml(pay.join(" · "))}</p>` : ""}
+      ${paymentBlockHtml({ seller: paymentSeller(input), ocr: input.ocr, dueDate: input.dueDate, amount: input.outstanding })}
       ${emailCta(input.url, "Visa faktura")}
     `,
   });
@@ -235,13 +259,24 @@ export interface CreditInvoiceEmailInput {
   creditNumber: number;
   /** Publik kreditfaktura `/faktura/[token]` – utelämnas om länken saknas. */
   url?: string;
+  /**
+   * Delkredit: krediterat belopp och vad som är kvar att betala på originalet.
+   * Utelämnad = hel kredit (kunden ska inte betala originalet alls).
+   */
+  partial?: { amount: number; remaining: number };
   footer: string;
 }
 
 /** Till fakturakunden efter hel kredit – inte till snickaren. */
 export function creditInvoiceEmail(input: CreditInvoiceEmailInput): { subject: string; text: string; html: string } {
   const subject = `Kreditfaktura från ${input.businessName} – ${input.title}`;
-  const lead = `Faktura #${input.originalNumber} är krediterad i sin helhet med kreditfaktura #${input.creditNumber}. Du ska inte betala faktura #${input.originalNumber}.`;
+  const lead = input.partial
+    ? `Faktura #${input.originalNumber} är delvis krediterad med kreditfaktura #${input.creditNumber} på ${kr(input.partial.amount)}. ${
+        input.partial.remaining > 0
+          ? `Kvar att betala på faktura #${input.originalNumber}: ${kr(input.partial.remaining)}.`
+          : `Faktura #${input.originalNumber} är därmed slutreglerad – inget mer att betala.`
+      }`
+    : `Faktura #${input.originalNumber} är krediterad i sin helhet med kreditfaktura #${input.creditNumber}. Du ska inte betala faktura #${input.originalNumber}.`;
   const text = [
     `Hej ${input.customerName},`,
     "",

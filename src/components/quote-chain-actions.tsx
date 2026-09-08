@@ -2,13 +2,13 @@
 
 import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { FileLock2, Hammer, Pencil, Plus } from "lucide-react";
+import { Copy, FileLock2, Hammer, Pencil, Plus } from "lucide-react";
 import { buttonClasses } from "./ui";
 import { actionMenuItemClassName, ActionMenu, ActionMenuLink, PageActions, useActionMenu } from "./action-menu";
 import { QuotePdfMenuItem } from "./quote-pdf-menu-item";
-import { CopyLinkButton } from "./copy-button";
+import { ShareCustomerLink } from "./share-customer-link";
 import { WithdrawQuoteDialog, WithdrawQuoteMenuItem } from "./withdraw-quote-button";
-import { createInvoiceFromQuoteAction, startJobFromQuoteAction } from "@/app/actions";
+import { createInvoiceFromQuoteAction, duplicateQuoteAction, startJobFromQuoteAction } from "@/app/actions";
 import { invoiceEditHref, jobHref } from "@/lib/nav";
 import type { ChainCta, QuoteChainState } from "@/lib/business-chain-model";
 
@@ -129,6 +129,7 @@ export function QuoteOwnerPageActions({
   followUp?: ReactNode;
 }) {
   const { run, isPending } = useQuoteChainRun(returnTo, returnLabel);
+  const [copyPending, startCopy] = useTransition();
   const [withdrawOpen, setWithdrawOpen] = useState(false);
 
   const startJob: ChainCta = { kind: "starta_uppdrag", label: "Starta uppdrag", quoteId };
@@ -163,7 +164,20 @@ export function QuoteOwnerPageActions({
         </button>
       ) : null}
       <ActionMenu>
-        <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
+        <button
+          type="button"
+          role="menuitem"
+          className={actionMenuItemClassName()}
+          disabled={isPending || copyPending}
+          onClick={() => {
+            startCopy(() => {
+              void duplicateQuoteAction(quoteId, { returnTo, returnLabel });
+            });
+          }}
+        >
+          <Copy className="size-3.5 shrink-0" /> Kopiera offert
+        </button>
+        <ShareCustomerLink path={publicPath} kind="offert" appearance="menu" />
         <QuotePdfMenuItem href={`${publicPath}/pdf`} />
         {showVersion ? (
           <ActionMenuLink href={editHref}>

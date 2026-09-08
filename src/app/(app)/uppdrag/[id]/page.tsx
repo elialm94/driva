@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MapPin, FileText, ReceiptText, BadgeCheck } from "lucide-react";
+import { MapPin, FileText, ReceiptText, BadgeCheck, Inbox, Mail, Phone } from "lucide-react";
 import { getJob, getInvoice, currentVersion, effectiveQuoteStatus, quoteStatusLabel, requireCustomer, invoiceTotals } from "@/lib/services/data";
 import { acceptedByLabel } from "@/lib/status-labels";
 import { jobAdminState } from "@/lib/services/job-admin";
-import { parseJobNotes } from "@/lib/services/jobs";
+import { isIncomingUnquotedJob, jobSourceLabel, parseJobNotes } from "@/lib/services/jobs";
 import {
   actualEntries,
   jobInvoiceChoice,
@@ -13,7 +13,7 @@ import {
   workEntryInvoiceStatus,
 } from "@/lib/services/job-work";
 import { kr, datumTid } from "@/lib/format";
-import { Avatar, Breadcrumbs, SectionTitle } from "@/components/ui";
+import { Avatar, Breadcrumbs, Card, SectionTitle, buttonClasses } from "@/components/ui";
 import { InvoiceStatusBadge, JobStatusBadge, QuoteStatusBadge } from "@/components/status";
 import { JobActions } from "@/components/job-controls";
 import { JobNotes } from "@/components/job-notes";
@@ -21,7 +21,11 @@ import { JobWorkSection, type JobWorkViewEntry } from "@/components/job-work";
 import { PurchaseOrdersSection } from "@/components/purchase-orders-section";
 import { jobPurchaseOrderRows, jobWholesalerContext } from "@/lib/services/job-wholesalers";
 import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
+import { JobPhotosSection } from "@/components/job-photos";
+import { RotDeadlineBanner } from "@/components/rot-deadline-banner";
 import { taxReductionCaseForJob } from "@/lib/services/tax-reduction";
+import { rotDeadlineStatus } from "@/lib/tax-reduction-deadline";
+import { todayDate } from "@/lib/accounting/dates";
 import { husExportPreview } from "@/lib/services/hus-export";
 import { getInvoiceDefaults } from "@/lib/services/settings";
 import { AppLink } from "@/components/app-link";
@@ -81,6 +85,13 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
   // Grossistbeställningar: avstängd funktion = materialytan ser ut som idag.
   const wholesalers = jobWholesalerContext(job.id);
   const purchaseOrderRows = jobPurchaseOrderRows(job.id);
+  const incoming = isIncomingUnquotedJob(job);
+  const sourceLabel = jobSourceLabel(job.source);
+  const message = job.originalMessage?.trim() || "";
+  // Beskrivningen visas bara när den säger något mer än rubriken/meddelandet.
+  const description = job.description.trim();
+  const showDescription = description.length > 0 && description !== message && description !== job.title;
+  const newQuote = newQuoteHref({ kund: customer.id, job: job.id, from: fromHere });
 
   return (
     <div className="animate-fade-up">
@@ -113,6 +124,57 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         </div>
         {admin.nextStep ? <p className="mt-2 text-[14px] text-soft">{admin.nextStep}</p> : null}
       </div>
+
+      {message ? (
+        <Card
+          className={
+            incoming ? "mb-8 border-accent/30 bg-accent-soft/20 px-6 py-5" : "mb-8 px-6 py-5"
+          }
+          data-testid="job-incoming-message"
+        >
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <div className="flex items-center gap-2">
+              <Inbox className="size-4 text-accent" />
+              <h2 className="text-[15px] font-semibold">{incoming ? "Ny förfrågan från kunden" : "Kundens förfrågan"}</h2>
+            </div>
+            <p className="text-[13px] text-muted">
+              {[sourceLabel, datumTid(job.createdAt)].filter(Boolean).join(" · ")}
+            </p>
+          </div>
+          <blockquote className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-ink">{message}</blockquote>
+          {customer.email || customer.phone ? (
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-[13px]">
+              {customer.phone ? (
+                <a href={`tel:${customer.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 text-soft hover:text-ink">
+                  <Phone className="size-3.5 text-muted" /> {customer.phone}
+                </a>
+              ) : null}
+              {customer.email ? (
+                <a href={`mailto:${customer.email}`} className="inline-flex items-center gap-1.5 text-soft hover:text-ink">
+                  <Mail className="size-3.5 text-muted" /> {customer.email}
+                </a>
+              ) : null}
+            </div>
+          ) : null}
+          {incoming ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link href={newQuote as never} className={buttonClasses("primary", "sm")}>
+                <FileText className="size-3.5" /> Skapa offert
+              </Link>
+              <p className="self-center text-[12px] text-muted">
+                Meddelandet följer med som beskrivning i offerten.
+              </p>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {showDescription ? (
+        <div className="mb-8">
+          <SectionTitle>Beskrivning</SectionTitle>
+          <p className="whitespace-pre-line text-[15px] leading-relaxed text-soft">{description}</p>
+        </div>
+      ) : null}
 
       <div className="mb-8">
         <JobActions
@@ -163,6 +225,18 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
               <dt className="text-muted">Betalt</dt>
               <dd className="font-medium text-ink">{kr(money.paid)}</dd>
             </div>
+            {money.cost > 0 ? (
+              <>
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-muted">Inköp</dt>
+                  <dd className="font-medium text-ink">{kr(money.cost)}</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-muted">Täckning</dt>
+                  <dd className={money.profit >= 0 ? "font-medium text-ok" : "font-medium text-danger"}>{kr(money.profit)}</dd>
+                </div>
+              </>
+            ) : null}
             {quote?.status === "godkand" || money.registeredUninvoiced > 0 ? (
               <div className="col-span-2 flex items-baseline justify-between gap-3 border-t border-line/60 pt-1.5">
                 <dt className="text-muted">Kvar att fakturera</dt>
@@ -216,6 +290,16 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         </div>
       ) : null}
 
+      {(() => {
+        const deadline = rotDeadlineStatus({
+          today: todayDate(),
+          workEndDate: job.endDate ?? job.completedAt,
+          paidAt: invoices.find((i) => i.rot && i.paidAt)?.paidAt,
+          applied: Boolean(job.taxReductionApplication && job.taxReductionApplication.status !== "preliminar" && job.taxReductionApplication.status !== "redo_att_ansokas"),
+        });
+        return deadline && job.taxReductionApplication ? <RotDeadlineBanner status={deadline} /> : null;
+      })()}
+
       <JobWorkSection
         jobId={job.id}
         jobTitle={job.title}
@@ -228,6 +312,8 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         invoiceChoice={invoiceChoice}
         wholesalers={wholesalers.enabled ? wholesalers : undefined}
       />
+
+      <JobPhotosSection jobId={job.id} photos={job.photos ?? []} />
 
       <PurchaseOrdersSection jobId={job.id} jobTitle={job.title} rows={purchaseOrderRows} />
 

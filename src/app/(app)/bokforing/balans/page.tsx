@@ -3,6 +3,8 @@ import { Card, PageHeader } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
 import { balansrapport, type BalansRad } from "@/lib/accounting/ledger";
+import { FiscalYearPicker, fiscalYearHref } from "@/components/fiscal-year-picker";
+import { fiscalYearAsOf, fiscalYears, resolveViewFiscalYear } from "@/lib/accounting/fiscal";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Balansrapport" };
@@ -22,9 +24,16 @@ function Rows({ rows }: { rows: BalansRad[] }) {
   );
 }
 
-export default async function BalansPage() {
+export default async function BalansPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ar?: string }>;
+}) {
   await ensurePageBusiness();
-  const br = balansrapport();
+  const params = await searchParams;
+  const years = fiscalYears();
+  const fy = resolveViewFiscalYear(params.ar);
+  const br = balansrapport(fiscalYearAsOf(fy));
 
   return (
     <div>
@@ -34,12 +43,18 @@ export default async function BalansPage() {
         subtitle={`Vad företaget äger och är skyldigt per ${datumLang(br.atDate)}.`}
         actions={
           <div className="flex items-center gap-2">
-            <a href="/api/bokforing/export?typ=balans" className="text-[13px] font-medium text-accent hover:underline">
+            <a href={`/api/bokforing/export?typ=balans&ar=${encodeURIComponent(fy.label)}`} className="text-[13px] font-medium text-accent hover:underline">
               Exportera CSV
             </a>
             <PrintButton />
           </div>
         }
+      />
+
+      <FiscalYearPicker
+        years={years}
+        activeLabel={fy.label}
+        hrefFor={(y) => fiscalYearHref("/bokforing/balans", y)}
       />
 
       {/* Ägarvänlig sammanfattning */}

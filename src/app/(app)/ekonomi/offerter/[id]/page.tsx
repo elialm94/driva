@@ -125,6 +125,11 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                 mailConfigured={isLiveMailConfigured()}
                 recipientEmail={customer.email}
                 canSend={canSend}
+                publicPath={publicPath}
+                customerPhone={customer.phone}
+                quoteNumber={quote.number}
+                deduction={totals.deduction}
+                rotType={version.rot?.type}
               />
             </PageActions>
           ) : (
@@ -193,6 +198,11 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                 mailConfigured={isLiveMailConfigured()}
                 recipientEmail={customer.email}
                 canSend={canSend}
+                publicPath={publicPath}
+                customerPhone={customer.phone}
+                quoteNumber={quote.number}
+                deduction={docTotals(pendingDraft.lines, pendingDraft.rot).deduction}
+                rotType={pendingDraft.rot?.type}
               />
             </div>
           )}

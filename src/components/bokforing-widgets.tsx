@@ -288,7 +288,7 @@ export function ReopenFiscalYearButton({
         {hasReport
           ? " Årsredovisningen markeras som ersatt och går inte längre att ändra, men den finns kvar att läsa. En ny upprättas när året stängs igen."
           : ""}{" "}
-        {Number(yearLabel) + 1} har kvar sina ingående balanser tills {yearLabel} stängs igen.
+        Nästa år har kvar sina ingående balanser tills {yearLabel} stängs igen.
       </p>
       <label className="mt-3 block text-[12.5px] font-medium text-soft" htmlFor={`reopen-reason-${fiscalYearId}`}>
         Varför öppnas året?

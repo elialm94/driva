@@ -10,6 +10,7 @@ import { isDemoBusiness, isDemoMode } from "../demo";
 import { isEmailFormat } from "../settings-validation";
 import { mailProviderAvailable, type MailMessage, type MailSendMeta } from "../mail";
 import { prepareQuoteAcceptedCustomerMail, prepareQuoteAcceptedMail } from "../email/service";
+import { ownerNoticeEnabled, ownerNoticeRecipient } from "../notices/owner-notices";
 import {
   currentVersion,
   getQuoteByToken,
@@ -303,8 +304,9 @@ export function prepareQuoteAcceptedNotices(acceptance: QuoteAcceptance): Prepar
       );
     }
 
-    const businessTo = db().settings.email?.trim();
-    if (businessTo && isEmailFormat(businessTo)) {
+    // Företagarens notis följer Inställningar → Notiser (mottagare + av/på).
+    const businessTo = ownerNoticeEnabled(db().settings, "offert_godkand") ? ownerNoticeRecipient(db().settings) : undefined;
+    if (businessTo) {
       notices.push(
         prepareQuoteAcceptedMail({
           to: businessTo,

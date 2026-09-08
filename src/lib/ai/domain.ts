@@ -1309,8 +1309,11 @@ export function requestUpdateBusinessProfile(patch: Record<string, string | numb
   if (keys.length === 0) return fail("Inget att ändra. Säg vad som ska uppdateras, till exempel bankgiro.");
   const current = getBusinessProfile();
   const defaults = getInvoiceDefaults();
+  // Bara skalära fält jämförs i förhandsvisningen (notiser är ett objekt och ändras inte här).
+  const { notices: _notices, ...scalarSettings } = current;
+  void _notices;
   const currentMap: Record<string, string | number | undefined> = {
-    ...current,
+    ...scalarSettings,
     ...defaults,
   };
   const rows = keys.map((key) => ({

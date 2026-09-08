@@ -8,6 +8,8 @@ import { buttonClasses } from "./ui";
 import { kr } from "@/lib/format";
 import { QUOTE_EXCESS_WARN_AMOUNT, QUOTE_EXCESS_WARN_PERCENT } from "@/lib/quote-excess";
 import { CustomerEmailPrompt } from "./customer-email-prompt";
+import { ShareCustomerLink } from "./share-customer-link";
+import { RotCustomerShareCallout } from "./rot-customer-share";
 import { useBlockedAction } from "./blocked-action";
 import { DisabledSendWrap } from "./disabled-send-button";
 import type { PendingAction } from "@/lib/missing-requirements";
@@ -31,6 +33,11 @@ export function InvoiceDraftSend({
   mailConfigured: _mailConfigured = true,
   excessAmount,
   tillaggHref,
+  publicPath,
+  customerPhone,
+  invoiceNumber,
+  deduction,
+  rotType,
 }: {
   documentId: string;
   customerId: string;
@@ -47,6 +54,11 @@ export function InvoiceDraftSend({
   /** Positivt belopp om fakturan överstiger tröskeln; annars utelämnas varningen. */
   excessAmount?: number;
   tillaggHref?: string;
+  publicPath?: string;
+  customerPhone?: string;
+  invoiceNumber?: number | null;
+  deduction?: number;
+  rotType?: "rot" | "rut";
 }) {
   const router = useRouter();
   const [warnOpen, setWarnOpen] = useState(false);
@@ -129,9 +141,22 @@ export function InvoiceDraftSend({
           <p className="text-[17px] font-semibold tracking-tight text-ink">{customerName}</p>
           <p className="mt-1 text-[15px] text-soft">{kr(amount)}</p>
           <p className="mt-1 text-[14px] text-muted">Förfaller {dueDateLabel}</p>
+          {rotType && deduction ? (
+            <RotCustomerShareCallout type={rotType} toPay={amount} deduction={deduction} />
+          ) : null}
           <p className="mt-4 text-[14px] leading-relaxed text-soft">
             Fakturan skickas till: <span className="font-semibold text-ink">{email}</span>
           </p>
+          {publicPath ? (
+            <div className="mt-4">
+              <ShareCustomerLink
+                path={publicPath}
+                kind="faktura"
+                number={invoiceNumber ?? undefined}
+                phone={customerPhone}
+              />
+            </div>
+          ) : null}
           {sendError ? <p className="mt-3 text-[13px] font-medium text-danger">{sendError}</p> : null}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button className={buttonClasses("secondary")} disabled={isSending} onClick={() => setConfirmOpen(false)}>

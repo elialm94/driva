@@ -3,7 +3,10 @@ import { MomsPeriods } from "@/components/moms-periods";
 import { Card, PageHeader } from "@/components/ui";
 import { loadAccountantClientPage } from "@/lib/collaboration/client-page";
 import { can } from "@/lib/collaboration/permissions";
-import { vatChecklist, vatPeriods } from "@/lib/accounting/vat";
+import { vatPeriodsFor } from "@/lib/accounting/vat";
+import { vatFlowFocus, vatPeriodFlow, type VatPeriodFlow } from "@/lib/accounting/vat-flow";
+import { fiscalYears, resolveViewFiscalYear } from "@/lib/accounting/fiscal";
+import { FiscalYearPicker, fiscalYearHref } from "@/components/fiscal-year-picker";
 import { kr } from "@/lib/format";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { loadStateSnapshot } from "@/lib/storage/adapter-supabase";
@@ -20,26 +23,41 @@ function momsStatus(state: string, blockers: number): string {
 
 export default async function AccountantMomsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ businessId: string }>;
+  searchParams: Promise<{ ar?: string; fokus?: string }>;
 }) {
   const { businessId } = await params;
+  const { ar, fokus } = await searchParams;
   const { access, snap } = await loadAccountantClientPage(businessId);
 
-  const periods = (
-    isSupabaseMode()
-      ? await (async () => {
-          const state = await loadStateSnapshot(businessId);
-          return runInTenantContext(
-            { businessId, userId: access.user.id, writable: false, state, baseline: state, stateVersion: 0, dirty: false },
-            () => vatPeriods()
-          );
-        })()
-      : vatPeriods()
-  ).filter((p) => p.state !== "kommande");
+  const loadView = (): { fy: ReturnType<typeof resolveViewFiscalYear>; years: ReturnType<typeof fiscalYears>; flows: VatPeriodFlow[] } => {
+    const fy = resolveViewFiscalYear(ar);
+    return {
+      fy,
+      years: fiscalYears(),
+      flows: vatPeriodsFor(fy)
+        .filter((p) => p.state !== "kommande")
+        .map((p) => vatPeriodFlow(p)),
+    };
+  };
+  const view = isSupabaseMode()
+    ? await (async () => {
+        const state = await loadStateSnapshot(businessId);
+        return runInTenantContext(
+          { businessId, userId: access.user.id, writable: false, state, baseline: state, stateVersion: 0, dirty: false },
+          loadView
+        );
+      })()
+    : loadView();
+  const { fy, years, flows } = view;
 
-  const current = periods.find((p) => p.state === "att_deklarera") ?? periods.find((p) => p.state === "pagaende");
-  const blockers = current ? vatChecklist(current.period).filter((c) => !c.ok).length : 0;
+  const currentFlow =
+    flows.find((f) => f.summary.state === "att_deklarera") ?? flows.find((f) => f.summary.state === "pagaende");
+  const current = currentFlow?.summary;
+  const blockers = currentFlow?.blockers.length ?? 0;
+  const focusKey = flows.some((f) => f.summary.period.key === fokus) ? fokus : vatFlowFocus(flows);
 
   return (
     <div className="animate-fade-up">
@@ -53,6 +71,11 @@ export default async function AccountantMomsPage({
         })}
       />
       <AccountantClientTabs businessId={businessId} active="moms" />
+      <FiscalYearPicker
+        years={years}
+        activeLabel={fy.label}
+        hrefFor={(y) => fiscalYearHref(`/redovisning/k/${businessId}/moms`, y)}
+      />
       {current ? (
         <div className="mb-5 grid gap-3 sm:grid-cols-4">
           <Card className="p-3">
@@ -75,7 +98,12 @@ export default async function AccountantMomsPage({
           </Card>
         </div>
       ) : null}
-      <MomsPeriods periods={periods} readOnly={!can(access.role, "vat")} />
+      <MomsPeriods
+        flows={flows}
+        focusKey={focusKey}
+        readOnly={!can(access.role, "vat")}
+        basePath={`/redovisning/k/${businessId}/moms`}
+      />
     </div>
   );
 }

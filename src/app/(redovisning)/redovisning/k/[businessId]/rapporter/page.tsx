@@ -3,6 +3,8 @@ import { AccountantClientTabs, accountantStatusText } from "@/components/account
 import { Card, PageHeader } from "@/components/ui";
 import { loadAccountantClientPage } from "@/lib/collaboration/client-page";
 import { balansrapport, resultatrapport, saldobalans } from "@/lib/accounting/ledger";
+import { fiscalYearAsOf, fiscalYears, resolveViewFiscalYear } from "@/lib/accounting/fiscal";
+import { FiscalYearPicker, fiscalYearHref } from "@/components/fiscal-year-picker";
 import { kr } from "@/lib/format";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { loadStateSnapshot } from "@/lib/storage/adapter-supabase";
@@ -12,20 +14,34 @@ export const metadata = { title: "Rapporter" };
 
 export default async function AccountantRapporterPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ businessId: string }>;
+  searchParams: Promise<{ ar?: string }>;
 }) {
   const { businessId } = await params;
+  const { ar } = await searchParams;
   const { access, snap } = await loadAccountantClientPage(businessId);
+  const reportsFor = () => {
+    const fy = resolveViewFiscalYear(ar);
+    const range = { from: fy.startDate, to: fy.endDate };
+    return {
+      fy,
+      years: fiscalYears(),
+      resultat: resultatrapport(range),
+      balans: balansrapport(fiscalYearAsOf(fy)),
+      saldo: saldobalans(range),
+    };
+  };
   const reports = isSupabaseMode()
     ? await (async () => {
         const state = await loadStateSnapshot(businessId);
         return runInTenantContext(
           { businessId, userId: access.user.id, writable: false, state, baseline: state, stateVersion: 0, dirty: false },
-          () => ({ resultat: resultatrapport(), balans: balansrapport(), saldo: saldobalans() })
+          reportsFor
         );
       })()
-    : { resultat: resultatrapport(), balans: balansrapport(), saldo: saldobalans() };
+    : reportsFor();
 
   return (
     <div className="animate-fade-up">
@@ -39,6 +55,11 @@ export default async function AccountantRapporterPage({
         })}
       />
       <AccountantClientTabs businessId={businessId} active="rapporter" />
+      <FiscalYearPicker
+        years={reports.years}
+        activeLabel={reports.fy.label}
+        hrefFor={(y) => fiscalYearHref(`/redovisning/k/${businessId}/rapporter`, y)}
+      />
       <div className="grid gap-3 md:grid-cols-3">
         <Card className="p-4">
           <h2 className="mb-1 text-[13px] font-semibold">Resultat</h2>

@@ -23,6 +23,8 @@ import {
   createPartInvoiceForQuote,
   createDeniedReductionInvoice,
   creditInvoice,
+  creditInvoiceContext,
+  type CreditInvoiceContext,
   discardInvoice,
   updateInvoice,
   type InvoiceInput,
@@ -41,6 +43,16 @@ import { userFacingInvoiceSendError, userFacingIssueError } from "@/lib/invoices
 import { QuoteNotReadyError } from "@/lib/services/quotes";
 import { getQuoteByToken } from "@/lib/services/data";
 import {
+  getOwnerNoticeSettings,
+  prepareOwnerNoticeTest,
+  prepareQuoteDeclinedNotice,
+  sendOwnerNotices,
+  updateOwnerNoticeSettings,
+  type OwnerNoticeSettingsInput,
+} from "@/lib/services/owner-notices";
+import { isOwnerNoticeKind } from "@/lib/notices/owner-notices";
+import { userFacingSendError } from "@/lib/email/service";
+import {
   completeReminder,
   describeSnoozeUntil,
   dismissReminder,
@@ -58,7 +70,16 @@ import {
   setTaxReductionDecision,
 } from "@/lib/services/tax-reduction";
 import { patchHusExportFields } from "@/lib/services/hus-export";
-import type { DwellingType, LineKind, PaymentDetailsMethod, TaxReductionDetails } from "@/lib/types";
+import type { CatalogArticle, DocLine, DwellingType, LineKind, PaymentDetailsMethod, TaxReductionDetails } from "@/lib/types";
+import {
+  articleFromLine,
+  deleteArticle,
+  listArticles,
+  upsertArticle,
+  type ArticleInput,
+} from "@/lib/services/articles";
+import { addJobPhoto, deleteJobPhoto } from "@/lib/services/job-photos";
+import { parseBeslutJson } from "@/lib/tax-reduction-beslut";
 import {
   applyBusinessProfilePatch,
   updateCompanySettings,
@@ -67,6 +88,11 @@ import {
 } from "@/lib/services/settings";
 import { normalizeCompanySettingsInput } from "@/lib/settings-action-input";
 import { BILLING_COMPLETION_PATCH_KEYS } from "@/lib/billing-readiness";
+import {
+  createNextFiscalYear,
+  currentFiscalYear,
+  updateFiscalYearPeriod,
+} from "@/lib/accounting/fiscal";
 import { userFacingStorageError } from "@/lib/storage/sql-errors";
 import { createCustomer, updateCustomer, updateCustomerNotes } from "@/lib/services/customers";
 import {
@@ -101,6 +127,7 @@ import {
 import { maskPersonnummer } from "@/lib/personnummer";
 import {
   createQuote,
+  duplicateQuote,
   declineQuote,
   discardQuote,
   markQuoteNotRelevant,
@@ -142,6 +169,8 @@ import {
   expenseAwaitingReceipt,
   uploadReceiptForExpense,
 } from "@/lib/services/expenses";
+import { createManualExpense, type ManualReceiptFile } from "@/lib/services/manual-expense";
+import type { ManualExpenseDraft } from "@/lib/expenses/manual-expense";
 import { uid } from "@/lib/ids";
 import {
   addServiceItem,
@@ -289,6 +318,21 @@ export async function updateCustomerDetailsAction(
   });
 }
 
+export async function setCustomerTaxReductionUsedAction(
+  customerId: string,
+  used: { year: number; rot: number; rut: number }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      updateCustomer(customerId, { taxReductionUsed: used });
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara." } as const;
+    }
+  });
+}
+
 export async function resolveCustomerEmailAction(
   customerId: string,
   email: string
@@ -411,6 +455,45 @@ export async function forgetLineDescriptionSuggestionAction(text: string, kind?:
   });
 }
 
+export async function listArticlesAction(): Promise<CatalogArticle[]> {
+  return withBusinessRead(() => listArticles());
+}
+
+export async function upsertArticleAction(
+  input: ArticleInput
+): Promise<{ ok: true; article: CatalogArticle } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const article = upsertArticle(input);
+      refresh();
+      return { ok: true, article } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara artikeln." } as const;
+    }
+  });
+}
+
+export async function deleteArticleAction(id: string) {
+  return withBusiness(() => {
+    deleteArticle(id);
+    refresh();
+  });
+}
+
+export async function articleFromLineAction(
+  line: Pick<DocLine, "description" | "kind" | "unit" | "unitPrice" | "vatRate" | "discountPercent" | "isHeading">
+): Promise<{ ok: true; article: CatalogArticle } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const article = articleFromLine(line);
+      refresh();
+      return { ok: true, article } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara artikeln." } as const;
+    }
+  });
+}
+
 /* --------------------------------- Offerter -------------------------------- */
 
 export async function createQuoteAction(input: QuoteInput, nav?: ReturnNav): Promise<never> {
@@ -434,12 +517,13 @@ export async function updateQuoteAction(quoteId: string, input: QuoteVersionInpu
 }
 
 export async function sendQuoteAction(
-  quoteId: string
+  quoteId: string,
+  message?: string
 ): Promise<{ ok: true; mailed: boolean; demo?: boolean } | { ok: false; errors: string[] }> {
   return withBusiness(
     async () => {
       try {
-        const { outcome } = await sendQuoteWithEmail(quoteId);
+        const { outcome } = await sendQuoteWithEmail(quoteId, message);
         if (!outcome.ok) {
           return { ok: false, errors: [outcome.error ?? "Kunde inte skicka offerten."] } as const;
         }
@@ -456,6 +540,17 @@ export async function sendQuoteAction(
       }
     },
     { retry: false }
+  );
+}
+
+export async function duplicateQuoteAction(quoteId: string, nav?: ReturnNav): Promise<never> {
+  return withBusiness(
+    (): never => {
+      const copy = duplicateQuote(quoteId, "anvandare");
+      refresh();
+      redirect(hrefWithNav(`/ekonomi/offerter/${copy.id}`, nav));
+    },
+    { capability: "create_quote" }
   );
 }
 
@@ -488,12 +583,15 @@ export async function followUpQuoteAction(
  * offerter än den hen faktiskt fått länken till.
  */
 export async function declineQuoteByTokenAction(token: string, reason?: string) {
-  await withPublicBusiness("quote", token, () => {
+  const notice = await withPublicBusiness("quote", token, () => {
     const quote = getQuoteByToken(token);
-    if (!quote || quote.status !== "skickad") return;
+    if (!quote || quote.status !== "skickad") return undefined;
     declineQuote(quote.id, typeof reason === "string" ? reason.slice(0, 2000) : undefined);
     refresh();
+    // Företagarens notis byggs här (tenantkontext) och skickas efter svaret.
+    return prepareQuoteDeclinedNotice(quote.id);
   });
+  if (notice) after(() => sendOwnerNotices([notice]));
 }
 
 export type AcceptQuoteActionResult =
@@ -645,6 +743,29 @@ export async function appendJobNoteAction(jobId: string, text: string) {
 export async function registerJobTimeAction(jobId: string, input: JobTimeInput) {
   await withBusiness(() => {
     registerJobTime(jobId, input);
+    refresh();
+  });
+}
+
+export async function addJobPhotoAction(
+  jobId: string,
+  dataUrl: string,
+  caption?: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      addJobPhoto(jobId, { dataUrl, caption });
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara fotot." } as const;
+    }
+  });
+}
+
+export async function deleteJobPhotoAction(jobId: string, photoId: string) {
+  await withBusiness(() => {
+    deleteJobPhoto(jobId, photoId);
     refresh();
   });
 }
@@ -1072,10 +1193,29 @@ export async function markQuoteNotRelevantAction(quoteId: string) {
   );
 }
 
-export async function creditInvoiceAction(invoiceId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function creditInvoiceContextAction(
+  invoiceId: string
+): Promise<{ ok: true; context: CreditInvoiceContext } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      return { ok: true as const, context: creditInvoiceContext(invoiceId) };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte läsa fakturan." };
+    }
+  });
+}
+
+export async function creditInvoiceAction(
+  invoiceId: string,
+  opts?: { amountInclVat?: number }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const amountInclVat =
+    opts && typeof opts.amountInclVat === "number" && Number.isFinite(opts.amountInclVat)
+      ? Math.round(opts.amountInclVat)
+      : undefined;
   const result = await withBusiness(() => {
     try {
-      const credit = creditInvoice(invoiceId);
+      const credit = creditInvoice(invoiceId, "anvandare", amountInclVat != null ? { amountInclVat } : {});
       const notice = prepareCreditInvoiceNotice(credit);
       refresh();
       return { ok: true as const, notice };
@@ -1138,6 +1278,28 @@ export async function setTaxReductionDecisionAction(input: {
       return { ok: true } as const;
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara beslut." } as const;
+    }
+  });
+}
+
+export async function importTaxReductionBeslutAction(input: {
+  jobId?: string;
+  invoiceId?: string;
+  json: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const parsed = parseBeslutJson(input.json);
+      setTaxReductionDecision({
+        jobId: input.jobId,
+        invoiceId: input.invoiceId,
+        outcome: parsed.outcome,
+        deniedAmount: parsed.deniedAmount,
+      });
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte läsa beslutet." } as const;
     }
   });
 }
@@ -1320,6 +1482,64 @@ export async function answerExpenseQuestionAction(expenseId: string, answer: str
     answerExpenseQuestion(expenseId, answer);
     refresh();
   }, { capability: "categorize" });
+}
+
+export type ManualExpenseActionResult =
+  | {
+      ok: true;
+      expenseId: string;
+      verificationId?: string;
+      /** Köp över inventariegränsen – frågan ligger på Hem i stället för en bokning. */
+      askedAssetQuestion: boolean;
+      title: string;
+      amount: number;
+      paidBy: ManualExpenseDraft["paidBy"];
+    }
+  | { ok: false; error: string };
+
+/**
+ * Registrera en utgift för hand: köp, privat utlägg, milersättning, traktamente
+ * eller representation. `receiptForm` bär ett valfritt kvitto som "file"
+ * (File/Blob, se lib/receipts/read-file.ts). Filen valideras och sparas mot
+ * ett förgenererat kvitto-id FÖRE utgiften skrivs, så ett misslyckat filspar
+ * aldrig lämnar en bokförd utgift utan sitt underlag. Reglerna och felen
+ * kommer ur domänlagret (svenska, samma som formuläret visar).
+ */
+export async function createManualExpenseAction(
+  draft: ManualExpenseDraft,
+  receiptForm?: FormData
+): Promise<ManualExpenseActionResult> {
+  try {
+    const upload = receiptForm ? await receiptFileFromForm(receiptForm) : null;
+    if (receiptForm && !upload) throw new Error("Kvittofilen kunde inte läsas. Välj filen igen.");
+    if (upload) validateReceiptFile(upload);
+    return await withBusiness(
+      async () => {
+        let receipt: ManualReceiptFile | undefined;
+        if (upload) {
+          const { filename, ...file } = upload;
+          const receiptId = uid();
+          const stored = await storeReceiptFile({ id: receiptId, filename }, file);
+          if (!receiptFileStored(stored)) throw new Error("Kvittofilen kunde inte sparas. Försök igen.");
+          receipt = { id: receiptId, filename, ...stored };
+        }
+        const result = createManualExpense(draft, { by: "anvandare", receipt });
+        refresh();
+        return {
+          ok: true as const,
+          expenseId: result.expense.id,
+          verificationId: result.verificationId,
+          askedAssetQuestion: result.askedAssetQuestion,
+          title: result.plan.title,
+          amount: result.plan.amount,
+          paidBy: result.expense.paidBy ?? "foretagskonto",
+        };
+      },
+      { capability: "write_accounting" }
+    );
+  } catch (e) {
+    return { ok: false as const, error: userFacingStorageError(e, "Utgiften kunde inte sparas. Försök igen.") };
+  }
 }
 
 export async function prepareSupplierPaymentAction(input: {
@@ -1890,6 +2110,35 @@ export async function completeAssistantCustomerAction(actionId: string, customer
 
 /* ------------------------------ Företagsuppgifter --------------------------- */
 
+export async function updateFiscalYearPeriodAction(input: {
+  fiscalYearId?: string;
+  startDate: string;
+  endDate: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    return await withBusiness(() => {
+      const id = input.fiscalYearId || currentFiscalYear().id;
+      updateFiscalYearPeriod(id, input.startDate, input.endDate);
+      refresh();
+      return { ok: true } as const;
+    });
+  } catch (e) {
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte spara räkenskapsåret.") };
+  }
+}
+
+export async function createNextFiscalYearAction(): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    return await withBusiness(() => {
+      createNextFiscalYear();
+      refresh();
+      return { ok: true } as const;
+    });
+  } catch (e) {
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte skapa nästa räkenskapsår.") };
+  }
+}
+
 export async function updateCompanySettingsAction(
   input: CompanySettingsInput
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -1901,6 +2150,38 @@ export async function updateCompanySettingsAction(
     });
   } catch (e) {
     return { ok: false, error: userFacingStorageError(e, "Kunde inte spara.") };
+  }
+}
+
+/** Inställningar → Notiser: mottagare och av/på per händelse. Sparas direkt, utanför stora formuläret. */
+export async function updateOwnerNoticeSettingsAction(
+  input: OwnerNoticeSettingsInput
+): Promise<{ ok: true; recipient?: string } | { ok: false; error: string }> {
+  try {
+    return await withBusiness(() => {
+      const off = Array.isArray(input.off) ? input.off.filter(isOwnerNoticeKind) : [];
+      updateOwnerNoticeSettings({ email: typeof input.email === "string" ? input.email : "", off });
+      refresh();
+      return { ok: true, recipient: getOwnerNoticeSettings().recipient } as const;
+    });
+  } catch (e) {
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte spara.") };
+  }
+}
+
+/** Skickar ett testmejl till notismottagaren så att företagaren ser att adressen fungerar. */
+export async function sendOwnerNoticeTestAction(): Promise<{ ok: true; to: string } | { ok: false; error: string }> {
+  try {
+    const prepared = await withBusiness(() => prepareOwnerNoticeTest(), { retry: false });
+    if (!prepared.ok) return prepared;
+    const result = await sendMail(prepared.notice.message, prepared.notice.meta);
+    if (!result.ok) return { ok: false, error: userFacingSendError(result, "Testmejlet kunde inte skickas. Försök igen.") };
+    if (result.mode === "mock") {
+      return { ok: false, error: "E-posttjänsten är inte konfigurerad i den här miljön – inget mejl skickades." };
+    }
+    return { ok: true, to: prepared.to };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Testmejlet kunde inte skickas." };
   }
 }
 

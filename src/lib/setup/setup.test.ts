@@ -135,9 +135,13 @@ describe("Kom igång-uppgifter härleds ur verklig data", () => {
     assert.equal(byId.get("first_job")?.status, "todo");
     assert.equal(byId.get("payment_details")?.status, "todo");
     assert.equal(byId.get("connect_bank")?.status, "todo");
-    // Nystartat: bokföringsflytten är irrelevant och visas inte; lön finns inte som uppgift.
+    // Nystartat: bokföringsflytten är irrelevant och visas inte; "inga löner" döljer lönuppgiften.
     assert.equal(byId.has("move_bookkeeping"), false);
     assert.equal(byId.has("payroll"), false);
+    // Preliminärskatten saknas → rekommenderad uppgift som öppnar Skattekontot.
+    assert.equal(byId.get("f_skatt")?.status, "todo");
+    assert.equal(byId.get("f_skatt")?.relevance, "recommended");
+    assert.equal(byId.get("f_skatt")?.href, "/bokforing/skattekonto");
     // Snickare: artiklar/priser är valfritt, inte rekommenderat.
     assert.equal(byId.get("articles_prices")?.relevance, "optional");
     assert.equal(summary.next?.id, "first_customer");
@@ -196,6 +200,8 @@ describe("Kom igång-uppgifter härleds ur verklig data", () => {
     assert.equal(byId.get("payment_details")?.doneDetail, "Bankgiro 5678-1234");
     assert.equal(byId.get("connect_bank")?.status, "done");
     assert.equal(byId.get("invite_consultant")?.status, "done");
+    // Konsulten sköter böckerna → preliminärskatten är valfri, inte ett hinder för Hem-kortet.
+    assert.equal(byId.get("f_skatt")?.relevance, "optional");
     const summary = setupSummary();
     assert.equal(summary.showHomeCard, false);
     assert.equal(summary.next, null);

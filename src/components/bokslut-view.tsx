@@ -10,7 +10,8 @@ import {
   PlanAccrualForm,
   ReopenFiscalYearButton,
 } from "./bokforing-widgets";
-import { fiscalYears } from "@/lib/accounting/fiscal";
+import { fiscalYearFollowing, fiscalYears, resolveViewFiscalYear, taxYearOf } from "@/lib/accounting/fiscal";
+import { FiscalYearPicker, fiscalYearHref } from "./fiscal-year-picker";
 import { bokslutChecklist, reopenBlockers } from "@/lib/accounting/close";
 import { listAssets, bookValue, assetsNeedingDepreciation, accumulatedDepreciation } from "@/lib/accounting/assets";
 import { pendingAccruals, accrualSuggestions } from "@/lib/accounting/accruals";
@@ -50,15 +51,21 @@ export interface BokslutViewProps {
   businessId?: string;
   /** Revisorn läser bokslutet men rör det inte. */
   readOnly?: boolean;
+  /** Query-param `ar` – default är innevarande räkenskapsår. */
+  selectedYearParam?: string;
 }
 
-export function BokslutView({ base, hrefFor = (href) => href, businessId, readOnly }: BokslutViewProps) {
+export function BokslutView({
+  base,
+  hrefFor = (href) => href,
+  businessId,
+  readOnly,
+  selectedYearParam,
+}: BokslutViewProps) {
   const data = db();
   const years = fiscalYears();
-  const openYears = years.filter((f) => f.status === "oppet");
   const closedYears = years.filter((f) => f.status === "stangt").reverse();
-  // Bokslut görs för det äldsta öppna året.
-  const fy = openYears[0];
+  const fy = resolveViewFiscalYear(selectedYearParam);
   const companyForm = data.settings.companyForm ?? "ab";
 
   const checklist = fy ? bokslutChecklist(fy.id) : [];
@@ -72,6 +79,11 @@ export function BokslutView({ base, hrefFor = (href) => href, businessId, readOn
 
   return (
     <>
+      <FiscalYearPicker
+        years={years}
+        activeLabel={fy.label}
+        hrefFor={(y) => hrefFor(fiscalYearHref(base, y))}
+      />
       {fy ? (
         <>
           {/* Checklista */}
@@ -151,7 +163,7 @@ export function BokslutView({ base, hrefFor = (href) => href, businessId, readOn
                 ) : (
                   <p className="mt-2 text-[12.5px] text-muted">
                     Allt är klart. När året stängs bokförs {companyForm === "ab" ? "beräknad bolagsskatt och " : ""}årets
-                    resultat mot eget kapital, {Number(fy.label) + 1} får ingående balanser och året låses.
+                    resultat mot eget kapital, {fiscalYearFollowing(fy).label} får ingående balanser och året låses.
                   </p>
                 )}
               </div>
@@ -207,8 +219,16 @@ export function BokslutView({ base, hrefFor = (href) => href, businessId, readOn
                         sourceType={s.sourceType}
                         sourceId={s.sourceId}
                         fiscalYearId={fy.id}
-                        defaultFrom={`${fy.label}-09-01`}
-                        defaultTo={`${Number(fy.label) + 1}-08-31`}
+                        defaultFrom={
+                          fy.startDate.endsWith("-01-01") && fy.endDate.endsWith("-12-31")
+                            ? `${fy.startDate.slice(0, 4)}-09-01`
+                            : fy.startDate
+                        }
+                        defaultTo={
+                          fy.startDate.endsWith("-01-01") && fy.endDate.endsWith("-12-31")
+                            ? `${taxYearOf(fy) + 1}-08-31`
+                            : fiscalYearFollowing(fy).endDate
+                        }
                         businessId={businessId}
                       />
                     </div>

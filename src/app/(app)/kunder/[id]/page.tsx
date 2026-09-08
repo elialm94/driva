@@ -7,6 +7,10 @@ import { customerChainCtas } from "@/lib/services/business-chain";
 import { SectionTitle } from "@/components/ui";
 import { CustomerDetailsPanel } from "@/components/customer-details-panel";
 import { CustomerRotSection } from "@/components/customer-rot-section";
+import { RotUsedField } from "@/components/rot-used-field";
+import { remainingTaxReduction, usedTaxReductionThisYear } from "@/lib/tax-reduction-used";
+import { db } from "@/lib/store";
+import { todayDate } from "@/lib/accounting/dates";
 import { CustomerActivity } from "@/components/customer-activity";
 import { CustomerChainActions } from "@/components/customer-chain-actions";
 import { SmartBack } from "@/components/back-link";
@@ -78,6 +82,21 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
       {customer.kind === "privat" ? (
         <div className="mt-8">
           <SectionTitle>ROT/RUT</SectionTitle>
+          {(() => {
+            const year = Number(todayDate().slice(0, 4));
+            const used = usedTaxReductionThisYear({ customer, invoices: db().invoices, year });
+            return (
+              <div className="mb-4">
+                <RotUsedField
+                  customerId={customer.id}
+                  year={year}
+                  rot={customer.taxReductionUsed?.year === year ? customer.taxReductionUsed.rot : 0}
+                  rut={customer.taxReductionUsed?.year === year ? customer.taxReductionUsed.rut : 0}
+                  remainingRot={remainingTaxReduction(used, "rot")}
+                />
+              </div>
+            );
+          })()}
           <CustomerRotSection
             customerId={customer.id}
             workLocations={customer.workLocations ?? []}

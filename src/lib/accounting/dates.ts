@@ -16,6 +16,10 @@ const dateFmt = new Intl.DateTimeFormat("sv-SE", {
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
+export function isIsoDate(value: string): boolean {
+  return DATE_ONLY.test(value);
+}
+
 /** Bokföringsdatum (YYYY-MM-DD i svensk tid) ur en ISO-sträng. */
 export function bokforingsdatum(iso: string): string {
   // Rena datum är redan bokföringsdatum – hoppa över Date/Intl, som annars
@@ -41,22 +45,124 @@ export function previousDay(date: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Kalenderåret som räkenskapsåret slutar i – beskattningsår, fonder, avgifter. */
+export function taxYearOf(fy: Pick<FiscalYear, "endDate">): number {
+  return Number(fy.endDate.slice(0, 4));
+}
+
 /**
- * Ren fabrik för ett kalenderår – används av både motorn och migreringen.
+ * Visningsnamn: "2026" för kalenderår, "2025/2026" när året sträcker sig
+ * över två kalenderår. Unikt per företag (Postgres unique på label).
+ */
+export function fiscalYearLabel(startDate: string, endDate: string): string {
+  const startYear = startDate.slice(0, 4);
+  const endYear = endDate.slice(0, 4);
+  if (startDate === `${startYear}-01-01` && endDate === `${startYear}-12-31`) return startYear;
+  return startYear === endYear ? startYear : `${startYear}/${endYear}`;
+}
+
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+/** Samma månad+dag, ett antal kalenderår framåt eller bakåt. 29 feb → 28 feb om det inte är skottår. */
+export function addCalendarYears(date: string, years: number): string {
+  const year = Number(date.slice(0, 4)) + years;
+  const monthDay = date.slice(5);
+  if (monthDay === "02-29" && !isLeapYear(year)) return `${year}-02-28`;
+  return `${year}-${monthDay}`;
+}
+
+/**
+ * Ren fabrik för ett räkenskapsår med valfria datum (kalenderår eller brutet).
  * Id:t bär en slumpdel: id-kolumnen är en global text-PK i Postgres, så ett
  * deterministiskt `fy-2026` skulle kollidera mellan företag så fort två
  * tenants bokför samma år. Alla uppslag sker via datum/label – aldrig id-form.
  */
-export function calendarFiscalYear(year: number): FiscalYear {
+export function makeFiscalYear(startDate: string, endDate: string): FiscalYear {
+  const label = fiscalYearLabel(startDate, endDate);
   return {
-    id: `fy-${year}-${Math.random().toString(36).slice(2, 10)}`,
-    label: String(year),
-    startDate: `${year}-01-01`,
-    endDate: `${year}-12-31`,
+    id: `fy-${label.replace("/", "-")}-${Math.random().toString(36).slice(2, 10)}`,
+    label,
+    startDate,
+    endDate,
     status: "oppet",
     openingBalances: {},
     openingSource: "manuell",
   };
+}
+
+/** Kalenderår 1 jan–31 dec – default för nya företag och demon. */
+export function calendarFiscalYear(year: number): FiscalYear {
+  return makeFiscalYear(`${year}-01-01`, `${year}-12-31`);
+}
+
+/** Nästa år: dagen efter slutdatum, lika långt fram som ett kalenderår. */
+export function fiscalYearFollowing(fy: Pick<FiscalYear, "endDate">): FiscalYear {
+  return makeFiscalYear(nextDay(fy.endDate), addCalendarYears(fy.endDate, 1));
+}
+
+/** Föregående år: samma mönster bakåt från startdatum. */
+export function fiscalYearPreceding(fy: Pick<FiscalYear, "startDate">): FiscalYear {
+  return makeFiscalYear(addCalendarYears(fy.startDate, -1), previousDay(fy.startDate));
+}
+
+function covers(fy: Pick<FiscalYear, "startDate" | "endDate">, date: string): boolean {
+  return fy.startDate <= date && date <= fy.endDate;
+}
+
+/**
+ * Året knappen "Skapa nästa år" ska utgå från: det senaste året som tagit
+ * slut, annars innevarande, annars det senaste. Efterföljaren skapas en gång.
+ */
+export function fiscalYearToExtend<T extends { startDate: string; endDate: string }>(
+  years: T[],
+  today: string
+): T | undefined {
+  if (years.length === 0) return undefined;
+  const sorted = [...years].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const ended = [...sorted].reverse().find((y) => y.endDate < today);
+  return ended ?? sorted.find((y) => covers(y, today)) ?? sorted[sorted.length - 1];
+}
+
+/**
+ * År som saknas för att `date` ska ligga i ett räkenskapsår. Följer mönstret
+ * hos befintliga år (brutet år ger brutna år). Tom lista = datumet täcks redan.
+ * Utan befintliga år skapas ett kalenderår.
+ */
+export function yearsToCoverDate(existing: FiscalYear[], date: string): FiscalYear[] {
+  const all = [...existing].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  if (all.some((f) => covers(f, date))) return [];
+  if (all.length === 0) return [calendarFiscalYear(Number(date.slice(0, 4)))];
+
+  const added: FiscalYear[] = [];
+  const before = [...all].reverse().find((f) => f.endDate < date);
+  const after = all.find((f) => f.startDate > date);
+
+  if (before) {
+    let cursor = before;
+    while (cursor.endDate < date && added.length < 40) {
+      const next = fiscalYearFollowing(cursor);
+      if (after && next.startDate >= after.startDate) break;
+      added.push(next);
+      cursor = next;
+    }
+    if (added.some((f) => covers(f, date)) || covers(cursor, date)) return added;
+  }
+
+  if (after) {
+    let cursor = after;
+    const backward: FiscalYear[] = [];
+    while (cursor.startDate > date && backward.length < 40) {
+      const prev = fiscalYearPreceding(cursor);
+      if (before && prev.endDate <= before.endDate) break;
+      backward.push(prev);
+      cursor = prev;
+    }
+    return [...added, ...backward];
+  }
+
+  return added;
 }
 
 export interface Period {
@@ -77,27 +183,57 @@ function lastDayOfMonth(year: number, month1: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Månader i ett räkenskapsår (härledda, lagras inte). */
+/** Månader i ett räkenskapsår (härledda ur start/slut, lagras inte). */
 export function monthsOf(fy: FiscalYear): Period[] {
-  const year = Number(fy.label);
-  return MONTH_NAMES.map((name, i) => ({
-    key: `${year}-${String(i + 1).padStart(2, "0")}`,
-    label: `${name} ${year}`,
-    start: `${year}-${String(i + 1).padStart(2, "0")}-01`,
-    end: lastDayOfMonth(year, i + 1),
-  }));
+  const periods: Period[] = [];
+  let year = Number(fy.startDate.slice(0, 4));
+  let month = Number(fy.startDate.slice(5, 7));
+  const endYear = Number(fy.endDate.slice(0, 4));
+  const endMonth = Number(fy.endDate.slice(5, 7));
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+    const monthEnd = lastDayOfMonth(year, month);
+    periods.push({
+      key: `${year}-${String(month).padStart(2, "0")}`,
+      label: `${MONTH_NAMES[month - 1]} ${year}`,
+      start: periods.length === 0 ? fy.startDate : monthStart,
+      end: monthEnd < fy.endDate ? monthEnd : fy.endDate,
+    });
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+  return periods;
 }
 
-/** Kvartal (momsperioder) i ett räkenskapsår. */
+function quarterLabel(chunk: Period[]): string {
+  const first = chunk[0];
+  const last = chunk[chunk.length - 1];
+  const firstName = MONTH_NAMES[Number(first.start.slice(5, 7)) - 1];
+  const lastName = MONTH_NAMES[Number(last.end.slice(5, 7)) - 1];
+  const firstYear = first.start.slice(0, 4);
+  const lastYear = last.end.slice(0, 4);
+  if (firstYear === lastYear) return `${firstName}–${lastName} ${firstYear}`;
+  return `${firstName} ${firstYear}–${lastName} ${lastYear}`;
+}
+
+/** Kvartal (momsperioder) i ett räkenskapsår – tre-månadersskivor från starten. */
 export function quartersOf(fy: FiscalYear): Period[] {
-  const year = Number(fy.label);
-  const labels = ["januari–mars", "april–juni", "juli–september", "oktober–december"];
-  return labels.map((label, q) => ({
-    key: `${year}-K${q + 1}`,
-    label: `${label} ${year}`,
-    start: `${year}-${String(q * 3 + 1).padStart(2, "0")}-01`,
-    end: lastDayOfMonth(year, q * 3 + 3),
-  }));
+  const months = monthsOf(fy);
+  const quarters: Period[] = [];
+  for (let i = 0; i < months.length; i += 3) {
+    const chunk = months.slice(i, i + 3);
+    const q = quarters.length + 1;
+    quarters.push({
+      key: `${fy.label}-K${q}`,
+      label: quarterLabel(chunk),
+      start: chunk[0].start,
+      end: chunk[chunk.length - 1].end,
+    });
+  }
+  return quarters;
 }
 
 /** Hela räkenskapsåret som en momsperiod (helårsmoms). */

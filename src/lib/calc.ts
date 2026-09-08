@@ -18,8 +18,25 @@ export const RUT_TAK = 75_000;
 /** @deprecated Använd taxReductionCap(type) – ROT och RUT har olika tak. */
 export const AVDRAG_TAK = ROT_TAK;
 
+/** ROT och RUT delar ett gemensamt utrymme per person och år (SFL 67 kap.). */
+export const ROT_RUT_GEMENSAMT_TAK = 75_000;
+
 export function taxReductionRate(type: RotRut["type"]): number {
   return type === "rot" ? ROT_ANDEL : RUT_ANDEL;
+}
+
+/**
+ * Satsen som faktiskt gäller styrs av KUNDENS BETALNINGSDAG, inte fakturadatum
+ * (övergångsbestämmelserna i lag 2025:321 och 2025:322): ROT var tillfälligt
+ * 50 % för betalningar 12 maj–31 december 2025 och är 30 % igen från 2026.
+ * Dokumenten räknar med dagens sats (taxReductionRate); den här används för att
+ * jämföra mot betalningsdagen när ansökan förbereds.
+ */
+export function taxReductionRateOn(type: RotRut["type"], paidDate: string): number {
+  if (type === "rut") return RUT_ANDEL;
+  const day = paidDate.slice(0, 10);
+  if (day >= "2025-05-12" && day <= "2025-12-31") return 0.5;
+  return ROT_ANDEL;
 }
 
 /** Lagstadgat tak per person och år för respektive avdragstyp. */
@@ -64,10 +81,22 @@ export interface VatBreakdownRow {
   vat: number;
 }
 
+export function lineDiscountPercent(line: Pick<DocLine, "discountPercent">): number {
+  const raw = line.discountPercent;
+  if (raw == null || !Number.isFinite(raw)) return 0;
+  return Math.min(100, Math.max(0, raw));
+}
+
+export function isHeadingLine(line: Pick<DocLine, "isHeading">): boolean {
+  return line.isHeading === true;
+}
+
 export function lineTotal(line: DocLine): number {
+  if (isHeadingLine(line)) return 0;
   const qty = Number.isFinite(line.qty) ? line.qty : 0;
   const unitPrice = Number.isFinite(line.unitPrice) ? line.unitPrice : 0;
-  return Math.round(qty * unitPrice);
+  const factor = 1 - lineDiscountPercent(line) / 100;
+  return Math.round(qty * unitPrice * factor);
 }
 
 export function lineVat(line: DocLine): number {
@@ -104,7 +133,7 @@ export function docTotals(lines: DocLine[], rot: RotRut | null): DocTotals {
 /**
  * Moms per momssats – enda summeringen för offerter, fakturor, PDF och bokföring.
  * Inkluderar 0 % när sådana rader finns, så underlaget syns.
- * Radrabatt som eget fält finns inte i V1; negativt à-pris på en rad är den stödda rabattformen.
+ * Radrabatt: `discountPercent` på raden (0–100). Negativt à-pris fungerar fortfarande.
  */
 export function vatBreakdown(lines: DocLine[]): VatBreakdownRow[] {
   const map = new Map<number, { base: number; vat: number }>();

@@ -3,18 +3,20 @@ export const SETTINGS_HREF = {
   komIgang: "/installningar?flik=kom-igang",
   foretag: "/installningar?flik=foretag",
   fakturering: "/installningar?flik=fakturering",
+  notiser: "/installningar?flik=notiser",
   funktioner: "/installningar?flik=funktioner",
   grossister: "/installningar?flik=grossister",
   konto: "/installningar?flik=konto",
 } as const;
 
-export type SettingsFlik = "kom-igang" | "foretag" | "fakturering" | "funktioner" | "grossister" | "konto";
+export type SettingsFlik = "kom-igang" | "foretag" | "fakturering" | "notiser" | "funktioner" | "grossister" | "konto";
 
 /** Standardflikarna – exakt som innan Grossistbeställningar fanns. */
 export const SETTINGS_TABS: { key: SettingsFlik; label: string; href: string }[] = [
   { key: "kom-igang", label: "Kom igång", href: SETTINGS_HREF.komIgang },
   { key: "foretag", label: "Företag", href: SETTINGS_HREF.foretag },
   { key: "fakturering", label: "Fakturering & betalning", href: SETTINGS_HREF.fakturering },
+  { key: "notiser", label: "Notiser", href: SETTINGS_HREF.notiser },
   { key: "funktioner", label: "Funktioner", href: SETTINGS_HREF.funktioner },
   { key: "konto", label: "Konto", href: SETTINGS_HREF.konto },
 ];
@@ -50,6 +52,7 @@ const SETTINGS_FIELDS = new Set([
 export function parseSettingsFlik(raw: string | undefined): SettingsFlik {
   if (raw === "kom-igang" || raw === "komigang") return "kom-igang";
   if (raw === "fakturering" || raw === "standardval") return "fakturering";
+  if (raw === "notiser" || raw === "notifieringar") return "notiser";
   if (raw === "funktioner") return "funktioner";
   if (raw === "grossister") return "grossister";
   if (raw === "konto") return "konto";

@@ -90,8 +90,18 @@ export function skatteverketTableUrl(): string {
  */
 export const FULL_CONTRIBUTION_PERCENT = 31.42;
 export const PENSIONER_CONTRIBUTION_PERCENT = 10.21;
-/** Nedsatt avgift från det år den anställde har fyllt 66 vid årets ingång. */
-export const PENSIONER_AGE = 66;
+/**
+ * Åldern (vid årets ingång) från vilken bara ålderspensionsavgift betalas.
+ * Följer pensionsålderns riktålder: 65 t.o.m. 2022, 66 för 2023–2025 och 67
+ * från 2026 (Skatteverket: "vid årets ingång har fyllt 67 år eller mer").
+ */
+export function pensionerAgeFor(incomeYear: number): number {
+  if (incomeYear >= 2026) return 67;
+  if (incomeYear >= 2023) return 66;
+  return 65;
+}
+/** Gällande gräns för innevarande regelverk (2026–). */
+export const PENSIONER_AGE = pensionerAgeFor(2026);
 /** Födda detta år eller tidigare betalar inga avgifter alls. */
 export const NO_CONTRIBUTION_BORN_BEFORE = 1938;
 /** Åldersgräns för att omfattas av lönemodellen alls. */
@@ -115,11 +125,12 @@ export function contributionRateFor(birthDate: string, incomeYear: number): Cont
       reason: `Född ${birthYear}: inga arbetsgivaravgifter betalas för den som är född före ${NO_CONTRIBUTION_BORN_BEFORE}.`,
     };
   }
-  if (age >= PENSIONER_AGE) {
+  const pensionerAge = pensionerAgeFor(incomeYear);
+  if (age >= pensionerAge) {
     return {
       percent: PENSIONER_CONTRIBUTION_PERCENT,
       label: `Ålderspensionsavgift ${fmtPercent(PENSIONER_CONTRIBUTION_PERCENT)} %`,
-      reason: `${age} år vid ingången av ${incomeYear}: bara ålderspensionsavgift från det år den anställde fyllt ${PENSIONER_AGE} vid årets ingång.`,
+      reason: `${age} år vid ingången av ${incomeYear}: bara ålderspensionsavgift från det år den anställde fyllt ${pensionerAge} vid årets ingång.`,
     };
   }
   return {

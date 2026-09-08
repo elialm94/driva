@@ -3,10 +3,14 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AppLink } from "./app-link";
-import { ArrowUpDown, ChevronDown, ChevronUp, FileText, Landmark, Pencil, ReceiptText, Search, ShoppingBag } from "lucide-react";
+import { ArrowUpDown, ChevronDown, ChevronUp, FileText, Landmark, Pencil, Plus, ReceiptText, Search, ShoppingBag } from "lucide-react";
 import { DiscardDraftButton } from "./discard-draft-button";
-import { Badge, Card, EmptyState, cx, type BadgeTone } from "./ui";
+import { Badge, ButtonLink, Card, EmptyState, buttonClasses, cx, type BadgeTone } from "./ui";
 import { Pagination } from "./customer-list";
+import { BankRowActions } from "./bank-row-actions";
+import { ExpenseQuestionButtons, UploadReceiptButton } from "./money-widgets";
+import { UndoBookingButton } from "./bokforing-widgets";
+import { ScrollToId } from "./scroll-to-id";
 import { kr, datumKort } from "@/lib/format";
 import type { EkonomiTab } from "@/lib/nav";
 import {
@@ -21,10 +25,12 @@ import {
 import type {
   BankStatusFilter,
   BankTableRow,
+  ExpenseInlineAction,
   ExpenseStatusFilter,
   ExpenseTableRow,
   InvoiceStatusFilter,
   InvoiceTableRow,
+  OpenReceivableOption,
   QuoteStatusFilter,
   QuoteTableRow,
 } from "@/lib/services/economy-list";
@@ -69,7 +75,13 @@ function useRegisterNav<S extends string>(tab: EkonomiTab, query: EconomyQuery<S
     );
   }
 
-  return { q, setQ, go, pending };
+  /** Tillbaka till hela registret: tom sökning, status "alla", första sidan. */
+  function clear(allStatus: S) {
+    setQ("");
+    go({ q: "", status: allStatus, page: 1 });
+  }
+
+  return { q, setQ, go, clear, pending };
 }
 
 function Toolbar<S extends string>({
@@ -189,26 +201,47 @@ function SortTh({
   );
 }
 
+/**
+ * Tomt register. Med filter aktivt: ett klick tar bort sök och status så att
+ * användaren inte behöver leta efter vad som döljer raderna. Utan filter: den
+ * naturliga första handlingen ("Ny offert"), inte bara en förklaring.
+ */
 function NoMatches({
   icon,
   filtered,
   title,
   text,
   action,
+  onClear,
 }: {
   icon: typeof FileText;
   filtered: boolean;
   title: string;
   text: string;
   action?: React.ReactNode;
+  onClear?: () => void;
 }) {
   return (
     <EmptyState
       icon={icon}
       title={filtered ? "Inget matchar" : title}
       text={filtered ? "Prova ett annat sökord eller ta bort ett filter." : text}
-      action={filtered ? undefined : action}
+      action={
+        filtered ? (
+          onClear ? <ClearFiltersButton onClick={onClear} /> : undefined
+        ) : (
+          action
+        )
+      }
     />
+  );
+}
+
+export function ClearFiltersButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className={buttonClasses("secondary", "sm")} onClick={onClick} data-clear-filters>
+      Rensa sök och filter
+    </button>
   );
 }
 
@@ -249,7 +282,7 @@ export function QuoteRegister({
   query: EconomyQuery<QuoteStatusFilter>;
   options: readonly [QuoteStatusFilter, string][];
 }) {
-  const { q, setQ, go, pending } = useRegisterNav("offerter", query);
+  const { q, setQ, go, clear, pending } = useRegisterNav("offerter", query);
   const filtered = Boolean(query.q) || query.status !== "alla";
 
   return (
@@ -271,6 +304,12 @@ export function QuoteRegister({
           filtered={filtered}
           title="Inga offerter ännu"
           text="Skapa din första offert – kunden godkänner den direkt i länken."
+          onClear={() => clear("alla")}
+          action={
+            <ButtonLink href="/ekonomi/offerter/ny">
+              <Plus className="size-4" /> Ny offert
+            </ButtonLink>
+          }
         />
       ) : (
         <>
@@ -355,7 +394,7 @@ export function InvoiceRegister({
   query: EconomyQuery<InvoiceStatusFilter>;
   options: readonly [InvoiceStatusFilter, string][];
 }) {
-  const { q, setQ, go, pending } = useRegisterNav("fakturor", query);
+  const { q, setQ, go, clear, pending } = useRegisterNav("fakturor", query);
   const filtered = Boolean(query.q) || query.status !== "alla";
 
   return (
@@ -377,6 +416,12 @@ export function InvoiceRegister({
           filtered={filtered}
           title="Inga fakturor ännu"
           text="Fakturor skapas oftast direkt från ett klart uppdrag – eller manuellt här."
+          onClear={() => clear("alla")}
+          action={
+            <ButtonLink href="/ekonomi/fakturor/ny">
+              <Plus className="size-4" /> Ny faktura
+            </ButtonLink>
+          }
         />
       ) : (
         <>
@@ -473,20 +518,42 @@ function ReceiptFileLink({ receiptId }: { receiptId: string }) {
   );
 }
 
+/** Raden går att slutföra på plats – samma vägar som Hem (kvitto, kategorifråga). */
+function ExpenseInlineActions({ action }: { action: ExpenseInlineAction }) {
+  if (action.kind === "receipt") return <UploadReceiptButton expenseId={action.expenseId} label="Lägg till kvitto" />;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[13px] text-soft">{action.text}</p>
+      <ExpenseQuestionButtons expenseId={action.expenseId} options={action.options} />
+    </div>
+  );
+}
+
+/** Ring + ankare för raden en djuplänk (?atgard=…) pekar på. */
+const HIGHLIGHT_ROW_CLASS = "ring-2 ring-accent/60 ring-inset bg-accent-soft/40";
+
 export function ExpenseRegister({
   result,
   query,
   options,
+  highlightId,
+  emptyAction,
 }: {
   result: PagedResult<ExpenseTableRow>;
   query: EconomyQuery<ExpenseStatusFilter>;
   options: readonly [ExpenseStatusFilter, string][];
+  /** Utgift/leverantörsfaktura som djuplänken pekar på – markeras och scrollas fram. */
+  highlightId?: string;
+  /** Första steget när registret är tomt – t.ex. koppla banken om den inte är kopplad. */
+  emptyAction?: React.ReactNode;
 }) {
-  const { q, setQ, go, pending } = useRegisterNav("utgifter", query);
+  const { q, setQ, go, clear, pending } = useRegisterNav("utgifter", query);
   const filtered = Boolean(query.q) || query.status !== "alla";
+  const highlighted = highlightId && result.rows.some((r) => r.id === highlightId) ? highlightId : undefined;
 
   return (
     <div className={cx(pending && "opacity-70")}>
+      {highlighted ? <ScrollToId id={`utgift-${highlighted}`} /> : null}
       <Toolbar
         placeholder="Sök leverantör, kategori eller beskrivning..."
         q={q}
@@ -503,7 +570,9 @@ export function ExpenseRegister({
           icon={ShoppingBag}
           filtered={filtered}
           title="Inga utgifter ännu"
-          text="Köp från banken dyker upp här automatiskt och matchas mot kvitton."
+          text="Släpp ett kvitto i rutan ovan – eller koppla banken så dyker kortköpen upp här av sig själva."
+          onClear={() => clear("alla")}
+          action={emptyAction}
         />
       ) : (
         <>
@@ -532,7 +601,12 @@ export function ExpenseRegister({
                 </thead>
                 <tbody>
                   {result.rows.map((r) => (
-                    <tr key={`${r.kind}-${r.id}`} className={bodyRowCls}>
+                    <tr
+                      key={`${r.kind}-${r.id}`}
+                      id={r.kind === "utgift" ? `utgift-${r.id}` : `leverantorsfaktura-${r.id}`}
+                      className={cx(bodyRowCls, highlighted === r.id && HIGHLIGHT_ROW_CLASS)}
+                      data-highlighted={highlighted === r.id ? "1" : undefined}
+                    >
                       <td className="px-3 py-2.5 text-soft">{datumKort(r.date)}</td>
                       <td className="max-w-56 px-3 py-2.5">
                         <span className="block truncate font-medium text-ink">{r.supplier}</span>
@@ -541,10 +615,12 @@ export function ExpenseRegister({
                       <td className="max-w-44 truncate px-3 py-2.5 text-soft">{r.categoryLabel}</td>
                       <td className="px-3 py-2.5 text-right tabular text-ink">{kr(r.amount)}</td>
                       <td className="px-3 py-2.5">
-                        <span className="inline-flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
                           {r.receiptId ? <ReceiptFileLink receiptId={r.receiptId} /> : null}
-                        </span>
+                          {r.inlineAction ? <ExpenseInlineActions action={r.inlineAction} /> : null}
+                          {r.undoable ? <UndoBookingButton expenseId={r.id} /> : null}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -554,7 +630,11 @@ export function ExpenseRegister({
           </div>
           <div className="space-y-2 md:hidden">
             {result.rows.map((r) => (
-              <div key={`${r.kind}-${r.id}`} className="card px-4 py-3">
+              <div
+                key={`${r.kind}-${r.id}`}
+                id={r.kind === "utgift" ? `utgift-${r.id}-m` : `leverantorsfaktura-${r.id}-m`}
+                className={cx("card px-4 py-3", highlighted === r.id && HIGHLIGHT_ROW_CLASS)}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <p className="min-w-0 truncate text-[15px] font-medium">{r.supplier}</p>
                   <p className="shrink-0 text-[14px] font-semibold tabular">{kr(r.amount)}</p>
@@ -563,10 +643,16 @@ export function ExpenseRegister({
                   {datumKort(r.date)} · {r.categoryLabel}
                   {r.reference ? ` · ${r.reference}` : ""}
                 </p>
-                <div className="mt-1.5 flex items-center gap-2">
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
                   <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
                   {r.receiptId ? <ReceiptFileLink receiptId={r.receiptId} /> : null}
+                  {r.undoable ? <UndoBookingButton expenseId={r.id} /> : null}
                 </div>
+                {r.inlineAction ? (
+                  <div className="mt-2.5">
+                    <ExpenseInlineActions action={r.inlineAction} />
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -583,16 +669,24 @@ export function BankRegister({
   result,
   query,
   options,
+  receivables = [],
+  highlightId,
 }: {
   result: PagedResult<BankTableRow>;
   query: EconomyQuery<BankStatusFilter>;
   options: readonly [BankStatusFilter, string][];
+  /** Obetalda fakturor för "Matcha mot faktura". */
+  receivables?: OpenReceivableOption[];
+  /** Transaktionen som djuplänken (?atgard=bank-<id>) pekar på. */
+  highlightId?: string;
 }) {
-  const { q, setQ, go, pending } = useRegisterNav("bank", query);
+  const { q, setQ, go, clear, pending } = useRegisterNav("bank", query);
   const filtered = Boolean(query.q) || query.status !== "alla";
+  const highlighted = highlightId && result.rows.some((r) => r.id === highlightId) ? highlightId : undefined;
 
   return (
     <div className={cx(pending && "opacity-70")}>
+      {highlighted ? <ScrollToId id={`tx-${highlighted}`} /> : null}
       <Toolbar
         placeholder="Sök motpart, beskrivning eller referens..."
         q={q}
@@ -609,7 +703,8 @@ export function BankRegister({
           icon={Landmark}
           filtered={filtered}
           title="Inga transaktioner ännu"
-          text="När företagskontot är kopplat dyker transaktionerna upp här."
+          text="Banken är kopplad – transaktionerna hämtas och visas här så fort de finns."
+          onClear={() => clear("alla")}
         />
       ) : (
         <>
@@ -633,25 +728,12 @@ export function BankRegister({
                 </thead>
                 <tbody>
                   {result.rows.map((r) => (
-                    <tr key={r.id} className={bodyRowCls}>
-                      <td className="px-3 py-2.5 text-soft">{datumKort(r.date)}</td>
-                      <td className="max-w-44 truncate px-3 py-2.5 font-medium text-ink">{r.counterpart}</td>
-                      <td className="max-w-64 truncate px-3 py-2.5 text-soft">
-                        {r.secondary || "—"}
-                      </td>
-                      <td
-                        className={cx(
-                          "px-3 py-2.5 text-right tabular",
-                          r.amount > 0 ? "font-medium text-accent-deep" : "text-ink"
-                        )}
-                      >
-                        {r.amount > 0 ? "+" : ""}
-                        {kr(r.amount)}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
-                      </td>
-                    </tr>
+                    <BankTableRows
+                      key={r.id}
+                      row={r}
+                      receivables={receivables}
+                      highlighted={highlighted === r.id}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -659,7 +741,12 @@ export function BankRegister({
           </div>
           <div className="space-y-2 md:hidden">
             {result.rows.map((r) => (
-              <div key={r.id} className="card px-4 py-3">
+              <div
+                key={r.id}
+                id={`tx-${r.id}-m`}
+                className={cx("card px-4 py-3", highlighted === r.id && HIGHLIGHT_ROW_CLASS)}
+                data-bank-row={r.id}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <p className="min-w-0 truncate text-[15px] font-medium">{r.counterpart}</p>
                   <p className={cx("shrink-0 text-[14px] font-semibold tabular", r.amount > 0 && "text-accent-deep")}>
@@ -673,6 +760,18 @@ export function BankRegister({
                 <div className="mt-1.5">
                   <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
                 </div>
+                {r.action ? (
+                  <div className="mt-3 border-t border-line/70 pt-3">
+                    <BankRowActions
+                      txId={r.id}
+                      amount={r.amount}
+                      action={r.action}
+                      picker={r.picker}
+                      receivables={receivables}
+                      defaultOpen={highlighted === r.id}
+                    />
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -680,5 +779,57 @@ export function BankRegister({
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * En banktransaktion i tabellen: själva raden och, för obokade transaktioner,
+ * en åtgärdsrad direkt under (förslag att bekräfta, matcha mot faktura, lägg
+ * till kvitto, svara på kategorifrågan). Ingen rad lämnas utan utväg.
+ */
+function BankTableRows({
+  row: r,
+  receivables,
+  highlighted,
+}: {
+  row: BankTableRow;
+  receivables: OpenReceivableOption[];
+  highlighted: boolean;
+}) {
+  return (
+    <>
+      <tr
+        id={`tx-${r.id}`}
+        className={cx(bodyRowCls, r.action && "border-b-0", highlighted && HIGHLIGHT_ROW_CLASS)}
+        data-bank-row={r.id}
+      >
+        <td className="px-3 py-2.5 text-soft">{datumKort(r.date)}</td>
+        <td className="max-w-44 truncate px-3 py-2.5 font-medium text-ink">{r.counterpart}</td>
+        <td className="max-w-64 truncate px-3 py-2.5 text-soft">{r.secondary || "—"}</td>
+        <td className={cx("px-3 py-2.5 text-right tabular", r.amount > 0 ? "font-medium text-accent-deep" : "text-ink")}>
+          {r.amount > 0 ? "+" : ""}
+          {kr(r.amount)}
+        </td>
+        <td className="px-3 py-2.5">
+          <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
+        </td>
+      </tr>
+      {r.action ? (
+        <tr className={cx(bodyRowCls, highlighted && HIGHLIGHT_ROW_CLASS)}>
+          <td colSpan={5} className="px-3 pb-3 pt-0">
+            <div className="ml-[7.5rem] max-w-2xl rounded-2xl bg-canvas/70 px-4 py-3">
+              <BankRowActions
+                txId={r.id}
+                amount={r.amount}
+                action={r.action}
+                picker={r.picker}
+                receivables={receivables}
+                defaultOpen={highlighted}
+              />
+            </div>
+          </td>
+        </tr>
+      ) : null}
+    </>
   );
 }

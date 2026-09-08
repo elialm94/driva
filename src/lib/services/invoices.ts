@@ -1020,6 +1020,29 @@ export interface CreditInvoiceOptions {
   amountInclVat?: number;
 }
 
+export interface CreditInvoiceContext {
+  number: number | null;
+  /** Kvar att kreditera inkl. moms: att-betala minus tidigare delkrediter. */
+  remainingToCredit: number;
+  /** Delkredit är otvetydig bara utan ROT/RUT-avdrag. */
+  partialAllowed: boolean;
+  /** Inbetalt på fakturan – vid hel kredit blir det en återbetalning till kunden. */
+  paid: number;
+}
+
+/** Det bekräftelsedialogen behöver för att erbjuda hel eller delvis kredit. */
+export function creditInvoiceContext(invoiceId: string): CreditInvoiceContext {
+  const invoice = getInvoice(invoiceId);
+  if (!invoice) throw new Error("Fakturan finns inte");
+  const totals = invoiceTotals(invoice);
+  return {
+    number: invoice.number ?? null,
+    remainingToCredit: Math.max(0, totals.toPay - invoiceCreditedAmount(invoice.id)),
+    partialAllowed: !(invoice.rot && totals.deduction > 0),
+    paid: invoicePaidAmount(invoice.id),
+  };
+}
+
 /** Blockerar kreditering när ROT/RUT-ärendet gått för långt för att en kredit ska vara entydig. */
 function assertCreditableTaxReductionState(original: Invoice): void {
   const t = invoiceTotals(original);

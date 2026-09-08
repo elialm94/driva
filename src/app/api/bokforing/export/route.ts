@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/store";
-import { fiscalYears, currentFiscalYear } from "@/lib/accounting/fiscal";
+import { findFiscalYearByParam, resolveViewFiscalYear } from "@/lib/accounting/fiscal";
 import { generateSie, encodeSieToPc8 } from "@/lib/accounting/sie";
 import {
   balansCsv,
@@ -29,7 +29,7 @@ async function handleExport(req: NextRequest) {
   const ar = req.nextUrl.searchParams.get("ar");
   const period = req.nextUrl.searchParams.get("period");
 
-  const fy = ar ? fiscalYears().find((f) => f.label === ar) : currentFiscalYear();
+  const fy = ar ? findFiscalYearByParam(ar) : resolveViewFiscalYear();
   if (!fy) return NextResponse.json({ error: `Okänt räkenskapsår: ${ar}` }, { status: 400 });
   const range = { from: fy.startDate, to: fy.endDate };
   const slug = db().settings.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");

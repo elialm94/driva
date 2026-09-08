@@ -37,9 +37,14 @@ import { SetupCenter } from "./setup/setup-center";
 import type { SetupSummary } from "@/lib/setup/tasks";
 import type { DataImport, OnboardingState } from "@/lib/types";
 import { StickyMobileActions } from "./sticky-actions";
+import { ArticleSettings } from "./article-settings";
+import type { CatalogArticle } from "@/lib/types";
 import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 import { SettingsBillingBanner } from "./settings-billing-readiness";
 import { AddressFields } from "./address-input";
+import { FSkattSettingCard } from "./skattekonto-widgets";
+import { FiscalYearSettings, type FiscalYearSettingsYear } from "./fiscal-year-settings";
+import { OwnerNoticeSettings, type OwnerNoticeSettingsProps } from "./owner-notice-settings";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -125,6 +130,11 @@ export function SettingsForm({
   setup,
   focusFieldKey = null,
   account,
+  fSkattPerMonth,
+  fiscalYears = [],
+  today,
+  notices,
+  articles,
 }: {
   initial: CompanySettings;
   defaults: InvoiceDefaults;
@@ -142,6 +152,13 @@ export function SettingsForm({
   focusFieldKey?: string | null;
   /** Demo-copy bara när appen faktiskt körs i demoläge. */
   account: { demo: boolean; email?: string | null };
+  /** Preliminärskatt per månad – sparas direkt via eget kort, inte med formuläret. */
+  fSkattPerMonth?: number;
+  fiscalYears?: FiscalYearSettingsYear[];
+  today: string;
+  /** Notiser – eget kort som sparar direkt, utanför formuläret. */
+  notices?: OwnerNoticeSettingsProps;
+  articles?: CatalogArticle[];
 }) {
   const TABS = settingsTabsFor(features);
   const router = useRouter();
@@ -280,6 +297,7 @@ export function SettingsForm({
     if (flik === "grossister") return "Dina grossister, kundnummer och prislistor. Beställningar görs från uppdragets materialyta.";
     if (flik === "kom-igang") return "Det som återstår för att Ferva ska vara redo – och det du sköt på. Lämna och fortsätt när du vill.";
     if (flik === "konto") return "Personligt konto är skilt från företagsuppgifterna.";
+    if (flik === "notiser") return "Mejl om det som händer när du inte är i appen – kundens svar, förfrågningar och dokument i inkorgen. Ändringar sparas direkt.";
     return "Uppgifterna används på offerter, fakturor, hemsidan och i mejl. Du fyller i dem en gång.";
   }, [flik]);
 
@@ -524,6 +542,8 @@ export function SettingsForm({
               />
             </div>
           </Card>
+
+          <FiscalYearSettings years={fiscalYears} today={today} />
         </div>
       ) : null}
 
@@ -798,6 +818,9 @@ export function SettingsForm({
               </Link>
             </Card>
           ) : null}
+
+          {typeof fSkattPerMonth === "number" ? <FSkattSettingCard amount={fSkattPerMonth} /> : null}
+          {articles ? <ArticleSettings articles={articles} /> : null}
         </div>
       ) : null}
 
@@ -840,7 +863,7 @@ export function SettingsForm({
         </div>
       ) : null}
 
-      {flik !== "konto" && flik !== "funktioner" && flik !== "grossister" && flik !== "kom-igang" ? (
+      {flik !== "konto" && flik !== "funktioner" && flik !== "grossister" && flik !== "kom-igang" && flik !== "notiser" ? (
         <div className="mt-6">
           {showErrors ? (
             <FormValidationSummary
@@ -906,8 +929,9 @@ export function SettingsForm({
       ) : null}
       </form>
 
-      {/* Egna formulär (grossist, prisfil, Kom igång) – utanför inställningsformuläret så inget <form> nästlas. */}
+      {/* Egna formulär (grossist, prisfil, Kom igång, notiser) – utanför inställningsformuläret så inget <form> nästlas. */}
       {flik === "grossister" ? <WholesalerSettings overviews={wholesalers ?? []} demo={account.demo} /> : null}
+      {flik === "notiser" && notices ? <OwnerNoticeSettings {...notices} /> : null}
       {flik === "kom-igang" && setup ? (
         <SetupCenter summary={setup.summary} onboarding={setup.onboarding} imports={setup.imports} />
       ) : null}

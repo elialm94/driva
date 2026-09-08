@@ -7,6 +7,8 @@ import { Modal } from "./modal";
 import { buttonClasses } from "./ui";
 import { kr } from "@/lib/format";
 import { CustomerEmailPrompt } from "./customer-email-prompt";
+import { ShareCustomerLink } from "./share-customer-link";
+import { RotCustomerShareCallout } from "./rot-customer-share";
 import { useBlockedAction } from "./blocked-action";
 import { DisabledSendWrap } from "./disabled-send-button";
 import type { PendingAction } from "@/lib/missing-requirements";
@@ -28,22 +30,33 @@ export function QuoteDraftSend({
   recipientEmail,
   canSend = true,
   mailConfigured = true,
+  publicPath,
+  customerPhone,
+  quoteNumber,
+  deduction,
+  rotType,
 }: {
   documentId: string;
   customerId: string;
   customerName: string;
   amount: number;
   validUntilLabel: string;
-  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; mailed?: boolean; demo?: boolean }>;
+  sendAction: (message?: string) => Promise<void | { ok: boolean; errors?: string[]; mailed?: boolean; demo?: boolean }>;
   detailHref: string;
   recipientEmail?: string;
   /** Samma källa som checklistan: canSend = quoteSendBlockers().length === 0. */
   canSend?: boolean;
   /** Om e-postutskick är konfigurerat på servern – styr ärlig text i dialogen. */
   mailConfigured?: boolean;
+  publicPath?: string;
+  customerPhone?: string;
+  quoteNumber?: number;
+  deduction?: number;
+  rotType?: "rot" | "rut";
 }) {
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [message, setMessage] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [isSending, startSending] = useTransition();
   const pendingAction: PendingAction = { kind: "SEND_QUOTE", documentId, customerId };
@@ -72,7 +85,7 @@ export function QuoteDraftSend({
     if (isSending) return;
     startSending(async () => {
       setSendError(null);
-      const result = await sendAction();
+      const result = await sendAction(message.trim() || undefined);
       if (result && result.ok === false) {
         setSendError((result.errors ?? []).join(" ") || "Offerten kunde inte skickas just nu.");
         return;
@@ -107,6 +120,19 @@ export function QuoteDraftSend({
           <p className="text-[17px] font-semibold tracking-tight text-ink">{customerName}</p>
           <p className="mt-1 text-[15px] text-soft">{kr(amount)}</p>
           <p className="mt-1 text-[14px] text-muted">Giltig till {validUntilLabel}</p>
+          {rotType && deduction ? (
+            <RotCustomerShareCallout type={rotType} toPay={amount} deduction={deduction} />
+          ) : null}
+          <label className="mt-4 block text-[13px] font-medium text-ink">
+            Personligt meddelande
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={3}
+              placeholder="Valfritt – syns överst i mejlet."
+              className="mt-1.5 w-full rounded-xl border border-line bg-card px-3 py-2 text-[14px] font-normal text-ink placeholder:text-muted focus:border-accent"
+            />
+          </label>
           <p className="mt-4 text-[14px] leading-relaxed text-soft">
             {mailConfigured ? (
               <>
@@ -119,6 +145,12 @@ export function QuoteDraftSend({
               </>
             )}
           </p>
+          {publicPath ? (
+            <div className="mt-4">
+              <p className="mb-2 text-[12px] font-medium text-muted">Förhandsgranska och dela</p>
+              <ShareCustomerLink path={publicPath} kind="offert" number={quoteNumber} phone={customerPhone} />
+            </div>
+          ) : null}
           {sendError ? <p className="mt-3 text-[13px] font-medium text-danger">{sendError}</p> : null}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button className={buttonClasses("secondary")} disabled={isSending} onClick={() => setConfirmOpen(false)}>

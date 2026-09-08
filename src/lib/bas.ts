@@ -245,15 +245,33 @@ function entriesReverseChargePurchase(
   ];
 }
 
-/** Utgift betald direkt från banken (kvitto): kostnad + ingående moms mot företagskontot. */
-export function entriesExpense(categoryKey: string, amount: number, vatAmount: number): VerificationEntry[] {
+/**
+ * Utgift (kvitto): kostnad + ingående moms mot det konto som betalade –
+ * företagskontot (1930) som standard, eller skuld till ägaren (2893) när
+ * ägaren la ut privat och bolaget ska betala tillbaka.
+ */
+export function entriesExpense(
+  categoryKey: string,
+  amount: number,
+  vatAmount: number,
+  settlementAccount: number = 1930
+): VerificationEntry[] {
   const cat = categoryByKey(categoryKey);
-  if (cat.reverseChargeRate) return entriesReverseChargePurchase(cat, amount, 1930);
+  if (cat.reverseChargeRate) return entriesReverseChargePurchase(cat, amount, settlementAccount);
   const net = amount - vatAmount;
   const entries: VerificationEntry[] = [e(cat.account, net, 0)];
   if (vatAmount > 0) entries.push(e(2641, vatAmount, 0));
-  entries.push(e(1930, 0, amount));
+  entries.push(e(settlementAccount, 0, amount));
   return entries;
+}
+
+/**
+ * Verifikationsrader ur en färdigräknad kontering (manuella utgifter:
+ * milersättning, traktamente, representation – se expenses/manual-expense.ts).
+ * Kontonamnen slås upp här så att den rena planeringsmodulen slipper registret.
+ */
+export function entriesFromPostingLines(lines: readonly { account: number; debit: number; credit: number }[]): VerificationEntry[] {
+  return lines.filter((l) => l.debit > 0 || l.credit > 0).map((l) => e(l.account, l.debit, l.credit));
 }
 
 /** Leverantörsfaktura mottagen: kostnad + ingående moms mot leverantörsskuld. */

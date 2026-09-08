@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useId, useRef, useState, type DragEvent } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, FileUp, Loader2, Sparkles, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Loader2, Sparkles, Trash2, X } from "lucide-react";
 import type { ImportAnalysis, ImportOutcome } from "@/lib/services/data-imports";
 import type { RegisterMapping } from "@/lib/imports/registers";
 import type { DataImportKind, WholesalerColumnMapping } from "@/lib/types";
 import { COLUMN_KEYS, COLUMN_LABELS } from "@/lib/wholesalers/column-mapping";
 import { AppLink } from "../app-link";
+import { FileDropzone } from "../file-dropzone";
 import { Badge, Card } from "../ui";
 import { buttonClasses, cx } from "../ui-classes";
 
@@ -58,10 +59,8 @@ async function postImport(file: File, mode: "analyze" | "import", options: Recor
 export function ImportCenter({ importedCount }: { importedCount: number }) {
   const router = useRouter();
   const [entries, setEntries] = useState<FileEntry[]>([]);
-  const [dragging, setDragging] = useState(false);
   const [showFormats, setShowFormats] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const inputId = useId();
   const importingRef = useRef(false);
 
   const update = useCallback((id: string, patch: Partial<FileEntry> | ((e: FileEntry) => Partial<FileEntry>)) => {
@@ -126,12 +125,6 @@ export function ImportCenter({ importedCount }: { importedCount: number }) {
     [analyze, update],
   );
 
-  function onDrop(e: DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    setDragging(false);
-    if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
-  }
-
   async function runImport(entry: FileEntry) {
     if (importingRef.current || !entry.analysis) return;
     importingRef.current = true;
@@ -166,45 +159,20 @@ export function ImportCenter({ importedCount }: { importedCount: number }) {
 
   return (
     <div className="space-y-5" data-import-center>
-      <Card
-        className={cx(
-          "border-dashed p-6 text-center transition-colors sm:p-10",
-          dragging ? "border-accent bg-accent-soft/40" : "border-line-strong",
-        )}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        data-import-dropzone
+      <FileDropzone
+        variant="landing"
+        multiple
+        accept={ACCEPT}
+        inputRef={inputRef}
+        dropzoneAttr="import"
+        fileInputAttr="import"
+        title="Dra filer hit eller välj från enheten"
+        subtitle="Till exempel bokföring, kunder, leverantörer, artiklar eller prislistor."
+        onFiles={(files) => addFiles(files)}
       >
-        <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-accent-soft text-accent-deep">
-          <FileUp className="size-5" />
-        </div>
-        <p className="mt-4 text-[17px] font-semibold text-ink">Dra filer hit eller välj från enheten</p>
-        <p className="mt-1 text-[14px] text-soft">Till exempel bokföring, kunder, leverantörer, artiklar eller prislistor.</p>
-        <input
-          ref={inputRef}
-          id={inputId}
-          type="file"
-          multiple
-          accept={ACCEPT}
-          className="sr-only"
-          onChange={(e) => {
-            if (e.target.files?.length) addFiles(e.target.files);
-            e.target.value = "";
-          }}
-          data-import-file-input
-        />
-        <div className="mt-5 flex flex-col items-center gap-3">
-          <label htmlFor={inputId} className={buttonClasses("primary", "lg", "cursor-pointer")}>
-            Välj filer
-          </label>
-          <button type="button" className="text-[13px] text-muted underline-offset-2 hover:text-ink hover:underline" onClick={() => setShowFormats((v) => !v)}>
-            Vilka filer fungerar?
-          </button>
-        </div>
+        <button type="button" className="text-[13px] text-muted underline-offset-2 hover:text-ink hover:underline" onClick={() => setShowFormats((v) => !v)}>
+          Vilka filer fungerar?
+        </button>
         {showFormats ? (
           <dl className="mx-auto mt-4 grid max-w-md gap-2 text-left text-[13px] text-soft sm:grid-cols-[auto_1fr]">
             <dt className="font-medium text-ink">Bokföring</dt>
@@ -217,7 +185,7 @@ export function ImportCenter({ importedCount }: { importedCount: number }) {
             <dd>Kvitton och fakturor som PDF tar du emot i Inboxen.</dd>
           </dl>
         ) : null}
-      </Card>
+      </FileDropzone>
 
       {entries.length === 0 && importedCount > 0 ? (
         <p className="text-[13px] text-muted">

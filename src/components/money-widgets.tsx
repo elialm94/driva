@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, Check, Banknote, FilePlus2, Undo2, Send } from "lucide-react";
+import { Check, Banknote, FilePlus2, Undo2, Send } from "lucide-react";
 import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
 import { Modal } from "./modal";
 import { buttonClasses, cx, DemoTag } from "./ui";
@@ -10,6 +10,7 @@ import {
   answerExpenseQuestionAction,
   createPartInvoiceAction,
   creditInvoiceAction,
+  creditInvoiceContextAction,
   deliverInvoiceAction,
   followUpQuoteAction,
   paySupplierInvoiceAction,
@@ -19,7 +20,11 @@ import {
   uploadReceiptAction,
 } from "@/app/actions";
 import { invoiceHref } from "@/lib/nav";
+import { kr } from "@/lib/format";
+import type { CreditInvoiceContext } from "@/lib/services/invoices";
 import { inboxDocumentForm, receiptUploadForm } from "@/lib/receipts/read-file";
+import { ReceiptUpload } from "./receipt-upload";
+import { useToast } from "./toast";
 
 /**
  * Ladda upp ett kvitto. Med `expenseId` kopplas det till ett känt bankköp –
@@ -27,53 +32,46 @@ import { inboxDocumentForm, receiptUploadForm } from "@/lib/receipts/read-file";
  * kvittotolkningen och bokförs när läsningen är säker nog; annars hamnar det i
  * Kontrollera-vyn. Ingen väg hittar på uppgifter.
  */
-export function UploadReceiptButton({ expenseId, label = "Lägg till kvitto" }: { expenseId?: string; label?: string }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [done, setDone] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  if (done) {
+export function UploadReceiptButton({
+  expenseId,
+  label = "Lägg till kvitto",
+  variant,
+}: {
+  expenseId?: string;
+  label?: string;
+  variant?: "landing" | "inline" | "compact";
+}) {
+  const zone = variant ?? (expenseId ? "compact" : "landing");
+
+  if (expenseId) {
     return (
-      <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
-        <Check className="size-4" /> {done}
-      </span>
-    );
-  }
-  return (
-    <label className={cx(buttonClasses("primary", "sm"), "cursor-pointer")}>
-      <Upload className="size-3.5" />
-      {isPending ? "Läser av …" : label}
-      <input
-        type="file"
-        accept="image/*,.pdf"
-        className="hidden"
-        disabled={isPending}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-          setError(null);
-          startTransition(async () => {
-            try {
-              if (expenseId) {
-                const result = await uploadReceiptAction(receiptUploadForm(expenseId, file));
-                if (result.ok === false) setError(result.error);
-                else setDone("Kvitto sparat");
-              } else {
-                const result = await uploadInboxDocumentAction(inboxDocumentForm(file));
-                if (result.ok === false) setError(result.error);
-                else {
-                  setDone(result.autoBooked ? "Kvitto bokfört" : "Kvitto i inboxen");
-                  router.refresh();
-                }
-              }
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Kunde inte spara kvittot.");
-            }
-          });
+      <ReceiptUpload
+        variant={zone}
+        multiple={false}
+        title={label}
+        formats="PDF, JPG, PNG, HEIC · max 5 MB"
+        upload={async (file) => {
+          // Filen följer med som File i en FormData – aldrig som data-URL (read-file.ts).
+          const result = await uploadReceiptAction(receiptUploadForm(expenseId, file));
+          if (result.ok === false) return { ok: false, error: result.error };
+          return { ok: true, note: "Kvitto sparat" };
         }}
       />
-      {error ? <span className="ml-2 text-[13px] font-medium text-danger">{error}</span> : null}
-    </label>
+    );
+  }
+
+  return (
+    <ReceiptUpload
+      variant={zone}
+      title={label}
+      subtitle="Eller tryck för att välja, fota med kameran eller klistra in en skärmdump. Kvittot läses av och bokförs när uppgifterna räcker."
+      pasteAnywhere={zone === "landing"}
+      upload={async (file) => {
+        const result = await uploadInboxDocumentAction(inboxDocumentForm(file));
+        if (result.ok === false) return { ok: false, error: result.error };
+        return { ok: true, note: result.autoBooked ? "Bokfört" : "I inboxen – kontrollera uppgifterna" };
+      }}
+    />
   );
 }
 
@@ -110,11 +108,17 @@ export function ExpenseQuestionButtons({ expenseId, options }: { expenseId: stri
 
 export function PaySupplierButton({ supplierInvoiceId }: { supplierInvoiceId: string }) {
   const [isPending, startTransition] = useTransition();
+  const { toast } = useToast();
   return (
     <button
       className={buttonClasses("secondary", "sm")}
       disabled={isPending}
-      onClick={() => startTransition(async () => paySupplierInvoiceAction(supplierInvoiceId))}
+      onClick={() =>
+        startTransition(async () => {
+          await paySupplierInvoiceAction(supplierInvoiceId);
+          toast({ title: "Leverantörsfakturan är betald och bokförd", tone: "ok" });
+        })
+      }
       title="Demoläge: simulerar att banken redan har dragit pengarna"
     >
       <Banknote className="size-3.5" />
@@ -133,6 +137,7 @@ export function SimulatePaymentButton({
 }) {
   const [isPending, startTransition] = useTransition();
   const menu = useActionMenu();
+  const { toast } = useToast();
   const inMenu = appearance === "menu";
   return (
     <button
@@ -144,6 +149,11 @@ export function SimulatePaymentButton({
         startTransition(async () => {
           menu?.close();
           await simulatePaymentAction(invoiceId);
+          toast({
+            title: "Inbetalningen finns på banken",
+            text: "Matchningen mot fakturan och bokföringen körs som på riktigt.",
+            tone: "ok",
+          });
         })
       }
       title="Simulerar att betalningen dyker upp på banken – matchning och bokföring körs på riktigt"
@@ -267,25 +277,96 @@ export function CreatePartInvoiceButton({
   );
 }
 
-/** Samma helkredit-bekräftelse som på fakturasidan. Rendera utanför overflow-menyn. */
+/**
+ * Kreditera hel eller del av en faktura. Delkredit får ett eget belopp inkl.
+ * moms; originalet lever kvar med lägre utestående. ROT/RUT-fakturor krediteras
+ * alltid i sin helhet (avdraget mot Skatteverket blir annars tvetydigt).
+ * Rendera utanför overflow-menyn.
+ */
 export function CreditInvoiceConfirmDialog({
   invoiceId,
   open,
   onClose,
   onSuccess,
+  context,
 }: {
   invoiceId: string;
   open: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  /** Känd på fakturasidan; hämtas annars när dialogen öppnas. */
+  context?: CreditInvoiceContext | null;
+}) {
+  const [isPending, setPending] = useState(false);
+  // Formuläret monteras om varje gång dialogen öppnas – då börjar valet om från "hela".
+  return (
+    <Modal open={open} onClose={() => !isPending && onClose()} size="sm" title="Kreditera faktura">
+      {open ? (
+        <CreditInvoiceForm
+          invoiceId={invoiceId}
+          initialContext={context ?? null}
+          onClose={onClose}
+          onSuccess={onSuccess}
+          onPendingChange={setPending}
+        />
+      ) : null}
+    </Modal>
+  );
+}
+
+function CreditInvoiceForm({
+  invoiceId,
+  initialContext,
+  onClose,
+  onSuccess,
+  onPendingChange,
+}: {
+  invoiceId: string;
+  initialContext: CreditInvoiceContext | null;
+  onClose: () => void;
+  onSuccess?: () => void;
+  onPendingChange: (pending: boolean) => void;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [context, setContext] = useState<CreditInvoiceContext | null>(initialContext);
+  const [mode, setMode] = useState<"hel" | "del">("hel");
+  const [amount, setAmount] = useState("");
+  const amountId = useId();
+
+  useEffect(() => {
+    onPendingChange(isPending);
+  }, [isPending, onPendingChange]);
+
+  useEffect(() => {
+    if (initialContext || !invoiceId) return;
+    let cancelled = false;
+    creditInvoiceContextAction(invoiceId).then((res) => {
+      if (cancelled) return;
+      if (res.ok) setContext(res.context);
+      else setError(res.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [invoiceId, initialContext]);
+
+  const partialAllowed = context?.partialAllowed ?? true;
+  const remaining = context?.remainingToCredit ?? null;
+  const parsedAmount = Number(amount.replace(/\s/g, "").replace(",", "."));
+  const partialValid = mode === "del" && Number.isFinite(parsedAmount) && parsedAmount >= 1;
 
   function confirm() {
+    if (mode === "del" && !partialValid) {
+      setError("Ange beloppet att kreditera i hela kronor inkl. moms.");
+      return;
+    }
     startTransition(async () => {
-      const result = await creditInvoiceAction(invoiceId);
+      const result = await creditInvoiceAction(
+        invoiceId,
+        mode === "del" ? { amountInclVat: Math.round(parsedAmount) } : undefined
+      );
       if (result && result.ok === false) {
         setError(result.error);
         return;
@@ -296,21 +377,112 @@ export function CreditInvoiceConfirmDialog({
     });
   }
 
+  const optionCls = (active: boolean) =>
+    cx(
+      "flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition-colors",
+      active ? "border-accent bg-accent-soft/40" : "border-line hover:border-line-strong"
+    );
+
   return (
-    <Modal open={open} onClose={() => !isPending && onClose()} size="sm" title="Kreditera faktura?">
-      <div className="px-6 py-5">
-        <p className="text-[15px] leading-relaxed text-soft">Kreditera hela fakturan? Delkredit stöds inte.</p>
-        {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button className={buttonClasses("secondary")} disabled={isPending} onClick={onClose}>
-            Avbryt
-          </button>
-          <button className={buttonClasses("danger")} disabled={isPending} onClick={confirm}>
-            {isPending ? "Krediterar …" : "Ja, kreditera"}
-          </button>
-        </div>
+    <div className="px-6 py-5">
+      {context?.number != null ? (
+        <p className="text-[17px] font-semibold tracking-tight text-ink">Faktura #{context.number}</p>
+      ) : null}
+      <p className={cx("text-[14px] leading-relaxed text-soft", context?.number != null && "mt-1")}>
+        Kunden får en kreditfaktura med eget nummer. Originalet och dess verifikation står kvar – krediten bokförs som en
+        egen händelse.
+      </p>
+
+      <div className="mt-4 space-y-2" role="radiogroup" aria-label="Vad ska krediteras">
+        <label className={optionCls(mode === "hel")}>
+          <input
+            type="radio"
+            name="kredit-lage"
+            className="mt-1 accent-accent"
+            checked={mode === "hel"}
+            onChange={() => setMode("hel")}
+          />
+          <span className="min-w-0">
+            <span className="block text-[14px] font-medium text-ink">
+              Hela fakturan{remaining != null ? ` · ${kr(remaining)}` : ""}
+            </span>
+            <span className="block text-[13px] text-soft">
+              {context && context.paid > 0
+                ? `Kunden har redan betalat ${kr(context.paid)} – det blir en återbetalning att bokföra.`
+                : "Fakturan markeras som krediterad och räknas inte längre som en fordran."}
+            </span>
+          </span>
+        </label>
+
+        {partialAllowed ? (
+          <label className={optionCls(mode === "del")}>
+            <input
+              type="radio"
+              name="kredit-lage"
+              className="mt-1 accent-accent"
+              checked={mode === "del"}
+              onChange={() => setMode("del")}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-medium text-ink">En del av beloppet</span>
+              <span className="block text-[13px] text-soft">
+                Raderna krediteras proportionellt per momssats. Fakturan fortsätter gälla för resten.
+              </span>
+              {mode === "del" ? (
+                <span className="mt-3 block">
+                  <label htmlFor={amountId} className="mb-1 block text-[12px] font-medium text-soft">
+                    Belopp att kreditera, inkl. moms
+                  </label>
+                  <span className="relative block w-44">
+                    <input
+                      id={amountId}
+                      type="text"
+                      inputMode="numeric"
+                      autoFocus
+                      placeholder={remaining != null ? `högst ${remaining.toLocaleString("sv-SE")}` : "t.ex. 2 500"}
+                      value={amount}
+                      onChange={(e) => {
+                        setAmount(e.target.value);
+                        setError(null);
+                      }}
+                      className="h-10 w-full rounded-xl border border-line bg-card px-3 pr-9 text-[14px] tabular outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+                    />
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[13px] text-muted"
+                    >
+                      kr
+                    </span>
+                  </span>
+                </span>
+              ) : null}
+            </span>
+          </label>
+        ) : (
+          <p className="px-1 text-[12px] text-muted">
+            Fakturor med ROT/RUT-avdrag krediteras alltid i sin helhet – avdraget hos Skatteverket kan inte delas.
+          </p>
+        )}
       </div>
-    </Modal>
+
+      {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
+      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <button className={buttonClasses("secondary")} disabled={isPending} onClick={onClose}>
+          Avbryt
+        </button>
+        <button
+          className={buttonClasses("danger")}
+          disabled={isPending || (mode === "del" && !partialValid)}
+          onClick={confirm}
+        >
+          {isPending
+            ? "Krediterar …"
+            : mode === "del" && partialValid
+              ? `Kreditera ${kr(Math.round(parsedAmount))}`
+              : "Kreditera hela fakturan"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -320,76 +492,42 @@ export function CreditInvoiceButton({
   label = "Kreditera",
   buttonVariant = "ghost",
   onSuccess,
+  context,
 }: {
   invoiceId: string;
   appearance?: ActionAppearance;
   label?: string;
   buttonVariant?: "ghost" | "secondary";
   onSuccess?: () => void;
+  context?: CreditInvoiceContext | null;
 }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const menu = useActionMenu();
   const inMenu = appearance === "menu";
 
   function startConfirm() {
     menu?.close();
-    setError(null);
     setConfirming(true);
   }
 
-  function confirm() {
-    startTransition(async () => {
-      const result = await creditInvoiceAction(invoiceId);
-      if (result && result.ok === false) {
-        setError(result.error);
-        return;
-      }
-      setConfirming(false);
-      onSuccess?.();
-      router.refresh();
-    });
-  }
-
-  const trigger = (
-    <button
-      type="button"
-      role={inMenu ? "menuitem" : undefined}
-      className={inMenu ? actionMenuItemClassName() : buttonClasses(buttonVariant, "sm")}
-      onClick={startConfirm}
-    >
-      <Undo2 className="size-3.5 shrink-0" /> {label}
-    </button>
-  );
-
-  if (inMenu) {
-    return (
-      <>
-        {trigger}
-        <CreditInvoiceConfirmDialog
-          invoiceId={invoiceId}
-          open={confirming}
-          onClose={() => !isPending && setConfirming(false)}
-          onSuccess={onSuccess}
-        />
-      </>
-    );
-  }
-
-  if (!confirming) return trigger;
   return (
-    <span className="flex flex-wrap items-center gap-2">
-      <span className="text-[13px] text-soft">Kreditera hela fakturan? Delkredit stöds inte.</span>
-      <button className={buttonClasses("danger", "sm")} disabled={isPending} onClick={confirm}>
-        {isPending ? "Krediterar …" : "Ja, kreditera"}
+    <>
+      <button
+        type="button"
+        role={inMenu ? "menuitem" : undefined}
+        className={inMenu ? actionMenuItemClassName() : buttonClasses(buttonVariant, "sm")}
+        onClick={startConfirm}
+      >
+        <Undo2 className="size-3.5 shrink-0" /> {label}
       </button>
-      <button className={buttonClasses("ghost", "sm")} onClick={() => setConfirming(false)}>
-        Avbryt
-      </button>
-      {error ? <span className="w-full text-[13px] font-medium text-danger">{error}</span> : null}
-    </span>
+      <CreditInvoiceConfirmDialog
+        invoiceId={invoiceId}
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        onSuccess={onSuccess}
+        context={context}
+      />
+    </>
   );
 }
 
@@ -405,10 +543,12 @@ export function ResendInvoiceButton({
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const menu = useActionMenu();
+  const { toast } = useToast();
   const inMenu = appearance === "menu";
   const label = isPending ? "Skickar …" : retry ? "Försök skicka igen" : "Skicka igen";
 
-  if (done) {
+  if (done && !inMenu) {
     return (
       <span
         className={cx(
@@ -430,8 +570,16 @@ export function ResendInvoiceButton({
       onClick={() =>
         startTransition(async () => {
           const result = await deliverInvoiceAction(invoiceId);
-          if (result.ok === false) setError(result.errors.join(" "));
-          else setDone(true);
+          if (result.ok === false) {
+            setError(result.errors.join(" "));
+            return;
+          }
+          setDone(true);
+          // Menyn stängs – bekräftelsen syns i toasten i stället.
+          if (inMenu) {
+            menu?.close();
+            toast({ title: retry ? "Fakturan skickades" : "Fakturan skickades igen", text: "Kunden får mejlet med länken för att betala.", tone: "ok" });
+          }
         })
       }
     >

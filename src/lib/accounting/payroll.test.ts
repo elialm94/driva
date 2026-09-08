@@ -116,9 +116,18 @@ describe("arbetsgivaravgift efter ålder", () => {
     assert.equal(rate.percent, FULL_CONTRIBUTION_PERCENT);
   });
 
-  it("bara ålderspensionsavgift från det år den anställde fyllt 66 vid årets ingång", () => {
-    assert.equal(contributionRateFor("1959-06-12", YEAR).percent, PENSIONER_CONTRIBUTION_PERCENT);
+  it("2026: bara ålderspensionsavgift från det år den anställde fyllt 67 vid årets ingång", () => {
+    // Skatteverket 2026: födda 1938–1958 → 10,21 %, födda 1959 eller senare → 31,42 %.
+    assert.equal(contributionRateFor("1958-06-12", YEAR).percent, PENSIONER_CONTRIBUTION_PERCENT);
+    assert.equal(contributionRateFor("1959-06-12", YEAR).percent, FULL_CONTRIBUTION_PERCENT);
     assert.equal(contributionRateFor("1960-06-12", YEAR).percent, FULL_CONTRIBUTION_PERCENT);
+    assert.match(contributionRateFor("1958-06-12", YEAR).reason, /fyllt 67/);
+  });
+
+  it("2023–2025 gällde 66 år – samma person byter inte sats bakåt i tiden", () => {
+    assert.equal(contributionRateFor("1959-06-12", 2025).percent, FULL_CONTRIBUTION_PERCENT);
+    assert.equal(contributionRateFor("1958-06-12", 2025).percent, PENSIONER_CONTRIBUTION_PERCENT);
+    assert.equal(contributionRateFor("1959-06-12", 2027).percent, PENSIONER_CONTRIBUTION_PERCENT);
   });
 
   it("inga avgifter för den som är född före 1938", () => {

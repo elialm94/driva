@@ -110,6 +110,7 @@ export function updateCustomer(
       | "personalIdentityNumber"
       | "notes"
       | "reverseChargeConstruction"
+      | "taxReductionUsed"
     >
   >
 ): Customer {
@@ -143,6 +144,17 @@ export function updateCustomer(
     }
     if (patch.reverseChargeConstruction) c.reverseChargeConstruction = true;
     else delete c.reverseChargeConstruction;
+  }
+  if (patch.taxReductionUsed !== undefined) {
+    const used = patch.taxReductionUsed;
+    if (!used) delete c.taxReductionUsed;
+    else {
+      c.taxReductionUsed = {
+        year: used.year,
+        rot: Math.max(0, Math.round(used.rot)),
+        rut: Math.max(0, Math.round(used.rut)),
+      };
+    }
   }
   if (patch.personalIdentityNumber !== undefined) {
     const pnError = personnummerFieldError(patch.personalIdentityNumber);

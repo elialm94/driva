@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { parseInboundPayload, verifyInboundSignature } from "@/lib/inbox/inbound-mail";
 import { followUpInboundConfirmation } from "@/lib/inbox/confirmation-followup";
 import { ingestInboundMail, inboundSlugMatches, interpretInboundPayload } from "@/lib/services/inbox";
+import { prepareInboxArrivalNotice, sendOwnerNotices } from "@/lib/services/owner-notices";
 import { persistInboundAttachments } from "@/lib/inbox/attachment-file";
 import { inboundSlugFromTo } from "@/lib/inbox/inbound-mail";
 import { isSupabaseMode } from "@/lib/storage/config";
@@ -48,6 +49,8 @@ export async function POST(req: NextRequest) {
       status: 200 as const,
       payload: { id: result.item.id, created: result.created, autoBooked: result.autoBooked },
       confirmationFollowUp: result.created && result.item.documentType === "orderbekraftelse",
+      // Företagarens notis byggs här (tenantkontext) och skickas efter svaret.
+      ownerNotice: prepareInboxArrivalNotice(result.item, { created: result.created }),
     };
   };
 
@@ -55,6 +58,8 @@ export async function POST(req: NextRequest) {
     const result = await run();
     if (result.status !== 200) return NextResponse.json({ error: result.error }, { status: result.status });
     if (result.confirmationFollowUp) after(() => followUpInboundConfirmation(slug, result.payload.id));
+    const notice = result.ownerNotice;
+    if (notice) after(() => sendOwnerNotices([notice]));
     return NextResponse.json(result.payload);
   }
 
@@ -63,5 +68,7 @@ export async function POST(req: NextRequest) {
   if (result.status !== 200) return NextResponse.json({ error: result.error }, { status: result.status });
   // AI-fallbacken körs efter svaret – webhooken väntar aldrig på en LLM.
   if (result.confirmationFollowUp) after(() => followUpInboundConfirmation(slug, result.payload.id));
+  const notice = result.ownerNotice;
+  if (notice) after(() => sendOwnerNotices([notice]));
   return NextResponse.json(result.payload);
 }

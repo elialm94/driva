@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
+import { bookkeepingHasPayroll, bookkeepingMode } from "@/lib/accounting/bookkeeping-mode";
+import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
 
 /**
  * Delat bokföringsskal. Flikraden lever här så den inte monteras om när
@@ -8,10 +10,26 @@ import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
  * Första steget in i Bokföring täcks av (app)/loading.tsx.
  */
 export default function BokforingLayout({ children }: { children: ReactNode }) {
+  const today = todayDate();
+  const openYear = fiscalYears().find((f) => f.status === "oppet");
+  const showYearEnd =
+    openYear != null &&
+    (today >= monthsBefore(openYear.endDate, 2) || today > openYear.endDate || fiscalYears().some((f) => f.status === "stangt"));
+
   return (
     <div className="animate-fade-up">
-      <BokforingAdvancedTabs />
+      <BokforingAdvancedTabs
+        mode={bookkeepingMode()}
+        hasPayroll={bookkeepingHasPayroll()}
+        showYearEnd={showYearEnd}
+      />
       {children}
     </div>
   );
+}
+
+function monthsBefore(date: string, months: number): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() - months);
+  return d.toISOString().slice(0, 10);
 }

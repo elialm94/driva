@@ -1,6 +1,6 @@
 import { SupplierRegister } from "@/components/supplier-register";
 import Link from "next/link";
-import { Plus, Landmark } from "lucide-react";
+import { BedDouble, Car, Coffee, Landmark, Plus, Wallet } from "lucide-react";
 import { db } from "@/lib/store";
 import { kr, datumKort, datumTid } from "@/lib/format";
 import {
@@ -16,13 +16,12 @@ import {
 } from "@/components/ui";
 import { UploadReceiptButton } from "@/components/money-widgets";
 import {
-  BankNoticeToast,
   CancelPendingBankButton,
   ConnectBankButton,
   DisconnectBankButton,
   RefreshBankButton,
 } from "@/components/bank-connection";
-import { bankConnectionView, type BankConnectionView } from "@/lib/banking/connection-state";
+import { bankConnectionView, hasConnectedBank, type BankConnectionView } from "@/lib/banking/connection-state";
 import { bankProviderKind } from "@/lib/banking/select";
 import { BANK_CONNECTION_STATUS } from "@/lib/status-labels";
 import { CreatePaymentFileButton } from "@/components/payment-file-actions";
@@ -33,15 +32,22 @@ import {
   InvoiceRegister,
   QuoteRegister,
 } from "@/components/economy-register";
+import { BankInboxStrip } from "@/components/bank-inbox-strip";
+import { BankRulesCard } from "@/components/bank-rules-card";
+import { listBankCounterpartRules } from "@/lib/services/bank-booking";
+import { ownerLiability } from "@/lib/services/manual-expense";
 import {
   BANK_STATUS_OPTIONS,
   EXPENSE_STATUS_OPTIONS,
   INVOICE_STATUS_OPTIONS,
   QUOTE_STATUS_OPTIONS,
+  bankInboxSummary,
   listBankForTable,
   listExpensesForTable,
   listInvoicesForTable,
   listQuotesForTable,
+  openBankTransactionCount,
+  openReceivablesForMatching,
   readyToPayBatch,
   type BankStatusFilter,
   type ExpenseStatusFilter,
@@ -51,8 +57,7 @@ import {
 import { EKONOMI_TABS, type EkonomiTab } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { parseEconomySort } from "@/lib/economy-sort";
-import { Suspense } from "react";
-import { DraftDiscardedToast } from "@/components/draft-discarded-toast";
+import { highlightFromAtgard } from "@/lib/economy-atgard";
 
 export const metadata = { title: "Ekonomi" };
 
@@ -102,6 +107,57 @@ function ReadyToPayBanner() {
         title={batch.count === 1 ? `Betala ${batch.rows[0].supplier}?` : `Betala ${batch.count} fakturor?`}
         confirmRows={confirmRows}
       />
+    </Card>
+  );
+}
+
+/** Det som inte kommer via kvitto eller bank: utlägg, mil, traktamente, representation. */
+function ManualExpenseShortcuts() {
+  const shortcuts: { typ: string; label: string; icon: typeof Plus }[] = [
+    { typ: "utlagg", label: "Utlägg", icon: Wallet },
+    { typ: "milersattning", label: "Milersättning", icon: Car },
+    { typ: "traktamente", label: "Traktamente", icon: BedDouble },
+    { typ: "representation", label: "Representation", icon: Coffee },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[13px]">
+      <span className="text-muted">Registrera för hand:</span>
+      {shortcuts.map((s) => {
+        const Icon = s.icon;
+        return (
+          <Link
+            key={s.typ}
+            href={`/ekonomi/utgifter/ny?typ=${s.typ}` as never}
+            className="inline-flex items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1 font-medium text-soft transition-colors hover:border-line-strong hover:text-ink"
+          >
+            <Icon className="size-3.5 text-muted" />
+            {s.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Bolagets skuld till ägaren för utlägg och ersättningar – med nästa steg. */
+function OwnerLiabilityBanner() {
+  const owed = ownerLiability();
+  if (owed.balance <= 0) return null;
+  return (
+    <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+      <div className="min-w-0">
+        <p className="text-[14px] font-semibold text-ink">
+          Bolaget är skyldigt dig {kr(owed.balance)}
+          <span className="ml-2 font-normal text-muted">utlägg och ersättningar som inte förts över</span>
+        </p>
+        <p className="mt-0.5 text-[13px] text-muted">
+          För över beloppet från företagskontot till ditt privata konto. När överföringen syns i banken känns den igen
+          och bockar av skulden.
+        </p>
+      </div>
+      <ButtonLink href="/ekonomi?flik=bank" variant="secondary">
+        <Landmark className="size-4" /> Till banken
+      </ButtonLink>
     </Card>
   );
 }
@@ -193,21 +249,30 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
   const q = param(searchParams.q);
   const page = pageParam(searchParams.sida);
   const sort = parseEconomySort(searchParams.sort, searchParams.direction);
+  const highlightId = highlightFromAtgard(param(searchParams.atgard), tab);
   const bank = tab === "bank" ? bankConnectionView() : null;
   const bankDemo = tab === "bank" ? bankProviderKind() === "mock" : false;
+  // Banken är en inkorg: utan valt filter visas det som väntar – finns inget
+  // obokat (eller söker man) visas allt, så listan aldrig är tom i onödan.
+  const bankStatus: BankStatusFilter =
+    tab === "bank"
+      ? param(searchParams.status) === "" && !q && !highlightId && openBankTransactionCount() > 0
+        ? "atgard"
+        : statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS)
+      : "alla";
 
   return (
     <div className="animate-fade-up">
-      <Suspense>
-        <DraftDiscardedToast />
-        {tab === "bank" ? <BankNoticeToast /> : null}
-      </Suspense>
       <PageHeader
         title="Ekonomi"
         subtitle="Alla offerter, fakturor, utgifter och banktransaktioner – sök och hitta."
         stackActions
         actions={
           <PageHeaderCreateActions>
+            <ButtonLink href="/ekonomi/utgifter/ny" variant="secondary" aria-label="Ny utgift">
+              <Plus className="size-4 shrink-0" />
+              <CreateActionLabel label="Ny utgift" shortLabel="Utgift" />
+            </ButtonLink>
             <ButtonLink href="/ekonomi/fakturor/ny" variant="secondary" aria-label="Ny faktura">
               <Plus className="size-4 shrink-0" />
               <CreateActionLabel label="Ny faktura" shortLabel="Faktura" />
@@ -263,12 +328,14 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
 
       {tab === "utgifter" ? (
         <div>
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="mb-4 space-y-4">
             <p className="text-[13px] text-muted">
               Kvitton och leverantörsfakturor. Åtgärder som behövs dyker upp på Hem och Bokföring.
             </p>
-            <UploadReceiptButton label="Ladda upp kvitto" />
+            <UploadReceiptButton label="Släpp kvitton här" />
+            <ManualExpenseShortcuts />
           </div>
+          <OwnerLiabilityBanner />
           <ReadyToPayBanner />
           <ExpenseRegister
             result={listExpensesForTable({
@@ -279,6 +346,14 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
             })}
             query={{ q, status: statusParam<ExpenseStatusFilter>(searchParams.status, EXPENSE_STATUS_OPTIONS), page, sort }}
             options={EXPENSE_STATUS_OPTIONS}
+            highlightId={highlightId}
+            emptyAction={
+              hasConnectedBank() ? undefined : (
+                <ButtonLink href="/ekonomi?flik=bank" variant="secondary">
+                  <Landmark className="size-4" /> Koppla företagskontot
+                </ButtonLink>
+              )
+            }
           />
           <SupplierRegister suppliers={db().suppliers ?? []} />
         </div>
@@ -303,16 +378,15 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
             {bank.status !== "connected" ? (
               <p className="text-[13px] text-muted">{BANK_SECONDARY_LINE}</p>
             ) : null}
+            <BankInboxStrip summary={bankInboxSummary()} filterHref="/ekonomi?flik=bank&status=atgard" />
             <BankRegister
-              result={listBankForTable({
-                q,
-                status: statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS),
-                page,
-                sort,
-              })}
-              query={{ q, status: statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS), page, sort }}
+              result={listBankForTable({ q, status: bankStatus, page, sort })}
+              query={{ q, status: bankStatus, page, sort }}
               options={BANK_STATUS_OPTIONS}
+              receivables={openReceivablesForMatching()}
+              highlightId={highlightId}
             />
+            <BankRulesCard rules={listBankCounterpartRules()} />
           </div>
         )
       ) : null}

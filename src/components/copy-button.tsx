@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { Check, Link2 } from "lucide-react";
-import { actionMenuItemClassName, type ActionAppearance } from "./action-menu";
+import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
 import { buttonClasses } from "./ui";
+import { useToast } from "./toast";
 
 export function CopyLinkButton({
   path,
@@ -17,6 +18,9 @@ export function CopyLinkButton({
   appearance?: ActionAppearance;
 }) {
   const [copied, setCopied] = useState(false);
+  const menu = useActionMenu();
+  const { toast } = useToast();
+  const inMenu = appearance === "menu";
 
   async function copy() {
     const url = `${window.location.origin}${path}`;
@@ -27,17 +31,22 @@ export function CopyLinkButton({
     }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    // I en meny stängs menyn direkt – bekräftelsen syns i toasten i stället för i en stängd meny.
+    if (inMenu) {
+      menu?.close();
+      toast({ title: copiedLabel.replace(/^✓\s*/, ""), text: "Klistra in den i ett sms eller mejl till kunden.", tone: "ok" });
+    }
   }
 
   return (
     <button
       type="button"
-      role={appearance === "menu" ? "menuitem" : undefined}
-      className={appearance === "menu" ? actionMenuItemClassName() : buttonClasses("secondary", "sm")}
+      role={inMenu ? "menuitem" : undefined}
+      className={inMenu ? actionMenuItemClassName() : buttonClasses("secondary", "sm")}
       onClick={copy}
     >
-      {copied ? <Check className="size-3.5 shrink-0 text-ok" /> : <Link2 className="size-3.5 shrink-0" />}
-      <span className={copied ? "text-ok" : undefined}>{copied ? copiedLabel : label}</span>
+      {copied && !inMenu ? <Check className="size-3.5 shrink-0 text-ok" /> : <Link2 className="size-3.5 shrink-0" />}
+      <span className={copied && !inMenu ? "text-ok" : undefined}>{copied && !inMenu ? copiedLabel : label}</span>
     </button>
   );
 }

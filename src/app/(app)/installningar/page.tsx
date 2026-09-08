@@ -20,6 +20,10 @@ import { db } from "@/lib/store";
 import { redirect } from "next/navigation";
 import { listConnectionOverviews } from "@/lib/services/wholesalers";
 import { setupSummary } from "@/lib/setup/tasks";
+import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
+import { getOwnerNoticeSettings } from "@/lib/services/owner-notices";
+import { websiteFormRecipientOverride } from "@/lib/website-form-recipient";
+import { isLiveMailConfigured } from "@/lib/mail";
 
 export const metadata = { title: "Inställningar" };
 
@@ -61,11 +65,33 @@ export default async function SettingsPage(props: {
           return d ? { hostname: d.hostname, live: d.status === "active" } : null;
         })()}
         account={{ demo: demoAccount, email: sessionUser?.email ?? null }}
+        fSkattPerMonth={flik === "fakturering" ? db().settings.fSkattPerMonth : undefined}
         features={features}
         wholesalers={flik === "grossister" ? listConnectionOverviews() : undefined}
         setup={
           flik === "kom-igang"
             ? { summary: setupSummary(), onboarding: db().onboarding ?? null, imports: db().dataImports ?? [] }
+            : undefined
+        }
+        fiscalYears={fiscalYears().map((y) => ({
+          id: y.id,
+          label: y.label,
+          startDate: y.startDate,
+          endDate: y.endDate,
+          status: y.status,
+        }))}
+        today={todayDate()}
+        articles={flik === "fakturering" ? db().meta.articles ?? [] : undefined}
+        notices={
+          flik === "notiser"
+            ? {
+                companyEmail: profile.email,
+                email: getOwnerNoticeSettings().email,
+                off: getOwnerNoticeSettings().off,
+                websiteRecipientOverride: websiteFormRecipientOverride(profile, profile),
+                mailLive: isLiveMailConfigured(),
+                demo: demoAccount,
+              }
             : undefined
         }
       />

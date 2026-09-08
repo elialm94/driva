@@ -1,10 +1,28 @@
 import { db } from "../store";
-import type { Invoice, Quote, Receipt, SupplierInvoice, SupplierPayment } from "../types";
-import { receiptFileStored } from "../receipts/receipt-meta";
-import { currentVersion, effectiveQuoteStatus, getCurrentVersion, getJob, getQuote, invoiceTotals, isOpenReceivable, isOverdue, daysOverdue, quoteTotals } from "./data";
+import type { BankTransaction, Expense, Invoice, Quote, SupplierInvoice, SupplierPayment } from "../types";
+import { receiptsWithAvailableFile } from "../receipts/receipt-source";
+import {
+  currentVersion,
+  effectiveQuoteStatus,
+  getCurrentVersion,
+  getJob,
+  getQuote,
+  invoiceOutstanding,
+  invoiceTotals,
+  isOpenReceivable,
+  isOverdue,
+  daysOverdue,
+  quoteTotals,
+} from "./data";
+import { paymentSuggestionForTransaction, suggestedBankBookings } from "./payment-matching";
+import { alreadyBookedCandidates, bankCounterpartRuleFor, type AlreadyBookedOption, type BankKindSuggestionSource } from "./bank-booking";
+import { bankKindByKey, directionOf, type BankDirection, type BankKindKey } from "../banking/bank-kinds";
+import { bankReconciliation } from "../accounting/reconciliation";
+import { supplierPayments } from "./supplier-payments";
 import { invoiceListTitle, invoiceListTypeLabel } from "../invoices/display";
 import type { PagedResult } from "./customers";
 import { categoryByKey } from "../bas";
+import { expenseCategoryLabel } from "./expenses";
 import { dagarTill, datumKort } from "../format";
 import { getBusinessActions, type BusinessAction } from "./actions";
 import { indexActionsBySource, issueForAction } from "./action-issue";
@@ -275,6 +293,15 @@ export const EXPENSE_STATUS_OPTIONS: [ExpenseStatusFilter, string][] = [
 /** Vilken filterflik raden hör hemma under – aldrig ett generiskt "Behandlad". */
 type ExpenseBucket = Exclude<ExpenseStatusFilter, "alla">;
 
+/**
+ * Åtgärden som går att göra direkt på raden i registret – samma domänvägar
+ * som Hem använder (Lägg till kvitto, svara på frågan). Registret är för att
+ * hitta, men en djuplänk (?atgard=…) ska landa på något som går att slutföra.
+ */
+export type ExpenseInlineAction =
+  | { kind: "receipt"; expenseId: string }
+  | { kind: "question"; expenseId: string; text: string; options: string[] };
+
 export interface ExpenseTableRow {
   id: string;
   /** Kvittoköp eller leverantörsfaktura – båda är utgifter i registret. */
@@ -291,6 +318,19 @@ export interface ExpenseTableRow {
   hasReceipt: boolean;
   /** Kvittofilen är sparad och kan öppnas via /api/kvitto/<receiptId>. */
   receiptId?: string;
+  inlineAction?: ExpenseInlineAction;
+  /** Handregistrerad och bokförd: går att ångra (rättelse + borttagen) om uppgifterna var fel. */
+  undoable?: boolean;
+  /** Betalt privat – bolaget är skyldigt ägaren beloppet tills det förs över. */
+  paidPrivately?: boolean;
+}
+
+function expenseInlineAction(e: Expense): ExpenseInlineAction | undefined {
+  if (e.status === "saknar_kvitto") return { kind: "receipt", expenseId: e.id };
+  if (e.status === "behover_svar" && e.question) {
+    return { kind: "question", expenseId: e.id, text: e.question.text, options: e.question.options };
+  }
+  return undefined;
 }
 
 /**
@@ -372,13 +412,12 @@ export function listExpensesForTable(
   const rows: ExpenseTableRow[] = [];
   const attention = attentionBySource();
 
-  const receiptsWithFile = new Map<string, Receipt>();
-  for (const r of db().receipts) if (receiptFileStored(r)) receiptsWithFile.set(r.id, r);
+  const receiptsWithFile = receiptsWithAvailableFile(db().receipts);
 
   for (const e of db().expenses) {
     const bucket: ExpenseBucket = e.status === "bokford" ? "klar" : "atgard";
     if (status !== "alla" && bucket !== status) continue;
-    const categoryLabel = e.category ? categoryByKey(e.category).label : "—";
+    const categoryLabel = expenseCategoryLabel(e);
     if (q) {
       const hay = `${e.supplier} ${e.description ?? ""} ${categoryLabel}`.toLowerCase();
       if (!hay.includes(q)) continue;
@@ -386,13 +425,19 @@ export function listExpensesForTable(
     // Konkret åtgärdsetikett från motorn ("Kvitto saknas", "Välj kategori").
     const action = bucket === "atgard" ? attention.get(`expense:${e.id}`) : undefined;
     const receiptFile = e.receiptId ? receiptsWithFile.get(e.receiptId) : undefined;
+    const manual = Boolean(e.kind);
+    const privately = e.paidBy === "privat";
     const meta: { label: string; tone: StatusTone } =
       e.status === "bokford"
-        ? e.receiptId
-          ? receiptFile
-            ? { label: "Kvitto · Bokfört", tone: "ok" }
-            : { label: "Bokfört · kvittouppgifter utan fil", tone: "ok" }
-          : EXPENSE_STATUS.bokford
+        ? privately
+          ? { label: "Bokfört · betalt privat", tone: "ok" }
+          : e.receiptId
+            ? receiptFile
+              ? { label: "Kvitto · Bokfört", tone: "ok" }
+              : { label: "Bokfört · kvittouppgifter utan fil", tone: "ok" }
+            : manual
+              ? { label: "Bokfört · utan kvitto", tone: "ok" }
+              : EXPENSE_STATUS.bokford
         : action
           ? { label: issueForAction(action), tone: "warn" }
           : EXPENSE_STATUS[e.status];
@@ -401,12 +446,16 @@ export function listExpensesForTable(
       kind: "utgift",
       date: e.date,
       supplier: e.supplier,
+      ...(manual && e.description ? { reference: e.description } : {}),
       categoryLabel,
       amount: e.amount,
       statusLabel: meta.label,
       statusTone: meta.tone,
       hasReceipt: Boolean(e.receiptId),
       ...(receiptFile ? { receiptId: receiptFile.id } : {}),
+      ...(bucket === "atgard" ? { inlineAction: expenseInlineAction(e) } : {}),
+      ...(manual && e.status === "bokford" && !e.bankTransactionId ? { undoable: true } : {}),
+      ...(privately ? { paidPrivately: true } : {}),
     });
   }
 
@@ -473,6 +522,60 @@ export const BANK_STATUS_OPTIONS: [BankStatusFilter, string][] = [
   ["bokford", "Bokförda"],
 ];
 
+/**
+ * Vad som går att göra med en obokad transaktion direkt i bankvyn. Härleds ur
+ * matchningsmotorns förslag (lagras aldrig) och kopplade utgifter – exakt
+ * samma domänvägar som Hem-raderna, så bankvyn är en åtgärdsyta och inte bara
+ * en lista.
+ */
+export type BankRowAction =
+  | {
+      kind: "confirm_match";
+      label: string;
+      reason: string;
+      invoiceId: string;
+      invoiceNumber: number | null;
+      customerName: string;
+      /** outstanding − belopp: > 0 delbetalning, < 0 överbetalning. */
+      diff: number;
+    }
+  | { kind: "confirm_rot_payout"; label: string; reason: string }
+  | { kind: "confirm_refund"; label: string; reason: string; invoiceId: string; invoiceNumber: number | null }
+  | { kind: "confirm_supplier_payment"; label: string; reason: string; supplierPaymentId: string; supplier: string }
+  | {
+      /** Motorn vet vad det är (regel, redan bokfört belopp eller mönster) – ett klick bokför. */
+      kind: "book_kind";
+      label: string;
+      reason: string;
+      bankKind: BankKindKey;
+      kindLabel: string;
+      source: BankKindSuggestionSource;
+      verificationId?: string;
+      verificationLabel?: string;
+    }
+  | { kind: "pick_invoice"; reason: string }
+  | { kind: "receipt"; expenseId: string; reason: string }
+  | { kind: "question"; expenseId: string; text: string; options: string[] }
+  | {
+      /** Ingen säker gissning – användaren väljer typ i väljaren (eller följer länken, t.ex. till Lön). */
+      kind: "categorize";
+      reason: string;
+      href?: string;
+      hrefLabel?: string;
+    };
+
+/**
+ * Underlag för "Vad är det här?"-väljaren på en obokad rad: riktningen avgör
+ * vilka typer som visas, redan bokförda belopp kan kopplas, och en befintlig
+ * regel visas så den går att glömma.
+ */
+export interface BankKindPickerData {
+  counterpart: string;
+  direction: BankDirection;
+  alreadyBooked: AlreadyBookedOption[];
+  rule?: { kind: BankKindKey; label: string; count: number };
+}
+
 export interface BankTableRow {
   id: string;
   date: string;
@@ -484,6 +587,205 @@ export interface BankTableRow {
   amount: number;
   statusLabel: string;
   statusTone: StatusTone;
+  /** Finns bara på obokade rader. */
+  action?: BankRowAction;
+  /** Finns bara på obokade rader – alltid, så ingen rad saknar en utväg. */
+  picker?: BankKindPickerData;
+}
+
+/** Öppen kundfordran som en inbetalning kan matchas mot för hand. */
+export interface OpenReceivableOption {
+  invoiceId: string;
+  invoiceNumber: number | null;
+  customerName: string;
+  outstanding: number;
+  dueDate: string;
+}
+
+/** Fakturor som väntar på betalning – underlag för "Matcha mot faktura". */
+export function openReceivablesForMatching(): OpenReceivableOption[] {
+  const names = customersById();
+  return db()
+    .invoices.filter(isOpenReceivable)
+    .map((inv) => ({
+      invoiceId: inv.id,
+      invoiceNumber: inv.number,
+      customerName: names.get(inv.customerId) ?? "Okänd kund",
+      outstanding: invoiceOutstanding(inv),
+      dueDate: inv.dueDate,
+    }))
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+}
+
+function bankRowAction(tx: BankTransaction): BankRowAction | undefined {
+  if (tx.status === "bokford") return undefined;
+  const expense = db().expenses.find((e) => e.bankTransactionId === tx.id && e.status !== "bokford");
+  if (expense?.status === "saknar_kvitto") {
+    return { kind: "receipt", expenseId: expense.id, reason: "Kortköp som väntar på kvitto" };
+  }
+  if (expense?.status === "behover_svar" && expense.question) {
+    return { kind: "question", expenseId: expense.id, text: expense.question.text, options: expense.question.options };
+  }
+  const suggestion = paymentSuggestionForTransaction(tx);
+  switch (suggestion.kind) {
+    case "match":
+      return {
+        kind: "confirm_match",
+        label: "Boka betalningen",
+        reason: suggestion.reason,
+        invoiceId: suggestion.invoiceId!,
+        invoiceNumber: suggestion.invoiceNumber ?? null,
+        customerName: suggestion.customerName ?? "",
+        diff: suggestion.diff ?? 0,
+      };
+    case "overpayment":
+      return {
+        kind: "confirm_match",
+        label: "Boka och hantera överskottet",
+        reason: suggestion.reason,
+        invoiceId: suggestion.invoiceId!,
+        invoiceNumber: suggestion.invoiceNumber ?? null,
+        customerName: suggestion.customerName ?? "",
+        diff: suggestion.diff ?? 0,
+      };
+    case "tax_reduction_payout":
+      return suggestion.payout
+        ? { kind: "confirm_rot_payout", label: "Boka utbetalningen", reason: suggestion.reason }
+        : { kind: "pick_invoice", reason: suggestion.reason };
+    case "credit_refund":
+      return {
+        kind: "confirm_refund",
+        label: "Boka återbetalningen",
+        reason: suggestion.reason,
+        invoiceId: suggestion.invoiceId!,
+        invoiceNumber: suggestion.invoiceNumber ?? null,
+      };
+    case "duplicate":
+      return { kind: "pick_invoice", reason: suggestion.reason };
+    case "supplier_payment": {
+      const payment = suggestion.supplierPaymentId
+        ? supplierPayments().find((p) => p.id === suggestion.supplierPaymentId)
+        : undefined;
+      if (!payment) return { kind: "categorize", reason: suggestion.reason };
+      return {
+        kind: "confirm_supplier_payment",
+        label: "Boka betalningen",
+        reason: suggestion.reason,
+        supplierPaymentId: payment.id,
+        supplier: payment.recipientName,
+      };
+    }
+    case "bank_kind": {
+      const def = suggestion.bankKind ? bankKindByKey(suggestion.bankKind) : undefined;
+      if (!def) return { kind: "categorize", reason: suggestion.reason };
+      // Lön utan körd lönekörning, "redan bokförd" utan träff: människan väljer.
+      if (suggestion.outcome === "REQUIRES_USER" || def.href || def.key === "kundbetalning" || def.key === "kortkop") {
+        return {
+          kind: "categorize",
+          reason: suggestion.reason,
+          ...(def.href ? { href: def.href, hrefLabel: def.key === "lon" ? "Öppna Lön" : "Bokför manuellt" } : {}),
+        };
+      }
+      return {
+        kind: "book_kind",
+        label: def.key === "redan_bokford" ? `Koppla till ${suggestion.verificationLabel ?? "verifikationen"}` : `Bokför som ${def.label.toLowerCase()}`,
+        reason: suggestion.reason,
+        bankKind: def.key,
+        kindLabel: def.label,
+        source: suggestion.bankKindSource ?? "monster",
+        ...(suggestion.verificationId
+          ? { verificationId: suggestion.verificationId, verificationLabel: suggestion.verificationLabel }
+          : {}),
+      };
+    }
+    default:
+      return tx.amount > 0 ? { kind: "pick_invoice", reason: suggestion.reason } : { kind: "categorize", reason: suggestion.reason };
+  }
+}
+
+function bankKindPicker(tx: BankTransaction): BankKindPickerData {
+  const rule = bankCounterpartRuleFor(tx.counterpart);
+  const ruleDef = rule ? bankKindByKey(rule.kind) : undefined;
+  return {
+    counterpart: tx.counterpart.trim() || "Okänd motpart",
+    direction: directionOf(tx.amount),
+    alreadyBooked: alreadyBookedCandidates(tx),
+    ...(rule && ruleDef ? { rule: { kind: ruleDef.key, label: ruleDef.label, count: rule.count } } : {}),
+  };
+}
+
+/* ------------------------------ Bankinkorgen ---------------------------------- */
+
+export interface BankInboxSuggestedRow {
+  txId: string;
+  date: string;
+  counterpart: string;
+  amount: number;
+  label: string;
+}
+
+export interface BankInboxSummary {
+  /** Obokade transaktioner (ny + behöver åtgärd). */
+  open: number;
+  /** Varav kortköp som väntar på kvitto eller kategorisvar (löses via kvittot). */
+  awaitingReceipt: number;
+  /** Förslag som går att bekräfta med ett klick – underlag för "Bokför alla föreslagna". */
+  suggested: BankInboxSuggestedRow[];
+  /** Summa obokade in- respektive utbetalningar. */
+  openIn: number;
+  openOut: number;
+  reconciliation: {
+    ok: boolean;
+    unexplained: number;
+    reconciledThrough?: string;
+    bankBalance: number;
+    ledgerBalance: number;
+  };
+}
+
+/**
+ * Bankvyns huvud: hur mycket som väntar, vad som kan bokföras direkt och om
+ * banken stämmer mot bokföringen. Härleds varje gång – lagras aldrig.
+ */
+export function bankInboxSummary(): BankInboxSummary {
+  const data = db();
+  let open = 0;
+  let awaitingReceipt = 0;
+  let openIn = 0;
+  let openOut = 0;
+  for (const tx of data.bankTransactions) {
+    if (tx.status === "bokford") continue;
+    open++;
+    if (tx.amount > 0) openIn += tx.amount;
+    else openOut += -tx.amount;
+    if (data.expenses.some((e) => e.bankTransactionId === tx.id && e.status !== "bokford")) awaitingReceipt++;
+  }
+  const recon = bankReconciliation();
+  return {
+    open,
+    awaitingReceipt,
+    suggested: suggestedBankBookings().map((s) => ({
+      txId: s.txId,
+      date: s.date,
+      counterpart: s.counterpart,
+      amount: s.amount,
+      label: s.label,
+    })),
+    openIn,
+    openOut,
+    reconciliation: {
+      ok: recon.ok,
+      unexplained: recon.unexplained,
+      reconciledThrough: recon.reconciledThrough,
+      bankBalance: recon.bankBalance,
+      ledgerBalance: recon.ledgerBalance,
+    },
+  };
+}
+
+/** Antal obokade transaktioner – styr standardfiltret i bankvyn. */
+export function openBankTransactionCount(): number {
+  return db().bankTransactions.filter((t) => t.status !== "bokford").length;
 }
 
 /** Beskrivning och referens – hoppar över tomma så kolumnen inte upprepar motparten. */
@@ -496,6 +798,35 @@ const TX_STATUS_META: Record<string, { label: string; tone: StatusTone }> = {
   ...TX_STATUS,
   matchad: { label: "Matchad", tone: "info" },
 };
+
+/**
+ * Statusetiketten säger vad som väntar – aldrig ett generiskt "Behöver åtgärd"
+ * när raden vet mer: "Förslag: Bankavgift", "Kvitto saknas", "Välj typ".
+ */
+function bankRowStatus(
+  tx: BankTransaction,
+  rowAction: BankRowAction | undefined,
+  action: BusinessAction | undefined
+): { label: string; tone: StatusTone } {
+  switch (rowAction?.kind) {
+    case "book_kind":
+      return { label: `Förslag: ${rowAction.kindLabel}`, tone: "info" };
+    case "confirm_supplier_payment":
+      return { label: "Förslag: Leverantörsbetalning", tone: "info" };
+    case "receipt":
+      return { label: "Kvitto saknas", tone: "warn" };
+    case "question":
+      return { label: "Välj kategori", tone: "warn" };
+    case "categorize":
+      return { label: "Välj typ", tone: "warn" };
+    default:
+      break;
+  }
+  // Motorn vet den konkreta åtgärden ("Matcha betalning" osv.) – visa den
+  // i stället för generiska "Behöver åtgärd" när transaktionen har en rad.
+  if (action) return { label: issueForAction(action), tone: "warn" };
+  return TX_STATUS_META[tx.status];
+}
 
 function bankSortable(row: BankTableRow): EconomySortable {
   return {
@@ -524,8 +855,10 @@ export function listBankForTable(
     }
     // Motorn vet den konkreta åtgärden ("Matcha betalning" osv.) – visa den
     // i stället för generiska "Behöver åtgärd" när transaktionen har en rad.
-    const action = tx.status === "behover_atgard" || tx.status === "ny" ? attention.get(`bank:${tx.id}`) : undefined;
-    const meta = action ? { label: issueForAction(action), tone: "warn" as StatusTone } : TX_STATUS_META[tx.status];
+    const unbooked = tx.status === "behover_atgard" || tx.status === "ny";
+    const action = unbooked ? attention.get(`bank:${tx.id}`) : undefined;
+    const rowAction = unbooked ? bankRowAction(tx) : undefined;
+    const meta = bankRowStatus(tx, rowAction, action);
     rows.push({
       id: tx.id,
       date: tx.date,
@@ -536,6 +869,8 @@ export function listBankForTable(
       amount: tx.amount,
       statusLabel: meta.label,
       statusTone: meta.tone,
+      ...(rowAction ? { action: rowAction } : {}),
+      ...(unbooked ? { picker: bankKindPicker(tx) } : {}),
     });
   }
 

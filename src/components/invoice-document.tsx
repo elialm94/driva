@@ -4,6 +4,7 @@ import { kr, datumNumeriskt, datumLang } from "@/lib/format";
 import { BadgeCheck } from "lucide-react";
 import { CompanyLogo } from "./company-logo";
 import { resolveInvoiceView } from "@/lib/invoices/snapshot";
+import { getInvoice } from "@/lib/services/data";
 import { invoiceTypeLabel } from "@/lib/invoices/display";
 import {
   invoicePaymentRows,
@@ -43,6 +44,15 @@ function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
       </thead>
       <tbody>
         {lines.map((line) => {
+          if (line.isHeading) {
+            return (
+              <tr key={line.id} className="break-inside-avoid border-b border-line/70 last:border-0">
+                <td colSpan={5} className="pt-4 pb-1 text-[13px] font-semibold uppercase tracking-wide text-muted">
+                  {line.description}
+                </td>
+              </tr>
+            );
+          }
           const typeNote = lineTypeNote(line);
           return (
             <tr key={line.id} className="break-inside-avoid border-b border-line/70 last:border-0">
@@ -266,6 +276,10 @@ export function InvoiceDocument({
   const isCredit = doc.type === "kredit";
   const isPaid = invoice.status === "betald";
   const originalNumber = doc.issuedSnapshot?.creditsInvoiceNumber ?? invoice.issuedSnapshot?.creditsInvoiceNumber;
+  // Delkredit: originalet lever kvar. Härleds ur originalets status – en hel
+  // kredit sätter alltid originalet till "krediterad".
+  const original = isCredit && invoice.creditsInvoiceId ? getInvoice(invoice.creditsInvoiceId) : undefined;
+  const creditIsPartial = isCredit && original != null && original.status !== "krediterad";
   // ROT/RUT-vyn binder mot rådatan (snapshot för utfärdad, live för utkast).
   const rotView = invoiceTaxReductionView(invoice, { buyer: customer });
   const reverseChargeView = invoiceReverseChargeView(invoice, { buyer: customer });
@@ -334,8 +348,8 @@ export function InvoiceDocument({
       {isCredit ? (
         <p className="mt-5 border-l-2 border-line-strong pl-3 text-[13px] leading-relaxed text-soft">
           Denna kreditfaktura krediterar
-          {originalNumber != null ? ` faktura #${originalNumber}` : " tidigare skickad faktura"} i sin helhet.
-          Delkredit stöds inte.
+          {originalNumber != null ? ` faktura #${originalNumber}` : " tidigare skickad faktura"}
+          {creditIsPartial ? ` med ${kr(t.toPay)}. Resterande belopp på fakturan gäller fortfarande.` : " i sin helhet."}
         </p>
       ) : null}
 

@@ -1,4 +1,5 @@
 import { db, save } from "../store";
+import { isValidBankgirotOcr } from "../ids";
 import type { BankTransaction, Verification, VatReport } from "../types";
 import { bokforingsdatum, todayDate } from "./dates";
 import { fiscalYearFor } from "./fiscal";
@@ -143,6 +144,73 @@ export function bookVatOnTaxAccount(reportId: string, actor: "anvandare" | "assi
   return ver;
 }
 
+/** Verifikationen som förde momsen för rapporten till skattekontot, om den finns. */
+export function vatOnTaxAccountVerification(reportId: string): Verification | undefined {
+  return alreadyBooked(`moms-${reportId}`);
+}
+
+/**
+ * Referensnumret (OCR) för inbetalningar till skattekontot. Skatteverket
+ * räknar fram det ur organisationsnumret i sin e-tjänst; Driva räknar det
+ * inte själv – ett fel nummer hamnar på någon annans skattekonto. Vi sparar
+ * det användaren hämtat och kontrollerar bara kontrollsiffran (OCR-10, som
+ * alla Bankgirot-referenser). Tomt tar bort numret.
+ */
+export function setTaxAccountOcr(value: string, actor: "anvandare" | "assistent"): string | undefined {
+  const digits = value.replace(/\s/g, "");
+  const s = db().settings;
+  if (!digits) {
+    if (!s.taxAccountOcr) return undefined;
+    delete s.taxAccountOcr;
+    logAudit(actor, "skattekonto_ocr_andrad", "OCR-numret för skattekontot togs bort.", {
+      targetType: "skattekonto",
+      targetId: "ocr",
+    });
+    save();
+    return undefined;
+  }
+  if (!/^\d{10,25}$/.test(digits)) {
+    throw new Error("OCR-numret består bara av siffror – kopiera det från Skatteverkets e-tjänst OCR-beräkning.");
+  }
+  if (!isValidBankgirotOcr(digits)) {
+    throw new Error("Kontrollsiffran stämmer inte – kontrollera numret mot Skatteverkets OCR-beräkning innan du sparar.");
+  }
+  if (s.taxAccountOcr === digits) return digits;
+  s.taxAccountOcr = digits;
+  logAudit(actor, "skattekonto_ocr_andrad", `OCR-numret för skattekontot sparades (${digits}).`, {
+    targetType: "skattekonto",
+    targetId: "ocr",
+  });
+  save();
+  return digits;
+}
+
+/**
+ * Preliminärskatten per månad enligt Skatteverkets beslut om debiterad
+ * preliminärskatt. 0 = inte satt (Driva föreslår då inga F-skattdragningar).
+ * Heltal kronor precis som allt annat i bokföringen.
+ */
+export function setFSkattPerMonth(amount: number, actor: "anvandare" | "assistent"): number {
+  if (!Number.isFinite(amount) || amount < 0 || amount > 10_000_000) {
+    throw new Error("Ange preliminärskatten per månad i hela kronor (0 om bolaget inte har någon debiterad F-skatt).");
+  }
+  const rounded = Math.round(amount);
+  const s = db().settings;
+  const previous = s.fSkattPerMonth;
+  if (previous === rounded) return rounded;
+  s.fSkattPerMonth = rounded;
+  logAudit(
+    actor,
+    "fskatt_andrad",
+    rounded > 0
+      ? `Preliminärskatten per månad sattes till ${rounded} kr (var ${previous} kr).`
+      : `Preliminärskatten per månad togs bort (var ${previous} kr).`,
+    { targetType: "skattekonto", targetId: "fskatt" }
+  );
+  save();
+  return rounded;
+}
+
 /**
  * Preliminärskatten (F-skatt) dras varje månad enligt Skatteverkets beslut.
  * Beloppet är en inställning på företaget; en månad bokförs bara en gång.
@@ -151,7 +219,9 @@ export function bookFSkatt(month: string, actor: "anvandare" | "assistent", amou
   if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("Månaden anges som YYYY-MM.");
   const amount = amountOverride ?? db().settings.fSkattPerMonth;
   if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error("F-skatten per månad är inte satt – fyll i den under Inställningar först.");
+    throw new Error(
+      "Preliminärskatten per månad är inte satt – fyll i beloppet från Skatteverkets beslut här på Skattekontot först."
+    );
   }
   const sourceId = `fskatt-${month}`;
   const existing = alreadyBooked(sourceId);

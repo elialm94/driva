@@ -3,7 +3,9 @@ import { uid } from "../ids";
 import type { VatBox, VatReport } from "../types";
 import {
   bokforingsdatum,
+  currentFiscalYear,
   ensureFiscalYearFor,
+  fiscalYears,
   lockPeriod,
   todayDate,
   vatDueDate,
@@ -13,6 +15,7 @@ import {
   type Period,
   type VatPeriodicity,
 } from "./fiscal";
+import type { FiscalYear } from "../types";
 import { postVerification } from "./engine";
 import { logAudit } from "./audit";
 
@@ -161,14 +164,19 @@ export function computeVatPosition(period: Period): VatPosition {
  * bara företagets aktuella: en rapport som skapades per kvartal måste gå att
  * öppna även efter ett byte till månadsmoms.
  */
+function allPeriodsOf(fy: FiscalYear): Period[] {
+  return [...vatPeriodsOf(fy, "helar"), ...vatPeriodsOf(fy, "kvartal"), ...vatPeriodsOf(fy, "manad")];
+}
+
 export function vatPeriodByKey(periodKey: string): Period | undefined {
+  for (const fy of fiscalYears()) {
+    const match = allPeriodsOf(fy).find((p) => p.key === periodKey);
+    if (match) return match;
+  }
   const year = Number(periodKey.slice(0, 4));
   if (!Number.isInteger(year)) return undefined;
   const fy = ensureFiscalYearFor(`${year}-06-15`);
-  for (const p of [...vatPeriodsOf(fy, "helar"), ...vatPeriodsOf(fy, "kvartal"), ...vatPeriodsOf(fy, "manad")]) {
-    if (p.key === periodKey) return p;
-  }
-  return undefined;
+  return allPeriodsOf(fy).find((p) => p.key === periodKey);
 }
 
 export function vatReportForPeriod(periodKey: string): VatReport | undefined {
@@ -190,11 +198,9 @@ export interface VatPeriodSummary {
   state: "kommande" | "pagaende" | "att_deklarera" | "deklarerad";
 }
 
-/** Momsperioder för ett år med status – underlag för momssidan. */
-export function vatPeriods(year?: number): VatPeriodSummary[] {
+/** Momsperioder för ett räkenskapsår med status – underlag för momssidan. */
+export function vatPeriodsFor(fy: FiscalYear): VatPeriodSummary[] {
   const today = todayDate();
-  const y = year ?? Number(today.slice(0, 4));
-  const fy = ensureFiscalYearFor(`${y}-06-15`);
   return vatPeriodsOf(fy, vatPeriodicity()).map((period) => {
     const report = db().vatReports.find((r) => r.periodStart === period.start && r.periodEnd === period.end);
     const position = computeVatPosition(period);
@@ -205,6 +211,12 @@ export function vatPeriods(year?: number): VatPeriodSummary[] {
     else state = "kommande";
     return { period, dueDate: vatDueDate(period), position, report, state };
   });
+}
+
+/** Momsperioder för ett kalenderår (tester) eller innevarande räkenskapsår. */
+export function vatPeriods(year?: number): VatPeriodSummary[] {
+  if (year != null) return vatPeriodsFor(ensureFiscalYearFor(`${year}-06-15`));
+  return vatPeriodsFor(currentFiscalYear());
 }
 
 /** Checklista inför deklaration – bara riktiga kontroller, serversidan. */
@@ -290,15 +302,17 @@ export function generateVatReport(periodKey: string, actor: "anvandare" | "assis
 
 /** Tidigare perioder med momsaktivitet som inte deklarerats – de måste tas i ordning. */
 function undeclaredEarlierPeriods(report: VatReport): Period[] {
+  return undeclaredVatPeriodsBefore(report.periodStart);
+}
+
+/** Samma spärr som vid deklarationen, för flödet: perioder före `periodStart` som inte är deklarerade. */
+export function undeclaredVatPeriodsBefore(periodStart: string): Period[] {
   const data = db();
-  const years = new Set<number>();
-  for (const v of data.verifications) years.add(Number(bokforingsdatum(v.date).slice(0, 4)));
   const out: Period[] = [];
   const periodicity = vatPeriodicity(data);
-  for (const y of [...years].sort((a, b) => a - b)) {
-    const fy = ensureFiscalYearFor(`${y}-06-15`);
+  for (const fy of fiscalYears(data)) {
     for (const p of vatPeriodsOf(fy, periodicity)) {
-      if (p.end >= report.periodStart) continue;
+      if (p.end >= periodStart) continue;
       const declared = data.vatReports.some(
         (r) => r.periodStart === p.start && r.periodEnd === p.end && r.status === "deklarerad"
       );

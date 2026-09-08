@@ -16,7 +16,6 @@ import {
   Bell,
   Check,
   Download,
-  Upload,
   Send,
   MoreHorizontal,
   ChevronDown,
@@ -48,12 +47,15 @@ import {
   uploadReceiptAction,
   prepareSupplierPaymentAction,
 } from "@/app/actions";
-import { receiptUploadForm } from "@/lib/receipts/read-file";
+import { RECEIPT_MAX_BYTES, receiptUploadForm } from "@/lib/receipts/read-file";
+import { FileDropzone } from "./file-dropzone";
 import { requestClientInformationAction } from "@/app/collaboration-actions";
 import { isPaymentDetailsCta, PaymentDetailsCta } from "./payment-details-actions";
 import {
+  bookBankTransactionAsAction,
   confirmPaymentMatchAction,
   confirmRotPayoutAction,
+  confirmSupplierPaymentMatchAction,
   registerCreditRefundAction,
 } from "@/app/bokforing-actions";
 import type { ActionConfirm, BusinessAction } from "@/lib/services/actions";
@@ -750,16 +752,16 @@ function AttentionRow({
               </button>
             ) : null}
             {cta?.type === "uploadReceipt" ? (
-              <label className={cx(buttonClasses("primary", "sm"), "cursor-pointer max-lg:min-h-11")}>
-                <Upload className="size-3.5" />
-                {isPending ? "Läser av …" : cta.label}
-                <input
-                  type="file"
-                  accept="image/*,.pdf"
-                  className="hidden"
-                  disabled={isPending}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
+              <div className="w-full min-w-[12rem] sm:w-64">
+                <FileDropzone
+                  variant="compact"
+                  accept="image/*,.pdf,.heic,.heif"
+                  busy={isPending}
+                  maxBytes={RECEIPT_MAX_BYTES}
+                  title={cta.label}
+                  formats="PDF, bild · max 5 MB"
+                  onFiles={(files) => {
+                    const file = files[0];
                     if (!file) return;
                     startTransition(async () => {
                       try {
@@ -774,7 +776,7 @@ function AttentionRow({
                     });
                   }}
                 />
-              </label>
+              </div>
             ) : null}
             {surface === "accountant" && cta?.type === "uploadReceipt" ? (
               <button
@@ -833,6 +835,46 @@ function AttentionRow({
                     const result = await confirmRotPayoutAction(cta.txId);
                     if (result.ok === false) setError(result.error);
                     else finish("Bokförd");
+                    router.refresh();
+                  })
+                }
+              >
+                {isPending ? "Bokför …" : cta.label}
+              </button>
+            ) : null}
+            {cta?.type === "confirmSupplierPayment" ? (
+              <button
+                className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
+                disabled={isPending}
+                aria-label={`${cta.label} – ${item.title}`}
+                onClick={() =>
+                  startTransition(async () => {
+                    const result = await confirmSupplierPaymentMatchAction(cta.txId, cta.supplierPaymentId);
+                    if (result.ok === false) setError(result.error);
+                    else finish("Bokförd");
+                    router.refresh();
+                  })
+                }
+              >
+                {isPending ? "Bokför …" : cta.label}
+              </button>
+            ) : null}
+            {cta?.type === "bookBankKind" ? (
+              // Motorns förslag (regel, redan bokfört belopp eller mönster) – ett
+              // klick bokför och motparten sparas så det sker automatiskt nästa gång.
+              <button
+                className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
+                disabled={isPending}
+                aria-label={`${cta.label} – ${item.title}`}
+                data-book-bank-kind={cta.bankKind}
+                onClick={() =>
+                  startTransition(async () => {
+                    const result = await bookBankTransactionAsAction(cta.txId, cta.bankKind, {
+                      verificationId: cta.verificationId,
+                      remember: true,
+                    });
+                    if (result.ok === false) setError(result.error);
+                    else finish(result.learned === "auto" ? "Bokförd – sker automatiskt nästa gång" : "Bokförd");
                     router.refresh();
                   })
                 }

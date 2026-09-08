@@ -69,11 +69,11 @@ function toOutcome(result: MailResult, to: string, fallback: string): DeliveryOu
 }
 
 /** Skicka offerten: Resend först, därefter status skickad. */
-export async function sendQuoteWithEmail(quoteId: string): Promise<{ outcome: DeliveryOutcome }> {
-  return withDocumentLock(`quote:${quoteId}`, () => sendQuoteWithEmailOnce(quoteId));
+export async function sendQuoteWithEmail(quoteId: string, message?: string): Promise<{ outcome: DeliveryOutcome }> {
+  return withDocumentLock(`quote:${quoteId}`, () => sendQuoteWithEmailOnce(quoteId, message));
 }
 
-async function sendQuoteWithEmailOnce(quoteId: string): Promise<{ outcome: DeliveryOutcome }> {
+async function sendQuoteWithEmailOnce(quoteId: string, message?: string): Promise<{ outcome: DeliveryOutcome }> {
   const quote = getQuote(quoteId);
   if (!quote) throw new Error("Offerten finns inte");
   if (quote.status === "skickad" && quote.sentAt) {
@@ -107,6 +107,7 @@ async function sendQuoteWithEmailOnce(quoteId: string): Promise<{ outcome: Deliv
     amount: t.toPay,
     validUntil: version.validUntil,
     token: quote.token,
+    message,
   });
   const outcome = toOutcome(result, to, QUOTE_SEND_FAILED);
   if (outcome.ok) {

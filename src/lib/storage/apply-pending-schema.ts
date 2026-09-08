@@ -38,6 +38,17 @@ async function run(client: SqlClient, sql: string): Promise<void> {
   }
 }
 
+async function tableExists(client: SqlExecutor, table: string): Promise<boolean> {
+  const rows = await client.query(
+    `select exists (
+       select 1 from information_schema.tables
+        where table_schema = 'public' and table_name = $1
+     ) as present`,
+    [table]
+  );
+  return Boolean(rows[0]?.present);
+}
+
 async function columnExists(client: SqlExecutor, table: string, column: string): Promise<boolean> {
   const rows = await client.query(
     `select exists (
@@ -53,6 +64,7 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const applied: string[] = [];
 
   async function ensureColumn(table: string, column: string, ddl: string): Promise<void> {
+    if (!(await tableExists(client, table))) return;
     if (await columnExists(client, table, column)) return;
     await run(client, ddl);
     applied.push(`${table}.${column}`);
@@ -170,6 +182,34 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
        add column if not exists source_quote_number integer,
        add column if not exists payment_plan_index integer`
   );
+  await ensureColumn(
+    "invoice_line_items",
+    "discount_percent",
+    `alter table public.invoice_line_items
+       add column if not exists discount_percent numeric
+         check (discount_percent is null or (discount_percent >= 0 and discount_percent <= 100))`
+  );
+  await ensureColumn(
+    "invoice_line_items",
+    "is_heading",
+    `alter table public.invoice_line_items
+       add column if not exists is_heading boolean not null default false`
+  );
+  await ensureColumn(
+    "customers",
+    "tax_reduction_used",
+    `alter table public.customers add column if not exists tax_reduction_used jsonb`
+  );
+  await ensureColumn(
+    "jobs",
+    "photos",
+    `alter table public.jobs add column if not exists photos jsonb`
+  );
+  await ensureColumn(
+    "job_work_entries",
+    "expense_id",
+    `alter table public.job_work_entries add column if not exists expense_id text`
+  );
 
   const files = await client.query(`select to_regclass('public.payment_files') is not null as present`);
   if (!files[0]?.present) {
@@ -271,6 +311,12 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     "business_settings",
     "payer_bic",
     `alter table public.business_settings add column if not exists payer_bic text`
+  );
+  // Notiser till företagaren (migration 43) – settings-upserten skriver alltid kolumnen.
+  await ensureColumn(
+    "business_settings",
+    "notices",
+    `alter table public.business_settings add column if not exists notices jsonb`
   );
 
   await run(
@@ -1215,7 +1261,35 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
   }
 
   const connections = await client.query(`select to_regclass('public.wholesaler_connections') is not null as present`);
-  if (connections[0]?.present) return applied;
+  if (connections[0]?.present) {
+    // Migration 42 (materialbutiken) på en databas som redan har tabellerna.
+    if (!(await columnExists(client, "wholesaler_products", "image_url"))) {
+      await run(
+        client,
+        `alter table public.wholesaler_products
+           add column if not exists brand text,
+           add column if not exists image_url text,
+           add column if not exists category_key text`,
+      );
+      await run(
+        client,
+        `update public.wholesaler_products
+            set category_key = nullif(trim(regexp_replace(lower(category), '[^[:alnum:]]+', ' ', 'g')), '')
+          where category is not null and category_key is null`,
+      );
+      await run(
+        client,
+        `create index if not exists wholesaler_products_import_category_idx
+           on public.wholesaler_products (business_id, import_id, category_key) where category_key is not null`,
+      );
+      applied.push("wholesaler_products.image_url");
+    }
+    if (!(await columnExists(client, "wholesaler_connections", "favorite_articles"))) {
+      await run(client, `alter table public.wholesaler_connections add column if not exists favorite_articles jsonb`);
+      applied.push("wholesaler_connections.favorite_articles");
+    }
+    return applied;
+  }
 
   await run(
     client,
@@ -1238,6 +1312,7 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
       active_import_id text,
       column_mapping jsonb,
       discount_groups jsonb,
+      favorite_articles jsonb,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     )`,
@@ -1293,6 +1368,8 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
       rsk_number text,
       gtin text,
       category text,
+      brand text,
+      image_url text,
       discount_group text,
       unit text not null default 'st',
       pack_size numeric check (pack_size is null or pack_size > 0),
@@ -1305,9 +1382,15 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
       e_key text,
       rsk_key text,
       gtin_key text,
+      category_key text,
       name_key text not null default '',
       search_text text not null default ''
     )`,
+  );
+  await run(
+    client,
+    `create index if not exists wholesaler_products_import_category_idx
+       on public.wholesaler_products (business_id, import_id, category_key) where category_key is not null`,
   );
   await run(
     client,

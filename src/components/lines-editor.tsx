@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type SelectHTMLAttributes } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, useTransition, type SelectHTMLAttributes } from "react";
+import { ChevronDown, ChevronUp, Copy, Plus, Trash2 } from "lucide-react";
 import { buttonClasses, cx } from "./ui";
 import { kr } from "@/lib/format";
-import type { DocLine, LineKind, VatRate } from "@/lib/types";
+import type { CatalogArticle, DocLine, LineKind, VatRate } from "@/lib/types";
 import {
   ECONOMIC_LINE_TYPES,
   TRAVEL_RECLASSIFY_ACTION,
@@ -18,13 +18,17 @@ import {
   type EconomicLineType,
 } from "@/lib/economic-line-type";
 import { applyArbeteLineDefaults, createDocLine } from "@/lib/line-defaults";
+import { lineTotal as calcLineTotal } from "@/lib/calc";
 import { lineFieldId, lineIsBlank, lineMissingParts, type LineEditorField } from "@/lib/form-requirements";
 import {
   LINE_DELETED_TOAST,
   applyLineRedo,
   applyLineUndo,
   createFollowUpLine,
+  createHeadingLine,
+  duplicateDocLine,
   insertLineAfter,
+  moveLine,
   lineUndoShortcut,
   nextLineField,
   pushLimited,
@@ -35,6 +39,11 @@ import {
 } from "@/lib/line-editor-nav";
 import { FieldError, invalidFieldCls } from "./form-validation";
 import { LineDescriptionInput } from "./line-description-input";
+import { useToast } from "./toast";
+import { Modal } from "./modal";
+import { articleFromLineAction, listArticlesAction } from "@/app/actions";
+
+const LINE_DELETED_TOAST_ID = "line-deleted";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -47,9 +56,9 @@ const mobileLineLabelCls = "mb-1 block text-[12px] font-medium text-muted @min-[
  * Hela klassnamnet måste stå statiskt så Tailwind hittar det.
  */
 const LINE_GRID_HEADER =
-  "hidden gap-2 text-[12px] font-medium uppercase tracking-wide text-muted @min-[40rem]:grid @min-[40rem]:grid-cols-[7.5rem_minmax(0,1fr)_4.375rem_4.375rem_6.875rem_5.625rem_2rem]";
+  "hidden gap-2 text-[12px] font-medium uppercase tracking-wide text-muted @min-[40rem]:grid @min-[40rem]:grid-cols-[7.5rem_minmax(0,1fr)_4.375rem_4.375rem_6.25rem_3.5rem_5.625rem_2rem]";
 const LINE_GRID_ROW =
-  "relative grid grid-cols-2 gap-x-2.5 gap-y-3 rounded-2xl border border-line bg-canvas/40 p-3.5 @min-[40rem]:static @min-[40rem]:grid-cols-[7.5rem_minmax(0,1fr)_4.375rem_4.375rem_6.875rem_5.625rem_2rem] @min-[40rem]:gap-2 @min-[40rem]:rounded-none @min-[40rem]:border-0 @min-[40rem]:bg-transparent @min-[40rem]:p-0";
+  "relative grid grid-cols-2 gap-x-2.5 gap-y-3 rounded-2xl border border-line bg-canvas/40 p-3.5 @min-[40rem]:static @min-[40rem]:grid-cols-[7.5rem_minmax(0,1fr)_4.375rem_4.375rem_6.25rem_3.5rem_5.625rem_2rem] @min-[40rem]:gap-2 @min-[40rem]:rounded-none @min-[40rem]:border-0 @min-[40rem]:bg-transparent @min-[40rem]:p-0";
 
 const DECIMAL_PARTIAL = /^-?\d*[.,]?\d*$/;
 const DECIMAL_PARTIAL_UNSIGNED = /^\d*[.,]?\d*$/;
@@ -251,11 +260,20 @@ export function LinesEditor({
   const focusMovedRef = useRef(false);
   const lastDeletedIdRef = useRef<string | null>(null);
   const pendingFocusRef = useRef<string | null>(null);
-  const toastTimerRef = useRef<number | null>(null);
-  const [toastOpen, setToastOpen] = useState(false);
+  const { toast, dismiss } = useToast();
+  const [articles, setArticles] = useState<CatalogArticle[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [, startArticle] = useTransition();
 
   linesRef.current = lines;
   onChangeRef.current = onChange;
+
+  useEffect(() => {
+    startArticle(async () => {
+      const rows = await listArticlesAction();
+      setArticles(rows);
+    });
+  }, []);
 
   function update(id: string, patch: Partial<DocLine>) {
     onChange(lines.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -283,10 +301,38 @@ export function LinesEditor({
     onChange([...lines, created]);
   }
 
+  function addHeading() {
+    const created = createHeadingLine("");
+    requestDescriptionFocus(created.id);
+    onChange([...lines, created]);
+  }
+
+  function addArticle(article: CatalogArticle) {
+    const created: DocLine = {
+      ...createDocLine(article.kind, { defaultVatRate: article.vatRate, defaultHourlyRate: article.unitPrice }),
+      description: article.description,
+      unit: article.unit,
+      unitPrice: article.unitPrice,
+      vatRate: article.vatRate,
+      discountPercent: article.discountPercent,
+    };
+    requestDescriptionFocus(created.id);
+    onChange([...lines, created]);
+    setPickerOpen(false);
+  }
+
+  function duplicateRow(line: DocLine) {
+    const copy = duplicateDocLine(line);
+    const index = lines.findIndex((row) => row.id === line.id);
+    requestDescriptionFocus(copy.id);
+    onChange(insertLineAfter(lines, index < 0 ? lines.length - 1 : index, copy));
+  }
+
+  // Samma id varje gång: upprepade raderingar staplar inte toasts utan
+  // förlänger den som redan visas. Ångra går via refs och fungerar därför
+  // även från en toast som utlöstes av en tidigare rendering.
   function showToast() {
-    setToastOpen(true);
-    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = window.setTimeout(() => setToastOpen(false), 8000);
+    toast({ id: LINE_DELETED_TOAST_ID, title: LINE_DELETED_TOAST, action: { label: "Ångra", onClick: undoDelete } });
   }
 
   function deleteLine(id: string) {
@@ -307,7 +353,7 @@ export function LinesEditor({
     undoRef.current = result.undo;
     redoRef.current = result.redo;
     onChangeRef.current(result.lines);
-    if (result.undo.length === 0) setToastOpen(false);
+    if (result.undo.length === 0) dismiss(LINE_DELETED_TOAST_ID);
     const activeId = lineIdFromElement(document.activeElement);
     if (
       shouldRefocusRestoredLine({
@@ -363,12 +409,6 @@ export function LinesEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
-    };
-  }, []);
-
   const allBlank = showErrors && lines.every(lineIsBlank);
   return (
     <div
@@ -391,6 +431,7 @@ export function LinesEditor({
         <span>Antal</span>
         <span>Enhet</span>
         <span>À-pris exkl.</span>
+        <span>Rabatt</span>
         <span>Moms</span>
         <span />
       </div>
@@ -398,8 +439,29 @@ export function LinesEditor({
         const parts = showErrors ? lineMissingParts(line) : { description: false, price: false };
         const markDescription = parts.description || (allBlank && index === 0);
         const markPrice = parts.price;
-        const lineTotal =
-          (Number.isFinite(line.qty) ? line.qty : 0) * (Number.isFinite(line.unitPrice) ? line.unitPrice : 0);
+        const lineTotal = calcLineTotal(line);
+        if (line.isHeading) {
+          return (
+            <div key={line.id} data-line-id={line.id} className="flex items-center gap-2">
+              <input
+                id={lineFieldId(line.id, "beskrivning")}
+                value={line.description}
+                onChange={(e) => update(line.id, { description: e.target.value })}
+                placeholder="Rubrik, t.ex. Arbete i kök"
+                aria-label="Rubrik"
+                className={cx(inputCls, "font-semibold")}
+              />
+              <RowActions
+                canUp={index > 0}
+                canDown={index < lines.length - 1}
+                onUp={() => onChange(moveLine(lines, line.id, -1))}
+                onDown={() => onChange(moveLine(lines, line.id, 1))}
+                onDuplicate={() => duplicateRow(line)}
+                onDelete={() => deleteLine(line.id)}
+              />
+            </div>
+          );
+        }
         return (
           <div key={line.id} data-line-id={line.id} className={LINE_GRID_ROW}>
             <div className="@min-[40rem]:contents">
@@ -447,7 +509,7 @@ export function LinesEditor({
                 value={line.description}
                 onChange={(description) => update(line.id, { description })}
                 onEnterNavigate={() => goFrom(line, "beskrivning")}
-                placeholder="Vad ingår? (rabatt läggs som rad med minusbelopp)"
+                placeholder="Vad ingår?"
                 aria-label="Beskrivning"
                 aria-invalid={markDescription}
                 kind={lineKindFromType(lineTypeOf(line))}
@@ -508,6 +570,20 @@ export function LinesEditor({
               </div>
             </div>
             <div className="@min-[40rem]:contents">
+              <label htmlFor={lineFieldId(line.id, "rabatt")} className={mobileLineLabelCls}>
+                Rabatt %
+              </label>
+              <DecimalInput
+                id={lineFieldId(line.id, "rabatt")}
+                value={line.discountPercent ?? 0}
+                onValueChange={(discountPercent) =>
+                  update(line.id, { discountPercent: discountPercent > 0 ? Math.min(100, discountPercent) : undefined })
+                }
+                className={inputCls}
+                aria-label="Rabatt i procent"
+              />
+            </div>
+            <div className="@min-[40rem]:contents">
               <label htmlFor={lineFieldId(line.id, "moms")} className={mobileLineLabelCls}>
                 Moms
               </label>
@@ -535,16 +611,28 @@ export function LinesEditor({
                 )}
               </LineSelect>
             </div>
-            <button
-              type="button"
-              tabIndex={-1}
-              onClick={() => deleteLine(line.id)}
-              className="absolute right-1.5 top-1.5 flex size-10 items-center justify-center rounded-lg text-muted transition-colors hover:bg-danger-soft hover:text-danger @min-[40rem]:static @min-[40rem]:size-auto"
-              title="Ta bort rad"
-              aria-label="Ta bort rad"
-            >
-              <Trash2 className="size-4" />
-            </button>
+            <div className="absolute right-1.5 top-1.5 flex items-center @min-[40rem]:static">
+              <RowActions
+                canUp={index > 0}
+                canDown={index < lines.length - 1}
+                onUp={() => onChange(moveLine(lines, line.id, -1))}
+                onDown={() => onChange(moveLine(lines, line.id, 1))}
+                onDuplicate={() => duplicateRow(line)}
+                onSaveArticle={() =>
+                  startArticle(async () => {
+                    const result = await articleFromLineAction(line);
+                    if (result.ok) {
+                      setArticles((prev) => {
+                        const next = prev.filter((a) => a.id !== result.article.id);
+                        return [...next, result.article];
+                      });
+                      toast({ title: "Sparad i registret", tone: "ok" });
+                    }
+                  })
+                }
+                onDelete={() => deleteLine(line.id)}
+              />
+            </div>
             <div className="col-span-2 -mb-0.5 flex items-baseline justify-between gap-3 border-t border-line pt-2.5 @min-[40rem]:hidden">
               <span className="text-[13px] text-soft">Summa exkl. moms</span>
               <span className="text-[14px] font-semibold tabular text-ink">{kr(lineTotal)}</span>
@@ -588,23 +676,98 @@ export function LinesEditor({
             <Plus className="size-3.5" /> {lineTypeLabel(type)}
           </button>
         ))}
-      </div>
-      {toastOpen ? (
-        <div
-          role="status"
-          data-line-delete-toast
-          className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl bg-ink px-4 py-2.5 text-[14px] font-medium text-white shadow-pop"
+        <button
+          type="button"
+          className={buttonClasses("secondary", "sm", "max-sm:h-11 flex-1 sm:flex-none")}
+          onClick={addHeading}
         >
-          <span>{LINE_DELETED_TOAST}</span>
-          <button
-            type="button"
-            className="rounded-lg bg-white/15 px-2.5 py-1 text-[13px] font-semibold hover:bg-white/25"
-            onClick={undoDelete}
-          >
-            Ångra
-          </button>
+          <Plus className="size-3.5" /> Rubrik
+        </button>
+        <button
+          type="button"
+          className={buttonClasses("secondary", "sm", "max-sm:h-11 flex-1 sm:flex-none")}
+          onClick={() => setPickerOpen(true)}
+        >
+          Från register
+        </button>
+      </div>
+
+      <Modal open={pickerOpen} onClose={() => setPickerOpen(false)} size="sm" title="Artikelregister">
+        <div className="px-6 py-5">
+          {articles.length === 0 ? (
+            <p className="text-[14px] text-soft">
+              Inga artiklar ännu. Fyll i en rad och välj spara i registret, eller lägg till dem under Inställningar →
+              Fakturering.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {articles.map((a) => (
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    className="flex w-full items-baseline justify-between gap-3 rounded-xl px-3 py-2 text-left hover:bg-canvas"
+                    onClick={() => addArticle(a)}
+                  >
+                    <span className="font-medium text-ink">{a.description}</span>
+                    <span className="text-[13px] tabular text-muted">
+                      {kr(a.unitPrice)}/{a.unit}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
+      </Modal>
+    </div>
+  );
+}
+
+function RowActions({
+  canUp,
+  canDown,
+  onUp,
+  onDown,
+  onDuplicate,
+  onSaveArticle,
+  onDelete,
+}: {
+  canUp: boolean;
+  canDown: boolean;
+  onUp: () => void;
+  onDown: () => void;
+  onDuplicate: () => void;
+  onSaveArticle?: () => void;
+  onDelete: () => void;
+}) {
+  const btn =
+    "flex size-8 items-center justify-center rounded-lg text-muted hover:bg-canvas hover:text-ink disabled:opacity-30";
+  return (
+    <div className="flex items-center">
+      <button type="button" tabIndex={-1} className={btn} disabled={!canUp} onClick={onUp} aria-label="Flytta upp">
+        <ChevronUp className="size-4" />
+      </button>
+      <button type="button" tabIndex={-1} className={btn} disabled={!canDown} onClick={onDown} aria-label="Flytta ner">
+        <ChevronDown className="size-4" />
+      </button>
+      <button type="button" tabIndex={-1} className={btn} onClick={onDuplicate} aria-label="Kopiera rad">
+        <Copy className="size-4" />
+      </button>
+      {onSaveArticle ? (
+        <button type="button" tabIndex={-1} className={cx(btn, "hidden @min-[40rem]:flex")} onClick={onSaveArticle} title="Spara i registret">
+          +
+        </button>
       ) : null}
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={onDelete}
+        className="flex size-8 items-center justify-center rounded-lg text-muted hover:bg-danger-soft hover:text-danger"
+        title="Ta bort rad"
+        aria-label="Ta bort rad"
+      >
+        <Trash2 className="size-4" />
+      </button>
     </div>
   );
 }

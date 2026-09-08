@@ -18,6 +18,7 @@ import { formatAddressLine } from "@/lib/address-autocomplete";
 import { datumKort, kr } from "@/lib/format";
 import { AddressAutocomplete } from "./address-input";
 import { AppLink } from "./app-link";
+import { RotBeslutImport } from "./rot-beslut-import";
 
 export function TaxReductionApplicationCard({
   cse,
@@ -219,6 +220,7 @@ export function TaxReductionApplicationCard({
               Nekat
             </button>
           </div>
+          <RotBeslutImport jobId={cse.jobId} invoiceId={cse.invoiceId} />
         </>
       ) : null}
 

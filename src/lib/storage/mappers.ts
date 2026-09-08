@@ -77,6 +77,7 @@ import type {
   WorkLocation,
   YearEndSchedule,
 } from "@/lib/types";
+import { isOwnerNoticeKind } from "@/lib/notices/owner-notices";
 import { syncDocLineClassification } from "@/lib/economic-line-type";
 import { migrateQuoteVersionDescription } from "@/lib/quote-description";
 import { withoutRetiredSections } from "@/lib/website-sections";
@@ -176,7 +177,7 @@ export const customersSpec: TableSpec<Customer> = {
   columns: [
     "id", "business_id", "kind", "name", "contact_person", "org_number", "email", "phone",
     "address", "postal_code", "city", "personal_identity_number", "default_work_location_id",
-    "notes", "reverse_charge_construction", "created_at",
+    "notes", "reverse_charge_construction", "tax_reduction_used", "created_at",
   ],
   toRow: (c, businessId) => ({
     id: c.id,
@@ -194,6 +195,7 @@ export const customersSpec: TableSpec<Customer> = {
     default_work_location_id: c.defaultWorkLocationId ?? null,
     notes: c.notes,
     reverse_charge_construction: c.reverseChargeConstruction === true,
+    tax_reduction_used: jsonParamOrNull(c.taxReductionUsed),
     created_at: c.createdAt,
   }),
   fromRow: (r) => ({
@@ -211,6 +213,7 @@ export const customersSpec: TableSpec<Customer> = {
     ...opt("defaultWorkLocationId", strOrU(r.default_work_location_id)),
     notes: str(r.notes),
     ...(r.reverse_charge_construction === true ? { reverseChargeConstruction: true as const } : {}),
+    ...opt("taxReductionUsed", jsonOrU<NonNullable<Customer["taxReductionUsed"]>>(r.tax_reduction_used)),
     createdAt: tsIso(r.created_at),
   }),
 };
@@ -482,7 +485,7 @@ export const jobsSpec: TableSpec<Job> = {
     "start_date", "end_date", "address", "work_location_id", "checklist", "notes",
     "completed_at", "housing", "tax_reduction_application", "created_at",
     "source", "original_message", "idempotency_key", "notification",
-    "archived_at",
+    "archived_at", "photos",
   ],
   toRow: (j, businessId) => ({
     id: j.id,
@@ -507,6 +510,7 @@ export const jobsSpec: TableSpec<Job> = {
     idempotency_key: j.idempotencyKey ?? null,
     notification: jsonParamOrNull(j.notification),
     archived_at: j.archivedAt ?? null,
+    photos: jsonParamOrNull(j.photos),
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -533,6 +537,7 @@ export const jobsSpec: TableSpec<Job> = {
     ...opt("idempotencyKey", strOrU(r.idempotency_key)),
     ...opt("notification", jsonOrU<NonNullable<Job["notification"]>>(r.notification)),
     ...opt("archivedAt", tsIsoOrU(r.archived_at)),
+    ...opt("photos", jsonOrU<NonNullable<Job["photos"]>>(r.photos)),
   }),
 };
 
@@ -544,7 +549,7 @@ export const jobWorkEntriesSpec: TableSpec<JobWorkEntry> = {
   columns: [
     "id", "business_id", "job_id", "role", "type", "description", "work_date",
     "qty", "unit", "unit_price", "vat_rate", "source", "quoted_line_item_id",
-    "is_extra", "invoice_id", "wholesaler_provenance", "created_at", "updated_at",
+    "is_extra", "invoice_id", "wholesaler_provenance", "expense_id", "created_at", "updated_at",
   ],
   toRow: (e, businessId) => ({
     id: e.id,
@@ -563,6 +568,7 @@ export const jobWorkEntriesSpec: TableSpec<JobWorkEntry> = {
     is_extra: e.isExtra,
     invoice_id: e.invoiceId ?? null,
     wholesaler_provenance: jsonParamOrNull(e.wholesaler),
+    expense_id: e.expenseId ?? null,
     created_at: e.createdAt,
     updated_at: e.updatedAt,
   }),
@@ -582,6 +588,7 @@ export const jobWorkEntriesSpec: TableSpec<JobWorkEntry> = {
     isExtra: Boolean(r.is_extra),
     ...opt("invoiceId", strOrU(r.invoice_id)),
     ...opt("wholesaler", jsonOrU<JobWorkEntry["wholesaler"]>(r.wholesaler_provenance)),
+    ...opt("expenseId", strOrU(r.expense_id)),
     createdAt: tsIso(r.created_at),
     updatedAt: tsIso(r.updated_at),
   }),
@@ -700,6 +707,8 @@ export function invoiceLineToRow(
     qty: synced.qty,
     unit: synced.unit,
     unit_price: synced.unitPrice,
+    discount_percent: synced.discountPercent ?? null,
+    is_heading: synced.isHeading === true,
     vat_rate: synced.vatRate,
     source_kind: synced.sourceKind ?? line.sourceKind ?? null,
     source_id: synced.sourceId ?? line.sourceId ?? null,
@@ -709,7 +718,7 @@ export function invoiceLineToRow(
 }
 
 export const invoiceLineColumns = [
-  "id", "business_id", "invoice_id", "position", "kind", "description", "qty", "unit", "unit_price", "vat_rate",
+    "id", "business_id", "invoice_id", "position", "kind", "description", "qty", "unit", "unit_price", "discount_percent", "is_heading", "vat_rate",
   "source_kind", "source_id", "source_quote_number", "payment_plan_index",
 ];
 
@@ -721,6 +730,8 @@ export function invoiceLineFromRow(r: SqlRow): DocLine {
     qty: num(r.qty),
     unit: str(r.unit),
     unitPrice: num(r.unit_price),
+    ...opt("discountPercent", numOrU(r.discount_percent)),
+    ...(r.is_heading === true ? { isHeading: true as const } : {}),
     vatRate: num(r.vat_rate) as DocLine["vatRate"],
     ...opt("sourceKind", r.source_kind == null ? undefined : (str(r.source_kind) as DocLine["sourceKind"])),
     ...opt("sourceId", strOrU(r.source_id)),
@@ -912,7 +923,7 @@ export const expensesSpec: TableSpec<Expense> = {
   columns: [
     "id", "business_id", "supplier", "date", "amount", "vat_amount", "category",
     "description", "job_id", "receipt_id", "bank_transaction_id", "status", "question",
-    "verification_id", "created_at",
+    "verification_id", "created_at", "paid_by", "kind", "details",
   ],
   toRow: (e, businessId) => ({
     id: e.id,
@@ -930,6 +941,9 @@ export const expensesSpec: TableSpec<Expense> = {
     question: jsonParamOrNull(e.question),
     verification_id: e.verificationId ?? null,
     created_at: e.createdAt,
+    paid_by: e.paidBy ?? null,
+    kind: e.kind ?? null,
+    details: jsonParamOrNull(e.details),
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -946,6 +960,9 @@ export const expensesSpec: TableSpec<Expense> = {
     ...opt("question", jsonOrU<NonNullable<Expense["question"]>>(r.question)),
     ...opt("verificationId", strOrU(r.verification_id)),
     createdAt: tsIso(r.created_at),
+    ...opt("paidBy", r.paid_by == null ? undefined : (r.paid_by as Expense["paidBy"])),
+    ...opt("kind", r.kind == null ? undefined : (r.kind as Expense["kind"])),
+    ...opt("details", jsonOrU<NonNullable<Expense["details"]>>(r.details)),
   }),
 };
 
@@ -2010,7 +2027,8 @@ export const wholesalerConnectionsSpec: TableSpec<WholesalerConnection> = {
   columns: [
     "id", "business_id", "wholesaler", "display_name", "customer_number", "order_email", "cc_self",
     "default_delivery_mode", "default_store", "default_delivery_address", "contact_person", "phone",
-    "customer_price_rule", "active", "active_import_id", "column_mapping", "discount_groups", "created_at", "updated_at",
+    "customer_price_rule", "active", "active_import_id", "column_mapping", "discount_groups", "favorite_articles",
+    "created_at", "updated_at",
   ],
   toRow: (c, businessId) => ({
     id: c.id,
@@ -2030,6 +2048,7 @@ export const wholesalerConnectionsSpec: TableSpec<WholesalerConnection> = {
     active_import_id: c.activeImportId ?? null,
     column_mapping: jsonParamOrNull(c.columnMapping),
     discount_groups: jsonParamOrNull(c.discountGroups),
+    favorite_articles: jsonParamOrNull(c.favoriteArticleNumbers),
     created_at: c.createdAt,
     updated_at: c.updatedAt,
   }),
@@ -2050,6 +2069,7 @@ export const wholesalerConnectionsSpec: TableSpec<WholesalerConnection> = {
     ...opt("activeImportId", strOrU(r.active_import_id)),
     ...opt("columnMapping", jsonOrU<WholesalerConnection["columnMapping"]>(r.column_mapping)),
     ...opt("discountGroups", jsonOrU<WholesalerConnection["discountGroups"]>(r.discount_groups)),
+    ...opt("favoriteArticleNumbers", jsonOrU<WholesalerConnection["favoriteArticleNumbers"]>(r.favorite_articles)),
     createdAt: tsIso(r.created_at),
     updatedAt: tsIso(r.updated_at),
   }),
@@ -2444,10 +2464,10 @@ export const settingsColumns = [
   "business_id", "name", "company_form", "org_number", "vat_number", "email",
   "website_notification_email", "phone", "website_url", "address", "postal_code", "city",
   "sate", "country", "bankgiro", "plusgiro", "bank_account", "iban", "bic", "logo_initials",
-  "logo_data_url", "f_skatt_per_month", "payroll_reserve_per_month", "payment_terms_days",
+  "logo_data_url", "f_skatt_per_month", "tax_account_ocr", "payroll_reserve_per_month", "payment_terms_days",
   "late_interest_rate", "quote_validity_days", "default_vat_rate", "default_hourly_rate",
   "default_quote_terms", "inbound_mail_slug", "payer_bank_name", "payer_iban", "payer_bic",
-  "vat_periodicity",
+  "vat_periodicity", "notices",
 ];
 
 export function settingsToRow(s: CompanySettings, businessId: string): Record<string, unknown> {
@@ -2474,6 +2494,7 @@ export function settingsToRow(s: CompanySettings, businessId: string): Record<st
     logo_initials: s.logoInitials,
     logo_data_url: s.logoDataUrl ?? null,
     f_skatt_per_month: s.fSkattPerMonth,
+    tax_account_ocr: s.taxAccountOcr ?? null,
     payroll_reserve_per_month: s.payrollReservePerMonth,
     payment_terms_days: s.paymentTermsDays,
     late_interest_rate: s.lateInterestRate,
@@ -2486,6 +2507,7 @@ export function settingsToRow(s: CompanySettings, businessId: string): Record<st
     payer_iban: s.payerIban ?? null,
     payer_bic: s.payerBic ?? null,
     vat_periodicity: s.vatPeriodicity ?? "kvartal",
+    notices: jsonParamOrNull(s.notices),
   };
 }
 
@@ -2512,6 +2534,7 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
     logoInitials: str(r.logo_initials),
     ...opt("logoDataUrl", strOrU(r.logo_data_url)),
     fSkattPerMonth: num(r.f_skatt_per_month),
+    ...opt("taxAccountOcr", strOrU(r.tax_account_ocr)),
     payrollReservePerMonth: num(r.payroll_reserve_per_month),
     paymentTermsDays: num(r.payment_terms_days),
     lateInterestRate: num(r.late_interest_rate),
@@ -2524,7 +2547,17 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
     ...opt("payerIban", strOrU(r.payer_iban)),
     ...opt("payerBic", strOrU(r.payer_bic)),
     ...opt("vatPeriodicity", vatPeriodicityOrU(r.vat_periodicity)),
+    ...opt("notices", ownerNoticesOrU(r.notices)),
   };
+}
+
+function ownerNoticesOrU(v: unknown): CompanySettings["notices"] | undefined {
+  const parsed = v == null ? undefined : jsonVal<{ email?: unknown; off?: unknown }>(v);
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const email = typeof parsed.email === "string" && parsed.email.trim() ? parsed.email.trim() : undefined;
+  const off = Array.isArray(parsed.off) ? parsed.off.filter(isOwnerNoticeKind) : [];
+  if (!email && off.length === 0) return undefined;
+  return { ...(email ? { email } : {}), ...(off.length > 0 ? { off } : {}) };
 }
 
 function vatPeriodicityOrU(v: unknown): CompanySettings["vatPeriodicity"] | undefined {

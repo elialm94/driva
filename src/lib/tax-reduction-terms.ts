@@ -1,6 +1,6 @@
 import type { RotRut, TaxReductionTermsSnapshot } from "./types";
 import { kr } from "./format";
-import { taxReductionCap, taxReductionRate } from "./calc";
+import { ROT_RUT_GEMENSAMT_TAK, taxReductionCap, taxReductionRate } from "./calc";
 
 /**
  * Central ROT/RUT-villkorstext.
@@ -174,7 +174,12 @@ export const TAX_REDUCTION_USE_MAX_LABEL = "Använd max";
 /** Central copy för ”Hur räknas detta?” – procent och tak från tax config. */
 export function taxReductionCalcHintText(type: RotRut["type"], laborInclVat: number): string {
   const percent = Math.round(taxReductionRate(type) * 100);
-  return `Avdraget är ${percent} % av arbetskostnaden inkl. moms (${kr(laborInclVat)}). Bara rader markerade som arbete räknas – material, resor och övrigt ingår inte. Högst ${kr(taxReductionCap(type))} per person och år. Beloppet räknas av systemet och är inte en rabatt.`;
+  const cap = taxReductionCap(type);
+  const shared =
+    cap < ROT_RUT_GEMENSAMT_TAK
+      ? ` (ROT och RUT tillsammans högst ${kr(ROT_RUT_GEMENSAMT_TAK)})`
+      : ` (ROT och RUT tillsammans, varav ROT högst ${kr(taxReductionCap("rot"))})`;
+  return `Avdraget är ${percent} % av arbetskostnaden inkl. moms (${kr(laborInclVat)}). Bara rader markerade som arbete räknas – material, resor och övrigt ingår inte. Högst ${kr(cap)} per person och år${shared}. Satsen avgörs av den dag kunden betalar. Beloppet räknas av systemet och är inte en rabatt.`;
 }
 
 export function getDeniedReductionNotice(deniedAmount: number): string {

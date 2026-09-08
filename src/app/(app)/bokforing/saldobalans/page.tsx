@@ -1,11 +1,11 @@
-import Link from "next/link";
 import { Table2 } from "lucide-react";
 import { kr } from "@/lib/format";
-import { Card, EmptyState, PageHeader, cx } from "@/components/ui";
+import { Card, EmptyState, PageHeader } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
 import { saldobalans } from "@/lib/accounting/ledger";
-import { fiscalYears } from "@/lib/accounting/fiscal";
+import { fiscalYears, resolveViewFiscalYear } from "@/lib/accounting/fiscal";
+import { FiscalYearPicker, fiscalYearHref } from "@/components/fiscal-year-picker";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Saldobalans" };
@@ -14,9 +14,9 @@ export default async function SaldobalansPage({ searchParams }: { searchParams: 
   await ensurePageBusiness();
   const params = await searchParams;
   const years = fiscalYears();
-  const chosen = params.ar ? years.find((f) => f.label === params.ar) : undefined;
-  const sb = chosen ? saldobalans({ from: chosen.startDate, to: chosen.endDate }) : saldobalans();
-  const activeLabel = chosen?.label ?? sb.fiscalYear?.label;
+  const fy = resolveViewFiscalYear(params.ar);
+  const sb = saldobalans({ from: fy.startDate, to: fy.endDate });
+  const activeLabel = fy.label;
 
   return (
     <div>
@@ -27,7 +27,7 @@ export default async function SaldobalansPage({ searchParams }: { searchParams: 
         actions={
           <div className="flex items-center gap-2">
             <a
-              href={`/api/bokforing/export?typ=saldobalans${activeLabel ? `&ar=${activeLabel}` : ""}`}
+              href={`/api/bokforing/export?typ=saldobalans&ar=${encodeURIComponent(activeLabel)}`}
               className="text-[13px] font-medium text-accent hover:underline"
             >
               Exportera CSV
@@ -37,23 +37,11 @@ export default async function SaldobalansPage({ searchParams }: { searchParams: 
         }
       />
 
-      {years.length > 1 ? (
-        <div className="mb-5 flex flex-wrap gap-1.5 print:hidden">
-          {years.map((f) => (
-            <Link
-              key={f.id}
-              href={`/bokforing/saldobalans?ar=${f.label}`}
-              className={cx(
-                "rounded-full px-3 py-1 text-[12.5px] font-medium transition-colors",
-                activeLabel === f.label ? "bg-ink text-white" : "bg-canvas text-soft hover:bg-line/60"
-              )}
-            >
-              {f.label}
-              {f.status === "stangt" ? " (stängt)" : ""}
-            </Link>
-          ))}
-        </div>
-      ) : null}
+      <FiscalYearPicker
+        years={years}
+        activeLabel={activeLabel}
+        hrefFor={(y) => fiscalYearHref("/bokforing/saldobalans", y)}
+      />
 
       {sb.rows.length === 0 ? (
         <EmptyState icon={Table2} title="Inget att visa" text="Det finns inga bokförda händelser i perioden." />

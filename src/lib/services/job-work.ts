@@ -61,6 +61,7 @@ export interface JobMaterialInput {
   vatRate?: VatRate;
   quotedLineItemId?: string;
   source?: JobWorkEntrySource;
+  expenseId?: string;
 }
 
 export interface JobWorkEntryPatch {
@@ -265,11 +266,44 @@ export function addJobMaterial(jobId: string, input: JobMaterialInput): JobWorkE
     vatRate: input.vatRate ?? defaultVat(),
     source: input.source ?? "manual",
     quotedLineItemId,
+    expenseId: input.expenseId,
     isExtra: detectExtra(jobId, { type: "material", description, quotedLineItemId }),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
   return persistEntry(entry);
+}
+
+function nearestVatRate(rate: number): VatRate {
+  const options: VatRate[] = [0, 6, 12, 25];
+  return options.reduce((best, n) => (Math.abs(n - rate) < Math.abs(best - rate) ? n : best), 25);
+}
+
+/** Kvitto som bokförts på uppdraget blir en materialrad att fakturera. */
+export function addJobMaterialFromExpense(expense: {
+  id: string;
+  jobId?: string;
+  supplier: string;
+  description?: string;
+  date: string;
+  amount: number;
+  vatAmount: number;
+}): JobWorkEntry | null {
+  if (!expense.jobId) return null;
+  const existing = jobWorkEntries(expense.jobId).find((e) => e.expenseId === expense.id);
+  if (existing) return existing;
+  const net = Math.max(0, Math.round(expense.amount - expense.vatAmount));
+  const vatRate = net > 0 ? nearestVatRate((expense.vatAmount / net) * 100) : defaultVat();
+  return addJobMaterial(expense.jobId, {
+    description: (expense.description || expense.supplier || "Material från kvitto").trim(),
+    date: expense.date,
+    qty: 1,
+    unit: "st",
+    unitPrice: net,
+    vatRate,
+    source: "import",
+    expenseId: expense.id,
+  });
 }
 
 export function addJobWorkEntry(

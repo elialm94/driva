@@ -1,16 +1,31 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
 import type { InboundParsedHint } from "../inbox/inbound-mail";
-import type { Expense, MerchantCategoryRule, Receipt, Verification } from "../types";
-import { categoryByKey, deductibleVat, entriesExpense, guessCategory, EXPENSE_CATEGORIES, KNOWN_SUPPLIERS } from "../bas";
+import type { BankTransaction, Expense, InboxAttachment, MerchantCategoryRule, Receipt, Verification } from "../types";
+import {
+  categoryByKey,
+  deductibleVat,
+  entriesExpense,
+  entriesFromPostingLines,
+  guessCategory,
+  EXPENSE_CATEGORIES,
+  KNOWN_SUPPLIERS,
+} from "../bas";
+import {
+  REPRESENTATION_LABELS,
+  planManualExpense,
+  settlementAccountFor,
+  type ManualExpenseDraft,
+} from "../expenses/manual-expense";
 import { kr } from "../format";
 import { logActivity } from "./activity";
 import { logAudit } from "../accounting/audit";
 import { postVerification, createCorrection } from "../accounting/engine";
 import { clampToOpenDate } from "../accounting/fiscal";
-import { assetSuggestionForExpense, registerAssetFromExpense, INVENTARIE_GRANS } from "../accounting/assets";
+import { assetSuggestionForExpense, registerAssetFromExpense, inventarieGransFor } from "../accounting/assets";
 import { resolveClientRequestsForExpense } from "../collaboration/requests";
 import { currentActor } from "../collaboration/actor";
+import { addJobMaterialFromExpense } from "./job-work";
 
 /**
  * Kvittotolkningen bor i ai/extract-document.ts (`extractReceipt`) och läser
@@ -112,10 +127,56 @@ function expenseExplanation(
     : cat.vatFree
       ? "Kategorin saknar avdragsgill moms, så hela beloppet bokförs som kostnad."
       : `Momsen (${kr(expense.vatAmount)}) lyfts som ingående moms.`;
-  return `${why}. Kostnaden hamnar på konto ${cat.account} (${cat.label}) och betalningen dras från företagskontot. ${vatText}`;
+  const paidText =
+    expense.paidBy === "privat"
+      ? "Du betalade privat, så bolaget har en skuld till dig (2893) tills pengarna förs över."
+      : "Betalningen dras från företagskontot.";
+  return `${why}. Kostnaden hamnar på konto ${cat.account} (${cat.label}). ${paidText} ${vatText}`;
 }
 
-function bookExpense(
+/**
+ * Milersättning, traktamente och representation konteras efter schablon –
+ * planen räknas om ur utgiftens sparade uppgifter så att bokföringen alltid
+ * är exakt det formuläret visade.
+ */
+function schablonPlan(expense: Expense) {
+  if (!expense.kind || expense.kind === "kop") return null;
+  const d = expense.details ?? {};
+  const draft: ManualExpenseDraft = {
+    kind: expense.kind,
+    date: expense.date,
+    paidBy: expense.paidBy ?? "privat",
+    supplier: expense.supplier,
+    amount: expense.amount,
+    vatAmount: expense.vatAmount,
+    description: expense.description,
+    ...(d.mileage ? { mileage: { km: d.mileage.km, vehicle: d.mileage.vehicle, route: d.mileage.route } } : {}),
+    ...(d.perDiem
+      ? {
+          perDiem: {
+            fullDays: d.perDiem.fullDays,
+            halfDays: d.perDiem.halfDays,
+            nights: d.perDiem.nights,
+            destination: d.perDiem.destination,
+          },
+        }
+      : {}),
+    ...(d.representation ? { representation: d.representation } : {}),
+  };
+  const result = planManualExpense(draft);
+  if (!result.ok) throw new Error(result.error);
+  return result.plan;
+}
+
+/** Konteringen för utgiften – schablonplan för manuella slag, annars kategori + moms mot betalkontot. */
+export function expenseEntries(expense: Expense, categoryKey: string): { entries: Verification["entries"]; explanation?: string } {
+  const plan = schablonPlan(expense);
+  if (plan) return { entries: entriesFromPostingLines(plan.lines), explanation: plan.explanation };
+  const vat = deductibleVat(categoryKey, expense.vatAmount);
+  return { entries: entriesExpense(categoryKey, expense.amount, vat, settlementAccountFor(expense.paidBy)) };
+}
+
+export function bookExpense(
   expense: Expense,
   categoryKey: string,
   confidence: Verification["confidence"],
@@ -128,17 +189,17 @@ function bookExpense(
     throw new Error(`Köpet hos ${expense.supplier} är redan bokfört.`);
   }
   const cat = categoryByKey(categoryKey);
-  const vat = deductibleVat(categoryKey, expense.vatAmount);
+  const posting = expenseEntries(expense, categoryKey);
   const clamped = clampToOpenDate(expense.date);
   const ver = postVerification({
     date: clamped.date,
     description: `${expense.supplier} – ${expense.description ?? cat.label.toLowerCase()}${clamped.adjusted ? ` (avser ${clamped.originalDate})` : ""}`,
-    entries: entriesExpense(categoryKey, expense.amount, vat),
+    entries: posting.entries,
     source: { type: "utgift", id: expense.id },
     confidence,
     createdBy,
     explanation:
-      expenseExplanation(expense, categoryKey, createdBy, matchReason) +
+      (posting.explanation ?? expenseExplanation(expense, categoryKey, createdBy, matchReason)) +
       (clamped.adjusted ? ` Bokfört ${clamped.date} eftersom perioden för ${clamped.originalDate} är låst.` : ""),
   });
   expense.category = categoryKey;
@@ -155,20 +216,45 @@ function bookExpense(
     }
   }
   // Mänskliga val bygger regelbutiken – autobokningar gör det inte
-  // (annars skulle en felgissning förstärka sig själv).
-  if (createdBy !== "auto") recordMerchantRule(expense.supplier, categoryKey);
-  logAudit(createdBy === "auto" ? "system" : createdBy, "utgift_bokford", `Köp hos ${expense.supplier} (${kr(expense.amount)}) bokfördes som ${cat.label}.`, {
-    targetType: "utgift",
-    targetId: expense.id,
-  });
+  // (annars skulle en felgissning förstärka sig själv). Schablonersättningar
+  // har ingen leverantör att lära sig.
+  const isAllowance = expense.kind === "milersattning" || expense.kind === "traktamente";
+  if (createdBy !== "auto" && !isAllowance) recordMerchantRule(expense.supplier, categoryKey);
+  logAudit(
+    createdBy === "auto" ? "system" : createdBy,
+    "utgift_bokford",
+    posting.explanation
+      ? `${expense.supplier} (${kr(expense.amount)}) bokfördes${expense.paidBy === "privat" ? " som skuld till ägaren" : ""}.`
+      : `Köp hos ${expense.supplier} (${kr(expense.amount)}) bokfördes som ${cat.label}.`,
+    {
+      targetType: "utgift",
+      targetId: expense.id,
+    }
+  );
   return ver;
 }
 
+/** Visningsnamn för utgiftens slag: kategorin för köp, schablonens namn annars. */
+export function expenseCategoryLabel(expense: Pick<Expense, "kind" | "category" | "details">): string {
+  switch (expense.kind) {
+    case "milersattning":
+      return "Milersättning";
+    case "traktamente":
+      return "Traktamente";
+    case "representation":
+      return expense.details?.representation
+        ? REPRESENTATION_LABELS[expense.details.representation.kind].label
+        : "Representation";
+    default:
+      return expense.category ? categoryByKey(expense.category).label : "—";
+  }
+}
+
 /** Ställ inventariefrågan i stället för att bokföra direkt – användaren avgör. */
-function askAssetQuestion(expense: Expense): void {
+export function askAssetQuestion(expense: Expense): void {
   expense.status = "behover_svar";
   expense.question = {
-    text: `Köpet på ${kr(expense.amount)} hos ${expense.supplier} ser ut som något som används i flera år (över ${kr(INVENTARIE_GRANS)}). Hur vill du bokföra det?`,
+    text: `Köpet på ${kr(expense.amount)} hos ${expense.supplier} ser ut som något som används i flera år (över ${kr(inventarieGransFor(expense.date))} exkl. moms). Hur vill du bokföra det?`,
     options: [...ASSET_QUESTION_OPTIONS],
   };
 }
@@ -207,6 +293,23 @@ export function uploadReceiptForExpense(
 ): { receipt: Receipt; autoBooked: boolean } {
   const data = db();
   const expense = expenseAwaitingReceipt(expenseId);
+
+  // Banken är sanningen om totalbeloppet, kvittot om momsdelningen: ett köp
+  // som skapades ur en banktransaktion har bara en schablonmoms (25 %) tills
+  // kvittot lästs. Momsen från tolkningen används bara när kvittots total
+  // stämmer med bankens (annars är det sannolikt fel kvitto).
+  const interpretedVat = interpreted?.vatAmount;
+  const interpretedTotalAgrees =
+    interpreted?.amount == null || Math.abs(Math.round(interpreted.amount) - expense.amount) <= 1;
+  if (
+    interpretedVat != null &&
+    Number.isFinite(interpretedVat) &&
+    interpretedTotalAgrees &&
+    Math.round(interpretedVat) >= 0 &&
+    Math.round(interpretedVat) <= expense.amount
+  ) {
+    expense.vatAmount = Math.round(interpretedVat);
+  }
 
   // Kategorin gissas på leverantören: kvittots eget namn om tolkningen läste
   // ett, annars banktransaktionens motpart.
@@ -329,6 +432,9 @@ export function bookExpenseToJob(expenseId: string, categoryKey: string, jobId?:
   } else {
     expense.category = categoryKey;
   }
+  if (expense.jobId) {
+    addJobMaterialFromExpense(expense);
+  }
   const jobText = expense.jobId ? ` och kopplades till uppdraget ${data.jobs.find((j) => j.id === expense.jobId)?.title}` : "";
   logActivity(`Köpet hos ${expense.supplier} (${kr(expense.amount)}) bokfördes som ${categoryByKey(categoryKey).label.toLowerCase()}${jobText}.`, {
     entity: { type: "utgift", id: expenseId },
@@ -339,6 +445,9 @@ export function bookExpenseToJob(expenseId: string, categoryKey: string, jobId?:
 /**
  * Ångra en bokförd utgift. Historiken skrivs aldrig om: en rättelseverifikation
  * återför originalet, och utgiften öppnas igen så att den kan bokföras rätt.
+ * En handregistrerad utgift (utlägg, milersättning, traktamente, representation)
+ * har inget att öppna igen – uppgifterna var fel – så den tas bort och kan
+ * registreras på nytt; rättelsen står kvar i bokföringen.
  */
 export function undoExpenseBooking(expenseId: string, by: "anvandare" | "assistent" = "anvandare"): void {
   const data = db();
@@ -348,9 +457,18 @@ export function undoExpenseBooking(expenseId: string, by: "anvandare" | "assiste
   }
   createCorrection({
     verificationId: expense.verificationId,
-    reason: `Användaren ångrade bokningen av köpet hos ${expense.supplier}`,
+    reason: `Användaren ångrade bokningen av ${expense.kind && expense.kind !== "kop" ? expense.supplier.toLowerCase() : `köpet hos ${expense.supplier}`}`,
     by: by === "assistent" ? "assistent" : "anvandare",
   });
+  if (expense.kind && !expense.bankTransactionId) {
+    data.expenses = data.expenses.filter((e) => e.id !== expenseId);
+    data.receipts = data.receipts.filter((r) => r.expenseId !== expenseId);
+    logActivity(`${expense.supplier} (${kr(expense.amount)}) ångrades och togs bort – en rättelseverifikation skapades. Registrera utgiften igen med rätt uppgifter.`, {
+      entity: { type: "utgift", id: expenseId },
+    });
+    save();
+    return;
+  }
   expense.verificationId = undefined;
   expense.status = "behover_svar";
   expense.question = {
@@ -429,6 +547,12 @@ export function createExpenseFromKnownReceipt(input: {
   description?: string;
   filename?: string;
   source?: Receipt["source"];
+  /**
+   * Inboxbilagan kvittot kom från. Inline-lagrade bytes kopieras till kvitto-
+   * raden så den bär underlaget själv; bucket-lagrade och demogenererade
+   * dokument nås via inboxposten (receipts/receipt-source.ts).
+   */
+  attachment?: Pick<InboxAttachment, "contentType" | "size" | "contentBase64">;
 }): { expense: Expense; autoBooked: boolean } {
   if (!Number.isInteger(input.amount) || input.amount < 1) {
     throw new Error("Belopp saknas – kan inte skapa utgift utan belopp i hela kronor.");
@@ -466,6 +590,9 @@ export function createExpenseFromKnownReceipt(input: {
     filename: input.filename || `kvitto-${supplier.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`,
     source: input.source ?? "email",
     uploadedAt: now,
+    ...(input.attachment?.contentType ? { contentType: input.attachment.contentType } : {}),
+    ...(input.attachment && input.attachment.size > 0 ? { sizeBytes: input.attachment.size } : {}),
+    ...(input.attachment?.contentBase64 ? { contentBase64: input.attachment.contentBase64 } : {}),
     extracted: {
       supplier,
       date: expense.date,
@@ -517,3 +644,63 @@ export function createExpenseFromKnownReceipt(input: {
  * Filen bevaras, uppgifterna kommer ur dokumentet, och är läsningen inte säker
  * nog stannar kvittot i Kontrollera-vyn. Ingen egen väg behövs här.
  */
+
+/* ----------------------- Kortköp i banken → utgift utan kvitto ----------------------- */
+
+/**
+ * Utgående transaktioner som INTE är köp med kvitto: skatt, egna överföringar,
+ * lön, ränta/amortering och bankens egna avgifter hanteras på sina egna ytor
+ * (Skattekonto, Lön, bankvyn). Allt annat utgående är i praktiken ett köp.
+ */
+const NOT_A_PURCHASE =
+  /skatteverk|skattekonto|överföring|overforing|egen insättning|eget uttag|\blön\b|\blon\b|utdelning|amortering|\bränta\b|bankavgift|månadsavgift|kortavgift|aviavgift/i;
+
+export function looksLikeCardPurchase(tx: Pick<BankTransaction, "amount" | "counterpart" | "description" | "reference">): boolean {
+  if (!(tx.amount < 0)) return false;
+  const text = `${tx.counterpart} ${tx.description} ${tx.reference ?? ""}`;
+  return !NOT_A_PURCHASE.test(text);
+}
+
+/** Schablonmoms 25 % inkl. – gäller tills kvittot lästs. */
+export function provisionalVatFor(amountInclVat: number): number {
+  return Math.round(amountInclVat - amountInclVat / 1.25);
+}
+
+/**
+ * Ett obokat kortköp i banken blir ett köp som saknar kvitto. Då får Hem raden
+ * "Kvitto saknas – Circle K, 812 kr" med Lägg till kvitto i stället för en stum
+ * bankrad, och kvittot bokför köpet mot just den transaktionen. Beloppet är
+ * bankens; momsen är preliminär tills kvittot lästs. Idempotent per transaktion
+ * och sparar aldrig själv – anroparen (matchningsmotorn) gör det.
+ */
+export function createExpenseFromBankPurchase(
+  tx: BankTransaction,
+  opts: {
+    /** Användaren (eller en lärd regel) säger att det är ett köp – hoppa över heuristiken. */
+    force?: boolean;
+  } = {}
+): Expense | null {
+  const data = db();
+  if (!(tx.amount < 0)) return null;
+  if (!opts.force && !looksLikeCardPurchase(tx)) return null;
+  if (tx.status === "bokford") return null;
+  if (data.expenses.some((e) => e.bankTransactionId === tx.id)) return null;
+  const amount = Math.abs(tx.amount);
+  if (!Number.isInteger(amount) || amount < 1) return null;
+  const supplier = tx.counterpart.trim() || "Okänd motpart";
+  const expense: Expense = {
+    id: uid(),
+    supplier,
+    date: tx.date.slice(0, 10),
+    amount,
+    vatAmount: provisionalVatFor(amount),
+    status: "saknar_kvitto",
+    bankTransactionId: tx.id,
+    createdAt: new Date().toISOString(),
+  };
+  data.expenses.push(expense);
+  logActivity(`Kortköpet hos ${supplier} (${kr(amount)}) väntar på kvitto.`, {
+    entity: { type: "utgift", id: expense.id },
+  });
+  return expense;
+}

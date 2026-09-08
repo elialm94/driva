@@ -63,6 +63,12 @@ export interface CompanySettings {
   /** Preliminärskatt (F-skatt) som dras varje månad. */
   fSkattPerMonth: number;
   /**
+   * Referensnummer (OCR) för inbetalningar till skattekontot, hämtat av
+   * användaren från Skatteverkets e-tjänst. Driva räknar det aldrig fram
+   * själv. Saknas = visa länken till OCR-beräkningen i betalsteget.
+   */
+  taxAccountOcr?: string;
+  /**
    * Reserv för arbetsgivaravgifter och personalskatt per månad. Används bara när
    * ingen anställd är upplagd – finns lönen räknas reserven ur den faktiska
    * lönen och den åldersberoende avgiften (services/finance.ts).
@@ -104,6 +110,25 @@ export interface CompanySettings {
   payerIban?: string;
   /** Debiteringsbankens BIC, t.ex. ESSESESS. */
   payerBic?: string;
+  /**
+   * Notiser till företagaren (Inställningar → Notiser). Saknas = allt på,
+   * till företagets e-post. Se `lib/notices/owner-notices.ts`.
+   */
+  notices?: OwnerNoticeSettings;
+}
+
+/**
+ * Händelser som sker UTANFÖR appen och därför mejlas till företagaren:
+ * kundens svar på offerten, förfrågningar från hemsidan och dokument som
+ * landar i inkorgen via mejl. Det användaren själv gör i appen notifieras aldrig.
+ */
+export type OwnerNoticeKind = "offert_godkand" | "offert_avbojd" | "forfragan" | "inkorg" | "orderbekraftelse";
+
+export interface OwnerNoticeSettings {
+  /** Egen mottagare. Tom/saknas/samma som företagets e-post = företagets e-post. */
+  email?: string;
+  /** Avstängda händelser – allt annat är på så att nya händelser når fram utan inställning. */
+  off?: OwnerNoticeKind[];
 }
 
 /* ---------------------------------- Kunder ---------------------------------- */
@@ -144,6 +169,16 @@ export interface Customer {
   /** Standardadress för nytt uppdrag / ROT-prefill när flera bostäder finns. */
   defaultWorkLocationId?: ID;
   notes: string;
+  /**
+   * ROT/RUT redan använt hos andra utförare i år. Driva kan inte läsa
+   * Skatteverkets saldo – det här fyller företagaren i så att offerten
+   * inte lovar mer avdrag än kunden har kvar.
+   */
+  taxReductionUsed?: {
+    year: number;
+    rot: number;
+    rut: number;
+  };
   createdAt: string;
 }
 
@@ -176,6 +211,17 @@ export type LineSourceKind =
   | "PAYMENT_PLAN"
   | "MANUAL";
 
+/** Företagets egna artikelregister – timpris, material, schabloner. */
+export interface CatalogArticle {
+  id: ID;
+  description: string;
+  kind: LineKind;
+  unit: string;
+  unitPrice: number;
+  vatRate: VatRate;
+  discountPercent?: number;
+}
+
 export interface DocLine {
   id: ID;
   /** Lagrad typ (arbete/material/resor/ovrigt). */
@@ -188,8 +234,18 @@ export interface DocLine {
   description: string;
   qty: number;
   unit: string;
-  /** Pris per enhet, exkl. moms. */
+  /** Pris per enhet, exkl. moms – före radrabatt. */
   unitPrice: number;
+  /**
+   * Radrabatt i procent (0–100). Saknas = 0. À-priset räknas om i
+   * `lineTotal` så offert, faktura och bokföring alltid stämmer.
+   */
+  discountPercent?: number;
+  /**
+   * Sektionsrubrik – syns på dokumentet men räknas inte i summan.
+   * qty/pris/moms ignoreras.
+   */
+  isHeading?: boolean;
   vatRate: VatRate;
   sourceKind?: LineSourceKind;
   /** Offertrad-id, uppdragspost-id eller motsvarande. */
@@ -493,7 +549,8 @@ export type JobStatus = "kommande" | "pagar" | "klart";
 export type JobSource = "manual" | "web_form" | "email" | "import" | "phone" | "other";
 
 export interface JobNotification {
-  status: "pending" | "sent" | "failed";
+  /** `off` = företagaren har stängt av notisen (Inställningar → Notiser); inget att skicka om. */
+  status: "pending" | "sent" | "failed" | "off";
   sentAt?: string;
   lastError?: string;
   attempts: number;
@@ -538,6 +595,16 @@ export interface Job {
    * offerter och bokföring rörs inte.
    */
   archivedAt?: string;
+  /** Foton från arbetsplatsen – bevis mot kunden, inte bokföringsunderlag. */
+  photos?: JobPhoto[];
+}
+
+export interface JobPhoto {
+  id: ID;
+  createdAt: string;
+  /** JPEG/PNG data-URL. */
+  dataUrl: string;
+  caption?: string;
 }
 
 /**
@@ -587,6 +654,8 @@ export interface JobWorkEntry {
   invoiceId?: ID;
   /** Endast source = wholesaler: vilken orderrad/bekräftelse raden kommer från. */
   wholesaler?: JobWorkEntryWholesalerProvenance;
+  /** Utgift som skapade materialraden (kvitto → material). */
+  expenseId?: ID;
   createdAt: string;
   updatedAt: string;
 }
@@ -879,6 +948,57 @@ export interface BankTransaction {
 
 export type ExpenseStatus = "saknar_kvitto" | "behover_svar" | "bokford";
 
+/**
+ * Vem som la ut pengarna. Företagskontot krediterar 1930; ett privat utlägg
+ * blir en skuld till ägaren (2893) tills bolaget för över pengarna.
+ * Saknas fältet är det företagskontot (alla köp från banken och kvitton).
+ */
+export type ExpensePaidBy = "foretagskonto" | "privat";
+
+/**
+ * Utgiftens slag när den registrerats för hand. Saknas = vanligt köp.
+ * Milersättning och traktamente är skattefria schablonersättningar till
+ * ägaren (ingen moms, ingen leverantör); representation har egna avdrags-
+ * och momsregler.
+ */
+export type ExpenseKind = "kop" | "milersattning" | "traktamente" | "representation";
+
+export type VehicleKind = "egen" | "formansbil" | "formansbil_el";
+
+/**
+ * Representationens slag styr både konto och avdrag: måltider är aldrig
+ * avdragsgilla (momsen får lyftas till en schablon per person), enklare
+ * förtäring är avdragsgill upp till 60 kr per person. Kund- och personal-
+ * representation bokförs på olika konton (60xx respektive 76xx).
+ */
+export type RepresentationKind = "kundmaltid" | "kundfika" | "personalmaltid" | "personalfika";
+
+/** Uppgifterna bakom en schablon- eller representationsutgift, som de såg ut när den bokfördes. */
+export interface ExpenseDetails {
+  mileage?: {
+    km: number;
+    vehicle: VehicleKind;
+    /** Skatteverkets schablon det år resan gjordes, kr per mil. */
+    ratePerMil: number;
+    route?: string;
+  };
+  perDiem?: {
+    fullDays: number;
+    halfDays: number;
+    nights: number;
+    destination?: string;
+    /** Schablonen det år resan gjordes. */
+    rates: { heldag: number; halvdag: number; natt: number };
+  };
+  representation?: {
+    kind: RepresentationKind;
+    persons: number;
+    alcohol: boolean;
+    participants?: string;
+    purpose?: string;
+  };
+}
+
 export interface Expense {
   id: ID;
   supplier: string;
@@ -895,6 +1015,9 @@ export interface Expense {
   question?: { text: string; options: string[] };
   verificationId?: ID;
   createdAt: string;
+  paidBy?: ExpensePaidBy;
+  kind?: ExpenseKind;
+  details?: ExpenseDetails;
 }
 
 export interface Receipt {
@@ -1543,11 +1666,14 @@ export type AuditAction =
   | "momsrapport_deklarerad"
   | "momsperiodicitet_andrad"
   | "skattekonto_bokford"
+  | "skattekonto_ocr_andrad"
+  | "fskatt_andrad"
   | "anstalld_andrad"
   | "lon_bokford"
   | "arbetsgivardeklaration_genererad"
   | "arbetsgivardeklaration_deklarerad"
   | "rakenskapsar_skapat"
+  | "rakenskapsar_andrat"
   | "sie_import"
   | "rakenskapsar_stangt"
   | "rakenskapsar_oppnat"
@@ -2511,6 +2637,8 @@ export type WholesalerColumnKey =
   | "rskNumber"
   | "gtin"
   | "category"
+  | "brand"
+  | "imageUrl"
   | "discountGroup"
   | "unit"
   | "packSize"
@@ -2550,6 +2678,11 @@ export interface WholesalerConnection {
    * nettopris. Nyckeln är normaliserad (trimmad, versaler).
    */
   discountGroups?: Record<string, number>;
+  /**
+   * Favoritartiklar i materialbutiken, nycklade på grossistens artikelnummer
+   * (artikel-id byts vid varje prisimport – artikelnumret består).
+   */
+  favoriteArticleNumbers?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -2608,6 +2741,10 @@ export interface WholesalerProduct {
   rskNumber?: string;
   gtin?: string;
   category?: string;
+  /** Fabrikat/varumärke om filen anger det – visas på artikelkortet. */
+  brand?: string;
+  /** Länk (https) till grossistens produktbild – bara om filen innehåller en. */
+  imageUrl?: string;
   discountGroup?: string;
   unit: string;
   packSize?: number;
@@ -2845,6 +2982,7 @@ export type SetupTaskId =
   | "first_job"
   | "invite_consultant"
   | "payroll"
+  | "f_skatt"
   | "articles_prices";
 
 /** Bara det som inte kan härledas sparas: "gör senare" och "behövs inte". */
@@ -3043,6 +3181,13 @@ export interface DB {
      */
     merchantCategoryRules?: Record<string, MerchantCategoryRule>;
     /**
+     * Lärda motpartsregler för banktransaktioner som inte är köp eller kund-
+     * betalningar (bankavgift, skattekonto, lön, amortering …). Nyckeln är det
+     * normaliserade motpartsnamnet. Första bokningen ger ett förslag nästa gång,
+     * den andra gör att transaktionen bokförs automatiskt med förklaring.
+     */
+    bankCounterpartRules?: Record<string, BankCounterpartRule>;
+    /**
      * Explicit tillstånd för valfria funktioner (Hemsida, Samarbeta).
      * true = på, false = avstängd (data finns kvar). Saknas flaggan men
      * data finns → backfill som aktiv så inget försvinner för befintliga.
@@ -3067,6 +3212,17 @@ export interface DB {
      */
     websitePausedAt?: string;
     /**
+     * Bokföringsläget. `enkelt` döljer huvudbok, verifikationer och rapporter
+     * i flikraden – moms, skattekonto och översikt räcker för de flesta.
+     * Saknas = enkelt (målgruppen är hantverkaren, inte revisorn).
+     */
+    bookkeepingMode?: "enkelt" | "avancerat";
+    /**
+     * Företagets egna artikelregister (timpris, material, schabloner).
+     * Används som förslag när rader läggs på offert och faktura.
+     */
+    articles?: CatalogArticle[];
+    /**
      * Prisradsbeskrivningar som användaren glömt i autocomplete.
      * Sträng = glömd för alla radtyper (äldre format). Objekt = glömd
      * bara för den typen. Påverkar bara förslag – historiska dokument orörda.
@@ -3082,4 +3238,15 @@ export interface MerchantCategoryRule {
   /** Antal gånger användaren bekräftat/valt kategorin för leverantören. */
   count: number;
   lastUsedAt: string;
+}
+
+/** Lärd regel för vad en banktransaktion från en motpart är (nyckel ur banking/bank-kinds.ts). */
+export interface BankCounterpartRule {
+  /** Typ ur BANK_KINDS, t.ex. "bankavgift" eller "redan_bokford". */
+  kind: string;
+  /** Antal gånger användaren bokfört motparten som typen. */
+  count: number;
+  lastUsedAt: string;
+  /** Motpartsnamnet som det såg ut senast – för inställningar och förklaringar. */
+  counterpart: string;
 }

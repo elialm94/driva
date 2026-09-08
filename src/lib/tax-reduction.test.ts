@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { replaceDb } from "./store";
 import { buildSeed } from "./seed";
 import { formatPersonnummer, isPersonnummerFormat, maskPersonnummer, normalizePersonnummer } from "./personnummer";
-import { docTotals, ROT_ANDEL, RUT_ANDEL, ROT_TAK, RUT_TAK } from "./calc";
+import { docTotals, ROT_ANDEL, RUT_ANDEL, ROT_TAK, RUT_TAK, ROT_RUT_GEMENSAMT_TAK, taxReductionRateOn } from "./calc";
 import { createInvoice, issueInvoice, markInvoicePaid, sendInvoice, updateInvoice } from "./services/invoices";
 import { createQuote, STANDARD_TERMS, quoteDefaults } from "./services/quotes";
 import { currentVersion, getInvoice, getJob, requireCustomer } from "./services/data";
@@ -252,6 +252,20 @@ describe("ROT-beräkning och villkor", () => {
     const rot = docTotals([labor({ kind: "arbete", unitPrice: 200_000, qty: 1, vatRate: 25 })], { type: "rot" });
     assert.equal(rot.deduction, ROT_TAK);
     assert.equal(Math.round(rot.laborInclVat * ROT_ANDEL) > ROT_TAK, true);
+  });
+
+  it("ROT-satsen styrs av betalningsdagen: 50 % 12 maj–31 dec 2025, annars 30 %", () => {
+    assert.equal(taxReductionRateOn("rot", "2025-05-11"), ROT_ANDEL);
+    assert.equal(taxReductionRateOn("rot", "2025-05-12"), 0.5);
+    assert.equal(taxReductionRateOn("rot", "2025-12-31T23:59:00+01:00"), 0.5);
+    assert.equal(taxReductionRateOn("rot", "2026-01-01"), ROT_ANDEL);
+    assert.equal(taxReductionRateOn("rut", "2025-08-01"), RUT_ANDEL);
+  });
+
+  it("ROT och RUT delar ett gemensamt tak på 75 000 kr per person och år", () => {
+    assert.equal(ROT_RUT_GEMENSAMT_TAK, 75_000);
+    assert.equal(ROT_RUT_GEMENSAMT_TAK, RUT_TAK);
+    assert.ok(ROT_TAK < ROT_RUT_GEMENSAMT_TAK);
   });
 });
 
