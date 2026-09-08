@@ -318,6 +318,31 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     "notices",
     `alter table public.business_settings add column if not exists notices jsonb`
   );
+  // OCR-nummer till skattekontot (migration 45) – settings-upserten skriver alltid kolumnen.
+  await ensureColumn(
+    "business_settings",
+    "tax_account_ocr",
+    `alter table public.business_settings
+       add column if not exists tax_account_ocr text
+         check (tax_account_ocr is null or tax_account_ocr ~ '^[0-9]{10,25}$')`
+  );
+  // Utgifter för hand (migration 44) – expenses-upserten skriver alltid kolumnerna.
+  // En ensureColumn per kolumn: en delvis migrerad tabell ska ändå bli hel.
+  await ensureColumn(
+    "expenses",
+    "paid_by",
+    `alter table public.expenses
+       add column if not exists paid_by text
+         check (paid_by is null or paid_by in ('foretagskonto', 'privat'))`
+  );
+  await ensureColumn(
+    "expenses",
+    "kind",
+    `alter table public.expenses
+       add column if not exists kind text
+         check (kind is null or kind in ('kop', 'milersattning', 'traktamente', 'representation'))`
+  );
+  await ensureColumn("expenses", "details", `alter table public.expenses add column if not exists details jsonb`);
 
   await run(
     client,
