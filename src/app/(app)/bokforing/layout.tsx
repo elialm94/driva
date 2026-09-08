@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { bookkeepingHasPayroll, bookkeepingMode } from "@/lib/accounting/bookkeeping-mode";
 import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
+import { ensurePageBusiness } from "@/lib/auth/session";
 
 /**
  * Delat bokföringsskal. Flikraden lever här så den inte monteras om när
@@ -9,7 +10,13 @@ import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
  * byter ut hela innehållet mot OverviewSkeleton vid varje flikbyte.
  * Första steget in i Bokföring täcks av (app)/loading.tsx.
  */
-export default function BokforingLayout({ children }: { children: ReactNode }) {
+export default async function BokforingLayout({ children }: { children: ReactNode }) {
+  // Nästlade layouter renderas parallellt med (app)/layout.tsx och sidan –
+  // inte efter dem. Utan egen inläsning här är request-cellen tom när db()
+  // läses, och i Supabase-läget (inkl. demosessionen) kastar db() då
+  // "Ingen tenantkontext" för hela Bokföring. React cache() gör anropet
+  // till samma inläsning som skalet och sidan redan väntar på.
+  await ensurePageBusiness();
   const today = todayDate();
   const openYear = fiscalYears().find((f) => f.status === "oppet");
   const showYearEnd =
