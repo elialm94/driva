@@ -1,4 +1,4 @@
-import { db, save } from "../store";
+import { save } from "../store";
 import { uid } from "../ids";
 import type { JobPhoto } from "../types";
 import { getJob } from "./data";

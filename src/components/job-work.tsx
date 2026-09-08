@@ -647,39 +647,35 @@ function EditSheet({ entry, onClose }: { entry: JobWorkViewEntry; onClose: () =>
 }
 
 function JobTimerButton({ jobId }: { jobId: string }) {
-  const storageKey = `driva-job-timer:${jobId}`;
   const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [now, setNow] = useState(Date.now());
+  const [elapsedMs, setElapsedMs] = useState(0);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    const raw = sessionStorage.getItem(storageKey);
-    if (raw) setStartedAt(Number(raw));
-  }, [storageKey]);
-
-  useEffect(() => {
     if (startedAt == null) return;
-    const t = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(t);
+    const id = window.setInterval(() => {
+      setElapsedMs(Date.now() - startedAt);
+    }, 1000);
+    return () => window.clearInterval(id);
   }, [startedAt]);
 
   function start() {
     const at = Date.now();
-    sessionStorage.setItem(storageKey, String(at));
     setStartedAt(at);
+    setElapsedMs(0);
   }
 
   function stop() {
     if (startedAt == null) return;
     const hours = Math.max(0.25, Math.round(((Date.now() - startedAt) / 3_600_000) * 100) / 100);
-    sessionStorage.removeItem(storageKey);
     setStartedAt(null);
+    setElapsedMs(0);
     startTransition(async () => {
       await registerJobTimeAction(jobId, { hours });
     });
   }
 
-  const elapsed = startedAt == null ? 0 : Math.max(0, now - startedAt);
+  const elapsed = Math.max(0, elapsedMs);
   const mm = String(Math.floor(elapsed / 60000)).padStart(2, "0");
   const ss = String(Math.floor((elapsed % 60000) / 1000)).padStart(2, "0");
 
