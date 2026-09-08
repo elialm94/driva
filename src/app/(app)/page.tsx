@@ -10,6 +10,8 @@ import { commandBarPrefetch } from "@/lib/services/command-bar";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { setupSummary, type SetupSummary } from "@/lib/setup/tasks";
 import { SetupHomeCard } from "@/components/setup/setup-home-card";
+import { HomeMoneyStrip } from "@/components/home-money-strip";
+import { businessStats, financeOverview } from "@/lib/services/finance";
 
 export const metadata = { title: "Hem" };
 
@@ -43,6 +45,35 @@ function safeCommandPrefetch() {
   }
 }
 
+function safeFinance() {
+  try {
+    return financeOverview();
+  } catch (err) {
+    console.error("[hem] pengar:", err instanceof Error ? err.message : err);
+    return {
+      bank: 0,
+      moms: 0,
+      momsDue: "",
+      fSkatt: 0,
+      payrollReserve: 0,
+      taxAccount: 0,
+      reserved: 0,
+      upcoming: 0,
+      upcomingRows: [],
+      available: 0,
+    };
+  }
+}
+
+function safeStats() {
+  try {
+    return businessStats();
+  } catch (err) {
+    console.error("[hem] nyckeltal:", err instanceof Error ? err.message : err);
+    return { unpaidSum: 0, overdueSum: 0 };
+  }
+}
+
 export default async function HomePage() {
   await ensurePageBusiness();
   const actions = safeHomeActions();
@@ -62,6 +93,12 @@ export default async function HomePage() {
       <CommandBar prefetch={safeCommandPrefetch()} variant="hem" />
 
       {setup ? <SetupHomeCard summary={setup} /> : null}
+
+      <HomeMoneyStrip
+        finance={safeFinance()}
+        unpaid={safeStats().unpaidSum}
+        overdue={safeStats().overdueSum}
+      />
 
       <div className="mt-10">
         <AttentionSection

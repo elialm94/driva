@@ -34,7 +34,7 @@ export function QuoteDraftSend({
   customerName: string;
   amount: number;
   validUntilLabel: string;
-  sendAction: () => Promise<void | { ok: boolean; errors?: string[]; mailed?: boolean; demo?: boolean }>;
+  sendAction: (message?: string) => Promise<void | { ok: boolean; errors?: string[]; mailed?: boolean; demo?: boolean }>;
   detailHref: string;
   recipientEmail?: string;
   /** Samma källa som checklistan: canSend = quoteSendBlockers().length === 0. */
@@ -44,6 +44,7 @@ export function QuoteDraftSend({
 }) {
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [message, setMessage] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [isSending, startSending] = useTransition();
   const pendingAction: PendingAction = { kind: "SEND_QUOTE", documentId, customerId };
@@ -72,7 +73,7 @@ export function QuoteDraftSend({
     if (isSending) return;
     startSending(async () => {
       setSendError(null);
-      const result = await sendAction();
+      const result = await sendAction(message.trim() || undefined);
       if (result && result.ok === false) {
         setSendError((result.errors ?? []).join(" ") || "Offerten kunde inte skickas just nu.");
         return;
@@ -107,6 +108,16 @@ export function QuoteDraftSend({
           <p className="text-[17px] font-semibold tracking-tight text-ink">{customerName}</p>
           <p className="mt-1 text-[15px] text-soft">{kr(amount)}</p>
           <p className="mt-1 text-[14px] text-muted">Giltig till {validUntilLabel}</p>
+          <label className="mt-4 block text-[13px] font-medium text-ink">
+            Personligt meddelande
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={3}
+              placeholder="Valfritt – syns överst i mejlet."
+              className="mt-1.5 w-full rounded-xl border border-line bg-card px-3 py-2 text-[14px] font-normal text-ink placeholder:text-muted focus:border-accent"
+            />
+          </label>
           <p className="mt-4 text-[14px] leading-relaxed text-soft">
             {mailConfigured ? (
               <>

@@ -221,6 +221,18 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
               <dt className="text-muted">Betalt</dt>
               <dd className="font-medium text-ink">{kr(money.paid)}</dd>
             </div>
+            {money.cost > 0 ? (
+              <>
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-muted">Inköp</dt>
+                  <dd className="font-medium text-ink">{kr(money.cost)}</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-muted">Täckning</dt>
+                  <dd className={money.profit >= 0 ? "font-medium text-ok" : "font-medium text-danger"}>{kr(money.profit)}</dd>
+                </div>
+              </>
+            ) : null}
             {quote?.status === "godkand" || money.registeredUninvoiced > 0 ? (
               <div className="col-span-2 flex items-baseline justify-between gap-3 border-t border-line/60 pt-1.5">
                 <dt className="text-muted">Kvar att fakturera</dt>

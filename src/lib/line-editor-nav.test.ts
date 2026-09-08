@@ -39,17 +39,18 @@ function line(over: Partial<DocLine> & { id: string }): DocLine {
 }
 
 describe("Enter-flow: nästa fält åt höger", () => {
-  it("går Typ → Beskrivning → Antal → Enhet → À-pris → Moms → ny rad", () => {
+  it("går Typ → Beskrivning → Antal → Enhet → À-pris → Rabatt → Moms → ny rad", () => {
     assert.deepEqual(nextLineField("typ"), { kind: "field", field: "beskrivning" });
     assert.deepEqual(nextLineField("beskrivning"), { kind: "field", field: "antal" });
     assert.deepEqual(nextLineField("antal"), { kind: "field", field: "enhet" });
     assert.deepEqual(nextLineField("enhet"), { kind: "field", field: "pris" });
-    assert.deepEqual(nextLineField("pris"), { kind: "field", field: "moms" });
+    assert.deepEqual(nextLineField("pris"), { kind: "field", field: "rabatt" });
+    assert.deepEqual(nextLineField("rabatt"), { kind: "field", field: "moms" });
     assert.deepEqual(nextLineField("moms"), { kind: "new-row" });
   });
 
   it("papperskorgen ingår inte i fältordningen", () => {
-    assert.deepEqual([...LINE_EDITOR_FIELDS], ["typ", "beskrivning", "antal", "enhet", "pris", "moms"]);
+    assert.deepEqual([...LINE_EDITOR_FIELDS], ["typ", "beskrivning", "antal", "enhet", "pris", "rabatt", "moms"]);
   });
 
   it("fält-id:n matchar DOM-id:n i editorn", () => {

@@ -18,6 +18,7 @@ import {
   type EconomicLineType,
 } from "@/lib/economic-line-type";
 import { applyArbeteLineDefaults, createDocLine } from "@/lib/line-defaults";
+import { lineTotal as calcLineTotal } from "@/lib/calc";
 import { lineFieldId, lineIsBlank, lineMissingParts, type LineEditorField } from "@/lib/form-requirements";
 import {
   LINE_DELETED_TOAST,
@@ -50,9 +51,9 @@ const mobileLineLabelCls = "mb-1 block text-[12px] font-medium text-muted @min-[
  * Hela klassnamnet måste stå statiskt så Tailwind hittar det.
  */
 const LINE_GRID_HEADER =
-  "hidden gap-2 text-[12px] font-medium uppercase tracking-wide text-muted @min-[40rem]:grid @min-[40rem]:grid-cols-[7.5rem_minmax(0,1fr)_4.375rem_4.375rem_6.875rem_5.625rem_2rem]";
+  "hidden gap-2 text-[12px] font-medium uppercase tracking-wide text-muted @min-[40rem]:grid @min-[40rem]:grid-cols-[7.5rem_minmax(0,1fr)_4.375rem_4.375rem_6.25rem_3.5rem_5.625rem_2rem]";
 const LINE_GRID_ROW =
-  "relative grid grid-cols-2 gap-x-2.5 gap-y-3 rounded-2xl border border-line bg-canvas/40 p-3.5 @min-[40rem]:static @min-[40rem]:grid-cols-[7.5rem_minmax(0,1fr)_4.375rem_4.375rem_6.875rem_5.625rem_2rem] @min-[40rem]:gap-2 @min-[40rem]:rounded-none @min-[40rem]:border-0 @min-[40rem]:bg-transparent @min-[40rem]:p-0";
+  "relative grid grid-cols-2 gap-x-2.5 gap-y-3 rounded-2xl border border-line bg-canvas/40 p-3.5 @min-[40rem]:static @min-[40rem]:grid-cols-[7.5rem_minmax(0,1fr)_4.375rem_4.375rem_6.25rem_3.5rem_5.625rem_2rem] @min-[40rem]:gap-2 @min-[40rem]:rounded-none @min-[40rem]:border-0 @min-[40rem]:bg-transparent @min-[40rem]:p-0";
 
 const DECIMAL_PARTIAL = /^-?\d*[.,]?\d*$/;
 const DECIMAL_PARTIAL_UNSIGNED = /^\d*[.,]?\d*$/;
@@ -388,6 +389,7 @@ export function LinesEditor({
         <span>Antal</span>
         <span>Enhet</span>
         <span>À-pris exkl.</span>
+        <span>Rabatt</span>
         <span>Moms</span>
         <span />
       </div>
@@ -395,8 +397,7 @@ export function LinesEditor({
         const parts = showErrors ? lineMissingParts(line) : { description: false, price: false };
         const markDescription = parts.description || (allBlank && index === 0);
         const markPrice = parts.price;
-        const lineTotal =
-          (Number.isFinite(line.qty) ? line.qty : 0) * (Number.isFinite(line.unitPrice) ? line.unitPrice : 0);
+        const lineTotal = calcLineTotal(line);
         return (
           <div key={line.id} data-line-id={line.id} className={LINE_GRID_ROW}>
             <div className="@min-[40rem]:contents">
@@ -444,7 +445,7 @@ export function LinesEditor({
                 value={line.description}
                 onChange={(description) => update(line.id, { description })}
                 onEnterNavigate={() => goFrom(line, "beskrivning")}
-                placeholder="Vad ingår? (rabatt läggs som rad med minusbelopp)"
+                placeholder="Vad ingår?"
                 aria-label="Beskrivning"
                 aria-invalid={markDescription}
                 kind={lineKindFromType(lineTypeOf(line))}
@@ -503,6 +504,20 @@ export function LinesEditor({
                   kr
                 </span>
               </div>
+            </div>
+            <div className="@min-[40rem]:contents">
+              <label htmlFor={lineFieldId(line.id, "rabatt")} className={mobileLineLabelCls}>
+                Rabatt %
+              </label>
+              <DecimalInput
+                id={lineFieldId(line.id, "rabatt")}
+                value={line.discountPercent ?? 0}
+                onValueChange={(discountPercent) =>
+                  update(line.id, { discountPercent: discountPercent > 0 ? Math.min(100, discountPercent) : undefined })
+                }
+                className={inputCls}
+                aria-label="Rabatt i procent"
+              />
             </div>
             <div className="@min-[40rem]:contents">
               <label htmlFor={lineFieldId(line.id, "moms")} className={mobileLineLabelCls}>

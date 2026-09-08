@@ -118,6 +118,7 @@ import {
 import { maskPersonnummer } from "@/lib/personnummer";
 import {
   createQuote,
+  duplicateQuote,
   declineQuote,
   discardQuote,
   markQuoteNotRelevant,
@@ -453,12 +454,13 @@ export async function updateQuoteAction(quoteId: string, input: QuoteVersionInpu
 }
 
 export async function sendQuoteAction(
-  quoteId: string
+  quoteId: string,
+  message?: string
 ): Promise<{ ok: true; mailed: boolean; demo?: boolean } | { ok: false; errors: string[] }> {
   return withBusiness(
     async () => {
       try {
-        const { outcome } = await sendQuoteWithEmail(quoteId);
+        const { outcome } = await sendQuoteWithEmail(quoteId, message);
         if (!outcome.ok) {
           return { ok: false, errors: [outcome.error ?? "Kunde inte skicka offerten."] } as const;
         }
@@ -475,6 +477,17 @@ export async function sendQuoteAction(
       }
     },
     { retry: false }
+  );
+}
+
+export async function duplicateQuoteAction(quoteId: string, nav?: ReturnNav): Promise<never> {
+  return withBusiness(
+    (): never => {
+      const copy = duplicateQuote(quoteId, "anvandare");
+      refresh();
+      redirect(hrefWithNav(`/ekonomi/offerter/${copy.id}`, nav));
+    },
+    { capability: "create_quote" }
   );
 }
 

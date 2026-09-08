@@ -27,6 +27,8 @@ import {
   quoteEmail,
   quoteFollowUpEmail,
 } from "./templates";
+import { invoicePdfBytes, quotePdfBytes } from "../invoices/document-pdf";
+import { getInvoice } from "../services/data";
 
 export const QUOTE_SEND_FAILED =
   "E-posttjänsten kunde inte ta emot offerten just nu. Kontrollera avsändaren och försök igen.";
@@ -90,10 +92,11 @@ export type QuoteMailInput = {
   amount: number;
   validUntil: string;
   token: string;
+  message?: string;
 };
 
 export function prepareQuoteMail(input: QuoteMailInput): MailMessage {
-  return envelope(
+  const message = envelope(
     input.to,
     quoteEmail({
       businessName: db().settings.name,
@@ -104,8 +107,24 @@ export function prepareQuoteMail(input: QuoteMailInput): MailMessage {
       validUntil: input.validUntil,
       url: absoluteAppUrl(`/offert/${input.token}`),
       footer: footer(),
+      message: input.message,
     })
   );
+  message.attachments = [
+    {
+      filename: `offert-${input.quoteNumber}.pdf`,
+      content: quotePdfBytes({
+        companyName: db().settings.name,
+        customerName: input.customerName,
+        quoteNumber: input.quoteNumber,
+        title: input.title,
+        amount: input.amount,
+        validUntil: input.validUntil,
+      }),
+      contentType: "application/pdf",
+    },
+  ];
+  return message;
 }
 
 export async function sendQuote(input: QuoteMailInput): Promise<MailResult> {
@@ -233,13 +252,27 @@ function invoiceEmailFields(input: InvoiceMailInput) {
     ocr: input.ocr,
     bankgiro: s.bankgiro,
     plusgiro: s.plusgiro,
+    bankAccount: s.bankAccount,
+    iban: s.iban,
+    bic: s.bic,
     url: absoluteAppUrl(`/faktura/${input.token}`),
     footer: footer(),
   };
 }
 
 export function prepareInvoiceMail(input: InvoiceMailInput): MailMessage {
-  return envelope(input.to, invoiceEmail(invoiceEmailFields(input)));
+  const message = envelope(input.to, invoiceEmail(invoiceEmailFields(input)));
+  const invoice = getInvoice(input.invoiceId);
+  if (invoice) {
+    message.attachments = [
+      {
+        filename: `faktura-${input.invoiceNumber}.pdf`,
+        content: invoicePdfBytes(invoice, db().settings, input.customerName),
+        contentType: "application/pdf",
+      },
+    ];
+  }
+  return message;
 }
 
 export async function sendInvoice(input: InvoiceMailInput): Promise<MailResult> {
@@ -254,10 +287,21 @@ export type InvoiceReminderMailInput = InvoiceMailInput & {
 };
 
 export function prepareInvoiceReminderMail(input: InvoiceReminderMailInput): MailMessage {
-  return envelope(
+  const message = envelope(
     input.to,
     invoiceReminderEmail({ ...invoiceEmailFields(input), outstanding: input.outstanding, partial: input.partial })
   );
+  const invoice = getInvoice(input.invoiceId);
+  if (invoice) {
+    message.attachments = [
+      {
+        filename: `faktura-${input.invoiceNumber}.pdf`,
+        content: invoicePdfBytes(invoice, db().settings, input.customerName),
+        contentType: "application/pdf",
+      },
+    ];
+  }
+  return message;
 }
 
 export async function sendPaymentReminder(input: InvoiceReminderMailInput): Promise<MailResult> {

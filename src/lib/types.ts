@@ -213,8 +213,13 @@ export interface DocLine {
   description: string;
   qty: number;
   unit: string;
-  /** Pris per enhet, exkl. moms. */
+  /** Pris per enhet, exkl. moms – före radrabatt. */
   unitPrice: number;
+  /**
+   * Radrabatt i procent (0–100). Saknas = 0. À-priset räknas om i
+   * `lineTotal` så offert, faktura och bokföring alltid stämmer.
+   */
+  discountPercent?: number;
   vatRate: VatRate;
   sourceKind?: LineSourceKind;
   /** Offertrad-id, uppdragspost-id eller motsvarande. */
@@ -3168,6 +3173,26 @@ export interface DB {
      * publicerade innehållet ligger kvar.
      */
     websitePausedAt?: string;
+    /**
+     * Bokföringsläget. `enkelt` döljer huvudbok, verifikationer och rapporter
+     * i flikraden – moms, skattekonto och översikt räcker för de flesta.
+     * Saknas = enkelt (målgruppen är hantverkaren, inte revisorn).
+     */
+    bookkeepingMode?: "enkelt" | "avancerat";
+    /**
+     * Företagets egna artikelregister (timpris, material, schabloner).
+     * Används som förslag när rader läggs på offert och faktura.
+     */
+    articles?: Array<{
+      id: string;
+      description: string;
+      kind: "arbete" | "material" | "resor" | "ovrigt";
+      unit: string;
+      unitPrice: number;
+      vatRate: 0 | 6 | 12 | 25;
+      /** Rabatt i procent som förifylls (0–100). */
+      discountPercent?: number;
+    }>;
     /**
      * Prisradsbeskrivningar som användaren glömt i autocomplete.
      * Sträng = glömd för alla radtyper (äldre format). Objekt = glömd

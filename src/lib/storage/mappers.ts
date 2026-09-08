@@ -701,6 +701,7 @@ export function invoiceLineToRow(
     qty: synced.qty,
     unit: synced.unit,
     unit_price: synced.unitPrice,
+    discount_percent: synced.discountPercent ?? null,
     vat_rate: synced.vatRate,
     source_kind: synced.sourceKind ?? line.sourceKind ?? null,
     source_id: synced.sourceId ?? line.sourceId ?? null,
@@ -710,7 +711,7 @@ export function invoiceLineToRow(
 }
 
 export const invoiceLineColumns = [
-  "id", "business_id", "invoice_id", "position", "kind", "description", "qty", "unit", "unit_price", "vat_rate",
+    "id", "business_id", "invoice_id", "position", "kind", "description", "qty", "unit", "unit_price", "discount_percent", "vat_rate",
   "source_kind", "source_id", "source_quote_number", "payment_plan_index",
 ];
 
@@ -722,6 +723,7 @@ export function invoiceLineFromRow(r: SqlRow): DocLine {
     qty: num(r.qty),
     unit: str(r.unit),
     unitPrice: num(r.unit_price),
+    ...opt("discountPercent", numOrU(r.discount_percent)),
     vatRate: num(r.vat_rate) as DocLine["vatRate"],
     ...opt("sourceKind", r.source_kind == null ? undefined : (str(r.source_kind) as DocLine["sourceKind"])),
     ...opt("sourceId", strOrU(r.source_id)),

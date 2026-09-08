@@ -81,10 +81,17 @@ export interface VatBreakdownRow {
   vat: number;
 }
 
+export function lineDiscountPercent(line: Pick<DocLine, "discountPercent">): number {
+  const raw = line.discountPercent;
+  if (raw == null || !Number.isFinite(raw)) return 0;
+  return Math.min(100, Math.max(0, raw));
+}
+
 export function lineTotal(line: DocLine): number {
   const qty = Number.isFinite(line.qty) ? line.qty : 0;
   const unitPrice = Number.isFinite(line.unitPrice) ? line.unitPrice : 0;
-  return Math.round(qty * unitPrice);
+  const factor = 1 - lineDiscountPercent(line) / 100;
+  return Math.round(qty * unitPrice * factor);
 }
 
 export function lineVat(line: DocLine): number {
@@ -121,7 +128,7 @@ export function docTotals(lines: DocLine[], rot: RotRut | null): DocTotals {
 /**
  * Moms per momssats – enda summeringen för offerter, fakturor, PDF och bokföring.
  * Inkluderar 0 % när sådana rader finns, så underlaget syns.
- * Radrabatt som eget fält finns inte i V1; negativt à-pris på en rad är den stödda rabattformen.
+ * Radrabatt: `discountPercent` på raden (0–100). Negativt à-pris fungerar fortfarande.
  */
 export function vatBreakdown(lines: DocLine[]): VatBreakdownRow[] {
   const map = new Map<number, { base: number; vat: number }>();

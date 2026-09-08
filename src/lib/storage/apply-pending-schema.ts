@@ -170,6 +170,13 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
        add column if not exists source_quote_number integer,
        add column if not exists payment_plan_index integer`
   );
+  await ensureColumn(
+    "invoice_line_items",
+    "discount_percent",
+    `alter table public.invoice_line_items
+       add column if not exists discount_percent numeric
+         check (discount_percent is null or (discount_percent >= 0 and discount_percent <= 100))`
+  );
 
   const files = await client.query(`select to_regclass('public.payment_files') is not null as present`);
   if (!files[0]?.present) {

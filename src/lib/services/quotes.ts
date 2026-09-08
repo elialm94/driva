@@ -583,6 +583,30 @@ export function discardQuote(quoteId: string, createdBy: "anvandare" | "assisten
   save();
 }
 
+/** Ny utkast-offert med samma rader, kund och villkor – egen länk och nummer. */
+export function duplicateQuote(quoteId: string, createdBy: "anvandare" | "assistent" = "anvandare"): Quote {
+  const quote = getQuote(quoteId);
+  if (!quote) throw new Error("Offerten finns inte");
+  const version = currentVersion(quote);
+  return createQuote(
+    {
+      customerId: quote.customerId,
+      jobId: quote.jobId,
+      workLocationId: quote.workLocationId,
+      title: version.title.startsWith("Kopia av ") ? version.title : `Kopia av ${version.title}`,
+      lines: version.lines.map((l) => syncDocLineClassification({ ...l, id: uid(), sourceId: undefined })),
+      rot: version.rot,
+      paymentPlan: version.paymentPlan.map((p) => ({ ...p })),
+      paymentTermsDays: version.paymentTermsDays,
+      lateInterestRate: version.lateInterestRate,
+      validUntil: isoDaysFromNow(db().settings.quoteValidityDays ?? 30),
+      terms: version.terms,
+      richText: version.richText,
+    },
+    createdBy
+  );
+}
+
 /** Standardvärden för en ny offert. */
 export function quoteDefaults() {
   const settings = db().settings;

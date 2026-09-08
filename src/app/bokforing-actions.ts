@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { generateVatReport, markVatReportDeclared, setVatPeriodicity } from "@/lib/accounting/vat";
 import { declareVatPeriod } from "@/lib/accounting/vat-flow";
+import { setBookkeepingMode, type BookkeepingMode } from "@/lib/accounting/bookkeeping-mode";
 import { isVatPeriodicity } from "@/lib/accounting/dates";
 import {
   bookFSkatt,
@@ -127,6 +128,11 @@ export async function declareVatPeriodAction(periodKey: string): Promise<Result>
 /** Momsflödets steg 3: användarens OCR-nummer för skattekontot (tomt tar bort det). */
 export async function setTaxAccountOcrAction(value: string): Promise<Result> {
   return run(() => void setTaxAccountOcr(String(value ?? ""), "anvandare"), "write_accounting");
+}
+
+/** Enkelt döljer huvudbok och rapporter; avancerat visar allt. */
+export async function setBookkeepingModeAction(mode: BookkeepingMode): Promise<Result> {
+  return run(() => void setBookkeepingMode(mode), "write_accounting");
 }
 
 export async function setVatPeriodicityAction(periodicity: string): Promise<Result> {
