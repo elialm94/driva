@@ -10,7 +10,7 @@ import {
   BOKFORING_REPORT_TABS,
   bokforingDetailTabForPath,
 } from "@/lib/nav";
-import { simpleBookkeepingKeys, type BookkeepingMode } from "@/lib/accounting/bookkeeping-mode";
+import { simpleBookkeepingKeys, type BookkeepingMode } from "@/lib/accounting/bookkeeping-mode-keys";
 import { setBookkeepingModeAction } from "@/app/bokforing-actions";
 import { cx } from "./ui";
 

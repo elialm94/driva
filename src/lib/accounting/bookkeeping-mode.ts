@@ -1,9 +1,9 @@
 import { db, save } from "../store";
 import { employees } from "./payroll";
+import type { BookkeepingMode } from "./bookkeeping-mode-keys";
 
-export type BookkeepingMode = "enkelt" | "avancerat";
-
-const SIMPLE_KEYS: string[] = ["oversikt", "moms", "skattekonto"];
+export type { BookkeepingMode } from "./bookkeeping-mode-keys";
+export { simpleBookkeepingKeys } from "./bookkeeping-mode-keys";
 
 /** Saknas inställning = enkelt – hantverkaren ska inte möta huvudboken först. */
 export function bookkeepingMode(): BookkeepingMode {
@@ -22,12 +22,4 @@ export function setBookkeepingMode(mode: BookkeepingMode): BookkeepingMode {
 
 export function bookkeepingHasPayroll(): boolean {
   return employees().length > 0;
-}
-
-/** Flikar som syns i enkelt läge. Lön och bokslut bara när de behövs. */
-export function simpleBookkeepingKeys(opts: { hasPayroll: boolean; showYearEnd: boolean }): string[] {
-  const keys = [...SIMPLE_KEYS];
-  if (opts.hasPayroll) keys.push("lon");
-  if (opts.showYearEnd) keys.push("bokslut");
-  return keys;
 }
