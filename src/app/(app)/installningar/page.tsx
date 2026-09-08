@@ -81,6 +81,7 @@ export default async function SettingsPage(props: {
           status: y.status,
         }))}
         today={todayDate()}
+        articles={flik === "fakturering" ? db().meta.articles ?? [] : undefined}
         notices={
           flik === "notiser"
             ? {

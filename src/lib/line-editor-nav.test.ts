@@ -10,8 +10,11 @@ import {
   applyLineRedo,
   applyLineUndo,
   createFollowUpLine,
+  createHeadingLine,
+  duplicateDocLine,
   followUpLineKind,
   insertLineAfter,
+  moveLine,
   isEditableTextTarget,
   isInsideLineEditor,
   lineFieldId,
@@ -141,6 +144,23 @@ describe("Enter på Moms: ny rad med samma typ, canonical defaults", () => {
     const hourly = 650;
     assert.equal(explicitZero ?? hourly, 0);
     assert.equal(explicitZero || hourly, 650);
+  });
+});
+
+describe("rubrik, kopiera och flytta", () => {
+  it("kopierar raden med nytt id", () => {
+    const src = line({ id: "a", description: "Luckor", unitPrice: 800 });
+    const copy = duplicateDocLine(src);
+    assert.notEqual(copy.id, src.id);
+    assert.equal(copy.description, "Luckor");
+    const heading = createHeadingLine("Arbete");
+    assert.equal(heading.isHeading, true);
+    assert.equal(heading.description, "Arbete");
+    const moved = moveLine([src, line({ id: "b", description: "B" })], "a", 1);
+    assert.deepEqual(
+      moved.map((l) => l.id),
+      ["b", "a"]
+    );
   });
 });
 

@@ -177,6 +177,27 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
        add column if not exists discount_percent numeric
          check (discount_percent is null or (discount_percent >= 0 and discount_percent <= 100))`
   );
+  await ensureColumn(
+    "invoice_line_items",
+    "is_heading",
+    `alter table public.invoice_line_items
+       add column if not exists is_heading boolean not null default false`
+  );
+  await ensureColumn(
+    "customers",
+    "tax_reduction_used",
+    `alter table public.customers add column if not exists tax_reduction_used jsonb`
+  );
+  await ensureColumn(
+    "jobs",
+    "photos",
+    `alter table public.jobs add column if not exists photos jsonb`
+  );
+  await ensureColumn(
+    "job_work_entries",
+    "expense_id",
+    `alter table public.job_work_entries add column if not exists expense_id text`
+  );
 
   const files = await client.query(`select to_regclass('public.payment_files') is not null as present`);
   if (!files[0]?.present) {

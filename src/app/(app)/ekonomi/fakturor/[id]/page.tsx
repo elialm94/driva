@@ -13,7 +13,7 @@ import { InvoiceDocument } from "@/components/invoice-document";
 import { LinkedToBox } from "@/components/linked-to-box";
 import { documentLinkView } from "@/lib/services/document-job-link";
 import { ActionMenu, ActionMenuLink, PageActions } from "@/components/action-menu";
-import { CopyLinkButton } from "@/components/copy-button";
+import { ShareCustomerLink } from "@/components/share-customer-link";
 import {
   CreditInvoiceButton,
   ResendInvoiceButton,
@@ -108,7 +108,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         <CreditInvoiceButton invoiceId={invoice.id} appearance="menu" context={creditInvoiceContext(invoice.id)} />
       ) : null}
       {canCopyLink ? (
-        <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
+        <ShareCustomerLink path={publicPath} kind="faktura" number={invoice.number ?? undefined} phone={customer.phone} appearance="menu" />
       ) : null}
       {canCustomerView ? (
         <ActionMenuLink href={`${publicPath}/pdf`} external>
@@ -139,6 +139,11 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         canSend={canSend}
         excessAmount={deviation?.largeExcess ? deviation.delta : undefined}
         tillaggHref={tillaggHref}
+        publicPath={publicPath}
+        customerPhone={customer.phone}
+        invoiceNumber={invoice.number}
+        deduction={totals.deduction}
+        rotType={invoice.rot?.type}
       />
     </PageActions>
   ) : (

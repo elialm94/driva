@@ -37,6 +37,8 @@ import { SetupCenter } from "./setup/setup-center";
 import type { SetupSummary } from "@/lib/setup/tasks";
 import type { DataImport, OnboardingState } from "@/lib/types";
 import { StickyMobileActions } from "./sticky-actions";
+import { ArticleSettings } from "./article-settings";
+import type { CatalogArticle } from "@/lib/types";
 import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 import { SettingsBillingBanner } from "./settings-billing-readiness";
 import { AddressFields } from "./address-input";
@@ -132,6 +134,7 @@ export function SettingsForm({
   fiscalYears = [],
   today,
   notices,
+  articles,
 }: {
   initial: CompanySettings;
   defaults: InvoiceDefaults;
@@ -155,6 +158,7 @@ export function SettingsForm({
   today: string;
   /** Notiser – eget kort som sparar direkt, utanför formuläret. */
   notices?: OwnerNoticeSettingsProps;
+  articles?: CatalogArticle[];
 }) {
   const TABS = settingsTabsFor(features);
   const router = useRouter();
@@ -816,6 +820,7 @@ export function SettingsForm({
           ) : null}
 
           {typeof fSkattPerMonth === "number" ? <FSkattSettingCard amount={fSkattPerMonth} /> : null}
+          {articles ? <ArticleSettings articles={articles} /> : null}
         </div>
       ) : null}
 

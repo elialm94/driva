@@ -125,6 +125,15 @@ export function DocLinesTable({
       </thead>
       <tbody>
         {lines.map((line) => {
+          if (line.isHeading) {
+            return (
+              <tr key={line.id} className="border-b border-line/60 last:border-0">
+                <td colSpan={4} className="pt-4 pb-1 text-[13px] font-semibold uppercase tracking-wide text-muted">
+                  {line.description}
+                </td>
+              </tr>
+            );
+          }
           const sublabel = lineKindSublabel(line);
           const qtyBit = (
             <span className="sm:hidden">

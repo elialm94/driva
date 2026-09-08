@@ -21,7 +21,11 @@ import { JobWorkSection, type JobWorkViewEntry } from "@/components/job-work";
 import { PurchaseOrdersSection } from "@/components/purchase-orders-section";
 import { jobPurchaseOrderRows, jobWholesalerContext } from "@/lib/services/job-wholesalers";
 import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
+import { JobPhotosSection } from "@/components/job-photos";
+import { RotDeadlineBanner } from "@/components/rot-deadline-banner";
 import { taxReductionCaseForJob } from "@/lib/services/tax-reduction";
+import { rotDeadlineStatus } from "@/lib/tax-reduction-deadline";
+import { todayDate } from "@/lib/accounting/dates";
 import { husExportPreview } from "@/lib/services/hus-export";
 import { getInvoiceDefaults } from "@/lib/services/settings";
 import { AppLink } from "@/components/app-link";
@@ -286,6 +290,16 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         </div>
       ) : null}
 
+      {(() => {
+        const deadline = rotDeadlineStatus({
+          today: todayDate(),
+          workEndDate: job.endDate ?? job.completedAt,
+          paidAt: invoices.find((i) => i.rot && i.paidAt)?.paidAt,
+          applied: Boolean(job.taxReductionApplication && job.taxReductionApplication.status !== "preliminar" && job.taxReductionApplication.status !== "redo_att_ansokas"),
+        });
+        return deadline && job.taxReductionApplication ? <RotDeadlineBanner status={deadline} /> : null;
+      })()}
+
       <JobWorkSection
         jobId={job.id}
         jobTitle={job.title}
@@ -298,6 +312,8 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         invoiceChoice={invoiceChoice}
         wholesalers={wholesalers.enabled ? wholesalers : undefined}
       />
+
+      <JobPhotosSection jobId={job.id} photos={job.photos ?? []} />
 
       <PurchaseOrdersSection jobId={job.id} jobTitle={job.title} rows={purchaseOrderRows} />
 

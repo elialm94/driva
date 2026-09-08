@@ -39,8 +39,13 @@ export function resolveTaxReductionAmounts(input: {
   type: RotRut["type"];
   appliedTaxReduction?: number | null;
   taxReductionManuallyAdjusted?: boolean;
+  /** Kvarvarande utrymme i år (egna fakturor + ifyllt från andra). */
+  remainingCap?: number;
 }): ResolvedTaxReductionAmounts {
-  const calculated = calculatedEligibleTaxReduction(input.lines, input.type);
+  let calculated = calculatedEligibleTaxReduction(input.lines, input.type);
+  if (input.remainingCap != null && Number.isFinite(input.remainingCap)) {
+    calculated = Math.min(calculated, Math.max(0, Math.round(input.remainingCap)));
+  }
   const manually = Boolean(input.taxReductionManuallyAdjusted);
   if (!manually || input.appliedTaxReduction == null || !Number.isFinite(input.appliedTaxReduction)) {
     return {

@@ -113,6 +113,19 @@ export function JobWorkSection({
       <SectionTitle
         right={
           <div className="flex gap-2">
+            <button
+              type="button"
+              className={buttonClasses("secondary", "sm")}
+              disabled={isPending}
+              onClick={() =>
+                startTransition(async () => {
+                  await registerJobTimeAction(jobId, { hours: 1 });
+                })
+              }
+            >
+              +1 tim
+            </button>
+            <JobTimerButton jobId={jobId} />
             <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setSheet("tid")}>
               <Plus className="size-3.5" />
               <span className="sm:hidden">Tid</span>
@@ -630,5 +643,56 @@ function EditSheet({ entry, onClose }: { entry: JobWorkViewEntry; onClose: () =>
         ) : null}
       </div>
     </Modal>
+  );
+}
+
+function JobTimerButton({ jobId }: { jobId: string }) {
+  const storageKey = `driva-job-timer:${jobId}`;
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem(storageKey);
+    if (raw) setStartedAt(Number(raw));
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (startedAt == null) return;
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [startedAt]);
+
+  function start() {
+    const at = Date.now();
+    sessionStorage.setItem(storageKey, String(at));
+    setStartedAt(at);
+  }
+
+  function stop() {
+    if (startedAt == null) return;
+    const hours = Math.max(0.25, Math.round(((Date.now() - startedAt) / 3_600_000) * 100) / 100);
+    sessionStorage.removeItem(storageKey);
+    setStartedAt(null);
+    startTransition(async () => {
+      await registerJobTimeAction(jobId, { hours });
+    });
+  }
+
+  const elapsed = startedAt == null ? 0 : Math.max(0, now - startedAt);
+  const mm = String(Math.floor(elapsed / 60000)).padStart(2, "0");
+  const ss = String(Math.floor((elapsed % 60000) / 1000)).padStart(2, "0");
+
+  if (startedAt == null) {
+    return (
+      <button type="button" className={buttonClasses("secondary", "sm")} onClick={start} disabled={isPending}>
+        Starta timer
+      </button>
+    );
+  }
+  return (
+    <button type="button" className={buttonClasses("primary", "sm")} onClick={stop} disabled={isPending}>
+      Stoppa {mm}:{ss}
+    </button>
   );
 }

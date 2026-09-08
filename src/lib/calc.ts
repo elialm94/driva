@@ -87,7 +87,12 @@ export function lineDiscountPercent(line: Pick<DocLine, "discountPercent">): num
   return Math.min(100, Math.max(0, raw));
 }
 
+export function isHeadingLine(line: Pick<DocLine, "isHeading">): boolean {
+  return line.isHeading === true;
+}
+
 export function lineTotal(line: DocLine): number {
+  if (isHeadingLine(line)) return 0;
   const qty = Number.isFinite(line.qty) ? line.qty : 0;
   const unitPrice = Number.isFinite(line.unitPrice) ? line.unitPrice : 0;
   const factor = 1 - lineDiscountPercent(line) / 100;

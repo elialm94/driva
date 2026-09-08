@@ -177,7 +177,7 @@ export const customersSpec: TableSpec<Customer> = {
   columns: [
     "id", "business_id", "kind", "name", "contact_person", "org_number", "email", "phone",
     "address", "postal_code", "city", "personal_identity_number", "default_work_location_id",
-    "notes", "reverse_charge_construction", "created_at",
+    "notes", "reverse_charge_construction", "tax_reduction_used", "created_at",
   ],
   toRow: (c, businessId) => ({
     id: c.id,
@@ -195,6 +195,7 @@ export const customersSpec: TableSpec<Customer> = {
     default_work_location_id: c.defaultWorkLocationId ?? null,
     notes: c.notes,
     reverse_charge_construction: c.reverseChargeConstruction === true,
+    tax_reduction_used: jsonParamOrNull(c.taxReductionUsed),
     created_at: c.createdAt,
   }),
   fromRow: (r) => ({
@@ -212,6 +213,7 @@ export const customersSpec: TableSpec<Customer> = {
     ...opt("defaultWorkLocationId", strOrU(r.default_work_location_id)),
     notes: str(r.notes),
     ...(r.reverse_charge_construction === true ? { reverseChargeConstruction: true as const } : {}),
+    ...opt("taxReductionUsed", jsonOrU<NonNullable<Customer["taxReductionUsed"]>>(r.tax_reduction_used)),
     createdAt: tsIso(r.created_at),
   }),
 };
@@ -483,7 +485,7 @@ export const jobsSpec: TableSpec<Job> = {
     "start_date", "end_date", "address", "work_location_id", "checklist", "notes",
     "completed_at", "housing", "tax_reduction_application", "created_at",
     "source", "original_message", "idempotency_key", "notification",
-    "archived_at",
+    "archived_at", "photos",
   ],
   toRow: (j, businessId) => ({
     id: j.id,
@@ -508,6 +510,7 @@ export const jobsSpec: TableSpec<Job> = {
     idempotency_key: j.idempotencyKey ?? null,
     notification: jsonParamOrNull(j.notification),
     archived_at: j.archivedAt ?? null,
+    photos: jsonParamOrNull(j.photos),
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -534,6 +537,7 @@ export const jobsSpec: TableSpec<Job> = {
     ...opt("idempotencyKey", strOrU(r.idempotency_key)),
     ...opt("notification", jsonOrU<NonNullable<Job["notification"]>>(r.notification)),
     ...opt("archivedAt", tsIsoOrU(r.archived_at)),
+    ...opt("photos", jsonOrU<NonNullable<Job["photos"]>>(r.photos)),
   }),
 };
 
@@ -545,7 +549,7 @@ export const jobWorkEntriesSpec: TableSpec<JobWorkEntry> = {
   columns: [
     "id", "business_id", "job_id", "role", "type", "description", "work_date",
     "qty", "unit", "unit_price", "vat_rate", "source", "quoted_line_item_id",
-    "is_extra", "invoice_id", "wholesaler_provenance", "created_at", "updated_at",
+    "is_extra", "invoice_id", "wholesaler_provenance", "expense_id", "created_at", "updated_at",
   ],
   toRow: (e, businessId) => ({
     id: e.id,
@@ -564,6 +568,7 @@ export const jobWorkEntriesSpec: TableSpec<JobWorkEntry> = {
     is_extra: e.isExtra,
     invoice_id: e.invoiceId ?? null,
     wholesaler_provenance: jsonParamOrNull(e.wholesaler),
+    expense_id: e.expenseId ?? null,
     created_at: e.createdAt,
     updated_at: e.updatedAt,
   }),
@@ -583,6 +588,7 @@ export const jobWorkEntriesSpec: TableSpec<JobWorkEntry> = {
     isExtra: Boolean(r.is_extra),
     ...opt("invoiceId", strOrU(r.invoice_id)),
     ...opt("wholesaler", jsonOrU<JobWorkEntry["wholesaler"]>(r.wholesaler_provenance)),
+    ...opt("expenseId", strOrU(r.expense_id)),
     createdAt: tsIso(r.created_at),
     updatedAt: tsIso(r.updated_at),
   }),
@@ -702,6 +708,7 @@ export function invoiceLineToRow(
     unit: synced.unit,
     unit_price: synced.unitPrice,
     discount_percent: synced.discountPercent ?? null,
+    is_heading: synced.isHeading === true,
     vat_rate: synced.vatRate,
     source_kind: synced.sourceKind ?? line.sourceKind ?? null,
     source_id: synced.sourceId ?? line.sourceId ?? null,
@@ -711,7 +718,7 @@ export function invoiceLineToRow(
 }
 
 export const invoiceLineColumns = [
-    "id", "business_id", "invoice_id", "position", "kind", "description", "qty", "unit", "unit_price", "discount_percent", "vat_rate",
+    "id", "business_id", "invoice_id", "position", "kind", "description", "qty", "unit", "unit_price", "discount_percent", "is_heading", "vat_rate",
   "source_kind", "source_id", "source_quote_number", "payment_plan_index",
 ];
 
@@ -724,6 +731,7 @@ export function invoiceLineFromRow(r: SqlRow): DocLine {
     unit: str(r.unit),
     unitPrice: num(r.unit_price),
     ...opt("discountPercent", numOrU(r.discount_percent)),
+    ...(r.is_heading === true ? { isHeading: true as const } : {}),
     vatRate: num(r.vat_rate) as DocLine["vatRate"],
     ...opt("sourceKind", r.source_kind == null ? undefined : (str(r.source_kind) as DocLine["sourceKind"])),
     ...opt("sourceId", strOrU(r.source_id)),

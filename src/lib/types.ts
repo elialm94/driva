@@ -169,6 +169,16 @@ export interface Customer {
   /** Standardadress för nytt uppdrag / ROT-prefill när flera bostäder finns. */
   defaultWorkLocationId?: ID;
   notes: string;
+  /**
+   * ROT/RUT redan använt hos andra utförare i år. Driva kan inte läsa
+   * Skatteverkets saldo – det här fyller företagaren i så att offerten
+   * inte lovar mer avdrag än kunden har kvar.
+   */
+  taxReductionUsed?: {
+    year: number;
+    rot: number;
+    rut: number;
+  };
   createdAt: string;
 }
 
@@ -201,6 +211,17 @@ export type LineSourceKind =
   | "PAYMENT_PLAN"
   | "MANUAL";
 
+/** Företagets egna artikelregister – timpris, material, schabloner. */
+export interface CatalogArticle {
+  id: ID;
+  description: string;
+  kind: LineKind;
+  unit: string;
+  unitPrice: number;
+  vatRate: VatRate;
+  discountPercent?: number;
+}
+
 export interface DocLine {
   id: ID;
   /** Lagrad typ (arbete/material/resor/ovrigt). */
@@ -220,6 +241,11 @@ export interface DocLine {
    * `lineTotal` så offert, faktura och bokföring alltid stämmer.
    */
   discountPercent?: number;
+  /**
+   * Sektionsrubrik – syns på dokumentet men räknas inte i summan.
+   * qty/pris/moms ignoreras.
+   */
+  isHeading?: boolean;
   vatRate: VatRate;
   sourceKind?: LineSourceKind;
   /** Offertrad-id, uppdragspost-id eller motsvarande. */
@@ -569,6 +595,16 @@ export interface Job {
    * offerter och bokföring rörs inte.
    */
   archivedAt?: string;
+  /** Foton från arbetsplatsen – bevis mot kunden, inte bokföringsunderlag. */
+  photos?: JobPhoto[];
+}
+
+export interface JobPhoto {
+  id: ID;
+  createdAt: string;
+  /** JPEG/PNG data-URL. */
+  dataUrl: string;
+  caption?: string;
 }
 
 /**
@@ -618,6 +654,8 @@ export interface JobWorkEntry {
   invoiceId?: ID;
   /** Endast source = wholesaler: vilken orderrad/bekräftelse raden kommer från. */
   wholesaler?: JobWorkEntryWholesalerProvenance;
+  /** Utgift som skapade materialraden (kvitto → material). */
+  expenseId?: ID;
   createdAt: string;
   updatedAt: string;
 }
@@ -3183,16 +3221,7 @@ export interface DB {
      * Företagets egna artikelregister (timpris, material, schabloner).
      * Används som förslag när rader läggs på offert och faktura.
      */
-    articles?: Array<{
-      id: string;
-      description: string;
-      kind: "arbete" | "material" | "resor" | "ovrigt";
-      unit: string;
-      unitPrice: number;
-      vatRate: 0 | 6 | 12 | 25;
-      /** Rabatt i procent som förifylls (0–100). */
-      discountPercent?: number;
-    }>;
+    articles?: CatalogArticle[];
     /**
      * Prisradsbeskrivningar som användaren glömt i autocomplete.
      * Sträng = glömd för alla radtyper (äldre format). Objekt = glömd

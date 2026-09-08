@@ -36,7 +36,7 @@ export function lineFieldId(lineId: string, part: LineEditorField): string {
   return `rad-${lineId}-${part}`;
 }
 
-type LineLike = Pick<DocLine, "description" | "unitPrice">;
+type LineLike = Pick<DocLine, "description" | "unitPrice" | "isHeading">;
 
 export type PriceLineIssue = {
   field: "description" | "price";
@@ -66,12 +66,14 @@ export function validatePriceLine(line: {
  * Beskrivning + 0 kr är en riktig kostnadsfri rad och rensas inte.
  */
 export function lineIsBlank(line: LineLike): boolean {
+  if (line.isHeading) return !line.description.trim();
   return !line.description.trim() && (isUnsetUnitPrice(line.unitPrice) || line.unitPrice === 0);
 }
 
 /** Vad som saknas på en påbörjad rad. Blanka rader räknas inte i UI:t. */
 export function lineMissingParts(line: LineLike): { description: boolean; price: boolean } {
   if (lineIsBlank(line)) return { description: false, price: false };
+  if (line.isHeading) return { description: !line.description.trim(), price: false };
   const issues = validatePriceLine(line);
   return {
     description: issues.some((i) => i.field === "description"),

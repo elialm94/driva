@@ -49,6 +49,34 @@ export function insertLineAfter<T>(lines: readonly T[], index: number, line: T):
   return next;
 }
 
+export function createHeadingLine(description = ""): DocLine {
+  return {
+    id: crypto.randomUUID(),
+    kind: "ovrigt",
+    type: "OTHER",
+    description,
+    qty: 0,
+    unit: "",
+    unitPrice: 0,
+    vatRate: 0,
+    isHeading: true,
+  };
+}
+
+export function duplicateDocLine(line: DocLine): DocLine {
+  return { ...line, id: crypto.randomUUID(), isHeading: line.isHeading };
+}
+
+export function moveLine<T extends { id: string }>(lines: readonly T[], id: string, direction: -1 | 1): T[] {
+  const index = lines.findIndex((line) => line.id === id);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= lines.length) return lines.slice();
+  const next = lines.slice();
+  const [row] = next.splice(index, 1);
+  next.splice(target, 0, row!);
+  return next;
+}
+
 export function pushLimited<T>(stack: readonly T[], item: T, limit = LINE_UNDO_LIMIT): T[] {
   return [...stack, item].slice(-limit);
 }

@@ -6,7 +6,7 @@ import { Copy, FileLock2, Hammer, Pencil, Plus } from "lucide-react";
 import { buttonClasses } from "./ui";
 import { actionMenuItemClassName, ActionMenu, ActionMenuLink, PageActions, useActionMenu } from "./action-menu";
 import { QuotePdfMenuItem } from "./quote-pdf-menu-item";
-import { CopyLinkButton } from "./copy-button";
+import { ShareCustomerLink } from "./share-customer-link";
 import { WithdrawQuoteDialog, WithdrawQuoteMenuItem } from "./withdraw-quote-button";
 import { createInvoiceFromQuoteAction, duplicateQuoteAction, startJobFromQuoteAction } from "@/app/actions";
 import { invoiceEditHref, jobHref } from "@/lib/nav";
@@ -177,7 +177,7 @@ export function QuoteOwnerPageActions({
         >
           <Copy className="size-3.5 shrink-0" /> Kopiera offert
         </button>
-        <CopyLinkButton path={publicPath} appearance="menu" copiedLabel="✓ Kundlänken är kopierad" />
+        <ShareCustomerLink path={publicPath} kind="offert" appearance="menu" />
         <QuotePdfMenuItem href={`${publicPath}/pdf`} />
         {showVersion ? (
           <ActionMenuLink href={editHref}>

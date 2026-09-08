@@ -70,7 +70,16 @@ import {
   setTaxReductionDecision,
 } from "@/lib/services/tax-reduction";
 import { patchHusExportFields } from "@/lib/services/hus-export";
-import type { DwellingType, LineKind, PaymentDetailsMethod, TaxReductionDetails } from "@/lib/types";
+import type { CatalogArticle, DocLine, DwellingType, LineKind, PaymentDetailsMethod, TaxReductionDetails } from "@/lib/types";
+import {
+  articleFromLine,
+  deleteArticle,
+  listArticles,
+  upsertArticle,
+  type ArticleInput,
+} from "@/lib/services/articles";
+import { addJobPhoto, deleteJobPhoto } from "@/lib/services/job-photos";
+import { parseBeslutJson } from "@/lib/tax-reduction-beslut";
 import {
   applyBusinessProfilePatch,
   updateCompanySettings,
@@ -309,6 +318,21 @@ export async function updateCustomerDetailsAction(
   });
 }
 
+export async function setCustomerTaxReductionUsedAction(
+  customerId: string,
+  used: { year: number; rot: number; rut: number }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      updateCustomer(customerId, { taxReductionUsed: used });
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara." } as const;
+    }
+  });
+}
+
 export async function resolveCustomerEmailAction(
   customerId: string,
   email: string
@@ -428,6 +452,45 @@ export async function forgetLineDescriptionSuggestionAction(text: string, kind?:
     addIgnoredLineDescription(db().meta, text, kind);
     save();
     return collectLineDescriptionVocabulary(db());
+  });
+}
+
+export async function listArticlesAction(): Promise<CatalogArticle[]> {
+  return withBusinessRead(() => listArticles());
+}
+
+export async function upsertArticleAction(
+  input: ArticleInput
+): Promise<{ ok: true; article: CatalogArticle } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const article = upsertArticle(input);
+      refresh();
+      return { ok: true, article } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara artikeln." } as const;
+    }
+  });
+}
+
+export async function deleteArticleAction(id: string) {
+  return withBusiness(() => {
+    deleteArticle(id);
+    refresh();
+  });
+}
+
+export async function articleFromLineAction(
+  line: Pick<DocLine, "description" | "kind" | "unit" | "unitPrice" | "vatRate" | "discountPercent" | "isHeading">
+): Promise<{ ok: true; article: CatalogArticle } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const article = articleFromLine(line);
+      refresh();
+      return { ok: true, article } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara artikeln." } as const;
+    }
   });
 }
 
@@ -680,6 +743,29 @@ export async function appendJobNoteAction(jobId: string, text: string) {
 export async function registerJobTimeAction(jobId: string, input: JobTimeInput) {
   await withBusiness(() => {
     registerJobTime(jobId, input);
+    refresh();
+  });
+}
+
+export async function addJobPhotoAction(
+  jobId: string,
+  dataUrl: string,
+  caption?: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      addJobPhoto(jobId, { dataUrl, caption });
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara fotot." } as const;
+    }
+  });
+}
+
+export async function deleteJobPhotoAction(jobId: string, photoId: string) {
+  await withBusiness(() => {
+    deleteJobPhoto(jobId, photoId);
     refresh();
   });
 }
@@ -1192,6 +1278,28 @@ export async function setTaxReductionDecisionAction(input: {
       return { ok: true } as const;
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara beslut." } as const;
+    }
+  });
+}
+
+export async function importTaxReductionBeslutAction(input: {
+  jobId?: string;
+  invoiceId?: string;
+  json: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  return withBusiness(() => {
+    try {
+      const parsed = parseBeslutJson(input.json);
+      setTaxReductionDecision({
+        jobId: input.jobId,
+        invoiceId: input.invoiceId,
+        outcome: parsed.outcome,
+        deniedAmount: parsed.deniedAmount,
+      });
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Kunde inte läsa beslutet." } as const;
     }
   });
 }

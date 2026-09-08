@@ -44,6 +44,15 @@ function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
       </thead>
       <tbody>
         {lines.map((line) => {
+          if (line.isHeading) {
+            return (
+              <tr key={line.id} className="break-inside-avoid border-b border-line/70 last:border-0">
+                <td colSpan={5} className="pt-4 pb-1 text-[13px] font-semibold uppercase tracking-wide text-muted">
+                  {line.description}
+                </td>
+              </tr>
+            );
+          }
           const typeNote = lineTypeNote(line);
           return (
             <tr key={line.id} className="break-inside-avoid border-b border-line/70 last:border-0">

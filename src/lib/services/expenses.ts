@@ -25,6 +25,7 @@ import { clampToOpenDate } from "../accounting/fiscal";
 import { assetSuggestionForExpense, registerAssetFromExpense, inventarieGransFor } from "../accounting/assets";
 import { resolveClientRequestsForExpense } from "../collaboration/requests";
 import { currentActor } from "../collaboration/actor";
+import { addJobMaterialFromExpense } from "./job-work";
 
 /**
  * Kvittotolkningen bor i ai/extract-document.ts (`extractReceipt`) och läser
@@ -430,6 +431,9 @@ export function bookExpenseToJob(expenseId: string, categoryKey: string, jobId?:
     bookExpense(expense, categoryKey, "hog", by === "assistent" ? "assistent" : "anvandare");
   } else {
     expense.category = categoryKey;
+  }
+  if (expense.jobId) {
+    addJobMaterialFromExpense(expense);
   }
   const jobText = expense.jobId ? ` och kopplades till uppdraget ${data.jobs.find((j) => j.id === expense.jobId)?.title}` : "";
   logActivity(`Köpet hos ${expense.supplier} (${kr(expense.amount)}) bokfördes som ${categoryByKey(categoryKey).label.toLowerCase()}${jobText}.`, {
