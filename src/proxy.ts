@@ -49,6 +49,10 @@ const PUBLIC_PREFIXES = [
   "/api/auth/send-email", // Supabase Send Email-hook (Resend). Vaktas av webhook-signatur.
   "/api/inbox",
   "/api/dev", // vaktas internt: endast utveckling
+  // Vercel Cron har ingen session – bara Authorization: Bearer CRON_SECRET,
+  // som routen själv verifierar (401 annars). Utan undantaget här fick
+  // /api/cron/reminders 307 → /login och påminnelserna kördes aldrig.
+  "/api/cron",
 ];
 
 function isPublicPath(pathname: string): boolean {
