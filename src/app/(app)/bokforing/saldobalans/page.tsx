@@ -7,6 +7,7 @@ import { saldobalans } from "@/lib/accounting/ledger";
 import { fiscalYears, resolveViewFiscalYear } from "@/lib/accounting/fiscal";
 import { FiscalYearPicker, fiscalYearHref } from "@/components/fiscal-year-picker";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { AccountantPackActions } from "@/components/accountant-pack-actions";
 
 export const metadata = { title: "Saldobalans" };
 
@@ -42,6 +43,10 @@ export default async function SaldobalansPage({ searchParams }: { searchParams: 
         activeLabel={activeLabel}
         hrefFor={(y) => fiscalYearHref("/bokforing/saldobalans", y)}
       />
+
+      <div className="mb-6">
+        <AccountantPackActions yearLabel={activeLabel} fiscalYearId={fy.id} />
+      </div>
 
       {sb.rows.length === 0 ? (
         <EmptyState icon={Table2} title="Inget att visa" text="Det finns inga bokförda händelser i perioden." />

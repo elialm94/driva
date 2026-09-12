@@ -13,6 +13,7 @@ import { LIST_BODY_ROW_CLASS, LIST_CARD_CLASS, LIST_HEAD_ROW_CLASS, LIST_ROW_LIN
 export interface InboxListQuery {
   q: string;
   filter: InboxListFilter;
+  economicOnly?: boolean;
   page: number;
 }
 
@@ -20,9 +21,10 @@ export function inboxListHref(query: Partial<InboxListQuery> = {}): string {
   const sp = new URLSearchParams();
   if (query.q) sp.set("q", query.q);
   if (query.filter && query.filter !== "oppna") sp.set("visning", query.filter);
+  if (query.economicOnly === false) sp.set("ekonomiska", "alla");
   if (query.page && query.page > 1) sp.set("sida", String(query.page));
   const qs = sp.toString();
-  return qs ? `/inbox?${qs}` : "/inbox";
+  return qs ? `/bokforing/underlag?${qs}` : "/bokforing/underlag";
 }
 
 function statusTone(tone: InboxListRow["statusTone"]): "neutral" | "info" | "ok" | "warn" | "danger" {
@@ -68,7 +70,7 @@ export function InboxList({
             className="w-full rounded-2xl border border-line bg-card py-2.5 pl-10 pr-4 text-[15px] shadow-card placeholder:text-muted focus:border-accent"
           />
         </div>
-        <div className="flex gap-1 rounded-2xl bg-ink/4 p-1">
+        <div className="flex flex-wrap gap-1 rounded-2xl bg-ink/4 p-1">
           {(
             [
               ["oppna", "Öppna"],
@@ -88,12 +90,21 @@ export function InboxList({
             </button>
           ))}
         </div>
+        <label className="flex min-h-11 items-center gap-2 rounded-2xl border border-line bg-card px-3 text-[13px] text-soft">
+          <input
+            type="checkbox"
+            checked={query.economicOnly !== false}
+            onChange={(e) => go({ economicOnly: e.target.checked, page: 1 })}
+            className="size-4 accent-ink"
+          />
+          Bara ekonomiska dokument
+        </label>
       </div>
 
       {result.total === 0 ? (
         <EmptyState
           icon={Inbox}
-          title={query.q ? "Inget matchar" : query.filter === "oppna" ? "Inget öppet i inboxen" : "Inboxen är tom"}
+          title={query.q ? "Inget matchar" : query.filter === "oppna" ? "Inget öppet underlag" : "Inga underlag"}
           text={
             query.q
               ? "Prova leverantör, fakturanummer, belopp eller OCR."
@@ -138,7 +149,7 @@ export function InboxList({
                   {result.rows.map((r) => (
                     <tr key={r.id} className={LIST_BODY_ROW_CLASS}>
                       <td className="px-3 py-2.5">
-                        <AppLink href={`/inbox/${r.id}`} className={LIST_ROW_LINK_CLASS} aria-label={r.documentLabel}>
+                        <AppLink href={`/bokforing/underlag/${r.id}`} className={LIST_ROW_LINK_CLASS} aria-label={r.documentLabel}>
                           <span className="sr-only">{r.fromLabel}</span>
                         </AppLink>
                         <div className="pointer-events-none flex items-center gap-3">
@@ -164,7 +175,7 @@ export function InboxList({
 
           <div className="space-y-2 md:hidden">
             {result.rows.map((r) => (
-              <AppLink key={r.id} href={`/inbox/${r.id}`} className="card flex items-start gap-3 px-4 py-3">
+              <AppLink key={r.id} href={`/bokforing/underlag/${r.id}`} className="card flex items-start gap-3 px-4 py-3">
                 <Avatar name={r.fromLabel} size="sm" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">

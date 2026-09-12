@@ -10,7 +10,7 @@
 export const RETURN_TO_PARAM = "tillbaka";
 export const RETURN_LABEL_PARAM = "tillbakaNamn";
 
-export type NavSection = "hem" | "uppdrag" | "kunder" | "ekonomi" | "inbox" | "bokforing" | "hemsida" | "samarbeta";
+export type NavSection = "hem" | "uppdrag" | "kunder" | "ekonomi" | "bokforing" | "hemsida" | "samarbeta";
 
 /** Primär = alltid synlig (sidomeny + bottennav). Mer = sekundär grupp / Mer-arket. */
 export type NavGroup = "primary" | "more";
@@ -25,17 +25,16 @@ export interface NavItem {
 /**
  * Huvudnavigation. Uppdrag är hantverkarens arbetsyta och ligger därför
  * bland de primära valen (Hem · Uppdrag · Kunder · Ekonomi · Mer).
- * Badge (tal) betyder "något väntar på dig" – bara Inbox och Bokföring,
- * som båda ligger under Mer men behåller sina tal där. Hem är den samlade
- * vyn och får ingen summerad badge. Uppdrag/Kunder/Ekonomi/Samarbeta/Hemsida
- * räknar inte poster.
+ * Badge (tal) betyder "något väntar på dig" – bara Bokföring, som ligger
+ * under Mer men behåller sitt tal där. Talet är summan av bokföringsfrågor
+ * och öppna underlag. Hem är den samlade vyn och får ingen summerad badge.
+ * Uppdrag/Kunder/Ekonomi/Samarbeta/Hemsida räknar inte poster.
  */
 export const NAV_ITEMS: NavItem[] = [
   { href: "/", section: "hem", label: "Hem", group: "primary" },
   { href: "/uppdrag", section: "uppdrag", label: "Uppdrag", group: "primary" },
   { href: "/kunder", section: "kunder", label: "Kunder", group: "primary" },
   { href: "/ekonomi", section: "ekonomi", label: "Ekonomi", group: "primary" },
-  { href: "/inbox", section: "inbox", label: "Inbox", group: "more" },
   { href: "/bokforing", section: "bokforing", label: "Bokföring", group: "more" },
   { href: "/samarbeta", section: "samarbeta", label: "Samarbeta", group: "more" },
   { href: "/hemsida", section: "hemsida", label: "Hemsida", group: "more" },
@@ -57,7 +56,7 @@ export function primaryNavItems(features: NavFeatures): NavItem[] {
   return visibleNavItems(features).filter((item) => item.group === "primary");
 }
 
-/** Under Mer: Inbox, Bokföring och (när aktiva) Samarbeta, Hemsida. Inställningar/support läggs på av nav.tsx. */
+/** Under Mer: Bokföring och (när aktiva) Samarbeta, Hemsida. Inställningar/support läggs på av nav.tsx. */
 export function moreNavItems(features: NavFeatures): NavItem[] {
   return visibleNavItems(features).filter((item) => item.group === "more");
 }
@@ -66,17 +65,19 @@ export const EKONOMI_TABS = [
   { key: "offerter", href: "/ekonomi?flik=offerter", label: "Offerter" },
   { key: "fakturor", href: "/ekonomi?flik=fakturor", label: "Fakturor" },
   { key: "utgifter", href: "/ekonomi?flik=utgifter", label: "Utgifter & kvitton" },
-  { key: "bank", href: "/ekonomi?flik=bank", label: "Bank" },
 ] as const;
 
 export type EkonomiTab = (typeof EKONOMI_TABS)[number]["key"];
 
 /** Bokföringsytan – samma flikar i den delade layouten, egna URL:er. */
 export const BOKFORING_DETAIL_TABS = [
-  { key: "oversikt", href: "/bokforing", label: "Översikt" },
+  { key: "oversikt", href: "/bokforing", label: "Att göra" },
+  { key: "underlag", href: "/bokforing/underlag", label: "Underlag" },
+  { key: "bank", href: "/bokforing/bank", label: "Bank" },
   { key: "verifikationer", href: "/bokforing/verifikationer", label: "Verifikationer" },
   { key: "huvudbok", href: "/bokforing/huvudbok", label: "Huvudbok" },
   { key: "rapporter", href: "/bokforing/resultat", label: "Rapporter" },
+  { key: "skatt", href: "/bokforing/skatt", label: "Skatt" },
   { key: "moms", href: "/bokforing/moms", label: "Moms" },
   { key: "skattekonto", href: "/bokforing/skattekonto", label: "Skattekonto" },
   { key: "lon", href: "/bokforing/lon", label: "Lön" },
@@ -87,13 +88,17 @@ export const BOKFORING_REPORT_TABS = [
   { key: "saldobalans", href: "/bokforing/saldobalans", label: "Saldobalans" },
   { key: "resultat", href: "/bokforing/resultat", label: "Resultat" },
   { key: "balans", href: "/bokforing/balans", label: "Balans" },
+  { key: "konton", href: "/bokforing/konton", label: "Konton" },
 ] as const;
 
 export const BOKFORING_FLIK_HREF: Record<string, string> = {
   oversikt: "/bokforing",
+  underlag: "/bokforing/underlag",
+  bank: "/bokforing/bank",
   verifikationer: "/bokforing/verifikationer",
   huvudbok: "/bokforing/huvudbok",
   rapporter: "/bokforing/resultat",
+  skatt: "/bokforing/skatt",
   moms: "/bokforing/moms",
   skattekonto: "/bokforing/skattekonto",
   lon: "/bokforing/lon",
@@ -101,29 +106,26 @@ export const BOKFORING_FLIK_HREF: Record<string, string> = {
   saldobalans: "/bokforing/saldobalans",
   resultat: "/bokforing/resultat",
   balans: "/bokforing/balans",
+  konton: "/bokforing/konton",
 };
 
 const BOKFORING_REPORT_PATHS = BOKFORING_REPORT_TABS.map((t) => t.href);
 
-/** Alla bokföringsvyer som ska prefetchas när ytan är öppen. */
-export const BOKFORING_PREFETCH_HREFS: readonly string[] = Array.from(
-  new Set([
-    ...BOKFORING_DETAIL_TABS.map((t) => t.href),
-    ...BOKFORING_REPORT_TABS.map((t) => t.href),
-  ])
-);
-
 export function bokforingDetailTabForPath(pathname: string): (typeof BOKFORING_DETAIL_TABS)[number]["key"] | null {
   const path = pathname.split("?")[0] ?? pathname;
   if (path === "/bokforing") return "oversikt";
-  if (path === "/bokforing/verifikationer" || path === "/bokforing/verifikationer/nytt") return "verifikationer";
+  if (path === "/bokforing/underlag" || path.startsWith("/bokforing/underlag/")) return "underlag";
+  if (path === "/bokforing/bank") return "bank";
+  if (path === "/bokforing/verifikationer" || path === "/bokforing/verifikationer/nytt" || path === "/bokforing/detaljer") {
+    return "verifikationer";
+  }
   if (path === "/bokforing/huvudbok") return "huvudbok";
   if ((BOKFORING_REPORT_PATHS as readonly string[]).includes(path)) return "rapporter";
+  if (path === "/bokforing/skatt") return "skatt";
   if (path === "/bokforing/moms") return "moms";
   if (path === "/bokforing/skattekonto") return "skattekonto";
   if (path === "/bokforing/lon" || path.startsWith("/bokforing/lon/")) return "lon";
   if (path === "/bokforing/bokslut" || path.startsWith("/bokforing/bokslut/")) return "bokslut";
-  if (path === "/bokforing/detaljer") return "verifikationer";
   return null;
 }
 
@@ -158,9 +160,12 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/ekonomi/offerter/ny", section: "ekonomi", parent: "/ekonomi?flik=offerter", label: "Ny offert", backLabel: "Offerter", showBack: true },
   { pattern: "/ekonomi/offerter/:id", section: "ekonomi", parent: "/ekonomi?flik=offerter", label: "Offert", backLabel: "Offerter", showBack: true },
   { pattern: "/ekonomi", section: "ekonomi", label: "Ekonomi" },
-  { pattern: "/inbox/:id/kontrollera", section: "inbox", parent: "/inbox/:id", label: "Kontrollera belopp", backLabel: "Inkorgspost", showBack: true },
-  { pattern: "/inbox/:id", section: "inbox", parent: "/inbox", label: "Inkorgspost", backLabel: "Inbox", showBack: true },
-  { pattern: "/inbox", section: "inbox", label: "Inbox" },
+  { pattern: "/bokforing/underlag/:id/kontrollera", section: "bokforing", parent: "/bokforing/underlag/:id", label: "Kontrollera belopp", backLabel: "Underlag", showBack: true },
+  { pattern: "/bokforing/underlag/:id", section: "bokforing", parent: "/bokforing/underlag", label: "Underlag", backLabel: "Underlag", showBack: true },
+  { pattern: "/bokforing/underlag", section: "bokforing", parent: "/bokforing", label: "Underlag", backLabel: "Bokföring", showBack: true },
+  { pattern: "/bokforing/bank", section: "bokforing", parent: "/bokforing", label: "Bank", backLabel: "Bokföring", showBack: true },
+  { pattern: "/bokforing/skatt", section: "bokforing", parent: "/bokforing", label: "Skatt", backLabel: "Bokföring", showBack: true },
+  { pattern: "/bokforing/konton", section: "bokforing", parent: "/bokforing", label: "Konton", backLabel: "Bokföring", showBack: true },
   { pattern: "/kunder/forfragningar/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
   { pattern: "/kunder/:id", section: "kunder", parent: "/kunder", label: "Kund", backLabel: "Kunder", showBack: true },
   { pattern: "/kunder", section: "kunder", label: "Kunder" },
@@ -186,7 +191,6 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/bokforing/bokslut", section: "bokforing", parent: "/bokforing", label: "Bokslut", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/periodstangning", section: "bokforing", parent: "/bokforing", label: "Periodstängning", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/ingaende-balans", section: "bokforing", parent: "/bokforing", label: "Ingående balans", backLabel: "Bokföring", showBack: true },
-  { pattern: "/bokforing/detaljer", section: "bokforing", parent: "/bokforing", label: "Bokföringsdetaljer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing", section: "bokforing", label: "Bokföring" },
   { pattern: "/samarbeta", section: "samarbeta", label: "Samarbeta" },
   { pattern: "/redovisning/k/:businessId/verifikationer/nytt", section: null, parent: "/redovisning/k/:businessId/verifikationer", label: "Nytt verifikat", backLabel: "Verifikationer", showBack: true },
@@ -301,7 +305,7 @@ export function labelForHref(href: string): string {
   }
   if (pathname === "/kunder") return "Kunder";
   if (pathname === "/uppdrag") return "Uppdrag";
-  if (pathname === "/inbox") return "Inbox";
+  if (pathname === "/bokforing/underlag") return "Underlag";
   const matched = matchRoute(pathname);
   if (!matched) return "Tillbaka";
   return matched.meta.label;
@@ -400,8 +404,8 @@ export function structuralCrumbs(
   if (!matched) return [];
   const title = currentLabel ?? matched.meta.label;
   switch (matched.meta.pattern) {
-    case "/inbox/:id":
-      return [{ href: "/inbox", label: "Inbox" }, { label: title }];
+    case "/bokforing/underlag/:id":
+      return [{ href: "/bokforing/underlag", label: "Underlag" }, { label: title }];
     case "/kunder/:id":
       return [{ href: "/kunder", label: "Kunder" }, { label: title }];
     case "/kunder/forfragningar/:id":
@@ -426,6 +430,10 @@ export function structuralCrumbs(
       ];
     case "/hemsida/doman":
       return [{ href: "/hemsida", label: "Hemsida" }, { label: title }];
+    case "/bokforing/underlag":
+    case "/bokforing/bank":
+    case "/bokforing/skatt":
+    case "/bokforing/konton":
     case "/bokforing/verifikationer":
     case "/bokforing/huvudbok":
     case "/bokforing/saldobalans":
@@ -435,7 +443,6 @@ export function structuralCrumbs(
     case "/bokforing/skattekonto":
     case "/bokforing/lon":
     case "/bokforing/bokslut":
-    case "/bokforing/detaljer":
       return [{ href: "/bokforing", label: "Bokföring" }, { label: title }];
     default:
       if (matched.meta.showBack && matched.meta.parent) {
@@ -576,7 +583,7 @@ export function jobHref(id: string, from?: { href: string; label?: string }): st
 }
 
 export function kunderInboxHref(): string {
-  return "/inbox";
+  return "/bokforing/underlag";
 }
 
 export function newQuoteHref(params: {
@@ -684,9 +691,9 @@ function rewriteLegacyLocation(
   searchParams: URLSearchParams
 ): { path: string; params: URLSearchParams } {
   const params = new URLSearchParams(searchParams);
-  const sourcePath = rewritePengarPath(rewriteJobPath(normalizePathname(pathname)));
+  const sourcePath = rewriteInboxPath(rewritePengarPath(rewriteJobPath(normalizePathname(pathname))));
   let path = rewriteInquiryPath(rewriteAssistentPath(sourcePath));
-  if (sourcePath === "/kunder") {
+  if (sourcePath === "/kunder" || path === "/kunder") {
     const flik = params.get("flik");
     if (flik === "uppdrag" || flik === "forfragningar") {
       path = "/uppdrag";
@@ -694,6 +701,10 @@ function rewriteLegacyLocation(
     } else if (flik === "kunder") {
       params.delete("flik");
     }
+  }
+  if ((sourcePath === "/ekonomi" || path === "/ekonomi") && params.get("flik") === "bank") {
+    path = "/bokforing/bank";
+    params.delete("flik");
   }
   return { path, params };
 }
@@ -716,8 +727,16 @@ function rewritePengarPath(pathname: string): string {
   return pathname;
 }
 
+function rewriteInboxPath(pathname: string): string {
+  if (pathname === "/inbox") return "/bokforing/underlag";
+  if (pathname.startsWith("/inbox/")) return `/bokforing/underlag/${pathname.slice("/inbox/".length)}`;
+  return pathname;
+}
+
 function rewriteAppPath(pathname: string): string {
-  return rewriteInquiryPath(rewriteAssistentPath(rewritePengarPath(rewriteJobPath(normalizePathname(pathname)))));
+  return rewriteInquiryPath(
+    rewriteAssistentPath(rewriteInboxPath(rewritePengarPath(rewriteJobPath(normalizePathname(pathname)))))
+  );
 }
 
 /** Path + query för gamla bokmärken och `tillbaka=`-kedjor. */

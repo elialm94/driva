@@ -132,7 +132,7 @@ export function setupTasks(): SetupTask[] {
       description: "Med banken kopplad matchas betalningar mot fakturor och utgifter automatiskt.",
       status: withOverride("connect_bank", bank.status === "connected" ? "done" : bank.status === "pending" ? "in_progress" : "todo"),
       relevance: "recommended",
-      href: "/ekonomi?flik=bank",
+      href: "/bokforing/bank",
       cta: "Koppla bank",
       doneDetail:
         bank.status === "connected" ? [bank.bankName, bank.maskedAccount].filter(Boolean).join(" · ") || "Ansluten" : undefined,

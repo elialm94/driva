@@ -63,9 +63,18 @@ export interface CompanySettings {
   /** Preliminärskatt (F-skatt) som dras varje månad. */
   fSkattPerMonth: number;
   /**
-   * Referensnummer (OCR) för inbetalningar till skattekontot, hämtat av
-   * användaren från Skatteverkets e-tjänst. Driva räknar det aldrig fram
-   * själv. Saknas = visa länken till OCR-beräkningen i betalsteget.
+   * false = användaren bokför F-skatt själv. Saknas / true = Driva bokför
+   * debiteringen på förfallodagen.
+   */
+  autoBookFSkatt?: boolean;
+  /**
+   * Branschprofil från onboarding. Styr bara startregler för kända
+   * leverantörer; användarens egna regler vinner.
+   */
+  tradeProfile?: "snickare" | "elektriker" | "vvs" | "malare" | "ovrigt";
+  /**
+   * Referensnummer (OCR) för inbetalningar till skattekontot. Räknas fram ur
+   * organisationsnumret och bekräftas en gång mot Skatteverkets OCR-beräkning.
    */
   taxAccountOcr?: string;
   /**
@@ -3212,11 +3221,20 @@ export interface DB {
      */
     websitePausedAt?: string;
     /**
-     * Bokföringsläget. `enkelt` döljer huvudbok, verifikationer och rapporter
-     * i flikraden – moms, skattekonto och översikt räcker för de flesta.
-     * Saknas = enkelt (målgruppen är hantverkaren, inte revisorn).
+     * Bokföringsläget per företag (äldre). Nya sparningar går i
+     * `bookkeepingModeByUser`. Saknas båda = enkelt.
      */
     bookkeepingMode?: "enkelt" | "avancerat";
+    /**
+     * Bokföringsläget per användare. Nyckeln är userId. Saknas = fall tillbaka
+     * på `bookkeepingMode` och därefter enkelt.
+     */
+    bookkeepingModeByUser?: Record<string, "enkelt" | "avancerat">;
+    /** false = F-skatt bokförs inte automatiskt. Saknas = på. */
+    autoBookFSkatt?: boolean;
+    tradeProfile?: "snickare" | "elektriker" | "vvs" | "malare" | "ovrigt";
+    /** Senaste inklistrade skattekontoutdraget, för förslag i kön. */
+    lastTaxAccountStatement?: { date: string; text: string; amount: number }[];
     /**
      * Företagets egna artikelregister (timpris, material, schabloner).
      * Används som förslag när rader läggs på offert och faktura.

@@ -60,18 +60,61 @@ export const KNOWN_SUPPLIERS: Record<string, string> = {
   beijer: "material",
   byggmax: "material",
   "xl-bygg": "material",
+  ahlsell: "material",
+  dahl: "material",
+  solar: "material",
+  onninen: "material",
+  optimera: "material",
+  woody: "material",
+  derome: "material",
+  "k-rauta": "material",
+  hornbach: "material",
+  swedol: "material",
+  würth: "material",
+  wurth: "material",
+  bygghemma: "material",
+  hilti: "material",
+  bolist: "material",
+  byggtema: "material",
+  fresks: "material",
+  "flügger": "material",
+  flugger: "material",
+  beckers: "material",
   "clas ohlson": "verktyg",
   jula: "verktyg",
   "circle k": "drivmedel",
   okq8: "drivmedel",
   preem: "drivmedel",
+  shell: "drivmedel",
+  ingo: "drivmedel",
+  st1: "drivmedel",
+  tanka: "drivmedel",
   adobe: "programvara",
   fortnox: "programvara",
   telia: "telefon",
   telenor: "telefon",
   tele2: "telefon",
+  tre: "telefon",
+  bahnhof: "telefon",
   "trygg-hansa": "forsakring",
   if: "forsakring",
+  länsförsäkringar: "forsakring",
+  lansforsakringar: "forsakring",
+  folksam: "forsakring",
+  gjensidige: "forsakring",
+  dina: "forsakring",
+  moderna: "forsakring",
+  skatteverket: "ovrigt",
+  bolagsverket: "ovrigt",
+  fora: "ovrigt",
+  collectum: "ovrigt",
+  sl: "ovrigt",
+  västtrafik: "ovrigt",
+  vasttrafik: "ovrigt",
+  skånetrafiken: "ovrigt",
+  skanetrafiken: "ovrigt",
+  parkster: "ovrigt",
+  easypark: "ovrigt",
 };
 
 export function guessCategory(supplier: string): { key: string; confidence: "hog" | "medel" | "lag" } | null {
@@ -293,8 +336,14 @@ export function entriesSupplierInvoicePaid(amount: number): VerificationEntry[] 
   return [e(2440, amount, 0), e(1930, 0, amount)];
 }
 
-export function entriesTaxPayment(amount: number): VerificationEntry[] {
-  return [e(2510, amount, 0), e(1930, 0, amount)];
+/** Inbetalning från företagskontot till skattekontot (samma som bank-kind `skattekonto`). */
+export function entriesTaxAccountDeposit(amount: number): VerificationEntry[] {
+  return [e(1630, amount, 0), e(1930, 0, amount)];
+}
+
+/** Skatteverkets debitering av F-skatt: 2518 mot 1630. */
+export function entriesFSkattCharge(amount: number): VerificationEntry[] {
+  return [e(2518, amount, 0), e(1630, 0, amount)];
 }
 
 export { isCostAccount, isRevenueAccount } from "./accounting/chart";

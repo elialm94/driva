@@ -105,7 +105,7 @@ export function AvstamningView({ hrefFor = (href: string) => href }: { hrefFor?:
                   {row.subsystem === undefined ? <span className="text-muted">–</span> : kr(row.subsystem)}
                 </td>
                 <td className="py-2 text-right align-top">
-                  {row.manual ? (
+                  {row.manual || row.source === "ingen" ? (
                     <Badge tone="neutral">För hand</Badge>
                   ) : row.difference === 0 ? (
                     <Badge tone="ok">Stämmer</Badge>

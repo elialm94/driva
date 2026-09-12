@@ -8,7 +8,6 @@ import {
   Hammer,
   Users,
   Wallet,
-  Inbox,
   BookOpenCheck,
   Handshake,
   Globe,
@@ -38,7 +37,6 @@ const NAV_ICONS: Record<NavSection, typeof Home> = {
   uppdrag: Hammer,
   kunder: Users,
   ekonomi: Wallet,
-  inbox: Inbox,
   bokforing: BookOpenCheck,
   samarbeta: Handshake,
   hemsida: Globe,
@@ -48,20 +46,16 @@ function withIcons(items: NavItem[]) {
   return items.map((item) => ({ ...item, icon: NAV_ICONS[item.section] }));
 }
 
-/** Tal i nav = något väntar på dig. Bara Inbox och Bokföring. 0 = ingen badge. */
-function navAttentionCount(href: string, inboxCount: number, bokforingCount: number): number {
-  if (href === "/inbox") return inboxCount;
+/** Tal i nav = något väntar på dig. Bara Bokföring. 0 = ingen badge. */
+function navAttentionCount(href: string, _inboxCount: number, bokforingCount: number): number {
   if (href === "/bokforing") return bokforingCount;
   return 0;
 }
 
 function navAttentionAriaLabel(href: string, label: string, count: number): string {
   if (count <= 0) return label;
-  if (href === "/inbox") return `Inbox, ${count} öppna`;
   if (href === "/bokforing") {
-    return count === 1
-      ? "Bokföring, 1 bokföringsfråga att lösa"
-      : `Bokföring, ${count} bokföringsfrågor att lösa`;
+    return count === 1 ? "Bokföring, 1 att lösa" : `Bokföring, ${count} att lösa`;
   }
   return label;
 }
@@ -80,7 +74,7 @@ const SHEET_LINK = "flex items-center gap-3 rounded-2xl px-4 py-3.5 text-[15px] 
 const SHEET_LINK_ACTIVE = "bg-ink/5 font-medium text-ink";
 const SHEET_LINK_IDLE = "text-ink";
 
-/** Neutral sidobadge – samma stil för Inbox och Bokföring, inte röd varning. */
+/** Neutral sidobadge för Bokföring, inte röd varning. */
 function SidebarCountBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (

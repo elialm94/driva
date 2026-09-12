@@ -5,6 +5,10 @@ import { kr, datumKort } from "@/lib/format";
 import { ButtonLink, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { AttentionSection } from "@/components/attention-list";
 import { ScrollToId } from "@/components/scroll-to-id";
+import { InboxAddressCard } from "@/components/inbox-address";
+import { InboxUploadZone } from "@/components/inbox-upload";
+import { ResultatOverview } from "@/components/resultat-overview";
+import { inboundAddressForBusiness } from "@/lib/services/inbox";
 import { getBusinessActions } from "@/lib/services/actions";
 import {
   BOOKKEEPING_PAGE_SUBTITLE,
@@ -18,7 +22,6 @@ import { bankReconciliation } from "@/lib/accounting/reconciliation";
 import { upcomingAuthorityEvents } from "@/lib/accounting/skatteverket-calendar";
 import { SkatteverketCalendar } from "@/components/skatteverket-calendar";
 import { fiscalYears, lockedThrough, todayDate } from "@/lib/accounting/fiscal";
-import { resultatrapport } from "@/lib/accounting/ledger";
 import { verificationLabel } from "@/lib/accounting/engine";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
@@ -43,7 +46,6 @@ export default async function BookkeepingPage({
   const focusUnresolved = isBookkeepingUnresolvedVisa(params.visa);
   const data = db();
   const recon = bankReconciliation();
-  const rr = resultatrapport();
   const today = todayDate();
 
   // Samma åtgärdsmotor som Hem – komplett bokföringskö, ingen gruppering.
@@ -113,25 +115,38 @@ export default async function BookkeepingPage({
         <section id={BOOKKEEPING_UNRESOLVED_ANCHOR} className="mb-8 scroll-mt-6" />
       ) : null}
 
+      {needsHelp === 0 ? (
+        <div className="mb-8 space-y-4">
+          <InboxUploadZone />
+          <InboxAddressCard address={inboundAddressForBusiness()} />
+        </div>
+      ) : (
+        <Card className="mb-8 px-5 py-4">
+          <p className="text-[14px] font-medium">Skicka underlag hit</p>
+          <p className="mt-0.5 text-[13px] text-soft">Kvitton och fakturor via mejl eller släpp i rutan.</p>
+          <div className="mt-3">
+            <InboxUploadZone />
+          </div>
+          <div className="mt-3">
+            <InboxAddressCard address={inboundAddressForBusiness()} />
+          </div>
+        </Card>
+      )}
+
       <SkatteverketCalendar events={upcoming} />
 
-      {/* Företaget i år: resultat + tyst bank */}
+      <ResultatOverview />
+
       <section className="mb-8">
-        <SectionTitle>Företaget i år</SectionTitle>
         <Card className="px-5 py-4">
-          <p className="text-[13px] text-muted">Resultat före skatt</p>
-          <p className="mt-0.5 text-[24px] font-semibold tracking-tight tabular">{kr(rr.resultatForeSkatt)}</p>
-          <p className="mt-1 text-[13px] text-soft">
-            Omsättning {kr(rr.omsattning)} · Kostnader {kr(rr.kostnaderSumma)}
-          </p>
           {recon.ok ? (
-            <p className="mt-3 flex items-center gap-1.5 text-[13px] text-soft">
+            <p className="flex items-center gap-1.5 text-[13px] text-soft">
               <Check className="size-3.5 text-ok" />
               Banken är avstämd
               {recon.reconciledThrough ? ` till ${datumKort(recon.reconciledThrough)}` : ""}
             </p>
           ) : null}
-          <p className="mt-3 text-[13px] text-soft">
+          <p className={`${recon.ok ? "mt-3" : ""} text-[13px] text-soft`}>
             {lock ? `Bokföringen är låst till och med ${datumKort(lock)}` : "Ingen period är låst"}
             {" · "}
             <Link href="/bokforing/periodstangning" className="font-medium text-accent hover:underline">

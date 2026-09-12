@@ -13,6 +13,7 @@ import {
   validatePersonalization,
 } from "../setup/onboarding-state";
 import { logActivity } from "./activity";
+import { applyTradeProfile, tradeProfileFromIndustries } from "./trade-profile";
 
 export function getOnboardingState(): OnboardingState | null {
   return db().onboarding ?? null;
@@ -49,6 +50,7 @@ export function applyPersonalization(answers: PersonalizationAnswers, now = new 
   const data = db();
   const wasComplete = onboardingIsComplete(data.onboarding);
   data.onboarding = onboardingAfterPersonalization(data.onboarding, answers, now);
+  applyTradeProfile(tradeProfileFromIndustries(answers.industries));
   if (!wasComplete) logActivity("Kom igång: företaget är anpassat och Ferva är öppet.");
   save();
   return data.onboarding;

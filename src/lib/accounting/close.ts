@@ -84,7 +84,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
       ok: unbookedBank.length === 0,
       blocking: true,
       detail: unbookedBank.length ? `${unbookedBank.length} banktransaktion${unbookedBank.length > 1 ? "er" : ""} behöver hanteras.` : "Alla banktransaktioner är bokförda.",
-      href: "/ekonomi?flik=bank",
+      href: "/bokforing/bank",
       hrefLabel: "Öppna banken",
     },
     {
@@ -113,7 +113,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
       ok: overdue.length === 0,
       blocking: false,
       detail: overdue.length
-        ? `${overdue.length} förfallen faktura${overdue.length > 1 ? "or" : ""} – bedöm om de kommer betalas.`
+        ? `${overdue.length} ${overdue.length === 1 ? "förfallen faktura" : "förfallna fakturor"} – bedöm om de kommer betalas.`
         : "Inga förfallna kundfordringar.",
       href: "/ekonomi?flik=fakturor",
       hrefLabel: "Visa fakturorna",

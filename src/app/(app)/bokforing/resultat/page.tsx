@@ -6,6 +6,7 @@ import { resultatrapport } from "@/lib/accounting/ledger";
 import { FiscalYearPicker, fiscalYearHref } from "@/components/fiscal-year-picker";
 import { fiscalYears, resolveViewFiscalYear } from "@/lib/accounting/fiscal";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { AccountantPackActions } from "@/components/accountant-pack-actions";
 
 export const metadata = { title: "Resultatrapport" };
 
@@ -41,6 +42,10 @@ export default async function ResultatPage({
         activeLabel={fy.label}
         hrefFor={(y) => fiscalYearHref("/bokforing/resultat", y)}
       />
+
+      <div className="mb-6">
+        <AccountantPackActions yearLabel={fy.label} fiscalYearId={fy.id} />
+      </div>
 
       {/* Ägarvänlig sammanfattning */}
       <Card className="mb-6 px-6 py-5">

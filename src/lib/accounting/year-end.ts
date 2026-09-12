@@ -202,7 +202,7 @@ export function doubtfulReceivablesDraft(fiscalYearId: string, invoiceIds: strin
     lines.push({
       label: `Faktura #${invoice.number} – ${customerName(invoice)}`,
       amount: net,
-      note: `${invoiceOutstanding(invoice)} kr obetalt, varav ${net} kr exklusive moms. Förfallen ${invoice.dueDate}.`,
+      note: `${invoiceOutstanding(invoice)} kr obetalt, varav ${net} kr exklusive moms. Förfallen ${invoice.dueDate ? bokforingsdatum(invoice.dueDate) : bokforingsdatum(invoice.issueDate)}.`,
     });
   }
 
@@ -614,7 +614,8 @@ export function doubtfulSuggestions(fiscalYearId: string, today: string = todayD
   for (const invoice of db().invoices) {
     if (!isOpenReceivable(invoice)) continue;
     if (bokforingsdatum(invoice.issueDate) > fy.endDate) continue;
-    const days = daysBetween(invoice.dueDate, today);
+    const due = invoice.dueDate ? bokforingsdatum(invoice.dueDate) : bokforingsdatum(invoice.issueDate);
+    const days = daysBetween(due, today);
     if (days < DOUBTFUL_AFTER_DAYS) continue;
     const net = receivableExcludingVat(invoice);
     if (net <= 0) continue;

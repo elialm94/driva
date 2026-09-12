@@ -40,6 +40,7 @@ import {
   followUpQuoteAction,
   markQuoteNotRelevantAction,
   sendReminderAction,
+  hideAttentionAction,
   snoozeAttentionAction,
   snoozeReminderAction,
   unsnoozeAttentionAction,
@@ -47,7 +48,10 @@ import {
   uploadReceiptAction,
   prepareSupplierPaymentAction,
 } from "@/app/actions";
+import { declareVatPeriodAction } from "@/app/bokforing-actions";
+import { closeAllReadyMonthsAction } from "@/app/periodstangning-actions";
 import { RECEIPT_MAX_BYTES, receiptUploadForm } from "@/lib/receipts/read-file";
+import { UPLOAD_MAX_FORMATS } from "@/lib/uploads/limits";
 import { FileDropzone } from "./file-dropzone";
 import { requestClientInformationAction } from "@/app/collaboration-actions";
 import { isPaymentDetailsCta, PaymentDetailsCta } from "./payment-details-actions";
@@ -235,6 +239,10 @@ function RowMenu({
     close();
     if (controls.dismissBehavior === "MARK_NOT_RELEVANT" && source?.kind === "quote") {
       run(() => markQuoteNotRelevantAction(source.id), "Markerad som inte aktuell");
+      return;
+    }
+    if (controls.dismissBehavior === "HIDE") {
+      run(() => hideAttentionAction(item.id), "Dold");
     }
   }
 
@@ -261,7 +269,7 @@ function RowMenu({
               <Clock className="size-3.5 shrink-0" /> Snooza
             </button>
           ) : null}
-          {controls.canDismiss && controls.dismissLabel && source ? (
+          {controls.canDismiss && controls.dismissLabel && (source || controls.dismissBehavior === "HIDE") ? (
             <button
               type="button"
               role="menuitem"
@@ -607,6 +615,24 @@ function AttentionRow({
         router.refresh();
       });
     }
+    if (cta.type === "declareVatPeriod") {
+      startTransition(async () => {
+        const result = await declareVatPeriodAction(cta.periodKey);
+        if (result.ok === false) setError(result.error);
+        else finish("Markerad som deklarerad");
+        router.refresh();
+      });
+    }
+    if (cta.type === "closeReadyMonths") {
+      const list = cta.months.join("\n");
+      if (!window.confirm(`Stäng ${cta.months.length} månader?\n\n${list}`)) return;
+      startTransition(async () => {
+        const result = await closeAllReadyMonthsAction();
+        if (result.ok === false) setError(result.error);
+        else finish(result.count === 1 ? "Månaden stängdes" : `${result.count} månader stängdes`);
+        router.refresh();
+      });
+    }
   }
 
   const compact = surface === "accountant";
@@ -759,7 +785,7 @@ function AttentionRow({
                   busy={isPending}
                   maxBytes={RECEIPT_MAX_BYTES}
                   title={cta.label}
-                  formats="PDF, bild · max 5 MB"
+                  formats={UPLOAD_MAX_FORMATS}
                   onFiles={(files) => {
                     const file = files[0];
                     if (!file) return;
@@ -904,6 +930,35 @@ function AttentionRow({
                 }
               >
                 {isPending ? "Skapar …" : cta.label}
+              </button>
+            ) : null}
+            {cta?.type === "declareVatPeriod" ? (
+              <>
+                <button
+                  className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
+                  disabled={isPending}
+                  aria-label={`${cta.label} – ${item.title}`}
+                  onClick={() => confirmable(executePrimary)}
+                >
+                  {isPending ? "Markerar …" : cta.label}
+                </button>
+                <button
+                  className={cx(buttonClasses("ghost", "sm"), "max-lg:min-h-11")}
+                  disabled={isPending}
+                  onClick={() => run(() => hideAttentionAction(item.id), "Dold")}
+                >
+                  {cta.dismissLabel}
+                </button>
+              </>
+            ) : null}
+            {cta?.type === "closeReadyMonths" ? (
+              <button
+                className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
+                disabled={isPending}
+                aria-label={`${cta.label} – ${item.title}`}
+                onClick={() => confirmable(executePrimary)}
+              >
+                {isPending ? "Stänger …" : cta.label}
               </button>
             ) : null}
             {cta?.type === "startJobFromQuote" && surface !== "accountant" ? (

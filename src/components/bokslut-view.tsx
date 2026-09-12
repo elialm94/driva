@@ -12,6 +12,7 @@ import {
 } from "./bokforing-widgets";
 import { fiscalYearFollowing, fiscalYears, resolveViewFiscalYear, taxYearOf } from "@/lib/accounting/fiscal";
 import { FiscalYearPicker, fiscalYearHref } from "./fiscal-year-picker";
+import { AccountantPackActions } from "./accountant-pack-actions";
 import { bokslutChecklist, reopenBlockers } from "@/lib/accounting/close";
 import { listAssets, bookValue, assetsNeedingDepreciation, accumulatedDepreciation } from "@/lib/accounting/assets";
 import { pendingAccruals, accrualSuggestions } from "@/lib/accounting/accruals";
@@ -107,6 +108,11 @@ export function BokslutView({
             </Card>
           ) : null}
           <Card className="mb-6 px-6 py-5">
+            {blockers.length > 0 ? (
+              <h3 className="mb-3 text-[15px] font-semibold">
+                {blockers.length} punkt{blockers.length === 1 ? "" : "er"} blockerar
+              </h3>
+            ) : null}
             <ul className="space-y-2.5">
               {checklist.map((c) => (
                 <li key={c.key} className="flex items-start gap-2.5 text-[14px]">
@@ -117,6 +123,11 @@ export function BokslutView({
                   )}
                   <span>
                     <span className={c.ok ? "text-soft" : "font-medium"}>{c.label}</span>
+                    {!c.ok ? (
+                      <span className="ml-2 text-[11px] font-medium uppercase tracking-wide text-muted">
+                        {c.blocking ? "Blockerar" : "Upplysning"}
+                      </span>
+                    ) : null}
                     {c.detail ? (
                       <span className="block text-[12.5px] text-muted">
                         {c.detail}
@@ -265,7 +276,12 @@ export function BokslutView({
                   </div>
                 ) : null}
                 <div className="flex justify-between border-t border-line pt-1.5">
-                  <span className="font-medium">Beskattningsbart resultat</span>
+                  <span className="font-medium">
+                    Beskattningsbart resultat
+                    {tax.skattemassigtResultat !== tax.beskattningsbartResultat ? (
+                      <span className="ml-1.5 font-normal text-muted">avrundat nedåt till närmaste tiotal</span>
+                    ) : null}
+                  </span>
                   <span className="font-semibold tabular">{kr(tax.beskattningsbartResultat)}</span>
                 </div>
                 <div className="flex justify-between">
@@ -422,6 +438,7 @@ export function BokslutView({
                   )}
 
                   <div className="mt-4 flex flex-wrap gap-4 border-t border-line/60 pt-3 text-[13px]">
+                    <AccountantPackActions yearLabel={f.label} fiscalYearId={f.id} />
                     <a href={`/api/bokforing/export?typ=sie&ar=${f.label}`} className="font-medium text-accent hover:underline">
                       <FileText className="mr-1 inline size-3.5" />
                       SIE-fil {f.label}

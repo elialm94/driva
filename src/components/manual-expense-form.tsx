@@ -710,7 +710,7 @@ export function ManualExpenseForm({
           maxBytes={RECEIPT_MAX_BYTES}
           title="Släpp kvittot här"
           subtitle="Fota, klistra in eller välj en fil."
-          formats="PDF, JPG, PNG, HEIC · max 5 MB"
+          formats="PDF, JPG, PNG, HEIC · max 8 MB"
           fileName={receipt?.name}
           onClear={() => setReceipt(null)}
           onFiles={(files) => {

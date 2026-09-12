@@ -1,5 +1,5 @@
 import { db } from "../store";
-import { kr } from "../format";
+import { datumLang, kr } from "../format";
 import { calendarFiscalYear, todayDate, vatDueDate, vatPeriodsOf } from "./dates";
 import { vatPeriodicity, fiscalYears } from "./fiscal";
 import { computeVatPosition } from "./vat";
@@ -97,10 +97,10 @@ function vatEvents(today: string, until: string): AuthorityEvent[] {
               ? `${kr(amount)} deklarerad`
               : "Deklarerad · ingen moms"
           : refund
-            ? `${kr(amount)} att få tillbaka · deklareras senast ${due}`
+            ? `${kr(amount)} att få tillbaka · deklareras senast ${datumLang(due)}`
             : amount
-              ? `${kr(amount)} ska finnas på skattekontot senast ${due}`
-              : `Deklareras senast ${due}`,
+              ? `${kr(amount)} ska finnas på skattekontot senast ${datumLang(due)}`
+              : `Deklareras senast ${datumLang(due)}`,
         dueDate: due,
         amount,
         href: `/bokforing/moms?fokus=${period.key}`,
@@ -138,7 +138,7 @@ function agiEvents(today: string, until: string): AuthorityEvent[] {
           title: `Arbetsgivardeklaration ${monthLabel(month)}`,
           subtitle: declared
             ? `${amount != null ? `${kr(amount)} · ` : ""}lämnad`
-            : `Lämnas senast ${due}${amount != null ? ` · ${kr(amount)}` : ""}`,
+            : `Lämnas senast ${datumLang(due)}${amount != null ? ` · ${kr(amount)}` : ""}`,
           dueDate: due,
           amount,
           href: "/bokforing/lon",
@@ -164,7 +164,7 @@ function fSkattEvents(today: string, until: string): AuthorityEvent[] {
         id: `fskatt-${month}`,
         kind: "f_skatt",
         title: `F-skatt ${monthLabel(month)}`,
-        subtitle: `${kr(amount)} dras från skattekontot ${due}`,
+        subtitle: `${kr(amount)} dras från skattekontot ${datumLang(due)}`,
         dueDate: due,
         amount,
         href: "/bokforing/skattekonto",
@@ -189,7 +189,7 @@ function yearEndEvents(today: string, until: string): AuthorityEvent[] {
         id: `ink2-${fy.id}`,
         kind: "ink2",
         title: `Inkomstdeklaration ${fy.label}`,
-        subtitle: closed ? `Deklareras senast ${ink2}` : `Bokslut ${fy.label} · deklareras senast ${ink2}`,
+        subtitle: closed ? `Deklareras senast ${datumLang(ink2)}` : `Bokslut ${fy.label} · deklareras senast ${datumLang(ink2)}`,
         dueDate: ink2,
         href: "/bokforing/bokslut",
         status: statusOf(ink2, today, false),
@@ -206,7 +206,7 @@ function yearEndEvents(today: string, until: string): AuthorityEvent[] {
         title: `Årsredovisning ${fy.label}`,
         subtitle: done
           ? `Inlämnad till Bolagsverket`
-          : `Bolagsverket senast ${ars}`,
+          : `Bolagsverket senast ${datumLang(ars)}`,
         dueDate: ars,
         href: `/bokforing/bokslut/arsredovisning/${fy.id}`,
         status: statusOf(ars, today, Boolean(done)),

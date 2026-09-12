@@ -182,11 +182,14 @@ function toMailRow(item: InboxItem): InboxListRow {
 export function listInbox(input: {
   q?: string;
   filter?: InboxListFilter;
+  /** Standard: bara kvitton och leverantörsfakturor, inte orderbekräftelser. */
+  economicOnly?: boolean;
   page?: number;
   pageSize?: number;
 } = {}): PagedResult<InboxListRow> {
   const q = (input.q ?? "").trim().toLowerCase();
   const filter = input.filter ?? "oppna";
+  const economicOnly = input.economicOnly !== false;
   const pageSize = input.pageSize ?? INBOX_PAGE_SIZE;
   const page = Math.max(1, input.page ?? 1);
 
@@ -195,6 +198,7 @@ export function listInbox(input: {
     const invoice = invoiceForItem(item);
     const payment = paymentForItem(item);
     if (filter === "oppna" && !isInboxItemOpen({ item, invoice, payment })) continue;
+    if (economicOnly && item.documentType === "orderbekraftelse") continue;
     if (!mailMatchesQuery(item, q)) continue;
     rows.push(toMailRow(item));
   }

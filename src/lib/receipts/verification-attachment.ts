@@ -9,6 +9,7 @@ import {
   safeReceiptFilename,
   type ReceiptFileInput,
 } from "./receipt-file";
+import { UPLOAD_MAX_BYTES, UPLOAD_MAX_LABEL } from "../uploads/limits";
 
 /**
  * Underlaget bakom en verifikation – fakturan, kvittot eller avtalet. Samma
@@ -19,7 +20,7 @@ import {
  * Läses via /api/verifikat/[id]/bilaga efter behörighetskontroll.
  */
 
-export const MAX_VERIFICATION_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_VERIFICATION_ATTACHMENT_BYTES = UPLOAD_MAX_BYTES;
 
 export function validateVerificationAttachment(file: ReceiptFileInput): ReceiptFileInput {
   if (!isAllowedReceiptContentType(file.contentType)) {
@@ -27,7 +28,7 @@ export function validateVerificationAttachment(file: ReceiptFileInput): ReceiptF
   }
   if (file.bytes.length === 0) throw new Error("Filen är tom.");
   if (file.bytes.length > MAX_VERIFICATION_ATTACHMENT_BYTES) {
-    throw new Error("Underlaget är för stort (max 10 MB).");
+    throw new Error(`Underlaget är för stort (max ${UPLOAD_MAX_LABEL}).`);
   }
   return file;
 }

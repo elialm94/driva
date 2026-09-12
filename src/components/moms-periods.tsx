@@ -6,10 +6,20 @@ import { BookVatOnTaxAccountButton } from "./skattekonto-widgets";
 import { CopyValue, DeclareVatButton, TaxAccountOcrField } from "./moms-flow-widgets";
 import type { VatChecklistItem } from "@/lib/accounting/vat";
 import type { VatFlowStep, VatPeriodFlow } from "@/lib/accounting/vat-flow";
+import { taxAccountOcrFromOrgnr } from "@/lib/accounting/tax-account-model";
+import { db } from "@/lib/store";
 import { VAT_PERIOD_STATE } from "@/lib/status-labels";
 import { InlamningPanel } from "./inlamning";
 import { filingPanelData } from "@/lib/filing/view";
 import { filingSubmissionAvailable } from "@/lib/filing/select";
+
+function suggestedTaxAccountOcr(): string | undefined {
+  try {
+    return taxAccountOcrFromOrgnr(db().settings.orgNumber ?? "");
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Momsen i tre steg per period: Kontrollera → Deklarera → Betala.
@@ -24,7 +34,7 @@ const SKV_DECLARE_URL = "https://skatteverket.se/foretag/moms/deklareramoms.4.74
 
 /** Var användaren fixar det checklistan klagar på. */
 const CHECKLIST_LINKS: Record<string, { href: string; label: string }> = {
-  bank: { href: "/ekonomi?flik=bank&status=atgard", label: "Öppna banken" },
+  bank: { href: "/bokforing/bank?status=atgard", label: "Öppna banken" },
   underlag: { href: "/ekonomi?flik=utgifter&status=atgard", label: "Öppna utgifterna" },
 };
 
@@ -97,10 +107,16 @@ function PeriodCard({
             </Badge>
           </div>
           <p className="mt-1 text-[13px] text-soft">
-            {p.state === "pagaende" ? `Pågår till ${datumLang(p.period.end)} · ` : ""}
-            {flow.done ? "Deklarerades senast " : "Deklareras och betalas senast "}
-            <span className={cx("font-medium", dueTone)}>{datumLang(pay.dueDate)}</span>
-            {!flow.done && p.state !== "kommande" ? <DaysLeft days={pay.daysLeft} /> : null}
+            {p.state === "kommande" ? (
+              <>Börjar {datumLang(p.period.start)}</>
+            ) : (
+              <>
+                {p.state === "pagaende" ? `Pågår till ${datumLang(p.period.end)} · ` : ""}
+                {flow.done ? "Deklarerades senast " : "Deklareras och betalas senast "}
+                <span className={cx("font-medium", dueTone)}>{datumLang(pay.dueDate)}</span>
+                {!flow.done ? <DaysLeft days={pay.daysLeft} /> : null}
+              </>
+            )}
           </p>
         </div>
         <div className="text-right">
@@ -379,7 +395,7 @@ function BetalaStep({ flow, readOnly }: { flow: VatPeriodFlow; readOnly?: boolea
         <div className="rounded-xl bg-canvas/70 px-3.5 py-2.5">
           <p className="text-[11px] text-muted">OCR-nummer</p>
           <div className="mt-0.5">
-            <TaxAccountOcrField ocr={pay.ocr} readOnly={readOnly} />
+            <TaxAccountOcrField ocr={pay.ocr} suggested={suggestedTaxAccountOcr()} readOnly={readOnly} />
           </div>
         </div>
       </div>

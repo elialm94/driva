@@ -21,10 +21,10 @@ export function HomeMoneyStrip({
   return (
     <section className="mt-8" data-home-money>
       <div className="grid gap-3 sm:grid-cols-3">
-        <MoneyCell href="/ekonomi?flik=bank" label="På kontot" value={finance.bank} />
+        <MoneyCell href="/bokforing/bank" label="På kontot" value={finance.bank} />
         <MoneyCell href="/bokforing" label="Reserverat" value={finance.reserved} hint="Moms, F-skatt och löneskatt" />
         <MoneyCell
-          href="/ekonomi?flik=bank"
+          href="/bokforing/bank"
           label="Ungefär ledigt"
           value={finance.available}
           hint={finance.upcoming > 0 ? `${kr(finance.upcoming)} i leverantörsfakturor` : undefined}

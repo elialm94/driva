@@ -850,7 +850,7 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
           result.alreadySubmitted
             ? `Betalningen till ${invoice?.supplier ?? "leverantören"} var redan skickad.`
             : `Klart – betalningen till ${invoice?.supplier ?? "leverantören"} är skickad till banken. Den är inte betald förrän banken bekräftar.`,
-          { kind: "links", links: [{ label: "Öppna Inbox", href: invoice?.inboxItemId ? `/inbox/${invoice.inboxItemId}` : "/inbox" }] }
+          { kind: "links", links: [{ label: "Öppna underlaget", href: invoice?.inboxItemId ? `/bokforing/underlag/${invoice.inboxItemId}` : "/bokforing/underlag" }] }
         );
       } catch (e) {
         const message = e instanceof Error ? e.message : "Kunde inte skicka betalningen.";
@@ -914,7 +914,7 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
           `Klart – ${invoice.supplier} ${invoice.invoiceNumber} använder nu de tidigare verifierade uppgifterna (${details.account}). Betalningen skickas inte förrän du godkänner den.`,
           {
             kind: "links",
-            links: [{ label: "Öppna dokumentet", href: invoice.inboxItemId ? `/inbox/${invoice.inboxItemId}` : "/ekonomi?flik=utgifter" }],
+            links: [{ label: "Öppna dokumentet", href: invoice.inboxItemId ? `/bokforing/underlag/${invoice.inboxItemId}` : "/ekonomi?flik=utgifter" }],
           }
         );
       } catch (e) {

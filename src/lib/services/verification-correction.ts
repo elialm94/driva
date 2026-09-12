@@ -71,6 +71,8 @@ export interface KontoOption {
   account: number;
   label: string;
   vatFree?: boolean;
+  section?: string;
+  used?: boolean;
 }
 
 export interface CorrectionFlow {
@@ -313,10 +315,10 @@ export function inspectCorrectionFlow(verificationId: string): CorrectionFlow {
     const inv = invoiceFor(v);
     const tx = db().bankTransactions.find((t) => t.verificationId === v.id);
     const href = tx
-      ? `/ekonomi?flik=bank&atgard=${encodeURIComponent(`bank-${tx.id}`)}`
+      ? `/bokforing/bank?atgard=${encodeURIComponent(`bank-${tx.id}`)}`
       : inv
         ? `/ekonomi/fakturor/${inv.id}`
-        : "/ekonomi?flik=bank";
+        : "/bokforing/bank";
     return {
       kind: "omatcha",
       title: "Matchningen är fel",

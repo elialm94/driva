@@ -49,7 +49,7 @@ export function UploadReceiptButton({
         variant={zone}
         multiple={false}
         title={label}
-        formats="PDF, JPG, PNG, HEIC · max 5 MB"
+        formats="PDF, JPG, PNG, HEIC · max 8 MB"
         upload={async (file) => {
           // Filen följer med som File i en FormData – aldrig som data-URL (read-file.ts).
           const result = await uploadReceiptAction(receiptUploadForm(expenseId, file));

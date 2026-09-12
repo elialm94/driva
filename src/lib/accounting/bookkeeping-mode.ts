@@ -1,21 +1,41 @@
 import { db, save } from "../store";
+import { currentActor } from "../collaboration/actor";
 import { employees } from "./payroll";
-import type { BookkeepingMode } from "./bookkeeping-mode-keys";
+import { parseBookkeepingMode, type BookkeepingMode } from "./bookkeeping-mode-keys";
 
 export type { BookkeepingMode } from "./bookkeeping-mode-keys";
 export { simpleBookkeepingKeys } from "./bookkeeping-mode-keys";
 
-/** Saknas inställning = enkelt – hantverkaren ska inte möta huvudboken först. */
-export function bookkeepingMode(): BookkeepingMode {
+/**
+ * Företagets äldre värde, innan läget flyttade per användare. Används som
+ * startvärde för ägaren och som fallback när användaren inte valt själv.
+ */
+export function companyBookkeepingMode(): BookkeepingMode {
   return db().meta.bookkeepingMode === "avancerat" ? "avancerat" : "enkelt";
 }
 
-export function setBookkeepingMode(mode: BookkeepingMode): BookkeepingMode {
-  if (mode !== "enkelt" && mode !== "avancerat") {
-    throw new Error("Okänt bokföringsläge.");
-  }
-  if (db().meta.bookkeepingMode === mode) return mode;
-  db().meta.bookkeepingMode = mode;
+/** @deprecated Använd bookkeepingModeForUser. Behålls som fallback utan aktör. */
+export function bookkeepingMode(): BookkeepingMode {
+  const userId = currentActor()?.userId;
+  return userId ? bookkeepingModeForUser(userId) : companyBookkeepingMode();
+}
+
+export function bookkeepingModeForUser(userId: string): BookkeepingMode {
+  const stored = parseBookkeepingMode(db().meta.bookkeepingModeByUser?.[userId]);
+  if (stored) return stored;
+  return companyBookkeepingMode();
+}
+
+/**
+ * Sparar läget per användare. Första skrivningen för ägaren tar med det
+ * gamla företagsvärdet som redan är fallback, så befintliga bolag inte
+ * tappar avancerat.
+ */
+export function setBookkeepingModeForUser(userId: string, mode: BookkeepingMode): BookkeepingMode {
+  const data = db();
+  const byUser = { ...(data.meta.bookkeepingModeByUser ?? {}) };
+  byUser[userId] = mode;
+  data.meta.bookkeepingModeByUser = byUser;
   save();
   return mode;
 }

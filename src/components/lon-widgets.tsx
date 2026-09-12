@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRightLeft, Check, Eye, FileText, Pencil, Undo2, UserRound, Wallet } from "lucide-react";
 import { buttonClasses, Card, cx } from "./ui";
@@ -22,6 +22,7 @@ import {
   TAX_TABLE_MAX,
   TAX_TABLE_MIN,
 } from "@/lib/accounting/payroll-model";
+import { taxTableDeduction } from "@/lib/accounting/skattetabell";
 import { birthDateFromPersonnummer } from "@/lib/personnummer";
 import type { Employee, EmployeeRole, TaxBasis } from "@/lib/types";
 
@@ -77,6 +78,15 @@ export function EmployeeForm({ employee, today }: { employee?: Employee; today: 
           salaryAtLookup: gross,
         }
       : { kind: "procent", percent: Number(percent.replace(",", ".")) || 0 };
+  useEffect(() => {
+    if (basisKind !== "tabell" || gross <= 0) return;
+    const year = Number((startDate || today).slice(0, 4));
+    const next = taxTableDeduction(year, Number(table) || 0, gross);
+    if (next == null) return;
+    const asText = String(next);
+    setDeduction(asText);
+  }, [basisKind, table, gross, startDate, today]);
+
   const birthDate = birthDateFromPersonnummer(personnummer, today);
   const preview =
     gross > 0 && birthDate
@@ -223,7 +233,7 @@ export function EmployeeForm({ employee, today }: { employee?: Employee; today: 
                 >
                   tabell {table || TAX_TABLE_MIN}
                 </a>{" "}
-                och skriv in beloppet. Driva räknar aldrig fram skatt på egen hand – avdraget ska vara Skatteverkets.
+                och skriv in beloppet. Avdraget hämtas ur Skatteverkets tabell. Kontrollera mot ditt beslut om du har jämkning.
               </p>
             </div>
           </div>
@@ -324,7 +334,15 @@ function BasisTab({ active, onClick, label }: { active: boolean; onClick: () => 
   );
 }
 
-export function RunPayrollButton({ month, gross }: { month: string; gross: number }) {
+export function RunPayrollButton({
+  month,
+  gross,
+  employeeId,
+}: {
+  month: string;
+  gross: number;
+  employeeId?: string;
+}) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   return (
@@ -334,7 +352,7 @@ export function RunPayrollButton({ month, gross }: { month: string; gross: numbe
         disabled={pending}
         onClick={() =>
           startTransition(async () => {
-            const res = await runPayrollAction(month);
+            const res = await runPayrollAction(month, employeeId);
             setError(res.ok ? null : res.error);
           })
         }

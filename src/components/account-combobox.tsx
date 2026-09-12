@@ -8,6 +8,35 @@ import type { KontoOption } from "@/lib/services/verification-correction";
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2.5 text-[14px] text-ink placeholder:text-muted focus:border-accent";
 
+const CLASS_LABEL: Record<string, string> = {
+  "1": "Tillgångar",
+  "2": "Eget kapital och skulder",
+  "3": "Intäkter",
+  "4": "Kostnader för varor och material",
+  "5": "Övriga externa kostnader",
+  "6": "Övriga kostnader",
+  "7": "Personalkostnader",
+  "8": "Finansiellt och bokslut",
+};
+
+function groupedAccountOptions(
+  options: KontoOption[],
+  query: string
+): Array<{ kind: "heading"; label: string } | { kind: "option"; option: KontoOption; index: number }> {
+  if (query.trim()) return options.map((option, index) => ({ kind: "option" as const, option, index }));
+  const out: Array<{ kind: "heading"; label: string } | { kind: "option"; option: KontoOption; index: number }> = [];
+  let lastClass = "";
+  options.forEach((option, index) => {
+    const klass = String(option.account)[0] ?? "";
+    if (klass !== lastClass) {
+      lastClass = klass;
+      out.push({ kind: "heading", label: CLASS_LABEL[klass] ?? `Klass ${klass}` });
+    }
+    out.push({ kind: "option", option, index });
+  });
+  return out;
+}
+
 export function AccountCombobox({
   options,
   value,
@@ -114,28 +143,37 @@ export function AccountCombobox({
             {filtered.length === 0 ? (
               <li className="px-3 py-2 text-[13px] text-muted">Inget konto matchar.</li>
             ) : (
-              filtered.map((o, i) => (
-                <li key={o.key}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={o.key === value}
-                    className={cx(
-                      "flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-[14px]",
-                      i === highlight ? "bg-canvas" : "hover:bg-canvas"
-                    )}
-                    onMouseEnter={() => setHighlight(i)}
-                    onClick={() => {
-                      onChange(o.key);
-                      setOpen(false);
-                      setQuery("");
-                    }}
+              groupedAccountOptions(filtered, query).map((entry) =>
+                entry.kind === "heading" ? (
+                  <li
+                    key={entry.label}
+                    className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted"
                   >
-                    <span className="font-medium">{o.label}</span>
-                    {o.key === value ? <span className="text-[12px] text-muted">Vald</span> : null}
-                  </button>
-                </li>
-              ))
+                    {entry.label}
+                  </li>
+                ) : (
+                  <li key={entry.option.key}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={entry.option.key === value}
+                      className={cx(
+                        "flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-[14px]",
+                        entry.index === highlight ? "bg-canvas" : "hover:bg-canvas"
+                      )}
+                      onMouseEnter={() => setHighlight(entry.index)}
+                      onClick={() => {
+                        onChange(entry.option.key);
+                        setOpen(false);
+                        setQuery("");
+                      }}
+                    >
+                      <span className="font-medium">{entry.option.label}</span>
+                      {entry.option.key === value ? <span className="text-[12px] text-muted">Vald</span> : null}
+                    </button>
+                  </li>
+                )
+              )
             )}
           </ul>
         </div>

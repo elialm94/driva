@@ -1,13 +1,16 @@
 import type { ReactNode } from "react";
+import { cookies } from "next/headers";
 import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { bookkeepingHasPayroll, bookkeepingMode } from "@/lib/accounting/bookkeeping-mode";
+import { BOKFORING_MODE_COOKIE, parseBookkeepingMode } from "@/lib/accounting/bookkeeping-mode-keys";
 import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
-import { ensurePageBusiness } from "@/lib/auth/session";
+import { ensurePageBusiness, withBusiness } from "@/lib/auth/session";
+import { ensureAutoFSkattBookings } from "@/lib/accounting/tax-account";
 
 /**
- * Delat bokföringsskal. Flikraden lever här så den inte monteras om när
- * bara barnvyn byts. Ingen loading.tsx i det här segmentet: en sådan gräns
- * byter ut hela innehållet mot OverviewSkeleton vid varje flikbyte.
+ * Delat bokföringsskal. Flikraden lever här så den inte monteras om när bara
+ * barnvyn byts, och loading.tsx i det här segmentet lägger Suspense-gränsen
+ * UNDER raden: vid flikbyte byts bara innehållsytan, aldrig chromet.
  * Första steget in i Bokföring täcks av (app)/loading.tsx.
  */
 export default async function BokforingLayout({ children }: { children: ReactNode }) {
@@ -17,6 +20,15 @@ export default async function BokforingLayout({ children }: { children: ReactNod
   // "Ingen tenantkontext" för hela Bokföring. React cache() gör anropet
   // till samma inläsning som skalet och sidan redan väntar på.
   await ensurePageBusiness();
+  try {
+    await withBusiness(() => ensureAutoFSkattBookings());
+  } catch {
+    // Läsande medlemskap eller saknad skrivbehörighet – F-skatten väntar.
+  }
+  // Vyinställningen läses ur cookien som toggeln själv skriver. Företag som
+  // slog på avancerat innan cookien fanns behåller sitt läge via meta-fältet.
+  const jar = await cookies();
+  const mode = parseBookkeepingMode(jar.get(BOKFORING_MODE_COOKIE)?.value) ?? bookkeepingMode();
   const today = todayDate();
   const openYear = fiscalYears().find((f) => f.status === "oppet");
   const showYearEnd =
@@ -26,7 +38,7 @@ export default async function BokforingLayout({ children }: { children: ReactNod
   return (
     <div className="animate-fade-up">
       <BokforingAdvancedTabs
-        mode={bookkeepingMode()}
+        initialMode={mode}
         hasPayroll={bookkeepingHasPayroll()}
         showYearEnd={showYearEnd}
       />
