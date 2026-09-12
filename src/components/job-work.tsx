@@ -111,7 +111,7 @@ export function JobWorkSection({
 
   return (
     <LineDescriptionVocabProvider>
-    <div className="mb-8">
+    <div className="mb-8 scroll-mt-4" id="arbete">
       <SectionTitle
         right={
           <div className="flex flex-wrap justify-end gap-2">

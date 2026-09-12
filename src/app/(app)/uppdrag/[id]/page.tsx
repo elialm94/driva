@@ -25,6 +25,8 @@ import { JobPhotosSection } from "@/components/job-photos";
 import { JobChangesSection } from "@/components/job-changes-section";
 import { getJobChange, jobChangesForJob } from "@/lib/services/job-changes";
 import { closeoutView } from "@/lib/services/closeout";
+import { jobTimeline } from "@/lib/services/job-timeline";
+import { JobTimeline } from "@/components/job-timeline";
 import { RotDeadlineBanner } from "@/components/rot-deadline-banner";
 import { taxReductionCaseForJob } from "@/lib/services/tax-reduction";
 import { rotDeadlineStatus } from "@/lib/tax-reduction-deadline";
@@ -342,6 +344,8 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
       <div className="mb-8">
         <JobNotes jobId={job.id} notes={notes} />
       </div>
+
+      <JobTimeline entries={jobTimeline(job.id)} />
     </div>
   );
 }

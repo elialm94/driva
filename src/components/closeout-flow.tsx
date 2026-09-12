@@ -93,7 +93,9 @@ export function CloseoutFlow({
     }
     return out;
   }, [view.items]);
-  const nothingToBill = billable.length === 0;
+  // Finns redan ett utkast från avslutet räknas det valda sättet, även om
+  // allt fakturerbart nu ligger på utkastet.
+  const nothingToBill = billable.length === 0 && !draft;
   const effectiveMode: CloseoutBillingMode = nothingToBill ? "ingen" : mode;
   const chosenMode = view.modes.find((m) => m.mode === effectiveMode);
   const checks = view.checks;
@@ -191,7 +193,7 @@ export function CloseoutFlow({
         ) : step === "fakturera" ? (
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[13px] text-soft tabular">
-              {nothingToBill ? "Inget fakturerbart just nu." : `Valt: ${kr(selectedTotal)} inkl. moms`}
+              {billable.length === 0 ? "Inget fakturerbart just nu." : `Valt: ${kr(selectedTotal)} inkl. moms`}
             </p>
             <button type="button" className={buttonClasses("primary")} onClick={() => setStep("satt")} data-testid="closeout-next-2">
               Fortsätt
@@ -349,6 +351,8 @@ export function CloseoutFlow({
           <div className="space-y-3">
             {nothingToBill ? (
               <p className="text-[14px] text-soft">Inget är valt att fakturera. Du kan avsluta uppdraget direkt.</p>
+            ) : draft ? (
+              <p className="text-[14px] text-soft">Allt fakturerbart ligger redan på utkastet från avslutet.</p>
             ) : (
               <fieldset className="space-y-2">
                 <legend className="sr-only">Faktureringssätt</legend>
