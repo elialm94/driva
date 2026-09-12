@@ -22,6 +22,7 @@ export type BankKindKey =
   | "utdelning"
   | "aterbetalning_agare"
   | "overforing_eget_konto"
+  | "lokalhyra"
   | "lon"
   | "privat_kop"
   /* ---------- inkommande ---------- */
@@ -189,6 +190,24 @@ export const BANK_KINDS: BankKind[] = [
     explanation: (amount, counterpart) =>
       `${amount} kr betalades tillbaka till ${counterpart} och minskade skulden till ägaren (2893). Ingen kostnad – bolaget betalar bara igen vad det lånat.`,
     pattern: /utlägg|utlagg|eget uttag|återbetalning ägare|aterbetalning agare/i,
+    learnable: true,
+    matchedType: "ovrigt",
+  },
+  {
+    // Hyran är återkommande men momsen antas ALDRIG: bara en hyresvärd som
+    // är frivilligt skattskyldig fakturerar moms, och då är hyresavin
+    // underlaget. Utan avi bokförs hela beloppet som momsfri lokalkostnad.
+    key: "lokalhyra",
+    label: "Lokalhyra",
+    hint: "Hyra för verkstad, lager eller kontor – utan moms tills hyresavin visar moms",
+    direction: "ut",
+    entries: (amount) => [
+      { account: 5010, debit: amount },
+      { account: FORETAGSKONTO, credit: amount },
+    ],
+    explanation: (amount, counterpart) =>
+      `Hyran ${amount} kr till ${counterpart} bokfördes som lokalhyra (5010) utan moms. Fakturerar hyresvärden moms ska hyresavin registreras som leverantörsfaktura så att momsen kan lyftas – den antas aldrig från bankraden.`,
+    pattern: /\bhyra\b|\bhyran\b|lokalhyra|hyresavi|hyresvärd|hyresvard|\bhyres(?:kostnad|faktura)\b/i,
     learnable: true,
     matchedType: "ovrigt",
   },

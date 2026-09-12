@@ -169,6 +169,8 @@ import {
   expenseAwaitingReceipt,
   uploadReceiptForExpense,
 } from "@/lib/services/expenses";
+import { normalizeMerchant, PRIVATE_ANSWER } from "@/lib/banking/merchants";
+import { recordSuggestionDecision } from "@/lib/services/suggestion-log";
 import { createManualExpense, type ManualReceiptFile } from "@/lib/services/manual-expense";
 import type { ManualExpenseDraft } from "@/lib/expenses/manual-expense";
 import { uid } from "@/lib/ids";
@@ -1488,10 +1490,33 @@ export async function uploadReceiptAction(
   }
 }
 
-export async function answerExpenseQuestionAction(expenseId: string, answer: string) {
-  await withBusiness(() => {
-    answerExpenseQuestion(expenseId, answer);
+/**
+ * Svar på en bokföringsfråga. `remember: false` = "Använd samma val nästa
+ * gång?" besvarades nej – köpet bokförs men ingen leverantörsregel sparas.
+ * Beslutet loggas aggregerat för kvalitetsvyn (aldrig motpart eller belopp).
+ */
+export async function answerExpenseQuestionAction(expenseId: string, answer: string, opts: { remember?: boolean } = {}) {
+  await withBusiness(async () => {
+    const expense = db().expenses.find((e) => e.id === expenseId);
+    const question = expense?.question;
+    answerExpenseQuestion(expenseId, answer, "anvandare", opts);
     refresh();
+    if (expense && question) {
+      const knowledge = normalizeMerchant(expense.supplier).knowledge;
+      const suggested = knowledge?.followUp ? undefined : question.options[0];
+      await recordSuggestionDecision({
+        input: { amount: -Math.abs(expense.amount), counterpart: expense.supplier, date: expense.date },
+        direction: "ut",
+        source: knowledge ? "kunskapsbas" : expense.receiptId ? "kvitto" : "ingen",
+        tier: "osakert",
+        decision: answer === PRIVATE_ANSWER ? "private" : !suggested || suggested === answer ? "accepted" : "changed",
+        humanRequired: knowledge?.risk.includes("privat") ? ["privat_risk"] : [],
+        merchantType: knowledge?.type,
+        suggested,
+        finalChoice: answer,
+        llm: null,
+      });
+    }
   }, { capability: "categorize" });
 }
 

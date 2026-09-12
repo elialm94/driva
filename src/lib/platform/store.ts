@@ -25,6 +25,7 @@ import type {
   PlatformAdmin,
   PlatformAdminInvitation,
   SupportSession,
+  SuggestionEvent,
   SupportTicket,
   SupportTicketStatus,
 } from "./types";
@@ -809,6 +810,97 @@ export async function countEmailEventsSince(sinceIso: string): Promise<{ sent: n
     [sinceIso]
   );
   return { sent: Number(rows[0]?.sent ?? 0), failed: Number(rows[0]?.failed ?? 0) };
+}
+
+/* ------------------------------ suggestion_events ------------------------------ */
+
+function suggestionEventFromRow(r: SqlRow): SuggestionEvent {
+  return {
+    id: str(r.id),
+    businessId: strOrUndef(r.business_id),
+    createdAt: iso(r.created_at),
+    direction: r.direction === "in" ? "in" : "ut",
+    source: str(r.source),
+    tier: (r.tier as SuggestionEvent["tier"]) ?? "osakert",
+    decision: r.decision as SuggestionEvent["decision"],
+    humanRequired: Array.isArray(r.human_required) ? (r.human_required as string[]) : [],
+    merchantType: strOrUndef(r.merchant_type),
+    kbVersion: str(r.kb_version),
+    ruleVersion: r.rule_version == null ? undefined : Number(r.rule_version),
+    provider: strOrUndef(r.provider) ?? null,
+    model: strOrUndef(r.model) ?? null,
+    promptVersion: strOrUndef(r.prompt_version) ?? null,
+    inputHash: str(r.input_hash),
+    suggested: strOrUndef(r.suggested),
+    finalChoice: str(r.final_choice),
+    amountBucket: (r.amount_bucket as SuggestionEvent["amountBucket"]) ?? "500_5000",
+  };
+}
+
+export async function insertSuggestionEvent(e: SuggestionEvent): Promise<void> {
+  if (!isSupabaseMode()) {
+    const reg = platformRegistry();
+    reg.suggestionEvents.push({ ...e });
+    if (reg.suggestionEvents.length > 5000) reg.suggestionEvents.splice(0, reg.suggestionEvents.length - 5000);
+    commitPlatformRegistry();
+    return;
+  }
+  const client = await sqlClient();
+  await client.query(
+    `insert into public.suggestion_events
+       (id, business_id, created_at, direction, source, tier, decision, human_required, merchant_type, kb_version,
+        rule_version, provider, model, prompt_version, input_hash, suggested, final_choice, amount_bucket)
+     values ($1,$2,$3,$4,$5,$6,$7,(select coalesce(array_agg(x), '{}') from jsonb_array_elements_text($8::jsonb) x),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+    [
+      e.id,
+      e.businessId ?? null,
+      e.createdAt,
+      e.direction,
+      e.source,
+      e.tier,
+      e.decision,
+      JSON.stringify(e.humanRequired),
+      e.merchantType ?? null,
+      e.kbVersion,
+      e.ruleVersion ?? null,
+      e.provider ?? null,
+      e.model ?? null,
+      e.promptVersion ?? null,
+      e.inputHash,
+      e.suggested ?? null,
+      e.finalChoice,
+      e.amountBucket,
+    ]
+  );
+}
+
+/** Händelserna de senaste `days` dagarna – fönstret räknas här, inte i vyn. */
+export async function listRecentSuggestionEvents(days: number, limit?: number): Promise<SuggestionEvent[]> {
+  const sinceIso = new Date(Date.now() - days * 86_400_000).toISOString();
+  return listSuggestionEvents({ sinceIso, limit });
+}
+
+export async function listSuggestionEvents(filter: { sinceIso?: string; limit?: number } = {}): Promise<SuggestionEvent[]> {
+  const limit = Math.min(Math.max(filter.limit ?? 5000, 1), 20000);
+  if (!isSupabaseMode()) {
+    return platformRegistry()
+      .suggestionEvents.filter((e) => !filter.sinceIso || e.createdAt >= filter.sinceIso)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
+  }
+  const client = await sqlClient();
+  const params: (string | number)[] = [];
+  let where = "";
+  if (filter.sinceIso) {
+    params.push(filter.sinceIso);
+    where = `where created_at >= $${params.length}`;
+  }
+  params.push(limit);
+  const rows = await client.query(
+    `select * from public.suggestion_events ${where} order by created_at desc limit $${params.length}`,
+    params
+  );
+  return rows.map(suggestionEventFromRow);
 }
 
 /* --------------------------- inaktiverade företag --------------------------- */

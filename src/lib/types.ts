@@ -3257,6 +3257,8 @@ export interface MerchantCategoryRule {
   /** Antal gånger användaren bekräftat/valt kategorin för leverantören. */
   count: number;
   lastUsedAt: string;
+  /** Räknas upp varje gång valet för leverantören byts – loggade beslut pekar på versionen. */
+  version?: number;
 }
 
 /** Lärd regel för vad en banktransaktion från en motpart är (nyckel ur banking/bank-kinds.ts). */
@@ -3268,4 +3270,6 @@ export interface BankCounterpartRule {
   lastUsedAt: string;
   /** Motpartsnamnet som det såg ut senast – för inställningar och förklaringar. */
   counterpart: string;
+  /** Räknas upp varje gång typen för motparten byts – loggade beslut pekar på versionen. */
+  version?: number;
 }

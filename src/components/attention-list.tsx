@@ -49,6 +49,7 @@ import {
   prepareSupplierPaymentAction,
 } from "@/app/actions";
 import { declareVatPeriodAction, markExpensePrivateAction } from "@/app/bokforing-actions";
+import { PRIVATE_ANSWER } from "@/lib/banking/merchants";
 import type { DecisionCard } from "@/lib/services/decision-cards";
 import { closeAllReadyMonthsAction } from "@/app/periodstangning-actions";
 import { RECEIPT_MAX_BYTES, receiptUploadForm } from "@/lib/receipts/read-file";
@@ -525,6 +526,8 @@ export function AttentionRow({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [privateOpen, setPrivateOpen] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
+  // "Använd samma val nästa gång?" – regeln sparas bara när rutan är ikryssad.
+  const [rememberAnswer, setRememberAnswer] = useState(true);
   const [undoing, setUndoing] = useState(false);
   // Skapad bankfil: raden är löst men nedladdningen ska vara ett klick bort.
   const [createdFile, setCreatedFile] = useState<{ fileId: string; filename: string } | null>(null);
@@ -919,18 +922,38 @@ export function AttentionRow({
               </button>
             ) : null}
             {cta?.type === "answerQuestion"
-              ? cta.options.map((opt, oi) => (
-                  <button
-                    key={opt}
-                    data-choice-index={oi + 1}
-                    className={cx(buttonClasses("secondary", "sm"), compact ? "h-8 text-[12px]" : "max-lg:min-h-11")}
-                    disabled={isPending}
-                    onClick={() => run(() => answerExpenseQuestionAction(cta.expenseId, opt), "Bokfört")}
-                  >
-                    {opt}
-                  </button>
-                ))
+              ? cta.options
+                  // Privat har en egen knapp med bekräftelse när kortet vet vad valet gör.
+                  .filter((opt) => !(privateDecision && opt === PRIVATE_ANSWER))
+                  .map((opt, oi) => (
+                    <button
+                      key={opt}
+                      data-choice-index={oi + 1}
+                      className={cx(buttonClasses("secondary", "sm"), compact ? "h-8 text-[12px]" : "max-lg:min-h-11")}
+                      disabled={isPending}
+                      onClick={() =>
+                        run(
+                          () => answerExpenseQuestionAction(cta.expenseId, opt, { remember: rememberAnswer }),
+                          rememberAnswer && opt !== PRIVATE_ANSWER ? "Bokfört – Ferva föreslår samma sak nästa gång" : "Bokfört"
+                        )
+                      }
+                    >
+                      {opt}
+                    </button>
+                  ))
               : null}
+            {cta?.type === "answerQuestion" && decision && !compact ? (
+              <label className="flex w-full items-center gap-2 text-[12.5px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={rememberAnswer}
+                  onChange={(e) => setRememberAnswer(e.target.checked)}
+                  data-remember-answer
+                  className="size-3.5 accent-ink"
+                />
+                Använd samma val nästa gång för den här leverantören
+              </label>
+            ) : null}
             {cta?.type === "confirmPaymentMatch" ? (
               <button
                 className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}

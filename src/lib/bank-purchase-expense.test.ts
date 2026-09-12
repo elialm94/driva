@@ -22,6 +22,7 @@ import {
   looksLikeCardPurchase,
   provisionalVatFor,
   uploadReceiptForExpense,
+  answerExpenseQuestion,
 } from "./services/expenses";
 
 function reset() {
@@ -111,10 +112,18 @@ describe("Kortköp i banken blir köp som saknar kvitto", () => {
       vatAmount: 100,
     });
     assert.equal(expense.vatAmount, 100, "momsen kom från kvittot");
-    assert.equal(expense.status, "bokford", "Circle K är en känd leverantör → bokförs automatiskt");
+    // Drivmedelsstationer säljer också butiksvaror och privat tankning:
+    // kunskapsbasen ställer följdfrågan i stället för att bokföra själv.
+    assert.equal(expense.status, "behover_svar", "Circle K är en riskmotpart → fråga, inte autobokning");
+    assert.deepEqual(expense.question?.options, ["Drivmedel", "Butik/förbrukning", "Biltvätt", "Privat / gäller inte företaget"]);
+    answerExpenseQuestion(expense.id, "Drivmedel");
+    assert.equal(expense.status, "bokford");
     const tx = db().bankTransactions[0];
     assert.equal(tx.status, "bokford");
     assert.equal(tx.matchedType, "utgift");
+    const ver = db().verifications.find((v) => v.id === expense.verificationId)!;
+    assert.ok(ver.entries.some((e) => e.account === 5611 && e.debit === 712), "drivmedel 5611 exkl. moms");
+    assert.ok(ver.entries.some((e) => e.account === 2641 && e.debit === 100), "momsen från kvittot lyfts");
   });
 
   it("ett kvitto med annan total ändrar inte momsen", () => {

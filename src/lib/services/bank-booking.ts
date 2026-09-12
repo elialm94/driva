@@ -63,10 +63,12 @@ export function recordBankCounterpartRule(counterpart: string, kind: BankKindKey
   const rules = data.meta.bankCounterpartRules ?? {};
   const existing = rules[key];
   const now = new Date().toISOString();
+  // Versionen räknas upp när valet byts, så att ett loggat beslut alltid kan
+  // spåras till den regel som gällde när förslaget visades.
   const rule: BankCounterpartRule =
     existing && existing.kind === kind
-      ? { ...existing, count: existing.count + 1, lastUsedAt: now, counterpart: counterpart.trim() }
-      : { kind, count: 1, lastUsedAt: now, counterpart: counterpart.trim() };
+      ? { ...existing, count: existing.count + 1, lastUsedAt: now, counterpart: counterpart.trim(), version: existing.version ?? 1 }
+      : { kind, count: 1, lastUsedAt: now, counterpart: counterpart.trim(), version: existing ? (existing.version ?? 1) + 1 : 1 };
   rules[key] = rule;
   data.meta.bankCounterpartRules = rules;
   return rule;

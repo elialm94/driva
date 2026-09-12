@@ -127,9 +127,23 @@ describe("Beslutskort – prioritering och språk", () => {
       })
     );
     assert.ok(question.question.endsWith("?"));
-    assert.equal(question.suggestion, "Drivmedel");
-    assert.ok(question.uncertainty, "osäkerheten sägs rakt ut");
+    // Shell är en riskmotpart i kunskapsbasen: inget förvalt förslag – kortet
+    // säger i stället varför köpet inte kan bokföras utan svar.
+    assert.equal(question.suggestion, undefined);
+    assert.match(question.uncertainty ?? "", /Shell .*drivmedel.*privat/u);
     assert.equal(question.privateChoice, true);
+
+    const plain = decisionCopy(
+      action({
+        id: "question-e3",
+        title: "Vad var köpet hos Snickarboa?",
+        subtitle: "Snickarboa · 640 kr · 3 mars",
+        amount: 640,
+        cta: { type: "answerQuestion", expenseId: "e3", options: ["Material", "Verktyg", "Annat"] },
+      })
+    );
+    assert.equal(plain.suggestion, "Material", "okänd motpart: första svaret är Fervas förslag");
+    assert.ok(plain.uncertainty, "osäkerheten sägs rakt ut");
     assert.ok(question.howBooked, "'Så bokförs det' finns bakom expandern");
     for (const text of [question.question, question.happened, question.suggestion ?? "", question.why ?? ""]) {
       assert.doesNotMatch(text, JARGON, text);

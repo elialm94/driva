@@ -52,6 +52,7 @@ JSON-läge (`.data/platform.json` via `src/lib/platform/registry.ts`).
 | `support_sessions` | admin, företag, **skäl (obligatoriskt)**, started_at, expires_at, ended_at, ev. ticket-koppling |
 | `admin_audit_log` | central plattformsaudit: admin, roll, action, target, metadata – **immutabel** (update/delete blockeras av trigger) |
 | `email_events` | transaktionsmejl: kind, mottagare, status (sent/failed/not_configured), fel, provider-id |
+| `suggestion_events` (migration 49) | bankklassificeringens förslagsbeslut: källa, nivå (saker/troligt/osakert), beslut (auto/accepted/changed/rejected/private), riskflaggor, motpartstyp, kunskapsbas-/regelversion, ev. LLM-leverantör/modell/promptversion, sha256-hash av indata, beloppsspann. **Aldrig motpartstext, belopp, dokumentinnehåll eller personnummer.** |
 
 Dessutom två nya kolumner på `businesses`: `is_demo` (demo exkluderas ur KPI:er)
 och `disabled_at` (avstängda företag försvinner ur medlemmarnas företagslistor).
@@ -60,9 +61,21 @@ och `disabled_at` (avstängda företag försvinner ur medlemmarnas företagslist
 ingenting, oavsett API). Appens serverroll (`driva_app`) når dem bara när
 plattformskontexten är satt via GUC (`app.platform_admin_user_id`), vilket
 enbart sker i adminflödena efter `requirePlatformAdmin()`. Undantag:
-`support_tickets` och `email_events` tillåter insert från vanlig tenantkontext
-(`app.is_member`) så att kundens "Hjälp & support" och mejlloggen fungerar.
-Ordinarie tenant-RLS är orörd.
+`support_tickets`, `email_events` och `suggestion_events` tillåter insert från
+vanlig tenantkontext så att kundens "Hjälp & support", mejlloggen och
+beslutsloggen fungerar. Ordinarie tenant-RLS är orörd.
+
+### Förslag (`/admin/forslag`)
+
+Kvalitetsvyn för den evidence-first-baserade bankklassificeringen
+(`src/lib/services/bank-suggestion.ts`, kunskapsbas i
+`src/lib/banking/merchants.ts`). Aggregerat över alla företag, 30 dagar:
+godkända/ändrade/avvisade/privat per nivå, källa och motpartstyp, andel falskt
+positiva (förslag som visades som Säker/Troligt men ändrades), vilka
+riskflaggor som krävde människa, LLM-inblandning och AI-kostnad ur
+`platformOverview().ai`. Rapporten byggs av
+`src/lib/platform/suggestion-quality.ts`; loggningen sker i
+`src/lib/services/suggestion-log.ts` och får aldrig stoppa en bokföring.
 
 ## Bootstrap av första super_admin (produktion)
 

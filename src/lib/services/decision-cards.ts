@@ -15,6 +15,7 @@ import type { BusinessAction } from "./actions";
 import { actionResolveHref } from "./action-issue";
 import { isBookkeepingAction } from "./action-views";
 import { bankKindByKey } from "../banking/bank-kinds";
+import { normalizeMerchant, type MerchantType } from "../banking/merchants";
 import { datumKort, kr } from "../format";
 
 /** Så många beslut visas direkt – resten bakom "Visa fler". */
@@ -107,6 +108,45 @@ export function decisionTier(action: Pick<BusinessAction, "id" | "priority" | "d
   return "ovrigt";
 }
 
+/**
+ * Vad kunskapsbasen vet om varför ett köp hos motparten inte kan bokföras
+ * utan svar – i klartext, utan konton.
+ */
+const MERCHANT_UNCERTAINTY: Partial<Record<MerchantType, string>> = {
+  drivmedel: "kan vara drivmedel, butiksvaror, biltvätt eller privat – kvittot och ditt svar avgör momsen",
+  restaurang: "kan vara privat, kundrepresentation, personalmåltid eller mat på tjänsteresa – syftet avgör avdraget",
+  dagligvaror: "kan vara privat, förbrukning till företaget eller fika/representation – du avgör",
+  hotell: "kan vara en tjänsteresa, en konferens eller privat – syftet avgör",
+  kollektivtrafik: "kan vara en tjänsteresa eller privat pendling",
+  parkering: "kan vara parkering i jobbet eller privat",
+  verktyg: "kan vara till företaget eller privat – kvittot visar vad som köptes",
+  kontantuttag: "ett kontantuttag är ingen kostnad i sig – vad pengarna gick till måste styrkas med kvitton",
+};
+
+function merchantUncertainty(supplier: string | undefined): string | undefined {
+  if (!supplier) return undefined;
+  const k = normalizeMerchant(supplier).knowledge;
+  // Bara motparter med risk (privat, representation, kontant) är osäkra –
+  // bygghandel och grossister bokförs med kvittot utan fråga.
+  if (!k || k.risk.length === 0) return undefined;
+  const text = MERCHANT_UNCERTAINTY[k.type];
+  return text ? `${k.display} ${text}.` : undefined;
+}
+
+/** Bedömningens "Därför"/"Osäkert" när motorn skickat med den. */
+function assessmentCopy(action: BusinessAction): { why?: string; uncertainty?: string } {
+  const a = action.assessment;
+  if (!a) return {};
+  const why = a.evidence.length > 0 ? a.evidence.join(". ") : undefined;
+  const uncertainty =
+    a.humanRequired.length > 0
+      ? `Kräver ditt beslut: ${a.humanRequired.map(lowerFirst).join("; ")}.`
+      : a.tier === "osakert"
+        ? "Ferva hittade ingen faktura, regel eller mönster som passar – du väljer typ."
+        : undefined;
+  return { ...(why ? { why } : {}), ...(uncertainty ? { uncertainty } : {}) };
+}
+
 /** Vardagsformuleringen av en åtgärd. Ren text – inga konton, ingen jargong. */
 export function decisionCopy(action: BusinessAction): DecisionCopy {
   const cta = action.cta;
@@ -115,25 +155,30 @@ export function decisionCopy(action: BusinessAction): DecisionCopy {
   if (cta?.type === "answerQuestion") {
     const supplier = parts(action)[0] ?? "köpet";
     const question = action.title.endsWith("?") ? action.title : `Hur ska köpet hos ${supplier} bokföras?`;
+    const kbUncertainty = merchantUncertainty(supplier);
     return {
       question,
       happened: `Köp hos ${supplier} · ${factsFrom(action)}`,
-      suggestion: cta.options[0] ? `${cta.options[0]}` : undefined,
-      why: cta.options[0] ? "Vanligast för den här typen av köp i ditt företag." : undefined,
-      uncertainty: "Ferva vet inte säkert vad köpet gällde – du väljer.",
+      suggestion: kbUncertainty ? undefined : cta.options[0] ? `${cta.options[0]}` : undefined,
+      why: kbUncertainty ? undefined : cta.options[0] ? "Vanligast för den här typen av köp i ditt företag." : undefined,
+      uncertainty: kbUncertainty ?? "Ferva vet inte säkert vad köpet gällde – du väljer.",
       privateChoice: true,
-      howBooked: "Köpet blir en kostnad i den kategori du väljer och momsen lyfts. Väljer du Privat bokförs ingen kostnad – beloppet blir i stället en skuld från dig till bolaget.",
+      howBooked: "Köpet blir en kostnad i den kategori du väljer och momsen lyfts bara när kvittot visar moms. Väljer du Privat bokförs ingen kostnad – beloppet blir i stället en skuld från dig till bolaget.",
     };
   }
 
   if (cta?.type === "uploadReceipt" || id.startsWith("receipt-")) {
     const m = action.title.match(/^Kvitto saknas –\s*(.+?),\s*(.+)$/u);
     const supplier = m?.[1] ?? parts(action)[0] ?? "köpet";
+    const kbUncertainty = merchantUncertainty(supplier);
     return {
       question: `Lägg till kvittot för ${supplier}`,
       happened: `Köp hos ${supplier} · ${m?.[2] ?? factsFrom(action)}`,
-      suggestion: "Fota eller ladda upp kvittot så bokförs köpet automatiskt.",
+      suggestion: kbUncertainty
+        ? "Fota eller ladda upp kvittot – sedan får du en kort fråga om vad köpet gällde."
+        : "Fota eller ladda upp kvittot så bokförs köpet automatiskt.",
       why: "Ett köp får dras av först när kvittot finns – momsen kräver underlag.",
+      uncertainty: kbUncertainty,
       privateChoice: true,
       howBooked: "Med kvittot bokförs köpet som kostnad och momsen lyfts. Utan kvitto får bolaget inte dra av momsen.",
     };
@@ -143,13 +188,15 @@ export function decisionCopy(action: BusinessAction): DecisionCopy {
     const def = bankKindByKey(cta.bankKind);
     const outgoing = def?.direction === "ut";
     const howBooked = def?.hint ? `${def.label}: ${lowerFirst(def.hint)}.` : undefined;
+    const assessed = assessmentCopy(action);
     const m = action.title.match(/^Bokför (.+?) (\d[\d\s ]*kr) som (.+)\?$/u);
     if (m) {
       return {
         question: `Godkänn att ${m[1]} bokförs som ${m[3]}?`,
         happened: `${m[1]} · ${m[2]} · ${parts(action)[0] ?? ""}`.replace(/ · $/u, ""),
         suggestion: `${m[3][0]?.toUpperCase()}${m[3].slice(1)}`,
-        why: reasonFrom(action),
+        why: assessed.why ?? reasonFrom(action),
+        uncertainty: assessed.uncertainty,
         privateChoice: outgoing,
         howBooked,
       };
@@ -158,7 +205,8 @@ export function decisionCopy(action: BusinessAction): DecisionCopy {
       question: action.title.endsWith("?") ? action.title : `${action.title}?`,
       happened: factsFrom(action),
       suggestion: cta.label,
-      why: reasonFrom(action),
+      why: assessed.why ?? reasonFrom(action),
+      uncertainty: assessed.uncertainty,
       privateChoice: outgoing,
       howBooked,
     };
@@ -166,11 +214,12 @@ export function decisionCopy(action: BusinessAction): DecisionCopy {
 
   // "Utbetalning till X – vad är det?" – inget förslag, men Privat är ett svar.
   if (id.startsWith("bank-") && cta?.type === "link" && /^Utbetalning till /u.test(action.title)) {
+    const assessed = assessmentCopy(action);
     return {
       question: action.title,
       happened: factsFrom(action),
-      why: reasonFrom(action),
-      uncertainty: "Ferva hittade ingen faktura, regel eller mönster som passar – du väljer typ.",
+      why: assessed.why ?? reasonFrom(action),
+      uncertainty: assessed.uncertainty ?? "Ferva hittade ingen faktura, regel eller mönster som passar – du väljer typ.",
       privateChoice: true,
     };
   }

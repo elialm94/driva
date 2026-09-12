@@ -118,6 +118,43 @@ export interface EmailEvent {
   createdAt: string;
 }
 
+/* ------------------------------ Förslagskvalitet ------------------------------ */
+
+export type SuggestionDecision = "auto" | "accepted" | "changed" | "rejected" | "private";
+
+/**
+ * Ett loggat förslagsbeslut för bankklassificeringen – aggregerbart utan
+ * känsligt innehåll: ingen motpartstext, inget belopp (bara spann), inget
+ * dokumentinnehåll, aldrig personnummer. inputHash är sha256 över den
+ * normaliserade motparten + belopp + datum så att samma rad känns igen.
+ */
+export interface SuggestionEvent {
+  id: string;
+  businessId?: string;
+  createdAt: string;
+  direction: "in" | "ut";
+  /** Var förslaget kom ifrån: faktura, leverantorsbetalning, regel, verifikation, monster, kunskapsbas, ingen. */
+  source: string;
+  /** Förslagets nivå när det visades. */
+  tier: "saker" | "troligt" | "osakert";
+  decision: SuggestionDecision;
+  /** Riskflaggor som krävde människa (banking/merchants.ts RiskFlag). */
+  humanRequired: string[];
+  /** Kunskapsbasens motpartstyp (drivmedel, restaurang …) – aldrig namnet. */
+  merchantType?: string;
+  kbVersion: string;
+  ruleVersion?: number;
+  /** LLM-lager: används inte för bankförslag i dag – loggas som null tills det gör det. */
+  provider?: string | null;
+  model?: string | null;
+  promptVersion?: string | null;
+  inputHash: string;
+  /** Vad förslaget var (banktyp/kategori) och vad användaren till slut valde. */
+  suggested?: string;
+  finalChoice: string;
+  amountBucket: "under_500" | "500_5000" | "over_5000";
+}
+
 export function platformRoleLabel(role: PlatformRole | string): string {
   return role === "super_admin" ? "Superadmin" : "Admin";
 }

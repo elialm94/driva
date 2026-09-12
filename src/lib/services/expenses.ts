@@ -9,7 +9,6 @@ import {
   entriesFromPostingLines,
   guessCategory,
   EXPENSE_CATEGORIES,
-  KNOWN_SUPPLIERS,
 } from "../bas";
 import {
   REPRESENTATION_LABELS,
@@ -26,6 +25,8 @@ import { assetSuggestionForExpense, registerAssetFromExpense, inventarieGransFor
 import { resolveClientRequestsForExpense } from "../collaboration/requests";
 import { currentActor } from "../collaboration/actor";
 import { addJobMaterialFromExpense } from "./job-work";
+import { looksLikePersonName, normalizeMerchant, PRIVATE_ANSWER } from "../banking/merchants";
+import { markExpensePrivate } from "./bank-booking";
 
 /**
  * Kvittotolkningen bor i ai/extract-document.ts (`extractReceipt`) och läser
@@ -43,12 +44,38 @@ export const ASSET_QUESTION_OPTIONS = ["Registrera som inventarie", "Bokför som
 /* Deterministiska regler: användarens egna val väger tyngst och byggs på       */
 /* varje gång ett köp bokförs av en människa. Ingen ML – en enkel regelbutik.   */
 
+/**
+ * Regelnyckel för en motpart: den normaliserade nyckeln (banking/merchants.ts)
+ * så att "MCDONALDS 1234 STOCKHOLM" och "McDonald's 5678" delar regel.
+ * Regler som sparades med den gamla, råare nyckeln hittas via legacyRuleKey.
+ */
 export function merchantRuleKey(supplier: string): string {
+  return normalizeMerchant(supplier).key;
+}
+
+export function legacyMerchantRuleKey(supplier: string): string {
   return supplier
     .toLowerCase()
     .replace(/\b(ab|hb|kb|aktiebolag)\b/g, "")
     .replace(/[^a-zåäö0-9]+/g, " ")
     .trim();
+}
+
+/** Slå upp en regel på ny nyckel först, sedan den gamla – och flytta över den. */
+export function lookupMerchantRule<T>(rules: Record<string, T> | undefined, supplier: string): { key: string; rule: T } | null {
+  if (!rules) return null;
+  const key = merchantRuleKey(supplier);
+  if (key && rules[key]) return { key, rule: rules[key] };
+  const legacy = legacyMerchantRuleKey(supplier);
+  if (legacy && legacy !== key && rules[legacy]) {
+    if (key) {
+      rules[key] = rules[legacy];
+      delete rules[legacy];
+      return { key, rule: rules[key] };
+    }
+    return { key: legacy, rule: rules[legacy] };
+  }
+  return null;
 }
 
 export interface MerchantCategoryGuess {
@@ -64,8 +91,7 @@ export interface MerchantCategoryGuess {
  * (3) heuristik. Deterministiskt och förklarbart.
  */
 export function categorizeMerchant(supplier: string): MerchantCategoryGuess | null {
-  const rules = db().meta.merchantCategoryRules ?? {};
-  const rule = rules[merchantRuleKey(supplier)];
+  const rule = lookupMerchantRule(db().meta.merchantCategoryRules, supplier)?.rule;
   if (rule) {
     const label = categoryByKey(rule.category).label;
     return {
@@ -100,10 +126,11 @@ export function recordMerchantRule(supplier: string, categoryKey: string): void 
   const existing = rules[key];
   rules[key] =
     existing && existing.category === categoryKey
-      ? { category: categoryKey, count: existing.count + 1, lastUsedAt: new Date().toISOString() }
+      ? { category: categoryKey, count: existing.count + 1, lastUsedAt: new Date().toISOString(), version: existing.version ?? 1 }
       : // Nytt val ersätter gammal regel – räknaren börjar om (kräver en
-        // bekräftelse till innan autobokning).
-        { category: categoryKey, count: 1, lastUsedAt: new Date().toISOString() };
+        // bekräftelse till innan autobokning) och versionen räknas upp så att
+        // loggade beslut kan spåras till regeln som gällde.
+        { category: categoryKey, count: 1, lastUsedAt: new Date().toISOString(), version: existing ? (existing.version ?? 1) + 1 : 1 };
   data.meta.merchantCategoryRules = rules;
 }
 
@@ -115,7 +142,7 @@ function expenseExplanation(
   matchReason?: string
 ): string {
   const cat = categoryByKey(categoryKey);
-  const known = Object.keys(KNOWN_SUPPLIERS).find((name) => expense.supplier.toLowerCase().includes(name));
+  const known = normalizeMerchant(expense.supplier).knowledge;
   const why =
     createdBy === "auto"
       ? (matchReason ?? (known ? `Ferva känner igen ${expense.supplier} och bokför köp där som ${cat.label.toLowerCase()}` : `Köpet bokfördes som ${cat.label.toLowerCase()}`))
@@ -181,7 +208,8 @@ export function bookExpense(
   categoryKey: string,
   confidence: Verification["confidence"],
   createdBy: Verification["createdBy"],
-  matchReason?: string
+  matchReason?: string,
+  opts: { remember?: boolean } = {}
 ): Verification {
   const data = db();
   if (expense.status === "bokford") {
@@ -217,9 +245,10 @@ export function bookExpense(
   }
   // Mänskliga val bygger regelbutiken – autobokningar gör det inte
   // (annars skulle en felgissning förstärka sig själv). Schablonersättningar
-  // har ingen leverantör att lära sig.
+  // har ingen leverantör att lära sig, och "Använd samma val nästa gång?" kan
+  // svaras nej (remember: false).
   const isAllowance = expense.kind === "milersattning" || expense.kind === "traktamente";
-  if (createdBy !== "auto" && !isAllowance) recordMerchantRule(expense.supplier, categoryKey);
+  if (createdBy !== "auto" && !isAllowance && opts.remember !== false) recordMerchantRule(expense.supplier, categoryKey);
   logAudit(
     createdBy === "auto" ? "system" : createdBy,
     "utgift_bokford",
@@ -359,13 +388,11 @@ export function uploadReceiptForExpense(
     autoBooked = true;
   } else {
     // Låg/medel säkerhet → ställ en enkel fråga, med ev. förslag först.
+    // Känner kunskapsbasen motparten ställs DEN följdfråga som krävs (Shell:
+    // drivmedel/butik/tvätt/privat, McDonald's: privat/representation/
+    // personal/tjänsteresa) – aldrig en gissning som bokförs.
     expense.status = "behover_svar";
-    const suggested = guess ? categoryByKey(guess.key).label : null;
-    const baseOptions = ["Material", "Verktyg & förbrukning", "Kundrepresentation", "Annat"];
-    expense.question = {
-      text: `Vad gällde köpet på ${kr(expense.amount)} hos ${expense.supplier}?${suggested ? ` Ferva gissar ${suggested.toLowerCase()} (${guess!.reason}).` : ""}`,
-      options: suggested ? [suggested, ...baseOptions.filter((o) => o !== suggested)] : baseOptions,
-    };
+    expense.question = merchantFollowUpQuestion(expense, supplierOnReceipt, guess);
     logActivity(`Kvitto från ${expense.supplier} mottaget – produkten behöver veta vad köpet gällde.`, {
       entity: { type: "utgift", id: expenseId },
     });
@@ -374,11 +401,69 @@ export function uploadReceiptForExpense(
   return { receipt, autoBooked };
 }
 
+/**
+ * Frågan som ställs när ett köp inte kan bokföras säkert. Kunskapsbasens
+ * följdfråga vinner; annars den generella med Fervas gissning först. Privat är
+ * alltid ett svar på köp som betalats från företagskontot.
+ */
+export function merchantFollowUpQuestion(
+  expense: Pick<Expense, "amount" | "supplier" | "bankTransactionId">,
+  supplierOnReceipt: string,
+  guess: MerchantCategoryGuess | null
+): NonNullable<Expense["question"]> {
+  const knowledge = normalizeMerchant(supplierOnReceipt).knowledge ?? normalizeMerchant(expense.supplier).knowledge;
+  if (knowledge?.followUp) {
+    const suggested = guess?.confidence === "medel" || guess?.confidence === "hog" ? categoryByKey(guess.key).label : null;
+    const options = [...knowledge.followUp.options];
+    // Företagets egen regel (1 bokning) läggs först som förslag om den inte redan finns.
+    if (suggested && !options.some((o) => o.toLowerCase() === suggested.toLowerCase()) && guess?.reason && !/kunskap|känner igen|antyder/u.test(guess.reason)) {
+      options.unshift(suggested);
+    }
+    return {
+      text: `${knowledge.followUp.question} ${kr(expense.amount)} hos ${knowledge.display}${guess?.reason && /gånger|senast/u.test(guess.reason) ? ` – ${lowerFirst(guess.reason)}` : ""}.`,
+      options: options.slice(0, 5),
+    };
+  }
+  const suggested = guess ? categoryByKey(guess.key).label : null;
+  const baseOptions = ["Material", "Verktyg & förbrukning", "Kundrepresentation", "Annat"];
+  const options = suggested ? [suggested, ...baseOptions.filter((o) => o !== suggested)] : [...baseOptions];
+  if (expense.bankTransactionId) options.push(PRIVATE_ANSWER);
+  return {
+    text: `Vad gällde köpet på ${kr(expense.amount)} hos ${expense.supplier}?${suggested ? ` Ferva gissar ${suggested.toLowerCase()} (${guess!.reason}).` : ""}`,
+    options,
+  };
+}
+
+function lowerFirst(text: string): string {
+  return text ? text.charAt(0).toLowerCase() + text.slice(1) : text;
+}
+
+/** Vardagssvar → kategori. Etiketter i EXPENSE_CATEGORIES matchas direkt. */
+const ANSWER_ALIASES: Record<string, string> = {
+  "butik/förbrukning": "verktyg",
+  "förbrukning till företaget": "verktyg",
+  biltvätt: "parkering",
+  "hotell på tjänsteresa": "hotell",
+  annat: "ovrigt",
+  hotell: "hotell",
+};
+
 /** Svar på en bokföringsfråga – systemet sköter resten. */
-export function answerExpenseQuestion(expenseId: string, answer: string, by: "anvandare" | "assistent" = "anvandare"): void {
+export function answerExpenseQuestion(
+  expenseId: string,
+  answer: string,
+  by: "anvandare" | "assistent" = "anvandare",
+  opts: { remember?: boolean } = {}
+): void {
   const data = db();
   const expense = data.expenses.find((e) => e.id === expenseId);
   if (!expense) return;
+
+  if (answer === PRIVATE_ANSWER) {
+    // Privat bokför aldrig en kostnad – går via bank-booking (skuld till bolaget).
+    markExpensePrivate(expenseId);
+    return;
+  }
 
   // Inventariefrågan: användaren avgör om köpet är en tillgång eller kostnad.
   if (answer === "Registrera som inventarie") {
@@ -404,10 +489,11 @@ export function answerExpenseQuestion(expenseId: string, answer: string, by: "an
 
   const key =
     EXPENSE_CATEGORIES.find((c) => c.label.toLowerCase() === answer.toLowerCase())?.key ??
-    (answer.toLowerCase() === "hotell" ? "hotell" : answer.toLowerCase() === "annat" ? "ovrigt" : "ovrigt");
+    ANSWER_ALIASES[answer.toLowerCase()] ??
+    "ovrigt";
 
   if (!expense.description) expense.description = categoryByKey(key).label;
-  bookExpense(expense, key, "hog", by === "assistent" ? "assistent" : "anvandare");
+  bookExpense(expense, key, "hog", by === "assistent" ? "assistent" : "anvandare", undefined, opts);
   logActivity(
     `Köpet hos ${expense.supplier} (${kr(expense.amount)}) bokfördes som ${categoryByKey(key).label.toLowerCase()}.`,
     { entity: { type: "utgift", id: expenseId } }
@@ -653,12 +739,20 @@ export function createExpenseFromKnownReceipt(input: {
  * (Skattekonto, Lön, bankvyn). Allt annat utgående är i praktiken ett köp.
  */
 const NOT_A_PURCHASE =
-  /skatteverk|skattekonto|överföring|overforing|egen insättning|eget uttag|\blön\b|\blon\b|utdelning|amortering|\bränta\b|bankavgift|månadsavgift|kortavgift|aviavgift/i;
+  /skatteverk|skattekonto|överföring|overforing|egen insättning|eget uttag|\blön\b|\blon\b|utdelning|amortering|\bränta\b|bankavgift|månadsavgift|kortavgift|aviavgift|kontantuttag|bankomat|\buttag\b|\batm\b|\bswish\b/i;
 
+/**
+ * Ett kontantuttag eller en Swish/överföring till en privatperson är inget
+ * köp – där finns inget kvitto att vänta på, utan ett beslut att fatta
+ * (ägarens pengar, lön, köp av privatperson, privat). De stannar som bankrad
+ * med 2–4 val i stället för att bli "Kvitto saknas".
+ */
 export function looksLikeCardPurchase(tx: Pick<BankTransaction, "amount" | "counterpart" | "description" | "reference">): boolean {
   if (!(tx.amount < 0)) return false;
   const text = `${tx.counterpart} ${tx.description} ${tx.reference ?? ""}`;
-  return !NOT_A_PURCHASE.test(text);
+  if (NOT_A_PURCHASE.test(text)) return false;
+  if (looksLikePersonName(tx.counterpart)) return false;
+  return true;
 }
 
 /** Schablonmoms 25 % inkl. – gäller tills kvittot lästs. */

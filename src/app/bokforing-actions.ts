@@ -64,6 +64,8 @@ import {
   type MarkExpensePrivateResult,
 } from "@/lib/services/bank-booking";
 import { isBankKindKey } from "@/lib/banking/bank-kinds";
+import { evaluateBankTransaction, type BankSuggestion } from "@/lib/services/bank-suggestion";
+import { classifyDecision, decisionFromAssessment, recordSuggestionDecision } from "@/lib/services/suggestion-log";
 import { registerCreditRefund } from "@/lib/services/invoices";
 import { newAttachmentKey, postManualVerification } from "@/lib/services/manual-verification";
 import { storeVerificationAttachment } from "@/lib/receipts/verification-attachment";
@@ -104,13 +106,13 @@ type Result = { ok: true } | { ok: false; error: string };
  * kontrollerar medlemskapet innan något körs.
  */
 async function run(
-  fn: () => void,
+  fn: () => unknown,
   capability: "vat" | "year_end" | "write_accounting" | "correct_voucher" | "match_payment",
   businessId?: string
 ): Promise<Result> {
   try {
-    await withBusiness(() => {
-      fn();
+    await withBusiness(async () => {
+      await fn();
       refresh();
     }, { capability, businessId });
     return { ok: true };
@@ -328,9 +330,36 @@ export async function updateAnnualReportAction(
 
 /* ---------------------- Betalningsmatchning (bekräfta) ---------------------- */
 
+/**
+ * Bedöm transaktionen INNAN den bokförs och logga beslutet efteråt –
+ * aggregerat för kvalitetsvyn i admin, aldrig med motpartstext eller belopp.
+ * Loggningen körs inom tenantkontexten (företags-id) men får aldrig fälla
+ * bokföringen.
+ */
+function assessOpenTransaction(txId: string): { assessment: BankSuggestion; input: { amount: number; counterpart: string; date: string } } | undefined {
+  const tx = db().bankTransactions.find((t) => t.id === txId);
+  if (!tx || tx.status === "bokford") return undefined;
+  return { assessment: evaluateBankTransaction(tx), input: { amount: tx.amount, counterpart: tx.counterpart, date: tx.date } };
+}
+
+async function logBankDecision(
+  before: ReturnType<typeof assessOpenTransaction>,
+  finalChoice: string,
+  decision?: "accepted" | "changed" | "private" | "rejected"
+): Promise<void> {
+  if (!before) return;
+  const s = before.assessment;
+  const suggested = s.payment.kind === "bank_kind" ? s.payment.bankKind : s.payment.kind === "none" ? undefined : s.payment.kind;
+  await recordSuggestionDecision(decisionFromAssessment(s, before.input, finalChoice, decision ?? classifyDecision(suggested, finalChoice)));
+}
+
 /** Bekräfta ett matchningsförslag: boka det faktiska bankbeloppet mot fakturan. */
 export async function confirmPaymentMatchAction(txId: string, invoiceId: string): Promise<Result> {
-  return run(() => confirmPaymentMatch(txId, invoiceId, "anvandare"), "match_payment");
+  return run(async () => {
+    const before = assessOpenTransaction(txId);
+    confirmPaymentMatch(txId, invoiceId, "anvandare");
+    await logBankDecision(before, "match");
+  }, "match_payment");
 }
 
 /** Bekräfta en föreslagen ROT/RUT-utbetalning från Skatteverket. */
@@ -371,7 +400,8 @@ export async function bookBankTransactionAsAction(
   if (!isBankKindKey(kind)) return { ok: false, error: "Okänd transaktionstyp." };
   try {
     let result: BookBankTransactionResult | undefined;
-    await withBusiness(() => {
+    await withBusiness(async () => {
+      const before = assessOpenTransaction(txId);
       result = bookBankTransactionAs(txId, {
         kind,
         verificationId: opts.verificationId,
@@ -379,6 +409,7 @@ export async function bookBankTransactionAsAction(
         by: "anvandare",
       });
       refresh();
+      await logBankDecision(before, kind);
     }, { capability: "write_accounting" });
     const rule = result?.rule;
     return {
@@ -401,9 +432,12 @@ export async function markExpensePrivateAction(
 ): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
   try {
     let result: MarkExpensePrivateResult | undefined;
-    await withBusiness(() => {
+    await withBusiness(async () => {
+      const expense = db().expenses.find((e) => e.id === expenseId);
+      const before = expense?.bankTransactionId ? assessOpenTransaction(expense.bankTransactionId) : undefined;
       result = markExpensePrivate(expenseId);
       refresh();
+      await logBankDecision(before, "privat_kop", "private");
     }, { capability: "write_accounting" });
     return { ok: true, summary: result?.summary ?? "Markerat som privat." };
   } catch (e) {

@@ -3,7 +3,7 @@
 /**
  * Skal för Ferva Admin – medvetet mörkt och tydligt SKILT från kundappen så
  * att en operatör aldrig tvekar om vilken yta hen arbetar i. Navigationen är
- * exakt: Översikt, Support, Företag, Användare, System (+ Admins för
+ * exakt: Översikt, Support, Företag, Användare, Förslag, System (+ Admins för
  * super_admin). Menyvalen här är bara UI – behörigheten prövas alltid på
  * servern (layout + varje server action).
  */
@@ -17,6 +17,7 @@ import {
   Search,
   ServerCog,
   ShieldCheck,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { cx } from "@/components/ui";
@@ -26,6 +27,7 @@ const NAV: { href: string; label: string; icon: typeof Gauge; exact?: boolean }[
   { href: "/admin/support", label: "Support", icon: LifeBuoy },
   { href: "/admin/businesses", label: "Företag", icon: Building2 },
   { href: "/admin/users", label: "Användare", icon: Users },
+  { href: "/admin/forslag", label: "Förslag", icon: Sparkles },
   { href: "/admin/system", label: "System", icon: ServerCog },
 ];
 

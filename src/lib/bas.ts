@@ -1,3 +1,4 @@
+import { normalizeMerchant } from "./banking/merchants";
 import type { DocLine, RotRut, VerificationEntry } from "./types";
 import { docTotals, vatBreakdown } from "./calc";
 import { accountName } from "./accounting/chart";
@@ -39,7 +40,14 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   { key: "hyra", label: "Lokalhyra", account: 5010, vatFree: true },
   { key: "forsakring", label: "Försäkring", account: 6310, vatFree: true },
   { key: "hotell", label: "Hotell & logi", account: 5831 },
+  { key: "kost_resa", label: "Mat på tjänsteresa", account: 5831 },
+  { key: "resa", label: "Resa & biljetter", account: 5810 },
+  { key: "parkering", label: "Parkering, biltvätt & vägavgifter", account: 5619 },
   { key: "representation", label: "Kundrepresentation", account: 6072 },
+  // Måltid åt ägaren/anställda utan kund: personalkostnad. Momsen lyfts inte –
+  // en enskild måltid är i regel en kostförmån, och ett för lågt avdrag skapar
+  // aldrig skatterisk.
+  { key: "personal", label: "Personalmåltid", account: 7690, vatFree: true },
   { key: "konferens", label: "Konferens", account: 6991 },
   { key: "ovrigt", label: "Övrigt", account: 6991 },
 ];
@@ -53,74 +61,19 @@ export function categoryAccountName(key: string): string {
   return accountName(categoryByKey(key).account);
 }
 
-/** Leverantörer som produkten känner igen → hög säkerhet vid klassificering. */
-export const KNOWN_SUPPLIERS: Record<string, string> = {
-  bauhaus: "material",
-  "beijer bygg": "material",
-  beijer: "material",
-  byggmax: "material",
-  "xl-bygg": "material",
-  ahlsell: "material",
-  dahl: "material",
-  solar: "material",
-  onninen: "material",
-  optimera: "material",
-  woody: "material",
-  derome: "material",
-  "k-rauta": "material",
-  hornbach: "material",
-  swedol: "material",
-  würth: "material",
-  wurth: "material",
-  bygghemma: "material",
-  hilti: "material",
-  bolist: "material",
-  byggtema: "material",
-  fresks: "material",
-  "flügger": "material",
-  flugger: "material",
-  beckers: "material",
-  "clas ohlson": "verktyg",
-  jula: "verktyg",
-  "circle k": "drivmedel",
-  okq8: "drivmedel",
-  preem: "drivmedel",
-  shell: "drivmedel",
-  ingo: "drivmedel",
-  st1: "drivmedel",
-  tanka: "drivmedel",
-  adobe: "programvara",
-  fortnox: "programvara",
-  telia: "telefon",
-  telenor: "telefon",
-  tele2: "telefon",
-  tre: "telefon",
-  bahnhof: "telefon",
-  "trygg-hansa": "forsakring",
-  if: "forsakring",
-  länsförsäkringar: "forsakring",
-  lansforsakringar: "forsakring",
-  folksam: "forsakring",
-  gjensidige: "forsakring",
-  dina: "forsakring",
-  moderna: "forsakring",
-  skatteverket: "ovrigt",
-  bolagsverket: "ovrigt",
-  fora: "ovrigt",
-  collectum: "ovrigt",
-  sl: "ovrigt",
-  västtrafik: "ovrigt",
-  vasttrafik: "ovrigt",
-  skånetrafiken: "ovrigt",
-  skanetrafiken: "ovrigt",
-  parkster: "ovrigt",
-  easypark: "ovrigt",
-};
-
+/**
+ * Kategori ur den generella kunskapsbasen (banking/merchants.ts). Motparter
+ * utan privat-/momsrisk (bygghandel, grossist, telekom, försäkring, program-
+ * vara) ger hög säkerhet – med kvitto bokförs de automatiskt. Riskmotparter
+ * (drivmedel, restaurang, dagligvaror, hotell …) ger bara ett förslag: Shell
+ * kan vara butik eller privat, McDonald's är inte "mat". Företagets egna
+ * regler (services/expenses.ts) väger alltid tyngre än kunskapsbasen.
+ */
 export function guessCategory(supplier: string): { key: string; confidence: "hog" | "medel" | "lag" } | null {
-  const s = supplier.toLowerCase();
-  for (const [name, key] of Object.entries(KNOWN_SUPPLIERS)) {
-    if (s.includes(name)) return { key, confidence: "hog" };
+  const merchant = normalizeMerchant(supplier);
+  const knowledge = merchant.knowledge;
+  if (knowledge && knowledge.categories.length > 0) {
+    return { key: knowledge.categories[0], confidence: knowledge.autoBookWithReceipt ? "hog" : "medel" };
   }
   if (/(hotel|hotell|hôtel)/i.test(supplier)) return { key: "hotell", confidence: "lag" };
   return null;
