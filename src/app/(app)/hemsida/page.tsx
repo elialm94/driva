@@ -51,7 +51,7 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
             <h2 className="mt-5 text-[22px] font-semibold tracking-tight">Vad gör ditt företag?</h2>
             <p className="mx-auto mt-2 max-w-md text-[14px] leading-relaxed text-soft">
               AI:n skapar startsida, tjänster, om oss, galleri och ett kontaktformulär som skapar uppdrag rakt
-              in i Driva. Du kan ändra allt efteråt.
+              in i Ferva. Du kan ändra allt efteråt.
             </p>
           </div>
           <div className="mx-auto mt-8 max-w-2xl">

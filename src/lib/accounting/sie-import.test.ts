@@ -133,7 +133,7 @@ describe("SIE-import", () => {
     assert.equal(result.accountsTotal, 6);
     assert.equal(result.balancedWith, undefined);
 
-    // Konton Driva inte har kommer in med filens namn – det är namnet byrån
+    // Konton Ferva inte har kommer in med filens namn – det är namnet byrån
     // redan använder. Ett BAS-konto behåller sitt namn i registret: att döpa om
     // 2091 för att en fil sa något annat är churn utan vinst.
     assert.equal(result.accountsCreated, 1);
@@ -240,7 +240,7 @@ describe("SIE-import", () => {
     assert.deepEqual(utf8.openingBalances, pc8.openingBalances);
   });
 
-  it("läser tillbaka Drivas egen export", () => {
+  it("läser tillbaka Fervas egen export", () => {
     replaceDb(emptyTestDb({ fiscalYears: [fy(2025), fy(2026)] }));
     postVerification({
       date: "2025-04-01",

@@ -637,7 +637,7 @@ export function SettingsForm({
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Bank &amp; betalkonto – utbetalningar</p>
             <p className={hintCls}>
               Kontot som dina leverantörsbetalningar dras från. Uppgifterna hamnar i bankfilen (pain.001) som du laddar
-              upp i internetbanken – Driva betalar aldrig något själv.
+              upp i internetbanken – Ferva betalar aldrig något själv.
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -838,7 +838,7 @@ export function SettingsForm({
             <Card className="space-y-3 p-6">
               <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Demoläge</p>
               <p className="text-[15px] leading-relaxed text-soft">
-                Driva körs just nu utan inloggning. Du arbetar som företagare för{" "}
+                Ferva körs just nu utan inloggning. Du arbetar som företagare för{" "}
                 <span className="font-medium text-ink">{initial.name}</span>. Det finns inget separat användarkonto
                 eller lösenord att ändra.
               </p>

@@ -1,6 +1,6 @@
 /**
  * Store för demosessioner: ETT DB-objekt (samma JSON-form som den lokala
- * utvecklingen använder) per besökare, aldrig en andra Driva. Skillnaden mot
+ * utvecklingen använder) per besökare, aldrig en andra Ferva. Skillnaden mot
  * den globala JSON-storen är bara VAR objektet bor:
  *
  *   * JSON-läge (lokal utveckling, tester): en fil per session under

@@ -216,7 +216,7 @@ export interface BusinessAction {
 }
 
 /**
- * Relevant närtid som Driva håller koll på – ingen åtgärd just nu.
+ * Relevant närtid som Ferva håller koll på – ingen åtgärd just nu.
  * Pågående (väntar på annan) och kommande (deadline) är samma feed.
  */
 export interface WatchingItem {
@@ -1292,7 +1292,7 @@ function detailCaseFor(s: SupplierInvoice, details: PaymentDetailsInfo, href: st
       category: "supplier",
       icon: "bank",
       title: `Betalningsuppgifter saknas – ${s.supplier}`,
-      subtitle: `${kr(s.amount)} · ${s.invoiceNumber} · Driva kan be leverantören komplettera`,
+      subtitle: `${kr(s.amount)} · ${s.invoiceNumber} · Ferva kan be leverantören komplettera`,
       href,
       cta: { type: "requestSupplierDetails", label: "Be leverantören", supplierInvoiceId: s.id, to: request.to },
       secondary: { label: "Lägg till själv", href },
@@ -1410,7 +1410,7 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
     }
 
     if (details && s.accountingStatus === "bokford") {
-      // Förfrågan skickad → inte en aktiv åtgärd; Driva bevakar tills svar kommer.
+      // Förfrågan skickad → inte en aktiv åtgärd; Ferva bevakar tills svar kommer.
       if (details.cause === "AWAITING_SUPPLIER") {
         const sentAt = details.request?.sentAt ?? s.createdAt;
         watching.push({

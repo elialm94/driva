@@ -241,7 +241,7 @@ export function SamarbetaView({
       <Modal
         open={inviteOpen}
         onClose={() => !invitePending && setInviteOpen(false)}
-        title="Bjud in till Driva"
+        title="Bjud in till Ferva"
         size="sm"
         footer={
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

@@ -273,7 +273,7 @@ const EXTRACTION_SOURCE_DOCUMENT = "dokument";
 const EXTRACTION_SOURCE_REVIEWED = "kontrollerad av dig";
 
 /**
- * Per-fält-proveniens: vad Driva läst, med konfidens per fält.
+ * Per-fält-proveniens: vad Ferva läst, med konfidens per fält.
  * fieldConfidence från tolken vinner; annars gäller dokumentkonfidensen
  * (och detaljkonfidensen för bankgiro/OCR).
  */
@@ -664,7 +664,7 @@ export const EXTRACTION_FIELD_LABELS: Record<ExtractionFieldKey, string> = {
 export interface ExtractionReviewField {
   key: ExtractionFieldKey;
   label: string;
-  /** Belopp som tal i kronor, övriga som text. null = Driva läste inget. */
+  /** Belopp som tal i kronor, övriga som text. null = Ferva läste inget. */
   value: string | number | null;
   confidence: number;
   /** "saker" eller "kontrollera" – aldrig råa decimaler i UI:t. */
@@ -706,7 +706,7 @@ function reviewField(item: InboxItem, key: ExtractionFieldKey): ExtractionReview
 }
 
 /**
- * Underlag för Kontrollera-vyn (PDF till vänster, Drivas läsning till höger)
+ * Underlag för Kontrollera-vyn (PDF till vänster, Fervas läsning till höger)
  * och AI-verktyget review_document_extraction. Samma sanning för båda.
  */
 export function extractionReviewForItem(id: string): ExtractionReview {
@@ -729,7 +729,7 @@ export function extractionReviewForItem(id: string): ExtractionReview {
 
 export interface ApproveExtractionInput {
   itemId: string;
-  /** Rätta dokumenttypen om Driva klassificerat fel – typen styr livscykeln. */
+  /** Rätta dokumenttypen om Ferva klassificerat fel – typen styr livscykeln. */
   documentType?: "kvitto" | "leverantorsfaktura";
   supplier?: string;
   invoiceNumber?: string;
@@ -776,7 +776,7 @@ export function approveInboxExtraction(input: ApproveExtractionInput): ApproveEx
   }
 
   const supplier = (input.supplier ?? item.parsedSupplier ?? "").trim();
-  if (!supplier) throw new Error("Ange leverantör – Driva gissar aldrig.");
+  if (!supplier) throw new Error("Ange leverantör – Ferva gissar aldrig.");
   const amount = input.amount ?? item.parsedAmount;
   if (amount == null || !Number.isInteger(amount) || amount < 1) {
     throw new Error("Ange totalbeloppet i hela kronor (kontrollera mot dokumentet).");
@@ -868,7 +868,7 @@ export function createSupplierInvoiceFromInboxItem(id: string): { invoiceId: str
     return { invoiceId: item.supplierInvoiceId, autoBooked: existing?.accountingStatus === "bokford" };
   }
   if (item.parsedAmount == null || item.parsedVatAmount == null || !item.parsedSupplier || !item.parsedInvoiceNumber) {
-    throw new Error("Leverantör, fakturanummer eller belopp saknas – Driva gissar inte.");
+    throw new Error("Leverantör, fakturanummer eller belopp saknas – Ferva gissar inte.");
   }
   const invoice = receiveSupplierInvoice({
     supplier: item.parsedSupplier,

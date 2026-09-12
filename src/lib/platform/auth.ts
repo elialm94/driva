@@ -1,5 +1,5 @@
 /**
- * Plattformsauktorisering för Driva Admin.
+ * Plattformsauktorisering för Ferva Admin.
  *
  * Källan till sanning är ALLTID servern: verifierad Supabase Auth-session →
  * aktiv rad i platform_admins → ev. rollkrav → operationen. UI:t döljer bara
@@ -103,13 +103,13 @@ export async function requirePlatformAdmin(): Promise<PlatformAdminContext> {
   if (!ctx) {
     const user = await getPlatformSessionUser();
     throw new PlatformAccessError(
-      user ? "Du har inte behörighet till Driva Admin." : "Inloggning krävs.",
+      user ? "Du har inte behörighet till Ferva Admin." : "Inloggning krävs.",
       user ? 403 : 401
     );
   }
   if (!ctx.mfaSatisfied) {
     throw new PlatformAccessError(
-      "Tvåfaktorsautentisering (MFA) krävs för Driva Admin i den här miljön. Logga in med din andra faktor.",
+      "Tvåfaktorsautentisering (MFA) krävs för Ferva Admin i den här miljön. Logga in med din andra faktor.",
       403
     );
   }

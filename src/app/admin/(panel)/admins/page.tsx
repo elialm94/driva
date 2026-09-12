@@ -55,7 +55,7 @@ export default async function AdminTeamPage() {
               type="email"
               name="email"
               required
-              placeholder="namn@driva.se"
+              placeholder="namn@ferva.se"
               className={adminInputClass}
             />
           </label>
@@ -120,7 +120,7 @@ export default async function AdminTeamPage() {
                         <ActionButton
                           action={disableAdminAction}
                           fields={{ adminId: a.id }}
-                          confirmText={`Inaktivera ${a.email}? Personen förlorar åtkomsten till Driva Admin direkt.`}
+                          confirmText={`Inaktivera ${a.email}? Personen förlorar åtkomsten till Ferva Admin direkt.`}
                         >
                           Inaktivera
                         </ActionButton>

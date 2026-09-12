@@ -40,7 +40,7 @@ export function generateSie(fiscalYearId?: string): string {
 
   const lines: string[] = [];
   lines.push("#FLAGGA 0");
-  lines.push("#PROGRAM \"Driva\" 1.0");
+  lines.push("#PROGRAM \"Ferva\" 1.0");
   lines.push("#FORMAT PC8");
   lines.push(`#GEN ${sieDate(new Date().toISOString())}`);
   lines.push("#SIETYP 4");
@@ -128,7 +128,7 @@ export interface SieImportPreview {
 
 /**
  * Två steg, inte ett: att läsa filen får aldrig vara samma handling som att
- * skriva in balanserna. Ingående balanser är den enda punkt i Driva där någon
+ * skriva in balanserna. Ingående balanser är den enda punkt i Ferva där någon
  * kan sätta ett saldo utan verifikation, så den ska ingen passera av misstag.
  */
 export interface SieImportHooks {

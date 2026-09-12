@@ -12,7 +12,7 @@ import { ensurePageBusiness } from "@/lib/auth/session";
 export const metadata = { title: "Kontrollera belopp" };
 
 /**
- * Fokuserad granskning: dokumentet till vänster, Drivas tolkning till höger.
+ * Fokuserad granskning: dokumentet till vänster, Fervas tolkning till höger.
  * Användaren rättar mot PDF:en och godkänner – därefter körs pipelinen om.
  */
 export default async function KontrolleraPage(props: { params: Promise<{ id: string }> }) {
@@ -49,8 +49,8 @@ export default async function KontrolleraPage(props: { params: Promise<{ id: str
         subtitle={
           uncertainAmount
             ? amountField?.value != null
-              ? `Driva läste ${kr(Number(amountField.value))} men är inte säker – jämför mot dokumentet.`
-              : "Driva kunde inte läsa totalbeloppet säkert – jämför mot dokumentet."
+              ? `Ferva läste ${kr(Number(amountField.value))} men är inte säker – jämför mot dokumentet.`
+              : "Ferva kunde inte läsa totalbeloppet säkert – jämför mot dokumentet."
             : "Kontrollera uppgifterna mot dokumentet och godkänn."
         }
       />

@@ -148,7 +148,7 @@ export function Sidebar({
         <span className="flex size-8 items-center justify-center rounded-[10px] bg-accent text-[15px] font-bold text-white">
           D
         </span>
-        <span className="text-[19px] font-semibold tracking-tight">Driva</span>
+        <span className="text-[19px] font-semibold tracking-tight">Ferva</span>
       </Link>
 
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">

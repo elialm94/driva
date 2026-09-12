@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { parseLoginAuthSearch } from "@/lib/auth/signup-flow";
 import { LoginForm } from "./login-form";
 
-export const metadata: Metadata = { title: "Logga in – Driva" };
+export const metadata: Metadata = { title: "Logga in – Ferva" };
 export const dynamic = "force-dynamic";
 
 /** Ärliga meddelanden för lägen som landar på /login via redirect. */
@@ -40,7 +40,7 @@ export default async function LoginPage({
     <main className="flex min-h-dvh items-center justify-center bg-stone-100 px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <div className="text-2xl font-semibold tracking-tight text-stone-900">Driva</div>
+          <div className="text-2xl font-semibold tracking-tight text-stone-900">Ferva</div>
           <p className="mt-1 text-sm text-stone-500">
             {next.startsWith("/inbjudan")
               ? "Logga in eller skapa konto för att acceptera inbjudan."

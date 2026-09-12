@@ -93,7 +93,7 @@ export function InlamningPanel({
     return (
       <div className={cx("rounded-xl border border-line/60 bg-canvas/60 px-4 py-3", className)}>
         <p className="text-[13px] leading-relaxed text-soft">
-          Driva lämnar inte in deklarationen maskinellt för det här företaget – det kräver ett avtal om inlämning.
+          Ferva lämnar inte in deklarationen maskinellt för det här företaget – det kräver ett avtal om inlämning.
           Filen ovan är komplett: ladda ner den och lämna in den i myndighetens e-tjänst.
         </p>
       </div>

@@ -73,7 +73,7 @@ export function HomePreview() {
             <span className="size-2.5 rounded-full bg-line-strong" />
             <span className="size-2.5 rounded-full bg-line-strong" />
           </span>
-          <span className="mx-auto rounded-md bg-card px-3 py-0.5 text-[11px] text-muted">app.driva.se</span>
+          <span className="mx-auto rounded-md bg-card px-3 py-0.5 text-[11px] text-muted">app.ferva.se</span>
         </div>
 
         <div className="px-4 py-5 sm:px-7 sm:py-6">

@@ -1,5 +1,5 @@
 /**
- * Explicita, säkra backend-åtgärder för Driva Admin. INGEN generell SQL-yta:
+ * Explicita, säkra backend-åtgärder för Ferva Admin. INGEN generell SQL-yta:
  * varje åtgärd är en namngiven domänoperation som återanvänder befintliga
  * tjänster, auditeras och visar ärliga fel när miljön saknar förutsättningar
  * (t.ex. service role-nyckel). Destruktiva åtgärder policy-prövas alltid

@@ -371,7 +371,7 @@ export const WHOLESALER_IMPORT_STATUS: Record<WholesalerPriceImportStatus, Statu
 /* -------------------------------- Support/Admin ------------------------------- */
 
 /**
- * Supportärendets status (Driva Admin). Primäretiketterna är klarspråk även i
+ * Supportärendets status (Ferva Admin). Primäretiketterna är klarspråk även i
  * admin – tekniska provider-/statusfält visas separat som sekundär metadata.
  */
 export type SupportTicketState = "open" | "in_progress" | "waiting_on_customer" | "resolved";

@@ -27,7 +27,7 @@ import { retentionPolicyText, retentionUntil } from "./retention";
 import type { FiscalYear, Verification } from "../types";
 
 /**
- * Arkivexporten: räkenskapsåret som en zip-fil som går att läsa utan Driva.
+ * Arkivexporten: räkenskapsåret som en zip-fil som går att läsa utan Ferva.
  *
  * SIE-filen och CSV-rapporterna fanns redan, men de bär bara siffrorna. Ett
  * arkiv som saknar underlagen uppfyller inte bokföringslagen, och det är också
@@ -271,13 +271,13 @@ function readme(fy: FiscalYear, summary: Omit<ArchiveSummary, "sizeBytes">, crea
   const lines: (string | null)[] = [
     `ARKIV – ${settings.name || "Företaget"} – räkenskapsåret ${fy.label}`,
     "",
-    `Skapat ${datumLang(createdAt.toISOString().slice(0, 10))} ur Driva.`,
+    `Skapat ${datumLang(createdAt.toISOString().slice(0, 10))} ur Ferva.`,
     settings.orgNumber ? `Organisationsnummer: ${settings.orgNumber}` : null,
     `Räkenskapsår: ${fy.startDate} – ${fy.endDate} (${fy.status === "stangt" ? "stängt" : "öppet"})`,
     "",
     "ARKIVERINGSTID",
     retentionPolicyText(fy),
-    "Driva raderar ingenting automatiskt när tiden gått ut. Behåll den här filen",
+    "Ferva raderar ingenting automatiskt när tiden gått ut. Behåll den här filen",
     "på ett ställe som finns kvar även om abonnemanget avslutas.",
     "",
     "INNEHÅLL",
@@ -382,7 +382,7 @@ export async function buildFiscalYearArchive(
 
 function annualReportNote(status: string, fy: FiscalYear): string {
   return [
-    `Årsredovisningen för ${fy.label} finns upprättad i Driva (status: ${status}).`,
+    `Årsredovisningen för ${fy.label} finns upprättad i Ferva (status: ${status}).`,
     "Den fastställda årsredovisningen laddas ner som iXBRL från bokslutssidan och",
     "hör till arkivet – lägg filen i den här mappen när den är signerad.",
     "",

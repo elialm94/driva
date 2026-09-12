@@ -487,7 +487,7 @@ export function bookBankTransactionAs(txId: string, input: BookBankTransactionIn
     const learned = result.rule
       ? ruleIsAutomatic(result.rule)
         ? " – nästa gång sker det automatiskt"
-        : " – Driva föreslår samma sak nästa gång"
+        : " – Ferva föreslår samma sak nästa gång"
       : "";
     logActivity(`${flow} ${kr(amount)} ${prep} ${counterpart} bokfördes som ${def.label.toLowerCase()}${learned}.`, {
       createdBy: by,

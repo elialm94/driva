@@ -9,7 +9,7 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
   return (
     <html lang="sv">
       <head>
-        <title>Sidan kunde inte laddas · Driva</title>
+        <title>Sidan kunde inte laddas · Ferva</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       </head>
       <body

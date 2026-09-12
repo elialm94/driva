@@ -63,10 +63,10 @@ export function IngaendeBalansView({ businessId, readOnly }: IngaendeBalansViewP
       )}
 
       <p className="text-[12px] leading-relaxed text-muted">
-        SIE är standardformatet som Fortnox, Visma, Björn Lundén och Drivas egen export talar. Filen som behövs är en
-        SIE 1 (balanser) eller SIE 4 (balanser och verifikationer) – Driva läser båda och tar med kontoplanen och
-        balanserna. Verifikationerna importeras inte: bokföring i Driva är oföränderlig och numrerad av motorn, och att
-        skriva in en främmande historik i den vore att påstå att Driva bokförde den.
+        SIE är standardformatet som Fortnox, Visma, Björn Lundén och Fervas egen export talar. Filen som behövs är en
+        SIE 1 (balanser) eller SIE 4 (balanser och verifikationer) – Ferva läser båda och tar med kontoplanen och
+        balanserna. Verifikationerna importeras inte: bokföring i Ferva är oföränderlig och numrerad av motorn, och att
+        skriva in en främmande historik i den vore att påstå att Ferva bokförde den.
       </p>
     </>
   );

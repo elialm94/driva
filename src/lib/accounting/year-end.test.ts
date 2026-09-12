@@ -384,7 +384,7 @@ describe("avstämning per balanskonto", () => {
     });
     const rec = balanceReconciliation("fy");
     const row = rec.rows.find((r) => r.account === 2393);
-    // Driva har inget lånregister, så saldot går inte att verifiera maskinellt.
+    // Ferva har inget lånregister, så saldot går inte att verifiera maskinellt.
     // Att stoppa bokslutet på det vore att kräva ett svar användaren inte kan
     // ge i produkten – men det får inte heller tyst passera som avstämt.
     assert.equal(row?.manual, true);

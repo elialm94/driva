@@ -37,7 +37,7 @@ import {
 export type { AddressParts };
 
 /**
- * Delad AddressAutocomplete – enda stället Driva hämtar adressförslag.
+ * Delad AddressAutocomplete – enda stället Ferva hämtar adressförslag.
  * Ny kund, redigera kund, ROT-bostad, onboarding, inställningar och
  * uppdrag använder den här filen. Forka inte en andra Places-integration.
  *

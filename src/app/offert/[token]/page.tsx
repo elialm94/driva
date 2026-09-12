@@ -161,7 +161,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
         ) : null}
 
         <p className="mt-6 text-center text-[12px] text-muted">
-          Skickad med Driva · Frågor? Kontakta {seller.name} på {seller.email}
+          Skickad med Ferva · Frågor? Kontakta {seller.name} på {seller.email}
           <br />
           <a href={`/offert/${quote.token}/pdf`} target="_blank" rel="noreferrer" className="mt-1 inline-block font-medium text-soft underline-offset-2 hover:text-ink hover:underline">
             Skriv ut eller spara som PDF

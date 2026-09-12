@@ -152,7 +152,7 @@ export function setupTasks(): SetupTask[] {
     {
       id: "payroll",
       title: "Ställ in lön",
-      description: "Lägg in dig själv (och eventuella anställda) så räknar Driva skatt och arbetsgivaravgifter och bokför lönen varje månad.",
+      description: "Lägg in dig själv (och eventuella anställda) så räknar Ferva skatt och arbetsgivaravgifter och bokför lönen varje månad.",
       status: withOverride("payroll", hasEmployee ? "done" : "todo"),
       // "Inga löner" i profilen döljer uppgiften helt – men finns det anställda
       // i böckerna visas den som klar oavsett.
@@ -165,7 +165,7 @@ export function setupTasks(): SetupTask[] {
     },
     {
       // Beloppet kommer från Skatteverkets beslut om debiterad preliminärskatt.
-      // Utan det kan Driva inte föreslå månadsdragningarna på skattekontot.
+      // Utan det kan Ferva inte föreslå månadsdragningarna på skattekontot.
       id: "f_skatt",
       title: "Ange preliminärskatten",
       description: "Beloppet i Skatteverkets beslut om debiterad preliminärskatt. Då bokförs månadsdragningen och skattekontot stämmer.",

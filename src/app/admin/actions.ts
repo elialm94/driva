@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Server actions för Driva Admin. VARJE action verifierar behörigheten på
+ * Server actions för Ferva Admin. VARJE action verifierar behörigheten på
  * nytt (requirePlatformAdmin/requireSuperAdmin) – UI:t döljer bara knappar,
  * servern är källan till sanning (spec §33/§34/§37). Ingen action litar på
  * roll, admin-id eller behörighet från formulärdata.

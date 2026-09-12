@@ -9,7 +9,7 @@ import type { FiscalYear } from "../types";
  * missuppfattningen: ett räkenskapsår som slutar i januari 2026 ska bevaras
  * lika länge som ett som slutar i december 2026, alltså till slutet av 2033.
  *
- * Driva säger tiden i klartext och tar aldrig bort något automatiskt när den
+ * Ferva säger tiden i klartext och tar aldrig bort något automatiskt när den
  * gått ut. Ett bolag med bokföring går inte heller att radera (se
  * platform/directory.ts) – gallring är i så fall ett medvetet beslut, inte en
  * bieffekt av att en timer löpte ut.

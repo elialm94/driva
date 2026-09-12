@@ -92,7 +92,7 @@ export function BankRowActions({
           result.learned === "auto"
             ? `Nästa gång bokförs ${picker?.counterpart ?? "motparten"} automatiskt.`
             : result.learned === "suggest"
-              ? `Nästa gång föreslår Driva samma sak för ${picker?.counterpart ?? "motparten"}.`
+              ? `Nästa gång föreslår Ferva samma sak för ${picker?.counterpart ?? "motparten"}.`
               : undefined
         );
       } catch (err) {

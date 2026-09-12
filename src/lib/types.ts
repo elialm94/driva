@@ -1,5 +1,5 @@
 /**
- * Domänmodell för Driva – AI-native business-in-a-box för svenska småföretag.
+ * Domänmodell för Ferva – AI-native business-in-a-box för svenska småföretag.
  * Alla belopp är i SEK (hela kronor om inget annat anges), datum är ISO-strängar.
  */
 
@@ -37,7 +37,7 @@ export interface CompanySettings {
    */
   websiteNotificationEmail?: string;
   phone: string;
-  /** Företagets webbplats (URL). Inte densamma som Driva-hemsidan. */
+  /** Företagets webbplats (URL). Inte densamma som Ferva-hemsidan. */
   websiteUrl?: string;
   address: string;
   postalCode: string;
@@ -63,7 +63,7 @@ export interface CompanySettings {
   /** Preliminärskatt (F-skatt) som dras varje månad. */
   fSkattPerMonth: number;
   /**
-   * false = användaren bokför F-skatt själv. Saknas / true = Driva bokför
+   * false = användaren bokför F-skatt själv. Saknas / true = Ferva bokför
    * debiteringen på förfallodagen.
    */
   autoBookFSkatt?: boolean;
@@ -179,7 +179,7 @@ export interface Customer {
   defaultWorkLocationId?: ID;
   notes: string;
   /**
-   * ROT/RUT redan använt hos andra utförare i år. Driva kan inte läsa
+   * ROT/RUT redan använt hos andra utförare i år. Ferva kan inte läsa
    * Skatteverkets saldo – det här fyller företagaren i så att offerten
    * inte lovar mer avdrag än kunden har kvar.
    */
@@ -324,7 +324,7 @@ export type HusWorkCategory = HusRotWorkCategory | HusRutWorkCategory;
 /**
  * Uppgifter som bara behövs för Skatteverkets HUS-fil (XML-import i e-tjänsten
  * "Rot och rut – företag"). Filen laddas ner och importeras av användaren själv –
- * Driva skickar aldrig något till Skatteverket.
+ * Ferva skickar aldrig något till Skatteverket.
  */
 export interface TaxReductionHusDetails {
   /** Arbetsområde enligt schemat. ROT utan val = Bygg (snickardefault). RUT måste väljas. */
@@ -1766,7 +1766,7 @@ export interface MultiYearRow {
   nettoomsattning: number;
   resultatEfterFinansiella: number;
   soliditetProcent: number;
-  /** Saknas för år Driva inte har bokföring för. */
+  /** Saknas för år Ferva inte har bokföring för. */
   ofullstandig?: boolean;
 }
 
@@ -1832,7 +1832,7 @@ export interface AnnualReportContent {
   /**
    * Medelantalet anställda som tal. Står också i noten, men i en mening – och
    * iXBRL-filen ska bära det som ett taggat tal med egen enhet, inte som text.
-   * Saknas i rapporter upprättade innan Driva sparade det.
+   * Saknas i rapporter upprättade innan Ferva sparade det.
    */
   medelantalAnstallda?: number;
   underskrifter?: AnnualReportSignatory[];
@@ -1872,7 +1872,7 @@ export type FilingAuthority = "skatteverket" | "bolagsverket";
  *   → inlamnad (myndigheten har tagit emot den och gett ett id)
  *   → kvitterad (kvittensen är hämtad) | avvisad (myndigheten sa nej)
  *
- * Statusen säger vad som HÄNT, aldrig vad Driva hoppas har hänt: "inlamnad"
+ * Statusen säger vad som HÄNT, aldrig vad Ferva hoppas har hänt: "inlamnad"
  * kräver ett id från myndigheten och "kvitterad" en kvittens.
  */
 export type FilingSubmissionStatus = "utkast" | "genererad" | "signerad" | "inlamnad" | "kvitterad" | "avvisad";
@@ -1920,7 +1920,7 @@ export interface FilingSubmission {
   id: ID;
   kind: FilingKind;
   /**
-   * Vad inlämningen gäller i Drivas data: momsrapportens id, AGI-månaden
+   * Vad inlämningen gäller i Fervas data: momsrapportens id, AGI-månaden
    * (YYYY-MM), räkenskapsårets id för INK2, årsredovisningens id.
    */
   subjectId: string;
@@ -2037,7 +2037,7 @@ export interface WebsiteSectionItem {
   rating?: number;
   /** Omdömen: t.ex. stad. */
   location?: string;
-  /** Ursprung. Saknas eller "manual" = inskrivet i Driva. */
+  /** Ursprung. Saknas eller "manual" = inskrivet i Ferva. */
   source?: "manual" | "google";
 }
 
@@ -2069,7 +2069,7 @@ export interface WebsiteSection {
 export const DEFAULT_PRIMARY_CTA_LABEL = "Begär offert";
 export const PRIMARY_CTA_LABEL_MAX = 40;
 
-/** STANDARD = Driva underhåller texten. CUSTOM = företaget redigerar hela policyn. */
+/** STANDARD = Ferva underhåller texten. CUSTOM = företaget redigerar hela policyn. */
 export type PrivacyPolicyMode = "standard" | "custom";
 
 /** Publicerat eller utkastat policyläge. Default för alla företag är STANDARD. */
@@ -2130,7 +2130,7 @@ export interface Website {
    */
   privacyPolicySupplement?: string;
   /**
-   * Publicerat läge. Saknas = standard (Driva underhåller policyn).
+   * Publicerat läge. Saknas = standard (Ferva underhåller policyn).
    * Befintliga sajter utan fältet är STANDARD – inget databortfall.
    */
   privacyPolicyMode?: PrivacyPolicyMode;
@@ -2540,7 +2540,7 @@ export interface ExtractedField<T = string> {
  * Per-fält-extraktion för ett inkommande dokument. Arbetsvärdena (det
  * pipelinen använder) bor i InboxItem.parsed* – här bor proveniensen:
  * konfidens och källa per fält, inklusive OSÄKRA kandidater som inte
- * flyttats till parsed* (t.ex. ett belopp Driva inte vågar lita på).
+ * flyttats till parsed* (t.ex. ett belopp Ferva inte vågar lita på).
  */
 export interface InboxExtraction {
   supplier?: ExtractedField;

@@ -61,7 +61,7 @@ export default async function AccountantBankPage({
         <Card className="mb-5 p-4">
           <p className="text-[14px] font-medium">Bank ej ansluten</p>
           <p className="mt-1 text-[13px] text-soft">
-            Inget bankkonto är kopplat. Driva låtsas inte att en anslutning finns.
+            Inget bankkonto är kopplat. Ferva låtsas inte att en anslutning finns.
           </p>
         </Card>
       ) : (

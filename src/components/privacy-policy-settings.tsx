@@ -186,7 +186,7 @@ function PrivacyPolicyEditModal({
                 className={buttonClasses("ghost")}
                 onClick={() => setConfirmReset(true)}
               >
-                Återställ till Drivas standard
+                Återställ till Fervas standard
               </button>
             ) : (
               <span />
@@ -217,7 +217,7 @@ function PrivacyPolicyEditModal({
         ) : (
           <div className="space-y-4 px-6 py-5">
             <p className="text-[13px] leading-relaxed text-soft">
-              Driva håller standardtexten uppdaterad. Företagsuppgifter hämtas automatiskt från{" "}
+              Ferva håller standardtexten uppdaterad. Företagsuppgifter hämtas automatiskt från{" "}
               <a href={SETTINGS_HREF.foretag} className="font-medium text-accent hover:underline">
                 Företagsuppgifter
               </a>
@@ -286,8 +286,8 @@ function PrivacyPolicyEditModal({
         }
       >
         <p className="px-6 py-5 text-[14px] leading-relaxed text-soft">
-          Drivas standard används som utgångspunkt. När du anpassar texten ansvarar du själv för
-          ändringarna. Du kan alltid återställa till Drivas standard.
+          Fervas standard används som utgångspunkt. När du anpassar texten ansvarar du själv för
+          ändringarna. Du kan alltid återställa till Fervas standard.
         </p>
       </Modal>
 
@@ -308,7 +308,7 @@ function PrivacyPolicyEditModal({
         }
       >
         <p className="px-6 py-5 text-[14px] leading-relaxed text-soft">
-          Egna ändringar ersätts av Drivas aktuella standardpolicy.
+          Egna ändringar ersätts av Fervas aktuella standardpolicy.
         </p>
       </Modal>
     </>

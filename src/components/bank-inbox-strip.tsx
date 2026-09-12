@@ -41,7 +41,7 @@ export function BankInboxStrip({ summary, filterHref }: { summary: BankInboxSumm
           text:
             result.failed.length > 0
               ? `${result.failed.length} gick inte – se raderna nedan.`
-              : "Driva kommer ihåg valen – nästa gång föreslås samma sak, och från andra gången sker det automatiskt.",
+              : "Ferva kommer ihåg valen – nästa gång föreslås samma sak, och från andra gången sker det automatiskt.",
           tone: "ok",
         });
       }

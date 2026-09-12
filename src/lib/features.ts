@@ -1,5 +1,5 @@
 /**
- * Valfria funktioner i Driva: Hemsida, Samarbeta och Grossistbeställningar.
+ * Valfria funktioner i Ferva: Hemsida, Samarbeta och Grossistbeställningar.
  *
  * Core-nav (Hem, Kunder, Ekonomi, Inbox, Bokföring) syns alltid.
  * Optional-nav syns bara när funktionen är explicit aktiv. Befintlig

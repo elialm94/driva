@@ -2038,7 +2038,7 @@ export function buildSeed(): DB {
       id: "msg-welcome",
       role: "assistant" as const,
       at: d(0, 7, 0),
-      text: "God morgon! Jag är din assistent och kan utföra saker i hela Driva. Prova till exempel: ”Skapa en offert till Karin för bokhyllan, 28 000 kr” eller ”Vilka kunder har inte betalat?”",
+      text: "God morgon! Jag är din assistent och kan utföra saker i hela Ferva. Prova till exempel: ”Skapa en offert till Karin för bokhyllan, 28 000 kr” eller ”Vilka kunder har inte betalat?”",
     },
   ];
 

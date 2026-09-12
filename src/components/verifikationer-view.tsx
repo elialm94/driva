@@ -695,7 +695,7 @@ function CorrectionSheet({
         {step === "preview" ? (
           <>
             <p className="mt-4 rounded-xl bg-accent-soft/60 px-4 py-2.5 text-[13px] leading-relaxed">
-              Driva kommer skapa en rättelse. Originalverifikationen ändras inte. Matchningen öppnas igen så du kan koppla rätt.
+              Ferva kommer skapa en rättelse. Originalverifikationen ändras inte. Matchningen öppnas igen så du kan koppla rätt.
             </p>
             {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
             <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -736,7 +736,7 @@ function CorrectionSheet({
         <p className="mt-4 text-[13px] font-medium text-muted">Ny</p>
         <p className="mt-1 text-[14px] text-soft">{advanced ? "Avancerad kontering enligt dina rader." : nextHint}</p>
         <p className="mt-4 rounded-xl bg-accent-soft/60 px-4 py-2.5 text-[13px] leading-relaxed">
-          Driva kommer skapa en rättelse. Originalverifikationen ändras inte.
+          Ferva kommer skapa en rättelse. Originalverifikationen ändras inte.
         </p>
         {flow.periodLockMessage ? <p className="mt-3 text-[13px] text-muted">{flow.periodLockMessage}</p> : null}
         {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}
@@ -774,7 +774,7 @@ function CorrectionSheet({
       {advanced && flow.allowAdvanced ? (
         <div className="mt-5 space-y-2">
           <p className="text-[14px] font-semibold">Avancerad rättelse</p>
-          <p className="text-[13px] text-soft">Debet och kredit måste balansera. Driva bokför rättelsen – originalet ändras inte.</p>
+          <p className="text-[13px] text-soft">Debet och kredit måste balansera. Ferva bokför rättelsen – originalet ändras inte.</p>
           {advLines.map((l, i) => (
             <div key={i} className="grid grid-cols-3 gap-2">
               <input

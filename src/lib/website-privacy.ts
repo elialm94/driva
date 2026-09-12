@@ -1,7 +1,7 @@
 /**
- * Integritetspolicy för Driva-genererade sajter.
+ * Integritetspolicy för Ferva-genererade sajter.
  *
- * STANDARD (default): Driva genererar och underhåller policyn. Företagsnamn,
+ * STANDARD (default): Ferva genererar och underhåller policyn. Företagsnamn,
  * org.nr, adress och kontakt hämtas alltid live från företagsuppgifterna –
  * de kopieras inte in i policyn. Valfritt "Eget tillägg" renderas som Övrigt.
  *
@@ -434,7 +434,7 @@ export function buildPrivacyPolicy(input: {
       id: "lagring",
       heading: "Hur länge uppgifterna sparas",
       paragraphs: [
-        "Uppgifterna sparas som kund och uppdrag i Driva så länge de behövs för att hantera förfrågan och en ev. kundrelation. Det finns ingen automatisk radering efter ett fast antal dagar.",
+        "Uppgifterna sparas som kund och uppdrag i Ferva så länge de behövs för att hantera förfrågan och en ev. kundrelation. Det finns ingen automatisk radering efter ett fast antal dagar.",
         "Företaget kan ta bort ett uppdrag som inte lett till avtal, faktura eller bokföring. Om förfrågan leder till offert, faktura eller bokföring kan uppgifter behöva sparas längre, bland annat enligt bokföringslagen.",
       ],
     },
@@ -442,8 +442,8 @@ export function buildPrivacyPolicy(input: {
       id: "mottagare",
       heading: "Mottagare och personuppgiftsbiträden",
       paragraphs: [
-        `Du skickar uppgifterna till ${name}, inte till Driva som om Driva vore företaget du kontaktar. Driva är plattformen som behandlar uppgifterna på uppdrag av ${name} (personuppgiftsbiträde).`,
-        "Driva anlitar tekniska underleverantörer för drift (Vercel), databas (Supabase) och – när e-postavisering är påslagen – utskick om nya förfrågningar (Resend). Uppgifterna lämnas inte ut för reklam, analys eller annan marknadsföring hos tredje part.",
+        `Du skickar uppgifterna till ${name}, inte till Ferva som om Ferva vore företaget du kontaktar. Ferva är plattformen som behandlar uppgifterna på uppdrag av ${name} (personuppgiftsbiträde).`,
+        "Ferva anlitar tekniska underleverantörer för drift (Vercel), databas (Supabase) och – när e-postavisering är påslagen – utskick om nya förfrågningar (Resend). Uppgifterna lämnas inte ut för reklam, analys eller annan marknadsföring hos tredje part.",
       ],
     },
     {

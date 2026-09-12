@@ -1,7 +1,7 @@
 process.env.DRIVA_TEST = "1";
 
 /**
- * Driva Admin – tjänstenivåtester (spec §44).
+ * Ferva Admin – tjänstenivåtester (spec §44).
  *
  * Kör i JSON-läget (in-memory-register) och prövar samma tjänstelager som
  * server actions anropar efter requirePlatformAdmin/requireSuperAdmin:

@@ -223,7 +223,7 @@ function kindSuggestion(tx: BankTransaction): PaymentSuggestion | null {
 
 function scoreOutgoingSupplierPayments(tx: BankTransaction): PaymentSuggestion | null {
   // PAYMENT_FILE_CREATED räknas som förväntad utbetalning: filen laddades
-  // upp i internetbanken utanför Driva, så banktransaktionen är första
+  // upp i internetbanken utanför Ferva, så banktransaktionen är första
   // beviset på att betalningen faktiskt genomfördes.
   const open = supplierPayments().filter(
     (p) =>

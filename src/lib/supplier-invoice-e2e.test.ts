@@ -316,7 +316,7 @@ describe("Fall C – osäkert belopp: uppmärksamhet → kontrollera → godkän
     assertAllVerificationsBalance();
   });
 
-  it("godkänn utan belopp avvisas – Driva gissar aldrig", () => {
+  it("godkänn utan belopp avvisas – Ferva gissar aldrig", () => {
     assert.throws(
       () => approveInboxExtraction({ itemId: "inbox-mail-byggmax", amount: 0, vatAmount: 0 }),
       /totalbeloppet/

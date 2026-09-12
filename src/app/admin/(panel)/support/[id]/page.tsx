@@ -141,7 +141,7 @@ export default async function TicketDetailPage(props: PageProps<"/admin/support/
                   name="notes"
                   rows={3}
                   defaultValue={ticket.adminNotes ?? ""}
-                  placeholder="Bara synlig för Driva Admin"
+                  placeholder="Bara synlig för Ferva Admin"
                   className={adminTextareaClass}
                 />
                 <div>
@@ -155,7 +155,7 @@ export default async function TicketDetailPage(props: PageProps<"/admin/support/
             <AdminCard title="Starta supportläge (öppna som kund)">
               <div className="px-4 py-3">
                 <p className="text-[12.5px] leading-relaxed text-neutral-500">
-                  Öppnar kundens Driva i den kontext ärendet gäller. Sessionen är tidsbegränsad
+                  Öppnar kundens Ferva i den kontext ärendet gäller. Sessionen är tidsbegränsad
                   (60 min), kräver ett skäl och allt du ändrar auditeras med ditt namn.
                 </p>
                 <StateForm action={startSupportSessionAction} className="mt-3 flex flex-col gap-2">

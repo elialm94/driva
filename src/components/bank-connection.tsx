@@ -170,7 +170,7 @@ export function DisconnectBankButton({ bankName }: { bankName?: string }) {
         }
       >
         <div className="space-y-2 text-[14px] text-soft">
-          <p>Driva slutar hämta saldo och transaktioner och bankens medgivande återkallas hos Tink.</p>
+          <p>Ferva slutar hämta saldo och transaktioner och bankens medgivande återkallas hos Tink.</p>
           <p>Transaktioner som redan hämtats och verifikationer som bokförts finns kvar.</p>
           <ErrorLine text={error} />
         </div>

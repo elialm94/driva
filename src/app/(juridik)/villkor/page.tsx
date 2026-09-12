@@ -2,38 +2,38 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Villkor",
-  description: "Allmänna villkor för tjänsten Driva.",
+  description: "Allmänna villkor för tjänsten Ferva.",
 };
 
 const SECTIONS: { title: string; body: string[] }[] = [
   {
     title: "1. Tjänsten",
     body: [
-      "Driva är en webbtjänst för småföretagare som samlar offerter, kunder, uppdrag, fakturor och bokföringsunderlag på ett ställe. Tjänsten tillhandahålls i befintligt skick och utvecklas löpande.",
+      "Ferva är en webbtjänst för småföretagare som samlar offerter, kunder, uppdrag, fakturor och bokföringsunderlag på ett ställe. Tjänsten tillhandahålls i befintligt skick och utvecklas löpande.",
     ],
   },
   {
     title: "2. Konto och provperiod",
     body: [
-      "För att använda Driva krävs ett konto med verifierad e-postadress. Nya konton får en kostnadsfri provperiod på 14 dagar utan krav på betalkort. Efter provperioden kostar tjänsten 199 kr per månad exklusive moms. Du kan säga upp när du vill; tjänsten är då tillgänglig till slutet av den betalda perioden.",
+      "För att använda Ferva krävs ett konto med verifierad e-postadress. Nya konton får en kostnadsfri provperiod på 14 dagar utan krav på betalkort. Efter provperioden kostar tjänsten 199 kr per månad exklusive moms. Du kan säga upp när du vill; tjänsten är då tillgänglig till slutet av den betalda perioden.",
     ],
   },
   {
     title: "3. Ditt ansvar",
     body: [
-      "Du ansvarar för att uppgifterna du registrerar är korrekta, att inloggningsuppgifter hanteras säkert och att tjänsten används i enlighet med gällande lag. Driva ersätter inte professionell rådgivning – du ansvarar själv för att bokföring, deklarationer och avtal blir korrekta.",
+      "Du ansvarar för att uppgifterna du registrerar är korrekta, att inloggningsuppgifter hanteras säkert och att tjänsten används i enlighet med gällande lag. Ferva ersätter inte professionell rådgivning – du ansvarar själv för att bokföring, deklarationer och avtal blir korrekta.",
     ],
   },
   {
     title: "4. Data och äganderätt",
     body: [
-      "Datat du lägger in i Driva är ditt. Du kan när som helst exportera dina uppgifter och begära att kontot med tillhörande data raderas. Hur personuppgifter behandlas beskrivs i integritetspolicyn.",
+      "Datat du lägger in i Ferva är ditt. Du kan när som helst exportera dina uppgifter och begära att kontot med tillhörande data raderas. Hur personuppgifter behandlas beskrivs i integritetspolicyn.",
     ],
   },
   {
     title: "5. Tillgänglighet och ansvarsbegränsning",
     body: [
-      "Vi strävar efter hög tillgänglighet men garanterar inte att tjänsten är fri från avbrott eller fel. Drivas sammanlagda ansvar är begränsat till vad du betalat för tjänsten under de senaste tolv månaderna. Driva ansvarar inte för indirekta skador, till exempel utebliven vinst.",
+      "Vi strävar efter hög tillgänglighet men garanterar inte att tjänsten är fri från avbrott eller fel. Fervas sammanlagda ansvar är begränsat till vad du betalat för tjänsten under de senaste tolv månaderna. Ferva ansvarar inte för indirekta skador, till exempel utebliven vinst.",
     ],
   },
   {

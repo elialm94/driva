@@ -73,7 +73,7 @@ class MockFilingSigner implements FilingSigner {
 
 /**
  * Ingen signeringsleverantör. Kastar hellre än att skriva en signatur som ingen
- * har gjort – en osignerad inlämning går att signera för hand utanför Driva,
+ * har gjort – en osignerad inlämning går att signera för hand utanför Ferva,
  * en påhittad signatur går inte att göra ogjord.
  */
 class UnconfiguredFilingSigner implements FilingSigner {

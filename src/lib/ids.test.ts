@@ -9,7 +9,7 @@ import {
   ocrForInvoice,
 } from "./ids";
 
-/** Äldre Driva-schema: nummer + "77" + Luhn. Används för att visa att giltiga historiska värden behålls. */
+/** Äldre Ferva-schema: nummer + "77" + Luhn. Används för att visa att giltiga historiska värden behålls. */
 function legacyOcrWith77Suffix(invoiceNumber: number): string {
   const base = `${invoiceNumber}77`;
   return base + bankgirotModulus10CheckDigit(base);

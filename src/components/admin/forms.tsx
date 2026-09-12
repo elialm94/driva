@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Klientformulär för Driva Admin. Komponenterna postar till server actions i
+ * Klientformulär för Ferva Admin. Komponenterna postar till server actions i
  * src/app/admin/actions.ts – ALL behörighet prövas där (servern), aldrig här.
  * Farliga åtgärder (radera/inaktivera) går via DangerPanel som alltid visar
  * vad som påverkas, vad som bevaras och om det går att ångra (spec §19).

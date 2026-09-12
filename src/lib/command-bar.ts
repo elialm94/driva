@@ -503,7 +503,7 @@ export const COMMANDS: CommandDef[] = [
   {
     id: "accountant_reconcile",
     label: "Stäm av banken",
-    hint: "Samma avstämning som i Driva",
+    hint: "Samma avstämning som i Ferva",
     aliases: ["stäm av banken", "avstäm banken"],
     keywords: ["stäm", "avstäm", "bank"],
     icon: "alert",

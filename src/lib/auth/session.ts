@@ -193,7 +193,7 @@ export const listMemberships = cache(async (userId: string): Promise<MembershipI
   const base = isSupabaseMode()
     ? await membershipsForUser(userId)
     : activeMembershipsForUser(userId)
-        // Företag som inaktiverats av Driva Admin nekas (Supabase-läget
+        // Företag som inaktiverats av Ferva Admin nekas (Supabase-läget
         // filtrerar samma sak i SQL:en; supportsessionen nedan går förbi).
         .filter((m) => !platformRegistry().disabledBusinesses.some((d) => d.businessId === m.businessId))
         .map((m) => ({
@@ -203,7 +203,7 @@ export const listMemberships = cache(async (userId: string): Promise<MembershipI
           invitedByUserId: m.invitedByUserId,
         }));
 
-  // SUPPORTLÄGE (Driva Admin): en aktiv, tidsbegränsad supportsession ger
+  // SUPPORTLÄGE (Ferva Admin): en aktiv, tidsbegränsad supportsession ger
   // adminen ett syntetiskt ägar-medlemskap i EXAKT sessionens företag.
   const support = await activeSupportContext().catch(() => null);
   if (support && support.admin.userId === userId) {
@@ -367,11 +367,11 @@ function actorFrom(user: SessionUser, businessId: string, role: BusinessRole): C
   };
 }
 
-/** Supportläge: aktören märks tydligt som Driva-support i aktivitetsflödet. */
+/** Supportläge: aktören märks tydligt som Ferva-support i aktivitetsflödet. */
 function labelSupportActor(actor: CollaborationActor, support: ActiveSupportContext | null): CollaborationActor {
   if (!support || support.session.businessId !== actor.businessId) return actor;
   const base = support.admin.name || support.admin.email || actor.name;
-  return { ...actor, name: `${base} (Driva-support)` };
+  return { ...actor, name: `${base} (Ferva-support)` };
 }
 
 /** Alla skrivningar under supportläge auditeras med adminen som aktör. */

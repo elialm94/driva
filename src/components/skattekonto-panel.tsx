@@ -165,7 +165,7 @@ export function SkattekontoPanel() {
       ) : null}
 
       <p className="mt-6 text-[12px] leading-relaxed text-muted">
-        Driva skickar aldrig något till Skatteverket. Skattekontot i bokföringen är bolagets egen bild av vad myndigheten
+        Ferva skickar aldrig något till Skatteverket. Skattekontot i bokföringen är bolagets egen bild av vad myndigheten
         anser – avstämningen mot utdraget är det som visar att bilden stämmer.
       </p>
     </div>

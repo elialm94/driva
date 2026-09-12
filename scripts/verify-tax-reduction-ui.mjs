@@ -114,7 +114,7 @@ try {
   });
   check("Klickade ROT på faktura", await clickText("button", "ROT"));
   await sleep(400);
-  check("Ingen BankID-varning på ROT-faktura", !(await has("Kunden har inte godkänt något ROT/RUT-villkor i Driva")));
+  check("Ingen BankID-varning på ROT-faktura", !(await has("Kunden har inte godkänt något ROT/RUT-villkor i Ferva")));
   check("Ingen rekommendation om BankID innan skick", !(await has("Villkoren är inte avtalade via BankID")));
   check("Tom ROT-faktura skriker inte om saknad uppgift", !(await has("En uppgift saknas för ROT")));
   check("ROT-formuläret är inte en stor uppgiftssektion", !(await has("Uppgifter för ROT")));
@@ -171,7 +171,7 @@ try {
     timeout: 20000,
   });
   await sleep(800);
-  check("Fakturasidan visar inte BankID-varning", !(await has("Kunden har inte godkänt något ROT/RUT-villkor i Driva")));
+  check("Fakturasidan visar inte BankID-varning", !(await has("Kunden har inte godkänt något ROT/RUT-villkor i Ferva")));
   check("Fakturadokumentet visar kort klausul", await has("ROT/RUT är preliminärt"));
   check("Fakturadokumentet visar Att betala nu", await has("Att betala nu"));
 

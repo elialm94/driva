@@ -1,5 +1,5 @@
 /**
- * Lagringsfasad för plattformsdatat (Driva Admin).
+ * Lagringsfasad för plattformsdatat (Ferva Admin).
  *
  * Två lägen, samma kontrakt (jfr src/lib/store.ts för tenantdata):
  *

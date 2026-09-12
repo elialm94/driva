@@ -38,7 +38,7 @@ export default async function SamarbetaPage() {
     <div className="animate-fade-up">
       <PageHeader
         title="Samarbeta"
-        subtitle="Låt din redovisningskonsult hjälpa till direkt i Driva."
+        subtitle="Låt din redovisningskonsult hjälpa till direkt i Ferva."
       />
       <SamarbetaView
         people={people}

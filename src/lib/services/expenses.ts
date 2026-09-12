@@ -84,7 +84,7 @@ export function categorizeMerchant(supplier: string): MerchantCategoryGuess | nu
       confidence: known.confidence,
       reason:
         known.confidence === "hog"
-          ? `Driva känner igen ${supplier} och bokför köp där som ${categoryByKey(known.key).label.toLowerCase()}`
+          ? `Ferva känner igen ${supplier} och bokför köp där som ${categoryByKey(known.key).label.toLowerCase()}`
           : `Namnet antyder ${categoryByKey(known.key).label.toLowerCase()}`,
     };
   }
@@ -118,7 +118,7 @@ function expenseExplanation(
   const known = Object.keys(KNOWN_SUPPLIERS).find((name) => expense.supplier.toLowerCase().includes(name));
   const why =
     createdBy === "auto"
-      ? (matchReason ?? (known ? `Driva känner igen ${expense.supplier} och bokför köp där som ${cat.label.toLowerCase()}` : `Köpet bokfördes som ${cat.label.toLowerCase()}`))
+      ? (matchReason ?? (known ? `Ferva känner igen ${expense.supplier} och bokför köp där som ${cat.label.toLowerCase()}` : `Köpet bokfördes som ${cat.label.toLowerCase()}`))
       : createdBy === "assistent"
         ? `Assistenten valde kategorin ${cat.label.toLowerCase()} och du godkände`
         : `Du svarade att köpet gällde ${cat.label.toLowerCase()}`;
@@ -345,7 +345,7 @@ export function uploadReceiptForExpense(
     if (!expense.description) expense.description = receipt.extracted.description;
     askAssetQuestion(expense);
     logActivity(
-      `Kvittot från ${expense.supplier} (${kr(expense.amount)}) ser ut som en inventarie – Driva frågar hur det ska bokföras.`,
+      `Kvittot från ${expense.supplier} (${kr(expense.amount)}) ser ut som en inventarie – Ferva frågar hur det ska bokföras.`,
       { entity: { type: "utgift", id: expenseId } }
     );
   } else if (guess && guess.confidence === "hog") {
@@ -363,7 +363,7 @@ export function uploadReceiptForExpense(
     const suggested = guess ? categoryByKey(guess.key).label : null;
     const baseOptions = ["Material", "Verktyg & förbrukning", "Kundrepresentation", "Annat"];
     expense.question = {
-      text: `Vad gällde köpet på ${kr(expense.amount)} hos ${expense.supplier}?${suggested ? ` Driva gissar ${suggested.toLowerCase()} (${guess!.reason}).` : ""}`,
+      text: `Vad gällde köpet på ${kr(expense.amount)} hos ${expense.supplier}?${suggested ? ` Ferva gissar ${suggested.toLowerCase()} (${guess!.reason}).` : ""}`,
       options: suggested ? [suggested, ...baseOptions.filter((o) => o !== suggested)] : baseOptions,
     };
     logActivity(`Kvitto från ${expense.supplier} mottaget – produkten behöver veta vad köpet gällde.`, {
@@ -624,7 +624,7 @@ export function createExpenseFromKnownReceipt(input: {
     expense.status = "behover_svar";
     const suggested = categoryByKey(guess.key).label;
     expense.question = {
-      text: `Vad gällde köpet på ${kr(expense.amount)} hos ${expense.supplier}? Driva gissar ${suggested.toLowerCase()} (${guess.reason}).`,
+      text: `Vad gällde köpet på ${kr(expense.amount)} hos ${expense.supplier}? Ferva gissar ${suggested.toLowerCase()} (${guess.reason}).`,
       options: [suggested, "Material", "Verktyg & förbrukning", "Annat"],
     };
   } else {

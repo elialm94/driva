@@ -1,6 +1,6 @@
 /**
  * ROT/RUT ska begäras senast 31 januari året efter arbetet utfördes
- * och kunden betalade. Driva skickar inte ansökan – den här ytan
+ * och kunden betalade. Ferva skickar inte ansökan – den här ytan
  * påminner så pengarna inte glöms.
  */
 export const ROT_APPLICATION_DEADLINE_MONTH = 1;

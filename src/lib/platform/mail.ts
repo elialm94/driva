@@ -1,5 +1,5 @@
 /**
- * Mejl för Driva Admin (admin-inbjudan). Går genom samma sendMail-transport
+ * Mejl för Ferva Admin (admin-inbjudan). Går genom samma sendMail-transport
  * som övriga utskick (Resend, ärliga fel, email_events-logg) men läser ALDRIG
  * tenantdata – adminflödet har ingen tenantkontext.
  */
@@ -19,25 +19,25 @@ export async function sendPlatformAdminInvite(input: {
     1,
     Math.round((new Date(input.invitation.expiresAt).getTime() - Date.now()) / 86_400_000)
   );
-  const subject = "Du har bjudits in som admin i Driva Admin";
+  const subject = "Du har bjudits in som admin i Ferva Admin";
   const text = [
     `Hej!`,
     ``,
-    `${input.invitation.invitedByName || "En superadmin"} har bjudit in dig som administratör i Driva Admin (plattformens interna adminverktyg).`,
+    `${input.invitation.invitedByName || "En superadmin"} har bjudit in dig som administratör i Ferva Admin (plattformens interna adminverktyg).`,
     ``,
     `Acceptera inbjudan här (giltig i ${days} dagar):`,
     url,
     ``,
-    `Du behöver logga in med (eller skapa) ett Driva-konto på exakt den här e-postadressen.`,
+    `Du behöver logga in med (eller skapa) ett Ferva-konto på exakt den här e-postadressen.`,
     `Om du inte väntade dig det här mejlet kan du ignorera det.`,
   ].join("\n");
   const html = `
     <div style="font-family: -apple-system, Segoe UI, sans-serif; max-width: 560px; margin: 0 auto; color: #111">
-      <h2 style="font-size:18px">Du har bjudits in som admin i Driva Admin</h2>
-      <p>${escapeHtml(input.invitation.invitedByName || "En superadmin")} har bjudit in dig som administratör i Driva Admin (plattformens interna adminverktyg).</p>
+      <h2 style="font-size:18px">Du har bjudits in som admin i Ferva Admin</h2>
+      <p>${escapeHtml(input.invitation.invitedByName || "En superadmin")} har bjudit in dig som administratör i Ferva Admin (plattformens interna adminverktyg).</p>
       <p><a href="${url}" style="display:inline-block;background:#111;color:#fff;padding:10px 18px;border-radius:10px;text-decoration:none">Acceptera inbjudan</a></p>
       <p style="color:#555;font-size:13px">Länken är giltig i ${days} dagar och kan bara användas en gång.
-      Du behöver logga in med (eller skapa) ett Driva-konto på exakt den här e-postadressen.</p>
+      Du behöver logga in med (eller skapa) ett Ferva-konto på exakt den här e-postadressen.</p>
       <p style="color:#555;font-size:13px">Om du inte väntade dig det här mejlet kan du ignorera det.</p>
     </div>`;
   return sendMail(
@@ -70,7 +70,7 @@ export async function notifyNewSupportTicket(ticket: SupportTicket): Promise<voi
     ``,
     `Företag: ${ticket.businessName || "–"}`,
     `Användare: ${ticket.userName || ticket.userEmail}`,
-    `Öppna i Driva Admin: ${url}`,
+    `Öppna i Ferva Admin: ${url}`,
   ].join("\n");
   try {
     await sendMail(

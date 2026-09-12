@@ -1,5 +1,5 @@
 /**
- * Central navigation config for the Driva app.
+ * Central navigation config for the Ferva app.
  *
  * Back = origin ("← Hem"). Breadcrumbs = structure ("Uppdrag / Köksrenovering").
  * Origin lives on the navigation event (`tillbaka` query + optional label), never on

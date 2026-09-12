@@ -298,7 +298,7 @@ export default async function LonPage() {
         skattekontot och månaden låses.{" "}
         {filingSubmissionAvailable()
           ? "Filen går att lämna in härifrån, eller att hämta och ladda upp i e-tjänsten Arbetsgivardeklaration själv."
-          : "Filen går att ladda upp i e-tjänsten Arbetsgivardeklaration, med en individuppgift per anställd. Driva skickar inget till Skatteverket för det här företaget."}
+          : "Filen går att ladda upp i e-tjänsten Arbetsgivardeklaration, med en individuppgift per anställd. Ferva skickar inget till Skatteverket för det här företaget."}
       </p>
     </div>
   );

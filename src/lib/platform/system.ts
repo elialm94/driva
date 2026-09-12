@@ -1,5 +1,5 @@
 /**
- * Systemvy för Driva Admin: ENDAST verifierbar driftstatus.
+ * Systemvy för Ferva Admin: ENDAST verifierbar driftstatus.
  *
  * Principen är ärlighet: en leverantör vars hälsa inte kan verifieras utan
  * sidoeffekter (Resend, OpenRouter) visas som "Okänd" med konfigurations-

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Skal för Driva Admin – medvetet mörkt och tydligt SKILT från kundappen så
+ * Skal för Ferva Admin – medvetet mörkt och tydligt SKILT från kundappen så
  * att en operatör aldrig tvekar om vilken yta hen arbetar i. Navigationen är
  * exakt: Översikt, Support, Företag, Användare, System (+ Admins för
  * super_admin). Menyvalen här är bara UI – behörigheten prövas alltid på
@@ -88,7 +88,7 @@ export function AdminShell({
           <span className="flex size-8 items-center justify-center rounded-lg bg-amber-400 text-[13px] font-bold text-neutral-950">
             DA
           </span>
-          <span className="text-[15px] font-semibold tracking-tight">Driva Admin</span>
+          <span className="text-[15px] font-semibold tracking-tight">Ferva Admin</span>
         </Link>
         <nav className="flex flex-1 flex-col gap-0.5 px-3">
           {items.map(({ href, label, icon: Icon }) => {
@@ -120,7 +120,7 @@ export function AdminShell({
           <p className="truncate font-medium text-neutral-200">{adminName}</p>
           <p className="text-neutral-500">{roleLabel}</p>
           <Link href="/" className="mt-2 text-neutral-400 underline-offset-2 hover:text-neutral-100 hover:underline">
-            Till Driva (kundappen) →
+            Till Ferva (kundappen) →
           </Link>
         </div>
       </aside>

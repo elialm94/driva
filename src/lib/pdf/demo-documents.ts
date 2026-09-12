@@ -6,7 +6,7 @@
  * pekar på samma dagar oavsett när demon körs.
  *
  * VIKTIGT för demo-berättelsen: Byggmax-fakturans PDF visar det RÄTTA
- * totalbeloppet (2 340 kr) medan Drivas tolkning i demon läst fel (875 kr,
+ * totalbeloppet (2 340 kr) medan Fervas tolkning i demon läst fel (875 kr,
  * låg konfidens) – det är själva poängen med "Kontrollera belopp".
  */
 import { buildSimplePdf, type PdfTextLine, type PdfRule, type SimplePdfSpec } from "./simple-pdf";

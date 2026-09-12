@@ -1121,7 +1121,7 @@ export async function deliverWebsiteJobNotification(jobId: string): Promise<bool
   if (!customer) return false;
   const settings = getBusinessProfile();
   if (!ownerNoticeEnabled(settings, "forfragan")) {
-    // Avstängd i Inställningar → Notiser: uppdraget finns ändå i Driva, inget mejl.
+    // Avstängd i Inställningar → Notiser: uppdraget finns ändå i Ferva, inget mejl.
     job.notification = { status: "off", attempts: job.notification?.attempts ?? 0 };
     save();
     return false;

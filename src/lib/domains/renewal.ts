@@ -9,7 +9,7 @@ import type { Domain } from "../types";
 export async function setAutoRenew(domainId: string, enabled: boolean): Promise<Domain> {
   const domain = requireOwnedDomain(domainId);
   if (domain.source !== "purchased") {
-    throw new DomainError("validation", "Automatisk förnyelse gäller bara adresser du köpt i Driva.");
+    throw new DomainError("validation", "Automatisk förnyelse gäller bara adresser du köpt i Ferva.");
   }
   domain.autoRenew = enabled;
   domain.billing.autoRenew = enabled;

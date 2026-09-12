@@ -26,7 +26,7 @@ export default async function VerifieraEpostPage({
     <main className="flex min-h-dvh items-center justify-center bg-stone-100 px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <div className="text-2xl font-semibold tracking-tight text-stone-900">Driva</div>
+          <div className="text-2xl font-semibold tracking-tight text-stone-900">Ferva</div>
         </div>
         <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
           <div className="mx-auto flex size-11 items-center justify-center rounded-full bg-accent-soft">

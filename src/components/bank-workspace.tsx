@@ -26,7 +26,7 @@ import { highlightFromAtgard } from "@/lib/economy-atgard";
 import { kr, datumTid } from "@/lib/format";
 
 export const BANK_SECONDARY_LINE =
-  "Du loggar in hos banken via Tink. Driva hämtar saldo och transaktioner för att matcha fakturor. Vi kan inte föra över pengar.";
+  "Du loggar in hos banken via Tink. Ferva hämtar saldo och transaktioner för att matcha fakturor. Vi kan inte föra över pengar.";
 
 function bankConnectionSubtitle(view: BankConnectionView): string {
   switch (view.status) {
@@ -39,7 +39,7 @@ function bankConnectionSubtitle(view: BankConnectionView): string {
     case "error":
       return view.error ?? BANK_CONNECTION_STATUS.error.label;
     case "revoked":
-      return "Driva hämtar inte längre något från banken. Tidigare transaktioner och verifikationer finns kvar.";
+      return "Ferva hämtar inte längre något från banken. Tidigare transaktioner och verifikationer finns kvar.";
     case "disconnected":
       return "Koppla företagskontot så hämtas saldo och transaktioner hit.";
   }

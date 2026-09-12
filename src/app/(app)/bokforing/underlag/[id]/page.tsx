@@ -173,7 +173,7 @@ export default async function InboxDetailPage(props: { params: Promise<{ id: str
                 Belopp {item.parsedAmount != null ? kr(item.parsedAmount) : "0 kr"}
               </p>
               <p className="mt-1 text-[14px] text-soft">
-                Driva kunde inte läsa totalbeloppet säkert. Kontrollera mot dokumentet och godkänn – därefter
+                Ferva kunde inte läsa totalbeloppet säkert. Kontrollera mot dokumentet och godkänn – därefter
                 bokförs {item.documentType === "kvitto" ? "kvittot" : "fakturan"} automatiskt.
               </p>
               <div className="mt-3">

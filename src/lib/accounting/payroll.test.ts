@@ -144,7 +144,7 @@ describe("preliminärskatt", () => {
     assert.equal(preliminaryTax(40_000, { kind: "procent", percent: 30 }), 12_000);
   });
 
-  it("tabell använder det uppslagna beloppet – Driva hittar inte på skatt", () => {
+  it("tabell använder det uppslagna beloppet – Ferva hittar inte på skatt", () => {
     const basis = { kind: "tabell" as const, table: 33, monthlyDeduction: 9_412, salaryAtLookup: 40_000 };
     assert.equal(preliminaryTax(40_000, basis), 9_412);
   });

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Integritetspolicy",
-  description: "Hur Driva behandlar personuppgifter.",
+  description: "Hur Ferva behandlar personuppgifter.",
 };
 
 const SECTIONS: { title: string; body: string[] }[] = [

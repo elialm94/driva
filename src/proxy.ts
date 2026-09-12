@@ -38,7 +38,7 @@ const PUBLIC_PREFIXES = [
   "/demo", // publik demo: GET provisionerar en isolerad demosession
   "/valkommen", // landningssidans interna sökväg (rewrite-mål)
   "/villkor",
-  "/integritet", // Drivas egen integritetspolicy (kundsajternas ligger på /integritetspolicy)
+  "/integritet", // Fervas egen integritetspolicy (kundsajternas ligger på /integritetspolicy)
   "/offert",
   "/faktura",
   "/sajt",

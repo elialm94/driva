@@ -29,7 +29,7 @@ export interface DomainCardView {
   retryIsHostingOnly: boolean;
   steps: DomainProgressStep[];
   phase: DomainUiPhase;
-  /** Endast befintlig, inte-live: CNAME-rader att visa. Aldrig för Driva-köpta adresser. */
+  /** Endast befintlig, inte-live: CNAME-rader att visa. Aldrig för Ferva-köpta adresser. */
   dnsChanges: DnsRecordInstruction[];
 }
 

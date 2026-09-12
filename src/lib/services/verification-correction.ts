@@ -322,7 +322,7 @@ export function inspectCorrectionFlow(verificationId: string): CorrectionFlow {
     return {
       kind: "omatcha",
       title: "Matchningen är fel",
-      hint: "En inbetalning rättas genom att koppla om den – inte genom att skriva debet och kredit. Driva återför bokningen och öppnar matchningen igen.",
+      hint: "En inbetalning rättas genom att koppla om den – inte genom att skriva debet och kredit. Ferva återför bokningen och öppnar matchningen igen.",
       href,
       hrefLabel: "Öppna matchningen",
       allowAdvanced: false,
@@ -367,8 +367,8 @@ export function inspectCorrectionFlow(verificationId: string): CorrectionFlow {
       kind: "konto",
       title: "Vad ska ändras?",
       hint: supplierReceive
-        ? "Byt kostnadskonto. Leverantörsskulden (2440) och momsen sköter Driva."
-        : "Byt kostnadskonto. Motkonto och moms sköter Driva.",
+        ? "Byt kostnadskonto. Leverantörsskulden (2440) och momsen sköter Ferva."
+        : "Byt kostnadskonto. Motkonto och moms sköter Ferva.",
       currentCategory: category,
       currentAccount: account,
       accountOptions: expenseAccountOptions(),
@@ -713,7 +713,7 @@ function toPosted(original: Verification, result: CorrectionResult, idempotent: 
 }
 
 export function creatorPhrase(v: Verification): string {
-  if (v.createdBy === "auto") return "Bokförd automatiskt av Driva";
+  if (v.createdBy === "auto") return "Bokförd automatiskt av Ferva";
   if (v.createdBy === "assistent") return "Bokförd av assistenten";
   return "Bokförd av dig";
 }

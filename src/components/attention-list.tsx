@@ -1140,7 +1140,7 @@ export function AttentionEmptyCard() {
     <Card className="px-6 py-5">
       <p className="text-[15px] font-medium text-ink">✓ Allt är under kontroll</p>
       <p className="mt-1 text-[14px] text-soft">
-        Driva håller koll och säger till när något behöver din uppmärksamhet.
+        Ferva håller koll och säger till när något behöver din uppmärksamhet.
       </p>
     </Card>
   );

@@ -175,7 +175,7 @@ export function createManualExpense(
   if (draft.kind === "kop" && assetSuggestionForExpense(expense)) {
     askAssetQuestion(expense);
     logActivity(
-      `${expense.supplier} (${kr(expense.amount)}) registrerades – köpet ser ut som en inventarie, så Driva frågar hur det ska bokföras.`,
+      `${expense.supplier} (${kr(expense.amount)}) registrerades – köpet ser ut som en inventarie, så Ferva frågar hur det ska bokföras.`,
       { entity: { type: "utgift", id: expense.id } }
     );
     save();

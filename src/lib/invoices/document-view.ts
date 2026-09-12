@@ -195,7 +195,7 @@ export type SellerIdentityInput = Pick<
   "name" | "address" | "postalCode" | "city" | "email" | "phone" | "orgNumber" | "vatNumber"
 > & {
   /**
-   * Driva har inget inställningsfält för F-skatt. Saknas/true = visa
+   * Ferva har inget inställningsfält för F-skatt. Saknas/true = visa
    * "Godkänd för F-skatt". Explicit false döljer radbiten (tester / framtida flagga).
    */
   approvedForFskatt?: boolean;

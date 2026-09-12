@@ -10,7 +10,7 @@ import { datumKort } from "@/lib/format";
 import type { BankCounterpartRuleView } from "@/lib/services/bank-booking";
 
 /**
- * Det Driva lärt sig om motparterna i banken – synligt och ångringsbart.
+ * Det Ferva lärt sig om motparterna i banken – synligt och ångringsbart.
  * En regel som bokför fel skulle annars göra det tyst varje månad.
  */
 export function BankRulesCard({ rules }: { rules: BankCounterpartRuleView[] }) {
@@ -40,7 +40,7 @@ export function BankRulesCard({ rules }: { rules: BankCounterpartRuleView[] }) {
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 text-accent" aria-hidden />
           <p className="text-[14px] font-medium text-ink">
-            Driva har lärt sig {rules.length === 1 ? "1 motpart" : `${rules.length} motparter`}
+            Ferva har lärt sig {rules.length === 1 ? "1 motpart" : `${rules.length} motparter`}
           </p>
         </div>
         <button type="button" className={buttonClasses("ghost", "sm")} onClick={() => setOpen((v) => !v)} aria-expanded={open}>

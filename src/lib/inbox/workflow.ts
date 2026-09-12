@@ -321,7 +321,7 @@ export function inboxWorkflowSteps(input: {
     key: "tolkat",
     label: "Dokument tolkat",
     state: parsed ? "done" : "todo",
-    ...(parsed ? {} : { detail: "Driva kunde inte läsa dokumentet." }),
+    ...(parsed ? {} : { detail: "Ferva kunde inte läsa dokumentet." }),
   });
 
   const certain = Boolean(invoice) || Boolean(expense) || amountIsCertain(item);

@@ -161,7 +161,7 @@ export function taxReductionClampedMessage(
 
 export function taxReductionAmountHelp(documentKind: "faktura" | "offert" = "faktura"): string {
   const doc = documentKind === "offert" ? "offerten" : "fakturan";
-  return `Driva visar det maximala avdrag som ${doc} medger. Sänk beloppet om kunden har mindre ROT/RUT-utrymme kvar.`;
+  return `Ferva visar det maximala avdrag som ${doc} medger. Sänk beloppet om kunden har mindre ROT/RUT-utrymme kvar.`;
 }
 
 export function taxReductionDocumentMaxLabel(documentKind: "faktura" | "offert", max: number): string {

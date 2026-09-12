@@ -1,6 +1,6 @@
-# Driva Admin – internt driftverktyg för plattformsteamet
+# Ferva Admin – internt driftverktyg för plattformsteamet
 
-Driva Admin (`/admin`) är plattformsoperatörernas yta: användare, företag,
+Ferva Admin (`/admin`) är plattformsoperatörernas yta: användare, företag,
 support, säkra driftåtgärder, audit och riktiga mätvärden. Den är **helt
 separerad** från kundappen och redovisningsytan (`/redovisning`) – samma
 Supabase-inloggning, men ett eget auktoriseringslager.
@@ -11,7 +11,7 @@ Tre begrepp som aldrig blandas ihop:
 | --- | --- | --- |
 | **Kund** | `business_memberships` (owner m.fl.) | Sitt eget företag |
 | **Samarbetspartner** | `business_memberships` (t.ex. `accounting_consultant`) | Explicit tilldelade företag |
-| **Driva-admin** | `platform_admins` | Hela plattformen |
+| **Ferva-admin** | `platform_admins` | Hela plattformen |
 
 En platform-admin har **noll** tenantbehörighet av sin adminroll – tenantaccess
 sker bara via en explicit, tidsbegränsad, auditerad supportsession.
@@ -68,7 +68,7 @@ Ordinarie tenant-RLS är orörd.
 
 Ingen klientväg, ingen publik flagga, inget hårdkodat. Exakta steg:
 
-1. Personen skapar/har ett vanligt Driva-konto (Supabase Auth) – logga in en
+1. Personen skapar/har ett vanligt Ferva-konto (Supabase Auth) – logga in en
    gång så att användaren finns i `auth.users`.
 2. Kör från en maskin med produktionsmiljövariablerna (kräver
    `SUPABASE_DB_URL`/`DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`,
@@ -92,7 +92,7 @@ Alternativ utan skript: samma upsert direkt i SQL mot `platform_admins`
 
 `super_admin` → `/admin/admins` → **Bjud in admin** (e-post). En engångslänk
 (`/admin/inbjudan/<token>`, giltig 7 dagar, endast hash lagras) mejlas via
-Resend. Mottagaren loggar in med (eller skapar) ett Driva-konto på **exakt**
+Resend. Mottagaren loggar in med (eller skapar) ett Ferva-konto på **exakt**
 den e-postadressen och accepterar → `platform_admins`-rad med roll `admin`.
 `admin` kan inte bjuda in någon. Inbjudningar kan skickas om och återkallas.
 
@@ -102,7 +102,7 @@ den e-postadressen och accepterar → `platform_admins`-rad med roll `admin`.
 - Vanliga användare på `/admin` → 403-sida ("Du har inte behörighet…").
   Utloggade → redirect till `/login?next=/admin`.
 - Ingen auto-redirect till `/admin` efter inloggning – en admin som också är
-  vanlig Driva-användare jobbar i kundappen tills hen själv går till `/admin`.
+  vanlig Ferva-användare jobbar i kundappen tills hen själv går till `/admin`.
 - **MFA-status:** arkitekturen är MFA-redo. Sessionens
   AAL-claim (`aal`) läses redan; med `PLATFORM_ADMIN_REQUIRE_MFA=1` kräver
   `requirePlatformAdmin()` `aal2` (genomförd andra faktor) för **alla**
@@ -133,7 +133,7 @@ Inte impersonation – en explicit, kort, auditerad session:
    "SUPPORTLÄGE – Du arbetar med {företag} \[Avsluta]". Aldrig otydligt vilken
    tenant som påverkas.
 6. **Audit:** alla skrivningar under supportläge loggas med **adminen** som
-   aktör ("… (Driva-support)") i tenantens `audit_log`, plus en
+   aktör ("… (Ferva-support)") i tenantens `audit_log`, plus en
    `support_write`-post i `admin_audit_log`. Start/slut loggas också.
 7. Avslut: bannerns **Avsluta**, admin-UI:t, eller automatiskt vid utgång.
 

@@ -1,5 +1,5 @@
 /**
- * Driva Admin – plattformsdomänen.
+ * Ferva Admin – plattformsdomänen.
  *
  * Tre begrepp som ALDRIG blandas ihop:
  *   1. KUND        arbetar i sitt företag (business_memberships).

@@ -40,7 +40,7 @@ import {
  *
  * Saldot på 2920 är ett tal. Bilagan är svaret på frågan revisorn ställer –
  * VAD består talet av? Tre bilagor kräver en uppgift som inte finns i
- * bokföringen och som Driva därför inte får gissa:
+ * bokföringen och som Ferva därför inte får gissa:
  *
  *   semesterloneskuld              antal sparade betalda semesterdagar
  *   kundfordringar_nedskrivning    bedömningen av vilka fordringar som är osäkra
@@ -118,7 +118,7 @@ export interface ScheduleDraft {
 
 /**
  * Semesterlöneskulden vid årets slut. Antalet sparade dagar kan inte härledas
- * ur bokföringen – Driva vet vilken lön som betalats, inte vilka dagar som
+ * ur bokföringen – Ferva vet vilken lön som betalats, inte vilka dagar som
  * tagits ut – så det är en uppgift användaren anger.
  */
 export function vacationLiabilityDraft(fiscalYearId: string, savedDays: number): ScheduleDraft {
@@ -178,7 +178,7 @@ export function vacationLiabilityDraft(fiscalYearId: string, savedDays: number):
 
 /**
  * Osäkra kundfordringar. Bedömningen är användarens – att en faktura är
- * förfallen betyder inte att den är förlorad – så Driva föreslår men avgör
+ * förfallen betyder inte att den är förlorad – så Ferva föreslår men avgör
  * aldrig. Beloppet skrivs ned exklusive moms: momsen justeras först när
  * förlusten är konstaterad, inte när den är befarad.
  */
@@ -228,7 +228,7 @@ export function doubtfulReceivablesDraft(fiscalYearId: string, invoiceIds: strin
  * skattemässiga resultatet före avsättning och skjuta skatten framåt. Varje
  * avsättning ska återföras senast sjätte året efter avsättningsåret.
  *
- * Avsättningen är ett VAL, inte en beräkning: Driva räknar ut taket och
+ * Avsättningen är ett VAL, inte en beräkning: Ferva räknar ut taket och
  * återföringarna som måste göras, men beloppet är bolagets beslut.
  */
 export interface FundLot {
@@ -286,7 +286,7 @@ export function fundDraft(
   const allocation = Math.max(0, Math.round(input.allocation));
   const max = maxFundAllocation(fiscalYearId);
   if ((db().settings.companyForm ?? "ab") !== "ab") {
-    errors.push("Periodiseringsfond fungerar annorlunda för enskild firma och stöds inte i Driva.");
+    errors.push("Periodiseringsfond fungerar annorlunda för enskild firma och stöds inte i Ferva.");
   }
   if (allocation > max) {
     errors.push(`Avsättningen får vara högst ${max} kr – 25 % av det skattemässiga resultatet före avsättning.`);

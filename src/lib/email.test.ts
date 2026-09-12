@@ -361,14 +361,14 @@ describe("live-post kräver nyckel och avsändare", () => {
   it("nyckel + From är live", () => {
     process.env.RESEND_API_KEY = "re_test";
     process.env.RESEND_FROM_EMAIL = "offerter@driva.se";
-    process.env.RESEND_FROM_NAME = "Driva";
-    assert.equal(configuredFromAddress(), "Driva <offerter@driva.se>");
+    process.env.RESEND_FROM_NAME = "Ferva";
+    assert.equal(configuredFromAddress(), "Ferva <offerter@driva.se>");
     assert.equal(isLiveMailConfigured(), true);
   });
 
   it("From som redan innehåller namn wrappas inte igen", () => {
-    process.env.RESEND_FROM_EMAIL = "Driva <offerter@driva.se>";
-    process.env.RESEND_FROM_NAME = "Driva";
-    assert.equal(configuredFromAddress(), "Driva <offerter@driva.se>");
+    process.env.RESEND_FROM_EMAIL = "Ferva <offerter@driva.se>";
+    process.env.RESEND_FROM_NAME = "Ferva";
+    assert.equal(configuredFromAddress(), "Ferva <offerter@driva.se>");
   });
 });
