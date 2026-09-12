@@ -1,9 +1,7 @@
 import Link from "next/link";
 import { AccountantFilters } from "@/components/accountant-filters";
 import { AccountantQueue } from "@/components/accountant-queue";
-import { AccountantClientTabs, accountantStatusText } from "@/components/accountant-workspace";
 import { CommandBar } from "@/components/command-bar";
-import { PageHeader } from "@/components/ui";
 import { loadAccountantClientPage } from "@/lib/collaboration/client-page";
 import { accountantActionHref } from "@/lib/collaboration/portfolio";
 import { matchesAccountantFilter, type AccountantFilter } from "@/lib/collaboration/issues";
@@ -22,7 +20,7 @@ export default async function ClientWorkspacePage({
 }) {
   const { businessId } = await params;
   const { filter: rawFilter } = await searchParams;
-  const { access, snap } = await loadAccountantClientPage(businessId);
+  const { snap } = await loadAccountantClientPage(businessId);
   const filter = (FILTERS.includes(rawFilter as AccountantFilter) ? rawFilter : "alla") as AccountantFilter;
   const pool = filter === "vantar" ? snap.waiting : filter === "alla" ? snap.queue : [...snap.queue, ...snap.waiting];
   const items = pool
@@ -39,21 +37,11 @@ export default async function ClientWorkspacePage({
   };
 
   return (
-    <div className="animate-fade-up">
-      <PageHeader
-        title={snap.name}
-        subtitle={accountantStatusText({
-          bookedThrough: snap.bookedThrough,
-          bankOk: snap.bankOk,
-          bankUnexplained: snap.bankUnexplained,
-          nextVatDue: snap.nextVat?.dueDate,
-        })}
-      />
+    <div>
       <CommandBar
         prefetch={accountantCommandBarPrefetch("current", snap.name)}
         variant="accountant"
       />
-      <AccountantClientTabs businessId={businessId} active="arbeta" />
       <AccountantFilters
         active={filter}
         counts={filterCounts}
@@ -73,9 +61,6 @@ export default async function ClientWorkspacePage({
           </p>
         }
       />
-      {access.role === "auditor" ? (
-        <p className="mt-4 text-[12px] text-muted">Revisor – endast läsning. Ändringar är blockerade.</p>
-      ) : null}
       {/* Månadsstängningen och övertagandet hör till klienten, inte till kön. */}
       <footer className="mt-8 border-t border-line/70 pt-6">
         <Link

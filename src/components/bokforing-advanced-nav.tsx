@@ -5,6 +5,7 @@ import { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
 import { BOKFORING_DETAIL_TABS, BOKFORING_REPORT_TABS, bokforingDetailTabForPath, matchRoute } from "@/lib/nav";
+import { OWNER_WORKSPACE_BASE, ownerPathFor, workspaceHref } from "@/lib/accounting-workspace/tabs";
 import {
   BOKFORING_MODE_COOKIE,
   BOKFORING_MODE_COOKIE_MAX_AGE,
@@ -22,12 +23,25 @@ export function BokforingAdvancedTabs({
   initialMode,
   hasPayroll,
   showYearEnd,
+  basePath = OWNER_WORKSPACE_BASE,
+  allowModeToggle = true,
 }: {
   initialMode: BookkeepingMode;
   hasPayroll: boolean;
   showYearEnd: boolean;
+  /**
+   * Arbetsytans basväg. Ägaren: /bokforing (standard). Konsulten:
+   * /redovisning/k/<businessId> – samma flikar, samma sidor, annan adress.
+   */
+  basePath?: string;
+  /** Enkel/avancerad-toggeln hör bara hemma på ägarens yta. */
+  allowModeToggle?: boolean;
 }) {
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  // Flik- och ruttlogiken är skriven för ägarytan; översätt konsultytans
+  // adress dit och tillbaka så att båda ytorna delar EN sanning om flikarna.
+  const pathname = ownerPathFor(basePath, rawPathname);
+  const hrefFor = (ownerHref: string) => workspaceHref(basePath, ownerHref);
   const active = bokforingDetailTabForPath(pathname);
   const [mode, setMode] = useState<BookkeepingMode>(initialMode);
   const reportsOpen = active === "rapporter" && mode === "avancerat";
@@ -80,7 +94,7 @@ export function BokforingAdvancedTabs({
         {tabs.map((t) => (
           <Link
             key={t.key}
-            href={t.href as never}
+            href={hrefFor(t.href) as never}
             prefetch={warm.has(t.key) ? true : undefined}
             onPointerEnter={() => warmOn(t.key, HOVER_INTENT_MS)}
             onPointerLeave={warmOff}
@@ -102,7 +116,7 @@ export function BokforingAdvancedTabs({
           {BOKFORING_REPORT_TABS.map((t) => (
             <Link
               key={t.key}
-              href={t.href as never}
+              href={hrefFor(t.href) as never}
               onClick={() => setPending({ key: "rapporter", from: pathname })}
               aria-current={pathname === t.href ? "page" : undefined}
               className={cx(
@@ -118,11 +132,12 @@ export function BokforingAdvancedTabs({
       {deepLink ? (
         <p className="mt-3 text-[13px] text-soft">
           {deepLabel}.{" "}
-          <Link href={"/bokforing" as never} className="font-medium text-accent hover:underline">
+          <Link href={hrefFor("/bokforing") as never} className="font-medium text-accent hover:underline">
             Tillbaka till Att göra
           </Link>
         </p>
       ) : null}
+      {allowModeToggle ? (
       <div className="mt-2 flex justify-end">
         <button
           type="button"
@@ -133,6 +148,7 @@ export function BokforingAdvancedTabs({
           {mode === "enkelt" ? "Visa redovisningsvy" : "Visa enkel vy"}
         </button>
       </div>
+      ) : null}
     </div>
   );
 }

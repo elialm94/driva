@@ -1,9 +1,8 @@
 import { notFound } from "next/navigation";
-import { AccountantClientTabs } from "@/components/accountant-workspace";
 import { Card, PageHeader } from "@/components/ui";
 import { Ink2View, ink2Applies } from "@/components/ink2-view";
-import { loadAccountantClientPage } from "@/lib/collaboration/client-page";
-import { can } from "@/lib/collaboration/permissions";
+import { loadPortfolioWorkspace } from "@/lib/accounting-workspace/workspace";
+import { wsReadOnly } from "@/lib/accounting-workspace/shared";
 import { getFiscalYear } from "@/lib/accounting/fiscal";
 
 export const metadata = { title: "INK2" };
@@ -14,19 +13,15 @@ export default async function AccountantInk2Page({
   params: Promise<{ businessId: string; fiscalYearId: string }>;
 }) {
   const { businessId, fiscalYearId } = await params;
-  const { access, snap } = await loadAccountantClientPage(businessId);
+  const ws = await loadPortfolioWorkspace(businessId);
   const fy = getFiscalYear(fiscalYearId);
   if (!fy) notFound();
 
   return (
-    <div className="animate-fade-up">
-      <PageHeader
-        title={`INK2 ${fy.label}`}
-        subtitle={`${snap.name} · varför skattens resultat inte är bokföringens.`}
-      />
-      <AccountantClientTabs businessId={businessId} active="bokslut" />
+    <div>
+      <PageHeader title={`INK2 ${fy.label}`} subtitle="Varför skattens resultat inte är bokföringens." />
       {ink2Applies() ? (
-        <Ink2View fy={fy} businessId={businessId} readOnly={!can(access.role, "prepare_filing")} />
+        <Ink2View fy={fy} businessId={ws.actionBusinessId} readOnly={wsReadOnly(ws, "prepare_filing")} />
       ) : (
         <Card className="px-6 py-5">
           <p className="text-[14px] leading-relaxed text-soft">

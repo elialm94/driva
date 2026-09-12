@@ -8,6 +8,7 @@ import { DiscardDraftButton } from "./discard-draft-button";
 import { Badge, ButtonLink, Card, EmptyState, buttonClasses, cx, type BadgeTone } from "./ui";
 import { Pagination } from "./customer-list";
 import { BankRowActions } from "./bank-row-actions";
+import { useWorkspaceHref } from "./accounting-workspace/use-workspace-href";
 import { ExpenseQuestionButtons, UploadReceiptButton } from "./money-widgets";
 import { UndoBookingButton } from "./bokforing-widgets";
 import { ScrollToId } from "./scroll-to-id";
@@ -54,6 +55,7 @@ export interface EconomyQuery<S extends string> {
 
 function useRegisterNav<S extends string>(tab: EkonomiTab | "bank", query: EconomyQuery<S>) {
   const router = useRouter();
+  const wsHref = useWorkspaceHref();
   const [pending, startTransition] = useTransition();
   const [q, setQ] = useState(query.q);
 
@@ -64,14 +66,16 @@ function useRegisterNav<S extends string>(tab: EkonomiTab | "bank", query: Econo
   useEffect(() => {
     const handle = setTimeout(() => {
       if (q === query.q) return;
-      startTransition(() => router.replace(ekonomiRegisterHref(tab, { ...query, q, page: 1 }) as never, { scroll: false }));
+      startTransition(() =>
+        router.replace(wsHref(ekonomiRegisterHref(tab, { ...query, q, page: 1 })) as never, { scroll: false })
+      );
     }, 200);
     return () => clearTimeout(handle);
-  }, [q, query, router, tab]);
+  }, [q, query, router, tab, wsHref]);
 
   function go(patch: Partial<EconomyQuery<S>>) {
     startTransition(() =>
-      router.replace(ekonomiRegisterHref(tab, { ...query, ...patch }) as never, { scroll: false })
+      router.replace(wsHref(ekonomiRegisterHref(tab, { ...query, ...patch })) as never, { scroll: false })
     );
   }
 
@@ -671,6 +675,7 @@ export function BankRegister({
   options,
   receivables = [],
   highlightId,
+  readOnly = false,
 }: {
   result: PagedResult<BankTableRow>;
   query: EconomyQuery<BankStatusFilter>;
@@ -679,6 +684,8 @@ export function BankRegister({
   receivables?: OpenReceivableOption[];
   /** Transaktionen som djuplänken (?atgard=bank-<id>) pekar på. */
   highlightId?: string;
+  /** Läsande roll (revisor): raderna visas, åtgärderna inte. */
+  readOnly?: boolean;
 }) {
   const { q, setQ, go, clear, pending } = useRegisterNav("bank", query);
   const filtered = Boolean(query.q) || query.status !== "alla";
@@ -733,6 +740,7 @@ export function BankRegister({
                       row={r}
                       receivables={receivables}
                       highlighted={highlighted === r.id}
+                      readOnly={readOnly}
                     />
                   ))}
                 </tbody>
@@ -760,7 +768,7 @@ export function BankRegister({
                 <div className="mt-1.5">
                   <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
                 </div>
-                {r.action ? (
+                {r.action && !readOnly ? (
                   <div className="mt-3 border-t border-line/70 pt-3">
                     <BankRowActions
                       txId={r.id}
@@ -791,10 +799,12 @@ function BankTableRows({
   row: r,
   receivables,
   highlighted,
+  readOnly,
 }: {
   row: BankTableRow;
   receivables: OpenReceivableOption[];
   highlighted: boolean;
+  readOnly?: boolean;
 }) {
   return (
     <>
@@ -814,7 +824,7 @@ function BankTableRows({
           <Badge tone={r.statusTone as BadgeTone}>{r.statusLabel}</Badge>
         </td>
       </tr>
-      {r.action ? (
+      {r.action && !readOnly ? (
         <tr className={cx(bodyRowCls, highlighted && HIGHLIGHT_ROW_CLASS)}>
           <td colSpan={5} className="px-3 pb-3 pt-0">
             <div className="ml-[7.5rem] max-w-2xl rounded-2xl bg-canvas/70 px-4 py-3">

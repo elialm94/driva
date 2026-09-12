@@ -3,6 +3,7 @@
  * Supabase: snapshotar laddas parallellt. JSON: bara det lokala företaget
  * har data – övriga demo-klienter är ärligt tomma.
  */
+import { isOwnerWorkspaceHref, portfolioBasePath, workspaceHref } from "../accounting-workspace/tabs";
 import { bankReconciliation } from "../accounting/reconciliation";
 import { vatPeriods, type VatPeriodSummary } from "../accounting/vat";
 import { LOCAL_JSON_BUSINESS_ID } from "./actor";
@@ -176,6 +177,11 @@ export function portfolioQueue(
 }
 
 export function accountantActionHref(businessId: string, action: BusinessAction): string {
+  // Åtgärder som pekar in i bokföringen har samma sida på konsultytan –
+  // frågesträngen (?atgard=…, ?fokus=…) följer med så rätt rad markeras.
+  if (action.href && isOwnerWorkspaceHref(action.href)) {
+    return workspaceHref(portfolioBasePath(businessId), action.href);
+  }
   if (action.id.startsWith("vat-") || action.category === "vat") {
     return `/redovisning/k/${businessId}/moms`;
   }

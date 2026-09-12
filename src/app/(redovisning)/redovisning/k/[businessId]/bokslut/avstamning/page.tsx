@@ -1,24 +1,28 @@
-import { AccountantClientTabs } from "@/components/accountant-workspace";
 import { PageHeader } from "@/components/ui";
+import { PrintButton } from "@/components/bokforing-widgets";
 import { AvstamningView, avstamningFiscalYear } from "@/components/avstamning-view";
-import { loadAccountantClientPage } from "@/lib/collaboration/client-page";
-import { accountantHref } from "@/lib/collaboration/hrefs";
+import { loadPortfolioWorkspace } from "@/lib/accounting-workspace/workspace";
+import { wsHref } from "@/lib/accounting-workspace/shared";
 
 export const metadata = { title: "Avstämning" };
 
 export default async function AccountantAvstamningPage({ params }: { params: Promise<{ businessId: string }> }) {
   const { businessId } = await params;
-  const { snap } = await loadAccountantClientPage(businessId);
+  const ws = await loadPortfolioWorkspace(businessId);
   const fy = avstamningFiscalYear();
 
   return (
-    <div className="animate-fade-up">
+    <div>
       <PageHeader
-        title={`${snap.name} – avstämning${fy ? ` ${fy.label}` : ""}`}
-        subtitle="Ett saldo är trovärdigt först när något utanför bokföringen säger samma sak."
+        title={fy ? `Avstämning ${fy.label}` : "Avstämning"}
+        subtitle={
+          fy
+            ? "Ett saldo är trovärdigt först när något utanför bokföringen säger samma sak."
+            : "Balanskontona mot sina underlag."
+        }
+        actions={<PrintButton />}
       />
-      <AccountantClientTabs businessId={businessId} active="bokslut" />
-      <AvstamningView hrefFor={(href) => accountantHref(businessId, href)} />
+      <AvstamningView hrefFor={(href) => wsHref(ws, href)} />
     </div>
   );
 }

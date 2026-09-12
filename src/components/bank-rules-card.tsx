@@ -13,7 +13,7 @@ import type { BankCounterpartRuleView } from "@/lib/services/bank-booking";
  * Det Ferva lärt sig om motparterna i banken – synligt och ångringsbart.
  * En regel som bokför fel skulle annars göra det tyst varje månad.
  */
-export function BankRulesCard({ rules }: { rules: BankCounterpartRuleView[] }) {
+export function BankRulesCard({ rules, readOnly = false }: { rules: BankCounterpartRuleView[]; readOnly?: boolean }) {
   const router = useRouter();
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -65,6 +65,7 @@ export function BankRulesCard({ rules }: { rules: BankCounterpartRuleView[] }) {
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <Badge tone={rule.automatic ? "ok" : "info"}>{rule.automatic ? "Automatiskt" : "Förslag"}</Badge>
+                {readOnly ? null : (
                 <button
                   type="button"
                   className={cx(buttonClasses("ghost", "sm"), "px-2")}
@@ -74,6 +75,7 @@ export function BankRulesCard({ rules }: { rules: BankCounterpartRuleView[] }) {
                 >
                   <X className="size-3.5" /> Ta bort
                 </button>
+                )}
               </div>
             </li>
           ))}

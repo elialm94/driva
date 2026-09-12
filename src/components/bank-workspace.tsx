@@ -24,6 +24,7 @@ import {
 import { parseEconomySort } from "@/lib/economy-sort";
 import { highlightFromAtgard } from "@/lib/economy-atgard";
 import { kr, datumTid } from "@/lib/format";
+import { workspaceHref } from "@/lib/accounting-workspace/tabs";
 
 export const BANK_SECONDARY_LINE =
   "Du loggar in hos banken via Tink. Ferva hämtar saldo och transaktioner för att matcha fakturor. Vi kan inte föra över pengar.";
@@ -45,7 +46,16 @@ function bankConnectionSubtitle(view: BankConnectionView): string {
   }
 }
 
-export function BankConnectionCard({ view, demo }: { view: BankConnectionView; demo: boolean }) {
+export function BankConnectionCard({
+  view,
+  demo,
+  manage = true,
+}: {
+  view: BankConnectionView;
+  demo: boolean;
+  /** Koppla/koppla från är ägarens sak – på konsultytan visas bara läget. */
+  manage?: boolean;
+}) {
   const status = BANK_CONNECTION_STATUS[view.status];
   const identity = [view.bankName, view.maskedAccount].filter(Boolean).join(" · ") || "Företagskonto";
 
@@ -76,21 +86,23 @@ export function BankConnectionCard({ view, demo }: { view: BankConnectionView; d
               <p className="text-[22px] font-semibold tracking-tight tabular">{kr(view.balance)}</p>
             </div>
           ) : null}
-          <div className="flex items-center gap-2">
-            <RefreshBankButton />
-            <DisconnectBankButton bankName={view.bankName} />
-          </div>
+          {manage ? (
+            <div className="flex items-center gap-2">
+              <RefreshBankButton />
+              <DisconnectBankButton bankName={view.bankName} />
+            </div>
+          ) : null}
         </div>
       ) : null}
 
-      {view.status === "pending" ? (
+      {view.status === "pending" && manage ? (
         <div className="flex flex-wrap items-center gap-2">
           <ConnectBankButton demo={demo} label="Fortsätt hos banken" variant="secondary" />
           <CancelPendingBankButton />
         </div>
       ) : null}
 
-      {view.status === "error" || view.status === "revoked" || view.status === "disconnected" ? (
+      {manage && (view.status === "error" || view.status === "revoked" || view.status === "disconnected") ? (
         <ConnectBankButton demo={demo} label={view.status === "error" ? "Försök igen" : "Koppla företagskonto"} />
       ) : null}
     </Card>
@@ -113,8 +125,17 @@ function pageParam(value: unknown): number {
 
 export function BankWorkspace({
   searchParams,
+  readOnly = false,
+  manageConnection = true,
+  basePath = "/bokforing",
 }: {
   searchParams: Record<string, string | string[] | undefined>;
+  /** Läsande roll: registret visas utan åtgärder. */
+  readOnly?: boolean;
+  /** Bankkopplingen sköts av ägaren; konsultytan visar bara status. */
+  manageConnection?: boolean;
+  /** Arbetsytans basväg för länkar som byggs här. */
+  basePath?: string;
 }) {
   const q = param(searchParams.q);
   const page = pageParam(searchParams.sida);
@@ -135,7 +156,11 @@ export function BankWorkspace({
         text="När företagskontot kopplas via Open Banking dyker saldo och transaktioner upp här och matchas mot fakturor automatiskt."
         action={
           <div className="flex flex-col items-center gap-3">
-            <ConnectBankButton demo={bankDemo} />
+            {manageConnection ? (
+              <ConnectBankButton demo={bankDemo} />
+            ) : (
+              <p className="text-[13px] text-soft">Ägaren kopplar banken under Bokföring › Bank.</p>
+            )}
             <p className="max-w-md text-[13px] text-muted">{BANK_SECONDARY_LINE}</p>
           </div>
         }
@@ -145,17 +170,18 @@ export function BankWorkspace({
 
   return (
     <div className="space-y-6">
-      <BankConnectionCard view={bank} demo={bankDemo} />
+      <BankConnectionCard view={bank} demo={bankDemo} manage={manageConnection} />
       {bank.status !== "connected" ? <p className="text-[13px] text-muted">{BANK_SECONDARY_LINE}</p> : null}
-      <BankInboxStrip summary={bankInboxSummary()} filterHref="/bokforing/bank?status=atgard" />
+      <BankInboxStrip summary={bankInboxSummary()} filterHref={workspaceHref(basePath, "/bokforing/bank?status=atgard")} />
       <BankRegister
         result={listBankForTable({ q, status: bankStatus, page, sort })}
         query={{ q, status: bankStatus, page, sort }}
         options={BANK_STATUS_OPTIONS}
         receivables={openReceivablesForMatching()}
         highlightId={highlightId}
+        readOnly={readOnly}
       />
-      <BankRulesCard rules={listBankCounterpartRules()} />
+      <BankRulesCard rules={listBankCounterpartRules()} readOnly={readOnly} />
     </div>
   );
 }
