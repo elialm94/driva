@@ -1949,7 +1949,8 @@ export type AuditAction =
   | "andring_godkand"
   | "andring_avbojd"
   | "uppdrag_avslutat"
-  | "uppdrag_oppnat_igen";
+  | "uppdrag_oppnat_igen"
+  | "uppdrag_kundvy_stangd";
 
 export type BusinessRole = "owner" | "admin" | "member" | "accounting_consultant" | "auditor";
 export type CollaborationRole = "accounting_consultant" | "auditor";

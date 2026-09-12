@@ -43,8 +43,6 @@ const PUBLIC_PREFIXES = [
   "/faktura",
   "/andring", // kundgodkännande av ändring/tillägg på uppdrag
   "/uppdrag-kund", // kundvyn för ett uppdrag (bara det som delats)
-  "/andring", // kundgodkännande av ändring/tillägg
-  "/uppdrag-kund", // kundvyn för ett uppdrag
   "/sajt",
   "/integritetspolicy",
   "/inbjudan",

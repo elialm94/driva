@@ -40,6 +40,7 @@ import {
   type JobChangeErrorCode,
   type JobChangeInput,
 } from "@/lib/services/job-changes";
+import { disableCustomerShare, enableCustomerShare, type CustomerShareSettings } from "@/lib/services/customer-share";
 
 function refresh() {
   revalidatePath("/", "layout");
@@ -298,6 +299,38 @@ export async function reopenJobCloseoutAction(jobId: string): Promise<CloseoutAc
       return { ok: true } as const;
     } catch (e) {
       return closeoutFailure(e, "Uppdraget kunde inte öppnas igen.");
+    }
+  });
+}
+
+/* ---------------------------------- Kundvyn ---------------------------------- */
+
+export type CustomerShareActionResult = { ok: true; token: string } | { ok: false; error: string };
+
+/** Slår på länken och/eller uppdaterar vad som delas. Skickar ingenting. */
+export async function updateCustomerShareAction(
+  jobId: string,
+  settings: Partial<CustomerShareSettings>
+): Promise<CustomerShareActionResult> {
+  return withBusiness(() => {
+    try {
+      const share = enableCustomerShare(jobId, settings);
+      refresh();
+      return { ok: true, token: share.token } as const;
+    } catch (e) {
+      return closeoutFailure(e, "Kundvyn kunde inte uppdateras.");
+    }
+  });
+}
+
+export async function disableCustomerShareAction(jobId: string): Promise<CloseoutActionResult> {
+  return withBusiness(() => {
+    try {
+      disableCustomerShare(jobId);
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return closeoutFailure(e, "Kundlänken kunde inte stängas.");
     }
   });
 }

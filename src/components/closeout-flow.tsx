@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, ChevronLeft, Clock, FileText, Flag, Ban, RotateCcw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, Clock, FileText, Flag, Ban, Printer, RotateCcw } from "lucide-react";
 import type { CloseoutBillingMode } from "@/lib/types";
 import type { CloseoutItem, CloseoutView } from "@/lib/services/closeout";
 import {
@@ -228,6 +228,11 @@ export function CloseoutFlow({
                 <FileText className="size-4" /> Öppna fakturautkastet
               </Link>
             ) : null}
+            {completed ? (
+              <Link href={`${jobHref}/slutunderlag` as never} className={buttonClasses("secondary")} data-testid="closeout-summary-link">
+                <Printer className="size-4" /> Slutunderlag
+              </Link>
+            ) : null}
             {!completed ? (
               <button type="button" className={buttonClasses("primary")} disabled={pending} onClick={complete} data-testid="closeout-complete">
                 {pending ? "Avslutar …" : "Avsluta uppdraget"}
@@ -400,7 +405,7 @@ export function CloseoutFlow({
             <p className="text-[18px] font-semibold text-ink">{completed ? "Uppdraget är avslutat" : draft ? "Fakturautkastet är skapat" : "Klart"}</p>
             <p className="mt-1 max-w-sm text-[14px] text-soft">
               {draft ? `${kr(draft.amount)} inkl. moms ligger som utkast. Granska raderna och skicka när det passar.` : "Inget nytt skapades."}
-              {!completed ? " Du kan avsluta uppdraget nu eller göra det senare." : " Uppdraget kan öppnas igen om något dyker upp."}
+              {!completed ? " Du kan avsluta uppdraget nu eller göra det senare." : " Uppdraget kan öppnas igen om något dyker upp. Slutunderlaget kan du förhandsgranska och dela via kundvyn."}
             </p>
           </div>
         ) : null}
