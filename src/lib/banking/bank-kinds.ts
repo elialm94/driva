@@ -23,6 +23,7 @@ export type BankKindKey =
   | "aterbetalning_agare"
   | "overforing_eget_konto"
   | "lon"
+  | "privat_kop"
   /* ---------- inkommande ---------- */
   | "kundbetalning"
   | "agartillskott"
@@ -206,6 +207,23 @@ export const BANK_KINDS: BankKind[] = [
       `${amount} kr flyttades från företagskontot till ett annat eget konto (1940). Pengarna är kvar i bolaget.`,
     pattern: /överföring|overforing|sparkonto|placeringskonto|kapitalkonto|till eget konto/i,
     learnable: true,
+    matchedType: "ovrigt",
+  },
+  {
+    // "Privat / gäller inte företaget": företagets pengar gick till något
+    // privat. Ingen kostnad, ingen moms – ägaren blir skyldig bolaget beloppet.
+    // Aldrig inlärbar: ett privat köp ska alltid vara ett medvetet val.
+    key: "privat_kop",
+    label: "Privat köp",
+    hint: "Gäller inte företaget – ägaren är skyldig bolaget pengarna tills de betalas tillbaka",
+    direction: "ut",
+    entries: (amount) => [
+      { account: 2893, debit: amount },
+      { account: FORETAGSKONTO, credit: amount },
+    ],
+    explanation: (amount, counterpart) =>
+      `${amount} kr till ${counterpart} var ett privat köp. Ingen kostnad och ingen moms för bolaget – beloppet ligger som ägarens skuld till bolaget (2893) tills det betalas tillbaka till företagskontot. Betala tillbaka snarast; annars kan Skatteverket se det som lön eller förbjudet lån.`,
+    learnable: false,
     matchedType: "ovrigt",
   },
 

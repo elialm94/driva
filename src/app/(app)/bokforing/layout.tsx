@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { cookies } from "next/headers";
-import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
+import { BokforingAdvancedTabs, BokforingSimpleChrome } from "@/components/bokforing-advanced-nav";
 import { bookkeepingHasPayroll, bookkeepingMode } from "@/lib/accounting/bookkeeping-mode";
 import { BOKFORING_MODE_COOKIE, parseBookkeepingMode } from "@/lib/accounting/bookkeeping-mode-keys";
 import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
@@ -35,13 +35,15 @@ export default async function BokforingLayout({ children }: { children: ReactNod
     openYear != null &&
     (today >= monthsBefore(openYear.endDate, 2) || today > openYear.endDate || fiscalYears().some((f) => f.status === "stangt"));
 
+  // Enkelt läge = en arbetskö utan flikrad; Underlag/Bank/Skatt nås som
+  // drill-down från korten. Avancerat = den gemensamma redovisningsarbetsytan.
   return (
     <div className="animate-fade-up">
-      <BokforingAdvancedTabs
-        initialMode={mode}
-        hasPayroll={bookkeepingHasPayroll()}
-        showYearEnd={showYearEnd}
-      />
+      {mode === "avancerat" ? (
+        <BokforingAdvancedTabs initialMode={mode} hasPayroll={bookkeepingHasPayroll()} showYearEnd={showYearEnd} />
+      ) : (
+        <BokforingSimpleChrome />
+      )}
       {children}
     </div>
   );

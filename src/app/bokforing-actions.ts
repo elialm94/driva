@@ -58,8 +58,10 @@ import {
 import {
   bookBankTransactionAs,
   forgetBankCounterpartRule,
+  markExpensePrivate,
   RULE_AUTO_THRESHOLD,
   type BookBankTransactionResult,
+  type MarkExpensePrivateResult,
 } from "@/lib/services/bank-booking";
 import { isBankKindKey } from "@/lib/banking/bank-kinds";
 import { registerCreditRefund } from "@/lib/services/invoices";
@@ -384,6 +386,26 @@ export async function bookBankTransactionAsAction(
       summary: result?.summary ?? "Bokfört.",
       ...(rule ? { learned: rule.count >= RULE_AUTO_THRESHOLD || rule.kind === "redan_bokford" || rule.kind === "kortkop" ? "auto" : "suggest" } : {}),
     };
+  } catch (e) {
+    refresh();
+    return { ok: false, error: e instanceof Error ? e.message : "Något gick fel." };
+  }
+}
+
+/**
+ * "Privat / gäller inte företaget" på ett köp i kön. Företagets pengar →
+ * privat köp (skuld till bolaget); utlägg utan bankkoppling → tas bort.
+ */
+export async function markExpensePrivateAction(
+  expenseId: string
+): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {
+  try {
+    let result: MarkExpensePrivateResult | undefined;
+    await withBusiness(() => {
+      result = markExpensePrivate(expenseId);
+      refresh();
+    }, { capability: "write_accounting" });
+    return { ok: true, summary: result?.summary ?? "Markerat som privat." };
   } catch (e) {
     refresh();
     return { ok: false, error: e instanceof Error ? e.message : "Något gick fel." };

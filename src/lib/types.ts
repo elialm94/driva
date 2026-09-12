@@ -1709,6 +1709,7 @@ export type AuditAction =
   | "faktura_krediterad"
   | "betalning_matchad"
   | "utgift_bokford"
+  | "utgift_privat"
   | "banktransaktion_bokford"
   | "rot_underlag_skapat"
   | "rot_fil_nedladdad"

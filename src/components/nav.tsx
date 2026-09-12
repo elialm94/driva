@@ -20,6 +20,7 @@ import { cx } from "./ui";
 import { CreateAccountRow } from "./demo-controls";
 import { DemoMenu } from "./demo-menu";
 import { LogoutRow } from "./logout-button";
+import { OpenAccountingViewLink } from "./bokforing-mode-switch";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import {
   isSectionActive,
@@ -197,6 +198,9 @@ export function Sidebar({
         )}
         {!demoBadge && accountingClientCount > 0 ? (
           <WorkspaceSwitcher variant="to-redovisning" clientCount={accountingClientCount} />
+        ) : null}
+        {!demoBadge ? (
+          <OpenAccountingViewLink className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[15px] text-muted transition-colors hover:bg-ink/5 hover:text-ink disabled:opacity-60" />
         ) : null}
         {demoSession ? (
           <CreateAccountRow variant="sidebar" />

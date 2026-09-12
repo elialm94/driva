@@ -6,18 +6,11 @@ import { usePathname } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
 import { BOKFORING_DETAIL_TABS, BOKFORING_REPORT_TABS, bokforingDetailTabForPath, matchRoute } from "@/lib/nav";
 import { OWNER_WORKSPACE_BASE, ownerPathFor, workspaceHref } from "@/lib/accounting-workspace/tabs";
-import {
-  BOKFORING_MODE_COOKIE,
-  BOKFORING_MODE_COOKIE_MAX_AGE,
-  simpleBookkeepingKeys,
-  type BookkeepingMode,
-} from "@/lib/accounting/bookkeeping-mode-keys";
-import { persistBookkeepingModeAction } from "@/app/bokforing-actions";
-import { useToast } from "./toast";
+import { simpleBookkeepingKeys, type BookkeepingMode } from "@/lib/accounting/bookkeeping-mode-keys";
+import { useBookkeepingModeSwitch } from "./bokforing-mode-switch";
 import { cx } from "./ui";
 
 const HOVER_INTENT_MS = 120;
-const HINT_COOKIE = "driva_bokforing_lage_hint";
 
 export function BokforingAdvancedTabs({
   initialMode,
@@ -49,7 +42,7 @@ export function BokforingAdvancedTabs({
   const pendingKey = pending?.from === pathname ? pending.key : null;
   const [warm, setWarm] = useState<Set<string>>(() => new Set());
   const intent = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { toast } = useToast();
+  const { switchTo } = useBookkeepingModeSwitch();
 
   function warmOn(key: string, delayMs: number) {
     if (warm.has(key)) return;
@@ -78,14 +71,7 @@ export function BokforingAdvancedTabs({
   function toggleMode() {
     const next = mode === "enkelt" ? "avancerat" : "enkelt";
     setMode(next);
-    document.cookie = `${BOKFORING_MODE_COOKIE}=${next}; path=/; max-age=${BOKFORING_MODE_COOKIE_MAX_AGE}; samesite=lax`;
-    void persistBookkeepingModeAction(next);
-    if (next === "avancerat" && !document.cookie.includes(`${HINT_COOKIE}=1`)) {
-      document.cookie = `${HINT_COOKIE}=1; path=/; max-age=${BOKFORING_MODE_COOKIE_MAX_AGE}; samesite=lax`;
-      toast({
-        title: "Redovisningsvyn visar verifikationer, huvudbok och rapporter. Bokföringen är densamma.",
-      });
-    }
+    switchTo(next);
   }
 
   return (
@@ -149,6 +135,38 @@ export function BokforingAdvancedTabs({
         </button>
       </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Enkel bokföring har ingen flikrad: /bokforing är arbetskön och Underlag,
+ * Bank och Skatt är drill-down-vyer man når från korten. Det här är det lilla
+ * chromet på de vyerna – vad sidan heter, vägen tillbaka till kön och den
+ * diskreta vägen in i redovisningsvyn. På själva kön visas inget alls.
+ */
+export function BokforingSimpleChrome() {
+  const pathname = usePathname();
+  const { switchTo, pending } = useBookkeepingModeSwitch();
+  if (pathname === "/bokforing") return null;
+  const label = matchRoute(pathname)?.meta.label ?? "Sidan";
+  return (
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-2 print:hidden" data-bokforing-tabs="enkelt">
+      <p className="text-[13px] text-soft">
+        <Link href="/bokforing" className="font-medium text-accent hover:underline">
+          ← Tillbaka till Att göra
+        </Link>
+        <span className="text-muted"> · {label}</span>
+      </p>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => switchTo("avancerat")}
+        data-bokforing-mode="enkelt"
+        className="text-[12.5px] font-medium text-muted hover:text-ink"
+      >
+        Visa redovisningsvy
+      </button>
     </div>
   );
 }

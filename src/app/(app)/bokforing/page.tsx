@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { BadgeCheck, Check, CircleHelp } from "lucide-react";
 import { db } from "@/lib/store";
 import { kr, datumKort } from "@/lib/format";
@@ -24,6 +25,10 @@ import { SkatteverketCalendar } from "@/components/skatteverket-calendar";
 import { fiscalYears, lockedThrough, todayDate } from "@/lib/accounting/fiscal";
 import { verificationLabel } from "@/lib/accounting/engine";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { bookkeepingMode } from "@/lib/accounting/bookkeeping-mode";
+import { BOKFORING_MODE_COOKIE, parseBookkeepingMode } from "@/lib/accounting/bookkeeping-mode-keys";
+import { decisionCards } from "@/lib/services/decision-cards";
+import { SimpleBookkeepingQueue, SimpleQueueFooter } from "@/components/simple-bookkeeping-queue";
 
 export const metadata = { title: "Bokföring" };
 
@@ -42,14 +47,16 @@ export default async function BookkeepingPage({
   searchParams: Promise<{ visa?: string }>;
 }) {
   await ensurePageBusiness();
-  const params = await searchParams;
+  const [params, jar] = await Promise.all([searchParams, cookies()]);
+  const mode = parseBookkeepingMode(jar.get(BOKFORING_MODE_COOKIE)?.value) ?? bookkeepingMode();
   const focusUnresolved = isBookkeepingUnresolvedVisa(params.visa);
   const data = db();
   const recon = bankReconciliation();
   const today = todayDate();
 
   // Samma åtgärdsmotor som Hem – komplett bokföringskö, ingen gruppering.
-  const bookkeepingActions = bookkeepingQueue(getBusinessActions().attention);
+  const attention = getBusinessActions().attention;
+  const bookkeepingActions = bookkeepingQueue(attention);
   const needsHelp = bookkeepingActions.length;
   const allGood = needsHelp === 0;
   const upcoming = upcomingAuthorityEvents();
@@ -57,6 +64,55 @@ export default async function BookkeepingPage({
   const openYear = fiscalYears().find((f) => f.status === "oppet");
   const showBokslut =
     openYear != null && (today >= monthsBefore(openYear.endDate, 2) || today > openYear.endDate);
+
+  if (mode === "enkelt") {
+    // Enkel bokföring: en arbetskö av vardagsbeslut – aldrig ett mini-
+    // bokföringsprogram. Samma åtgärds-id:n som Hem, projicerade till kort.
+    const cards = decisionCards(attention);
+    const nextEvent = upcoming.find((e) => e.dueDate >= today);
+    const bankSyncing = (data.bankConnections ?? []).some((c) => c.status === "pending");
+    return (
+      <div>
+        <PageHeader title="Bokföring" subtitle={BOOKKEEPING_PAGE_SUBTITLE} />
+        {focusUnresolved ? <ScrollToId id={BOOKKEEPING_UNRESOLVED_ANCHOR} /> : null}
+        <section className="mb-8">
+          <SimpleBookkeepingQueue
+            cards={cards}
+            working={{ documents: 0, bankSyncing }}
+            nextDeadline={nextEvent ? { label: nextEvent.title, date: nextEvent.dueDate } : undefined}
+            anchorId={BOOKKEEPING_UNRESOLVED_ANCHOR}
+          />
+        </section>
+
+        <Card className="mb-8 px-5 py-4">
+          <p className="text-[14px] font-medium">Skicka underlag hit</p>
+          <p className="mt-0.5 text-[13px] text-soft">Kvitton och fakturor via mejl eller släpp i rutan – Ferva läser och föreslår.</p>
+          <div className="mt-3">
+            <InboxUploadZone />
+          </div>
+          <div className="mt-3">
+            <InboxAddressCard address={inboundAddressForBusiness()} />
+          </div>
+        </Card>
+
+        {showBokslut && openYear ? (
+          <Card className="mb-8 flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+            <div>
+              <p className="text-[15px] font-semibold">Bokslutet närmar sig</p>
+              <p className="mt-0.5 text-[13px] text-soft">Räkenskapsåret {openYear.label} går mot sitt slut.</p>
+            </div>
+            <ButtonLink href="/bokforing/bokslut" variant="secondary" size="sm">
+              Fortsätt bokslut
+            </ButtonLink>
+          </Card>
+        ) : null}
+
+        <div className="mb-8">
+          <SimpleQueueFooter />
+        </div>
+      </div>
+    );
+  }
 
   /*
    * Ett öppet år utan ingående balanser och utan en enda verifikation är
