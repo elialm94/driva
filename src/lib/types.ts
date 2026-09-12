@@ -874,6 +874,12 @@ export interface JobWorkEntry {
   quotedLineItemId?: ID;
   /** true när posten inte ingår i ursprunglig offert. */
   isExtra: boolean;
+  /**
+   * Registrerad på en ändring (JobChange). Priset mot kunden är ändringens
+   * godkända rader; posten faktureras därför aldrig separat utan följer
+   * ändringen när den faktureras.
+   */
+  changeId?: ID;
   /** Kopplad faktura (utkast eller utfärdad). Saknas = ej fakturerad. */
   invoiceId?: ID;
   /** Endast source = wholesaler: vilken orderrad/bekräftelse raden kommer från. */

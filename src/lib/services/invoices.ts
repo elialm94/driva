@@ -48,6 +48,7 @@ import { resolvePersistedWorkLocationId } from "../tax-reduction-send";
 import { getWorkLocation, workLocationsOf, workLocationToHousing } from "./work-locations";
 import {
   associateEntriesWithInvoice,
+  billsAsExtra,
   entryToDocLine,
   unlinkJobWorkEntriesFromInvoice,
   uninvoicedActuals,
@@ -526,7 +527,7 @@ export function createInvoiceFromJobActuals(
 export function createInvoiceFromQuotePlusExtras(jobId: string, createdBy: Actor = "anvandare"): Invoice {
   const job = getJob(jobId);
   if (!job) throw new Error("Uppdraget finns inte");
-  const extras = uninvoicedActuals(jobId).filter((e) => e.isExtra);
+  const extras = uninvoicedActuals(jobId).filter(billsAsExtra);
   const remaining = remainingToInvoiceForJob(jobId);
   const quote = jobQuote(job);
 

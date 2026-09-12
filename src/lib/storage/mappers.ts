@@ -667,7 +667,7 @@ export const jobWorkEntriesSpec: TableSpec<JobWorkEntry> = {
   columns: [
     "id", "business_id", "job_id", "role", "type", "description", "work_date",
     "qty", "unit", "unit_price", "vat_rate", "source", "quoted_line_item_id",
-    "is_extra", "invoice_id", "wholesaler_provenance", "expense_id", "created_at", "updated_at",
+    "is_extra", "change_id", "invoice_id", "wholesaler_provenance", "expense_id", "created_at", "updated_at",
   ],
   toRow: (e, businessId) => ({
     id: e.id,
@@ -684,6 +684,7 @@ export const jobWorkEntriesSpec: TableSpec<JobWorkEntry> = {
     source: e.source,
     quoted_line_item_id: e.quotedLineItemId ?? null,
     is_extra: e.isExtra,
+    change_id: e.changeId ?? null,
     invoice_id: e.invoiceId ?? null,
     wholesaler_provenance: jsonParamOrNull(e.wholesaler),
     expense_id: e.expenseId ?? null,
@@ -704,6 +705,7 @@ export const jobWorkEntriesSpec: TableSpec<JobWorkEntry> = {
     source: r.source as JobWorkEntry["source"],
     ...opt("quotedLineItemId", strOrU(r.quoted_line_item_id)),
     isExtra: Boolean(r.is_extra),
+    ...opt("changeId", strOrU(r.change_id)),
     ...opt("invoiceId", strOrU(r.invoice_id)),
     ...opt("wholesaler", jsonOrU<JobWorkEntry["wholesaler"]>(r.wholesaler_provenance)),
     ...opt("expenseId", strOrU(r.expense_id)),

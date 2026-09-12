@@ -147,6 +147,15 @@ export function uninvoicedActuals(jobId: string): JobWorkEntry[] {
   return actualEntries(jobId).filter((e) => workEntryInvoiceStatus(e) === "uninvoiced");
 }
 
+/**
+ * Tillägg som faktureras vid sidan av offerten. Poster registrerade på en
+ * ändring (changeId) prissätts av ändringens godkända rader och tas aldrig
+ * med separat – annars skulle samma arbete faktureras två gånger.
+ */
+export function billsAsExtra(e: JobWorkEntry): boolean {
+  return e.isExtra && !e.changeId;
+}
+
 export function quotedLaborPrefill(jobId: string): {
   description: string;
   unitPrice: number;
@@ -547,7 +556,7 @@ export function jobInvoiceChoice(jobId: string): JobInvoiceChoice {
   const job = requireJob(jobId);
   const quote = jobQuote(job);
   const pricingKind = inferJobPricingKind(jobId);
-  const extras = uninvoicedActuals(jobId).filter((e) => e.isExtra);
+  const extras = uninvoicedActuals(jobId).filter(billsAsExtra);
   const uninvoiced = uninvoicedActuals(jobId);
   const actualsAmount = uninvoiced.reduce((s, e) => s + entryInclVat(e), 0);
   const extrasAmount = extras.reduce((s, e) => s + entryInclVat(e), 0);

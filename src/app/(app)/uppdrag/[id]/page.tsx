@@ -23,7 +23,8 @@ import { jobPurchaseOrderRows, jobWholesalerContext } from "@/lib/services/job-w
 import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
 import { JobPhotosSection } from "@/components/job-photos";
 import { JobChangesSection } from "@/components/job-changes-section";
-import { jobChangesForJob } from "@/lib/services/job-changes";
+import { getJobChange, jobChangesForJob } from "@/lib/services/job-changes";
+import { closeoutView } from "@/lib/services/closeout";
 import { RotDeadlineBanner } from "@/components/rot-deadline-banner";
 import { taxReductionCaseForJob } from "@/lib/services/tax-reduction";
 import { rotDeadlineStatus } from "@/lib/tax-reduction-deadline";
@@ -61,7 +62,13 @@ function toView(entry: ReturnType<typeof actualEntries>[number]): JobWorkViewEnt
     locked: status === "invoiced",
     invoiceId: entry.invoiceId,
     invoiceNumber: invoice?.number,
+    ...(entry.changeId ? { changeLabel: changeLabelFor(entry.changeId) } : {}),
   };
+}
+
+function changeLabelFor(changeId: string): string {
+  const change = getJobChange(changeId);
+  return change ? `Ändring ${change.number}` : "Ändring";
 }
 
 export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
@@ -197,6 +204,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
           quoteHref={quote ? quoteHref(quote.id, fromHere) : "/ekonomi?flik=offerter"}
           newQuoteHref={newQuoteHref({ kund: customer.id, job: job.id, from: fromHere })}
           invoiceChoice={invoiceChoice}
+          closeout={closeoutView(job.id)}
           job={{
             title: job.title,
             description: job.description,

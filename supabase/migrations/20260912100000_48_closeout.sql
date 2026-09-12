@@ -34,6 +34,12 @@ alter table public.jobs
 create unique index if not exists jobs_share_token_uq
   on public.jobs (share_token) where share_token is not null;
 
+-- Tid/material registrerat på en ändring: priset mot kunden är ändringens
+-- godkända rader, så posten faktureras aldrig separat. Ingen FK: ändringen
+-- kan raderas som utkast utan att registreringen försvinner.
+alter table public.job_work_entries
+  add column if not exists change_id text;
+
 -- --------------------------- Faktureringsallokering --------------------------
 
 create table if not exists public.billing_allocations (

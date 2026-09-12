@@ -840,6 +840,7 @@ export function buildSeed(): DB {
     unitPrice: number;
     source?: JobWorkEntry["source"];
     isExtra?: boolean;
+    changeId?: string;
     invoiceId?: string;
   }): JobWorkEntry {
     return {
@@ -855,6 +856,7 @@ export function buildSeed(): DB {
       vatRate: 25,
       source: entry.source ?? "manual",
       isExtra: entry.isExtra ?? false,
+      ...(entry.changeId ? { changeId: entry.changeId } : {}),
       invoiceId: entry.invoiceId,
       createdAt: d(entry.daysAgo, 17, 0),
       updatedAt: d(entry.daysAgo, 17, 0),
@@ -937,7 +939,7 @@ export function buildSeed(): DB {
     W({ id: "jwe-kok-a2", jobId: "job-kok", role: "actual", type: "labor", description: "Montering av stommar och luckor", daysAgo: 6, qty: 24, unit: "tim", unitPrice: 550 }),
     W({ id: "jwe-kok-a3", jobId: "job-kok", role: "actual", type: "labor", description: "Bänkskiva: kapning, passbitar och montering", daysAgo: 2, qty: 12, unit: "tim", unitPrice: 550 }),
     W({ id: "jwe-kok-a4", jobId: "job-kok", role: "actual", type: "material", description: "Luckor, stommar och bänkskiva i ek (levererat)", daysAgo: 6, qty: 1, unit: "st", unitPrice: 15200 }),
-    W({ id: "jwe-kok-a5", jobId: "job-kok", role: "actual", type: "labor", description: "Extraarbete: urtag och anpassning för flyttat eluttag", daysAgo: 5, qty: 2, unit: "tim", unitPrice: 550, isExtra: true }),
+    W({ id: "jwe-kok-a5", jobId: "job-kok", role: "actual", type: "labor", description: "Extraarbete: urtag och anpassning för flyttat eluttag", daysAgo: 5, qty: 2, unit: "tim", unitPrice: 550, isExtra: true, changeId: "chg-kok-1" }),
     // Altanen (kommande): bara avtalad baseline än så länge.
     W({ id: "jwe-altan-p1", jobId: "job-altan", role: "planned", type: "labor", description: "Rivning av befintlig altan samt nybyggnad", daysAgo: 20, qty: 56, unit: "tim", unitPrice: 550, source: "quote" }),
     W({ id: "jwe-altan-p2", jobId: "job-altan", role: "planned", type: "material", description: "Tryckimpregnerat virke, skruv och plintar", daysAgo: 20, qty: 1, unit: "st", unitPrice: 10000, source: "quote" }),

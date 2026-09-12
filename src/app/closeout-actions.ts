@@ -10,9 +10,21 @@
  */
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { withBusiness, withPublicBusiness } from "@/lib/auth/session";
+import { withBusiness, withBusinessRead, withPublicBusiness } from "@/lib/auth/session";
 import { clientIpFrom } from "@/lib/auth/demo-session";
-import type { DocLine } from "@/lib/types";
+import type { BillingDeferral, CloseoutBillingMode, DocLine } from "@/lib/types";
+import { invoiceTotals } from "@/lib/services/data";
+import {
+  CloseoutError,
+  clearBillingDeferral,
+  closeoutView,
+  completeJobCloseout,
+  createCloseoutInvoiceDraft,
+  parseCloseoutKey,
+  reopenJobCloseout,
+  setBillingDeferral,
+  type CloseoutView,
+} from "@/lib/services/closeout";
 import {
   JOB_CHANGE_TEXT,
   JobChangeError,
@@ -185,3 +197,107 @@ export async function declineJobChangeByTokenAction(token: string, reason?: stri
 
 /** Typexport så klientkomponenter kan skicka rader utan att importera tjänsten. */
 export type JobChangeLineInput = DocLine;
+
+/* --------------------------------- Avsluta uppdrag ---------------------------- */
+
+export type CloseoutActionResult = { ok: true } | { ok: false; error: string };
+export type CloseoutDraftActionResult = { ok: true; invoiceId: string; amount: number } | { ok: false; error: string };
+
+function closeoutFailure(e: unknown, fallback: string): { ok: false; error: string } {
+  if (e instanceof CloseoutError) return { ok: false, error: e.message };
+  return { ok: false, error: e instanceof Error && e.message ? e.message : fallback };
+}
+
+export async function closeoutViewAction(jobId: string): Promise<CloseoutView | null> {
+  return withBusinessRead(() => {
+    try {
+      return closeoutView(jobId);
+    } catch {
+      return null;
+    }
+  });
+}
+
+export async function setBillingDeferralAction(
+  jobId: string,
+  key: string,
+  kind: BillingDeferral["kind"],
+  note?: string
+): Promise<CloseoutActionResult> {
+  return withBusiness(() => {
+    const ref = parseCloseoutKey(key);
+    if (!ref) return { ok: false, error: "Posten kunde inte tolkas." } as const;
+    try {
+      setBillingDeferral(jobId, ref, kind, note);
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return closeoutFailure(e, "Beslutet kunde inte sparas.");
+    }
+  });
+}
+
+export async function clearBillingDeferralAction(jobId: string, key: string): Promise<CloseoutActionResult> {
+  return withBusiness(() => {
+    const ref = parseCloseoutKey(key);
+    if (!ref) return { ok: false, error: "Posten kunde inte tolkas." } as const;
+    try {
+      clearBillingDeferral(jobId, ref);
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return closeoutFailure(e, "Beslutet kunde inte ändras.");
+    }
+  });
+}
+
+/** Skapar fakturautkastet – aldrig ett utskick. Idempotent på serversidan. */
+export async function createCloseoutDraftAction(
+  jobId: string,
+  mode: CloseoutBillingMode,
+  includeKeys?: string[]
+): Promise<CloseoutDraftActionResult> {
+  return withBusiness(
+    () => {
+      try {
+        const invoice = createCloseoutInvoiceDraft(jobId, {
+          mode,
+          ...(Array.isArray(includeKeys) ? { includeKeys: includeKeys.filter((k) => typeof k === "string") } : {}),
+        });
+        refresh();
+        return { ok: true, invoiceId: invoice.id, amount: invoiceTotals(invoice).toPay } as const;
+      } catch (e) {
+        return closeoutFailure(e, "Fakturautkastet kunde inte skapas.");
+      }
+    },
+    { retry: false }
+  );
+}
+
+export async function completeJobCloseoutAction(
+  jobId: string,
+  mode: CloseoutBillingMode,
+  invoiceId?: string
+): Promise<CloseoutActionResult> {
+  return withBusiness(() => {
+    try {
+      completeJobCloseout(jobId, { mode, ...(invoiceId ? { invoiceId } : {}) });
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return closeoutFailure(e, "Uppdraget kunde inte avslutas.");
+    }
+  });
+}
+
+export async function reopenJobCloseoutAction(jobId: string): Promise<CloseoutActionResult> {
+  return withBusiness(() => {
+    try {
+      reopenJobCloseout(jobId);
+      refresh();
+      return { ok: true } as const;
+    } catch (e) {
+      return closeoutFailure(e, "Uppdraget kunde inte öppnas igen.");
+    }
+  });
+}

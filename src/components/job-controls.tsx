@@ -2,12 +2,15 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, CheckCircle2, PartyPopper, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, CheckCircle2, Flag, PartyPopper, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { buttonClasses, ButtonLink } from "./ui";
 import { Modal } from "./modal";
 import { ActionMenu, PageActions, actionMenuItemClassName, useActionMenu } from "./action-menu";
 import { EditUppdragModal } from "./uppdrag-form";
-import { createInvoiceForJobAction, deleteOrArchiveJobAction, reopenJobAction, setJobStatusAction } from "@/app/actions";
+import { createInvoiceForJobAction, deleteOrArchiveJobAction, setJobStatusAction } from "@/app/actions";
+import { reopenJobCloseoutAction } from "@/app/closeout-actions";
+import { CloseoutFlow } from "./closeout-flow";
+import type { CloseoutView } from "@/lib/services/closeout";
 import { invoiceEditHref } from "@/lib/nav";
 import { kr } from "@/lib/format";
 import type {
@@ -67,6 +70,7 @@ export function JobActions({
   quoteHref,
   newQuoteHref,
   invoiceChoice,
+  closeout,
   job,
 }: {
   jobId: string;
@@ -86,6 +90,8 @@ export function JobActions({
   quoteHref: string;
   newQuoteHref: string;
   invoiceChoice: JobInvoiceChoice;
+  /** Underlag för det guidade avslutsflödet. Saknas det faller "Markera som klart" tillbaka på den enkla dialogen. */
+  closeout?: CloseoutView;
   job: {
     title: string;
     description: string;
@@ -96,6 +102,7 @@ export function JobActions({
   const [isPending, startTransition] = useTransition();
   const [showDoneDialog, setShowDoneDialog] = useState(false);
   const [showDoneWarn, setShowDoneWarn] = useState(false);
+  const [showCloseout, setShowCloseout] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
   const [invoicePreselect, setInvoicePreselect] = useState<JobInvoiceOptionBasis | undefined>();
@@ -120,6 +127,10 @@ export function JobActions({
   }
 
   function markDone() {
+    if (closeout) {
+      setShowCloseout(true);
+      return;
+    }
     if (completeWarning.shouldWarn) {
       setShowDoneWarn(true);
       return;
@@ -140,7 +151,8 @@ export function JobActions({
 
   function reopen() {
     startTransition(async () => {
-      await reopenJobAction(jobId);
+      await reopenJobCloseoutAction(jobId);
+      router.refresh();
     });
   }
 
@@ -183,6 +195,21 @@ export function JobActions({
     </button>
   );
 
+  // Avsluta-knappen visas som huvudåtgärd när jobbet har något att fakturera
+  // eller är på väg att bli klart; annars ligger den kvar i menyn.
+  const closeoutBtn =
+    closeout && canMarkDone ? (
+      <button
+        type="button"
+        className={buttonClasses(closeout.totals.billable > 0 && !quoteRecommended ? "primary" : "secondary")}
+        onClick={() => setShowCloseout(true)}
+        data-testid="job-closeout-open"
+      >
+        <Flag className="size-4" />
+        Avsluta uppdrag
+      </button>
+    ) : null;
+
   return (
     <>
       <PageActions>
@@ -190,11 +217,19 @@ export function JobActions({
           <>
             {quoteBtn}
             {invoiceBtn}
+            {closeoutBtn}
+          </>
+        ) : closeout && closeout.totals.billable > 0 ? (
+          <>
+            {closeoutBtn}
+            {invoiceBtn}
+            {quoteBtn}
           </>
         ) : (
           <>
             {invoiceBtn}
             {quoteBtn}
+            {closeoutBtn}
           </>
         )}
         {waitingLabel ? <p className="text-[14px] font-medium text-soft">{waitingLabel}</p> : null}
@@ -358,6 +393,10 @@ export function JobActions({
         choice={invoiceChoice}
         preselect={invoicePreselect}
       />
+
+      {closeout ? (
+        <CloseoutFlow open={showCloseout} onClose={() => setShowCloseout(false)} view={closeout} jobHref={`/uppdrag/${jobId}`} />
+      ) : null}
     </>
   );
 }

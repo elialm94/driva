@@ -44,6 +44,8 @@ export type JobWorkViewEntry = Pick<
   locked: boolean;
   invoiceId?: string;
   invoiceNumber?: number | null;
+  /** Registrerad på en godkänd ändring: "Ändring 1" – faktureras via ändringen. */
+  changeLabel?: string;
 };
 
 function todayISO(): string {
@@ -112,7 +114,7 @@ export function JobWorkSection({
     <div className="mb-8">
       <SectionTitle
         right={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               type="button"
               className={buttonClasses("secondary", "sm")}
@@ -343,7 +345,9 @@ function WorkList({
               >
                 <p className="text-[14px] font-medium">
                   {entry.description}
-                  {entry.isExtra ? (
+                  {entry.changeLabel ? (
+                    <span className="ml-2 text-[12px] font-medium text-info">{entry.changeLabel}</span>
+                  ) : entry.isExtra ? (
                     <span className="ml-2 text-[12px] font-medium text-warn">Tillägg</span>
                   ) : null}
                 </p>

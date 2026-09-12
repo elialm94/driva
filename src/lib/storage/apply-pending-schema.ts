@@ -2039,7 +2039,8 @@ export async function ensureCloseoutSchema(client: SqlClient): Promise<string[]>
   const allocations = await client.query(`select to_regclass('public.billing_allocations') is not null as present`);
   const changes = await client.query(`select to_regclass('public.job_changes') is not null as present`);
   const shareToken = await columnExists(client, "jobs", "share_token");
-  if (allocations[0]?.present && changes[0]?.present && shareToken) return applied;
+  const entryChange = await columnExists(client, "job_work_entries", "change_id");
+  if (allocations[0]?.present && changes[0]?.present && shareToken && entryChange) return applied;
 
   await run(client, `alter table public.invoice_line_items drop constraint if exists invoice_line_items_source_kind_check`);
   await run(
@@ -2063,6 +2064,7 @@ export async function ensureCloseoutSchema(client: SqlClient): Promise<string[]>
     client,
     `create unique index if not exists jobs_share_token_uq on public.jobs (share_token) where share_token is not null`,
   );
+  await run(client, `alter table public.job_work_entries add column if not exists change_id text`);
 
   await run(
     client,
