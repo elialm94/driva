@@ -1,6 +1,21 @@
 import { createHash } from "crypto";
-import type { QuoteVersion } from "./types";
+import type { PaymentPlanPart, QuoteVersion } from "./types";
 import { canonicalRichText } from "./richtext";
+
+/**
+ * Kanonisk form av betalplanen. Äldre delar ({label, percent}) serialiseras
+ * exakt som förut så att signerade versioner behåller sitt hash. Nya valfria
+ * fält (kind, amount) läggs bara till när de finns, i jsonb:s nyckelordning
+ * (längd, sedan bytevis) – lagringen bevarar inte insättningsordningen.
+ */
+export function canonicalPaymentPlan(plan: PaymentPlanPart[]): Record<string, unknown>[] {
+  return plan.map((part) => ({
+    ...(part.kind !== undefined ? { kind: part.kind } : {}),
+    label: part.label,
+    ...(part.amount !== undefined ? { amount: part.amount } : {}),
+    percent: part.percent,
+  }));
+}
 
 /**
  * Kanoniskt, verifierbart hash av en offertversions innehåll.
@@ -23,7 +38,7 @@ export function quoteVersionHash(v: QuoteVersion): string {
       vatRate: l.vatRate,
     })),
     rot: v.rot ? { type: v.rot.type } : v.rot,
-    paymentPlan: v.paymentPlan,
+    paymentPlan: canonicalPaymentPlan(v.paymentPlan),
     paymentTermsDays: v.paymentTermsDays,
     // Villkorligt så att versioner signerade innan fältet fanns behåller sitt hash.
     ...(v.lateInterestRate !== undefined ? { lateInterestRate: v.lateInterestRate } : {}),

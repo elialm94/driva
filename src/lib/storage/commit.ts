@@ -53,6 +53,8 @@ import {
   invoiceLineColumns,
   invoiceLineToRow,
   invoicesSpec,
+  billingAllocationsSpec,
+  jobChangesSpec,
   jobsSpec,
   jobWorkEntriesSpec,
   paymentFilesSpec,
@@ -670,6 +672,15 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
   await applySpec(
     jobWorkEntriesSpec,
     diffCollection(baseline.jobWorkEntries ?? [], state.jobWorkEntries ?? [])
+  );
+
+  // Ändringar/tillägg (FK till jobs + customers) och faktureringsallokeringar
+  // (FK till invoices). Det unika indexet på levande allokeringar per källa
+  // gör att en dubbelfakturering smäller i databasen – inte bara i tjänsten.
+  await applySpec(jobChangesSpec, diffCollection(baseline.jobChanges ?? [], state.jobChanges ?? []));
+  await applySpec(
+    billingAllocationsSpec,
+    diffCollection(baseline.billingAllocations ?? [], state.billingAllocations ?? [])
   );
 
   // Rättelsestämpel: enda tillåtna ändringen på en bokförd verifikation.

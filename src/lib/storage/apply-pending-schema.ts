@@ -377,6 +377,9 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const onboardingApplied = await ensureOnboardingSchema(client);
   applied.push(...onboardingApplied);
 
+  const closeoutApplied = await ensureCloseoutSchema(client);
+  applied.push(...closeoutApplied);
+
   const reminted = await remintHexInboundMailSlugs(client);
   if (reminted > 0) applied.push(`inbound_mail_slug.remint:${reminted}`);
 
@@ -2024,4 +2027,192 @@ const RESET_DEMO_BUSINESS_WITH_ONBOARDING_SQL = RESET_DEMO_BUSINESS_WITH_WHOLESA
          industries = '[]'::jsonb, other_industry = null, payroll = null, bookkeeping = null,
          task_overrides = '{}'::jsonb, updated_at = now()
    where business_id = p_business_id;`,
+);
+
+/**
+ * Avsluta uppdrag (migration 48): faktureringsallokeringar, ändringar och
+ * tillägg, avslutskolumner på jobs, CHANGE_LINE som radkälla och de nya
+ * publika tokentyperna. Speglar migrationen exakt – idempotent.
+ */
+export async function ensureCloseoutSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  const allocations = await client.query(`select to_regclass('public.billing_allocations') is not null as present`);
+  const changes = await client.query(`select to_regclass('public.job_changes') is not null as present`);
+  const shareToken = await columnExists(client, "jobs", "share_token");
+  if (allocations[0]?.present && changes[0]?.present && shareToken) return applied;
+
+  await run(client, `alter table public.invoice_line_items drop constraint if exists invoice_line_items_source_kind_check`);
+  await run(
+    client,
+    `alter table public.invoice_line_items
+       add constraint invoice_line_items_source_kind_check
+       check (source_kind is null or source_kind in (
+         'QUOTE_LINE', 'JOB_TIME_ENTRY', 'JOB_MATERIAL', 'JOB_OTHER', 'PAYMENT_PLAN', 'CHANGE_LINE', 'MANUAL'
+       ))`,
+  );
+
+  await run(
+    client,
+    `alter table public.jobs
+       add column if not exists billing_deferrals jsonb,
+       add column if not exists closeout jsonb,
+       add column if not exists customer_share jsonb,
+       add column if not exists share_token text`,
+  );
+  await run(
+    client,
+    `create unique index if not exists jobs_share_token_uq on public.jobs (share_token) where share_token is not null`,
+  );
+
+  await run(
+    client,
+    `create table if not exists public.billing_allocations (
+       id text primary key,
+       business_id uuid not null references public.businesses (id) on delete cascade,
+       job_id text references public.jobs (id) on delete cascade,
+       source_type text not null check (source_type in (
+         'quote_line', 'payment_plan_part', 'quote_remainder', 'work_entry',
+         'change_line', 'expense', 'receipt_line', 'manual'
+       )),
+       source_id text not null,
+       invoice_id text not null references public.invoices (id) on delete cascade,
+       invoice_line_id text not null,
+       qty numeric,
+       amount_excl_vat bigint not null default 0,
+       status text not null check (status in ('draft', 'invoiced', 'released')),
+       created_at timestamptz not null default now(),
+       invoiced_at timestamptz,
+       released_at timestamptz,
+       release_reason text check (release_reason is null or release_reason in (
+         'utkast_kastat', 'rad_borttagen', 'faktura_krediterad'
+       )),
+       constraint billing_allocations_release_consistent check (
+         (status = 'released') = (released_at is not null)
+       )
+     )`,
+  );
+  await run(
+    client,
+    `create unique index if not exists billing_allocations_live_source_uq
+       on public.billing_allocations (business_id, source_type, source_id)
+       where status <> 'released'`,
+  );
+  await run(
+    client,
+    `create unique index if not exists billing_allocations_live_line_uq
+       on public.billing_allocations (business_id, invoice_id, invoice_line_id)
+       where status <> 'released'`,
+  );
+  await run(
+    client,
+    `create index if not exists billing_allocations_invoice_idx on public.billing_allocations (business_id, invoice_id)`,
+  );
+  await run(
+    client,
+    `create index if not exists billing_allocations_job_idx
+       on public.billing_allocations (business_id, job_id) where job_id is not null`,
+  );
+  await run(client, `grant select, insert, update, delete on public.billing_allocations to driva_app`);
+  await ensureTenantPolicies(client, "billing_allocations", ["select", "insert", "update", "delete"]);
+
+  await run(
+    client,
+    `create table if not exists public.job_changes (
+       id text primary key,
+       business_id uuid not null references public.businesses (id) on delete cascade,
+       job_id text not null references public.jobs (id) on delete cascade,
+       customer_id text not null references public.customers (id) on delete cascade,
+       number integer not null,
+       version integer not null default 1,
+       status text not null check (status in ('utkast', 'vantar_pa_kunden', 'godkand', 'avbojd', 'ersatt')),
+       title text not null default '',
+       description text not null default '',
+       time_impact text,
+       lines jsonb not null default '[]'::jsonb,
+       token text not null,
+       created_at timestamptz not null default now(),
+       sent_at timestamptz,
+       viewed_at timestamptz,
+       decided_at timestamptz,
+       decline_reason text,
+       locked_at timestamptz,
+       content_hash text,
+       seller_snapshot jsonb,
+       buyer_snapshot jsonb,
+       approval jsonb,
+       replaces_change_id text,
+       replaced_by_change_id text,
+       created_by text check (created_by is null or created_by in ('anvandare', 'assistent')),
+       constraint job_changes_approval_locked check (
+         status <> 'godkand' or (approval is not null and locked_at is not null and content_hash is not null)
+       )
+     )`,
+  );
+  await run(client, `create unique index if not exists job_changes_token_uq on public.job_changes (token)`);
+  await run(
+    client,
+    `create unique index if not exists job_changes_job_number_version_uq
+       on public.job_changes (business_id, job_id, number, version)`,
+  );
+  await run(client, `create index if not exists job_changes_job_idx on public.job_changes (business_id, job_id, created_at)`);
+  await run(client, `grant select, insert, update, delete on public.job_changes to driva_app`);
+  await ensureTenantPolicies(client, "job_changes", ["select", "insert", "update", "delete"]);
+
+  await run(
+    client,
+    `create or replace function app.resolve_public_token(p_kind text, p_token text)
+     returns table (business_id uuid, entity_id text)
+     language sql
+     stable
+     security definer
+     set search_path = ''
+     as $$
+       select q.business_id, q.id from public.quotes q
+         where p_kind = 'quote' and q.token = p_token
+       union all
+       select i.business_id, i.id from public.invoices i
+         where p_kind = 'invoice' and i.token = p_token
+       union all
+       select o.business_id, o.order_ref from public.bankid_orders o
+         where p_kind = 'bankid_order' and o.order_ref = p_token
+       union all
+       select w.business_id, w.id from public.websites w
+         where p_kind = 'website' and w.id = p_token
+       union all
+       select w.business_id, w.id from public.websites w
+         where p_kind = 'website_slug' and w.slug = p_token
+       union all
+       select d.business_id, d.id from public.domains d
+         where p_kind = 'hostname' and lower(d.hostname) = lower(p_token)
+       union all
+       select s.business_id, s.inbound_mail_slug
+         from public.business_settings s
+         where p_kind = 'inbound' and s.inbound_mail_slug = p_token
+       union all
+       select c.business_id, c.id from public.job_changes c
+         where p_kind = 'job_change' and c.token = p_token
+       union all
+       select j.business_id, j.id from public.jobs j
+         where p_kind = 'job_share' and j.share_token = p_token
+       limit 1
+     $$`,
+  );
+  await run(client, `revoke all on function app.resolve_public_token(text, text) from public`);
+  await run(client, `grant execute on function app.resolve_public_token(text, text) to driva_app`);
+
+  await run(client, RESET_DEMO_BUSINESS_WITH_CLOSEOUT_SQL);
+
+  applied.push("closeout");
+  return applied;
+}
+
+/** Migration 48:s reset – 39:s reset plus allokeringar och ändringar. */
+const RESET_DEMO_BUSINESS_WITH_CLOSEOUT_SQL = RESET_DEMO_BUSINESS_WITH_ONBOARDING_SQL.replace(
+  "  delete from public.invoice_issued_snapshots where business_id = p_business_id;",
+  `  delete from public.billing_allocations where business_id = p_business_id;
+  delete from public.invoice_issued_snapshots where business_id = p_business_id;`,
+).replace(
+  "  delete from public.job_work_entries where business_id = p_business_id;",
+  `  delete from public.job_changes where business_id = p_business_id;
+  delete from public.job_work_entries where business_id = p_business_id;`,
 );

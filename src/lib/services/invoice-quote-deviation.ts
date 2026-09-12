@@ -4,6 +4,8 @@ import { docTotals, lineTotal, lineVat } from "../calc";
 import type { DocLine, Invoice, Quote, QuoteVersion } from "../types";
 import { currentVersion, getInvoice, getJob, getQuote, invoiceTotals, quoteAcceptance, quoteVersions } from "./data";
 import { QUOTE_EXCESS_WARN_AMOUNT, QUOTE_EXCESS_WARN_PERCENT } from "../quote-excess";
+import { paymentPlanPartAmount } from "../payment-plan";
+import { kr } from "../format";
 
 export { QUOTE_EXCESS_WARN_AMOUNT, QUOTE_EXCESS_WARN_PERCENT };
 
@@ -74,6 +76,11 @@ function matchPaymentPlanPart(invoice: Invoice, version: QuoteVersion) {
   const plan = version.paymentPlan;
   if (plan.length === 0) return undefined;
 
+  // Sparat index är sanningen när det finns (fakturor efter radproveniensen).
+  if (invoice.paymentPlanIndex != null && plan[invoice.paymentPlanIndex]) {
+    return plan[invoice.paymentPlanIndex];
+  }
+
   const desc = invoice.lines[0]?.description ?? "";
   const numbered = desc.match(/delbetalning\s+(\d+)\s+av\s+(\d+)/i);
   if (numbered) {
@@ -106,11 +113,11 @@ function expectedAmount(invoice: Invoice, quote: Quote, version: QuoteVersion): 
   if (invoice.type === "delbetalning") {
     const part = matchPaymentPlanPart(invoice, version);
     if (part) {
-      const amount = Math.round((quoteTotals.total * part.percent) / 100);
+      const amount = paymentPlanPartAmount(part, quoteTotals.total);
       return {
         amount,
         kind: "delbetalning",
-        label: `${part.percent} % · ${part.label.toLowerCase()}`,
+        label: `${part.amount != null ? kr(part.amount) : `${part.percent} %`} · ${part.label.toLowerCase()}`,
       };
     }
   }

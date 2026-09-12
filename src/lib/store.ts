@@ -285,6 +285,8 @@ export function normalize(loaded: DB, opts: { persistIfDirty?: boolean } = {}): 
   loaded.purchaseOrderConfirmations ??= [];
   loaded.dataImports ??= [];
   loaded.suppliers ??= [];
+  loaded.billingAllocations ??= [];
+  loaded.jobChanges ??= [];
   // Saknad onboarding = klar (äldre JSON-filer, demo): ingen tvingas om.
   if (loaded.onboarding === undefined) loaded.onboarding = null;
   loaded.settings.inboundMailSlug ??= "demo";
@@ -501,6 +503,8 @@ export function resetToEmptyCompany(): void {
     onboarding: null,
     dataImports: [],
     suppliers: [],
+    billingAllocations: [],
+    jobChanges: [],
     meta: { seededAt: seeded, taxReductionDemoHydrated: true },
   };
   g.__drivaDb = normalize(empty);

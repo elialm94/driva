@@ -218,6 +218,8 @@ export type LineSourceKind =
   | "JOB_MATERIAL"
   | "JOB_OTHER"
   | "PAYMENT_PLAN"
+  /** Rad på en godkänd ändring/tillägg (JobChange). sourceId = ändringsradens id. */
+  | "CHANGE_LINE"
   | "MANUAL";
 
 /** Företagets egna artikelregister – timpris, material, schabloner. */
@@ -385,9 +387,25 @@ export interface TaxReductionTermsSnapshot {
   text: string;
 }
 
+/**
+ * En del i offertens betalplan (förskott, delbetalning, slutbetalning).
+ *
+ *   * percent – andel av offertsumman inkl. moms. Sista delen faktureras
+ *     alltid som RESTEN (avrundning, tidigare fakturor, krediter) – aldrig
+ *     som procent rakt av.
+ *   * amount  – fast belopp i hela kronor inkl. moms (t.ex. "förskott 20 000
+ *     kr"). När det finns styr det över percent. Nya fält är valfria så att
+ *     äldre versioner behåller sitt contentHash (se lib/hash).
+ *   * kind    – förskott / delbetalning / slutbetalning. Saknas = härleds av
+ *     positionen (första = förskott när det finns fler än en, sista = slut).
+ */
+export type PaymentPlanPartKind = "forskott" | "delbetalning" | "slutbetalning";
+
 export interface PaymentPlanPart {
   label: string;
   percent: number;
+  amount?: number;
+  kind?: PaymentPlanPartKind;
 }
 
 /* ---------------------------------- Offerter --------------------------------- */
@@ -606,6 +624,203 @@ export interface Job {
   archivedAt?: string;
   /** Foton från arbetsplatsen – bevis mot kunden, inte bokföringsunderlag. */
   photos?: JobPhoto[];
+  /**
+   * Avslutsflödet: beslut om vad som inte ska faktureras (nu eller alls) och
+   * händelser som bara finns i flödet (avslutat, öppnat igen). Saknas =
+   * inget beslut fattat. Ligger på uppdraget – små listor per uppdrag.
+   */
+  billingDeferrals?: BillingDeferral[];
+  closeout?: JobCloseoutState;
+  /** Kundvyn: vad kunden får se via sin länk. Saknas = ingen länk delad. */
+  customerShare?: JobCustomerShare;
+}
+
+/* ------------------------------ Avsluta uppdrag ------------------------------ */
+
+/**
+ * Beslut i avslutsflödet om en källrad som INTE faktureras nu.
+ *   inte_fakturerbart – räknas aldrig som kvar att fakturera (garanti, eget fel …).
+ *   hantera_senare    – ligger kvar som ofakturerat men hindrar inte avslut.
+ * Ett beslut per källa; nytt beslut ersätter det gamla. Sätts resolvedAt när
+ * källan ändå faktureras eller beslutet tas bort.
+ */
+export type BillingDeferralKind = "inte_fakturerbart" | "hantera_senare";
+
+export interface BillingDeferral {
+  id: ID;
+  sourceType: BillingSourceType;
+  sourceId: ID;
+  kind: BillingDeferralKind;
+  note?: string;
+  createdAt: string;
+  createdBy?: "anvandare" | "assistent";
+  resolvedAt?: string;
+}
+
+export type JobCloseoutEventKind =
+  | "avslutat"
+  | "oppnat_igen"
+  | "beslut_inte_fakturerbart"
+  | "beslut_hantera_senare"
+  | "beslut_borttaget"
+  | "fakturautkast_skapat"
+  | "kundvy_delad"
+  | "kundvy_stangd"
+  | "slutunderlag_skapat"
+  | "dagsrapport";
+
+export interface JobCloseoutEvent {
+  id: ID;
+  at: string;
+  kind: JobCloseoutEventKind;
+  /** Kort, kundvänlig text utan systemjargong – visas i tidslinjen. */
+  text: string;
+  /** Kopplad faktura/ändring/källa när det finns en. */
+  entity?: { type: "faktura" | "andring" | "kalla"; id: ID };
+  createdBy?: "anvandare" | "assistent";
+}
+
+export interface JobCloseoutState {
+  /** Sätts när uppdraget avslutas via flödet. Tas bort när det öppnas igen. */
+  completedAt?: string;
+  /** Vad användaren valde som faktureringssätt i det senaste avslutet. */
+  billingMode?: CloseoutBillingMode;
+  events: JobCloseoutEvent[];
+}
+
+/** Faktureringssätt i avslutsflödet. Härlett förslag, användaren kan byta. */
+export type CloseoutBillingMode = "slutfaktura" | "delfaktura" | "lopande" | "ingen";
+
+/** Vad kunden får se på sin uppdragslänk. Allt är av som standard. */
+export interface JobCustomerShare {
+  token: string;
+  sharedAt: string;
+  /** Länken pausad: sidan svarar "inte tillgänglig". Inställningarna finns kvar. */
+  disabledAt?: string;
+  quote: boolean;
+  changes: boolean;
+  /** Foto-id:n som delas explicit. Tom = inga foton. */
+  photoIds: ID[];
+  invoices: boolean;
+  paymentStatus: boolean;
+  closeoutSummary: boolean;
+}
+
+/* --------------------------- Faktureringsallokering --------------------------- */
+
+/**
+ * Källa som kan faktureras. Generell – samma modell används av avslutsflödet,
+ * betalplanen och (senare) vidarefakturering av material/kvitton.
+ *
+ *   quote_line        – rad på godkänd offertversion (sourceId = DocLine.id).
+ *   payment_plan_part – del i betalplanen (sourceId = `${quoteId}:plan:${index}`).
+ *   quote_remainder   – resterande enligt offert som klumpsumma (sourceId = quoteId).
+ *   work_entry        – registrerad tid/material/övrigt (sourceId = JobWorkEntry.id).
+ *   change_line       – rad på godkänd ändring (sourceId = ändringsradens id).
+ *   expense           – utgift/kvitto som vidarefaktureras (sourceId = Expense.id).
+ *   receipt_line      – kvittorad (sourceId = `${receiptId}:${index}`), reserverad.
+ *   manual            – fri rad utan källa; allokeras aldrig.
+ */
+export type BillingSourceType =
+  | "quote_line"
+  | "payment_plan_part"
+  | "quote_remainder"
+  | "work_entry"
+  | "change_line"
+  | "expense"
+  | "receipt_line"
+  | "manual";
+
+export interface BillingSourceRef {
+  sourceType: BillingSourceType;
+  sourceId: ID;
+}
+
+/**
+ *   draft     – ligger på ett fakturautkast (reserverar källan).
+ *   invoiced  – fakturan är utfärdad.
+ *   released  – frisläppt (utkast kastat, rad borttagen eller faktura helt
+ *               krediterad). Historik – räknas inte som fakturerad.
+ */
+export type BillingAllocationStatus = "draft" | "invoiced" | "released";
+
+/**
+ * Spårbar länk källrad → fakturarad. EN levande (draft/invoiced) allokering
+ * per källa (unikt index i databasen, samma kontroll i tjänsten) – det är
+ * detta som hindrar dubbelfakturering.
+ */
+export interface BillingAllocation {
+  id: ID;
+  jobId?: ID;
+  sourceType: BillingSourceType;
+  sourceId: ID;
+  invoiceId: ID;
+  invoiceLineId: ID;
+  /** Antal av källan som allokerats (hela källan om det saknas). */
+  qty?: number;
+  /** Radens belopp exkl. moms, hela kronor, vid allokeringen. */
+  amountExclVat: number;
+  status: BillingAllocationStatus;
+  createdAt: string;
+  invoicedAt?: string;
+  releasedAt?: string;
+  releaseReason?: "utkast_kastat" | "rad_borttagen" | "faktura_krediterad";
+}
+
+/* ---------------------------- Ändringar och tillägg ---------------------------- */
+
+/**
+ *   utkast            – skapad, inte skickad.
+ *   vantar_pa_kunden  – skickad/delad, kunden har inte svarat.
+ *   godkand           – kunden godkände exakt den här versionen (approval).
+ *   avbojd            – kunden avböjde.
+ *   ersatt            – ersatt av en ny version (replacedByChangeId).
+ * "Delvis fakturerad"/"Fakturerad" härleds ur allokeringarna – lagras aldrig.
+ */
+export type JobChangeStatus = "utkast" | "vantar_pa_kunden" | "godkand" | "avbojd" | "ersatt";
+
+/** Kundens godkännande av EXAKT en ändringsversion – samma bevismodell som offerten. */
+export interface JobChangeApproval {
+  approvedAt: string;
+  approvedByName: string;
+  customerNameAtApproval: string;
+  /** SHA-256 av det låsta innehållet (samma som JobChange.contentHash). */
+  contentHash: string;
+  statement: string;
+  ip?: string;
+  userAgent?: string;
+}
+
+export interface JobChange {
+  id: ID;
+  jobId: ID;
+  customerId: ID;
+  /** Löpnummer per uppdrag (Ändring 1, 2 …). Versioner delar nummer. */
+  number: number;
+  version: number;
+  status: JobChangeStatus;
+  title: string;
+  /** Vad som ändras och varför – ren text som kunden ser. */
+  description: string;
+  /** Påverkan på tid, om någon ("cirka två extra dagar"). */
+  timeImpact?: string;
+  lines: DocLine[];
+  /** Publik token för kundlänken. */
+  token: string;
+  createdAt: string;
+  sentAt?: string;
+  viewedAt?: string;
+  decidedAt?: string;
+  declineReason?: string;
+  /** Låsning vid utskick: innehållet får inte ändras efter att kunden sett det. */
+  lockedAt?: string;
+  contentHash?: string;
+  sellerSnapshot?: InvoiceSellerSnapshot;
+  buyerSnapshot?: InvoiceBuyerSnapshot;
+  approval?: JobChangeApproval;
+  replacesChangeId?: ID;
+  replacedByChangeId?: ID;
+  createdBy?: "anvandare" | "assistent";
 }
 
 export interface JobPhoto {
@@ -1723,7 +1938,12 @@ export type AuditAction =
   | "samarbete_aterstalld"
   | "samarbete_skrivning"
   | "kundunderlag_begart"
-  | "kundunderlag_lost";
+  | "kundunderlag_lost"
+  // Avslut och ändringar: kundgodkännanden och avslutsbeslut auditloggas.
+  | "andring_godkand"
+  | "andring_avbojd"
+  | "uppdrag_avslutat"
+  | "uppdrag_oppnat_igen";
 
 export type BusinessRole = "owner" | "admin" | "member" | "accounting_consultant" | "auditor";
 export type CollaborationRole = "accounting_consultant" | "auditor";
@@ -1955,7 +2175,7 @@ export interface ActivityEvent {
   customerId?: ID;
   createdBy?: "anvandare" | "assistent";
   entity?: {
-    type: "offert" | "faktura" | "jobb" | "utgift" | "verifikation" | "hemsida" | "doman";
+    type: "offert" | "faktura" | "jobb" | "utgift" | "verifikation" | "hemsida" | "doman" | "andring";
     id: ID;
   };
 }
@@ -3172,6 +3392,10 @@ export interface DB {
   dataImports?: DataImport[];
   /** Leverantörsregister. Guardera med ?? []. */
   suppliers?: Supplier[];
+  /** Faktureringsallokeringar (källrad → fakturarad). Guardera med ?? []. */
+  billingAllocations?: BillingAllocation[];
+  /** Ändringar och tillägg på uppdrag. Guardera med ?? []. */
+  jobChanges?: JobChange[];
   meta: {
     seededAt: string;
     /**

@@ -193,7 +193,18 @@ export async function loadStateSnapshot(businessId: string): Promise<DB> {
 
 /* ------------------------- uppslag utanför tenantkontext ------------------------- */
 
-export type PublicTokenKind = "quote" | "invoice" | "bankid_order" | "website" | "website_slug" | "hostname" | "inbound";
+export type PublicTokenKind =
+  | "quote"
+  | "invoice"
+  | "bankid_order"
+  | "website"
+  | "website_slug"
+  | "hostname"
+  | "inbound"
+  /** Ändring/tillägg på uppdrag (kundgodkännande). */
+  | "job_change"
+  /** Kundvyn för ett uppdrag (jobs.share_token). */
+  | "job_share";
 
 /** Slå upp företag + entitet för en publik token (offert-/fakturalänk, sajt). */
 export async function resolvePublicToken(
