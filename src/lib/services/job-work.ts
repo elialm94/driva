@@ -360,7 +360,7 @@ export function addJobWorkEntry(
     id: uid(),
     jobId,
     role: "actual",
-    type: "other",
+    type: input.type,
     description,
     date: (input.date || todayISO()).slice(0, 10),
     qty: assertPositiveQty(input.qty),
@@ -369,7 +369,7 @@ export function addJobWorkEntry(
     vatRate: input.vatRate ?? defaultVat(),
     source: input.source ?? "manual",
     quotedLineItemId,
-    isExtra: detectExtra(jobId, { type: "other", description, quotedLineItemId }),
+    isExtra: detectExtra(jobId, { type: input.type, description, quotedLineItemId }),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

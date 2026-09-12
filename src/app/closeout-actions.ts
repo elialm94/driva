@@ -41,6 +41,7 @@ import {
   type JobChangeInput,
 } from "@/lib/services/job-changes";
 import { disableCustomerShare, enableCustomerShare, type CustomerShareSettings } from "@/lib/services/customer-share";
+import { saveDayReport, type DayReportSaveItem } from "@/lib/services/day-report";
 
 function refresh() {
   revalidatePath("/", "layout");
@@ -331,6 +332,39 @@ export async function disableCustomerShareAction(jobId: string): Promise<Closeou
       return { ok: true } as const;
     } catch (e) {
       return closeoutFailure(e, "Kundlänken kunde inte stängas.");
+    }
+  });
+}
+
+/* ------------------------------ Rapportera dagens jobb ------------------------------ */
+
+export type DayReportActionResult =
+  | { ok: true; entries: number; changes: number; notes: number; firstChangeId?: string }
+  | { ok: false; error: string };
+
+/**
+ * Sparar de förslag användaren valt. Tolkningen sker lokalt i webbläsaren
+ * (src/lib/day-report.ts) - här sparas bara det som kommer in, genom samma
+ * tjänster som manuell registrering. Skickar ingenting externt.
+ */
+export async function saveDayReportAction(
+  jobId: string,
+  items: DayReportSaveItem[],
+  date?: string
+): Promise<DayReportActionResult> {
+  return withBusiness(() => {
+    try {
+      const result = saveDayReport(jobId, items, date);
+      refresh();
+      return {
+        ok: true,
+        entries: result.entries.length,
+        changes: result.changes.length,
+        notes: result.notes,
+        ...(result.changes[0] ? { firstChangeId: result.changes[0].id } : {}),
+      } as const;
+    } catch (e) {
+      return closeoutFailure(e, "Rapporten kunde inte sparas.");
     }
   });
 }

@@ -20,6 +20,7 @@ import type { JobWorkEntry, VatRate } from "@/lib/types";
 import type { JobWholesalerContext } from "@/lib/wholesalers/views";
 import { LineDescriptionInput, LineDescriptionVocabProvider } from "./line-description-input";
 import { WholesalerMaterialSheet } from "./wholesaler-material-sheet";
+import { DayReportButton } from "./day-report-sheet";
 
 function hoursLabel(n: number): string {
   return `${Number(n.toFixed(2)).toLocaleString("sv-SE")} tim`;
@@ -143,6 +144,7 @@ export function JobWorkSection({
               <span className="sm:hidden">Material</span>
               <span className="hidden sm:inline">Lägg till material</span>
             </button>
+            <DayReportButton jobId={jobId} />
           </div>
         }
       >
