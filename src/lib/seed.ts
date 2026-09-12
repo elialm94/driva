@@ -23,11 +23,12 @@ import { syncDocLineClassification } from "./economic-line-type";
 import { getPaymentExportProvider } from "./banking/payment-export";
 import {
   entriesExpense,
+  entriesFSkattCharge,
   entriesInvoicePaid,
   entriesInvoiceSent,
   entriesSupplierInvoicePaid,
   entriesSupplierInvoiceReceived,
-  entriesTaxPayment,
+  entriesTaxAccountDeposit,
 } from "./bas";
 import { docTotals } from "./calc";
 import { quoteVersionHash } from "./hash";
@@ -41,6 +42,29 @@ function d(daysAgo: number, hour = 10, minute = 0): string {
   const t = new Date(Date.now() - daysAgo * 86_400_000);
   t.setHours(hour, minute, 0, 0);
   return t.toISOString();
+}
+
+/** Samma dagregel som AGI/moms: 12:e, 17:e i januari och augusti. */
+function fskattDueDate(month: string): string {
+  const y = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7));
+  const day = m === 1 || m === 8 ? 17 : 12;
+  return `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/**
+ * Månader i innevarande kalenderår vars F-skatt redan förfallit.
+ * Seedas som 2518/1630 så sidladdningen inte bokför dem en gång till.
+ */
+function passedFskattMonths(through = new Date()): string[] {
+  const year = through.getFullYear();
+  const today = `${year}-${String(through.getMonth() + 1).padStart(2, "0")}-${String(through.getDate()).padStart(2, "0")}`;
+  const months: string[] = [];
+  for (let m = 1; m <= 12; m++) {
+    const month = `${year}-${String(m).padStart(2, "0")}`;
+    if (fskattDueDate(month) <= today) months.push(month);
+  }
+  return months;
 }
 
 function L(kind: LineKind, description: string, qty: number, unit: string, unitPrice: number, vatRate: VatRate = 25): DocLine {
@@ -1845,17 +1869,27 @@ export function buildSeed(): DB {
   addVer({
     id: "ver-skatt-aug",
     date: d(15),
-    description: "Preliminärskatt augusti",
-    entries: entriesTaxPayment(12400),
+    description: "Inbetalning till skattekontot",
+    entries: entriesTaxAccountDeposit(12400),
     source: { type: "banktransaktion", id: "tx-fskatt-aug" },
   });
   addVer({
     id: "ver-skatt-jul",
     date: d(45),
-    description: "Preliminärskatt juli",
-    entries: entriesTaxPayment(12400),
+    description: "Inbetalning till skattekontot",
+    entries: entriesTaxAccountDeposit(12400),
     source: { type: "banktransaktion", id: "tx-fskatt-jul" },
   });
+
+  for (const month of passedFskattMonths()) {
+    addVer({
+      id: `ver-fskatt-${month}`,
+      date: `${fskattDueDate(month)}T12:00:00.000Z`,
+      description: `F-skatt ${month}`,
+      entries: entriesFSkattCharge(12400),
+      source: { type: "skattekonto", id: `fskatt-${month}` },
+    });
+  }
 
   const verifications: Verification[] = rawVerifications
     .sort((a, b) => a.date.localeCompare(b.date))

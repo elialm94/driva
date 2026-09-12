@@ -5,6 +5,7 @@ import type { AttentionState } from "../types";
 import { DAYPART_TIMES, instantFromLocal, localParts, resolveWhen } from "../reminders/when";
 import { businessTimezone } from "./reminders";
 import { controlsForAction, type AttentionSnoozeChoice } from "./action-issue";
+import { legalDeadlineDueDate, legalDeadlineSnoozeCap } from "./legal-deadline";
 
 /**
  * Uppmärksamhetstillstånd: snooze (och HIDE-avfärdan) för åtgärdsmotorns rader.
@@ -136,10 +137,17 @@ function assertSnoozable(actionId: string): void {
   }
 }
 
+function clampSnoozeToLegalDeadline(actionId: string, until: Date): Date {
+  const due = legalDeadlineDueDate(actionId);
+  if (!due) return until;
+  const cap = instantFromLocal(legalDeadlineSnoozeCap(due, businessTimezone()), businessTimezone());
+  return until.getTime() > cap.getTime() ? cap : until;
+}
+
 /** Snooza med preset/datum. Ändrar aldrig domänstatus. */
 export function snoozeAttention(actionId: string, choice: AttentionSnoozeChoice, now = new Date()): AttentionState {
   assertSnoozable(actionId);
-  const until = resolveSnoozeUntil(choice, now);
+  const until = clampSnoozeToLegalDeadline(actionId, resolveSnoozeUntil(choice, now));
   if (until.getTime() <= now.getTime()) throw new Error("Snooze-tidpunkten måste vara framåt.");
   return upsertState(actionId, { snoozedUntil: until.toISOString() });
 }
@@ -147,10 +155,11 @@ export function snoozeAttention(actionId: string, choice: AttentionSnoozeChoice,
 /** Snooza till en exakt tidpunkt (AI-vägen: WhenExpression → resolveWhen → hit). */
 export function snoozeAttentionUntil(actionId: string, untilIso: string, now = new Date()): AttentionState {
   assertSnoozable(actionId);
-  const until = Date.parse(untilIso);
-  if (Number.isNaN(until)) throw new Error("Ogiltig tidpunkt att skjuta upp till.");
-  if (until <= now.getTime()) throw new Error("Snooze-tidpunkten måste vara framåt.");
-  return upsertState(actionId, { snoozedUntil: new Date(until).toISOString() });
+  const parsed = Date.parse(untilIso);
+  if (Number.isNaN(parsed)) throw new Error("Ogiltig tidpunkt att skjuta upp till.");
+  const until = clampSnoozeToLegalDeadline(actionId, new Date(parsed));
+  if (until.getTime() <= now.getTime()) throw new Error("Snooze-tidpunkten måste vara framåt.");
+  return upsertState(actionId, { snoozedUntil: until.toISOString() });
 }
 
 /**

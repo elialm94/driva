@@ -4,6 +4,7 @@ import { tenantContext } from "../storage/context";
 import { supabaseAuthAdminClient } from "../platform/supabase-admin";
 import { MAX_INLINE_ATTACHMENT_BYTES, attachmentBytes } from "../inbox/attachment-content";
 import { inboxAttachmentForReceipt } from "./receipt-source";
+import { UPLOAD_MAX_BYTES, UPLOAD_MAX_LABEL } from "../uploads/limits";
 
 export { receiptFileStored } from "./receipt-meta";
 export { receiptFileAvailable, inboxAttachmentForReceipt } from "./receipt-source";
@@ -33,7 +34,7 @@ export { receiptFileAvailable, inboxAttachmentForReceipt } from "./receipt-sourc
  */
 
 export const RECEIPT_BUCKET = "receipts";
-export const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
+export const MAX_RECEIPT_BYTES = UPLOAD_MAX_BYTES;
 
 /** Användarsäkra feltexter – aldrig rå Storage-/Postgres-text i UI:t. */
 export const RECEIPT_TOO_LARGE_FOR_DEMO =
@@ -98,7 +99,7 @@ export function validateReceiptFile(file: ReceiptFileInput): ReceiptFileInput {
   }
   if (file.bytes.length === 0) throw new Error("Kvittofilen är tom.");
   if (file.bytes.length > MAX_RECEIPT_BYTES) {
-    throw new Error("Kvittot är för stort (max 5 MB).");
+    throw new Error(`Kvittot är för stort (max ${UPLOAD_MAX_LABEL}).`);
   }
   return file;
 }

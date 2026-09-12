@@ -1,45 +1,16 @@
-import { PageHeader } from "@/components/ui";
-import { InboxList } from "@/components/inbox-list";
-import { InboxAddressCard } from "@/components/inbox-address";
-import { InboxUploadZone } from "@/components/inbox-upload";
-import { inboundAddressForBusiness, listInbox } from "@/lib/services/inbox";
-import { ensurePageBusiness } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Inbox" };
-
-function str(value: string | string[] | undefined): string {
-  return typeof value === "string" ? value : "";
-}
-
-export default async function InboxPage(props: {
+/** Kvar som redirect i minst två releaser – mejl och gamla länkar landar här. */
+export default async function InboxRedirect({
+  searchParams,
+}: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await ensurePageBusiness();
-  const searchParams = await props.searchParams;
-  const address = inboundAddressForBusiness();
-
-  return (
-    <div className="animate-fade-up">
-      <PageHeader
-        title="Inbox"
-        subtitle="Leverantörsfakturor, kvitton och andra ekonomiska dokument samlas här."
-      />
-      <div className="mb-5">
-        <InboxUploadZone />
-      </div>
-      <InboxAddressCard address={address} />
-      <InboxList
-        result={listInbox({
-          q: str(searchParams.q),
-          filter: str(searchParams.visning) === "alla" ? "alla" : "oppna",
-          page: Number(str(searchParams.sida)) || 1,
-        })}
-        query={{
-          q: str(searchParams.q),
-          filter: str(searchParams.visning) === "alla" ? "alla" : "oppna",
-          page: Number(str(searchParams.sida)) || 1,
-        }}
-      />
-    </div>
-  );
+  const params = await searchParams;
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === "string" && value) qs.set(key, value);
+  }
+  const suffix = qs.toString();
+  redirect(suffix ? `/bokforing/underlag?${suffix}` : "/bokforing/underlag");
 }

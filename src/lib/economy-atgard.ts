@@ -9,7 +9,7 @@ import type { EkonomiTab } from "./nav";
  *   utgift-<id>            → en nyss registrerad utgift (fliken Utgifter)
  *   supplier-<id>          → leverantörsfakturan (fliken Utgifter)
  */
-export function highlightFromAtgard(atgard: string | undefined, tab: EkonomiTab): string | undefined {
+export function highlightFromAtgard(atgard: string | undefined, tab: EkonomiTab | "bank"): string | undefined {
   const id = (atgard ?? "").trim();
   if (!id) return undefined;
   if (tab === "bank") {

@@ -674,7 +674,7 @@ describe("åtgärdsmotorn: moms", () => {
     assert.ok(vat, "moms inom 14 dagar ska vara en åtgärd");
     assert.equal(vat.priority, "action");
     assert.match(vat.title, /Moms ska deklareras/);
-    assert.equal(vat.href, "/bokforing/moms");
+    assert.equal(vat.href, `/bokforing/moms?fokus=${period.key}`);
     assert.ok(!actions.watching.some((u) => u.id === `vat-${period.key}`), "inte både åtgärd och På gång");
 
     // 1 dag före: urgent.

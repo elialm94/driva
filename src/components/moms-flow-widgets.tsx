@@ -123,7 +123,15 @@ const SKV_OCR_URL =
  * OCR-numret för skattekontot: visas med kopiera-knapp när det är sparat,
  * annars en länk till Skatteverkets OCR-beräkning och ett fält att spara det i.
  */
-export function TaxAccountOcrField({ ocr, readOnly }: { ocr?: string; readOnly?: boolean }) {
+export function TaxAccountOcrField({
+  ocr,
+  suggested,
+  readOnly,
+}: {
+  ocr?: string;
+  suggested?: string;
+  readOnly?: boolean;
+}) {
   const router = useRouter();
   const inputId = useId();
   const [isPending, startTransition] = useTransition();
@@ -167,48 +175,88 @@ export function TaxAccountOcrField({ ocr, readOnly }: { ocr?: string; readOnly?:
     return <span className="text-[13px] text-muted">Inte sparat</span>;
   }
 
+  function confirmSuggested() {
+    if (!suggested) return;
+    setValue(suggested);
+    setError(null);
+    startTransition(async () => {
+      const res = await setTaxAccountOcrAction(suggested);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setEditing(false);
+      router.refresh();
+    });
+  }
+
   return (
     <div data-vat-ocr-field>
-      <p className="text-[12.5px] leading-relaxed text-soft">
-        Numret är unikt för bolaget och hämtas hos Skatteverket.{" "}
-        <a href={SKV_OCR_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
-          Öppna OCR-beräkningen
-          <ExternalLink className="size-3" />
-        </a>
-      </p>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <label htmlFor={inputId} className="sr-only">
-          OCR-nummer för skattekontot
-        </label>
-        <input
-          id={inputId}
-          value={value}
-          inputMode="numeric"
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") submit();
-          }}
-          placeholder="Klistra in numret här"
-          className="w-56 rounded-lg border border-line bg-card px-3 py-1.5 font-mono text-[13px] tabular outline-none focus:border-accent"
-        />
-        <button type="button" className={buttonClasses("secondary", "sm")} disabled={isPending || !value.trim()} onClick={submit}>
-          {isPending ? "Sparar …" : "Spara"}
-        </button>
-        {ocr ? (
-          <button
-            type="button"
-            className={buttonClasses("ghost", "sm")}
-            disabled={isPending}
-            onClick={() => {
-              setEditing(false);
-              setValue(ocr);
-              setError(null);
-            }}
-          >
-            Avbryt
-          </button>
-        ) : null}
-      </div>
+      {suggested ? (
+        <>
+          <p className="font-mono text-[14px] tabular text-ink">{suggested}</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-soft">
+            Framräknat ur organisationsnumret. Kontrollera en gång mot Skatteverkets OCR-beräkning.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button type="button" className={buttonClasses("primary", "sm")} disabled={isPending} onClick={confirmSuggested}>
+              {isPending ? "Sparar …" : "Stämmer"}
+            </button>
+            <a
+              href={SKV_OCR_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[13px] font-medium text-accent hover:underline"
+            >
+              Öppna OCR-beräkningen
+              <ExternalLink className="size-3" />
+            </a>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-[12.5px] leading-relaxed text-soft">
+            Numret är unikt för bolaget och hämtas hos Skatteverket.{" "}
+            <a href={SKV_OCR_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
+              Öppna OCR-beräkningen
+              <ExternalLink className="size-3" />
+            </a>
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label htmlFor={inputId} className="sr-only">
+              OCR-nummer för skattekontot
+            </label>
+            <input
+              id={inputId}
+              value={value}
+              inputMode="numeric"
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submit();
+              }}
+              placeholder="Klistra in numret här"
+              className="w-56 rounded-lg border border-line bg-card px-3 py-1.5 font-mono text-[13px] tabular outline-none focus:border-accent"
+            />
+            <button type="button" className={buttonClasses("secondary", "sm")} disabled={isPending || !value.trim()} onClick={submit}>
+              {isPending ? "Sparar …" : "Spara"}
+            </button>
+            {ocr ? (
+              <button
+                type="button"
+                className={buttonClasses("ghost", "sm")}
+                disabled={isPending}
+                onClick={() => {
+                  setEditing(false);
+                  setValue(ocr);
+                  setError(null);
+                }}
+              >
+                Avbryt
+              </button>
+            ) : null}
+          </div>
+        </>
+      )}
       <ErrorNote error={error} />
     </div>
   );

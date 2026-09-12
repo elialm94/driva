@@ -61,7 +61,7 @@ export function ConnectBankButton({
               window.location.assign(result.redirectTo);
               return;
             }
-            router.push((result.redirectTo ?? "/ekonomi?flik=bank") as never);
+            router.push((result.redirectTo ?? "/bokforing/bank") as never);
             router.refresh();
           });
         }}

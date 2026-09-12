@@ -114,9 +114,8 @@ export function parseEconomySortValue(value: string): EconomySortState | null {
   return parseEconomySort(key, direction);
 }
 
-export function ekonomiRegisterHref(tab: EkonomiTab, query: EconomyRegisterQueryInput): string {
+export function ekonomiRegisterHref(tab: EkonomiTab | "bank", query: EconomyRegisterQueryInput): string {
   const sp = new URLSearchParams();
-  sp.set("flik", tab);
   if (query.q) sp.set("q", query.q);
   if (query.status && query.status !== "alla") sp.set("status", query.status);
   if (query.sort) {
@@ -124,5 +123,10 @@ export function ekonomiRegisterHref(tab: EkonomiTab, query: EconomyRegisterQuery
     sp.set("direction", query.sort.direction);
   }
   if (query.page && query.page > 1) sp.set("sida", String(query.page));
+  if (tab === "bank") {
+    const qs = sp.toString();
+    return qs ? `/bokforing/bank?${qs}` : "/bokforing/bank";
+  }
+  sp.set("flik", tab);
   return `/ekonomi?${sp.toString()}`;
 }

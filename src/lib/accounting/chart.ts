@@ -239,7 +239,7 @@ const STANDARD_NAMES: Readonly<Record<number, string>> = {
   2518: "Betald F-skatt",
 
   /* ---- 2 Moms ---- */
-  2610: "Utgående moms, 25 % försäljning",
+  2610: "Utgående moms 25 %, samlingskonto",
   2611: "Utgående moms 25 %",
   2612: "Utgående moms på egna uttag, 25 %",
   2614: "Utgående moms omvänd skattskyldighet, 25 %",
@@ -250,7 +250,7 @@ const STANDARD_NAMES: Readonly<Record<number, string>> = {
   2630: "Utgående moms, 6 % försäljning",
   2631: "Utgående moms 6 %",
   2634: "Utgående moms omvänd skattskyldighet, 6 %",
-  2640: "Ingående moms",
+  2640: "Ingående moms, samlingskonto",
   2641: "Ingående moms",
   2645: "Beräknad ingående moms på förvärv från utlandet",
   2647: "Ingående moms omvänd skattskyldighet",
@@ -268,7 +268,7 @@ const STANDARD_NAMES: Readonly<Record<number, string>> = {
   2820: "Kortfristiga skulder till anställda",
   2821: "Löneskulder",
   2822: "Reseräkningar",
-  2850: "Avräkning för skatter och avgifter (skattekonto)",
+  2850: "Avräkning för skatter och avgifter (skuld)",
   2890: "Övriga kortfristiga skulder",
   2893: "Skulder till närstående personer, kortfristig del",
   2898: "Outtagen vinstutdelning",
@@ -458,6 +458,17 @@ const STANDARD_ACCOUNTS: ReadonlyMap<number, ChartAccount> = new Map(
     return [account, { number: account, name, type: TYPE_BY_SECTION[section], section }] as const;
   })
 );
+
+const ENSKILD_EQUITY = new Set([2010, 2013, 2018, 2019]);
+const AB_EQUITY = new Set([2081, 2085, 2086, 2091, 2093, 2097, 2098, 2099]);
+/** Dubbletter i standardplanen som inte ska föreslås i Nytt verifikat. */
+const HIDDEN_PICKER_ACCOUNTS = new Set([2610, 2640]);
+
+/** AB ska inte se enskild-firmas 20xx-konton, och omvänt. */
+export function accountFitsCompanyForm(account: number, form: "ab" | "enskild" = "ab"): boolean {
+  if (form === "ab") return !ENSKILD_EQUITY.has(account);
+  return !AB_EQUITY.has(account);
+}
 
 /** Standardplanens konton, i nummerordning. Utan företagets egna avvikelser. */
 export function standardAccounts(): ChartAccount[] {

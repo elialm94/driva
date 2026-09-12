@@ -83,11 +83,11 @@ export function saveEmployee(
   if (input.id && !existing) throw new Error("Den anställde finns inte.");
 
   if (!existing) {
-    const other = data.employees.find((e) => e.status === "anstalld");
-    if (other) {
-      throw new Error(
-        `${other.name} är redan upplagd som anställd. Driva stöder en anställd – avsluta anställningen först.`
-      );
+    const samePerson = data.employees.find(
+      (e) => e.status === "anstalld" && e.personnummer === normalized.personnummer
+    );
+    if (samePerson) {
+      throw new Error(`${samePerson.name} är redan upplagd med samma personnummer.`);
     }
   }
 
@@ -295,18 +295,32 @@ export function reversePayrollRun(runId: string, reason: string, actor: "anvanda
  * bokförd. Innevarande månad räknas först när lönedagen passerat.
  */
 export function payrollMonthsAwaitingRun(through: string = todayDate()): string[] {
-  const employee = currentEmployee();
-  if (!employee) return [];
+  const active = employees().filter((e) => e.status === "anstalld");
+  if (active.length === 0) return [];
   const fy = fiscalYearFor(through);
   if (!fy) return [];
-  const months: string[] = [];
-  const first = maxMonth(fy.startDate.slice(0, 7), employee.startDate.slice(0, 7));
-  const last = employee.endDate ? minMonth(fy.endDate.slice(0, 7), employee.endDate.slice(0, 7)) : fy.endDate.slice(0, 7);
-  for (let m = first; m <= last; m = nextMonthKey(m)) {
-    if (defaultPayDate(m) > through) break;
-    if (!payrollRuns().some((r) => r.month === m && r.employeeId === employee.id)) months.push(m);
+  const months = new Set<string>();
+  for (const employee of active) {
+    const first = maxMonth(fy.startDate.slice(0, 7), employee.startDate.slice(0, 7));
+    const last = employee.endDate
+      ? minMonth(fy.endDate.slice(0, 7), employee.endDate.slice(0, 7))
+      : fy.endDate.slice(0, 7);
+    for (let m = first; m <= last; m = nextMonthKey(m)) {
+      if (defaultPayDate(m) > through) break;
+      if (!payrollRuns().some((r) => r.month === m && r.employeeId === employee.id)) months.add(m);
+    }
   }
-  return months;
+  return [...months].sort();
+}
+
+/** Anställda som saknar lönekörning för månaden. */
+export function employeesAwaitingPayroll(month: string): Employee[] {
+  return employees().filter((e) => {
+    if (e.status !== "anstalld") return false;
+    if (e.startDate.slice(0, 7) > month) return false;
+    if (e.endDate && e.endDate.slice(0, 7) < month) return false;
+    return !payrollRuns().some((r) => r.month === month && r.employeeId === e.id);
+  });
 }
 
 function maxMonth(a: string, b: string): string {

@@ -10,6 +10,8 @@ import {
   bookVatOnTaxAccount,
   parseTaxAccountStatement,
   reconcileTaxAccount,
+  rememberTaxAccountStatement,
+  setAutoBookFSkatt,
   setFSkattPerMonth,
   setTaxAccountOcr,
   type TaxAccountReconciliation,
@@ -75,6 +77,11 @@ import type {
   YearEndScheduleKind,
 } from "@/lib/types";
 import { withBusiness, withBusinessRead } from "@/lib/auth/session";
+import { currentActor } from "@/lib/collaboration/actor";
+import { parseBookkeepingMode } from "@/lib/accounting/bookkeeping-mode-keys";
+import { setBookkeepingModeForUser } from "@/lib/accounting/bookkeeping-mode";
+import { addCustomAccount, archiveAccount, renameAccount } from "@/lib/accounting/chart";
+import { emailAccountantPack } from "@/lib/services/accountant-pack";
 
 /**
  * Serveråtgärder för bokföringen. Tunna omslag runt domänlagret –
@@ -146,6 +153,10 @@ export async function setFSkattPerMonthAction(amount: number): Promise<Result> {
   return run(() => void setFSkattPerMonth(Number(amount), "anvandare"), "write_accounting");
 }
 
+export async function setAutoBookFSkattAction(enabled: boolean): Promise<Result> {
+  return run(() => void setAutoBookFSkatt(enabled, "anvandare"), "write_accounting");
+}
+
 export async function bookTaxAccountDepositAction(txId: string): Promise<Result> {
   return run(() => void bookTaxAccountDeposit(txId, "anvandare"), "write_accounting");
 }
@@ -162,8 +173,8 @@ export async function endEmploymentAction(id: string, endDate: string): Promise<
   return run(() => void endEmployment(id, endDate, "anvandare"), "write_accounting");
 }
 
-export async function runPayrollAction(month: string): Promise<Result> {
-  return run(() => void runPayroll({ month }, "anvandare"), "write_accounting");
+export async function runPayrollAction(month: string, employeeId?: string): Promise<Result> {
+  return run(() => void runPayroll({ month, employeeId }, "anvandare"), "write_accounting");
 }
 
 export async function reversePayrollRunAction(runId: string, reason: string): Promise<Result> {
@@ -197,18 +208,19 @@ export async function revealEmployeePersonnummerAction(
 }
 
 /**
- * Avstämning mot skattekontoutdraget. Läser bara – utdraget lagras aldrig, på
- * samma sätt som bankavstämningen härleds i stället för att sparas.
+ * Avstämning mot skattekontoutdraget. Utdraget sparas så kön kan föreslå
+ * att en momsperiod är deklarerad.
  */
 export async function reconcileTaxAccountAction(
   text: string
 ): Promise<{ ok: true; result: TaxAccountReconciliation; parsed: number } | { ok: false; error: string }> {
   try {
-    return await withBusinessRead(() => {
+    return await withBusiness(() => {
       const statement = parseTaxAccountStatement(text);
       if (statement.length === 0) {
         return { ok: false as const, error: "Hittade inga rader. Varje rad ska börja med datum (2026-05-12) och sluta med belopp." };
       }
+      rememberTaxAccountStatement(statement);
       return { ok: true as const, result: reconcileTaxAccount(statement), parsed: statement.length };
     });
   } catch (e) {
@@ -595,5 +607,48 @@ export async function postManualVerificationAction(
   } catch (e) {
     refresh();
     return { ok: false, error: userFacingStorageError(e, "Verifikatet kunde inte bokföras.") };
+  }
+}
+
+export async function persistBookkeepingModeAction(mode: string): Promise<Result> {
+  const parsed = parseBookkeepingMode(mode);
+  if (!parsed) return { ok: false, error: "Okänt läge." };
+  try {
+    await withBusiness(() => {
+      const userId = currentActor()?.userId;
+      if (!userId) return;
+      setBookkeepingModeForUser(userId, parsed);
+    }, { capability: "write_accounting" });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Läget kunde inte sparas." };
+  }
+}
+
+export async function addCustomAccountAction(number: number, name: string): Promise<Result> {
+  return run(() => void addCustomAccount({ number, name }), "write_accounting");
+}
+
+export async function renameAccountAction(number: number, name: string): Promise<Result> {
+  return run(() => void renameAccount(number, name), "write_accounting");
+}
+
+export async function archiveAccountAction(number: number, archived = true): Promise<Result> {
+  return run(() => void archiveAccount(number, archived), "write_accounting");
+}
+
+export async function emailAccountantPackAction(
+  to: string,
+  fiscalYearId?: string
+): Promise<
+  | { ok: true; mode: "sent" | "download"; filename?: string; bytesBase64?: string }
+  | { ok: false; error: string }
+> {
+  try {
+    return await withBusiness(() => emailAccountantPack({ to, fiscalYearId }), {
+      capability: "write_accounting",
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Paketet kunde inte skapas." };
   }
 }

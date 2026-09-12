@@ -9,7 +9,8 @@ const krFmt = new Intl.NumberFormat("sv-SE", {
 });
 
 export function kr(n: number): string {
-  return krFmt.format(Math.round(n));
+  const rounded = Math.round(n);
+  return krFmt.format(rounded === 0 ? 0 : rounded);
 }
 
 const procentFmt = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 2 });

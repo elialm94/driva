@@ -6,6 +6,7 @@ import { AlertCircle, Check, FileText, Loader2, X } from "lucide-react";
 import { FileDropzone, type FileDropzoneVariant } from "./file-dropzone";
 import { cx } from "./ui";
 import { RECEIPT_MAX_BYTES } from "@/lib/receipts/read-file";
+import { UPLOAD_MAX_LABEL } from "@/lib/uploads/limits";
 
 /**
  * Kvittouppladdning som en kö, inte en knapp.
@@ -57,7 +58,7 @@ export function ReceiptUpload({
   multiple = true,
   title,
   subtitle,
-  formats = "PDF, JPG, PNG, HEIC · max 5 MB per fil",
+  formats = "PDF, JPG, PNG, HEIC · max 8 MB per fil",
   className,
   camera = true,
   pasteAnywhere = false,
@@ -121,7 +122,7 @@ export function ReceiptUpload({
     for (const file of files) {
       const id = `up-${++queueSeq}`;
       if (file.size > RECEIPT_MAX_BYTES) {
-        accepted.push({ id, file, previewUrl: previewFor(file), status: "fel", note: `För stor (${sizeLabel(file.size)}) – max 5 MB.` });
+        accepted.push({ id, file, previewUrl: previewFor(file), status: "fel", note: `För stor (${sizeLabel(file.size)}) – max ${UPLOAD_MAX_LABEL}.` });
         continue;
       }
       accepted.push({ id, file, previewUrl: previewFor(file), status: "vantar" });

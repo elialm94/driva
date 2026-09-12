@@ -4,42 +4,20 @@ import Link from "next/link";
 import { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
-import { BOKFORING_DETAIL_TABS, BOKFORING_REPORT_TABS, bokforingDetailTabForPath } from "@/lib/nav";
+import { BOKFORING_DETAIL_TABS, BOKFORING_REPORT_TABS, bokforingDetailTabForPath, matchRoute } from "@/lib/nav";
 import {
   BOKFORING_MODE_COOKIE,
   BOKFORING_MODE_COOKIE_MAX_AGE,
   simpleBookkeepingKeys,
   type BookkeepingMode,
 } from "@/lib/accounting/bookkeeping-mode-keys";
+import { persistBookkeepingModeAction } from "@/app/bokforing-actions";
+import { useToast } from "./toast";
 import { cx } from "./ui";
 
-/** Så länge måste pekaren vila på en flik innan vyn hämtas i förväg. */
 const HOVER_INTENT_MS = 120;
+const HINT_COOKIE = "driva_bokforing_lage_hint";
 
-/**
- * Flikrad i den delade bokföringslayouten. I enkelt läge syns bara det
- * hantverkaren behöver (översikt, moms, skattekonto – lön och bokslut när
- * de är aktuella). Avancerat visar allt.
- *
- * Två prestandaregler, båda mätta i produktionsbygget:
- *
- *   * Läget är KLIENTTILLSTÅND (+ cookie). Enkelt ↔ avancerat får bara byta
- *     vilka flikar som syns – ingen serveråtgärd, ingen revalidering och
- *     ingen router.refresh(). Den gamla vägen skrev i bokföringen och
- *     revaliderade "/" som layout, vilket tömde klientcachen och lät hela
- *     appskalet plus varje flikvy hämtas om: det var därför växlingen kändes
- *     som en helsidesladdning.
- *
- *   * Flikarna använder Next standardprefetch. prefetch={true} tvingar en
- *     FULL rendering av varje dynamisk flikvy på servern redan när raden
- *     visas – att öppna Skattekonto hämtade då Huvudbok, Verifikationer, Lön,
- *     Bokslut och Rapporter också, var och en med en full tenant-snapshot.
- *     Standardprefetch hämtar i stället skalet till loading-gränsen i
- *     bokforing/loading.tsx, så flikraden ligger kvar och bara innehållsytan
- *     byts vid ett klick. Full prefetch sker bara på avsikt (hover/fokus/
- *     touch) och då för EN flik – klicket blir omedelbart utan att de andra
- *     vyerna renderas.
- */
 export function BokforingAdvancedTabs({
   initialMode,
   hasPayroll,
@@ -53,16 +31,11 @@ export function BokforingAdvancedTabs({
   const active = bokforingDetailTabForPath(pathname);
   const [mode, setMode] = useState<BookkeepingMode>(initialMode);
   const reportsOpen = active === "rapporter" && mode === "avancerat";
-  // Klickad flik markeras direkt. Markeringen hör till sökvägen den startade
-  // från, så den nollställs av sig själv när navigeringen landat.
   const [pending, setPending] = useState<{ key: string; from: string } | null>(null);
   const pendingKey = pending?.from === pathname ? pending.key : null;
-
-  // Avsiktsprefetch: en flik som pekas ut i minst HOVER_INTENT_MS hämtas i sin
-  // helhet, så klicket blir omedelbart. Att dra musen längs raden räcker inte
-  // och en flik som aldrig pekas ut renderas aldrig på servern i förväg.
   const [warm, setWarm] = useState<Set<string>>(() => new Set());
   const intent = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { toast } = useToast();
 
   function warmOn(key: string, delayMs: number) {
     if (warm.has(key)) return;
@@ -78,17 +51,27 @@ export function BokforingAdvancedTabs({
   const simpleKeys = simpleBookkeepingKeys({ hasPayroll, showYearEnd });
   const tabs =
     mode === "avancerat"
-      ? BOKFORING_DETAIL_TABS
-      : BOKFORING_DETAIL_TABS.filter((t) => simpleKeys.includes(t.key) || t.key === active);
+      ? BOKFORING_DETAIL_TABS.filter((t) => t.key !== "skatt")
+      : BOKFORING_DETAIL_TABS.filter((t) => simpleKeys.includes(t.key));
+
+  const outsideSimple = mode === "enkelt" && Boolean(active) && !simpleKeys.includes(active);
+  const outsideAnyTab = mode === "enkelt" && !active && pathname !== "/bokforing";
+  const deepLink = outsideSimple || outsideAnyTab;
+  const deepLabel = matchRoute(pathname)?.meta.label ?? "Sidan";
 
   const selected = pendingKey ?? active;
 
   function toggleMode() {
     const next = mode === "enkelt" ? "avancerat" : "enkelt";
     setMode(next);
-    // Cookien gör att läget sitter kvar vid nästa hårda laddning. Ingen
-    // serveråtgärd: sidans data är oförändrad, bara flikraden byter form.
     document.cookie = `${BOKFORING_MODE_COOKIE}=${next}; path=/; max-age=${BOKFORING_MODE_COOKIE_MAX_AGE}; samesite=lax`;
+    void persistBookkeepingModeAction(next);
+    if (next === "avancerat" && !document.cookie.includes(`${HINT_COOKIE}=1`)) {
+      document.cookie = `${HINT_COOKIE}=1; path=/; max-age=${BOKFORING_MODE_COOKIE_MAX_AGE}; samesite=lax`;
+      toast({
+        title: "Redovisningsvyn visar verifikationer, huvudbok och rapporter. Bokföringen är densamma.",
+      });
+    }
   }
 
   return (
@@ -132,6 +115,14 @@ export function BokforingAdvancedTabs({
           ))}
         </div>
       ) : null}
+      {deepLink ? (
+        <p className="mt-3 text-[13px] text-soft">
+          {deepLabel}.{" "}
+          <Link href={"/bokforing" as never} className="font-medium text-accent hover:underline">
+            Tillbaka till Att göra
+          </Link>
+        </p>
+      ) : null}
       <div className="mt-2 flex justify-end">
         <button
           type="button"
@@ -139,7 +130,7 @@ export function BokforingAdvancedTabs({
           data-bokforing-mode={mode}
           className="text-[12.5px] font-medium text-muted hover:text-ink"
         >
-          {mode === "enkelt" ? "Visa avancerat" : "Visa enkelt"}
+          {mode === "enkelt" ? "Visa redovisningsvy" : "Visa enkel vy"}
         </button>
       </div>
     </div>

@@ -6,6 +6,7 @@ import { Paperclip, Plus, Trash2 } from "lucide-react";
 import { FileDropzone } from "./file-dropzone";
 import { Card, buttonClasses, cx } from "./ui";
 import { VERIFICATION_ATTACHMENT_MAX_BYTES, verificationAttachmentForm } from "@/lib/receipts/read-file";
+import { UPLOAD_MAX_FORMATS } from "@/lib/uploads/limits";
 import { DateField } from "./date-field";
 import { AccountCombobox } from "./account-combobox";
 import { kr } from "@/lib/format";
@@ -47,6 +48,7 @@ export function ManualVerificationForm({
   lockedThrough,
   firstOpenDate,
   businessId,
+  companyForm = "ab",
   backHref = "/bokforing/verifikationer",
 }: {
   accounts: AccountPickerOption[];
@@ -57,6 +59,7 @@ export function ManualVerificationForm({
   firstOpenDate?: string;
   /** Klienten bokföringen gäller – sätts från konsultytan, inte från ägarytan. */
   businessId?: string;
+  companyForm?: "ab" | "enskild";
   backHref?: string;
 }) {
   const router = useRouter();
@@ -64,6 +67,7 @@ export function ManualVerificationForm({
   const [rows, setRows] = useState<Row[]>([emptyRow(), emptyRow()]);
   const [date, setDate] = useState(today);
   const [transactionDate, setTransactionDate] = useState("");
+  const [showTransactionDate, setShowTransactionDate] = useState(false);
   const [description, setDescription] = useState("");
   const [explanation, setExplanation] = useState("");
   // Filen paketeras redan vid valet (storlekskontroll på svenska direkt) och
@@ -73,7 +77,14 @@ export function ManualVerificationForm({
   const [posted, setPosted] = useState<{ label: string; total: number; id: string } | null>(null);
 
   const comboOptions = useMemo(
-    () => accounts.map((a) => ({ key: String(a.account), account: a.account, label: a.label })),
+    () =>
+      accounts.map((a) => ({
+        key: String(a.account),
+        account: a.account,
+        label: a.label,
+        section: a.section,
+        used: a.used,
+      })),
     [accounts]
   );
 
@@ -84,6 +95,28 @@ export function ManualVerificationForm({
 
   function patch(key: string, next: Partial<Row>) {
     setRows((current) => current.map((r) => (r.key === key ? { ...r, ...next } : r)));
+  }
+
+  function applyTemplate(kind: "omforing" | "agarinsattning" | "agaruttag" | "privat" | "rattelse") {
+    const ownerOut = companyForm === "enskild" ? "2013" : "2893";
+    const ownerIn = companyForm === "enskild" ? "2018" : "2893";
+    const row = (account: string): Row => ({ ...emptyRow(), account });
+    if (kind === "omforing") {
+      setDescription("Omföring");
+      setRows([emptyRow(), emptyRow()]);
+    } else if (kind === "agarinsattning") {
+      setDescription("Ägarinsättning");
+      setRows([row("1930"), row(ownerIn)]);
+    } else if (kind === "agaruttag") {
+      setDescription("Ägaruttag");
+      setRows([row(ownerOut), row("1930")]);
+    } else if (kind === "privat") {
+      setDescription("Privat utlägg utan kvitto");
+      setRows([row("6991"), row(ownerOut)]);
+    } else {
+      setDescription("Rättelse av tidigare verifikation");
+      setRows([emptyRow(), emptyRow()]);
+    }
   }
 
   function submit() {
@@ -147,6 +180,29 @@ export function ManualVerificationForm({
   return (
     <div className="space-y-4">
       <Card className="space-y-4 p-5">
+        <div>
+          <p className="mb-2 text-[13px] font-medium text-soft">Mall</p>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ["omforing", "Omföring"],
+                ["agarinsattning", "Ägarinsättning"],
+                ["agaruttag", "Ägaruttag"],
+                ["privat", "Privat utlägg utan kvitto"],
+                ["rattelse", "Rättelse"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={buttonClasses("ghost", "sm")}
+                onClick={() => applyTemplate(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
             <span className="mb-1.5 block text-[13px] font-medium text-soft">Bokföringsdatum</span>
@@ -156,20 +212,30 @@ export function ManualVerificationForm({
               {lockedThrough ? ` Bokföringen är låst till och med ${lockedThrough}.` : ""}
             </span>
           </label>
-          <label className="block">
-            <span className="mb-1.5 block text-[13px] font-medium text-soft">
-              Handelsdatum <span className="font-normal text-muted">(om annat)</span>
-            </span>
-            <DateField
-              value={transactionDate}
-              onChange={setTransactionDate}
-              className={fieldCls}
-              placeholder="Samma som bokföringsdatum"
-            />
-            <span className="mt-1 block text-[12px] text-muted">
-              När händelsen faktiskt inträffade. Påverkar inte perioden.
-            </span>
-          </label>
+          <div className="block">
+            {showTransactionDate ? (
+              <label className="block">
+                <span className="mb-1.5 block text-[13px] font-medium text-soft">Handelsdatum</span>
+                <DateField
+                  value={transactionDate}
+                  onChange={setTransactionDate}
+                  className={fieldCls}
+                  placeholder="Samma som bokföringsdatum"
+                />
+                <span className="mt-1 block text-[12px] text-muted">
+                  När händelsen faktiskt inträffade. Påverkar inte perioden.
+                </span>
+              </label>
+            ) : (
+              <button
+                type="button"
+                className="mt-8 text-[13px] font-medium text-accent hover:underline"
+                onClick={() => setShowTransactionDate(true)}
+              >
+                Händelsen inträffade ett annat datum
+              </button>
+            )}
+          </div>
         </div>
 
         <label className="block">
@@ -257,7 +323,7 @@ export function ManualVerificationForm({
             maxBytes={VERIFICATION_ATTACHMENT_MAX_BYTES}
             title="Släpp underlaget här"
             subtitle="Fakturan, kvittot eller avtalet bakom bokningen."
-            formats="PDF, JPG, PNG, HEIC · max 10 MB"
+            formats={UPLOAD_MAX_FORMATS}
             fileName={attachment?.name}
             onClear={() => setAttachment(null)}
             onFiles={(files) => {

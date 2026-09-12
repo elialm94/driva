@@ -33,6 +33,9 @@ const nextConfig: NextConfig = {
       // /kunder?flik=uppdrag|forfragningar → /uppdrag sköts i kunder/page.tsx så
       // att `flik` städas bort och q/visning/sida/tillbaka följer med.
       { source: "/assistent", destination: "/", permanent: true },
+      { source: "/inbox/:id/kontrollera", destination: "/bokforing/underlag/:id/kontrollera", permanent: false },
+      { source: "/inbox/:id", destination: "/bokforing/underlag/:id", permanent: false },
+      { source: "/inbox", destination: "/bokforing/underlag", permanent: false },
     ];
   },
 };

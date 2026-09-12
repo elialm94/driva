@@ -13,7 +13,10 @@ import {
   snoozeAttentionUntil,
   suppressedActionIds,
 } from "./services/attention-state";
+import { controlsForAction } from "./services/action-issue";
 import { DAYPART_TIMES, instantFromLocal, localParts } from "./reminders/when";
+import { businessTimezone } from "./services/reminders";
+import { legalDeadlineSnoozeCap } from "./services/legal-deadline";
 
 /**
  * Uppmärksamhetstillstånd: snooze är ren presentationspolicy.
@@ -139,5 +142,38 @@ describe("attention-state: upsert och filter", () => {
     assert.throws(() => hideAttention("job-new-job-1"), /kan inte döljas permanent/);
     assert.throws(() => hideAttention("invoice-late-inv-1"), /kan inte döljas permanent/);
     assert.equal(db().attentionStates.length, 0);
+  });
+
+  it("förfallen moms kan inte snoozas", () => {
+    replaceDb(emptyTestDb());
+    db().fiscalYears.push({
+      id: "fy-2020",
+      label: "2020",
+      startDate: "2020-01-01",
+      endDate: "2020-12-31",
+      status: "oppet",
+      openingBalances: {},
+      openingSource: "migrering",
+    });
+    assert.equal(controlsForAction({ id: "vat-2020-K1" }).canSnooze, false);
+    assert.throws(() => snoozeAttention("vat-2020-K1", "imorgon"), /aldrig tystas/);
+  });
+
+  it("kommande momsdeadline kan snoozas men klampas till dagen före förfall kl 08", () => {
+    replaceDb(emptyTestDb());
+    db().fiscalYears.push({
+      id: "fy-2028",
+      label: "2028",
+      startDate: "2028-01-01",
+      endDate: "2028-12-31",
+      status: "oppet",
+      openingBalances: {},
+      openingSource: "migrering",
+    });
+    assert.equal(controlsForAction({ id: "vat-2028-K1" }).canSnooze, true);
+    const now = new Date("2026-09-12T10:00:00.000Z");
+    const state = snoozeAttention("vat-2028-K1", { date: "2028-12-01" }, now);
+    const cap = instantFromLocal(legalDeadlineSnoozeCap("2028-05-12", businessTimezone()), businessTimezone());
+    assert.equal(state.snoozedUntil, cap.toISOString());
   });
 });

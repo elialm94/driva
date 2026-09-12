@@ -169,9 +169,24 @@ describe("anställd", () => {
     assert.equal(e.status, "anstalld");
   });
 
-  it("avvisar en andra anställd – V1 är en anställd", () => {
+  it("avvisar samma personnummer två gånger men tillåter två anställda", () => {
     hire();
-    assert.throws(() => hire({ name: "Bo Ek", personnummer: "19900101-1111" }), /redan upplagd/);
+    assert.throws(() => hire({ name: "Anna Två", personnummer: "19850612-1234" }), /redan upplagd/);
+    const second = hire({ name: "Bo Ek", personnummer: "19900101-1111" });
+    assert.equal(second.name, "Bo Ek");
+  });
+
+  it("två anställda i samma månad ger två individuppgifter i AGI", () => {
+    const anna = hire();
+    const bo = hire({ name: "Bo Ek", personnummer: "19900101-1111" });
+    runPayroll({ employeeId: anna.id, month: `${YEAR}-01` }, "anvandare");
+    runPayroll({ employeeId: bo.id, month: `${YEAR}-01` }, "anvandare");
+    const declaration = generateEmployerDeclaration(`${YEAR}-01`, "anvandare");
+    assert.equal(declaration.rows.length, 2);
+    assert.deepEqual(
+      declaration.rows.map((r) => r.name).sort(),
+      ["Anna Ek", "Bo Ek"]
+    );
   });
 
   it("avvisar ett personnummer som inte går att tolka", () => {

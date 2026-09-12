@@ -285,7 +285,7 @@ export default async function BestallningPage(props: PageProps<"/uppdrag/[id]/be
                   <div className="mt-3 flex flex-wrap items-center gap-3">
                     <ConfirmationActions confirmationId={c.id} canApprove={c.status === "needs_review"} canDismiss={c.status === "needs_review"} />
                     {c.inboxItemId ? (
-                      <AppLink href={`/inbox/${c.inboxItemId}`} originLabel={`Beställning ${order.reference}`} className="text-[13px] text-accent underline-offset-2 hover:underline">
+                      <AppLink href={`/bokforing/underlag/${c.inboxItemId}`} originLabel={`Beställning ${order.reference}`} className="text-[13px] text-accent underline-offset-2 hover:underline">
                         Visa mejlet i inboxen
                       </AppLink>
                     ) : null}

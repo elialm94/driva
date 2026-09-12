@@ -17,7 +17,7 @@ export function parseBookkeepingMode(raw: string | undefined | null): Bookkeepin
   return raw === "enkelt" || raw === "avancerat" ? raw : null;
 }
 
-const SIMPLE_KEYS: string[] = ["oversikt", "moms", "skattekonto"];
+const SIMPLE_KEYS: string[] = ["oversikt", "underlag", "bank", "skatt"];
 
 /** Flikar som syns i enkelt läge. Lön och bokslut bara när de behövs. */
 export function simpleBookkeepingKeys(opts: { hasPayroll: boolean; showYearEnd: boolean }): string[] {

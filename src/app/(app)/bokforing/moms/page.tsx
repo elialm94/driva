@@ -20,9 +20,7 @@ export default async function MomsPage({
   const years = fiscalYears();
   const fy = resolveViewFiscalYear(params.ar);
   const periodicity = vatPeriodicity();
-  const flows = vatPeriodsFor(fy)
-    .filter((p) => p.state !== "kommande")
-    .map((p) => vatPeriodFlow(p));
+  const flows = vatPeriodsFor(fy).map((p) => vatPeriodFlow(p));
   const focusKey = flows.some((f) => f.summary.period.key === params.fokus) ? params.fokus : vatFlowFocus(flows);
 
   return (

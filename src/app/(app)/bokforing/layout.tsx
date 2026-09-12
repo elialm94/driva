@@ -4,7 +4,8 @@ import { BokforingAdvancedTabs } from "@/components/bokforing-advanced-nav";
 import { bookkeepingHasPayroll, bookkeepingMode } from "@/lib/accounting/bookkeeping-mode";
 import { BOKFORING_MODE_COOKIE, parseBookkeepingMode } from "@/lib/accounting/bookkeeping-mode-keys";
 import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
-import { ensurePageBusiness } from "@/lib/auth/session";
+import { ensurePageBusiness, withBusiness } from "@/lib/auth/session";
+import { ensureAutoFSkattBookings } from "@/lib/accounting/tax-account";
 
 /**
  * Delat bokföringsskal. Flikraden lever här så den inte monteras om när bara
@@ -19,6 +20,11 @@ export default async function BokforingLayout({ children }: { children: ReactNod
   // "Ingen tenantkontext" för hela Bokföring. React cache() gör anropet
   // till samma inläsning som skalet och sidan redan väntar på.
   await ensurePageBusiness();
+  try {
+    await withBusiness(() => ensureAutoFSkattBookings());
+  } catch {
+    // Läsande medlemskap eller saknad skrivbehörighet – F-skatten väntar.
+  }
   // Vyinställningen läses ur cookien som toggeln själv skriver. Företag som
   // slog på avancerat innan cookien fanns behåller sitt läge via meta-fältet.
   const jar = await cookies();

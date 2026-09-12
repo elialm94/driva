@@ -121,17 +121,18 @@ describe("huvudnavigation", () => {
     assert.ok(NAV_ITEMS.some((i) => i.section === "uppdrag" && i.group === "primary"));
   });
 
-  it("puts Inbox, Bokföring and the optional features under Mer", () => {
-    assert.deepEqual(moreNavItems(allOff).map((i) => i.label), ["Inbox", "Bokföring"]);
-    assert.deepEqual(moreNavItems(allOn).map((i) => i.label), ["Inbox", "Bokföring", "Samarbeta", "Hemsida"]);
+  it("puts Bokföring and the optional features under Mer", () => {
+    assert.deepEqual(moreNavItems(allOff).map((i) => i.label), ["Bokföring"]);
+    assert.deepEqual(moreNavItems(allOn).map((i) => i.label), ["Bokföring", "Samarbeta", "Hemsida"]);
     assert.deepEqual(
       moreNavItems({ website: true, collaboration: false }).map((i) => i.label),
-      ["Inbox", "Bokföring", "Hemsida"]
+      ["Bokföring", "Hemsida"]
     );
     assert.deepEqual(
       moreNavItems({ website: false, collaboration: true }).map((i) => i.label),
-      ["Inbox", "Bokföring", "Samarbeta"]
+      ["Bokföring", "Samarbeta"]
     );
+    assert.ok(!NAV_ITEMS.some((i) => i.label === "Inbox"));
   });
 
   it("rewrites the old Kunder-tab list links to /uppdrag", () => {

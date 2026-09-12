@@ -68,7 +68,10 @@ export function PersonalizeForm({
     >
       <fieldset id="ob-industries" className="space-y-3">
         <legend className={questionTitle}>Vad arbetar företaget med?</legend>
-        <p className="text-[13px] text-muted">Välj allt som stämmer. Det styr förslag – inte vad du kan göra.</p>
+        <p className="text-[13px] text-muted">
+          Välj allt som stämmer. Det styr vilka leverantörer Driva känner igen från start, till exempel Ahlsell,
+          Flügger och Beckers. Dina egna regler vinner alltid.
+        </p>
         <div className="grid gap-2 sm:grid-cols-2">
           {INDUSTRY_OPTIONS.map((option) => {
             const checked = industries.includes(option.value);
