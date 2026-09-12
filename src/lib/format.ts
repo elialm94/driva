@@ -9,10 +9,10 @@ const krFmt = new Intl.NumberFormat("sv-SE", {
 });
 
 export function kr(n: number): string {
-  const avrundat = Math.round(n);
+  const rounded = Math.round(n);
   // Math.round(-0.4) är -0, och Intl formaterar -0 med minustecken. Noll är
   // noll: "−0 kr" läses som ett fel i bokföringen. NaN lämnas synligt.
-  return krFmt.format(avrundat === 0 ? 0 : avrundat);
+  return krFmt.format(rounded === 0 ? 0 : rounded);
 }
 
 const procentFmt = new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 2 });

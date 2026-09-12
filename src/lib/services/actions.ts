@@ -37,8 +37,13 @@ import { computeVatPosition } from "../accounting/vat";
 import { annualReportDueDate, ink2DueDate } from "../accounting/deadlines";
 import { bokslutChecklist } from "../accounting/close";
 import { annualReportFor } from "../accounting/annual-report";
-import { nextMonthToClose } from "../accounting/period-close";
-import { fSkattMonthsAwaitingBooking, vatReportsAwaitingTaxAccount } from "../accounting/tax-account";
+import { monthsReadyToClose, periodCloseStatus } from "../accounting/period-close";
+import {
+  lastTaxAccountStatement,
+  taxAccountDepositCandidates,
+  vatReportsAwaitingTaxAccount,
+} from "../accounting/tax-account";
+import { vatPeriods } from "../accounting/vat";
 import {
   currentEmployee,
   employerDeclarationsAwaitingFiling,
@@ -169,7 +174,9 @@ export type ActionCta =
       supplierInvoiceId: string;
       to: string;
     }
-  | { type: "paymentDetailsQueue"; label: string; items: PaymentDetailsQueueItem[] };
+  | { type: "paymentDetailsQueue"; label: string; items: PaymentDetailsQueueItem[] }
+  | { type: "declareVatPeriod"; label: string; dismissLabel: string; periodKey: string }
+  | { type: "closeReadyMonths"; label: string; months: string[] };
 
 /**
  * Bekräftelseinnehåll för åtgärder som skickar externt (e-post) eller bokför
@@ -204,6 +211,8 @@ export interface BusinessAction {
   amount?: number;
   /** Bekräftelsedialog före utförande (externa utskick, pengabokningar). */
   confirm?: ActionConfirm;
+  /** Lagkravsradens förfallodag (YYYY-MM-DD). Används av snooze-policyn i klienten. */
+  dueDate?: string;
 }
 
 /**
@@ -384,6 +393,7 @@ function collectBookkeepingSources(ranked: Ranked[], watching: WatchingItem[], n
   runCollect("inbox-mail", () => collectInboxMail(ranked));
   runCollect("vat", () => collectVat(ranked, watching, now));
   runCollect("tax-account", () => collectTaxAccount(ranked, now));
+  runCollect("vat-suggest", () => collectSuggestedVatDeclared(ranked, now));
   runCollect("payroll", () => collectPayroll(ranked, watching, now));
   runCollect("year-end", () => collectYearEnd(ranked, watching, now));
   /*
@@ -1017,7 +1027,7 @@ function collectAccounting(ranked: Ranked[]) {
     const incoming = tx.amount > 0;
     const suggestion = paymentSuggestionForTransaction(tx);
     // Djuplänk rakt till transaktionen (samma format som actionResolveHref).
-    const txHref = `/ekonomi?flik=bank&atgard=${encodeURIComponent(`bank-${tx.id}`)}`;
+    const txHref = `/bokforing/bank?atgard=${encodeURIComponent(`bank-${tx.id}`)}`;
 
     let title = incoming
       ? `Inbetalning från ${tx.counterpart} kunde inte matchas`
@@ -1144,8 +1154,8 @@ function collectAccounting(ranked: Ranked[]) {
         icon: "bank",
         title: "Banken stämmer inte mot bokföringen",
         subtitle: `Oförklarad skillnad ${kr(recon.unexplained)} · kontrollera banktransaktionerna`,
-        href: "/ekonomi?flik=bank",
-        cta: { type: "link", label: "Öppna banken", href: "/ekonomi?flik=bank" },
+        href: "/bokforing/bank",
+        cta: { type: "link", label: "Öppna banken", href: "/bokforing/bank" },
         amount: Math.abs(recon.unexplained),
       },
     });
@@ -1331,7 +1341,7 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
 
   for (const s of db().supplierInvoices) {
     const payment = latestPaymentForInvoice(s.id);
-    const href = s.inboxItemId ? `/inbox/${s.inboxItemId}` : `/ekonomi?flik=utgifter&atgard=${encodeURIComponent(`supplier-${s.id}`)}`;
+    const href = s.inboxItemId ? `/bokforing/underlag/${s.inboxItemId}` : `/ekonomi?flik=utgifter&atgard=${encodeURIComponent(`supplier-${s.id}`)}`;
 
     if (payment?.status === "FAILED") {
       const remaining = remainingAmountForInvoice(s);
@@ -1497,9 +1507,9 @@ function collectInboxMail(ranked: Ranked[]) {
           icon: "inbox",
           title: `Välj beställning för orderbekräftelsen från ${item.parsedSupplier ?? item.fromAddress}`,
           subtitle: excerpt(item.subject || item.textBody),
-          href: `/inbox/${item.id}`,
-          cta: { type: "link", label: "Öppna i inboxen", href: `/inbox/${item.id}` },
-          secondary: { label: "Visa posten", href: `/inbox/${item.id}` },
+          href: `/bokforing/underlag/${item.id}`,
+          cta: { type: "link", label: "Öppna underlaget", href: `/bokforing/underlag/${item.id}` },
+          secondary: { label: "Visa posten", href: `/bokforing/underlag/${item.id}` },
         },
       });
       continue;
@@ -1512,7 +1522,7 @@ function collectInboxMail(ranked: Ranked[]) {
         (invoice && invoice.accountingStatus !== "bokford"));
     if (!needsReview) continue;
 
-    const href = `/inbox/${item.id}`;
+    const href = `/bokforing/underlag/${item.id}`;
     const amountReview = needsAmountReview(item);
     const who = item.parsedSupplier ?? (item.subject || "dokument");
     const docWord = item.documentType === "kvitto" ? "kvittot" : "fakturan";
@@ -1535,8 +1545,8 @@ function collectInboxMail(ranked: Ranked[]) {
               : excerpt(item.textBody),
         href,
         cta: amountReview
-          ? { type: "link", label: "Kontrollera", href: `/inbox/${item.id}/kontrollera` }
-          : { type: "link", label: "Öppna i inboxen", href },
+          ? { type: "link", label: "Kontrollera", href: `/bokforing/underlag/${item.id}/kontrollera` }
+          : { type: "link", label: "Öppna underlaget", href },
         secondary: { label: "Visa posten", href },
       },
     });
@@ -1615,6 +1625,7 @@ function collectPayroll(ranked: Ranked[], watching: WatchingItem[], now: Date) {
         href: "/bokforing/lon",
         cta: { type: "link", label: "Öppna lönen", href: "/bokforing/lon" },
         amount: declaration.attBetala,
+        dueDate: declaration.dueDate,
       },
     });
   }
@@ -1655,7 +1666,7 @@ function collectVat(ranked: Ranked[], watching: WatchingItem[], now: Date) {
             category: "vat",
             title: `Moms ${kr(amount)}${refund ? " tillbaka" : ""}`,
             subtitle: `${period.label} · deklareras senast ${datumKort(dueDate)}`,
-            href: "/bokforing/moms",
+            href: `/bokforing/moms?fokus=${period.key}`,
             date: dueDate,
             amount,
           });
@@ -1691,9 +1702,10 @@ function collectVat(ranked: Ranked[], watching: WatchingItem[], now: Date) {
             ? `Momsen för ${period.label} skulle ha deklarerats ${datumKort(dueDate)}`
             : `Moms ska deklareras ${relativ(dueDate)}`,
         subtitle: `${period.label} · ${kr(amount)} ${refund ? "att få tillbaka" : "att betala"}`,
-        href: "/bokforing/moms",
-        cta: { type: "link", label: "Öppna momsöversikten", href: "/bokforing/moms" },
+        href: `/bokforing/moms?fokus=${period.key}`,
+        cta: { type: "link", label: "Öppna momsöversikten", href: `/bokforing/moms?fokus=${period.key}` },
         amount,
+        dueDate,
       },
     });
     return;
@@ -1712,9 +1724,10 @@ function collectVat(ranked: Ranked[], watching: WatchingItem[], now: Date) {
       subtitle: `${overdue.map((p) => p.period.label).join(", ")} · ${kr(Math.abs(net))} ${
         net < 0 ? "att få tillbaka" : "att betala"
       }`,
-      href: "/bokforing/moms",
-      cta: { type: "link", label: "Öppna momsöversikten", href: "/bokforing/moms" },
+      href: `/bokforing/moms?fokus=${worst.period.key}`,
+      cta: { type: "link", label: "Öppna momsöversikten", href: `/bokforing/moms?fokus=${worst.period.key}` },
       amount: Math.abs(net),
+      dueDate: worst.dueDate,
     },
   });
 }
@@ -1728,21 +1741,20 @@ function collectVat(ranked: Ranked[], watching: WatchingItem[], now: Date) {
  * de är bokföringsarbete, inte en myndighetsdeadline, och rankas därefter.
  */
 function collectTaxAccount(ranked: Ranked[], now: Date) {
-  const today = bokforingsdatum(now.toISOString());
   const awaitingVat = vatReportsAwaitingTaxAccount();
-  const awaitingFSkatt = fSkattMonthsAwaitingBooking(today);
-  const total = awaitingVat.length + awaitingFSkatt.length;
+  const deposits = taxAccountDepositCandidates();
+  const total = awaitingVat.length + deposits.length;
   if (total === 0) return;
 
   const amount =
     awaitingVat.reduce((s, r) => s + Math.abs(r.attBetala), 0) +
-    awaitingFSkatt.length * db().settings.fSkattPerMonth;
+    deposits.reduce((s, t) => s + Math.abs(t.amount), 0);
   const parts = [
     awaitingVat.length > 0
       ? `${awaitingVat.length} momsperiod${awaitingVat.length === 1 ? "" : "er"}`
       : null,
-    awaitingFSkatt.length > 0
-      ? `F-skatt för ${awaitingFSkatt.length} månad${awaitingFSkatt.length === 1 ? "" : "er"}`
+    deposits.length > 0
+      ? `${deposits.length} bankbetalning${deposits.length === 1 ? "" : "ar"} till Skatteverket`
       : null,
   ].filter(Boolean);
 
@@ -1752,8 +1764,6 @@ function collectTaxAccount(ranked: Ranked[], now: Date) {
     action: {
       id: "tax-account-pending",
       priority: "action",
-      // Bokföringsarbete, inte en myndighetsdeadline: kategorin "vat" är
-      // reserverad för deklarationen som sådan.
       category: "accounting",
       icon: "bank",
       title:
@@ -1766,6 +1776,54 @@ function collectTaxAccount(ranked: Ranked[], now: Date) {
       amount,
     },
   });
+}
+
+function daysBetweenDates(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000);
+}
+
+function collectSuggestedVatDeclared(ranked: Ranked[], now: Date) {
+  const today = bokforingsdatum(now.toISOString());
+  const statement = lastTaxAccountStatement();
+  for (const summary of vatPeriods()) {
+    if (summary.state !== "att_deklarera") continue;
+    const amount = Math.abs(summary.position.attBetala);
+    if (amount === 0) continue;
+    const due = summary.dueDate;
+    const fromStatement = statement.some((row) => {
+      if (Math.abs(row.amount) !== amount) return false;
+      const daysAfterDue = daysBetweenDates(due, row.date);
+      return daysAfterDue >= 0 && daysAfterDue <= 5;
+    });
+    const fromBank = db().bankTransactions.some((t) => {
+      if (t.status !== "bokford") return false;
+      const text = `${t.description ?? ""} ${t.counterpart ?? ""}`.toLowerCase();
+      if (!/skatteverk|skattekonto|\bskv\b/.test(text)) return false;
+      if (Math.abs(t.amount) !== amount) return false;
+      return bokforingsdatum(t.date) > summary.period.end;
+    });
+    if (!fromStatement && !fromBank) continue;
+    ranked.push({
+      rank: RANK.vatSoon,
+      order: daysBetweenDates(today, due),
+      action: {
+        id: `vat-suggest-declared-${summary.period.key}`,
+        priority: "action",
+        category: "vat",
+        icon: "calendar",
+        title: `Momsen för ${summary.period.label} verkar vara deklarerad och betald. Stämmer det?`,
+        subtitle: `${kr(amount)} · ${fromStatement ? "finns på skattekontoutdraget" : "matchar en bankbetalning till Skatteverket"}`,
+        href: `/bokforing/moms?fokus=${summary.period.key}`,
+        cta: {
+          type: "declareVatPeriod",
+          label: "Ja, markera",
+          dismissLabel: "Nej",
+          periodKey: summary.period.key,
+        },
+        amount,
+      },
+    });
+  }
 }
 
 /* --------------------------- Bokslut och periodstängning ---------------------- */
@@ -1808,6 +1866,7 @@ function collectYearEnd(ranked: Ranked[], watching: WatchingItem[], now: Date) {
             : `Allt är klart att stänga${due ? ` · deklarationen ska lämnas ${datumKort(due)}` : ""}`,
           href: "/bokforing/bokslut",
           cta: { type: "link", label: "Öppna bokslutet", href: "/bokforing/bokslut" },
+          ...(due ? { dueDate: due } : {}),
         },
       });
       continue;
@@ -1853,6 +1912,7 @@ function collectYearEnd(ranked: Ranked[], watching: WatchingItem[], now: Date) {
         subtitle: `Bolagsverket senast ${datumKort(due)}`,
         href: `/bokforing/bokslut/arsredovisning/${fy.id}`,
         cta: { type: "link", label: "Öppna årsredovisningen", href: `/bokforing/bokslut/arsredovisning/${fy.id}` },
+        dueDate: due,
       },
     });
   }
@@ -1875,23 +1935,41 @@ function collectYearEnd(ranked: Ranked[], watching: WatchingItem[], now: Date) {
  */
 function collectPeriodClose(ranked: Ranked[], now: Date) {
   const today = bokforingsdatum(now.toISOString());
-  const next = nextMonthToClose(today);
-  if (!next || next.blockers.length > 0 || next.verifications === 0) return;
+  const ready = monthsReadyToClose(today);
+  if (ready.length === 0) return;
+  const statuses = ready.map((p) => periodCloseStatus(p, today));
+  if (statuses.every((s) => s.verifications === 0)) return;
+  const first = statuses[0];
 
   ranked.push({
     rank: RANK.periodClose,
-    order: Date.parse(next.period.end) || 0,
+    order: Date.parse(ready[0].end) || 0,
     action: {
-      id: `period-close-${next.period.key}`,
+      id: `period-close-${ready[0].key}`,
       priority: "action",
       category: "accounting",
       icon: "calendar",
-      title: `${next.period.label} är klar att stängas`,
-      subtitle: next.endsVatPeriod
-        ? `${next.verifications} verifikation${next.verifications === 1 ? "" : "er"} · momsperioden är deklarerad, månaden kan låsas`
-        : `${next.verifications} verifikation${next.verifications === 1 ? "" : "er"} · avstämd och klar att låsa`,
+      title:
+        ready.length === 1
+          ? `${ready[0].label} är klar att stängas`
+          : `${ready.length} månader är klara att stängas`,
+      subtitle:
+        ready.length === 1
+          ? first.endsVatPeriod
+            ? `${first.verifications} verifikation${first.verifications === 1 ? "" : "er"} · momsperioden är deklarerad, månaden kan låsas`
+            : `${first.verifications} verifikation${first.verifications === 1 ? "" : "er"} · avstämd och klar att låsa`
+          : `${ready.map((p) => p.label).join(", ")} · stängs i tur och ordning`,
       href: "/bokforing/periodstangning",
-      cta: { type: "link", label: "Öppna periodstängningen", href: "/bokforing/periodstangning" },
+      cta: {
+        type: "closeReadyMonths",
+        label: "Stäng alla klara månader",
+        months: ready.map((p) => p.key),
+      },
+      confirm: {
+        title: ready.length === 1 ? `Stäng ${ready[0].label}?` : `Stäng ${ready.length} månader?`,
+        rows: ready.map((p) => ({ label: "Månad", value: p.label })),
+        confirmLabel: "Stäng",
+      },
     },
   });
 }

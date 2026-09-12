@@ -344,6 +344,9 @@ export interface BalansRad {
   name: string;
   /** Positivt enligt rapportens läsart (tillgångar debet+, EK/skulder kredit+). */
   amount: number;
+  /** Naturligt tecken: debet +, kredit −. Används i CSV. */
+  signed: number;
+  side: "tillgang" | "eget_kapital" | "skuld";
 }
 
 export interface Balansrapport {
@@ -371,13 +374,13 @@ export function balansrapport(atDate: string = todayDate()): Balansrapport {
     if (r.ub === 0) continue;
     switch (accountType(r.account)) {
       case "tillgang":
-        tillgangar.push({ account: r.account, name: r.name, amount: r.ub });
+        tillgangar.push({ account: r.account, name: r.name, amount: r.ub, signed: r.ub, side: "tillgang" });
         break;
       case "eget_kapital":
-        egetKapital.push({ account: r.account, name: r.name, amount: -r.ub });
+        egetKapital.push({ account: r.account, name: r.name, amount: -r.ub, signed: r.ub, side: "eget_kapital" });
         break;
       case "skuld":
-        skulder.push({ account: r.account, name: r.name, amount: -r.ub });
+        skulder.push({ account: r.account, name: r.name, amount: -r.ub, signed: r.ub, side: "skuld" });
         break;
       default:
         // Resultatkonton påverkar beräknat resultat tills året stängs, och

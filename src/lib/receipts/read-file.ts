@@ -12,9 +12,11 @@
  * webbläsaren, på svenska, innan filen skickas.
  */
 
-export const RECEIPT_MAX_BYTES = 5 * 1024 * 1024;
-/** Speglar MAX_VERIFICATION_ATTACHMENT_BYTES (server-only modul). */
-export const VERIFICATION_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+import { UPLOAD_MAX_BYTES, UPLOAD_MAX_LABEL } from "../uploads/limits";
+
+export const RECEIPT_MAX_BYTES = UPLOAD_MAX_BYTES;
+/** Speglar serverns bodySizeLimit. */
+export const VERIFICATION_ATTACHMENT_MAX_BYTES = UPLOAD_MAX_BYTES;
 
 function fileForm(file: File, fallbackName: string): FormData {
   const form = new FormData();
@@ -25,7 +27,7 @@ function fileForm(file: File, fallbackName: string): FormData {
 /** Kvitto till ett känt bankköp (uploadReceiptAction). */
 export function receiptUploadForm(expenseId: string, file: File): FormData {
   if (file.size > RECEIPT_MAX_BYTES) {
-    throw new Error("Kvittot är för stort (max 5 MB).");
+    throw new Error(`Kvittot är för stort (max ${UPLOAD_MAX_LABEL}).`);
   }
   const form = fileForm(file, "kvitto");
   form.set("expenseId", expenseId);
@@ -35,7 +37,7 @@ export function receiptUploadForm(expenseId: string, file: File): FormData {
 /** Fristående kvitto eller leverantörsfaktura till inboxen (uploadInboxDocumentAction). */
 export function inboxDocumentForm(file: File): FormData {
   if (file.size > RECEIPT_MAX_BYTES) {
-    throw new Error("Filen är för stor (max 5 MB).");
+    throw new Error(`Filen är för stor (max ${UPLOAD_MAX_LABEL}).`);
   }
   return fileForm(file, "dokument");
 }
@@ -43,7 +45,7 @@ export function inboxDocumentForm(file: File): FormData {
 /** Kvittot till en handregistrerad utgift (createManualExpenseAction). */
 export function manualExpenseReceiptForm(file: File): FormData {
   if (file.size > RECEIPT_MAX_BYTES) {
-    throw new Error("Kvittot är för stort (max 5 MB).");
+    throw new Error(`Kvittot är för stort (max ${UPLOAD_MAX_LABEL}).`);
   }
   return fileForm(file, "kvitto");
 }
@@ -51,7 +53,7 @@ export function manualExpenseReceiptForm(file: File): FormData {
 /** Underlaget till ett manuellt verifikat (postManualVerificationAction). */
 export function verificationAttachmentForm(file: File): FormData {
   if (file.size > VERIFICATION_ATTACHMENT_MAX_BYTES) {
-    throw new Error("Underlaget är för stort (max 10 MB).");
+    throw new Error(`Underlaget är för stort (max ${UPLOAD_MAX_LABEL}).`);
   }
   return fileForm(file, "underlag");
 }

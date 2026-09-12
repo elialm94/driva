@@ -9,6 +9,7 @@ import {
   bookTaxAccountDepositAction,
   bookVatOnTaxAccountAction,
   reconcileTaxAccountAction,
+  setAutoBookFSkattAction,
   setFSkattPerMonthAction,
 } from "@/app/bokforing-actions";
 import { TAX_ACCOUNT_KIND_LABEL, type TaxAccountReconciliation } from "@/lib/accounting/tax-account-model";
@@ -79,13 +80,23 @@ export function BookFSkattButton({ month, amount }: { month: string; amount: num
  * preliminärskatt. Utan det kan Driva inte föreslå F-skattdragningarna, så
  * kortet är framhävt tills beloppet är satt och blir en stillsam rad därefter.
  */
-export function FSkattSettingCard({ amount, className }: { amount: number; className?: string }) {
+export function FSkattSettingCard({
+  amount,
+  autoBook = true,
+  className,
+}: {
+  amount: number;
+  autoBook?: boolean;
+  className?: string;
+}) {
   const [isPending, startTransition] = useTransition();
   const [editing, setEditing] = useState(amount <= 0);
   const [value, setValue] = useState(amount > 0 ? String(amount) : "");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [autoEnabled, setAutoEnabled] = useState(autoBook);
   const inputId = useId();
+  const autoId = useId();
   const unset = amount <= 0;
 
   function submit() {
@@ -192,8 +203,35 @@ export function FSkattSettingCard({ amount, className }: { amount: number; class
       ) : null}
       {saved && !editing ? (
         <p className="mt-2 flex items-center gap-1.5 text-[13px] font-medium text-ok">
-          <Check className="size-3.5" /> Sparat. Månader som väntar på bokföring visas under Att bokföra.
+          <Check className="size-3.5" />{" "}
+          {autoEnabled
+            ? "Sparat. Debiteringen bokförs automatiskt på förfallodagen."
+            : "Sparat. Debiteringen bokförs inte automatiskt."}
         </p>
+      ) : null}
+      {amount > 0 ? (
+        <label htmlFor={autoId} className="mt-4 flex items-start gap-2.5 text-[13px] text-soft">
+          <input
+            id={autoId}
+            type="checkbox"
+            className="mt-0.5"
+            checked={!autoEnabled}
+            disabled={isPending}
+            onChange={(e) => {
+              const enabled = !e.target.checked;
+              startTransition(async () => {
+                const res = await setAutoBookFSkattAction(enabled);
+                if (!res.ok) {
+                  setError(res.error);
+                  return;
+                }
+                setAutoEnabled(enabled);
+                setError(null);
+              });
+            }}
+          />
+          <span>Bokför inte F-skatt automatiskt. Används om besluten ändras ofta.</span>
+        </label>
       ) : null}
       <ErrorNote error={error} />
     </Card>

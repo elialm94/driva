@@ -1310,8 +1310,9 @@ export function requestUpdateBusinessProfile(patch: Record<string, string | numb
   const current = getBusinessProfile();
   const defaults = getInvoiceDefaults();
   // Bara skalära fält jämförs i förhandsvisningen (notiser är ett objekt och ändras inte här).
-  const { notices: _notices, ...scalarSettings } = current;
+  const { notices: _notices, autoBookFSkatt: _autoBookFSkatt, ...scalarSettings } = current;
   void _notices;
+  void _autoBookFSkatt;
   const currentMap: Record<string, string | number | undefined> = {
     ...scalarSettings,
     ...defaults,
@@ -1476,7 +1477,7 @@ export function listSupplierInvoicesResult(q?: string): DomainResult {
       rows: rows.slice(0, 20).map((s) => ({
         label: `${s.supplier} · ${s.invoiceNumber}`,
         value: kr(s.amount),
-        href: s.inboxItemId ? `/inbox/${s.inboxItemId}` : "/ekonomi?flik=utgifter",
+        href: s.inboxItemId ? `/bokforing/underlag/${s.inboxItemId}` : "/ekonomi?flik=utgifter",
       })),
       links: [{ label: "Öppna Ekonomi", href: "/ekonomi?flik=utgifter" }],
     },
@@ -1660,7 +1661,7 @@ export function reviewDocumentExtractionResult(itemId: string): DomainResult {
           label: f.label,
           value: `${f.value == null ? "—" : typeof f.value === "number" ? kr(f.value) : f.value} · ${f.state === "saker" ? "Säker" : "Kontrollera"}`,
         })),
-        links: [{ label: review.editable ? "Öppna Kontrollera-vyn" : "Öppna dokumentet", href: review.editable ? `/inbox/${review.itemId}/kontrollera` : `/inbox/${review.itemId}` }],
+        links: [{ label: review.editable ? "Öppna Kontrollera-vyn" : "Öppna dokumentet", href: review.editable ? `/bokforing/underlag/${review.itemId}/kontrollera` : `/bokforing/underlag/${review.itemId}` }],
       },
     };
   } catch (e) {

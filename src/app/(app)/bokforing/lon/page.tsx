@@ -20,8 +20,9 @@ import { maskPersonnummer } from "@/lib/personnummer";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { todayDate } from "@/lib/accounting/dates";
 import {
-  currentEmployee,
   employeeById,
+  employees,
+  employeesAwaitingPayroll,
   employerDeclarations,
   employerDeclarationsAwaitingFiling,
   employerDeclarationFor,
@@ -38,89 +39,100 @@ export const metadata = { title: "Lön" };
 export default async function LonPage() {
   await ensurePageBusiness();
   const today = todayDate();
-  const employee = currentEmployee();
+  const allEmployees = employees().filter((e) => e.status === "anstalld");
   const runs = [...payrollRuns()].sort((a, b) => b.month.localeCompare(a.month));
   const awaitingRun = payrollMonthsAwaitingRun(today);
   const awaitingFiling = employerDeclarationsAwaitingFiling(today);
   const declarations = [...employerDeclarations()].sort((a, b) => b.month.localeCompare(a.month));
   const missingDraft = awaitingRun.filter((m) => !employerDeclarationFor(m));
-  const stale = employee ? taxLookupStale(employee.taxBasis, employee.monthlySalary) : false;
 
   return (
     <div>
       <PageHeader
         back={<SmartBack />}
         title="Lön"
-        subtitle="Fast månadslön till ägaren, med arbetsgivardeklaration varje månad. Skatten och avgifterna följer med till skattekontot."
-        actions={<PrintButton />}
+        subtitle="Fast månadslön till anställda, med arbetsgivardeklaration varje månad. Skatten och avgifterna följer med till skattekontot."
+        actions={allEmployees.length > 0 ? <PrintButton /> : undefined}
       />
 
-      {employee ? (
+      {allEmployees.length > 0 ? (
         <>
-          <Card className="mb-4 px-6 py-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2.5">
-                  <UserRound className="size-4.5 text-muted" />
-                  <h2 className="text-[15px] font-semibold">{employee.name}</h2>
-                  <Badge tone="ok">{EMPLOYEE_ROLE_LABEL[employee.role]}</Badge>
-                </div>
-                <dl className="mt-3 grid gap-3 text-[13px] sm:grid-cols-2">
-                  <div>
-                    <dt className="text-[12px] text-muted">Personnummer</dt>
-                    <dd>
-                      <RevealPersonnummer
-                        employeeId={employee.id}
-                        masked={maskPersonnummer(employee.personnummer)}
-                      />
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[12px] text-muted">Anställd sedan</dt>
-                    <dd>{datumKort(employee.startDate)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[12px] text-muted">Skatteavdrag</dt>
-                    <dd>{taxBasisLabel(employee.taxBasis)}</dd>
-                  </div>
-                  {employee.email ? (
+          <div className="mb-4 space-y-4">
+            {allEmployees.map((person) => {
+              const stale = taxLookupStale(person.taxBasis, person.monthlySalary);
+              return (
+                <Card key={person.id} className="px-6 py-5">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                      <dt className="text-[12px] text-muted">E-post</dt>
-                      <dd>{employee.email}</dd>
+                      <div className="flex items-center gap-2.5">
+                        <UserRound className="size-4.5 text-muted" />
+                        <h2 className="text-[15px] font-semibold">{person.name}</h2>
+                        <Badge tone="ok">{EMPLOYEE_ROLE_LABEL[person.role]}</Badge>
+                      </div>
+                      <dl className="mt-3 grid gap-3 text-[13px] sm:grid-cols-2">
+                        <div>
+                          <dt className="text-[12px] text-muted">Personnummer</dt>
+                          <dd>
+                            <RevealPersonnummer
+                              employeeId={person.id}
+                              masked={maskPersonnummer(person.personnummer)}
+                            />
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-[12px] text-muted">Anställd sedan</dt>
+                          <dd>{datumKort(person.startDate)}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-[12px] text-muted">Skatteavdrag</dt>
+                          <dd>{taxBasisLabel(person.taxBasis)}</dd>
+                        </div>
+                        {person.email ? (
+                          <div>
+                            <dt className="text-[12px] text-muted">E-post</dt>
+                            <dd>{person.email}</dd>
+                          </div>
+                        ) : null}
+                      </dl>
                     </div>
+                    <p className="text-[26px] font-semibold tracking-tight tabular">{kr(person.monthlySalary)}</p>
+                  </div>
+                  {stale ? (
+                    <p className="mt-4 border-t border-line/60 pt-3 text-[13px] font-medium text-warn">
+                      Månadslönen har ändrats sedan tabellavdraget slogs upp. Slå upp raden för{" "}
+                      {kr(person.monthlySalary)} i tabellen igen, annars dras fel skatt.
+                    </p>
                   ) : null}
-                </dl>
-              </div>
-              <p className="text-[26px] font-semibold tracking-tight tabular">{kr(employee.monthlySalary)}</p>
-            </div>
-            {stale ? (
-              <p className="mt-4 border-t border-line/60 pt-3 text-[13px] font-medium text-warn">
-                Månadslönen har ändrats sedan tabellavdraget slogs upp. Slå upp raden för{" "}
-                {kr(employee.monthlySalary)} i tabellen igen, annars dras fel skatt.
-              </p>
-            ) : null}
-            <div className="mt-4 flex flex-wrap items-start gap-3 border-t border-line/60 pt-4">
-              <EmployeeForm employee={employee} today={today} />
-              <EndEmploymentButton employeeId={employee.id} today={today} />
-            </div>
-          </Card>
+                  <div className="mt-4 flex flex-wrap items-start gap-3 border-t border-line/60 pt-4">
+                    <EmployeeForm employee={person} today={today} />
+                    <EndEmploymentButton employeeId={person.id} today={today} />
+                  </div>
+                </Card>
+              );
+            })}
+            <EmployeeForm today={today} />
+          </div>
 
           {awaitingRun.length + awaitingFiling.length + missingDraft.length > 0 ? (
             <div className="mb-8">
               <SectionTitle>Att göra ({awaitingRun.length + awaitingFiling.length})</SectionTitle>
               <div className="space-y-4">
-                {awaitingRun.map((m) => (
-                  <Card key={m} className="px-6 py-5">
-                    <p className="text-[15px] font-semibold">Lön {monthLabel(m)}</p>
-                    <p className="mt-1 text-[13px] text-soft">
-                      Lönedagen har passerat men lönen är inte bokförd. Utan lönekörning finns inget underlag till
-                      arbetsgivardeklarationen.
-                    </p>
-                    <div className="mt-3">
-                      <RunPayrollButton month={m} gross={employee.monthlySalary} />
-                    </div>
-                  </Card>
-                ))}
+                {awaitingRun.map((m) =>
+                  employeesAwaitingPayroll(m).map((person) => (
+                    <Card key={`${m}-${person.id}`} className="px-6 py-5">
+                      <p className="text-[15px] font-semibold">
+                        Lön {monthLabel(m)} · {person.name}
+                      </p>
+                      <p className="mt-1 text-[13px] text-soft">
+                        Lönedagen har passerat men lönen är inte bokförd. Utan lönekörning finns inget underlag till
+                        arbetsgivardeklarationen.
+                      </p>
+                      <div className="mt-3">
+                        <RunPayrollButton month={m} gross={person.monthlySalary} employeeId={person.id} />
+                      </div>
+                    </Card>
+                  ))
+                )}
                 {awaitingFiling.map((d) => (
                   <Card key={d.id} className="px-6 py-5">
                     <p className="text-[15px] font-semibold">Arbetsgivardeklaration {d.label}</p>

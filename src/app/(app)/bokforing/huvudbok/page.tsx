@@ -8,6 +8,7 @@ import { PrintButton } from "@/components/bokforing-widgets";
 import { FiscalYearPicker, fiscalYearHref } from "@/components/fiscal-year-picker";
 import { fiscalYears, resolveViewFiscalYear } from "@/lib/accounting/fiscal";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { AccountantPackActions } from "@/components/accountant-pack-actions";
 
 export const metadata = { title: "Huvudbok" };
 
@@ -49,6 +50,10 @@ export default async function HuvudbokPage({
         activeLabel={fy.label}
         hrefFor={(y) => fiscalYearHref("/bokforing/huvudbok", y, extra)}
       />
+
+      <div className="mb-6">
+        <AccountantPackActions yearLabel={fy.label} fiscalYearId={fy.id} />
+      </div>
 
       {/* Kontoväljare */}
       <div className="mb-6 flex flex-wrap gap-1.5 print:hidden">

@@ -109,14 +109,9 @@ describe("kvittofil – validering", () => {
     assert.equal(RECEIPT_MAX_BYTES, MAX_RECEIPT_BYTES);
     assert.equal(VERIFICATION_ATTACHMENT_MAX_BYTES, MAX_VERIFICATION_ATTACHMENT_BYTES);
     const tooBig = new File([Buffer.alloc(RECEIPT_MAX_BYTES + 1)], "stor.pdf", { type: "application/pdf" });
-    assert.throws(() => receiptUploadForm("exp-clas", tooBig), /Kvittot är för stort \(max 5 MB\)/);
-    assert.throws(() => inboxDocumentForm(tooBig), /Filen är för stor \(max 5 MB\)/);
-    // Underlaget tillåter 10 MB – ett 5 MB-dokument går igenom där.
-    assert.ok(verificationAttachmentForm(tooBig).get("file") instanceof Blob);
-    const wayTooBig = new File([Buffer.alloc(VERIFICATION_ATTACHMENT_MAX_BYTES + 1)], "stor.pdf", {
-      type: "application/pdf",
-    });
-    assert.throws(() => verificationAttachmentForm(wayTooBig), /Underlaget är för stort \(max 10 MB\)/);
+    assert.throws(() => receiptUploadForm("exp-clas", tooBig), /Kvittot är för stort \(max 8 MB\)/);
+    assert.throws(() => inboxDocumentForm(tooBig), /Filen är för stor \(max 8 MB\)/);
+    assert.throws(() => verificationAttachmentForm(tooBig), /Underlaget är för stort \(max 8 MB\)/);
   });
 });
 

@@ -1,10 +1,12 @@
 import { db, save } from "../store";
 import { isValidBankgirotOcr } from "../ids";
 import type { BankTransaction, Verification, VatReport } from "../types";
+import { kr } from "../format";
 import { bokforingsdatum, todayDate } from "./dates";
 import { fiscalYearFor } from "./fiscal";
 import { postVerification } from "./engine";
 import { logAudit } from "./audit";
+import { monthLabel } from "./payroll-model";
 import {
   ARBETSGIVARAVGIFT,
   F_SKATT,
@@ -150,11 +152,9 @@ export function vatOnTaxAccountVerification(reportId: string): Verification | un
 }
 
 /**
- * Referensnumret (OCR) för inbetalningar till skattekontot. Skatteverket
- * räknar fram det ur organisationsnumret i sin e-tjänst; Driva räknar det
- * inte själv – ett fel nummer hamnar på någon annans skattekonto. Vi sparar
- * det användaren hämtat och kontrollerar bara kontrollsiffran (OCR-10, som
- * alla Bankgirot-referenser). Tomt tar bort numret.
+ * Referensnumret (OCR) för inbetalningar till skattekontot. Driva räknar
+ * fram det ur organisationsnumret (OCR-10) och ber användaren kontrollera
+ * det en gång mot Skatteverkets OCR-beräkning. Tomt tar bort numret.
  */
 export function setTaxAccountOcr(value: string, actor: "anvandare" | "assistent"): string | undefined {
   const digits = value.replace(/\s/g, "");
@@ -215,7 +215,11 @@ export function setFSkattPerMonth(amount: number, actor: "anvandare" | "assisten
  * Preliminärskatten (F-skatt) dras varje månad enligt Skatteverkets beslut.
  * Beloppet är en inställning på företaget; en månad bokförs bara en gång.
  */
-export function bookFSkatt(month: string, actor: "anvandare" | "assistent", amountOverride?: number): Verification {
+export function bookFSkatt(
+  month: string,
+  actor: "anvandare" | "assistent" | "auto",
+  amountOverride?: number
+): Verification {
   if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("Månaden anges som YYYY-MM.");
   const amount = amountOverride ?? db().settings.fSkattPerMonth;
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -227,23 +231,106 @@ export function bookFSkatt(month: string, actor: "anvandare" | "assistent", amou
   const existing = alreadyBooked(sourceId);
   if (existing) return existing;
 
+  const createdBy = actor === "auto" ? "auto" : actor;
+  const explanation =
+    actor === "auto"
+      ? `Skatteverket debiterar F-skatt ${monthLabel(month)} enligt beslut. Beloppet ${kr(amount)} kommer från inställningen Preliminärskatt per månad.`
+      : `Preliminärskatten för ${monthLabel(month)} (${kr(amount)}) drogs från skattekontot. F-skatten kvittas mot den slutliga skatten vid bokslutet.`;
+
   const ver = postVerification({
-    date: `${month}-12`,
+    date: fSkattChargeDate(month),
     description: `F-skatt ${month}`,
     entries: [
       { account: F_SKATT, debit: amount },
       { account: SKATTEKONTO, credit: amount },
     ],
     source: { type: "skattekonto", id: sourceId },
-    createdBy: actor,
-    explanation: `Preliminärskatten för ${month} (${amount} kr) drogs från skattekontot. F-skatten kvittas mot den slutliga skatten vid bokslutet.`,
+    createdBy,
+    explanation,
   });
-  logAudit(actor, "skattekonto_bokford", `F-skatt för ${month} bokfördes (${amount} kr).`, {
-    targetType: "skattekonto",
-    targetId: sourceId,
-  });
+  logAudit(
+    actor === "auto" ? "system" : actor,
+    "skattekonto_bokford",
+    `F-skatt för ${month} bokfördes (${amount} kr).`,
+    {
+      targetType: "skattekonto",
+      targetId: sourceId,
+    }
+  );
   save();
   return ver;
+}
+
+/** Samma dagregel som AGI/moms: 12:e, 17:e i januari och augusti. */
+function fSkattChargeDate(month: string): string {
+  const y = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7));
+  const day = m === 1 || m === 8 ? 17 : 12;
+  return `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+export function isAutoBookFSkattEnabled(): boolean {
+  const data = db();
+  if (data.settings.autoBookFSkatt === false) return false;
+  if (data.meta.autoBookFSkatt === false) return false;
+  return true;
+}
+
+export function setAutoBookFSkatt(enabled: boolean, actor: "anvandare" | "assistent"): boolean {
+  const data = db();
+  const previous = isAutoBookFSkattEnabled();
+  if (previous === enabled) return enabled;
+  data.settings.autoBookFSkatt = enabled;
+  data.meta.autoBookFSkatt = enabled;
+  logAudit(
+    actor,
+    "fskatt_andrad",
+    enabled
+      ? "F-skatten bokförs automatiskt på förfallodagen."
+      : "Automatisk bokföring av F-skatt stängdes av.",
+    { targetType: "skattekonto", targetId: "fskatt-auto" }
+  );
+  save();
+  return enabled;
+}
+
+/**
+ * Bokför förfallna F-skattedebiteringar som saknas. Körs vid sidladdning så
+ * att ingen cron behövs. Hoppar över månader som redan har `fskatt-YYYY-MM`.
+ */
+export function ensureAutoFSkattBookings(through: string = todayDate()): Verification[] {
+  if (!isAutoBookFSkattEnabled()) return [];
+  const amount = db().settings.fSkattPerMonth;
+  if (!Number.isFinite(amount) || amount <= 0) return [];
+  const booked: Verification[] = [];
+  for (const month of fSkattMonthsDue(through)) {
+    booked.push(bookFSkatt(month, "auto"));
+  }
+  return booked;
+}
+
+/** Månader i det öppna året vars förfallodag har passerat och som saknar verifikation. */
+export function fSkattMonthsDue(through: string = todayDate()): string[] {
+  const amount = db().settings.fSkattPerMonth;
+  if (!Number.isFinite(amount) || amount <= 0) return [];
+  const fy = fiscalYearFor(through);
+  if (!fy) return [];
+  const months: string[] = [];
+  for (let m = monthOf(fy.startDate); m <= monthOf(fy.endDate); m = nextMonth(m)) {
+    if (fSkattChargeDate(m) > through) break;
+    if (!alreadyBooked(`fskatt-${m}`)) months.push(m);
+  }
+  return months;
+}
+
+/** Senaste inklistrade skattekontoutdraget, så kön kan föreslå deklarerad moms. */
+export function rememberTaxAccountStatement(rows: TaxAccountStatementRow[]): void {
+  db().meta.lastTaxAccountStatement = rows.map((r) => ({ date: r.date, text: r.text, amount: r.amount }));
+  save();
+}
+
+export function lastTaxAccountStatement(): TaxAccountStatementRow[] {
+  return db().meta.lastTaxAccountStatement ?? [];
 }
 
 /**

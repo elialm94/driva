@@ -2,7 +2,7 @@ import { db, save } from "../store";
 import { bokforingsdatum, monthsOf, todayDate, vatPeriodsOf, type Period } from "./dates";
 import { fiscalYears, lockPeriod, lockedThrough, vatPeriodicity } from "./fiscal";
 import { bankReconciliationAt } from "./reconciliation";
-import { currentEmployee, employerDeclarations, payrollRuns } from "./payroll";
+import { employees, employerDeclarations, payrollRuns } from "./payroll";
 import { logAudit } from "./audit";
 
 /**
@@ -116,12 +116,15 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
     ? data.vatReports.find((r) => r.periodStart === vatPeriod.start && r.periodEnd === vatPeriod.end)
     : undefined;
 
-  const employee = currentEmployee();
-  const employedInMonth =
-    employee != null &&
-    employee.startDate.slice(0, 7) <= period.key &&
-    (!employee.endDate || employee.endDate.slice(0, 7) >= period.key);
-  const payrollBooked = payrollRuns().some((r) => r.month === period.key);
+  const employedInMonth = employees().filter(
+    (e) =>
+      e.startDate.slice(0, 7) <= period.key &&
+      (!e.endDate || e.endDate.slice(0, 7) >= period.key)
+  );
+  const missingPayroll = employedInMonth.filter(
+    (e) => !payrollRuns().some((r) => r.month === period.key && r.employeeId === e.id)
+  );
+  const payrollBooked = employedInMonth.length > 0 && missingPayroll.length === 0;
   const declaration = employerDeclarations().find((d) => d.month === period.key);
 
   const checks: PeriodCheckItem[] = [
@@ -148,7 +151,7 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
           : recon.unexplained !== 0
             ? `${Math.abs(recon.unexplained)} kr skiljer mellan banken och bokföringen den ${period.end} utan förklaring.`
             : "Kontot stämmer mot bokföringen vid månadens slut.",
-      href: "/ekonomi?flik=bank",
+      href: "/bokforing/bank",
       hrefLabel: "Öppna banken",
     },
     {
@@ -182,14 +185,16 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
     },
   ];
 
-  if (employedInMonth) {
+  if (employedInMonth.length > 0) {
     checks.push({
       key: "lon",
       label: "Lönen bokförd och deklarerad",
       ok: payrollBooked && declaration?.status === "deklarerad",
       blocking: true,
       detail: !payrollBooked
-        ? `Lönen för ${period.label} är inte bokförd.`
+        ? missingPayroll.length === 1
+          ? `Lönen för ${missingPayroll[0].name} i ${period.label} är inte bokförd.`
+          : `Lön saknas för ${missingPayroll.length} anställda i ${period.label}.`
         : declaration?.status !== "deklarerad"
           ? `Arbetsgivardeklarationen för ${period.label} är inte lämnad.`
           : "Lön och arbetsgivardeklaration är klara.",
@@ -263,4 +268,30 @@ export function closePeriod(
   );
   save();
   return periodCloseStatus(period);
+}
+
+/** Avslutade månader som kan stängas i följd, fram till första blockeraren. */
+export function monthsReadyToClose(today: string = todayDate()): Period[] {
+  const ready: Period[] = [];
+  for (const period of monthsAwaitingClose(today)) {
+    if (periodCloseStatus(period, today).blockers.length > 0) break;
+    ready.push(period);
+  }
+  return ready;
+}
+
+/**
+ * Stäng alla månader som är klara, i ordning. Stannar vid första blockeraren
+ * utan att kasta – redan stängda månader ligger kvar.
+ */
+export function closeAllReadyMonths(
+  actor: "anvandare" | "assistent" | "system" = "anvandare"
+): PeriodCloseStatus[] {
+  const closed: PeriodCloseStatus[] = [];
+  for (const period of monthsAwaitingClose()) {
+    const status = periodCloseStatus(period);
+    if (status.blockers.length > 0) break;
+    closed.push(closePeriod(period.key, actor));
+  }
+  return closed;
 }

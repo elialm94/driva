@@ -1,7 +1,8 @@
 import { db } from "../store";
 import type { FiscalYear } from "../types";
 import { accountName } from "./chart";
-import { bokforingsdatum } from "./dates";
+import { kr } from "../format";
+import { bokforingsdatum, todayDate } from "./dates";
 import { getFiscalYear } from "./fiscal";
 import { accountBalance, saldobalans } from "./ledger";
 import { accumulatedDepreciation, bookValue } from "./assets";
@@ -180,7 +181,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       ...base,
       subsystem,
       source: "kundfakturor",
-      detail: `${open.length} obetald${open.length === 1 ? "" : "a"} faktura${open.length === 1 ? "" : "or"} på ${subsystem} kr.`,
+      detail: `${open.length} ${open.length === 1 ? "obetald faktura" : "obetalda fakturor"} på ${kr(subsystem)}.`,
       href: "/ekonomi?flik=fakturor",
       hrefLabel: "Visa fakturorna",
     });
@@ -196,7 +197,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       ...base,
       subsystem,
       source: "leverantorsfakturor",
-      detail: `${open.length} obetald${open.length === 1 ? "" : "a"} leverantörsfaktura${open.length === 1 ? "" : "or"} på ${-subsystem} kr.`,
+      detail: `${open.length} ${open.length === 1 ? "obetald leverantörsfaktura" : "obetalda leverantörsfakturor"} på ${kr(-subsystem)}.`,
       href: "/bokforing",
       hrefLabel: "Öppna bokföringen",
     });
@@ -210,10 +211,10 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
         ...base,
         difference: 0,
         source: "ingen",
-        detail: `Ingen bank är kopplad, så saldot ${ledger} kr går inte att stämma av automatiskt. Jämför mot bankens kontoutdrag.`,
+        detail: `Ingen bank är kopplad, så saldot ${kr(ledger)} går inte att stämma av automatiskt. Jämför mot bankens kontoutdrag.`,
         ok: true,
         manual: true,
-        href: "/ekonomi?flik=bank",
+        href: "/bokforing/bank",
         hrefLabel: "Öppna banken",
       };
     }
@@ -226,10 +227,10 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       difference: -bank.unexplained,
       source: "bank",
       detail: bank.unhandled.length
-        ? `${bank.unhandled.length} banktransaktion${bank.unhandled.length === 1 ? "" : "er"} är inte bokförd${bank.unhandled.length === 1 ? "" : "a"} – de förklarar ${bank.unhandledSum} kr av skillnaden.`
-        : `Bankens saldo ${fy.endDate} var ${bank.bankBalance} kr.`,
-      ok: bank.unexplained === 0,
-      href: "/ekonomi?flik=bank",
+        ? `${bank.unhandled.length} banktransaktion${bank.unhandled.length === 1 ? "" : "er"} är inte bokförd${bank.unhandled.length === 1 ? "" : "a"} – de förklarar ${kr(bank.unhandledSum)} av skillnaden.`
+        : `Bankens saldo ${fy.endDate} var ${kr(bank.bankBalance)}.`,
+      ok: bank.unexplained === 0 && bank.unhandled.length === 0,
+      href: "/bokforing/bank",
       hrefLabel: "Öppna banken",
     };
   }
@@ -240,7 +241,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       ...base,
       difference: 0,
       source: "skattekonto",
-      detail: `Bokfört saldo ${ledger} kr. Stäm av mot Skatteverkets kontoutdrag på skattekontosidan.`,
+      detail: `Bokfört saldo ${kr(ledger)}. Stäm av mot Skatteverkets kontoutdrag på skattekontosidan.`,
       ok: true,
       manual: true,
       href: "/bokforing/skattekonto",
@@ -276,7 +277,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       detail:
         ledger === 0
           ? "Ingen deklarerad moms väntar på skattekontot."
-          : `${Math.abs(ledger)} kr ${ledger < 0 ? "att betala" : "att få tillbaka"} är deklarerat men inte fört till skattekontot.`,
+          : `${kr(Math.abs(ledger))} ${ledger < 0 ? "att betala" : "att få tillbaka"} är deklarerat men inte fört till skattekontot.`,
       ok: true,
       href: "/bokforing/skattekonto",
       hrefLabel: "Öppna skattekontot",
@@ -312,7 +313,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       ...base,
       subsystem,
       source: "inventarieregister",
-      detail: `${assets.length} inventarie${assets.length === 1 ? "" : "r"} med anskaffningsvärde ${subsystem} kr, bokfört värde ${assets.reduce((s, a) => s + bookValue(a), 0)} kr.`,
+      detail: `${assets.length} inventarie${assets.length === 1 ? "" : "r"} med anskaffningsvärde ${kr(subsystem)}, bokfört värde ${kr(assets.reduce((s, a) => s + bookValue(a), 0))}.`,
       href: "/bokforing/bokslut",
       hrefLabel: "Öppna bokslutet",
     });
@@ -324,7 +325,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       ...base,
       subsystem,
       source: "inventarieregister",
-      detail: `Ackumulerade avskrivningar enligt registret: ${-subsystem} kr.`,
+      detail: `Ackumulerade avskrivningar enligt registret: ${kr(-subsystem)}.`,
       href: "/bokforing/bokslut",
       hrefLabel: "Öppna bokslutet",
     });
@@ -340,7 +341,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       ...base,
       subsystem,
       source: "periodiseringar",
-      detail: `${booked.length} periodisering${booked.length === 1 ? "" : "ar"} på ${Math.abs(subsystem)} kr.`,
+      detail: `${booked.length} periodisering${booked.length === 1 ? "" : "ar"} på ${kr(Math.abs(subsystem))}.`,
       href: "/bokforing/bokslut",
       hrefLabel: "Öppna bokslutet",
     });
@@ -365,7 +366,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       detail: lots.length
         ? `${lots.length} fond${lots.length === 1 ? "" : "er"} avsatt${lots.length === 1 ? "" : "a"} ${lots
             .map((l) => l.year)
-            .join(", ")} på ${-subsystem} kr.`
+            .join(", ")} på ${kr(-subsystem)}.`
         : "Ingen periodiseringsfond är avsatt.",
       href: "/bokforing/bokslut",
       hrefLabel: "Öppna bokslutet",
@@ -392,7 +393,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       ...base,
       subsystem,
       source: "bokslutsbilaga",
-      detail: `Bilagan specificerar ${Math.abs(subsystem)} kr${schedule.status === "utkast" ? " (utkast – inte bokförd ännu)" : ""}.`,
+      detail: `Bilagan specificerar ${kr(Math.abs(subsystem))}${schedule.status === "utkast" ? " (utkast – inte bokförd ännu)" : ""}.`,
       href: "/bokforing/bokslut",
       hrefLabel: "Öppna bokslutet",
     });
@@ -418,7 +419,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
     ...base,
     difference: 0,
     source: "ingen",
-    detail: `${accountName(account)} har saldo ${ledger} kr utan delsystem i Driva. Stäm av mot underlaget – lånebeskedet, avtalet eller motpartens uppgift – och lägg vid en specifikation.`,
+    detail: `${accountName(account)} har saldo ${kr(ledger)} utan delsystem i Driva. Stäm av mot underlaget – lånebeskedet, avtalet eller motpartens uppgift – och lägg vid en specifikation.`,
     ok: true,
     manual: ledger !== 0,
   };
@@ -462,8 +463,10 @@ function isAccumulatedDepreciationAccount(account: number): boolean {
 /** Momsperioder i året som inte är deklarerade. */
 function undeclaredVatPeriods(fy: FiscalYear): { start: string; end: string; label: string }[] {
   const reports = db().vatReports;
+  const today = todayDate();
   return vatPeriodsOf(fy, vatPeriodicity())
     .filter((p) => {
+      if (p.end >= today) return false;
       const report = reports.find((r) => r.periodStart === p.start && r.periodEnd === p.end);
       return report?.status !== "deklarerad";
     })

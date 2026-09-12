@@ -3,7 +3,6 @@ import { describe, it, beforeEach } from "node:test";
 
 import { db, resetDemoData } from "../store";
 import { accountPickerOptions, postManualVerification } from "../services/manual-verification";
-import { chartAccounts } from "./chart";
 import { PostingError, postVerification, verificationLabel } from "./engine";
 import { lockPeriod } from "./fiscal";
 import { MAIN_SERIES, MANUAL_SERIES, nextNumberInSeries, seriesLabel } from "./series";
@@ -148,14 +147,10 @@ describe("manuellt verifikat", () => {
 
   it("erbjuder hela det aktiva kontoregistret i kontoväljaren", () => {
     const options = accountPickerOptions();
-    assert.equal(options.length, chartAccounts().length);
-    assert.deepEqual(
-      options.map((o) => o.account),
-      [...options.map((o) => o.account)].sort((a, b) => a - b),
-      "kontona ska ligga i nummerordning"
-    );
     const bank = options.find((o) => o.account === 1930);
     assert.ok(bank);
     assert.equal(bank.label, "1930 Företagskonto");
+    assert.ok(!options.some((o) => o.account === 2610 || o.account === 2640));
+    assert.ok(!options.some((o) => o.account === 2010 || o.account === 2013));
   });
 });

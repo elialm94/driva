@@ -4,10 +4,17 @@ import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
 import { balansrapport, type BalansRad } from "@/lib/accounting/ledger";
 import { FiscalYearPicker, fiscalYearHref } from "@/components/fiscal-year-picker";
+import { AccountantPackActions } from "@/components/accountant-pack-actions";
 import { fiscalYearAsOf, fiscalYears, resolveViewFiscalYear } from "@/lib/accounting/fiscal";
 import { ensurePageBusiness } from "@/lib/auth/session";
 
 export const metadata = { title: "Balansrapport" };
+
+const SIDE_LABEL: Record<BalansRad["side"], string> = {
+  tillgang: "Tillgång",
+  eget_kapital: "Eget kapital",
+  skuld: "Skuld",
+};
 
 function Rows({ rows }: { rows: BalansRad[] }) {
   return (
@@ -17,6 +24,7 @@ function Rows({ rows }: { rows: BalansRad[] }) {
           <td className="py-1.5 pr-3">
             <span className="font-mono text-[12px] text-muted">{r.account}</span> {r.name}
           </td>
+          <td className="py-1.5 pr-3 text-[12px] text-muted">{SIDE_LABEL[r.side]}</td>
           <td className="py-1.5 text-right tabular">{kr(r.amount)}</td>
         </tr>
       ))}
@@ -42,7 +50,7 @@ export default async function BalansPage({
         title="Balansrapport"
         subtitle={`Vad företaget äger och är skyldigt per ${datumLang(br.atDate)}.`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <a href={`/api/bokforing/export?typ=balans&ar=${encodeURIComponent(fy.label)}`} className="text-[13px] font-medium text-accent hover:underline">
               Exportera CSV
             </a>
@@ -56,6 +64,10 @@ export default async function BalansPage({
         activeLabel={fy.label}
         hrefFor={(y) => fiscalYearHref("/bokforing/balans", y)}
       />
+
+      <div className="mb-6">
+        <AccountantPackActions yearLabel={fy.label} fiscalYearId={fy.id} />
+      </div>
 
       {/* Ägarvänlig sammanfattning */}
       <Card className="mb-6 px-6 py-5">
@@ -85,7 +97,7 @@ export default async function BalansPage({
             <tbody>
               <Rows rows={br.tillgangar} />
               <tr className="border-t border-line font-semibold">
-                <td className="py-2">Summa tillgångar</td>
+                <td className="py-2" colSpan={2}>Summa tillgångar</td>
                 <td className="py-2 text-right tabular">{kr(br.sumTillgangar)}</td>
               </tr>
             </tbody>
@@ -99,21 +111,21 @@ export default async function BalansPage({
               <Rows rows={br.egetKapital} />
               {br.beraknatResultat !== 0 ? (
                 <tr className="border-t border-line/50">
-                  <td className="py-1.5 pr-3 text-soft">Beräknat resultat (året pågår – bokförs vid bokslut)</td>
+                  <td className="py-1.5 pr-3 text-soft" colSpan={2}>Beräknat resultat (året pågår – bokförs vid bokslut)</td>
                   <td className="py-1.5 text-right tabular">{kr(br.beraknatResultat)}</td>
                 </tr>
               ) : null}
               <tr className="border-t border-line font-medium">
-                <td className="py-2">Summa eget kapital</td>
+                <td className="py-2" colSpan={2}>Summa eget kapital</td>
                 <td className="py-2 text-right tabular">{kr(br.sumEgetKapital)}</td>
               </tr>
               <Rows rows={br.skulder} />
               <tr className="border-t border-line font-medium">
-                <td className="py-2">Summa skulder</td>
+                <td className="py-2" colSpan={2}>Summa skulder</td>
                 <td className="py-2 text-right tabular">{kr(br.sumSkulder)}</td>
               </tr>
               <tr className="border-t-2 border-line font-semibold">
-                <td className="py-2.5">Summa eget kapital och skulder</td>
+                <td className="py-2.5" colSpan={2}>Summa eget kapital och skulder</td>
                 <td className="py-2.5 text-right tabular">{kr(br.sumEgetKapital + br.sumSkulder)}</td>
               </tr>
             </tbody>

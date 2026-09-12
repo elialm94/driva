@@ -61,7 +61,7 @@ import {
   unsnoozeReminder,
   updateReminder,
 } from "@/lib/services/reminders";
-import { clearAttentionSnooze, snoozeAttention } from "@/lib/services/attention-state";
+import { clearAttentionSnooze, hideAttention, snoozeAttention } from "@/lib/services/attention-state";
 import { snoozeDoneText } from "@/lib/reminders/when";
 import type { AttentionSnoozeChoice } from "@/lib/services/action-issue";
 import {
@@ -1097,6 +1097,17 @@ export async function unsnoozeAttentionAction(actionId: string) {
     async () => {
       clearAttentionSnooze(actionId);
       refresh();
+    },
+    { retry: false }
+  );
+}
+
+export async function hideAttentionAction(actionId: string) {
+  return withBusiness(
+    async () => {
+      hideAttention(actionId);
+      refresh();
+      return { ok: true as const };
     },
     { retry: false }
   );

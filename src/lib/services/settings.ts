@@ -250,7 +250,7 @@ export function connectedBankSummary(): { label: string; href: string } | null {
   const view = bankConnectionView();
   if (view.status !== "connected") return null;
   const label = [view.bankName, view.maskedAccount].filter(Boolean).join(" · ") || "Företagskonto";
-  return { label, href: "/ekonomi?flik=bank" };
+  return { label, href: "/bokforing/bank" };
 }
 
 const PATCHABLE: (keyof CompanySettingsInput)[] = [

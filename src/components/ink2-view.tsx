@@ -106,7 +106,12 @@ export function Ink2View({ fy, businessId, readOnly }: Ink2ViewProps) {
             <span className="font-medium tabular">{kr(tax.redovisningsresultat)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-soft">Beskattningsbart resultat</span>
+            <span className="text-soft">
+              Beskattningsbart resultat
+              {tax.skattemassigtResultat !== tax.beskattningsbartResultat
+                ? " · avrundat nedåt till närmaste tiotal"
+                : ""}
+            </span>
             <span className="font-medium tabular">{kr(tax.beskattningsbartResultat)}</span>
           </div>
           <div className="flex justify-between border-t border-line pt-1.5">

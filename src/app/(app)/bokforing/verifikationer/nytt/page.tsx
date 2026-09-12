@@ -5,6 +5,7 @@ import { accountPickerOptions } from "@/lib/services/manual-verification";
 import { lockedThrough } from "@/lib/accounting/fiscal";
 import { nextDay, todayDate } from "@/lib/accounting/dates";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { db } from "@/lib/store";
 
 export const metadata = { title: "Nytt verifikat" };
 
@@ -26,6 +27,7 @@ export default async function NyttVerifikatPage() {
         today={firstOpen && firstOpen > today ? firstOpen : today}
         lockedThrough={lock}
         firstOpenDate={firstOpen}
+        companyForm={db().settings.companyForm ?? "ab"}
       />
     </div>
   );

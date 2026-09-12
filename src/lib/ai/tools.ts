@@ -493,9 +493,9 @@ const specs: ToolSpec[] = [
                 rows: page.rows.map((r) => ({
                   label: r.documentLabel,
                   value: r.fromLabel,
-                  href: `/inbox/${r.id}`,
+                  href: `/bokforing/underlag/${r.id}`,
                 })),
-                links: [{ label: "Öppna inboxen", href: "/inbox" }],
+                links: [{ label: "Öppna underlag", href: "/bokforing/underlag" }],
               },
       };
     },

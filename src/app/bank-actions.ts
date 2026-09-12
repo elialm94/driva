@@ -48,7 +48,7 @@ export async function connectBankAction(): Promise<BankActionResult> {
     const result = await withBusiness(() => selectBankProvider().startConnect(), NO_RETRY);
     refresh();
     if (result.kind === "redirect") return { ok: true, redirectTo: result.url };
-    return { ok: true, redirectTo: "/ekonomi?flik=bank&bank=kopplad" };
+    return { ok: true, redirectTo: "/bokforing/bank?bank=kopplad" };
   } catch (err) {
     return toError(err);
   }

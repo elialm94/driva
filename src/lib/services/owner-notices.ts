@@ -152,7 +152,7 @@ export function prepareInboxArrivalNotice(item: InboxItem, opts: { created: bool
       amount: item.parsedAmount,
       outcome,
       subject: item.subject,
-      url: absoluteAppUrl(outcome === "kontrollera" && !amountIsCertain(item) ? `/inbox/${item.id}/kontrollera` : `/inbox/${item.id}`),
+      url: absoluteAppUrl(outcome === "kontrollera" && !amountIsCertain(item) ? `/bokforing/underlag/${item.id}/kontrollera` : `/bokforing/underlag/${item.id}`),
       footer: footer(),
     });
   });
@@ -177,7 +177,7 @@ function prepareOrderConfirmationNotice(item: InboxItem): PreparedOwnerNotice | 
       jobTitle: job?.title,
       status,
       deviations,
-      url: absoluteAppUrl(order ? `/uppdrag/${order.jobId}/bestallning/${order.id}` : `/inbox/${item.id}`),
+      url: absoluteAppUrl(order ? `/uppdrag/${order.jobId}/bestallning/${order.id}` : `/bokforing/underlag/${item.id}`),
       footer: footer(),
     });
   });

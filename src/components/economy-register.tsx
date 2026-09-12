@@ -52,7 +52,7 @@ export interface EconomyQuery<S extends string> {
   sort: EconomySortState | null;
 }
 
-function useRegisterNav<S extends string>(tab: EkonomiTab, query: EconomyQuery<S>) {
+function useRegisterNav<S extends string>(tab: EkonomiTab | "bank", query: EconomyQuery<S>) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [q, setQ] = useState(query.q);

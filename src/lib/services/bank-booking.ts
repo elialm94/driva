@@ -299,6 +299,10 @@ export function bankKindSuggestion(tx: BankTransaction): BankKindSuggestion | nu
 
   const byPattern = bankKindByPattern(tx);
   if (byPattern) {
+    const ownBank = ownBankFeeSuggestion(tx, byPattern);
+    if (ownBank) return ownBank;
+    const taxAuto = skattekontoExactSuggestion(tx, byPattern);
+    if (taxAuto) return taxAuto;
     if (byPattern.key === "lon") {
       return {
         kind: "lon",
@@ -495,4 +499,51 @@ export function bookBankTransactionAs(txId: string, input: BookBankTransactionIn
 
 function lowerFirst(text: string): string {
   return text ? text.charAt(0).toLowerCase() + text.slice(1) : text;
+}
+
+function connectedBankName(): string | undefined {
+  const name = db().bankConnections?.find((c) => c.status === "connected")?.bankName?.trim();
+  return name || undefined;
+}
+
+function counterpartMatches(counterpart: string, name: string): boolean {
+  const a = counterpart.toLowerCase();
+  const b = name.toLowerCase();
+  return Boolean(a && b && (a.includes(b) || b.includes(a)));
+}
+
+function ownBankFeeSuggestion(tx: BankTransaction, def: BankKind): BankKindSuggestion | null {
+  if (def.key !== "bankavgift") return null;
+  const bankName = connectedBankName();
+  if (!bankName || !counterpartMatches(tx.counterpart, bankName)) return null;
+  return {
+    kind: def.key,
+    label: def.label,
+    outcome: "AUTO_EXECUTE",
+    reason: `Avgiften kommer från din egen bank (${bankName}) och bokförs som bankavgift`,
+    source: "monster",
+  };
+}
+
+function skattekontoExactSuggestion(tx: BankTransaction, def: BankKind): BankKindSuggestion | null {
+  if (def.key !== "skattekonto") return null;
+  const text = `${tx.description ?? ""} ${tx.counterpart ?? ""}`.toLowerCase();
+  if (!/skatteverk|skattekonto|\bskv\b/.test(text)) return null;
+  const amount = Math.abs(tx.amount);
+  if (amount <= 0) return null;
+  if (!isExactSkatteverketAmount(amount)) return null;
+  return {
+    kind: def.key,
+    label: def.label,
+    outcome: "AUTO_EXECUTE",
+    reason: `${kr(amount)} matchar en F-skatt, en deklarerad moms eller en AGI som väntar på inbetalning`,
+    source: "monster",
+  };
+}
+
+function isExactSkatteverketAmount(amount: number): boolean {
+  const data = db();
+  if (data.settings.fSkattPerMonth > 0 && amount === data.settings.fSkattPerMonth) return true;
+  if (data.vatReports.some((r) => r.status === "deklarerad" && Math.abs(r.attBetala) === amount)) return true;
+  return (data.employerDeclarations ?? []).some((d) => d.attBetala === amount);
 }

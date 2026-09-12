@@ -18,6 +18,7 @@ import {
 import type { FiscalYear } from "../types";
 import { postVerification } from "./engine";
 import { logAudit } from "./audit";
+import { categoryByKey } from "../bas";
 
 /**
  * Moms från huvudboken – INTE från fakturasummor. Momsrapporten läser
@@ -236,7 +237,9 @@ export function vatChecklist(period: Period): VatChecklistItem[] {
     (e) => e.status !== "bokford" && bokforingsdatum(e.date) <= period.end
   );
   const pos = computeVatPosition(period);
-  return [
+  const ledger = vatLedgerAgainstBoxes(period, pos);
+  const rateWarning = vatRateMismatchWarning(period);
+  const items: VatChecklistItem[] = [
     {
       key: "bank",
       label: "Banken är avstämd för perioden",
@@ -252,10 +255,100 @@ export function vatChecklist(period: Period): VatChecklistItem[] {
     {
       key: "moms",
       label: "Momsen är avstämd mot bokföringen",
-      ok: true,
-      detail: `Utgående ${pos.utgaende} kr, ingående ${pos.ingaende} kr – hämtat direkt ur huvudboken.`,
+      ok: ledger.ok,
+      detail: ledger.ok
+        ? `Utgående ${pos.utgaende} kr, ingående ${pos.ingaende} kr – hämtat direkt ur huvudboken.`
+        : ledger.detail,
     },
   ];
+  if (rateWarning) items.push(rateWarning);
+  return items;
+}
+
+function boxAmount(pos: VatPosition, code: string): number {
+  return pos.boxes.find((b) => b.code === code)?.amount ?? 0;
+}
+
+function periodAccountNet(
+  account: number,
+  period: Period,
+  side: "credit" | "debit"
+): number {
+  let sum = 0;
+  for (const v of db().verifications) {
+    const d = bokforingsdatum(v.date);
+    if (d < period.start || d > period.end) continue;
+    for (const e of v.entries) {
+      if (e.account !== account) continue;
+      sum += side === "credit" ? e.credit - e.debit : e.debit - e.credit;
+    }
+  }
+  return sum;
+}
+
+function vatLedgerAgainstBoxes(period: Period, pos: VatPosition): { ok: boolean; detail: string } {
+  const a2611 = periodAccountNet(2611, period, "credit");
+  const a2621 = periodAccountNet(2621, period, "credit");
+  const a2631 = periodAccountNet(2631, period, "credit");
+  const a2641 = periodAccountNet(2641, period, "debit");
+  const extra10 = periodAccountNet(2614, period, "credit");
+  const extra11 = periodAccountNet(2624, period, "credit");
+  const extra12 = periodAccountNet(2634, period, "credit");
+  const extra48 = periodAccountNet(2647, period, "debit");
+  const diffs: string[] = [];
+  if (a2611 + extra10 !== boxAmount(pos, "10")) diffs.push("ruta 10 mot 2611");
+  if (a2621 + extra11 !== boxAmount(pos, "11")) diffs.push("ruta 11 mot 2621");
+  if (a2631 + extra12 !== boxAmount(pos, "12")) diffs.push("ruta 12 mot 2631");
+  if (a2641 + extra48 !== boxAmount(pos, "48")) diffs.push("ruta 48 mot 2641");
+  if (diffs.length === 0) return { ok: true, detail: "" };
+  return {
+    ok: false,
+    detail: `Bokföringen och deklarationsrutorna skiljer sig (${diffs.join(", ")}).`,
+  };
+}
+
+function inferredVatRate(amount: number, vatAmount: number): 25 | 12 | 6 | 0 | null {
+  const net = amount - vatAmount;
+  if (vatAmount <= 0) return 0;
+  if (net <= 0) return null;
+  const rate = vatAmount / net;
+  if (Math.abs(rate - 0.25) < 0.015) return 25;
+  if (Math.abs(rate - 0.12) < 0.015) return 12;
+  if (Math.abs(rate - 0.06) < 0.015) return 6;
+  return null;
+}
+
+function vatRateMismatchWarning(period: Period): VatChecklistItem | null {
+  const data = db();
+  const inPeriod = (date: string) => {
+    const d = bokforingsdatum(date);
+    return d >= period.start && d <= period.end;
+  };
+  let count = 0;
+  for (const e of data.expenses) {
+    if (e.status !== "bokford" || !inPeriod(e.date) || !e.category) continue;
+    const cat = categoryByKey(e.category);
+    if (cat.vatFree || cat.reverseChargeRate) continue;
+    const rate = inferredVatRate(e.amount, e.vatAmount);
+    if (rate === 12 || rate === 6) count++;
+  }
+  for (const s of data.supplierInvoices) {
+    if (s.accountingStatus !== "bokford" || !inPeriod(s.date) || !s.category) continue;
+    const cat = categoryByKey(s.category);
+    if (cat.vatFree || cat.reverseChargeRate) continue;
+    const rate = inferredVatRate(s.amount, s.vatAmount);
+    if (rate === 12 || rate === 6) count++;
+  }
+  if (count === 0) return null;
+  return {
+    key: "momssats",
+    label: "En kategori med 25 % moms är bokförd med 12 % eller 6 %",
+    ok: true,
+    detail:
+      count === 1
+        ? "Ett köp i perioden har lägre momssats än kategorins normala 25 %. Kontrollera att det stämmer."
+        : `${count} köp i perioden har lägre momssats än kategorins normala 25 %. Kontrollera att det stämmer.`,
+  };
 }
 
 /** Generera (eller uppdatera utkast till) momsrapport för en period. */

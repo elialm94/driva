@@ -1,3 +1,5 @@
+import { bankgirotModulus10CheckDigit } from "../ids";
+
 /**
  * Skattekontots begrepp: konton, händelsetyper och kontoutdraget.
  *
@@ -85,6 +87,19 @@ export function parseTaxAccountStatement(text: string): TaxAccountStatementRow[]
     rows.push({ date, text: parts.slice(1, -1).join(" ") || "Rad", amount });
   }
   return rows;
+}
+
+/**
+ * Skatteverkets OCR för inbetalning till skattekontot: organisationsnumrets
+ * tio siffror plus OCR-10-kontrollsiffra (modulus 10, vikterna 2-1-2… från
+ * höger). Publicerad som OCR-beräkning hos Skatteverket.
+ */
+export function taxAccountOcrFromOrgnr(orgNumber: string): string {
+  const digits = orgNumber.replace(/\D/g, "");
+  if (digits.length !== 10) {
+    throw new Error("Organisationsnumret måste ha tio siffror för att OCR-numret ska kunna räknas fram.");
+  }
+  return digits + bankgirotModulus10CheckDigit(digits);
 }
 
 function parseAmount(raw: string): number | null {

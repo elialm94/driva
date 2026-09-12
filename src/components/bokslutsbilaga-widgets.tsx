@@ -301,7 +301,10 @@ export function DoubtfulReceivablesForm({
               <span className="min-w-0 flex-1">
                 <span className="block text-[14px] font-medium text-ink">{s.label}</span>
                 <span className="block text-[12px] text-soft">
-                  {s.daysOverdue} dagar förfallen · {kr(s.outstanding)} obetalt · {kr(s.amountExcludingVat)}{" "}
+                  {Number.isFinite(s.daysOverdue)
+                    ? `${s.daysOverdue} dagar förfallen`
+                    : "Förfallen"}{" "}
+                  · {kr(s.outstanding)} obetalt · {kr(s.amountExcludingVat)}{" "}
                   exklusive moms
                 </span>
               </span>

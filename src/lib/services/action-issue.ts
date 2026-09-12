@@ -1,5 +1,7 @@
 import type { ActionCta, BusinessAction } from "./actions";
 import { ACCOUNTING_EXCEPTIONS_GROUP_ID } from "./action-views";
+import { todayDate } from "../accounting/dates";
+import { dueDateFromLegalActionId } from "./legal-deadline-id";
 
 /**
  * Central deklaration av hur åtgärdsrader FÅR hanteras – EN källa för Hem,
@@ -56,6 +58,8 @@ const CTA_ISSUE: Partial<Record<ActionCta["type"], string>> = {
   confirmChangedSupplierDetails: "Kontrollera bankuppgifter",
   requestSupplierDetails: "Fråga leverantören",
   paymentDetailsQueue: "Behöver betalningsuppgifter",
+  declareVatPeriod: "Markera deklarerad",
+  closeReadyMonths: "Stäng perioden",
 };
 
 /** Kort label för en action – aldrig en generisk badge om vi vet mer. */
@@ -143,7 +147,7 @@ export function actionResolveHref(action: BusinessAction): string {
   if (action.id === ACCOUNTING_EXCEPTIONS_GROUP_ID) return action.href;
   const source = sourceForAction(action);
   if (source?.kind === "expense") return `/ekonomi?flik=utgifter&atgard=${encodeURIComponent(action.id)}`;
-  if (source?.kind === "bank") return `/ekonomi?flik=bank&atgard=${encodeURIComponent(action.id)}`;
+  if (source?.kind === "bank") return `/bokforing/bank?atgard=${encodeURIComponent(action.id)}`;
   if (source?.kind === "supplier") return `/ekonomi?flik=utgifter&atgard=${encodeURIComponent(action.id)}`;
   const sep = action.href.includes("?") ? "&" : "?";
   return `${action.href}${sep}atgard=${encodeURIComponent(action.id)}`;
@@ -180,6 +184,7 @@ export type AttentionKind =
   | "newJob"
   | "inboxMail"
   | "vat"
+  | "agi"
   | "taxAccount"
   | "periodClose"
   | "yearEnd"
@@ -206,6 +211,7 @@ export function attentionKind(action: Pick<BusinessAction, "id">): AttentionKind
   if (id.startsWith("period-close-")) return "periodClose";
   if (id.startsWith("year-end-")) return "yearEnd";
   if (id.startsWith("vat-")) return "vat";
+  if (id.startsWith("agi-")) return "agi";
   if (id.startsWith("client-request-")) return "clientRequest";
   return null;
 }
@@ -381,6 +387,13 @@ const CONTROLS: Record<AttentionKind, Omit<ActionControls, "kind">> = {
     dismissBehavior: "none",
     requiresConfirmation: false,
   },
+  agi: {
+    viewLabel: "Öppna lönen",
+    canSnooze: true,
+    canDismiss: false,
+    dismissBehavior: "none",
+    requiresConfirmation: false,
+  },
   taxAccount: {
     viewLabel: "Öppna skattekontot",
     canSnooze: true,
@@ -424,7 +437,12 @@ export const FALLBACK_CONTROLS: ActionControls = {
   requiresConfirmation: false,
 };
 
-export function controlsForAction(action: Pick<BusinessAction, "id">): ActionControls {
+function isActionLegalDeadlineOverdue(action: Pick<BusinessAction, "id" | "dueDate">): boolean {
+  const due = action.dueDate ?? dueDateFromLegalActionId(action.id);
+  return Boolean(due && due < todayDate());
+}
+
+export function controlsForAction(action: Pick<BusinessAction, "id" | "dueDate">): ActionControls {
   // Hem-projektion: länken öppnar Bokföring. Snooze/Klar sker på de
   // underliggande åtgärds-id:na (samma tillstånd som på Bokföring).
   if (action.id === ACCOUNTING_EXCEPTIONS_GROUP_ID) {
@@ -449,6 +467,22 @@ export function controlsForAction(action: Pick<BusinessAction, "id">): ActionCon
   }
   if (action.id === "supplier-details-group") {
     return { ...base, viewLabel: "Visa leverantörsfakturor", requiresConfirmation: false };
+  }
+  if ((kind === "vat" || kind === "agi" || kind === "yearEnd") && isActionLegalDeadlineOverdue(action)) {
+    return { ...base, canSnooze: false };
+  }
+  if (action.id.startsWith("vat-suggest-declared-")) {
+    return {
+      ...base,
+      canSnooze: false,
+      canDismiss: true,
+      dismissBehavior: "HIDE",
+      dismissLabel: "Nej",
+      requiresConfirmation: false,
+    };
+  }
+  if (action.id.startsWith("period-close-")) {
+    return { ...base, requiresConfirmation: true };
   }
   return base;
 }

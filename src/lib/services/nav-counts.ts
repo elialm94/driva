@@ -6,14 +6,8 @@ import { countBookkeepingBadge, listBookkeepingAttention } from "./actions";
  * App-skalets nav-räknare – EN beräkning per request via React cache().
  *
  * Badge betyder "något här väntar på dig", inte "det finns data här".
- * Bara Inbox och Bokföring får tal. Hem är redan den samlade vyn och
- * ska inte ha en summerad badge. Kunder/Ekonomi/Samarbeta/Hemsida
- * räknar inte poster.
- *
- *   Inbox     – inkommande dokument användaren ska hantera nu
- *               (countsTowardInboxBadge / countInboxBadge)
- *   Bokföring – aktiva bokföringsfrågor att lösa
- *               (countsTowardBookkeepingBadge / countBookkeepingBadge)
+ * Bara Bokföring får tal: öppna underlag plus aktiva bokföringsfrågor.
+ * Hem är redan den samlade vyn och ska inte ha en summerad badge.
  *
  * Sidomenyn anropar inte listInbox() eller getBusinessActions() – bara
  * de billiga räknarna. Efter server action / router.refresh() byggs
@@ -34,5 +28,5 @@ export const getNavAttentionCounts = cache(() => {
   } catch (err) {
     console.error("[nav-counts] bokforing:", err instanceof Error ? err.message : err);
   }
-  return { inbox, bokforing };
+  return { inbox: 0, bokforing: inbox + bokforing };
 });

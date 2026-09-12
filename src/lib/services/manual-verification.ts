@@ -1,6 +1,6 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
-import { chartAccounts } from "../accounting/chart";
+import { accountFitsCompanyForm, chartAccounts } from "../accounting/chart";
 import { postVerification, verificationLabel, type PostLineInput } from "../accounting/engine";
 import { MANUAL_SERIES } from "../accounting/series";
 import { todayDate } from "../accounting/dates";
@@ -45,16 +45,31 @@ export interface AccountPickerOption {
   label: string;
   section: string;
   custom: boolean;
+  used?: boolean;
 }
 
+const HIDDEN_PICKER = new Set([2610, 2640]);
+
 export function accountPickerOptions(): AccountPickerOption[] {
-  return chartAccounts().map((a) => ({
-    account: a.number,
-    name: a.name,
-    label: `${a.number} ${a.name}`,
-    section: a.section,
-    custom: a.custom === true,
-  }));
+  const form = db().settings.companyForm ?? "ab";
+  const used = new Set<number>();
+  for (const v of db().verifications) {
+    for (const e of v.entries) used.add(e.account);
+  }
+  return chartAccounts()
+    .filter((a) => accountFitsCompanyForm(a.number, form) && !HIDDEN_PICKER.has(a.number))
+    .map((a) => ({
+      account: a.number,
+      name: a.name,
+      label: `${a.number} ${a.name}`,
+      section: a.section,
+      custom: a.custom === true,
+      used: used.has(a.number),
+    }))
+    .sort((a, b) => {
+      if (a.used !== b.used) return a.used ? -1 : 1;
+      return a.account - b.account;
+    });
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;

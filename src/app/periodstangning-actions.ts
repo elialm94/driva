@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { withBusiness } from "@/lib/auth/session";
-import { closePeriod, PeriodCloseError } from "@/lib/accounting/period-close";
+import { closeAllReadyMonths, closePeriod, PeriodCloseError } from "@/lib/accounting/period-close";
 
 /**
  * Serveråtgärd för periodstängning. Tunt omslag runt accounting/period-close.
@@ -25,5 +25,21 @@ export async function closePeriodAction(
   } catch (e) {
     if (e instanceof PeriodCloseError) return { ok: false, error: e.message };
     return { ok: false, error: e instanceof Error ? e.message : "Perioden kunde inte stängas." };
+  }
+}
+
+export async function closeAllReadyMonthsAction(
+  businessId?: string
+): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  try {
+    const closed = await withBusiness(async () => closeAllReadyMonths("anvandare"), {
+      capability: "period_close",
+      businessId,
+    });
+    revalidatePath("/", "layout");
+    return { ok: true, count: closed.length };
+  } catch (e) {
+    if (e instanceof PeriodCloseError) return { ok: false, error: e.message };
+    return { ok: false, error: e instanceof Error ? e.message : "Månaderna kunde inte stängas." };
   }
 }

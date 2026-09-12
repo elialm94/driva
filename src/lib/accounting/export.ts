@@ -63,12 +63,12 @@ export function resultatCsv(range?: Partial<DateRange>): string {
 export function balansCsv(atDate?: string): string {
   const br = balansrapport(atDate);
   const rows: (string | number)[][] = [["Del", "Konto", "Belopp"]];
-  for (const r of br.tillgangar) rows.push(["Tillgångar", `${r.account} ${r.name}`, r.amount]);
+  for (const r of br.tillgangar) rows.push(["Tillgångar", `${r.account} ${r.name}`, r.signed]);
   rows.push(["Summa tillgångar", "", br.sumTillgangar]);
-  for (const r of br.egetKapital) rows.push(["Eget kapital", `${r.account} ${r.name}`, r.amount]);
+  for (const r of br.egetKapital) rows.push(["Eget kapital", `${r.account} ${r.name}`, r.signed]);
   if (br.beraknatResultat !== 0) rows.push(["Eget kapital", "Beräknat resultat (ej bokslutat)", br.beraknatResultat]);
   rows.push(["Summa eget kapital", "", br.sumEgetKapital]);
-  for (const r of br.skulder) rows.push(["Skulder", `${r.account} ${r.name}`, r.amount]);
+  for (const r of br.skulder) rows.push(["Skulder", `${r.account} ${r.name}`, r.signed]);
   rows.push(["Summa skulder", "", br.sumSkulder]);
   return csv(rows);
 }

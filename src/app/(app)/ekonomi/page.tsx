@@ -1,55 +1,33 @@
 import { SupplierRegister } from "@/components/supplier-register";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { BedDouble, Car, Coffee, Landmark, Plus, Wallet } from "lucide-react";
 import { db } from "@/lib/store";
-import { kr, datumKort, datumTid } from "@/lib/format";
+import { kr, datumKort } from "@/lib/format";
 import {
-  Badge,
   ButtonLink,
   Card,
   CreateActionLabel,
-  EmptyState,
   PageHeader,
   PageHeaderCreateActions,
-  StatusDot,
   cx,
 } from "@/components/ui";
 import { UploadReceiptButton } from "@/components/money-widgets";
-import {
-  CancelPendingBankButton,
-  ConnectBankButton,
-  DisconnectBankButton,
-  RefreshBankButton,
-} from "@/components/bank-connection";
-import { bankConnectionView, hasConnectedBank, type BankConnectionView } from "@/lib/banking/connection-state";
-import { bankProviderKind } from "@/lib/banking/select";
-import { BANK_CONNECTION_STATUS } from "@/lib/status-labels";
+import { hasConnectedBank } from "@/lib/banking/connection-state";
+import { bankConnectionView } from "@/lib/banking/connection-state";
+import { bankReconciliation } from "@/lib/accounting/reconciliation";
 import { CreatePaymentFileButton } from "@/components/payment-file-actions";
 import { payerAccountLabel } from "@/lib/services/payment-files";
-import {
-  BankRegister,
-  ExpenseRegister,
-  InvoiceRegister,
-  QuoteRegister,
-} from "@/components/economy-register";
-import { BankInboxStrip } from "@/components/bank-inbox-strip";
-import { BankRulesCard } from "@/components/bank-rules-card";
-import { listBankCounterpartRules } from "@/lib/services/bank-booking";
+import { ExpenseRegister, InvoiceRegister, QuoteRegister } from "@/components/economy-register";
 import { ownerLiability } from "@/lib/services/manual-expense";
 import {
-  BANK_STATUS_OPTIONS,
   EXPENSE_STATUS_OPTIONS,
   INVOICE_STATUS_OPTIONS,
   QUOTE_STATUS_OPTIONS,
-  bankInboxSummary,
-  listBankForTable,
   listExpensesForTable,
   listInvoicesForTable,
   listQuotesForTable,
-  openBankTransactionCount,
-  openReceivablesForMatching,
   readyToPayBatch,
-  type BankStatusFilter,
   type ExpenseStatusFilter,
   type InvoiceStatusFilter,
   type QuoteStatusFilter,
@@ -155,86 +133,31 @@ function OwnerLiabilityBanner() {
           och bockar av skulden.
         </p>
       </div>
-      <ButtonLink href="/ekonomi?flik=bank" variant="secondary">
+      <ButtonLink href="/bokforing/bank" variant="secondary">
         <Landmark className="size-4" /> Till banken
       </ButtonLink>
     </Card>
   );
 }
 
-const BANK_SECONDARY_LINE =
-  "Du loggar in hos banken via Tink. Driva hämtar saldo och transaktioner för att matcha fakturor. Vi kan inte föra över pengar.";
-
-function bankConnectionSubtitle(view: BankConnectionView): string {
-  switch (view.status) {
-    case "connected":
-      if (view.lastSyncAt) return `Senast uppdaterad ${datumTid(view.lastSyncAt)}`;
-      if (view.connectedAt) return `Kopplad ${datumTid(view.connectedAt)}`;
-      return "Kopplad via Open Banking";
-    case "pending":
-      return "Slutför inloggningen hos banken. Kom tillbaka hit när du är klar.";
-    case "error":
-      return view.error ?? BANK_CONNECTION_STATUS.error.label;
-    case "revoked":
-      return "Driva hämtar inte längre något från banken. Tidigare transaktioner och verifikationer finns kvar.";
-    case "disconnected":
-      return "Koppla företagskontot så hämtas saldo och transaktioner hit.";
-  }
-}
-
-/**
- * Bankkopplingens kort ovanför transaktionslistan. Läser bara projektionen
- * (bankConnectionView) – aldrig tokens eller Tink-id:n. Status-etiketter
- * kommer från status-labels, aldrig råa enum-värden.
- */
-function BankConnectionCard({ view, demo }: { view: BankConnectionView; demo: boolean }) {
-  const status = BANK_CONNECTION_STATUS[view.status];
-  const identity = [view.bankName, view.maskedAccount].filter(Boolean).join(" · ") || "Företagskonto";
-
+function EconomyBankCard() {
+  const bank = bankConnectionView();
+  const recon = bankReconciliation();
+  const saldo = typeof bank.balance === "number" ? bank.balance : null;
   return (
-    <Card className="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
-      <div className="flex min-w-0 items-center gap-4">
-        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent-soft">
-          <Landmark className="size-5 text-accent" />
-        </div>
-        <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-2 text-[15px] font-semibold">
-            <span className="truncate">{identity}</span>
-            <Badge tone={status.tone}>
-              <StatusDot tone={status.tone} />
-              {status.label}
-            </Badge>
-            {demo && view.status === "connected" ? <Badge tone="warn">Demo-bank</Badge> : null}
-          </p>
-          <p className="text-[13px] text-muted">{bankConnectionSubtitle(view)}</p>
-        </div>
+    <Card className="mb-5 flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+      <div>
+        <p className="text-[13px] text-muted">Företagskonto</p>
+        <p className="text-[20px] font-semibold tabular tracking-tight">{saldo != null ? kr(saldo) : "Inget saldo"}</p>
+        <p className="mt-0.5 text-[13px] text-soft">
+          {recon.ok && recon.reconciledThrough
+            ? `Avstämt till ${datumKort(recon.reconciledThrough)}`
+            : "Bankhändelser hanteras under Bokföring"}
+        </p>
       </div>
-
-      {view.status === "connected" ? (
-        <div className="flex flex-wrap items-center gap-4">
-          {typeof view.balance === "number" ? (
-            <div className="text-right">
-              <p className="text-[12px] font-medium text-muted">Saldo</p>
-              <p className="text-[22px] font-semibold tracking-tight tabular">{kr(view.balance)}</p>
-            </div>
-          ) : null}
-          <div className="flex items-center gap-2">
-            <RefreshBankButton />
-            <DisconnectBankButton bankName={view.bankName} />
-          </div>
-        </div>
-      ) : null}
-
-      {view.status === "pending" ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <ConnectBankButton demo={demo} label="Fortsätt hos banken" variant="secondary" />
-          <CancelPendingBankButton />
-        </div>
-      ) : null}
-
-      {view.status === "error" || view.status === "revoked" || view.status === "disconnected" ? (
-        <ConnectBankButton demo={demo} label={view.status === "error" ? "Försök igen" : "Koppla företagskonto"} />
-      ) : null}
+      <ButtonLink href="/bokforing/bank" variant="secondary" size="sm">
+        <Landmark className="size-4" /> Hantera bankhändelser
+      </ButtonLink>
     </Card>
   );
 }
@@ -242,7 +165,16 @@ function BankConnectionCard({ view, demo }: { view: BankConnectionView; demo: bo
 export default async function MoneyPage(props: PageProps<"/ekonomi">) {
   await ensurePageBusiness();
   const searchParams = await props.searchParams;
-  const tab = (["offerter", "fakturor", "utgifter", "bank"].includes(String(searchParams.flik))
+  if (String(searchParams.flik) === "bank") {
+    const qs = new URLSearchParams();
+    for (const key of ["q", "status", "sida", "atgard", "sort", "direction"] as const) {
+      const value = searchParams[key];
+      if (typeof value === "string" && value) qs.set(key, value);
+    }
+    const suffix = qs.toString();
+    redirect(suffix ? `/bokforing/bank?${suffix}` : "/bokforing/bank");
+  }
+  const tab = (["offerter", "fakturor", "utgifter"].includes(String(searchParams.flik))
     ? String(searchParams.flik)
     : "offerter") as EkonomiTab;
 
@@ -250,16 +182,6 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
   const page = pageParam(searchParams.sida);
   const sort = parseEconomySort(searchParams.sort, searchParams.direction);
   const highlightId = highlightFromAtgard(param(searchParams.atgard), tab);
-  const bank = tab === "bank" ? bankConnectionView() : null;
-  const bankDemo = tab === "bank" ? bankProviderKind() === "mock" : false;
-  // Banken är en inkorg: utan valt filter visas det som väntar – finns inget
-  // obokat (eller söker man) visas allt, så listan aldrig är tom i onödan.
-  const bankStatus: BankStatusFilter =
-    tab === "bank"
-      ? param(searchParams.status) === "" && !q && !highlightId && openBankTransactionCount() > 0
-        ? "atgard"
-        : statusParam<BankStatusFilter>(searchParams.status, BANK_STATUS_OPTIONS)
-      : "alla";
 
   return (
     <div className="animate-fade-up">
@@ -299,6 +221,8 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
           </Link>
         ))}
       </div>
+
+      <EconomyBankCard />
 
       {tab === "offerter" ? (
         <QuoteRegister
@@ -349,7 +273,7 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
             highlightId={highlightId}
             emptyAction={
               hasConnectedBank() ? undefined : (
-                <ButtonLink href="/ekonomi?flik=bank" variant="secondary">
+                <ButtonLink href="/bokforing/bank" variant="secondary">
                   <Landmark className="size-4" /> Koppla företagskontot
                 </ButtonLink>
               )
@@ -357,38 +281,6 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
           />
           <SupplierRegister suppliers={db().suppliers ?? []} />
         </div>
-      ) : null}
-
-      {tab === "bank" && bank ? (
-        bank.status === "disconnected" && !bank.hasHistory ? (
-          <EmptyState
-            icon={Landmark}
-            title="Ingen bank kopplad ännu"
-            text="När företagskontot kopplas via Open Banking dyker saldo och transaktioner upp här och matchas mot fakturor automatiskt."
-            action={
-              <div className="flex flex-col items-center gap-3">
-                <ConnectBankButton demo={bankDemo} />
-                <p className="max-w-md text-[13px] text-muted">{BANK_SECONDARY_LINE}</p>
-              </div>
-            }
-          />
-        ) : (
-          <div className="space-y-6">
-            <BankConnectionCard view={bank} demo={bankDemo} />
-            {bank.status !== "connected" ? (
-              <p className="text-[13px] text-muted">{BANK_SECONDARY_LINE}</p>
-            ) : null}
-            <BankInboxStrip summary={bankInboxSummary()} filterHref="/ekonomi?flik=bank&status=atgard" />
-            <BankRegister
-              result={listBankForTable({ q, status: bankStatus, page, sort })}
-              query={{ q, status: bankStatus, page, sort }}
-              options={BANK_STATUS_OPTIONS}
-              receivables={openReceivablesForMatching()}
-              highlightId={highlightId}
-            />
-            <BankRulesCard rules={listBankCounterpartRules()} />
-          </div>
-        )
       ) : null}
     </div>
   );

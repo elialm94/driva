@@ -17,6 +17,25 @@ import { ReceiptText } from "lucide-react";
 
 type Filter = "alla" | "auto" | "manuella" | "rattade";
 
+function matchesSearch(v: VerificationView, query: string, from: string, to: string): boolean {
+  if (from && v.date < from) return false;
+  if (to && v.date > to) return false;
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const amountNeedle = Number(q.replace(/\s/g, "").replace(",", "."));
+  if (Number.isFinite(amountNeedle) && Math.round(Math.abs(amountNeedle)) === v.total) return true;
+  const hay = [
+    v.label,
+    v.description,
+    v.explanation ?? "",
+    v.sourceLabel,
+    ...v.entries.map((e) => `${e.account} ${e.accountName}`),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return hay.includes(q);
+}
+
 function matchesFilter(v: VerificationView, filter: Filter): boolean {
   if (filter === "alla") return true;
   if (filter === "auto") return v.createdBy === "auto";
@@ -109,6 +128,9 @@ export function VerifikationerView({
   const router = useRouter();
   const [items, setItems] = useState(initial);
   const [filter, setFilter] = useState<Filter>("alla");
+  const [query, setQuery] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
 
   useEffect(() => {
@@ -118,7 +140,10 @@ export function VerifikationerView({
   const [creditInvoiceId, setCreditInvoiceId] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const filtered = useMemo(() => items.filter((v) => matchesFilter(v, filter)), [items, filter]);
+  const filtered = useMemo(
+    () => items.filter((v) => matchesFilter(v, filter) && matchesSearch(v, query, fromDate, toDate)),
+    [items, filter, query, fromDate, toDate]
+  );
   const open = openId ? items.find((v) => v.id === openId) : undefined;
 
   function merge(next: VerificationView[]) {
@@ -132,6 +157,36 @@ export function VerifikationerView({
 
   return (
     <>
+      <div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+        <label className="block">
+          <span className="sr-only">Sök verifikationer</span>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Sök på text, belopp eller konto"
+            className="h-11 w-full rounded-xl border border-line bg-card px-3 text-[14px] outline-none focus:border-accent"
+          />
+        </label>
+        <label className="block">
+          <span className="sr-only">Från datum</span>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="h-11 w-full rounded-xl border border-line bg-card px-3 text-[14px] outline-none focus:border-accent"
+          />
+        </label>
+        <label className="block">
+          <span className="sr-only">Till datum</span>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="h-11 w-full rounded-xl border border-line bg-card px-3 text-[14px] outline-none focus:border-accent"
+          />
+        </label>
+      </div>
+
       <div className="mb-3 flex gap-1 overflow-x-auto rounded-2xl bg-ink/4 p-1">
         {(
           [

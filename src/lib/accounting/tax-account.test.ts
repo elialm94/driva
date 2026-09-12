@@ -4,6 +4,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { db, replaceDb } from "../store";
 import { emptyTestDb } from "../invoices/test-db";
+import { buildSeed } from "../seed";
 import { postVerification } from "./engine";
 import { accountBalance } from "./ledger";
 import { generateVatReport, markVatReportDeclared } from "./vat";
@@ -235,6 +236,33 @@ describe("F-skatt", () => {
   it("avvisar negativa och orimliga belopp", () => {
     assert.throws(() => setFSkattPerMonth(-1, "anvandare"), /hela kronor/);
     assert.throws(() => setFSkattPerMonth(Number.NaN, "anvandare"), /hela kronor/);
+  });
+
+  it("demoseeden bokför inbetalningar och F-skatt mot 1630 utan dubbletter", () => {
+    replaceDb(buildSeed());
+    const amount = db().settings.fSkattPerMonth;
+    assert.ok(amount > 0);
+    const months = fSkattMonthsAwaitingBooking();
+    for (const month of months) bookFSkatt(month, "anvandare");
+
+    const sourceIds = db()
+      .verifications.filter((v) => v.source.type === "skattekonto" && "id" in v.source)
+      .map((v) => (v.source as { type: "skattekonto"; id: string }).id);
+    assert.equal(new Set(sourceIds).size, sourceIds.length, "samma source.id får inte bokföras två gånger");
+    assert.ok(
+      !db().verifications.some((v) => v.entries.some((e) => e.account === 2510)),
+      "F-skatt ska inte ligga på 2510"
+    );
+
+    const deposits = db()
+      .bankTransactions.filter((t) => t.id.startsWith("tx-fskatt-"))
+      .reduce((s, t) => s + Math.abs(t.amount), 0);
+    const charges = db()
+      .verifications.filter((v) => v.source.type === "skattekonto" && "id" in v.source && v.source.id.startsWith("fskatt-"))
+      .reduce((s, v) => s + v.entries.filter((e) => e.account === F_SKATT).reduce((a, e) => a + e.debit, 0), 0);
+    const through = `${new Date().getFullYear()}-12-31`;
+    assert.equal(accountBalance(SKATTEKONTO, through), deposits - charges);
+    assert.equal(accountBalance(SKATTEKONTO, through), taxAccountLedger(through).balance);
   });
 });
 

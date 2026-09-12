@@ -4,9 +4,10 @@ import { datumKort } from "@/lib/format";
 import { Badge, Card, SectionTitle } from "./ui";
 import { cx } from "./ui-classes";
 import { ClosePeriodButton } from "./periodstangning-widgets";
+import { CloseAllReadyMonthsButton } from "./close-all-ready-months-button";
 import { todayDate } from "@/lib/accounting/dates";
 import { lockedThrough } from "@/lib/accounting/fiscal";
-import { closableMonths, periodCloseStatus, type PeriodCloseStatus } from "@/lib/accounting/period-close";
+import { closableMonths, monthsReadyToClose, periodCloseStatus, type PeriodCloseStatus } from "@/lib/accounting/period-close";
 
 /**
  * Periodstängning: månadsavstämningen som ett flöde.
@@ -40,6 +41,7 @@ export function PeriodstangningView({
   const awaiting = months.filter((m) => m.state === "att_stanga");
   const next = awaiting[0];
   const ongoing = months.find((m) => m.state === "pagaende");
+  const ready = readOnly ? [] : monthsReadyToClose(today);
 
   return (
     <>
@@ -47,7 +49,9 @@ export function PeriodstangningView({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <Lock className="size-4.5 text-muted" />
-            <h3 className="text-[15px] font-semibold">Bokföringen är låst</h3>
+            <h3 className="text-[15px] font-semibold">
+              {lock ? `Bokföringen är låst till och med ${datumKort(lock)}` : "Ingen period är låst"}
+            </h3>
           </div>
           <Badge tone={lock ? "ok" : "neutral"}>{lock ? `Till och med ${datumKort(lock)}` : "Ingen period är låst"}</Badge>
         </div>
@@ -110,14 +114,15 @@ export function PeriodstangningView({
                 Endast läsning – en revisor stänger inte en period.
               </p>
             ) : (
-              <div className="mt-4 border-t border-line/60 pt-4">
+              <div className="mt-4 space-y-3 border-t border-line/60 pt-4">
+                {ready.length > 0 ? <CloseAllReadyMonthsButton months={ready} businessId={businessId} /> : null}
                 <ClosePeriodButton
                   periodKey={next.period.key}
                   label={`Stäng ${next.period.label}`}
                   disabled={next.blockers.length > 0}
                   businessId={businessId}
                 />
-                <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
+                <p className="text-[12.5px] leading-relaxed text-muted">
                   {next.blockers.length > 0
                     ? `${next.blockers.length} punkt${next.blockers.length === 1 ? "" : "er"} behöver bli klar${next.blockers.length === 1 ? "" : "a"} innan månaden kan stängas.`
                     : `Bokföringen låses till och med ${next.period.end}. Låset går bara framåt – det backas enbart genom att räkenskapsåret öppnas igen, och det lämnar ett spår.`}
@@ -192,5 +197,12 @@ function statusText(m: PeriodCloseStatus): string {
   if (m.state === "stangd") return "Stängd";
   if (m.state === "pagaende") return "Pågår";
   if (m.state === "kommande") return "Kommande";
-  return m.blockers.length === 0 ? "Klar att stängas" : `${m.blockers.length} kvar`;
+  if (m.blockers.length === 0) return "Klar att stängas";
+  if (m.blockers.length === 1) return blockerStatusLabel(m.blockers[0]);
+  return `${m.blockers.length} kvar · ${blockerStatusLabel(m.blockers[0])}`;
+}
+
+function blockerStatusLabel(check: PeriodCloseStatus["blockers"][number]): string {
+  if (check.key === "moms") return "Momsen ej deklarerad";
+  return check.label;
 }
