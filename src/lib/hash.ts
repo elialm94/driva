@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import type { PaymentPlanPart, QuoteVersion } from "./types";
+import type { JobChange, PaymentPlanPart, QuoteVersion } from "./types";
 import { canonicalRichText } from "./richtext";
 
 /**
@@ -68,4 +68,32 @@ export function quoteVersionHash(v: QuoteVersion): string {
     ...(v.richText ? { richText: canonicalRichText(v.richText) } : {}),
   });
   return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+/**
+ * Kanoniskt hash av en ändrings innehåll (Ändringar och tillägg) – det kunden
+ * faktiskt godkänner via /andring/[token]. Snapshots och status ingår inte.
+ */
+export function jobChangeContentHash(
+  c: Pick<JobChange, "jobId" | "number" | "version" | "title" | "description" | "timeImpact" | "lines">
+): string {
+  const canonical = JSON.stringify({
+    jobId: c.jobId,
+    number: c.number,
+    version: c.version,
+    title: c.title,
+    description: c.description,
+    ...(c.timeImpact ? { timeImpact: c.timeImpact } : {}),
+    lines: c.lines.map((l) => ({
+      kind: l.kind,
+      description: l.description,
+      qty: l.qty,
+      unit: l.unit,
+      unitPrice: l.unitPrice,
+      vatRate: l.vatRate,
+      ...(l.discountPercent ? { discountPercent: l.discountPercent } : {}),
+      ...(l.isHeading ? { isHeading: true } : {}),
+    })),
+  });
+  return createHash("sha256").update(canonical).digest("hex");
 }

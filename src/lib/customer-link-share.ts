@@ -3,7 +3,11 @@
  * Inget WhatsApp, ingen SMS-leverantör.
  */
 
-export function customerShareText(kind: "offert" | "faktura", number: string | number | undefined): string {
+export type CustomerShareKind = "offert" | "faktura" | "andring" | "uppdrag";
+
+export function customerShareText(kind: CustomerShareKind, number: string | number | undefined): string {
+  if (kind === "andring") return `Ändring${number != null ? ` ${number}` : ""} att godkänna`;
+  if (kind === "uppdrag") return "Ditt uppdrag hos oss";
   const label = kind === "offert" ? "Offert" : "Faktura";
   const nr = number != null ? ` #${number}` : "";
   return `${label}${nr} från oss`;

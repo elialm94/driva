@@ -22,6 +22,8 @@ import { PurchaseOrdersSection } from "@/components/purchase-orders-section";
 import { jobPurchaseOrderRows, jobWholesalerContext } from "@/lib/services/job-wholesalers";
 import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
 import { JobPhotosSection } from "@/components/job-photos";
+import { JobChangesSection } from "@/components/job-changes-section";
+import { jobChangesForJob } from "@/lib/services/job-changes";
 import { RotDeadlineBanner } from "@/components/rot-deadline-banner";
 import { taxReductionCaseForJob } from "@/lib/services/tax-reduction";
 import { rotDeadlineStatus } from "@/lib/tax-reduction-deadline";
@@ -312,6 +314,8 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         invoiceChoice={invoiceChoice}
         wholesalers={wholesalers.enabled ? wholesalers : undefined}
       />
+
+      <JobChangesSection jobId={job.id} changes={jobChangesForJob(job.id)} />
 
       <JobPhotosSection jobId={job.id} photos={job.photos ?? []} />
 
