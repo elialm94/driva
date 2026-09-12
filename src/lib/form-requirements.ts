@@ -131,6 +131,11 @@ export interface QuoteFormState {
   title: string;
   lines: DocLine[];
   planPercentTotal: number;
+  /**
+   * Fullständig betalplansvalidering (fasta förskott m.m.). När fältet
+   * anges gäller det i stället för procentsumman.
+   */
+  paymentPlanIssue?: string | null;
   validUntil: string;
   paymentTermsDays: number;
   /** Behövs bara i läget "send". */
@@ -143,7 +148,11 @@ export function quoteMissingRequirements(state: QuoteFormState, mode: Requiremen
   if (!state.customerId) out.push({ id: "kund", label: "Kund", fieldId: "offert-kund" });
   if (!state.title.trim()) out.push({ id: "rubrik", label: "Rubrik", fieldId: "offert-rubrik" });
   out.push(...lineRequirements(state.lines));
-  if (state.planPercentTotal !== 100) {
+  if (state.paymentPlanIssue !== undefined) {
+    if (state.paymentPlanIssue) {
+      out.push({ id: "betalplan", label: `Betalplan: ${state.paymentPlanIssue}`, fieldId: "offert-betalplan" });
+    }
+  } else if (state.planPercentTotal !== 100) {
     out.push({
       id: "betalplan",
       label: `Betalningsplan som summerar till 100 % (nu ${state.planPercentTotal} %)`,

@@ -1,5 +1,6 @@
 import type { CompanySettings, Customer, Quote, QuoteAcceptance, QuoteVersion } from "@/lib/types";
 import { docTotals, lineTotal, vatBreakdown } from "@/lib/calc";
+import { hasPaymentPlan, paymentPlanAmounts } from "@/lib/payment-plan";
 import { kr, datumTid, datumNumeriskt } from "@/lib/format";
 import { taxReductionDeductionLabel, getTaxReductionTerms } from "@/lib/tax-reduction-terms";
 import { TaxReductionQuoteClause, TaxReductionCalcHint } from "./tax-reduction-terms";
@@ -306,16 +307,23 @@ export function QuoteDocument({
 
       {version.paymentPlan.length > 0 ? (
         <div className="mt-8">
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-muted">Betalningsplan</p>
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+            {hasPaymentPlan(version.paymentPlan) ? "Betalplan" : "Betalning"}
+          </p>
           <div className="mt-2 space-y-1">
-            {version.paymentPlan.map((p, i) => (
-              <div key={i} className="flex items-baseline justify-between gap-4 text-[13.5px]">
-                <span className="text-soft">
-                  {p.label} ({p.percent} %)
-                </span>
-                <span className="font-medium tabular">{kr(Math.round((t.toPay * p.percent) / 100))}</span>
-              </div>
-            ))}
+            {version.paymentPlan.map((p, i) => {
+              const amounts = paymentPlanAmounts(version.paymentPlan, t.toPay);
+              const share =
+                p.amount != null ? kr(p.amount) : i === version.paymentPlan.length - 1 && version.paymentPlan.length > 1 ? "resten" : `${p.percent} %`;
+              return (
+                <div key={i} className="flex items-baseline justify-between gap-4 text-[13.5px]">
+                  <span className="text-soft">
+                    {p.label} ({share})
+                  </span>
+                  <span className="font-medium tabular">{kr(amounts[i] ?? 0)}</span>
+                </div>
+              );
+            })}
           </div>
           <p className="mt-2 text-[12px] leading-relaxed text-muted">
             Betalningsvillkor: {version.paymentTermsDays} dagar per faktura.
