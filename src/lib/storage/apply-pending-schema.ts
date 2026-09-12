@@ -326,6 +326,32 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
        add column if not exists tax_account_ocr text
          check (tax_account_ocr is null or tax_account_ocr ~ '^[0-9]{10,25}$')`
   );
+  // Manuell inlämning (migration 50) – filing_submissions-upserten skriver alltid kolumnerna.
+  await ensureColumn(
+    "filing_submissions",
+    "downloaded_at",
+    `alter table public.filing_submissions add column if not exists downloaded_at timestamptz`
+  );
+  await ensureColumn(
+    "filing_submissions",
+    "manual_receipt",
+    `alter table public.filing_submissions add column if not exists manual_receipt jsonb;
+     alter table public.filing_submissions drop constraint if exists filing_submissions_provider_check;
+     alter table public.filing_submissions add constraint filing_submissions_provider_check
+       check (provider in ('mock', 'live', 'manuell'));
+     alter table public.filing_submissions drop constraint if exists filing_submissions_signed_has_signature;
+     alter table public.filing_submissions add constraint filing_submissions_signed_has_signature check (
+       status not in ('signerad', 'inlamnad', 'kvitterad') or signature is not null or provider = 'manuell'
+     );
+     alter table public.filing_submissions drop constraint if exists filing_submissions_submitted_has_id;
+     alter table public.filing_submissions add constraint filing_submissions_submitted_has_id check (
+       status not in ('inlamnad', 'kvitterad') or provider_submission_id is not null or provider = 'manuell'
+     );
+     alter table public.filing_submissions drop constraint if exists filing_submissions_manual_has_report;
+     alter table public.filing_submissions add constraint filing_submissions_manual_has_report check (
+       provider <> 'manuell' or status not in ('inlamnad', 'kvitterad') or manual_receipt is not null
+     )`
+  );
   // Utgifter för hand (migration 44) – expenses-upserten skriver alltid kolumnerna.
   // En ensureColumn per kolumn: en delvis migrerad tabell ska ändå bli hel.
   await ensureColumn(

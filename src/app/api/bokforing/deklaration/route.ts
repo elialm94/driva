@@ -7,6 +7,7 @@ import { sruBytes, sruForFiscalYear } from "@/lib/accounting/sru";
 import { ixbrlBytes, ixbrlForAnnualReport } from "@/lib/accounting/ixbrl";
 import { FilingDataError } from "@/lib/accounting/filing-format";
 import { withBusinessRead } from "@/lib/auth/session";
+import { buildZip } from "@/lib/filing/zip";
 
 export const dynamic = "force-dynamic";
 
@@ -15,19 +16,24 @@ export const dynamic = "force-dynamic";
  *
  *   GET /api/bokforing/deklaration?typ=moms&period=2026-K2
  *   GET /api/bokforing/deklaration?typ=agi&manad=2026-05
- *   GET /api/bokforing/deklaration?typ=ink2&ar=2026&fil=info|blanketter
+ *   GET /api/bokforing/deklaration?typ=ink2&ar=2026&fil=info|blanketter|paket
  *   GET /api/bokforing/deklaration?typ=arsredovisning&rapport=<id>
  *
  * Filerna byggs vid hämtningen ur det som redan är redovisat – ingen mutering,
- * så en läsande tenantkontext räcker. INK2 är två filer och hämtas en i taget:
- * Skatteverkets e-tjänst vill ha båda, men en zip skulle bara vara ett lager
- * mellan användaren och det e-tjänsten faktiskt tar emot.
+ * så en läsande tenantkontext räcker. INK2 är två filer som Skatteverkets
+ * Filöverföring vill ha tillsammans: de hämtas en i taget, eller som paket
+ * (zip utan komprimering, samma byte) när användaren vill ha båda i ett grepp.
  *
  * Teckenuppsättningen är formatens, inte vår: eSKD och SRU går i ISO 8859-1,
  * AGI och iXBRL i UTF-8. Därför skickas byte-innehållet, aldrig strängen.
  */
+/**
+ * Konsultytan skickar &foretag=<businessId> så att klienten – inte cookien –
+ * avgör vems fil som byggs. withBusinessRead kontrollerar medlemskapet.
+ */
 export async function GET(req: NextRequest) {
-  return withBusinessRead(() => handle(req));
+  const businessId = req.nextUrl.searchParams.get("foretag") ?? undefined;
+  return withBusinessRead(() => handle(req), { businessId });
 }
 
 function handle(req: NextRequest) {
@@ -53,6 +59,13 @@ function handle(req: NextRequest) {
         if (!fy) return bad(`Okänt räkenskapsår: ${p.get("ar") ?? p.get("rakenskapsar") ?? ""}`);
         const filing = sruForFiscalYear(fy.id);
         const which = p.get("fil") ?? "blanketter";
+        if (which === "paket") {
+          const zip = buildZip([
+            { filename: filing.blanketterFilename, bytes: sruBytes(filing.blanketter) },
+            { filename: filing.infoFilename, bytes: sruBytes(filing.info) },
+          ]);
+          return download(zip, `INK2-${fy.label}-SRU.zip`, "application/zip");
+        }
         if (which !== "info" && which !== "blanketter") return bad(`Okänd SRU-fil: ${which}`);
         const text = which === "info" ? filing.info : filing.blanketter;
         const name = which === "info" ? filing.infoFilename : filing.blanketterFilename;

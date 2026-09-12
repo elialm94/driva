@@ -80,6 +80,7 @@ export const BOKFORING_DETAIL_TABS = [
   { key: "skatt", href: "/bokforing/skatt", label: "Skatt" },
   { key: "moms", href: "/bokforing/moms", label: "Moms" },
   { key: "skattekonto", href: "/bokforing/skattekonto", label: "Skattekonto" },
+  { key: "deklarationer", href: "/bokforing/deklarationer", label: "Deklarationer" },
   { key: "lon", href: "/bokforing/lon", label: "Lön" },
   { key: "bokslut", href: "/bokforing/bokslut", label: "Bokslut" },
 ] as const;
@@ -101,6 +102,7 @@ export const BOKFORING_FLIK_HREF: Record<string, string> = {
   skatt: "/bokforing/skatt",
   moms: "/bokforing/moms",
   skattekonto: "/bokforing/skattekonto",
+  deklarationer: "/bokforing/deklarationer",
   lon: "/bokforing/lon",
   bokslut: "/bokforing/bokslut",
   saldobalans: "/bokforing/saldobalans",
@@ -124,6 +126,7 @@ export function bokforingDetailTabForPath(pathname: string): (typeof BOKFORING_D
   if (path === "/bokforing/skatt") return "skatt";
   if (path === "/bokforing/moms") return "moms";
   if (path === "/bokforing/skattekonto") return "skattekonto";
+  if (path === "/bokforing/deklarationer" || path.startsWith("/bokforing/deklarationer/")) return "deklarationer";
   if (path === "/bokforing/lon" || path.startsWith("/bokforing/lon/")) return "lon";
   if (path === "/bokforing/bokslut" || path.startsWith("/bokforing/bokslut/")) return "bokslut";
   return null;
@@ -181,6 +184,8 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/bokforing/balans", section: "bokforing", parent: "/bokforing", label: "Balansrapport", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/moms", section: "bokforing", parent: "/bokforing", label: "Moms", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/skattekonto", section: "bokforing", parent: "/bokforing", label: "Skattekonto", backLabel: "Bokföring", showBack: true },
+  { pattern: "/bokforing/deklarationer/:type/:subjectId", section: "bokforing", parent: "/bokforing/deklarationer", label: "Deklaration", backLabel: "Deklarationer", showBack: true },
+  { pattern: "/bokforing/deklarationer", section: "bokforing", parent: "/bokforing", label: "Deklarationer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/lon/:runId", section: "bokforing", parent: "/bokforing/lon", label: "Lönespecifikation", backLabel: "Lön", showBack: true },
   { pattern: "/bokforing/lon", section: "bokforing", parent: "/bokforing", label: "Lön", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/bokslut/arsredovisning/:fiscalYearId/pdf", section: "bokforing", parent: "/bokforing/bokslut/arsredovisning/:fiscalYearId", label: "Årsredovisning A4", backLabel: "Årsredovisning", showBack: true },
@@ -197,6 +202,7 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/redovisning/k/:businessId/verifikationer", section: null, parent: "/redovisning/k/:businessId", label: "Verifikationer", backLabel: "Arbeta", showBack: true },
   { pattern: "/redovisning/k/:businessId/bank", section: null, parent: "/redovisning/k/:businessId", label: "Bank", backLabel: "Arbeta", showBack: true },
   { pattern: "/redovisning/k/:businessId/moms", section: null, parent: "/redovisning/k/:businessId", label: "Moms", backLabel: "Arbeta", showBack: true },
+  { pattern: "/redovisning/k/:businessId/deklarationer/:type/:subjectId", section: null, parent: "/redovisning/k/:businessId/deklarationer", label: "Deklaration", backLabel: "Deklarationer", showBack: true },
   { pattern: "/redovisning/k/:businessId/rapporter", section: null, parent: "/redovisning/k/:businessId", label: "Rapporter", backLabel: "Arbeta", showBack: true },
   { pattern: "/redovisning/k/:businessId/underlag/:id/kontrollera", section: null, parent: "/redovisning/k/:businessId/underlag/:id", label: "Kontrollera", backLabel: "Underlag", showBack: true },
   { pattern: "/redovisning/k/:businessId/underlag/:id", section: null, parent: "/redovisning/k/:businessId/underlag", label: "Underlag", backLabel: "Underlag", showBack: true },

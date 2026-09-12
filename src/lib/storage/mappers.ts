@@ -1641,6 +1641,7 @@ export const filingSubmissionsSpec: TableSpec<FilingSubmission> = {
     "id", "business_id", "kind", "subject_id", "label", "authority", "provider", "status",
     "files", "generated_at", "signature", "submitted_at", "provider_submission_id",
     "receipt", "rejection", "last_error", "created_by", "created_at", "updated_at",
+    "downloaded_at", "manual_receipt",
   ],
   toRow: (s, businessId) => ({
     id: s.id,
@@ -1662,6 +1663,8 @@ export const filingSubmissionsSpec: TableSpec<FilingSubmission> = {
     created_by: s.createdBy,
     created_at: s.createdAt,
     updated_at: s.updatedAt,
+    downloaded_at: s.downloadedAt ?? null,
+    manual_receipt: s.manualReceipt ? jsonParam(s.manualReceipt) : null,
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -1682,6 +1685,11 @@ export const filingSubmissionsSpec: TableSpec<FilingSubmission> = {
       r.rejection == null ? undefined : jsonVal<NonNullable<FilingSubmission["rejection"]>>(r.rejection)
     ),
     ...opt("lastError", strOrU(r.last_error)),
+    ...opt("downloadedAt", tsIsoOrU(r.downloaded_at)),
+    ...opt(
+      "manualReceipt",
+      r.manual_receipt == null ? undefined : jsonVal<NonNullable<FilingSubmission["manualReceipt"]>>(r.manual_receipt)
+    ),
     createdBy: r.created_by as FilingSubmission["createdBy"],
     createdAt: tsIso(r.created_at),
     updatedAt: tsIso(r.updated_at),

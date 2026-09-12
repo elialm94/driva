@@ -53,6 +53,7 @@ JSON-läge (`.data/platform.json` via `src/lib/platform/registry.ts`).
 | `admin_audit_log` | central plattformsaudit: admin, roll, action, target, metadata – **immutabel** (update/delete blockeras av trigger) |
 | `email_events` | transaktionsmejl: kind, mottagare, status (sent/failed/not_configured), fel, provider-id |
 | `suggestion_events` (migration 49) | bankklassificeringens förslagsbeslut: källa, nivå (saker/troligt/osakert), beslut (auto/accepted/changed/rejected/private), riskflaggor, motpartstyp, kunskapsbas-/regelversion, ev. LLM-leverantör/modell/promptversion, sha256-hash av indata, beloppsspann. **Aldrig motpartstext, belopp, dokumentinnehåll eller personnummer.** |
+| `filing_submissions` (migration 50) | två nya kolumner för manuell inlämning: `downloaded_at` (när filen hämtades) och `manual_receipt` (jsonb: referens, notering, ev. kvittensfil `{filename, contentType, sizeBytes, storagePath}`, rapporterad när/av vem). Provider-checken tillåter `'manuell'`; signatur- och id-kraven gäller inte manuella rader, men en manuell rad i `inlamnad`/`kvitterad` **måste** ha `manual_receipt`. Kvittensfilen ligger i den privata bucketen `receipts` under `<business_id>/<submission_id>/`. |
 
 Dessutom två nya kolumner på `businesses`: `is_demo` (demo exkluderas ur KPI:er)
 och `disabled_at` (avstängda företag försvinner ur medlemmarnas företagslistor).
