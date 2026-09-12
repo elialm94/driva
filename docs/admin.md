@@ -53,6 +53,8 @@ JSON-läge (`.data/platform.json` via `src/lib/platform/registry.ts`).
 | `admin_audit_log` | central plattformsaudit: admin, roll, action, target, metadata – **immutabel** (update/delete blockeras av trigger) |
 | `email_events` | transaktionsmejl: kind, mottagare, status (sent/failed/not_configured), fel, provider-id |
 | `suggestion_events` (migration 49) | bankklassificeringens förslagsbeslut: källa, nivå (saker/troligt/osakert), beslut (auto/accepted/changed/rejected/private), riskflaggor, motpartstyp, kunskapsbas-/regelversion, ev. LLM-leverantör/modell/promptversion, sha256-hash av indata, beloppsspann. **Aldrig motpartstext, belopp, dokumentinnehåll eller personnummer.** |
+| `businesses` – abonnemang (migration 51) | Stripe-fälten `stripe_customer_id`, `stripe_subscription_id`, `stripe_price_id`, `stripe_status`, `current_period_end`, `cancel_at_period_end`, `billing_updated_at`, `billing_event_created`; `subscription_status` får `past_due` (grace). Alla fryses av triggern `businesses_subscription_frozen` – bara faktureringsflödet (som sätter `app.allow_subscription_update = 1` i sin transaktion) får skriva; en medlems PATCH via Data API:t kan aldrig aktivera ett abonnemang. |
+| `stripe_webhook_events` (migration 51) | idempotent logg per Stripe event-id: mottagen, Stripes `created`, typ, livemode, API-version, företag, status (mottagen/bearbetad/ignorerad/fel), sanerat fel. **Ingen payload lagras.** |
 | `filing_submissions` (migration 50) | två nya kolumner för manuell inlämning: `downloaded_at` (när filen hämtades) och `manual_receipt` (jsonb: referens, notering, ev. kvittensfil `{filename, contentType, sizeBytes, storagePath}`, rapporterad när/av vem). Provider-checken tillåter `'manuell'`; signatur- och id-kraven gäller inte manuella rader, men en manuell rad i `inlamnad`/`kvitterad` **måste** ha `manual_receipt`. Kvittensfilen ligger i den privata bucketen `receipts` under `<business_id>/<submission_id>/`. |
 
 Dessutom två nya kolumner på `businesses`: `is_demo` (demo exkluderas ur KPI:er)
@@ -168,7 +170,8 @@ Kön visar Datum/Företag/Användare/Ärende/Status; i detaljen [Öppen] [Pågå
 | `SUPABASE_SERVICE_ROLE_KEY` | För användaråtgärder | Endast serversidan (aldrig `NEXT_PUBLIC`). Används av auth-admin-åtgärder: skicka om verifiering, inaktivera/radera auth-konto, e-postuppslag. Utan nyckel visas åtgärderna som ärligt otillgängliga. |
 | `PLATFORM_SUPER_ADMIN_USER_ID` | Vid bootstrap | Alternativ till `--user-id`/`--email` för `npm run platform:bootstrap`. |
 | `PLATFORM_ADMIN_REQUIRE_MFA` | Nej (default av) | `1` ⇒ `aal2` (MFA) krävs för alla adminanrop. Slå på när Supabase-MFA är aktiverat. |
-| `DRIVA_APP_URL` (eller `APP_URL`) | I produktion | Absolut bas-URL för inbjudningslänkar i mejl. |
+| `DRIVA_APP_URL` (eller `APP_URL`) | I produktion | Absolut bas-URL för inbjudningslänkar i mejl och Stripe-retur-URL:er. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` (+ valfri `STRIPE_PUBLISHABLE_KEY`) | För abonnemang | Server-only. Alla tre krävs, annars visar Inställningar → Konto *Abonnemangsbetalning är inte konfigurerad* och inget abonnemang simuleras. Systemvyn listar konfigurationsproblem i klartext (blandade test/live-nycklar, live-nyckel utanför produktion, `prod_` i stället för `price_`). Se avsnittet Abonnemang nedan och `.env.example`. |
 | Befintliga | – | Supabase-URL/nycklar, `SUPABASE_DB_URL`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL` återanvänds. Inga nya publika variabler. |
 
 ## Produktionsuppsättning (Vercel + Supabase)
@@ -182,6 +185,61 @@ Kön visar Datum/Företag/Användare/Ärende/Status; i detaljen [Öppen] [Pågå
 3. **Bootstrap:** kör `npm run platform:bootstrap -- --email …` (steg ovan).
 4. **Verifiera:** logga in → `/admin` öppnas; en icke-admin ser 403; bjud in
    nästa admin från `/admin/admins`.
+
+## Abonnemang (Stripe Billing)
+
+Spec §5. Koden ligger i `src/lib/billing/*`; webhooken i
+`src/app/api/stripe/webhook/route.ts` (publik sökväg i `src/proxy.ts`,
+signaturen verifieras mot den råa kroppen); knapparna i
+`src/components/abonnemang-card.tsx` (Inställningar → Konto) och
+serveråtgärderna i `src/app/abonnemang-actions.ts`.
+
+**Affärsregler i koden**
+
+- Nya företag startar 14 dagars provperiod utan kort (migration 24, oförändrat).
+  Under provperioden står dagarna kvar diskret under Konto – ingen banner.
+- **Fortsätt med Ferva** → Stripe Checkout (`mode: subscription`, kund skapas
+  server-side, `client_reference_id` = företagets id). Checkout-success
+  aktiverar aldrig något: bannern på Konto säger *aktiveras så snart Stripe
+  bekräftat*, och webhooken skriver tillståndet.
+- Webhooken är sanningskälla: `checkout.session.completed`,
+  `customer.subscription.created/updated/deleted/paused/resumed/trial_will_end`,
+  `invoice.paid`, `invoice.payment_succeeded`, `invoice.payment_failed`,
+  `invoice.payment_action_required`. Faktura- och checkouthändelser läser om
+  abonnemanget från Stripe. Dubbletter (samma event-id) och händelser med
+  äldre `created` än det som redan skrivits ignoreras.
+- Kanoniskt tillstånd: `trialing` / `active` / `past_due` (grace: full
+  åtkomst, banner *Betalning väntar*) / `expired` / `canceled` (full åtkomst
+  till `current_period_end`). `unpaid`/`paused` från Stripe ⇒ `expired`.
+- **Skrivskydd** (`withBusiness` → `assertWritable`): provperiod slut utan
+  abonnemang eller upphört abonnemang ⇒ `SubscriptionReadOnlyError` för alla
+  skrivande flöden utom de som skickar `allowReadOnly: true` (Checkout,
+  kundportal). Läsning, export och support fungerar alltid. Företag från före
+  provperiodsmodellen (`subscription_status is null`) och demoföretag låses
+  aldrig.
+- Uppsägning sker i Customer Portal och gäller till periodens slut. Data
+  raderas aldrig automatiskt.
+
+**Uppsättning (dashboard)**
+
+1. Stripe → Products → *Ferva*, pris 199 kr/månad, återkommande, SEK, exklusive
+   moms → `STRIPE_PRICE_ID`.
+2. Developers → Webhooks → endpoint `https://<prod>/api/stripe/webhook` med
+   händelserna ovan → `STRIPE_WEBHOOK_SECRET`.
+3. Settings → Billing → Customer portal: tillåt byte av betalmetod, kvitton
+   och uppsägning vid periodens slut; inga planbyten.
+4. Vercel: `STRIPE_SECRET_KEY` (sk_live_ bara i Production), `STRIPE_WEBHOOK_SECRET`,
+   `STRIPE_PRICE_ID`. Preview-miljöer får test-nycklar och en egen test-webhook.
+5. Kör migration 51 (pending schema lägger annars till kolumnerna vid första
+   skrivningen, men triggern som fryser fälten kommer bara med migrationen).
+6. Verifiera i `/admin/system` → *Abonnemang (Stripe)*: läge, webhookfel 7 d,
+   senaste webhook.
+
+**Lokalt**: `stripe listen --forward-to localhost:3123/api/stripe/webhook`,
+sedan `stripe trigger checkout.session.completed` /
+`customer.subscription.updated` / `invoice.payment_failed`. Tester utan nätverk:
+`src/lib/billing/billing.test.ts` (signaturen verifieras med SDK:ns
+`generateTestHeaderString`).
 
 ## Lokal utveckling (JSON-läget)
 

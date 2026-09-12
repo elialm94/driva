@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "DRIVA_TEST=1 tsx --test src/lib/*.test.ts src/lib/invoices/*.test.ts src/lib/accounting/*.test.ts src/lib/domains/*.test.ts src/lib/filing/*.test.ts src/lib/storage/*.test.ts src/lib/setup/*.test.ts src/lib/imports/*.test.ts src/lib/accounting-workspace/*.test.ts",
+    "test": "DRIVA_TEST=1 tsx --test src/lib/*.test.ts src/lib/invoices/*.test.ts src/lib/accounting/*.test.ts src/lib/domains/*.test.ts src/lib/filing/*.test.ts src/lib/billing/*.test.ts src/lib/storage/*.test.ts src/lib/setup/*.test.ts src/lib/imports/*.test.ts src/lib/accounting-workspace/*.test.ts",
     "typecheck": "next typegen && tsc --noEmit",
     "test:assistant": "DRIVA_TEST=1 npx --yes tsx scripts/verify-assistant.ts",
     "test:tax-reduction": "DRIVA_TEST=1 npx --yes tsx scripts/verify-tax-reduction.ts",
@@ -31,7 +31,8 @@
     "postgres": "^3.4.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "resend": "^6.25.0"
+    "resend": "^6.25.0",
+    "stripe": "^22.6.2"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",

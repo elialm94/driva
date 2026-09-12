@@ -92,6 +92,45 @@ export default async function AdminSystemPage() {
           />
         </AdminCard>
 
+        <AdminCard title="Abonnemang (Stripe)">
+          <KeyValueList
+            rows={[
+              {
+                label: "Status",
+                value: status.stripe.configured ? (
+                  <HealthBadge state={status.stripe.state} />
+                ) : (
+                  <AdminBadge tone="warn">Ej konfigurerat</AdminBadge>
+                ),
+              },
+              {
+                label: "Läge",
+                value: status.stripe.mode ? (
+                  <AdminBadge tone={status.stripe.mode === "live" ? "ok" : "neutral"}>{status.stripe.mode}</AdminBadge>
+                ) : (
+                  "–"
+                ),
+              },
+              { label: "Webhookfel 7 d", value: status.stripe.webhookFailures7d },
+              { label: "Senaste webhook", value: status.stripe.lastEventAt ? datumTidKort(status.stripe.lastEventAt) : "Ingen mottagen" },
+              ...(status.stripe.problems.length
+                ? [
+                    {
+                      label: "Att åtgärda",
+                      value: (
+                        <ul className="list-disc space-y-0.5 pl-4 text-[12px]">
+                          {status.stripe.problems.map((p) => (
+                            <li key={p}>{p}</li>
+                          ))}
+                        </ul>
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </AdminCard>
+
         <AdminCard title="AI (OpenRouter)">
           <KeyValueList
             rows={[

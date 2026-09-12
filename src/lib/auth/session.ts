@@ -58,6 +58,7 @@ import {
 } from "@/lib/collaboration/registry";
 import { activeSupportContext, type ActiveSupportContext } from "@/lib/platform/auth";
 import { ownerNeedsOnboarding } from "@/lib/setup/onboarding-state";
+import { assertWritable } from "@/lib/billing/access";
 import { writeAdminAudit } from "@/lib/platform/audit";
 import { platformRegistry } from "@/lib/platform/registry";
 
@@ -503,10 +504,18 @@ async function withDemoSession<T>(
   return runInDemoSession(sessionId, { access: opts.access, actor: actorFrom(user, businessId, role) }, fn);
 }
 
-/** Skrivande flöde i tenantkontext. */
+/**
+ * Skrivande flöde i tenantkontext.
+ *
+ * Abonnemangsgrinden: ett riktigt företag vars provperiod tagit slut utan
+ * abonnemang (eller vars abonnemang upphört) är skrivskyddat – allt går att
+ * läsa och exportera, men inga nya ekonomiska ändringar. Flöden som måste
+ * fungera även då (starta Checkout, kundportal, godkänna villkor) skickar
+ * `allowReadOnly: true`. Demosessioner och JSON-läget har inget abonnemang.
+ */
 export async function withBusiness<T>(
   fn: () => T | Promise<T>,
-  opts: { retry?: boolean; businessId?: string; capability?: CollaborationCapability } = {}
+  opts: { retry?: boolean; businessId?: string; capability?: CollaborationCapability; allowReadOnly?: boolean } = {}
 ): Promise<T> {
   const demoId = await demoRequestSessionId();
   if (demoId) {
@@ -535,6 +544,7 @@ export async function withBusiness<T>(
   const user = await requireUser();
   const businessId = await resolveActiveBusiness(user.id, opts.businessId);
   const role = await authorizeWrite(user, businessId, opts.capability);
+  if (!opts.allowReadOnly) await assertWritable(businessId);
   try {
     return await runAsActor(labelSupportActor(actorFrom(user, businessId, role), support), () =>
       runWithTenant({ businessId, userId: user.id, access: "write", retry: opts.retry }, fn)

@@ -53,6 +53,7 @@ const PUBLIC_PREFIXES = [
   // som routen själv verifierar (401 annars). Utan undantaget här fick
   // /api/cron/reminders 307 → /login och påminnelserna kördes aldrig.
   "/api/cron",
+  "/api/stripe/webhook", // Stripe har ingen session – Stripe-Signature verifieras i routen.
 ];
 
 function isPublicPath(pathname: string): boolean {

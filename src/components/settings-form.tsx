@@ -43,6 +43,7 @@ import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 import { SettingsBillingBanner } from "./settings-billing-readiness";
 import { AddressFields } from "./address-input";
 import { FSkattSettingCard } from "./skattekonto-widgets";
+import { AbonnemangCard, type AbonnemangCardProps } from "./abonnemang-card";
 import { FiscalYearSettings, type FiscalYearSettingsYear } from "./fiscal-year-settings";
 import { OwnerNoticeSettings, type OwnerNoticeSettingsProps } from "./owner-notice-settings";
 
@@ -135,6 +136,7 @@ export function SettingsForm({
   today,
   notices,
   articles,
+  subscription,
 }: {
   initial: CompanySettings;
   defaults: InvoiceDefaults;
@@ -159,6 +161,8 @@ export function SettingsForm({
   /** Notiser – eget kort som sparar direkt, utanför formuläret. */
   notices?: OwnerNoticeSettingsProps;
   articles?: CatalogArticle[];
+  /** Konto – abonnemanget (Stripe). Bara på fliken Konto. */
+  subscription?: AbonnemangCardProps;
 }) {
   const TABS = settingsTabsFor(features);
   const router = useRouter();
@@ -834,6 +838,7 @@ export function SettingsForm({
 
       {flik === "konto" ? (
         <div className="space-y-5">
+          {subscription ? <AbonnemangCard {...subscription} /> : null}
           {account.demo ? (
             <Card className="space-y-3 p-6">
               <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Demoläge</p>

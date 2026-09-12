@@ -89,6 +89,44 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
        add column if not exists subscription_status text`
   );
 
+  // Stripe Billing (migration 51). Triggern som fryser fälten uppdateras bara
+  // av migrationen – tills den körts skyddas fälten av att Data API:t inte
+  // känner till kolumnerna i sin cache och av att serverkoden är enda skrivaren.
+  await ensureColumn(
+    "businesses",
+    "stripe_customer_id",
+    `alter table public.businesses
+       add column if not exists stripe_customer_id text,
+       add column if not exists stripe_subscription_id text,
+       add column if not exists stripe_price_id text,
+       add column if not exists stripe_status text,
+       add column if not exists current_period_end timestamptz,
+       add column if not exists cancel_at_period_end boolean not null default false,
+       add column if not exists billing_updated_at timestamptz,
+       add column if not exists billing_event_created bigint`
+  );
+  const webhookEvents = await client.query(`select to_regclass('public.stripe_webhook_events') is not null as present`);
+  if (!webhookEvents[0]?.present) {
+    await run(
+      client,
+      `create table if not exists public.stripe_webhook_events (
+        id text primary key,
+        received_at timestamptz not null default now(),
+        event_created timestamptz,
+        type text not null,
+        livemode boolean not null default false,
+        api_version text,
+        business_id uuid,
+        status text not null default 'mottagen' check (status in ('mottagen', 'bearbetad', 'ignorerad', 'fel')),
+        error text,
+        processed_at timestamptz
+      )`
+    );
+    await run(client, `create index if not exists stripe_webhook_events_received_idx on public.stripe_webhook_events (received_at desc)`);
+    await run(client, `alter table public.stripe_webhook_events enable row level security`);
+    applied.push("stripe_webhook_events");
+  }
+
   await ensureColumn(
     "business_settings",
     "default_hourly_rate",

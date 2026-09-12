@@ -4,6 +4,8 @@ import { Sidebar, BottomNav } from "@/components/nav";
 import { NavOriginProvider } from "@/components/nav-origin";
 import { LiveRefresh } from "@/components/live-refresh";
 import { SupportModeBanner } from "@/components/support-mode-banner";
+import { SubscriptionBanner } from "@/components/subscription-banner";
+import { currentBillingAccess } from "@/lib/billing/access";
 import { ToastProvider } from "@/components/toast";
 import { FlashToast } from "@/components/flash-toast";
 import { db } from "@/lib/store";
@@ -39,6 +41,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // Skapa eget konto gäller bara den publika demosessionen.
   const demoSession = await isDemoSession();
   const demoBadge = !isSupabaseMode() || demoSession;
+  // Abonnemangsbannern: bara skrivskydd och betalningsfel – aldrig provperiodens vardag.
+  const billing = await currentBillingAccess(businessId, { demo: demoBadge });
   return (
     // data-driva-demo: klientgrindar (t.ex. adressförslagens Places-laddare)
     // läser attributet och håller sig till lokala exempeldata i demon.
@@ -53,6 +57,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         */}
         <div className="no-print">
           <SupportModeBanner companyName={settings.name} />
+          <SubscriptionBanner access={billing} />
         </div>
         <div className="no-print">
           <Sidebar

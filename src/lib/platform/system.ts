@@ -14,6 +14,8 @@ import { db } from "../store";
 import { platformMfaRequired } from "./auth";
 import { listEmailEvents } from "./store";
 import type { EmailEvent } from "./types";
+import { isStripeConfigured, stripeConfigProblems, stripeModeHint } from "../billing/config";
+import { billingStore } from "../billing/store";
 
 export type HealthState = "ok" | "fel" | "okand";
 
@@ -38,6 +40,15 @@ export interface SystemStatus {
     nodeEnv: string;
   };
   mfa: { required: boolean };
+  stripe: {
+    configured: boolean;
+    mode: "test" | "live" | null;
+    /** Konfigurationsproblem i klartext – aldrig värden. */
+    problems: string[];
+    webhookFailures7d: number;
+    lastEventAt?: string;
+    state: HealthState;
+  };
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -72,11 +83,18 @@ async function aiErrorsLast7d(): Promise<number> {
 
 export async function systemStatus(): Promise<SystemStatus> {
   const since7 = new Date(Date.now() - 7 * DAY_MS).toISOString();
-  const [database, failedEmails, aiErrors] = await Promise.all([
+  const [database, failedEmails, aiErrors, stripeEvents, stripeFailures] = await Promise.all([
     dbHealth(),
     listEmailEvents({ status: "failed", limit: 200 }),
     aiErrorsLast7d().catch(() => 0),
+    billingStore()
+      .listRecentWebhookEvents(1)
+      .catch(() => []),
+    billingStore()
+      .countWebhookFailuresSince(since7)
+      .catch(() => 0),
   ]);
+  const stripeConfigured = isStripeConfigured();
   const emailFailures7d = failedEmails.filter((e) => e.createdAt >= since7).length;
   const ai = aiConfig();
   const aiConfiguredNow = isAiConfigured();
@@ -109,6 +127,15 @@ export async function systemStatus(): Promise<SystemStatus> {
       nodeEnv: process.env.NODE_ENV ?? "development",
     },
     mfa: { required: platformMfaRequired() },
+    stripe: {
+      configured: stripeConfigured,
+      mode: stripeModeHint(),
+      problems: stripeConfigProblems(),
+      webhookFailures7d: stripeFailures,
+      lastEventAt: stripeEvents[0]?.receivedAt,
+      // Ingen ping utan sidoeffekt: konfigurerad + inga färska webhookfel ⇒ Okänd.
+      state: !stripeConfigured ? "okand" : stripeFailures > 0 ? "fel" : "okand",
+    },
   };
 }
 
