@@ -23,6 +23,7 @@ import { todayDate } from "./accounting/fiscal";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const page = (p: string) => readFileSync(join(here, "../app/(app)/bokforing", p), "utf8");
+const component = (p: string) => readFileSync(join(here, "../components", p), "utf8");
 
 const MINUS = "\u2212";
 
@@ -112,7 +113,10 @@ describe("Huvudboken: datumkolumnen följer appens datumformat", () => {
   });
 
   it("de andra datumkolumnerna under /bokforing använder redan datumKort", () => {
-    assert.match(page("skattekonto/page.tsx"), /\{datumKort\(r\.date\)\}/);
+    // Skattekontots tabell flyttade ut ur sidan och in i SkattekontoPanel när
+    // bokföringsnavigeringen gjordes om (PR #137). Samma assertion, den läser
+    // bara kolumnen där den bor nu.
+    assert.match(component("skattekonto-panel.tsx"), /\{datumKort\(r\.date\)\}/);
     assert.match(page("lon/page.tsx"), /\{datumKort\(r\.payDate\)\}/);
   });
 });

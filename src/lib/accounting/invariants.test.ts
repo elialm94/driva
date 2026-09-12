@@ -134,17 +134,52 @@ describe("Scenariot demo uppfyller invarianterna a till g", () => {
   }
 
   /**
-   * (e) är grön på demo av ett skäl som är värt att skriva ned: ingenting i
-   * seeden rör 1630. Preliminärskatten bokförs med entriesTaxPayment (2510/1930),
-   * så skattekontot är orört och kontrollen har ingenting att jämföra. Läses den
-   * gröna raden som "skattekontot stämmer" är det en feltolkning. När Fas 1.1
-   * Skattekontomodellen lägger F-skatten som 2518/1630 med source skattekonto
-   * blir kontrollen skarp, och då ska den här raden bytas mot ett riktigt saldo.
+   * (e) var grön på demo av ett skäl som var värt att skriva ned: ingenting i
+   * seeden rörde 1630. Preliminärskatten bokfördes med entriesTaxPayment
+   * (2510/1930), så skattekontot var orört och kontrollen hade ingenting att
+   * jämföra – en grön rad som inte betydde "skattekontot stämmer".
+   *
+   * Skattekontomodellen (PR #137) bokför F-skatten som 2518/1630 med source
+   * skattekonto, så kontrollen är skarp nu. Därför är den här raden ett riktigt
+   * saldo i stället: rörelserna finns, var och en kommer från en av de två
+   * dokumenterade vägarna, och saldot är ingående balans plus just dem.
+   *
+   * Inga exakta belopp eller antal pinnas här: F-skatten bokförs en gång per
+   * månad fram till todayDate(), så både antalet rörelser och saldot växer med
+   * kalendern. Ett hårdkodat tal hade gjort testet beroende av vilken dag det
+   * kördes, och det är precis vad en invariant inte ska vara.
    */
-  it("(e) har ingenting att kontrollera i dag: demo rör aldrig 1630", () => {
+  it("(e) skattekontots saldo är ingående balans plus rörelserna via de två vägarna", () => {
     const data = scenarioDemo();
+    const nettoPa1630 = (v: Verification) =>
+      v.entries.filter((e) => e.account === 1630).reduce((s, e) => s + e.debit - e.credit, 0);
+    const viaSkattekontot = (v: Verification) => v.source.type === "skattekonto";
+    const viaBanken = (v: Verification) =>
+      v.source.type === "banktransaktion" &&
+      v.entries.every((e) => e.account === 1630 || (e.account >= 1900 && e.account <= 1999));
+
     const rorelser = data.verifications.filter((v) => v.entries.some((e) => e.account === 1630));
-    assert.equal(rorelser.length, 0, "seeden rör 1630 nu, gör om kontrollen till ett saldo");
+    assert.ok(rorelser.length > 0, "seeden ska röra 1630 – annars är kontrollen tom igen");
+    assert.ok(rorelser.some(viaSkattekontot), "F-skatten ska bokföras med source skattekonto");
+    assert.ok(rorelser.some(viaBanken), "bankens överföring till skattekontot ska finnas");
+    assert.deepEqual(
+      rorelser.filter((v) => !viaSkattekontot(v) && !viaBanken(v)).map((v) => v.description),
+      [],
+      "varje rörelse på 1630 ska komma via skattekontot eller bankens överföring"
+    );
+
+    const ib = data.fiscalYears.reduce((s, fy) => s + (fy.openingBalances["1630"] ?? 0), 0);
+    const alla = rorelser.reduce((s, v) => s + nettoPa1630(v), 0);
+    const dokumenterade = rorelser
+      .filter((v) => viaSkattekontot(v) || viaBanken(v))
+      .reduce((s, v) => s + nettoPa1630(v), 0);
+    assert.notEqual(alla, 0, "saldot ska vara skilt från noll – annars stämmer det trivialt");
+    assert.equal(ib + alla, ib + dokumenterade, "saldot ska förklaras helt av de dokumenterade vägarna");
+
+    // …och invarianten själv ska vara grön på just det saldot.
+    const report = checkInvariants(data, { only: ["skattekonto_harleds_ur_rorelserna"] });
+    assert.equal(report.brott.length, 0, messages(report.brott));
+    assert.equal(report.ejVerifierbara.length, 0, messages(report.ejVerifierbara));
   });
 
   it("(c) rapporteras som ej verifierbar, inte som godkänd", () => {
