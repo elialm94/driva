@@ -1,6 +1,7 @@
 import type { ActionCta, BusinessAction } from "./actions";
 import { ACCOUNTING_EXCEPTIONS_GROUP_ID } from "./action-views";
-import { isLegalDeadlineOverdue } from "./legal-deadline";
+import { todayDate } from "../accounting/dates";
+import { dueDateFromLegalActionId } from "./legal-deadline-id";
 
 /**
  * Central deklaration av hur åtgärdsrader FÅR hanteras – EN källa för Hem,
@@ -436,7 +437,12 @@ export const FALLBACK_CONTROLS: ActionControls = {
   requiresConfirmation: false,
 };
 
-export function controlsForAction(action: Pick<BusinessAction, "id">): ActionControls {
+function isActionLegalDeadlineOverdue(action: Pick<BusinessAction, "id" | "dueDate">): boolean {
+  const due = action.dueDate ?? dueDateFromLegalActionId(action.id);
+  return Boolean(due && due < todayDate());
+}
+
+export function controlsForAction(action: Pick<BusinessAction, "id" | "dueDate">): ActionControls {
   // Hem-projektion: länken öppnar Bokföring. Snooze/Klar sker på de
   // underliggande åtgärds-id:na (samma tillstånd som på Bokföring).
   if (action.id === ACCOUNTING_EXCEPTIONS_GROUP_ID) {
@@ -462,7 +468,7 @@ export function controlsForAction(action: Pick<BusinessAction, "id">): ActionCon
   if (action.id === "supplier-details-group") {
     return { ...base, viewLabel: "Visa leverantörsfakturor", requiresConfirmation: false };
   }
-  if ((kind === "vat" || kind === "agi" || kind === "yearEnd") && isLegalDeadlineOverdue(action.id)) {
+  if ((kind === "vat" || kind === "agi" || kind === "yearEnd") && isActionLegalDeadlineOverdue(action)) {
     return { ...base, canSnooze: false };
   }
   if (action.id.startsWith("vat-suggest-declared-")) {

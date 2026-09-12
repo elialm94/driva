@@ -211,6 +211,8 @@ export interface BusinessAction {
   amount?: number;
   /** Bekräftelsedialog före utförande (externa utskick, pengabokningar). */
   confirm?: ActionConfirm;
+  /** Lagkravsradens förfallodag (YYYY-MM-DD). Används av snooze-policyn i klienten. */
+  dueDate?: string;
 }
 
 /**
@@ -1623,6 +1625,7 @@ function collectPayroll(ranked: Ranked[], watching: WatchingItem[], now: Date) {
         href: "/bokforing/lon",
         cta: { type: "link", label: "Öppna lönen", href: "/bokforing/lon" },
         amount: declaration.attBetala,
+        dueDate: declaration.dueDate,
       },
     });
   }
@@ -1702,6 +1705,7 @@ function collectVat(ranked: Ranked[], watching: WatchingItem[], now: Date) {
         href: `/bokforing/moms?fokus=${period.key}`,
         cta: { type: "link", label: "Öppna momsöversikten", href: `/bokforing/moms?fokus=${period.key}` },
         amount,
+        dueDate,
       },
     });
     return;
@@ -1723,6 +1727,7 @@ function collectVat(ranked: Ranked[], watching: WatchingItem[], now: Date) {
       href: `/bokforing/moms?fokus=${worst.period.key}`,
       cta: { type: "link", label: "Öppna momsöversikten", href: `/bokforing/moms?fokus=${worst.period.key}` },
       amount: Math.abs(net),
+      dueDate: worst.dueDate,
     },
   });
 }
@@ -1861,6 +1866,7 @@ function collectYearEnd(ranked: Ranked[], watching: WatchingItem[], now: Date) {
             : `Allt är klart att stänga${due ? ` · deklarationen ska lämnas ${datumKort(due)}` : ""}`,
           href: "/bokforing/bokslut",
           cta: { type: "link", label: "Öppna bokslutet", href: "/bokforing/bokslut" },
+          ...(due ? { dueDate: due } : {}),
         },
       });
       continue;
@@ -1906,6 +1912,7 @@ function collectYearEnd(ranked: Ranked[], watching: WatchingItem[], now: Date) {
         subtitle: `Bolagsverket senast ${datumKort(due)}`,
         href: `/bokforing/bokslut/arsredovisning/${fy.id}`,
         cta: { type: "link", label: "Öppna årsredovisningen", href: `/bokforing/bokslut/arsredovisning/${fy.id}` },
+        dueDate: due,
       },
     });
   }

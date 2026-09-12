@@ -1,9 +1,16 @@
 import { db } from "../store";
-import { calendarFiscalYear, previousDay, todayDate, vatDueDate, vatPeriodsOf } from "../accounting/dates";
+import { calendarFiscalYear, todayDate, vatDueDate, vatPeriodsOf } from "../accounting/dates";
 import { getFiscalYear, vatPeriodicity } from "../accounting/fiscal";
 import { annualReportDueDate, ink2DueDate } from "../accounting/deadlines";
 import { agiDueDate } from "../accounting/payroll-model";
 import { vatPeriodByKey, vatReportForPeriod } from "../accounting/vat";
+import { dueDateFromLegalActionId } from "./legal-deadline-id";
+
+export {
+  dueDateFromLegalActionId,
+  isLegalDeadlineAction,
+  legalDeadlineSnoozeCap,
+} from "./legal-deadline-id";
 
 /**
  * Förfallodag för en lagkravsrad i kön (moms, AGI, INK2, årsredovisning).
@@ -31,29 +38,9 @@ export function legalDeadlineDueDate(actionId: string): string | undefined {
   return undefined;
 }
 
-export function isLegalDeadlineAction(actionId: string): boolean {
-  return (
-    (actionId.startsWith("vat-") && !actionId.startsWith("vat-suggest-")) ||
-    actionId.startsWith("agi-") ||
-    actionId.startsWith("year-end-")
-  );
-}
-
 export function isLegalDeadlineOverdue(actionId: string, today: string = todayDate()): boolean {
-  const due = legalDeadlineDueDate(actionId);
+  const due = legalDeadlineDueDate(actionId) ?? dueDateFromLegalActionId(actionId);
   return Boolean(due && due < today);
-}
-
-/** Dagen före förfallodagen kl 08:00 lokal tid – yttersta snooze för ett kommande lagkrav. */
-export function legalDeadlineSnoozeCap(dueDate: string, tz: string): { year: number; month: number; day: number; hour: number; minute: number } {
-  const cap = previousDay(dueDate);
-  return {
-    year: Number(cap.slice(0, 4)),
-    month: Number(cap.slice(5, 7)),
-    day: Number(cap.slice(8, 10)),
-    hour: 8,
-    minute: 0,
-  };
 }
 
 function earliestOpenVatDue(): string | undefined {
