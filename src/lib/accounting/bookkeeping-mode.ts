@@ -34,9 +34,6 @@ export function bookkeepingModeForUser(userId: string): BookkeepingMode {
 export function setBookkeepingModeForUser(userId: string, mode: BookkeepingMode): BookkeepingMode {
   const data = db();
   const byUser = { ...(data.meta.bookkeepingModeByUser ?? {}) };
-  if (!byUser[userId] && data.meta.bookkeepingMode && currentActor()?.role === "agare") {
-    byUser[userId] = companyBookkeepingMode();
-  }
   byUser[userId] = mode;
   data.meta.bookkeepingModeByUser = byUser;
   save();

@@ -54,7 +54,7 @@ export function BokforingAdvancedTabs({
       ? BOKFORING_DETAIL_TABS.filter((t) => t.key !== "skatt")
       : BOKFORING_DETAIL_TABS.filter((t) => simpleKeys.includes(t.key));
 
-  const outsideSimple = mode === "enkelt" && Boolean(active) && !simpleKeys.includes(active);
+  const outsideSimple = mode === "enkelt" && active != null && !simpleKeys.includes(active);
   const outsideAnyTab = mode === "enkelt" && !active && pathname !== "/bokforing";
   const deepLink = outsideSimple || outsideAnyTab;
   const deepLabel = matchRoute(pathname)?.meta.label ?? "Sidan";

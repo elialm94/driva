@@ -203,7 +203,10 @@ export function FSkattSettingCard({
       ) : null}
       {saved && !editing ? (
         <p className="mt-2 flex items-center gap-1.5 text-[13px] font-medium text-ok">
-          <Check className="size-3.5" /> Sparat. Debiteringen bokförs automatiskt på förfallodagen.
+          <Check className="size-3.5" />{" "}
+          {autoEnabled
+            ? "Sparat. Debiteringen bokförs automatiskt på förfallodagen."
+            : "Sparat. Debiteringen bokförs inte automatiskt."}
         </p>
       ) : null}
       {amount > 0 ? (

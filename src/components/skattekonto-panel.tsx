@@ -1,6 +1,7 @@
 import { ArrowDownLeft, ArrowUpRight, Landmark } from "lucide-react";
 import { Badge, ButtonLink, Card, EmptyState, SectionTitle } from "@/components/ui";
 import {
+  BookFSkattButton,
   BookTaxAccountDepositButton,
   BookVatOnTaxAccountButton,
   FSkattSettingCard,
@@ -14,6 +15,7 @@ import {
   vatReportsAwaitingTaxAccount,
   TAX_ACCOUNT_KIND_LABEL,
   isAutoBookFSkattEnabled,
+  fSkattMonthsAwaitingBooking,
 } from "@/lib/accounting/tax-account";
 
 /** Skattekontots saldo, rörelser och avstämning – delas av Skatt och Skattekonto. */
@@ -23,7 +25,8 @@ export function SkattekontoPanel() {
   const deposits = taxAccountDepositCandidates();
   const fSkattPerMonth = db().settings.fSkattPerMonth;
   const autoBookFSkatt = isAutoBookFSkattEnabled();
-  const todo = awaitingVat.length + deposits.length;
+  const pendingFSkatt = autoBookFSkatt ? [] : fSkattMonthsAwaitingBooking();
+  const todo = awaitingVat.length + deposits.length + pendingFSkatt.length;
 
   return (
     <div>
@@ -80,6 +83,17 @@ export function SkattekontoPanel() {
                 </p>
                 <div className="mt-3">
                   <BookTaxAccountDepositButton txId={t.id} amount={Math.abs(t.amount)} />
+                </div>
+              </Card>
+            ))}
+            {pendingFSkatt.map((month) => (
+              <Card key={month} className="px-6 py-5">
+                <p className="text-[15px] font-semibold">F-skatt {month}</p>
+                <p className="mt-1 text-[13px] text-soft">
+                  Automatisk bokföring är avstängd. Debiteringen från Skatteverket behöver bokföras för hand.
+                </p>
+                <div className="mt-3">
+                  <BookFSkattButton month={month} amount={fSkattPerMonth} />
                 </div>
               </Card>
             ))}

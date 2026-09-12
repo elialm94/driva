@@ -116,7 +116,9 @@ export function bokforingDetailTabForPath(pathname: string): (typeof BOKFORING_D
   if (path === "/bokforing") return "oversikt";
   if (path === "/bokforing/underlag" || path.startsWith("/bokforing/underlag/")) return "underlag";
   if (path === "/bokforing/bank") return "bank";
-  if (path === "/bokforing/verifikationer" || path === "/bokforing/verifikationer/nytt") return "verifikationer";
+  if (path === "/bokforing/verifikationer" || path === "/bokforing/verifikationer/nytt" || path === "/bokforing/detaljer") {
+    return "verifikationer";
+  }
   if (path === "/bokforing/huvudbok") return "huvudbok";
   if ((BOKFORING_REPORT_PATHS as readonly string[]).includes(path)) return "rapporter";
   if (path === "/bokforing/skatt") return "skatt";

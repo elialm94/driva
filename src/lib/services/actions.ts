@@ -1025,7 +1025,7 @@ function collectAccounting(ranked: Ranked[]) {
     const incoming = tx.amount > 0;
     const suggestion = paymentSuggestionForTransaction(tx);
     // Djuplänk rakt till transaktionen (samma format som actionResolveHref).
-    const txHref = `/bokforing/bank&atgard=${encodeURIComponent(`bank-${tx.id}`)}`;
+    const txHref = `/bokforing/bank?atgard=${encodeURIComponent(`bank-${tx.id}`)}`;
 
     let title = incoming
       ? `Inbetalning från ${tx.counterpart} kunde inte matchas`
@@ -1930,8 +1930,9 @@ function collectPeriodClose(ranked: Ranked[], now: Date) {
   const today = bokforingsdatum(now.toISOString());
   const ready = monthsReadyToClose(today);
   if (ready.length === 0) return;
-  const first = periodCloseStatus(ready[0], today);
-  if (first.verifications === 0 && ready.length === 1) return;
+  const statuses = ready.map((p) => periodCloseStatus(p, today));
+  if (statuses.every((s) => s.verifications === 0)) return;
+  const first = statuses[0];
 
   ranked.push({
     rank: RANK.periodClose,
@@ -1956,6 +1957,11 @@ function collectPeriodClose(ranked: Ranked[], now: Date) {
         type: "closeReadyMonths",
         label: "Stäng alla klara månader",
         months: ready.map((p) => p.key),
+      },
+      confirm: {
+        title: ready.length === 1 ? `Stäng ${ready[0].label}?` : `Stäng ${ready.length} månader?`,
+        rows: ready.map((p) => ({ label: "Månad", value: p.label })),
+        confirmLabel: "Stäng",
       },
     },
   });

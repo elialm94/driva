@@ -58,7 +58,7 @@ describe("sanitizeReturnTo allowlist", () => {
     assert.equal(sanitizeReturnTo("/kunder/forfragningar/req-karin"), "/uppdrag/req-karin");
     assert.equal(sanitizeReturnTo("/hemsida/doman"), "/hemsida/doman");
     assert.equal(sanitizeReturnTo("/installningar"), "/installningar");
-    assert.equal(sanitizeReturnTo("/inbox"), "/inbox");
+    assert.equal(sanitizeReturnTo("/inbox"), "/bokforing/underlag");
   });
 
   it("rejects unknown prefixes", () => {
@@ -73,8 +73,8 @@ describe("sanitizeReturnTo allowlist", () => {
 describe("canonical fallback", () => {
   it("maps detail routes to list parents", () => {
     assert.deepEqual(defaultBack("/inbox/req-karin"), {
-      href: "/inbox",
-      label: "Inbox",
+      href: "/bokforing/underlag",
+      label: "Underlag",
     });
     assert.deepEqual(defaultBack("/kunder/forfragningar/req-karin"), {
       href: "/uppdrag",
@@ -216,17 +216,17 @@ describe("origin labels", () => {
     assert.equal(labelForHref("/jobb"), "Uppdrag");
     assert.equal(labelForHref("/ekonomi?flik=offerter"), "Offerter");
     assert.equal(labelForHref("/ekonomi?flik=fakturor"), "Fakturor");
-    assert.equal(labelForHref("/inbox/req-karin"), "Inkorgspost");
+    assert.equal(labelForHref("/inbox/req-karin"), "Underlag");
     assert.equal(labelForHref("/kunder/cust-karin"), "Kund");
     assert.equal(labelForHref("/assistent"), "Hem");
-    assert.equal(labelForHref("/inbox"), "Inbox");
+    assert.equal(labelForHref("/inbox"), "Underlag");
   });
 });
 
 describe("stamp origin", () => {
   it("stamps Hem onto an enquiry opened from home", () => {
     const href = resolveAppHref("/inbox/req-karin", "/");
-    assert.equal(href, withReturnTo("/inbox/req-karin", "/", "Hem"));
+    assert.equal(href, withReturnTo("/bokforing/underlag/req-karin", "/", "Hem"));
     assert.equal(shouldStampOrigin("/", "/inbox/req-karin"), true);
     const back = resolveBack("/inbox/req-karin", new URLSearchParams(href.split("?")[1]), defaultBack("/inbox/req-karin")!);
     assert.equal(back?.href, "/");
@@ -253,8 +253,8 @@ describe("stamp origin", () => {
       new URLSearchParams(href.slice(href.indexOf("?") + 1)),
       defaultBack("/inbox/req-karin")!
     );
-    assert.equal(back?.href, origin);
-    assert.equal(back?.label, "Inbox");
+    assert.equal(back?.href, "/bokforing/underlag?q=karin&sida=2");
+    assert.equal(back?.label, "Underlag");
   });
 
   it("rewrites old inbox query origin through tillbaka", () => {
@@ -281,7 +281,7 @@ describe("stamp origin", () => {
   });
 
   it("does not stamp list destinations or already-stamped hrefs", () => {
-    assert.equal(shouldStampOrigin("/", "/inbox"), false);
+    assert.equal(shouldStampOrigin("/", "/kunder"), false);
     assert.equal(shouldStampOrigin("/", "/kunder?flik=forfragningar"), false);
     assert.equal(shouldStampOrigin("/", "/uppdrag"), false);
     assert.equal(shouldStampOrigin("/", "/ekonomi?flik=fakturor"), false);
@@ -300,7 +300,7 @@ describe("stamp origin", () => {
     const enquiryFromHome = resolveAppHref("/inbox/req-karin", "/");
     const customerFromEnquiry = resolveAppHref("/kunder/cust-karin", enquiryFromHome, "Inkorgspost");
     const backToEnquiry = resolveAppHref("/inbox/req-karin", customerFromEnquiry);
-    assert.match(backToEnquiry, /^\/inbox\/req-karin\?tillbaka=/);
+    assert.match(backToEnquiry, /^\/bokforing\/underlag\/req-karin\?tillbaka=/);
     const back = resolveBack(
       "/inbox/req-karin",
       new URLSearchParams(backToEnquiry.slice(backToEnquiry.indexOf("?") + 1)),
@@ -313,10 +313,10 @@ describe("stamp origin", () => {
 
 describe("scroll keys", () => {
   it("keys to path+list query, not origin params", () => {
-    assert.equal(scrollKeyForHref("/inbox?q=karin"), "driva:scroll:/inbox?q=karin");
+    assert.equal(scrollKeyForHref("/inbox?q=karin"), "driva:scroll:/bokforing/underlag?q=karin");
     assert.equal(scrollKeyForHref("/kunder?flik=forfragningar&q=karin"), "driva:scroll:/uppdrag?q=karin");
     assert.equal(scrollKeyForHref("/uppdrag?q=karin&tillbaka=/"), "driva:scroll:/uppdrag?q=karin");
-    assert.equal(scrollKeyForHref("/inbox?q=karin&tillbaka=/&tillbakaNamn=Hem"), "driva:scroll:/inbox?q=karin");
+    assert.equal(scrollKeyForHref("/inbox?q=karin&tillbaka=/&tillbakaNamn=Hem"), "driva:scroll:/bokforing/underlag?q=karin");
     assert.equal(scrollKeyForHref(locationHref("/", "")), "driva:scroll:/");
   });
 });
@@ -324,7 +324,7 @@ describe("scroll keys", () => {
 describe("structural crumbs stay hierarchical", () => {
   it("does not follow origin history", () => {
     assert.deepEqual(structuralCrumbs("/inbox/req-karin", "Platsbyggd bokhylla i ek"), [
-      { href: "/inbox", label: "Inbox" },
+      { href: "/bokforing/underlag", label: "Underlag" },
       { label: "Platsbyggd bokhylla i ek" },
     ]);
     assert.deepEqual(structuralCrumbs("/uppdrag/job-kok", "Köksrenovering"), [
@@ -417,8 +417,8 @@ describe("komplettera from a document returns to that document", () => {
 
   it("maps inbox kontrollera to the inbox item", () => {
     assert.deepEqual(defaultBack("/inbox/mail-1/kontrollera"), {
-      href: "/inbox/mail-1",
-      label: "Inkorgspost",
+      href: "/bokforing/underlag/mail-1",
+      label: "Underlag",
     });
     assert.equal(shouldStampOrigin("/inbox/mail-1", "/inbox/mail-1/kontrollera"), true);
   });

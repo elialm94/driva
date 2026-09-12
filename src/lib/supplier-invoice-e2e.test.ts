@@ -276,7 +276,7 @@ describe("Fall C – osäkert belopp: uppmärksamhet → kontrollera → godkän
     assert.match(row!.title, /Kontrollera belopp/);
     assert.equal(row!.cta?.type, "link");
     if (row!.cta?.type === "link") {
-      assert.equal(row!.cta.href, "/inbox/inbox-mail-byggmax/kontrollera");
+      assert.equal(row!.cta.href, "/bokforing/underlag/inbox-mail-byggmax/kontrollera");
     }
 
     // Kontrollera-vyn: beloppet flaggat, säkra fält är säkra (krav 3).

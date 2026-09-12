@@ -233,7 +233,7 @@ describe("notiser: dokument kommer in via mejl", () => {
     assert.equal(notice.message.to, "info@test.se");
     assert.equal(notice.message.subject, `Kvitto från Bauhaus är bokfört – ${kr(1240)}`);
     assert.ok(notice.message.text.includes(`Ett kvitto från Bauhaus på ${kr(1240)} kom in via mejl och är bokfört`));
-    assert.match(notice.message.text, new RegExp(`/inbox/${result.item.id}$`, "m"));
+    assert.match(notice.message.text, new RegExp(`/bokforing/underlag/${result.item.id}$`, "m"));
     assert.equal(notice.meta.kind, "notis:inkorg");
   });
 
@@ -253,7 +253,7 @@ describe("notiser: dokument kommer in via mejl", () => {
     assert.ok(notice);
     assert.equal(notice.message.subject, "Kvitto från Okänd AB behöver kontrolleras");
     assert.match(notice.message.text, /kunde inte läsas säkert – kontrollera dem mot dokumentet/);
-    assert.match(notice.message.text, new RegExp(`/inbox/${result.item.id}/kontrollera`));
+    assert.match(notice.message.text, new RegExp(`/bokforing/underlag/${result.item.id}/kontrollera`));
   });
 
   it("faktura utan uppgifter ⇒ ”nytt dokument i inkorgen” – aldrig påhittat belopp", () => {
@@ -345,7 +345,7 @@ describe("notiser: dokument kommer in via mejl", () => {
     assert.equal(notice.kind, "orderbekraftelse");
     assert.match(notice.message.subject, /^Orderbekräftelse från .+ kunde inte kopplas till en beställning$/);
     assert.match(notice.message.text, /Välj beställning:/);
-    assert.match(notice.message.text, new RegExp(`/inbox/${result.item.id}`));
+    assert.match(notice.message.text, new RegExp(`/bokforing/underlag/${result.item.id}`));
     assert.equal(notice.meta.kind, "notis:orderbekraftelse");
   });
 });
