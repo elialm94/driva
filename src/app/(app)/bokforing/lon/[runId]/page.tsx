@@ -65,7 +65,7 @@ export default async function LonespecifikationPage({ params }: { params: Promis
                 Preliminär skatt
                 <span className="block text-[12px] text-muted">{slip.taxLabel}</span>
               </td>
-              <td className="py-2.5 text-right tabular">−{kr(run.tax)}</td>
+              <td className="py-2.5 text-right tabular">{kr(-run.tax)}</td>
             </tr>
             <tr>
               <td className="py-3 text-[15px] font-semibold">Netto att betala</td>

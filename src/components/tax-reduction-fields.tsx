@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { DwellingType, HousingDetails, TaxReductionDetails } from "@/lib/types";
-import { formatPersonnummer, isPersonnummerFormat, maskPersonnummer } from "@/lib/personnummer";
+import {
+  formatPersonnummer,
+  isPersonnummerFormat,
+  maskPersonnummer,
+  personnummerInputChange,
+} from "@/lib/personnummer";
 import { formatOrgnr } from "@/lib/invoices/formats";
 import {
   formatWorkPeriodRange,
@@ -303,7 +308,9 @@ export function TaxReductionFields({
           <label className={labelCls}>Personnummer</label>
           <input
             value={value.personalIdentityNumber}
-            onChange={(e) => patch({ personalIdentityNumber: e.target.value })}
+            onChange={(e) =>
+              patch({ personalIdentityNumber: personnummerInputChange(value.personalIdentityNumber, e.target.value) })
+            }
             onBlur={() => {
               if (isPersonnummerFormat(value.personalIdentityNumber)) {
                 patch({ personalIdentityNumber: formatPersonnummer(value.personalIdentityNumber) });

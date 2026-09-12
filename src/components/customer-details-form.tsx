@@ -8,7 +8,7 @@ import {
   updateCustomerDetailsAction,
   updateCustomerPersonnummerAction,
 } from "@/app/actions";
-import { formatPersonnummer } from "@/lib/personnummer";
+import { formatPersonnummer, personnummerInputChange } from "@/lib/personnummer";
 import {
   formatSwedishOrganizationNumber,
   validateSwedishOrganizationNumber,
@@ -448,7 +448,7 @@ function PersonnummerAutosaveField({
       <input
         id="kund-personnummer"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => setValue(personnummerInputChange(value, e.target.value))}
         onBlur={() => {
           if (value.trim()) setValue(formatPersonnummer(value));
           void persist();

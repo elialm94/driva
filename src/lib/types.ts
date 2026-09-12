@@ -2679,12 +2679,93 @@ export interface WholesalerConnection {
    */
   discountGroups?: Record<string, number>;
   /**
+   * Rabattavtal i grossistens eget format (t.ex. Ahlsell avtalsfil). Huvudet
+   * bor här; villkoren (rabatt per materialklass, artikelvillkor) bor i
+   * katalogstoren nycklade på `discountAgreement.id`. Slås ihop med
+   * prislistan först när ett pris visas – aldrig vid importen.
+   */
+  discountAgreement?: WholesalerDiscountAgreement;
+  /**
    * Favoritartiklar i materialbutiken, nycklade på grossistens artikelnummer
    * (artikel-id byts vid varje prisimport – artikelnumret består).
    */
   favoriteArticleNumbers?: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** Känt grossistformat (parser-id i lib/wholesalers/formats/registry.ts). */
+export type WholesalerFileFormatId = "ahlsell-avtalsfil" | "ahlsell-prisfil";
+
+/**
+ * Rabattavtal/rabattbrev från grossisten – huvudet. Rabatter lagras som
+ * heltal i tiondels procent, priser i ören (ADR-1-tillägget i README).
+ */
+export interface WholesalerDiscountAgreement {
+  /** Villkoren i katalogstoren pekar hit; byts vid varje ny avtalsfil. */
+  id: ID;
+  format: WholesalerFileFormatId;
+  filename: string;
+  /** Importposten (historik) som skapade avtalet. */
+  importId?: ID;
+  /** 1 = kundavtal/standardavtal, 3 = anläggningsavtal. */
+  agreementType: "1" | "3";
+  customerNumber: string;
+  /** "000" för kundavtal. */
+  facilityNumber: string;
+  /** Avtalsbeteckning, t.ex. "R87 VS WC-MALL NIVÅ 2". */
+  name: string;
+  /** KEDJERABATTKOD – parsas och lagras; ingen beräkning byggs på J. */
+  chainDiscountCode: "J" | "N";
+  /** Körningsdatum (YYYY-MM-DD). */
+  runDate?: string;
+  /** Giltigt till och med (YYYY-MM-DD). */
+  endDate?: string;
+  classDiscountCount: number;
+  articleTermCount: number;
+  specDiscountCount: number;
+  netPriceCount: number;
+  /** Rader med KEDJERABATTKOD = J – flaggas i UI:t. */
+  chainDiscountRows: number;
+  importedAt: string;
+  /**
+   * Hur många artiklar i den aktiva prislistan som saknar matchande rabatt.
+   * Räknas om vid varje import av endera filen – det är siffran som avslöjar
+   * om fel avtalsfil laddats upp.
+   */
+  coverage?: WholesalerAgreementCoverage;
+}
+
+export interface WholesalerAgreementCoverage {
+  importId: ID;
+  articleCount: number;
+  withoutTermsCount: number;
+  computedAt: string;
+}
+
+/**
+ * Villkor ur ett rabattavtal. Bor i katalogstoren (tusentals rader per
+ * avtal) – se lib/wholesalers/catalog-store.ts. Exakt ett av
+ * materialClass/articleNumber är satt.
+ */
+export interface WholesalerAgreementTerm {
+  id: ID;
+  connectionId: ID;
+  agreementId: ID;
+  kind: "class" | "article";
+  /** Materialklass (högertrimmad) – kind = class. Kan vara huvudgrupp (5 tecken) eller undergrupp (6). */
+  materialClass?: string;
+  materialClassText?: string;
+  /** Grossistens artikelnummer – kind = article. */
+  articleNumber?: string;
+  /** Rabatt i tiondels procent: klassrabatt (class) eller specrabatt (article). */
+  discountTenths?: number;
+  /** Nettopris i ören – kind = article. */
+  netPriceOre?: number;
+  /** Kedjerabatt i tiondels procent – bara lagrad, aldrig räknad. */
+  chainDiscountTenths?: number;
+  /** Giltigt till och med (YYYY-MM-DD). */
+  endDate?: string;
 }
 
 export type WholesalerPriceFileKind = "csv" | "txt" | "xlsx" | "xml" | "zip";
@@ -2705,6 +2786,8 @@ export interface WholesalerPriceImport {
   connectionId: ID;
   filename: string;
   fileKind: WholesalerPriceFileKind;
+  /** Känt grossistformat som filen tolkades med. Saknas = generisk kolumnmappning. */
+  format?: WholesalerFileFormatId;
   status: WholesalerPriceImportStatus;
   mapping: WholesalerColumnMapping;
   /** Datarader i filen (exkl. rubrik). */
@@ -2745,16 +2828,50 @@ export interface WholesalerProduct {
   brand?: string;
   /** Länk (https) till grossistens produktbild – bara om filen innehåller en. */
   imageUrl?: string;
+  /** Rabattgrupp/materialklass – nyckeln mot rabattbrev och rabattavtal. */
   discountGroup?: string;
   unit: string;
   packSize?: number;
+  /** Lagerförd hos grossisten, om prisfilen anger det. */
+  stocked?: boolean;
   listPriceOre?: number;
   discountPercent?: number;
-  /** Kundens inköpspris exkl. moms i ören – uttryckligt eller från listpris × rabatt. */
+  /**
+   * Kundens inköpspris exkl. moms i ören. Lagrat när filen ger det
+   * uttryckligt (`file`) eller via det äldre rabattbrevet (`discount_group`).
+   * `agreement_*` sätts vid LÄSNING ur rabattavtalet (agreement-pricing.ts)
+   * och lagras aldrig.
+   */
   netPriceOre?: number;
-  netPriceSource?: "file" | "discount_group";
+  netPriceSource?: WholesalerNetPriceSource;
   /** Rekommenderat/avtalat utpris exkl. moms i ören, om filen anger det. */
   salesPriceOre?: number;
+  /** Förklaring av inköpspriset (regel, listpris, materialklass, avtal, datum). Beräknas vid läsning. */
+  priceExplanation?: WholesalerPriceExplanation;
+}
+
+export type WholesalerNetPriceSource =
+  | "file"
+  | "discount_group"
+  | "agreement_net_price"
+  | "agreement_spec_discount"
+  | "agreement_class_discount";
+
+/** Varje framräknat pris ska kunna förklaras: vilket listpris, vilken regel, vilken klass, vilket avtal, vilket datum. */
+export interface WholesalerPriceExplanation {
+  rule: WholesalerNetPriceSource | "list_price" | "none";
+  listPriceOre?: number;
+  /** Rabatt i tiondels procent som användes. */
+  discountTenths?: number;
+  /** Artikelns materialklass i prislistan. */
+  materialClass?: string;
+  /** Klassen i avtalet som matchade (samma som materialClass vid exakt träff, kortare vid prefix). */
+  matchedClass?: string;
+  matchedClassText?: string;
+  agreementName?: string;
+  agreementEndDate?: string;
+  /** Begriplig svensk text för UI:t. */
+  text: string;
 }
 
 /**

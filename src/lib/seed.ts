@@ -1872,7 +1872,7 @@ export function buildSeed(): DB {
     { id: "act-6", at: d(3, 12, 46), text: "Kvitto från Bauhaus (875 kr) matchades mot kortköpet och bokfördes som material.", entity: { type: "utgift", id: "exp-bauhaus" } },
     { id: "act-16", at: d(2, 9, 12), text: "Leverantörsfaktura från Beijer Bygg (18 500 kr) bokfördes automatiskt. Redo att betala – förfaller " + d(-10).slice(0, 10) + ".", entity: { type: "verifikation", id: "ver-sup-beijer" } },
     { id: "act-17", at: d(1, 11, 5), text: "Bankfil driva-betalningar-" + d(1).slice(0, 10) + ".xml skapades för Telia (1 295 kr). Ladda upp den i internetbanken och godkänn betalningen där." },
-    { id: "act-18", at: d(0, 10, 15), text: "Faktura från Byggmax behöver kontroll – totalbeloppet kunde inte läsas säkert." },
+    { id: "act-18", at: d(0, 10, 15), text: "Faktura från Byggmax inkommen – granska och godkänn uppgifterna." },
     { id: "act-7", at: d(4, 12, 30), text: "Betalningen på 4 250 kr till Grand Hôtel behöver klassificeras.", entity: { type: "utgift", id: "exp-hotel" } },
     { id: "act-8", at: d(6, 11, 30), text: "Faktura #1047 skickades till Johan Lindberg (25 500 kr).", customerId: "cust-johan", entity: { type: "faktura", id: "inv-1047" } },
     { id: "act-9", at: d(6, 9, 2), text: "Betalning på 4 800 kr från Johan Lindberg matchades mot faktura #1041 och bokfördes.", customerId: "cust-johan", entity: { type: "faktura", id: "inv-1041" } },
@@ -2146,9 +2146,8 @@ export function buildSeed(): DB {
         createdAt: d(2, 9, 10),
         processedAt: d(2, 9, 12),
       },
-      // Fall C: leverantörsfaktura där totalbeloppet lästes OSÄKERT (875 kr,
-      // låg konfidens) – PDF:en visar 2 340 kr. Ingen faktura skapas på en
-      // osäker siffra: posten väntar på [Kontrollera belopp].
+      // Fall C: leverantörsfaktura med belopp som matchar PDF:en (2 340 kr).
+      // Posten väntar på granskning/godkännande innan fakturan bokförs.
       {
         id: "inbox-mail-byggmax",
         kind: "mail" as const,
@@ -2170,8 +2169,8 @@ export function buildSeed(): DB {
             storageKey: "demo/inbox-mail-byggmax/faktura-byggmax.pdf",
           },
         ],
-        parsedAmount: 875,
-        parsedVatAmount: 175,
+        parsedAmount: 2_340,
+        parsedVatAmount: 468,
         parsedSupplier: "Byggmax",
         parsedInvoiceNumber: "BM-73821",
         parsedDate: d(1).slice(0, 10),
@@ -2179,16 +2178,14 @@ export function buildSeed(): DB {
         parsedOcr: "7382101",
         parsedBankgiro: "5786-8140",
         parsedDetailsConfidence: 0.98,
-        confidence: 0.42,
-        // Bara BELOPPET lästes osäkert – resten är säkra läsningar. Det är
-        // poängen med vyn: kontrollera undantaget, inte allt.
+        confidence: 0.98,
         extraction: {
           supplier: { value: "Byggmax", confidence: 0.98, source: "dokument" },
           invoiceNumber: { value: "BM-73821", confidence: 0.98, source: "dokument" },
           invoiceDate: { value: d(1).slice(0, 10), confidence: 0.98, source: "dokument" },
           dueDate: { value: d(-14).slice(0, 10), confidence: 0.98, source: "dokument" },
-          amount: { value: 875, confidence: 0.42, source: "dokument" },
-          vatAmount: { value: 175, confidence: 0.42, source: "dokument" },
+          amount: { value: 2_340, confidence: 0.98, source: "dokument" },
+          vatAmount: { value: 468, confidence: 0.98, source: "dokument" },
           ocr: { value: "7382101", confidence: 0.98, source: "dokument" },
           bankgiro: { value: "5786-8140", confidence: 0.98, source: "dokument" },
         },

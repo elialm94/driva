@@ -1209,9 +1209,19 @@ function ProductCard({
         </p>
         <div className="mt-auto pt-1.5">
           <p className="flex items-baseline justify-between gap-2 text-[13px] tabular">
-            <span className="text-soft">
+            <span className="text-soft" title={row.priceExplanation}>
               Inköp <span className="font-medium text-ink">{unitPriceLabel(row)}</span>
             </span>
+            {row.priceExplanation ? (
+              <details className="relative shrink-0" data-price-explanation="">
+                <summary className="cursor-pointer list-none text-[11.5px] text-muted underline-offset-2 hover:underline">
+                  Varför?
+                </summary>
+                <p className="absolute right-0 z-10 mt-1 w-64 rounded-xl border border-line bg-card p-2.5 text-left text-[12px] leading-snug text-soft shadow-lg">
+                  {row.priceExplanation}
+                </p>
+              </details>
+            ) : null}
           </p>
           <p className="flex items-center justify-between gap-2 text-[13px] tabular">
             {row.customerPrice.ore != null ? (

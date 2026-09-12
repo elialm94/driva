@@ -15,10 +15,15 @@
  * (wholesalerPriceImports) och pekas ut av anslutningens activeImportId.
  * Byte av aktiv import är därför en aggregatcommit; artikelraderna kan
  * skrivas före och städas efter utan att en halv import någonsin blir synlig.
+ *
+ * Rabattavtalets villkor (rabatt per materialklass, artikelvillkor – tusentals
+ * rader) bor här av samma skäl, nycklade på connection.discountAgreement.id.
+ * Huvudet ligger i aggregatet; bytet av avtal är en aggregatcommit.
  */
 import fs from "fs";
 import path from "path";
-import type { WholesalerProduct } from "../types";
+import type { WholesalerAgreementTerm, WholesalerProduct } from "../types";
+import { articleTermKey, materialClassKey } from "./agreement-pricing";
 import { categoriesInMemory, searchInMemory, type CatalogCategory } from "./catalog-search";
 
 export interface CatalogSearchInput {
@@ -45,8 +50,33 @@ export interface WholesalerCatalogStore {
   categories(businessId: string, connectionId: string, importId: string): Promise<CatalogCategory[]>;
   getByIds(businessId: string, importId: string, ids: string[]): Promise<WholesalerProduct[]>;
   findByArticleNumbers(businessId: string, importId: string, articleNumbers: string[]): Promise<WholesalerProduct[]>;
+  /** Artikelnummer + materialklass för alla artiklar i en import (täckningsberäkning). */
+  listArticleClasses(businessId: string, importId: string): Promise<AgreementCoverageArticle[]>;
+
+  /** Rabattavtal: skriv villkoren för ett avtal (idempotent på id). */
+  insertAgreementTerms(businessId: string, terms: WholesalerAgreementTerm[]): Promise<void>;
+  deleteAgreement(businessId: string, agreementId: string): Promise<void>;
+  countAgreementTerms(businessId: string, agreementId: string): Promise<number>;
+  /**
+   * Villkoren som kan påverka en uppsättning artiklar: artikelnycklar
+   * (normaliserade som article_key) och alla klassprefix (versaler).
+   */
+  agreementTermsFor(businessId: string, agreementId: string, keys: AgreementLookupKeys): Promise<WholesalerAgreementTerm[]>;
+  /** Alla villkor för avtalet – bara för täckningsberäkningen vid import. */
+  allAgreementTerms(businessId: string, agreementId: string): Promise<WholesalerAgreementTerm[]>;
+
   /** Demo-/dev-återställning: släng allt för företaget. */
   deleteBusiness(businessId: string): Promise<void> | void;
+}
+
+export interface AgreementLookupKeys {
+  articleKeys: string[];
+  classKeys: string[];
+}
+
+export interface AgreementCoverageArticle {
+  articleNumber: string;
+  materialClass?: string;
 }
 
 const onServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
@@ -67,12 +97,13 @@ function safeBusinessFile(businessId: string): string {
   return path.join(catalogDir(), `${businessId}.json`);
 }
 
-type CatalogFile = { products: WholesalerProduct[] };
+type CatalogFile = { products: WholesalerProduct[]; agreementTerms?: WholesalerAgreementTerm[] };
+type CatalogData = { products: WholesalerProduct[]; terms: WholesalerAgreementTerm[] };
 
-type GlobalWithCatalog = typeof globalThis & { __drivaWholesalerCatalog?: Map<string, WholesalerProduct[]> };
+type GlobalWithCatalog = typeof globalThis & { __drivaWholesalerCatalog?: Map<string, CatalogData> };
 const g = globalThis as GlobalWithCatalog;
 
-function cache(): Map<string, WholesalerProduct[]> {
+function cache(): Map<string, CatalogData> {
   return (g.__drivaWholesalerCatalog ??= new Map());
 }
 
@@ -80,76 +111,127 @@ function memoryOnly(): boolean {
   return process.env.DRIVA_TEST === "1";
 }
 
-function loadFile(businessId: string): WholesalerProduct[] {
+function loadFile(businessId: string): CatalogData {
   const cached = cache().get(businessId);
   if (cached) return cached;
-  let products: WholesalerProduct[] = [];
+  let data: CatalogData = { products: [], terms: [] };
   if (!memoryOnly()) {
     try {
       const file = safeBusinessFile(businessId);
       if (fs.existsSync(file)) {
         const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as CatalogFile;
-        products = Array.isArray(parsed.products) ? parsed.products : [];
+        data = {
+          products: Array.isArray(parsed.products) ? parsed.products : [],
+          terms: Array.isArray(parsed.agreementTerms) ? parsed.agreementTerms : [],
+        };
       }
     } catch {
-      products = [];
+      data = { products: [], terms: [] };
     }
   }
-  cache().set(businessId, products);
-  return products;
+  cache().set(businessId, data);
+  return data;
 }
 
-function persistFile(businessId: string, products: WholesalerProduct[]): void {
-  cache().set(businessId, products);
+function persistFile(businessId: string, data: CatalogData): void {
+  cache().set(businessId, data);
   if (memoryOnly()) return;
   try {
     const file = safeBusinessFile(businessId);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = `${file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ products } satisfies CatalogFile), "utf8");
+    const payload: CatalogFile = { products: data.products, agreementTerms: data.terms };
+    fs.writeFileSync(tmp, JSON.stringify(payload), "utf8");
     fs.renameSync(tmp, file);
   } catch {
     // Read-only FS: minnescachen räcker på den här instansen.
   }
 }
 
+function loadProducts(businessId: string): WholesalerProduct[] {
+  return loadFile(businessId).products;
+}
+
+function persistProducts(businessId: string, products: WholesalerProduct[]): void {
+  persistFile(businessId, { products, terms: loadFile(businessId).terms });
+}
+
+function persistTerms(businessId: string, terms: WholesalerAgreementTerm[]): void {
+  persistFile(businessId, { products: loadFile(businessId).products, terms });
+}
+
 /** Fil-/minneslagringen: JSON-läge, demosessioner och tester. */
 class FileCatalogStore implements WholesalerCatalogStore {
   async insertProducts(businessId: string, products: WholesalerProduct[]): Promise<void> {
     if (products.length === 0) return;
-    const current = loadFile(businessId);
+    const current = loadProducts(businessId);
     const ids = new Set(products.map((p) => p.id));
-    persistFile(businessId, [...current.filter((p) => !ids.has(p.id)), ...products]);
+    persistProducts(businessId, [...current.filter((p) => !ids.has(p.id)), ...products]);
   }
   async deleteImport(businessId: string, importId: string): Promise<void> {
-    const current = loadFile(businessId);
+    const current = loadProducts(businessId);
     const next = current.filter((p) => p.importId !== importId);
-    if (next.length !== current.length) persistFile(businessId, next);
+    if (next.length !== current.length) persistProducts(businessId, next);
   }
   async countImport(businessId: string, importId: string): Promise<number> {
-    return loadFile(businessId).filter((p) => p.importId === importId).length;
+    return loadProducts(businessId).filter((p) => p.importId === importId).length;
   }
   async search(businessId: string, input: CatalogSearchInput): Promise<CatalogSearchResult> {
-    const scope = loadFile(businessId).filter(
+    const scope = loadProducts(businessId).filter(
       (p) => p.importId === input.importId && p.connectionId === input.connectionId,
     );
     return searchInMemory(scope, input.query, { limit: input.limit, offset: input.offset }, { category: input.category });
   }
   async categories(businessId: string, connectionId: string, importId: string): Promise<CatalogCategory[]> {
     return categoriesInMemory(
-      loadFile(businessId).filter((p) => p.importId === importId && p.connectionId === connectionId),
+      loadProducts(businessId).filter((p) => p.importId === importId && p.connectionId === connectionId),
     );
   }
   async getByIds(businessId: string, importId: string, ids: string[]): Promise<WholesalerProduct[]> {
     const wanted = new Set(ids);
-    return loadFile(businessId).filter((p) => p.importId === importId && wanted.has(p.id));
+    return loadProducts(businessId).filter((p) => p.importId === importId && wanted.has(p.id));
   }
   async findByArticleNumbers(businessId: string, importId: string, articleNumbers: string[]): Promise<WholesalerProduct[]> {
     const wanted = new Set(articleNumbers.map((a) => a.trim().toLowerCase()));
-    return loadFile(businessId).filter(
+    return loadProducts(businessId).filter(
       (p) => p.importId === importId && wanted.has(p.articleNumber.trim().toLowerCase()),
     );
   }
+  async listArticleClasses(businessId: string, importId: string): Promise<AgreementCoverageArticle[]> {
+    return loadProducts(businessId)
+      .filter((p) => p.importId === importId)
+      .map((p) => ({ articleNumber: p.articleNumber, materialClass: p.discountGroup }));
+  }
+
+  async insertAgreementTerms(businessId: string, terms: WholesalerAgreementTerm[]): Promise<void> {
+    if (terms.length === 0) return;
+    const current = loadFile(businessId).terms;
+    const ids = new Set(terms.map((t) => t.id));
+    persistTerms(businessId, [...current.filter((t) => !ids.has(t.id)), ...terms]);
+  }
+  async deleteAgreement(businessId: string, agreementId: string): Promise<void> {
+    const current = loadFile(businessId).terms;
+    const next = current.filter((t) => t.agreementId !== agreementId);
+    if (next.length !== current.length) persistTerms(businessId, next);
+  }
+  async countAgreementTerms(businessId: string, agreementId: string): Promise<number> {
+    return loadFile(businessId).terms.filter((t) => t.agreementId === agreementId).length;
+  }
+  async agreementTermsFor(businessId: string, agreementId: string, keys: AgreementLookupKeys): Promise<WholesalerAgreementTerm[]> {
+    const articleKeys = new Set(keys.articleKeys);
+    const classKeys = new Set(keys.classKeys);
+    return loadFile(businessId).terms.filter(
+      (t) =>
+        t.agreementId === agreementId &&
+        (t.kind === "article"
+          ? articleKeys.has(articleTermKey(t.articleNumber))
+          : classKeys.has(materialClassKey(t.materialClass))),
+    );
+  }
+  async allAgreementTerms(businessId: string, agreementId: string): Promise<WholesalerAgreementTerm[]> {
+    return loadFile(businessId).terms.filter((t) => t.agreementId === agreementId);
+  }
+
   deleteBusiness(businessId: string): void {
     cache().delete(businessId);
     if (memoryOnly()) return;

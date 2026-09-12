@@ -261,9 +261,18 @@ describe("Fall C – osäkert belopp: uppmärksamhet → kontrollera → godkän
   });
 
   it("demofallet Byggmax: rätta beloppet mot PDF:en och godkänn", () => {
-    // Utgångsläget: beloppet lästes osäkert – ingen faktura får skapas på en gissning.
     const item = (db().inboxItems ?? []).find((i) => i.id === "inbox-mail-byggmax")!;
     assert.ok(item, "Demodata saknar Byggmax-fakturan");
+    assert.equal(item.parsedAmount, 2_340, "demoseeden ska matcha PDF:ens total");
+    assert.equal(item.parsedVatAmount, 468);
+
+    // Simulera osäker läsning – kontrollflödet testas utan felaktig demoseed.
+    item.parsedAmount = 875;
+    item.parsedVatAmount = 175;
+    item.confidence = 0.42;
+    item.extraction!.amount = { value: 875, confidence: 0.42, source: "dokument" };
+    item.extraction!.vatAmount = { value: 175, confidence: 0.42, source: "dokument" };
+
     assert.equal(item.status, "ny");
     assert.equal(item.supplierInvoiceId, undefined);
     assert.equal(amountIsCertain(item), false);

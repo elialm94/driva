@@ -9,27 +9,42 @@ import { db, save } from "../store";
 import { uid } from "../ids";
 import { isEmailFormat } from "../settings-validation";
 import type {
+  WholesalerAgreementCoverage,
+  WholesalerAgreementTerm,
   WholesalerColumnMapping,
   WholesalerConnection,
   WholesalerCustomerPriceRule,
   WholesalerDeliveryMode,
+  WholesalerDiscountAgreement,
   WholesalerKey,
   WholesalerPriceFileKind,
   WholesalerPriceImport,
   WholesalerProduct,
 } from "../types";
 import { catalogStore, catalogStoreFor, currentBusinessId } from "../wholesalers/catalog";
+import type { WholesalerCatalogStore } from "../wholesalers/catalog-store";
 import { CATALOG_SEARCH_PAGE_SIZE, normalizeIdentifier, type CatalogCategory } from "../wholesalers/catalog-search";
 import { connectionLabel, isDeliveryMode, isWholesalerKey, priceListIsStale } from "../wholesalers/labels";
 import {
+  buildPriceListProducts,
   buildProducts,
   parsePriceFile,
   previewImport,
   sanitizeMapping,
   type ImportPreview,
+  type KnownFormatFile,
+  type PreviewContext,
 } from "../wholesalers/import-engine";
+import type { ParsedDiscountAgreement } from "../wholesalers/formats/types";
 import { PriceFileError } from "../wholesalers/file-detect";
 import { customerPriceForProduct, type CustomerPrice } from "../wholesalers/pricing";
+import {
+  agreementCoverage,
+  agreementExpired,
+  agreementLookupKeys,
+  applyAgreementToProducts,
+  indexAgreementTerms,
+} from "../wholesalers/agreement-pricing";
 import { logActivity } from "./activity";
 
 export const MAX_PRODUCTS_PER_IMPORT = 50_000;
@@ -222,6 +237,36 @@ export interface WholesalerConnectionOverview {
   lastImport: WholesalerPriceImport | null;
   /** Rabattbrev finns men inget artikelregister. */
   discountsWithoutRegister: boolean;
+  /** Rabattavtal i grossistens format (t.ex. Ahlsell avtalsfil), om något. */
+  agreement: WholesalerAgreementOverview | null;
+}
+
+export interface WholesalerAgreementOverview extends WholesalerDiscountAgreement {
+  /** Slutdatumet har passerat. Visas – blockerar aldrig. */
+  expired: boolean;
+  /** Avtal utan aktiv prislista: inga priser kan räknas förrän prisfilen laddats upp. */
+  priceListMissing: boolean;
+  /** Kundnumret i avtalet skiljer sig från anslutningens. */
+  customerNumberMismatch: boolean;
+  /** Täckningen gäller den aktiva prislistan (annars är den inaktuell). */
+  coverageCurrent: boolean;
+}
+
+function agreementOverview(
+  connection: WholesalerConnection,
+  active: WholesalerPriceImport | undefined,
+  now: Date,
+): WholesalerAgreementOverview | null {
+  const agreement = connection.discountAgreement;
+  if (!agreement) return null;
+  const connectionNumber = connection.customerNumber.replace(/\D/g, "");
+  return {
+    ...agreement,
+    expired: agreementExpired(agreement.endDate, now),
+    priceListMissing: !active,
+    customerNumberMismatch: Boolean(connectionNumber) && connectionNumber !== agreement.customerNumber,
+    coverageCurrent: Boolean(active && agreement.coverage && agreement.coverage.importId === active.id),
+  };
 }
 
 export function connectionOverview(connection: WholesalerConnection, now = new Date()): WholesalerConnectionOverview {
@@ -243,6 +288,14 @@ export function connectionOverview(connection: WholesalerConnection, now = new D
       : null,
     lastImport,
     discountsWithoutRegister: hasDiscountLetter && !active,
+    agreement: agreementOverview(connection, active, now),
+  };
+}
+
+function previewContextFor(connection: WholesalerConnection): PreviewContext {
+  return {
+    customerNumber: connection.customerNumber,
+    hasActivePriceList: Boolean(activeImportFor(connection)),
   };
 }
 
@@ -265,6 +318,7 @@ export function previewPriceFile(input: {
   return previewImport(parsed, {
     remembered: connection.columnMapping,
     override: input.mapping ? sanitizeMapping(parsed.table, input.mapping) : undefined,
+    context: previewContextFor(connection),
   });
 }
 
@@ -272,11 +326,264 @@ export function previewPriceFile(input: {
 export type ImportRunner = <T>(fn: () => T | Promise<T>) => Promise<T>;
 
 export type PriceImportOutcome =
-  | { ok: true; importId: string; productCount: number; discountLetter: boolean; message: string }
+  | {
+      ok: true;
+      importId: string;
+      productCount: number;
+      discountLetter: boolean;
+      message: string;
+      /** Filen var ett rabattavtal i grossistens format – huvudet som sparades. */
+      agreement?: WholesalerDiscountAgreement;
+      /** Varningar som inte stoppade importen (visas, blockerar inte). */
+      warnings?: string[];
+    }
   | { ok: false; error: string; importId?: string; errors?: WholesalerPriceImport["errors"] };
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function sv(n: number): string {
+  return n.toLocaleString("sv-SE");
+}
+
+/**
+ * Täckningen: hur många artiklar i prislistan får ingen rabatt ur avtalet.
+ * Räknas om vid varje import av endera filen – siffran avslöjar fel avtalsfil.
+ */
+function coverageSnapshot(
+  importId: string,
+  articles: Array<{ articleNumber: string; materialClass?: string }>,
+  terms: WholesalerAgreementTerm[],
+): WholesalerAgreementCoverage {
+  const result = agreementCoverage(articles, indexAgreementTerms(terms));
+  return { importId, ...result, computedAt: new Date().toISOString() };
+}
+
+/** Villkor ur avtalsfilen → lagringsrader i katalogstoren. */
+function agreementTermsFrom(
+  file: ParsedDiscountAgreement,
+  ctx: { connectionId: string; agreementId: string },
+): WholesalerAgreementTerm[] {
+  const terms: WholesalerAgreementTerm[] = [];
+  for (const c of file.classDiscounts) {
+    terms.push({
+      id: uid(),
+      connectionId: ctx.connectionId,
+      agreementId: ctx.agreementId,
+      kind: "class",
+      materialClass: c.materialClass,
+      materialClassText: c.text || undefined,
+      discountTenths: c.discountTenths,
+      ...(c.chainDiscountTenths != null ? { chainDiscountTenths: c.chainDiscountTenths } : {}),
+      ...(c.endDate ? { endDate: c.endDate } : {}),
+    });
+  }
+  for (const a of file.articleTerms) {
+    terms.push({
+      id: uid(),
+      connectionId: ctx.connectionId,
+      agreementId: ctx.agreementId,
+      kind: "article",
+      articleNumber: a.articleNumber,
+      ...(a.specDiscountTenths != null ? { discountTenths: a.specDiscountTenths } : {}),
+      ...(a.netPriceOre != null ? { netPriceOre: a.netPriceOre } : {}),
+      ...(a.chainDiscountTenths != null ? { chainDiscountTenths: a.chainDiscountTenths } : {}),
+      ...(a.endDate ? { endDate: a.endDate } : {}),
+    });
+  }
+  return terms;
+}
+
+/**
+ * Rabattavtal i grossistens format (Ahlsell avtalsfil). Samma tre steg som
+ * prislistan: (1) importpost "processing", (2) villkoren skrivs till
+ * katalogstoren under ett nytt avtals-id, (3) huvudet byts på anslutningen i
+ * en egen commit och det gamla avtalets villkor städas. Prislistan rörs inte.
+ */
+async function importDiscountAgreement(
+  known: KnownFormatFile,
+  file: ParsedDiscountAgreement,
+  input: { connectionId: string; filename: string },
+  run: ImportRunner,
+): Promise<PriceImportOutcome> {
+  type Prepared =
+    | { kind: "wrong_wholesaler"; error: string }
+    | {
+        kind: "ok";
+        importId: string;
+        agreementId: string;
+        businessId: string;
+        connectionId: string;
+        previousAgreementId?: string;
+        activeImportId?: string;
+      };
+
+  const prepared = await run((): Prepared => {
+    const connection = requireWholesalerConnection(input.connectionId);
+    if (known.parser.wholesaler !== connection.wholesaler && connection.wholesaler !== "other") {
+      return {
+        kind: "wrong_wholesaler",
+        error: `Filen är en ${known.parser.label} men anslutningen gäller ${connectionLabel(connection)}. Ladda upp den på rätt grossist.`,
+      };
+    }
+    const importId = uid();
+    const agreementId = uid();
+    const now = new Date().toISOString();
+    const record: WholesalerPriceImport = {
+      id: importId,
+      connectionId: connection.id,
+      filename: input.filename.slice(0, 160),
+      fileKind: "txt",
+      format: known.parser.id,
+      status: "processing",
+      mapping: {},
+      rowCount: file.rowCount,
+      productCount: 0,
+      skippedCount: 0,
+      errors: [],
+      hasArticleRegister: false,
+      hasDiscounts: true,
+      discountGroupCount: file.classDiscounts.length,
+      priceDate: file.header.runDate ?? todayISO(),
+      createdAt: now,
+    };
+    const data = db();
+    data.wholesalerPriceImports ??= [];
+    data.wholesalerPriceImports.push(record);
+    save();
+    const active = activeImportFor(connection);
+    return {
+      kind: "ok",
+      importId,
+      agreementId,
+      businessId: currentBusinessId(),
+      connectionId: connection.id,
+      previousAgreementId: connection.discountAgreement?.id,
+      activeImportId: active?.id,
+    };
+  });
+  if (prepared.kind === "wrong_wholesaler") return { ok: false, error: prepared.error };
+
+  const terms = agreementTermsFrom(file, { connectionId: prepared.connectionId, agreementId: prepared.agreementId });
+  const { businessId, importId, agreementId } = prepared;
+
+  const failImport = async (reason: string): Promise<PriceImportOutcome> => {
+    await run(() => {
+      const record = priceImports().find((i) => i.id === importId);
+      if (record) {
+        record.status = "failed";
+        record.failedReason = reason;
+        record.completedAt = new Date().toISOString();
+        save();
+      }
+    });
+    try {
+      const store = await catalogStoreFor(businessId);
+      await store.deleteAgreement(businessId, agreementId);
+    } catch {
+      // Städning är bäst-ansträngning – posten är redan markerad misslyckad.
+    }
+    return { ok: false, error: reason, importId };
+  };
+
+  let coverage: WholesalerAgreementCoverage | undefined;
+  try {
+    const store = await catalogStoreFor(businessId);
+    await store.insertAgreementTerms(businessId, terms);
+    const count = await store.countAgreementTerms(businessId, agreementId);
+    if (count !== terms.length) {
+      throw new Error(`Bara ${count} av ${terms.length} villkor kunde sparas.`);
+    }
+    if (prepared.activeImportId) {
+      try {
+        const articles = await store.listArticleClasses(businessId, prepared.activeImportId);
+        coverage = coverageSnapshot(prepared.activeImportId, articles, terms);
+      } catch {
+        coverage = undefined;
+      }
+    }
+  } catch (e) {
+    const detail = e instanceof Error && /Bara \d+ av/.test(e.message) ? ` ${e.message}` : "";
+    return failImport(`Rabattavtalet kunde inte sparas. Det tidigare avtalet gäller fortfarande.${detail}`);
+  }
+
+  const now = new Date().toISOString();
+  const agreement: WholesalerDiscountAgreement = {
+    id: agreementId,
+    format: known.parser.id,
+    filename: input.filename.slice(0, 160),
+    importId,
+    agreementType: file.header.agreementType,
+    customerNumber: file.header.customerNumber,
+    facilityNumber: file.header.facilityNumber,
+    name: file.header.name,
+    chainDiscountCode: file.header.chainDiscount,
+    ...(file.header.runDate ? { runDate: file.header.runDate } : {}),
+    ...(file.endDate ? { endDate: file.endDate } : {}),
+    classDiscountCount: file.classDiscounts.length,
+    articleTermCount: file.articleTerms.length,
+    specDiscountCount: file.articleTerms.filter((t) => t.specDiscountTenths != null).length,
+    netPriceCount: file.articleTerms.filter((t) => t.netPriceOre != null).length,
+    chainDiscountRows: file.chainDiscountRows,
+    importedAt: now,
+    ...(coverage ? { coverage } : {}),
+  };
+
+  await run(() => {
+    const connection = requireWholesalerConnection(input.connectionId);
+    const record = priceImports().find((i) => i.id === importId);
+    if (!record) throw new Error("Importen försvann under körningen.");
+    record.status = "superseded";
+    record.completedAt = now;
+    connection.discountAgreement = agreement;
+    connection.updatedAt = now;
+    logActivity(
+      `Läste in rabattavtalet ${agreement.name || agreement.customerNumber} för ${connectionLabel(connection)} (${sv(agreement.classDiscountCount)} materialklasser, ${sv(agreement.articleTermCount)} artikelvillkor).`,
+    );
+    save();
+  });
+
+  if (prepared.previousAgreementId && prepared.previousAgreementId !== agreementId) {
+    try {
+      const store = await catalogStoreFor(businessId);
+      await store.deleteAgreement(businessId, prepared.previousAgreementId);
+    } catch {
+      // Gamla villkor städas vid nästa import om det misslyckas – de är ändå
+      // inte nåbara (fel avtals-id).
+    }
+  }
+
+  const warnings = [...file.warnings];
+  if (file.chainDiscountRows > 0) {
+    warnings.push(
+      `${sv(file.chainDiscountRows)} rader har kedjerabattkod J. Kedjerabatt lagras men räknas inte – kontrollera priserna mot Ahlsell.`,
+    );
+  }
+  if (file.header.chainDiscount === "J") {
+    warnings.push("Avtalet har kedjerabatt (J) i huvudet. Kedjerabatt räknas inte i Driva – priserna kan avvika.");
+  }
+  const parts = [
+    `Rabattavtalet ${agreement.name ? `${agreement.name} ` : ""}(kundnummer ${agreement.customerNumber}) lästes in: ${sv(agreement.classDiscountCount)} materialklasser och ${sv(agreement.articleTermCount)} artikelvillkor.`,
+  ];
+  if (!prepared.activeImportId) {
+    parts.push("Prislistan saknas ännu – ladda även upp grossistens prisfil så att priserna kan räknas.");
+  } else if (coverage) {
+    parts.push(
+      coverage.withoutTermsCount === 0
+        ? `Alla ${sv(coverage.articleCount)} artiklar i prislistan träffas av avtalet.`
+        : `${sv(coverage.withoutTermsCount)} av ${sv(coverage.articleCount)} artiklar i prislistan saknar rabatt i avtalet.`,
+    );
+  }
+  return {
+    ok: true,
+    importId,
+    productCount: 0,
+    discountLetter: true,
+    agreement,
+    message: parts.join(" "),
+    ...(warnings.length ? { warnings } : {}),
+  };
 }
 
 /**
@@ -301,6 +608,14 @@ export async function importPriceFile(
     return { ok: false, error: e instanceof PriceFileError ? e.message : "Filen kunde inte läsas." };
   }
 
+  // Känt grossistformat: rabattavtalet har sitt eget flöde (villkoren bor
+  // separat från prislistan); prislistan går genom samma tre steg som en
+  // mappad fil, men utan kolumnmappning.
+  const known = parsed.known;
+  if (known && known.file.kind === "discount_agreement") {
+    return importDiscountAgreement(known, known.file, input, run);
+  }
+
   type Prepared =
     | { kind: "problems"; problems: string[] }
     | { kind: "failed"; failed: string; importId: string; errors: WholesalerPriceImport["errors"] }
@@ -312,29 +627,44 @@ export async function importPriceFile(
         products: WholesalerProduct[];
         discountGroups: Record<string, number>;
         mapping: WholesalerColumnMapping;
+        knownFormat: boolean;
+        agreementId?: string;
       };
 
   const prepared = await run((): Prepared => {
     const connection = requireWholesalerConnection(input.connectionId);
+    if (known && known.parser.wholesaler !== connection.wholesaler && connection.wholesaler !== "other") {
+      return {
+        kind: "problems",
+        problems: [
+          `Filen är en ${known.parser.label} men anslutningen gäller ${connectionLabel(connection)}. Ladda upp den på rätt grossist.`,
+        ],
+      };
+    }
     const preview = previewImport(parsed, {
       remembered: connection.columnMapping,
       override: input.mapping ? sanitizeMapping(parsed.table, input.mapping) : undefined,
+      context: previewContextFor(connection),
     });
     if (preview.problems.length > 0) {
       return { kind: "problems", problems: preview.problems };
     }
     const importId = uid();
-    const result = buildProducts(parsed.table, preview.mapping, {
-      connectionId: connection.id,
-      importId,
-      discountGroups: connection.discountGroups,
-    });
+    const result =
+      known && known.file.kind === "price_list"
+        ? buildPriceListProducts(known.file, { connectionId: connection.id, importId })
+        : buildProducts(parsed.table, preview.mapping, {
+            connectionId: connection.id,
+            importId,
+            discountGroups: connection.discountGroups,
+          });
     const now = new Date().toISOString();
     const record: WholesalerPriceImport = {
       id: importId,
       connectionId: connection.id,
       filename: input.filename.slice(0, 160),
       fileKind: parsed.detected.kind as WholesalerPriceFileKind,
+      ...(known ? { format: known.parser.id } : {}),
       status: "processing",
       mapping: preview.mapping,
       rowCount: result.rowCount,
@@ -388,6 +718,8 @@ export async function importPriceFile(
       products: result.products,
       discountGroups: result.discountGroups,
       mapping: preview.mapping,
+      knownFormat: Boolean(known),
+      agreementId: connection.discountAgreement?.id,
     };
   });
 
@@ -409,12 +741,26 @@ export async function importPriceFile(
   }
 
   const { importId, businessId, products } = prepared;
+  let coverage: WholesalerAgreementCoverage | undefined;
   try {
     const store = await catalogStoreFor(businessId);
     await store.insertProducts(businessId, products);
     const count = await store.countImport(businessId, importId);
     if (count !== products.length) {
       throw new Error(`Bara ${count} av ${products.length} artiklar kunde sparas.`);
+    }
+    if (prepared.agreementId) {
+      // Ny prislista → räkna om avtalets täckning mot den (bäst-ansträngning).
+      try {
+        const terms = await store.allAgreementTerms(businessId, prepared.agreementId);
+        coverage = coverageSnapshot(
+          importId,
+          products.map((p) => ({ articleNumber: p.articleNumber, materialClass: p.discountGroup })),
+          terms,
+        );
+      } catch {
+        coverage = undefined;
+      }
     }
   } catch (e) {
     const reason = "Artiklarna kunde inte sparas. Den tidigare prislistan gäller fortfarande.";
@@ -454,9 +800,13 @@ export async function importPriceFile(
     record.status = "active";
     record.completedAt = now;
     connection.activeImportId = importId;
-    connection.columnMapping = prepared.mapping;
+    // Ett känt format har ingen kolumnmappning – rör inte den sparade.
+    if (!prepared.knownFormat) connection.columnMapping = prepared.mapping;
     if (Object.keys(prepared.discountGroups).length > 0) {
       connection.discountGroups = { ...(connection.discountGroups ?? {}), ...prepared.discountGroups };
+    }
+    if (coverage && connection.discountAgreement && connection.discountAgreement.id === prepared.agreementId) {
+      connection.discountAgreement = { ...connection.discountAgreement, coverage };
     }
     connection.updatedAt = now;
     logActivity(
@@ -476,12 +826,20 @@ export async function importPriceFile(
     }
   }
 
+  const messageParts = [`${sv(activated.productCount)} artiklar importerades.`];
+  if (coverage) {
+    messageParts.push(
+      coverage.withoutTermsCount === 0
+        ? "Alla artiklar träffas av rabattavtalet."
+        : `${sv(coverage.withoutTermsCount)} av ${sv(coverage.articleCount)} artiklar saknar rabatt i avtalet.`,
+    );
+  }
   return {
     ok: true,
     importId,
     productCount: activated.productCount,
     discountLetter: false,
-    message: `${activated.productCount.toLocaleString("sv-SE")} artiklar importerades.`,
+    message: messageParts.join(" "),
   };
 }
 
@@ -499,9 +857,15 @@ export interface WholesalerSearchRow {
   imageUrl?: string;
   unit: string;
   packSize?: number;
+  /** Lagerförd hos grossisten (prisfilen). */
+  stocked?: boolean;
+  /** Materialklass/rabattgrupp i prislistan. */
+  discountGroup?: string;
   /** Eget inköpspris per enhet i ören, om känt. */
   netPriceOre?: number;
   listPriceOre?: number;
+  /** Hur inköpspriset räknats fram: listpris, regel, materialklass, avtal, datum. */
+  priceExplanation?: string;
   customerPrice: CustomerPrice;
 }
 
@@ -528,10 +892,31 @@ export function toSearchRow(product: WholesalerProduct, rule: WholesalerCustomer
     ...(product.imageUrl ? { imageUrl: product.imageUrl } : {}),
     unit: product.unit,
     ...(product.packSize != null ? { packSize: product.packSize } : {}),
+    ...(product.stocked != null ? { stocked: product.stocked } : {}),
+    ...(product.discountGroup ? { discountGroup: product.discountGroup } : {}),
     ...(product.netPriceOre != null ? { netPriceOre: product.netPriceOre } : {}),
     ...(product.listPriceOre != null ? { listPriceOre: product.listPriceOre } : {}),
+    ...(product.priceExplanation ? { priceExplanation: product.priceExplanation.text } : {}),
     customerPrice: customerPriceForProduct(product, rule),
   };
+}
+
+/**
+ * Slå ihop artiklarna med rabattavtalet – ENDA stället där avtalspriset
+ * räknas. Alla läsningar ur katalogen går via den här funktionen så att
+ * sök, favoriter, varukorg och bekräftelsematchning ser samma pris.
+ */
+async function withAgreementPrices(
+  connection: WholesalerConnection,
+  businessId: string,
+  store: WholesalerCatalogStore,
+  products: WholesalerProduct[],
+): Promise<WholesalerProduct[]> {
+  if (products.length === 0) return products;
+  const agreement = connection.discountAgreement;
+  if (!agreement) return applyAgreementToProducts(products, undefined, undefined);
+  const terms = await store.agreementTermsFor(businessId, agreement.id, agreementLookupKeys(products));
+  return applyAgreementToProducts(products, agreement, indexAgreementTerms(terms));
 }
 
 /**
@@ -559,8 +944,9 @@ export async function searchWholesalerProducts(input: {
     limit: pageSize,
     offset: (page - 1) * pageSize,
   });
+  const priced = await withAgreementPrices(connection, businessId, store, result.rows);
   return {
-    rows: result.rows.map((p) => toSearchRow(p, connection.customerPriceRule)),
+    rows: priced.map((p) => toSearchRow(p, connection.customerPriceRule)),
     total: result.total,
     page,
     pageSize,
@@ -636,10 +1022,14 @@ export async function wholesalerShopContext(connectionId: string): Promise<Whole
   if (!active) return { categories: [], favorites: [], favoriteArticleNumbers, recent: [] };
   const { businessId, store } = await catalogStore();
   const recentNumbers = recentlyOrderedArticleNumbers(connection.id);
-  const [categories, favoriteProducts, recentProducts] = await Promise.all([
+  const [categories, favoriteRaw, recentRaw] = await Promise.all([
     store.categories(businessId, connection.id, active.id),
     favoriteArticleNumbers.length ? store.findByArticleNumbers(businessId, active.id, favoriteArticleNumbers) : [],
     recentNumbers.length ? store.findByArticleNumbers(businessId, active.id, recentNumbers) : [],
+  ]);
+  const [favoriteProducts, recentProducts] = await Promise.all([
+    withAgreementPrices(connection, businessId, store, favoriteRaw),
+    withAgreementPrices(connection, businessId, store, recentRaw),
   ]);
   const rule = connection.customerPriceRule;
   return {
@@ -676,7 +1066,7 @@ export async function catalogProductsByIds(connectionId: string, ids: string[]):
   const active = activeImportFor(connection);
   if (!active || ids.length === 0) return [];
   const { businessId, store } = await catalogStore();
-  return store.getByIds(businessId, active.id, ids);
+  return withAgreementPrices(connection, businessId, store, await store.getByIds(businessId, active.id, ids));
 }
 
 /** Artiklar per artikelnummer ur den aktiva prislistan (bekräftelsematchning). */
@@ -688,5 +1078,10 @@ export async function catalogProductsByArticleNumbers(
   const active = activeImportFor(connection);
   if (!active || articleNumbers.length === 0) return [];
   const { businessId, store } = await catalogStore();
-  return store.findByArticleNumbers(businessId, active.id, articleNumbers);
+  return withAgreementPrices(
+    connection,
+    businessId,
+    store,
+    await store.findByArticleNumbers(businessId, active.id, articleNumbers),
+  );
 }

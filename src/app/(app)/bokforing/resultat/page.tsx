@@ -51,7 +51,7 @@ export default async function ResultatPage({
           </div>
           <div>
             <p className="text-[13px] text-muted">Kostnader</p>
-            <p className="mt-1 text-[24px] font-semibold tracking-tight tabular">−{kr(rr.kostnaderSumma)}</p>
+            <p className="mt-1 text-[24px] font-semibold tracking-tight tabular">{kr(-rr.kostnaderSumma)}</p>
           </div>
           <div>
             <p className="text-[13px] text-muted">Resultat före skatt</p>
@@ -95,7 +95,7 @@ export default async function ResultatPage({
                   <td className="py-1.5 pr-3">
                     <span className="font-mono text-[12px] text-muted">{r.account}</span> {r.name}
                   </td>
-                  <td className="py-1.5 text-right tabular">−{kr(r.amount)}</td>
+                  <td className="py-1.5 text-right tabular">{kr(-r.amount)}</td>
                 </tr>
               ))}
               {rr.avskrivningar.map((r) => (
@@ -103,12 +103,12 @@ export default async function ResultatPage({
                   <td className="py-1.5 pr-3">
                     <span className="font-mono text-[12px] text-muted">{r.account}</span> {r.name}
                   </td>
-                  <td className="py-1.5 text-right tabular">−{kr(r.amount)}</td>
+                  <td className="py-1.5 text-right tabular">{kr(-r.amount)}</td>
                 </tr>
               ))}
               <tr className="border-t border-line font-semibold">
                 <td className="py-2">Summa kostnader</td>
-                <td className="py-2 text-right tabular">−{kr(rr.kostnaderSumma)}</td>
+                <td className="py-2 text-right tabular">{kr(-rr.kostnaderSumma)}</td>
               </tr>
 
               <tr className="border-t-2 border-line text-[14px] font-semibold">
@@ -119,7 +119,7 @@ export default async function ResultatPage({
                 <>
                   <tr className="border-t border-line/50">
                     <td className="py-1.5">Skatt på årets resultat</td>
-                    <td className="py-1.5 text-right tabular">−{kr(rr.skatt)}</td>
+                    <td className="py-1.5 text-right tabular">{kr(-rr.skatt)}</td>
                   </tr>
                   <tr className="border-t border-line font-semibold">
                     <td className="py-2">Resultat efter skatt</td>

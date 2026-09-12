@@ -8,21 +8,16 @@ export type JobEconomyFilter = "alla" | "kvar" | "vantar" | "betalt";
 export type JobSort = "standard" | "datum" | "kund" | "belopp";
 
 /**
- * Betalt uppdrag är i praktiken klara. "Aktiva" + "Betalt" ger en tom lista –
- * när användaren väljer den ena släpper vi den andra.
+ * Pengafilter (kvar / väntar / betalt) tillämpas inom den valda
+ * statusmängden. Pågår + Betalt ger pågående som är betalda – inte Alla.
  */
 export function reconcileJobListFilters(input: {
   lifecycle: JobLifecycleFilter;
   economy: JobEconomyFilter;
   patch: Partial<{ lifecycle: JobLifecycleFilter; economy: JobEconomyFilter }>;
 }): { lifecycle: JobLifecycleFilter; economy: JobEconomyFilter } {
-  const next = {
+  return {
     lifecycle: input.patch.lifecycle ?? input.lifecycle,
     economy: input.patch.economy ?? input.economy,
   };
-  if (next.economy !== "betalt") return next;
-  if (next.lifecycle !== "aktiva") return next;
-  if ("economy" in input.patch) return { ...next, lifecycle: "alla" };
-  if ("lifecycle" in input.patch) return { ...next, economy: "alla" };
-  return next;
 }

@@ -1248,6 +1248,76 @@ async function ensureTenantPolicies(
 }
 
 /**
+ * Rabattavtal från grossist (migration 48). Körs både när grossisttabellerna
+ * redan finns och direkt efter att de skapats. Idempotent.
+ */
+async function ensureWholesalerAgreementSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  if (!(await columnExists(client, "wholesaler_connections", "discount_agreement"))) {
+    await run(client, `alter table public.wholesaler_connections add column if not exists discount_agreement jsonb`);
+    applied.push("wholesaler_connections.discount_agreement");
+  }
+  if (!(await columnExists(client, "wholesaler_price_imports", "format"))) {
+    await run(client, `alter table public.wholesaler_price_imports add column if not exists format text`);
+    applied.push("wholesaler_price_imports.format");
+  }
+  if (!(await columnExists(client, "wholesaler_products", "stocked"))) {
+    await run(client, `alter table public.wholesaler_products add column if not exists stocked boolean`);
+    applied.push("wholesaler_products.stocked");
+  }
+  if (await tableExists(client, "wholesaler_agreement_terms")) return applied;
+
+  await run(
+    client,
+    `create table if not exists public.wholesaler_agreement_terms (
+      id text primary key,
+      business_id uuid not null references public.businesses (id) on delete cascade,
+      connection_id text not null references public.wholesaler_connections (id) on delete cascade,
+      agreement_id text not null,
+      kind text not null check (kind in ('class', 'article')),
+      material_class text,
+      material_class_text text,
+      article_number text,
+      article_key text,
+      discount_tenths integer check (discount_tenths is null or (discount_tenths >= 0 and discount_tenths <= 1000)),
+      net_price_ore bigint check (net_price_ore is null or net_price_ore >= 0),
+      chain_discount_tenths integer check (chain_discount_tenths is null or (chain_discount_tenths >= 0 and chain_discount_tenths <= 1000)),
+      end_date date,
+      constraint wholesaler_agreement_terms_kind_fields check (
+        (kind = 'class' and material_class is not null and article_number is null)
+        or (kind = 'article' and article_number is not null and material_class is null)
+      )
+    )`,
+  );
+  await run(
+    client,
+    `create index if not exists wholesaler_agreement_terms_class_idx
+       on public.wholesaler_agreement_terms (business_id, agreement_id, material_class) where material_class is not null`,
+  );
+  await run(
+    client,
+    `create index if not exists wholesaler_agreement_terms_article_idx
+       on public.wholesaler_agreement_terms (business_id, agreement_id, article_key) where article_key is not null`,
+  );
+  await run(
+    client,
+    `create index if not exists wholesaler_agreement_terms_agreement_idx
+       on public.wholesaler_agreement_terms (business_id, agreement_id)`,
+  );
+  await run(client, `grant select, insert, update, delete on public.wholesaler_agreement_terms to driva_app`);
+  await ensureTenantPolicies(client, "wholesaler_agreement_terms", ["select", "insert", "update", "delete"]);
+  await run(client, `drop trigger if exists wholesaler_agreement_terms_same_business on public.wholesaler_agreement_terms`);
+  await run(
+    client,
+    `create trigger wholesaler_agreement_terms_same_business
+       before insert or update of connection_id, business_id on public.wholesaler_agreement_terms
+       for each row execute function app.assert_wholesaler_same_business()`,
+  );
+  applied.push("wholesaler_agreement_terms");
+  return applied;
+}
+
+/**
  * Grossistbeställningar (migration 38). Speglar migrationen exakt så att en
  * produktion där `supabase db push` inte körts ändå kan aktivera funktionen.
  * Allt är IF NOT EXISTS / drop-if-exists – idempotent.
@@ -1313,6 +1383,7 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
       await run(client, `alter table public.wholesaler_connections add column if not exists favorite_articles jsonb`);
       applied.push("wholesaler_connections.favorite_articles");
     }
+    applied.push(...(await ensureWholesalerAgreementSchema(client)));
     return applied;
   }
 
@@ -1337,6 +1408,7 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
       active_import_id text,
       column_mapping jsonb,
       discount_groups jsonb,
+      discount_agreement jsonb,
       favorite_articles jsonb,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
@@ -1357,6 +1429,7 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
       connection_id text not null references public.wholesaler_connections (id) on delete cascade,
       filename text not null default '',
       file_kind text not null check (file_kind in ('csv', 'txt', 'xlsx', 'xml', 'zip')),
+      format text,
       status text not null check (status in ('processing', 'active', 'superseded', 'failed')),
       mapping jsonb not null default '{}'::jsonb,
       row_count integer not null default 0,
@@ -1398,6 +1471,7 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
       discount_group text,
       unit text not null default 'st',
       pack_size numeric check (pack_size is null or pack_size > 0),
+      stocked boolean,
       list_price_ore bigint check (list_price_ore is null or list_price_ore >= 0),
       discount_percent numeric check (discount_percent is null or (discount_percent >= 0 and discount_percent <= 100)),
       net_price_ore bigint check (net_price_ore is null or net_price_ore >= 0),
@@ -1475,6 +1549,7 @@ export async function ensureWholesalerSchema(client: SqlClient): Promise<string[
        before insert or update of connection_id, business_id on public.wholesaler_products
        for each row execute function app.assert_wholesaler_same_business()`,
   );
+  applied.push(...(await ensureWholesalerAgreementSchema(client)));
 
   await run(
     client,

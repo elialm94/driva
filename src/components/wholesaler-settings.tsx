@@ -1,17 +1,17 @@
 "use client";
 
-import { useId, useMemo, useState, useTransition } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useTransition, type DragEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, FileUp, Pencil, Plus, Store } from "lucide-react";
-import { FileDropzone } from "./file-dropzone";
+import { AlertTriangle, CheckCircle2, ExternalLink, FileText, FileUp, Pencil, Plus, Store } from "lucide-react";
 import type {
   WholesalerColumnKey,
   WholesalerColumnMapping,
   WholesalerConnection,
   WholesalerCustomerPriceRule,
+  WholesalerDiscountAgreement,
   WholesalerPriceImport,
 } from "@/lib/types";
-import type { ImportPreview } from "@/lib/wholesalers/import-engine";
+import type { ImportPreview, KnownFormatSummary } from "@/lib/wholesalers/import-engine";
 import { COLUMN_HINTS, COLUMN_KEYS, COLUMN_LABELS } from "@/lib/wholesalers/column-mapping";
 import {
   DELIVERY_MODE_LABELS,
@@ -20,6 +20,8 @@ import {
   connectionLabel,
   customerPriceRuleLabel,
 } from "@/lib/wholesalers/labels";
+import { AHLSELL_PRICE_FILE_HELP_URL } from "@/lib/wholesalers/formats/registry";
+import { agreementExpired } from "@/lib/wholesalers/agreement-pricing";
 import { datumLang, datumTid } from "@/lib/format";
 import { saveWholesalerConnectionAction, setWholesalerConnectionActiveAction } from "@/app/wholesaler-actions";
 import { Badge, Card, DemoTag, buttonClasses, cx } from "./ui";
@@ -28,6 +30,20 @@ import { Modal } from "./modal";
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
 const labelCls = "mb-1 block text-[13px] text-muted";
+const PRICE_FILE_ACCEPT =
+  ".csv,.txt,.xlsx,.xml,.zip,text/csv,text/plain,application/xml,text/xml,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+function takeFirstFile(files: FileList | null | undefined): File | undefined {
+  return files?.[0];
+}
+
+/** Rabattavtalet på kortet – huvudet plus det som bara kan avgöras med prislistan bredvid. */
+export interface WholesalerSettingsAgreement extends WholesalerDiscountAgreement {
+  expired: boolean;
+  priceListMissing: boolean;
+  customerNumberMismatch: boolean;
+  coverageCurrent: boolean;
+}
 
 export interface WholesalerSettingsConnection {
   connection: WholesalerConnection;
@@ -35,6 +51,28 @@ export interface WholesalerSettingsConnection {
   priceList: { importId: string; priceDate: string; productCount: number; stale: boolean; filename: string } | null;
   lastImport: WholesalerPriceImport | null;
   discountsWithoutRegister: boolean;
+  agreement: WholesalerSettingsAgreement | null;
+}
+
+const sv = (n: number) => n.toLocaleString("sv-SE");
+
+const AGREEMENT_TYPE_LABELS: Record<WholesalerDiscountAgreement["agreementType"], string> = {
+  "1": "Kundavtal",
+  "3": "Anläggningsavtal",
+};
+
+function AhlsellHelpLink({ children }: { children: ReactNode }) {
+  return (
+    <a
+      href={AHLSELL_PRICE_FILE_HELP_URL}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="inline-flex items-center gap-1 font-medium text-accent underline-offset-2 hover:underline"
+    >
+      {children}
+      <ExternalLink className="size-3.5" />
+    </a>
+  );
 }
 
 export function WholesalerSettings({
@@ -45,7 +83,7 @@ export function WholesalerSettings({
   demo: boolean;
 }) {
   const [editing, setEditing] = useState<WholesalerConnection | null | "new">(null);
-  const [importing, setImporting] = useState<WholesalerConnection | null>(null);
+  const [importing, setImporting] = useState<{ connection: WholesalerConnection; file: File } | null>(null);
 
   return (
     <div className="space-y-5">
@@ -91,7 +129,7 @@ export function WholesalerSettings({
               key={o.connection.id}
               overview={o}
               onEdit={() => setEditing(o.connection)}
-              onImport={() => setImporting(o.connection)}
+              onImport={(file) => setImporting({ connection: o.connection, file })}
             />
           ))}
         </div>
@@ -100,12 +138,78 @@ export function WholesalerSettings({
       {editing ? (
         <ConnectionFormModal connection={editing === "new" ? null : editing} onClose={() => setEditing(null)} />
       ) : null}
-      {importing ? <PriceFileModal connection={importing} onClose={() => setImporting(null)} /> : null}
+      {importing ? (
+        <PriceFileModal connection={importing.connection} file={importing.file} onClose={() => setImporting(null)} />
+      ) : null}
     </div>
   );
 }
 
 /* ------------------------------ anslutningskort ----------------------------- */
+
+function PriceFilePickButton({
+  label,
+  onFile,
+}: {
+  label: string;
+  onFile: (file: File) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  function deliver(file: File | undefined) {
+    if (!file) return;
+    onFile(file);
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  function onDragEnter(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(true);
+  }
+
+  function onDragOver(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  }
+
+  function onDragLeave(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+  }
+
+  function onDrop(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+    deliver(takeFirstFile(e.dataTransfer.files));
+  }
+
+  return (
+    <div
+      className={cx("rounded-xl", dragging && "ring-2 ring-accent/40")}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept={PRICE_FILE_ACCEPT}
+        className="sr-only"
+        data-price-file-input=""
+        onChange={(e) => deliver(takeFirstFile(e.target.files))}
+      />
+      <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => inputRef.current?.click()}>
+        <FileUp className="size-3.5" /> {label}
+      </button>
+    </div>
+  );
+}
 
 function ConnectionCard({
   overview,
@@ -114,12 +218,13 @@ function ConnectionCard({
 }: {
   overview: WholesalerSettingsConnection;
   onEdit: () => void;
-  onImport: () => void;
+  onImport: (file: File) => void;
 }) {
-  const { connection, priceList, lastImport } = overview;
+  const { connection, priceList, lastImport, agreement } = overview;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const isAhlsell = connection.wholesaler === "ahlsell";
 
   function toggleActive() {
     setError(null);
@@ -182,13 +287,32 @@ function ConnectionCard({
                   </p>
                 ) : null}
               </>
+            ) : agreement ? (
+              <div className="space-y-1" data-agreement-without-price-list="">
+                <p className="flex items-start gap-2 font-medium text-warn">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                  Rabattavtalet är inläst men prislistan saknas – utan den kan inga priser räknas.
+                </p>
+                <p className="text-[13px] text-soft">
+                  Ladda upp {WHOLESALER_NAMES[connection.wholesaler]}s prisfil (bruttoprislistan) på samma knapp.
+                  {isAhlsell ? (
+                    <>
+                      {" "}
+                      Så här får du den: <AhlsellHelpLink>Ahlsell – prislistor och avtalsfil</AhlsellHelpLink>
+                    </>
+                  ) : null}
+                </p>
+              </div>
             ) : overview.discountsWithoutRegister ? (
               <p className="flex items-start gap-2 font-medium text-warn">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                 Vi hittade rabatter men saknar artikelregistret. Ladda även upp grossistens artikel- eller prislista.
               </p>
             ) : (
-              <p className="text-soft">Ingen prislista ännu. Ladda upp grossistens prisfil för att söka med dina priser.</p>
+              <p className="text-soft">
+                Ingen prislista ännu. Ladda upp grossistens prisfil för att söka med dina priser.
+                {isAhlsell ? " Ahlsells prisfil och avtalsfil känns igen automatiskt." : ""}
+              </p>
             )}
             {lastImport && lastImport.status === "failed" ? (
               <p className="mt-1 text-[13px] text-danger">
@@ -211,13 +335,86 @@ function ConnectionCard({
               </details>
             ) : null}
           </div>
-          <button type="button" className={buttonClasses("secondary", "sm")} onClick={onImport}>
-            <FileUp className="size-3.5" /> {priceList ? "Ersätt prisfilen" : "Ladda upp prisfil"}
-          </button>
+          <PriceFilePickButton
+            label={priceList ? "Ersätt prisfilen" : "Ladda upp prisfil"}
+            onFile={onImport}
+          />
         </div>
       </div>
+
+      {agreement ? (
+        <AgreementSummary agreement={agreement} priceListCount={priceList?.productCount ?? null} />
+      ) : isAhlsell ? (
+        <p className="mt-2 flex items-start gap-2 px-1 text-[13px] text-soft">
+          <FileText className="mt-0.5 size-3.5 shrink-0" />
+          Ladda även upp Ahlsells avtalsfil (rabattbrevet) så räknas dina avtalspriser per materialklass och artikel.
+          Filen beställs under Mina sidor → Beställ avtal på ahlsell.se.
+        </p>
+      ) : null}
       {error ? <p className="mt-2 text-[13px] font-medium text-danger">{error}</p> : null}
     </Card>
+  );
+}
+
+/** Rabattavtalet på kortet: vem, vad, hur länge – och hur väl det täcker prislistan. */
+function AgreementSummary({
+  agreement,
+  priceListCount,
+}: {
+  agreement: WholesalerSettingsAgreement;
+  priceListCount: number | null;
+}) {
+  const coverage = agreement.coverageCurrent ? agreement.coverage : undefined;
+  return (
+    <div className="mt-3 rounded-2xl border border-line/80 px-4 py-3 text-[14px]" data-wholesaler-agreement={agreement.id}>
+      <p className="flex flex-wrap items-center gap-2 font-medium text-ink">
+        <CheckCircle2 className="size-4 text-ok" />
+        Rabattavtal {agreement.name || "utan namn"}
+        <span className="text-[13px] font-normal text-muted">
+          {AGREEMENT_TYPE_LABELS[agreement.agreementType]} · kundnummer {agreement.customerNumber}
+          {agreement.facilityNumber !== "000" ? ` · anläggning ${agreement.facilityNumber}` : ""}
+        </span>
+      </p>
+      <p className="mt-0.5 text-[13px] text-soft">
+        {sv(agreement.classDiscountCount)} materialklasser · {sv(agreement.articleTermCount)} artikelvillkor (
+        {sv(agreement.specDiscountCount)} specrabatt, {sv(agreement.netPriceCount)} nettopris) · läst in{" "}
+        {datumLang(agreement.importedAt)} · {agreement.filename}
+      </p>
+      <p className="mt-0.5 text-[13px] text-soft">
+        {agreement.endDate ? (
+          <>
+            Gäller t.o.m. {datumLang(agreement.endDate)}
+            {agreement.expired ? <span className="font-medium text-warn"> – har gått ut, be om en ny avtalsfil</span> : null}
+          </>
+        ) : (
+          "Inget slutdatum i filen"
+        )}
+        {agreement.runDate ? ` · körningsdatum ${datumLang(agreement.runDate)}` : ""}
+      </p>
+      {coverage && priceListCount != null ? (
+        <p
+          className={cx("mt-1 text-[13px]", coverage.withoutTermsCount > 0 ? "font-medium text-warn" : "text-soft")}
+          data-agreement-coverage=""
+        >
+          {coverage.withoutTermsCount === 0
+            ? `Alla ${sv(coverage.articleCount)} artiklar i prislistan träffas av avtalet.`
+            : `${sv(coverage.withoutTermsCount)} av ${sv(coverage.articleCount)} artiklar i prislistan saknar rabatt i avtalet – de får listpris.`}
+        </p>
+      ) : null}
+      {agreement.customerNumberMismatch ? (
+        <p className="mt-1 flex items-start gap-1.5 text-[13px] font-medium text-warn">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          Kundnumret i avtalsfilen ({agreement.customerNumber}) skiljer sig från anslutningens. Kontrollera att det är rätt
+          avtal.
+        </p>
+      ) : null}
+      {agreement.chainDiscountRows > 0 || agreement.chainDiscountCode === "J" ? (
+        <p className="mt-1 flex items-start gap-1.5 text-[13px] font-medium text-warn">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          Avtalet har kedjerabatt (J). Kedjerabatt lagras men räknas inte – kontrollera priserna mot grossisten.
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -465,9 +662,17 @@ function ConnectionFormModal({ connection, onClose }: { connection: WholesalerCo
 /* ------------------------------ prisfil: import ---------------------------- */
 
 type UploadState =
-  | { step: "pick" }
+  | { step: "reading"; file: File }
   | { step: "preview"; file: File; preview: ImportPreview; mapping: WholesalerColumnMapping }
-  | { step: "done"; message: string; ok: boolean; errors?: { row: number; message: string }[] };
+  | { step: "failed"; file: File; message: string }
+  | {
+      step: "done";
+      message: string;
+      ok: boolean;
+      kind?: KnownFormatSummary["kind"];
+      errors?: { row: number; message: string }[];
+      warnings?: string[];
+    };
 
 async function postPriceFile(
   connectionId: string,
@@ -486,31 +691,51 @@ async function postPriceFile(
   return json;
 }
 
-function PriceFileModal({ connection, onClose }: { connection: WholesalerConnection; onClose: () => void }) {
+function PriceFileModal({
+  connection,
+  file,
+  onClose,
+}: {
+  connection: WholesalerConnection;
+  file: File;
+  onClose: () => void;
+}) {
   const router = useRouter();
-  const [state, setState] = useState<UploadState>({ step: "pick" });
-  const [busy, setBusy] = useState(false);
+  const replaceRef = useRef<HTMLInputElement>(null);
+  const [state, setState] = useState<UploadState>({ step: "reading", file });
+  const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const label = connectionLabel(connection);
 
-  async function pick(file: File | undefined) {
-    if (!file) return;
+  async function pick(next: File | undefined) {
+    if (!next) return;
     setError(null);
+    setState({ step: "reading", file: next });
     setBusy(true);
     try {
-      const json = await postPriceFile(connection.id, file, "preview");
+      const json = await postPriceFile(connection.id, next, "preview");
       if (json.ok !== true) {
-        setError(String(json.error ?? "Filen kunde inte läsas."));
+        setState({ step: "failed", file: next, message: String(json.error ?? "Filen kunde inte läsas.") });
         return;
       }
       const preview = json.preview as ImportPreview;
-      setState({ step: "preview", file, preview, mapping: preview.mapping });
+      setState({ step: "preview", file: next, preview, mapping: preview.mapping });
     } catch {
-      setError("Filen kunde inte skickas. Kontrollera uppkopplingen och försök igen.");
+      setState({
+        step: "failed",
+        file: next,
+        message: "Filen kunde inte skickas. Kontrollera uppkopplingen och försök igen.",
+      });
     } finally {
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    void pick(file);
+    // Load the file the card picker already chose — do not remount-loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function remap(next: WholesalerColumnMapping) {
     if (state.step !== "preview") return;
@@ -532,13 +757,21 @@ function PriceFileModal({ connection, onClose }: { connection: WholesalerConnect
     setError(null);
     setBusy(true);
     try {
-      const json = await postPriceFile(connection.id, state.file, "import", state.mapping);
+      const kind = state.preview.known?.kind;
+      const json = await postPriceFile(connection.id, state.file, "import", state.preview.known ? undefined : state.mapping);
       if (json.ok === true) {
-        setState({ step: "done", ok: true, message: String(json.message ?? "Prislistan importerades.") });
+        setState({
+          step: "done",
+          ok: true,
+          kind,
+          message: String(json.message ?? "Prislistan importerades."),
+          warnings: Array.isArray(json.warnings) ? (json.warnings as string[]) : undefined,
+        });
       } else {
         setState({
           step: "done",
           ok: false,
+          kind,
           message: String(json.error ?? "Importen misslyckades."),
           errors: Array.isArray(json.errors) ? (json.errors as { row: number; message: string }[]) : undefined,
         });
@@ -551,25 +784,77 @@ function PriceFileModal({ connection, onClose }: { connection: WholesalerConnect
     }
   }
 
+  const replaceInput = (
+    <input
+      ref={replaceRef}
+      type="file"
+      accept={PRICE_FILE_ACCEPT}
+      className="sr-only"
+      onChange={(e) => {
+        void pick(takeFirstFile(e.target.files));
+        e.target.value = "";
+      }}
+    />
+  );
+
+  const knownKind = state.step === "preview" ? state.preview.known?.kind : state.step === "done" ? state.kind : undefined;
+  const title =
+    knownKind === "discount_agreement"
+      ? `Rabattavtal för ${label}`
+      : knownKind === "price_list"
+        ? `Prislista för ${label}`
+        : `Prisfil för ${label}`;
+
   return (
     <Modal
       open
       onClose={() => !busy && onClose()}
-      title={`Prisfil för ${label}`}
+      title={title}
       size="lg"
       footer={
         state.step === "preview" ? (
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <button type="button" className={buttonClasses("ghost")} disabled={busy} onClick={() => setState({ step: "pick" })}>
-              Välj annan fil
+            <button type="button" className={buttonClasses("ghost")} disabled={busy} onClick={onClose}>
+              Stäng
+            </button>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <button
+                type="button"
+                className={buttonClasses("ghost")}
+                disabled={busy}
+                onClick={() => replaceRef.current?.click()}
+              >
+                Välj annan fil
+              </button>
+              <button
+                type="button"
+                className={buttonClasses("primary")}
+                disabled={busy || state.preview.problems.length > 0}
+                onClick={runImport}
+                data-import-confirm=""
+              >
+                {busy
+                  ? "Importerar …"
+                  : knownKind === "discount_agreement"
+                    ? "Läs in rabattavtalet"
+                    : state.preview.discountLetter
+                      ? "Spara rabatter"
+                      : "Importera prislistan"}
+              </button>
+            </div>
+          </div>
+        ) : state.step === "failed" ? (
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <button type="button" className={buttonClasses("ghost")} disabled={busy} onClick={onClose}>
+              Stäng
             </button>
             <button
               type="button"
               className={buttonClasses("primary")}
-              disabled={busy || state.preview.problems.length > 0}
-              onClick={runImport}
+              disabled={busy}
+              onClick={() => replaceRef.current?.click()}
             >
-              {busy ? "Importerar …" : state.preview.discountLetter ? "Spara rabatter" : "Importera prislistan"}
+              Välj annan fil
             </button>
           </div>
         ) : (
@@ -582,30 +867,35 @@ function PriceFileModal({ connection, onClose }: { connection: WholesalerConnect
       }
     >
       <div className="px-6 py-5">
-        {state.step === "pick" ? (
-          <div className="space-y-4">
-            <p className="text-[14px] leading-relaxed text-soft">
-              Ladda upp grossistens prislista, rabattbrev eller din kundspecifika nettoprislista. CSV, TXT, Excel
-              (.xlsx), XML eller ZIP fungerar – vi känner igen kolumnerna åt dig och du får kontrollera innan
-              något ersätts.
+        {replaceInput}
+        {state.step === "reading" ? (
+          <div className="space-y-2">
+            <p className="text-[15px] font-medium text-ink">Läser in {state.file.name} …</p>
+            <p className="text-[14px] text-soft">Den nuvarande prislistan påverkas inte förrän du bekräftar.</p>
+          </div>
+        ) : null}
+
+        {state.step === "failed" ? (
+          <div className="space-y-2">
+            <p className="flex items-start gap-2 text-[15px] font-medium text-danger">
+              <AlertTriangle className="mt-0.5 size-5 shrink-0" />
+              {state.message}
             </p>
-            <FileDropzone
-              variant="landing"
-              autoFocus
-              busy={busy}
-              error={error}
-              fileInputAttr="price"
-              accept=".csv,.txt,.xlsx,.xml,.zip,text/csv,text/plain,application/xml,text/xml,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              title="Släpp prisfilen här"
-              subtitle="Eller tryck för att välja. Den nuvarande prislistan påverkas inte förrän du bekräftar."
-              formats="CSV, TXT, Excel, XML eller ZIP · max 8 MB"
-              onFiles={(files) => pick(files[0])}
-            />
+            <p className="text-[13px] text-muted">CSV, TXT, Excel, XML eller ZIP · max 8 MB</p>
           </div>
         ) : null}
 
         {state.step === "preview" ? (
-          <PreviewStep state={state} busy={busy} onRemap={remap} error={error} />
+          state.preview.known ? (
+            <KnownFormatStep
+              summary={state.preview.known}
+              filename={state.preview.innerFilename}
+              connection={connection}
+              error={error}
+            />
+          ) : (
+            <PreviewStep state={state} busy={busy} onRemap={remap} error={error} />
+          )
         ) : null}
 
         {state.step === "done" ? (
@@ -614,6 +904,15 @@ function PriceFileModal({ connection, onClose }: { connection: WholesalerConnect
               {state.ok ? <CheckCircle2 className="mt-0.5 size-5 text-ok" /> : <AlertTriangle className="mt-0.5 size-5" />}
               {state.message}
             </p>
+            {state.warnings && state.warnings.length > 0 ? (
+              <ul className="space-y-1 rounded-xl bg-warn-soft/40 px-4 py-3 text-[13.5px] text-warn">
+                {state.warnings.map((w) => (
+                  <li key={w} className="flex items-start gap-1.5">
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {w}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {state.errors && state.errors.length > 0 ? (
               <ul className="max-h-48 space-y-1 overflow-y-auto rounded-xl bg-canvas p-3 text-[13px] text-soft">
                 {state.errors.map((e) => (
@@ -749,9 +1048,172 @@ function PreviewStep({
       </div>
       {error ? <p className="text-[14px] font-medium text-danger">{error}</p> : null}
       <p className="text-[12.5px] text-muted">
-        Den nya prislistan blir aktiv först när alla{" "}
+        Den nuvarande prislistan påverkas inte förrän du bekräftar. Den blir aktiv först när alla{" "}
         <span className="font-medium text-ink">{preview.rowCount.toLocaleString("sv-SE")}</span> rader gått igenom. Går
         något fel behåller vi den gamla listan.
+      </p>
+    </div>
+  );
+}
+
+/* --------------------------- känt grossistformat --------------------------- */
+
+function SummaryRow({ label, value, tone }: { label: string; value: ReactNode; tone?: "warn" }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-t border-line/60 py-1.5 first:border-t-0">
+      <dt className="shrink-0 text-[13px] text-muted">{label}</dt>
+      <dd className={cx("text-right text-[14px]", tone === "warn" ? "font-medium text-warn" : "text-ink")}>{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * Sammanfattningen som ersätter kolumnmappningen när filen känns igen:
+ * filtyp, grossist, kundnummer, avtal, antal per radtyp och giltighet.
+ * Gamla datum visas – de stoppar aldrig importen.
+ */
+function KnownFormatStep({
+  summary,
+  filename,
+  connection,
+  error,
+}: {
+  summary: KnownFormatSummary;
+  filename: string;
+  connection: WholesalerConnection;
+  error: string | null;
+}) {
+  const isAgreement = summary.kind === "discount_agreement";
+  const header = summary.header;
+  const expired = agreementExpired(summary.endDate);
+  const hasAgreement = Boolean(connection.discountAgreement);
+  const wholesalerName = WHOLESALER_NAMES[summary.wholesaler] ?? summary.wholesaler;
+
+  return (
+    <div className="space-y-5" data-known-format={summary.parserId}>
+      <div className="text-[14px] text-soft">
+        <p className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-ink">{filename}</span>
+          <Badge tone="info">{summary.formatLabel}</Badge>
+          <span>· {sv(summary.rowCount)} rader</span>
+        </p>
+        <p className="mt-1 flex items-center gap-2 text-ok">
+          <CheckCircle2 className="size-4" />
+          {isAgreement
+            ? "Formatet känns igen – ingen kolumnmappning behövs. Kontrollera uppgifterna och läs in avtalet."
+            : "Formatet känns igen – ingen kolumnmappning behövs. Kontrollera uppgifterna och importera."}
+        </p>
+      </div>
+
+      <dl className="rounded-2xl border border-line/80 px-4 py-2">
+        <SummaryRow label="Filtyp" value={summary.formatLabel} />
+        <SummaryRow label="Grossist" value={wholesalerName} />
+        {header ? (
+          <>
+            <SummaryRow
+              label="Kundnummer"
+              value={
+                <>
+                  {header.customerNumber}
+                  {header.facilityNumber !== "000" ? ` · anläggning ${header.facilityNumber}` : ""}
+                </>
+              }
+              tone={summary.customerNumberMismatch ? "warn" : undefined}
+            />
+            <SummaryRow label="Avtal" value={header.name || "–"} />
+            <SummaryRow label="Avtalstyp" value={AGREEMENT_TYPE_LABELS[header.agreementType]} />
+            <SummaryRow label="Kedjerabatt" value={header.chainDiscount === "J" ? "Ja (J) – räknas inte" : "Nej"} tone={header.chainDiscount === "J" ? "warn" : undefined} />
+            {header.runDate ? <SummaryRow label="Körningsdatum" value={datumLang(header.runDate)} /> : null}
+          </>
+        ) : null}
+        {summary.endDate ? (
+          <SummaryRow
+            label="Gäller t.o.m."
+            value={
+              <>
+                {datumLang(summary.endDate)}
+                {expired ? " – har gått ut" : ""}
+              </>
+            }
+            tone={expired ? "warn" : undefined}
+          />
+        ) : null}
+        <SummaryRow label="Teckenkodning" value={summary.encoding === "iso-8859-1" ? "ISO-8859-1" : "UTF-8"} />
+      </dl>
+
+      <div>
+        <p className="mb-2 text-[13px] font-medium text-muted">Rader i filen</p>
+        <dl className="rounded-2xl border border-line/80 px-4 py-2" data-known-format-counts="">
+          {summary.counts.map((c) => (
+            <SummaryRow key={c.label} label={c.label} value={sv(c.count)} />
+          ))}
+        </dl>
+      </div>
+
+      {summary.customerNumberMismatch ? (
+        <p className="flex items-start gap-2 rounded-xl bg-warn-soft/40 px-4 py-3 text-[14px] text-warn">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          Kundnumret i filen ({summary.customerNumberMismatch.file}) skiljer sig från anslutningens (
+          {summary.customerNumberMismatch.connection}). Kontrollera att det är rätt avtalsfil – du kan ändå läsa in den.
+        </p>
+      ) : null}
+      {expired ? (
+        <p className="flex items-start gap-2 rounded-xl bg-warn-soft/40 px-4 py-3 text-[14px] text-warn">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          Slutdatumet har passerat. Filen kan läsas in ändå, men priserna kan vara inaktuella – be grossisten om en ny
+          fil.
+        </p>
+      ) : null}
+      {summary.chainDiscountRows > 0 ? (
+        <p className="flex items-start gap-2 rounded-xl bg-warn-soft/40 px-4 py-3 text-[14px] text-warn">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          {sv(summary.chainDiscountRows)} rader har kedjerabattkod J. Kedjerabatten lagras men räknas inte – kontrollera
+          priserna mot grossisten.
+        </p>
+      ) : null}
+      {summary.warnings.map((w) => (
+        <p key={w} className="flex items-start gap-2 rounded-xl bg-warn-soft/40 px-4 py-3 text-[14px] text-warn">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          {w}
+        </p>
+      ))}
+
+      {isAgreement && summary.priceListMissing ? (
+        <div className="rounded-xl border border-line/80 bg-canvas px-4 py-3 text-[14px]" data-price-list-missing="">
+          <p className="flex items-start gap-2 font-medium text-ink">
+            <FileText className="mt-0.5 size-4 shrink-0 text-accent" />
+            Ingen prislista är inläst för {wholesalerName} ännu.
+          </p>
+          <p className="mt-1 text-soft">
+            Avtalet sparas, men inga priser kan räknas förrän du också laddar upp {wholesalerName}s prisfil
+            (bruttoprislistan). Rabatterna slås ihop med prislistan först när ett pris visas.
+            {summary.wholesaler === "ahlsell" ? (
+              <>
+                {" "}
+                Så här får du filerna: <AhlsellHelpLink>Ahlsell – prislistor och avtalsfil</AhlsellHelpLink>
+              </>
+            ) : null}
+          </p>
+        </div>
+      ) : null}
+      {!isAgreement && !hasAgreement ? (
+        <p className="rounded-xl border border-line/80 bg-canvas px-4 py-3 text-[14px] text-soft">
+          Inget rabattavtal är inläst för {wholesalerName}. Artiklarna får listpris tills du också laddar upp
+          avtalsfilen (rabattbrevet).
+        </p>
+      ) : null}
+      {!isAgreement && hasAgreement ? (
+        <p className="text-[13px] text-soft">
+          Rabattavtalet {connection.discountAgreement?.name} används på den nya prislistan. Efter importen visas hur många
+          artiklar som saknar rabatt i avtalet.
+        </p>
+      ) : null}
+
+      {error ? <p className="text-[14px] font-medium text-danger">{error}</p> : null}
+      <p className="text-[12.5px] text-muted">
+        {isAgreement
+          ? "Prislistan påverkas inte. Det tidigare avtalet byts ut först när alla villkor sparats – går något fel behåller vi det gamla."
+          : `Den nuvarande prislistan påverkas inte förrän du bekräftar. Den blir aktiv först när alla ${sv(summary.rowCount)} rader gått igenom.`}
       </p>
     </div>
   );

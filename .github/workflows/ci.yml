@@ -6,13 +6,24 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    # 02:17 UTC varje natt = 04:17 svensk sommartid (CEST), 03:17 svensk
+    # vintertid (CET). Klart långt före arbetsdagens början, och en ojämn
+    # minut undviker köerna på hel timme hos GitHub.
+    - cron: "17 2 * * *"
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Nattkörningen får en egen grupp: en push till main mitt i natten ska
+  # inte avbryta den, och två nattkörningar ska aldrig avbryta varandra.
+  group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
   verify:
+    # Hela grinden på varje PR och push till main. Nattetid räcker
+    # djupkörningen nedan - den kör samma npm test, bara hårdare.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -38,3 +49,63 @@ jobs:
           # Bygget får inte kräva Supabase-miljö; JSON-läget räcker för att
           # verifiera att alla routes kompilerar.
           NEXT_TELEMETRY_DISABLED: "1"
+
+  # Nattlig djupkörning. Samma npm test som i verify, men med DRIVA_DEEP=1:
+  # de egenskapsbaserade testerna (fast-check) kör många fler fall än de gör
+  # på en PR. Poängen är att ett fall ska lämna den minsta brytande
+  # sekvensen läsbar i loggen till morgonen - därför klipps ingen utskrift.
+  nightly-deep:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # Djupkörningen är många gånger tyngre än PR-körningen.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Djupkörning av testsviten (DRIVA_DEEP=1)
+        env:
+          DRIVA_DEEP: "1"
+          # Utan färgkoder blir shrink-utskriften läsbar både i jobbloggen
+          # och i den sparade artefakten.
+          FORCE_COLOR: "0"
+        run: |
+          # pipefail: tee får aldrig maskera att npm test föll.
+          set -o pipefail
+          npm test 2>&1 | tee deep-test.log
+      - name: Minsta brytande sekvens
+        if: failure()
+        run: |
+          if [ ! -f deep-test.log ]; then
+            echo "Ingen testlogg - körningen föll före npm test." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## Nattlig djupkörning föll (DRIVA_DEEP=1)"
+            echo
+            echo '```'
+            if grep -qE "Property failed after|Counterexample:" deep-test.log; then
+              # fast-check skriver seed, path, motexempel efter shrink och
+              # antal shrink-steg i ett block. Det blocket ÄR den minsta
+              # brytande sekvensen - lyft det högst upp i sammanfattningen.
+              awk '/Property failed after/ { f = 1 } f { print; n++ } n >= 80 { exit }' deep-test.log
+            else
+              echo "Inget fast-check-motexempel i loggen - fallet ligger i ett vanligt test:"
+              echo
+              grep -E "^not ok |^# fail |failing tests:" deep-test.log | head -40
+            fi
+            echo '```'
+            echo
+            echo "Hela den oklippta utskriften: jobbloggen ovan, samt artefakten \`deep-test-log\`."
+          } | head -c 200000 | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Spara hela testutskriften
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deep-test-log
+          path: deep-test.log
+          if-no-files-found: warn
+          retention-days: 30

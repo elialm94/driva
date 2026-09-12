@@ -21,7 +21,7 @@ import {
 } from "@/lib/tax-reduction-terms";
 import { TaxReductionEditorHint, TaxReductionCalcHint } from "./tax-reduction-terms";
 import { EditorWorkspace } from "./editor-workspace";
-import { LinesEditor, newLine } from "./lines-editor";
+import { LinesEditor, startLines } from "./lines-editor";
 import { withoutVat } from "@/lib/invoices/reverse-charge";
 import {
   TaxReductionFields,
@@ -300,7 +300,9 @@ export function QuoteForm({
   const vat = defaults.defaultVatRate ?? 25;
   const hourly = defaults.defaultHourlyRate;
   const [lines, setLines] = useState<DocLine[]>(
-    initial?.lines?.length ? initial.lines : [newLine("arbete", vat, "start-arbete"), newLine("material", vat, "start-material")]
+    initial?.lines?.length
+      ? initial.lines
+      : startLines(["arbete", "material"], { defaultVatRate: vat, defaultHourlyRate: hourly })
   );
   const [rot, setRot] = useState<RotRut | null>(() =>
     initial?.rot ? rotForEditor(initial.rot.type, initial.lines?.length ? initial.lines : [], initial.rot, "offert") : null
@@ -812,7 +814,7 @@ export function InvoiceForm({
   const [customerOptions, setCustomerOptions] = useState(customers);
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
   const [lines, setLines] = useState<DocLine[]>(
-    initial?.lines?.length ? initial.lines : [newLine("arbete", defaultVatRate, "start-arbete")]
+    initial?.lines?.length ? initial.lines : startLines(["arbete"], { defaultVatRate, defaultHourlyRate })
   );
   const [rot, setRot] = useState<RotRut | null>(() =>
     initial?.rot ? rotForEditor(initial.rot.type, initial.lines?.length ? initial.lines : [], initial.rot, "faktura") : null

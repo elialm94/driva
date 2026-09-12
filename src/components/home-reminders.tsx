@@ -48,8 +48,8 @@ export function HomeReminders({ items }: { items: HomeReminderItem[] }) {
   const showAllLink = visible.length > HOME_REMINDERS_VISIBLE;
 
   function hide(id: string) {
+    // In-place only. router.refresh() remounts Hem and jumps scroll to top.
     setHidden((prev) => new Set(prev).add(id));
-    router.refresh();
   }
 
   return (

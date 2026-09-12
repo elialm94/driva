@@ -8,7 +8,7 @@ import { useToast } from "./toast";
 import { AddressFields } from "./address-input";
 import { createCustomerAction } from "@/app/actions";
 import { FieldError, focusField, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
-import { formatPersonnummer } from "@/lib/personnummer";
+import { personnummerInputChange } from "@/lib/personnummer";
 import {
   formatSwedishOrganizationNumber,
   swedishOrgnrInputProps,
@@ -219,7 +219,7 @@ export function NewCustomerModal({
               id="ny-kund-personnummer"
               name="personalIdentityNumber"
               value={personnummer}
-              onChange={(e) => setPersonnummer(formatPersonnummer(e.target.value))}
+              onChange={(e) => setPersonnummer(personnummerInputChange(personnummer, e.target.value))}
               {...swedishPersonnummerInputProps}
               className={cx(inputCls, errors.personalIdentityNumber && invalidFieldCls)}
               {...fieldProps("personalIdentityNumber", "ny-kund-personnummer-fel")}
