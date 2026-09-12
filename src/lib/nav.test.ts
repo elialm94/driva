@@ -6,7 +6,6 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  BOKFORING_PREFETCH_HREFS,
   bokforingDetailTabForPath,
   defaultBack,
   jobHref,
@@ -161,13 +160,6 @@ describe("bokföring tab paths", () => {
     assert.equal(bokforingDetailTabForPath("/kunder"), null);
   });
 
-  it("prefetches overview, detail tabs and report subviews", () => {
-    assert.ok(BOKFORING_PREFETCH_HREFS.includes("/bokforing"));
-    assert.ok(BOKFORING_PREFETCH_HREFS.includes("/bokforing/verifikationer"));
-    assert.ok(BOKFORING_PREFETCH_HREFS.includes("/bokforing/moms"));
-    assert.ok(BOKFORING_PREFETCH_HREFS.includes("/bokforing/saldobalans"));
-    assert.ok(BOKFORING_PREFETCH_HREFS.includes("/bokforing/balans"));
-  });
 });
 
 describe("section active", () => {

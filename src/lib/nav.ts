@@ -105,14 +105,6 @@ export const BOKFORING_FLIK_HREF: Record<string, string> = {
 
 const BOKFORING_REPORT_PATHS = BOKFORING_REPORT_TABS.map((t) => t.href);
 
-/** Alla bokföringsvyer som ska prefetchas när ytan är öppen. */
-export const BOKFORING_PREFETCH_HREFS: readonly string[] = Array.from(
-  new Set([
-    ...BOKFORING_DETAIL_TABS.map((t) => t.href),
-    ...BOKFORING_REPORT_TABS.map((t) => t.href),
-  ])
-);
-
 export function bokforingDetailTabForPath(pathname: string): (typeof BOKFORING_DETAIL_TABS)[number]["key"] | null {
   const path = pathname.split("?")[0] ?? pathname;
   if (path === "/bokforing") return "oversikt";
