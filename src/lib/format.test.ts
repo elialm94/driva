@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { datumTid, dagarTill, halsning, veckodag } from "./format";
+import { datumTid, dagarTill, halsning, kr, veckodag } from "./format";
 
 describe("halsning: svensk klocka, inte serverns UTC", () => {
   it("06:22 sommartid (04:22 UTC) är God morgon, inte God natt", () => {
@@ -43,5 +44,20 @@ describe("dagarTill räknar svenska kalenderdagar", () => {
   it("just efter svensk midnatt är samma dag, inte föregående UTC-dygn", () => {
     const justAfterMidnightCest = new Date("2026-08-31T22:30:00.000Z"); // 00:30 1 sept
     assert.equal(dagarTill("2026-09-01T04:22:00.000Z", justAfterMidnightCest), 0);
+  });
+});
+
+describe("minus noll i belopp", () => {
+  it("kr nollställer negativ nolla", () => {
+    assert.match(kr(0), /^0\s*kr$/);
+    assert.match(kr(-0), /^0\s*kr$/);
+    assert.doesNotMatch(kr(-0), /−/);
+  });
+
+  it("resultatrapporten och lönespecen prefixar inte minus utanför kr()", () => {
+    const resultat = readFileSync(new URL("../app/(app)/bokforing/resultat/page.tsx", import.meta.url), "utf8");
+    const lonespec = readFileSync(new URL("../app/(app)/bokforing/lon/[runId]/page.tsx", import.meta.url), "utf8");
+    assert.doesNotMatch(resultat, /−\{kr\(/);
+    assert.doesNotMatch(lonespec, /−\{kr\(/);
   });
 });

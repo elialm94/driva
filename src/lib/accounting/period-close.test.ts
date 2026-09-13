@@ -4,6 +4,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { db, replaceDb } from "../store";
 import { emptyTestDb } from "../invoices/test-db";
+import { kr } from "../format";
 import { calendarFiscalYear } from "./dates";
 import { postVerification } from "./engine";
 import { lockedThrough } from "./fiscal";
@@ -158,6 +159,44 @@ describe("periodstängningens kontroller", () => {
   it("utan anställd finns ingen lönekontroll", () => {
     const status = periodCloseStatus(monthsAwaitingClose(AFTER_YEAR)[0], AFTER_YEAR);
     assert.equal(status.checks.some((c) => c.key === "lon"), false);
+  });
+
+  it("oförklarad bankdifferens visar beloppet med kr()", () => {
+    bookSale("2026-01-15");
+    db().bankAccounts.push({
+      id: "acc-1",
+      provider: "mock",
+      name: "Företagskonto",
+      accountNumber: "1234-5678",
+      balance: 12_340,
+      connectedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const status = periodCloseStatus(monthsAwaitingClose(AFTER_YEAR)[0], AFTER_YEAR);
+    const bank = status.checks.find((c) => c.key === "bank")!;
+    assert.equal(bank.ok, false);
+    assert.ok((bank.detail ?? "").includes(kr(12_340)), bank.detail);
+    assert.doesNotMatch(bank.detail ?? "", /12340 kr/);
+  });
+
+  it("ogranskade dokument pekar på underlagen, inte inboxen", () => {
+    bookSale("2026-01-15");
+    db().inboxItems.push({
+      id: "inbox-1",
+      kind: "uppladdning",
+      status: "ny",
+      documentType: "kvitto",
+      fromAddress: "",
+      toAddress: "",
+      subject: "Kvitto",
+      textBody: "",
+      attachments: [],
+      createdAt: "2026-01-20T10:00:00.000Z",
+    });
+    const status = periodCloseStatus(monthsAwaitingClose(AFTER_YEAR)[0], AFTER_YEAR);
+    const underlag = status.checks.find((c) => c.key === "underlag")!;
+    assert.equal(underlag.ok, false);
+    assert.match(underlag.detail ?? "", /underlagen/);
+    assert.doesNotMatch(underlag.detail ?? "", /inboxen/);
   });
 });
 

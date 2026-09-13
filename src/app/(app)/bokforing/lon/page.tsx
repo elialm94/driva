@@ -22,11 +22,10 @@ import { todayDate } from "@/lib/accounting/dates";
 import {
   employeeById,
   employees,
-  employeesAwaitingPayroll,
   employerDeclarations,
-  employerDeclarationsAwaitingFiling,
   employerDeclarationFor,
   monthLabel,
+  payrollAttGora,
   payrollMonthsAwaitingRun,
   payrollRuns,
   taxBasisLabel,
@@ -42,7 +41,7 @@ export default async function LonPage() {
   const allEmployees = employees().filter((e) => e.status === "anstalld");
   const runs = [...payrollRuns()].sort((a, b) => b.month.localeCompare(a.month));
   const awaitingRun = payrollMonthsAwaitingRun(today);
-  const awaitingFiling = employerDeclarationsAwaitingFiling(today);
+  const attGora = payrollAttGora(today);
   const declarations = [...employerDeclarations()].sort((a, b) => b.month.localeCompare(a.month));
   const missingDraft = awaitingRun.filter((m) => !employerDeclarationFor(m));
 
@@ -113,27 +112,25 @@ export default async function LonPage() {
             <EmployeeForm today={today} />
           </div>
 
-          {awaitingRun.length + awaitingFiling.length + missingDraft.length > 0 ? (
+          {attGora.runs.length + attGora.filings.length + missingDraft.length > 0 ? (
             <div className="mb-8">
-              <SectionTitle>Att göra ({awaitingRun.length + awaitingFiling.length})</SectionTitle>
+              <SectionTitle>Att göra ({attGora.runs.length + attGora.filings.length})</SectionTitle>
               <div className="space-y-4">
-                {awaitingRun.map((m) =>
-                  employeesAwaitingPayroll(m).map((person) => (
-                    <Card key={`${m}-${person.id}`} className="px-6 py-5">
-                      <p className="text-[15px] font-semibold">
-                        Lön {monthLabel(m)} · {person.name}
-                      </p>
-                      <p className="mt-1 text-[13px] text-soft">
-                        Lönedagen har passerat men lönen är inte bokförd. Utan lönekörning finns inget underlag till
-                        arbetsgivardeklarationen.
-                      </p>
-                      <div className="mt-3">
-                        <RunPayrollButton month={m} gross={person.monthlySalary} employeeId={person.id} />
-                      </div>
-                    </Card>
-                  ))
-                )}
-                {awaitingFiling.map((d) => (
+                {attGora.runs.map(({ month: m, employee: person }) => (
+                  <Card key={`${m}-${person.id}`} className="px-6 py-5">
+                    <p className="text-[15px] font-semibold">
+                      Lön {monthLabel(m)} · {person.name}
+                    </p>
+                    <p className="mt-1 text-[13px] text-soft">
+                      Lönedagen har passerat men lönen är inte bokförd. Utan lönekörning finns inget underlag till
+                      arbetsgivardeklarationen.
+                    </p>
+                    <div className="mt-3">
+                      <RunPayrollButton month={m} gross={person.monthlySalary} employeeId={person.id} />
+                    </div>
+                  </Card>
+                ))}
+                {attGora.filings.map((d) => (
                   <Card key={d.id} className="px-6 py-5">
                     <p className="text-[15px] font-semibold">Arbetsgivardeklaration {d.label}</p>
                     <p className="mt-1 text-[13px] text-soft">

@@ -81,6 +81,13 @@ describe("myndighetskalendern", () => {
     assert.equal(ars?.dueDate, "2026-07-31");
   });
 
+  it("årsredovisningen länkar till bokslutet innan rapporten finns, inte till en 404", () => {
+    const events = authorityCalendar(TODAY, 400);
+    const ars = events.find((e) => e.kind === "arsredovisning");
+    assert.ok(ars, "årsredovisningen syns i kalendern");
+    assert.equal(ars.href, "/bokforing/bokslut");
+  });
+
   it("ICS innehåller en VEVENT per öppen post och en stabil UID", () => {
     bookSales(`${YEAR}-02-10`, 10_000, 2_500);
     db().settings.fSkattPerMonth = 3_000;

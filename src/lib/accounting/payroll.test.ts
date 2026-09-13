@@ -1,5 +1,6 @@
 process.env.DRIVA_TEST = "1";
 
+import { readFileSync } from "node:fs";
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { db, replaceDb } from "../store";
@@ -12,8 +13,10 @@ import {
   contributionRateFor,
   currentEmployee,
   employerDeclarationFor,
+  employeesAwaitingPayroll,
   employerDeclarationsAwaitingFiling,
   endEmployment,
+  payrollAttGora,
   generateEmployerDeclaration,
   markEmployerDeclarationDeclared,
   payrollMonthsAwaitingRun,
@@ -414,5 +417,25 @@ describe("arbetsgivardeklaration", () => {
     const totals = payrollTotals(`${YEAR}-01-01`, `${YEAR}-12-31`);
     assert.equal(totals.gross, 80_000);
     assert.equal(totals.months, 2);
+  });
+});
+
+describe("lönesidans Att göra-räknare", () => {
+  beforeEach(reset);
+
+  it("räknar korten i listan, inte månaderna", () => {
+    hire();
+    hire({ name: "Bo Ek", personnummer: "19900101-1111" });
+    const through = `${YEAR}-02-01`;
+    const months = payrollMonthsAwaitingRun(through);
+    const cards = months.flatMap((m) => employeesAwaitingPayroll(m));
+    const filings = employerDeclarationsAwaitingFiling(through);
+    assert.equal(months.length, 1, "en avslutad löneperiod");
+    assert.equal(cards.length, 2, "ett kort per anställd");
+    const att = payrollAttGora(through);
+    assert.equal(att.runs.length + att.filings.length, cards.length + filings.length);
+    const src = readFileSync(new URL("../../app/(app)/bokforing/lon/page.tsx", import.meta.url), "utf8");
+    assert.match(src, /payrollAttGora/);
+    assert.doesNotMatch(src, /Att göra \(\{awaitingRun\.length \+ awaitingFiling\.length\}\)/);
   });
 });
