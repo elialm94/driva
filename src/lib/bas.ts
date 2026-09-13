@@ -2,6 +2,7 @@ import { normalizeMerchant } from "./banking/merchants";
 import type { DocLine, RotRut, VerificationEntry } from "./types";
 import { docTotals, vatBreakdown } from "./calc";
 import { accountName } from "./accounting/chart";
+import { REPRESENTATION_ANSWER } from "./expenses/manual-expense";
 
 const SALES_BY_VAT: Record<number, number> = { 25: 3001, 12: 3002, 6: 3003, 0: 3004 };
 const VAT_OUT_BY_RATE: Record<number, number> = { 25: 2611, 12: 2621, 6: 2631 };
@@ -28,8 +29,21 @@ export interface ExpenseCategory {
    * gällt om säljaren fakturerat momsen – byggtjänster är alltid 25 %.
    */
   reverseChargeRate?: 25 | 12 | 6;
+  /**
+   * Kategorin konteras ALDRIG av `entriesExpense`. Avdraget och momsen beror
+   * på uppgifter som varken banken eller kvittot bär, så konteringen räknas
+   * fram av `representationSplit` (expenses/manual-expense.ts) först när
+   * användaren svarat. `account` är då bara kontot kategorin visas med.
+   */
+  requiresConfirmedDetails?: true;
 }
 
+/**
+ * Kategorier som `entriesExpense` kan kontera själv: kostnad plus moms mot
+ * betalkontot. Listan är också kategorivalet i appen och alternativen vid en
+ * kontorättelse, alltså allt som får bli en kontering av bara ett kategorival.
+ * "Övrigt" ligger sist - `categoryByKey` faller tillbaka på den.
+ */
 export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   { key: "material", label: "Material", account: 4010 },
   { key: "byggtjanster_omvand", label: "Inköpt byggtjänst (omvänd byggmoms)", account: 4425, reverseChargeRate: 25 },
@@ -43,7 +57,6 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   { key: "kost_resa", label: "Mat på tjänsteresa", account: 5831 },
   { key: "resa", label: "Resa & biljetter", account: 5810 },
   { key: "parkering", label: "Parkering, biltvätt & vägavgifter", account: 5619 },
-  { key: "representation", label: "Kundrepresentation", account: 6072 },
   // Måltid åt ägaren/anställda utan kund: personalkostnad. Momsen lyfts inte –
   // en enskild måltid är i regel en kostförmån, och ett för lågt avdrag skapar
   // aldrig skatterisk.
@@ -52,9 +65,49 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   { key: "ovrigt", label: "Övrigt", account: 6991 },
 ];
 
+/** Kategorinyckeln för representation - den enda som kräver bekräftade uppgifter. */
+export const REPRESENTATION_CATEGORY_KEY = "representation";
+
+/**
+ * Kategorier som inte går att kontera av ett kategorival ensamt.
+ *
+ * Representation låg tidigare i listan ovan och pekade platt på 6072. Det var
+ * fel: avdraget beror på hur många som deltog och om alkohol ingick, enklare
+ * förtäring hör hemma på 6071/7631, och momsen lyfts efter schablon. Inget av
+ * det går att läsa ur en banktransaktion.
+ *
+ * Valet här är att flytta nyckeln ut ur den konterbara listan i stället för
+ * att ta bort den helt. Det ger minst specialfall: allt som bara ska kontera
+ * en kategori (entriesExpense, kategorivalet i Ny utgift, kontorättelsens
+ * alternativ) itererar EXPENSE_CATEGORIES och slutar därmed se representation,
+ * utan att något av dem behöver känna till undantaget. Samtidigt finns nyckeln
+ * kvar för `categoryByKey`, så kunskapsbasen (banking/merchants.ts), de lärda
+ * leverantörsreglerna och redan bokförda utgifter behåller sin etikett i
+ * stället för att tyst falla tillbaka på "Övrigt" (6991). `entriesExpense`
+ * vägrar dessutom kontera en märkt kategori, som skydd mot en ny anropare.
+ */
+export const CONFIRMATION_REQUIRED_CATEGORIES: ExpenseCategory[] = [
+  { key: REPRESENTATION_CATEGORY_KEY, label: REPRESENTATION_ANSWER, account: 6072, requiresConfirmedDetails: true },
+];
+
+/** Varje kategorinyckel som kan stå på en utgift, konterbar eller inte. */
+export const ALL_EXPENSE_CATEGORIES: ExpenseCategory[] = [...EXPENSE_CATEGORIES, ...CONFIRMATION_REQUIRED_CATEGORIES];
+
 export function categoryByKey(key: string): ExpenseCategory {
-  return EXPENSE_CATEGORIES.find((c) => c.key === key) ?? EXPENSE_CATEGORIES[EXPENSE_CATEGORIES.length - 1];
+  return ALL_EXPENSE_CATEGORIES.find((c) => c.key === key) ?? EXPENSE_CATEGORIES[EXPENSE_CATEGORIES.length - 1];
 }
+
+/**
+ * Pekar värdet ut representation? Tar både nyckeln ("representation") och
+ * etiketten ("Kundrepresentation"), eftersom svaren i bokföringsfrågan och
+ * assistentens verktygsargument bär etiketten.
+ */
+export function isRepresentationCategory(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  return v === REPRESENTATION_CATEGORY_KEY || v === REPRESENTATION_ANSWER.toLowerCase();
+}
+
+export { REPRESENTATION_ANSWER };
 
 /** Kontots namn ur kontoregistret, för "5410 Förbrukningsinventarier" i UI. */
 export function categoryAccountName(key: string): string {
@@ -245,6 +298,10 @@ function entriesReverseChargePurchase(
  * Utgift (kvitto): kostnad + ingående moms mot det konto som betalade –
  * företagskontot (1930) som standard, eller skuld till ägaren (2893) när
  * ägaren la ut privat och bolaget ska betala tillbaka.
+ *
+ * Kategorier som kräver bekräftade uppgifter (representation) konteras inte
+ * här. Den generiska konteringen kan bara dela beloppet i kostnad och moms,
+ * och för representation är just den delningen hela frågan.
  */
 export function entriesExpense(
   categoryKey: string,
@@ -253,6 +310,11 @@ export function entriesExpense(
   settlementAccount: number = 1930
 ): VerificationEntry[] {
   const cat = categoryByKey(categoryKey);
+  if (cat.requiresConfirmedDetails) {
+    throw new Error(
+      `${cat.label} kan inte bokföras utan antal personer och om alkohol ingick - uppdelningen görs av representationSplit när frågan är besvarad.`
+    );
+  }
   if (cat.reverseChargeRate) return entriesReverseChargePurchase(cat, amount, settlementAccount);
   const net = amount - vatAmount;
   const entries: VerificationEntry[] = [e(cat.account, net, 0)];
