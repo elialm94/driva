@@ -34,16 +34,31 @@ export interface QuoteChainState {
   overflow: ChainCta[];
 }
 
+export interface CustomerInvoiceSourceOption {
+  id: string;
+  label: string;
+  /** Fakturaformulär kopplat till uppdraget - aldrig uppdragssidan. */
+  href?: string;
+}
+
 export interface CustomerChainCtas {
   /** Godkänd offert utan uppdrag – starta därifrån. */
   approvedQuoteId?: string;
   approvedQuoteNumber?: number;
-  /** Öppet uppdrag som Ny faktura bör fortsätta. */
+  /** Öppet uppdrag, bara som data - Skapa faktura ska inte öppna det. */
   openJobId?: string;
   openJobTitle?: string;
   preferLinkedInvoice: boolean;
   primary: ChainCta | null;
   secondary: ChainCta[];
+  /** Godkända offerter att skapa faktura från. */
+  invoiceQuotes: CustomerInvoiceSourceOption[];
+  /** Ej arkiverade uppdrag att koppla fakturan till. */
+  invoiceJobs: CustomerInvoiceSourceOption[];
+  /** Offert eller uppdrag finns - visa kort väljare i stället för att hoppa. */
+  showInvoicePicker: boolean;
+  /** Nytt utkast för kunden, utan koppling. */
+  standaloneInvoiceHref: string;
 }
 
 export interface CustomerActivityMember {

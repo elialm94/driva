@@ -9,6 +9,7 @@ process.env.DRIVA_TEST = "1";
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { db, replaceDb } from "./store";
+import { buildSeed } from "./seed";
 import { emptyTestDb, labor, testCustomer } from "./invoices/test-db";
 import { createQuote } from "./services/quotes";
 import { startJobFromQuote } from "./services/jobs";
@@ -204,7 +205,10 @@ describe("§41 fristående faktura vs kopplad sökväg", () => {
     assert.equal(invoiceChainLink(inv).label, null);
   });
 
-  it("öppet uppdrag gör att Ny faktura föredrar kopplad sökväg, fristående finns kvar", () => {
+  it("öppet uppdrag ger kort väljare, inte djuplänk till uppdragssidan", () => {
+    // Tidigare: Skapa faktura gick till jobHref(openJobId) (t.ex. Köksrenovering)
+    // och Fristående faktura var en extra knapp. Nu: en knapp, väljare med
+    // från offert / från uppdrag / fristående, och uppdraget öppnas aldrig.
     const quote = approvedQuote([labor({ id: "q-tim", qty: 4, unitPrice: 700 })]);
     const job = startJobFromQuote(quote.id);
     const preferred = preferredJobForNewInvoice("cust-1");
@@ -212,7 +216,47 @@ describe("§41 fristående faktura vs kopplad sökväg", () => {
     const ctas = customerChainCtas("cust-1");
     assert.equal(ctas.preferLinkedInvoice, true);
     assert.equal(ctas.openJobId, job.id);
-    assert.ok(ctas.secondary.some((c) => c.kind === "fristaende_faktura"));
+    assert.equal(ctas.showInvoicePicker, true);
+    assert.equal(ctas.invoiceJobs.length, 1);
+    assert.equal(ctas.invoiceJobs[0].id, job.id);
+    assert.match(ctas.invoiceJobs[0].href ?? "", /\/ekonomi\/fakturor\/ny/);
+    assert.match(ctas.invoiceJobs[0].href ?? "", new RegExp(`job=${job.id}`));
+    assert.ok(!(ctas.invoiceJobs[0].href ?? "").includes(`/uppdrag/${job.id}`));
+    assert.ok(!ctas.primary?.href?.includes(`/uppdrag/${job.id}`));
+    assert.ok(ctas.invoiceQuotes.some((q) => q.id === quote.id));
+    assert.match(ctas.standaloneInvoiceHref, /\/ekonomi\/fakturor\/ny/);
+    assert.match(ctas.standaloneInvoiceHref, /fristaende=1/);
+    assert.ok(!ctas.secondary.some((c) => c.kind === "fristaende_faktura"));
+  });
+
+  it("kund utan offert och uppdrag: Skapa faktura är fristående utkast för kunden", () => {
+    const ctas = customerChainCtas("cust-1");
+    assert.equal(ctas.showInvoicePicker, false);
+    assert.equal(ctas.invoiceQuotes.length, 0);
+    assert.equal(ctas.invoiceJobs.length, 0);
+    assert.match(ctas.standaloneInvoiceHref, /\/ekonomi\/fakturor\/ny/);
+    assert.match(ctas.standaloneInvoiceHref, /kund=cust-1/);
+    assert.match(ctas.standaloneInvoiceHref, /fristaende=1/);
+    assert.ok(!ctas.standaloneInvoiceHref.includes("/uppdrag/"));
+    assert.ok(!ctas.secondary.some((c) => c.kind === "fristaende_faktura"));
+  });
+
+  it("seed: Anna får väljare utan uppdragslänk, Gläntan får fristående utkast", () => {
+    replaceDb(buildSeed());
+    const anna = customerChainCtas("cust-anna");
+    assert.equal(anna.showInvoicePicker, true);
+    assert.ok(anna.invoiceJobs.some((j) => j.label === "Köksrenovering"));
+    assert.ok(anna.invoiceJobs.every((j) => j.href && !j.href.includes("/uppdrag/")));
+    assert.match(anna.standaloneInvoiceHref, /fristaende=1/);
+    assert.ok(!anna.secondary.some((c) => c.kind === "fristaende_faktura"));
+
+    const glantan = customerChainCtas("cust-glantan");
+    assert.equal(glantan.showInvoicePicker, false);
+    assert.equal(glantan.invoiceQuotes.length, 0);
+    assert.equal(glantan.invoiceJobs.length, 0);
+    assert.match(glantan.standaloneInvoiceHref, /kund=cust-glantan/);
+    assert.match(glantan.standaloneInvoiceHref, /fristaende=1/);
+    assert.ok(!glantan.standaloneInvoiceHref.includes("/uppdrag/"));
   });
 
   it("godkänd offert utan uppdrag: Starta uppdrag är primärt, Skapa faktura skapar utan uppdrag", () => {
