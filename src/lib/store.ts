@@ -9,7 +9,7 @@ import { migrateAccounting } from "./accounting/migrate";
 import { normalizeDomains } from "./domains/normalize";
 import { storageMode } from "./storage/config";
 import { tenantContext } from "./storage/context";
-import { requestTenantState } from "./storage/request-scope";
+import { bindRequestTenant, requestTenantState } from "./storage/request-scope";
 import { hydrateQuotedBaselines } from "./services/job-work-baseline";
 import { withoutRetiredSections } from "./website-sections";
 import { allocateInboundMailSlug, shouldRemintHexInboundSlug } from "./inbox/inbound-slug";
@@ -352,7 +352,13 @@ export function db(): DB {
   // Supabase-läge: tillståndet ägs av requestens tenantkontext (server
   // actions/API) eller sidans request-cell (RSC-renderingar).
   const ctx = tenantContext();
-  if (ctx) return ctx.state;
+  if (ctx) {
+    // Spegla till request-cellen: revalidatePath i en action startar RSC
+    // medan ALS fortfarande lever, men nästlade serverkomponenter renderas
+    // efter att actionen (och ALS) släppt. Utan spegeln kastar db() där.
+    bindRequestTenant({ state: ctx.state, businessId: ctx.businessId });
+    return ctx.state;
+  }
   const pageState = requestTenantState();
   if (pageState) return pageState;
   if (storageMode() === "supabase") {
