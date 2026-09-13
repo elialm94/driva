@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { discardInvoiceAction, discardQuoteAction } from "@/app/actions";
 import { Modal } from "./modal";
-import { buttonClasses, cx } from "./ui";
+import { buttonClasses, cx, type ButtonSize } from "./ui";
 
 type DraftKind = "quote" | "invoice";
 
@@ -31,12 +31,14 @@ export function DiscardDraftButton({
   documentId,
   appearance = "button",
   returnTo,
+  size = "md",
 }: {
   kind: DraftKind;
   documentId: string;
   appearance?: "button" | "icon";
   /** Intern sökväg att landa på efter kastat utkast (samma discardQuote/discardInvoice). */
   returnTo?: string;
+  size?: ButtonSize;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -72,10 +74,10 @@ export function DiscardDraftButton({
         <button
           type="button"
           data-testid="discard-draft-trigger"
-          className={buttonClasses("danger-outline")}
+          className={buttonClasses("danger-outline", size, "max-[28rem]:h-9 max-[28rem]:px-2.5 max-[28rem]:text-[13px] max-[28rem]:gap-1")}
           onClick={() => setConfirming(true)}
         >
-          <Trash2 className="size-4" aria-hidden />
+          <Trash2 className="size-4 max-[28rem]:hidden" aria-hidden />
           Kasta utkast
         </button>
       )}
