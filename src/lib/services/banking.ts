@@ -9,7 +9,7 @@ import { logAudit } from "../accounting/audit";
 import { postVerification } from "../accounting/engine";
 import { assertDemoMode } from "../demo";
 import { connectedBankAccount } from "../banking/connection-state";
-import { processIncomingTransaction } from "./payment-matching";
+import { ensureBankPurchaseExpenses, processIncomingTransaction } from "./payment-matching";
 import { expectedTaxReductionPayouts } from "./tax-reduction";
 
 /**
@@ -62,6 +62,10 @@ export function registerBankTransactions(incoming: BankTransaction[]): { importe
     save();
     processIncomingTransaction(tx.id);
   }
+  // Uppdatera är den enda åtgärden vars hela uppgift är att köra banken genom
+  // matchningen, så den reparerar också rader som fastnade utan köp vid en
+  // tidigare import. Idempotent och rör aldrig en rad med ett levande förslag.
+  ensureBankPurchaseExpenses();
   if (imported > 0 || labelsTouched) save();
   return { imported, skipped };
 }

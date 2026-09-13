@@ -62,6 +62,19 @@ function strandedTx(over: Partial<BankTransaction> & { amount: number; counterpa
   return tx;
 }
 
+/** En färsk rad från banken, som Uppdatera lämnar den till matchningen. */
+function importedTx(over: Partial<BankTransaction> & { amount: number; counterpart: string }): BankTransaction {
+  return {
+    id: uid(),
+    accountId: "acc-1",
+    externalId: `ext-${uid()}`,
+    date: "2026-08-20",
+    description: "Kortköp",
+    status: "ny",
+    ...over,
+  };
+}
+
 function bankRow(txId: string) {
   return listBankForTable().rows.find((r) => r.id === txId)!;
 }
@@ -196,22 +209,22 @@ describe("Bankrader som fastnade utan köp repareras", () => {
   });
 
   it("importvägen skapar köpet direkt – reparationen har inget att göra", () => {
-    registerBankTransactions([
-      {
-        id: uid(),
-        accountId: "acc-1",
-        externalId: "ext-vapiano",
-        date: "2026-08-14",
-        amount: -180,
-        counterpart: "Vapiano",
-        description: "Kortköp",
-        status: "ny",
-      },
-    ]);
+    registerBankTransactions([importedTx({ externalId: "ext-vapiano", amount: -180, counterpart: "Vapiano" })]);
 
     const expense = db().expenses.find((e) => e.supplier === "Vapiano");
     assert.ok(expense, "importen skapade köpet");
     assert.equal(expense.status, "saknar_kvitto");
     assert.deepEqual(ensureBankPurchaseExpenses(), []);
+  });
+
+  it("Uppdatera reparerar rader som fastnade vid en tidigare import", () => {
+    const stranded = strandedTx({ amount: -180, counterpart: "Vapiano" });
+
+    registerBankTransactions([importedTx({ externalId: "ext-ny", amount: -240, counterpart: "Bauhaus" })]);
+
+    const repaired = db().expenses.find((e) => e.bankTransactionId === stranded.id);
+    assert.ok(repaired, "den gamla raden fick sitt köp");
+    assert.equal(repaired.status, "saknar_kvitto");
+    assert.equal(bankRow(stranded.id).statusLabel, "Kvitto saknas");
   });
 });
