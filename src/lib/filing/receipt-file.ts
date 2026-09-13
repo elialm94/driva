@@ -19,7 +19,9 @@ import {
   type ReceiptFileInput,
 } from "../receipts/receipt-file";
 
-export const RECEIPT_FILE_FIELD = "kvittens";
+import { RECEIPT_FILE_FIELD } from "./receipt-field";
+
+export { RECEIPT_FILE_FIELD };
 
 /** Läser kvittensfilen ur server actionens FormData; null när inget valdes. */
 export async function filingReceiptFromForm(form: FormData): Promise<(ReceiptFileInput & { filename: string }) | null> {

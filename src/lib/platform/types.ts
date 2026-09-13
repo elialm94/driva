@@ -118,6 +118,28 @@ export interface EmailEvent {
   createdAt: string;
 }
 
+/* ------------------------------- Driftposter -------------------------------- */
+
+export type OpsRecordKind = "restore_drill" | "email_test_outbound" | "email_inbound" | "cron_run";
+export type OpsRecordStatus = "ok" | "fel" | "partiell";
+
+/**
+ * Verifierbar drifthändelse för systemvyn: senaste dokumenterade restore
+ * drill, senaste mejltest, senaste inkommande mejl, senaste cronkörning.
+ * summary är icke-känslig JSON (räknare, tider, ansvarig) – aldrig
+ * mejlinnehåll, kunddata eller hemligheter.
+ */
+export interface OpsRecord {
+  id: string;
+  kind: OpsRecordKind;
+  createdAt: string;
+  recordedByUserId?: string;
+  recordedByEmail?: string;
+  status: OpsRecordStatus;
+  environment?: string;
+  summary: Record<string, unknown>;
+}
+
 /* ------------------------------ Förslagskvalitet ------------------------------ */
 
 export type SuggestionDecision = "auto" | "accepted" | "changed" | "rejected" | "private";

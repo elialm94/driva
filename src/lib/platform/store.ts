@@ -22,6 +22,8 @@ import { platformRegistry, commitPlatformRegistry } from "./registry";
 import type {
   AdminAuditEntry,
   EmailEvent,
+  OpsRecord,
+  OpsRecordKind,
   PlatformAdmin,
   PlatformAdminInvitation,
   SupportSession,
@@ -713,6 +715,77 @@ export async function listAdminAudit(filter: {
     params
   );
   return rows.map(auditFromRow);
+}
+
+/* ---------------------------- platform_ops_records --------------------------- */
+
+function opsRecordFromRow(r: SqlRow): OpsRecord {
+  const summary = r.summary;
+  return {
+    id: str(r.id),
+    kind: r.kind as OpsRecordKind,
+    createdAt: iso(r.created_at),
+    recordedByUserId: strOrUndef(r.recorded_by_user_id),
+    recordedByEmail: strOrUndef(r.recorded_by_email),
+    status: r.status as OpsRecord["status"],
+    environment: strOrUndef(r.environment),
+    summary:
+      typeof summary === "string"
+        ? (JSON.parse(summary) as Record<string, unknown>)
+        : ((summary as Record<string, unknown>) ?? {}),
+  };
+}
+
+export async function insertOpsRecord(rec: OpsRecord): Promise<void> {
+  if (!isSupabaseMode()) {
+    const reg = platformRegistry();
+    reg.opsRecords.push({ ...rec });
+    if (reg.opsRecords.length > 2000) reg.opsRecords.splice(0, reg.opsRecords.length - 2000);
+    commitPlatformRegistry();
+    return;
+  }
+  const client = await sqlClient();
+  await client.query(
+    `insert into public.platform_ops_records (id, kind, created_at, recorded_by_user_id, recorded_by_email, status, environment, summary)
+     values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+    [
+      rec.id,
+      rec.kind,
+      rec.createdAt,
+      rec.recordedByUserId ?? null,
+      rec.recordedByEmail ?? null,
+      rec.status,
+      rec.environment ?? null,
+      JSON.stringify(rec.summary ?? {}),
+    ]
+  );
+}
+
+export async function listOpsRecords(filter: { kind?: OpsRecordKind; limit?: number } = {}): Promise<OpsRecord[]> {
+  const limit = Math.min(Math.max(filter.limit ?? 50, 1), 500);
+  if (!isSupabaseMode()) {
+    let items = [...platformRegistry().opsRecords];
+    if (filter.kind) items = items.filter((r) => r.kind === filter.kind);
+    return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
+  }
+  const params: (string | number)[] = [];
+  let where = "";
+  if (filter.kind) {
+    params.push(filter.kind);
+    where = `where kind = $${params.length}`;
+  }
+  params.push(limit);
+  const client = await sqlClient();
+  const rows = await client.query(
+    `select * from public.platform_ops_records ${where} order by created_at desc limit $${params.length}`,
+    params
+  );
+  return rows.map(opsRecordFromRow);
+}
+
+export async function latestOpsRecord(kind: OpsRecordKind): Promise<OpsRecord | null> {
+  const rows = await listOpsRecords({ kind, limit: 1 });
+  return rows[0] ?? null;
 }
 
 /* -------------------------------- email_events ------------------------------ */

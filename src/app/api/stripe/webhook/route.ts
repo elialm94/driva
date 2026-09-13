@@ -4,6 +4,7 @@ import { readStripeConfig } from "@/lib/billing/config";
 import { billingStore } from "@/lib/billing/store";
 import { stripeGateway } from "@/lib/billing/stripe";
 import { processStripeEvent } from "@/lib/billing/webhook";
+import { reportSafeError } from "@/lib/observability/report";
 import { isSupabaseMode } from "@/lib/storage/config";
 
 /**
@@ -39,7 +40,12 @@ export async function POST(req: NextRequest) {
   const outcome = await processStripeEvent({ store: billingStore(), gateway }, event);
   if (outcome.kind === "processed") invalidateBillingCache(outcome.businessId);
   if (outcome.kind === "failed") {
-    return NextResponse.json({ received: true, error: outcome.error }, { status: 500 });
+    const correlationId = reportSafeError(new Error(outcome.error), {
+      route: "/api/stripe/webhook",
+      integration: "stripe",
+      extra: { eventType: event.type, eventId: event.id },
+    });
+    return NextResponse.json({ received: true, error: outcome.error, correlationId }, { status: 500 });
   }
   return NextResponse.json({ received: true, outcome: outcome.kind });
 }

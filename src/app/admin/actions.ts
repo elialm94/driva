@@ -46,6 +46,7 @@ import {
   resendAccountantInvite,
   resendVerificationEmail,
 } from "@/lib/platform/operations";
+import { OpsError, parseRestoreDrillInput, recordRestoreDrill, sendAdminTestEmail } from "@/lib/platform/ops";
 import { PlatformAccessError } from "@/lib/platform/types";
 import type { SupportTicketPriority, SupportTicketStatus } from "@/lib/platform/types";
 import { BUSINESS_COOKIE } from "@/lib/auth/session";
@@ -59,7 +60,8 @@ function toError(e: unknown, fallback: string): AdminActionState {
     e instanceof PlatformAdminError ||
     e instanceof SupportTicketError ||
     e instanceof SupportSessionError ||
-    e instanceof AdminOperationError
+    e instanceof AdminOperationError ||
+    e instanceof OpsError
   ) {
     return { error: e.message };
   }
@@ -395,5 +397,32 @@ export async function resendAccountantInviteAction(formData: FormData): Promise<
     };
   } catch (e) {
     return toError(e, "Kunde inte skicka om inbjudan.");
+  }
+}
+
+/* ---------------------------------- Drift ---------------------------------- */
+
+/** Testmejl till adminens EGEN adress – aldrig fri mottagare. Loggas utan innehåll. */
+export async function sendTestEmailAction(_prev: AdminActionState, _formData: FormData): Promise<AdminActionState> {
+  try {
+    const ctx = await requirePlatformAdmin();
+    const result = await sendAdminTestEmail(ctx.admin);
+    revalidatePath("/admin/system");
+    return result.ok ? { notice: result.message } : { error: result.message };
+  } catch (e) {
+    return toError(e, "Testmejlet kunde inte skickas.");
+  }
+}
+
+/** Registrera en genomförd restore drill (endast super_admin, auditeras). */
+export async function recordRestoreDrillAction(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  try {
+    const ctx = await requireSuperAdmin();
+    const input = parseRestoreDrillInput(Object.fromEntries(formData.entries()));
+    await recordRestoreDrill(ctx.admin, input);
+    revalidatePath("/admin/system");
+    return { notice: `Restore drill ${input.performedOn} (${input.result === "ok" ? "godkänd" : "underkänd"}) är registrerad.` };
+  } catch (e) {
+    return toError(e, "Drillen kunde inte registreras.");
   }
 }

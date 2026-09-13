@@ -4,7 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Download, ExternalLink, FileText, Package, Send } from "lucide-react";
 import { markFilingDownloadedAction, reportManualFilingAction } from "@/app/inlamning-actions";
-import { RECEIPT_FILE_FIELD } from "@/lib/filing/receipt-file";
+import { RECEIPT_FILE_FIELD } from "@/lib/filing/receipt-field";
 import { FERVA_DOES_NOT_SEND, type FilingInstruction } from "@/lib/filing/instructions";
 import type { FilingCaseFile } from "@/lib/filing/deklarationer";
 import type { FilingKind, FilingSubmission } from "@/lib/types";

@@ -1,11 +1,18 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
+import { useEffect } from "react";
+
 /**
  * Ersätter Next.js inbyggda engelska "This page couldn't load".
  * Root-layoutfel och avhuggna RSC-navigeringar (React #412) landar här.
  * Full omladdning — inte retry() — eftersom klientcachen kan vara trasig.
  */
 export default function GlobalError({ error }: { error: Error & { digest?: string } }) {
+  // No-op utan NEXT_PUBLIC_SENTRY_DSN; med DSN skrubbas eventet i beforeSend.
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
   return (
     <html lang="sv">
       <head>

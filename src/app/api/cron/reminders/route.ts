@@ -4,6 +4,8 @@ import { withBusinessRead } from "@/lib/auth/session";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { listActiveBusinessIds } from "@/lib/storage/list-businesses";
 import { runWithTenant } from "@/lib/storage/adapter-supabase";
+import { recordCronRun } from "@/lib/platform/ops";
+import { reportSafeError } from "@/lib/observability/report";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +17,7 @@ export const dynamic = "force-dynamic";
  * retry:false så ett mejl inte skickas två gånger vid CAS-omkörning.
  */
 export async function GET(req: NextRequest) {
+  const started = Date.now();
   const secret = process.env.CRON_SECRET;
   const sent = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? req.nextUrl.searchParams.get("secret");
   if (!secret || sent !== secret) {
@@ -23,6 +26,7 @@ export async function GET(req: NextRequest) {
 
   if (!isSupabaseMode()) {
     const result = await withBusinessRead(() => runAutomaticReminders());
+    await recordCronRun("reminders", { businesses: 1, errors: result.errors.length, extra: { quotes: result.quotes, invoices: result.invoices } }, Date.now() - started);
     return NextResponse.json({ ok: true, businesses: 1, ...result });
   }
 
@@ -42,6 +46,14 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       errors.push(`${businessId}: ${e instanceof Error ? e.message : "okänt fel"}`);
     }
+  }
+  await recordCronRun("reminders", { businesses: ids.length, errors: errors.length, extra: { quotes, invoices } }, Date.now() - started);
+  if (errors.length > 0) {
+    reportSafeError(new Error(`Påminnelsecron: ${errors.length} av ${ids.length} företag misslyckades`), {
+      route: "/api/cron/reminders",
+      integration: "cron",
+      extra: { businesses: ids.length, errors: errors.length },
+    });
   }
   return NextResponse.json({ ok: true, businesses: ids.length, quotes, invoices, errors });
 }

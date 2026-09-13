@@ -126,6 +126,25 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     await run(client, `alter table public.stripe_webhook_events enable row level security`);
     applied.push("stripe_webhook_events");
   }
+  const opsRecords = await client.query(`select to_regclass('public.platform_ops_records') is not null as present`);
+  if (!opsRecords[0]?.present) {
+    await run(
+      client,
+      `create table if not exists public.platform_ops_records (
+        id text primary key,
+        kind text not null check (kind in ('restore_drill', 'email_test_outbound', 'email_inbound', 'cron_run')),
+        created_at timestamptz not null default now(),
+        recorded_by_user_id text,
+        recorded_by_email text,
+        status text not null check (status in ('ok', 'fel', 'partiell')),
+        environment text,
+        summary jsonb not null default '{}'::jsonb
+      )`
+    );
+    await run(client, `create index if not exists platform_ops_records_kind_idx on public.platform_ops_records (kind, created_at desc)`);
+    await run(client, `alter table public.platform_ops_records enable row level security`);
+    applied.push("platform_ops_records");
+  }
 
   await ensureColumn(
     "business_settings",

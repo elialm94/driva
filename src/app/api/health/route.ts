@@ -7,6 +7,10 @@ import {
   hasSupabaseEnv,
 } from "@/lib/storage/config";
 import { getSqlClient } from "@/lib/storage/executor";
+import { EXPECTED_MIGRATION_VERSION } from "@/lib/storage/schema-version";
+import { isStripeConfigured, stripeModeHint } from "@/lib/billing/config";
+import { isSentryConfigured, appRelease } from "@/lib/observability/config";
+import { platformMfaRequired } from "@/lib/platform/auth";
 
 /**
  * Driftdiagnostik för produktion (Vercel). Kräver INGEN inloggning så att den
@@ -23,6 +27,87 @@ import { getSqlClient } from "@/lib/storage/executor";
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * Larmbara driftkontroller utan hemligheter eller kunddata: version,
+ * migrationsläge, senaste cronkörning, webhookfel och om en restore drill
+ * någonsin dokumenterats. Varningar fäller inte hälsan (annars larmflimmer)
+ * men listas så att en extern monitor kan larma på dem.
+ */
+interface OpsChecks {
+  release: string;
+  migrations: { expected: string; applied?: string; behind: boolean };
+  cron: { lastRunAt?: string; ageHours?: number; lastStatus?: string };
+  stripe: { configured: boolean; mode: "test" | "live" | null; webhookFailures7d?: number };
+  sentry: { configured: boolean };
+  adminMfaRequired: boolean;
+  backup: { drillVerified: boolean; lastDrillOn?: string };
+  warnings: string[];
+}
+
+async function probeOps(dbUrl: string): Promise<OpsChecks> {
+  const checks: OpsChecks = {
+    release: appRelease(),
+    migrations: { expected: EXPECTED_MIGRATION_VERSION, behind: false },
+    cron: {},
+    stripe: { configured: isStripeConfigured(), mode: stripeModeHint() },
+    sentry: { configured: isSentryConfigured() },
+    adminMfaRequired: platformMfaRequired(),
+    backup: { drillVerified: false },
+    warnings: [],
+  };
+  try {
+    const client = await getSqlClient(dbUrl);
+    const mig = await client.query(
+      `select version from supabase_migrations.schema_migrations order by version desc limit 1`
+    ).catch(() => []);
+    const applied = mig[0]?.version ? String(mig[0].version) : undefined;
+    checks.migrations.applied = applied;
+    checks.migrations.behind = Boolean(applied) && applied! < EXPECTED_MIGRATION_VERSION;
+    if (checks.migrations.behind) checks.warnings.push("migrations_behind");
+
+    const opsPresent = await client.query(`select to_regclass('public.platform_ops_records') is not null as present`);
+    if (opsPresent[0]?.present) {
+      const cron = await client.query(
+        `select created_at, status from public.platform_ops_records where kind = 'cron_run' order by created_at desc limit 1`
+      );
+      if (cron[0]) {
+        const at = new Date(cron[0].created_at as string);
+        checks.cron = {
+          lastRunAt: at.toISOString(),
+          ageHours: Math.round(((Date.now() - at.getTime()) / 3_600_000) * 10) / 10,
+          lastStatus: String(cron[0].status),
+        };
+        if ((checks.cron.ageHours ?? 0) > 36) checks.warnings.push("cron_stale");
+        if (checks.cron.lastStatus === "fel") checks.warnings.push("cron_failed");
+      } else {
+        checks.warnings.push("cron_never_ran");
+      }
+      const drill = await client.query(
+        `select summary->>'performedOn' as performed_on, status from public.platform_ops_records
+          where kind = 'restore_drill' order by created_at desc limit 1`
+      );
+      if (drill[0] && String(drill[0].status) === "ok") {
+        checks.backup = { drillVerified: true, lastDrillOn: String(drill[0].performed_on ?? "") };
+      } else {
+        checks.warnings.push("restore_drill_unverified");
+      }
+    }
+    const whPresent = await client.query(`select to_regclass('public.stripe_webhook_events') is not null as present`);
+    if (whPresent[0]?.present) {
+      const wh = await client.query(
+        `select count(*)::int as n from public.stripe_webhook_events where status = 'fel' and received_at >= now() - interval '7 days'`
+      );
+      checks.stripe.webhookFailures7d = Number(wh[0]?.n ?? 0);
+      if (checks.stripe.webhookFailures7d > 0) checks.warnings.push("stripe_webhook_failures");
+    }
+  } catch {
+    checks.warnings.push("ops_probe_failed");
+  }
+  if (!checks.sentry.configured) checks.warnings.push("sentry_unconfigured");
+  if (!checks.adminMfaRequired) checks.warnings.push("admin_mfa_not_required");
+  return checks;
+}
 
 interface DbProbe {
   canConnect: boolean;
@@ -143,6 +228,7 @@ export async function GET() {
   const db = dbUrl ? await probeDatabase(dbUrl) : { canConnect: false, hasAppRole: false, hasCoreTables: false };
 
   const schemaReady = db.canConnect && db.hasAppRole && db.hasCoreTables;
+  const ops = schemaReady && dbUrl ? await probeOps(dbUrl) : undefined;
   let hint: string | undefined;
   if (!db.canConnect) {
     hint =
@@ -158,6 +244,7 @@ export async function GET() {
       storageMode: "supabase",
       env,
       database: db,
+      ...(ops ? { ops } : {}),
       ...(hint ? { hint } : {}),
     },
     { status: schemaReady ? 200 : 503 }

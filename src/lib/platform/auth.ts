@@ -77,8 +77,18 @@ export interface PlatformAdminContext {
   mfaSatisfied: boolean;
 }
 
-export function platformMfaRequired(): boolean {
-  return process.env.PLATFORM_ADMIN_REQUIRE_MFA?.trim() === "1";
+/**
+ * MFA-policy för Ferva Admin (spec §6): TOTP (AAL2) krävs för alla
+ * plattformsadmins i Supabase-läget. I produktion går kravet inte att stänga
+ * av. Utanför produktion kan PLATFORM_ADMIN_REQUIRE_MFA=0 stänga av det för
+ * en staging utan TOTP. JSON-läget har ingen Supabase Auth och därmed ingen
+ * MFA – det är dev-only och stoppas i produktion av storage/config.
+ */
+export function platformMfaRequired(env: Record<string, string | undefined> = process.env): boolean {
+  if (!isSupabaseMode()) return false;
+  const production = env.VERCEL_ENV?.trim() === "production" || env.NODE_ENV === "production";
+  if (production) return true;
+  return env.PLATFORM_ADMIN_REQUIRE_MFA?.trim() !== "0";
 }
 
 /**
@@ -109,8 +119,25 @@ export async function requirePlatformAdmin(): Promise<PlatformAdminContext> {
   }
   if (!ctx.mfaSatisfied) {
     throw new PlatformAccessError(
-      "Tvåfaktorsautentisering (MFA) krävs för Ferva Admin i den här miljön. Logga in med din andra faktor.",
+      "Tvåfaktorsautentisering (MFA) krävs för Ferva Admin. Verifiera din autentiseringsapp under /admin/mfa och försök igen.",
       403
+    );
+  }
+  return ctx;
+}
+
+/**
+ * För /admin/mfa-sidan: kräver inloggad, aktiv plattformsadmin men INTE
+ * AAL2 – det är ju där nivån ska uppnås. Allt annat admindata kräver
+ * requirePlatformAdmin.
+ */
+export async function requirePlatformAdminPreMfa(): Promise<PlatformAdminContext> {
+  const ctx = await getPlatformAdmin();
+  if (!ctx) {
+    const user = await getPlatformSessionUser();
+    throw new PlatformAccessError(
+      user ? "Du har inte behörighet till Ferva Admin." : "Inloggning krävs.",
+      user ? 403 : 401
     );
   }
   return ctx;

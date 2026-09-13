@@ -1,6 +1,9 @@
+import { recordRestoreDrillAction, sendTestEmailAction } from "@/app/admin/actions";
+import { PendingButton, StateForm, adminInputClass, adminTextareaClass } from "@/components/admin/forms";
 import { requirePlatformAdmin } from "@/lib/platform/auth";
 import { recentFailures, systemStatus, type HealthState } from "@/lib/platform/system";
 import { listAdminAudit, listEmailEvents } from "@/lib/platform/store";
+import { SUPER_ADMIN } from "@/lib/platform/types";
 import { AdminBadge, AdminCard, AdminTable, KeyValueList, Th, Td, datumTidKort } from "@/components/admin/ui";
 
 export const metadata = { title: "System" };
@@ -13,7 +16,8 @@ function HealthBadge({ state }: { state: HealthState }) {
 }
 
 export default async function AdminSystemPage() {
-  await requirePlatformAdmin();
+  const ctx = await requirePlatformAdmin();
+  const isSuper = ctx.admin.role === SUPER_ADMIN;
   const [status, failures, emailEvents, audit] = await Promise.all([
     systemStatus(),
     recentFailures(30),
@@ -88,8 +92,31 @@ export default async function AdminSystemPage() {
                 label: "Misslyckade utskick 7 d",
                 value: status.resend.failures7d,
               },
+              {
+                label: "Senaste utgående test",
+                value: status.emailTest.last
+                  ? `${datumTidKort(status.emailTest.last.createdAt)} · ${status.emailTest.last.status === "ok" ? "levererat till Resend" : "misslyckades"}`
+                  : "Inget test gjort",
+              },
+              {
+                label: "Inkommande (webhook)",
+                value: (
+                  <span className="inline-flex items-center gap-2">
+                    <HealthBadge state={status.inboundMail.state} />
+                    {status.inboundMail.lastEvent
+                      ? `senast ${datumTidKort(status.inboundMail.lastEvent.createdAt)} (HTTP ${String(status.inboundMail.lastEvent.summary.httpStatus)})`
+                      : "Inget mottaget ännu"}
+                  </span>
+                ),
+              },
             ]}
           />
+          <div className="border-t border-neutral-800 px-4 py-3">
+            <StateForm action={sendTestEmailAction} className="flex flex-wrap items-center gap-2">
+              <PendingButton>Skicka testmejl till {ctx.admin.email}</PendingButton>
+              <span className="text-[12px] text-neutral-600">Loggas utan innehåll. Kontrollera SPF/DKIM/DMARC i mottagna rubriker.</span>
+            </StateForm>
+          </div>
         </AdminCard>
 
         <AdminCard title="Abonnemang (Stripe)">
@@ -129,6 +156,186 @@ export default async function AdminSystemPage() {
                 : []),
             ]}
           />
+        </AdminCard>
+
+        <AdminCard title="Version & migrationer">
+          <KeyValueList
+            rows={[
+              { label: "Applikationsversion", value: <code className="text-[11px]">{status.version.release}</code> },
+              {
+                label: "Migrationer",
+                value: (
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    <HealthBadge state={status.migrations.state} />
+                    <span className="text-[12px]">
+                      DB: <code>{status.migrations.applied ?? "okänd"}</code> · kod: <code>{status.migrations.expected}</code>
+                    </span>
+                  </span>
+                ),
+              },
+              ...(status.migrations.behind
+                ? [{ label: "Att åtgärda", value: <span className="text-red-400">Databasen saknar migrationer – kör `npx supabase db push` (runbook: docs/runbooks/incident.md).</span> }]
+                : []),
+              ...(status.migrations.error ? [{ label: "Fel", value: <span className="text-amber-300">{status.migrations.error}</span> }] : []),
+            ]}
+          />
+        </AdminCard>
+
+        <AdminCard title="Felövervakning (Sentry)">
+          <KeyValueList
+            rows={[
+              {
+                label: "Status",
+                value: status.sentry.configured ? (
+                  <AdminBadge tone="ok">Konfigurerat</AdminBadge>
+                ) : (
+                  <AdminBadge tone="warn">Ej konfigurerat (SENTRY_DSN saknas)</AdminBadge>
+                ),
+              },
+              { label: "Server/edge", value: status.sentry.server ? "Ja" : "Nej" },
+              { label: "Klient", value: status.sentry.client ? "Ja" : "Nej (NEXT_PUBLIC_SENTRY_DSN saknas)" },
+              { label: "Source maps i build", value: status.sentry.sourceMaps ? "Ja" : "Nej" },
+              {
+                label: "Skrubbning",
+                value: "Personnummer, tokens, banktext, dokument- och mejlinnehåll tas bort innan sändning (beforeSend). Korrelations-id sätts som tagg.",
+              },
+            ]}
+          />
+        </AdminCard>
+
+        <AdminCard title="Cron, webhooks & integrationer">
+          <KeyValueList
+            rows={[
+              {
+                label: "Påminnelsecron",
+                value: (
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    <HealthBadge state={status.cron.state} />
+                    {status.cron.lastRun
+                      ? `senast ${datumTidKort(status.cron.lastRun.createdAt)} (${status.cron.lastRun.status}, ${String(status.cron.lastRun.summary.businesses ?? 0)} företag, ${String(status.cron.lastRun.summary.errors ?? 0)} fel)`
+                      : "Ingen körning loggad ännu"}
+                  </span>
+                ),
+              },
+              { label: "Senaste Stripe-webhook", value: status.stripe.lastEventAt ? datumTidKort(status.stripe.lastEventAt) : "Ingen mottagen" },
+              { label: "Köade / misslyckade webhooks (7 d)", value: `${status.webhooks.queued} / ${status.webhooks.failed7d}` },
+              {
+                label: "Bank (Tink)",
+                value: status.tink.configured ? (
+                  <span className="inline-flex items-center gap-2">
+                    <AdminBadge tone="ok">Konfigurerat</AdminBadge>
+                    <HealthBadge state={status.tink.state} />
+                  </span>
+                ) : (
+                  <AdminBadge tone="warn">Ej konfigurerat – bankkoppling visas som otillgänglig</AdminBadge>
+                ),
+              },
+              {
+                label: "Myndighetsinlämning",
+                value:
+                  status.filing.provider === "live" ? (
+                    <AdminBadge tone="ok">Live-leverantör</AdminBadge>
+                  ) : status.filing.provider === "mock" ? (
+                    <AdminBadge tone="neutral">Mock (endast demo/dev)</AdminBadge>
+                  ) : (
+                    <AdminBadge tone="neutral">Manuell inlämning (ingen leverantör)</AdminBadge>
+                  ),
+              },
+            ]}
+          />
+        </AdminCard>
+
+        <AdminCard title="Backup & återställning">
+          <KeyValueList
+            rows={[
+              {
+                label: "PITR/backup i Supabase",
+                value: status.backup.lastDrill?.summary.pitrConfirmedOn ? (
+                  <span>
+                    Bekräftat påslaget {String(status.backup.lastDrill.summary.pitrConfirmedOn)} (manuell kontroll i dashboarden)
+                  </span>
+                ) : (
+                  <AdminBadge tone="warn">Ej verifierat – kan inte läsas via API, se runbook</AdminBadge>
+                ),
+              },
+              {
+                label: "Senaste dokumenterade restore drill",
+                value: status.backup.lastDrill ? (
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    <AdminBadge tone={status.backup.stale ? "warn" : "ok"}>
+                      {String(status.backup.lastDrill.summary.performedOn)} · {status.backup.lastDrill.status === "ok" ? "godkänd" : "underkänd"}
+                    </AdminBadge>
+                    <span className="text-[12px]">
+                      mot {status.backup.lastDrill.environment} · {status.backup.daysSinceDrill} dagar sedan
+                      {status.backup.stale ? " · förfallen (>180 d eller underkänd)" : ""}
+                    </span>
+                  </span>
+                ) : (
+                  <AdminBadge tone="danger">Ej verifierat – ingen drill registrerad</AdminBadge>
+                ),
+              },
+              {
+                label: "RPO / RTO (observerat)",
+                value: status.backup.lastDrill
+                  ? `${String(status.backup.lastDrill.summary.rpoMinutes)} min / ${String(status.backup.lastDrill.summary.rtoMinutes)} min`
+                  : "Ej verifierat",
+              },
+              { label: "Ansvarig", value: status.backup.lastDrill ? String(status.backup.lastDrill.summary.responsible) : "Ej angiven" },
+            ]}
+          />
+          {isSuper ? (
+            <details className="border-t border-neutral-800 px-4 py-3">
+              <summary className="cursor-pointer text-[12.5px] font-medium text-neutral-300">Registrera genomförd restore drill</summary>
+              <StateForm action={recordRestoreDrillAction} className="mt-3 grid gap-2 sm:grid-cols-2">
+                <label className="flex flex-col gap-1 text-[12px] text-neutral-400">
+                  Datum (ÅÅÅÅ-MM-DD)
+                  <input name="performedOn" required pattern="\d{4}-\d{2}-\d{2}" className={adminInputClass} />
+                </label>
+                <label className="flex flex-col gap-1 text-[12px] text-neutral-400">
+                  Staging-miljö (projektref/namn)
+                  <input name="targetEnvironment" required className={adminInputClass} placeholder="t.ex. ferva-staging" />
+                </label>
+                <label className="flex flex-col gap-1 text-[12px] text-neutral-400">
+                  Ansvarig
+                  <input name="responsible" required className={adminInputClass} />
+                </label>
+                <label className="flex flex-col gap-1 text-[12px] text-neutral-400">
+                  Resultat
+                  <select name="result" className={adminInputClass} defaultValue="ok">
+                    <option value="ok">Godkänd</option>
+                    <option value="fel">Underkänd</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-[12px] text-neutral-400">
+                  RPO observerat (minuter)
+                  <input name="rpoMinutes" type="number" min={0} required className={adminInputClass} />
+                </label>
+                <label className="flex flex-col gap-1 text-[12px] text-neutral-400">
+                  RTO observerat (minuter)
+                  <input name="rtoMinutes" type="number" min={0} required className={adminInputClass} />
+                </label>
+                <label className="flex flex-col gap-1 text-[12px] text-neutral-400">
+                  PITR bekräftat påslaget i dashboarden (datum, valfritt)
+                  <input name="pitrConfirmedOn" pattern="\d{4}-\d{2}-\d{2}" className={adminInputClass} />
+                </label>
+                <label className="flex flex-col gap-1 text-[12px] text-neutral-400 sm:col-span-2">
+                  RESULT-raden från scripts/restore-drill.ts (JSON, valfritt)
+                  <textarea name="checksJson" rows={3} className={adminTextareaClass} />
+                </label>
+                <label className="flex flex-col gap-1 text-[12px] text-neutral-400 sm:col-span-2">
+                  Anteckningar (max 500 tecken, inga kunduppgifter)
+                  <textarea name="notes" rows={2} maxLength={500} className={adminTextareaClass} />
+                </label>
+                <div className="sm:col-span-2">
+                  <PendingButton variant="primary">Registrera drill</PendingButton>
+                </div>
+              </StateForm>
+            </details>
+          ) : (
+            <p className="border-t border-neutral-800 px-4 py-2.5 text-[12px] text-neutral-600">
+              Endast super_admin kan registrera en genomförd restore drill.
+            </p>
+          )}
         </AdminCard>
 
         <AdminCard title="AI (OpenRouter)">

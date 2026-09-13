@@ -49,6 +49,8 @@ export interface BillingStore {
   finishWebhookEvent(id: string, outcome: { status: WebhookEventStatus; businessId?: string; error?: string }): Promise<void>;
   listRecentWebhookEvents(limit?: number): Promise<WebhookEventRow[]>;
   countWebhookFailuresSince(sinceIso: string): Promise<number>;
+  /** Händelser som tagits emot men inte avslutats (status "mottagen") – kö/hängande. */
+  countWebhookQueued(): Promise<number>;
 }
 
 /* --------------------------------- Minne ----------------------------------- */
@@ -126,6 +128,10 @@ export class MemoryBillingStore implements BillingStore {
 
   async countWebhookFailuresSince(sinceIso: string): Promise<number> {
     return [...this.events.values()].filter((e) => e.status === "fel" && e.receivedAt >= sinceIso).length;
+  }
+
+  async countWebhookQueued(): Promise<number> {
+    return [...this.events.values()].filter((e) => e.status === "mottagen").length;
   }
 }
 
@@ -279,6 +285,12 @@ export class SqlBillingStore implements BillingStore {
     const rows = await client.query(`select count(*)::int as n from public.stripe_webhook_events where status = 'fel' and received_at >= $1`, [
       sinceIso,
     ]);
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  async countWebhookQueued(): Promise<number> {
+    const client = await this.client();
+    const rows = await client.query(`select count(*)::int as n from public.stripe_webhook_events where status = 'mottagen'`);
     return Number(rows[0]?.n ?? 0);
   }
 }

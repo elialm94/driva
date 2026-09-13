@@ -55,6 +55,7 @@ JSON-läge (`.data/platform.json` via `src/lib/platform/registry.ts`).
 | `suggestion_events` (migration 49) | bankklassificeringens förslagsbeslut: källa, nivå (saker/troligt/osakert), beslut (auto/accepted/changed/rejected/private), riskflaggor, motpartstyp, kunskapsbas-/regelversion, ev. LLM-leverantör/modell/promptversion, sha256-hash av indata, beloppsspann. **Aldrig motpartstext, belopp, dokumentinnehåll eller personnummer.** |
 | `businesses` – abonnemang (migration 51) | Stripe-fälten `stripe_customer_id`, `stripe_subscription_id`, `stripe_price_id`, `stripe_status`, `current_period_end`, `cancel_at_period_end`, `billing_updated_at`, `billing_event_created`; `subscription_status` får `past_due` (grace). Alla fryses av triggern `businesses_subscription_frozen` – bara faktureringsflödet (som sätter `app.allow_subscription_update = 1` i sin transaktion) får skriva; en medlems PATCH via Data API:t kan aldrig aktivera ett abonnemang. |
 | `stripe_webhook_events` (migration 51) | idempotent logg per Stripe event-id: mottagen, Stripes `created`, typ, livemode, API-version, företag, status (mottagen/bearbetad/ignorerad/fel), sanerat fel. **Ingen payload lagras.** |
+| `platform_ops_records` (migration 52) | driftposter för systemvyn: `restore_drill`, `email_test_outbound`, `email_inbound`, `cron_run` – status, miljö, ansvarig och räknare i `summary` (icke-känslig JSON). Aldrig mejlinnehåll eller kunddata. |
 | `filing_submissions` (migration 50) | två nya kolumner för manuell inlämning: `downloaded_at` (när filen hämtades) och `manual_receipt` (jsonb: referens, notering, ev. kvittensfil `{filename, contentType, sizeBytes, storagePath}`, rapporterad när/av vem). Provider-checken tillåter `'manuell'`; signatur- och id-kraven gäller inte manuella rader, men en manuell rad i `inlamnad`/`kvitterad` **måste** ha `manual_receipt`. Kvittensfilen ligger i den privata bucketen `receipts` under `<business_id>/<submission_id>/`. |
 
 Dessutom två nya kolumner på `businesses`: `is_demo` (demo exkluderas ur KPI:er)
@@ -91,15 +92,22 @@ Ingen klientväg, ingen publik flagga, inget hårdkodat. Exakta steg:
    `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`):
 
    ```bash
-   npm run platform:bootstrap -- --email person@driva.se
+   npm run platform:bootstrap -- --email almqvist94@hotmail.com
    # eller exakt: --user-id <supabase-auth-uuid>
    # eller via env: PLATFORM_SUPER_ADMIN_USER_ID=<uuid> npm run platform:bootstrap
    ```
 
+   Skriptet läser `.env.local`/`.env` i arbetskatalogen; alternativt
+   `vercel env pull .env.local --environment=production` först. Det fungerar
+   **bara** med server-side produktionscredentials och en **befintlig,
+   verifierad** Supabase Auth-användare – det finns ingen publik route,
+   ingen hemlig query-parameter och ingen hårdkodad admin.
+
 3. Skriptet verifierar att auth-användaren finns (service-rollen), upsert:ar
    `platform_admins`-raden som aktiv `super_admin` och loggar `admin_bootstrap`
    i `admin_audit_log`. Idempotent – en redan aktiv super_admin lämnas orörd.
-4. Personen loggar in som vanligt och öppnar `/admin`.
+4. Personen loggar in som vanligt och öppnar `/admin` → tvingas registrera
+   TOTP (se MFA nedan) → adminytan öppnas.
 
 Alternativ utan skript: samma upsert direkt i SQL mot `platform_admins`
 (service-/superuser-anslutning) – triggern och audit gäller ändå.
@@ -119,13 +127,41 @@ den e-postadressen och accepterar → `platform_admins`-rad med roll `admin`.
   Utloggade → redirect till `/login?next=/admin`.
 - Ingen auto-redirect till `/admin` efter inloggning – en admin som också är
   vanlig Ferva-användare jobbar i kundappen tills hen själv går till `/admin`.
-- **MFA-status:** arkitekturen är MFA-redo. Sessionens
-  AAL-claim (`aal`) läses redan; med `PLATFORM_ADMIN_REQUIRE_MFA=1` kräver
-  `requirePlatformAdmin()` `aal2` (genomförd andra faktor) för **alla**
-  adminanrop. Flaggan är av som standard eftersom projektets Supabase-instans
-  inte har MFA-enrollment aktiverat ännu. Aktivering: slå på TOTP i Supabase
-  Auth-inställningarna, låt adminteamet registrera en faktor (Supabase
-  standard-UI/API), sätt sedan flaggan i Vercel.
+- **MFA (TOTP, Supabase Auth) – obligatoriskt för alla plattformsadmins.**
+  Vanlig e-post/lösenord- eller magic-link-inloggning är `aal1` och räknas
+  inte som MFA. `requirePlatformAdmin()` kräver `aal2` för **alla**
+  adminsidor och server actions (`src/lib/platform/auth.ts`).
+  - I Supabase-läget är kravet på som standard och kan **inte** stängas av i
+    produktion (`VERCEL_ENV=production`/`NODE_ENV=production`). Utanför
+    produktion kan `PLATFORM_ADMIN_REQUIRE_MFA=0` stänga av det för en
+    staging utan TOTP. JSON-läget (dev) har ingen Supabase Auth och därmed
+    ingen MFA – tydligt separat och stoppat i produktion.
+  - **Registrering:** `/admin/mfa` (utanför panel-layouten – inget admindata
+    renderas). Admin utan verifierad faktor skickas dit av `(panel)/layout.tsx`
+    och får QR-kod + **reservnyckel** (TOTP-hemligheten, visas en gång, lagras
+    aldrig av Ferva) och verifierar med första koden
+    (`supabase.auth.mfa.enroll` → `challengeAndVerify`). Audit
+    `admin_mfa_enrolled`.
+  - **Utmaning:** admin med faktor men `aal1`-session redirectas till
+    `/admin/mfa` (kodfält, `challengeAndVerify`) i stället för en rå 403.
+    Server actions med `aal1` får däremot ett tydligt 403-fel.
+  - **Hantering:** under `/admin/mfa` (menyn **Säkerhet**) kan admin lägga
+    till fler enheter och ta bort en faktor – borttagning kräver `aal2`
+    (Supabase nekar annars). Audit `admin_mfa_unenrolled`.
+  - **Återställning (förlorad enhet):** endast `super_admin`, under
+    `/admin/admins` → **Återställ MFA** på raden, med obligatoriskt skäl.
+    Service role (`auth.admin.mfa.deleteFactor`) tar bort personens
+    faktorer; audit `admin_mfa_reset` med skäl. Personen tvingas registrera
+    ny faktor vid nästa besök. Aldrig på sig själv. Är den **enda**
+    superadminen utelåst: Supabase Dashboard → Authentication → Users →
+    användaren → *Remove MFA factors* (dokumenterat i
+    `docs/runbooks/incident.md`).
+  - Supabase: TOTP är påslaget som standard i alla projekt
+    (Authentication → Multi-Factor → TOTP). Inga faktorer seedas någonsin.
+  - Plattformstabellerna nås aldrig via Data API (inga policyer för
+    `authenticated`/`anon`), så en `aal1`-session kan inte läsa dem ens
+    direkt mot PostgREST; SQL-vägen auktoriseras server-side före varje
+    anrop.
 - Adminbehörighet bor aldrig i klienttillstånd/localStorage – varje request
   slår upp `platform_admins` på nytt (React `cache` per request).
 
@@ -169,7 +205,9 @@ Kön visar Datum/Företag/Användare/Ärende/Status; i detaljen [Öppen] [Pågå
 | --- | --- | --- |
 | `SUPABASE_SERVICE_ROLE_KEY` | För användaråtgärder | Endast serversidan (aldrig `NEXT_PUBLIC`). Används av auth-admin-åtgärder: skicka om verifiering, inaktivera/radera auth-konto, e-postuppslag. Utan nyckel visas åtgärderna som ärligt otillgängliga. |
 | `PLATFORM_SUPER_ADMIN_USER_ID` | Vid bootstrap | Alternativ till `--user-id`/`--email` för `npm run platform:bootstrap`. |
-| `PLATFORM_ADMIN_REQUIRE_MFA` | Nej (default av) | `1` ⇒ `aal2` (MFA) krävs för alla adminanrop. Slå på när Supabase-MFA är aktiverat. |
+| `PLATFORM_ADMIN_REQUIRE_MFA` | Nej (default **på**) | `0` stänger av MFA-kravet **endast utanför produktion** (staging utan TOTP). I produktion krävs alltid `aal2`. |
+| `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | För felövervakning | Server/edge respektive klient. Utan DSN initieras Sentry inte. `SENTRY_ENVIRONMENT` valfritt; `SENTRY_ORG`/`SENTRY_PROJECT`/`SENTRY_AUTH_TOKEN` endast för source maps i build; `SENTRY_TENANT_SALT` valfritt – utan salt skickas ingen tenant-hash. Se avsnittet Drift. |
+| `RESTORE_DRILL_DB_URL`, `RESTORE_DRILL_STAGING_REF`, `PRODUCTION_SUPABASE_PROJECT_REF` | Vid restore drill | Endast för `npm run restore:drill` (staging). Se `docs/runbooks/backup-restore.md`. |
 | `DRIVA_APP_URL` (eller `APP_URL`) | I produktion | Absolut bas-URL för inbjudningslänkar i mejl och Stripe-retur-URL:er. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` (+ valfri `STRIPE_PUBLISHABLE_KEY`) | För abonnemang | Server-only. Alla tre krävs, annars visar Inställningar → Konto *Abonnemangsbetalning är inte konfigurerad* och inget abonnemang simuleras. Systemvyn listar konfigurationsproblem i klartext (blandade test/live-nycklar, live-nyckel utanför produktion, `prod_` i stället för `price_`). Se avsnittet Abonnemang nedan och `.env.example`. |
 | Befintliga | – | Supabase-URL/nycklar, `SUPABASE_DB_URL`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL` återanvänds. Inga nya publika variabler. |
@@ -180,11 +218,16 @@ Kön visar Datum/Företag/Användare/Ärende/Status; i detaljen [Öppen] [Pågå
    `20260830074500_20_platform_admin.sql`) mot produktions-Postgres.
    `npm run test:db` validerar hela kedjan mot PGlite innan.
 2. **Vercel-miljö:** kontrollera `SUPABASE_SERVICE_ROLE_KEY` (server-only) och
-   `DRIVA_APP_URL=https://…`. Lämna `PLATFORM_ADMIN_REQUIRE_MFA` osatt tills
-   MFA-enrollment är på plats.
+   `DRIVA_APP_URL=https://…`. Sätt `SENTRY_DSN` (och ev.
+   `NEXT_PUBLIC_SENTRY_DSN`) för felövervakning. Lämna
+   `PLATFORM_ADMIN_REQUIRE_MFA` osatt – MFA krävs alltid i produktion.
 3. **Bootstrap:** kör `npm run platform:bootstrap -- --email …` (steg ovan).
-4. **Verifiera:** logga in → `/admin` öppnas; en icke-admin ser 403; bjud in
-   nästa admin från `/admin/admins`.
+4. **Verifiera:** logga in → `/admin` → registrera TOTP på `/admin/mfa` →
+   adminytan öppnas; en icke-admin ser 403; bjud in nästa admin från
+   `/admin/admins`.
+5. **Drift:** `/admin/system` visar version, migrationsläge, Sentry, Resend
+   (ut/in + testmejl), Stripe, Tink, filing, cron, webhooks och backup/restore
+   – se avsnittet Drift och `docs/runbooks/`.
 
 ## Abonnemang (Stripe Billing)
 
@@ -240,6 +283,76 @@ sedan `stripe trigger checkout.session.completed` /
 `customer.subscription.updated` / `invoice.payment_failed`. Tester utan nätverk:
 `src/lib/billing/billing.test.ts` (signaturen verifieras med SDK:ns
 `generateTestHeaderString`).
+
+## Drift: felövervakning, systemvy, backup och runbooks
+
+### Felövervakning (Sentry)
+
+`@sentry/nextjs` är integrerat för server (`sentry.server.config.ts`), edge
+(`sentry.edge.config.ts`) och klient (`src/instrumentation-client.ts`);
+`src/instrumentation.ts` registrerar per runtime och exporterar
+`onRequestError = Sentry.captureRequestError`; `app/global-error.tsx` fångar
+renderfel. `next.config.ts` wrappas med `withSentryConfig` **bara när en DSN
+finns** – utan konfiguration är bygget oförändrat.
+
+Skydd (`src/lib/observability/scrub.ts`, testat i `scrub.test.ts`):
+request-body, cookies, headers, query-strängar, lokala variabler, e-post/IP
+tas alltid bort; fritext skrubbas för personnummer, JWT/Bearer, Stripe-,
+Resend-, Supabase- och AI-nycklar, anslutningssträngar, IBAN, långa
+nummerserier och base64-blobbar; console-/UI-brödsmulor kastas; endast
+taggarna i `ALLOWED_TAGS` (route, integration, correlationId, release,
+tenant-hash …) passerar. Ingen Session Replay. `sendDefaultPii: false`.
+
+`reportSafeError(error, { route, integration, businessId })`
+(`src/lib/observability/report.ts`) används i webhook/cron-vägar, sätter
+taggar och returnerar ett korrelations-id som också loggas/svaras ut.
+Tenant-id skickas bara som `sha256(SENTRY_TENANT_SALT:businessId)` – utan
+salt skickas ingen tenant-tagg.
+
+### Systemvy (`/admin/system`)
+
+Endast verifierbar status, aldrig grönt av artighet: version (release),
+migrationer (DB `supabase_migrations.schema_migrations` vs
+`EXPECTED_MIGRATION_VERSION` i `src/lib/storage/schema-version.ts`, testat
+mot katalogen), Sentry (server/klient/source maps), Resend (utgående fel,
+senaste testmejl, senaste inkommande webhook), Stripe (läge, webhookfel,
+senaste händelse, köade), Tink/filing (konfigurerat eller ej), påminnelsecron
+(senaste körning, >36 h ⇒ Fel), backup/restore (PITR-bekräftelse, senaste
+dokumenterade restore drill, RPO/RTO, ansvarig – **Ej verifierat** tills en
+super_admin registrerat en riktig drill). Driftposterna bor i
+`platform_ops_records` (migration 52; JSON-läget: `.data/platform.json`):
+`cron_run` (skrivs av `/api/cron/reminders`), `email_inbound`
+(`/api/inbox/inbound`, bara HTTP-status), `email_test_outbound` (knappen
+**Skicka testmejl** till adminens egen adress – aldrig fri mottagare, aldrig
+innehåll), `restore_drill` (formuläret, super_admin, audit
+`restore_drill_recorded`).
+
+`GET /api/health` (utan inloggning, inga hemligheter) svarar dessutom med
+`ops`: release, migrationsläge, senaste cron, Stripe-webhookfel, Sentry
+konfigurerad, MFA-krav, restore drill verifierad samt `warnings[]`
+(`migrations_behind`, `cron_stale`, `cron_failed`, `cron_never_ran`,
+`stripe_webhook_failures`, `restore_drill_unverified`,
+`sentry_unconfigured`, `admin_mfa_not_required`) – larmbara från en extern
+monitor. Varningar fäller inte statuskoden (annars larmflimmer).
+
+### Backup/restore
+
+Supabase PITR/backup kan inte läsas via API och simuleras därför inte –
+aktivering och verifiering är dokumenterad steg för steg i
+`docs/runbooks/backup-restore.md`. `npm run restore:drill -- --target staging
+--staging-ref <ref>` (`scripts/restore-drill.ts`) verifierar en **återläst
+staging-kopia** i en READ ONLY-transaktion: kärnschema + senaste migration,
+immutabilitetstriggrar, tenantantal, ledger-checksumma och debet = kredit per
+företag. Scriptet vägrar allt annat än `--target staging`, kräver explicit
+staging-identitet i värdnamnet och vägrar värdnamn som matchar
+produktionsprojektet. RESULT-raden klistras in i systemvyns formulär.
+
+### Runbooks (`docs/runbooks/`)
+
+`incident.md`, `nyckelrotation.md`, `epoststopp.md`, `bankstopp.md`,
+`stripe-webhook-fel.md`, `filing-fel.md`, `backup-restore.md`,
+`epost-produktion.md` (SPF/DKIM/DMARC, bounce/complaint, Resend-signatur,
+inbound MX, auth email hook).
 
 ## Lokal utveckling (JSON-läget)
 

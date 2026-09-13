@@ -11,6 +11,7 @@ import path from "path";
 import type {
   AdminAuditEntry,
   EmailEvent,
+  OpsRecord,
   SuggestionEvent,
   PlatformAdmin,
   PlatformAdminInvitation,
@@ -26,6 +27,7 @@ export interface PlatformRegistry {
   auditLog: AdminAuditEntry[];
   emailEvents: EmailEvent[];
   suggestionEvents: SuggestionEvent[];
+  opsRecords: OpsRecord[];
   /** Företag som inaktiverats av admin (JSON-läget saknar businesses-tabell). */
   disabledBusinesses: { businessId: string; disabledAt: string; disabledBy: string }[];
 }
@@ -47,6 +49,7 @@ function empty(): PlatformRegistry {
     auditLog: [],
     emailEvents: [],
     suggestionEvents: [],
+    opsRecords: [],
     disabledBusinesses: [],
   };
 }

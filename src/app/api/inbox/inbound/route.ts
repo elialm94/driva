@@ -7,6 +7,7 @@ import { persistInboundAttachments } from "@/lib/inbox/attachment-file";
 import { inboundSlugFromTo } from "@/lib/inbox/inbound-mail";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { withPublicBusiness } from "@/lib/auth/session";
+import { recordInboundMail } from "@/lib/platform/ops";
 
 export async function POST(req: NextRequest) {
   const raw = await req.text();
@@ -56,6 +57,7 @@ export async function POST(req: NextRequest) {
 
   if (!isSupabaseMode()) {
     const result = await run();
+    after(() => recordInboundMail(result.status === 200 ? "ok" : "fel", { httpStatus: result.status, created: result.status === 200 ? result.payload.created : undefined }));
     if (result.status !== 200) return NextResponse.json({ error: result.error }, { status: result.status });
     if (result.confirmationFollowUp) after(() => followUpInboundConfirmation(slug, result.payload.id));
     const notice = result.ownerNotice;
@@ -64,6 +66,13 @@ export async function POST(req: NextRequest) {
   }
 
   const result = await withPublicBusiness("inbound", slug, run);
+  // Driftpost för systemvyn (status/tid, aldrig innehåll) – efter svaret, utanför tenantkontexten.
+  after(() =>
+    recordInboundMail(result?.status === 200 ? "ok" : "fel", {
+      httpStatus: result ? result.status : 404,
+      created: result?.status === 200 ? result.payload.created : undefined,
+    })
+  );
   if (!result) return NextResponse.json({ error: "Okänd inkommande adress" }, { status: 404 });
   if (result.status !== 200) return NextResponse.json({ error: result.error }, { status: result.status });
   // AI-fallbacken körs efter svaret – webhooken väntar aldrig på en LLM.

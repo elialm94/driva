@@ -68,17 +68,9 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     );
   }
 
-  if (!ctx.mfaSatisfied) {
-    return (
-      <DeniedScreen title="Tvåfaktorsautentisering krävs">
-        <p>
-          Den här miljön kräver MFA för Ferva Admin (<code>PLATFORM_ADMIN_REQUIRE_MFA=1</code>).
-          Logga in igen och verifiera din andra faktor – sessionen behöver AAL2 innan adminytan
-          öppnas.
-        </p>
-      </DeniedScreen>
-    );
-  }
+  // AAL1-session: inget admindata renderas. /admin/mfa avgör själv om det är
+  // registrering (ingen verifierad faktor) eller utmaning (faktor finns).
+  if (!ctx.mfaSatisfied) redirect("/admin/mfa");
 
   const [ticketCounts, support] = await Promise.all([
     countSupportTicketsByStatus(),
