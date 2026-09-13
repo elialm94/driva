@@ -55,10 +55,18 @@ describe("uppdragssidan är en ekonomilogg", () => {
     assert.doesNotMatch(editor, /Fota kvitto|Sök och beställ/);
   });
 
-  it("sidorenderingen muterar inte inköpsreferensen", () => {
+  it("sidan har ingen inköpsreferenskort och tilldelar ingen ref vid visning", () => {
+    // Tidigare: kortet + ensureJobPurchaseRefAction vid mount mintade FV-n
+    // bara för att någon öppnade uppdraget. Kortet är borta; skrivvägen
+    // finns kvar i actions.ts för inbox/beställning/kvitto.
     assert.equal(page.includes("ensureJobPurchaseRef("), false);
-    assert.match(page, /purchaseRef=\{job\.purchaseRef\}/);
-    assert.match(work, /ensureJobPurchaseRefAction/);
+    assert.equal(page.includes("purchaseRef="), false);
+    assert.equal(work.includes("ensureJobPurchaseRefAction"), false);
+    assert.equal(work.includes("PurchaseRefRow"), false);
+    for (const gone of ["Inköpsreferens", "Kopiera referens", "Fota materialköp", "Vidarebefordra underlag"]) {
+      assert.equal(work.includes(gone), false, `${gone} ska inte finnas på uppdragssidan`);
+      assert.equal(page.includes(gone), false, `${gone} ska inte finnas på uppdragssidan`);
+    }
   });
 
   it("sidan har en enda huvudåtgärd, och den ligger i sidhuvudet", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { Check, Copy, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { Badge, buttonClasses, cx, SectionTitle } from "./ui";
 import { Modal } from "./modal";
 import { DateField } from "./date-field";
@@ -14,7 +14,6 @@ import { syncDocLineClassification } from "@/lib/economic-line-type";
 import {
   addJobWorkEntryAction,
   deleteJobWorkEntryAction,
-  ensureJobPurchaseRefAction,
   updateJobWorkEntryAction,
 } from "@/app/actions";
 import type { DocLine, JobWorkEntry, VatRate } from "@/lib/types";
@@ -78,8 +77,6 @@ export function JobWorkSection({
   defaultHourlyRate,
   defaultVatRate = 25,
   wholesalers,
-  purchaseRef,
-  inboxAddress,
   invoiceReadiness,
 }: {
   jobId: string;
@@ -94,8 +91,6 @@ export function JobWorkSection({
    * konfigurerad grossist → dagens manuella materialformulär, oförändrat.
    */
   wholesalers?: JobWholesalerContext;
-  purchaseRef?: string;
-  inboxAddress?: string;
   invoiceReadiness?: InvoiceReadiness;
 }) {
   const [sheet, setSheet] = useState<"post" | "grossist" | "val" | "kvitto" | null>(null);
@@ -104,27 +99,7 @@ export function JobWorkSection({
   const [edit, setEdit] = useState<JobWorkViewEntry | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [resolvedRef, setResolvedRef] = useState(purchaseRef);
   const fromHere = { href: `/uppdrag/${jobId}`, label: jobTitle };
-
-  useEffect(() => {
-    setResolvedRef(purchaseRef);
-  }, [purchaseRef]);
-
-  useEffect(() => {
-    if (resolvedRef) return;
-    let cancelled = false;
-    void ensureJobPurchaseRefAction(jobId)
-      .then((next) => {
-        if (!cancelled && next) setResolvedRef(next);
-      })
-      .catch(() => {
-        /* Referensen är extra – uppdragssidan ska gå att använda utan den. */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [jobId, resolvedRef]);
 
   function remove(id: string) {
     startTransition(async () => {
@@ -162,13 +137,6 @@ export function JobWorkSection({
 
       <WorkList entries={entries} from={fromHere} onEdit={setEdit} onDelete={setConfirmId} />
 
-      {resolvedRef ? (
-        <PurchaseRefRow
-          purchaseRef={resolvedRef}
-          inboxAddress={inboxAddress}
-          onPhoto={() => setSheet("kvitto")}
-        />
-      ) : null}
       {invoiceReadiness ? <InvoiceReadinessBlock readiness={invoiceReadiness} /> : null}
 
       <AddEntrySheet
@@ -544,49 +512,5 @@ function EditSheet({
         </label>
       </div>
     </Modal>
-  );
-}
-
-function PurchaseRefRow({
-  purchaseRef,
-  inboxAddress,
-  onPhoto,
-}: {
-  purchaseRef: string;
-  inboxAddress?: string;
-  onPhoto: () => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="mt-4 rounded-2xl border border-line/80 px-4 py-3" data-job-purchase-ref="">
-      <p className="text-[13px] text-muted">Inköpsreferens</p>
-      <div className="mt-1 flex flex-wrap items-center gap-2">
-        <span className="font-medium text-ink">{purchaseRef}</span>
-        <button
-          type="button"
-          className={buttonClasses("ghost", "sm")}
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(purchaseRef);
-            } catch {
-              window.prompt("Kopiera referensen:", purchaseRef);
-            }
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 2000);
-          }}
-        >
-          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-          {copied ? "Kopierad" : "Kopiera referens"}
-        </button>
-        <button type="button" className={buttonClasses("ghost", "sm")} onClick={onPhoto}>
-          Fota materialköp
-        </button>
-      </div>
-      {inboxAddress ? (
-        <p className="mt-2 text-[13px] text-soft">
-          Vidarebefordra underlag till {inboxAddress}. Ange referensen i ämnesraden, till exempel {purchaseRef}.
-        </p>
-      ) : null}
-    </div>
   );
 }

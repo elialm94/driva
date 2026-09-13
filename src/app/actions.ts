@@ -768,7 +768,7 @@ export async function registerJobTimeAction(jobId: string, input: JobTimeInput) 
   });
 }
 
-/** Inköpsreferens: skrivväg. Sidorenderingen får inte kalla ensureJobPurchaseRef. */
+/** Inköpsreferens: skrivväg för inbox/beställning/kvitto. Inte uppdragssidan. */
 export async function ensureJobPurchaseRefAction(jobId: string): Promise<string> {
   return withBusiness(() => ensureJobPurchaseRef(jobId));
 }
