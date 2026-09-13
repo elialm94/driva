@@ -10,10 +10,11 @@
  * modulen), och db() i store.ts läser cellen synkront – även från nästlade
  * serverkomponenter i samma request.
  *
- * bindRequestTenant MÅSTE köras utanför den cachade laddningen. revalidatePath
- * efter en mutation kan ge en ny cache-cell för requestSlot() medan den
- * cachade loadern är en träff och inte körs om – då blir db() utan tenant
- * och sidan kraschar i error boundary (hosted digest).
+ * bindRequestTenant MÅSTE köras utanför den cachade auth-laddningen, och
+ * state MÅSTE läsas live (inte ur React cache()). revalidatePath efter en
+ * mutation kan ge en ny cache-cell för requestSlot() medan en cachad
+ * state-snapshot är en träff från FÖRE skrivningen – då kastar
+ * requireCustomer/currentVersion (hosted digest).
  *
  * Utanför en RSC-request (tester, route handlers, scripts) memoiserar cache()
  * inte – cellen är alltid tom och db() faller vidare till ALS/JSON-vägarna.

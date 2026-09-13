@@ -8,11 +8,13 @@ import { buildSeed } from "./seed";
 import { cloneState, runInTenantContext, type TenantContext } from "./storage/context";
 import { createCustomer } from "./services/customers";
 import { createInvoice } from "./services/invoices";
-import { getInvoiceSendBlockers } from "./invoices/validate";
+import { getInvoiceSendBlockers, validateInvoiceForIssue } from "./invoices/validate";
 import { emptyTestDb, labor, testCustomer } from "./invoices/test-db";
 import {
   currentVersion,
+  getInvoice,
   getQuote,
+  invoiceTotals,
   pendingDraftQuoteVersion,
   quoteAcceptance,
   quoteTotals,
@@ -70,13 +72,23 @@ function loadQuotePageReads(quoteId: string) {
   return { quote, sendBlockers, hard };
 }
 
-describe("ensurePageBusiness binder request-cellen utanför cache()", () => {
-  it("sidoladdningen skriver bindRequestTenant efter den cachade loadern", () => {
+function actionSource(name: string, nextName: string): string {
+  const actions = readFileSync(new URL("../app/actions.ts", import.meta.url), "utf8");
+  const start = actions.indexOf(`export async function ${name}`);
+  const end = actions.indexOf(`export async function ${nextName}`);
+  assert.ok(start >= 0 && end > start, name);
+  return actions.slice(start, end);
+}
+
+describe("ensurePageBusiness binder live state, inte React-cachad snapshot", () => {
+  it("sidoladdningen binder färsk session/snapshot, inte cached state-blob", () => {
     const session = readFileSync(new URL("./auth/session.ts", import.meta.url), "utf8");
-    assert.match(session, /bindRequestTenant\(await loadDemoPage/);
-    assert.match(session, /bindRequestTenant\(await loadPageBusiness/);
-    assert.match(session, /bindRequestTenant\(await loadDemoPublicPage/);
-    assert.match(session, /bindRequestTenant\(loaded\)/);
+    assert.match(session, /bindRequestTenant\(\{ \.\.\.auth, state: await ensureDemoSessionState\(demoId\) \}\)/);
+    assert.match(session, /bindRequestTenant\(\{ \.\.\.auth, state: await loadStateSnapshot\(auth\.businessId\) \}\)/);
+    assert.match(session, /state: await loadStateSnapshot\(resolved\.businessId\)/);
+    assert.doesNotMatch(session, /bindRequestTenant\(await loadDemoPage/);
+    assert.doesNotMatch(session, /bindRequestTenant\(await loadPageBusiness/);
+    assert.doesNotMatch(session, /return \{\s*state: await ensureDemoSessionState/);
     assert.doesNotMatch(session, /const slot = requestSlot\(\);\s*slot\.state =/);
   });
 
@@ -85,19 +97,66 @@ describe("ensurePageBusiness binder request-cellen utanför cache()", () => {
     assert.match(store, /bindRequestTenant\(\{ state: ctx\.state, businessId: ctx\.businessId \}\)/);
   });
 
-  it("createQuoteAction revaliderar efter withBusiness, inte inuti", () => {
-    const actions = readFileSync(new URL("../app/actions.ts", import.meta.url), "utf8");
-    const start = actions.indexOf("export async function createQuoteAction");
-    const end = actions.indexOf("export async function updateQuoteAction");
-    assert.ok(start >= 0 && end > start);
-    const fn = actions.slice(start, end);
-    assert.match(fn, /await withBusiness\(\(\) => createQuote\(input\)\.id/);
-    assert.match(fn, /refresh\(\)/);
-    assert.match(fn, /redirect\(/);
-    assert.ok(
-      fn.indexOf("refresh()") > fn.indexOf("createQuote(input).id"),
-      "refresh() måste ligga efter withBusiness-anropet",
+  it("createQuoteAction och createInvoiceAction revaliderar efter withBusiness", () => {
+    const quote = actionSource("createQuoteAction", "updateQuoteAction");
+    assert.match(quote, /await withBusiness\(\(\) => createQuote\(input\)\.id/);
+    assert.ok(quote.indexOf("refresh()") > quote.indexOf("createQuote(input).id"));
+
+    const invoice = actionSource("createInvoiceAction", "updateInvoiceAction");
+    assert.match(invoice, /await withBusiness\(\(\) => createInvoice\(input\)\.id/);
+    assert.ok(invoice.indexOf("refresh()") > invoice.indexOf("createInvoice(input).id"));
+
+    const invoiceUpdate = actionSource("updateInvoiceAction", "sendInvoiceAction");
+    assert.match(invoiceUpdate, /await withBusiness\(\(\) => updateInvoice\(invoiceId, input\)\.id/);
+    assert.ok(invoiceUpdate.indexOf("refresh()") > invoiceUpdate.indexOf("updateInvoice(invoiceId, input).id"));
+  });
+});
+
+describe("cached snapshot från före mutationen kastar – därför måste bind läsa live", () => {
+  it("ny kund och ny offert saknas i klonen tagen före create", () => {
+    replaceDb(buildSeed());
+    const snapshot = cloneState(db());
+    const created = runInTenantContext(writeCtx(), () => {
+      const customer = createCustomer({
+        kind: "privat",
+        name: "Stale bind",
+        phone: "0707654321",
+        email: "",
+      });
+      const defaults = quoteDefaults();
+      const quote = createQuote({
+        customerId: customer.id,
+        title: "Efter mutation",
+        lines: [labor({ unitPrice: 2_000 })],
+        rot: null,
+        paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
+        paymentTermsDays: defaults.paymentTermsDays,
+        validUntil: defaults.validUntil,
+        terms: defaults.terms,
+      });
+      return { customer, quote };
+    });
+
+    assert.equal(snapshot.customers.some((customer) => customer.id === created.customer.id), false);
+    assert.equal(snapshot.quotes.some((quote) => quote.id === created.quote.id), false);
+    assert.ok(db().customers.some((customer) => customer.id === created.customer.id));
+    assert.ok(db().quotes.some((quote) => quote.id === created.quote.id));
+
+    assert.throws(
+      () =>
+        runInTenantContext({ ...readCtx(), state: snapshot, baseline: snapshot }, () =>
+          requireCustomer(created.customer.id),
+        ),
+      /finns inte/,
     );
+    assert.equal(
+      runInTenantContext({ ...readCtx(), state: snapshot, baseline: snapshot }, () => getQuote(created.quote.id)),
+      undefined,
+    );
+    runInTenantContext(readCtx(), () => {
+      requireCustomer(created.customer.id);
+      loadQuotePageReads(created.quote.id);
+    });
   });
 });
 
@@ -213,6 +272,33 @@ describe("ny kund utan e-post och fakturans hårda e-postkrav", () => {
     assert.equal(created.phone.length > 0, true);
     assert.equal(created.email, "");
     assert.ok(db().customers.some((customer) => customer.id === created.id));
+  });
+
+  it("efter create: fakturasidans läsningar kastar inte, buyer_email är fortfarande hård", () => {
+    replaceDb(
+      emptyTestDb({
+        customers: [testCustomer({ id: "cust-1", email: "", phone: "0707654321" })],
+      }),
+    );
+    const invoice = runInTenantContext(writeCtx(), () =>
+      createInvoice({
+        customerId: "cust-1",
+        type: "faktura",
+        lines: [labor({ unitPrice: 2_000 })],
+        rot: null,
+      }),
+    );
+    runInTenantContext(readCtx(), () => {
+      const found = getInvoice(invoice.id);
+      assert.ok(found);
+      requireCustomer(found.customerId);
+      invoiceTotals(found);
+      documentLinkView("invoice", found.id, { href: `/ekonomi/fakturor/${found.id}`, label: "Faktura" });
+      validateInvoiceForIssue(found.id);
+    });
+    const email = getInvoiceSendBlockers(invoice.id).find((blocker) => blocker.code === "buyer_email");
+    assert.ok(email);
+    assert.equal(email.actionLabel, "Lägg till e-post");
   });
 
   it("faktura utan buyer_email är fortfarande hård send-blocker med Lägg till e-post", () => {
