@@ -13,11 +13,15 @@ import {
   ADDRESS_SEARCH_DEBOUNCE_MS,
   ADDRESS_SEARCH_MIN_CHARS,
   applyPickedAddress,
+  DEMO_ADDRESSES,
   demoAddressSuggestions,
   formatAddressLine,
+  formatTripDestination,
   googleMapsApiKey,
   partsFromPlaceComponents,
+  presentAddressSuggestion,
   shouldSearchAddress,
+  streetAddressParts,
   trimmedAddressQuery,
 } from "./address-autocomplete";
 
@@ -71,6 +75,67 @@ describe("address autocomplete helpers", () => {
       address: "Vädursvägen 13",
       postalCode: "141 43",
       city: "Huddinge",
+    });
+  });
+
+  it("Vasagatan är ett demo-gatuförslag med bara strängar i menyraden", () => {
+    const hits = demoAddressSuggestions("vas");
+    assert.equal(hits.length, 1);
+    assert.deepEqual(hits[0], {
+      address: "Vasagatan 33",
+      postalCode: "411 24",
+      city: "Göteborg",
+    });
+    const row = presentAddressSuggestion(hits[0]);
+    assert.equal(typeof row.id, "string");
+    assert.equal(row.main, "Vasagatan 33");
+    assert.equal(row.secondary, "411 24 Göteborg");
+    assert.equal(row.main.includes("[object"), false);
+  });
+
+  it("varje demoadress ger sträng-id, main och secondary – inget objekt som React-barn", () => {
+    for (const address of DEMO_ADDRESSES) {
+      const row = presentAddressSuggestion(address);
+      assert.equal(typeof row.id, "string");
+      assert.equal(typeof row.main, "string");
+      assert.equal(typeof row.secondary, "string");
+      assert.ok(row.main.length > 0, address.address);
+    }
+  });
+
+  it("presentAddressSuggestion och applyPickedAddress kastar inte när fält saknas", () => {
+    const incomplete = { address: undefined, postalCode: undefined, city: undefined } as unknown as Parameters<
+      typeof applyPickedAddress
+    >[0];
+    const row = presentAddressSuggestion(incomplete);
+    assert.equal(row.main, "");
+    assert.equal(row.secondary, "");
+    const picked = applyPickedAddress(incomplete, "Vasagatan 33");
+    assert.deepEqual(streetAddressParts(picked), {
+      address: "Vasagatan 33",
+      postalCode: "",
+      city: "",
+    });
+    assert.equal(formatAddressLine(incomplete), "");
+    assert.equal(formatTripDestination(incomplete), "");
+  });
+
+  it("AddressFields släpper bara gata/postnr/ort – land stannar på resmålet", () => {
+    const picked = applyPickedAddress(
+      {
+        address: "Vasagatan 33",
+        postalCode: "411 24",
+        city: "Göteborg",
+        country: "Sverige",
+        countryCode: "SE",
+      },
+      "Vasagatan 33"
+    );
+    assert.equal(picked.country, "Sverige");
+    assert.deepEqual(streetAddressParts(picked), {
+      address: "Vasagatan 33",
+      postalCode: "411 24",
+      city: "Göteborg",
     });
   });
 
@@ -153,6 +218,13 @@ describe("AddressAutocomplete-klienten", () => {
     assert.match(source, /referrerPolicy = "origin"/);
   });
 
+  it("defaultgatan använder presentAddressSuggestion och AddressFields släpper streetAddressParts", () => {
+    assert.match(source, /presentAddressSuggestion\(a\)/);
+    assert.match(source, /streetAddressParts\(next\)/);
+    assert.match(source, /p\.mainText\?\.text \?\? p\.text\?\.text/);
+    assert.doesNotMatch(source, /composeSelected="trip"/);
+  });
+
   it("portalerar förslagsmenyn ovanpå Ny kund-modalen", () => {
     assert.match(source, /ADDRESS_MENU_Z_INDEX/);
     assert.match(source, /data-address-suggestions/);
@@ -178,6 +250,21 @@ describe("alla redigerbara adressfält använder den delade komponenten", () => 
       assert.match(src, /from ["'].*address-input["']/);
     });
   }
+
+  it("AddressFields-ytor är Sweden+street, inte Traktamente-trip", () => {
+    for (const rel of [
+      "src/components/new-customer-modal.tsx",
+      "src/components/customer-details-form.tsx",
+      "src/components/work-location-form.tsx",
+      "src/components/settings-form.tsx",
+      "src/components/settings-billing-readiness.tsx",
+      "src/app/onboarding/onboarding-form.tsx",
+    ]) {
+      const src = readFileSync(join(root, rel), "utf8");
+      assert.match(src, /<AddressFields/);
+      assert.doesNotMatch(src, /composeSelected="trip"/);
+    }
+  });
 
   it("Inställningar använder AddressFields med Gatuadress", () => {
     const src = readFileSync(join(root, "src/components/settings-form.tsx"), "utf8");

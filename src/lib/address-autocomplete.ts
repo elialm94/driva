@@ -63,9 +63,48 @@ export function shouldSearchAddress(raw: string): boolean {
   return trimmedAddressQuery(raw).length >= ADDRESS_SEARCH_MIN_CHARS;
 }
 
+/** Alltid en sträng – `.trim()` på undefined kastar och kan fälla error boundary. */
+export function addressFieldText(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * Gata / postnummer / ort – det enda AddressFields får släppa ut.
+ * Land hör till resmålet (`composeSelected="trip"`), inte kund-/jobbadress.
+ */
+export function streetAddressParts(parts: AddressParts): Pick<AddressParts, "address" | "postalCode" | "city"> {
+  return {
+    address: addressFieldText(parts.address),
+    postalCode: addressFieldText(parts.postalCode),
+    city: addressFieldText(parts.city),
+  };
+}
+
+/**
+ * En rad i förslagsmenyn. `main`/`secondary` är alltid strängar så React
+ * inte får ett objekt som barn (produktion: minified error, #441-gränsen).
+ */
+export function presentAddressSuggestion(parts: AddressParts): { id: string; main: string; secondary: string } {
+  const address = addressFieldText(parts.address).trim();
+  const city = addressFieldText(parts.city).trim();
+  const postal = addressFieldText(parts.postalCode).trim();
+  const main = address || city;
+  const place = [postal, city].filter(Boolean).join(" ");
+  const countryCode = addressFieldText(parts.countryCode).trim().toUpperCase();
+  const country = countryCode === "SE" ? "" : addressFieldText(parts.country).trim();
+  const secondary = [place, country].filter(Boolean).join(", ");
+  return {
+    id: [main, postal, city].filter(Boolean).join("|") || "förslag",
+    main,
+    secondary,
+  };
+}
+
 export function formatAddressLine(parts: AddressParts): string {
-  const place = [parts.postalCode.trim(), parts.city.trim()].filter(Boolean).join(" ");
-  return [parts.address.trim(), place].filter(Boolean).join(", ");
+  const place = [addressFieldText(parts.postalCode).trim(), addressFieldText(parts.city).trim()]
+    .filter(Boolean)
+    .join(" ");
+  return [addressFieldText(parts.address).trim(), place].filter(Boolean).join(", ");
 }
 
 /**
@@ -74,13 +113,15 @@ export function formatAddressLine(parts: AddressParts): string {
  * kontrollerat state, där en gatu-only-uppdatering annars vinner).
  */
 export function applyPickedAddress(selected: AddressParts, suggestionMain: string): AddressParts {
-  const postal = selected.postalCode.trim();
+  const postal = addressFieldText(selected?.postalCode).trim();
+  const country = addressFieldText(selected?.country).trim();
+  const countryCode = addressFieldText(selected?.countryCode).trim().toUpperCase();
   return {
-    address: selected.address.trim() || suggestionMain.trim(),
+    address: addressFieldText(selected?.address).trim() || addressFieldText(suggestionMain).trim(),
     postalCode: isSwedishPostalCode(postal) ? formatSwedishPostalCode(postal) : postal,
-    city: selected.city.trim(),
-    ...(selected.country?.trim() ? { country: selected.country.trim() } : {}),
-    ...(selected.countryCode?.trim() ? { countryCode: selected.countryCode.trim().toUpperCase() } : {}),
+    city: addressFieldText(selected?.city).trim(),
+    ...(country ? { country } : {}),
+    ...(countryCode ? { countryCode } : {}),
   };
 }
 
@@ -106,10 +147,13 @@ export function partsFromPlaceComponents(components: PlaceAddressComponent[]): A
  * "Göteborg, Göteborg". Sverige skrivs inte ut – inrikes är normalfallet.
  */
 export function formatTripDestination(parts: AddressParts): string {
-  const place = [parts.postalCode.trim(), parts.city.trim()].filter(Boolean).join(" ");
-  const country = parts.countryCode?.toUpperCase() === "SE" ? "" : (parts.country?.trim() ?? "");
+  const place = [addressFieldText(parts.postalCode).trim(), addressFieldText(parts.city).trim()]
+    .filter(Boolean)
+    .join(" ");
+  const countryCode = addressFieldText(parts.countryCode).trim().toUpperCase();
+  const country = countryCode === "SE" ? "" : addressFieldText(parts.country).trim();
   const segments: string[] = [];
-  for (const segment of [parts.address.trim(), place, country]) {
+  for (const segment of [addressFieldText(parts.address).trim(), place, country]) {
     if (!segment) continue;
     const lower = segment.toLowerCase();
     if (segments.some((s) => s.toLowerCase().includes(lower))) continue;
