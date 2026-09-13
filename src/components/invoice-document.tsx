@@ -27,6 +27,19 @@ function DocSectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">{children}</p>;
 }
 
+/**
+ * Rader som kunden ska se. En rad på 0 kr ("Skruv 1 st 0 kr") läser som ett
+ * misstag på ett dokument som mejlas och arkiveras, så den renderas inte.
+ *
+ * Rent visningsval: raden ligger kvar i `invoice.lines` och därmed i
+ * snapshoten, i bokföringen (entriesInvoiceSent) och i HUS-underlaget
+ * (laborHoursFromLines läser timmarna ur arbetsraderna). Rubrikrader
+ * summerar alltid till 0 och är alltid med.
+ */
+function documentLines(lines: Invoice["lines"]): Invoice["lines"] {
+  return lines.filter((line) => line.isHeading || lineTotal(line) !== 0);
+}
+
 function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
   const numericTh = "hidden pb-2 pl-3 text-right font-semibold sm:table-cell print:table-cell";
   const numericTd = "hidden py-2.5 pl-3 text-right align-top text-soft tabular whitespace-nowrap sm:table-cell print:table-cell";
@@ -43,7 +56,7 @@ function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
         </tr>
       </thead>
       <tbody>
-        {lines.map((line) => {
+        {documentLines(lines).map((line) => {
           if (line.isHeading) {
             return (
               <tr key={line.id} className="break-inside-avoid border-b border-line/70 last:border-0">
@@ -82,7 +95,10 @@ function InvoiceLinesTable({ lines }: { lines: Invoice["lines"] }) {
 /** Normala totaler – ROT/RUT-detaljer bor i sin egen sektion, aldrig här. */
 function InvoiceTotals({ lines, reverseCharge }: { lines: Invoice["lines"]; reverseCharge: boolean }) {
   const t = docTotals(lines, null);
-  const vat = vatBreakdown(lines);
+  // Summorna räknas på alla rader, men en momssats som bara en dold nollrad
+  // bar får ingen egen "Moms 6 %: 0 kr". Omvänd byggmoms har 0 % med underlag
+  // och står därför kvar.
+  const vat = vatBreakdown(lines).filter((v) => v.base !== 0 || v.vat !== 0);
   return (
     <div className="break-inside-avoid mt-3 flex justify-end">
       <div className="w-full max-w-[300px] space-y-1.5 text-[13.5px]">
@@ -129,10 +145,12 @@ function InvoiceTaxReductionSection({
       <DocSectionLabel>{view.heading}</DocSectionLabel>
       <div className="mt-2.5 grid gap-x-8 gap-y-3 sm:grid-cols-[minmax(0,1fr)_300px] print:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-0.5 text-[13.5px] leading-relaxed">
+          {/* Maskerat personnummer: namnet plus de fyra sista kopplar avdraget
+              till rätt person utan att hela numret hamnar i en mejlad PDF. */}
           <p className="font-medium text-ink">
             {view.personName}
-            {view.personalIdentityNumber ? (
-              <span className="font-normal text-soft tabular"> · {view.personalIdentityNumber}</span>
+            {view.personalIdentityNumberMasked ? (
+              <span className="font-normal text-soft tabular"> · {view.personalIdentityNumberMasked}</span>
             ) : null}
           </p>
           {view.propertyRows.map((row) => (

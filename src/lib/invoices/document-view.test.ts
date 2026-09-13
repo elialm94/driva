@@ -38,8 +38,8 @@ describe("ROT-sektionens databindning", () => {
     assert.ok(view);
     assert.equal(view.heading, "ROT-avdrag");
     assert.equal(view.personName, "Anna Andersson");
-    assert.equal(view.personalIdentityNumber, "19850515-1234");
-    assert.deepEqual(view.propertyRows, [{ label: "Fastighet", value: "Södermalm 1:1" }]);
+    assert.equal(view.personalIdentityNumberMasked, "1985••••-1234");
+    assert.deepEqual(view.propertyRows, [{ label: "Fastighetsbeteckning", value: "Södermalm 1:1" }]);
   });
 
   it("fastigheten kommer från fakturans valda bostad, inte kundens standard", () => {
@@ -64,7 +64,7 @@ describe("ROT-sektionens databindning", () => {
     // Skrivfixen: lagrade detaljer baseras på fakturans val – inte standardbostaden.
     assert.equal(inv.taxReductionDetails?.housing?.propertyDesignation, "Skövde Aspen 2:14");
     const view = invoiceTaxReductionView(inv, { buyer: db().customers[0] });
-    assert.deepEqual(view?.propertyRows, [{ label: "Fastighet", value: "Skövde Aspen 2:14" }]);
+    assert.deepEqual(view?.propertyRows, [{ label: "Fastighetsbeteckning", value: "Skövde Aspen 2:14" }]);
   });
 
   it("utfärdad faktura fryser person och fastighet – kundkortet kan ändras fritt", () => {
@@ -86,8 +86,8 @@ describe("ROT-sektionens databindning", () => {
     assert.equal(stored.issuedSnapshot?.buyer.personalIdentityNumber, "19850515-1234");
     const view = invoiceTaxReductionView(stored, { buyer: customer });
     assert.equal(view?.personName, "Anna Andersson");
-    assert.equal(view?.personalIdentityNumber, "19850515-1234");
-    assert.deepEqual(view?.propertyRows, [{ label: "Fastighet", value: "Södermalm 1:1" }]);
+    assert.equal(view?.personalIdentityNumberMasked, "1985••••-1234");
+    assert.deepEqual(view?.propertyRows, [{ label: "Fastighetsbeteckning", value: "Södermalm 1:1" }]);
   });
 
   it("vanlig faktura utan ROT: ingen sektion och inget fryst personnummer", () => {
@@ -159,8 +159,8 @@ describe("ROT-sektionens databindning", () => {
     const view = invoiceTaxReductionView(inv, { buyer: db().customers[0] });
     assert.ok(view);
     assert.equal(view.personName, "Göran Eriksson");
-    assert.equal(view.personalIdentityNumber, "19800101-1234");
-    assert.deepEqual(view.propertyRows, [{ label: "Fastighet", value: "Skövde Aspen 2:14" }]);
+    assert.equal(view.personalIdentityNumberMasked, "1980••••-1234");
+    assert.deepEqual(view.propertyRows, [{ label: "Fastighetsbeteckning", value: "Skövde Aspen 2:14" }]);
     assert.deepEqual(view.periodRow, { label: "Utförandedatum", value: "9 augusti 2026" });
     assert.equal(view.laborInclVat, 563);
     assert.equal(view.deduction, 169);
