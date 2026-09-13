@@ -30,6 +30,7 @@ import type {
   SuggestionEvent,
   SupportTicket,
   SupportTicketStatus,
+  TermsAcceptanceRecord,
 } from "./types";
 
 export class LastSuperAdminError extends Error {
@@ -463,6 +464,8 @@ export async function supportTicketById(id: string): Promise<SupportTicket | nul
 export interface TicketListFilter {
   statuses?: SupportTicketStatus[];
   businessId?: string;
+  /** Ärenden skapade av en viss användare (registrerades export). */
+  userId?: string;
   q?: string;
   limit?: number;
   offset?: number;
@@ -475,6 +478,7 @@ export async function listSupportTickets(filter: TicketListFilter = {}): Promise
     let items = [...platformRegistry().tickets];
     if (filter.statuses?.length) items = items.filter((t) => filter.statuses!.includes(t.status));
     if (filter.businessId) items = items.filter((t) => t.businessId === filter.businessId);
+    if (filter.userId) items = items.filter((t) => t.userId === filter.userId);
     if (filter.q) {
       const q = filter.q.toLowerCase();
       items = items.filter(
@@ -495,6 +499,10 @@ export async function listSupportTickets(filter: TicketListFilter = {}): Promise
   if (filter.businessId) {
     params.push(filter.businessId);
     where.push(`business_id = $${params.length}::uuid`);
+  }
+  if (filter.userId) {
+    params.push(filter.userId);
+    where.push(`user_id = $${params.length}::uuid`);
   }
   if (filter.q) {
     params.push(`%${filter.q}%`);
@@ -786,6 +794,66 @@ export async function listOpsRecords(filter: { kind?: OpsRecordKind; limit?: num
 export async function latestOpsRecord(kind: OpsRecordKind): Promise<OpsRecord | null> {
   const rows = await listOpsRecords({ kind, limit: 1 });
   return rows[0] ?? null;
+}
+
+/* ----------------------------- terms_acceptances ---------------------------- */
+
+function termsAcceptanceFromRow(r: SqlRow): TermsAcceptanceRecord {
+  return {
+    id: str(r.id),
+    userId: str(r.user_id),
+    businessId: strOrUndef(r.business_id),
+    document: "villkor",
+    version: str(r.version),
+    acceptedAt: iso(r.accepted_at),
+    source: r.source as TermsAcceptanceRecord["source"],
+    email: strOrUndef(r.email),
+  };
+}
+
+export async function insertTermsAcceptance(rec: TermsAcceptanceRecord): Promise<void> {
+  if (!isSupabaseMode()) {
+    const reg = platformRegistry();
+    reg.termsAcceptances.push({ ...rec });
+    commitPlatformRegistry();
+    return;
+  }
+  const client = await sqlClient();
+  await client.query(
+    `insert into public.terms_acceptances (id, user_id, business_id, document, version, accepted_at, source, email)
+     values ($1,$2::uuid,$3::uuid,$4,$5,$6,$7,$8)`,
+    [rec.id, rec.userId, rec.businessId ?? null, rec.document, rec.version, rec.acceptedAt, rec.source, rec.email ?? null]
+  );
+}
+
+/** Senaste godkännandet för användaren (högsta version vinner vid lika tid). */
+export async function latestTermsAcceptance(userId: string): Promise<TermsAcceptanceRecord | null> {
+  if (!isSupabaseMode()) {
+    const items = platformRegistry().termsAcceptances.filter((t) => t.userId === userId);
+    items.sort((a, b) => b.acceptedAt.localeCompare(a.acceptedAt) || b.version.localeCompare(a.version));
+    return items[0] ?? null;
+  }
+  const client = await sqlClient();
+  const rows = await client.query(
+    `select * from public.terms_acceptances where user_id = $1::uuid and document = 'villkor'
+      order by accepted_at desc, version desc limit 1`,
+    [userId]
+  );
+  return rows[0] ? termsAcceptanceFromRow(rows[0]) : null;
+}
+
+export async function listTermsAcceptances(userId: string): Promise<TermsAcceptanceRecord[]> {
+  if (!isSupabaseMode()) {
+    return platformRegistry()
+      .termsAcceptances.filter((t) => t.userId === userId)
+      .sort((a, b) => b.acceptedAt.localeCompare(a.acceptedAt));
+  }
+  const client = await sqlClient();
+  const rows = await client.query(
+    `select * from public.terms_acceptances where user_id = $1::uuid order by accepted_at desc limit 100`,
+    [userId]
+  );
+  return rows.map(termsAcceptanceFromRow);
 }
 
 /* -------------------------------- email_events ------------------------------ */

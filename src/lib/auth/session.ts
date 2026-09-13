@@ -181,6 +181,21 @@ export async function sessionPhoneHint(): Promise<string> {
 }
 
 /**
+ * Villkorsversionen som godkändes vid registreringen (user_metadata). Grinden
+ * i appen läser den som bevis tills en rad i terms_acceptances skrivits.
+ */
+export async function sessionTermsHint(): Promise<{ version: string; acceptedAt: string } | null> {
+  if (!isSupabaseMode()) return null;
+  const claims = (await sessionClaims()) as {
+    user_metadata?: { terms_version?: unknown; terms_accepted_at?: unknown };
+  } | null;
+  const version = claims?.user_metadata?.terms_version;
+  const acceptedAt = claims?.user_metadata?.terms_accepted_at;
+  if (typeof version !== "string" || !version) return null;
+  return { version, acceptedAt: typeof acceptedAt === "string" ? acceptedAt : new Date(0).toISOString() };
+}
+
+/**
  * Medlemskap per request: layout, sida och åtgärdsvakter frågar alla efter
  * samma lista – React cache() deduperar till EN databasfråga per request.
  * Muterade medlemskap (invite/revoke) följs alltid av redirect, så en
@@ -505,6 +520,19 @@ async function withDemoSession<T>(
 }
 
 /**
+ * Villkorsgrinden på skrivvägen: sidorna redirectar till /godkann-villkor,
+ * men en gammal flik eller ett skript ska inte kunna skriva förbi den.
+ * Lazy import – legal/acceptance importerar sessionslagret.
+ */
+async function assertTermsAccepted(): Promise<void> {
+  const { termsGateStatus } = await import("@/lib/legal/acceptance");
+  const gate = await termsGateStatus();
+  if (gate.required) {
+    throw new Error("Villkoren har uppdaterats. Godkänn den nya versionen (ladda om sidan) innan du fortsätter.");
+  }
+}
+
+/**
  * Skrivande flöde i tenantkontext.
  *
  * Abonnemangsgrinden: ett riktigt företag vars provperiod tagit slut utan
@@ -544,7 +572,10 @@ export async function withBusiness<T>(
   const user = await requireUser();
   const businessId = await resolveActiveBusiness(user.id, opts.businessId);
   const role = await authorizeWrite(user, businessId, opts.capability);
-  if (!opts.allowReadOnly) await assertWritable(businessId);
+  if (!opts.allowReadOnly) {
+    await assertWritable(businessId);
+    await assertTermsAccepted();
+  }
   try {
     return await runAsActor(labelSupportActor(actorFrom(user, businessId, role), support), () =>
       runWithTenant({ businessId, userId: user.id, access: "write", retry: opts.retry }, fn)

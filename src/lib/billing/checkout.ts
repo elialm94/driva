@@ -3,6 +3,7 @@
  * företaget. Kund-id:t hämtas ur företagsraden eller skapas här – aldrig från
  * klienten. Checkout-success aktiverar inget; webhooken gör det.
  */
+import { legalEntityStatus } from "../legal/entity";
 import { BillingError, BillingNotConfiguredError } from "./errors";
 import { readStripeConfig } from "./config";
 import { billingAccess } from "./state";
@@ -19,6 +20,9 @@ export interface CheckoutContext {
 }
 
 export const BILLING_RETURN_PATH = "/installningar?flik=konto";
+
+export const LEGAL_ENTITY_MISSING_MESSAGE =
+  "Abonnemang kan inte tecknas ännu: Fervas avtalsuppgifter (avtalspart, organisationsnummer, adress, kontakt) är inte konfigurerade i den här miljön.";
 
 interface Deps {
   store?: BillingStore;
@@ -46,6 +50,8 @@ export async function createCheckoutUrl(ctx: CheckoutContext, deps: Deps = {}): 
   const env = deps.env ?? process.env;
   const config = readStripeConfig(env);
   if (!config) throw new BillingNotConfiguredError();
+  // Ingen får teckna ett avtal med en avtalspart som inte finns (spec §7).
+  if (!legalEntityStatus(env).complete) throw new BillingError(LEGAL_ENTITY_MISSING_MESSAGE);
   const store = deps.store ?? billingStore();
   const gateway = deps.gateway ?? stripeGateway(env);
 

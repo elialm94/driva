@@ -33,6 +33,8 @@ export type AdminAuditAction =
   | "user_disabled"
   | "user_enabled"
   | "user_deleted"
+  | "user_anonymized"
+  | "data_subject_request"
   | "user_verification_resent"
   | "business_disabled"
   | "business_enabled"

@@ -44,6 +44,7 @@ import { SettingsBillingBanner } from "./settings-billing-readiness";
 import { AddressFields } from "./address-input";
 import { FSkattSettingCard } from "./skattekonto-widgets";
 import { AbonnemangCard, type AbonnemangCardProps } from "./abonnemang-card";
+import { KontoDataCard, type KontoDataCardProps } from "./konto-data-card";
 import { FiscalYearSettings, type FiscalYearSettingsYear } from "./fiscal-year-settings";
 import { OwnerNoticeSettings, type OwnerNoticeSettingsProps } from "./owner-notice-settings";
 
@@ -137,6 +138,7 @@ export function SettingsForm({
   notices,
   articles,
   subscription,
+  kontoData,
 }: {
   initial: CompanySettings;
   defaults: InvoiceDefaults;
@@ -163,6 +165,8 @@ export function SettingsForm({
   articles?: CatalogArticle[];
   /** Konto – abonnemanget (Stripe). Bara på fliken Konto. */
   subscription?: AbonnemangCardProps;
+  /** Konto – dina uppgifter, godkända villkor och kontoavslut. Bara på fliken Konto. */
+  kontoData?: KontoDataCardProps;
 }) {
   const TABS = settingsTabsFor(features);
   const router = useRouter();
@@ -839,6 +843,7 @@ export function SettingsForm({
       {flik === "konto" ? (
         <div className="space-y-5">
           {subscription ? <AbonnemangCard {...subscription} /> : null}
+          {kontoData ? <KontoDataCard {...kontoData} /> : null}
           {account.demo ? (
             <Card className="space-y-3 p-6">
               <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Demoläge</p>

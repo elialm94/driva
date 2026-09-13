@@ -23,6 +23,12 @@ export default function JuridikLayout({ children }: { children: React.ReactNode 
             <a href="/villkor" className="transition-colors hover:text-ink">
               Villkor
             </a>
+            <a href="/bitradesavtal" className="transition-colors hover:text-ink">
+              Biträdesavtal
+            </a>
+            <a href="/underbitraden" className="transition-colors hover:text-ink">
+              Underbiträden
+            </a>
           </nav>
         </div>
       </footer>

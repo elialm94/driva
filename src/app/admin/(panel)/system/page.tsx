@@ -5,6 +5,9 @@ import { recentFailures, systemStatus, type HealthState } from "@/lib/platform/s
 import { listAdminAudit, listEmailEvents } from "@/lib/platform/store";
 import { SUPER_ADMIN } from "@/lib/platform/types";
 import { AdminBadge, AdminCard, AdminTable, KeyValueList, Th, Td, datumTidKort } from "@/components/admin/ui";
+import { legalEntityStatus } from "@/lib/legal/entity";
+import { providerRegister } from "@/lib/legal/providers";
+import { LEGAL_DOCUMENTS } from "@/lib/legal/documents";
 
 export const metadata = { title: "System" };
 
@@ -18,6 +21,8 @@ function HealthBadge({ state }: { state: HealthState }) {
 export default async function AdminSystemPage() {
   const ctx = await requirePlatformAdmin();
   const isSuper = ctx.admin.role === SUPER_ADMIN;
+  const legal = legalEntityStatus();
+  const providers = providerRegister();
   const [status, failures, emailEvents, audit] = await Promise.all([
     systemStatus(),
     recentFailures(30),
@@ -380,6 +385,64 @@ export default async function AdminSystemPage() {
               },
             ]}
           />
+        </AdminCard>
+
+        <AdminCard title="Juridik & leverantörsregister">
+          <KeyValueList
+            rows={[
+              {
+                label: "Avtalspart",
+                value: legal.complete ? (
+                  <span>
+                    <AdminBadge tone="ok">Konfigurerad</AdminBadge>{" "}
+                    <span className="text-neutral-300">
+                      {legal.entity!.name} · {legal.entity!.orgNumber}
+                    </span>
+                  </span>
+                ) : (
+                  <span data-admin-legal-missing>
+                    <AdminBadge tone="danger">Saknas</AdminBadge>{" "}
+                    <span className="text-neutral-400">{legal.missing.join(", ")}</span>
+                  </span>
+                ),
+              },
+              { label: "Kontakt", value: legal.entity?.contactEmail ?? "–" },
+              { label: "Dataskyddskontakt", value: legal.entity?.privacyEmail ?? "–" },
+              {
+                label: "Villkor",
+                value: `v${LEGAL_DOCUMENTS.villkor.version} från ${LEGAL_DOCUMENTS.villkor.effectiveFrom} · integritet v${LEGAL_DOCUMENTS.integritet.version} · DPA v${LEGAL_DOCUMENTS.dpa.version}`,
+              },
+              {
+                label: "Aktiva leverantörer",
+                value: (
+                  <span className="text-neutral-300">
+                    {providers.filter((p) => p.active).map((p) => p.name).join(", ") || "Inga"}
+                  </span>
+                ),
+              },
+              {
+                label: "Att verifiera",
+                value:
+                  providers.filter((p) => p.active && (p.verify || !p.termsUrl)).length === 0 ? (
+                    <AdminBadge tone="ok">Inget</AdminBadge>
+                  ) : (
+                    <ul className="list-disc space-y-0.5 pl-4 text-neutral-400">
+                      {providers
+                        .filter((p) => p.active && (p.verify || !p.termsUrl))
+                        .map((p) => (
+                          <li key={p.id}>
+                            <span className="text-neutral-300">{p.name}:</span> {p.verify ?? "Avtalslänk saknas."}
+                          </li>
+                        ))}
+                    </ul>
+                  ),
+              },
+            ]}
+          />
+          <p className="px-4 pb-3 text-[12px] text-neutral-500">
+            Publik lista: /underbitraden härleds ur registret. Dokumenten är utkast tills juridisk granskning registrerats i
+            GO_LIVE_CHECKLIST.md. Utan avtalspart är Checkout blockerad och health röd i produktion.
+          </p>
         </AdminCard>
       </div>
 

@@ -18,10 +18,14 @@ import { hydrateInvitationsFromTenant } from "@/lib/collaboration/service";
 import { resolveOptionalFeatures } from "@/lib/features";
 import { tenantContext } from "@/lib/storage/context";
 import { requestSlot } from "@/lib/storage/request-scope";
+import { ensureTermsAccepted } from "@/lib/legal/acceptance";
 
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
+  // Villkorsgrinden ligger före tenantladdningen: ingen företagsdata renderas
+  // förrän aktuell villkorsversion är godkänd (spec §7).
+  await ensureTermsAccepted("/");
   await ensurePageBusiness();
   const settings = db().settings;
   // Logga ut visas bara när riktiga sessioner finns (Supabase-läge).

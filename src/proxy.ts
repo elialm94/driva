@@ -39,6 +39,8 @@ const PUBLIC_PREFIXES = [
   "/valkommen", // landningssidans interna sökväg (rewrite-mål)
   "/villkor",
   "/integritet", // Fervas egen integritetspolicy (kundsajternas ligger på /integritetspolicy)
+  "/bitradesavtal", // personuppgiftsbiträdesavtal + säkerhetsbilaga
+  "/underbitraden", // publik underbiträdeslista (härledd ur leverantörsregistret)
   "/offert",
   "/faktura",
   "/sajt",

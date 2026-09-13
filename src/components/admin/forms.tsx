@@ -24,16 +24,20 @@ export function PendingButton({
   children,
   variant = "secondary",
   className,
+  disabled,
+  ...rest
 }: {
   children: ReactNode;
   variant?: "primary" | "secondary" | "danger";
   className?: string;
-}) {
+  disabled?: boolean;
+} & Record<`data-${string}`, string | boolean | undefined>) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={pending || disabled}
+      {...rest}
       className={cx(
         "inline-flex h-8 items-center justify-center rounded-lg px-3 text-[12.5px] font-medium transition-colors disabled:opacity-50",
         variant === "primary" && "bg-amber-400 text-neutral-950 hover:bg-amber-300",

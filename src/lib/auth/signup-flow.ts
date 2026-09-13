@@ -125,6 +125,15 @@ export function validateSignupFields(email: string, phone: string, password: str
   return null;
 }
 
+export const TERMS_NOT_ACCEPTED_ERROR = "Du behöver godkänna villkoren och integritetspolicyn för att skapa ett konto.";
+
+/** Kryssrutan är ett aktivt val: bara "on"/"1"/"true" räknas – aldrig tomt eller förifyllt värde. */
+export function termsAccepted(value: FormDataEntryValue | null | undefined): boolean {
+  if (typeof value !== "string") return false;
+  const v = value.trim().toLowerCase();
+  return v === "on" || v === "1" || v === "true";
+}
+
 export function validateLoginFields(email: string, password: string): string | null {
   if (!email || !password) return "Fyll i e-post och lösenord.";
   return null;

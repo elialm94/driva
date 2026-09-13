@@ -13,6 +13,8 @@ export interface AbonnemangCardProps {
   plan: { name: string; pricePerMonthExVat: number; trialDays: number };
   /** ?checkout=klart|avbrutet efter återkomst från Stripe. */
   checkoutResult?: "klart" | "avbrutet";
+  /** Avtalspart (LEGAL_*). null ⇒ Checkout är blockerad tills uppgifterna finns. */
+  legalEntity?: { name: string; orgNumber: string } | null;
 }
 
 const TONE: Record<BillingAccess["reason"], BadgeTone> = {
@@ -44,7 +46,7 @@ const LABEL: Record<BillingAccess["reason"], string> = {
  * (en rad med dagar kvar), tydligt när något behöver göras. Kortet påstår
  * aldrig att ett abonnemang finns – det visar vad webhooken skrivit.
  */
-export function AbonnemangCard({ access, configured, canManage, plan, checkoutResult }: AbonnemangCardProps) {
+export function AbonnemangCard({ access, configured, canManage, plan, checkoutResult, legalEntity }: AbonnemangCardProps) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -86,12 +88,26 @@ export function AbonnemangCard({ access, configured, canManage, plan, checkoutRe
           {plan.name} kostar {plan.pricePerMonthExVat} kr per månad exklusive moms. Nya företag börjar med {plan.trialDays} dagars
           gratis provperiod utan kort. Uppsägning görs i kundportalen och gäller till periodens slut. Dina uppgifter raderas
           aldrig automatiskt – allt går alltid att läsa och exportera.
+          {legalEntity ? (
+            <>
+              {" "}
+              Avtalspart: {legalEntity.name} (org.nr {legalEntity.orgNumber}).{" "}
+              <a href="/villkor" className="underline hover:text-ink">
+                Villkor
+              </a>
+              .
+            </>
+          ) : null}
         </p>
       )}
 
       {access.reason === "demo" ? null : !configured ? (
         <p className="text-[13px] text-warn" data-abonnemang-unconfigured>
           Abonnemangsbetalning är inte konfigurerad för den här miljön. Företaget kan inte teckna abonnemang här ännu.
+        </p>
+      ) : legalEntity === null ? (
+        <p className="text-[13px] text-warn" data-abonnemang-legal-missing>
+          Abonnemang kan inte tecknas ännu: Fervas avtalsuppgifter (avtalspart) är inte konfigurerade i den här miljön.
         </p>
       ) : !canManage ? (
         <p className="text-[13px] text-muted">Bara företagets ägare eller administratör kan hantera abonnemanget.</p>

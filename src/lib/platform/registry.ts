@@ -17,6 +17,7 @@ import type {
   PlatformAdminInvitation,
   SupportSession,
   SupportTicket,
+  TermsAcceptanceRecord,
 } from "./types";
 
 export interface PlatformRegistry {
@@ -28,6 +29,8 @@ export interface PlatformRegistry {
   emailEvents: EmailEvent[];
   suggestionEvents: SuggestionEvent[];
   opsRecords: OpsRecord[];
+  /** Godkända villkorsversioner (JSON-läget; Supabase har terms_acceptances). */
+  termsAcceptances: TermsAcceptanceRecord[];
   /** Företag som inaktiverats av admin (JSON-läget saknar businesses-tabell). */
   disabledBusinesses: { businessId: string; disabledAt: string; disabledBy: string }[];
 }
@@ -50,6 +53,7 @@ function empty(): PlatformRegistry {
     emailEvents: [],
     suggestionEvents: [],
     opsRecords: [],
+    termsAcceptances: [],
     disabledBusinesses: [],
   };
 }

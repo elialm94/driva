@@ -10,6 +10,7 @@ import { isAccountingRole, isOwnerRole } from "@/lib/collaboration/permissions";
 import { listAccountantClients } from "@/lib/collaboration/clients";
 import { userById } from "@/lib/collaboration/registry";
 import { isSupabaseMode } from "@/lib/storage/config";
+import { ensureTermsAccepted } from "@/lib/legal/acceptance";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ export default async function RedovisningLayout({ children }: { children: ReactN
   if (!user && isSupabaseMode()) redirect("/login?next=/redovisning");
   const userId = user?.id;
   if (!userId) redirect("/login?next=/redovisning");
+  await ensureTermsAccepted("/redovisning");
 
   const memberships = await listMemberships(userId);
   const accounting = memberships.filter((m) => isAccountingRole(m.role));

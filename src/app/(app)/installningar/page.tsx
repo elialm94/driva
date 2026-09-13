@@ -29,6 +29,9 @@ import { isStripeConfigured } from "@/lib/billing/config";
 import { PLAN } from "@/lib/billing/state";
 import { isOwnerRole } from "@/lib/collaboration/permissions";
 import { currentActor } from "@/lib/collaboration/actor";
+import { legalEntityStatus } from "@/lib/legal/entity";
+import { latestTermsAcceptance } from "@/lib/legal/acceptance";
+import { TERMS_VERSION } from "@/lib/legal/documents";
 
 export const metadata = { title: "Inställningar" };
 
@@ -52,11 +55,14 @@ export default async function SettingsPage(props: {
   const sessionUser = await getSessionUser();
   const tillbaka = typeof searchParams.tillbaka === "string" ? sanitizeReturnTo(searchParams.tillbaka) : null;
   const checkoutParam = typeof searchParams.checkout === "string" ? searchParams.checkout : undefined;
+  const legal = flik === "konto" ? legalEntityStatus() : null;
+  const legalEntity = legal?.entity ? { name: legal.entity.name, orgNumber: legal.entity.orgNumber } : null;
   const subscription =
     flik === "konto"
       ? {
           access: await currentBillingAccess(businessId, { demo: demoAccount }),
           configured: isStripeConfigured(),
+          legalEntity,
           canManage: isOwnerRole(currentActor()?.role ?? (demoAccount ? "owner" : null)),
           plan: { name: PLAN.name, pricePerMonthExVat: PLAN.pricePerMonthExVat, trialDays: PLAN.trialDays },
           checkoutResult: (checkoutParam === "klart" || checkoutParam === "avbrutet" ? checkoutParam : undefined) as
@@ -85,6 +91,22 @@ export default async function SettingsPage(props: {
         })()}
         account={{ demo: demoAccount, email: sessionUser?.email ?? null }}
         subscription={subscription}
+        kontoData={
+          flik === "konto"
+            ? await (async () => {
+                const accepted = !demoAccount && sessionUser ? await latestTermsAcceptance(sessionUser.id).catch(() => null) : null;
+                return {
+                  demo: demoAccount,
+                  legalEntity,
+                  terms: {
+                    acceptedVersion: accepted?.version ?? null,
+                    acceptedAt: accepted?.acceptedAt ?? null,
+                    currentVersion: TERMS_VERSION,
+                  },
+                };
+              })()
+            : undefined
+        }
         fSkattPerMonth={flik === "fakturering" ? db().settings.fSkattPerMonth : undefined}
         features={features}
         wholesalers={flik === "grossister" ? listConnectionOverviews() : undefined}

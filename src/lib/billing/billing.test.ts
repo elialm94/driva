@@ -27,6 +27,11 @@ const ENV_OK = {
   STRIPE_WEBHOOK_SECRET: "whsec_testsecret",
   STRIPE_PRICE_ID: "price_123",
   NODE_ENV: "test",
+  // Avtalspart måste finnas för att Checkout ska få startas (spec §7).
+  LEGAL_ENTITY_NAME: "Testbolaget AB",
+  LEGAL_ENTITY_ORG_NUMBER: "556016-0680",
+  LEGAL_ENTITY_ADDRESS: "Testgatan 1, 123 45 Teststad",
+  LEGAL_CONTACT_EMAIL: "avtal@example.com",
 };
 
 const NOW = new Date("2026-09-12T10:00:00Z");

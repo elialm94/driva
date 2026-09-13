@@ -11,6 +11,7 @@ import { EXPECTED_MIGRATION_VERSION } from "@/lib/storage/schema-version";
 import { isStripeConfigured, stripeModeHint } from "@/lib/billing/config";
 import { isSentryConfigured, appRelease } from "@/lib/observability/config";
 import { platformMfaRequired } from "@/lib/platform/auth";
+import { legalEntityStatus } from "@/lib/legal/entity";
 
 /**
  * Driftdiagnostik för produktion (Vercel). Kräver INGEN inloggning så att den
@@ -42,10 +43,17 @@ interface OpsChecks {
   sentry: { configured: boolean };
   adminMfaRequired: boolean;
   backup: { drillVerified: boolean; lastDrillOn?: string };
+  /** Avtalspart konfigurerad? Saknad ⇒ röd i produktion, Checkout blockerad. */
+  legal: { complete: boolean; missing: string[] };
   warnings: string[];
 }
 
+function isProductionRuntime(): boolean {
+  return process.env.VERCEL_ENV === "production";
+}
+
 async function probeOps(dbUrl: string): Promise<OpsChecks> {
+  const legal = legalEntityStatus();
   const checks: OpsChecks = {
     release: appRelease(),
     migrations: { expected: EXPECTED_MIGRATION_VERSION, behind: false },
@@ -54,8 +62,10 @@ async function probeOps(dbUrl: string): Promise<OpsChecks> {
     sentry: { configured: isSentryConfigured() },
     adminMfaRequired: platformMfaRequired(),
     backup: { drillVerified: false },
+    legal: { complete: legal.complete, missing: [...legal.missing] },
     warnings: [],
   };
+  if (!legal.complete) checks.warnings.push("legal_entity_incomplete");
   try {
     const client = await getSqlClient(dbUrl);
     const mig = await client.query(
@@ -229,7 +239,13 @@ export async function GET() {
 
   const schemaReady = db.canConnect && db.hasAppRole && db.hasCoreTables;
   const ops = schemaReady && dbUrl ? await probeOps(dbUrl) : undefined;
+  // Produktion utan avtalspart är inte redo: ingen får teckna avtal med ett
+  // bolag som inte är angivet (spec §7). Förhandsmiljöer får bara varningen.
+  const legalBlocking = isProductionRuntime() && ops ? !ops.legal.complete : false;
   let hint: string | undefined;
+  if (legalBlocking) {
+    hint = `Juridisk avtalspart saknas i produktion: sätt ${ops!.legal.missing.join(", ")} i Vercel → Environment Variables (Production).`;
+  }
   if (!db.canConnect) {
     hint =
       "Databasen går inte att nå. Kontrollera att databas-URL:en är Supabases Transaction pooler (port 6543) – direktanslutningen (5432) är IPv6 och når inte fram från Vercel.";
@@ -240,13 +256,13 @@ export async function GET() {
 
   return NextResponse.json(
     {
-      status: schemaReady ? "ok" : "degraded",
+      status: schemaReady && !legalBlocking ? "ok" : "degraded",
       storageMode: "supabase",
       env,
       database: db,
       ...(ops ? { ops } : {}),
       ...(hint ? { hint } : {}),
     },
-    { status: schemaReady ? 200 : 503 }
+    { status: schemaReady && !legalBlocking ? 200 : 503 }
   );
 }

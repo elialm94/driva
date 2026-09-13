@@ -14,9 +14,12 @@ import {
   mapLoginAuthError,
   safeAuthNext,
   sanitizeAuthEmail,
+  termsAccepted,
+  TERMS_NOT_ACCEPTED_ERROR,
   validateLoginFields,
   validateSignupFields,
 } from "@/lib/auth/signup-flow";
+import { TERMS_VERSION } from "@/lib/legal/documents";
 import { endDemoSession } from "@/lib/auth/demo-request";
 import { isSupabaseMode } from "@/lib/storage/config";
 
@@ -98,6 +101,7 @@ export async function signupAction(_prev: AuthFormState, formData: FormData): Pr
   const fieldError = validateSignupFields(email, phone, password);
   const stay = (error: string): AuthFormState => ({ error });
   if (fieldError) return stay(fieldError);
+  if (!termsAccepted(formData.get("acceptTerms"))) return stay(TERMS_NOT_ACCEPTED_ERROR);
 
   const supabase = await createSupabaseServerClient();
   const emailRedirectTo = await confirmationRedirectUrl(next);
@@ -110,7 +114,9 @@ export async function signupAction(_prev: AuthFormState, formData: FormData): Pr
       // Telefonnumret verifieras inte – det sparas på kontot (user_metadata)
       // och förifylls i onboarding. Aldrig via `phone`-fältet: det skulle
       // aktivera Supabase SMS-verifiering.
-      data: { phone },
+      // Villkorsgodkännandet följer med som bevis (version + tid) och flyttas
+      // till terms_acceptances vid första inloggade sidladdningen.
+      data: { phone, terms_version: TERMS_VERSION, terms_accepted_at: new Date().toISOString() },
       ...(emailRedirectTo ? { emailRedirectTo } : undefined),
     },
   });

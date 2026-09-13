@@ -140,6 +140,28 @@ export interface OpsRecord {
   summary: Record<string, unknown>;
 }
 
+/* ------------------------------ Villkorsgodkännande ------------------------------ */
+
+export type TermsAcceptanceSource = "signup" | "app" | "checkout" | "admin";
+
+/**
+ * Ett aktivt godkännande av en villkorsversion (spec §7). Append-only: varje
+ * nytt godkännande blir en ny rad; det senaste per användare avgör om grinden
+ * i appen släpper igenom. Ingen IP-adress eller user agent lagras.
+ */
+export interface TermsAcceptanceRecord {
+  id: string;
+  userId: string;
+  /** Företag i sessionen när godkännandet gjordes (saknas vid registrering). */
+  businessId?: string;
+  document: "villkor";
+  version: string;
+  acceptedAt: string;
+  source: TermsAcceptanceSource;
+  /** E-post vid tillfället – för adminvyn och export; aldrig som nyckel. */
+  email?: string;
+}
+
 /* ------------------------------ Förslagskvalitet ------------------------------ */
 
 export type SuggestionDecision = "auto" | "accepted" | "changed" | "rejected" | "private";

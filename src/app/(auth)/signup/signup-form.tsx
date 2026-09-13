@@ -80,6 +80,28 @@ export function SignupForm({ next }: { next: string }) {
         <FieldError id="signup-password-fel">{errors.password}</FieldError>
       </div>
 
+      <label className="flex items-start gap-2.5 text-sm text-stone-700" htmlFor="signup-terms">
+        <input
+          id="signup-terms"
+          name="acceptTerms"
+          type="checkbox"
+          required
+          className="mt-0.5 size-4 shrink-0 rounded border-stone-300 accent-stone-900"
+          data-signup-terms
+        />
+        <span>
+          Jag godkänner{" "}
+          <a href="/villkor" target="_blank" rel="noopener noreferrer" className="font-medium text-stone-900 underline">
+            villkoren
+          </a>{" "}
+          och har läst{" "}
+          <a href="/integritet" target="_blank" rel="noopener noreferrer" className="font-medium text-stone-900 underline">
+            integritetspolicyn
+          </a>
+          . Personuppgiftsbiträdesavtalet ingår i villkoren.
+        </span>
+      </label>
+
       {signupState.error ? (
         <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
           {signupState.error}

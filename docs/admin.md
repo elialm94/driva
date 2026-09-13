@@ -54,6 +54,7 @@ JSON-läge (`.data/platform.json` via `src/lib/platform/registry.ts`).
 | `email_events` | transaktionsmejl: kind, mottagare, status (sent/failed/not_configured), fel, provider-id |
 | `suggestion_events` (migration 49) | bankklassificeringens förslagsbeslut: källa, nivå (saker/troligt/osakert), beslut (auto/accepted/changed/rejected/private), riskflaggor, motpartstyp, kunskapsbas-/regelversion, ev. LLM-leverantör/modell/promptversion, sha256-hash av indata, beloppsspann. **Aldrig motpartstext, belopp, dokumentinnehåll eller personnummer.** |
 | `businesses` – abonnemang (migration 51) | Stripe-fälten `stripe_customer_id`, `stripe_subscription_id`, `stripe_price_id`, `stripe_status`, `current_period_end`, `cancel_at_period_end`, `billing_updated_at`, `billing_event_created`; `subscription_status` får `past_due` (grace). Alla fryses av triggern `businesses_subscription_frozen` – bara faktureringsflödet (som sätter `app.allow_subscription_update = 1` i sin transaktion) får skriva; en medlems PATCH via Data API:t kan aldrig aktivera ett abonnemang. |
+| `terms_acceptances` (migration 53) | append-only: användare, ev. företag, dokument, version, tidpunkt, källa (signup/app/checkout/admin), e-post vid tillfället. Trigger `terms_acceptances_immutable`. Ingen IP/user agent. |
 | `stripe_webhook_events` (migration 51) | idempotent logg per Stripe event-id: mottagen, Stripes `created`, typ, livemode, API-version, företag, status (mottagen/bearbetad/ignorerad/fel), sanerat fel. **Ingen payload lagras.** |
 | `platform_ops_records` (migration 52) | driftposter för systemvyn: `restore_drill`, `email_test_outbound`, `email_inbound`, `cron_run` – status, miljö, ansvarig och räknare i `summary` (icke-känslig JSON). Aldrig mejlinnehåll eller kunddata. |
 | `filing_submissions` (migration 50) | två nya kolumner för manuell inlämning: `downloaded_at` (när filen hämtades) och `manual_receipt` (jsonb: referens, notering, ev. kvittensfil `{filename, contentType, sizeBytes, storagePath}`, rapporterad när/av vem). Provider-checken tillåter `'manuell'`; signatur- och id-kraven gäller inte manuella rader, men en manuell rad i `inlamnad`/`kvitterad` **måste** ha `manual_receipt`. Kvittensfilen ligger i den privata bucketen `receipts` under `<business_id>/<submission_id>/`. |
@@ -209,6 +210,8 @@ Kön visar Datum/Företag/Användare/Ärende/Status; i detaljen [Öppen] [Pågå
 | `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` | För felövervakning | Server/edge respektive klient. Utan DSN initieras Sentry inte. `SENTRY_ENVIRONMENT` valfritt; `SENTRY_ORG`/`SENTRY_PROJECT`/`SENTRY_AUTH_TOKEN` endast för source maps i build; `SENTRY_TENANT_SALT` valfritt – utan salt skickas ingen tenant-hash. Se avsnittet Drift. |
 | `RESTORE_DRILL_DB_URL`, `RESTORE_DRILL_STAGING_REF`, `PRODUCTION_SUPABASE_PROJECT_REF` | Vid restore drill | Endast för `npm run restore:drill` (staging). Se `docs/runbooks/backup-restore.md`. |
 | `DRIVA_APP_URL` (eller `APP_URL`) | I produktion | Absolut bas-URL för inbjudningslänkar i mejl och Stripe-retur-URL:er. |
+| `LEGAL_ENTITY_NAME`, `LEGAL_ENTITY_ORG_NUMBER`, `LEGAL_ENTITY_ADDRESS`, `LEGAL_CONTACT_EMAIL` (+ valfri `LEGAL_PRIVACY_EMAIL`) | **I produktion** | Juridisk avtalspart för villkor, integritetspolicy och biträdesavtal. Saknas de: sidorna visar öppet *[avtalspart ej konfigurerad]*, `/api/health` svarar 503 i produktion (`legal_entity_incomplete`), systemvyn visar rött och Stripe Checkout vägrar starta. Organisationsnumrets kontrollsiffra valideras. Se avsnittet Juridik. |
+| `FILING_PROVIDER_NAME`, `FILING_PROVIDER_TERMS_URL` | När filing är aktiv | Namn och avtalslänk för inlämningsleverantören på `/underbitraden`. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` (+ valfri `STRIPE_PUBLISHABLE_KEY`) | För abonnemang | Server-only. Alla tre krävs, annars visar Inställningar → Konto *Abonnemangsbetalning är inte konfigurerad* och inget abonnemang simuleras. Systemvyn listar konfigurationsproblem i klartext (blandade test/live-nycklar, live-nyckel utanför produktion, `prod_` i stället för `price_`). Se avsnittet Abonnemang nedan och `.env.example`. |
 | Befintliga | – | Supabase-URL/nycklar, `SUPABASE_DB_URL`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL` återanvänds. Inga nya publika variabler. |
 
@@ -353,6 +356,45 @@ produktionsprojektet. RESULT-raden klistras in i systemvyns formulär.
 `stripe-webhook-fel.md`, `filing-fel.md`, `backup-restore.md`,
 `epost-produktion.md` (SPF/DKIM/DMARC, bounce/complaint, Resend-signatur,
 inbound MX, auth email hook).
+
+## Juridik och dataskydd (spec §7)
+
+Allt juridiskt härleds från ett centralt register i `src/lib/legal/`:
+
+- `entity.ts` – avtalsparten ur `LEGAL_*`-env (aldrig hårdkodad).
+- `providers.ts` – leverantörs-/underbiträdesregistret. En leverantör listas
+  bara när den faktiskt är påslagen (nyckel/konfiguration finns): Vercel,
+  Supabase, Resend, Stripe (självständigt ansvarig), Tink, OpenRouter eller
+  generisk AI-leverantör, Google Maps (klientsida), Sentry, aktiv
+  inlämningstjänst. Projektberoende uppgifter (vald region) är märkta
+  *verifieras vid go-live* och listas i systemvyn under **Juridik &
+  leverantörsregister → Att verifiera**.
+- `documents.ts` – versionerade texter: `/villkor` (v2.0), `/integritet`
+  (v2.0), `/bitradesavtal` (DPA + säkerhetsbilaga, v1.0) och den publika
+  `/underbitraden`. Alla sidor bär **utkastmarkering** tills juridisk granskning
+  registrerats i `GO_LIVE_CHECKLIST.md`.
+- `acceptance.ts` – villkorsgodkännande per användare (tabell
+  `terms_acceptances`, migration 53, append-only). Signup kräver kryssrutan och
+  skriver `terms_version` i user_metadata som bevis; första inloggade
+  sidladdningen flyttar beviset till tabellen (`source = signup`). Höjd
+  **major**-version ⇒ `/godkann-villkor` visas före all företagsdata (app-,
+  redovisnings- och onboardinglayouten) och `withBusiness` vägrar skrivningar
+  tills nytt aktivt godkännande finns. Minor-ändringar kräver inget nytt
+  godkännande.
+- `data-subject.ts` – registrerades export: `GET /api/konto/export` (JSON med
+  konto, medlemskap, godkända villkor, egna supportärenden) från
+  Inställningar → Konto → *Dina uppgifter och avtal*.
+
+Admin: användarvyn har **Registrerades begäran (GDPR)** – rättelse (loggas),
+radering (raderingspolicyn, blockeras av bokföringslagen) eller
+**anonymisering** (auth-e-post/telefon ersätts med platshållare, supportärenden
+anonymiseras, medlemskap återkallas, företag med bevarandeplikt inaktiveras och
+behålls skrivskyddade). Radering/anonymisering kräver super_admin, grund och
+bekräftelse; allt auditeras (`data_subject_request`, `user_anonymized`) utan
+att den gamla adressen loggas.
+
+Raderingstexten är harmoniserad med bokföringslagen: räkenskapsinformation
+bevaras sju år efter räkenskapsårets utgång och utlovas aldrig raderad i förtid.
 
 ## Lokal utveckling (JSON-läget)
 

@@ -37,15 +37,18 @@ import {
 import { endSupportSession, startSupportSession, SupportSessionError } from "@/lib/platform/support";
 import {
   AdminOperationError,
+  anonymizeUserAccount,
   deleteBusiness,
   deleteUserAccount,
   disableBusiness,
   disableUserAccount,
   enableBusiness,
   enableUserAccount,
+  parseDataSubjectRequest,
   resendAccountantInvite,
   resendVerificationEmail,
 } from "@/lib/platform/operations";
+import { writeAdminAudit } from "@/lib/platform/audit";
 import { OpsError, parseRestoreDrillInput, recordRestoreDrill, sendAdminTestEmail } from "@/lib/platform/ops";
 import { PlatformAccessError } from "@/lib/platform/types";
 import type { SupportTicketPriority, SupportTicketStatus } from "@/lib/platform/types";
@@ -336,6 +339,67 @@ export async function deleteUserAction(formData: FormData): Promise<AdminActionS
   }
   revalidatePath("/admin/users");
   redirect("/admin/users?raderad=1");
+}
+
+/**
+ * Registrerades begäran (spec §7): rättelse loggas som ärende (admin utför
+ * rättelsen i berörd vy eller ber företaget), radering följer
+ * raderingspolicyn, anonymisering är vägen när bokföringslagen blockerar
+ * radering. Allt auditeras med grund. Bara super_admin får radera/anonymisera.
+ */
+export async function dataSubjectRequestAction(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  let outcome: { redirectTo?: string; notice?: string } = {};
+  try {
+    const ctx = await requirePlatformAdmin();
+    const userId = String(formData.get("userId") ?? "");
+    const email = String(formData.get("email") ?? "");
+    const input = parseDataSubjectRequest(Object.fromEntries(formData.entries()));
+    if (!userId) return { error: "Användare saknas." };
+
+    if (input.kind === "rattelse") {
+      await writeAdminAudit(ctx.admin, {
+        action: "data_subject_request",
+        targetType: "user",
+        targetId: userId,
+        metadata: { kind: input.kind, reason: input.reason },
+      });
+      outcome = {
+        notice:
+          "Begäran om rättelse är loggad. Utför rättelsen i berörd vy (eller be företaget rätta sina egna kunduppgifter) och notera i ärendet.",
+      };
+    } else {
+      if (ctx.admin.role !== "super_admin") {
+        return { error: "Bara super_admin får radera eller anonymisera konton på registrerads begäran." };
+      }
+      const confirm = String(formData.get("confirmEmail") ?? "").trim().toLowerCase();
+      if (confirm !== email.trim().toLowerCase()) {
+        return { error: "Bekräfta genom att skriva användarens e-postadress exakt." };
+      }
+      await writeAdminAudit(ctx.admin, {
+        action: "data_subject_request",
+        targetType: "user",
+        targetId: userId,
+        metadata: { kind: input.kind, reason: input.reason },
+      });
+      if (input.kind === "radering") {
+        await deleteUserAccount(ctx.admin, userId, email);
+        outcome = { redirectTo: "/admin/users?raderad=1" };
+      } else {
+        const policy = await anonymizeUserAccount(ctx.admin, userId, email, input.reason);
+        outcome = {
+          notice: `Kontot är anonymiserat. ${policy.retainedBusinesses.length} företag med bevarandeplikt behålls inaktiverade; ${policy.membershipsToRevoke} medlemskap återkallades.`,
+        };
+      }
+    }
+    revalidatePath(`/admin/users/${userId}`);
+  } catch (e) {
+    return toError(e, "Begäran kunde inte hanteras.");
+  }
+  if (outcome.redirectTo) {
+    revalidatePath("/admin/users");
+    redirect(outcome.redirectTo);
+  }
+  return { notice: outcome.notice };
 }
 
 /* --------------------------------- Företag --------------------------------- */

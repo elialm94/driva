@@ -145,6 +145,25 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     await run(client, `alter table public.platform_ops_records enable row level security`);
     applied.push("platform_ops_records");
   }
+  const termsAcceptances = await client.query(`select to_regclass('public.terms_acceptances') is not null as present`);
+  if (!termsAcceptances[0]?.present) {
+    await run(
+      client,
+      `create table if not exists public.terms_acceptances (
+        id text primary key,
+        user_id uuid not null,
+        business_id uuid,
+        document text not null check (document in ('villkor')),
+        version text not null,
+        accepted_at timestamptz not null default now(),
+        source text not null check (source in ('signup', 'app', 'checkout', 'admin')),
+        email text
+      )`
+    );
+    await run(client, `create index if not exists terms_acceptances_user_idx on public.terms_acceptances (user_id, accepted_at desc)`);
+    await run(client, `alter table public.terms_acceptances enable row level security`);
+    applied.push("terms_acceptances");
+  }
 
   await ensureColumn(
     "business_settings",

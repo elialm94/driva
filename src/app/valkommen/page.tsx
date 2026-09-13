@@ -171,6 +171,9 @@ export default function LandingPage() {
             <a href="/villkor" className="transition-colors hover:text-ink">
               Villkor
             </a>
+            <a href="/underbitraden" className="transition-colors hover:text-ink">
+              Underbiträden
+            </a>
             <a href="/login" className="transition-colors hover:text-ink">
               Logga in
             </a>
