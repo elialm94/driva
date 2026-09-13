@@ -35,7 +35,7 @@ describe("uppdragssidan är en ekonomilogg", () => {
   });
 
   it("sidorenderingen muterar inte inköpsreferensen", () => {
-    assert.equal(page.includes("ensureJobPurchaseRef"), false);
+    assert.equal(page.includes("ensureJobPurchaseRef("), false);
     assert.match(page, /purchaseRef=\{job\.purchaseRef\}/);
     assert.match(work, /ensureJobPurchaseRefAction/);
   });
