@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import { AppLink } from "./app-link";
 import { kr, datumKort } from "@/lib/format";
@@ -14,6 +14,7 @@ import {
   DEFAULT_ACTIVITY_SORT,
   activityListMinHeightPx,
   nextActivitySort,
+  reserveActivityListHeight,
   visibleCustomerActivity,
   type ActivitySortKey,
   type ActivitySortState,
@@ -42,6 +43,18 @@ export function CustomerActivity({
   const [sort, setSort] = useState<ActivitySortState>(DEFAULT_ACTIVITY_SORT);
   const showFilter = rows.length > ACTIVITY_FILTER_MIN;
   const visible = visibleCustomerActivity(rows, filter, sort);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [reservedPx, setReservedPx] = useState(() => activityListMinHeightPx(rows.length));
+
+  useLayoutEffect(() => {
+    const floor = activityListMinHeightPx(rows.length);
+    if (filter !== "alla") {
+      setReservedPx((prev) => Math.max(prev, floor));
+      return;
+    }
+    const measured = panelRef.current?.getBoundingClientRect().height ?? 0;
+    setReservedPx((prev) => reserveActivityListHeight(prev, rows.length, measured));
+  }, [filter, rows.length, sort, visible.length]);
 
   return (
     <div>
@@ -67,52 +80,56 @@ export function CustomerActivity({
           ))}
         </div>
       ) : null}
-      <Card
-        className={cx(LIST_CARD_CLASS, "flex flex-col justify-start")}
+      <div
+        ref={panelRef}
+        className="flex flex-col justify-start"
         data-activity-list
-        style={{ minHeight: activityListMinHeightPx(rows.length) }}
+        data-activity-min-height={reservedPx}
+        style={{ minHeight: reservedPx }}
       >
-        <table className={LIST_TABLE_CLASS}>
-          <thead>
-            <tr className={LIST_HEAD_ROW_CLASS}>
-              <SortTh label="Datum" sortKey="datum" current={sort} onSort={setSort} />
-              <SortTh label="Händelse" sortKey="handelse" current={sort} onSort={setSort} />
-              <SortTh label="Belopp" sortKey="belopp" current={sort} onSort={setSort} align="right" />
-              <SortTh label="Status" sortKey="status" current={sort} onSort={setSort} align="right" />
-            </tr>
-          </thead>
-          <tbody>
-            {visible.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-4 py-3 align-top text-[14px] text-muted">
-                  Ingen aktivitet ännu.
-                </td>
+        <Card className={LIST_CARD_CLASS}>
+          <table className={LIST_TABLE_CLASS}>
+            <thead>
+              <tr className={LIST_HEAD_ROW_CLASS}>
+                <SortTh label="Datum" sortKey="datum" current={sort} onSort={setSort} />
+                <SortTh label="Händelse" sortKey="handelse" current={sort} onSort={setSort} />
+                <SortTh label="Belopp" sortKey="belopp" current={sort} onSort={setSort} align="right" />
+                <SortTh label="Status" sortKey="status" current={sort} onSort={setSort} align="right" />
               </tr>
-            ) : (
-              visible.map((row) => (
-                <tr key={row.id} className={LIST_BODY_ROW_CLASS}>
-                  <td className="whitespace-nowrap px-4 py-3 text-muted">
-                    <AppLink href={row.href} originLabel={originLabel} className={LIST_ROW_LINK_CLASS} aria-label={row.title}>
-                      <span className="sr-only">{row.title}</span>
-                    </AppLink>
-                    <span className="pointer-events-none">{datumKort(row.at)}</span>
+            </thead>
+            <tbody>
+              {visible.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-4 py-3 align-top text-[14px] text-muted">
+                    Ingen aktivitet ännu.
                   </td>
-                  <td className="pointer-events-none px-4 py-3">
-                    <span className="font-medium text-ink">{row.title}</span>
-                    {row.subtitle ? (
-                      <span className="mt-0.5 block text-[13px] text-muted">{row.subtitle}</span>
-                    ) : null}
-                  </td>
-                  <td className="pointer-events-none px-4 py-3 text-right tabular text-soft">
-                    {row.amount != null ? kr(row.amount) : "—"}
-                  </td>
-                  <td className="pointer-events-none px-4 py-3 text-right text-[13px] text-muted">{row.statusLabel}</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </Card>
+              ) : (
+                visible.map((row) => (
+                  <tr key={row.id} className={LIST_BODY_ROW_CLASS}>
+                    <td className="whitespace-nowrap px-4 py-3 text-muted">
+                      <AppLink href={row.href} originLabel={originLabel} className={LIST_ROW_LINK_CLASS} aria-label={row.title}>
+                        <span className="sr-only">{row.title}</span>
+                      </AppLink>
+                      <span className="pointer-events-none">{datumKort(row.at)}</span>
+                    </td>
+                    <td className="pointer-events-none px-4 py-3">
+                      <span className="font-medium text-ink">{row.title}</span>
+                      {row.subtitle ? (
+                        <span className="mt-0.5 block text-[13px] text-muted">{row.subtitle}</span>
+                      ) : null}
+                    </td>
+                    <td className="pointer-events-none px-4 py-3 text-right tabular text-soft">
+                      {row.amount != null ? kr(row.amount) : "—"}
+                    </td>
+                    <td className="pointer-events-none px-4 py-3 text-right text-[13px] text-muted">{row.statusLabel}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </Card>
+      </div>
     </div>
   );
 }

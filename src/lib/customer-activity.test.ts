@@ -8,6 +8,7 @@ import {
   DEFAULT_ACTIVITY_SORT,
   activityListMinHeightPx,
   compareActivityRows,
+  reserveActivityListHeight,
   defaultActivitySortDirection,
   filterCustomerActivity,
   nextActivitySort,
@@ -151,5 +152,12 @@ describe("listpanelens min-höjd", () => {
     const afterEmptyFilter = activityListMinHeightPx(12);
     assert.equal(alla, afterEmptyFilter);
     assert.ok(alla > activityListMinHeightPx(0));
+  });
+
+  it("behåller uppmätt Alla-höjd när ett filter är kortare än golvet", () => {
+    const floor = activityListMinHeightPx(3);
+    const reserved = reserveActivityListHeight(floor, 3, 410);
+    assert.equal(reserved, 410);
+    assert.equal(reserveActivityListHeight(reserved, 3), 410);
   });
 });

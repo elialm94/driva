@@ -100,3 +100,12 @@ export function activityListMinHeightPx(unfilteredCount: number): number {
     ACTIVITY_LIST_HEAD_PX + unfilteredCount * ACTIVITY_LIST_ROW_PX
   );
 }
+
+/** Behåll den högsta Alla-höjden så ett smalare filter inte krymper panelen. */
+export function reserveActivityListHeight(
+  previousPx: number,
+  unfilteredCount: number,
+  measuredAllaPx = 0
+): number {
+  return Math.max(previousPx, activityListMinHeightPx(unfilteredCount), measuredAllaPx);
+}
