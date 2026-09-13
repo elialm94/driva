@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, CheckCircle2, Flag, PartyPopper, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, Camera, Flag, PartyPopper, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { buttonClasses, ButtonLink } from "./ui";
 import { Modal } from "./modal";
 import { ActionMenu, PageActions, actionMenuItemClassName, useActionMenu } from "./action-menu";
@@ -10,9 +10,11 @@ import { EditUppdragModal } from "./uppdrag-form";
 import { createInvoiceForJobAction, deleteOrArchiveJobAction, setJobStatusAction } from "@/app/actions";
 import { reopenJobCloseoutAction } from "@/app/closeout-actions";
 import { CloseoutFlow } from "./closeout-flow";
+import { JobPhotosModal } from "./job-photos";
 import type { CloseoutView } from "@/lib/services/closeout";
 import { invoiceEditHref } from "@/lib/nav";
 import { kr } from "@/lib/format";
+import { jobHeaderPrimary } from "@/lib/job-ui-types";
 import type {
   JobCompleteWarning,
   JobInvoiceAction,
@@ -21,6 +23,7 @@ import type {
   JobQuoteAction,
   JobRemovalPolicy,
 } from "@/lib/job-ui-types";
+import type { JobPhoto } from "@/lib/types";
 import type { ReactNode } from "react";
 import { JobInvoiceModal } from "./job-invoice-choice";
 
@@ -61,6 +64,7 @@ export function JobActions({
   remainingLabel,
   quoteAction,
   invoiceAction,
+  hasBillable,
   waitingLabel,
   doneLabel,
   canMarkDone,
@@ -71,6 +75,7 @@ export function JobActions({
   newQuoteHref,
   invoiceChoice,
   closeout,
+  photos,
   job,
 }: {
   jobId: string;
@@ -81,6 +86,8 @@ export function JobActions({
   remainingLabel: string | null;
   quoteAction: JobQuoteAction;
   invoiceAction: JobInvoiceAction;
+  /** Finns något kvar enligt offerten eller registrerat men ofakturerat. */
+  hasBillable: boolean;
   waitingLabel: string | null;
   doneLabel: string | null;
   canMarkDone: boolean;
@@ -90,8 +97,9 @@ export function JobActions({
   quoteHref: string;
   newQuoteHref: string;
   invoiceChoice: JobInvoiceChoice;
-  /** Underlag för det guidade avslutsflödet. Saknas det faller "Markera som klart" tillbaka på den enkla dialogen. */
+  /** Underlag för det guidade avslutsflödet. Saknas det faller "Avsluta uppdrag" tillbaka på den enkla dialogen. */
   closeout?: CloseoutView;
+  photos: JobPhoto[];
   job: {
     title: string;
     description: string;
@@ -107,6 +115,7 @@ export function JobActions({
   const [showInvoice, setShowInvoice] = useState(false);
   const [invoicePreselect, setInvoicePreselect] = useState<JobInvoiceOptionBasis | undefined>();
   const [showRemove, setShowRemove] = useState(false);
+  const [showPhotos, setShowPhotos] = useState(false);
 
   function openInvoice(preselect?: JobInvoiceOptionBasis) {
     const auto = invoiceChoice.autoBasis;
@@ -164,87 +173,56 @@ export function JobActions({
     });
   }
 
-  const quoteRecommended = quoteAction === "skapa_offert";
-  const quoteBtn =
-    quoteAction === "skapa_offert" ? (
-      <ButtonLink href={newQuoteHref} variant={quoteRecommended ? "primary" : "secondary"}>
-        Skapa offert
-      </ButtonLink>
-    ) : quoteAction === "fortsatt_offert" ? (
-      <ButtonLink href={quoteHref} variant="secondary">
+  const invoiceLabel =
+    invoiceAction === "skapa_slutfaktura"
+      ? "Skapa slutfaktura"
+      : invoiceAction === "skapa_delfaktura"
+        ? "Skapa delfaktura"
+        : "Skapa faktura";
+
+  // Exakt en huvudknapp. Allt annat ligger i "…"-menyn.
+  const primary = jobHeaderPrimary({ quoteAction, invoiceAction, hasBillable });
+  const primaryBtn =
+    primary === "fortsatt_offert" ? (
+      <ButtonLink href={quoteHref} variant="primary">
         Fortsätt offert
       </ButtonLink>
-    ) : (
-      <ButtonLink href={quoteHref} variant="secondary">
+    ) : primary === "skapa_offert" ? (
+      <ButtonLink href={newQuoteHref} variant="primary">
+        Skapa offert
+      </ButtonLink>
+    ) : primary === "visa_offert" ? (
+      <ButtonLink href={quoteHref} variant="primary">
         Visa offert
       </ButtonLink>
-    );
-
-  const invoiceBtn = (
-    <button
-      type="button"
-      className={buttonClasses(quoteRecommended ? "secondary" : "accent")}
-      onClick={() => openInvoice()}
-    >
-      <Plus className="size-4" />
-      {invoiceAction === "skapa_slutfaktura"
-        ? "Skapa slutfaktura"
-        : invoiceAction === "skapa_delfaktura"
-          ? "Skapa delfaktura"
-          : "Skapa faktura"}
-    </button>
-  );
-
-  // Avsluta-knappen visas som huvudåtgärd när jobbet har något att fakturera
-  // eller är på väg att bli klart; annars ligger den kvar i menyn.
-  const closeoutBtn =
-    closeout && canMarkDone ? (
-      <button
-        type="button"
-        className={buttonClasses(closeout.totals.billable > 0 && !quoteRecommended ? "primary" : "secondary")}
-        onClick={() => setShowCloseout(true)}
-        data-testid="job-closeout-open"
-      >
-        <Flag className="size-4" />
-        Avsluta uppdrag
+    ) : (
+      <button type="button" className={buttonClasses("primary")} onClick={() => openInvoice()} data-testid="job-primary-invoice">
+        <Plus className="size-4" />
+        {invoiceLabel}
       </button>
-    ) : null;
+    );
 
   return (
     <>
       <PageActions>
-        {quoteRecommended ? (
-          <>
-            {quoteBtn}
-            {invoiceBtn}
-            {closeoutBtn}
-          </>
-        ) : closeout && closeout.totals.billable > 0 ? (
-          <>
-            {closeoutBtn}
-            {invoiceBtn}
-            {quoteBtn}
-          </>
-        ) : (
-          <>
-            {invoiceBtn}
-            {quoteBtn}
-            {closeoutBtn}
-          </>
-        )}
+        {primaryBtn}
         {waitingLabel ? <p className="text-[14px] font-medium text-soft">{waitingLabel}</p> : null}
         {doneLabel ? <p className="text-[14px] font-semibold text-ok">{doneLabel}</p> : null}
         <ActionMenu>
-          <JobMenuItem
-            onSelect={() => setShowEdit(true)}
-            icon={<Pencil className="size-4 shrink-0" />}
-            label="Redigera uppdrag"
-          />
+          {/* Fakturaknappen får bara finnas en gång på sidan: i menyn bara när
+              den inte redan är huvudknappen. */}
+          {hasBillable && primary !== invoiceAction ? (
+            <JobMenuItem
+              onSelect={() => openInvoice()}
+              icon={<Plus className="size-4 shrink-0" />}
+              label={invoiceLabel}
+            />
+          ) : null}
           {canMarkDone ? (
             <JobMenuItem
               onSelect={markDone}
-              icon={<CheckCircle2 className="size-4 shrink-0" />}
-              label="Markera som klart"
+              icon={<Flag className="size-4 shrink-0" />}
+              label="Avsluta uppdrag"
             />
           ) : null}
           {canReopen ? (
@@ -254,6 +232,16 @@ export function JobActions({
               label="Återöppna uppdrag"
             />
           ) : null}
+          <JobMenuItem
+            onSelect={() => setShowEdit(true)}
+            icon={<Pencil className="size-4 shrink-0" />}
+            label="Redigera uppdrag"
+          />
+          <JobMenuItem
+            onSelect={() => setShowPhotos(true)}
+            icon={<Camera className="size-4 shrink-0" />}
+            label={photos.length > 0 ? `Foton (${photos.length})` : "Foton"}
+          />
           <JobMenuItem
             onSelect={() => setShowRemove(true)}
             icon={
@@ -268,6 +256,8 @@ export function JobActions({
           />
         </ActionMenu>
       </PageActions>
+
+      <JobPhotosModal open={showPhotos} onClose={() => setShowPhotos(false)} jobId={jobId} photos={photos} />
 
       <EditUppdragModal
         open={showEdit}
@@ -397,42 +387,6 @@ export function JobActions({
       {closeout ? (
         <CloseoutFlow open={showCloseout} onClose={() => setShowCloseout(false)} view={closeout} jobHref={`/uppdrag/${jobId}`} />
       ) : null}
-    </>
-  );
-}
-
-export function JobInvoiceTrigger({
-  jobId,
-  jobTitle,
-  invoiceChoice,
-  preselect,
-  label = "Skapa faktura",
-  variant = "accent",
-  size = "md",
-}: {
-  jobId: string;
-  jobTitle: string;
-  invoiceChoice: JobInvoiceChoice;
-  preselect?: JobInvoiceOptionBasis;
-  label?: string;
-  variant?: "primary" | "accent" | "secondary";
-  size?: "sm" | "md";
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button type="button" className={buttonClasses(variant, size)} onClick={() => setOpen(true)}>
-        <Plus className="size-3.5" />
-        {label}
-      </button>
-      <JobInvoiceModal
-        open={open}
-        onClose={() => setOpen(false)}
-        jobId={jobId}
-        jobTitle={jobTitle}
-        choice={invoiceChoice}
-        preselect={preselect}
-      />
     </>
   );
 }

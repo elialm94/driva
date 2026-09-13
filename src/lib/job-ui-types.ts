@@ -9,6 +9,22 @@ export type JobInvoiceAction = "skapa_faktura" | "skapa_delfaktura" | "skapa_slu
 export type JobPrimaryKind = JobQuoteAction | JobInvoiceAction;
 export type JobSecondaryKind = JobQuoteAction | JobInvoiceAction | "redigera";
 
+/**
+ * Uppdragssidans enda huvudknapp. Offertutkastet går först (den är inte
+ * skickad än), sedan det som går att fakturera, sedan offerten.
+ * "Avsluta uppdrag" är aldrig huvudknapp - den bor i "…"-menyn.
+ */
+export function jobHeaderPrimary(state: {
+  quoteAction: JobQuoteAction;
+  invoiceAction: JobInvoiceAction;
+  hasBillable: boolean;
+}): JobPrimaryKind {
+  if (state.quoteAction === "fortsatt_offert") return "fortsatt_offert";
+  if (state.hasBillable) return state.invoiceAction;
+  if (state.quoteAction === "skapa_offert") return "skapa_offert";
+  return "visa_offert";
+}
+
 export type JobInvoiceOptionBasis = "quote" | "actuals" | "empty";
 export type JobInvoiceBasis = "quote" | "actuals" | "quote_plus_extras" | "empty";
 

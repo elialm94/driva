@@ -40,6 +40,7 @@ import {
 } from "./tax-reduction-fields";
 import { suggestedServiceDate } from "@/lib/tax-reduction-gaps";
 import { autoSelectWorkLocationId, TaxReductionDocumentProperty } from "./tax-reduction-document-property";
+import { formatPostalAddress, housingFromPropertyOption } from "@/lib/work-location-label";
 import { maskPersonnummer } from "@/lib/personnummer";
 import { AppLink } from "./app-link";
 import { rotWithAmounts, syncRotWithLines } from "@/lib/tax-reduction-amount";
@@ -70,6 +71,26 @@ const RichTextEditor = dynamic(
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
 const labelCls = "mb-1 block text-[13px] font-medium text-soft";
+
+function DocDescriptionCard({
+  initial,
+  onChange,
+  aiEnabled,
+  hint,
+}: {
+  initial?: RichTextDoc;
+  onChange: (doc: RichTextDoc | undefined) => void;
+  aiEnabled?: boolean;
+  hint: string;
+}) {
+  return (
+    <Card className="p-6">
+      <label className={labelCls}>Beskrivning</label>
+      <RichTextEditor value={initial} onChange={onChange} aiEnabled={aiEnabled} ariaLabel="Beskrivning" />
+      <p className="mt-1.5 text-[12px] leading-relaxed text-muted">{hint}</p>
+    </Card>
+  );
+}
 
 export type { CustomerOption };
 
@@ -499,14 +520,6 @@ export function QuoteForm({
               {missingIds.has("rubrik") ? <FieldError id="offert-rubrik-fel">Rubrik krävs.</FieldError> : null}
             </div>
           </div>
-          <div>
-            <label className={labelCls}>Beskrivning</label>
-            <RichTextEditor value={initial?.richText} onChange={setRichText} aiEnabled={aiEnabled} ariaLabel="Beskrivning" />
-            <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
-              Allt du vill berätta om projektet – vad som ingår, förutsättningar och praktisk information.
-              Rubriker och listor i texten ger strukturen. Visas på offerten före prisraderna.
-            </p>
-          </div>
         </Card>
 
         <Card className="p-6">
@@ -520,6 +533,13 @@ export function QuoteForm({
             rotActive={Boolean(rot)}
           />
         </Card>
+
+        <DocDescriptionCard
+          initial={initial?.richText}
+          onChange={setRichText}
+          aiEnabled={aiEnabled}
+          hint="Allt du vill berätta om projektet – vad som ingår, förutsättningar och praktisk information. Rubriker och listor i texten ger strukturen. Visas på offerten före prisraderna."
+        />
 
         <Card className="space-y-5 p-6">
           <div>
@@ -622,6 +642,7 @@ export function QuoteForm({
                   properties={propertiesByCustomer[customerId] ?? []}
                   value={workLocationId}
                   onChange={(id) => setWorkLocationId(id)}
+                  workAddress={rotByCustomer?.[customerId]?.addressLine ?? ""}
                   onPropertiesChange={(next) =>
                     setPropertiesByCustomer((prev) => ({ ...prev, [customerId]: next }))
                   }
@@ -982,11 +1003,6 @@ export function InvoiceForm({
                 Avbryt
               </button>
             </div>
-            <p className="mt-3 text-center text-[12px] leading-relaxed text-muted">
-              {invoiceId
-                ? "Nummer tilldelas när du skickar. Koppling till offert är oförändrad."
-                : "Utkastet får inget löpnummer förrän du skickar."}
-            </p>
           </Card>
           {dialog}
         </>
@@ -1083,54 +1099,69 @@ export function InvoiceForm({
             rotActive={Boolean(rot)}
             reverseCharge={reverseCharge}
           />
-          <div className="mt-5">
-            <label className={labelCls}>Skattereduktion</label>
-            <div className="flex flex-wrap gap-1.5">
-              {(
-                [
-                  [null, "Ingen"],
-                  ["rot", "ROT"],
-                  ["rut", "RUT"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => {
-                    const next = value ? rotForEditor(value, lines, rot, "faktura") : null;
-                    setRot(next);
-                    setClampNotice(null);
-                    if (value && customerId) applyCustomerRot(customerId, true);
-                    if (value) syncServiceFromPeriod(taxFields);
-                  }}
-                  className={cx(
-                    "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors max-lg:py-2",
-                    (rot?.type ?? null) === value ? "border-ink bg-ink text-white" : "border-line-strong text-soft hover:border-muted"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {rot ? (
-              <div id="faktura-rot-rut">
+        </Card>
+        <DocDescriptionCard
+          initial={initial?.richText}
+          onChange={setRichText}
+          aiEnabled={aiEnabled}
+          hint="Valfritt. Visas på fakturan före raderna – t.ex. vad som ingår eller praktisk information. Rubriker och listor i texten ger strukturen. Sparas med utkastet och fryses när fakturan skickas."
+        />
+        <Card className="p-6">
+          <label className={labelCls}>Skattereduktion</label>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                [null, "Ingen"],
+                ["rot", "ROT"],
+                ["rut", "RUT"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => {
+                  const next = value ? rotForEditor(value, lines, rot, "faktura") : null;
+                  setRot(next);
+                  setClampNotice(null);
+                  if (value && customerId) applyCustomerRot(customerId, true);
+                  if (value) syncServiceFromPeriod(taxFields);
+                }}
+                className={cx(
+                  "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors max-lg:py-2",
+                  (rot?.type ?? null) === value ? "border-ink bg-ink text-white" : "border-line-strong text-soft hover:border-muted"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {rot ? (
+            <div id="faktura-rot-rut" className="mt-5">
               <TaxReductionDocumentProperty
                 customerId={customerId}
                 type={rot.type}
                 dwellingType={taxFields.housing.dwellingType}
                 properties={propertiesByCustomer[customerId] ?? []}
                 value={workLocationId}
-                designation={taxFields.housing.propertyDesignation ?? ""}
-                onDesignationChange={setPropertyDesignation}
-                onChange={(id, designation) => {
+                onChange={(id, selected) => {
                   setWorkLocationId(id);
-                  if (designation?.trim()) setPropertyDesignation(designation);
+                  if (selected) {
+                    setTaxFields((prev) => ({
+                      ...prev,
+                      housing: housingFromPropertyOption(selected),
+                      workAddress: formatPostalAddress(selected) || prev.workAddress,
+                    }));
+                  }
                 }}
                 onPropertiesChange={(next) =>
                   setPropertiesByCustomer((prev) => ({ ...prev, [customerId]: next }))
                 }
                 fieldId="faktura-fastighet"
                 documentKind="faktura"
+                workAddress={taxFields.workAddress}
+                onWorkAddressChange={(workAddress) =>
+                  setTaxFields((prev) => ({ ...prev, workAddress }))
+                }
               />
               <TaxReductionFields
                 key={rot.type}
@@ -1138,7 +1169,6 @@ export function InvoiceForm({
                 value={taxFields}
                 onChange={setTaxFieldsAndDates}
                 onPersonnummerCommit={commitPersonnummer}
-                propertyFieldId="faktura-fastighet-ny"
                 amountSlot={
                   rotLiveTotals ? (
                     <>
@@ -1171,17 +1201,8 @@ export function InvoiceForm({
                   ) : null
                 }
               />
-              </div>
-            ) : null}
-          </div>
-        </Card>
-        <Card className="p-6">
-          <label className={labelCls}>Beskrivning</label>
-          <RichTextEditor value={initial?.richText} onChange={setRichText} aiEnabled={aiEnabled} ariaLabel="Beskrivning" />
-          <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
-            Valfritt. Visas på fakturan före raderna – t.ex. vad som ingår eller praktisk information.
-            Rubriker och listor i texten ger strukturen. Sparas med utkastet och fryses när fakturan skickas.
-          </p>
+            </div>
+          ) : null}
         </Card>
     </EditorWorkspace>
   );

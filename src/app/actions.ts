@@ -442,7 +442,10 @@ export async function removeCustomerWorkLocationAction(
       removeWorkLocation(customerId, locationId);
       refresh();
       return { ok: true } as const;
-    } catch {
+    } catch (e) {
+      if (e instanceof CustomerValidationError) {
+        return { ok: false, error: e.message } as const;
+      }
       return { ok: false, error: "Kunde inte ta bort bostaden" } as const;
     }
   });

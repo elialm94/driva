@@ -8,7 +8,6 @@ import {
   maskPersonnummer,
   personnummerInputChange,
 } from "@/lib/personnummer";
-import { formatOrgnr } from "@/lib/invoices/formats";
 import {
   formatWorkPeriodRange,
   taxReductionMissingFields,
@@ -144,6 +143,13 @@ export function TaxReductionAmountPanel({
       return;
     }
     if (parsed > calculated) {
+      if (commit) {
+        setError(null);
+        onApply(calculated);
+        setDraft(String(calculated));
+        setEditing(false);
+        return;
+      }
       setError(taxReductionExceedsMaxError(calculated, documentKind));
       return;
     }
@@ -188,10 +194,19 @@ export function TaxReductionAmountPanel({
       ) : (
         <p className="flex justify-between text-accent-deep">
           <span>
-            {taxReductionDeductionLabel(type)} {kr(applied)}
+            <button type="button" onClick={startEdit} className="text-left underline-offset-2 hover:underline">
+              {taxReductionDeductionLabel(type)} {kr(applied)}
+            </button>
             <ChangeButton onClick={startEdit} />
           </span>
-          <span className="tabular">−{kr(applied)}</span>
+          <button
+            type="button"
+            onClick={startEdit}
+            className="tabular underline-offset-2 hover:underline"
+            aria-label={`${taxReductionDeductionLabel(type)} ${kr(applied)}`}
+          >
+            −{kr(applied)}
+          </button>
         </p>
       )}
       {error ? <p className="text-[13px] font-medium text-danger">{error}</p> : null}
@@ -225,7 +240,17 @@ function KnownRow({ children }: { children: ReactNode }) {
   return <p className="text-[13px] leading-relaxed text-soft">{children}</p>;
 }
 
-export type InvoicePropertyOption = { id: string; designation: string; label: string };
+export type InvoicePropertyOption = {
+  id: string;
+  designation: string;
+  label: string;
+  address?: string;
+  postalCode?: string;
+  city?: string;
+  propertyType?: DwellingType;
+  brfOrgNumber?: string;
+  apartmentNumber?: string;
+};
 
 export function TaxReductionFields({
   type,
@@ -246,34 +271,21 @@ export function TaxReductionFields({
 }) {
   const pnKnown = isPersonnummerFormat(value.personalIdentityNumber);
   const periodKnown = Boolean(value.workPeriodStart || value.workPeriodEnd);
-  const dwelling = value.housing.dwellingType;
-  const designation = value.housing.propertyDesignation?.trim() ?? "";
 
   const [pnEditing, setPnEditing] = useState(!pnKnown);
   // Arbetsperioden härleds alltid fram (uppdragets datum, annars aktuell
   // månad), så den börjar sammanfattad. Två tomma datumfält ska aldrig möta
   // användaren - de öppnas bara med Ändra.
   const [periodEditing, setPeriodEditing] = useState(false);
-  const [dwellingEditing, setDwellingEditing] = useState(type === "rot" && !dwelling);
-  const [brfEditing, setBrfEditing] = useState(
-    type === "rot" && dwelling === "bostadsratt" && !value.housing.brfOrgNumber?.trim()
-  );
-  const [aptEditing, setAptEditing] = useState(
-    type === "rot" && dwelling === "bostadsratt" && !value.housing.apartmentNumber?.trim()
-  );
 
   const missing = taxReductionMissingFields({
     type,
     personalIdentityNumber: value.personalIdentityNumber,
     details: taxReductionDetailsFromForm(value),
     scope: "invoice",
-  });
+  }).filter((m) => m.code === "personnummer");
   const fieldIds: Partial<Record<TaxReductionMissingCode, string>> = {
     personnummer: `${type}-personnummer`,
-    dwellingType: `${type}-bostadstyp`,
-    propertyDesignation: propertyFieldId,
-    brfOrgNumber: `${type}-brf-orgnr`,
-    apartmentNumber: `${type}-lagenhetsnummer`,
   };
   const missingItems = missing.map((m) => ({ id: m.code, label: m.label, fieldId: fieldIds[m.code] }));
 
@@ -281,29 +293,8 @@ export function TaxReductionFields({
     onChange({ ...value, ...partial });
   }
 
-  function setDwelling(dwellingType: DwellingType) {
-    patch({
-      housing:
-        dwellingType === "smahus"
-          ? { dwellingType, propertyDesignation: value.housing.propertyDesignation }
-          : {
-              dwellingType,
-              brfOrgNumber: value.housing.brfOrgNumber,
-              apartmentNumber: value.housing.apartmentNumber,
-            },
-    });
-    setDwellingEditing(false);
-    setBrfEditing(dwellingType === "bostadsratt");
-    setAptEditing(dwellingType === "bostadsratt");
-  }
-
   const showPnInput = pnEditing || !pnKnown;
   const showPeriodInput = periodEditing;
-  const showDwellingPicker = type === "rot" && (dwellingEditing || !dwelling);
-  const showBrf =
-    type === "rot" && dwelling === "bostadsratt" && (brfEditing || !value.housing.brfOrgNumber?.trim());
-  const showApt =
-    type === "rot" && dwelling === "bostadsratt" && (aptEditing || !value.housing.apartmentNumber?.trim());
 
   return (
     <div className="mt-3 space-y-2.5">
@@ -368,97 +359,6 @@ export function TaxReductionFields({
           <ChangeButton onClick={() => setPeriodEditing(true)} />
         </KnownRow>
       )}
-
-      {type === "rot" ? (
-        showDwellingPicker ? (
-          <div id={`${type}-bostadstyp`}>
-            <label className={labelCls}>Bostadstyp</label>
-            <div className="flex flex-wrap gap-1.5">
-              {(
-                [
-                  ["smahus", "Fastighet/småhus"],
-                  ["bostadsratt", "Bostadsrätt"],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setDwelling(id)}
-                  className={cx(
-                    "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors max-lg:py-2",
-                    value.housing.dwellingType === id
-                      ? "border-ink bg-ink text-white"
-                      : "border-line-strong text-soft hover:border-muted"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : dwelling ? (
-          <KnownRow>
-            Bostadstyp {dwelling === "smahus" ? "Fastighet/småhus" : "Bostadsrätt"}
-            {dwelling === "smahus" && designation ? ` - ${designation}` : null}
-            <ChangeButton onClick={() => setDwellingEditing(true)} />
-          </KnownRow>
-        ) : null
-      ) : null}
-
-      {showBrf ? (
-        <div id={`${type}-brf-orgnr`}>
-          <label className={labelCls}>BRF organisationsnummer</label>
-          <input
-            value={value.housing.brfOrgNumber ?? ""}
-            onChange={(e) =>
-              patch({
-                housing: {
-                  dwellingType: "bostadsratt",
-                  brfOrgNumber: e.target.value,
-                  apartmentNumber: value.housing.apartmentNumber,
-                },
-              })
-            }
-            onBlur={() => {
-              const raw = value.housing.brfOrgNumber ?? "";
-              if (!raw.trim()) return;
-              patch({
-                housing: {
-                  dwellingType: "bostadsratt",
-                  brfOrgNumber: formatOrgnr(raw),
-                  apartmentNumber: value.housing.apartmentNumber,
-                },
-              });
-              setBrfEditing(false);
-            }}
-            inputMode="numeric"
-            placeholder="555555-5555"
-            className={inputCls}
-          />
-        </div>
-      ) : null}
-
-      {showApt ? (
-        <div id={`${type}-lagenhetsnummer`}>
-          <label className={labelCls}>Lägenhetsnummer</label>
-          <input
-            value={value.housing.apartmentNumber ?? ""}
-            onChange={(e) =>
-              patch({
-                housing: {
-                  dwellingType: "bostadsratt",
-                  brfOrgNumber: value.housing.brfOrgNumber,
-                  apartmentNumber: e.target.value,
-                },
-              })
-            }
-            onBlur={() => {
-              if (value.housing.apartmentNumber?.trim()) setAptEditing(false);
-            }}
-            className={inputCls}
-          />
-        </div>
-      ) : null}
 
       {missing.length === 0 ? (
         <p className="text-[13px] font-medium text-ok">✓ Alla uppgifter finns</p>
