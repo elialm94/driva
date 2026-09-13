@@ -120,6 +120,11 @@ Sätt i Vercel (Production) och kontrollera att `GET /api/health` är `status: "
 AI (`AI_PROVIDER`, `OPENROUTER_API_KEY`) om assistenten ska vara på, Tink (`TINK_*`, `TINK_ENV=production`) om
 bankkoppling ska vara live. Fullständig lista med kommentarer: `.env.example`.
 
+**Node-version:** Vercel → Settings → Build & Development Settings → *Node.js Version* måste vara **22.x**, samma
+major som `package.json` → `engines.node` (`>=22.0.0 <23.0.0`), `.nvmrc` (`22`) och CI (`node-version: 22`). Väljer
+Vercel en annan default kan ett bygge vara grönt i CI och trasigt i produktion. Vakten i repot är
+`src/lib/node-version.test.ts`; den kan inte se Vercels inställning, så den kryssas av i dashboarden.
+
 ## C. Efter första deploy
 
 - [ ] `GET /api/health` → `status: "ok"`, `warnings: []` (eller bara `restore_drill_unverified` tills B4 är gjord).
