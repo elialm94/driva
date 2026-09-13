@@ -48,6 +48,7 @@ import { resolvePersistedWorkLocationId } from "../tax-reduction-send";
 import { getWorkLocation, workLocationsOf, workLocationToHousing } from "./work-locations";
 import {
   associateEntriesWithInvoice,
+  billsAsExtra,
   entryToDocLine,
   unlinkJobWorkEntriesFromInvoice,
   uninvoicedActuals,
@@ -59,6 +60,13 @@ import {
   nextPaymentPlanPartForQuote,
   paymentPlanPartAlreadyInvoiced,
 } from "./business-chain";
+import { paymentPlanPartAmount, paymentPlanPartKind } from "../payment-plan";
+import {
+  dropDraftAllocations,
+  markAllocationsInvoiced,
+  releaseAllocationsForInvoice,
+  syncAllocationsWithLines,
+} from "./billing-allocation";
 
 export type Actor = "anvandare" | "assistent";
 
@@ -251,6 +259,12 @@ export interface InvoiceInput {
   /** "Övrig information" – saneras alltid serverside (vitlista, se lib/richtext). */
   richText?: RichTextDoc;
   paymentPlanIndex?: number;
+  /**
+   * Strikt allokering: kasta BillingConflictError om någon rad pekar på en
+   * källa som redan är fakturerad eller ligger på ett annat utkast. Äldre
+   * flöden (egna kontroller) lämnar den av och hoppar då över konflikter.
+   */
+  strictAllocation?: boolean;
 }
 
 export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare"): Invoice {
@@ -295,6 +309,9 @@ export function createInvoice(input: InvoiceInput, createdBy: Actor = "anvandare
   };
   if (input.paymentPlanIndex != null) invoice.paymentPlanIndex = input.paymentPlanIndex;
   applyTaxReductionContext(invoice, input);
+  // Allokeringar härleds ur radernas proveniens INNAN utkastet läggs till –
+  // en konflikt i strikt läge lämnar då inget halvskapat utkast efter sig.
+  syncAllocationsWithLines(invoice, { strict: input.strictAllocation === true });
   data.invoices.push(invoice);
   logActivity(`Fakturautkast skapades för ${customer.name}.`, {
     customerId: customer.id,
@@ -357,6 +374,8 @@ export function updateInvoice(invoiceId: string, input: InvoiceUpdateInput, crea
   if (input.serviceDate !== undefined) {
     invoice.serviceDate = input.serviceDate || undefined;
   }
+  // Borttagna rader frisläpper sin källa, nya rader med proveniens reserverar den.
+  syncAllocationsWithLines(invoice);
 
   const customer = requireCustomer(invoice.customerId);
   logActivity(`Fakturautkast ${invoiceNumberLabel(invoice)} uppdaterades.`, {
@@ -508,7 +527,7 @@ export function createInvoiceFromJobActuals(
 export function createInvoiceFromQuotePlusExtras(jobId: string, createdBy: Actor = "anvandare"): Invoice {
   const job = getJob(jobId);
   if (!job) throw new Error("Uppdraget finns inte");
-  const extras = uninvoicedActuals(jobId).filter((e) => e.isExtra);
+  const extras = uninvoicedActuals(jobId).filter(billsAsExtra);
   const remaining = remainingToInvoiceForJob(jobId);
   const quote = jobQuote(job);
 
@@ -524,6 +543,7 @@ export function createInvoiceFromQuotePlusExtras(jobId: string, createdBy: Actor
         extras.map((e) => e.id),
         invoice.id
       );
+      syncAllocationsWithLines(invoice);
       save();
     }
     return invoice;
@@ -634,7 +654,16 @@ export function createPartInvoiceForQuote(quoteId: string, partIndex: number, cr
     throw new Error(`Delbetalning ${partIndex + 1} är redan fakturerad`);
   }
   const totals = docTotals(version.lines, version.rot);
-  const partInkl = Math.round((totals.total * part.percent) / 100);
+  // Fast belopp (förskott i kronor) styr; annars procent. Aldrig mer än det
+  // som är kvar enligt offerten (tidigare delar och krediter inräknade).
+  const next = nextPaymentPlanPartForQuote(quoteId);
+  const fromPlan = paymentPlanPartAmount(part, totals.total);
+  const partInkl = next && next.index === partIndex ? Math.min(fromPlan, next.amount) : fromPlan;
+  const kind = paymentPlanPartKind(version.paymentPlan, partIndex);
+  const shareLabel =
+    part.amount != null
+      ? `${kind === "forskott" ? "förskott " : ""}${kr(part.amount)}`
+      : `${part.percent} %`;
   return createInvoice(
     {
       customerId: quote.customerId,
@@ -644,7 +673,7 @@ export function createPartInvoiceForQuote(quoteId: string, partIndex: number, cr
       lines: shareLinesFromVersion(
         version,
         partInkl,
-        `Delbetalning ${partIndex + 1} av ${version.paymentPlan.length} – ${version.title} (${part.percent} % ${part.label.toLowerCase()})`
+        `Delbetalning ${partIndex + 1} av ${version.paymentPlan.length} – ${version.title} (${shareLabel} ${part.label.toLowerCase()})`
       ).map((l) => lineWithPaymentPlanProvenance(l, quote, partIndex)),
       rot: null,
       dueInDays: Math.min(version.paymentTermsDays, 14),
@@ -737,6 +766,7 @@ export function issueInvoice(invoiceId: string, createdBy: Actor = "anvandare"):
 
   freezeIssue(invoice, { number, ocr, issuedAt: now });
   invoice.status = "skickad";
+  markAllocationsInvoiced(invoice.id, now);
   if (invoice.number == null || !invoice.ocr) {
     throw new Error("Fakturan kunde inte utfärdas utan nummer och OCR. Försök igen.");
   }
@@ -1182,6 +1212,8 @@ export function creditInvoice(invoiceId: string, createdBy: Actor = "anvandare",
   //   * annars: status orörd, utestående minskar.
   if (!isPartial) {
     original.status = "krediterad";
+    // Källorna (offertrader, tid, ändringar) är fria att fakturera igen.
+    releaseAllocationsForInvoice(original.id, "faktura_krediterad", now);
   } else {
     const outstandingAfter = totals.toPay - paid - alreadyCredited - creditToPay;
     if (outstandingAfter <= 0 && original.status !== "betald") {
@@ -1312,6 +1344,7 @@ export function discardInvoice(invoiceId: string, createdBy: Actor = "anvandare"
   }
   const customer = requireCustomer(invoice.customerId);
   unlinkJobWorkEntriesFromInvoice(invoiceId);
+  dropDraftAllocations(invoiceId);
   data.invoices = data.invoices.filter((i) => i.id !== invoiceId);
   logActivity(`Fakturautkast ${invoiceNumberLabel(invoice)} kastades.`, {
     customerId: customer.id,

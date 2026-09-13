@@ -11,6 +11,7 @@ import {
   requireCustomer,
 } from "./data";
 import { docTotals } from "../calc";
+import { normalizePaymentPlan, paymentPlanIssue } from "../payment-plan";
 import { resolvedHourlyRate } from "../line-defaults";
 import { kr, isoDaysFromNow, dagarTill, datumKort } from "../format";
 import { logActivity } from "./activity";
@@ -87,7 +88,7 @@ export function createQuote(input: QuoteInput, createdBy: "anvandare" | "assiste
     version: 1,
     title: input.title,
     lines: input.lines.map((l) => syncDocLineClassification({ ...l })),
-    paymentPlan: input.paymentPlan,
+    paymentPlan: input.paymentPlan.length > 0 ? normalizePaymentPlan(input.paymentPlan) : [],
     paymentTermsDays: input.paymentTermsDays,
     lateInterestRate: input.lateInterestRate ?? data.settings.lateInterestRate,
     validUntil: input.validUntil,
@@ -163,6 +164,7 @@ export function updateQuote(quoteId: string, input: QuoteVersionInput): Quote {
     ...versionFields,
     richText: sanitizeRichText(input.richText),
     lines: input.lines.map((l) => syncDocLineClassification({ ...l })),
+    paymentPlan: input.paymentPlan.length > 0 ? normalizePaymentPlan(input.paymentPlan) : [],
   };
   const customer = requireCustomer(quote.customerId);
   const persisted = persistQuoteWorkLocation(customer, input.rot, requestedLocation ?? quote.workLocationId);
@@ -291,6 +293,16 @@ export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
       message: "Offerten har inga rader.",
       href: editHref,
       actionLabel: "Lägg till rader",
+    });
+  }
+  // Betalplanen är en del av det kunden godkänner: fel plan får aldrig skickas.
+  const planIssue = version.paymentPlan.length > 0 ? paymentPlanIssue(version.paymentPlan, docTotals(version.lines, version.rot).total) : null;
+  if (planIssue) {
+    blockers.push({
+      code: "payment_plan",
+      message: `Betalplanen stämmer inte: ${planIssue}`,
+      href: `${editHref}#offert-betalplan`,
+      actionLabel: "Rätta betalplanen",
     });
   }
   if (dagarTill(version.validUntil) < 0) {

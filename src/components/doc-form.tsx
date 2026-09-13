@@ -22,6 +22,8 @@ import {
 import { TaxReductionEditorHint, TaxReductionCalcHint } from "./tax-reduction-terms";
 import { EditorWorkspace } from "./editor-workspace";
 import { LinesEditor, startLines } from "./lines-editor";
+import { PaymentPlanEditor } from "./payment-plan-editor";
+import { DEFAULT_PAYMENT_PLAN, paymentPlanIssue } from "@/lib/payment-plan";
 import { withoutVat } from "@/lib/invoices/reverse-charge";
 import {
   TaxReductionFields,
@@ -221,24 +223,6 @@ function DocStickyActions({
   );
 }
 
-const PLAN_PRESETS: { label: string; plan: PaymentPlanPart[] }[] = [
-  { label: "Allt när arbetet är klart", plan: [{ label: "Betalning när arbetet är klart", percent: 100 }] },
-  {
-    label: "30 % vid start",
-    plan: [
-      { label: "Vid arbetets start", percent: 30 },
-      { label: "När arbetet är klart och godkänt", percent: 70 },
-    ],
-  },
-  {
-    label: "50 / 50",
-    plan: [
-      { label: "Vid arbetets start", percent: 50 },
-      { label: "När arbetet är klart och godkänt", percent: 50 },
-    ],
-  },
-];
-
 export interface QuoteFormInitial {
   title: string;
   lines: DocLine[];
@@ -315,7 +299,9 @@ export function QuoteForm({
     return autoSelectWorkLocationId(properties, initial?.workLocationId);
   });
   const [clampNotice, setClampNotice] = useState<string | null>(null);
-  const [plan, setPlan] = useState<PaymentPlanPart[]>(initial?.paymentPlan ?? PLAN_PRESETS[0].plan);
+  const [plan, setPlan] = useState<PaymentPlanPart[]>(
+    initial?.paymentPlan && initial.paymentPlan.length > 0 ? initial.paymentPlan : DEFAULT_PAYMENT_PLAN.map((p) => ({ ...p }))
+  );
   const [termsDays, setTermsDays] = useState(initial?.paymentTermsDays ?? defaults.paymentTermsDays);
   const [lateInterest, setLateInterest] = useState(initial?.lateInterestRate ?? defaults.lateInterestRate);
   const [validUntil, setValidUntil] = useState((initial?.validUntil ?? defaults.validUntil).slice(0, 10));
@@ -351,6 +337,7 @@ export function QuoteForm({
   const { confirmLeave, dialog } = useUnsavedLeave(dirty && !saving);
 
   const planTotal = plan.reduce((s, p) => s + p.percent, 0);
+  const planIssue = paymentPlanIssue(plan, docTotals(finiteLines(lines), rot).total);
   const missing = useMemo(
     () =>
       quoteMissingRequirements({
@@ -358,10 +345,11 @@ export function QuoteForm({
         title,
         lines,
         planPercentTotal: planTotal,
+        paymentPlanIssue: planIssue,
         validUntil,
         paymentTermsDays: termsDays,
       }),
-    [customerId, title, lines, planTotal, validUntil, termsDays]
+    [customerId, title, lines, planTotal, planIssue, validUntil, termsDays]
   );
   const [attempted, setAttempted] = useState(false);
   const showErrors = attempted && missing.length > 0;
@@ -629,52 +617,7 @@ export function QuoteForm({
             ) : null}
           </div>
 
-          <div id="offert-betalplan">
-            <label className={labelCls}>Betalningsplan</label>
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {PLAN_PRESETS.map((p) => (
-                <button
-                  key={p.label}
-                  type="button"
-                  onClick={() => setPlan(p.plan)}
-                  className={cx(
-                    "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors max-lg:py-2",
-                    JSON.stringify(plan) === JSON.stringify(p.plan)
-                      ? "border-ink bg-ink text-white"
-                      : "border-line-strong text-soft hover:border-muted"
-                  )}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <div className="space-y-2">
-              {plan.map((p, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input
-                    value={p.label}
-                    onChange={(e) => setPlan(plan.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
-                    aria-label="Delbetalningens namn"
-                    className={cx(inputCls, "min-w-0 flex-1")}
-                  />
-                  <div className="flex shrink-0 items-center gap-1">
-                    <input
-                      type="number"
-                      value={p.percent}
-                      min={0}
-                      max={100}
-                      inputMode="numeric"
-                      aria-label="Andel i procent"
-                      onChange={(e) => setPlan(plan.map((x, j) => (j === i ? { ...x, percent: Number(e.target.value) } : x)))}
-                      className={cx(inputCls, "w-20 text-right")}
-                    />
-                    <span className="text-[13px] text-muted">%</span>
-                  </div>
-                </div>
-              ))}
-              {planTotal !== 100 ? <p className="text-[13px] font-medium text-danger">Delarna måste summera till 100 % (nu {planTotal} %).</p> : null}
-            </div>
-          </div>
+          <PaymentPlanEditor plan={plan} onChange={setPlan} totalInclVat={liveTotals.total} showErrors={showErrors} />
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div>

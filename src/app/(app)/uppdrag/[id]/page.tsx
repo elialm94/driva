@@ -22,6 +22,12 @@ import { PurchaseOrdersSection } from "@/components/purchase-orders-section";
 import { jobPurchaseOrderRows, jobWholesalerContext } from "@/lib/services/job-wholesalers";
 import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
 import { JobPhotosSection } from "@/components/job-photos";
+import { JobChangesSection } from "@/components/job-changes-section";
+import { getJobChange, jobChangesForJob } from "@/lib/services/job-changes";
+import { closeoutView } from "@/lib/services/closeout";
+import { jobTimeline } from "@/lib/services/job-timeline";
+import { JobTimeline } from "@/components/job-timeline";
+import { CustomerShareSection } from "@/components/customer-share-section";
 import { RotDeadlineBanner } from "@/components/rot-deadline-banner";
 import { taxReductionCaseForJob } from "@/lib/services/tax-reduction";
 import { rotDeadlineStatus } from "@/lib/tax-reduction-deadline";
@@ -59,7 +65,13 @@ function toView(entry: ReturnType<typeof actualEntries>[number]): JobWorkViewEnt
     locked: status === "invoiced",
     invoiceId: entry.invoiceId,
     invoiceNumber: invoice?.number,
+    ...(entry.changeId ? { changeLabel: changeLabelFor(entry.changeId) } : {}),
   };
+}
+
+function changeLabelFor(changeId: string): string {
+  const change = getJobChange(changeId);
+  return change ? `Ändring ${change.number}` : "Ändring";
 }
 
 export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
@@ -195,6 +207,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
           quoteHref={quote ? quoteHref(quote.id, fromHere) : "/ekonomi?flik=offerter"}
           newQuoteHref={newQuoteHref({ kund: customer.id, job: job.id, from: fromHere })}
           invoiceChoice={invoiceChoice}
+          closeout={closeoutView(job.id)}
           job={{
             title: job.title,
             description: job.description,
@@ -313,9 +326,21 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         wholesalers={wholesalers.enabled ? wholesalers : undefined}
       />
 
+      <JobChangesSection jobId={job.id} changes={jobChangesForJob(job.id)} />
+
       <JobPhotosSection jobId={job.id} photos={job.photos ?? []} />
 
       <PurchaseOrdersSection jobId={job.id} jobTitle={job.title} rows={purchaseOrderRows} />
+
+      <CustomerShareSection
+        jobId={job.id}
+        share={job.customerShare}
+        photos={job.photos ?? []}
+        phone={customer.phone}
+        hasQuote={quote?.status === "godkand"}
+        hasChanges={jobChangesForJob(job.id).some((c) => c.status === "godkand")}
+        hasInvoices={invoices.some((i) => i.status !== "utkast")}
+      />
 
       {taxCase.phase !== "none" && taxCase.phase !== "preliminar" && taxCase.phase !== "waiting_payment" && taxCase.phase !== "waiting_work" ? (
         <div className="mb-8">
@@ -330,6 +355,8 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
       <div className="mb-8">
         <JobNotes jobId={job.id} notes={notes} />
       </div>
+
+      <JobTimeline entries={jobTimeline(job.id)} />
     </div>
   );
 }

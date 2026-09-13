@@ -4,6 +4,8 @@ import { docTotals, lineTotal, lineVat } from "../calc";
 import type { DocLine, Invoice, Quote, QuoteVersion } from "../types";
 import { currentVersion, getInvoice, getJob, getQuote, invoiceTotals, quoteAcceptance, quoteVersions } from "./data";
 import { QUOTE_EXCESS_WARN_AMOUNT, QUOTE_EXCESS_WARN_PERCENT } from "../quote-excess";
+import { paymentPlanPartAmount } from "../payment-plan";
+import { kr } from "../format";
 
 export { QUOTE_EXCESS_WARN_AMOUNT, QUOTE_EXCESS_WARN_PERCENT };
 
@@ -56,8 +58,9 @@ function normalizeDesc(s: string): string {
 
 /** Samlingsrader från del-/slutfaktura – inte jämförbara med offertrader. */
 function isBundleLine(line: DocLine): boolean {
+  if (line.sourceKind === "PAYMENT_PLAN") return true;
   const d = normalizeDesc(line.description);
-  return d.startsWith("delbetalning") || d.startsWith("slutfaktura");
+  return d.startsWith("delbetalning") || d.startsWith("slutfaktura") || d.startsWith("slutbetalning");
 }
 
 function signedQuoteVersion(quote: Quote): QuoteVersion {
@@ -73,6 +76,11 @@ function signedQuoteVersion(quote: Quote): QuoteVersion {
 function matchPaymentPlanPart(invoice: Invoice, version: QuoteVersion) {
   const plan = version.paymentPlan;
   if (plan.length === 0) return undefined;
+
+  // Sparat index är sanningen när det finns (fakturor efter radproveniensen).
+  if (invoice.paymentPlanIndex != null && plan[invoice.paymentPlanIndex]) {
+    return plan[invoice.paymentPlanIndex];
+  }
 
   const desc = invoice.lines[0]?.description ?? "";
   const numbered = desc.match(/delbetalning\s+(\d+)\s+av\s+(\d+)/i);
@@ -106,16 +114,17 @@ function expectedAmount(invoice: Invoice, quote: Quote, version: QuoteVersion): 
   if (invoice.type === "delbetalning") {
     const part = matchPaymentPlanPart(invoice, version);
     if (part) {
-      const amount = Math.round((quoteTotals.total * part.percent) / 100);
+      const amount = paymentPlanPartAmount(part, quoteTotals.total);
       return {
         amount,
         kind: "delbetalning",
-        label: `${part.percent} % · ${part.label.toLowerCase()}`,
+        label: `${part.amount != null ? kr(part.amount) : `${part.percent} %`} · ${part.label.toLowerCase()}`,
       };
     }
   }
 
-  const others = relatedInvoices(invoice, quote).reduce((s, i) => s + invoiceTotals(i).toPay, 0);
+  // Godkända ändringar på tidigare fakturor hör inte till offertens belopp.
+  const others = relatedInvoices(invoice, quote).reduce((s, i) => s + invoiceTotals(i).toPay - approvedChangeAmount(i), 0);
   if (others > 0) {
     return {
       amount: Math.max(0, quoteToPay - others),
@@ -125,6 +134,21 @@ function expectedAmount(invoice: Invoice, quote: Quote, version: QuoteVersion): 
   }
 
   return { amount: quoteToPay, kind: "offert", label: "hela den godkända offerten" };
+}
+
+/**
+ * Rader från en ändring kunden godkänt (Ändringar och tillägg) är lika avtalade
+ * som offerten: de räknas in i det godkända beloppet och jämförs inte radvis.
+ * Utkast, avböjda eller ersatta ändringar räknas inte.
+ */
+function isApprovedChangeLine(line: DocLine): boolean {
+  if (line.sourceKind !== "CHANGE_LINE" || !line.sourceId) return false;
+  const changes = db().jobChanges ?? [];
+  return changes.some((c) => c.status === "godkand" && c.approval && c.lines.some((l) => l.id === line.sourceId));
+}
+
+function approvedChangeAmount(invoice: Invoice): number {
+  return invoice.lines.filter(isApprovedChangeLine).reduce((s, l) => s + lineInclVat(l), 0);
 }
 
 function isLargeExcess(delta: number, approvedAmount: number): boolean {
@@ -153,7 +177,7 @@ function lineDiffs(invoice: Invoice, version: QuoteVersion): { addedLines: Quote
   const used = new Set<string>();
 
   for (const invLine of invoice.lines) {
-    if (isBundleLine(invLine)) continue;
+    if (isBundleLine(invLine) || isApprovedChangeLine(invLine)) continue;
     const match = quoteLines.find(
       (q) => !used.has(q.id) && q.kind === invLine.kind && normalizeDesc(q.description) === normalizeDesc(invLine.description)
     );
@@ -188,7 +212,8 @@ export function invoiceQuoteDeviation(invoice: Invoice): QuoteDeviation | null {
 
   const version = signedQuoteVersion(quote);
   const invoicedAmount = invoiceTotals(invoice).toPay;
-  const expected = expectedAmount(invoice, quote, version);
+  const baseline = expectedAmount(invoice, quote, version);
+  const expected = { ...baseline, amount: baseline.amount + approvedChangeAmount(invoice) };
   const delta = invoicedAmount - expected.amount;
   const { addedLines } = lineDiffs(invoice, version);
   const rotChanged = (invoice.rot?.type ?? null) !== (version.rot?.type ?? null);

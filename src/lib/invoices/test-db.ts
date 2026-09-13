@@ -151,6 +151,8 @@ export function emptyTestDb(over: Partial<DB> = {}): DB {
     onboarding: over.onboarding === undefined ? null : over.onboarding,
     dataImports: over.dataImports ?? [],
     suppliers: over.suppliers ?? [],
+    billingAllocations: over.billingAllocations ?? [],
+    jobChanges: over.jobChanges ?? [],
     meta: over.meta ?? { seededAt: new Date().toISOString() },
   };
 }

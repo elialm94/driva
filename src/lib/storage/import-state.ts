@@ -63,6 +63,8 @@ const COUNTED: Array<[keyof DB, string]> = [
   ["purchaseOrderConfirmations", "orderbekräftelser"],
   ["dataImports", "dataimporter"],
   ["suppliers", "leverantörer"],
+  ["billingAllocations", "faktureringsallokeringar"],
+  ["jobChanges", "ändringar"],
 ];
 
 function countOf(state: DB, key: keyof DB): number {
