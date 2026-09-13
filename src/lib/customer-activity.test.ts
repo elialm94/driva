@@ -2,7 +2,7 @@ process.env.DRIVA_TEST = "1";
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { CustomerActivityRow } from "./customer-activity-model";
+import { ACTIVITY_FILTER_MIN, type CustomerActivityRow } from "./customer-activity-model";
 import {
   ACTIVITY_LIST_EMPTY_MIN_PX,
   DEFAULT_ACTIVITY_SORT,
@@ -133,10 +133,17 @@ describe("filter och sort på aktuell flik", () => {
   });
 });
 
+describe("flikar", () => {
+  it("korta kedjelistor visar flikarna (tröskel 0, inte 8)", () => {
+    assert.equal(ACTIVITY_FILTER_MIN, 0);
+    assert.ok(3 > ACTIVITY_FILTER_MIN);
+  });
+});
+
 describe("listpanelens min-höjd", () => {
   it("tom lista har en golvhöjd så sidan inte kollapsar", () => {
     assert.equal(activityListMinHeightPx(0), ACTIVITY_LIST_EMPTY_MIN_PX);
-    assert.ok(ACTIVITY_LIST_EMPTY_MIN_PX >= 280);
+    assert.ok(ACTIVITY_LIST_EMPTY_MIN_PX >= 320);
   });
 
   it("min-höjd följer ofiltrerad radantal så flikbyte inte krymper panelen", () => {

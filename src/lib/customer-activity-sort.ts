@@ -89,9 +89,9 @@ export function visibleCustomerActivity(
  * Listpanelen reserverar höjd efter den ofiltrerade listan så att ett
  * tomt filter (t.ex. Betalningar) inte krymper sidan och flyttar flikraden.
  */
-export const ACTIVITY_LIST_EMPTY_MIN_PX = 280;
+export const ACTIVITY_LIST_EMPTY_MIN_PX = 320;
 export const ACTIVITY_LIST_HEAD_PX = 42;
-export const ACTIVITY_LIST_ROW_PX = 64;
+export const ACTIVITY_LIST_ROW_PX = 88;
 
 export function activityListMinHeightPx(unfilteredCount: number): number {
   if (unfilteredCount <= 0) return ACTIVITY_LIST_EMPTY_MIN_PX;

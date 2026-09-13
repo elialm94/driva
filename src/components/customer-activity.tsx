@@ -77,14 +77,7 @@ export function CustomerActivity({
             <tr className={LIST_HEAD_ROW_CLASS}>
               <SortTh label="Datum" sortKey="datum" current={sort} onSort={setSort} />
               <SortTh label="Händelse" sortKey="handelse" current={sort} onSort={setSort} />
-              <SortTh
-                label="Belopp"
-                sortKey="belopp"
-                current={sort}
-                onSort={setSort}
-                align="right"
-                className="hidden sm:table-cell"
-              />
+              <SortTh label="Belopp" sortKey="belopp" current={sort} onSort={setSort} align="right" />
               <SortTh label="Status" sortKey="status" current={sort} onSort={setSort} align="right" />
             </tr>
           </thead>
@@ -109,11 +102,8 @@ export function CustomerActivity({
                     {row.subtitle ? (
                       <span className="mt-0.5 block text-[13px] text-muted">{row.subtitle}</span>
                     ) : null}
-                    {row.amount != null ? (
-                      <span className="mt-0.5 block text-[13px] text-muted sm:hidden">{kr(row.amount)}</span>
-                    ) : null}
                   </td>
-                  <td className="pointer-events-none hidden px-4 py-3 text-right tabular text-soft sm:table-cell">
+                  <td className="pointer-events-none px-4 py-3 text-right tabular text-soft">
                     {row.amount != null ? kr(row.amount) : "—"}
                   </td>
                   <td className="pointer-events-none px-4 py-3 text-right text-[13px] text-muted">{row.statusLabel}</td>
