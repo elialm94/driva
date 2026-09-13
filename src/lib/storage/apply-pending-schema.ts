@@ -766,7 +766,7 @@ export async function ensureReverseChargeSchema(client: SqlClient): Promise<stri
 }
 
 /**
- * Leveranskanal på fakturan (migration 49): vald kanal utanför e-post och
+ * Leveranskanal på fakturan (migration 55): vald kanal utanför e-post och
  * tidpunkten då kunden fick fakturan den vägen. Speglar migrationen exakt.
  * Utan kolumnerna ser åtgärdsmotorn varje pappersfaktura som ett leveransfel.
  */
@@ -789,7 +789,7 @@ export async function ensureInvoiceDeliveryChannelSchema(client: SqlClient): Pro
 
 /**
  * Nuvarande definition av app.issue_invoice – spegling av den senaste
- * migrationen som rör den (49, leveranskanal). `create or replace` gör den
+ * migrationen som rör den (55, leveranskanal). `create or replace` gör den
  * idempotent, så varje ensure-funktion som behöver en nyare RPC kör samma
  * text. Håll den i takt med supabase/migrations när fler kolumner tillkommer.
  */

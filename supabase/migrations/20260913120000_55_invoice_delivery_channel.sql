@@ -1,5 +1,5 @@
 -- ============================================================================
--- 49 · Leveranskanal på fakturan
+-- 55 · Leveranskanal på fakturan
 -- ----------------------------------------------------------------------------
 -- Att sakna e-postadress ska inte hindra att en faktura utfärdas. En snickare
 -- fakturerar ofta kunder som vill ha papper, och en pappersfaktura är utfärdad

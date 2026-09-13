@@ -604,7 +604,7 @@ async function main() {
   await expectOk(db, "statusflödet (skickat/påminnelser) är fortsatt öppet", () =>
     db.query(`update public.invoices set sent_at = now(), reminders = '["2026-03-05T10:00:00.000Z"]'::jsonb where id = 'inv-a1'`)
   );
-  // Leveranskanalen (migration 49) är ett leveranstillstånd, inte
+  // Leveranskanalen (migration 55) är ett leveranstillstånd, inte
   // dokumentinnehåll: den får sättas efter utfärdandet, men bara till en
   // känd kanal. E-post har sent_at och sätter aldrig fältet.
   await expectOk(db, "leveranskanalen kan sättas på en utfärdad faktura", () =>
