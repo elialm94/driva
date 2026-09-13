@@ -164,6 +164,28 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     await run(client, `alter table public.terms_acceptances enable row level security`);
     applied.push("terms_acceptances");
   }
+  const offlineMutations = await client.query(`select to_regclass('public.offline_mutations') is not null as present`);
+  if (!offlineMutations[0]?.present) {
+    await run(
+      client,
+      `create table if not exists public.offline_mutations (
+        id text primary key,
+        business_id uuid not null,
+        user_id uuid not null,
+        idempotency_key text not null,
+        kind text not null,
+        client_created_at timestamptz not null,
+        applied_at timestamptz not null default now(),
+        outcome text not null check (outcome in ('synced', 'conflict', 'failed', 'rejected')),
+        result_ref text,
+        message text,
+        unique (business_id, idempotency_key)
+      )`
+    );
+    await run(client, `create index if not exists offline_mutations_business_idx on public.offline_mutations (business_id, applied_at desc)`);
+    await run(client, `alter table public.offline_mutations enable row level security`);
+    applied.push("offline_mutations");
+  }
 
   await ensureColumn(
     "business_settings",

@@ -18,6 +18,7 @@ import type {
   SupportSession,
   SupportTicket,
   TermsAcceptanceRecord,
+  OfflineMutationReceipt,
 } from "./types";
 
 export interface PlatformRegistry {
@@ -31,6 +32,8 @@ export interface PlatformRegistry {
   opsRecords: OpsRecord[];
   /** Godkända villkorsversioner (JSON-läget; Supabase har terms_acceptances). */
   termsAcceptances: TermsAcceptanceRecord[];
+  /** Kvitton på offline-synkade mutationer (JSON-läget; Supabase har offline_mutations). */
+  offlineMutations: OfflineMutationReceipt[];
   /** Företag som inaktiverats av admin (JSON-läget saknar businesses-tabell). */
   disabledBusinesses: { businessId: string; disabledAt: string; disabledBy: string }[];
 }
@@ -54,6 +57,7 @@ function empty(): PlatformRegistry {
     suggestionEvents: [],
     opsRecords: [],
     termsAcceptances: [],
+    offlineMutations: [],
     disabledBusinesses: [],
   };
 }

@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { LogOut } from "lucide-react";
 import { logoutAction } from "@/app/auth-actions";
+import { wipeOfflineStore } from "@/lib/offline/client";
 import { cx } from "./ui";
 
 /**
@@ -18,7 +19,12 @@ export function LogoutRow({ variant = "sidebar" }: { variant?: "sidebar" | "shee
   return (
     <button
       type="button"
-      onClick={() => startTransition(() => logoutAction())}
+      // Offline-kön raderas FÖRE sessionen: efter redirecten finns ingen
+      // tenant kvar att binda mot, och inget företagsinnehåll får ligga kvar.
+      onClick={() => startTransition(async () => {
+        await wipeOfflineStore().catch(() => {});
+        await logoutAction();
+      })}
       disabled={pending}
       aria-label="Logga ut"
       className={cx(

@@ -397,6 +397,44 @@ att den gamla adressen loggas.
 Raderingstexten är harmoniserad med bokföringslagen: räkenskapsinformation
 bevaras sju år efter räkenskapsårets utgång och utlovas aldrig raderad i förtid.
 
+## PWA, offline-fältläge och mobilskal (spec §9)
+
+**PWA.** `src/app/manifest.ts` ger `/manifest.webmanifest` (installerbar på
+Android/Chrome och iOS "Lägg till på hemskärmen"); ikonerna i `public/icons/`
+är platshållare genererade av `scripts/generate-pwa-icons.ts`. Service workern
+serveras av `/sw.js` (`src/app/sw.js/route.ts`) med release-strängen inbakad
+som version – varje deploy är en ny worker som raderar föregående versions
+cache vid aktivering. Källan (`src/lib/pwa/service-worker-source.ts`) är en
+**allowlist**: bara `/_next/static/*`, ikoner/manifest och offline-reservsidan
+`/offline` får cachas. HTML för inloggade sidor, RSC-payloads, `/api/*`, auth,
+admin, redovisning, dokument (offert/faktura/PDF) och kundlänkar med token
+passerar alltid orört. Policyn testas i VM utan webbläsare
+(`src/lib/offline/offline.test.ts`). Registrering sker bara i produktion eller
+med `NEXT_PUBLIC_PWA_DEV=1`. `experimental.useOffline` håller navigeringar och
+server actions väntande vid nätbortfall.
+
+**Offline-fältläge V1 (`/falt`).** Det enda i appen som fungerar utan nät.
+Klienten är aldrig sanningskälla: den sparar en *minimerad* uppdragslista
+(id, titel, kundnamn, status, adress) för de uppdrag användaren uttryckligen
+valt, och en kö av avsikter (arbetstid, anteckning, foto, kvitto, materialrad,
+kund-/uppdragsutkast). Kön ligger i IndexedDB (`ferva-offline`) med payload
+och blobbar krypterade med en icke-exporterbar AES-GCM-nyckel (WebCrypto);
+saknas WebCrypto visas det i fältläget. Synk går via `POST /api/offline/sync`
+i seq-ordning med backoff (2 s → 5 min, max 8 automatiska försök) och samma
+`withBusiness`-kontroll som formulären: session, tenant, capability per
+ärendetyp (`change_jobs`, `manage_customers`, `write_accounting`),
+abonnemangets skrivskydd och villkorsgrinden. Servern kvitterar varje ärende i
+`offline_mutations` (migration 55, unik per företag + klientnyckel, immutabel)
+– en omsändning får första utfallet tillbaka utan att något görs om.
+Konflikter (uppdraget klart/borttaget) och avvisningar parkeras i köns
+konfliktvy med *Försök igen*/*Ta bort*. Utloggning, tenantbyte och 401/403
+från synken raderar hela det lokala lagret inklusive nyckeln. Demosessioner
+har inget fältläge.
+
+**Mobilskal.** `mobile/` är ett Capacitor-skal som laddar den driftsatta
+PWA:n via `FERVA_APP_URL`; egna beroenden, exkluderat från tsc/eslint. Körbart
+lokalt, **inte butiksklart** – återstående punkter står i `mobile/README.md`.
+
 ## Lokal utveckling (JSON-läget)
 
 Utan Supabase-miljö finns en tydligt separerad dev-väg: öppna
@@ -430,3 +468,6 @@ auditens immutabilitet. `scripts/db-validate.ts` verifierar dessutom
 Postgres-lagret: triggers, RLS för `authenticated`/`anon`/`driva_app` med och
 utan plattformskontext. Kör `npm run test`, `npm run test:db`,
 `npm run test:adapter`, `npm run typecheck`, `npm run build`.
+`src/lib/offline/offline.test.ts` täcker offline-kön (ordning, beroenden,
+backoff, tenantbindning, dataminimering), serverns idempotens/konflikt/
+capability-kontroll och service workerns cachepolicy.

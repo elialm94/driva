@@ -562,6 +562,24 @@ Reset demo (Inställningar → **Återställ demo**) → `/ekonomi/offerter/ny?k
 
 ---
 
+## Fältläge (offline field mode), PWA, mobile shell
+
+Spec §9. The only part of the app that works without network. Client is never the source of truth.
+
+- **Route** `/falt` (`src/app/(app)/falt/page.tsx` → `FieldMode` in `src/components/field-mode.tsx`), linked from the Uppdrag header (**Fältläge**) and the manifest shortcut. Route meta in `nav.ts` (section `uppdrag`, back to `/uppdrag`). Demo sessions get a stub card (no binding).
+- **Local store** (`src/lib/offline/idb.ts`): IndexedDB `ferva-offline` with `meta` (binding, cached jobs, active timer, non-extractable AES-GCM `CryptoKey`), `mutations` (payload encrypted; `status/kind/seq` plain for indexing) and `blobs` (photos/receipts, encrypted). No WebCrypto ⇒ stored plain and the field mode shows a red notice.
+- **Queue logic** (`src/lib/offline/queue.ts`, pure): `nextBatch` (seq order, backoff, dependency gating on `localId` producers), `resolveLocalRefs`, `applyResult`, `applyTransportFailure` (2 s→5 min, `MAX_AUTO_ATTEMPTS = 8` then `failed`), `retryNow`, `bindingDecision` (bind/keep/wipe), `minimizeJob` (id, title, customerName, status, address, cachedAt - nothing else), `pruneSynced`.
+- **Client adapter** (`src/lib/offline/client.ts`): `ensureBinding`, `enqueue(kind, payload, {blob, entityVersion})`, `syncNow` (single-flight; inlines blobs as dataUrl/base64; wipes the store on `signed_out`/`forbidden`; keeps queue on `read_only`), `retryMutation`, `discardMutation`, `subscribeOffline`.
+- **Kinds** (`types.ts`): `work_time`, `work_note`, `job_photo`, `receipt`, `material`, `customer_draft`, `job_draft`. Capabilities per kind in `CAPABILITY_BY_KIND` (`change_jobs` / `manage_customers` / `write_accounting`).
+- **Server** `POST /api/offline/sync` (`src/app/api/offline/sync/route.ts` → `applyOfflineBatch` in `src/lib/offline/server.ts`) runs inside `withBusiness` (write). Per item: parse → capability (`can(role, …)`) → idempotency lookup → `jobGate` (job missing ⇒ conflict; job `klart` while cached as open ⇒ conflict) → apply through `registerJobTime` / `appendJobNote` / `addJobPhoto` / `addJobMaterial` / `createCustomer` / `createJob` / `storeInboxAttachment`+`ingestUploadedDocument` (no AI interpretation) → receipt row in `offline_mutations` (migration 55, unique `(business_id, idempotency_key)`, immutable, platform-context RLS; JSON mode: `platformRegistry().offlineMutations`). Responses: 401 `signed_out`, 403 `forbidden`, 423 `read_only`, 400 `bad_request`, 500 `server_error`.
+- **Wipe points**: `LogoutRow` (before `logoutAction`), `PwaRegister session={null}` on `/login`, binding mismatch in the app layout, and 401/403 from sync.
+- **PWA**: `src/app/manifest.ts` (`/manifest.webmanifest`, shortcuts to `/falt`, `/uppdrag`, `/bokforing`), icons in `public/icons/` (placeholders, `scripts/generate-pwa-icons.ts`), SW served by `/sw.js` (`src/app/sw.js/route.ts`, version = `appRelease()`), source in `src/lib/pwa/service-worker-source.ts` (allowlist: `/_next/static/*` cache-first, icons/manifest/`/offline` stale-while-revalidate, navigations network-only with `/offline` fallback; everything else - `/api`, auth, admin, redovisning, offert/faktura/andring/uppdrag-kund tokens, RSC/prefetch - bypassed). `PwaRegister` registers only in production or `NEXT_PUBLIC_PWA_DEV=1`. `ConnectivityStatus` (pill above the bottom nav) uses `useOffline` + queue summary and auto-syncs on `online`. Public paths added to `proxy.ts`: `/manifest.webmanifest`, `/sw.js`, `/offline`, `/icons`.
+- **Mobile shell**: `mobile/` (Capacitor 7, `server.url` from `FERVA_APP_URL`), excluded from tsc/eslint, own `package.json`; not store-ready - checklist in `mobile/README.md`.
+- **Tests**: `src/lib/offline/offline.test.ts` (queue, binding, minimisation, server idempotency/conflict/capability/receipt, SW policy via `node:vm`).
+- **Verify (browser)**: log in → Uppdrag → **Fältläge** → tick a job → DevTools *Network: Offline* → **Starta tid** … **Stoppa** (≥ 15 min or use *Timmar*), *Spara anteckning*, *Ta foto* → queue rows show **Väntar** and the pill says *Offline · N ändringar väntar* → go online → pill turns *Synkar…* then disappears; the job's *Arbete & material* lists the time and note. Mark the job **Klart** in another tab, queue another time entry offline, go online → row shows **Konflikt** with the Swedish message and *Försök igen / Ta bort*.
+
+---
+
 ## Offerter (Quotes)
 
 - **User-facing name:** Offerter (tab). Detail: **Offert #{n}**

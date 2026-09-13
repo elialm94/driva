@@ -162,6 +162,32 @@ export interface TermsAcceptanceRecord {
   email?: string;
 }
 
+/* ------------------------------- Offline-synk -------------------------------- */
+
+export type OfflineMutationOutcome = "synced" | "conflict" | "failed" | "rejected";
+
+/**
+ * Serverns kvitto på en offline-mutation (spec §9). Idempotensnyckeln är
+ * klientgenererad och unik per företag: ett andra försök med samma nyckel
+ * returnerar det första utfallet utan att göra om något. Ingen payload lagras
+ * – bara typ, resultat och referens till det som skapades.
+ */
+export interface OfflineMutationReceipt {
+  id: string;
+  businessId: string;
+  userId: string;
+  idempotencyKey: string;
+  kind: string;
+  /** Klientens skapelsetid (ISO). */
+  clientCreatedAt: string;
+  appliedAt: string;
+  outcome: OfflineMutationOutcome;
+  /** Skapad entitet på servern (uppdrag, post, foto …). */
+  resultRef?: string;
+  /** Användarsäkert fel/konfliktmeddelande. Aldrig payload. */
+  message?: string;
+}
+
 /* ------------------------------ Förslagskvalitet ------------------------------ */
 
 export type SuggestionDecision = "auto" | "accepted" | "changed" | "rejected" | "private";

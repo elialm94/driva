@@ -58,6 +58,13 @@ const PUBLIC_PREFIXES = [
   // /api/cron/reminders 307 → /login och påminnelserna kördes aldrig.
   "/api/cron",
   "/api/stripe/webhook", // Stripe har ingen session – Stripe-Signature verifieras i routen.
+  // PWA (spec §9): manifest, service worker och offline-reservsidan läser
+  // ingen data och måste nås utan session – annars 307 → /login och
+  // installationen/registreringen misslyckas.
+  "/manifest.webmanifest",
+  "/sw.js",
+  "/offline",
+  "/icons",
 ];
 
 function isPublicPath(pathname: string): boolean {

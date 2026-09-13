@@ -73,6 +73,12 @@ Lagret mellan "arbetet är gjort" och "rätt faktura" (migration `48_closeout`, 
 - **Kundvy** (`/uppdrag-kund/[token]`) visar bara det ägaren uttryckligen delat: godkänd offert, godkända ändringar, valda foton, fakturor, betalningsstatus och slutunderlag. Aldrig inköpspriser, marginal, interna anteckningar, bokföring eller AI-förslag. **Slutunderlag** finns som utskriftsvy för ägaren (`/uppdrag/[id]/slutunderlag`) och skickas aldrig automatiskt.
 - **Rapportera dagens jobb**: fritext tolkas lokalt (ingen extern leverantör) till förslag för tid, resa, material, ändring och anteckning som användaren granskar och väljer bland innan något sparas. Gränssnittet är byggt så att röst kan läggas till senare i samma fält.
 
+### Fältläge, PWA och mobilskal
+
+- **PWA**: installerbar från webbläsaren (`/manifest.webmanifest`, ikoner i `public/icons/`). Service workern (`/sw.js`, versionerad per deploy) cachar bara byggartefakter, ikoner och offline-reservsidan – aldrig företagsdata, dokument eller API-svar.
+- **Fältläge (`/falt`)** är det enda som fungerar utan nät: välj vilka uppdrag som ska följa med (bara titel, kund och adress sparas), starta/stoppa tid, skriv anteckning, ta foto, fota kvitto, lägg materialrad eller skapa kund-/uppdragsutkast. Allt köas krypterat i enheten och synkas i ordning via `/api/offline/sync` med idempotensnyckel, backoff och konfliktvy. Servern validerar precis som formulären; klienten är aldrig sanningskälla. Utloggning eller byte av företag rensar enheten.
+- **Mobilskal**: `mobile/` är ett Capacitor-skal runt den driftsatta webbappen – körbart lokalt, inte butiksklart (se `mobile/README.md`).
+
 ## Arkitektur
 
 | Del | Var | Anteckning |
@@ -117,7 +123,7 @@ Serverless (Vercel): använd **Transaction pooler**-URL:en (port 6543) som `SUPA
 
 ### 3. Migrationer
 
-Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning.
+Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy; därefter 49–55 för go-live: bankförslagens kvalitetslogg, manuell inlämning, Stripe-abonnemang, driftposter, villkorsgodkännanden, företagets verifierade påståenden och offline-synkens kvitton). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning.
 
 ```bash
 npx supabase login
