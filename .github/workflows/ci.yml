@@ -33,6 +33,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: xmllint (libxml2-utils) för XSD- och välformadhetskontroller
+        # Utan xmllint hoppar HUS-/AGI-/eSKD-/iXBRL-kontrollerna över sig
+        # själva lokalt; i CI kastar testhjälparen i stället (CI=true), så
+        # steget är obligatoriskt. Schemana är vendorade och pinnade
+        # (docs/skatteverket/hus/SCHEMAS.sha256) - inget hämtas från nätet.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libxml2-utils && xmllint --version
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
@@ -66,6 +72,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: xmllint (libxml2-utils) för XSD- och välformadhetskontroller
+        # Utan xmllint hoppar HUS-/AGI-/eSKD-/iXBRL-kontrollerna över sig
+        # själva lokalt; i CI kastar testhjälparen i stället (CI=true), så
+        # steget är obligatoriskt. Schemana är vendorade och pinnade
+        # (docs/skatteverket/hus/SCHEMAS.sha256) - inget hämtas från nätet.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libxml2-utils && xmllint --version
       - name: Djupkörning av testsviten (DRIVA_DEEP=1)
         env:
           DRIVA_DEEP: "1"
