@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, Camera, Flag, PartyPopper, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Camera, Flag, PartyPopper, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { buttonClasses, ButtonLink } from "./ui";
 import { Modal } from "./modal";
 import { ActionMenu, PageActions, actionMenuItemClassName, useActionMenu } from "./action-menu";
@@ -32,25 +32,40 @@ function JobMenuItem({
   icon,
   label,
   danger,
+  disabled,
+  hint,
 }: {
   onSelect: () => void;
   icon: ReactNode;
   label: string;
   danger?: boolean;
+  disabled?: boolean;
+  hint?: string | null;
 }) {
   const menu = useActionMenu();
   return (
     <button
       type="button"
       role="menuitem"
-      className={actionMenuItemClassName({ danger })}
+      disabled={disabled}
+      aria-disabled={disabled || undefined}
+      title={disabled && hint ? hint : undefined}
+      className={
+        disabled
+          ? `${actionMenuItemClassName({ danger })} cursor-not-allowed opacity-60 hover:bg-transparent`
+          : actionMenuItemClassName({ danger })
+      }
       onClick={() => {
+        if (disabled) return;
         menu?.close();
         onSelect();
       }}
     >
       {icon}
-      {label}
+      <span className="min-w-0">
+        <span className="block">{label}</span>
+        {disabled && hint ? <span className="mt-0.5 block text-[12px] font-normal text-muted">{hint}</span> : null}
+      </span>
     </button>
   );
 }
@@ -65,8 +80,6 @@ export function JobActions({
   quoteAction,
   invoiceAction,
   hasBillable,
-  waitingLabel,
-  doneLabel,
   canMarkDone,
   canReopen,
   completeWarning,
@@ -88,8 +101,6 @@ export function JobActions({
   invoiceAction: JobInvoiceAction;
   /** Finns något kvar enligt offerten eller registrerat men ofakturerat. */
   hasBillable: boolean;
-  waitingLabel: string | null;
-  doneLabel: string | null;
   canMarkDone: boolean;
   canReopen: boolean;
   completeWarning: JobCompleteWarning;
@@ -116,6 +127,10 @@ export function JobActions({
   const [invoicePreselect, setInvoicePreselect] = useState<JobInvoiceOptionBasis | undefined>();
   const [showRemove, setShowRemove] = useState(false);
   const [showPhotos, setShowPhotos] = useState(false);
+  const [photoList, setPhotoList] = useState(photos);
+  useEffect(() => {
+    setPhotoList(photos);
+  }, [photos]);
 
   function openInvoice(preselect?: JobInvoiceOptionBasis) {
     const auto = invoiceChoice.autoBasis;
@@ -206,8 +221,6 @@ export function JobActions({
     <>
       <PageActions>
         {primaryBtn}
-        {waitingLabel ? <p className="text-[14px] font-medium text-soft">{waitingLabel}</p> : null}
-        {doneLabel ? <p className="text-[14px] font-semibold text-ok">{doneLabel}</p> : null}
         <ActionMenu>
           {/* Fakturaknappen får bara finnas en gång på sidan: i menyn bara när
               den inte redan är huvudknappen. */}
@@ -240,24 +253,26 @@ export function JobActions({
           <JobMenuItem
             onSelect={() => setShowPhotos(true)}
             icon={<Camera className="size-4 shrink-0" />}
-            label={photos.length > 0 ? `Foton (${photos.length})` : "Foton"}
+            label={photoList.length > 0 ? `Foton (${photoList.length})` : "Foton"}
           />
           <JobMenuItem
             onSelect={() => setShowRemove(true)}
-            icon={
-              removal.kind === "delete" ? (
-                <Trash2 className="size-4 shrink-0" />
-              ) : (
-                <Archive className="size-4 shrink-0" />
-              )
-            }
-            label="Ta bort uppdrag"
+            icon={<Trash2 className="size-4 shrink-0" />}
+            label="Ta bort"
             danger
+            disabled={removal.kind !== "delete"}
+            hint={removal.disabledReason}
           />
         </ActionMenu>
       </PageActions>
 
-      <JobPhotosModal open={showPhotos} onClose={() => setShowPhotos(false)} jobId={jobId} photos={photos} />
+      <JobPhotosModal
+        open={showPhotos}
+        onClose={() => setShowPhotos(false)}
+        jobId={jobId}
+        photos={photoList}
+        onPhotosChange={setPhotoList}
+      />
 
       <EditUppdragModal
         open={showEdit}
@@ -352,7 +367,7 @@ export function JobActions({
       <Modal
         open={showRemove}
         onClose={() => setShowRemove(false)}
-        title={removal.kind === "delete" ? "Ta bort uppdraget?" : "Arkivera uppdraget?"}
+        title="Ta bort uppdraget?"
         size="sm"
         footer={
           <div className="flex justify-end gap-2">
@@ -360,15 +375,13 @@ export function JobActions({
               Avbryt
             </button>
             <button type="button" className={buttonClasses("danger")} disabled={isPending} onClick={remove}>
-              {isPending ? "Sparar …" : removal.kind === "delete" ? "Ta bort" : "Arkivera"}
+              {isPending ? "Sparar …" : "Ta bort"}
             </button>
           </div>
         }
       >
         <p className="px-6 py-5 text-[15px] leading-relaxed text-soft">
-          {removal.kind === "delete"
-            ? "Uppdraget tas bort. Det finns ingen godkänd offert, utfärdad faktura, betalning eller bokföring."
-            : `Uppdraget arkiveras och försvinner från Aktiva. ${removal.reasons.join(", ")} påverkas inte.`}
+          Uppdraget tas bort. Det finns ingen godkänd offert, utfärdad faktura, betalning eller bokföring.
         </p>
       </Modal>
 

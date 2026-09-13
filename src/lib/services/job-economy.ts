@@ -24,8 +24,14 @@ import {
  */
 export interface JobMoney {
   quote?: Quote;
-  /** Kundens pris enligt offerten (att betala, efter ROT/RUT). */
+  /**
+   * Avtalat: kundens pris enligt den godkända (gällande) offerten, att betala
+   * efter ROT/RUT. Utkast och oaccepterad skickad offert är 0 - de är inte
+   * avtalade. Beloppet på offertraden räknas separat (quoteDocumentAmount).
+   */
   quoteAmount: number;
+  /** Offertens belopp oavsett status - bara till offertraden, inte Avtalat. */
+  quoteDocumentAmount: number;
   /** Fakturerat inkl. moms (utkast inräknade, krediter avdragna). */
   invoiced: number;
   /**
@@ -160,10 +166,12 @@ function moneyFor(jobId: string, quote: Quote | undefined, invoices: Invoice[]):
   const remaining =
     quote?.status === "godkand" && quoteTotals ? Math.max(0, quoteTotals.total - invoiced) : 0;
   const cost = jobCost(jobId);
+  const documentAmount = quoteTotals?.toPay ?? 0;
 
   return {
     quote,
-    quoteAmount: quoteTotals?.toPay ?? 0,
+    quoteAmount: quote?.status === "godkand" ? documentAmount : 0,
+    quoteDocumentAmount: documentAmount,
     invoiced,
     invoicedIssued,
     remaining,

@@ -7,6 +7,7 @@ import { Modal } from "./modal";
 import { DateField } from "./date-field";
 import { AppLink } from "./app-link";
 import { kr, datumKort } from "@/lib/format";
+import { jobWorkInvoiceChipLabel } from "@/lib/job-ui-types";
 import { invoiceHref } from "@/lib/nav";
 import {
   addJobMaterialAction,
@@ -42,6 +43,8 @@ export type JobWorkViewEntry = Pick<
   locked: boolean;
   invoiceId?: string;
   invoiceNumber?: number | null;
+  invoiceAmount?: number;
+  invoiceTitle?: string;
   /** Registrerad på en godkänd ändring: "Ändring 1" – faktureras via ändringen. */
   changeLabel?: string;
 };
@@ -52,17 +55,20 @@ function todayISO(): string {
 }
 
 function invoiceBadge(entry: JobWorkViewEntry, from: { href: string; label: string }) {
-  if (entry.invoiceStatus === "invoiced" && entry.invoiceId) {
-    const label = entry.invoiceNumber != null ? `Fakturerad · #${entry.invoiceNumber}` : "Fakturerad";
-    return (
-      <AppLink href={invoiceHref(entry.invoiceId, from)} className="inline-flex">
-        <Badge tone="ok">{label}</Badge>
-      </AppLink>
-    );
+  const label = jobWorkInvoiceChipLabel({
+    status: entry.invoiceStatus,
+    invoiceNumber: entry.invoiceNumber,
+    invoiceAmount: entry.invoiceAmount,
+    invoiceTitle: entry.invoiceTitle,
+  });
+  if (entry.invoiceStatus === "uninvoiced" || !entry.invoiceId) {
+    return <Badge>{label}</Badge>;
   }
-  if (entry.invoiceStatus === "invoiced") return <Badge tone="ok">Fakturerad</Badge>;
-  if (entry.invoiceStatus === "draft") return <Badge tone="info">På fakturautkast</Badge>;
-  return <Badge>Ej fakturerad</Badge>;
+  return (
+    <AppLink href={invoiceHref(entry.invoiceId, from)} className="inline-flex">
+      <Badge tone={entry.invoiceStatus === "invoiced" ? "ok" : "info"}>{label}</Badge>
+    </AppLink>
+  );
 }
 
 export function JobWorkSection({

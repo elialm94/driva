@@ -30,10 +30,13 @@ export function DiscardDraftButton({
   kind,
   documentId,
   appearance = "button",
+  returnTo,
 }: {
   kind: DraftKind;
   documentId: string;
   appearance?: "button" | "icon";
+  /** Intern sökväg att landa på efter kastat utkast (samma discardQuote/discardInvoice). */
+  returnTo?: string;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -42,8 +45,8 @@ export function DiscardDraftButton({
   function confirm() {
     if (isPending) return;
     startTransition(async () => {
-      if (kind === "quote") await discardQuoteAction(documentId);
-      else await discardInvoiceAction(documentId);
+      if (kind === "quote") await discardQuoteAction(documentId, returnTo);
+      else await discardInvoiceAction(documentId, returnTo);
     });
   }
 

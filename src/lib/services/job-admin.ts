@@ -1,5 +1,4 @@
 import { kr } from "../format";
-import { QUOTE_STATUS } from "../status-labels";
 import type { Job, Quote, QuoteAcceptance } from "../types";
 import { jobMoneySummary, nextPaymentPlanPartForJob } from "./attention";
 import { quoteAcceptance } from "./data";
@@ -32,8 +31,6 @@ export interface JobAdminState {
   /** Rekommenderad knapp när ingen offert finns: offert. Annars faktura om något är fakturerbart. */
   primary: JobPrimaryKind | null;
   secondary: JobSecondaryKind | null;
-  waitingLabel: string | null;
-  doneLabel: string | null;
   nextStep: string | null;
   canMarkDone: boolean;
   canReopen: boolean;
@@ -66,17 +63,12 @@ export function jobAdminState(job: Job): JobAdminState {
   const acceptance = quote ? quoteAcceptance(quote.id) : undefined;
   const nextPart = nextPaymentPlanPartForJob(job.id);
   const remaining = money.remaining;
-  const unpaid = money.invoices.some(
-    (i) => i.status === "skickad" || i.status === "delbetald" || i.status === "utkast"
-  );
+  const unpaid = money.unpaid > 0;
   const approved = quote?.status === "godkand";
-  const fullyInvoiced = approved && remaining <= 0 && money.invoiced > 0;
+  const fullyInvoiced = approved && remaining <= 0 && money.invoicedIssued > 0;
   const fullyPaid = fullyInvoiced && !unpaid && money.paid > 0;
   const lifecycle = derivedJobStatus(job);
   const dueNow = installmentDue(nextPart, lifecycle);
-
-  let waitingLabel: string | null = null;
-  let doneLabel: string | null = null;
 
   const hasUninvoicedActuals = uninvoicedActuals(job.id).length > 0;
   const hasBillable = remaining > 0 || hasUninvoicedActuals;
@@ -96,16 +88,6 @@ export function jobAdminState(job: Job): JobAdminState {
         ? "skapa_delfaktura"
         : "skapa_faktura";
 
-  if (quote?.status === "skickad") {
-    waitingLabel = QUOTE_STATUS.skickad.label;
-  } else if (lifecycle === "klart") {
-    if (!hasBillable && unpaid) waitingLabel = "Väntar på betalning";
-    else if (fullyPaid) doneLabel = "Klart och betalt ✓";
-    else if (!hasBillable) doneLabel = "Klart";
-  } else if (!hasBillable && unpaid) {
-    waitingLabel = "Väntar på betalning";
-  }
-
   const primary: JobPrimaryKind | null = !quote && !hasUninvoicedActuals ? quoteAction : invoiceAction;
   const secondary: JobSecondaryKind | null = primary === quoteAction ? invoiceAction : quoteAction;
 
@@ -124,8 +106,6 @@ export function jobAdminState(job: Job): JobAdminState {
     nextStep = `${kr(nextPart.amount)} kan faktureras enligt offerten.`;
   } else if (remaining > 0 && approved) {
     nextStep = `${kr(remaining)} återstår enligt den godkända offerten.`;
-  } else if (unpaid) {
-    nextStep = "Väntar på betalning.";
   } else if (fullyPaid) {
     nextStep = null;
   }
@@ -152,8 +132,6 @@ export function jobAdminState(job: Job): JobAdminState {
     invoiceAction,
     primary,
     secondary,
-    waitingLabel,
-    doneLabel,
     nextStep,
     canMarkDone: lifecycle !== "klart",
     canReopen: lifecycle === "klart",

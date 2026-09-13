@@ -1,8 +1,6 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MapPin, FileText, ReceiptText, BadgeCheck, Inbox, Mail, Phone } from "lucide-react";
-import { getJob, getInvoice, currentVersion, effectiveQuoteStatus, requireCustomer, invoiceTotals } from "@/lib/services/data";
-import { acceptedByLabel } from "@/lib/status-labels";
+import { MapPin, Inbox, Mail, Phone } from "lucide-react";
+import { getJob, getInvoice, effectiveQuoteStatus, invoiceTotals, requireCustomer } from "@/lib/services/data";
 import { jobAdminState } from "@/lib/services/job-admin";
 import { isIncomingUnquotedJob, jobSourceLabel, parseJobNotes } from "@/lib/services/jobs";
 import {
@@ -13,8 +11,9 @@ import {
 } from "@/lib/services/job-work";
 import { kr, datumTid } from "@/lib/format";
 import { Avatar, Breadcrumbs, Card, SectionTitle } from "@/components/ui";
-import { InvoiceStatusBadge, JobStatusBadge, QuoteStatusBadge } from "@/components/status";
+import { JobStatusBadge } from "@/components/status";
 import { JobActions } from "@/components/job-controls";
+import { JobEconomyDocs } from "@/components/job-economy-docs";
 import { JobNotes } from "@/components/job-notes";
 import { JobWorkSection, type JobWorkViewEntry } from "@/components/job-work";
 import { PurchaseOrdersSection } from "@/components/purchase-orders-section";
@@ -61,6 +60,8 @@ function toView(entry: ReturnType<typeof actualEntries>[number]): JobWorkViewEnt
     locked: status === "invoiced",
     invoiceId: entry.invoiceId,
     invoiceNumber: invoice?.number,
+    invoiceAmount: invoice ? invoiceTotals(invoice).toPay : undefined,
+    invoiceTitle: invoice?.lines[0]?.description,
     ...(entry.changeId ? { changeLabel: changeLabelFor(entry.changeId) } : {}),
   };
 }
@@ -79,7 +80,6 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
   const customer = requireCustomer(job.customerId);
   const admin = jobAdminState(job);
   const { money, quote } = admin;
-  const version = quote ? currentVersion(quote) : undefined;
   const invoices = money.invoices;
   const fromHere = pageOrigin(`/uppdrag/${job.id}`, searchParams, job.title);
   const notes = parseJobNotes(job.notes);
@@ -149,8 +149,6 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
             quoteAction={admin.quoteAction}
             invoiceAction={admin.invoiceAction}
             hasBillable={admin.hasBillable}
-            waitingLabel={admin.waitingLabel}
-            doneLabel={admin.doneLabel}
             canMarkDone={admin.canMarkDone}
             canReopen={admin.canReopen}
             completeWarning={admin.completeWarning}
@@ -210,12 +208,14 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
       {hasEconomy ? (
         <div className="mb-6">
           <SectionTitle>Ekonomi</SectionTitle>
-          {/* Avtalat, Fakturerat och Kvar är sidans tre tal. Registrerat och
-              Betalt står kvar som andrahandssiffror. */}
+          {/* Avtalat = godkänd offert. Fakturerat = utfärdat. Kvar = avtalat minus
+              utfärdat. Registrerat/Betalt hör inte hemma i den här listen. */}
           <dl className="mb-3 grid grid-cols-3 gap-x-4 gap-y-1.5 text-[13px] tabular">
             <div>
               <dt className="text-muted">Avtalat</dt>
-              <dd className="text-[17px] font-semibold text-ink">{kr(money.quoteAmount)}</dd>
+              <dd className="text-[17px] font-semibold text-ink" data-job-avtalat={money.quoteAmount}>
+                {kr(money.quoteAmount)}
+              </dd>
             </div>
             <div>
               <dt className="text-muted">Fakturerat</dt>
@@ -223,72 +223,34 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
             </div>
             <div>
               <dt className="text-muted">Kvar</dt>
-              <dd className="text-[17px] font-semibold text-ink">
-                {kr(Math.max(admin.remaining, money.registeredUninvoiced))}
+              <dd className="text-[17px] font-semibold text-ink" data-job-kvar={admin.remaining}>
+                {kr(admin.remaining)}
               </dd>
             </div>
-            <div className="col-span-3 mt-0.5 flex flex-wrap gap-x-5 gap-y-1 border-t border-line/60 pt-1.5 text-muted">
-              <span>
-                Registrerat <span className="font-medium text-soft">{kr(money.registered)}</span>
-              </span>
-              <span>
-                Betalt <span className="font-medium text-soft">{kr(money.paid)}</span>
-              </span>
-              {money.cost > 0 ? (
-                <>
-                  <span>
-                    Inköp <span className="font-medium text-soft">{kr(money.cost)}</span>
+            {money.cost > 0 ? (
+              <div className="col-span-3 mt-0.5 flex flex-wrap gap-x-5 gap-y-1 border-t border-line/60 pt-1.5 text-muted">
+                <span>
+                  Inköp <span className="font-medium text-soft">{kr(money.cost)}</span>
+                </span>
+                <span>
+                  Täckning{" "}
+                  <span className={money.profit >= 0 ? "font-medium text-ok" : "font-medium text-danger"}>
+                    {kr(money.profit)}
                   </span>
-                  <span>
-                    Täckning{" "}
-                    <span className={money.profit >= 0 ? "font-medium text-ok" : "font-medium text-danger"}>
-                      {kr(money.profit)}
-                    </span>
-                  </span>
-                </>
-              ) : null}
-            </div>
-          </dl>
-          <div className="divide-y divide-line/70 rounded-2xl border border-line/80">
-            {quote && version ? (
-              <Link
-                href={quoteHref(quote.id, fromHere) as never}
-                className="flex items-start gap-3 px-5 py-3.5 transition-colors hover:bg-canvas/60 first:rounded-t-[calc(1rem-1px)] last:rounded-b-[calc(1rem-1px)]"
-              >
-                <FileText className="mt-0.5 size-4 shrink-0 text-muted" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[14px] font-medium">
-                    Offert #{quote.number} · {kr(money.quoteAmount)}
-                  </p>
-                  {/* Statusen står i märket - andraraden bara när den säger något mer. */}
-                  {admin.acceptance ? (
-                    <p className="mt-0.5 flex items-center gap-1 text-[13px] text-ok">
-                      <BadgeCheck className="size-3.5 shrink-0" />
-                      {acceptedByLabel(admin.acceptance)}, {datumTid(admin.acceptance.acceptedAt)}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="shrink-0">
-                  <QuoteStatusBadge quote={quote} status={effectiveQuoteStatus(quote)} />
-                </div>
-              </Link>
+                </span>
+              </div>
             ) : null}
-            {invoices.map((inv) => (
-              <Link
-                key={inv.id}
-                href={invoiceHref(inv.id, fromHere) as never}
-                className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-canvas/60 first:rounded-t-[calc(1rem-1px)] last:rounded-b-[calc(1rem-1px)]"
-              >
-                <ReceiptText className="size-4 shrink-0 text-muted" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[14px] font-medium">
-                    {inv.number == null ? "Fakturautkast" : `Faktura #${inv.number}`} · {kr(invoiceTotals(inv).toPay)}
-                  </p>
-                </div>
-                <InvoiceStatusBadge invoice={inv} />
-              </Link>
-            ))}
-          </div>
+          </dl>
+          <JobEconomyDocs
+            quote={quote}
+            quoteAmount={money.quoteDocumentAmount}
+            quoteStatus={quote ? effectiveQuoteStatus(quote) : undefined}
+            acceptance={admin.acceptance}
+            quoteHref={quote ? (quoteHref(quote.id, fromHere) as string) : "/ekonomi?flik=offerter"}
+            invoices={invoices}
+            invoiceHref={(id) => invoiceHref(id, fromHere) as string}
+            returnTo={`/uppdrag/${job.id}`}
+          />
         </div>
       ) : null}
 

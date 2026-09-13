@@ -222,7 +222,8 @@ import {
   completeCreateCustomerAndResume,
   confirmPendingAction,
 } from "@/lib/services/assistant";
-import type { Customer, WebsiteSectionItem } from "@/lib/types";
+import type { Customer, JobPhoto, WebsiteSectionItem } from "@/lib/types";
+import { hrefAfterDiscardDraft } from "@/lib/flash-notices";
 import { hrefWithNav, type ReturnNav } from "@/lib/nav";
 import {
   activateOptionalFeature,
@@ -775,12 +776,12 @@ export async function addJobPhotoAction(
   jobId: string,
   dataUrl: string,
   caption?: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; photo: JobPhoto } | { ok: false; error: string }> {
   return withBusiness(() => {
     try {
-      addJobPhoto(jobId, { dataUrl, caption });
+      const photo = addJobPhoto(jobId, { dataUrl, caption });
       refresh();
-      return { ok: true } as const;
+      return { ok: true, photo } as const;
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Kunde inte spara fotot." } as const;
     }
@@ -1123,19 +1124,19 @@ export async function deliverInvoiceAction(
   );
 }
 
-export async function discardInvoiceAction(invoiceId: string): Promise<never> {
+export async function discardInvoiceAction(invoiceId: string, returnTo?: string): Promise<never> {
   return withBusiness((): never => {
     discardInvoice(invoiceId);
     refresh();
-    redirect("/ekonomi?flik=fakturor&kastat=faktura");
+    redirect(hrefAfterDiscardDraft("faktura", returnTo));
   });
 }
 
-export async function discardQuoteAction(quoteId: string): Promise<never> {
+export async function discardQuoteAction(quoteId: string, returnTo?: string): Promise<never> {
   return withBusiness((): never => {
     discardQuote(quoteId);
     refresh();
-    redirect("/ekonomi?flik=offerter&kastat=offert");
+    redirect(hrefAfterDiscardDraft("offert", returnTo));
   });
 }
 

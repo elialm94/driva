@@ -2,7 +2,8 @@
  * Typer som klient-UI får importera. Inga store/fs-beroenden –
  * servicefilerna re-exporterar samma namn.
  */
-import type { JobPricingKind } from "./types";
+import { kr } from "./format";
+import type { Invoice, JobPricingKind, Quote } from "./types";
 
 export type JobQuoteAction = "skapa_offert" | "visa_offert" | "fortsatt_offert";
 export type JobInvoiceAction = "skapa_faktura" | "skapa_delfaktura" | "skapa_slutfaktura";
@@ -77,4 +78,47 @@ export type JobRemovalKind = "delete" | "archive";
 export interface JobRemovalPolicy {
   kind: JobRemovalKind;
   reasons: string[];
+  /** En rad till varför Ta bort är avstängd. Tom när uppdraget får raderas. */
+  disabledReason: string | null;
+}
+
+/** En svensk rad: utfärdad faktura vinner över godkänd offert. */
+export function jobRemovalDisabledReason(reasons: string[]): string | null {
+  if (reasons.length === 0) return null;
+  if (reasons.includes("Utfärdad faktura")) return "Uppdraget har en utfärdad faktura.";
+  if (reasons.includes("Godkänd offert")) return "Uppdraget har en godkänd offert.";
+  return `Uppdraget har ${reasons[0].toLowerCase()}.`;
+}
+
+/** Rubrik på offertraden i uppdragets Ekonomi - utkast är inte Avtalat. */
+export function jobQuoteCardHeading(quote: Pick<Quote, "number" | "status">, amount: number): string {
+  if (quote.status === "utkast") return `Offert utkast ${kr(amount)}`;
+  return `Offert #${quote.number} · ${kr(amount)}`;
+}
+
+/** Chip på arbetsraden: vilket dokument raden ligger på. */
+export function jobWorkInvoiceChipLabel(input: {
+  status: "uninvoiced" | "draft" | "invoiced";
+  invoiceNumber?: number | null;
+  invoiceAmount?: number;
+  invoiceTitle?: string;
+}): string {
+  if (input.status === "uninvoiced") return "Ej fakturerad";
+  if (input.status === "invoiced") {
+    return input.invoiceNumber != null ? `På faktura #${input.invoiceNumber}` : "På faktura";
+  }
+  const detail =
+    input.invoiceAmount != null ? kr(input.invoiceAmount) : input.invoiceTitle?.trim() || "";
+  return detail ? `På utkast · ${detail}` : "På utkast";
+}
+
+/** Papperskorgen i Ekonomi-listan: bara offert-/fakturautkast, aldrig kredit. */
+export function jobEconomyDocCanDiscard(doc: {
+  kind: "quote" | "invoice";
+  status: Quote["status"] | Invoice["status"];
+  type?: Invoice["type"];
+}): boolean {
+  if (doc.status !== "utkast") return false;
+  if (doc.kind === "invoice" && doc.type === "kredit") return false;
+  return true;
 }
