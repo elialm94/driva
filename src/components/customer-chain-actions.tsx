@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Hammer, Plus } from "lucide-react";
+import { Hammer, Plus } from "lucide-react";
 import { AppLink } from "./app-link";
 import { buttonClasses, ButtonLink } from "./ui";
 import { createInvoiceFromQuoteAction, startJobFromQuoteAction } from "@/app/actions";
@@ -119,144 +119,76 @@ function InvoiceSourcePicker({
   pending: boolean;
   onInvoiceFromQuote: (quoteId: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [view, setView] = useState<"root" | "quotes" | "jobs">("root");
-  const id = useId();
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  function close() {
-    setOpen(false);
-    setView("root");
-  }
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointer(e: PointerEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) close();
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
-    }
-    document.addEventListener("pointerdown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  function pickQuote(quote: CustomerInvoiceSourceOption) {
-    close();
-    onInvoiceFromQuote(quote.id);
-  }
-
-  function onFromQuote() {
-    if (quotes.length === 1) {
-      pickQuote(quotes[0]);
-      return;
-    }
-    setView("quotes");
-  }
-
-  function onFromJob() {
-    if (jobs.length === 1 && jobs[0].href) {
-      close();
-      return;
-    }
-    setView("jobs");
-  }
-
   return (
-    <div ref={rootRef} className="relative shrink-0">
-      <button
-        type="button"
-        className={buttonClasses("primary", "sm")}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={id}
-        disabled={pending}
-        data-invoice-create="picker"
-        onClick={() => {
-          if (open) close();
-          else {
-            setView("root");
-            setOpen(true);
-          }
-        }}
+    <details className="relative shrink-0 max-lg:basis-full" data-invoice-create="picker">
+      <summary
+        className={`${buttonClasses("primary", "sm")} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}
       >
         <Plus className="size-3.5" />
         {pending ? "…" : "Skapa faktura"}
-      </button>
+      </summary>
       <div
-        id={id}
         role="menu"
-        aria-hidden={!open}
         data-invoice-picker=""
-        className={`absolute right-0 top-full z-30 mt-1.5 min-w-[15.5rem] overflow-hidden rounded-xl border border-line bg-card p-1 shadow-pop ${open ? "" : "hidden"}`}
+        className="absolute left-0 top-full z-50 mt-1.5 min-w-[13rem] overflow-hidden rounded-xl border border-line bg-card p-1 shadow-pop max-lg:right-0 max-lg:min-w-0 lg:left-auto lg:right-0 lg:min-w-[15.5rem]"
       >
-        {view !== "root" ? (
+        {quotes.length === 1 ? (
           <button
             type="button"
+            role="menuitem"
             className={pickerItemClass}
-            onClick={() => setView("root")}
+            disabled={pending}
+            onClick={() => onInvoiceFromQuote(quotes[0].id)}
           >
-            <ChevronLeft className="size-3.5 shrink-0" />
-            Tillbaka
+            Från offert
           </button>
-        ) : null}
-        {view === "root" ? (
-          <>
-            {quotes.length > 0 ? (
-              <button type="button" role="menuitem" className={pickerItemClass} onClick={onFromQuote}>
-                Från offert
-              </button>
-            ) : null}
-            {jobs.length > 0 ? (
-              jobs.length === 1 && jobs[0].href ? (
-                <AppLink role="menuitem" href={jobs[0].href} className={pickerItemClass} onClick={close}>
-                  Från uppdrag
-                </AppLink>
-              ) : (
-                <button type="button" role="menuitem" className={pickerItemClass} onClick={onFromJob}>
-                  Från uppdrag
-                </button>
-              )
-            ) : null}
-            <AppLink
-              role="menuitem"
-              href={standaloneHref}
-              className={pickerItemClass}
-              onClick={close}
-              data-invoice-create="standalone-choice"
-            >
-              Fristående
-            </AppLink>
-          </>
-        ) : null}
-        {view === "quotes"
-          ? quotes.map((quote) => (
+        ) : quotes.length > 1 ? (
+          <details>
+            <summary className={`${pickerItemClass} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
+              Från offert
+            </summary>
+            {quotes.map((quote) => (
               <button
                 key={quote.id}
                 type="button"
                 role="menuitem"
-                className={pickerItemClass}
-                onClick={() => pickQuote(quote)}
+                className={`${pickerItemClass} pl-4`}
+                disabled={pending}
+                onClick={() => onInvoiceFromQuote(quote.id)}
               >
                 {quote.label}
               </button>
-            ))
-          : null}
-        {view === "jobs"
-          ? jobs.map((job) =>
+            ))}
+          </details>
+        ) : null}
+        {jobs.length === 1 && jobs[0].href ? (
+          <AppLink role="menuitem" href={jobs[0].href} className={pickerItemClass} data-invoice-create="from-job">
+            Från uppdrag
+          </AppLink>
+        ) : jobs.length > 1 ? (
+          <details data-invoice-create="from-job-list">
+            <summary className={`${pickerItemClass} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
+              Från uppdrag
+            </summary>
+            {jobs.map((job) =>
               job.href ? (
-                <AppLink key={job.id} role="menuitem" href={job.href} className={pickerItemClass} onClick={close}>
+                <AppLink key={job.id} role="menuitem" href={job.href} className={`${pickerItemClass} pl-4`}>
                   {job.label}
                 </AppLink>
               ) : null
-            )
-          : null}
+            )}
+          </details>
+        ) : null}
+        <AppLink
+          role="menuitem"
+          href={standaloneHref}
+          className={pickerItemClass}
+          data-invoice-create="standalone-choice"
+        >
+          Fristående
+        </AppLink>
       </div>
-    </div>
+    </details>
   );
 }
 
