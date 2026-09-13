@@ -191,7 +191,7 @@ export function CloseoutFlow({
             </button>
           </div>
         ) : step === "fakturera" ? (
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[13px] text-soft tabular">
               {billable.length === 0 ? "Inget fakturerbart just nu." : `Valt: ${kr(selectedTotal)} inkl. moms`}
             </p>
@@ -357,7 +357,15 @@ export function CloseoutFlow({
             {nothingToBill ? (
               <p className="text-[14px] text-soft">Inget är valt att fakturera. Du kan avsluta uppdraget direkt.</p>
             ) : draft ? (
-              <p className="text-[14px] text-soft">Allt fakturerbart ligger redan på utkastet från avslutet.</p>
+              billable.length > 0 ? (
+                <p className="text-[14px] text-soft">
+                  Utkastet från avslutet återanvänds. {billable.length === 1 ? "En post" : `${billable.length} poster`} som är
+                  fakturerbar{billable.length === 1 ? "" : "a"} ligger inte på det - skicka utkastet först, så tas resten med
+                  nästa gång du avslutar.
+                </p>
+              ) : (
+                <p className="text-[14px] text-soft">Allt fakturerbart ligger redan på utkastet från avslutet.</p>
+              )
             ) : (
               <fieldset className="space-y-2">
                 <legend className="sr-only">Faktureringssätt</legend>
