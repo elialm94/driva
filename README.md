@@ -61,6 +61,18 @@ npm run test:assistant
 - Betalningar matchas mot fakturor (OCR/belopp) och bokförs automatiskt enligt BAS-kontoplanen.
 - Bokföringen är confidence-styrd: hög säkerhet bokförs direkt, låg säkerhet blir en enkel fråga ("Vad gällde köpet på Grand Hôtel?").
 
+### Avsluta uppdrag, ändringar och kundvy
+
+Lagret mellan "arbetet är gjort" och "rätt faktura" (migration `48_closeout`, se `docs/agent/FEATURE_MAP.md` → *Avsluta uppdrag*):
+
+- **Betalplan** på offerten är valfri: en rad som standard, **Lägg till betalplan** ger förskott / delbetalning / slutbetalning i procent eller kronor. Delfakturor räknas på servern med hänsyn till tidigare fakturor, krediter, avrundning, moms, ROT/RUT och omvänd byggmoms.
+- **Ändringar och tillägg** (`/uppdrag/[id]/andringar`) godkänns av kunden på en egen länk (`/andring/[token]`) med samma bevismodell som offerten (låst innehåll, hash, namn, tidpunkt). Statusar: Utkast, Väntar på kunden, Godkänd, Avböjd, Ersatt av ny version, Delvis fakturerad, Fakturerad. AI får strukturera text men aldrig hitta på pris, material eller tid.
+- **Avsluta uppdrag** är ett guidat flöde i tre steg (kontrollera jobbet → vad ska faktureras nu → faktureringssätt) som slutar i **Skapa fakturautkast** - aldrig ett utskick. Beslut per post (**Hantera senare**, **Inte fakturerbart**) sparas på uppdraget, och ett avslutat uppdrag kan öppnas igen.
+- **Faktureringsallokering** (`billing_allocations`): varje källrad (offertrad, betalplansdel, registrerad tid/material, ändringsrad, kvitto) har högst en levande koppling till en fakturarad - unika index i databasen och samma regel i tjänsten. Det är spärren mot dubbelfakturering, och materialkedjan kopplar in sig i samma modell.
+- **Uppdragstidslinje** (nyast först, filter Alla/Kund/Arbete/Ekonomi) härleds ur befintliga data, inget lagras.
+- **Kundvy** (`/uppdrag-kund/[token]`) visar bara det ägaren uttryckligen delat: godkänd offert, godkända ändringar, valda foton, fakturor, betalningsstatus och slutunderlag. Aldrig inköpspriser, marginal, interna anteckningar, bokföring eller AI-förslag. **Slutunderlag** finns som utskriftsvy för ägaren (`/uppdrag/[id]/slutunderlag`) och skickas aldrig automatiskt.
+- **Rapportera dagens jobb**: fritext tolkas lokalt (ingen extern leverantör) till förslag för tid, resa, material, ändring och anteckning som användaren granskar och väljer bland innan något sparas. Gränssnittet är byggt så att röst kan läggas till senare i samma fält.
+
 ## Arkitektur
 
 | Del | Var | Anteckning |
@@ -105,7 +117,7 @@ Serverless (Vercel): använd **Transaction pooler**-URL:en (port 6543) som `SUPA
 
 ### 3. Migrationer
 
-Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (8 filer: extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets).
+Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning.
 
 ```bash
 npx supabase login
@@ -195,6 +207,8 @@ Enhetstester (domän, bokföring, fakturor, lagring):
 ```bash
 npm test
 ```
+
+Avslutslagret har egna tester för beräkningar och behörigheter: `billing-allocation.test.ts` (en levande allokering per källa, kredit släpper), `payment-plan.test.ts`, `job-changes.test.ts` (låsning, godkännande, versioner), `closeout.test.ts` (underlag, beslut, del-/slutfaktura, återöppning), `job-timeline.test.ts`, `customer-share.test.ts` (kundvyn läcker aldrig intern ekonomi), `invoice-quote-deviation.test.ts`, `day-report.test.ts`.
 
 Databas- och persistenslager (Postgres i WASM – ingen Docker eller Supabase-miljö krävs):
 
