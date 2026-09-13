@@ -2,13 +2,16 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Hammer, Plus } from "lucide-react";
+import { FileText, Hammer, ReceiptText } from "lucide-react";
 import { AppLink } from "./app-link";
 import { buttonClasses, ButtonLink } from "./ui";
 import { createInvoiceFromQuoteAction, startJobFromQuoteAction } from "@/app/actions";
 import { invoiceEditHref, jobHref, newQuoteHref, type PageOrigin } from "@/lib/nav";
 import type { CustomerChainCtas, CustomerInvoiceSourceOption } from "@/lib/business-chain-model";
 import { NewUppdragButton, type JobWorkLocationOption } from "./uppdrag-form";
+
+/** Samma glyph som i nav / objektytorna: Hammer, FileText, ReceiptText. 18px, currentColor. */
+const headerIconClass = "size-[18px] shrink-0";
 
 export function CustomerChainActions({
   customerId,
@@ -48,8 +51,8 @@ export function CustomerChainActions({
   return (
     <div className="flex flex-wrap gap-2">
       {ctas.approvedQuoteId ? (
-        <button type="button" className={buttonClasses("accent", "sm")} disabled={isPending} onClick={startFromQuote}>
-          <Hammer className="size-3.5" />
+        <button type="button" className={buttonClasses("ghost", "sm")} disabled={isPending} onClick={startFromQuote}>
+          <Hammer className={headerIconClass} />
           {isPending ? "…" : "Starta uppdrag"}
         </button>
       ) : (
@@ -59,11 +62,13 @@ export function CustomerChainActions({
           workLocations={workLocations}
           defaultWorkLocationId={defaultWorkLocationId}
           size="sm"
-          variant="secondary"
+          variant="ghost"
+          icon={Hammer}
+          iconClassName={headerIconClass}
         />
       )}
       <ButtonLink href={newQuoteHref({ kund: customerId, from })} size="sm" variant="secondary">
-        <Plus className="size-3.5" /> Ny offert
+        <FileText className={headerIconClass} /> Ny offert
       </ButtonLink>
       <CustomerInvoiceCreate
         ctas={ctas}
@@ -90,7 +95,7 @@ function CustomerInvoiceCreate({
         className={buttonClasses("primary", "sm")}
         data-invoice-create="standalone"
       >
-        <Plus className="size-3.5" /> Skapa faktura
+        <ReceiptText className={headerIconClass} /> Skapa faktura
       </AppLink>
     );
   }
@@ -124,7 +129,7 @@ function InvoiceSourcePicker({
       <summary
         className={`${buttonClasses("primary", "sm")} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}
       >
-        <Plus className="size-3.5" />
+        <ReceiptText className={headerIconClass} />
         {pending ? "…" : "Skapa faktura"}
       </summary>
       <div
