@@ -14,7 +14,12 @@ import {
 import { Camera, FileUp, X, type LucideIcon } from "lucide-react";
 import { cx } from "./ui";
 
-export type FileDropzoneVariant = "landing" | "inline" | "compact";
+/**
+ * `landing` och `inline` är stående rutor, `compact` är den lilla zonen i en
+ * tabell- eller åtgärdsrad. `row` är samma låga rad i full bredd: en riktig
+ * släppyta ovanför en lista, utan att ta plats som en tom ruta.
+ */
+export type FileDropzoneVariant = "landing" | "inline" | "compact" | "row";
 
 export type FileDropzoneProps = {
   accept?: string;
@@ -148,10 +153,12 @@ export function FileDropzone({
     return () => document.removeEventListener("paste", onDocPaste);
   }, [pasteAnywhere, locked, multiple, onFiles]);
 
+  const lowRow = variant === "compact" || variant === "row";
+
   const defaultTitle =
     variant === "landing"
       ? "Släpp filer här eller klicka"
-      : variant === "compact"
+      : lowRow
         ? "Släpp eller klicka"
         : "Släpp en fil här eller klicka";
 
@@ -295,7 +302,7 @@ export function FileDropzone({
       className={cx(
         "hidden items-center gap-1.5 rounded-xl border border-line-strong bg-card px-3.5 text-[13px] font-medium text-ink transition-colors hover:border-accent/70 hover:bg-accent-soft/40",
         "pointer-coarse:inline-flex",
-        variant === "compact" ? "h-9" : "h-10"
+        lowRow ? "h-9" : "h-10"
       )}
     >
       <Camera className="size-4" />
@@ -321,7 +328,7 @@ export function FileDropzone({
     onDrop,
   };
 
-  if (variant === "compact") {
+  if (lowRow) {
     return (
       <div>
         {fileInput}

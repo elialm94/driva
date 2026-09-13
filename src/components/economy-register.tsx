@@ -13,6 +13,7 @@ import { ExpenseQuestionButtons, UploadReceiptButton } from "./money-widgets";
 import { UndoBookingButton } from "./bokforing-widgets";
 import { ScrollToId } from "./scroll-to-id";
 import { kr, datumKort } from "@/lib/format";
+import { economyFilterActive, expenseDropzoneMode } from "@/lib/economy-empty";
 import type { EkonomiTab } from "@/lib/nav";
 import {
   ekonomiRegisterHref,
@@ -541,19 +542,27 @@ export function ExpenseRegister({
   query,
   options,
   highlightId,
-  emptyAction,
+  receiptDropzoneAbove = false,
 }: {
   result: PagedResult<ExpenseTableRow>;
   query: EconomyQuery<ExpenseStatusFilter>;
   options: readonly [ExpenseStatusFilter, string][];
   /** Utgift/leverantörsfaktura som djuplänken pekar på – markeras och scrollas fram. */
   highlightId?: string;
-  /** Första steget när registret är tomt – t.ex. koppla banken om den inte är kopplad. */
-  emptyAction?: React.ReactNode;
+  /**
+   * Kvittorutan ovanför registret ÄR tomtillståndet när det inte finns en enda
+   * utgift (Ekonomi → Utgifter). Registret ritar då varken sökrad eller egen
+   * tomruta: samma mening ska inte stå i två rutor på rad. Filtrerat till noll
+   * träffar är något annat och får sitt "Inget matchar" med Rensa som vanligt.
+   */
+  receiptDropzoneAbove?: boolean;
 }) {
   const { q, setQ, go, clear, pending } = useRegisterNav("utgifter", query);
-  const filtered = Boolean(query.q) || query.status !== "alla";
+  const filtered = economyFilterActive(query);
   const highlighted = highlightId && result.rows.some((r) => r.id === highlightId) ? highlightId : undefined;
+
+  const dropzoneMode = expenseDropzoneMode({ total: result.total, q: query.q, status: query.status });
+  if (receiptDropzoneAbove && dropzoneMode === "empty-state") return null;
 
   return (
     <div className={cx(pending && "opacity-70")}>
@@ -574,9 +583,8 @@ export function ExpenseRegister({
           icon={ShoppingBag}
           filtered={filtered}
           title="Inga utgifter ännu"
-          text="Släpp ett kvitto i rutan ovan – eller koppla banken så dyker kortköpen upp här av sig själva."
+          text="Kvitton, kortköp och leverantörsfakturor samlas här."
           onClear={() => clear("alla")}
-          action={emptyAction}
         />
       ) : (
         <>

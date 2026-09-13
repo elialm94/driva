@@ -32,6 +32,7 @@ import {
   type InvoiceStatusFilter,
   type QuoteStatusFilter,
 } from "@/lib/services/economy-list";
+import { expenseDropzoneMode } from "@/lib/economy-empty";
 import { EKONOMI_TABS, type EkonomiTab } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
 import { parseEconomySort } from "@/lib/economy-sort";
@@ -117,6 +118,32 @@ function ManualExpenseShortcuts() {
   );
 }
 
+/**
+ * Tomtillståndet för Utgifter: kvittorutan ÄR tomrutan. Inte en andra ruta
+ * under som säger samma sak - meningen om banken står här, en gång, och bara
+ * den halvan som fortfarande är sann.
+ */
+function FirstReceiptDropzone() {
+  const connected = hasConnectedBank();
+  return (
+    <div>
+      <UploadReceiptButton label="Inga utgifter ännu - släpp ditt första kvitto här" />
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[13px] text-muted">
+        <span>
+          {connected
+            ? "Kortköpen från banken dyker upp här av sig själva."
+            : "Eller koppla banken, så dyker kortköpen upp här av sig själva."}
+        </span>
+        {connected ? null : (
+          <ButtonLink href="/bokforing/bank" variant="secondary" size="sm">
+            <Landmark className="size-4" /> Koppla företagskontot
+          </ButtonLink>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Bolagets skuld till ägaren för utlägg och ersättningar – med nästa steg. */
 function OwnerLiabilityBanner() {
   const owed = ownerLiability();
@@ -182,6 +209,17 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
   const page = pageParam(searchParams.sida);
   const sort = parseEconomySort(searchParams.sort, searchParams.direction);
   const highlightId = highlightFromAtgard(param(searchParams.atgard), tab);
+
+  const expenseQuery = {
+    q,
+    status: statusParam<ExpenseStatusFilter>(searchParams.status, EXPENSE_STATUS_OPTIONS),
+    page,
+    sort,
+  };
+  const expenses = tab === "utgifter" ? listExpensesForTable(expenseQuery) : null;
+  const dropzoneMode = expenses
+    ? expenseDropzoneMode({ total: expenses.total, q, status: expenseQuery.status })
+    : "row";
 
   return (
     <div className="animate-fade-up">
@@ -250,34 +288,27 @@ export default async function MoneyPage(props: PageProps<"/ekonomi">) {
         />
       ) : null}
 
-      {tab === "utgifter" ? (
+      {tab === "utgifter" && expenses ? (
         <div>
           <div className="mb-4 space-y-4">
             <p className="text-[13px] text-muted">
               Kvitton och leverantörsfakturor. Åtgärder som behövs dyker upp på Hem och Bokföring.
             </p>
-            <UploadReceiptButton label="Släpp kvitton här" />
+            {dropzoneMode === "empty-state" ? (
+              <FirstReceiptDropzone />
+            ) : (
+              <UploadReceiptButton label="Släpp kvitton här" variant="row" />
+            )}
             <ManualExpenseShortcuts />
           </div>
           <OwnerLiabilityBanner />
           <ReadyToPayBanner />
           <ExpenseRegister
-            result={listExpensesForTable({
-              q,
-              status: statusParam<ExpenseStatusFilter>(searchParams.status, EXPENSE_STATUS_OPTIONS),
-              page,
-              sort,
-            })}
-            query={{ q, status: statusParam<ExpenseStatusFilter>(searchParams.status, EXPENSE_STATUS_OPTIONS), page, sort }}
+            result={expenses}
+            query={expenseQuery}
             options={EXPENSE_STATUS_OPTIONS}
             highlightId={highlightId}
-            emptyAction={
-              hasConnectedBank() ? undefined : (
-                <ButtonLink href="/bokforing/bank" variant="secondary">
-                  <Landmark className="size-4" /> Koppla företagskontot
-                </ButtonLink>
-              )
-            }
+            receiptDropzoneAbove
           />
           <SupplierRegister suppliers={db().suppliers ?? []} />
         </div>

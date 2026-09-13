@@ -23,6 +23,7 @@ import { invoiceHref } from "@/lib/nav";
 import { kr } from "@/lib/format";
 import type { CreditInvoiceContext } from "@/lib/services/invoices";
 import { inboxDocumentForm, receiptUploadForm } from "@/lib/receipts/read-file";
+import type { FileDropzoneVariant } from "./file-dropzone";
 import { ReceiptUpload } from "./receipt-upload";
 import { useToast } from "./toast";
 
@@ -39,7 +40,7 @@ export function UploadReceiptButton({
 }: {
   expenseId?: string;
   label?: string;
-  variant?: "landing" | "inline" | "compact";
+  variant?: FileDropzoneVariant;
 }) {
   const zone = variant ?? (expenseId ? "compact" : "landing");
 
@@ -65,7 +66,7 @@ export function UploadReceiptButton({
       variant={zone}
       title={label}
       subtitle="Eller tryck för att välja, fota med kameran eller klistra in en skärmdump. Kvittot läses av och bokförs när uppgifterna räcker."
-      pasteAnywhere={zone === "landing"}
+      pasteAnywhere={zone === "landing" || zone === "row"}
       upload={async (file) => {
         const result = await uploadInboxDocumentAction(inboxDocumentForm(file));
         if (result.ok === false) return { ok: false, error: result.error };
