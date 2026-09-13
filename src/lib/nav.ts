@@ -176,6 +176,7 @@ export const ROUTES: RouteMeta[] = [
   { pattern: "/uppdrag/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
   { pattern: "/jobb/:id", section: "uppdrag", parent: "/uppdrag", label: "Uppdrag", backLabel: "Uppdrag", showBack: true },
   { pattern: "/uppdrag", section: "uppdrag", label: "Uppdrag" },
+  { pattern: "/falt", section: "uppdrag", parent: "/uppdrag", label: "Fältläge", backLabel: "Uppdrag", showBack: true },
   { pattern: "/bokforing/verifikationer/nytt", section: "bokforing", parent: "/bokforing/verifikationer", label: "Nytt verifikat", backLabel: "Verifikationer", showBack: true },
   { pattern: "/bokforing/verifikationer", section: "bokforing", parent: "/bokforing", label: "Verifikationer", backLabel: "Bokföring", showBack: true },
   { pattern: "/bokforing/huvudbok", section: "bokforing", parent: "/bokforing", label: "Huvudbok", backLabel: "Bokföring", showBack: true },

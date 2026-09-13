@@ -18,7 +18,7 @@ import {
 import { setupSummary, setupTasks } from "./tasks";
 import { applyPersonalization, setSetupTaskOverride, updateSetupProfile } from "../services/onboarding";
 import { onboardingFromRow, onboardingToRow } from "../storage/mappers";
-import type { OnboardingState } from "../types";
+import type { OnboardingState, Quote } from "../types";
 
 function freshCompany(over: Parameters<typeof emptyTestDb>[0] = {}) {
   replaceDb(
@@ -145,6 +145,24 @@ describe("Kom igång-uppgifter härleds ur verklig data", () => {
     // Snickare: artiklar/priser är valfritt, inte rekommenderat.
     assert.equal(byId.get("articles_prices")?.relevance, "optional");
     assert.equal(summary.next?.id, "first_customer");
+    // Sanna standardtexter (spec §8): utan bekräftad F-skatt är uppgiften kvar,
+    // valfri tills företaget fakturerar, och öppnar Företag-fliken.
+    assert.equal(byId.get("company_claims")?.status, "todo");
+    assert.equal(byId.get("company_claims")?.relevance, "optional");
+    assert.equal(byId.get("company_claims")?.href, "/installningar?flik=foretag");
+  });
+
+  it("bekräftad F-skatt gör uppgiften klar; ett fakturerande företag får den rekommenderad", () => {
+    applyPersonalization({ industries: ["bygg"], payroll: "none", bookkeeping: "new" });
+    db().quotes.push({ id: "q-1" } as Quote);
+    let byId = new Map(setupSummary().tasks.map((t) => [t.id, t]));
+    assert.equal(byId.get("company_claims")?.relevance, "recommended");
+    assert.equal(byId.get("company_claims")?.status, "todo");
+
+    db().settings.claims = { fSkatt: { confirmedAt: "2026-01-01" } };
+    byId = new Map(setupSummary().tasks.map((t) => [t.id, t]));
+    assert.equal(byId.get("company_claims")?.status, "done");
+    assert.equal(byId.get("company_claims")?.doneDetail, "F-skatt");
   });
 
   it("befintlig bokföring prioriterar Flytta in bokföringen; konsult prioriterar inbjudan", () => {

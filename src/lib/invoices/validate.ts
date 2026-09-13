@@ -8,6 +8,8 @@ import { taxReductionSendBlockers, taxReductionSendInputFromCustomer } from "../
 import { missingEmailForSend } from "../customer-validation";
 import { collectSellerBlockers, type IssueBlocker } from "./seller-blockers";
 import { buyerVatNumber, invoiceHasReverseCharge, linesWithVat } from "./reverse-charge";
+import { entryStatusFor } from "../support/eligibility";
+import { supportEntry } from "../support/matrix";
 
 export type { IssueBlocker } from "./seller-blockers";
 export {
@@ -154,6 +156,25 @@ export function collectReverseChargeBlockers(invoice: Invoice, buyer: Customer):
   return blockers;
 }
 
+/**
+ * Supportmatrisen (spec §10): omvänd byggmoms på egna kundfakturor är ett
+ * konsultfall tills kedjan är expertverifierad. Fakturan får utfärdas först
+ * när bolagets redovisningskonsult godkänt fallet – oavsett vad UI:t visar.
+ */
+export function collectScopeBlockers(invoice: Invoice, seller: Pick<CompanySettings, "scope" | "companyForm">): IssueBlocker[] {
+  if (!invoiceHasReverseCharge(invoice)) return [];
+  const status = entryStatusFor(seller, "reverse_charge_construction_outgoing");
+  if (status === "supported" || status === "approved") return [];
+  const entry = supportEntry("reverse_charge_construction_outgoing");
+  return [
+    {
+      code: "scope_reverse_charge",
+      message: `${entry.label} är ett konsultfall i Ferva: fakturan kan utfärdas när en redovisningskonsult med tillgång till bolaget har godkänt det. Bjud in konsulten under Samarbeta – eller ta bort markeringen omvänd byggmoms på kunden om den inte stämmer.`,
+      href: "/samarbeta",
+    },
+  ];
+}
+
 export function collectPaymentBlockers(invoice: Invoice, _seller?: CompanySettings): IssueBlocker[] {
   const blockers: IssueBlocker[] = [];
   if (!invoice.dueDate) {
@@ -184,6 +205,7 @@ export function collectIssueErrors(input: {
     ...collectLineBlockers(invoice),
     ...collectTotalsBlockers(invoice),
     ...collectReverseChargeBlockers(invoice, buyer),
+    ...collectScopeBlockers(invoice, seller),
     ...collectPaymentBlockers(invoice, seller),
     ...taxReductionSendBlockers(
       taxReductionSendInputFromCustomer(buyer, {

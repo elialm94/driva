@@ -38,7 +38,13 @@ export type CollaborationCapability =
   /** Bygga varukorg och skicka materialbeställningar (ägare/admin/medlem). */
   | "order_materials"
   /** Flytta in bokföring och register (Kom igång → importera). Ägare/admin. */
-  | "import_data";
+  | "import_data"
+  /**
+   * Godkänna ett konsultfall i supportmatrisen (t.ex. omvänd byggmoms) så att
+   * bolaget får använda det. Bara redovisningskonsulten – ägaren kan inte
+   * godkänna åt sig själv (spec §10).
+   */
+  | "approve_scope";
 
 const CONSULTANT: ReadonlySet<CollaborationCapability> = new Set([
   "read_accounting",
@@ -56,6 +62,7 @@ const CONSULTANT: ReadonlySet<CollaborationCapability> = new Set([
   // in den är bolagets egen handling och kräver submit_filing.
   "prepare_filing",
   "request_client_information",
+  "approve_scope",
 ]);
 
 const AUDITOR: ReadonlySet<CollaborationCapability> = new Set([

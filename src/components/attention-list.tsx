@@ -753,7 +753,10 @@ export function AttentionRow({
       data-action-id={item.id}
       tabIndex={-1}
       className={cx(
-        "flex flex-col outline-none transition-colors first:rounded-t-[calc(1.25rem-1px)] last:rounded-b-[calc(1.25rem-1px)] hover:bg-canvas/60 focus:bg-canvas/80 sm:flex-row sm:items-start",
+        "flex flex-col outline-none transition-colors first:rounded-t-[calc(1.25rem-1px)] last:rounded-b-[calc(1.25rem-1px)] hover:bg-canvas/60 focus:bg-canvas/80",
+        // Beslutskort har flera svarsknappar + kryssruta: de får en egen rad under
+        // texten på alla bredder i stället för att tränga ut sidan åt höger.
+        decision ? "" : "sm:flex-row sm:items-start",
         compact ? "gap-2 px-3.5 py-2.5 sm:gap-3" : "gap-3 px-5 py-4 sm:gap-4"
       )}
     >
@@ -769,7 +772,7 @@ export function AttentionRow({
           </AppLink>
         )}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 pl-13 sm:justify-end sm:pl-0">
+      <div className={cx("flex flex-wrap items-center gap-2 pl-13", decision ? "min-w-0" : "shrink-0 sm:justify-end sm:pl-0")}>
         {doneText ? (
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-ok">
             <span className="inline-flex items-center gap-1.5">

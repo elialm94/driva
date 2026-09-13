@@ -1,0 +1,26 @@
+{
+  "name": "ferva-mobile-shell",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Capacitor-skal runt Fervas PWA. Inte butiksklart – se README.md.",
+  "scripts": {
+    "cap:sync": "cap sync",
+    "cap:add:ios": "cap add ios",
+    "cap:add:android": "cap add android",
+    "cap:open:ios": "cap open ios",
+    "cap:open:android": "cap open android",
+    "cap:run:android": "cap run android",
+    "cap:run:ios": "cap run ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.0",
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/core": "^7.4.0",
+    "@capacitor/ios": "^7.4.0",
+    "@capacitor/status-bar": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.0",
+    "typescript": "^5"
+  }
+}

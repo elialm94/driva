@@ -375,6 +375,8 @@ export async function createBusinessWithOwner(input: {
   isDemo?: boolean;
   /** Bolagsform från onboardingens steg 1. Default 'ab' (kolumnens default). */
   companyForm?: "ab" | "enskild";
+  /** Svaren mot supportmatrisen (spec §10). Saknas = obedömt, inga godkännanden. */
+  scope?: import("../types").BusinessScope;
   /**
    * Onboardingens tillstånd efter skapandet. Appens steg 1 skickar
    * 'company_done' (steg 2 återstår); seed/tester/demo skapar klara företag.
@@ -471,6 +473,7 @@ async function insertSettingsWithAllocatedSlug(
     plusgiro?: string;
     bankAccount?: string;
     companyForm?: "ab" | "enskild";
+    scope?: import("../types").BusinessScope;
   },
 ): Promise<string> {
   const skipped = new Set<string>();
@@ -486,8 +489,8 @@ async function insertSettingsWithAllocatedSlug(
            business_id, name, org_number, vat_number, email, phone,
            address, postal_code, city, country,
            bankgiro, plusgiro, bank_account,
-           logo_initials, inbound_mail_slug, default_quote_terms, company_form
-         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+           logo_initials, inbound_mail_slug, default_quote_terms, company_form, scope
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb)`,
         [
           businessId,
           input.name,
@@ -507,6 +510,7 @@ async function insertSettingsWithAllocatedSlug(
           // default_quote_terms lämnas tom: offerterna följer systemtexten och verifieringarna (spec §8).
           null,
           input.companyForm ?? "ab",
+          input.scope ? JSON.stringify(input.scope) : null,
         ],
       );
       await tx.query("release savepoint inbound_mail_slug_alloc");

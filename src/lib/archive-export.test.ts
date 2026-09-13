@@ -277,7 +277,7 @@ describe("arkivexport", () => {
   it("namnger arkivet med året först", () => {
     assert.equal(
       archiveFilename({ label: "2026" }, new Date("2026-09-05T00:00:00.000Z")),
-      "driva-arkiv-2026-20260905.zip"
+      "ferva-arkiv-2026-20260905.zip"
     );
   });
 

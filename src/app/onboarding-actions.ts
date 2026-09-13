@@ -14,11 +14,14 @@ import { createBusinessForCurrentUser, getSessionUser, listMemberships, withBusi
 import { isOwnerRole } from "@/lib/collaboration/permissions";
 import { isSupabaseMode } from "@/lib/storage/config";
 import {
+  ONBOARDING_FIELD_IDS,
   firstOnboardingFieldId,
   readOnboardingFormData,
   validateOnboardingFields,
   type OnboardingField,
 } from "@/lib/onboarding";
+import { newBusinessScope } from "@/lib/support/eligibility";
+import { assertEligibleToCreate } from "@/lib/support/guard";
 import { validatePersonalization } from "@/lib/setup/onboarding-state";
 import { applyPersonalization, setSetupTaskOverride, updateSetupProfile } from "@/lib/services/onboarding";
 import type { SetupTaskId, SetupTaskOverride } from "@/lib/types";
@@ -40,8 +43,20 @@ export async function createCompanyAction(_prev: CompanyStepState, formData: For
       firstField: firstOnboardingFieldId(result.fieldErrors),
     };
   }
+  // Servern bedömer mot supportmatrisen igen – klienten kan kringgås (spec §10).
   try {
-    await createBusinessForCurrentUser({ ...result.values, onboardingStatus: "company_done" });
+    assertEligibleToCreate({ companyForm: result.values.companyForm, flags: result.values.scopeFlags });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Ferva stöder inte företaget ännu.";
+    return { error: message, fieldErrors: { scope: message }, firstField: ONBOARDING_FIELD_IDS.scope };
+  }
+  const { scopeFlags, ...values } = result.values;
+  try {
+    await createBusinessForCurrentUser({
+      ...values,
+      scope: newBusinessScope(scopeFlags),
+      onboardingStatus: "company_done",
+    });
   } catch (e) {
     return { error: userFacingStorageError(e, "Företaget kunde inte skapas. Försök igen.") };
   }

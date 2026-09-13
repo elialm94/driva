@@ -16,6 +16,9 @@ import {
 } from "@/lib/onboarding";
 import { COMPANY_FORM_OPTIONS } from "@/lib/setup/onboarding-state";
 import { ChoiceChip } from "@/components/choice-chip";
+import { EligibilityVerdict, ScopeQuestions } from "@/components/scope-eligibility";
+import { assessEligibility } from "@/lib/support/eligibility";
+import type { ScopeFlag } from "@/lib/types";
 import { swedishOrgnrInputProps } from "@/lib/validation";
 
 const initialState: CompanyStepState = {};
@@ -45,6 +48,7 @@ export function OnboardingForm({
   const [clientErrors, setClientErrors] = useState<CompanyStepState["fieldErrors"]>({});
   const [name, setName] = useState(defaultName);
   const [companyForm, setCompanyForm] = useState<OnboardingCompanyForm | "">("");
+  const [scopeFlags, setScopeFlags] = useState<ScopeFlag[]>([]);
   const [orgNumber, setOrgNumber] = useState("");
   const [address, setAddress] = useState("");
   const [postalCode, setPostalCode] = useState("");
@@ -76,6 +80,7 @@ export function OnboardingForm({
     return {
       name,
       companyForm,
+      scopeFlags,
       orgNumber,
       vatNumber,
       address,
@@ -103,7 +108,9 @@ export function OnboardingForm({
   }
 
   const hasErrors = Object.values(errors).some(Boolean);
-  const unsupported = companyForm === "annan";
+  // Direkt besked mot supportmatrisen. Servern gör samma bedömning igen.
+  const eligibility = assessEligibility({ companyForm, flags: scopeFlags });
+  const unsupported = companyForm === "annan" || eligibility.verdict === "unsupported";
 
   return (
     <form action={submit} noValidate className="space-y-7" onSubmit={onSubmit} data-onboarding-step="company">
@@ -138,6 +145,20 @@ export function OnboardingForm({
           <FieldError id={`${ONBOARDING_FIELD_IDS.companyForm}-fel`}>{errors.companyForm}</FieldError>
         ) : null}
       </fieldset>
+
+      <div id={ONBOARDING_FIELD_IDS.scope} className="space-y-3">
+        <ScopeQuestions
+          flags={scopeFlags}
+          onChange={(next) => {
+            setScopeFlags(next);
+            clearError("scope");
+          }}
+          legendClassName={labelCls}
+          helperClassName={helperCls}
+        />
+        {companyForm && companyForm !== "annan" ? <EligibilityVerdict eligibility={eligibility} /> : null}
+        {errors.scope ? <FieldError id={`${ONBOARDING_FIELD_IDS.scope}-fel`}>{errors.scope}</FieldError> : null}
+      </div>
 
       <FormField
         id={ONBOARDING_FIELD_IDS.orgNumber}
