@@ -40,20 +40,20 @@ export function quoteContactGapCopy(contact: { email?: string | null; phone?: st
     return {
       missingEmail,
       missingPhone,
-      banner: "Kunden saknar e-post och telefon. Fyll i minst en här - det sparas på kunden.",
+      banner: "Kunden saknar e-post och telefon. Fyll i minst en när du skickar - det sparas på kunden.",
     };
   }
   if (missingEmail) {
     return {
       missingEmail,
       missingPhone,
-      banner: "Kunden saknar e-post. Du kan skicka med SMS eller fylla i adressen här.",
+      banner: "Kunden saknar e-post. Du kan skicka med SMS eller fylla i adressen när du skickar.",
     };
   }
   return {
     missingEmail,
     missingPhone,
-    banner: "Kunden saknar telefon. Du kan skicka med e-post eller fylla i numret här.",
+      banner: "Kunden saknar telefon. Du kan skicka med e-post eller fylla i numret när du skickar.",
   };
 }
 

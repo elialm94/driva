@@ -16,12 +16,12 @@ import { kr, datumTid, datumLang, relativ } from "@/lib/format";
 import { Badge, ButtonLink, Breadcrumbs, Card, SectionTitle, cx } from "@/components/ui";
 import { QuoteStatusBadge, InvoiceStatusBadge } from "@/components/status";
 import { QuoteDocument } from "@/components/quote-document";
-import { PageActions } from "@/components/action-menu";
 import { FollowUpButton } from "@/components/money-widgets";
 import { QuoteDraftSend } from "@/components/quote-draft-send";
 import { DiscardDraftButton } from "@/components/discard-draft-button";
 import { SendChecklist } from "@/components/send-checklist";
 import { isQuoteContactSoftBlocker, isQuoteWithdrawnByOwner, quoteSendBlockers } from "@/lib/services/quotes";
+import { quoteContactGapCopy } from "@/lib/quote-send-contact";
 import { sendQuoteAction } from "@/app/actions";
 import { isLiveMailConfigured } from "@/lib/mail";
 import { docTotals } from "@/lib/calc";
@@ -71,6 +71,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
           .map((b) => (b.href ? { ...b, href: hrefFromOrigin(b.href, fromHere) } : b))
       : [];
   const canSend = sendBlockers.length === 0;
+  const contactGaps = quoteContactGapCopy({ email: customer.email, phone: customer.phone });
 
   const jobLinked = Boolean(linkView.job);
   const canInvoice = quote.status === "godkand" && jobLinked && nextPaymentPlanPartForQuote(quote.id) != null;
@@ -101,13 +102,20 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
           <p className="mt-1 text-[15px] text-soft">
             {version.title} · <AppLink href={`/kunder/${customer.id}`} originLabel={`Offert #${quote.number}`} className="font-medium text-ink hover:underline">{customer.name}</AppLink> · {kr(totals.toPay)}
           </p>
+          {isDraft && contactGaps.banner ? (
+            <p className="mt-2 max-w-xl text-[13px] leading-snug text-soft">{contactGaps.banner}</p>
+          ) : null}
         </div>
 
-        <div className="min-w-0">
+        <div className={isDraft ? "flex shrink-0 flex-nowrap items-center justify-end gap-1.5 sm:gap-2" : "min-w-0"}>
           {isDraft ? (
-            <PageActions>
-              <ButtonLink href={editHref} variant="secondary">
-                <Pencil className="size-4" /> Redigera
+            <>
+              <ButtonLink
+                href={editHref}
+                variant="secondary"
+                className="max-[28rem]:h-9 max-[28rem]:px-2.5 max-[28rem]:text-[13px] max-[28rem]:gap-1"
+              >
+                <Pencil className="size-4 max-[28rem]:hidden" /> Redigera
               </ButtonLink>
               <DiscardDraftButton kind="quote" documentId={quote.id} />
               <QuoteDraftSend
@@ -127,7 +135,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
                 deduction={totals.deduction}
                 rotType={version.rot?.type}
               />
-            </PageActions>
+            </>
           ) : (
             <QuoteOwnerPageActions
               status={quote.status}

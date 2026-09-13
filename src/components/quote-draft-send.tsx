@@ -16,7 +16,6 @@ import {
   channelsFromChoice,
   defaultQuoteSendChoice,
   quoteChannelEnabled,
-  quoteContactGapCopy,
   quoteSendButtonEnabled,
   type QuoteSendChannel,
 } from "@/lib/quote-send-contact";
@@ -30,6 +29,8 @@ function withFlag(href: string, key: string, value: string) {
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
+
+const headerBtnCls = "max-[28rem]:h-9 max-[28rem]:px-2.5 max-[28rem]:text-[13px] max-[28rem]:gap-1";
 
 type ChannelChoice = "email" | "sms" | "both";
 
@@ -137,20 +138,32 @@ export function QuoteDraftSend({
     defaultQuoteSendChoice({ email: recipientEmail, phone: customerPhone })
   );
 
-  const gaps = quoteContactGapCopy({ email, phone });
   const emailOn = quoteChannelEnabled("email", { email, phone });
   const smsOn = quoteChannelEnabled("sms", { email, phone });
-  const sendEnabled = quoteSendButtonEnabled({
-    hardBlockers: canSend ? 0 : 1,
+  const confirmEnabled = quoteSendButtonEnabled({
+    hardBlockers: 0,
     email,
     phone,
   });
+  const selectedChannels = channelsFromChoice(choice);
+  const selectedReady = selectedChannels.length > 0 && selectedChannels.every((ch) => quoteChannelEnabled(ch, { email, phone }));
+
+  function applyContact(nextEmail: string, nextPhone: string) {
+    const emailOk = quoteChannelEnabled("email", { email: nextEmail, phone: nextPhone });
+    const smsOk = quoteChannelEnabled("sms", { email: nextEmail, phone: nextPhone });
+    if (choice === "both" && !(emailOk && smsOk)) {
+      setChoice(defaultQuoteSendChoice({ email: nextEmail, phone: nextPhone }));
+    } else if (choice === "email" && !emailOk) {
+      setChoice(defaultQuoteSendChoice({ email: nextEmail, phone: nextPhone }));
+    } else if (choice === "sms" && !smsOk) {
+      setChoice(defaultQuoteSendChoice({ email: nextEmail, phone: nextPhone }));
+    }
+  }
 
   function requestSend() {
     setSendError(null);
-    if (!sendEnabled || isSending) return;
-    const next = defaultQuoteSendChoice({ email, phone });
-    setChoice(next);
+    if (!canSend || isSending) return;
+    setChoice(defaultQuoteSendChoice({ email, phone }));
     setConfirmOpen(true);
   }
 
@@ -200,8 +213,8 @@ export function QuoteDraftSend({
   }
 
   function confirmSend() {
-    if (isSending) return;
-    const channels = channelsFromChoice(choice);
+    if (isSending || !confirmEnabled || !selectedReady) return;
+    const channels = selectedChannels;
     if (channels.includes("email")) {
       const invalid = emailInputError(email);
       if (invalid) {
@@ -238,71 +251,28 @@ export function QuoteDraftSend({
     });
   }
 
-  const disabledTitle = !canSend
-    ? "Komplettera uppgifterna ovan innan offerten kan skickas."
-    : "Fyll i e-post eller telefon för att skicka.";
+  const sendTrigger = canSend ? (
+    <button
+      type="button"
+      className={buttonClasses("primary", "md", headerBtnCls)}
+      onClick={requestSend}
+      disabled={isSending || isSaving}
+    >
+      <Send className="size-4 max-[28rem]:hidden" />
+      Skicka offert
+    </button>
+  ) : (
+    <DisabledSendWrap title="Komplettera uppgifterna ovan innan offerten kan skickas.">
+      <button type="button" className={buttonClasses("primary", "md", headerBtnCls)} disabled aria-disabled>
+        <Send className="size-4 max-[28rem]:hidden" />
+        Skicka offert
+      </button>
+    </DisabledSendWrap>
+  );
 
   return (
-    <div className="flex w-full min-w-[18rem] max-w-sm flex-col items-stretch gap-3 sm:items-end">
-      <div className="w-full rounded-2xl border border-line bg-card px-4 py-3 text-left shadow-card">
-        {gaps.banner ? <p className="mb-3 text-[13px] leading-relaxed text-soft">{gaps.banner}</p> : null}
-        <label className="mb-1 block text-[13px] font-medium text-soft" htmlFor={`offert-skicka-epost-${documentId}`}>
-          E-post
-        </label>
-        <input
-          id={`offert-skicka-epost-${documentId}`}
-          type="email"
-          autoComplete="email"
-          autoCapitalize="none"
-          value={email}
-          onChange={(e) => {
-            setEmail(e.target.value);
-            setEmailError(null);
-          }}
-          onBlur={persistEmail}
-          placeholder="namn@exempel.se"
-          className={cx(inputCls, emailError && invalidFieldCls)}
-          aria-invalid={emailError ? true : undefined}
-          aria-describedby={emailError ? `offert-skicka-epost-fel-${documentId}` : undefined}
-        />
-        <FieldError id={`offert-skicka-epost-fel-${documentId}`}>{emailError}</FieldError>
-
-        <label className="mb-1 mt-3 block text-[13px] font-medium text-soft" htmlFor={`offert-skicka-telefon-${documentId}`}>
-          Telefon
-        </label>
-        <input
-          id={`offert-skicka-telefon-${documentId}`}
-          type="tel"
-          inputMode="tel"
-          autoComplete="tel"
-          value={phone}
-          onChange={(e) => {
-            setPhone(e.target.value);
-            setPhoneError(null);
-          }}
-          onBlur={persistPhone}
-          placeholder="070-123 45 67"
-          className={cx(inputCls, phoneError && invalidFieldCls)}
-          aria-invalid={phoneError ? true : undefined}
-          aria-describedby={phoneError ? `offert-skicka-telefon-fel-${documentId}` : undefined}
-        />
-        <FieldError id={`offert-skicka-telefon-fel-${documentId}`}>{phoneError}</FieldError>
-        <p className="mt-2 text-[12px] text-muted">Uppgifterna sparas på {customerName}.</p>
-      </div>
-
-      {sendEnabled ? (
-        <button type="button" className={buttonClasses("primary")} onClick={requestSend} disabled={isSending || isSaving}>
-          <Send className="size-4" />
-          Skicka offert
-        </button>
-      ) : (
-        <DisabledSendWrap title={disabledTitle}>
-          <button type="button" className={buttonClasses("primary")} disabled aria-disabled>
-            <Send className="size-4" />
-            Skicka offert
-          </button>
-        </DisabledSendWrap>
-      )}
+    <>
+      {sendTrigger}
 
       <Modal open={confirmOpen} onClose={() => !isSending && setConfirmOpen(false)} size="sm" title="Skicka offert">
         <div className="px-6 py-5">
@@ -312,6 +282,55 @@ export function QuoteDraftSend({
           {rotType && deduction ? (
             <RotCustomerShareCallout type={rotType} toPay={amount} deduction={deduction} />
           ) : null}
+
+          <div className="mt-4">
+            <label className="mb-1 block text-[13px] font-medium text-soft" htmlFor={`offert-skicka-epost-${documentId}`}>
+              E-post
+            </label>
+            <input
+              id={`offert-skicka-epost-${documentId}`}
+              type="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              value={email}
+              onChange={(e) => {
+                const next = e.target.value;
+                setEmail(next);
+                setEmailError(null);
+                applyContact(next, phone);
+              }}
+              onBlur={persistEmail}
+              placeholder="namn@exempel.se"
+              className={cx(inputCls, emailError && invalidFieldCls)}
+              aria-invalid={emailError ? true : undefined}
+              aria-describedby={emailError ? `offert-skicka-epost-fel-${documentId}` : undefined}
+            />
+            <FieldError id={`offert-skicka-epost-fel-${documentId}`}>{emailError}</FieldError>
+
+            <label className="mb-1 mt-3 block text-[13px] font-medium text-soft" htmlFor={`offert-skicka-telefon-${documentId}`}>
+              Telefon
+            </label>
+            <input
+              id={`offert-skicka-telefon-${documentId}`}
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              value={phone}
+              onChange={(e) => {
+                const next = e.target.value;
+                setPhone(next);
+                setPhoneError(null);
+                applyContact(email, next);
+              }}
+              onBlur={persistPhone}
+              placeholder="070-123 45 67"
+              className={cx(inputCls, phoneError && invalidFieldCls)}
+              aria-invalid={phoneError ? true : undefined}
+              aria-describedby={phoneError ? `offert-skicka-telefon-fel-${documentId}` : undefined}
+            />
+            <FieldError id={`offert-skicka-telefon-fel-${documentId}`}>{phoneError}</FieldError>
+            <p className="mt-2 text-[12px] text-muted">Uppgifterna sparas på {customerName}.</p>
+          </div>
 
           <div className="mt-4 space-y-2" role="radiogroup" aria-label="Hur ska offerten skickas">
             <ChannelButton
@@ -375,17 +394,29 @@ export function QuoteDraftSend({
             </div>
           ) : null}
           {sendError ? <p className="mt-3 text-[13px] font-medium text-danger">{sendError}</p> : null}
+          {!confirmEnabled ? (
+            <p className="mt-3 text-[13px] text-soft">Fyll i e-post eller telefon för att skicka.</p>
+          ) : null}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button className={buttonClasses("secondary")} disabled={isSending} onClick={() => setConfirmOpen(false)}>
               Avbryt
             </button>
-            <button className={buttonClasses("primary")} disabled={isSending || !channelsFromChoice(choice).length} onClick={confirmSend}>
-              <Send className="size-4" />
-              {isSending ? "Skickar ..." : sendError ? "Försök igen" : "Skicka offert"}
-            </button>
+            {confirmEnabled && selectedReady ? (
+              <button className={buttonClasses("primary")} disabled={isSending} onClick={confirmSend}>
+                <Send className="size-4" />
+                {isSending ? "Skickar ..." : sendError ? "Försök igen" : "Skicka offert"}
+              </button>
+            ) : (
+              <DisabledSendWrap title="Fyll i e-post eller telefon för att skicka.">
+                <button type="button" className={buttonClasses("primary")} disabled aria-disabled>
+                  <Send className="size-4" />
+                  Skicka offert
+                </button>
+              </DisabledSendWrap>
+            )}
           </div>
         </div>
       </Modal>
-    </div>
+    </>
   );
 }

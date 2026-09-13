@@ -99,17 +99,25 @@ describe("offertkontakt: mjuka luckor, inte hard-block", () => {
     assert.equal(quoteChannelEnabled("sms", { email: "", phone: "0732104866" }), true);
   });
 
-  it("QuoteDraftSend har inline e-post och telefon och säger inte kan inte skicka", () => {
+  it("QuoteDraftSend har e-post och telefon i Skicka-dialogen och säger inte kan inte skicka", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = readFileSync(join(here, "../components/quote-draft-send.tsx"), "utf8");
+    const page = readFileSync(join(here, "../app/(app)/ekonomi/offerter/[id]/page.tsx"), "utf8");
     assert.match(src, /offert-skicka-epost/);
     assert.match(src, /offert-skicka-telefon/);
     assert.match(src, /title="E-post"/);
     assert.match(src, /title="SMS"/);
     assert.match(src, /title="E-post och SMS"/);
+    assert.match(src, /<Modal /);
     assert.doesNotMatch(src, /kan inte skicka/i);
     assert.doesNotMatch(src, /CustomerEmailPrompt/);
     assert.doesNotMatch(src, /\/kunder\//);
+    assert.doesNotMatch(src, /min-w-\[18rem\]/);
+    assert.doesNotMatch(src, /shadow-card/);
+    assert.match(page, /quoteContactGapCopy/);
+    assert.match(page, /flex-nowrap/);
+    assert.match(page, /Intyg om godkännande/);
+    assert.doesNotMatch(page, /Version \$\{[^}]+\} låst/);
   });
 });
 
