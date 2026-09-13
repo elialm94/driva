@@ -2,7 +2,7 @@ import { db } from "@/lib/store";
 import { PageHeader } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { ManualExpenseForm, type ManualExpensePreset } from "@/components/manual-expense-form";
-import { manualExpenseCategories } from "@/lib/services/manual-expense";
+import { manualExpenseCategories, travellerName } from "@/lib/services/manual-expense";
 import { MANUAL_EXPENSE_ACCOUNTS } from "@/lib/expenses/manual-expense";
 import { accountName } from "@/lib/accounting/chart";
 import { lockedThrough } from "@/lib/accounting/fiscal";
@@ -42,7 +42,12 @@ export default async function NewExpensePage(props: PageProps<"/ekonomi/utgifter
   const customers = new Map(data.customers.map((c) => [c.id, c.name]));
   const jobs = data.jobs
     .filter((j) => j.status !== "klart" || j.id === requestedJobId)
-    .map((j) => ({ id: j.id, title: j.title, customerName: customers.get(j.customerId) ?? "" }))
+    .map((j) => ({
+      id: j.id,
+      title: j.title,
+      customerName: customers.get(j.customerId) ?? "",
+      ...(j.address?.trim() ? { address: j.address.trim() } : {}),
+    }))
     .sort((a, b) => a.title.localeCompare(b.title, "sv"));
 
   return (
@@ -61,6 +66,7 @@ export default async function NewExpensePage(props: PageProps<"/ekonomi/utgifter
         initialPreset={preset}
         initialJobId={requestedJobId && jobs.some((j) => j.id === requestedJobId) ? requestedJobId : undefined}
         cancelHref={cancelHref}
+        travellerName={travellerName()}
       />
     </div>
   );

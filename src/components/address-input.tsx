@@ -28,6 +28,7 @@ import {
   applyPickedAddress,
   demoAddressSuggestions,
   formatAddressLine,
+  formatTripDestination,
   googleMapsApiKey,
   partsFromPlaceComponents,
   shouldSearchAddress,
@@ -61,7 +62,7 @@ interface Suggestion {
 
 interface PlaceComponents {
   fetchFields(opts: { fields: string[] }): Promise<unknown>;
-  addressComponents?: { longText: string | null; types: string[] }[] | null;
+  addressComponents?: { longText: string | null; shortText?: string | null; types: string[] }[] | null;
 }
 
 interface PlacePrediction {
@@ -242,6 +243,9 @@ export function AddressAutocomplete({
   labelClassName,
   disabled,
   composeSelected = "street",
+  primaryTypes = ADDRESS_PRIMARY_TYPES,
+  regionCodes = ADDRESS_REGION_CODES,
+  demoSuggestions = demoAddressSuggestions,
   "aria-invalid": ariaInvalid,
   "aria-describedby": ariaDescribedBy,
   "aria-label": ariaLabel,
@@ -259,8 +263,14 @@ export function AddressAutocomplete({
   inputClassName?: string;
   labelClassName?: string;
   disabled?: boolean;
-  /** street = gata; line = "gata, postnummer ort" för enfältiga formulär. */
-  composeSelected?: "street" | "line";
+  /** street = gata; line = "gata, postnummer ort" för enfältiga formulär; trip = resmål med land. */
+  composeSelected?: "street" | "line" | "trip";
+  /** Vilka Places-typer förslagen får komma från. Default: bara svenska adresser. */
+  primaryTypes?: readonly string[];
+  /** Tom lista = hela världen (reseräkningens resmål). */
+  regionCodes?: readonly string[];
+  /** Exempelförslag utan Google-nyckel eller i demo. */
+  demoSuggestions?: (query: string) => AddressParts[];
   "aria-invalid"?: boolean;
   "aria-describedby"?: string;
   "aria-label"?: string;
@@ -298,10 +308,12 @@ export function AddressAutocomplete({
     }
 
     if (preferLocalExamples()) {
-      const result = demoAddressSuggestions(query).map((a) => ({
-        id: a.address,
-        main: a.address,
-        secondary: `${a.postalCode} ${a.city}`.trim(),
+      const result = demoSuggestions(query).map((a) => ({
+        id: a.address || a.city,
+        main: a.address || a.city,
+        secondary: [`${a.postalCode} ${a.city}`.trim(), a.countryCode === "SE" ? "" : (a.country ?? "")]
+          .filter(Boolean)
+          .join(", "),
         resolve: async () => a,
       }));
       setLiveMode(false);
@@ -326,15 +338,22 @@ export function AddressAutocomplete({
 
     sessionRef.current ??= new lib.AutocompleteSessionToken();
 
+    const request: Record<string, unknown> = {
+      input: query,
+      sessionToken: sessionRef.current,
+      includedPrimaryTypes: [...ADDRESS_PRIMARY_TYPES],
+      includedRegionCodes: [...ADDRESS_REGION_CODES],
+      language: ADDRESS_LANGUAGE,
+      region: "se",
+    };
+    // Adressfälten står kvar på svenska adresser; resmålet på en reseräkning
+    // skickar in orter och tom regionlista = hela världen.
+    if (primaryTypes.length) request.includedPrimaryTypes = [...primaryTypes];
+    if (regionCodes.length) request.includedRegionCodes = [...regionCodes];
+    else delete request.includedRegionCodes;
+
     try {
-      const { suggestions: raw } = await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
-        input: query,
-        sessionToken: sessionRef.current,
-        includedPrimaryTypes: [...ADDRESS_PRIMARY_TYPES],
-        includedRegionCodes: [...ADDRESS_REGION_CODES],
-        language: ADDRESS_LANGUAGE,
-        region: "se",
-      });
+      const { suggestions: raw } = await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
       if (seq !== requestSeq.current) return;
 
       const mapped: Suggestion[] = raw
@@ -365,7 +384,7 @@ export function AddressAutocomplete({
     } finally {
       if (seq === requestSeq.current) setSearching(false);
     }
-  }, []);
+  }, [demoSuggestions, primaryTypes, regionCodes]);
 
   function onAddressChange(next: string) {
     setStreet(next);
@@ -388,8 +407,13 @@ export function AddressAutocomplete({
       resolved = { address: s.main, postalCode: "", city: "" };
     }
     const selected = applyPickedAddress(resolved, s.main);
-    const filled = composeSelected === "line" ? formatAddressLine(selected) : selected.address;
-    const complete = composeSelected === "line" ? { ...selected, address: filled } : selected;
+    const filled =
+      composeSelected === "line"
+        ? formatAddressLine(selected)
+        : composeSelected === "trip"
+          ? formatTripDestination(selected)
+          : selected.address;
+    const complete = composeSelected === "street" ? selected : { ...selected, address: filled };
     // Ett skriv: full adress via onSelect. Anropa inte onChange(gata) före/efter —
     // kontrollerade formulär (Inställningar) skulle annars skriva gata + gammal postort.
     if (value === undefined) setUncontrolled(filled);

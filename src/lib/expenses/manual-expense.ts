@@ -1,10 +1,18 @@
 import type { ExpenseKind, ExpensePaidBy, RepresentationKind, VehicleKind } from "../types";
 import {
+  FREE_MEALS_LABELS,
   VEHICLE_LABELS,
+  foreignPerDiemRatesFor,
+  freeMealsDeduction,
+  isSweden,
   mileageAllowance,
   mileageRatePerMil,
   perDiemAllowance,
   perDiemRatesFor,
+  tripDays,
+  type FreeMeals,
+  type PerDiemRates,
+  type TripDays,
 } from "../accounting/allowances";
 import { yearOf } from "../accounting/prisbasbelopp";
 import { kr } from "../format";
@@ -21,7 +29,9 @@ import { kr } from "../format";
  *   * Milersättning: Skatteverkets schablon per mil och bilslag → 7331,
  *     skuld till ägaren. Ingen moms.
  *   * Traktamente: schablon per hel dag, halv dag och natt → 7321, skuld
- *     till ägaren. Ingen moms.
+ *     till ägaren. Ingen moms. Dagarna räknas ur avresa och hemkomst, fri
+ *     kost minskar dagbeloppet och ett annat land än Sverige kräver
+ *     normalbelopp ur Skatteverkets tabell.
  *   * Representation: måltider är aldrig avdragsgilla (6072/7632) men momsen
  *     får lyftas till 36 kr per person (46 kr med alkohol); enklare förtäring
  *     är avdragsgill upp till 60 kr per person (6071/7631) och momsen lyfts
@@ -122,6 +132,34 @@ export function representationSplit(input: {
 
 /* --------------------------------- Utkast --------------------------------- */
 
+/**
+ * Reseräkningen för en tjänsteresa, samma uppgifter som Skatteverkets
+ * blankett vill ha. Finns `departure` och `arrival` räknas hel dag, halv dag
+ * och natt fram ur tiderna; räknarna finns kvar för resor som registrerats
+ * utan klockslag.
+ */
+export interface PerDiemDraft {
+  fullDays: number;
+  halfDays: number;
+  nights: number;
+  /** Resmål eller arbetsort: ort, gatuadress eller ort + land. */
+  destination?: string;
+  /** Avresa som lokal datumtid, "2026-03-10T07:30". */
+  departure?: string;
+  /** Hemkomst som lokal datumtid. */
+  arrival?: string;
+  /** Måltider som ingått i resan och minskar schablonen. */
+  freeMeals?: FreeMeals;
+  /** Landskod (ISO 3166-1 alpha-2). Saknas = Sverige. */
+  countryCode?: string;
+  /** Landets namn som det visades för användaren - står i felet när schablon saknas. */
+  countryName?: string;
+  /** Bolaget betalade login, så inget nattraktamente. */
+  paidLodging?: boolean;
+  /** Anledning till resan: uppdragets titel eller en kort text. */
+  reason?: string;
+}
+
 export interface ManualExpenseDraft {
   kind: ExpenseKind;
   date: string;
@@ -136,7 +174,7 @@ export interface ManualExpenseDraft {
   description?: string;
   jobId?: string;
   mileage?: { km: number; vehicle: VehicleKind; route?: string };
-  perDiem?: { fullDays: number; halfDays: number; nights: number; destination?: string };
+  perDiem?: PerDiemDraft;
   representation?: { kind: RepresentationKind; persons: number; alcohol: boolean; participants?: string; purpose?: string };
 }
 
@@ -316,24 +354,89 @@ function planMileage(draft: ManualExpenseDraft): ManualExpensePlanResult {
   };
 }
 
+/** Landet resan gick till: koden styr schablonen, namnet står i felet. */
+export function perDiemCountry(perDiem: PerDiemDraft | undefined): { code: string; name: string } {
+  const code = perDiem?.countryCode?.trim().toUpperCase() || "SE";
+  const name = cleanText(perDiem?.countryName) ?? (isSweden(code) ? "Sverige" : "");
+  return { code, name };
+}
+
+export type PerDiemRatesResult = { ok: true; rates: PerDiemRates } | { ok: false; error: string };
+
+/**
+ * Schablonen för resan. Sverige får prisbasbeloppsschablonen; ett annat land
+ * måste finnas i Skatteverkets normalbeloppstabell. Saknas landet där är det
+ * ett fel - det svenska beloppet får aldrig användas för en utlandsresa.
+ */
+export function perDiemTripRates(date: string, perDiem: PerDiemDraft | undefined): PerDiemRatesResult {
+  const year = yearOf(date);
+  const country = perDiemCountry(perDiem);
+  if (isSweden(country.code)) return { ok: true, rates: perDiemRatesFor(year) };
+  if (!country.name) return { ok: false, error: "Skriv vilket land resan gick till." };
+  const foreign = foreignPerDiemRatesFor(country.code, year);
+  if (!foreign) return { ok: false, error: `Utland - saknar schablon för ${country.name}` };
+  return { ok: true, rates: foreign };
+}
+
+/**
+ * Resans dagar: klockslagen vinner när de finns, annars räknarna.
+ * `null` = tiderna duger inte (ingen övernattning, hemkomst före avresa).
+ */
+export function perDiemTripDays(perDiem: PerDiemDraft): TripDays | null {
+  const whole = (n: number) => (Number.isFinite(n) && n > 0 ? Math.floor(n) : 0);
+  const timed = perDiem.departure || perDiem.arrival ? tripDays(perDiem.departure, perDiem.arrival) : null;
+  if (perDiem.departure || perDiem.arrival) {
+    if (!timed) return null;
+    return { ...timed, nights: perDiem.paidLodging ? 0 : timed.nights };
+  }
+  return {
+    fullDays: whole(perDiem.fullDays),
+    halfDays: whole(perDiem.halfDays),
+    nights: perDiem.paidLodging ? 0 : whole(perDiem.nights),
+  };
+}
+
+function clockText(value: string | undefined): string {
+  return value?.trim().replace("T", " ") ?? "";
+}
+
 function planPerDiem(draft: ManualExpenseDraft): ManualExpensePlanResult {
   const p = draft.perDiem;
   if (!p) return { ok: false, error: "Ange resans dagar." };
-  const whole = (n: number) => (Number.isFinite(n) && n > 0 ? Math.floor(n) : 0);
-  const fullDays = whole(p.fullDays);
-  const halfDays = whole(p.halfDays);
-  const nights = whole(p.nights);
+  const days = perDiemTripDays(p);
+  if (!days) {
+    return {
+      ok: false,
+      error: "Fyll i avresa och hemkomst med datum och tid. Hemkomsten måste ligga ett senare dygn - traktamente kräver övernattning.",
+    };
+  }
+  const { fullDays, halfDays, nights } = days;
   if (fullDays + halfDays + nights === 0) return { ok: false, error: "Ange minst en hel dag, halv dag eller natt." };
   if (fullDays + halfDays > 90) return { ok: false, error: "Efter tre månader på samma ort sänks traktamentet – registrera resan i delar." };
   const destination = cleanText(p.destination);
   if (!destination) return { ok: false, error: "Skriv vart resan gick." };
-  const rates = perDiemRatesFor(yearOf(draft.date));
-  const amount = perDiemAllowance({ date: draft.date, fullDays, halfDays, nights });
+  const ratesResult = perDiemTripRates(draft.date, p);
+  if (!ratesResult.ok) return { ok: false, error: ratesResult.error };
+  const rates = ratesResult.rates;
+  const meals = p.freeMeals ?? "inga";
+  const mealDeduction = { heldag: freeMealsDeduction(rates.heldag, meals), halvdag: freeMealsDeduction(rates.halvdag, meals) };
+  const paid = { heldag: rates.heldag - mealDeduction.heldag, halvdag: rates.halvdag - mealDeduction.halvdag };
+  const amount = perDiemAllowance({ date: draft.date, fullDays, halfDays, nights, freeMeals: meals, rates });
+  if (amount < 1) return { ok: false, error: "Fri kost täcker hela schablonen, så det finns inget skattefritt traktamente att betala ut." };
   const parts = [
-    fullDays ? `${plural(fullDays, "heldag", "heldagar")} à ${kr(rates.heldag)}` : "",
-    halfDays ? `${plural(halfDays, "halvdag", "halvdagar")} à ${kr(rates.halvdag)}` : "",
+    fullDays ? `${plural(fullDays, "heldag", "heldagar")} à ${kr(paid.heldag)}` : "",
+    halfDays ? `${plural(halfDays, "halvdag", "halvdagar")} à ${kr(paid.halvdag)}` : "",
     nights ? `${plural(nights, "natt", "nätter")} à ${kr(rates.natt)}` : "",
   ].filter(Boolean);
+  const reason = cleanText(p.reason);
+  const tripText =
+    p.departure && p.arrival ? ` Avresa ${clockText(p.departure)} och hemkomst ${clockText(p.arrival)}.` : "";
+  const mealText =
+    meals === "inga"
+      ? ""
+      : ` Fri kost (${FREE_MEALS_LABELS[meals].toLowerCase()}) minskar schablonen med ${kr(mealDeduction.heldag)} per heldag och ${kr(mealDeduction.halvdag)} per halvdag.`;
+  const lodgingText = p.paidLodging ? " Bolaget betalade login, så inget nattraktamente betalas ut." : "";
+  const reasonText = reason ? ` Anledning: ${reason}.` : "";
   return {
     ok: true,
     plan: {
@@ -350,8 +453,8 @@ function planPerDiem(draft: ManualExpenseDraft): ManualExpensePlanResult {
         nights ? plural(nights, "natt", "nätter") : "",
       ]
         .filter(Boolean)
-        .join(", ")}`,
-      explanation: `Tjänsteresa till ${destination} med övernattning: ${parts.join(", ")} = ${kr(amount)} skattefritt enligt Skatteverkets schablon för ${yearOf(draft.date)}. Beloppet bokförs som skattefritt traktamente (7321) och som skuld till dig (2893) tills bolaget för över pengarna. Ingen moms.`,
+        .join(", ")}${reason ? ` - ${reason}` : ""}`,
+      explanation: `Tjänsteresa till ${destination} med övernattning: ${parts.join(", ")} = ${kr(amount)} skattefritt enligt Skatteverkets schablon för ${yearOf(draft.date)}.${tripText}${reasonText}${mealText}${lodgingText} Beloppet bokförs som skattefritt traktamente (7321) och som skuld till dig (2893) tills bolaget för över pengarna. Ingen moms.`,
       notes: [
         "Traktamente kräver övernattning och att resmålet ligger mer än 50 km från både bostaden och arbetsplatsen.",
         "Nattraktamente gäller bara nätter då bolaget inte betalat logi. Betalade bolaget frukost eller måltider ska schablonen reduceras.",

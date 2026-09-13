@@ -1436,6 +1436,17 @@ export interface ExpenseDetails {
     halfDays: number;
     nights: number;
     destination?: string;
+    /** Avresa och hemkomst som lokal datumtid, "2026-03-10T07:30" (reseräkningen). */
+    departure?: string;
+    arrival?: string;
+    /** Fri kost under resan: minskar dagbeloppet. */
+    freeMeals?: "inga" | "frukost" | "lunch_eller_middag" | "lunch_och_middag" | "alla";
+    /** Landskod (ISO 3166-1 alpha-2). Saknas = Sverige. */
+    countryCode?: string;
+    countryName?: string;
+    /** Bolaget betalade login, så inget nattraktamente. */
+    paidLodging?: boolean;
+    reason?: string;
     /** Schablonen det år resan gjordes. */
     rates: { heldag: number; halvdag: number; natt: number };
   };

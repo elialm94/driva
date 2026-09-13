@@ -2,18 +2,21 @@ import { db, save } from "../store";
 import { uid } from "../ids";
 import type { Expense, ExpenseDetails, Receipt } from "../types";
 import { EXPENSE_CATEGORIES, categoryByKey } from "../bas";
-import { mileageRatePerMil, perDiemRatesFor } from "../accounting/allowances";
+import { isSweden, mileageRatePerMil, perDiemRatesFor } from "../accounting/allowances";
 import { yearOf } from "../accounting/prisbasbelopp";
 import { assetSuggestionForExpense } from "../accounting/assets";
 import { accountBalance } from "../accounting/ledger";
 import { todayDate } from "../accounting/dates";
 import {
   SKULD_TILL_AGARE,
+  perDiemTripDays,
+  perDiemTripRates,
   planManualExpense,
   type CategoryContext,
   type ManualExpenseDraft,
   type ManualExpensePlan,
 } from "../expenses/manual-expense";
+import { currentActor } from "../collaboration/actor";
 import { askAssetQuestion, bookExpense } from "./expenses";
 import { logActivity } from "./activity";
 import { kr } from "../format";
@@ -36,6 +39,18 @@ export function categoryContext(key: string | undefined): CategoryContext | unde
     ...(cat.vatFree ? { vatFree: true } : {}),
     ...(cat.reverseChargeRate ? { reverseChargeRate: cat.reverseChargeRate } : {}),
   };
+}
+
+/**
+ * Vem reseräkningen gäller: den inloggade personen. Generiska namn från
+ * demo- och JSON-läget ("Du", "Ägare") byts mot företagets namn, samma regel
+ * som beställaren på en grossistorder.
+ */
+export function travellerName(): string {
+  const actor = currentActor();
+  const generic = new Set(["", "Du", "Ägare", "Användare"]);
+  const name = actor && !generic.has(actor.name.trim()) ? actor.name.trim() : (db().settings.name ?? "");
+  return name || "Du";
 }
 
 /** Utgiftskategorierna som val i formuläret (kvitton och köp – inte inventarier). */
@@ -76,13 +91,24 @@ function detailsFor(draft: ManualExpenseDraft): ExpenseDetails | undefined {
     }
     case "traktamente": {
       const p = draft.perDiem!;
+      // Dagarna sparas som de räknades fram, så en ombokning av samma
+      // utgift ger exakt samma verifikation som förhandsvisningen visade.
+      const days = perDiemTripDays(p) ?? { fullDays: 0, halfDays: 0, nights: 0 };
+      const rates = perDiemTripRates(draft.date, p);
       return {
         perDiem: {
-          fullDays: Math.floor(p.fullDays),
-          halfDays: Math.floor(p.halfDays),
-          nights: Math.floor(p.nights),
+          fullDays: days.fullDays,
+          halfDays: days.halfDays,
+          nights: days.nights,
           ...(p.destination?.trim() ? { destination: p.destination.trim() } : {}),
-          rates: perDiemRatesFor(yearOf(draft.date)),
+          ...(p.departure?.trim() ? { departure: p.departure.trim() } : {}),
+          ...(p.arrival?.trim() ? { arrival: p.arrival.trim() } : {}),
+          ...(p.freeMeals && p.freeMeals !== "inga" ? { freeMeals: p.freeMeals } : {}),
+          ...(p.countryCode?.trim() && !isSweden(p.countryCode) ? { countryCode: p.countryCode.trim().toUpperCase() } : {}),
+          ...(p.countryName?.trim() && !isSweden(p.countryCode) ? { countryName: p.countryName.trim() } : {}),
+          ...(p.paidLodging ? { paidLodging: true } : {}),
+          ...(p.reason?.trim() ? { reason: p.reason.trim() } : {}),
+          rates: rates.ok ? rates.rates : perDiemRatesFor(yearOf(draft.date)),
         },
       };
     }
