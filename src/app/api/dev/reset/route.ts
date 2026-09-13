@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resetDemoData, resetToEmptyCompany } from "@/lib/store";
+import { seedActivityListFixture } from "@/lib/dev/activity-list-fixture";
 import { buildScaleData } from "@/lib/dev/scale-data";
 import { isSupabaseMode } from "@/lib/storage/config";
 
@@ -11,6 +12,8 @@ import { isSupabaseMode } from "@/lib/storage/config";
  *   POST /api/dev/reset  { "mode": "seed" }   → demodata
  *   POST /api/dev/reset  { "mode": "scale" }  → ~5 000 kunder, ~2 000 uppdrag,
  *                                               ~10 000 fakturor, ~20 000+ huvudboksrader
+ *   POST /api/dev/reset  { "mode": "activity-list" } → företagskund med 21
+ *                                               offertrader (Visa fler / tom Betalningar)
  */
 export async function POST(req: NextRequest) {
   if (process.env.NODE_ENV === "production") {
@@ -35,5 +38,9 @@ export async function POST(req: NextRequest) {
     const stats = buildScaleData();
     return NextResponse.json({ ok: true, mode: "scale", ...stats });
   }
-  return NextResponse.json({ error: "mode måste vara \"empty\", \"seed\" eller \"scale\"" }, { status: 400 });
+  if (body.mode === "activity-list") {
+    const fixture = seedActivityListFixture();
+    return NextResponse.json({ ok: true, mode: "activity-list", ...fixture });
+  }
+  return NextResponse.json({ error: "mode måste vara \"empty\", \"seed\", \"scale\" eller \"activity-list\"" }, { status: 400 });
 }

@@ -5,13 +5,17 @@ import { describe, it } from "node:test";
 import { ACTIVITY_FILTER_MIN, type CustomerActivityRow } from "./customer-activity-model";
 import {
   ACTIVITY_LIST_EMPTY_MIN_PX,
+  ACTIVITY_LIST_EMPTY_MIN_ROWS,
+  ACTIVITY_LIST_HEAD_PX,
+  ACTIVITY_LIST_PAGE_SIZE,
+  ACTIVITY_LIST_ROW_PX,
   DEFAULT_ACTIVITY_SORT,
   activityListMinHeightPx,
   compareActivityRows,
-  reserveActivityListHeight,
   defaultActivitySortDirection,
   filterCustomerActivity,
   nextActivitySort,
+  pageCustomerActivity,
   sortCustomerActivity,
   visibleCustomerActivity,
 } from "./customer-activity-sort";
@@ -142,22 +146,48 @@ describe("flikar", () => {
 });
 
 describe("listpanelens min-höjd", () => {
-  it("tom lista har en golvhöjd så sidan inte kollapsar", () => {
+  it("tomt filter har golv på ungefär 4-6 rader", () => {
+    // Tidigare sanning: tom golvhöjd >= 320 och min-höjd = ofiltrerad Alla
+    // (42 + n * 88, plus uppmätt Alla-höjd). Det höll flikarna stilla men
+    // lämnade ett stort hål under en full Alla-lista. Nu: golv bara när
+    // synliga rader är 0, och bara 4-6 rader högt. Flikhoppet tas i UI:t.
+    assert.ok(ACTIVITY_LIST_EMPTY_MIN_ROWS >= 4 && ACTIVITY_LIST_EMPTY_MIN_ROWS <= 6);
+    assert.equal(
+      ACTIVITY_LIST_EMPTY_MIN_PX,
+      ACTIVITY_LIST_HEAD_PX + ACTIVITY_LIST_EMPTY_MIN_ROWS * ACTIVITY_LIST_ROW_PX
+    );
     assert.equal(activityListMinHeightPx(0), ACTIVITY_LIST_EMPTY_MIN_PX);
-    assert.ok(ACTIVITY_LIST_EMPTY_MIN_PX >= 320);
   });
 
-  it("min-höjd följer ofiltrerad radantal så flikbyte inte krymper panelen", () => {
-    const alla = activityListMinHeightPx(12);
-    const afterEmptyFilter = activityListMinHeightPx(12);
-    assert.equal(alla, afterEmptyFilter);
-    assert.ok(alla > activityListMinHeightPx(0));
+  it("en lista med rader har ingen extra min-höjd", () => {
+    assert.equal(activityListMinHeightPx(1), 0);
+    assert.equal(activityListMinHeightPx(12), 0);
+    assert.equal(activityListMinHeightPx(20), 0);
   });
+});
 
-  it("behåller uppmätt Alla-höjd när ett filter är kortare än golvet", () => {
-    const floor = activityListMinHeightPx(3);
-    const reserved = reserveActivityListHeight(floor, 3, 410);
-    assert.equal(reserved, 410);
-    assert.equal(reserveActivityListHeight(reserved, 3), 410);
+describe("Visa fler", () => {
+  it("visar 20 rader och släpper in den 21:a på nästa sida", () => {
+    const rows = Array.from({ length: 21 }, (_, i) =>
+      row({
+        id: `r${i}`,
+        at: `2026-01-${String(i + 1).padStart(2, "0")}T12:00:00.000Z`,
+        title: `Händelse ${i + 1}`,
+      })
+    );
+    const sorted = visibleCustomerActivity(rows, "alla", DEFAULT_ACTIVITY_SORT);
+    const first = pageCustomerActivity(sorted, ACTIVITY_LIST_PAGE_SIZE);
+    assert.equal(ACTIVITY_LIST_PAGE_SIZE, 20);
+    assert.equal(first.length, 20);
+    assert.equal(
+      first.some((r) => r.id === "r0"),
+      false
+    );
+    const more = pageCustomerActivity(sorted, ACTIVITY_LIST_PAGE_SIZE * 2);
+    assert.equal(more.length, 21);
+    assert.equal(
+      more.some((r) => r.id === "r0"),
+      true
+    );
   });
 });

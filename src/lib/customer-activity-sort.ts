@@ -85,27 +85,27 @@ export function visibleCustomerActivity(
   return sortCustomerActivity(filterCustomerActivity(rows, filter), sort);
 }
 
-/**
- * Listpanelen reserverar höjd efter den ofiltrerade listan så att ett
- * tomt filter (t.ex. Betalningar) inte krymper sidan och flyttar flikraden.
- */
-export const ACTIVITY_LIST_EMPTY_MIN_PX = 320;
-export const ACTIVITY_LIST_HEAD_PX = 42;
-export const ACTIVITY_LIST_ROW_PX = 88;
+/** Första sidan i aktivitetslistan - resten bakom Visa fler. */
+export const ACTIVITY_LIST_PAGE_SIZE = 20;
 
-export function activityListMinHeightPx(unfilteredCount: number): number {
-  if (unfilteredCount <= 0) return ACTIVITY_LIST_EMPTY_MIN_PX;
-  return Math.max(
-    ACTIVITY_LIST_EMPTY_MIN_PX,
-    ACTIVITY_LIST_HEAD_PX + unfilteredCount * ACTIVITY_LIST_ROW_PX
-  );
+/**
+ * Tomt filter (t.ex. Betalningar utan rader) får ett lågt golv, ungefär
+ * 4-6 rader. En full lista ska bara vara så hög som sina rader - den
+ * gamla reservationen mot ofiltrerad Alla-höjd lämnade ett stort hål.
+ * Flikraden hålls stilla med scroll-lås i UI:t, inte med extra min-höjd.
+ */
+export const ACTIVITY_LIST_EMPTY_MIN_ROWS = 5;
+export const ACTIVITY_LIST_HEAD_PX = 42;
+export const ACTIVITY_LIST_ROW_PX = 64;
+export const ACTIVITY_LIST_EMPTY_MIN_PX =
+  ACTIVITY_LIST_HEAD_PX + ACTIVITY_LIST_EMPTY_MIN_ROWS * ACTIVITY_LIST_ROW_PX;
+
+export function pageCustomerActivity<T>(rows: readonly T[], shown: number): T[] {
+  return rows.slice(0, Math.max(0, shown));
 }
 
-/** Behåll den högsta Alla-höjden så ett smalare filter inte krymper panelen. */
-export function reserveActivityListHeight(
-  previousPx: number,
-  unfilteredCount: number,
-  measuredAllaPx = 0
-): number {
-  return Math.max(previousPx, activityListMinHeightPx(unfilteredCount), measuredAllaPx);
+/** Min-höjd bara när den synliga (filtrerade) listan är tom. */
+export function activityListMinHeightPx(visibleCount: number): number {
+  if (visibleCount > 0) return 0;
+  return ACTIVITY_LIST_EMPTY_MIN_PX;
 }
