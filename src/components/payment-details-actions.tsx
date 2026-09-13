@@ -375,7 +375,7 @@ export interface PaymentDetailsPanelProps {
   /** Skickad förfrågan (AWAITING_SUPPLIER). */
   requestTo?: string;
   requestSentAtText?: string;
-  /** Kan Driva be leverantören via mejl? */
+  /** Kan Ferva be leverantören via mejl? */
   requestPossible: boolean;
   requestMessageExcerpt?: string;
   /** Ärlig degradering – varför mejlknappen inte erbjuds. */
@@ -476,7 +476,7 @@ export function SupplierPaymentDetailsPanel(props: PaymentDetailsPanelProps) {
           </button>
         ) : null}
         {props.cause !== "CHANGED" ? (
-          // Manuell komplettering finns alltid – primär endast när Driva
+          // Manuell komplettering finns alltid – primär endast när Ferva
           // saknar bättre väg (ingen kandidat/historik/mejlmöjlighet).
           <button
             type="button"
@@ -627,7 +627,7 @@ function QueueRow({ item, done, onDone }: { item: PaymentDetailsQueueItem; done:
         : "Betalningsuppgifterna kunde inte läsas – kontrollera mot dokumentet"
       : item.action.kind === "reuse"
         ? `Tidigare verifierat: ${item.action.account} (${item.action.verifiedVia})`
-        : `Driva kan be leverantören komplettera (${item.action.to})`;
+        : `Ferva kan be leverantören komplettera (${item.action.to})`;
 
   function runConfirmed(fn: () => Promise<{ ok: true } | { ok: false; error: string }>) {
     startTransition(async () => {

@@ -4,6 +4,7 @@ import { activateOptionalFeature, clearWebsitePublicPause, isOptionalFeatureExpl
 import {
   DEFAULT_PRIMARY_CTA_LABEL,
   PRIMARY_CTA_LABEL_MAX,
+  type CompanySettings,
   type Customer,
   type Job,
   type PrivacyPolicyState,
@@ -45,6 +46,7 @@ import {
   samePrivacyPolicyState,
 } from "../website-privacy";
 import { sanitizeRichText } from "../richtext";
+import { claimSummary } from "../company-claims";
 import { logActivity } from "./activity";
 import { findOrCreateCustomerByEmail } from "./customers";
 import { createJob, titleFromIncomingMessage } from "./jobs";
@@ -94,7 +96,7 @@ const BRANCHES: Record<string, BranchTemplate> = {
       { title: "Platsbyggda möbler", text: "Bokhyllor, plattformssängar, fönsterbänkar – möbler byggda för ditt rum." },
     ],
     about:
-      "Vi tror på raka besked, fasta priser och att alltid lämna ett städat hem efter oss. F-skatt, ansvarsförsäkring och ROT-avdrag direkt på fakturan.",
+      "Vi tror på raka besked, fasta priser och att alltid lämna ett städat hem efter oss. ROT-avdrag direkt på fakturan.",
   },
   foto: {
     theme: "studio",
@@ -121,7 +123,7 @@ const BRANCHES: Record<string, BranchTemplate> = {
       { title: "Flyttstäd", text: "Godkänd flyttstädning med garanti – vi gör om tills besiktningen är godkänd." },
       { title: "Kontorsstäd", text: "Trivsamma arbetsplatser med flexibla scheman, även kvällar och helger." },
     ],
-    about: "Vi är ett litet team som bryr oss om detaljerna. Försäkrade, F-skatt och kollektivavtal.",
+    about: "Vi är ett litet team som bryr oss om detaljerna.",
   },
   el: {
     theme: "el",
@@ -174,6 +176,16 @@ function extractCity(description: string, fallback: string): string {
   return m ? m[1] : fallback;
 }
 
+/**
+ * "Om oss" får bara nämna F-skatt/ansvarsförsäkring när företaget verifierat
+ * det i Inställningar (spec §8). Utan verifiering: bara branschtexten.
+ */
+function aboutBody(name: string, about: string, settings: Pick<CompanySettings, "claims">): string {
+  const summary = claimSummary(settings);
+  const verified = summary ? ` Vi har ${summary}.` : "";
+  return `${name} – ${about}${verified}`;
+}
+
 export function generateWebsite(description: string): Website {
   const data = db();
   const branch = detectBranch(description);
@@ -188,7 +200,7 @@ export function generateWebsite(description: string): Website {
       id: uid(),
       type: "text",
       heading: "Om oss",
-      body: `${name} – ${branch.about}`,
+      body: aboutBody(name, branch.about, data.settings),
       visible: true,
       imagePosition: "right",
     },
@@ -1121,7 +1133,7 @@ export async function deliverWebsiteJobNotification(jobId: string): Promise<bool
   if (!customer) return false;
   const settings = getBusinessProfile();
   if (!ownerNoticeEnabled(settings, "forfragan")) {
-    // Avstängd i Inställningar → Notiser: uppdraget finns ändå i Driva, inget mejl.
+    // Avstängd i Inställningar → Notiser: uppdraget finns ändå i Ferva, inget mejl.
     job.notification = { status: "off", attempts: job.notification?.attempts ?? 0 };
     save();
     return false;

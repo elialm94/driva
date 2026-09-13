@@ -132,7 +132,7 @@ export default async function PublicJobChangePage(props: PageProps<"/andring/[to
         ) : null}
 
         <p className="mt-6 text-center text-[12px] text-muted">
-          Skickad med Driva · Frågor? Kontakta {seller.name} på {seller.email}
+          Skickad med Ferva · Frågor? Kontakta {seller.name} på {seller.email}
         </p>
         <div className="h-10" />
       </main>

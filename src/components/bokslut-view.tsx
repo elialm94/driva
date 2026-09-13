@@ -215,7 +215,7 @@ export function BokslutView({
             <Card className="mb-6 px-6 py-5">
               <h3 className="text-[15px] font-semibold">Ser ut att gälla en längre period</h3>
               <p className="mt-0.5 text-[13px] text-soft">
-                De här köpen ser ut att avse mer än det här räkenskapsåret. Ange vilken period de gäller så flyttar Driva
+                De här köpen ser ut att avse mer än det här räkenskapsåret. Ange vilken period de gäller så flyttar Ferva
                 rätt del över bokslutet – du behöver aldrig se debet och kredit.
               </p>
               <div className="mt-4 space-y-4">
@@ -293,7 +293,7 @@ export function BokslutView({
                 <div className="mt-3 rounded-xl bg-warn-soft/60 px-4 py-3">
                   <p className="text-[12.5px] leading-relaxed text-ink">
                     ⚠ {tax.manualReviewNotes.length} post{tax.manualReviewNotes.length === 1 ? "" : "er"} i
-                    skatteberäkningen behöver granskas för hand. Driva räknar inte fram dem, för de kräver en bedömning.
+                    skatteberäkningen behöver granskas för hand. Ferva räknar inte fram dem, för de kräver en bedömning.
                   </p>
                 </div>
               ) : null}
@@ -518,7 +518,7 @@ export function BokslutView({
 
       <p className="mt-6 text-[12px] leading-relaxed text-muted">
         Bokslutet är deterministiskt: avskrivningar, periodiseringar, skatt och resultatdisposition bokförs av motorn
-        enligt fasta regler – aldrig av en gissning. Årsredovisningen lämnas in hos Bolagsverket; Driva håller ordning på
+        enligt fasta regler – aldrig av en gissning. Årsredovisningen lämnas in hos Bolagsverket; Ferva håller ordning på
         status med full spårbarhet.
       </p>
     </>

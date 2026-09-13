@@ -231,7 +231,7 @@ function adjustmentsExcludingDeficit(fy: FiscalYear): AdjustmentResult {
    * räntebeläggs först nästa år.
    *
    * Ingående balans går före det räknade saldot: ett bolag som flyttat in i
-   * Driva med en fond har ingen bokföring bakåt att räkna den ur.
+   * Ferva med en fond har ingen bokföring bakåt att räkna den ur.
    */
   const openingFund = fy.openingBalances[String(PERIODISERINGSFOND)];
   const fundsAtStart = -(openingFund ?? accountBalance(PERIODISERINGSFOND, previousDay(fy.startDate)));
@@ -240,7 +240,7 @@ function adjustmentsExcludingDeficit(fy: FiscalYear): AdjustmentResult {
     const rate = schablonranta(taxYear);
     if (rate === undefined) {
       notes.push(
-        `Statslåneräntan för beskattningsår ${taxYear} finns inte i Driva ännu, så schablonintäkten på periodiseringsfonderna (${kr(fundsAtStart)}) är inte beräknad. Den ska tas upp i ruta 4.6a.`
+        `Statslåneräntan för beskattningsår ${taxYear} finns inte i Ferva ännu, så schablonintäkten på periodiseringsfonderna (${kr(fundsAtStart)}) är inte beräknad. Den ska tas upp i ruta 4.6a.`
       );
     } else {
       adjustments.push({
@@ -334,7 +334,7 @@ export function computeTaxCalculation(fy: FiscalYear): TaxCalculation {
   }
   if (base.depreciation && base.depreciation.unusedHeadroom > 0) {
     manualReviewNotes.push(
-      `Inventarierna får skrivas av med ytterligare ${kr(base.depreciation.unusedHeadroom)} skattemässigt i år. Det kräver en bokförd överavskrivning – bokföringen och avdraget måste vara lika stora vid räkenskapsenlig avskrivning. Driva bokför den inte av sig själv, för det är ett val om bolaget vill skjuta upp skatt.`
+      `Inventarierna får skrivas av med ytterligare ${kr(base.depreciation.unusedHeadroom)} skattemässigt i år. Det kräver en bokförd överavskrivning – bokföringen och avdraget måste vara lika stora vid räkenskapsenlig avskrivning. Ferva bokför den inte av sig själv, för det är ett val om bolaget vill skjuta upp skatt.`
     );
   }
 
@@ -367,7 +367,7 @@ export function computeTaxCalculation(fy: FiscalYear): TaxCalculation {
  * INK2S rad för rad, i blankettens ordning.
  *
  * Blanketten börjar i årets resultat EFTER skatt (4.1/4.2) och lägger tillbaka
- * skatten (4.3a). Driva räknar internt från resultatet före skatt, vilket är
+ * skatten (4.3a). Ferva räknar internt från resultatet före skatt, vilket är
  * samma tal – men den som ska fylla i blanketten behöver den ordningen, och
  * bara en av dem kan vara källan. Här är det blankettens.
  */

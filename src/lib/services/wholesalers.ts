@@ -561,7 +561,7 @@ async function importDiscountAgreement(
     );
   }
   if (file.header.chainDiscount === "J") {
-    warnings.push("Avtalet har kedjerabatt (J) i huvudet. Kedjerabatt räknas inte i Driva – priserna kan avvika.");
+    warnings.push("Avtalet har kedjerabatt (J) i huvudet. Kedjerabatt räknas inte i Ferva – priserna kan avvika.");
   }
   const parts = [
     `Rabattavtalet ${agreement.name ? `${agreement.name} ` : ""}(kundnummer ${agreement.customerNumber}) lästes in: ${sv(agreement.classDiscountCount)} materialklasser och ${sv(agreement.articleTermCount)} artikelvillkor.`,

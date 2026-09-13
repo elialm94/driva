@@ -27,8 +27,9 @@ import {
   reminderTargetHref,
   reminderVisibleFrom,
 } from "./reminders";
-import { paymentSuggestionForTransaction } from "./payment-matching";
 import { bankKindByKey } from "../banking/bank-kinds";
+import { evaluateBankTransaction, type SuggestionTier } from "./bank-suggestion";
+import { RISK_FLAG_LABEL } from "../banking/merchants";
 import { suppressedActionIds } from "./attention-state";
 import { bankReconciliation } from "../accounting/reconciliation";
 import { bokforingsdatum, calendarFiscalYear, vatDueDate, vatPeriodsOf, type Period } from "../accounting/dates";
@@ -213,10 +214,20 @@ export interface BusinessAction {
   confirm?: ActionConfirm;
   /** Lagkravsradens förfallodag (YYYY-MM-DD). Används av snooze-policyn i klienten. */
   dueDate?: string;
+  /** Evidence-first-bedömningen för bankrader: nivå, bevis i klartext och vad som kräver människa. */
+  assessment?: ActionAssessment;
+}
+
+export interface ActionAssessment {
+  tier: SuggestionTier;
+  /** Bevisen i klartext, starkast först. */
+  evidence: string[];
+  /** Riskflaggor i klartext ("Kan vara privat") – en räcker för att stoppa automatik. */
+  humanRequired: string[];
 }
 
 /**
- * Relevant närtid som Driva håller koll på – ingen åtgärd just nu.
+ * Relevant närtid som Ferva håller koll på – ingen åtgärd just nu.
  * Pågående (väntar på annan) och kommande (deadline) är samma feed.
  */
 export interface WatchingItem {
@@ -1025,7 +1036,8 @@ function collectAccounting(ranked: Ranked[]) {
     const coveredByExpense = data.expenses.some((e) => e.bankTransactionId === tx.id && e.status !== "bokford");
     if (coveredByExpense) continue;
     const incoming = tx.amount > 0;
-    const suggestion = paymentSuggestionForTransaction(tx);
+    const assessed = evaluateBankTransaction(tx);
+    const suggestion = assessed.payment;
     // Djuplänk rakt till transaktionen (samma format som actionResolveHref).
     const txHref = `/bokforing/bank?atgard=${encodeURIComponent(`bank-${tx.id}`)}`;
 
@@ -1087,9 +1099,12 @@ function collectAccounting(ranked: Ranked[]) {
       }
       case "bank_kind": {
         const def = suggestion.bankKind ? bankKindByKey(suggestion.bankKind) : undefined;
+        // Osäkert (kontantuttag, överföring till person, utland, restaurang):
+        // aldrig en förvald bokning – användaren väljer bland 2–4 alternativ.
         const oneClick =
           def &&
           suggestion.outcome !== "REQUIRES_USER" &&
+          assessed.tier !== "osakert" &&
           !def.href &&
           def.key !== "kortkop" &&
           def.key !== "kundbetalning" &&
@@ -1138,6 +1153,11 @@ function collectAccounting(ranked: Ranked[]) {
         href: txHref,
         cta,
         amount: Math.abs(tx.amount),
+        assessment: {
+          tier: assessed.tier,
+          evidence: assessed.evidence.map((e) => e.text),
+          humanRequired: assessed.humanRequired.map((f) => RISK_FLAG_LABEL[f]),
+        },
       },
     });
   }
@@ -1292,7 +1312,7 @@ function detailCaseFor(s: SupplierInvoice, details: PaymentDetailsInfo, href: st
       category: "supplier",
       icon: "bank",
       title: `Betalningsuppgifter saknas – ${s.supplier}`,
-      subtitle: `${kr(s.amount)} · ${s.invoiceNumber} · Driva kan be leverantören komplettera`,
+      subtitle: `${kr(s.amount)} · ${s.invoiceNumber} · Ferva kan be leverantören komplettera`,
       href,
       cta: { type: "requestSupplierDetails", label: "Be leverantören", supplierInvoiceId: s.id, to: request.to },
       secondary: { label: "Lägg till själv", href },
@@ -1410,7 +1430,7 @@ function collectSuppliers(ranked: Ranked[], watching: WatchingItem[], now: Date)
     }
 
     if (details && s.accountingStatus === "bokford") {
-      // Förfrågan skickad → inte en aktiv åtgärd; Driva bevakar tills svar kommer.
+      // Förfrågan skickad → inte en aktiv åtgärd; Ferva bevakar tills svar kommer.
       if (details.cause === "AWAITING_SUPPLIER") {
         const sentAt = details.request?.sentAt ?? s.createdAt;
         watching.push({

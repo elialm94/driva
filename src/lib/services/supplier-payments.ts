@@ -217,7 +217,7 @@ export function submitSupplierPayment(paymentId: string, scheduledDate?: string)
   if (payment.status === "PAYMENT_FILE_CREATED") {
     return {
       ok: false,
-      error: "En bankfil är redan skapad för betalningen. Ladda upp filen i din internetbank – Driva skickar inget själv.",
+      error: "En bankfil är redan skapad för betalningen. Ladda upp filen i din internetbank – Ferva skickar inget själv.",
       payment,
     };
   }

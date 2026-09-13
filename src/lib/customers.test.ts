@@ -83,7 +83,7 @@ describe("listCustomersForTable", () => {
 });
 
 /**
- * Kärnprincipen: Driva frågar efter uppgifter NÄR de behövs – inte före.
+ * Kärnprincipen: Ferva frågar efter uppgifter NÄR de behövs – inte före.
  * "Erik" → Skapa kund → klart. Flöden som skickar e-post, fakturerar eller
  * ansöker om ROT ber om sina uppgifter först när de faktiskt behövs.
  */

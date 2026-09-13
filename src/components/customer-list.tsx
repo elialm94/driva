@@ -145,7 +145,7 @@ export function CustomerRegister({
           <EmptyState
             icon={UserRound}
             title="Inga kunder ännu"
-            text="Lägg till din första kund så håller Driva ordning på allt kring den."
+            text="Lägg till din första kund så håller Ferva ordning på allt kring den."
             action={<NewCustomerButton />}
           />
         )

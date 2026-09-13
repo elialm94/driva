@@ -80,6 +80,7 @@ import type {
   YearEndSchedule,
 } from "@/lib/types";
 import { isOwnerNoticeKind } from "@/lib/notices/owner-notices";
+import { normalizeCompanyClaims } from "@/lib/company-claims";
 import { syncDocLineClassification } from "@/lib/economic-line-type";
 import { migrateQuoteVersionDescription } from "@/lib/quote-description";
 import { withoutRetiredSections } from "@/lib/website-sections";
@@ -1761,6 +1762,7 @@ export const filingSubmissionsSpec: TableSpec<FilingSubmission> = {
     "id", "business_id", "kind", "subject_id", "label", "authority", "provider", "status",
     "files", "generated_at", "signature", "submitted_at", "provider_submission_id",
     "receipt", "rejection", "last_error", "created_by", "created_at", "updated_at",
+    "downloaded_at", "manual_receipt",
   ],
   toRow: (s, businessId) => ({
     id: s.id,
@@ -1782,6 +1784,8 @@ export const filingSubmissionsSpec: TableSpec<FilingSubmission> = {
     created_by: s.createdBy,
     created_at: s.createdAt,
     updated_at: s.updatedAt,
+    downloaded_at: s.downloadedAt ?? null,
+    manual_receipt: s.manualReceipt ? jsonParam(s.manualReceipt) : null,
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -1802,6 +1806,11 @@ export const filingSubmissionsSpec: TableSpec<FilingSubmission> = {
       r.rejection == null ? undefined : jsonVal<NonNullable<FilingSubmission["rejection"]>>(r.rejection)
     ),
     ...opt("lastError", strOrU(r.last_error)),
+    ...opt("downloadedAt", tsIsoOrU(r.downloaded_at)),
+    ...opt(
+      "manualReceipt",
+      r.manual_receipt == null ? undefined : jsonVal<NonNullable<FilingSubmission["manualReceipt"]>>(r.manual_receipt)
+    ),
     createdBy: r.created_by as FilingSubmission["createdBy"],
     createdAt: tsIso(r.created_at),
     updatedAt: tsIso(r.updated_at),
@@ -2591,7 +2600,7 @@ export const settingsColumns = [
   "logo_data_url", "f_skatt_per_month", "tax_account_ocr", "payroll_reserve_per_month", "payment_terms_days",
   "late_interest_rate", "quote_validity_days", "default_vat_rate", "default_hourly_rate",
   "default_quote_terms", "inbound_mail_slug", "payer_bank_name", "payer_iban", "payer_bic",
-  "vat_periodicity", "notices",
+  "vat_periodicity", "notices", "claims",
 ];
 
 export function settingsToRow(s: CompanySettings, businessId: string): Record<string, unknown> {
@@ -2632,6 +2641,7 @@ export function settingsToRow(s: CompanySettings, businessId: string): Record<st
     payer_bic: s.payerBic ?? null,
     vat_periodicity: s.vatPeriodicity ?? "kvartal",
     notices: jsonParamOrNull(s.notices),
+    claims: jsonParamOrNull(s.claims),
   };
 }
 
@@ -2672,6 +2682,7 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
     ...opt("payerBic", strOrU(r.payer_bic)),
     ...opt("vatPeriodicity", vatPeriodicityOrU(r.vat_periodicity)),
     ...opt("notices", ownerNoticesOrU(r.notices)),
+    ...opt("claims", r.claims == null ? undefined : normalizeCompanyClaims(jsonVal<unknown>(r.claims))),
   };
 }
 

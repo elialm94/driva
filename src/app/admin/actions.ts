@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Server actions för Driva Admin. VARJE action verifierar behörigheten på
+ * Server actions för Ferva Admin. VARJE action verifierar behörigheten på
  * nytt (requirePlatformAdmin/requireSuperAdmin) – UI:t döljer bara knappar,
  * servern är källan till sanning (spec §33/§34/§37). Ingen action litar på
  * roll, admin-id eller behörighet från formulärdata.
@@ -37,15 +37,19 @@ import {
 import { endSupportSession, startSupportSession, SupportSessionError } from "@/lib/platform/support";
 import {
   AdminOperationError,
+  anonymizeUserAccount,
   deleteBusiness,
   deleteUserAccount,
   disableBusiness,
   disableUserAccount,
   enableBusiness,
   enableUserAccount,
+  parseDataSubjectRequest,
   resendAccountantInvite,
   resendVerificationEmail,
 } from "@/lib/platform/operations";
+import { writeAdminAudit } from "@/lib/platform/audit";
+import { OpsError, parseRestoreDrillInput, recordRestoreDrill, sendAdminTestEmail } from "@/lib/platform/ops";
 import { PlatformAccessError } from "@/lib/platform/types";
 import type { SupportTicketPriority, SupportTicketStatus } from "@/lib/platform/types";
 import { BUSINESS_COOKIE } from "@/lib/auth/session";
@@ -59,7 +63,8 @@ function toError(e: unknown, fallback: string): AdminActionState {
     e instanceof PlatformAdminError ||
     e instanceof SupportTicketError ||
     e instanceof SupportSessionError ||
-    e instanceof AdminOperationError
+    e instanceof AdminOperationError ||
+    e instanceof OpsError
   ) {
     return { error: e.message };
   }
@@ -336,6 +341,67 @@ export async function deleteUserAction(formData: FormData): Promise<AdminActionS
   redirect("/admin/users?raderad=1");
 }
 
+/**
+ * Registrerades begäran (spec §7): rättelse loggas som ärende (admin utför
+ * rättelsen i berörd vy eller ber företaget), radering följer
+ * raderingspolicyn, anonymisering är vägen när bokföringslagen blockerar
+ * radering. Allt auditeras med grund. Bara super_admin får radera/anonymisera.
+ */
+export async function dataSubjectRequestAction(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  let outcome: { redirectTo?: string; notice?: string } = {};
+  try {
+    const ctx = await requirePlatformAdmin();
+    const userId = String(formData.get("userId") ?? "");
+    const email = String(formData.get("email") ?? "");
+    const input = parseDataSubjectRequest(Object.fromEntries(formData.entries()));
+    if (!userId) return { error: "Användare saknas." };
+
+    if (input.kind === "rattelse") {
+      await writeAdminAudit(ctx.admin, {
+        action: "data_subject_request",
+        targetType: "user",
+        targetId: userId,
+        metadata: { kind: input.kind, reason: input.reason },
+      });
+      outcome = {
+        notice:
+          "Begäran om rättelse är loggad. Utför rättelsen i berörd vy (eller be företaget rätta sina egna kunduppgifter) och notera i ärendet.",
+      };
+    } else {
+      if (ctx.admin.role !== "super_admin") {
+        return { error: "Bara super_admin får radera eller anonymisera konton på registrerads begäran." };
+      }
+      const confirm = String(formData.get("confirmEmail") ?? "").trim().toLowerCase();
+      if (confirm !== email.trim().toLowerCase()) {
+        return { error: "Bekräfta genom att skriva användarens e-postadress exakt." };
+      }
+      await writeAdminAudit(ctx.admin, {
+        action: "data_subject_request",
+        targetType: "user",
+        targetId: userId,
+        metadata: { kind: input.kind, reason: input.reason },
+      });
+      if (input.kind === "radering") {
+        await deleteUserAccount(ctx.admin, userId, email);
+        outcome = { redirectTo: "/admin/users?raderad=1" };
+      } else {
+        const policy = await anonymizeUserAccount(ctx.admin, userId, email, input.reason);
+        outcome = {
+          notice: `Kontot är anonymiserat. ${policy.retainedBusinesses.length} företag med bevarandeplikt behålls inaktiverade; ${policy.membershipsToRevoke} medlemskap återkallades.`,
+        };
+      }
+    }
+    revalidatePath(`/admin/users/${userId}`);
+  } catch (e) {
+    return toError(e, "Begäran kunde inte hanteras.");
+  }
+  if (outcome.redirectTo) {
+    revalidatePath("/admin/users");
+    redirect(outcome.redirectTo);
+  }
+  return { notice: outcome.notice };
+}
+
 /* --------------------------------- Företag --------------------------------- */
 
 export async function disableBusinessAction(formData: FormData): Promise<AdminActionState> {
@@ -395,5 +461,32 @@ export async function resendAccountantInviteAction(formData: FormData): Promise<
     };
   } catch (e) {
     return toError(e, "Kunde inte skicka om inbjudan.");
+  }
+}
+
+/* ---------------------------------- Drift ---------------------------------- */
+
+/** Testmejl till adminens EGEN adress – aldrig fri mottagare. Loggas utan innehåll. */
+export async function sendTestEmailAction(_prev: AdminActionState, _formData: FormData): Promise<AdminActionState> {
+  try {
+    const ctx = await requirePlatformAdmin();
+    const result = await sendAdminTestEmail(ctx.admin);
+    revalidatePath("/admin/system");
+    return result.ok ? { notice: result.message } : { error: result.message };
+  } catch (e) {
+    return toError(e, "Testmejlet kunde inte skickas.");
+  }
+}
+
+/** Registrera en genomförd restore drill (endast super_admin, auditeras). */
+export async function recordRestoreDrillAction(_prev: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  try {
+    const ctx = await requireSuperAdmin();
+    const input = parseRestoreDrillInput(Object.fromEntries(formData.entries()));
+    await recordRestoreDrill(ctx.admin, input);
+    revalidatePath("/admin/system");
+    return { notice: `Restore drill ${input.performedOn} (${input.result === "ok" ? "godkänd" : "underkänd"}) är registrerad.` };
+  } catch (e) {
+    return toError(e, "Drillen kunde inte registreras.");
   }
 }

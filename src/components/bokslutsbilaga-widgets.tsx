@@ -484,7 +484,7 @@ export function ManualAccrualForm({
     <Card className="p-5">
       <h3 className="text-[15px] font-semibold text-ink">Periodisera manuellt</h3>
       <p className="mt-1 text-[13px] leading-relaxed text-soft">
-        För poster som saknar bokfört underlag. Driva bokar upp beloppet vid årsskiftet och löser upp det i takt med
+        För poster som saknar bokfört underlag. Ferva bokar upp beloppet vid årsskiftet och löser upp det i takt med
         perioden.
       </p>
 

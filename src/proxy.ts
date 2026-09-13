@@ -38,7 +38,9 @@ const PUBLIC_PREFIXES = [
   "/demo", // publik demo: GET provisionerar en isolerad demosession
   "/valkommen", // landningssidans interna sökväg (rewrite-mål)
   "/villkor",
-  "/integritet", // Drivas egen integritetspolicy (kundsajternas ligger på /integritetspolicy)
+  "/integritet", // Fervas egen integritetspolicy (kundsajternas ligger på /integritetspolicy)
+  "/bitradesavtal", // personuppgiftsbiträdesavtal + säkerhetsbilaga
+  "/underbitraden", // publik underbiträdeslista (härledd ur leverantörsregistret)
   "/offert",
   "/faktura",
   "/andring", // kundgodkännande av ändring/tillägg på uppdrag
@@ -55,6 +57,7 @@ const PUBLIC_PREFIXES = [
   // som routen själv verifierar (401 annars). Utan undantaget här fick
   // /api/cron/reminders 307 → /login och påminnelserna kördes aldrig.
   "/api/cron",
+  "/api/stripe/webhook", // Stripe har ingen session – Stripe-Signature verifieras i routen.
 ];
 
 function isPublicPath(pathname: string): boolean {

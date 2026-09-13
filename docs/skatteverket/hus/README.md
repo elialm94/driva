@@ -13,7 +13,7 @@ Företag → E-tjänster och blanketter → Schemalager (XML) → Rot och rut). 
 speglar schemalagret så att `Begaran.xsd`:s relativa import
 (`../../komponent/V6/BegaranCOMPONENT.xsd`) fungerar oförändrad.
 
-## Vad Driva gör – och inte gör
+## Vad Ferva gör – och inte gör
 
 - `src/lib/hus-begaran.ts` bygger filen och kontrollerar den mot schemats regler
   plus e-tjänstens inskickskontroller (begärt ≤ betalt, begärt + betalt ≤ arbetskostnad,
@@ -21,7 +21,7 @@ speglar schemalagret så att `Begaran.xsd`:s relativa import
 - `src/lib/services/hus-export.ts` fyller filen från ett ROT/RUT-ärende med skapat
   ansökningsunderlag. Ett `Arenden` per betald faktura.
 - Användaren laddar ner filen (`GET /api/skatteverket/hus?jobb=|faktura=`) och
-  importerar den själv i e-tjänsten. **Driva skickar ingenting till Skatteverket**
+  importerar den själv i e-tjänsten. **Ferva skickar ingenting till Skatteverket**
   och markerar aldrig ett beslut automatiskt.
 - ROT och RUT hamnar aldrig i samma fil (`RotBegaran` respektive `HushallBegaran`).
 - Utföraren (företagets organisationsnummer) finns inte i schemat – det är det

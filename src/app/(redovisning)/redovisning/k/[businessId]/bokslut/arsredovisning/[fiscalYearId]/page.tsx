@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileText } from "lucide-react";
-import { AccountantClientTabs } from "@/components/accountant-workspace";
 import { PageHeader, buttonClasses } from "@/components/ui";
 import { ArsredovisningView, annualReportPageData } from "@/components/arsredovisning-view";
-import { loadAccountantClientPage } from "@/lib/collaboration/client-page";
-import { can } from "@/lib/collaboration/permissions";
+import { loadPortfolioWorkspace } from "@/lib/accounting-workspace/workspace";
+import { wsReadOnly } from "@/lib/accounting-workspace/shared";
 
 export const metadata = { title: "Årsredovisning" };
 
@@ -18,15 +17,15 @@ export default async function AccountantArsredovisningPage({
 }) {
   const { businessId, fiscalYearId } = await params;
   const { rapport } = await searchParams;
-  const { access } = await loadAccountantClientPage(businessId);
+  const ws = await loadPortfolioWorkspace(businessId);
   const data = annualReportPageData(fiscalYearId, rapport);
   if (!data) notFound();
   const { fy, report } = data;
-  const base = `/redovisning/k/${businessId}/bokslut`;
+  const base = `${ws.basePath}/bokslut`;
   const pdfHref = `${base}/arsredovisning/${fiscalYearId}/pdf${report.supersededAt ? `?rapport=${report.id}` : ""}`;
 
   return (
-    <div className="animate-fade-up">
+    <div>
       <PageHeader
         title={`Årsredovisning ${fy.label}`}
         subtitle={`${report.content.companyName} · org.nr ${report.content.orgNumber}`}
@@ -37,13 +36,12 @@ export default async function AccountantArsredovisningPage({
           </Link>
         }
       />
-      <AccountantClientTabs businessId={businessId} active="bokslut" />
       <ArsredovisningView
         fy={fy}
         report={report}
         base={base}
-        businessId={businessId}
-        readOnly={!can(access.role, "year_end")}
+        businessId={ws.actionBusinessId}
+        readOnly={wsReadOnly(ws, "year_end")}
       />
     </div>
   );

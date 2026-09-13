@@ -99,6 +99,15 @@ export function collectTotalsBlockers(invoice: Invoice): IssueBlocker[] {
   if (t.total !== t.subtotal + t.vat) {
     blockers.push({ code: "total_mismatch", message: "Totalt inkl. moms stämmer inte med underlag och moms." });
   }
+  // Nollkronorsfaktura är inget giltigt dokument: en kreditfaktura nollar en
+  // tidigare faktura, allt annat ska ha ett belopp (spec §8).
+  if (invoice.type !== "kredit" && t.total === 0) {
+    blockers.push({
+      code: "zero_total",
+      message:
+        "Fakturan är på 0 kr och kan inte utfärdas eller skickas. Lägg till rader med belopp – eller skapa en kreditfaktura om syftet är att nolla en tidigare faktura.",
+    });
+  }
   if (
     invoice.rot &&
     invoice.rot.appliedTaxReduction != null &&

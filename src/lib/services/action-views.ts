@@ -3,7 +3,7 @@ import type { BusinessAction } from "./actions";
 /**
  * Två vyer av SAMMA åtgärdsmotor – aldrig två todo-system.
  *
- *   Hem       = prioriterad åtgärdsyta över hela Driva ("Vad behöver jag göra?").
+ *   Hem       = prioriterad åtgärdsyta över hela Ferva ("Vad behöver jag göra?").
  *               Bokföringsundantag kan grupperas så de inte drunknar andra
  *               domäner. Inga egna rader i en tabell.
  *   Bokföring = komplett bokföringsyta ("Vad händer i bokföringen?").

@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Kundens "Hjälp & support": skapar ett supportärende i Driva Admin.
+ * Kundens "Hjälp & support": skapar ett supportärende i Ferva Admin.
  * Identitet och företag tas från sessionen – aldrig från klientpåståenden.
  * Mejl är inte ett krav; databasen är källan till sanning.
  */

@@ -78,7 +78,7 @@ export type SectionListSection = Omit<WebsiteSection, "image" | "items"> & {
 
 /**
  * Formulärets utseendetokens – beräknas av renderaren utifrån temat.
- * Endast presentation: fält, inskick, validering och Driva-integrationen är
+ * Endast presentation: fält, inskick, validering och Ferva-integrationen är
  * identiska i alla teman.
  */
 export interface SiteFormTokens {
@@ -1718,7 +1718,7 @@ export function PublishWebsiteButton({ published }: { published: boolean }) {
         ) : (
           <div className="px-6 py-5">
             <p className="text-[14px] leading-relaxed text-soft">
-              Sajten blir tillgänglig för besökare och kontaktformuläret börjar skapa uppdrag i Driva. En egen
+              Sajten blir tillgänglig för besökare och kontaktformuläret börjar skapa uppdrag i Ferva. En egen
               .se-adress skaffar du under Domän när du vill.
             </p>
             {error ? <p className="mt-3 text-[13px] font-medium text-danger">{error}</p> : null}

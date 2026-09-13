@@ -3,7 +3,25 @@
  * Ren funktion – ingen I/O. Cookie + redirect sköts av server actions.
  */
 
-const CLIENT_SUBPAGES = ["verifikationer", "bank", "moms", "rapporter", "bokslut"] as const;
+/** Klientens flikar på konsultytan – samma undersidor som ägarens /bokforing. */
+const CLIENT_SUBPAGES = [
+  "underlag",
+  "bank",
+  "verifikationer",
+  "huvudbok",
+  "saldobalans",
+  "resultat",
+  "balans",
+  "konton",
+  "rapporter",
+  "moms",
+  "skattekonto",
+  "lon",
+  "bokslut",
+  "periodstangning",
+  "ingaende-balans",
+  "deklarationer",
+] as const;
 
 export type ClientSubpage = (typeof CLIENT_SUBPAGES)[number];
 

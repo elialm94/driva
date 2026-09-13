@@ -29,7 +29,7 @@ export const OWNER_NOTICE_COPY: Record<OwnerNoticeKind, { label: string; descrip
   },
   forfragan: {
     label: "Ny förfrågan från hemsidan",
-    description: "Kundens meddelande och kontaktuppgifter. Uppdraget finns redan i Driva.",
+    description: "Kundens meddelande och kontaktuppgifter. Uppdraget finns redan i Ferva.",
   },
   inkorg: {
     label: "Faktura eller kvitto kommer in via mejl",

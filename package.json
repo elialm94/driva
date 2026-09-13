@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "DRIVA_TEST=1 tsx --test src/lib/*.test.ts src/lib/invoices/*.test.ts src/lib/accounting/*.test.ts src/lib/domains/*.test.ts src/lib/filing/*.test.ts src/lib/storage/*.test.ts src/lib/setup/*.test.ts src/lib/imports/*.test.ts",
+    "test": "DRIVA_TEST=1 tsx --test src/lib/*.test.ts src/lib/invoices/*.test.ts src/lib/accounting/*.test.ts src/lib/domains/*.test.ts src/lib/filing/*.test.ts src/lib/billing/*.test.ts src/lib/observability/*.test.ts src/lib/platform/*.test.ts src/lib/storage/*.test.ts src/lib/legal/*.test.ts src/lib/setup/*.test.ts src/lib/imports/*.test.ts src/lib/accounting-workspace/*.test.ts",
     "typecheck": "next typegen && tsc --noEmit",
     "test:assistant": "DRIVA_TEST=1 npx --yes tsx scripts/verify-assistant.ts",
     "test:tax-reduction": "DRIVA_TEST=1 npx --yes tsx scripts/verify-tax-reduction.ts",
@@ -17,9 +17,11 @@
     "db:seed": "tsx scripts/db-seed.ts",
     "scenario": "tsx scripts/scenario.ts",
     "platform:bootstrap": "tsx scripts/platform-bootstrap.ts",
+    "restore:drill": "tsx scripts/restore-drill.ts",
     "migrate:local-to-supabase": "tsx scripts/migrate-local-to-supabase.ts"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.74.0",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
     "@tiptap/core": "^3.30.5",
@@ -32,7 +34,8 @@
     "postgres": "^3.4.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "resend": "^6.25.0"
+    "resend": "^6.25.0",
+    "stripe": "^22.6.2"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",

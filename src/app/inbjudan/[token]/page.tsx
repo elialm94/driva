@@ -6,7 +6,7 @@ import { lookupInvitation } from "@/lib/collaboration/service";
 import { roleLabel } from "@/lib/collaboration/permissions";
 import { isSupabaseMode } from "@/lib/storage/config";
 
-export const metadata = { title: "Inbjudan – Driva" };
+export const metadata = { title: "Inbjudan – Ferva" };
 export const dynamic = "force-dynamic";
 
 export default async function InviteAcceptPage({
@@ -56,7 +56,7 @@ export default async function InviteAcceptPage({
   return (
     <main className="flex min-h-dvh items-center justify-center bg-stone-100 px-4 py-10">
       <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-        <p className="text-sm text-stone-500">Driva</p>
+        <p className="text-sm text-stone-500">Ferva</p>
         <h1 className="mt-1 text-xl font-semibold tracking-tight">
           {invitation.invitedByName} bjuder in dig som {role.toLowerCase()}
         </h1>

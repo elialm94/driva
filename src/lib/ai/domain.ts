@@ -938,7 +938,7 @@ export function watchingResult(): DomainResult {
   if (items.length === 0) {
     return {
       ok: true,
-      text: "Inget särskilt är på gång just nu – Driva håller koll och säger till när något behöver din uppmärksamhet.",
+      text: "Inget särskilt är på gång just nu – Ferva håller koll och säger till när något behöver din uppmärksamhet.",
       forModel: { count: 0 },
     };
   }
@@ -1310,9 +1310,10 @@ export function requestUpdateBusinessProfile(patch: Record<string, string | numb
   const current = getBusinessProfile();
   const defaults = getInvoiceDefaults();
   // Bara skalära fält jämförs i förhandsvisningen (notiser är ett objekt och ändras inte här).
-  const { notices: _notices, autoBookFSkatt: _autoBookFSkatt, ...scalarSettings } = current;
+  const { notices: _notices, autoBookFSkatt: _autoBookFSkatt, claims: _claims, ...scalarSettings } = current;
   void _notices;
   void _autoBookFSkatt;
+  void _claims;
   const currentMap: Record<string, string | number | undefined> = {
     ...scalarSettings,
     ...defaults,
@@ -1601,7 +1602,7 @@ export function requestSubmitSupplierPayment(paymentId: string): DomainResult {
     card: {
       kind: "confirm",
       actionId: action.id,
-      summary: "Betalningen skickas till banken. Driva hittar aldrig på att den är betald.",
+      summary: "Betalningen skickas till banken. Ferva hittar aldrig på att den är betald.",
       rows: supplierPaymentConfirmRows(payment, invoice),
       confirmLabel: "Skicka till banken",
       state: "vantar",
@@ -1632,7 +1633,7 @@ export function requestCancelSupplierPayment(paymentId: string): DomainResult {
 }
 
 /**
- * Vad Driva LÄST ur ett inkommande dokument – fält för fält med mänskliga
+ * Vad Ferva LÄST ur ett inkommande dokument – fält för fält med mänskliga
  * lägen ("saker"/"kontrollera"), aldrig råa sannolikheter som beslut.
  * Samma läsmodell som Kontrollera-vyn (services/inbox.ts).
  */
@@ -1656,7 +1657,7 @@ export function reviewDocumentExtractionResult(itemId: string): DomainResult {
       },
       card: {
         kind: "list",
-        title: "Det här har Driva läst",
+        title: "Det här har Ferva läst",
         rows: review.fields.map((f) => ({
           label: f.label,
           value: `${f.value == null ? "—" : typeof f.value === "number" ? kr(f.value) : f.value} · ${f.state === "saker" ? "Säker" : "Kontrollera"}`,
@@ -1701,7 +1702,7 @@ export function updateSupplierInvoiceFieldResult(
 /**
  * Bekräftelsekort för [Skapa bankfil] (pain.001). Validerar ALLT innan kortet
  * visas (exakta hinder i klartext) och skapar INGEN fil förrän användaren
- * bekräftar. Filen laddas upp manuellt i internetbanken – Driva påstår aldrig
+ * bekräftar. Filen laddas upp manuellt i internetbanken – Ferva påstår aldrig
  * att banken tagit emot något.
  */
 export function requestGeneratePaymentFile(invoiceIds: string[]): DomainResult {

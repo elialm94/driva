@@ -2,7 +2,7 @@
  * Inlämningsmiljö (server-only). Deklarationer lämnas in via en
  * inlämningstjänst som bolaget har avtal med – Skatteverkets och
  * Bolagsverkets maskinvägar kräver både avtal och certifikat, och det är
- * avtalet som avgör om Driva får skicka något alls.
+ * avtalet som avgör om Ferva får skicka något alls.
  *
  *   FILING_API_BASE_URL  Tjänstens bas-URL, t.ex. https://inlamning.example.se
  *   FILING_API_TOKEN     Bearer-token för bolagets konto hos tjänsten

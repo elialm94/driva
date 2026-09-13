@@ -13,7 +13,7 @@ export function RotBeslutImport({ jobId, invoiceId }: { jobId?: string; invoiceI
   return (
     <div className="mt-3">
       <p className="text-[13px] font-medium text-ink">Importera beslut från Skatteverket</p>
-      <p className="mt-0.5 text-[12px] text-muted">JSON från e-tjänsten. Driva fyller i utfallet så du inte skriver om beloppet.</p>
+      <p className="mt-0.5 text-[12px] text-muted">JSON från e-tjänsten. Ferva fyller i utfallet så du inte skriver om beloppet.</p>
       <input
         type="file"
         accept="application/json,.json"

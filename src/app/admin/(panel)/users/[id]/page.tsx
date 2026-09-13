@@ -19,7 +19,10 @@ import {
 } from "@/components/admin/ui";
 import { requirePlatformAdmin } from "@/lib/platform/auth";
 import { userDeletionPolicy, userDetail } from "@/lib/platform/directory";
-import { platformRoleLabel } from "@/lib/platform/types";
+import { userAnonymizationPolicy } from "@/lib/platform/operations";
+import { latestTermsAcceptance } from "@/lib/platform/store";
+import { SUPER_ADMIN, platformRoleLabel } from "@/lib/platform/types";
+import { DataSubjectRequestForm } from "./data-subject-form";
 
 export const metadata = { title: "Användare" };
 
@@ -32,12 +35,20 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export default async function UserDetailPage(props: PageProps<"/admin/users/[id]">) {
-  await requirePlatformAdmin();
+  const ctx = await requirePlatformAdmin();
   const { id } = await props.params;
   const user = await userDetail(id);
   if (!user) notFound();
   const policy = await userDeletionPolicy(id);
+  const anonymization = await userAnonymizationPolicy(id).catch(() => ({
+    canAnonymize: false,
+    blockers: ["Policyn kunde inte läsas."],
+    retainedBusinesses: [] as { id: string; name: string }[],
+    membershipsToRevoke: 0,
+  }));
+  const terms = await latestTermsAcceptance(id).catch(() => null);
   const banned = isBannedNow(user.bannedUntil);
+  const isSuper = ctx.admin.role === SUPER_ADMIN;
 
   return (
     <div className="space-y-4">
@@ -123,6 +134,21 @@ export default async function UserDetailPage(props: PageProps<"/admin/users/[id]
             />
           ) : null}
 
+          <AdminCard title="Registrerades begäran (GDPR)">
+            <DataSubjectRequestForm
+              userId={user.id}
+              email={user.email}
+              isSuper={isSuper}
+              deletionBlockers={policy.blockers}
+              anonymizationBlockers={anonymization.blockers}
+              retainedBusinesses={anonymization.retainedBusinesses.map((b) => b.name || b.id)}
+            />
+            <p className="px-4 pb-3 text-[12px] text-neutral-500">
+              Användarens egen export finns under Inställningar → Konto i appen (/api/konto/export). Alla begäranden
+              auditeras med grund; radering/anonymisering kräver super_admin och bekräftelse.
+            </p>
+          </AdminCard>
+
           <DangerPanel
             title="Radera kontot permanent"
             buttonLabel="Radera kontot"
@@ -174,6 +200,10 @@ export default async function UserDetailPage(props: PageProps<"/admin/users/[id]
                 {
                   label: "Plattformsroll",
                   value: user.isPlatformAdmin ? platformRoleLabel(user.platformRole ?? "") : "Ingen",
+                },
+                {
+                  label: "Godkända villkor",
+                  value: terms ? `v${terms.version} · ${datumTidKort(terms.acceptedAt)} (${terms.source})` : "Ej registrerat",
                 },
               ]}
             />

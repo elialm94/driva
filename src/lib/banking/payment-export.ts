@@ -25,7 +25,7 @@ export interface PaymentExportPayer {
 }
 
 export interface PaymentExportInstruction {
-  /** Instruktionens id i Driva (blir InstrId). */
+  /** Instruktionens id i Ferva (blir InstrId). */
   instructionId: string;
   /** Spårbar referens hela vägen till kontoutdraget (blir EndToEndId). */
   endToEndId: string;

@@ -20,7 +20,7 @@ import type {
   FilingSubmitOutcome,
 } from "../provider";
 
-/** Bolagsverket och Skatteverket tar båda emot det Driva bygger. */
+/** Bolagsverket och Skatteverket tar båda emot det Ferva bygger. */
 const SUPPORTED: readonly FilingKind[] = ["moms", "agi", "ink2", "arsredovisning"];
 
 type Json = Record<string, unknown>;

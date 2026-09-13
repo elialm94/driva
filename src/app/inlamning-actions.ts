@@ -7,9 +7,13 @@ import { userFacingFilingError } from "@/lib/filing/errors";
 import {
   fetchFilingReceipt,
   generateFilingSubmission,
+  markFilingDownloaded,
+  openFilingSubmission,
+  reportManualFilingSubmission,
   signFilingSubmission,
   submitFilingSubmission,
 } from "@/lib/filing/submission";
+import { filingReceiptFromForm, storeFilingReceiptFile } from "@/lib/filing/receipt-file";
 import type { FilingKind, FilingSubmission } from "@/lib/types";
 
 /**
@@ -75,4 +79,63 @@ export async function submitFilingAction(submissionId: string, businessId?: stri
 
 export async function fetchFilingReceiptAction(submissionId: string, businessId?: string): Promise<Result> {
   return run(() => fetchFilingReceipt(submissionId, { by: "anvandare" }), "submit_filing", businessId);
+}
+
+/* --------------------------- Manuell inlämning ----------------------------- */
+
+/**
+ * Filen hämtas för att lämnas in för hand. Konsulten får förbereda
+ * (prepare_filing): raden låser kontrollsumman för det som hämtades.
+ */
+export async function markFilingDownloadedAction(kind: string, subjectId: string, businessId?: string): Promise<Result> {
+  if (!isFilingKind(kind)) return { ok: false, error: `Okänd deklarationstyp: ${kind}` };
+  return run(() => markFilingDownloaded({ kind, subjectId, by: "anvandare" }), "prepare_filing", businessId);
+}
+
+/**
+ * "Jag har lämnat in" – kräver submit_filing (ägarens handling). Formuläret
+ * bär kind, subjectId, reference, note, ev. businessId och kvittensfilen som
+ * File i fältet "kvittens". Filen sparas inne i tenantkontexten innan raden
+ * skrivs; misslyckas lagringen rapporteras ingen inlämning.
+ */
+export async function reportManualFilingAction(form: FormData): Promise<Result> {
+  const kind = String(form.get("kind") ?? "");
+  const subjectId = String(form.get("subjectId") ?? "").trim();
+  const reference = String(form.get("reference") ?? "").trim();
+  const note = String(form.get("note") ?? "").trim();
+  const businessId = String(form.get("businessId") ?? "").trim() || undefined;
+  if (!isFilingKind(kind)) return { ok: false, error: `Okänd deklarationstyp: ${kind}` };
+  if (!subjectId) return { ok: false, error: "Ärendet saknas." };
+
+  const user = await requireUser();
+  const reportedByName = user.name?.trim() || user.email;
+  let upload: Awaited<ReturnType<typeof filingReceiptFromForm>>;
+  try {
+    upload = await filingReceiptFromForm(form);
+  } catch {
+    return { ok: false, error: "Kvittensfilen kunde inte läsas. Välj filen igen." };
+  }
+  if (!reference && !upload) {
+    return { ok: false, error: "Ange myndighetens referens- eller kvittensnummer, eller ladda upp kvittensen." };
+  }
+
+  return run(
+    async () => {
+      // Se till att raden finns innan filen lagras under dess id.
+      const open = openFilingSubmission(kind, subjectId) ?? generateFilingSubmission({ kind, subjectId, by: "anvandare" });
+      const file = upload ? await storeFilingReceiptFile(open.id, upload) : undefined;
+      return reportManualFilingSubmission({
+        kind,
+        subjectId,
+        reference: reference || undefined,
+        note: note || undefined,
+        file,
+        reportedByName,
+        reportedByUserId: user.id,
+        by: "anvandare",
+      });
+    },
+    "submit_filing",
+    businessId
+  );
 }

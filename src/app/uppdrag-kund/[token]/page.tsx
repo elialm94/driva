@@ -218,7 +218,7 @@ export default async function CustomerJobPage(props: PageProps<"/uppdrag-kund/[t
         </div>
 
         <p className="mt-8 text-center text-[12px] text-muted">
-          Delad med Driva · Frågor? Kontakta {seller.name} på {seller.email}
+          Delad med Ferva · Frågor? Kontakta {seller.name} på {seller.email}
         </p>
         <div className="h-10" />
       </main>

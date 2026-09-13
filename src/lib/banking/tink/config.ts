@@ -3,8 +3,8 @@
  * NEXT_PUBLIC_TINK_*-variabler och får aldrig finnas: client secret och
  * redirect-URI hör hemma i serverns process.env.
  *
- *   TINK_CLIENT_ID      Console → appen "Driva"
- *   TINK_CLIENT_SECRET  Console → appen "Driva"
+ *   TINK_CLIENT_ID      Console → appen "Ferva"
+ *   TINK_CLIENT_SECRET  Console → appen "Ferva"
  *   TINK_REDIRECT_URI   Måste vara byte-för-byte identisk med den som är
  *                       registrerad i Console (och det vi skickar i Link-URL:en).
  *   TINK_MARKET         SE (standard)

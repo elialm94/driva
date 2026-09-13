@@ -7,7 +7,7 @@
  * sekelprefix. Reglerna hör inte hemma i varje filbyggare för sig, så de bor
  * här och används av eskd.ts, agi-xml.ts, sru.ts och ixbrl.ts.
  *
- * Ingen av filerna skickas någonstans av Driva. De laddas ner av användaren
+ * Ingen av filerna skickas någonstans av Ferva. De laddas ner av användaren
  * och lämnas in i Skatteverkets eller Bolagsverkets egna tjänster.
  */
 

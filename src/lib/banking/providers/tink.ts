@@ -3,7 +3,7 @@
  * TINK_ENV). Väljs bara av selectBankProvider när miljön är komplett OCH
  * requesten inte är demo – en demo-request kan aldrig nå hit.
  *
- * Datamodell: en permanent Tink-användare per Driva-företag
+ * Datamodell: en permanent Tink-användare per Ferva-företag
  * (external_user_id = företagets id), ett bankmedgivande (credentials) och
  * en cachad användartoken på bank_connections-raden (server-only).
  *
@@ -153,7 +153,7 @@ export class LiveTinkProvider implements BankProvider {
       }
       const code = await tink.delegateAuthorizationCode(this.cfg, clientToken, {
         externalUserId: businessId,
-        idHint: db().settings.name || "Driva",
+        idHint: db().settings.name || "Ferva",
       });
       const url = tink.buildTinkLinkUrl(this.cfg, { authorizationCode: code, state });
       upsertBankConnection({

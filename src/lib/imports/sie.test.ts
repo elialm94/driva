@@ -403,7 +403,7 @@ describe("SIE-import", () => {
     const target = freshDb();
     target.settings.orgNumber = source.settings.orgNumber;
     const file = parseSie(new TextEncoder().encode(exported));
-    assert.equal(file.program?.startsWith("Driva"), true);
+    assert.equal(file.program?.startsWith("Ferva"), true);
     const preview = previewSie(file, target);
     const year = preview.years.find((y) => y.startDate === fy.startDate)!;
     assert.equal(year.selectable, true);

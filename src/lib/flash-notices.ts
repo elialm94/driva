@@ -4,7 +4,7 @@
  * bort ur adressen direkt så att omladdning eller delad länk inte upprepar dem.
  *
  * Bara kända nycklar ger en notis – fri text ur URL:en visas aldrig som
- * "Driva säger …", med ett undantag: bankens felmeddelande, som kommer från
+ * "Ferva säger …", med ett undantag: bankens felmeddelande, som kommer från
  * vår egen callback och bara visas tillsammans med bank=fel.
  */
 

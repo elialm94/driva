@@ -297,7 +297,7 @@ describe("tolkningen i inkorgens pipeline", () => {
     assert.equal(item.parsedAmount, 1240);
     assert.equal(item.expenseId, undefined);
     assert.equal(item.attachments[0]?.contentBase64, PNG_BASE64, "underlaget bevaras");
-    // Granskningsvyn har fälten redo, med Drivas läsning per fält.
+    // Granskningsvyn har fälten redo, med Fervas läsning per fält.
     assert.equal(item.extraction?.amount?.confidence, 0.95);
   });
 

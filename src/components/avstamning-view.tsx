@@ -53,7 +53,7 @@ export function AvstamningView({ hrefFor = (href: string) => href }: { hrefFor?:
             </p>
             {tieOut.manual.length > 0 ? (
               <p className="mt-2 text-[13px] leading-relaxed text-soft">
-                {tieOut.manual.length} konto{tieOut.manual.length === 1 ? "" : "n"} saknar delsystem i Driva – ett
+                {tieOut.manual.length} konto{tieOut.manual.length === 1 ? "" : "n"} saknar delsystem i Ferva – ett
                 banklån eller en skuld till en aktieägare har inget register att jämföra mot. De stoppar inte bokslutet,
                 men stäm av dem mot lånebeskedet eller avtalet och lägg vid en specifikation.
               </p>

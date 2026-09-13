@@ -1,9 +1,8 @@
-import { AccountantClientTabs, accountantStatusText } from "@/components/accountant-workspace";
 import { PageHeader } from "@/components/ui";
+import { PrintButton } from "@/components/bokforing-widgets";
 import { BokslutView } from "@/components/bokslut-view";
-import { loadAccountantClientPage } from "@/lib/collaboration/client-page";
-import { accountantHref } from "@/lib/collaboration/hrefs";
-import { can } from "@/lib/collaboration/permissions";
+import { loadPortfolioWorkspace } from "@/lib/accounting-workspace/workspace";
+import { wsHref, wsReadOnly } from "@/lib/accounting-workspace/shared";
 
 export const metadata = { title: "Bokslut" };
 
@@ -14,27 +13,21 @@ export default async function AccountantBokslutPage({
   params: Promise<{ businessId: string }>;
   searchParams: Promise<{ ar?: string }>;
 }) {
-  const { businessId } = await params;
-  const { ar } = await searchParams;
-  const { access, snap } = await loadAccountantClientPage(businessId);
+  const [{ businessId }, { ar }] = await Promise.all([params, searchParams]);
+  const ws = await loadPortfolioWorkspace(businessId);
 
   return (
-    <div className="animate-fade-up">
+    <div>
       <PageHeader
-        title={snap.name}
-        subtitle={accountantStatusText({
-          bookedThrough: snap.bookedThrough,
-          bankOk: snap.bankOk,
-          bankUnexplained: snap.bankUnexplained,
-          nextVatDue: snap.nextVat?.dueDate,
-        })}
+        title="Bokslut"
+        subtitle="Ferva kontrollerar allt som går att kontrollera automatiskt – här syns bara det som faktiskt behöver någon."
+        actions={<PrintButton />}
       />
-      <AccountantClientTabs businessId={businessId} active="bokslut" />
       <BokslutView
-        base={`/redovisning/k/${businessId}/bokslut`}
-        hrefFor={(href) => accountantHref(businessId, href)}
-        businessId={businessId}
-        readOnly={!can(access.role, "year_end")}
+        base={`${ws.basePath}/bokslut`}
+        hrefFor={(href) => wsHref(ws, href)}
+        businessId={ws.actionBusinessId}
+        readOnly={wsReadOnly(ws, "year_end")}
         selectedYearParam={ar}
       />
     </div>

@@ -1,5 +1,5 @@
 /**
- * Sidfot för Driva-genererade sajter.
+ * Sidfot för Ferva-genererade sajter.
  *
  * Kontakt, tjänster och logotyp hämtas live från företagsuppgifter och
  * Tjänster-sektionen. Användaren fyller bara i det som inte redan finns:

@@ -33,7 +33,7 @@ import {
  * lucka – inget hittas på, minst av allt arbetade timmar.
  *
  * Filen laddas ner av användaren och importeras i e-tjänsten "Rot och rut –
- * företag". Driva skickar aldrig något till Skatteverket och markerar aldrig
+ * företag". Ferva skickar aldrig något till Skatteverket och markerar aldrig
  * ett beslut automatiskt.
  */
 
@@ -301,7 +301,7 @@ export interface HusExportFile {
 
 /**
  * Bygger själva filen. Kastar med en läsbar sammanfattning av luckorna om något
- * saknas – exporten blockeras hellre än att en ofullständig fil lämnar Driva.
+ * saknas – exporten blockeras hellre än att en ofullständig fil lämnar Ferva.
  */
 export function buildHusExportFile(input: { jobId?: string; invoiceId?: string }): HusExportFile {
   const preview = husExportPreview(input);

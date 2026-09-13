@@ -1,5 +1,5 @@
 /**
- * Explicita, säkra backend-åtgärder för Driva Admin. INGEN generell SQL-yta:
+ * Explicita, säkra backend-åtgärder för Ferva Admin. INGEN generell SQL-yta:
  * varje åtgärd är en namngiven domänoperation som återanvänder befintliga
  * tjänster, auditeras och visar ärliga fel när miljön saknar förutsättningar
  * (t.ex. service role-nyckel). Destruktiva åtgärder policy-prövas alltid
@@ -23,7 +23,7 @@ import {
   type BusinessDeletionPolicy,
   type UserDeletionPolicy,
 } from "./directory";
-import { setBusinessDisabled, businessDisabledAt } from "./store";
+import { setBusinessDisabled, businessDisabledAt, platformAdminByUserId } from "./store";
 import { AUTH_ADMIN_UNAVAILABLE, supabaseAuthAdminClient } from "./supabase-admin";
 import type { PlatformAdmin } from "./types";
 
@@ -137,6 +137,141 @@ export async function deleteUserAccount(
       email,
       businessesDeleted: policy.businessesToDelete.map((b) => b.name || b.id),
       membershipsRevoked: policy.membershipsToRevoke,
+    },
+  });
+  return policy;
+}
+
+/* --------------------- Registrerades begäran (GDPR) ----------------------- */
+
+export type DataSubjectRequestKind = "rattelse" | "radering" | "anonymisering";
+
+export interface DataSubjectRequestInput {
+  kind: DataSubjectRequestKind;
+  /** Grund/beskrivning – loggas i auditen (ingen känslig data). */
+  reason: string;
+}
+
+export function parseDataSubjectRequest(raw: Record<string, unknown>): DataSubjectRequestInput {
+  const kind = String(raw.kind ?? "");
+  if (kind !== "rattelse" && kind !== "radering" && kind !== "anonymisering") {
+    throw new AdminOperationError("Välj typ av begäran: rättelse, radering eller anonymisering.");
+  }
+  const reason = String(raw.reason ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .trim();
+  if (reason.length < 5) throw new AdminOperationError("Ange en grund för begäran (minst 5 tecken).");
+  if (reason.length > 500) throw new AdminOperationError("Grunden får vara högst 500 tecken.");
+  return { kind, reason };
+}
+
+export interface AnonymizationPolicy {
+  canAnonymize: boolean;
+  blockers: string[];
+  /** Företag som stannar (bevarandeplikt) men där personen tas bort som medlem. */
+  retainedBusinesses: { id: string; name: string }[];
+  membershipsToRevoke: number;
+}
+
+/**
+ * Anonymisering är vägen när radering är blockerad av bokföringslagen: kontot
+ * stängs för alltid, personens identifierare tas bort ur auth och
+ * supportärenden, medlemskap återkallas – men företagets räkenskaper ligger
+ * kvar orörda (och skrivskyddade via inaktivering).
+ */
+export async function userAnonymizationPolicy(userId: string): Promise<AnonymizationPolicy> {
+  const deletion = await userDeletionPolicy(userId);
+  const policy: AnonymizationPolicy = {
+    canAnonymize: true,
+    blockers: [],
+    retainedBusinesses: [],
+    membershipsToRevoke: deletion.membershipsToRevoke,
+  };
+  const platformAdmin = await platformAdminByUserId(userId);
+  if (platformAdmin && !platformAdmin.disabledAt) {
+    policy.blockers.push("Personen är plattformsadmin – ta bort admin-rollen först (Admins-fliken).");
+  }
+  // Ägda företag med andra aktiva medlemmar måste få ny ägare först; företag
+  // med bevarandeplikt behålls (inaktiverade) utan personen.
+  for (const b of deletion.blockers) {
+    if (/andra aktiva medlemmar/.test(b)) policy.blockers.push(b);
+  }
+  const preservedNames = deletion.preserved.map((p) => p.split(":")[0]);
+  if (!isSupabaseMode()) {
+    for (const m of activeMembershipsForUser(userId)) {
+      if (m.role === "owner" && preservedNames.includes(m.businessName)) {
+        policy.retainedBusinesses.push({ id: m.businessId, name: m.businessName });
+      }
+    }
+  } else {
+    const client = await sqlClient();
+    const rows = await client.query(
+      `select m.business_id, b.name from public.business_memberships m
+         join public.businesses b on b.id = m.business_id
+        where m.user_id = $1 and m.revoked_at is null and m.role = 'owner'
+          and (exists (select 1 from public.verifications v where v.business_id = m.business_id)
+            or exists (select 1 from public.invoices i where i.business_id = m.business_id and i.issued_at is not null))`,
+      [userId]
+    );
+    policy.retainedBusinesses = rows.map((r) => ({ id: String(r.business_id), name: String(r.name ?? "") }));
+  }
+  policy.canAnonymize = policy.blockers.length === 0;
+  return policy;
+}
+
+export function anonymizedEmailFor(userId: string): string {
+  return `anonymiserad-${userId.replace(/[^a-z0-9]/gi, "").slice(0, 12).toLowerCase()}@anonym.invalid`;
+}
+
+export async function anonymizeUserAccount(
+  actor: PlatformAdmin,
+  userId: string,
+  email: string,
+  reason: string
+): Promise<AnonymizationPolicy> {
+  const policy = await userAnonymizationPolicy(userId);
+  if (!policy.canAnonymize) {
+    throw new AdminOperationError(`Kontot kan inte anonymiseras: ${policy.blockers.join(" ")}`);
+  }
+  if (!isSupabaseMode()) {
+    throw new AdminOperationError("Anonymisering kräver Supabase-läget (lokalt JSON-läge saknar riktig auth).");
+  }
+  const authAdmin = supabaseAuthAdminClient();
+  if (!authAdmin) throw new AdminOperationError(AUTH_ADMIN_UNAVAILABLE);
+
+  const client = await sqlClient();
+  const placeholder = anonymizedEmailFor(userId);
+  // Företag med bevarandeplikt inaktiveras (skrivskydd) och personen lämnar dem.
+  for (const b of policy.retainedBusinesses) {
+    if (!(await businessDisabledAt(b.id))) await setBusinessDisabled(b.id, true, actor.userId);
+  }
+  await client.query(
+    `update public.business_memberships set revoked_at = now() where user_id = $1 and revoked_at is null`,
+    [userId]
+  );
+  await client.query(
+    `update public.support_tickets set user_email = $2, user_name = 'Anonymiserad' where user_id = $1::uuid`,
+    [userId, placeholder]
+  );
+  const { error } = await authAdmin.auth.admin.updateUserById(userId, {
+    email: placeholder,
+    email_confirm: true,
+    phone: "",
+    user_metadata: { anonymized_at: new Date().toISOString() },
+    ban_duration: BAN_DURATION_DISABLED,
+  });
+  if (error) throw new AdminOperationError(`Auth-kontot kunde inte anonymiseras: ${error.message}`);
+
+  await writeAdminAudit(actor, {
+    action: "user_anonymized",
+    targetType: "user",
+    targetId: userId,
+    metadata: {
+      reason,
+      retainedBusinesses: policy.retainedBusinesses.map((b) => b.name || b.id),
+      membershipsRevoked: policy.membershipsToRevoke,
+      // E-posten före anonymisering loggas inte – det är själva poängen.
+      emailDomain: email.split("@")[1] ?? "",
     },
   });
   return policy;

@@ -65,7 +65,7 @@ export function MomsPeriods({
       <p className="text-[12px] leading-relaxed text-muted">
         {filingSubmissionAvailable()
           ? "Deklarationsfilen (eSKD) går att lämna in härifrån, och då står kvittensen kvar på perioden. Du kan lika gärna hämta filen och ladda upp den i e-tjänsten själv, eller fylla i rutorna för hand – siffrorna är desamma."
-          : "Driva skickar inget till Skatteverket för det här företaget. Du deklarerar som vanligt i e-tjänsten Lämna momsdeklaration – antingen genom att fylla i rutorna eller genom att ladda upp deklarationsfilen (eSKD)."}
+          : "Ferva skickar inget till Skatteverket för det här företaget. Du deklarerar som vanligt i e-tjänsten Lämna momsdeklaration – antingen genom att fylla i rutorna eller genom att ladda upp deklarationsfilen (eSKD)."}
       </p>
     </div>
   );
@@ -234,7 +234,7 @@ function KontrolleraStep({ flow, basePath }: { flow: VatPeriodFlow; basePath: st
     <div data-vat-step-body="kontrollera">
       <StepHeading
         title="Steg 1 · Kontrollera underlaget"
-        text="Allt i perioden ska vara bokfört innan siffrorna går till Skatteverket. Driva kollar banken och köpen – det som saknas fixar du med ett klick."
+        text="Allt i perioden ska vara bokfört innan siffrorna går till Skatteverket. Ferva kollar banken och köpen – det som saknas fixar du med ett klick."
       />
       <ul className="space-y-2">
         {flow.checklist.map((c) => (
@@ -298,7 +298,7 @@ function DeklareraStep({ flow, readOnly }: { flow: VatPeriodFlow; readOnly?: boo
     <div data-vat-step-body="deklarera">
       <StepHeading
         title="Steg 2 · Deklarera hos Skatteverket"
-        text="Underlaget är klart. Lämna momsdeklarationen i Skatteverkets e-tjänst – fyll i rutorna eller ladda upp filen – och tala sedan om för Driva att det är gjort."
+        text="Underlaget är klart. Lämna momsdeklarationen i Skatteverkets e-tjänst – fyll i rutorna eller ladda upp filen – och tala sedan om för Ferva att det är gjort."
       >
         <a href={SKV_DECLARE_URL} target="_blank" rel="noreferrer" className={cx("inline-flex items-center gap-1.5 text-[13px] font-medium text-accent hover:underline")}>
           Öppna Lämna momsdeklaration
@@ -345,7 +345,7 @@ function DeklareraStep({ flow, readOnly }: { flow: VatPeriodFlow; readOnly?: boo
         <div className="text-[13px]">
           <p className="font-medium text-ink">När deklarationen är inlämnad</p>
           <p className="text-soft">
-            Driva fryser siffrorna, för momsen till redovisningskontot (2650) och låser perioden.
+            Ferva fryser siffrorna, för momsen till redovisningskontot (2650) och låser perioden.
             {pay.direction === "betala" ? ` Sedan återstår att betala ${kr(pay.amount)} senast ${datumLang(pay.dueDate)}.` : ""}
           </p>
         </div>

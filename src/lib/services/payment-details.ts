@@ -242,7 +242,7 @@ function looksLikeEmail(value: string): boolean {
 }
 
 /**
- * Kan Driva be leverantören om uppgifterna? Kräver användbar avsändaradress
+ * Kan Ferva be leverantören om uppgifterna? Kräver användbar avsändaradress
  * från det inkommande mejlet OCH en konfigurerad e-postleverantör. Utan det:
  * erbjud aldrig knappen (ärlig degradering – aldrig fejkade utskick).
  */
@@ -301,7 +301,7 @@ export async function requestPaymentDetailsFromSupplier(
     return { ok: false, error: req.reason ?? "Förfrågan kan inte skickas." };
   }
 
-  const from = mailFromAddress() ?? "Driva <noreply@localhost>";
+  const from = mailFromAddress() ?? "Ferva <noreply@localhost>";
   const replyTo = inboundMailAddress(db().settings.inboundMailSlug || "demo");
   const result = await sendMail({
     to: req.to,

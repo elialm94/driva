@@ -189,11 +189,11 @@ export function ownerNoticeTestEmail(input: { businessName: string; footer: stri
   return build({
     businessName: input.businessName,
     footer: input.footer,
-    subject: `Så här ser notiser från Driva ut`,
+    subject: `Så här ser notiser från Ferva ut`,
     lead: "Det här är ett testmejl från Inställningar → Notiser. När en kund svarar på en offert, en förfrågan kommer in från hemsidan eller en faktura landar i inkorgen får du ett mejl som det här.",
     leadHtml:
       "Det här är ett testmejl från <strong>Inställningar → Notiser</strong>. När en kund svarar på en offert, en förfrågan kommer in från hemsidan eller en faktura landar i inkorgen får du ett mejl som det här.",
     detail: "Du väljer själv vilka händelser som mejlas, och till vilken adress.",
-    cta: { href: input.url, label: "Öppna Driva" },
+    cta: { href: input.url, label: "Öppna Ferva" },
   });
 }

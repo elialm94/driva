@@ -277,7 +277,10 @@ describe("Nytt konto: Kom igång → kund → faktura", () => {
     assert.equal(row.city, "Stockholm");
     assert.equal(row.bankgiro, "5678-1234");
     assert.equal(row.email, "info@soders.se");
-    assert.equal(row.default_quote_terms, settings.defaultQuoteTerms);
+    // Inga standardvillkor lagras vid skapande (spec §8): nya offerter följer
+    // systemtexten och företagets verifieringar i stället.
+    assert.equal(settings.defaultQuoteTerms, undefined);
+    assert.equal(row.default_quote_terms, null);
     const back = settingsFromRow(row);
     assert.equal(back.vatNumber, settings.vatNumber);
     assert.equal(back.postalCode, settings.postalCode);

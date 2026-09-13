@@ -60,7 +60,7 @@ export function DeclareVatButton({ periodKey, label, attBetala }: { periodKey: s
           Har du lämnat in momsdeklarationen för <span className="font-medium">{label}</span> hos Skatteverket?
         </p>
         <p className="mt-1 text-[12px] text-muted">
-          Driva fryser då siffrorna, för momsen till redovisningskontot (2650) och låser perioden. Det går inte att bokföra
+          Ferva fryser då siffrorna, för momsen till redovisningskontot (2650) och låser perioden. Det går inte att bokföra
           mer i perioden efteråt.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-2">

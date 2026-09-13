@@ -17,7 +17,7 @@
 /**
  * De rutor ett litet aktiebolag faktiskt använder. Blanketten har fler
  * (koncernbidrag, andelsförsäljningar, ackord) – de kräver bedömningar som
- * Driva inte gör, och saknas därför här hellre än att fyllas i på en gissning.
+ * Ferva inte gör, och saknas därför här hellre än att fyllas i på en gissning.
  */
 export type Ink2Field =
   | "4.1" // Årets resultat, vinst
@@ -78,11 +78,11 @@ export const STATSLANERANTA_GOLV = 0.5;
 
 /**
  * Schablonräntan för ett beskattningsår, i procent. `undefined` när
- * statslåneräntan för året inte finns i tabellen – då vet Driva inte, och ska
+ * statslåneräntan för året inte finns i tabellen – då vet Ferva inte, och ska
  * säga det.
  *
  * Sedan lagändringen 2018:1206 används hela statslåneräntan; tidigare 72 % av
- * den. Driva räknar bara år från och med 2019, så bara den nya regeln finns.
+ * den. Ferva räknar bara år från och med 2019, så bara den nya regeln finns.
  */
 export function schablonranta(taxYear: number): number | undefined {
   const slr = STATSLANERANTA_30_NOV[taxYear - 1];
@@ -119,7 +119,7 @@ export interface AccountTaxRule {
  * skattelindring av den.
  *
  * Listan går på konto, inte på bedömning. Ett konto som HETER "ej avdragsgill"
- * är bokförarens eget beslut om posten, och det beslutet är det Driva följer –
+ * är bokförarens eget beslut om posten, och det beslutet är det Ferva följer –
  * motorn tolkar aldrig ett kvitto för att avgöra om en lunch var representation.
  */
 export const NON_DEDUCTIBLE_ACCOUNTS: AccountTaxRule[] = [

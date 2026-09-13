@@ -642,7 +642,7 @@ describe("årsredovisning som iXBRL-fil", () => {
     assert.match(file.xhtml, /^<\?xml version="1.0" encoding="UTF-8"\?>/);
     assert.match(file.xhtml, /xmlns="http:\/\/www.w3.org\/1999\/xhtml"/);
     assert.match(file.xhtml, /xmlns:ix="http:\/\/www.xbrl.org\/2013\/inlineXBRL"/);
-    assert.match(file.xhtml, /<meta name="generator" content="Driva" \/>/);
+    assert.match(file.xhtml, /<meta name="generator" content="Ferva" \/>/);
     // Inga script, inga externa stilmallar, inga bilder utifrån (TA 3.4, 3.5, 3.7).
     assert.doesNotMatch(file.xhtml, /<script|onclick=|<link rel="stylesheet"|<img/i);
     assert.match(file.xhtml, /<style type="text\/css">/);
@@ -846,7 +846,7 @@ describe("årsredovisning som iXBRL-fil", () => {
 /* ---------------------------- Kopplingstabellen ---------------------------- */
 
 describe("kopplingen mellan kontoplanen och räkenskapsschemat", () => {
-  it("varje konto i Drivas kontoplan har en ruta", () => {
+  it("varje konto i Fervas kontoplan har en ruta", () => {
     const utan: number[] = [];
     for (const { number: account } of standardAccounts()) {
       // Årets resultat och enskild firmas eget kapital hör inte till INK2R.

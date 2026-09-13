@@ -159,7 +159,7 @@ export function OwnerNoticeSettings(props: OwnerNoticeSettingsProps) {
           <div className="min-w-0 flex-1">
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Händelser</p>
             <p className="mt-1 text-[14px] leading-relaxed text-soft">
-              Du får mejl om det som händer när du inte är i appen. Det du gör själv i Driva notifieras aldrig.
+              Du får mejl om det som händer när du inte är i appen. Det du gör själv i Ferva notifieras aldrig.
             </p>
           </div>
         </div>

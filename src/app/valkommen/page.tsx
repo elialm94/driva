@@ -3,7 +3,7 @@ import Link from "next/link";
 import { HomePreview } from "@/components/home-preview";
 
 /**
- * Drivas publika landningssida.
+ * Fervas publika landningssida.
  *
  * Serveras på "/" för utloggade besökare via proxyns rewrite (URL:en förblir
  * "/"); direktbesök på /valkommen skickas till "/". Sidan är ren server-HTML
@@ -13,7 +13,7 @@ import { HomePreview } from "@/components/home-preview";
  */
 
 export const metadata: Metadata = {
-  title: { absolute: "Driva – mindre administration, mer tid till jobbet" },
+  title: { absolute: "Ferva – mindre administration, mer tid till jobbet" },
   description: "Offerter, fakturor, kunder och bokföring för småföretagare. Testa gratis i 14 dagar.",
 };
 
@@ -67,7 +67,7 @@ export default function LandingPage() {
     <div className="min-h-dvh bg-canvas text-ink">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-5 py-5 sm:px-8">
         <Link href="/" className="text-xl font-semibold tracking-tight">
-          Driva
+          Ferva
         </Link>
         <nav className="flex items-center gap-2 sm:gap-3">
           <a
@@ -89,10 +89,10 @@ export default function LandingPage() {
         <section className="mx-auto max-w-5xl px-5 pb-16 pt-10 sm:px-8 sm:pt-16">
           <div className="mx-auto max-w-2xl text-center">
             <h1 className="text-balance text-4xl font-semibold leading-[1.08] tracking-tight sm:text-[52px]">
-              Driva ditt företag. Inte administrationen.
+              Ferva ditt företag. Inte administrationen.
             </h1>
             <p className="mx-auto mt-5 max-w-xl text-pretty text-[17px] leading-relaxed text-soft">
-              Offerter, fakturor, kunder och bokföring på ett ställe. Driva hjälper dig från första förfrågan
+              Offerter, fakturor, kunder och bokföring på ett ställe. Ferva hjälper dig från första förfrågan
               tills pengarna är på kontot.
             </p>
             <div className="mt-8 flex justify-center">
@@ -106,7 +106,7 @@ export default function LandingPage() {
           <div className="mt-14 sm:mt-16">
             <HomePreview />
             <p className="mx-auto mt-5 max-w-md text-center text-[15px] leading-relaxed text-soft">
-              Driva håller koll. Du säger bara vad du vill göra.
+              Ferva håller koll. Du säger bara vad du vill göra.
             </p>
           </div>
 
@@ -163,13 +163,16 @@ export default function LandingPage() {
 
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 px-5 py-8 text-sm text-muted sm:flex-row sm:px-8">
-          <span className="font-semibold tracking-tight text-soft">Driva</span>
+          <span className="font-semibold tracking-tight text-soft">Ferva</span>
           <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
             <a href="/integritet" className="transition-colors hover:text-ink">
               Integritetspolicy
             </a>
             <a href="/villkor" className="transition-colors hover:text-ink">
               Villkor
+            </a>
+            <a href="/underbitraden" className="transition-colors hover:text-ink">
+              Underbiträden
             </a>
             <a href="/login" className="transition-colors hover:text-ink">
               Logga in

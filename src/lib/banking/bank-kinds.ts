@@ -22,7 +22,9 @@ export type BankKindKey =
   | "utdelning"
   | "aterbetalning_agare"
   | "overforing_eget_konto"
+  | "lokalhyra"
   | "lon"
+  | "privat_kop"
   /* ---------- inkommande ---------- */
   | "kundbetalning"
   | "agartillskott"
@@ -192,6 +194,24 @@ export const BANK_KINDS: BankKind[] = [
     matchedType: "ovrigt",
   },
   {
+    // Hyran är återkommande men momsen antas ALDRIG: bara en hyresvärd som
+    // är frivilligt skattskyldig fakturerar moms, och då är hyresavin
+    // underlaget. Utan avi bokförs hela beloppet som momsfri lokalkostnad.
+    key: "lokalhyra",
+    label: "Lokalhyra",
+    hint: "Hyra för verkstad, lager eller kontor – utan moms tills hyresavin visar moms",
+    direction: "ut",
+    entries: (amount) => [
+      { account: 5010, debit: amount },
+      { account: FORETAGSKONTO, credit: amount },
+    ],
+    explanation: (amount, counterpart) =>
+      `Hyran ${amount} kr till ${counterpart} bokfördes som lokalhyra (5010) utan moms. Fakturerar hyresvärden moms ska hyresavin registreras som leverantörsfaktura så att momsen kan lyftas – den antas aldrig från bankraden.`,
+    pattern: /\bhyra\b|\bhyran\b|lokalhyra|hyresavi|hyresvärd|hyresvard|\bhyres(?:kostnad|faktura)\b/i,
+    learnable: true,
+    matchedType: "ovrigt",
+  },
+  {
     // Sist bland de utgående: "överföring" står ofta i beskrivningen även för
     // lön, utlägg och utdelning – de mer specifika mönstren ovan vinner.
     key: "overforing_eget_konto",
@@ -206,6 +226,23 @@ export const BANK_KINDS: BankKind[] = [
       `${amount} kr flyttades från företagskontot till ett annat eget konto (1940). Pengarna är kvar i bolaget.`,
     pattern: /överföring|overforing|sparkonto|placeringskonto|kapitalkonto|till eget konto/i,
     learnable: true,
+    matchedType: "ovrigt",
+  },
+  {
+    // "Privat / gäller inte företaget": företagets pengar gick till något
+    // privat. Ingen kostnad, ingen moms – ägaren blir skyldig bolaget beloppet.
+    // Aldrig inlärbar: ett privat köp ska alltid vara ett medvetet val.
+    key: "privat_kop",
+    label: "Privat köp",
+    hint: "Gäller inte företaget – ägaren är skyldig bolaget pengarna tills de betalas tillbaka",
+    direction: "ut",
+    entries: (amount) => [
+      { account: 2893, debit: amount },
+      { account: FORETAGSKONTO, credit: amount },
+    ],
+    explanation: (amount, counterpart) =>
+      `${amount} kr till ${counterpart} var ett privat köp. Ingen kostnad och ingen moms för bolaget – beloppet ligger som ägarens skuld till bolaget (2893) tills det betalas tillbaka till företagskontot. Betala tillbaka snarast; annars kan Skatteverket se det som lön eller förbjudet lån.`,
+    learnable: false,
     matchedType: "ovrigt",
   },
 

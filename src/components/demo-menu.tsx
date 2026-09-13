@@ -12,7 +12,7 @@ import { buttonClasses, cx } from "./ui";
 /**
  * Demo-menyn bakom företagsraden i navigationen.
  *
- * Demon ska se ut som vanliga Driva: primärnavigationen är identisk och de
+ * Demon ska se ut som vanliga Ferva: primärnavigationen är identisk och de
  * demospecifika åtgärderna – redovisningsvyn, återställ och avsluta – ligger
  * samlade här i stället för som permanenta rader i sidomenyn.
  *
@@ -92,7 +92,7 @@ export function DemoMenu({
           variant === "sidebar" ? "px-2.5" : "px-4"
         )}
       >
-        Utforska Driva med exempeldatan för {title}.
+        Utforska Ferva med exempeldatan för {title}.
       </p>
 
       {showAccountantView ? (

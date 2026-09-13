@@ -25,6 +25,8 @@ import {
 } from "./tax-reduction";
 import { bankKindSuggestion, bookBankTransactionAs, type BankKindSuggestionSource } from "./bank-booking";
 import { bankKindByKey, type BankKindKey } from "../banking/bank-kinds";
+import { assessBankTransaction } from "./bank-suggestion";
+import { decisionFromAssessment, recordSuggestionDecision } from "./suggestion-log";
 
 /**
  * Betalningsmatchning – hjärtat i autopiloten för inbetalningar.
@@ -223,7 +225,7 @@ function kindSuggestion(tx: BankTransaction): PaymentSuggestion | null {
 
 function scoreOutgoingSupplierPayments(tx: BankTransaction): PaymentSuggestion | null {
   // PAYMENT_FILE_CREATED räknas som förväntad utbetalning: filen laddades
-  // upp i internetbanken utanför Driva, så banktransaktionen är första
+  // upp i internetbanken utanför Ferva, så banktransaktionen är första
   // beviset på att betalningen faktiskt genomfördes.
   const open = supplierPayments().filter(
     (p) =>
@@ -452,7 +454,19 @@ export function processIncomingTransaction(txId: string): ProcessTransactionResu
     return { outcome: "skipped" };
   }
 
-  const suggestion = paymentSuggestionForTransaction(tx);
+  // Evidence-first-vakten (bank-suggestion.ts): hur säker matchningen än är
+  // får inget bokföras automatiskt när motparten bär en riskflagga (privat-
+  // risk, restaurang, kontantuttag, överföring till person, utland, okänd
+  // mottagare, ovanligt belopp). Bedömningen nedgraderar då AUTO_EXECUTE till
+  // SUGGEST och säger varför – förslaget står kvar som något människan godkänner.
+  const assessment = assessBankTransaction(tx, paymentSuggestionForTransaction(tx));
+  const suggestion = assessment.payment;
+
+  const logAuto = (finalChoice: string) => {
+    void recordSuggestionDecision(
+      decisionFromAssessment(assessment, { amount: tx.amount, counterpart: tx.counterpart, date: tx.date }, finalChoice, "auto")
+    );
+  };
 
   if (suggestion.outcome === "AUTO_EXECUTE" && suggestion.kind === "supplier_payment" && suggestion.supplierPaymentId) {
     const payment = supplierPayments().find((p) => p.id === suggestion.supplierPaymentId);
@@ -462,6 +476,7 @@ export function processIncomingTransaction(txId: string): ProcessTransactionResu
         bankTransactionId: tx.id,
         matchReason: suggestion.reason,
       });
+      logAuto("supplier_payment");
       return { outcome: "booked", suggestion };
     }
   }
@@ -475,6 +490,7 @@ export function processIncomingTransaction(txId: string): ProcessTransactionResu
         matchReason: suggestion.reason,
         confidence: 1,
       });
+      logAuto("match");
       return { outcome: "booked", suggestion };
     }
     if (suggestion.kind === "tax_reduction_payout" && suggestion.payout) {
@@ -485,6 +501,7 @@ export function processIncomingTransaction(txId: string): ProcessTransactionResu
         bankTransactionId: tx.id,
         matchReason: suggestion.reason,
       });
+      logAuto("tax_reduction_payout");
       return { outcome: "booked", suggestion };
     }
     if (suggestion.kind === "bank_kind" && suggestion.bankKind) {
@@ -503,6 +520,7 @@ export function processIncomingTransaction(txId: string): ProcessTransactionResu
           matchReason: suggestion.reason,
           remember: false,
         });
+        logAuto(suggestion.bankKind);
         return { outcome: "booked", suggestion };
       } catch {
         // T.ex. låst period eller verifikationen hann kopplas av något annat –
@@ -631,7 +649,11 @@ export function suggestedBankBookings(): SuggestedBankBooking[] {
     if (tx.status === "bokford") continue;
     // Kortköp som väntar på kvitto/kategori har sin egen väg (kvittot).
     if (data.expenses.some((e) => e.bankTransactionId === tx.id && e.status !== "bokford")) continue;
-    const suggestion = paymentSuggestionForTransaction(tx);
+    const assessed = assessBankTransaction(tx, paymentSuggestionForTransaction(tx));
+    // Osäkert (kontantuttag, överföring till person, utland …) hör inte hemma
+    // i "bekräfta alla" – där väljer människan bland alternativen rad för rad.
+    if (assessed.tier === "osakert") continue;
+    const suggestion = assessed.payment;
     const label = oneClickLabel(suggestion);
     if (!label) continue;
     rows.push({ txId: tx.id, date: tx.date, counterpart: tx.counterpart, amount: tx.amount, label, suggestion });

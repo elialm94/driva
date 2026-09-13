@@ -39,7 +39,7 @@ const SECTION_LABEL: Record<string, string> = {
   arets_resultat: "Årets resultat",
 };
 
-export function ChartAccountsView({ accounts }: { accounts: ChartAccountRow[] }) {
+export function ChartAccountsView({ accounts, readOnly = false }: { accounts: ChartAccountRow[]; readOnly?: boolean }) {
   const [pending, start] = useTransition();
   const [query, setQuery] = useState("");
   const [number, setNumber] = useState("");
@@ -58,6 +58,7 @@ export function ChartAccountsView({ accounts }: { accounts: ChartAccountRow[] })
 
   return (
     <div className="space-y-4">
+      {readOnly ? null : (
       <Card className="space-y-3 px-5 py-4">
         <p className="text-[15px] font-semibold">Lägg till konto</p>
         <div className="flex flex-wrap items-end gap-2">
@@ -99,6 +100,7 @@ export function ChartAccountsView({ accounts }: { accounts: ChartAccountRow[] })
         </div>
         {error ? <p className="text-[13px] text-danger">{error}</p> : null}
       </Card>
+      )}
 
       <input
         value={query}
@@ -137,7 +139,7 @@ export function ChartAccountsView({ accounts }: { accounts: ChartAccountRow[] })
                 </td>
                 <td className="py-2 pr-3 text-soft">{SECTION_LABEL[a.section] ?? a.section}</td>
                 <td className="py-2 text-right">
-                  {renameId === a.number ? (
+                  {readOnly ? null : renameId === a.number ? (
                     <button
                       type="button"
                       className={buttonClasses("primary", "sm")}

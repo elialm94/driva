@@ -37,7 +37,7 @@ export function RotUsedField({
     <div className="rounded-2xl border border-line/80 px-4 py-3">
       <p className="text-[13px] font-medium text-ink">ROT använt {year}</p>
       <p className="mt-0.5 text-[12px] leading-relaxed text-muted">
-        Det kunden redan fått i ROT hos andra. Driva räknar egna fakturor själv. Kvar att lova: {kr(remainingRot)}.
+        Det kunden redan fått i ROT hos andra. Ferva räknar egna fakturor själv. Kvar att lova: {kr(remainingRot)}.
       </p>
       <div className="mt-2 flex gap-2">
         <input

@@ -1,5 +1,5 @@
 /**
- * Systemvy för Driva Admin: ENDAST verifierbar driftstatus.
+ * Systemvy för Ferva Admin: ENDAST verifierbar driftstatus.
  *
  * Principen är ärlighet: en leverantör vars hälsa inte kan verifieras utan
  * sidoeffekter (Resend, OpenRouter) visas som "Okänd" med konfigurations-
@@ -12,8 +12,15 @@ import { aiConfig, isAiConfigured } from "../ai/provider";
 import { isLiveMailConfigured, mailFromAddress } from "../mail";
 import { db } from "../store";
 import { platformMfaRequired } from "./auth";
-import { listEmailEvents } from "./store";
-import type { EmailEvent } from "./types";
+import { latestOpsRecord, listEmailEvents } from "./store";
+import type { EmailEvent, OpsRecord } from "./types";
+import { isStripeConfigured, stripeConfigProblems, stripeModeHint } from "../billing/config";
+import { billingStore } from "../billing/store";
+import { isTinkConfigured } from "../banking/tink/config";
+import { readFilingConfig } from "../filing/config";
+import { appRelease, isSentryConfigured, sentryClientDsn, sentryServerDsn, sentrySourceMapsEnabled } from "../observability/config";
+import { EXPECTED_MIGRATION_VERSION } from "../storage/schema-version";
+import { backupStatus, type BackupStatus } from "./ops";
 
 export type HealthState = "ok" | "fel" | "okand";
 
@@ -38,6 +45,33 @@ export interface SystemStatus {
     nodeEnv: string;
   };
   mfa: { required: boolean };
+  /** Applikationsversion (release-sträng) och senaste migration i DB vs kod. */
+  version: { release: string; expectedMigration: string };
+  migrations: {
+    applied?: string;
+    expected: string;
+    state: HealthState;
+    /** Migrationer i koden som databasen saknar ⇒ kör `supabase db push`. */
+    behind: boolean;
+    error?: string;
+  };
+  sentry: { configured: boolean; server: boolean; client: boolean; sourceMaps: boolean };
+  tink: { configured: boolean; state: HealthState };
+  filing: { provider: "live" | "unconfigured" | "mock"; configured: boolean };
+  cron: { lastRun?: OpsRecord; ageHours?: number; state: HealthState };
+  inboundMail: { lastEvent?: OpsRecord; state: HealthState };
+  emailTest: { last?: OpsRecord };
+  backup: BackupStatus;
+  webhooks: { queued: number; failed7d: number };
+  stripe: {
+    configured: boolean;
+    mode: "test" | "live" | null;
+    /** Konfigurationsproblem i klartext – aldrig värden. */
+    problems: string[];
+    webhookFailures7d: number;
+    lastEventAt?: string;
+    state: HealthState;
+  };
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -70,13 +104,53 @@ async function aiErrorsLast7d(): Promise<number> {
   return Number(rows[0]?.n ?? 0);
 }
 
-export async function systemStatus(): Promise<SystemStatus> {
-  const since7 = new Date(Date.now() - 7 * DAY_MS).toISOString();
-  const [database, failedEmails, aiErrors] = await Promise.all([
-    dbHealth(),
-    listEmailEvents({ status: "failed", limit: 200 }),
-    aiErrorsLast7d().catch(() => 0),
-  ]);
+async function migrationStatus(): Promise<SystemStatus["migrations"]> {
+  if (!isSupabaseMode()) return { expected: EXPECTED_MIGRATION_VERSION, state: "ok", behind: false, applied: "(JSON-läge)" };
+  try {
+    const client = await sqlClient();
+    const present = await client.query(`select to_regclass('supabase_migrations.schema_migrations') is not null as present`);
+    if (!present[0]?.present) {
+      return {
+        expected: EXPECTED_MIGRATION_VERSION,
+        state: "okand",
+        behind: false,
+        error: "Tabellen supabase_migrations.schema_migrations saknas – migrationer verkar inte köras via Supabase CLI.",
+      };
+    }
+    const rows = await client.query(`select version from supabase_migrations.schema_migrations order by version desc limit 1`);
+    const applied = rows[0]?.version ? String(rows[0].version) : undefined;
+    const behind = !applied || applied < EXPECTED_MIGRATION_VERSION;
+    return { applied, expected: EXPECTED_MIGRATION_VERSION, state: behind ? "fel" : "ok", behind };
+  } catch (e) {
+    return { expected: EXPECTED_MIGRATION_VERSION, state: "okand", behind: false, error: e instanceof Error ? e.message : "okänt fel" };
+  }
+}
+
+export async function systemStatus(now = Date.now()): Promise<SystemStatus> {
+  const since7 = new Date(now - 7 * DAY_MS).toISOString();
+  const [database, failedEmails, aiErrors, stripeEvents, stripeFailures, migrations, lastCron, lastInbound, lastEmailTest, backup, queuedWebhooks] =
+    await Promise.all([
+      dbHealth(),
+      listEmailEvents({ status: "failed", limit: 200 }),
+      aiErrorsLast7d().catch(() => 0),
+      billingStore()
+        .listRecentWebhookEvents(1)
+        .catch(() => []),
+      billingStore()
+        .countWebhookFailuresSince(since7)
+        .catch(() => 0),
+      migrationStatus(),
+      latestOpsRecord("cron_run").catch(() => null),
+      latestOpsRecord("email_inbound").catch(() => null),
+      latestOpsRecord("email_test_outbound").catch(() => null),
+      backupStatus(now),
+      billingStore()
+        .countWebhookQueued()
+        .catch(() => 0),
+    ]);
+  const cronAgeHours = lastCron ? (now - new Date(lastCron.createdAt).getTime()) / (60 * 60 * 1000) : undefined;
+  const filingConfigured = readFilingConfig() !== null;
+  const stripeConfigured = isStripeConfigured();
   const emailFailures7d = failedEmails.filter((e) => e.createdAt >= since7).length;
   const ai = aiConfig();
   const aiConfiguredNow = isAiConfigured();
@@ -109,6 +183,41 @@ export async function systemStatus(): Promise<SystemStatus> {
       nodeEnv: process.env.NODE_ENV ?? "development",
     },
     mfa: { required: platformMfaRequired() },
+    version: { release: appRelease(), expectedMigration: EXPECTED_MIGRATION_VERSION },
+    migrations,
+    sentry: {
+      configured: isSentryConfigured(),
+      server: Boolean(sentryServerDsn()),
+      client: Boolean(sentryClientDsn()),
+      sourceMaps: sentrySourceMapsEnabled(),
+    },
+    tink: { configured: isTinkConfigured(), state: "okand" },
+    filing: {
+      provider: filingConfigured ? "live" : isSupabaseMode() ? "unconfigured" : "mock",
+      configured: filingConfigured,
+    },
+    cron: {
+      lastRun: lastCron ?? undefined,
+      ageHours: cronAgeHours === undefined ? undefined : Math.round(cronAgeHours * 10) / 10,
+      // Påminnelsecronen kör dagligen: >36 h utan körning eller senaste = fel ⇒ Fel.
+      state: !lastCron ? "okand" : lastCron.status === "fel" || (cronAgeHours ?? 0) > 36 ? "fel" : "ok",
+    },
+    inboundMail: {
+      lastEvent: lastInbound ?? undefined,
+      state: !lastInbound ? "okand" : lastInbound.status === "ok" ? "ok" : "fel",
+    },
+    emailTest: { last: lastEmailTest ?? undefined },
+    backup,
+    webhooks: { queued: queuedWebhooks, failed7d: stripeFailures },
+    stripe: {
+      configured: stripeConfigured,
+      mode: stripeModeHint(),
+      problems: stripeConfigProblems(),
+      webhookFailures7d: stripeFailures,
+      lastEventAt: stripeEvents[0]?.receivedAt,
+      // Ingen ping utan sidoeffekt: konfigurerad + inga färska webhookfel ⇒ Okänd.
+      state: !stripeConfigured ? "okand" : stripeFailures > 0 ? "fel" : "okand",
+    },
   };
 }
 

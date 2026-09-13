@@ -8,8 +8,12 @@ import {
 } from "@/app/admin/actions";
 import { ActionButton, PendingButton, StateForm, adminInputClass } from "@/components/admin/forms";
 import { AdminBadge, AdminCard, AdminTable, Th, Td, datumTidKort } from "@/components/admin/ui";
-import { getPlatformAdmin } from "@/lib/platform/auth";
+import { resetAdminMfaAction } from "@/app/admin/mfa-actions";
+import { ResetMfaForm } from "@/app/admin/mfa/mfa-panel";
+import { getPlatformAdmin, platformMfaRequired } from "@/lib/platform/auth";
 import { listAdminTeam } from "@/lib/platform/admins";
+import { mfaOverviewForAdmins } from "@/lib/platform/mfa";
+import { isSupabaseMode } from "@/lib/storage/config";
 import { platformRoleLabel, SUPER_ADMIN } from "@/lib/platform/types";
 
 export const metadata = { title: "Admins" };
@@ -34,6 +38,9 @@ export default async function AdminTeamPage() {
   }
 
   const { admins, invitations } = await listAdminTeam();
+  const mfa = await mfaOverviewForAdmins(admins);
+  const mfaRequired = platformMfaRequired();
+  const supabase = isSupabaseMode();
   const activeSupers = admins.filter((a) => a.role === SUPER_ADMIN && !a.disabledAt).length;
   const openInvitations = invitations.filter((i) => i.status === "pending" || i.status === "expired");
 
@@ -55,7 +62,7 @@ export default async function AdminTeamPage() {
               type="email"
               name="email"
               required
-              placeholder="namn@driva.se"
+              placeholder="namn@ferva.se"
               className={adminInputClass}
             />
           </label>
@@ -76,11 +83,13 @@ export default async function AdminTeamPage() {
               <Th>Roll</Th>
               <Th>Sedan</Th>
               <Th>Status</Th>
+              <Th>MFA</Th>
               <Th />
             </>
           }
         >
           {admins.map((a) => {
+            const m = mfa.get(a.id);
             const isSelf = a.userId === ctx.admin.userId;
             const lastSuper = a.role === SUPER_ADMIN && !a.disabledAt && activeSupers <= 1;
             return (
@@ -106,7 +115,23 @@ export default async function AdminTeamPage() {
                   )}
                 </Td>
                 <Td>
+                  {!supabase ? (
+                    <AdminBadge tone="neutral">Ej i JSON-läge</AdminBadge>
+                  ) : !m ? (
+                    <AdminBadge tone="neutral">Okänd (service role saknas)</AdminBadge>
+                  ) : m.error ? (
+                    <AdminBadge tone="warn">Okänd</AdminBadge>
+                  ) : m.verifiedFactors > 0 ? (
+                    <AdminBadge tone="ok">TOTP ({m.verifiedFactors})</AdminBadge>
+                  ) : (
+                    <AdminBadge tone={mfaRequired ? "danger" : "warn"}>Ej registrerad</AdminBadge>
+                  )}
+                </Td>
+                <Td>
                   <div className="flex flex-wrap justify-end gap-1.5">
+                    {supabase && m && !m.error && m.verifiedFactors > 0 && !isSelf ? (
+                      <ResetMfaForm adminId={a.id} action={resetAdminMfaAction} />
+                    ) : null}
                     {a.disabledAt ? (
                       <ActionButton action={enableAdminAction} fields={{ adminId: a.id }}>
                         Återaktivera
@@ -120,7 +145,7 @@ export default async function AdminTeamPage() {
                         <ActionButton
                           action={disableAdminAction}
                           fields={{ adminId: a.id }}
-                          confirmText={`Inaktivera ${a.email}? Personen förlorar åtkomsten till Driva Admin direkt.`}
+                          confirmText={`Inaktivera ${a.email}? Personen förlorar åtkomsten till Ferva Admin direkt.`}
                         >
                           Inaktivera
                         </ActionButton>
@@ -192,7 +217,9 @@ export default async function AdminTeamPage() {
         Skydd: Admin kan aldrig skapa, inaktivera, ta bort eller nedgradera en Superadmin – varken
         via UI:t eller genom direkta serveranrop. Den sista aktiva Superadmin kan inte tas bort
         eller inaktiveras (spärr i tjänstelagret och databastriggern). Varje teamändring skrivs till
-        den oföränderliga auditloggen.
+        den oföränderliga auditloggen. MFA: varje admin registrerar sin egen autentiseringsapp under{" "}
+        <code>/admin/mfa</code>; en Superadmin kan återställa någon annans faktorer (förlorad enhet)
+        med angivet skäl – personen tvingas då registrera på nytt.
       </p>
     </div>
   );

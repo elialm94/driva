@@ -14,7 +14,8 @@ import {
   daysOverdue,
   quoteTotals,
 } from "./data";
-import { paymentSuggestionForTransaction, suggestedBankBookings } from "./payment-matching";
+import { suggestedBankBookings } from "./payment-matching";
+import { evaluateBankTransaction } from "./bank-suggestion";
 import { alreadyBookedCandidates, bankCounterpartRuleFor, type AlreadyBookedOption, type BankKindSuggestionSource } from "./bank-booking";
 import { bankKindByKey, directionOf, type BankDirection, type BankKindKey } from "../banking/bank-kinds";
 import { bankReconciliation } from "../accounting/reconciliation";
@@ -626,7 +627,8 @@ function bankRowAction(tx: BankTransaction): BankRowAction | undefined {
   if (expense?.status === "behover_svar" && expense.question) {
     return { kind: "question", expenseId: expense.id, text: expense.question.text, options: expense.question.options };
   }
-  const suggestion = paymentSuggestionForTransaction(tx);
+  const assessed = evaluateBankTransaction(tx);
+  const suggestion = assessed.payment;
   switch (suggestion.kind) {
     case "match":
       return {
@@ -678,8 +680,9 @@ function bankRowAction(tx: BankTransaction): BankRowAction | undefined {
     case "bank_kind": {
       const def = suggestion.bankKind ? bankKindByKey(suggestion.bankKind) : undefined;
       if (!def) return { kind: "categorize", reason: suggestion.reason };
-      // Lön utan körd lönekörning, "redan bokförd" utan träff: människan väljer.
-      if (suggestion.outcome === "REQUIRES_USER" || def.href || def.key === "kundbetalning" || def.key === "kortkop") {
+      // Lön utan körd lönekörning, "redan bokförd" utan träff, Osäkert
+      // (kontantuttag, överföring till person, utland): människan väljer.
+      if (suggestion.outcome === "REQUIRES_USER" || assessed.tier === "osakert" || def.href || def.key === "kundbetalning" || def.key === "kortkop") {
         return {
           kind: "categorize",
           reason: suggestion.reason,

@@ -1,10 +1,10 @@
 # Bankfiler för leverantörsbetalningar (pain.001)
 
-Driva genererar betalningsfiler enligt **ISO 20022 pain.001.001.03**
+Ferva genererar betalningsfiler enligt **ISO 20022 pain.001.001.03**
 (CustomerCreditTransferInitiationV03) – den version svenska banker (SEB,
 Handelsbanken, Swedbank, Nordea) tar emot för filbaserade leverantörs-
-betalningar. V1 är **endast filexport**: Driva skapar filen, användaren
-laddar upp den i sin internetbank och godkänner betalningen där. Driva
+betalningar. V1 är **endast filexport**: Ferva skapar filen, användaren
+laddar upp den i sin internetbank och godkänner betalningen där. Ferva
 påstår aldrig att banken tagit emot något ("Bankfil skapad" ≠ "Skickad
 till bank" ≠ "Betald").
 

@@ -48,7 +48,9 @@ import {
   uploadReceiptAction,
   prepareSupplierPaymentAction,
 } from "@/app/actions";
-import { declareVatPeriodAction } from "@/app/bokforing-actions";
+import { declareVatPeriodAction, markExpensePrivateAction } from "@/app/bokforing-actions";
+import { PRIVATE_ANSWER } from "@/lib/banking/merchants";
+import type { DecisionCard } from "@/lib/services/decision-cards";
 import { closeAllReadyMonthsAction } from "@/app/periodstangning-actions";
 import { RECEIPT_MAX_BYTES, receiptUploadForm } from "@/lib/receipts/read-file";
 import { UPLOAD_MAX_FORMATS } from "@/lib/uploads/limits";
@@ -488,20 +490,27 @@ function ReminderCtas({
   );
 }
 
-type AttentionToast = {
+export type AttentionToast = {
   id: string;
   item: BusinessAction;
   text: string;
   undo?: RowUndo;
 };
 
-function AttentionRow({
+/**
+ * En rad i Behöver din uppmärksamhet – ELLER ett beslutskort i enkel
+ * bokföring (`decision`). Knapparna är exakt desamma; bara ramen skiljer:
+ * kortet ställer vardagsfrågan, visar vad som hänt, Fervas förslag och varför,
+ * och lägger till "Privat / gäller inte företaget" när det är ett giltigt svar.
+ */
+export function AttentionRow({
   item,
   onResolved,
   toast,
   onToast,
   onClearToast,
   surface = "owner",
+  decision,
 }: {
   item: BusinessAction;
   onResolved: (id: string) => void;
@@ -509,11 +518,16 @@ function AttentionRow({
   onToast: (text: string, undo?: RowUndo) => void;
   onClearToast: () => void;
   surface?: "owner" | "accountant";
+  decision?: DecisionCard;
 }) {
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [privateOpen, setPrivateOpen] = useState(false);
+  const [howOpen, setHowOpen] = useState(false);
+  // "Använd samma val nästa gång?" – regeln sparas bara när rutan är ikryssad.
+  const [rememberAnswer, setRememberAnswer] = useState(true);
   const [undoing, setUndoing] = useState(false);
   // Skapad bankfil: raden är löst men nedladdningen ska vara ett klick bort.
   const [createdFile, setCreatedFile] = useState<{ fileId: string; filename: string } | null>(null);
@@ -635,8 +649,90 @@ function AttentionRow({
     }
   }
 
+  const privateDecision = surface === "accountant" ? undefined : decision?.privateDecision;
+  const privateConfirm: ActionConfirm | null = privateDecision
+    ? {
+        title: "Privat – gäller inte företaget?",
+        rows: [
+          { label: "Händelse", value: decision?.happened ?? item.subtitle },
+          {
+            label: "Så bokförs det",
+            value:
+              privateDecision.kind === "bank"
+                ? "Ingen kostnad, ingen moms. Beloppet blir en skuld från dig till bolaget (2893) tills du betalar tillbaka till företagskontot."
+                : "Ingen kostnad och ingen moms. Betalades det med företagets pengar blir beloppet en skuld från dig till bolaget.",
+          },
+        ],
+        confirmLabel: "Ja, privat",
+      }
+    : null;
+
+  function executePrivate() {
+    if (!privateDecision) return;
+    startTransition(async () => {
+      const result =
+        privateDecision.kind === "expense"
+          ? await markExpensePrivateAction(privateDecision.expenseId)
+          : await bookBankTransactionAsAction(privateDecision.txId, "privat_kop", { remember: false });
+      if (result.ok === false) setError(result.error);
+      else finish("Markerat som privat");
+      router.refresh();
+    });
+  }
+
   const compact = surface === "accountant";
-  const body = (
+  const body = decision ? (
+    <div className="min-w-0 flex-1" data-decision-tier={decision.tier}>
+      <p className="text-[16px] font-semibold leading-snug text-ink">{decision.question}</p>
+      <dl className="mt-2 space-y-1 text-[13.5px] leading-relaxed">
+        <div className="flex gap-2">
+          <dt className="w-24 shrink-0 text-muted">Det här hände</dt>
+          <dd className="min-w-0 text-soft">{decision.happened}</dd>
+        </div>
+        {decision.suggestion ? (
+          <div className="flex gap-2">
+            <dt className="w-24 shrink-0 text-muted">Fervas förslag</dt>
+            <dd className="min-w-0 font-medium text-ink">{decision.suggestion}</dd>
+          </div>
+        ) : null}
+        {decision.why ? (
+          <div className="flex gap-2">
+            <dt className="w-24 shrink-0 text-muted">Därför</dt>
+            <dd className="min-w-0 text-soft">{decision.why}</dd>
+          </div>
+        ) : null}
+        {decision.uncertainty ? (
+          <div className="flex gap-2">
+            <dt className="w-24 shrink-0 text-muted">Osäkert</dt>
+            <dd className="min-w-0 text-soft">{decision.uncertainty}</dd>
+          </div>
+        ) : null}
+      </dl>
+      {decision.group && decision.group.count > 1 ? (
+        <ul className="mt-2 space-y-0.5 text-[12.5px] text-soft" aria-label="Transaktionerna i gruppen">
+          {decision.group.actions.map((a) => (
+            <li key={a.id} className="truncate">
+              {a.title.replace(/^Bokför /u, "").replace(/ som .+\?$/u, "")}
+              {a.subtitle ? ` · ${a.subtitle.split(" · ")[0]}` : ""}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {decision.howBooked ? (
+        <div className="mt-2">
+          <button
+            type="button"
+            aria-expanded={howOpen}
+            onClick={() => setHowOpen((v) => !v)}
+            className="inline-flex items-center gap-1 text-[12.5px] font-medium text-muted hover:text-ink"
+          >
+            Så bokförs det {howOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+          </button>
+          {howOpen ? <p className="mt-1 text-[13px] leading-relaxed text-soft">{decision.howBooked}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  ) : (
     <div className="min-w-0 flex-1">
       {item.clientName ? (
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{item.clientName}</p>
@@ -665,9 +761,13 @@ function AttentionRow({
         <div className={cx("mt-0.5 flex shrink-0 items-center justify-center rounded-xl", compact ? "size-7" : "size-9", cls)}>
           <Icon className="size-4.5" />
         </div>
-        <AppLink href={item.href} className="min-w-0 flex-1">
-          {body}
-        </AppLink>
+        {decision ? (
+          body
+        ) : (
+          <AppLink href={item.href} className="min-w-0 flex-1">
+            {body}
+          </AppLink>
+        )}
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2 pl-13 sm:justify-end sm:pl-0">
         {doneText ? (
@@ -822,18 +922,38 @@ function AttentionRow({
               </button>
             ) : null}
             {cta?.type === "answerQuestion"
-              ? cta.options.map((opt, oi) => (
-                  <button
-                    key={opt}
-                    data-choice-index={oi + 1}
-                    className={cx(buttonClasses("secondary", "sm"), compact ? "h-8 text-[12px]" : "max-lg:min-h-11")}
-                    disabled={isPending}
-                    onClick={() => run(() => answerExpenseQuestionAction(cta.expenseId, opt), "Bokfört")}
-                  >
-                    {opt}
-                  </button>
-                ))
+              ? cta.options
+                  // Privat har en egen knapp med bekräftelse när kortet vet vad valet gör.
+                  .filter((opt) => !(privateDecision && opt === PRIVATE_ANSWER))
+                  .map((opt, oi) => (
+                    <button
+                      key={opt}
+                      data-choice-index={oi + 1}
+                      className={cx(buttonClasses("secondary", "sm"), compact ? "h-8 text-[12px]" : "max-lg:min-h-11")}
+                      disabled={isPending}
+                      onClick={() =>
+                        run(
+                          () => answerExpenseQuestionAction(cta.expenseId, opt, { remember: rememberAnswer }),
+                          rememberAnswer && opt !== PRIVATE_ANSWER ? "Bokfört – Ferva föreslår samma sak nästa gång" : "Bokfört"
+                        )
+                      }
+                    >
+                      {opt}
+                    </button>
+                  ))
               : null}
+            {cta?.type === "answerQuestion" && decision && !compact ? (
+              <label className="flex w-full items-center gap-2 text-[12.5px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={rememberAnswer}
+                  onChange={(e) => setRememberAnswer(e.target.checked)}
+                  data-remember-answer
+                  className="size-3.5 accent-ink"
+                />
+                Använd samma val nästa gång för den här leverantören
+              </label>
+            ) : null}
             {cta?.type === "confirmPaymentMatch" ? (
               <button
                 className={cx(buttonClasses("primary", "sm"), "max-lg:min-h-11")}
@@ -895,17 +1015,41 @@ function AttentionRow({
                 data-book-bank-kind={cta.bankKind}
                 onClick={() =>
                   startTransition(async () => {
-                    const result = await bookBankTransactionAsAction(cta.txId, cta.bankKind, {
-                      verificationId: cta.verificationId,
-                      remember: true,
-                    });
-                    if (result.ok === false) setError(result.error);
-                    else finish(result.learned === "auto" ? "Bokförd – sker automatiskt nästa gång" : "Bokförd");
+                    // Grupperat beslutskort: varje transaktion bokförs för sig –
+                    // ett fel stoppar resten och visas, det som hann bokföras står.
+                    const targets = decision?.group && decision.group.count > 1 ? decision.group.actions : [item];
+                    let booked = 0;
+                    let learned: "suggest" | "auto" | undefined;
+                    for (const target of targets) {
+                      const targetCta = target.cta?.type === "bookBankKind" ? target.cta : cta;
+                      const result = await bookBankTransactionAsAction(targetCta.txId, targetCta.bankKind, {
+                        verificationId: targetCta.verificationId,
+                        remember: true,
+                      });
+                      if (result.ok === false) {
+                        setError(booked > 0 ? `${booked} av ${targets.length} bokfördes. ${result.error}` : result.error);
+                        router.refresh();
+                        return;
+                      }
+                      booked += 1;
+                      learned = result.learned ?? learned;
+                    }
+                    finish(
+                      targets.length > 1
+                        ? `${booked} bokförda${learned === "auto" ? " – sker automatiskt nästa gång" : ""}`
+                        : learned === "auto"
+                          ? "Bokförd – sker automatiskt nästa gång"
+                          : "Bokförd"
+                    );
                     router.refresh();
                   })
                 }
               >
-                {isPending ? "Bokför …" : cta.label}
+                {isPending
+                  ? "Bokför …"
+                  : decision?.group && decision.group.count > 1
+                    ? `Godkänn alla ${decision.group.count}`
+                    : cta.label}
               </button>
             ) : null}
             {cta && isPaymentDetailsCta(cta) ? (
@@ -976,11 +1120,45 @@ function AttentionRow({
                 {isPending ? "Startar …" : cta.label}
               </button>
             ) : null}
+            {privateConfirm ? (
+              <button
+                type="button"
+                className={cx(buttonClasses("ghost", "sm"), "max-lg:min-h-11 text-soft")}
+                disabled={isPending}
+                data-private-choice
+                aria-label={`Privat, gäller inte företaget – ${item.title}`}
+                onClick={() => setPrivateOpen(true)}
+              >
+                Privat / gäller inte företaget
+              </button>
+            ) : null}
+            {decision ? (
+              <AppLink
+                href={decision.drilldown.href}
+                className={cx(buttonClasses("ghost", "sm"), "max-lg:min-h-11 text-soft")}
+                aria-label={`${decision.drilldown.label} – ${item.title}`}
+              >
+                {decision.drilldown.label}
+              </AppLink>
+            ) : null}
             {error ? <span className="text-[13px] font-medium text-danger">{error}</span> : null}
             <RowMenu item={item} controls={controls} disabled={isPending} run={run} runSnooze={runSnooze} />
           </>
         )}
       </div>
+
+      {privateConfirm ? (
+        <ConfirmDialog
+          open={privateOpen}
+          onClose={() => setPrivateOpen(false)}
+          confirm={privateConfirm}
+          note="Betala tillbaka till företagskontot så snart du kan – annars kan Skatteverket se det som lön."
+          onConfirm={() => {
+            setPrivateOpen(false);
+            executePrivate();
+          }}
+        />
+      ) : null}
 
       {/* Bekräftelse före externa utskick / pengabokningar – innehåll från motorn. */}
       {item.confirm ? (
@@ -1140,7 +1318,7 @@ export function AttentionEmptyCard() {
     <Card className="px-6 py-5">
       <p className="text-[15px] font-medium text-ink">✓ Allt är under kontroll</p>
       <p className="mt-1 text-[14px] text-soft">
-        Driva håller koll och säger till när något behöver din uppmärksamhet.
+        Ferva håller koll och säger till när något behöver din uppmärksamhet.
       </p>
     </Card>
   );

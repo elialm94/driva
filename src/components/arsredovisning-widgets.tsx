@@ -90,7 +90,7 @@ export function NarrativeForm({
     <Card className="px-6 py-5">
       <h3 className="text-[15px] font-semibold">Förvaltningsberättelsen</h3>
       <p className="mt-1 text-[13px] leading-relaxed text-soft">
-        Driva skriver ett utkast ur bokföringen, men verksamheten och årets händelser är bolagets egna ord. Skriv om dem
+        Ferva skriver ett utkast ur bokföringen, men verksamheten och årets händelser är bolagets egna ord. Skriv om dem
         så att en utomstående läsare förstår vad bolaget gör.
       </p>
 
@@ -175,7 +175,7 @@ export function NarrativeForm({
 }
 
 /**
- * Underskrifterna. Driva känner inte styrelsen – den står i bolagsordningen och
+ * Underskrifterna. Ferva känner inte styrelsen – den står i bolagsordningen och
  * hos Bolagsverket, inte i bokföringen – så listan fylls i här. Årsredovisningen
  * skrivs under av samtliga styrelseledamöter och av VD.
  */
@@ -223,7 +223,7 @@ export function SignatoriesForm({
       <h3 className="text-[15px] font-semibold">Underskrifter</h3>
       <p className="mt-1 text-[13px] leading-relaxed text-soft">
         Årsredovisningen skrivs under av samtliga styrelseledamöter och av verkställande direktör om bolaget har en.
-        Driva känner inte styrelsen, så ange den här – namnen står på dokumentet.
+        Ferva känner inte styrelsen, så ange den här – namnen står på dokumentet.
       </p>
 
       <div className="mt-4 space-y-3">

@@ -173,7 +173,7 @@ async function main() {
       await check("utloggad / visar landningssidan med all nyckelcopy", async () => {
         const t = await text(page);
         for (const needle of [
-          "Driva ditt företag. Inte administrationen.",
+          "Ferva ditt företag. Inte administrationen.",
           "Testa gratis i 14 dagar",
           "Se demo",
           "199 kr/mån",
@@ -188,7 +188,7 @@ async function main() {
       });
       await check("SEO-titel och beskrivning", async () => {
         const title = await page.title();
-        assert(title.includes("Driva – mindre administration"), `titel: ${title}`);
+        assert(title.includes("Ferva – mindre administration"), `titel: ${title}`);
         const desc = await page.$eval('meta[name="description"]', (el) => el.getAttribute("content") ?? "");
         assert(desc.includes("Testa gratis i 14 dagar"), `description: ${desc}`);
       });
@@ -471,7 +471,7 @@ async function main() {
       await check("Avsluta demo tar bort sessionens fil och kakan", async () => {
         await gotoOk(page, `${BASE}/`);
         await clickByText(page, "button", "Avsluta demo");
-        await waitForText(page, "Driva ditt företag. Inte administrationen.", 30000);
+        await waitForText(page, "Ferva ditt företag. Inte administrationen.", 30000);
         assert((await demoCookie(ctxA)) === null, "driva_demo-kakan finns kvar efter Avsluta demo");
         assert(!fs.existsSync(sessionFile(sesA)), "A:s sessionsfil finns kvar efter Avsluta demo");
         assert(fs.existsSync(sessionFile(sesB)), "B:s fil försvann när A avslutade!");
@@ -511,7 +511,7 @@ async function main() {
         });
         await gotoOk(page, `${BASE}/kunder`);
         assert(new URL(page.url()).pathname === "/", `hamnade på ${page.url()}`);
-        assert(has(await text(page), "Driva ditt företag. Inte administrationen."), "landningssidan visas inte");
+        assert(has(await text(page), "Ferva ditt företag. Inte administrationen."), "landningssidan visas inte");
         assert((await demoCookie(ctx)) === null, "den utgångna kakan rensades inte");
         await page.close();
         await ctx.close();
