@@ -925,6 +925,79 @@ async function main() {
     });
   });
 
+  console.log("\nAvslutslagret genom adaptern (migration 48):");
+  await check("ändring → godkännande → avslutsutkast → allokeringar och kundlänk rundresas och isoleras", async () => {
+    const { createJob } = await import("../src/lib/services/jobs");
+    const { addJobMaterial, actualEntries, registerJobTime } = await import("../src/lib/services/job-work");
+    const { approveJobChange, createJobChange, sendJobChange, getJobChange } = await import("../src/lib/services/job-changes");
+    const { createCloseoutInvoiceDraft, setBillingDeferral, completeJobCloseout, closeoutBasis } = await import(
+      "../src/lib/services/closeout"
+    );
+    const { liveAllocationsForJob, sourceBillingState } = await import("../src/lib/services/billing-allocation");
+    const { enableCustomerShare, getJobByShareToken } = await import("../src/lib/services/customer-share");
+    let jobId = "";
+    let changeId = "";
+    let changeToken = "";
+    let materialId = "";
+    let draftId = "";
+    let shareToken = "";
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      const customer = db().customers[0];
+      const job = createJob({ customerId: customer.id, title: "Adapter-avslut" });
+      jobId = job.id;
+      const time = registerJobTime(job.id, { hours: 3, unitPrice: 600, description: "Montering" });
+      time.isExtra = true;
+      const material = addJobMaterial(job.id, { description: "Ekplank", qty: 1, unitPrice: 3200 });
+      material.isExtra = true;
+      materialId = material.id;
+      const change = sendJobChange(
+        createJobChange(job.id, {
+          title: "Extra handledare",
+          description: "Kunden vill ha handledare på båda sidor.",
+          // Avsiktligt utan enhet: tjänsten ska sätta "st" så att raden går ner i databasen.
+          lines: [{ id: "c-adapter-1", kind: "arbete", description: "Handledare", qty: 4, unitPrice: 600, vatRate: 25 } as DocLine],
+        }).id
+      );
+      changeId = change.id;
+      changeToken = change.token;
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      const approved = approveJobChange({ token: changeToken, name: "Anna A" });
+      assert.equal(approved.change.status, "godkand");
+      assert.ok(approved.approval?.contentHash, "godkännandet bär hashen");
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      setBillingDeferral(jobId, { sourceType: "work_entry", sourceId: materialId }, "hantera_senare", "Väntar på kvitto");
+      const draft = createCloseoutInvoiceDraft(jobId, { mode: "lopande" });
+      draftId = draft.id;
+      completeJobCloseout(jobId, { mode: "lopande", invoiceId: draft.id });
+      shareToken = enableCustomerShare(jobId, { closeoutSummary: true }).token;
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const change = getJobChange(changeId);
+      assert.equal(change?.status, "godkand");
+      assert.equal(change?.approval?.approvedByName, "Anna A");
+      const allocations = liveAllocationsForJob(jobId);
+      assert.ok(allocations.length >= 2, `tid + ändringsrad ska ha allokeringar (fick ${allocations.length})`);
+      assert.ok(allocations.every((a) => a.invoiceId === draftId && a.status === "draft"));
+      assert.equal(sourceBillingState({ sourceType: "change_line", sourceId: "c-adapter-1" }).status, "draft");
+      assert.equal(sourceBillingState({ sourceType: "work_entry", sourceId: materialId }).status, "unbilled", "uppskjutet material är inte på utkastet");
+      const basis = closeoutBasis(jobId);
+      assert.equal(basis.items.find((i) => i.sourceId === materialId)?.state, "hantera_senare", "beslutet överlevde rundresan");
+      const job = db().jobs.find((j) => j.id === jobId)!;
+      assert.ok(job.closeout?.completedAt, "avslutet är sparat");
+      assert.ok(job.closeout?.events.some((e) => e.kind === "fakturautkast_skapat"));
+      assert.equal(job.customerShare?.closeoutSummary, true);
+      assert.equal(getJobByShareToken(shareToken)?.id, jobId);
+      assert.equal(actualEntries(jobId).length, 2);
+    });
+    await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {
+      assert.equal((db().jobChanges ?? []).length, 0, "B ser inga av A:s ändringar");
+      assert.equal((db().billingAllocations ?? []).length, 0, "B ser inga av A:s allokeringar");
+      assert.equal(getJobByShareToken(shareToken), undefined, "B kan inte slå upp A:s kundlänk");
+    });
+  });
+
   console.log("\nTenantisolering genom adaptern:");
   await check("företag B ser ingenting av företag A", async () => {
     await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {

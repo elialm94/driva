@@ -219,6 +219,7 @@ function cleanLines(lines: DocLine[]): DocLine[] {
         ...l,
         id: l.id || uid(),
         description: l.description.trim(),
+        unit: typeof l.unit === "string" && l.unit.trim() ? l.unit.trim() : "st",
         qty: Number.isFinite(l.qty) ? l.qty : 0,
         unitPrice: Number.isFinite(l.unitPrice) ? l.unitPrice : 0,
         sourceKind: undefined,

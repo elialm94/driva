@@ -8,7 +8,6 @@ import { reverseChargeAppliesTo } from "@/lib/invoices/reverse-charge";
 import {
   billableChangeLines,
   getJobChange,
-  jobChangeDisplayStatus,
   jobChangeRot,
   jobChangeStatusLabel,
   jobChangeStatusTone,

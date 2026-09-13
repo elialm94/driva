@@ -192,4 +192,15 @@ describe("Ändringar och tillägg med kundgodkännande", () => {
     );
     assert.equal(db().invoices.length, 1);
   });
+
+  it("rad utan enhet får 'st' så att fakturaraden alltid går ner i databasen (unit not null)", () => {
+    const job = jobWithQuote();
+    const c = createJobChange(job.id, {
+      title: "Utan enhet",
+      description: "",
+      lines: [{ id: "u1", kind: "arbete", description: "Handledare", qty: 4, unitPrice: 600, vatRate: 25 } as DocLine, extra({ unit: " tim " })],
+    });
+    assert.equal(c.lines[0].unit, "st");
+    assert.equal(c.lines[1].unit, "tim");
+  });
 });

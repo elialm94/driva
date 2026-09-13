@@ -2014,6 +2014,123 @@ async function main() {
   });
 
   // ------------------------------------------------------------------
+  // Avslutslagret (migration 48): allokering, ändringar, kundlänk
+  // ------------------------------------------------------------------
+  console.log("\nAvslutslagret (migration 48) – allokering, ändringar, kundlänk:");
+
+  await asSuperuser();
+  await db.exec(`
+    insert into public.jobs (id, business_id, customer_id, title, description, status, checklist, notes, created_at, share_token) values
+      ('job-a48', '${A}', 'cust-a1', 'Altan A', '', 'pagar', '[]'::jsonb, '', now(), 'share-a48'),
+      ('job-b48', '${B}', 'cust-b1', 'Altan B', '', 'pagar', '[]'::jsonb, '', now(), null);
+    insert into public.invoices (id, business_id, customer_id, type, status, issue_date, due_date, payment_terms_days, token, created_at)
+      values ('inv-a48', '${A}', 'cust-a1', 'faktura', 'utkast', current_date, current_date + 30, 30, 'tok-inv-a48', now()),
+             ('inv-a48b', '${A}', 'cust-a1', 'faktura', 'utkast', current_date, current_date + 30, 30, 'tok-inv-a48b', now());
+  `);
+
+  await asApp(A);
+  await expectOk(db, "tenant A allokerar en registrerad post till en fakturarad (utkast)", () =>
+    db.query(
+      `insert into public.billing_allocations (id, business_id, job_id, source_type, source_id, invoice_id, invoice_line_id, amount_excl_vat, status)
+       values ('ba-1', '${A}', 'job-a48', 'work_entry', 'jwe-48', 'inv-a48', 'line-1', 3200, 'draft')`
+    )
+  );
+  await expectError(db, "samma källa kan inte ligga levande på två fakturarader (dubbelfakturering)", "billing_allocations_live_source_uq", () =>
+    db.query(
+      `insert into public.billing_allocations (id, business_id, job_id, source_type, source_id, invoice_id, invoice_line_id, amount_excl_vat, status)
+       values ('ba-2', '${A}', 'job-a48', 'work_entry', 'jwe-48', 'inv-a48b', 'line-9', 3200, 'draft')`
+    )
+  );
+  await expectError(db, "en fakturarad bär högst en levande allokering", "billing_allocations_live_line_uq", () =>
+    db.query(
+      `insert into public.billing_allocations (id, business_id, job_id, source_type, source_id, invoice_id, invoice_line_id, amount_excl_vat, status)
+       values ('ba-3', '${A}', 'job-a48', 'work_entry', 'jwe-other', 'inv-a48', 'line-1', 100, 'draft')`
+    )
+  );
+  await expectError(db, "released kräver released_at (och omvänt)", "billing_allocations_release_consistent", () =>
+    db.query(
+      `insert into public.billing_allocations (id, business_id, job_id, source_type, source_id, invoice_id, invoice_line_id, amount_excl_vat, status)
+       values ('ba-4', '${A}', 'job-a48', 'manual', 'm-1', 'inv-a48b', 'line-4', 100, 'released')`
+    )
+  );
+  await expectOk(db, "kastat utkast släpper källan: därefter får den allokeras igen", async () => {
+    await db.query(
+      `update public.billing_allocations set status = 'released', released_at = now(), release_reason = 'utkast_kastat' where id = 'ba-1'`
+    );
+    await db.query(
+      `insert into public.billing_allocations (id, business_id, job_id, source_type, source_id, invoice_id, invoice_line_id, amount_excl_vat, status)
+       values ('ba-5', '${A}', 'job-a48', 'work_entry', 'jwe-48', 'inv-a48b', 'line-9', 3200, 'draft')`
+    );
+  });
+  await expectError(db, "okänd källtyp avvisas", "source_type", () =>
+    db.query(
+      `insert into public.billing_allocations (id, business_id, job_id, source_type, source_id, invoice_id, invoice_line_id, amount_excl_vat, status)
+       values ('ba-6', '${A}', 'job-a48', 'kaffe', 'x', 'inv-a48b', 'line-6', 1, 'draft')`
+    )
+  );
+  await expectError(db, "tenant A kan inte allokera i B:s företag", "row-level security", () =>
+    db.query(
+      `insert into public.billing_allocations (id, business_id, job_id, source_type, source_id, invoice_id, invoice_line_id, amount_excl_vat, status)
+       values ('ba-7', '${B}', 'job-b48', 'manual', 'm-b', 'inv-a48b', 'line-7', 1, 'draft')`
+    )
+  );
+
+  await expectOk(db, "tenant A skapar ett ändringsutkast", () =>
+    db.query(
+      `insert into public.job_changes (id, business_id, job_id, customer_id, number, status, title, lines, token)
+       values ('chg-a48', '${A}', 'job-a48', 'cust-a1', 1, 'utkast', 'Extra handledare', '[]'::jsonb, 'tok-chg-a48')`
+    )
+  );
+  await expectError(db, "en ändring kan inte bli godkänd utan låsning, hash och bevis", "job_changes_approval_locked", () =>
+    db.query(`update public.job_changes set status = 'godkand' where id = 'chg-a48'`)
+  );
+  await expectOk(db, "godkänd med låst innehåll, hash och bevis går igenom", () =>
+    db.query(
+      `update public.job_changes set status = 'godkand', locked_at = now(), content_hash = 'abc',
+         approval = '{"approvedByName":"Anna A","statement":"Jag godkänner"}'::jsonb where id = 'chg-a48'`
+    )
+  );
+  await expectError(db, "samma ändringsnummer och version två gånger på ett uppdrag stoppas", "job_changes_job_number_version_uq", () =>
+    db.query(
+      `insert into public.job_changes (id, business_id, job_id, customer_id, number, version, status, title, lines, token)
+       values ('chg-a48-dup', '${A}', 'job-a48', 'cust-a1', 1, 1, 'utkast', 'Dubblett', '[]'::jsonb, 'tok-chg-dup')`
+    )
+  );
+  {
+    await asApp(B);
+    const r = await rows(db, `select id from public.job_changes union all select id from public.billing_allocations`);
+    if (r.length === 0) ok("tenant B ser varken A:s ändringar eller allokeringar");
+    else fail("tenant B ser varken A:s ändringar eller allokeringar", JSON.stringify(r));
+  }
+
+  await asApp(null);
+  {
+    const r = await rows<{ business_id: string; entity_id: string }>(
+      db,
+      `select business_id, entity_id from app.resolve_public_token('job_change', 'tok-chg-a48')`
+    );
+    if (r.length === 1 && r[0].business_id === A && r[0].entity_id === "chg-a48") ok("ändringstoken → rätt företag och ändring (utan tenantkontext)");
+    else fail("ändringstoken → rätt företag och ändring (utan tenantkontext)", JSON.stringify(r));
+  }
+  {
+    const r = await rows<{ business_id: string; entity_id: string }>(
+      db,
+      `select business_id, entity_id from app.resolve_public_token('job_share', 'share-a48')`
+    );
+    if (r.length === 1 && r[0].business_id === A && r[0].entity_id === "job-a48") ok("kundlänkstoken för uppdraget → rätt företag och uppdrag");
+    else fail("kundlänkstoken för uppdraget → rätt företag och uppdrag", JSON.stringify(r));
+  }
+  {
+    const r = await rows(db, `select * from app.resolve_public_token('job_share', 'finns-inte')`);
+    if (r.length === 0) ok("okänd kundlänkstoken → tomt svar");
+    else fail("okänd kundlänkstoken → tomt svar", JSON.stringify(r));
+  }
+  await asSuperuser();
+  await expectError(db, "två uppdrag kan inte dela samma kundlänkstoken", "jobs_share_token_uq", () =>
+    db.query(`update public.jobs set share_token = 'share-a48' where id = 'job-b48'`)
+  );
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");
