@@ -41,6 +41,7 @@ const PUBLIC_PREFIXES = [
   "/integritet", // Fervas egen integritetspolicy (kundsajternas ligger på /integritetspolicy)
   "/bitradesavtal", // personuppgiftsbiträdesavtal + säkerhetsbilaga
   "/underbitraden", // publik underbiträdeslista (härledd ur leverantörsregistret)
+  "/omfattning", // supportmatrisen: Vad Ferva stödjer (spec §10)
   "/offert",
   "/faktura",
   "/andring", // kundgodkännande av ändring/tillägg på uppdrag

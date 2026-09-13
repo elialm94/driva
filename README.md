@@ -73,6 +73,13 @@ Lagret mellan "arbetet är gjort" och "rätt faktura" (migration `48_closeout`, 
 - **Kundvy** (`/uppdrag-kund/[token]`) visar bara det ägaren uttryckligen delat: godkänd offert, godkända ändringar, valda foton, fakturor, betalningsstatus och slutunderlag. Aldrig inköpspriser, marginal, interna anteckningar, bokföring eller AI-förslag. **Slutunderlag** finns som utskriftsvy för ägaren (`/uppdrag/[id]/slutunderlag`) och skickas aldrig automatiskt.
 - **Rapportera dagens jobb**: fritext tolkas lokalt (ingen extern leverantör) till förslag för tid, resa, material, ändring och anteckning som användaren granskar och väljer bland innan något sparas. Gränssnittet är byggt så att röst kan läggas till senare i samma fält.
 
+### Vad Ferva stödjer (supportmatris)
+
+- **En versionerad matris** (`src/lib/support/matrix.ts`) är den enda sanningen om produktomfattningen: stött (aktiebolag, K2, svensk verksamhet i SEK, fakturering med 0/6/12/25 % moms, ROT/RUT, fast månadslön, bokföring/moms/AGI/INK2, K2-bokslut, manuell inlämning), **konsultfall** (enskild firma, omvänd byggmoms på egna kundfakturor) och **stöds inte ännu** (annan företagsform, koncern, K3, annan valuta, EU/export/import, VMB, lager, komplex lön, e-faktura, API-inlämning). Varje post har primärkälla, giltighetsdatum, ägare och testmatris; inga regler läggs till utan dem.
+- **Onboardingen** ställer en fråga (fem kryssrutor) och visar direkt om Ferva passar, passar med konsult eller inte stöder bolaget. **Servern gör samma bedömning igen** och vägrar skapa ett bolag med ej stödda svar; svaren sparas i `business_settings.scope` (migration 56).
+- **Konsultfall spärras** tills bolagets redovisningskonsult godkänt dem i sin vy (`/redovisning/k/<id>/omfattning`, capability `approve_scope` – ägaren kan inte godkänna åt sig själv). En faktura med omvänd byggmoms kan inte utfärdas före godkännandet; godkännanden och återkallanden auditloggas.
+- Publik hjälpsida: **`/omfattning`** (Hjälp → Vad Ferva stödjer). Ägaren ser sitt bolags status och kan ändra svaren under Inställningar → Företag.
+
 ### Fältläge, PWA och mobilskal
 
 - **PWA**: installerbar från webbläsaren (`/manifest.webmanifest`, ikoner i `public/icons/`). Service workern (`/sw.js`, versionerad per deploy) cachar bara byggartefakter, ikoner och offline-reservsidan – aldrig företagsdata, dokument eller API-svar.
@@ -123,7 +130,7 @@ Serverless (Vercel): använd **Transaction pooler**-URL:en (port 6543) som `SUPA
 
 ### 3. Migrationer
 
-Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy; därefter 49–55 för go-live: bankförslagens kvalitetslogg, manuell inlämning, Stripe-abonnemang, driftposter, villkorsgodkännanden, företagets verifierade påståenden och offline-synkens kvitton). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning.
+Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy; därefter 49–56 för go-live: bankförslagens kvalitetslogg, manuell inlämning, Stripe-abonnemang, driftposter, villkorsgodkännanden, företagets verifierade påståenden, offline-synkens kvitton och bolagets produktomfattning). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning.
 
 ```bash
 npx supabase login

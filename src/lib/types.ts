@@ -131,6 +131,34 @@ export interface CompanySettings {
    * utgången = påståendet utelämnas tyst. Se `lib/company-claims.ts`.
    */
   claims?: CompanyClaims;
+  /**
+   * Produktomfattning (spec §10): onboardingens svar mot supportmatrisen,
+   * bedömningen och konsultens godkännanden av konsultfall. Saknas = bolaget
+   * skapades före matrisen; behandlas som obedömt aktiebolag utan godkännanden.
+   * Se `lib/support/`.
+   */
+  scope?: BusinessScope;
+}
+
+/** Onboardingens ja/nej-frågor som pekar ut konsult- eller ej stödda fall. */
+export type ScopeFlag = "foreign" | "inventory" | "k3_group" | "complex_payroll" | "reverse_charge";
+
+/** En redovisningskonsults godkännande av att ett konsultfall får användas i bolaget. */
+export interface ScopeApproval {
+  /** Post i supportmatrisen (nivå consultant). */
+  entryId: string;
+  approvedAt: string;
+  approvedBy: { userId: string; name: string; email: string };
+  /** Matrisversionen godkännandet gavs mot. */
+  matrixVersion: string;
+  note?: string;
+}
+
+export interface BusinessScope {
+  matrixVersion: string;
+  assessedAt: string;
+  flags: ScopeFlag[];
+  approvals: ScopeApproval[];
 }
 
 /** Företagets aktiva bekräftelse av att det är godkänt för F-skatt. */
@@ -1999,7 +2027,12 @@ export type AuditAction =
   | "andring_avbojd"
   | "uppdrag_avslutat"
   | "uppdrag_oppnat_igen"
-  | "uppdrag_kundvy_stangd";
+  | "uppdrag_kundvy_stangd"
+  // Produktomfattning (spec §10): konsultens godkännanden av konsultfall och
+  // ägarens ändrade svar auditloggas – de styr vad servern släpper igenom.
+  | "omfattning_godkand"
+  | "omfattning_aterkallad"
+  | "omfattning_andrad";
 
 export type BusinessRole = "owner" | "admin" | "member" | "accounting_consultant" | "auditor";
 export type CollaborationRole = "accounting_consultant" | "auditor";

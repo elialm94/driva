@@ -81,6 +81,7 @@ import type {
 } from "@/lib/types";
 import { isOwnerNoticeKind } from "@/lib/notices/owner-notices";
 import { normalizeCompanyClaims } from "@/lib/company-claims";
+import { normalizeBusinessScope } from "@/lib/support/eligibility";
 import { syncDocLineClassification } from "@/lib/economic-line-type";
 import { migrateQuoteVersionDescription } from "@/lib/quote-description";
 import { withoutRetiredSections } from "@/lib/website-sections";
@@ -2600,7 +2601,7 @@ export const settingsColumns = [
   "logo_data_url", "f_skatt_per_month", "tax_account_ocr", "payroll_reserve_per_month", "payment_terms_days",
   "late_interest_rate", "quote_validity_days", "default_vat_rate", "default_hourly_rate",
   "default_quote_terms", "inbound_mail_slug", "payer_bank_name", "payer_iban", "payer_bic",
-  "vat_periodicity", "notices", "claims",
+  "vat_periodicity", "notices", "claims", "scope",
 ];
 
 export function settingsToRow(s: CompanySettings, businessId: string): Record<string, unknown> {
@@ -2642,6 +2643,7 @@ export function settingsToRow(s: CompanySettings, businessId: string): Record<st
     vat_periodicity: s.vatPeriodicity ?? "kvartal",
     notices: jsonParamOrNull(s.notices),
     claims: jsonParamOrNull(s.claims),
+    scope: jsonParamOrNull(s.scope),
   };
 }
 
@@ -2683,6 +2685,7 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
     ...opt("vatPeriodicity", vatPeriodicityOrU(r.vat_periodicity)),
     ...opt("notices", ownerNoticesOrU(r.notices)),
     ...opt("claims", r.claims == null ? undefined : normalizeCompanyClaims(jsonVal<unknown>(r.claims))),
+    ...opt("scope", r.scope == null ? undefined : normalizeBusinessScope(jsonVal<unknown>(r.scope))),
   };
 }
 

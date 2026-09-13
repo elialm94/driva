@@ -832,7 +832,33 @@ async function main() {
         ],
         rot: null,
       });
-      invoiceId = issueInvoice(invoice.id).id;
+      invoiceId = invoice.id;
+      // Supportmatrisen (spec §10): omvänd byggmoms är ett konsultfall och
+      // spärras tills redovisningskonsulten godkänt det i bolaget.
+      assert.throws(() => issueInvoice(invoice.id), /konsultfall/, "spärras utan konsultgodkännande");
+      db().settings.scope = {
+        matrixVersion: "adapter-test",
+        assessedAt: new Date().toISOString(),
+        flags: ["reverse_charge"],
+        approvals: [
+          {
+            entryId: "reverse_charge_construction_outgoing",
+            approvedAt: new Date().toISOString(),
+            approvedBy: { userId: USER_A, name: "Adapter Konsult", email: "konsult@adapter.se" },
+            matrixVersion: "adapter-test",
+          },
+        ],
+      };
+      save();
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      assert.equal(
+        db().settings.scope?.approvals[0]?.entryId,
+        "reverse_charge_construction_outgoing",
+        "scope-kolumnen (svar + konsultgodkännande) rundresar"
+      );
+      assert.deepEqual(db().settings.scope?.flags, ["reverse_charge"]);
+      invoiceId = issueInvoice(invoiceId).id;
     });
     await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
       const customer = db().customers.find((c) => c.id === customerId);
@@ -1343,6 +1369,7 @@ async function main() {
       email: "karin@maleri.se",
       phone: "",
       companyForm: "enskild",
+      scope: { matrixVersion: "adapter-test", assessedAt: new Date().toISOString(), flags: ["reverse_charge"], approvals: [] },
       onboardingStatus: "company_done",
     });
     const before = await membershipsForUser(USER_F);
@@ -1357,6 +1384,7 @@ async function main() {
     await runWithTenant({ businessId: bizF, userId: USER_F, access: "write" }, () => {
       assert.equal(db().onboarding?.status, "company_done");
       assert.equal(db().settings.companyForm, "enskild");
+      assert.deepEqual(db().settings.scope?.flags, ["reverse_charge"], "onboardingens omfattningssvar skrivs vid skapandet");
       applyPersonalization({ industries: ["maleri", "annat"], otherIndustry: "Tapetsering", payroll: "owner", bookkeeping: "existing" });
     });
     const after = await membershipsForUser(USER_F);

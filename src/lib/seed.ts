@@ -37,6 +37,7 @@ import { acceptanceStatement } from "./quote-acceptance";
 import { ocrForInvoice } from "./ids";
 import { snapshotTaxReductionTerms } from "./tax-reduction-terms";
 import { systemQuoteTerms } from "./standard-quote-terms";
+import { SUPPORT_MATRIX_VERSION } from "./support/matrix";
 
 /* Datum relativt "nu" så att demon alltid känns levande. */
 function d(daysAgo: number, hour = 10, minute = 0): string {
@@ -2152,6 +2153,9 @@ export function buildSeed(): DB {
           source: "Försäkringsbrev 2026-DEMO",
         },
       },
+      // Demobolaget svarade "inget av detta" på omfattningsfrågorna: ett
+      // svenskt AB i kronor med fast månadslön – helt inom det Ferva stödjer.
+      scope: { matrixVersion: SUPPORT_MATRIX_VERSION, assessedAt: d(45), flags: [], approvals: [] },
       inboundMailSlug: "demo",
       // Betalkontot för utgående leverantörsbetalningar (pain.001-debitorn).
       payerBankName: "SEB",

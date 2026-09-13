@@ -422,6 +422,12 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     "claims",
     `alter table public.business_settings add column if not exists claims jsonb`
   );
+  // Produktomfattning: svar mot supportmatrisen + konsultgodkännanden (migration 56).
+  await ensureColumn(
+    "business_settings",
+    "scope",
+    `alter table public.business_settings add column if not exists scope jsonb`
+  );
   // OCR-nummer till skattekontot (migration 45) – settings-upserten skriver alltid kolumnen.
   await ensureColumn(
     "business_settings",

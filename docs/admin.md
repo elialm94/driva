@@ -435,6 +435,39 @@ har inget fältläge.
 PWA:n via `FERVA_APP_URL`; egna beroenden, exkluderat från tsc/eslint. Körbart
 lokalt, **inte butiksklart** – återstående punkter står i `mobile/README.md`.
 
+## Supportmatris, eligibility och konsultfall (spec §10)
+
+**Matrisen.** `src/lib/support/matrix.ts` är versionerad
+(`SUPPORT_MATRIX_VERSION`) och listar varje fall med nivå *supported* /
+*consultant* / *unsupported*, var regeln upprätthålls i koden, primärkälla,
+giltighetsdatum, ägare och testfiler. Testet `src/lib/support/support.test.ts`
+vägrar poster utan källa/ägare/test och låser spec §10:s nivåer. Byter en post
+nivå: bumpa versionen – sparade svar och godkännanden bär versionen de gavs
+mot. Publikt läsbar på `/omfattning` (villkoren hänvisar dit).
+
+**Eligibility.** Onboardingens steg 1 har en fråga med fem kryssrutor
+(`scope`). Klienten visar beskedet direkt; `createCompanyAction` kör
+`assertEligibleToCreate` igen och vägrar skapa bolaget vid *unsupported*.
+Svaren sparas i `business_settings.scope` (jsonb, migration 56 + pending-
+schema) tillsammans med konsultens godkännanden. Bolag skapade före kolumnen
+har `null`: de bedöms bara på företagsformen tills ägaren svarar under
+Inställningar → Företag.
+
+**Konsultfall.** Enskild firma och omvänd byggmoms på egna kundfakturor är
+tillåtna först när en redovisningskonsult med tillgång till bolaget godkänt
+dem på `/redovisning/k/<businessId>/omfattning`. Behörigheten är capability
+`approve_scope` (bara `accounting_consultant`; ägare, admin, medlem och
+revisor kan inte). Godkännande/återkallande auditloggas
+(`omfattning_godkand`/`omfattning_aterkallad`) och skrivs i samma transaktion
+som inställningarna. Servervakterna: `collectScopeBlockers` i
+`src/lib/invoices/validate.ts` (blocker `scope_reverse_charge`),
+`assertCompanyFormSupported` i onboarding och `updateBusinessProfile`,
+`assertScopeAllowed(entryId)` för nya funktioner.
+
+**Support.** Frågan "varför kan kunden inte skicka fakturan?" med omvänd
+byggmoms: kontrollera att bolaget har en konsult (Samarbeta) och att
+konsulten godkänt fallet. Ferva-admin ändrar inte godkännanden åt bolaget.
+
 ## Lokal utveckling (JSON-läget)
 
 Utan Supabase-miljö finns en tydligt separerad dev-väg: öppna

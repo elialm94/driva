@@ -48,6 +48,7 @@ import { KontoDataCard, type KontoDataCardProps } from "./konto-data-card";
 import { FiscalYearSettings, type FiscalYearSettingsYear } from "./fiscal-year-settings";
 import { OwnerNoticeSettings, type OwnerNoticeSettingsProps } from "./owner-notice-settings";
 import { CompanyClaimsCard } from "./company-claims-card";
+import { ScopeCard } from "./scope-card";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -553,6 +554,8 @@ export function SettingsForm({
           </Card>
 
           <CompanyClaimsCard claims={initial.claims} today={today} />
+
+          <ScopeCard companyForm={initial.companyForm} scope={initial.scope} />
 
           <FiscalYearSettings years={fiscalYears} today={today} />
         </div>

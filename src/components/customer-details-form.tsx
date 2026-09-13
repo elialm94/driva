@@ -333,6 +333,7 @@ function ReverseChargeField({ checked, onChange }: { checked: boolean; onChange:
         <span className="font-medium text-ink">Omvänd byggmoms</span>
         <span className="block text-muted">
           Kunden är ett byggföretag som redovisar momsen själv. Fakturor till kunden får 0 % moms och laghänvisning.
+          Konsultfall: fakturan kan utfärdas när din redovisningskonsult godkänt omvänd byggmoms för bolaget.
         </span>
       </span>
     </label>
