@@ -1,14 +1,12 @@
 import { notFound } from "next/navigation";
 import { getCustomer } from "@/lib/services/data";
-import { isDesignationOnlyLocation } from "@/lib/services/work-locations";
 import { maskPersonnummer } from "@/lib/personnummer";
 import { customerActivityFeed, customerMoneyLine } from "@/lib/services/customer-activity";
 import { customerChainCtas } from "@/lib/services/business-chain";
 import { SectionTitle } from "@/components/ui";
 import { CustomerDetailsPanel } from "@/components/customer-details-panel";
 import { CustomerRotSection } from "@/components/customer-rot-section";
-import { RotUsedField } from "@/components/rot-used-field";
-import { remainingTaxReduction, usedTaxReductionThisYear } from "@/lib/tax-reduction-used";
+import { usedTaxReductionThisYear } from "@/lib/tax-reduction-used";
 import { db } from "@/lib/store";
 import { todayDate } from "@/lib/accounting/dates";
 import { CustomerActivity } from "@/components/customer-activity";
@@ -29,9 +27,8 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
   const fromHere = pageOrigin(`/kunder/${customer.id}`, searchParams, customer.name);
   const activity = customerActivityFeed(customer.id);
   const money = customerMoneyLine(customer.id);
-  const designations = (customer.workLocations ?? [])
-    .map((location) => location.propertyDesignation?.trim())
-    .filter((value): value is string => Boolean(value));
+  const year = Number(todayDate().slice(0, 4));
+  const used = usedTaxReductionThisYear({ customer, invoices: db().invoices, year });
 
   return (
     <div className="animate-fade-up">
@@ -48,19 +45,8 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
           orgNumber: customer.orgNumber,
           contactPerson: customer.contactPerson,
           notes: customer.notes,
-          personalIdentityNumberMasked: customer.personalIdentityNumber
-            ? maskPersonnummer(customer.personalIdentityNumber)
-            : "",
-          hasPersonnummer: Boolean(customer.personalIdentityNumber),
           reverseChargeConstruction: customer.reverseChargeConstruction,
-          properties: (customer.workLocations ?? [])
-            .filter((location) => location.propertyDesignation?.trim() || isDesignationOnlyLocation(location))
-            .map((location) => ({ id: location.id, designation: location.propertyDesignation ?? "" })),
         }}
-        designations={designations}
-        maskedPersonnummer={
-          customer.personalIdentityNumber ? maskPersonnummer(customer.personalIdentityNumber) : undefined
-        }
         back={<SmartBack />}
         actions={
           <CustomerChainActions
@@ -82,25 +68,21 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
       {customer.kind === "privat" ? (
         <div className="mt-8">
           <SectionTitle>ROT/RUT</SectionTitle>
-          {(() => {
-            const year = Number(todayDate().slice(0, 4));
-            const used = usedTaxReductionThisYear({ customer, invoices: db().invoices, year });
-            return (
-              <div className="mb-4">
-                <RotUsedField
-                  customerId={customer.id}
-                  year={year}
-                  rot={customer.taxReductionUsed?.year === year ? customer.taxReductionUsed.rot : 0}
-                  rut={customer.taxReductionUsed?.year === year ? customer.taxReductionUsed.rut : 0}
-                  remainingRot={remainingTaxReduction(used, "rot")}
-                />
-              </div>
-            );
-          })()}
           <CustomerRotSection
             customerId={customer.id}
             workLocations={customer.workLocations ?? []}
             defaultWorkLocationId={customer.defaultWorkLocationId}
+            usedWorkLocationIds={[
+              ...db().quotes.filter((q) => q.customerId === customer.id).map((q) => q.workLocationId),
+              ...db().invoices.filter((i) => i.customerId === customer.id).map((i) => i.workLocationId),
+            ].filter((id): id is string => Boolean(id))}
+            maskedPersonnummer={
+              customer.personalIdentityNumber ? maskPersonnummer(customer.personalIdentityNumber) : undefined
+            }
+            hasPersonnummer={Boolean(customer.personalIdentityNumber)}
+            year={year}
+            fervaRot={used.rot}
+            fervaRut={used.rut}
           />
         </div>
       ) : null}

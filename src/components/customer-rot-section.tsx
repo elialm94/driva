@@ -1,13 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
-import { upsertCustomerWorkLocationAction } from "@/app/actions";
-import type { DwellingType, WorkLocation } from "@/lib/types";
-import { AddressFields } from "./address-input";
-import { SaveHint } from "./save-status";
-import { buttonClasses, cx } from "./ui";
+import {
+  removeCustomerWorkLocationAction,
+  revealCustomerPersonnummerAction,
+  updateCustomerPersonnummerAction,
+} from "@/app/actions";
+import type { WorkLocation } from "@/lib/types";
+import { formatPersonnummer, personnummerInputChange } from "@/lib/personnummer";
+import { validateSwedishPersonalIdentityNumber } from "@/lib/validation";
+import { derivedPropertyLabel, propertyTypeLabel, WORK_LOCATION_IN_USE_MESSAGE } from "@/lib/work-location-label";
+import { FieldError, invalidFieldCls } from "./form-validation";
+import { RotUsedField } from "./rot-used-field";
+import { cx } from "./ui";
+import { WorkLocationForm } from "./work-location-form";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -22,188 +30,249 @@ export function CustomerRotSection({
   customerId,
   workLocations,
   defaultWorkLocationId,
+  usedWorkLocationIds,
+  maskedPersonnummer,
+  hasPersonnummer,
+  year,
+  fervaRot,
+  fervaRut,
 }: {
   customerId: string;
   workLocations: WorkLocationView[];
   defaultWorkLocationId?: string;
+  usedWorkLocationIds?: string[];
+  maskedPersonnummer?: string;
+  hasPersonnummer?: boolean;
+  year: number;
+  fervaRot: number;
+  fervaRut: number;
 }) {
-  const hasData = workLocations.length > 0;
-  const [open, setOpen] = useState(hasData);
+  const router = useRouter();
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [blockReason, setBlockReason] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const used = new Set(usedWorkLocationIds ?? []);
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        className="text-[14px] font-medium text-accent hover:text-accent-deep"
-        onClick={() => {
-          setOpen(true);
-          setAdding(true);
-        }}
-      >
-        + Lägg till ROT/RUT-uppgifter
-      </button>
-    );
+  async function remove(loc: WorkLocationView) {
+    setBlockReason(null);
+    if (used.has(loc.id)) {
+      setBlockReason(WORK_LOCATION_IN_USE_MESSAGE);
+      return;
+    }
+    setRemovingId(loc.id);
+    const result = await removeCustomerWorkLocationAction(customerId, loc.id);
+    setRemovingId(null);
+    if (!result.ok) {
+      setBlockReason(result.error);
+      return;
+    }
+    router.refresh();
   }
 
   return (
     <div className="space-y-4">
+      <RotUsedField year={year} rot={fervaRot} rut={fervaRut} />
+      <PersonnummerAutosaveField
+        customerId={customerId}
+        masked={maskedPersonnummer ?? ""}
+        hasValue={Boolean(hasPersonnummer)}
+      />
       {workLocations.length > 0 ? (
-        <ul className="space-y-2">
-          {workLocations.map((loc) => (
-            <li key={loc.id} className="flex flex-wrap items-baseline justify-between gap-2 text-[14px]">
-              <span>
-                <span className="font-medium text-ink">{loc.label}</span>
-                <span className="text-soft">
-                  {" "}
-                  · {propertyTypeLabel(loc.propertyType)}
-                  {loc.id === defaultWorkLocationId ? " · standard" : ""}
-                </span>
-              </span>
-              <span className="text-[13px] text-muted">
-                {housingHint(loc)}
-                {loc.address ? ` · ${loc.address}` : ""}
-              </span>
-            </li>
-          ))}
+        <ul className="space-y-3">
+          {workLocations.map((loc) =>
+            editingId === loc.id ? (
+              <li key={loc.id}>
+                <WorkLocationForm
+                  customerId={customerId}
+                  initial={loc}
+                  onDone={() => setEditingId(null)}
+                  onCancel={() => setEditingId(null)}
+                />
+              </li>
+            ) : (
+              <li key={loc.id} className="rounded-2xl border border-line/80 px-4 py-3 text-[14px]">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="font-medium text-ink">{derivedPropertyLabel(loc)}</span>
+                  {loc.id === defaultWorkLocationId ? (
+                    <span className="text-[12px] text-muted">Standard</span>
+                  ) : null}
+                </div>
+                {propertyListPlace(loc) ? <p className="mt-0.5 text-soft">{propertyListPlace(loc)}</p> : null}
+                <p className="mt-0.5 text-[13px] text-muted">{propertySummary(loc)}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-[13px] font-medium text-accent hover:text-accent-deep"
+                    onClick={() => {
+                      setAdding(false);
+                      setBlockReason(null);
+                      setEditingId(loc.id);
+                    }}
+                  >
+                    Ändra
+                  </button>
+                  <button
+                    type="button"
+                    className="text-[13px] text-muted hover:text-ink"
+                    disabled={removingId === loc.id}
+                    onClick={() => void remove(loc)}
+                  >
+                    {removingId === loc.id ? "Tar bort…" : "Ta bort"}
+                  </button>
+                </div>
+              </li>
+            )
+          )}
         </ul>
       ) : null}
+      {blockReason ? <p className="text-[13px] text-soft">{blockReason}</p> : null}
       {adding ? (
         <WorkLocationForm
           customerId={customerId}
           onDone={() => setAdding(false)}
-          onCancel={() => {
-            setAdding(false);
-            if (!hasData) setOpen(false);
-          }}
+          onCancel={() => setAdding(false)}
         />
       ) : (
-        <button type="button" className="text-[14px] font-medium text-accent hover:text-accent-deep" onClick={() => setAdding(true)}>
+        <button
+          type="button"
+          className="text-[14px] font-medium text-accent hover:text-accent-deep"
+          onClick={() => {
+            setEditingId(null);
+            setBlockReason(null);
+            setAdding(true);
+          }}
+        >
           <Plus className="mr-1 inline size-3.5" />
-          Lägg till bostad
+          Lägg till fastighet
         </button>
       )}
     </div>
   );
 }
 
-function WorkLocationForm({
+function propertyListPlace(loc: WorkLocationView): string {
+  return [loc.postalCode, loc.city].filter(Boolean).join(" ");
+}
+
+function propertySummary(loc: WorkLocationView): string {
+  const type = propertyTypeLabel(loc.propertyType);
+  if (loc.propertyType === "bostadsratt") {
+    const extra = [loc.brfOrgNumber, loc.apartmentNumber].filter(Boolean).join(" · ");
+    return extra ? `${type} · ${extra}` : type;
+  }
+  const designation = loc.propertyDesignation?.trim() ?? "";
+  if (designation && designation !== loc.address?.trim()) return `${type} · ${designation}`;
+  return type;
+}
+
+function PersonnummerAutosaveField({
   customerId,
-  onDone,
-  onCancel,
+  masked,
+  hasValue,
 }: {
   customerId: string;
-  onDone: () => void;
-  onCancel: () => void;
+  masked: string;
+  hasValue: boolean;
 }) {
   const router = useRouter();
-  const [label, setLabel] = useState("");
-  const [address, setAddress] = useState({ address: "", postalCode: "", city: "" });
-  const [propertyType, setPropertyType] = useState<DwellingType>("smahus");
-  const [propertyDesignation, setPropertyDesignation] = useState("");
-  const [brfOrgNumber, setBrfOrgNumber] = useState("");
-  const [apartmentNumber, setApartmentNumber] = useState("");
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [editing, setEditing] = useState(!hasValue);
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const fade = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function save() {
-    setStatus("saving");
+  useEffect(() => {
+    return () => {
+      if (fade.current) clearTimeout(fade.current);
+    };
+  }, []);
+
+  async function reveal() {
+    const result = await revealCustomerPersonnummerAction(customerId);
+    if (result.ok) setRevealed(result.value);
+  }
+
+  async function persist() {
+    if (!editing) return;
+    if (!value.trim()) {
+      if (hasValue) setEditing(false);
+      return;
+    }
+    const pn = validateSwedishPersonalIdentityNumber(value);
+    if (!pn.ok) {
+      setError(pn.message);
+      return;
+    }
     setError(null);
-    const result = await upsertCustomerWorkLocationAction(customerId, {
-      label: label || (propertyType === "smahus" ? "Hem" : "Bostad"),
-      address: address.address,
-      postalCode: address.postalCode,
-      city: address.city,
-      propertyType,
-      propertyDesignation,
-      brfOrgNumber,
-      apartmentNumber,
-    });
+    const result = await updateCustomerPersonnummerAction(customerId, value);
     if (!result.ok) {
-      setStatus("error");
       setError(result.error);
       return;
     }
-    setStatus("saved");
+    setEditing(false);
+    setRevealed(null);
+    setValue("");
     router.refresh();
-    onDone();
+  }
+
+  if (!editing && hasValue) {
+    return (
+      <div id="kund-personnummer">
+        <label className={labelCls}>Personnummer</label>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[14px]">
+          <span className="font-medium tabular text-ink">{revealed ?? masked}</span>
+          <button
+            type="button"
+            className="text-[13px] font-medium text-accent hover:text-accent-deep"
+            onClick={() => (revealed ? setRevealed(null) : void reveal())}
+          >
+            {revealed ? "Dölj" : "Visa"}
+          </button>
+          <button
+            type="button"
+            className="text-[13px] text-muted hover:text-ink"
+            onClick={() => {
+              setEditing(true);
+              setValue("");
+            }}
+          >
+            Ändra
+          </button>
+        </div>
+        <p className="mt-1 text-[12px] text-muted">Samma nummer för alla fastigheter. Behövs för ROT/RUT.</p>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-3 rounded-2xl border border-line/80 bg-canvas/40 p-4">
-      <div>
-        <label className={labelCls} htmlFor="bostad-etikett">
-          Namn
-        </label>
-        <input
-          id="bostad-etikett"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="Hem, Fritidshus …"
-          className={inputCls}
-        />
-      </div>
-      <AddressFields defaults={address} onChange={setAddress} />
-      <div>
-        <p className={labelCls}>Bostadstyp</p>
-        <div className="flex flex-wrap gap-1.5">
-          {(
-            [
-              ["smahus", "Fastighet/småhus"],
-              ["bostadsratt", "Bostadsrätt"],
-            ] as const
-          ).map(([id, text]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setPropertyType(id)}
-              className={cx(
-                "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors",
-                propertyType === id ? "border-ink bg-ink text-white" : "border-line-strong text-soft hover:border-muted"
-              )}
-            >
-              {text}
-            </button>
-          ))}
-        </div>
-      </div>
-      {propertyType === "smahus" ? (
-        <div>
-          <label className={labelCls}>Fastighetsbeteckning</label>
-          <input value={propertyDesignation} onChange={(e) => setPropertyDesignation(e.target.value)} className={inputCls} />
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className={labelCls}>BRF org.nr</label>
-            <input value={brfOrgNumber} onChange={(e) => setBrfOrgNumber(e.target.value)} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Lägenhetsnummer</label>
-            <input value={apartmentNumber} onChange={(e) => setApartmentNumber(e.target.value)} className={inputCls} />
-          </div>
-        </div>
-      )}
-      <div className="flex items-center gap-2 pt-1">
-        <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => void save()} disabled={!address.address.trim()}>
-          {status === "saving" ? "Sparar…" : "Lägg till"}
-        </button>
-        <button type="button" className="text-[13px] text-muted hover:text-ink" onClick={onCancel}>
+    <div>
+      <label className={labelCls} htmlFor="kund-personnummer">
+        Personnummer
+      </label>
+      <input
+        id="kund-personnummer"
+        value={value}
+        onChange={(e) => setValue(personnummerInputChange(value, e.target.value))}
+        onBlur={() => {
+          if (value.trim()) setValue(formatPersonnummer(value));
+          void persist();
+        }}
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder="YYYYMMDD-XXXX"
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? "kund-personnummer-fel" : undefined}
+        className={cx(inputCls, error && invalidFieldCls)}
+      />
+      <FieldError id="kund-personnummer-fel">{error}</FieldError>
+      <p className="mt-1 text-[12px] text-muted">Samma nummer för alla fastigheter. Behövs för ROT/RUT.</p>
+      {hasValue ? (
+        <button type="button" className="mt-1 text-[13px] text-muted hover:text-ink" onClick={() => setEditing(false)}>
           Avbryt
         </button>
-      </div>
-      <SaveHint status={status === "saved" ? "idle" : status} error={error} onRetry={() => void save()} />
+      ) : null}
     </div>
   );
 }
 
-function propertyTypeLabel(type: DwellingType): string {
-  return type === "bostadsratt" ? "Bostadsrätt" : "Fastighet/småhus";
-}
-
-function housingHint(loc: WorkLocationView): string {
-  if (loc.propertyType === "smahus") {
-    return loc.propertyDesignation ? "Beteckning finns" : "Ingen beteckning";
-  }
-  return loc.brfOrgNumber ? "BRF finns" : "Ingen BRF";
-}

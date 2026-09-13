@@ -1,6 +1,7 @@
-import { save } from "../store";
+import { db, save } from "../store";
 import { uid } from "../ids";
 import type { Customer, DwellingType, HousingDetails, Job, WorkLocation } from "../types";
+import { WORK_LOCATION_IN_USE_MESSAGE } from "../work-location-label";
 import {
   CustomerValidationError,
   personnummerFieldError,
@@ -210,11 +211,26 @@ export function setDefaultWorkLocation(customerId: string, locationId: string): 
   save();
 }
 
+export function workLocationDocumentRefs(locationId: string): { quotes: number; invoices: number } {
+  const data = db();
+  return {
+    quotes: data.quotes.filter((quote) => quote.workLocationId === locationId).length,
+    invoices: data.invoices.filter((invoice) => invoice.workLocationId === locationId).length,
+  };
+}
+
 export function removeWorkLocation(customerId: string, locationId: string): void {
+  const refs = workLocationDocumentRefs(locationId);
+  if (refs.quotes + refs.invoices > 0) {
+    throw new CustomerValidationError([{ field: "workLocation", message: WORK_LOCATION_IN_USE_MESSAGE }]);
+  }
   const customer = requireCustomer(customerId);
   customer.workLocations = workLocationsOf(customer).filter((l) => l.id !== locationId);
   if (customer.defaultWorkLocationId === locationId) {
     customer.defaultWorkLocationId = customer.workLocations[0]?.id;
+  }
+  for (const job of db().jobs) {
+    if (job.workLocationId === locationId) delete job.workLocationId;
   }
   save();
 }

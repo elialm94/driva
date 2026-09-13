@@ -2,7 +2,12 @@ process.env.DRIVA_TEST = "1";
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { clampDeductionToRemaining, remainingTaxReduction, usedTaxReductionThisYear } from "./tax-reduction-used";
+import {
+  clampDeductionToRemaining,
+  fervaCapSummaryText,
+  remainingTaxReduction,
+  usedTaxReductionThisYear,
+} from "./tax-reduction-used";
 import type { Customer, Invoice } from "./types";
 
 function customer(over: Partial<Customer> = {}): Customer {
@@ -18,29 +23,55 @@ function customer(over: Partial<Customer> = {}): Customer {
   };
 }
 
+function paidRotInvoice(over: Partial<Invoice> = {}): Invoice {
+  return {
+    id: "i1",
+    customerId: "c1",
+    status: "betald",
+    type: "faktura",
+    issueDate: "2026-03-01",
+    paidAt: "2026-03-10",
+    rot: { type: "rot", appliedTaxReduction: 8_000 },
+    issuedSnapshot: {
+      lines: [{ id: "l", kind: "arbete", description: "Jobb", qty: 1, unit: "tim", unitPrice: 20000, vatRate: 25 }],
+      rot: { type: "rot", appliedTaxReduction: 8_000 },
+    },
+    ...over,
+  } as unknown as Invoice;
+}
+
 describe("använt ROT i år", () => {
-  it("räknar manuellt ifyllt plus betalda egna fakturor", () => {
+  it("räknar bara Fervas betalda fakturor - manuellt hos-andra ingår inte", () => {
+    // Tidigare adderades taxReductionUsed (hos andra) in i samma summa, så ett
+    // tomt fält blev 0 använt överallt. Hos-andra-fältet är borta från
+    // kundkortet; Fervas siffra är bara egna fakturor.
     const used = usedTaxReductionThisYear({
       customer: customer({ taxReductionUsed: { year: 2026, rot: 10_000, rut: 0 } }),
-      invoices: [
-        {
-          id: "i1",
-          customerId: "c1",
-          status: "betald",
-          type: "faktura",
-          issueDate: "2026-03-01",
-          paidAt: "2026-03-10",
-          rot: { type: "rot", appliedTaxReduction: 8_000 },
-          issuedSnapshot: {
-            lines: [{ id: "l", kind: "arbete", description: "Jobb", qty: 1, unit: "tim", unitPrice: 20000, vatRate: 25 }],
-            rot: { type: "rot", appliedTaxReduction: 8_000 },
-          },
-        } as unknown as Invoice,
-      ],
+      invoices: [paidRotInvoice()],
       year: 2026,
     });
-    assert.equal(used.rot >= 10_000, true);
+    // 20 000 exkl. * 1,25 * 30 % = 7 500. Hos-andra 10 000 ska inte adderas.
+    assert.equal(used.rot, 7_500);
+    assert.equal(used.rut, 0);
     assert.equal(used.year, 2026);
+  });
+
+  it("tomt eller saknat hos-andra räknas inte som noll använt överallt", () => {
+    const empty = usedTaxReductionThisYear({ customer: customer(), invoices: [], year: 2026 });
+    const filled = usedTaxReductionThisYear({
+      customer: customer({ taxReductionUsed: { year: 2026, rot: 10_000, rut: 5_000 } }),
+      invoices: [],
+      year: 2026,
+    });
+    assert.equal(empty.rot, 0);
+    assert.equal(empty.rut, 0);
+    assert.equal(filled.rot, 0);
+    assert.equal(filled.rut, 0);
+    const text = fervaCapSummaryText(empty);
+    assert.match(text, /Ferva i 2026/);
+    assert.match(text, /inte Skatteverkets saldo/);
+    assert.doesNotMatch(text, /kvar att lova/i);
+    assert.doesNotMatch(text, /hos andra/);
   });
 
   it("kvarvarande tar hänsyn till eget tak och det gemensamma", () => {

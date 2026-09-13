@@ -239,9 +239,10 @@ export interface Customer {
   defaultWorkLocationId?: ID;
   notes: string;
   /**
-   * ROT/RUT redan använt hos andra utförare i år. Ferva kan inte läsa
-   * Skatteverkets saldo – det här fyller företagaren i så att offerten
-   * inte lovar mer avdrag än kunden har kvar.
+   * Historiskt: ROT/RUT ifyllt som använt hos andra. Kundkortet samlar inte
+   * längre in det, och usedTaxReductionThisYear räknar det inte – ett tomt
+   * värde är okänt, inte noll använt överallt. Fältet kan fortfarande finnas
+   * i äldre data.
    */
   taxReductionUsed?: {
     year: number;
@@ -538,10 +539,10 @@ export interface Quote {
   customerId: ID;
   jobId?: ID;
   /**
-   * Bostad som ROT/RUT på den här offerten gäller. Måste vara explicit
+   * Bostad som ROT på den här offerten gäller. Måste vara explicit
    * sparad här – kundens fastigheter räcker inte vid utskick.
-   * Samma relation som Job.workLocationId, så kedjan offert → uppdrag →
-   * faktura kan ärva fältet utan ny modell.
+   * RUT kräver inget fastighetsval. Samma relation som Job.workLocationId,
+   * så kedjan offert → uppdrag → faktura kan ärva fältet utan ny modell.
    */
   workLocationId?: ID;
   status: QuoteStatus;
