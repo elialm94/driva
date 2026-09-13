@@ -21,7 +21,9 @@ import {
 } from "./services/data";
 import { documentLinkView } from "./services/document-job-link";
 import {
+  createQuote,
   isQuoteContactSoftBlocker,
+  quoteDefaults,
   quoteHardSendBlockers,
   quoteSendBlockers,
   updateQuote,
@@ -82,6 +84,21 @@ describe("ensurePageBusiness binder request-cellen utanför cache()", () => {
     const store = readFileSync(new URL("./store.ts", import.meta.url), "utf8");
     assert.match(store, /bindRequestTenant\(\{ state: ctx\.state, businessId: ctx\.businessId \}\)/);
   });
+
+  it("createQuoteAction revaliderar efter withBusiness, inte inuti", () => {
+    const actions = readFileSync(new URL("../app/actions.ts", import.meta.url), "utf8");
+    const start = actions.indexOf("export async function createQuoteAction");
+    const end = actions.indexOf("export async function updateQuoteAction");
+    assert.ok(start >= 0 && end > start);
+    const fn = actions.slice(start, end);
+    assert.match(fn, /await withBusiness\(\(\) => createQuote\(input\)\.id/);
+    assert.match(fn, /refresh\(\)/);
+    assert.match(fn, /redirect\(/);
+    assert.ok(
+      fn.indexOf("refresh()") > fn.indexOf("createQuote(input).id"),
+      "refresh() måste ligga efter withBusiness-anropet",
+    );
+  });
 });
 
 describe("offert #116 quote-bokhylla: spara utkast utan error boundary", () => {
@@ -133,6 +150,53 @@ describe("offert #116 quote-bokhylla: spara utkast utan error boundary", () => {
     assert.equal(
       quoteSendButtonEnabled({ hardBlockers: sendBlockers.length, email: customer.email, phone: customer.phone }),
       true,
+    );
+  });
+});
+
+describe("ny offert utan ROT (/ekonomi/offerter/ny): skapa och landa utan krasch", () => {
+  beforeEach(() => {
+    replaceDb(buildSeed());
+  });
+
+  it("ny-sidans läsningar kastar inte i läskontext", () => {
+    runInTenantContext(readCtx(), () => {
+      quoteDefaults();
+      const customers = [...db().customers].sort((a, b) => a.name.localeCompare(b.name, "sv"));
+      assert.ok(customers.length > 0);
+    });
+  });
+
+  it("efter create av icke-ROT-utkast: detaljsidans läsningar kastar inte, och save() är förbjudet", () => {
+    const created = runInTenantContext(writeCtx(), () => {
+      const defaults = quoteDefaults();
+      return createQuote({
+        customerId: "cust-eva",
+        title: "Hyllplan utan ROT",
+        lines: [labor({ unitPrice: 2_000 })],
+        rot: null,
+        paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
+        paymentTermsDays: defaults.paymentTermsDays,
+        validUntil: defaults.validUntil,
+        terms: defaults.terms,
+      });
+    });
+
+    const { quote, sendBlockers } = runInTenantContext(readCtx(), () => loadQuotePageReads(created.id));
+    assert.equal(quote.status, "utkast");
+    assert.equal(currentVersion(quote).rot, null);
+    assert.ok(!sendBlockers.some((blocker) => blocker.code === "personnummer"));
+    assert.ok(!sendBlockers.some((blocker) => blocker.code === "property"));
+    const customer = requireCustomer(quote.customerId);
+    assert.equal(quoteHasSendDestination(customer), true);
+    assert.equal(sendBlockers.length, 0);
+    assert.equal(
+      quoteSendButtonEnabled({ hardBlockers: 0, email: customer.email, phone: customer.phone }),
+      true,
+    );
+    assert.throws(
+      () => runInTenantContext(readCtx(), () => save()),
+      /läskontext/,
     );
   });
 });

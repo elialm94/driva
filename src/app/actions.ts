@@ -524,16 +524,11 @@ export async function articleFromLineAction(
 /* --------------------------------- Offerter -------------------------------- */
 
 export async function createQuoteAction(input: QuoteInput, nav?: ReturnNav): Promise<never> {
-  // redirect() kastar kontrollflödesfel – adaptern committar innan den släpper
-  // vidare felet, så mutationen går aldrig förlorad.
-  return withBusiness(
-    (): never => {
-      const quote = createQuote(input);
-      refresh();
-      redirect(hrefWithNav(`/ekonomi/offerter/${quote.id}`, nav));
-    },
-    { capability: "create_quote" }
-  );
+  const quoteId = await withBusiness(() => createQuote(input).id, { capability: "create_quote" });
+  // revalidatePath + redirect efter skrivkontexten: RSC på den nya offerten
+  // får inte ärva ALS (samma kraschklass som quote-bokhylla, digest 2908162500).
+  refresh();
+  redirect(hrefWithNav(`/ekonomi/offerter/${quoteId}`, nav));
 }
 
 export async function updateQuoteAction(quoteId: string, input: QuoteVersionInput) {
