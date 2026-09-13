@@ -279,6 +279,16 @@ describe("Bankhändelse som kategoriseras som representation", () => {
     assert.match(text, /företagskontot \(1930\)/);
   });
 
+  it("en utgift med tidsstämpel i datumet bokförs också", () => {
+    const { expense } = bankExpenseAwaitingRepresentation({ amount: 1_500, vatAmount: 161 });
+    // Äldre rader och seeddata bär en full tidsstämpel i date. Planen kräver
+    // en dag, så dagen plockas ut i stället för att svaret vägras.
+    expense.date = `${DATE}T10:00:00.000Z`;
+    const ver = answerRepresentationQuestion(expense.id, { kind: "kundmaltid", persons: 4, alcohol: false });
+    assert.deepEqual(net(ver.entries), { 6072: 1_356, 2641: 144, 1930: -1_500 });
+    assert.equal(expense.status, "bokford");
+  });
+
   it("nekar ett svar utan slag eller utan personer", () => {
     const { expense } = bankExpenseAwaitingRepresentation({ amount: 1_500, vatAmount: 161 });
     assert.throws(

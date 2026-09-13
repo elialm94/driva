@@ -184,7 +184,10 @@ function schablonPlan(expense: Expense) {
   const d = expense.details ?? {};
   const draft: ManualExpenseDraft = {
     kind: expense.kind,
-    date: expense.date,
+    // Utgiftsdatumet är en dag, men äldre rader (och seeddata) bär en full
+    // tidsstämpel. Planen kräver YYYY-MM-DD, så dagen plockas ut här i
+    // stället för att vägra bokföra raden.
+    date: expense.date.slice(0, 10),
     paidBy: expense.paidBy ?? "privat",
     supplier: expense.supplier,
     amount: expense.amount,
