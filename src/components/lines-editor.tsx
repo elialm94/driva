@@ -41,7 +41,7 @@ import { FieldError, invalidFieldCls } from "./form-validation";
 import { LineDescriptionInput } from "./line-description-input";
 import { useToast } from "./toast";
 import { Modal } from "./modal";
-import { articleFromLineAction, listArticlesAction } from "@/app/actions";
+import { listArticlesAction } from "@/app/actions";
 
 const LINE_DELETED_TOAST_ID = "line-deleted";
 
@@ -60,9 +60,9 @@ const mobileLineLabelCls = "mb-1 block text-[12px] font-medium text-muted @min-[
  * Hela klassnamnet måste stå statiskt så Tailwind hittar det.
  */
 export const LINE_GRID_HEADER =
-  "hidden gap-2 text-[12px] font-medium uppercase tracking-wide text-muted @min-[48rem]:grid @min-[48rem]:grid-cols-[6.5rem_minmax(0,1fr)_3.75rem_3.75rem_5.5rem_3.25rem_4.75rem_10rem]";
+  "hidden gap-2 text-[12px] font-medium uppercase tracking-wide text-muted @min-[48rem]:grid @min-[48rem]:grid-cols-[6.5rem_minmax(0,1fr)_3.75rem_3.75rem_5.5rem_3.25rem_4.75rem_8rem]";
 export const LINE_GRID_ROW =
-  "relative grid grid-cols-2 gap-x-2.5 gap-y-3 rounded-2xl border border-line bg-canvas/40 p-3.5 @min-[48rem]:static @min-[48rem]:grid-cols-[6.5rem_minmax(0,1fr)_3.75rem_3.75rem_5.5rem_3.25rem_4.75rem_10rem] @min-[48rem]:gap-2 @min-[48rem]:rounded-none @min-[48rem]:border-0 @min-[48rem]:bg-transparent @min-[48rem]:p-0";
+  "relative grid grid-cols-2 gap-x-2.5 gap-y-3 rounded-2xl border border-line bg-canvas/40 p-3.5 @min-[48rem]:static @min-[48rem]:grid-cols-[6.5rem_minmax(0,1fr)_3.75rem_3.75rem_5.5rem_3.25rem_4.75rem_8rem] @min-[48rem]:gap-2 @min-[48rem]:rounded-none @min-[48rem]:border-0 @min-[48rem]:bg-transparent @min-[48rem]:p-0";
 
 const DECIMAL_PARTIAL = /^-?\d*[.,]?\d*$/;
 const DECIMAL_PARTIAL_UNSIGNED = /^\d*[.,]?\d*$/;
@@ -252,6 +252,8 @@ export function LinesEditor({
   showErrors = false,
   rotActive = false,
   reverseCharge = false,
+  fromRegister = true,
+  variant = "document",
 }: {
   lines: DocLine[];
   onChange: (lines: DocLine[]) => void;
@@ -262,6 +264,13 @@ export function LinesEditor({
   rotActive?: boolean;
   /** Omvänd byggmoms: momssatsen är låst till 0 % på alla rader. */
   reverseCharge?: boolean;
+  /** Artikelregistret under listan - bara offert- och fakturarader. */
+  fromRegister?: boolean;
+  /**
+   * `single` = en prisrad utan listknappar, för uppdragets Tid / Material.
+   * Grossist och kvitto hör inte hit.
+   */
+  variant?: "document" | "single";
 }) {
   const linesRef = useRef(lines);
   const onChangeRef = useRef(onChange);
@@ -280,11 +289,12 @@ export function LinesEditor({
   onChangeRef.current = onChange;
 
   useEffect(() => {
+    if (variant === "single" || !fromRegister) return;
     startArticle(async () => {
       const rows = await listArticlesAction();
       setArticles(rows);
     });
-  }, []);
+  }, [variant, fromRegister]);
 
   function update(id: string, patch: Partial<DocLine>) {
     onChange(lines.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -294,9 +304,12 @@ export function LinesEditor({
     pendingFocusRef.current = lineId;
   }
 
+  const single = variant === "single";
+
   function goFrom(line: DocLine, field: LineEditorField) {
     const next = nextLineField(field);
     if (next.kind === "new-row") {
+      if (single) return;
       const created = createFollowUpLine(line, { defaultVatRate, defaultHourlyRate });
       const index = lines.findIndex((row) => row.id === line.id);
       requestDescriptionFocus(created.id);
@@ -423,8 +436,9 @@ export function LinesEditor({
   const allBlank = showErrors && lines.every(lineIsBlank);
   return (
     <div
-      id="prisrader"
-      data-line-editor
+      id={single ? undefined : "prisrader"}
+      data-line-editor={single ? undefined : ""}
+      data-job-line-editor={single ? "" : undefined}
       className="@container space-y-3.5 @min-[48rem]:space-y-2.5"
       onInput={() => {
         typedSinceDeleteRef.current = true;
@@ -463,6 +477,7 @@ export function LinesEditor({
                 // min-w-0: annars trycker fältets egen minimibredd ut knapparna.
                 className={cx(inputCls, "min-w-0 font-semibold")}
               />
+              {single ? null : (
               <RowActions
                 canUp={index > 0}
                 canDown={index < lines.length - 1}
@@ -471,6 +486,7 @@ export function LinesEditor({
                 onDuplicate={() => duplicateRow(line)}
                 onDelete={() => deleteLine(line.id)}
               />
+              )}
             </div>
           );
         }
@@ -623,6 +639,7 @@ export function LinesEditor({
                 )}
               </LineSelect>
             </div>
+            {single ? null : (
             <div className="absolute right-1.5 top-1.5 flex items-center @min-[48rem]:static">
               <RowActions
                 canUp={index > 0}
@@ -630,21 +647,10 @@ export function LinesEditor({
                 onUp={() => onChange(moveLine(lines, line.id, -1))}
                 onDown={() => onChange(moveLine(lines, line.id, 1))}
                 onDuplicate={() => duplicateRow(line)}
-                onSaveArticle={() =>
-                  startArticle(async () => {
-                    const result = await articleFromLineAction(line);
-                    if (result.ok) {
-                      setArticles((prev) => {
-                        const next = prev.filter((a) => a.id !== result.article.id);
-                        return [...next, result.article];
-                      });
-                      toast({ title: "Sparad i registret", tone: "ok" });
-                    }
-                  })
-                }
                 onDelete={() => deleteLine(line.id)}
               />
             </div>
+            )}
             <div className="col-span-2 -mb-0.5 flex items-baseline justify-between gap-3 border-t border-line pt-2.5 @min-[48rem]:hidden">
               <span className="text-[13px] text-soft">Summa exkl. moms</span>
               <span className="text-[14px] font-semibold tabular text-ink">{kr(lineTotal)}</span>
@@ -676,6 +682,7 @@ export function LinesEditor({
         );
       })}
       {allBlank ? <FieldError>Beskrivning saknas på raden.</FieldError> : null}
+      {single ? null : (
       <div className="flex flex-wrap gap-2 pt-1">
         {(["LABOR", "MATERIAL", "TRAVEL", "OTHER"] as EconomicLineType[]).map((type) => (
           <button
@@ -695,6 +702,7 @@ export function LinesEditor({
         >
           <Plus className="size-3.5" /> Rubrik
         </button>
+        {fromRegister ? (
         <button
           type="button"
           className={buttonClasses("secondary", "sm", "max-sm:h-11 flex-1 sm:flex-none")}
@@ -702,14 +710,15 @@ export function LinesEditor({
         >
           Från register
         </button>
+        ) : null}
       </div>
+      )}
 
       <Modal open={pickerOpen} onClose={() => setPickerOpen(false)} size="sm" title="Artikelregister">
         <div className="px-6 py-5">
           {articles.length === 0 ? (
             <p className="text-[14px] text-soft">
-              Inga artiklar ännu. Fyll i en rad och välj spara i registret, eller lägg till dem under Inställningar →
-              Fakturering.
+              Inga artiklar ännu. Lägg till dem under Inställningar → Fakturering.
             </p>
           ) : (
             <ul className="space-y-1">
@@ -742,7 +751,6 @@ export function RowActions({
   onUp,
   onDown,
   onDuplicate,
-  onSaveArticle,
   onDelete,
 }: {
   canUp: boolean;
@@ -750,7 +758,6 @@ export function RowActions({
   onUp: () => void;
   onDown: () => void;
   onDuplicate: () => void;
-  onSaveArticle?: () => void;
   onDelete: () => void;
 }) {
   const btn =
@@ -766,11 +773,6 @@ export function RowActions({
       <button type="button" tabIndex={-1} className={btn} onClick={onDuplicate} aria-label="Kopiera rad">
         <Copy className="size-4" />
       </button>
-      {onSaveArticle ? (
-        <button type="button" tabIndex={-1} className={cx(btn, "hidden @min-[48rem]:flex")} onClick={onSaveArticle} title="Spara i registret">
-          +
-        </button>
-      ) : null}
       <button
         type="button"
         tabIndex={-1}

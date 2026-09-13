@@ -16,8 +16,9 @@ import { importQuotedBaseline, isIssuedLinked, jobWorkEntries } from "./job-work
 import { nextFervaReference } from "../ferva-reference";
 import { invoicesForJob } from "./job-economy";
 import { discardInvoice } from "./invoices";
-import type { JobCompleteWarning, JobRemovalPolicy } from "../job-ui-types";
+import { jobRemovalDisabledReason, type JobCompleteWarning, type JobRemovalPolicy } from "../job-ui-types";
 export type { JobCompleteWarning, JobRemovalKind, JobRemovalPolicy } from "../job-ui-types";
+export { jobRemovalDisabledReason } from "../job-ui-types";
 
 export function createJobFromQuote(quote: Quote): Job {
   const data = db();
@@ -412,7 +413,11 @@ export function jobRemovalPolicy(jobId: string): JobRemovalPolicy {
   if (jobHasAccountingRefs(jobId)) reasons.push("Bokföring");
   if (jobHasInvoicedWork(jobId)) reasons.push("Fakturerat arbete");
   if (jobHasSentPurchaseOrders(jobId)) reasons.push("Skickad materialbeställning");
-  return { kind: reasons.length === 0 ? "delete" : "archive", reasons };
+  return {
+    kind: reasons.length === 0 ? "delete" : "archive",
+    reasons,
+    disabledReason: jobRemovalDisabledReason(reasons),
+  };
 }
 
 /** Skickade grossistbeställningar är extern historik – uppdraget arkiveras i stället för att raderas. */

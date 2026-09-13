@@ -96,11 +96,6 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-[26px] font-semibold tracking-tight">Offert #{quote.number}</h1>
             <QuoteStatusBadge quote={quote} status={effectiveQuoteStatus(quote)} />
-            {version.lockedAt ? (
-              <Badge tone="ok">
-                <FileLock2 className="size-3" /> Version {version.version} låst
-              </Badge>
-            ) : null}
           </div>
           <p className="mt-1 text-[15px] text-soft">
             {version.title} · <AppLink href={`/kunder/${customer.id}`} originLabel={`Offert #${quote.number}`} className="font-medium text-ink hover:underline">{customer.name}</AppLink> · {kr(totals.toPay)}
@@ -241,7 +236,7 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
               rel="noreferrer"
               className="inline-flex items-center gap-1 font-medium text-accent-deep hover:underline"
             >
-              <FileLock2 className="size-3.5" /> Visa intyg
+              <FileLock2 className="size-3.5" /> Intyg om godkännande
             </a>
           </p>
         </Card>

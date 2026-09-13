@@ -11,10 +11,11 @@ import {
   type CustomerMoneyLine,
 } from "@/lib/customer-activity-model";
 import {
+  ACTIVITY_LIST_PAGE_SIZE,
   DEFAULT_ACTIVITY_SORT,
   activityListMinHeightPx,
   nextActivitySort,
-  reserveActivityListHeight,
+  pageCustomerActivity,
   visibleCustomerActivity,
   type ActivitySortKey,
   type ActivitySortState,
@@ -41,20 +42,30 @@ export function CustomerActivity({
 }) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("alla");
   const [sort, setSort] = useState<ActivitySortState>(DEFAULT_ACTIVITY_SORT);
+  const [shown, setShown] = useState(ACTIVITY_LIST_PAGE_SIZE);
   const showFilter = rows.length > ACTIVITY_FILTER_MIN;
-  const visible = visibleCustomerActivity(rows, filter, sort);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const [reservedPx, setReservedPx] = useState(() => activityListMinHeightPx(rows.length));
+  const filtered = visibleCustomerActivity(rows, filter, sort);
+  const visible = pageCustomerActivity(filtered, shown);
+  const hasMore = filtered.length > shown;
+  const reservedPx = activityListMinHeightPx(visible.length);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const pinTabTopRef = useRef<number | null>(null);
+
+  function selectFilter(next: (typeof FILTERS)[number]["key"]) {
+    const top = tabsRef.current?.getBoundingClientRect().top;
+    if (top != null) pinTabTopRef.current = top;
+    setFilter(next);
+    setShown(ACTIVITY_LIST_PAGE_SIZE);
+  }
 
   useLayoutEffect(() => {
-    const floor = activityListMinHeightPx(rows.length);
-    if (filter !== "alla") {
-      setReservedPx((prev) => Math.max(prev, floor));
-      return;
-    }
-    const measured = panelRef.current?.getBoundingClientRect().height ?? 0;
-    setReservedPx((prev) => reserveActivityListHeight(prev, rows.length, measured));
-  }, [filter, rows.length, sort, visible.length]);
+    const pin = pinTabTopRef.current;
+    const tabs = tabsRef.current;
+    if (pin == null || !tabs) return;
+    pinTabTopRef.current = null;
+    const delta = tabs.getBoundingClientRect().top - pin;
+    if (delta !== 0) window.scrollBy(0, delta);
+  }, [filter, visible.length]);
 
   return (
     <div>
@@ -64,12 +75,12 @@ export function CustomerActivity({
         </p>
       ) : null}
       {showFilter ? (
-        <div className="mb-3 flex flex-wrap gap-1" data-activity-tabs>
+        <div ref={tabsRef} className="mb-3 flex flex-wrap gap-1" data-activity-tabs>
           {FILTERS.map((f) => (
             <button
               key={f.key}
               type="button"
-              onClick={() => setFilter(f.key)}
+              onClick={() => selectFilter(f.key)}
               className={cx(
                 "rounded-full px-2.5 py-1 text-[12px] font-medium transition-colors",
                 filter === f.key ? "bg-ink text-white" : "text-muted hover:bg-ink/5 hover:text-ink"
@@ -81,11 +92,12 @@ export function CustomerActivity({
         </div>
       ) : null}
       <div
-        ref={panelRef}
         className="flex flex-col justify-start"
         data-activity-list
         data-activity-min-height={reservedPx}
-        style={{ minHeight: reservedPx }}
+        data-activity-visible={visible.length}
+        data-activity-total={filtered.length}
+        style={reservedPx > 0 ? { minHeight: reservedPx } : undefined}
       >
         <Card className={LIST_CARD_CLASS}>
           <table className={LIST_TABLE_CLASS}>
@@ -130,6 +142,16 @@ export function CustomerActivity({
           </table>
         </Card>
       </div>
+      {hasMore ? (
+        <button
+          type="button"
+          data-activity-visa-fler
+          onClick={() => setShown((n) => n + ACTIVITY_LIST_PAGE_SIZE)}
+          className="mt-2 min-h-11 text-[13px] font-medium text-soft hover:text-ink"
+        >
+          Visa fler
+        </button>
+      ) : null}
     </div>
   );
 }

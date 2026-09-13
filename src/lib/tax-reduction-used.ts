@@ -2,8 +2,8 @@
  * Kundens använda ROT/RUT i år enligt Fervas egna fakturor.
  *
  * taxReductionUsed på kunden (ifyllt "hos andra") räknas inte hit. Ett tomt
- * eller saknat värde är okänt – inte noll använt överallt. Taken i
- * sammanfattningen är lagens tak mot Fervas fakturor, inte Skatteverkets saldo.
+ * eller saknat värde är okänt - inte noll använt överallt. remainingTaxReduction
+ * är därför bara Fervas fakturor mot lagens tak, inte Skatteverkets saldo.
  */
 import type { Customer, Invoice, RotRut } from "./types";
 import { ROT_RUT_GEMENSAMT_TAK, RUT_TAK, ROT_TAK, taxReductionCap } from "./calc";
@@ -63,12 +63,4 @@ export function clampDeductionToRemaining(
 
 export function fervaCapAmount(type: RotRut["type"]): number {
   return type === "rot" ? ROT_TAK : RUT_TAK;
-}
-
-/**
- * Text för kundkortet. Visar Fervas fakturor mot lagens tak. Lovar inte
- * resterande utrymme hos Skatteverket – hos-andra är okänt, inte noll.
- */
-export function fervaCapSummaryText(used: TaxReductionUsed): string {
-  return `Ferva i ${used.year}. ROT ${used.rot} kr av ${ROT_TAK} kr. RUT ${used.rut} kr av ${RUT_TAK} kr. Fervas fakturor mot det lagstadgade taket. Det här är inte Skatteverkets saldo.`;
 }

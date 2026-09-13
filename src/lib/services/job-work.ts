@@ -46,6 +46,7 @@ export interface JobTimeInput {
   description?: string;
   date?: string;
   hours: number;
+  unit?: string;
   unitPrice?: number;
   vatRate?: VatRate;
   quotedLineItemId?: string;
@@ -73,6 +74,7 @@ export interface JobWorkEntryPatch {
   unit?: string;
   unitPrice?: number;
   vatRate?: VatRate;
+  type?: JobWorkEntryType;
 }
 
 function todayISO(): string {
@@ -245,7 +247,7 @@ export function registerJobTime(jobId: string, input: JobTimeInput): JobWorkEntr
     description,
     date: (input.date || todayISO()).slice(0, 10),
     qty: hours,
-    unit: prefill?.unit || "tim",
+    unit: input.unit?.trim() || prefill?.unit || "tim",
     unitPrice: assertMoney(
       pickUnitPrice(input.unitPrice, prefill?.unitPrice ?? resolvedHourlyRate(db().settings.defaultHourlyRate) ?? 0)
     ),
@@ -326,7 +328,7 @@ export function addJobWorkEntry(
   jobId: string,
   input: {
     type: JobWorkEntryType;
-    description: string;
+    description?: string;
     date?: string;
     qty: number;
     unit?: string;
@@ -341,6 +343,7 @@ export function addJobWorkEntry(
       description: input.description,
       date: input.date,
       hours: input.qty,
+      unit: input.unit,
       unitPrice: input.unitPrice,
       vatRate: input.vatRate,
       quotedLineItemId: input.quotedLineItemId,
@@ -349,7 +352,7 @@ export function addJobWorkEntry(
   }
   if (input.type === "material") {
     return addJobMaterial(jobId, {
-      description: input.description,
+      description: input.description ?? "",
       date: input.date,
       qty: input.qty,
       unit: input.unit,
@@ -360,7 +363,7 @@ export function addJobWorkEntry(
     });
   }
   requireJob(jobId);
-  const description = input.description.trim();
+  const description = (input.description ?? "").trim();
   if (!description) throw new Error("Ange en beskrivning");
   const quotedLineItemId = input.quotedLineItemId;
   const entry: JobWorkEntry = {
@@ -404,6 +407,7 @@ export function updateJobWorkEntry(entryId: string, patch: JobWorkEntryPatch): J
   if (patch.unit !== undefined) entry.unit = patch.unit.trim() || entry.unit;
   if (patch.unitPrice !== undefined) entry.unitPrice = assertMoney(patch.unitPrice);
   if (patch.vatRate !== undefined) entry.vatRate = patch.vatRate;
+  if (patch.type !== undefined) entry.type = patch.type;
   entry.isExtra = detectExtra(entry.jobId, entry);
   entry.updatedAt = new Date().toISOString();
   save();

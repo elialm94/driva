@@ -187,7 +187,7 @@ export function QuoteOwnerPageActions({
         {showWithdraw ? <WithdrawQuoteMenuItem onOpen={() => setWithdrawOpen(true)} /> : null}
         {showIntyg ? (
           <ActionMenuLink href={`${publicPath}/underlag`} external>
-            <FileLock2 className="size-3.5 shrink-0" /> Visa intyg
+            <FileLock2 className="size-3.5 shrink-0" /> Intyg om godkännande
           </ActionMenuLink>
         ) : null}
       </ActionMenu>

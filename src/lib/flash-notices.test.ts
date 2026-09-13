@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { BANK_ERROR_MESSAGE_MAX_CHARS, flashFromSearch, hrefWithoutFlash } from "./flash-notices";
+import { BANK_ERROR_MESSAGE_MAX_CHARS, flashFromSearch, hrefAfterDiscardDraft, hrefWithoutFlash } from "./flash-notices";
 
 describe("engångsnotiser i URL:en", () => {
   it("kastat utkast ger en neutral notis och tar bara bort sin egen parameter", () => {
@@ -12,6 +12,12 @@ describe("engångsnotiser i URL:en", () => {
     assert.equal(match.notice.tone, undefined);
     assert.deepEqual(match.strip, ["kastat"]);
     assert.equal(hrefWithoutFlash("/ekonomi", params, match.strip), "/ekonomi?flik=offerter&sida=2");
+  });
+
+  it("kastat från uppdraget landar tillbaka på uppdraget", () => {
+    assert.equal(hrefAfterDiscardDraft("faktura", "/uppdrag/job-1"), "/uppdrag/job-1?kastat=faktura");
+    assert.equal(hrefAfterDiscardDraft("offert"), "/ekonomi?flik=offerter&kastat=offert");
+    assert.equal(hrefAfterDiscardDraft("faktura", "https://evil.com"), "/ekonomi?flik=fakturor&kastat=faktura");
   });
 
   it("fakturautkast har sin egen text", () => {
