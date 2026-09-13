@@ -328,9 +328,15 @@ describe("kundkortet: ett ROT/RUT-paket", () => {
 
     const fields = source("src/components/tax-reduction-fields.tsx");
     assert.doesNotMatch(fields, /Bostadstyp Fastighet/);
-    assert.match(fields, /taxReductionDeductionLabel\(type\)\} \{kr\(applied\)\}/);
-    assert.match(fields, /onClick=\{startEdit\}/);
+    // Ett Ändra (penna) öppnar fältet. Beloppstexten är inte en extra länk
+    // till samma editor (tidigare tre startEdit: etikett, Ändra, minusbelopp).
+    assert.match(fields, /taxReductionDeductionLabel\(type\)/);
+    assert.doesNotMatch(fields, /taxReductionDeductionLabel\(type\)\} \{kr\(applied\)\}/);
+    assert.equal((fields.match(/onClick=\{startEdit\}/g) ?? []).length, 1);
+    assert.match(fields, /<Pencil/);
+    assert.match(fields, />\s*Ändra\s*</);
     assert.match(fields, /−\{kr\(applied\)\}/);
+    assert.match(fields, /<span className="tabular">−\{kr\(applied\)\}<\/span>/);
     assert.match(fields, /onApply\(calculated\)/);
     assert.doesNotMatch(fields, /remainingCap/);
     assert.doesNotMatch(fields, /step=/);
