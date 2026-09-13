@@ -26,6 +26,11 @@ const inputCls =
 /** Ett av tre sätt att lämna fakturan till kunden. */
 type Choice = "mejl" | "pdf" | "manuell";
 
+/**
+ * Ett val i utskicksdialogen. Prickmarkeringen bär valet, inte ramfärgen:
+ * tangentbordsfokus ritar en egen accentram, och två ramar i samma färg
+ * skulle läsa som två valda alternativ.
+ */
 function ChoiceButton({
   active,
   icon,
@@ -43,12 +48,22 @@ function ChoiceButton({
     <button
       type="button"
       onClick={onClick}
-      aria-pressed={active}
+      role="radio"
+      aria-checked={active}
       className={cx(
         "flex w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition",
         active ? "border-accent bg-accent-soft/40" : "border-line hover:border-line-strong"
       )}
     >
+      <span
+        aria-hidden
+        className={cx(
+          "mt-1 flex size-4 shrink-0 items-center justify-center rounded-full border",
+          active ? "border-accent-deep" : "border-line-strong"
+        )}
+      >
+        {active ? <span className="size-2 rounded-full bg-accent-deep" /> : null}
+      </span>
       <span className={cx("mt-0.5 shrink-0", active ? "text-accent-deep" : "text-muted")}>{icon}</span>
       <span className="min-w-0">
         <span className="block text-[14.5px] font-medium text-ink">{title}</span>
@@ -215,7 +230,7 @@ export function InvoiceDraftSend({
           : "Utfärda och ladda ner"
         : isSending
           ? "Markerar ..."
-          : "Markera som skickad";
+          : "Utfärda och markera som skickad";
 
   return (
     <>
@@ -233,7 +248,35 @@ export function InvoiceDraftSend({
         </DisabledSendWrap>
       )}
 
-      <Modal open={choiceOpen} onClose={() => !isSending && setChoiceOpen(false)} size="sm" title="Skicka faktura">
+      <Modal
+        open={choiceOpen}
+        onClose={() => !isSending && setChoiceOpen(false)}
+        size="sm"
+        title="Skicka faktura"
+        // Knapparna ligger i footern: dialogen är hög och på en 375-skärm
+        // skulle de annars hamna nedanför det som syns.
+        footer={
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button className={buttonClasses("secondary")} disabled={isSending} onClick={() => setChoiceOpen(false)}>
+              Avbryt
+            </button>
+            <button
+              className={buttonClasses("primary")}
+              disabled={isSending}
+              onClick={choice === "mejl" ? confirmEmail : choice === "pdf" ? confirmDownload : confirmManual}
+            >
+              {choice === "mejl" ? (
+                <Mail className="size-4" />
+              ) : choice === "pdf" ? (
+                <FileDown className="size-4" />
+              ) : (
+                <Check className="size-4" />
+              )}
+              {confirmLabel}
+            </button>
+          </div>
+        }
+      >
         <div className="px-6 py-5">
           <p className="text-[17px] font-semibold tracking-tight text-ink">{customerName}</p>
           <p className="mt-1 text-[15px] text-soft">{kr(amount)}</p>
@@ -247,7 +290,7 @@ export function InvoiceDraftSend({
             inte ändras efteråt - bara krediteras.
           </p>
 
-          <div className="mt-4 space-y-2">
+          <div className="mt-4 space-y-2" role="radiogroup" aria-label="Så lämnar du fakturan till kunden">
             <ChoiceButton
               active={choice === "mejl"}
               icon={<Mail className="size-4" />}
@@ -321,19 +364,6 @@ export function InvoiceDraftSend({
             <p className="mt-3 text-[13px] text-ok">Sparade e-postadressen på {savedEmailFor}.</p>
           ) : null}
           {sendError ? <p className="mt-3 text-[13px] font-medium text-danger">{sendError}</p> : null}
-          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <button className={buttonClasses("secondary")} disabled={isSending} onClick={() => setChoiceOpen(false)}>
-              Avbryt
-            </button>
-            <button
-              className={buttonClasses("primary")}
-              disabled={isSending}
-              onClick={choice === "mejl" ? confirmEmail : choice === "pdf" ? confirmDownload : confirmManual}
-            >
-              {choice === "mejl" ? <Mail className="size-4" /> : choice === "pdf" ? <FileDown className="size-4" /> : <Check className="size-4" />}
-              {confirmLabel}
-            </button>
-          </div>
         </div>
       </Modal>
 
