@@ -287,10 +287,9 @@ export async function createCustomerAction(input: {
   propertyDesignations?: string[];
   reverseChargeConstruction?: boolean;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string; field?: string }> {
-  return withBusiness(() => {
+  const result = await withBusiness(() => {
     try {
       const c = createCustomer(input);
-      refresh();
       return { ok: true, id: c.id } as const;
     } catch (e) {
       if (e instanceof CustomerValidationError) {
@@ -299,6 +298,9 @@ export async function createCustomerAction(input: {
       return { ok: false, error: "Kunde inte skapa kunden" } as const;
     }
   });
+  // revalidatePath efter skrivkontexten: RSC-omladdningen får inte ärva ALS.
+  if (result.ok) refresh();
+  return result;
 }
 
 export async function updateCustomerNotesAction(customerId: string, notes: string) {
@@ -323,10 +325,9 @@ export async function updateCustomerDetailsAction(
     reverseChargeConstruction?: boolean;
   }
 ): Promise<{ ok: true } | { ok: false; error: string; field?: string }> {
-  return withBusiness(() => {
+  const result = await withBusiness(() => {
     try {
       updateCustomer(customerId, patch);
-      refresh();
       return { ok: true } as const;
     } catch (e) {
       if (e instanceof CustomerValidationError) {
@@ -335,6 +336,8 @@ export async function updateCustomerDetailsAction(
       return { ok: false, error: "Kunde inte spara ändringen" } as const;
     }
   });
+  if (result.ok) refresh();
+  return result;
 }
 
 export async function setCustomerTaxReductionUsedAction(
@@ -367,10 +370,9 @@ export async function updateCustomerPersonnummerAction(
   customerId: string,
   value: string
 ): Promise<{ ok: true; masked: string } | { ok: false; error: string }> {
-  return withBusiness(() => {
+  const result = await withBusiness(() => {
     try {
       const stored = setCustomerPersonnummer(customerId, value);
-      refresh();
       return { ok: true, masked: stored ? maskPersonnummer(stored) : "" } as const;
     } catch (e) {
       if (e instanceof CustomerValidationError) {
@@ -379,6 +381,8 @@ export async function updateCustomerPersonnummerAction(
       return { ok: false, error: "Kunde inte spara ändringen" } as const;
     }
   });
+  if (result.ok) refresh();
+  return result;
 }
 
 /** Dedikerad Visa-åtgärd. Returnerar fullt personnummer – anropa inte från listor eller AI. */
@@ -396,12 +400,11 @@ export async function upsertCustomerWorkLocationAction(
   customerId: string,
   input: WorkLocationInput & { id?: string }
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  return withBusiness(() => {
+  const result = await withBusiness(() => {
     try {
       const location = input.id
         ? updateWorkLocation(customerId, input.id, input)
         : addWorkLocation(customerId, input);
-      refresh();
       return { ok: true, id: location.id } as const;
     } catch (e) {
       if (e instanceof CustomerValidationError) {
@@ -410,6 +413,8 @@ export async function upsertCustomerWorkLocationAction(
       return { ok: false, error: "Kunde inte spara bostaden" } as const;
     }
   });
+  if (result.ok) refresh();
+  return result;
 }
 
 export async function syncCustomerPropertiesAction(
@@ -534,8 +539,9 @@ export async function createQuoteAction(input: QuoteInput, nav?: ReturnNav): Pro
 export async function updateQuoteAction(quoteId: string, input: QuoteVersionInput) {
   await withBusiness(() => {
     updateQuote(quoteId, input);
-    refresh();
   });
+  // revalidatePath efter skrivkontexten: RSC-omladdningen får inte ärva ALS.
+  refresh();
 }
 
 export type SendQuoteActionInput = {
@@ -561,7 +567,7 @@ export async function sendQuoteAction(
   quoteId: string,
   messageOrInput?: string | SendQuoteActionInput
 ): Promise<{ ok: true; mailed: boolean; demo?: boolean } | { ok: false; errors: string[] }> {
-  return withBusiness(
+  const result = await withBusiness(
     async () => {
       try {
         const input = normalizeSendQuoteInput(messageOrInput);
@@ -581,7 +587,6 @@ export async function sendQuoteAction(
         if (!outcome.ok) {
           return { ok: false, errors: [outcome.error ?? "Kunde inte skicka offerten."] } as const;
         }
-        refresh();
         return { ok: true, mailed: outcome.mode === "live", demo: outcome.mode === "demo" } as const;
       } catch (e) {
         if (e instanceof QuoteNotReadyError) {
@@ -595,6 +600,8 @@ export async function sendQuoteAction(
     },
     { retry: false }
   );
+  if (result.ok) refresh();
+  return result;
 }
 
 export async function duplicateQuoteAction(quoteId: string, nav?: ReturnNav): Promise<never> {

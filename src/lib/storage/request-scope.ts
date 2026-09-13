@@ -10,6 +10,11 @@
  * modulen), och db() i store.ts läser cellen synkront – även från nästlade
  * serverkomponenter i samma request.
  *
+ * bindRequestTenant MÅSTE köras utanför den cachade laddningen. revalidatePath
+ * efter en mutation kan ge en ny cache-cell för requestSlot() medan den
+ * cachade loadern är en träff och inte körs om – då blir db() utan tenant
+ * och sidan kraschar i error boundary (hosted digest).
+ *
  * Utanför en RSC-request (tester, route handlers, scripts) memoiserar cache()
  * inte – cellen är alltid tom och db() faller vidare till ALS/JSON-vägarna.
  * Route handlers och server actions ska därför alltid använda withBusiness/
@@ -34,5 +39,24 @@ export function requestTenantState(): DB | null {
   } catch {
     // cache() utanför React-render kan sakna requestkontext – behandla som tom.
     return null;
+  }
+}
+
+/**
+ * Skriv request-cellen som db() läser under RSC. Alltid mot den cell
+ * requestSlot() ger NU – inte bara första gången en cached loader kördes.
+ */
+export function bindRequestTenant(input: {
+  state: DB;
+  businessId: string;
+  actor?: CollaborationActor | null;
+}): void {
+  try {
+    const slot = requestSlot();
+    slot.state = input.state;
+    slot.businessId = input.businessId;
+    if (input.actor !== undefined) slot.actor = input.actor;
+  } catch {
+    // cache() utanför React-render – ALS/JSON-vägen gäller.
   }
 }
