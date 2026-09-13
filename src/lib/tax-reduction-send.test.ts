@@ -249,3 +249,20 @@ describe("ROT-faktura skick-validering", () => {
     assert.equal(issued.status, "skickad");
   });
 });
+
+describe("RUT kräver inte vald bostad", () => {
+  it("RUT-faktura med personnummer kan utfärdas utan workLocationId", () => {
+    reset({
+      customers: [testCustomer({ id: "cust-1", personalIdentityNumber: "19850515-1234" })],
+    });
+    const invoice = createInvoice({
+      customerId: "cust-1",
+      type: "faktura",
+      lines: [labor()],
+      rot: { type: "rut" },
+    });
+    assert.equal(invoice.workLocationId, undefined);
+    const issued = issueInvoice(invoice.id);
+    assert.equal(issued.status, "skickad");
+  });
+});

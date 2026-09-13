@@ -8,14 +8,11 @@ import { useToast } from "./toast";
 import { AddressFields } from "./address-input";
 import { createCustomerAction } from "@/app/actions";
 import { FieldError, focusField, invalidFieldCls, useNativeFieldErrors } from "./form-validation";
-import { personnummerInputChange } from "@/lib/personnummer";
 import {
   formatSwedishOrganizationNumber,
   swedishOrgnrInputProps,
-  swedishPersonnummerInputProps,
   validateSwedishOrganizationNumber,
 } from "@/lib/validation";
-import { PropertyDesignationFields, type PropertyDesignationDraft } from "./property-designation-fields";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
@@ -28,10 +25,9 @@ export interface CreatedCustomer {
 }
 
 /**
- * Ny kund: bara namnet krävs – "Erik" → Skapa kund → klart. E-post, telefon,
- * adress och personnummer är frivilliga. Personnummer syns alltid för
- * privatperson (behövs först vid ROT/RUT). Företagsfälten bor under
- * "+ Fler uppgifter"; fastigheter under "+ Lägg till fastighet".
+ * Ny kund: bara namnet krävs – "Erik" → Skapa kund → klart. E-post, telefon
+ * och adress är frivilliga. Personnummer och fastighet hör till ROT/RUT på
+ * kundkortet och efterfrågas först där.
  */
 export function NewCustomerModal({
   open,
@@ -45,9 +41,6 @@ export function NewCustomerModal({
   initialName?: string;
 }) {
   const [kind, setKind] = useState<"privat" | "foretag">("privat");
-  const [personnummer, setPersonnummer] = useState("");
-  const [properties, setProperties] = useState<PropertyDesignationDraft[]>([]);
-  const [showProperties, setShowProperties] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
@@ -58,9 +51,6 @@ export function NewCustomerModal({
   useEffect(() => {
     if (open) {
       setKind("privat");
-      setPersonnummer("");
-      setProperties([]);
-      setShowProperties(false);
       setMoreOpen(false);
       reset();
     }
@@ -91,18 +81,12 @@ export function NewCustomerModal({
         address: String(formData.get("address") ?? "") || undefined,
         postalCode: String(formData.get("postalCode") ?? "") || undefined,
         city: String(formData.get("city") ?? "") || undefined,
-        personalIdentityNumber: createdKind === "privat" ? personnummer : undefined,
-        propertyDesignations: properties.map((row) => row.designation),
         reverseChargeConstruction: createdKind === "foretag" ? formData.get("reverseChargeConstruction") === "on" : undefined,
       });
       if (!result.ok) {
         if (result.field) setFieldError(result.field, result.error);
-        if (result.field === "personalIdentityNumber") {
-          focusField("ny-kund-personnummer");
-        } else if (result.field === "orgNumber") {
+        if (result.field === "orgNumber") {
           revealAndFocus("ny-kund-orgnr", () => setMoreOpen(true));
-        } else if (result.field === "propertyDesignation") {
-          revealAndFocus("fastighetsbeteckning", () => setShowProperties(true));
         } else if (result.field === "name") {
           focusField("ny-kund-namn");
         } else if (result.field === "email") {
@@ -189,96 +173,60 @@ export function NewCustomerModal({
         </div>
         <AddressFields />
 
-        {showProperties ? (
-          <PropertyDesignationFields
-            values={properties}
-            onChange={setProperties}
-            error={errors.propertyDesignation}
-            inputClassName={inputCls}
-          />
-        ) : (
-          <button
-            type="button"
-            className="block text-[13px] font-medium text-muted hover:text-ink"
-            onClick={() => {
-              setShowProperties(true);
-              setProperties([{ designation: "" }]);
-            }}
-          >
-            <Plus className="mr-1 inline size-3.5" />
-            Lägg till fastighet
-          </button>
-        )}
-
-        {kind === "privat" ? (
-          <div>
-            <label className={labelCls} htmlFor="ny-kund-personnummer">
-              Personnummer
-            </label>
-            <input
-              id="ny-kund-personnummer"
-              name="personalIdentityNumber"
-              value={personnummer}
-              onChange={(e) => setPersonnummer(personnummerInputChange(personnummer, e.target.value))}
-              {...swedishPersonnummerInputProps}
-              className={cx(inputCls, errors.personalIdentityNumber && invalidFieldCls)}
-              {...fieldProps("personalIdentityNumber", "ny-kund-personnummer-fel")}
-            />
-            <FieldError id="ny-kund-personnummer-fel">{errors.personalIdentityNumber}</FieldError>
-            <p className="mt-1 text-[12px] text-muted">Behövs först vid ROT/RUT – går att lägga till då.</p>
-          </div>
-        ) : moreOpen ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className={labelCls} htmlFor="ny-kund-kontaktperson">
-                Kontaktperson
-              </label>
-              <input id="ny-kund-kontaktperson" name="contactPerson" autoComplete="name" className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls} htmlFor="ny-kund-orgnr">
-                Org.nummer
-              </label>
-              <input
-                id="ny-kund-orgnr"
-                name="orgNumber"
-                {...swedishOrgnrInputProps}
-                className={cx(inputCls, errors.orgNumber && invalidFieldCls)}
-                onBlur={(e) => {
-                  const r = validateSwedishOrganizationNumber(e.target.value);
-                  if (r.ok && r.normalized) e.target.value = formatSwedishOrganizationNumber(r.normalized);
-                }}
-                {...fieldProps("orgNumber", "ny-kund-orgnr-fel")}
-              />
-              <FieldError id="ny-kund-orgnr-fel">{errors.orgNumber}</FieldError>
-            </div>
-            {/* Omvänd byggmoms är ett val, ingen bedömning – produkten vet inte
-                om köparen bedriver byggverksamhet. */}
-            <label className="flex cursor-pointer items-start gap-2.5 sm:col-span-2">
-              <input
-                type="checkbox"
-                name="reverseChargeConstruction"
-                className="mt-0.5 size-4 shrink-0 rounded border-line-strong accent-accent"
-              />
-              <span className="text-[13px] leading-snug">
-                <span className="font-medium text-ink">Omvänd byggmoms</span>
-                <span className="block text-muted">
-                  Kunden är ett byggföretag som redovisar momsen själv. Fakturor får 0 % moms och laghänvisning.
-                  Konsultfall: fakturan kan utfärdas när din redovisningskonsult godkänt omvänd byggmoms för bolaget.
+        {kind === "foretag" ? (
+          moreOpen ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className={labelCls} htmlFor="ny-kund-kontaktperson">
+                  Kontaktperson
+                </label>
+                <input id="ny-kund-kontaktperson" name="contactPerson" autoComplete="name" className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls} htmlFor="ny-kund-orgnr">
+                  Org.nummer
+                </label>
+                <input
+                  id="ny-kund-orgnr"
+                  name="orgNumber"
+                  {...swedishOrgnrInputProps}
+                  className={cx(inputCls, errors.orgNumber && invalidFieldCls)}
+                  onBlur={(e) => {
+                    const r = validateSwedishOrganizationNumber(e.target.value);
+                    if (r.ok && r.normalized) e.target.value = formatSwedishOrganizationNumber(r.normalized);
+                  }}
+                  {...fieldProps("orgNumber", "ny-kund-orgnr-fel")}
+                />
+                <FieldError id="ny-kund-orgnr-fel">{errors.orgNumber}</FieldError>
+              </div>
+              {/* Omvänd byggmoms är ett val, ingen bedömning – produkten vet inte
+                  om köparen bedriver byggverksamhet. */}
+              <label className="flex cursor-pointer items-start gap-2.5 sm:col-span-2">
+                <input
+                  type="checkbox"
+                  name="reverseChargeConstruction"
+                  className="mt-0.5 size-4 shrink-0 rounded border-line-strong accent-accent"
+                />
+                <span className="text-[13px] leading-snug">
+                  <span className="font-medium text-ink">Omvänd byggmoms</span>
+                  <span className="block text-muted">
+                    Kunden är ett byggföretag som redovisar momsen själv. Fakturor får 0 % moms och laghänvisning.
+                    Konsultfall: fakturan kan utfärdas när din redovisningskonsult godkänt omvänd byggmoms för bolaget.
+                  </span>
                 </span>
-              </span>
-            </label>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="block text-[13px] font-medium text-muted hover:text-ink"
-            onClick={() => setMoreOpen(true)}
-          >
-            <Plus className="mr-1 inline size-3.5" />
-            Fler uppgifter
-          </button>
-        )}
+              </label>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="block text-[13px] font-medium text-muted hover:text-ink"
+              onClick={() => setMoreOpen(true)}
+            >
+              <Plus className="mr-1 inline size-3.5" />
+              Fler uppgifter
+            </button>
+          )
+        ) : null}
 
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" className={buttonClasses("ghost")} onClick={onClose}>

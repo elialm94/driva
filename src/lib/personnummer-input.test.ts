@@ -95,9 +95,13 @@ describe("personnummerfält i gränssnittet", () => {
     assert.match(src, /maskPersonnummer\(value\.personalIdentityNumber\)/);
   });
 
-  it("kundformuläret och ny kund-rutan formaterar vid ändring", () => {
-    assert.match(source("src/components/customer-details-form.tsx"), /personnummerInputChange\(/);
-    assert.match(source("src/components/new-customer-modal.tsx"), /personnummerInputChange\(/);
+  it("ROT/RUT-blocket på kunden formaterar vid ändring - inte identiteten eller ny kund", () => {
+    // Personnummer hör till ROT/RUT, inte till kundens identitetsfält.
+    assert.match(source("src/components/customer-rot-section.tsx"), /personnummerInputChange\(/);
+    assert.match(source("src/components/customer-rot-section.tsx"), /id="kund-personnummer"/);
+    assert.doesNotMatch(source("src/components/customer-details-form.tsx"), /personnummerInputChange/);
+    assert.doesNotMatch(source("src/components/new-customer-modal.tsx"), /personnummerInputChange/);
+    assert.doesNotMatch(source("src/components/new-customer-modal.tsx"), /ny-kund-personnummer/);
   });
 
   it("anställdfältet under Lön formaterar vid ändring", () => {

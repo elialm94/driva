@@ -164,7 +164,7 @@ describe("alla redigerbara adressfält använder den delade komponenten", () => 
   const consumers = [
     "src/components/new-customer-modal.tsx",
     "src/components/customer-details-form.tsx",
-    "src/components/customer-rot-section.tsx",
+    "src/components/work-location-form.tsx",
     "src/components/settings-form.tsx",
     "src/components/settings-billing-readiness.tsx",
     "src/app/onboarding/onboarding-form.tsx",
