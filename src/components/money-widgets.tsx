@@ -19,8 +19,14 @@ import {
   uploadInboxDocumentAction,
   uploadReceiptAction,
 } from "@/app/actions";
+import {
+  RepresentationAnswerDialog,
+  isRepresentationOption,
+  representationKindFromOption,
+} from "./representation-answer";
 import { invoiceHref } from "@/lib/nav";
 import { kr } from "@/lib/format";
+import type { RepresentationKind } from "@/lib/types";
 import type { CreditInvoiceContext } from "@/lib/services/invoices";
 import { inboxDocumentForm, receiptUploadForm } from "@/lib/receipts/read-file";
 import type { FileDropzoneVariant } from "./file-dropzone";
@@ -76,9 +82,15 @@ export function UploadReceiptButton({
   );
 }
 
+/**
+ * Svaren på en bokföringsfråga. Representation är inte klar med ett klick:
+ * avdraget beror på antal personer och om alkohol ingick, så svaret öppnar
+ * bekräftelsesteget i stället för att bokföra (services/expenses.ts).
+ */
 export function ExpenseQuestionButtons({ expenseId, options }: { expenseId: string; options: string[] }) {
   const [isPending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
+  const [representation, setRepresentation] = useState<{ kind?: RepresentationKind } | null>(null);
   if (done) {
     return (
       <span className="flex items-center gap-1.5 text-sm font-medium text-ok">
@@ -93,16 +105,29 @@ export function ExpenseQuestionButtons({ expenseId, options }: { expenseId: stri
           key={opt}
           className={buttonClasses("secondary", "sm")}
           disabled={isPending}
-          onClick={() =>
+          onClick={() => {
+            if (isRepresentationOption(opt)) {
+              setRepresentation({ kind: representationKindFromOption(opt) });
+              return;
+            }
             startTransition(async () => {
               await answerExpenseQuestionAction(expenseId, opt);
               setDone(true);
-            })
-          }
+            });
+          }}
         >
           {opt}
         </button>
       ))}
+      {representation ? (
+        <RepresentationAnswerDialog
+          expenseId={expenseId}
+          open
+          initialKind={representation.kind}
+          onClose={() => setRepresentation(null)}
+          onBooked={() => setDone(true)}
+        />
+      ) : null}
     </div>
   );
 }
