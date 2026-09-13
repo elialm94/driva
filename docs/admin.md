@@ -424,7 +424,7 @@ i seq-ordning med backoff (2 s → 5 min, max 8 automatiska försök) och samma
 `withBusiness`-kontroll som formulären: session, tenant, capability per
 ärendetyp (`change_jobs`, `manage_customers`, `write_accounting`),
 abonnemangets skrivskydd och villkorsgrinden. Servern kvitterar varje ärende i
-`offline_mutations` (migration 55, unik per företag + klientnyckel, immutabel)
+`offline_mutations` (migration 56, unik per företag + klientnyckel, immutabel)
 – en omsändning får första utfallet tillbaka utan att något görs om.
 Konflikter (uppdraget klart/borttaget) och avvisningar parkeras i köns
 konfliktvy med *Försök igen*/*Ta bort*. Utloggning, tenantbyte och 401/403
@@ -448,7 +448,7 @@ mot. Publikt läsbar på `/omfattning` (villkoren hänvisar dit).
 **Eligibility.** Onboardingens steg 1 har en fråga med fem kryssrutor
 (`scope`). Klienten visar beskedet direkt; `createCompanyAction` kör
 `assertEligibleToCreate` igen och vägrar skapa bolaget vid *unsupported*.
-Svaren sparas i `business_settings.scope` (jsonb, migration 56 + pending-
+Svaren sparas i `business_settings.scope` (jsonb, migration 57 + pending-
 schema) tillsammans med konsultens godkännanden. Bolag skapade före kolumnen
 har `null`: de bedöms bara på företagsformen tills ägaren svarar under
 Inställningar → Företag.

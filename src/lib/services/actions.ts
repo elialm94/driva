@@ -529,8 +529,14 @@ function collectInvoices(ranked: Ranked[], watching: WatchingItem[], now: Date) 
 
     if (inv.status === "krediterad") continue;
 
+    // "Utfärdad men aldrig levererad" är ett fel bara när ingen kanal valdes.
+    // Valde användaren papper eller ett eget utskick är avsaknaden av sentAt
+    // exakt vad som ska gälla, inte ett mejl som föll bort.
     const deliveryFailed =
-      (inv.status === "skickad" || inv.status === "delbetald") && Boolean(inv.issuedAt) && !inv.sentAt;
+      (inv.status === "skickad" || inv.status === "delbetald") &&
+      Boolean(inv.issuedAt) &&
+      !inv.sentAt &&
+      !inv.deliveredBy;
     if (deliveryFailed) {
       const toPay = invoiceTotals(inv).toPay;
       ranked.push({

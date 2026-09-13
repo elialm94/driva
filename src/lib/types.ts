@@ -968,6 +968,12 @@ export type JobPricingKind = "fast_pris" | "lopande" | "hybrid";
  * del av att-betala. Förfallen härleds (isOverdue) och lagras aldrig.
  */
 export type InvoiceStatus = "utkast" | "skickad" | "delbetald" | "betald" | "krediterad";
+
+/**
+ * Leveranskanal utanför e-post. Bara de två: mejlade fakturor känns igen på
+ * sentAt/lastEmail och behöver ingen egen markering.
+ */
+export type InvoiceDeliveryChannel = "utskrift" | "manuell";
 export type InvoiceType = "faktura" | "delbetalning" | "slutfaktura" | "kredit";
 
 /** Säljaren vid utfärdandet – fryses så att senare ändringar i företagsuppgifter inte ändrar gamla fakturor. */
@@ -1116,6 +1122,24 @@ export interface Invoice {
   issuedAt?: string;
   /** Första lyckade e-postleveransen. Sätts bara efter provider-succé. */
   sentAt?: string;
+  /**
+   * Vald leveranskanal när fakturan INTE mejlades: "utskrift" = användaren
+   * laddade ner PDF:en för att lämna den på papper, "manuell" = användaren
+   * skickade den själv på annat sätt. E-postleveransen bärs av sentAt och
+   * lastEmail och sätter aldrig det här fältet.
+   *
+   * Fältet finns för att "utfärdad utan sentAt" har två helt olika
+   * betydelser: ett mejl som inte gick fram (ett fel som ska lyftas) och en
+   * pappersfaktura (ett medvetet val). Utan det ser åtgärdsmotorn varje
+   * pappersfaktura som ett leveransfel.
+   */
+  deliveredBy?: InvoiceDeliveryChannel;
+  /**
+   * När kunden bevisligen fick fakturan via en annan kanal än e-post
+   * ("Markera som skickad"). En nedladdad PDF räknas inte – då vet vi bara
+   * att fakturan är utfärdad, inte att den nått kunden.
+   */
+  deliveredAt?: string;
   /** Senaste leveransförsöket (skicka igen). */
   lastSentAt?: string;
   lastEmail?: DocumentEmailDelivery;

@@ -24,6 +24,7 @@ import {
   resolveTaxReductionPrefill,
   taxReductionCaseForInvoice,
   taxReductionCaseForJob,
+  taxReductionCaseView,
   taxReductionMissingFields,
 } from "./services/tax-reduction";
 import { formatWorkPeriodRange } from "./tax-reduction-gaps";
@@ -552,5 +553,40 @@ describe("Manuellt sänkt ROT-avdrag", () => {
     assert.equal(/kunden har \d/i.test(corpus), false);
     assert.match(corpus, /maximala avdrag som fakturan medger/);
     assert.match(corpus, /material, resor och övrigt ingår inte/);
+  });
+});
+
+describe("ansökningsfallet till klienten", () => {
+  beforeEach(reset);
+
+  /**
+   * `prefill` bär hela personnummret och läses bara på servern. Fallet skickas
+   * till en klientkomponent, så allt som ligger i objektet följer med ut i
+   * RSC-payloaden och hamnar i webbläsarens HTML. Det gör maskeringen på
+   * dokumentet meningslös: samma sida skulle bära hela numret ändå.
+   */
+  it("vyn till klienten bär inte hela personnummret", () => {
+    const job = getJob("job-kok")!;
+    job.housing = { dwellingType: "smahus", propertyDesignation: "Södermalm 12:34" };
+    const inv = createInvoice({
+      customerId: "cust-anna",
+      jobId: "job-kok",
+      type: "faktura",
+      lines: [labor({ qty: 40, unit: "tim", unitPrice: 1_000 })],
+      rot: { type: "rot" },
+    });
+    issueInvoice(inv.id);
+
+    const cse = taxReductionCaseForInvoice(getInvoice(inv.id)!);
+    assert.equal(cse.prefill?.personalIdentityNumber, "19850515-1234", "servern behöver hela numret");
+
+    const view = taxReductionCaseView(cse);
+    assert.equal(JSON.stringify(view).includes("19850515-1234"), false);
+    assert.equal(JSON.stringify(view).includes("198505151234"), false);
+    // Resten av fallet är orört – vyn är bara fallet utan prefill.
+    assert.equal(view.phase, cse.phase);
+    assert.equal(view.label, cse.label);
+    assert.equal(view.invoiceId, cse.invoiceId);
+    assert.deepEqual(view.missing, cse.missing);
   });
 });

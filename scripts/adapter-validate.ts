@@ -877,6 +877,62 @@ async function main() {
     });
   });
 
+  console.log("\nLeveranskanal på fakturan genom adaptern:");
+  await check("pappersfaktura utfärdas via RPC:n och kanalen rundresar", async () => {
+    const { createCustomer } = await import("../src/lib/services/customers");
+    const { createInvoice, issueInvoiceForPrint, markInvoiceSentManually } = await import(
+      "../src/lib/services/invoices"
+    );
+    let invoiceId = "";
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      const customer = createCustomer({
+        kind: "privat",
+        name: "Papper Perssson",
+        address: "Pappersgatan 2",
+        postalCode: "113 30",
+        city: "Stockholm",
+      });
+      assert.equal(customer.email?.trim() ?? "", "", "kunden saknar e-post – utfärdandet ska ändå gå igenom");
+      const invoice = createInvoice({
+        customerId: customer.id,
+        type: "faktura",
+        lines: [
+          {
+            id: "adapter-papper-rad",
+            kind: "arbete",
+            description: "Snickeriarbete",
+            qty: 1,
+            unit: "st",
+            unitPrice: 5_000,
+            vatRate: 25,
+          },
+        ],
+        rot: null,
+      });
+      // Utfärdandet går via app.issue_invoice: kanalen måste med i RPC:n,
+      // annars tappas den i samma transaktion som den sattes.
+      invoiceId = issueInvoiceForPrint(invoice.id).id;
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const invoice = db().invoices.find((i) => i.id === invoiceId);
+      assert.equal(invoice?.deliveredBy, "utskrift", "kanalen rundresar genom utfärdande-RPC:n");
+      assert.equal(invoice?.deliveredAt, undefined, "en nedladdad PDF är inte en bekräftad leverans");
+      assert.equal(invoice?.sentAt, undefined, "papper är inte e-post");
+      assert.ok(invoice?.issuedAt, "pappersfakturan är utfärdad");
+      const ver = db().verifications.find((v) => v.source?.type === "kundfaktura" && v.source.id === invoiceId);
+      assert.ok(ver, "pappersfakturan är bokförd");
+    });
+    // Andra transaktionen: vanlig upsert på en redan utfärdad faktura.
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      markInvoiceSentManually(invoiceId);
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      const invoice = db().invoices.find((i) => i.id === invoiceId);
+      assert.equal(invoice?.deliveredBy, "manuell", "kanalen får ändras efter utfärdandet");
+      assert.ok(invoice?.deliveredAt, "leveranstidpunkten rundresar");
+    });
+  });
+
   console.log("\nMomsperiodicitet genom adaptern:");
   await check("valet rundresar och styr perioderna", async () => {
     const { setVatPeriodicity, vatPeriods } = await import("../src/lib/accounting/vat");

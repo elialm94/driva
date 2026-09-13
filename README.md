@@ -76,7 +76,7 @@ Lagret mellan "arbetet är gjort" och "rätt faktura" (migration `48_closeout`, 
 ### Vad Ferva stödjer (supportmatris)
 
 - **En versionerad matris** (`src/lib/support/matrix.ts`) är den enda sanningen om produktomfattningen: stött (aktiebolag, K2, svensk verksamhet i SEK, fakturering med 0/6/12/25 % moms, ROT/RUT, fast månadslön, bokföring/moms/AGI/INK2, K2-bokslut, manuell inlämning), **konsultfall** (enskild firma, omvänd byggmoms på egna kundfakturor) och **stöds inte ännu** (annan företagsform, koncern, K3, annan valuta, EU/export/import, VMB, lager, komplex lön, e-faktura, API-inlämning). Varje post har primärkälla, giltighetsdatum, ägare och testmatris; inga regler läggs till utan dem.
-- **Onboardingen** ställer en fråga (fem kryssrutor) och visar direkt om Ferva passar, passar med konsult eller inte stöder bolaget. **Servern gör samma bedömning igen** och vägrar skapa ett bolag med ej stödda svar; svaren sparas i `business_settings.scope` (migration 56).
+- **Onboardingen** ställer en fråga (fem kryssrutor) och visar direkt om Ferva passar, passar med konsult eller inte stöder bolaget. **Servern gör samma bedömning igen** och vägrar skapa ett bolag med ej stödda svar; svaren sparas i `business_settings.scope` (migration 57).
 - **Konsultfall spärras** tills bolagets redovisningskonsult godkänt dem i sin vy (`/redovisning/k/<id>/omfattning`, capability `approve_scope` – ägaren kan inte godkänna åt sig själv). En faktura med omvänd byggmoms kan inte utfärdas före godkännandet; godkännanden och återkallanden auditloggas.
 - Publik hjälpsida: **`/omfattning`** (Hjälp → Vad Ferva stödjer). Ägaren ser sitt bolags status och kan ändra svaren under Inställningar → Företag.
 
@@ -130,7 +130,7 @@ Serverless (Vercel): använd **Transaction pooler**-URL:en (port 6543) som `SUPA
 
 ### 3. Migrationer
 
-Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy; därefter 49–56 för go-live: bankförslagens kvalitetslogg, manuell inlämning, Stripe-abonnemang, driftposter, villkorsgodkännanden, företagets verifierade påståenden, offline-synkens kvitton och bolagets produktomfattning). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning.
+Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy; därefter 49–57 för go-live och fakturautskick: bankförslagens kvalitetslogg, manuell inlämning, Stripe-abonnemang, driftposter, villkorsgodkännanden, företagets verifierade påståenden, fakturans leveranskanal, offline-synkens kvitton och bolagets produktomfattning). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning.
 
 ```bash
 npx supabase login
