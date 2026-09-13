@@ -37,7 +37,7 @@ describe("dokumentradsmatematik", () => {
     const math = validateDocumentLineMath({ lines: sevenArticles, documentTotal: 1300 });
     assert.equal(math.ok, false);
     assert.equal(Math.abs(math.delta), 52);
-    assert.match(math.message, /1 248/);
+    assert.match(math.message, /1[\s\u00a0]248/);
   });
 
   it("6. rabatt, pant, frakt och avrundning", () => {
