@@ -1,10 +1,10 @@
 /**
  * ROT/RUT-redo innan utskick.
  *
- * Utkast får sakna personnummer och bostad. Innan offerten eller fakturan
- * skickas måste dokumentet ha giltigt personnummer på den som får avdraget
- * och en bostad som är explicit sparad på dokumentet. Kundens fastigheter
- * räcker inte – relationen måste ligga på just den här offerten/fakturan.
+ * Utkast får sakna personnummer och (för ROT) bostad. Innan offerten eller
+ * fakturan skickas måste dokumentet ha giltigt personnummer. ROT kräver
+ * dessutom en bostad som är explicit sparad på dokumentet – kundens
+ * fastigheter räcker inte. RUT kräver personnummer men inget fastighetsval.
  *
  * UI och server delar den här funktionen. Felkoder är interna; användaren
  * ser bara den svenska texten.
@@ -67,9 +67,9 @@ export function isValidTaxReductionPersonnummer(value?: string | null): boolean 
 }
 
 /**
- * Om ROT/RUT är valt och dokumentet saknar bostad, men kunden har precis en,
+ * Om ROT är valt och dokumentet saknar bostad, men kunden har precis en,
  * väljs den och ska sparas på dokumentet. Flera bostäder kräver aktivt val.
- * Första bostaden gissas aldrig om det finns mer än en.
+ * Första bostaden gissas aldrig om det finns mer än en. RUT auto-väljer inte.
  */
 export function resolvePersistedWorkLocationId(input: {
   taxReduction: RotRut | null | undefined;
@@ -79,7 +79,7 @@ export function resolvePersistedWorkLocationId(input: {
   const ids = input.customerWorkLocationIds.filter(Boolean);
   const current = input.workLocationId?.trim();
   if (current && ids.includes(current)) return current;
-  if (input.taxReduction && !current && ids.length === 1) return ids[0];
+  if (input.taxReduction?.type === "rot" && !current && ids.length === 1) return ids[0];
   return undefined;
 }
 
@@ -103,7 +103,7 @@ export function validateTaxReductionSendReadiness(
     });
   }
 
-  if (!hasExplicitProperty(document.workLocationId, document.customerWorkLocationIds)) {
+  if (rot.type === "rot" && !hasExplicitProperty(document.workLocationId, document.customerWorkLocationIds)) {
     issues.push({
       code: "property",
       message: `Ingen bostad är vald på ${kindLabel(document.kind)}.`,

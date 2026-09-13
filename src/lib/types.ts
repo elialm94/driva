@@ -511,10 +511,10 @@ export interface Quote {
   customerId: ID;
   jobId?: ID;
   /**
-   * Bostad som ROT/RUT på den här offerten gäller. Måste vara explicit
+   * Bostad som ROT på den här offerten gäller. Måste vara explicit
    * sparad här – kundens fastigheter räcker inte vid utskick.
-   * Samma relation som Job.workLocationId, så kedjan offert → uppdrag →
-   * faktura kan ärva fältet utan ny modell.
+   * RUT kräver inget fastighetsval. Samma relation som Job.workLocationId,
+   * så kedjan offert → uppdrag → faktura kan ärva fältet utan ny modell.
    */
   workLocationId?: ID;
   status: QuoteStatus;

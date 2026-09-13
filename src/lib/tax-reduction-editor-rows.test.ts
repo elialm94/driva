@@ -23,34 +23,31 @@ function render(type: "rot" | "rut", over: Partial<TaxReductionFormValue> = {}):
       type,
       value,
       onChange: () => {},
-      propertyFieldId: "faktura-fastighet-ny",
     })
   );
 }
 
 /**
- * Målbilden: känd kund och uppdrag med datum ger tre sammanfattade rader, noll
- * öppna fält och ingen saknad uppgift.
+ * Personnummer och arbetsperiod bor här. Fastighet ägs av Bostad-väljaren.
  */
 describe("ROT-editorn börjar sammanfattad", () => {
-  it("tre kända rader, inga öppna fält och inga luckor", () => {
+  it("personnummer och arbetsperiod, ingen andra bostadsrad", () => {
     const html = render("rot");
     assert.match(html, /Personnummer 1985••••-1234/);
     assert.match(html, /Arbetsperiod: 12–19 augusti 2026/);
-    assert.match(html, /Bostadstyp Fastighet\/småhus - Eken 1:23/);
+    assert.doesNotMatch(html, /Bostadstyp Fastighet/);
     assert.equal(html.includes('id="rot-arbetsperiod"'), false, "inga öppna datumfält");
     assert.equal(html.includes('id="rot-bostadstyp"'), false, "ingen öppen bostadstypsväljare");
     assert.equal(/uppgift(er)? saknas/.test(html), false);
     assert.match(html, /Alla uppgifter finns/);
-    assert.equal((html.match(/Ändra/g) ?? []).length, 3, "tre Ändra-knappar, en per rad");
+    assert.equal((html.match(/Ändra/g) ?? []).length, 2, "två Ändra-knappar: personnummer och period");
   });
 
-  it("fastighetsbeteckningen har ett fält, och det ligger i bostadsblocket", () => {
+  it("fastighet redigeras inte här - Bostad-väljaren är ensam ägare", () => {
     const html = render("rot", { housing: { dwellingType: "smahus" } });
-    assert.equal(html.includes("Fastighetsbeteckning</label"), false, "inget andra inmatningsfält här");
-    // Luckan finns kvar och pekar (via propertyFieldId) på fältet i bostadsblocket.
-    assert.match(html, /1 uppgift saknas för ROT-ansökan/);
-    assert.match(html, />Fastighetsbeteckning<\/button>/);
+    assert.equal(html.includes("Fastighetsbeteckning"), false);
+    assert.equal(html.includes("Bostadstyp"), false);
+    assert.equal(/uppgift(er)? saknas/.test(html), false);
   });
 
   it("en härledd period utan uppdragsdatum visas som aktuell månad, inte som lucka", () => {

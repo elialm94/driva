@@ -72,6 +72,10 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
             customerId={customer.id}
             workLocations={customer.workLocations ?? []}
             defaultWorkLocationId={customer.defaultWorkLocationId}
+            usedWorkLocationIds={[
+              ...db().quotes.filter((q) => q.customerId === customer.id).map((q) => q.workLocationId),
+              ...db().invoices.filter((i) => i.customerId === customer.id).map((i) => i.workLocationId),
+            ].filter((id): id is string => Boolean(id))}
             maskedPersonnummer={
               customer.personalIdentityNumber ? maskPersonnummer(customer.personalIdentityNumber) : undefined
             }

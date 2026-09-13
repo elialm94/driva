@@ -18,6 +18,7 @@ import {
   workLocationToHousing,
   workLocationsOf,
 } from "./work-locations";
+import { toPropertyOption } from "../work-location-label";
 import { kr, datumKort } from "../format";
 import { maskPersonnummer, normalizePersonnummer } from "../personnummer";
 import { normalizeOrgnr } from "../invoices/formats";
@@ -151,7 +152,7 @@ export function resolveTaxReductionPrefill(input: {
 export type CustomerInvoiceRotPrefill = {
   personalIdentityNumber?: string;
   addressLine: string;
-  properties: { id: string; designation: string; label: string }[];
+  properties: ReturnType<typeof toPropertyOption>[];
   /** Bostadstyp och beteckning att prefilla med när kunden byts i editorn. */
   housing: HousingDetails;
 };
@@ -161,11 +162,7 @@ export function customerInvoiceRotPrefill(customer: Customer): CustomerInvoiceRo
   return {
     personalIdentityNumber: customer.personalIdentityNumber,
     addressLine: formatWorkAddress(customer),
-    properties: workLocationsOf(customer).map((location) => ({
-      id: location.id,
-      designation: location.propertyDesignation ?? "",
-      label: location.label,
-    })),
+    properties: workLocationsOf(customer).map(toPropertyOption),
     housing: mergeHousing(
       housingFromEarlierTaxReductionInvoices(customer.id),
       workLocationToHousing(defaultLocation)
