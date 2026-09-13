@@ -1530,7 +1530,7 @@ export type PaymentExportFormat = "ISO20022_PAIN001";
  */
 export interface PaymentFile {
   id: ID;
-  /** T.ex. driva-betalningar-2026-08-30.xml. */
+  /** T.ex. ferva-betalningar-2026-08-30.xml. */
   filename: string;
   /** pain.001 GrpHdr/MsgId – max 35 tecken. */
   messageId: string;
@@ -3479,6 +3479,7 @@ export type SetupTaskId =
   | "invite_consultant"
   | "payroll"
   | "f_skatt"
+  | "company_claims"
   | "articles_prices";
 
 /** Bara det som inte kan härledas sparas: "gör senare" och "behövs inte". */
