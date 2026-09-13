@@ -12,8 +12,15 @@
 #
 # Needs SUPABASE_MIGRATION_DB_URL in Vercel (Production scope only): the
 # direct Postgres connection string, not the pooler, with the password
-# percent-encoded. A missing URL warns instead of failing, so deploys still
-# work if the secret is rotated or unset.
+# percent-encoded.
+#
+# A missing URL in production FAILS the build. It used to warn and build on,
+# which left the migration-53 failure mode wide open: rotate the secret or
+# change its Vercel scope and the next deploy ships code whose tables do not
+# exist. A failed build means the previous deploy keeps serving, which is the
+# safe outcome. There is deliberately no escape-hatch env var.
+#
+# Non-production (preview, local) is unchanged: skip with a note.
 #
 # Usage: set as buildCommand in vercel.json. Never runs locally.
 
@@ -29,9 +36,17 @@ apply_migrations() {
   fi
 
   if [[ -z "${SUPABASE_MIGRATION_DB_URL:-}" ]]; then
-    echo "[migrate] WARNING: SUPABASE_MIGRATION_DB_URL is not set - migrations NOT applied."
-    echo "[migrate] Production schema may lag behind this build. See README, 'Databas och migrationer'."
-    return 0
+    echo "[migrate] FEL: SUPABASE_MIGRATION_DB_URL är inte satt - bygget avbryts." >&2
+    echo "[migrate] Utan den kan migrationerna inte appliceras, och en deploy med kod" >&2
+    echo "[migrate] vars tabeller saknas släcker sajten (det var migration 53 och" >&2
+    echo "[migrate] terms_acceptances som tog ner ferva.se)." >&2
+    echo "[migrate] Sätt den i Vercel: Project → Settings → Environment Variables," >&2
+    echo "[migrate] scope Production, värdet = den DIREKTA Postgres-anslutningen" >&2
+    echo "[migrate] (db.<ref>.supabase.co:5432, inte poolaren) med lösenordet" >&2
+    echo "[migrate] procent-kodat. Deploya om därefter." >&2
+    echo "[migrate] Den förra deployen fortsätter svara tills bygget går igenom." >&2
+    # exit, inte return: bygget ska stanna här, före next build.
+    exit 1
   fi
 
   echo "[migrate] Applying supabase/migrations to production..."

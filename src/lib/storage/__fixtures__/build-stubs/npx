@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Stubb för migration-guard.test.ts: ekar anropet i stället för att köra
+# supabase db push mot en riktig databas.
+echo "[stub npx] $*"
