@@ -1686,7 +1686,8 @@ const specs: ToolSpec[] = [
       type: "function",
       function: {
         name: "book_expense",
-        description: "Be om bekräftelse att bokföra ett köp, valfritt kopplat till uppdrag (bookExpenseToJob).",
+        description:
+          "Be om bekräftelse att bokföra ett köp, valfritt kopplat till uppdrag (bookExpenseToJob). Representation går inte den här vägen: antal personer och alkohol avgör avdraget och får aldrig gissas.",
         parameters: obj(
           {
             expenseId: { type: "string" },
