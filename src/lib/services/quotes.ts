@@ -333,6 +333,16 @@ export function quoteSendBlockers(quoteId: string): QuoteSendBlocker[] {
   return blockers;
 }
 
+/** E-post (och telefon i UI) är mjuka luckor - inte hard-block för Skicka. */
+export function isQuoteContactSoftBlocker(code: string): boolean {
+  return code === "buyer_email";
+}
+
+/** Hard-blockers: samma lista som quoteSendBlockers minus kundens e-post. */
+export function quoteHardSendBlockers(quoteId: string): QuoteSendBlocker[] {
+  return quoteSendBlockers(quoteId).filter((b) => !isQuoteContactSoftBlocker(b.code));
+}
+
 /** Servergräns: samma lista som checklistan och disabled Skicka. */
 export function assertQuoteReadyToSend(quoteId: string): void {
   const blockers = quoteSendBlockers(quoteId);
