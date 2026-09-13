@@ -22,6 +22,18 @@ import type { AnnualReport } from "../types";
 import { encodeLatin1, FilingDataError, orgNumber12, personnummer12 } from "./filing-format";
 import { INK2R_BALANCE, INK2R_RESULT, ruleForAccount } from "./ink2r-model";
 import { addCustomAccount, standardAccounts } from "./chart";
+import { xmllintAvailable, XMLLINT_SKIP, xmlWellFormed } from "../__fixtures__/xmllint";
+
+/**
+ * Välformadhet enligt libxml2 – samma parser Skatteverkets mottagning i
+ * praktiken beter sig som. Lokalt utan xmllint hoppas steget över; i CI
+ * installeras verktyget och ett saknat xmllint är ett fel (../__fixtures__/xmllint.ts).
+ */
+function assertLibxmlWellFormed(xml: string, t: { skip: (m?: string) => void }, encoding: BufferEncoding = "utf8") {
+  if (!xmllintAvailable()) return t.skip(XMLLINT_SKIP);
+  const res = xmlWellFormed(xml, encoding);
+  assert.ok(res?.ok, `libxml2 avvisar filen:\n${res?.output}`);
+}
 
 /**
  * Myndighetsfilerna: momsdeklaration (eSKD), arbetsgivardeklaration (AGI) och
@@ -164,6 +176,13 @@ describe("momsdeklaration som eSKD-fil", () => {
     assert.ok(eskdBytes(file).byteLength > 0);
   });
 
+  it("är välformad XML enligt libxml2 i den deklarerade teckenkodningen", (t) => {
+    sale(`${YEAR}-04-10`, 12_345);
+    purchase(`${YEAR}-05-12`, 6_789);
+    const file = eskdForPeriod(`${YEAR}-K2`);
+    assertLibxmlWellFormed(file.xml, t, "latin1");
+  });
+
   it("tomma rutor utelämnas men summeringen skrivs alltid", () => {
     const file = eskdForPeriod(`${YEAR}-K1`);
     assert.doesNotMatch(file.xml, /<ForsMomsEjAnnan>/);
@@ -251,6 +270,12 @@ describe("arbetsgivardeklaration som XML-fil", () => {
     const februari = agiForMonth(`${YEAR}-02`).xml;
     const nummer = (xml: string) => xml.match(/faltkod="570">(\d+)</)?.[1];
     assert.equal(nummer(januari), nummer(februari));
+  });
+
+  it("är välformad XML enligt libxml2 med namnrymderna deklarerade", (t) => {
+    generateEmployerDeclaration(`${YEAR}-01`, "anvandare");
+    const file = agiForMonth(`${YEAR}-01`);
+    assertLibxmlWellFormed(file.xml, t);
   });
 
   it("en månad utan deklaration går inte att bygga en fil av", () => {
@@ -648,6 +673,11 @@ describe("årsredovisning som iXBRL-fil", () => {
     assert.match(file.xhtml, /<style type="text\/css">/);
     assert.ok(ixbrlBytes(file).byteLength > 0);
     assert.equal(new TextDecoder().decode(ixbrlBytes(file)), file.xhtml);
+  });
+
+  it("är välformad XHTML enligt libxml2 (Bolagsverket läser den som XML)", (t) => {
+    const file = ixbrlForAnnualReport(reportForIxbrl({ intyg: true }).id);
+    assertLibxmlWellFormed(file.xhtml, t);
   });
 
   it("pekar på K2-taxonomin för aktiebolag med resultat- och balansräkning", () => {

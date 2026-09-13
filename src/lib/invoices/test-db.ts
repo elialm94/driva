@@ -1,6 +1,22 @@
-import type { CompanySettings, Customer, DB, DocLine, WorkLocation } from "../types";
+import type { BusinessScope, CompanySettings, Customer, DB, DocLine, WorkLocation } from "../types";
 import { syncDocLineClassification } from "../economic-line-type";
 import { STANDARD_TERMS } from "../standard-quote-terms";
+import { SUPPORT_MATRIX_VERSION, type SupportEntryId } from "../support/matrix";
+
+/** Bolagsscope där en redovisningskonsult redan godkänt de angivna konsultfallen. */
+export function consultantApprovedScope(...entryIds: SupportEntryId[]): BusinessScope {
+  return {
+    matrixVersion: SUPPORT_MATRIX_VERSION,
+    assessedAt: "2026-01-01T00:00:00.000Z",
+    flags: [],
+    approvals: entryIds.map((entryId) => ({
+      entryId,
+      approvedAt: "2026-01-02T00:00:00.000Z",
+      approvedBy: { userId: "konsult-1", name: "Karin Konsult", email: "karin@byran.se" },
+      matrixVersion: SUPPORT_MATRIX_VERSION,
+    })),
+  };
+}
 
 export function testCompany(over: Partial<CompanySettings> = {}): CompanySettings {
   return {

@@ -148,7 +148,7 @@ export default async function WebsitePage(props: PageProps<"/hemsida">) {
                 <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted">
                   <Globe className="size-4 shrink-0" />
                   <span className="min-w-0 break-all font-mono text-[12px]">
-                    {liveHost ? liveHost : live ? "driva.site/" + site.slug : "Förhandsvisning"}
+                    {liveHost ? liveHost : live ? "Publicerad – ingen egen adress ännu" : "Förhandsvisning"}
                   </span>
                   <Badge
                     tone={

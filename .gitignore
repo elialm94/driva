@@ -52,3 +52,7 @@ next-env.d.ts
 
 # Lokal Cursor-konfiguration
 .cursor/
+
+# Capacitor-skalet (mobile/): egna beroenden och genererade plattformsmappar byggs lokalt
+/mobile/node_modules
+/mobile/www

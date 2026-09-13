@@ -27,6 +27,7 @@ import {
 } from "../website-form-recipient";
 import { isSystemQuoteTerms } from "../standard-quote-terms";
 import { parseCompanyClaimsInput, type CompanyClaimsInput } from "../company-claims";
+import { assertCompanyFormSupported } from "../support/guard";
 
 export function getBusinessProfile(): CompanySettings {
   return db().settings;
@@ -142,7 +143,11 @@ function validateProfile(input: SettingsProfileFields): string[] {
 
 function applyProfile(s: CompanySettings, input: BusinessProfileInput): void {
   s.name = input.name.trim();
-  if (input.companyForm === "ab" || input.companyForm === "enskild") s.companyForm = input.companyForm;
+  if (input.companyForm != null && input.companyForm !== s.companyForm) {
+    // Supportmatrisen avgör vilka former som får sparas – även om UI:t kringgås.
+    assertCompanyFormSupported(input.companyForm);
+    s.companyForm = input.companyForm;
+  }
   s.orgNumber = input.orgNumber.trim() ? normalizeOrgnr(input.orgNumber) : "";
   s.vatNumber = input.vatNumber.trim().toUpperCase().replace(/\s/g, "");
   s.email = input.email.trim();

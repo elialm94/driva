@@ -6,6 +6,9 @@ import { loadAccountantClientPage } from "@/lib/collaboration/client-page";
 import { accountantActionHref } from "@/lib/collaboration/portfolio";
 import { matchesAccountantFilter, type AccountantFilter } from "@/lib/collaboration/issues";
 import { accountantCommandBarPrefetch } from "@/lib/services/command-bar";
+import { pendingConsultantEntries } from "@/lib/support/eligibility";
+import { db } from "@/lib/store";
+import { ShieldQuestion } from "lucide-react";
 
 export const metadata = { title: "Arbeta" };
 
@@ -21,6 +24,8 @@ export default async function ClientWorkspacePage({
   const { businessId } = await params;
   const { filter: rawFilter } = await searchParams;
   const { snap } = await loadAccountantClientPage(businessId);
+  // Konsultfall som väntar på godkännande syns överst – de spärrar klientens fakturor.
+  const pendingScope = pendingConsultantEntries(db().settings);
   const filter = (FILTERS.includes(rawFilter as AccountantFilter) ? rawFilter : "alla") as AccountantFilter;
   const pool = filter === "vantar" ? snap.waiting : filter === "alla" ? snap.queue : [...snap.queue, ...snap.waiting];
   const items = pool
@@ -49,6 +54,21 @@ export default async function ClientWorkspacePage({
           key === "alla" ? `/redovisning/k/${businessId}` : `/redovisning/k/${businessId}?filter=${key}`
         }
       />
+      {pendingScope.length ? (
+        <Link
+          href={`/redovisning/k/${businessId}/omfattning` as never}
+          className="mb-4 flex items-start gap-3 rounded-xl border border-info/30 bg-info-soft/50 px-4 py-3 text-[13px] text-ink hover:border-info/60"
+          data-scope-pending
+        >
+          <ShieldQuestion className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
+          <span>
+            <span className="font-medium">
+              {pendingScope.length === 1 ? "Ett konsultfall väntar på ditt godkännande" : `${pendingScope.length} konsultfall väntar på ditt godkännande`}
+            </span>
+            <span className="block text-soft">{pendingScope.map((e) => e.label).join(" · ")}</span>
+          </span>
+        </Link>
+      ) : null}
       <AccountantQueue
         title="Arbeta"
         items={items}
@@ -74,6 +94,12 @@ export default async function ClientWorkspacePage({
           className="mt-2 block text-[13px] font-medium text-accent hover:underline"
         >
           Ingående balans och övertagande från annat program
+        </Link>
+        <Link
+          href={`/redovisning/k/${businessId}/omfattning` as never}
+          className="mt-2 block text-[13px] font-medium text-accent hover:underline"
+        >
+          Produktomfattning och konsultfall
         </Link>
       </footer>
     </div>

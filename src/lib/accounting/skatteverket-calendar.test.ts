@@ -87,10 +87,10 @@ describe("myndighetskalendern", () => {
     const ics = authorityCalendarIcs({ today: TODAY, companyName: "Test Snickeri AB", origin: "https://app.example" });
     assert.match(ics, /^BEGIN:VCALENDAR\r\n/);
     assert.match(ics, /X-WR-CALNAME:Skatteverket · Test Snickeri AB/);
-    assert.match(ics, /UID:moms-2025-K1@driva/);
+    assert.match(ics, /UID:moms-2025-K1@ferva/);
     assert.match(ics, /SUMMARY:Moms/);
     assert.match(ics, /URL:https:\/\/app\.example\/bokforing\/moms\?fokus=2025-K1/);
     assert.match(ics, /END:VCALENDAR\r\n$/);
-    assert.ok(!ics.includes("STATUS:klar") && !ics.includes("BEGIN:VEVENT\r\nUID:moms-2025-K1@driva") === false);
+    assert.ok(!ics.includes("STATUS:klar") && !ics.includes("BEGIN:VEVENT\r\nUID:moms-2025-K1@ferva") === false);
   });
 });

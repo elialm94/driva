@@ -105,7 +105,7 @@ function vatEvents(today: string, until: string): AuthorityEvent[] {
         amount,
         href: `/bokforing/moms?fokus=${period.key}`,
         status: statusOf(due, today, declared),
-        uid: `moms-${period.key}@driva`,
+        uid: `moms-${period.key}@ferva`,
       });
     }
   }
@@ -143,7 +143,7 @@ function agiEvents(today: string, until: string): AuthorityEvent[] {
           amount,
           href: "/bokforing/lon",
           status: statusOf(due, today, declared),
-          uid: `agi-${month}@driva`,
+          uid: `agi-${month}@ferva`,
         });
       }
     }
@@ -169,7 +169,7 @@ function fSkattEvents(today: string, until: string): AuthorityEvent[] {
         amount,
         href: "/bokforing/skattekonto",
         status: statusOf(due, today, false),
-        uid: `fskatt-${month}@driva`,
+        uid: `fskatt-${month}@ferva`,
       });
     }
     month = nextMonthKey(month);
@@ -193,7 +193,7 @@ function yearEndEvents(today: string, until: string): AuthorityEvent[] {
         dueDate: ink2,
         href: "/bokforing/bokslut",
         status: statusOf(ink2, today, false),
-        uid: `ink2-${fy.id}@driva`,
+        uid: `ink2-${fy.id}@ferva`,
       });
     }
     const ars = annualReportDueDate(fy);
@@ -210,7 +210,7 @@ function yearEndEvents(today: string, until: string): AuthorityEvent[] {
         dueDate: ars,
         href: `/bokforing/bokslut/arsredovisning/${fy.id}`,
         status: statusOf(ars, today, Boolean(done)),
-        uid: `ars-${fy.id}@driva`,
+        uid: `ars-${fy.id}@ferva`,
       });
     }
   }
