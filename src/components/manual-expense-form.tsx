@@ -28,9 +28,12 @@ import {
   REPRESENTATION_RULES,
   isMeal,
   perDiemTripDays,
+  paidByForPreset,
   planManualExpense,
+  showsPaidByChoice,
   type CategoryContext,
   type ManualExpenseDraft,
+  type ManualExpensePreset,
 } from "@/lib/expenses/manual-expense";
 
 /**
@@ -44,7 +47,7 @@ import {
  * Inget kvitto – schablonen är underlaget.
  */
 
-export type ManualExpensePreset = "kop" | "utlagg" | "milersattning" | "traktamente" | "representation";
+export type { ManualExpensePreset };
 
 export interface ManualExpenseJobOption {
   id: string;
@@ -178,7 +181,7 @@ export function ManualExpenseForm({
 
   const [preset, setPreset] = useState<ManualExpensePreset>(initialPreset);
   const [date, setDate] = useState(initialPreset === "traktamente" ? tripStart : today);
-  const [paidBy, setPaidBy] = useState<ExpensePaidBy>(initialPreset === "utlagg" ? "privat" : "foretagskonto");
+  const [paidBy, setPaidBy] = useState<ExpensePaidBy>(paidByForPreset(initialPreset));
   const [supplier, setSupplier] = useState("");
   const [amount, setAmount] = useState("");
   const [vat, setVat] = useState("");
@@ -235,8 +238,7 @@ export function ManualExpenseForm({
     setPreset(next);
     setError(null);
     setShowPlanError(false);
-    if (next === "utlagg") setPaidBy("privat");
-    if (next === "kop") setPaidBy("foretagskonto");
+    setPaidBy(paidByForPreset(next, next === "kop" ? "foretagskonto" : paidBy));
     if (next === "traktamente" && date === today) {
       setDate(tripStart);
       setReturnDate(today);
@@ -273,7 +275,7 @@ export function ManualExpenseForm({
     () => ({
       kind,
       date,
-      paidBy: kind === "milersattning" || kind === "traktamente" ? "privat" : paidBy,
+      paidBy: paidByForPreset(preset, paidBy),
       supplier,
       amount: grossAmount,
       vatAmount: parseKronor(vatValue) ?? 0,
@@ -298,7 +300,7 @@ export function ManualExpenseForm({
       },
       representation: { kind: reprKind, persons: parseCount(persons), alcohol, participants, purpose },
     }),
-    [kind, date, paidBy, supplier, grossAmount, vatValue, category, description, jobId, km, vehicle, route, tripDestination, departureTime, returnDate, returnTime, freeMeals, abroad, countryCode, countryName, paidLodging, tripReason, reprKind, persons, alcohol, participants, purpose]
+    [preset, kind, date, paidBy, supplier, grossAmount, vatValue, category, description, jobId, km, vehicle, route, tripDestination, departureTime, returnDate, returnTime, freeMeals, abroad, countryCode, countryName, paidLodging, tripReason, reprKind, persons, alcohol, participants, purpose]
   );
 
   const planned = useMemo(() => planManualExpense(draft, { category: selectedCategory }), [draft, selectedCategory]);
@@ -362,7 +364,7 @@ export function ManualExpenseForm({
     });
   }
 
-  const showPaidBy = kind === "kop" || kind === "representation";
+  const showPaidBy = showsPaidByChoice(preset);
   const showAmount = kind === "kop" || kind === "representation";
 
   return (
