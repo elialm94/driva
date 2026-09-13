@@ -185,6 +185,13 @@ function schablonPlan(expense: Expense) {
             halfDays: d.perDiem.halfDays,
             nights: d.perDiem.nights,
             destination: d.perDiem.destination,
+            departure: d.perDiem.departure,
+            arrival: d.perDiem.arrival,
+            freeMeals: d.perDiem.freeMeals,
+            countryCode: d.perDiem.countryCode,
+            countryName: d.perDiem.countryName,
+            paidLodging: d.perDiem.paidLodging,
+            reason: d.perDiem.reason,
           },
         }
       : {}),

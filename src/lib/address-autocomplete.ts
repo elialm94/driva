@@ -18,6 +18,14 @@ export const ADDRESS_REGION_CODES = ["se"] as const;
 export const ADDRESS_LANGUAGE = "sv-SE";
 export const ADDRESS_PLACE_FIELDS = ["addressComponents"] as const;
 
+/**
+ * Resmål på en reseräkning: ort ELLER gatuadress, i vilket land som helst.
+ * "geocode" är Googles samling av adresser och orter utan företag, och
+ * inga `includedRegionCodes` betyder hela världen.
+ */
+export const TRIP_PRIMARY_TYPES = ["geocode"] as const;
+export const TRIP_REGION_CODES = [] as const;
+
 /** Över Ny kund-modalen (z=50 + 10×lager) och datumväljaren (z=80). */
 export const ADDRESS_MENU_Z_INDEX = 400;
 
@@ -33,10 +41,16 @@ export interface AddressParts {
   address: string;
   postalCode: string;
   city: string;
+  /** Landets namn på svenska. Bara med när förslaget hade ett land. */
+  country?: string;
+  /** Landskod (ISO 3166-1 alpha-2), t.ex. "SE" eller "NO". */
+  countryCode?: string;
 }
 
 export interface PlaceAddressComponent {
   longText?: string | null;
+  /** Kort form, t.ex. landskoden "NO". */
+  shortText?: string | null;
   types: string[];
 }
 
@@ -65,17 +79,69 @@ export function applyPickedAddress(selected: AddressParts, suggestionMain: strin
     address: selected.address.trim() || suggestionMain.trim(),
     postalCode: isSwedishPostalCode(postal) ? formatSwedishPostalCode(postal) : postal,
     city: selected.city.trim(),
+    ...(selected.country?.trim() ? { country: selected.country.trim() } : {}),
+    ...(selected.countryCode?.trim() ? { countryCode: selected.countryCode.trim().toUpperCase() } : {}),
   };
 }
 
 export function partsFromPlaceComponents(components: PlaceAddressComponent[]): AddressParts {
-  const get = (type: string) => components.find((c) => c.types.includes(type))?.longText ?? "";
+  const find = (type: string) => components.find((c) => c.types.includes(type));
+  const get = (type: string) => find(type)?.longText ?? "";
   const street = [get("route"), get("street_number")].filter(Boolean).join(" ");
+  const country = find("country");
   return {
     address: street,
     postalCode: get("postal_code"),
     city: get("postal_town") || get("locality") || get("sublocality") || "",
+    // Landet följer bara med när förslaget hade ett – gamla adressfält
+    // (kund, ROT-bostad, inställningar) ska se exakt samma objekt som förut.
+    ...(country?.longText ? { country: country.longText } : {}),
+    ...(country?.shortText ? { countryCode: country.shortText.toUpperCase() } : {}),
   };
+}
+
+/**
+ * Resmålet som en rad: "Vasagatan 33, 411 24 Göteborg" eller "Oslo, Norge".
+ * Delar som redan står i en tidigare del hoppas över, så en ort inte blir
+ * "Göteborg, Göteborg". Sverige skrivs inte ut – inrikes är normalfallet.
+ */
+export function formatTripDestination(parts: AddressParts): string {
+  const place = [parts.postalCode.trim(), parts.city.trim()].filter(Boolean).join(" ");
+  const country = parts.countryCode?.toUpperCase() === "SE" ? "" : (parts.country?.trim() ?? "");
+  const segments: string[] = [];
+  for (const segment of [parts.address.trim(), place, country]) {
+    if (!segment) continue;
+    const lower = segment.toLowerCase();
+    if (segments.some((s) => s.toLowerCase().includes(lower))) continue;
+    segments.push(segment);
+  }
+  return segments.join(", ");
+}
+
+/**
+ * Exempelresmål när Places inte är tillgängligt (demo eller saknad nyckel):
+ * orter i Sverige och några vanliga utlandsmål, så att landet kan väljas
+ * utan Google.
+ */
+export const DEMO_TRIP_PLACES: AddressParts[] = [
+  { address: "", postalCode: "", city: "Göteborg", country: "Sverige", countryCode: "SE" },
+  { address: "", postalCode: "", city: "Malmö", country: "Sverige", countryCode: "SE" },
+  { address: "", postalCode: "", city: "Stockholm", country: "Sverige", countryCode: "SE" },
+  { address: "", postalCode: "", city: "Kiruna", country: "Sverige", countryCode: "SE" },
+  { address: "", postalCode: "", city: "Umeå", country: "Sverige", countryCode: "SE" },
+  { address: "", postalCode: "", city: "Oslo", country: "Norge", countryCode: "NO" },
+  { address: "", postalCode: "", city: "Trondheim", country: "Norge", countryCode: "NO" },
+  { address: "", postalCode: "", city: "København", country: "Danmark", countryCode: "DK" },
+  { address: "", postalCode: "", city: "Helsingfors", country: "Finland", countryCode: "FI" },
+  { address: "", postalCode: "", city: "Berlin", country: "Tyskland", countryCode: "DE" },
+];
+
+export function demoTripSuggestions(query: string): AddressParts[] {
+  if (!shouldSearchAddress(query)) return [];
+  const q = trimmedAddressQuery(query).toLowerCase();
+  return DEMO_TRIP_PLACES.filter(
+    (p) => p.city.toLowerCase().includes(q) || (p.country ?? "").toLowerCase().includes(q)
+  ).slice(0, 5);
 }
 
 export const DEMO_ADDRESSES: AddressParts[] = [

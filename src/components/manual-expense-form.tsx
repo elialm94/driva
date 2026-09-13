@@ -7,21 +7,27 @@ import type { LucideIcon } from "lucide-react";
 import { Card, buttonClasses, cx } from "./ui";
 import { FileDropzone } from "./file-dropzone";
 import { DateField } from "./date-field";
+import { AddressAutocomplete, type AddressParts } from "./address-input";
 import { useToast } from "./toast";
 import { kr } from "@/lib/format";
 import { RECEIPT_MAX_BYTES, manualExpenseReceiptForm } from "@/lib/receipts/read-file";
 import { createManualExpenseAction } from "@/app/actions";
 import type { ExpenseKind, ExpensePaidBy, RepresentationKind, VehicleKind } from "@/lib/types";
 import {
+  FREE_MEALS_LABELS,
   VEHICLE_LABELS,
   mileageRatePerMil,
   perDiemRatesFor,
+  type FreeMeals,
 } from "@/lib/accounting/allowances";
+import { previousDay } from "@/lib/accounting/dates";
 import { yearOf } from "@/lib/accounting/prisbasbelopp";
+import { TRIP_PRIMARY_TYPES, TRIP_REGION_CODES, demoTripSuggestions } from "@/lib/address-autocomplete";
 import {
   REPRESENTATION_LABELS,
   REPRESENTATION_RULES,
   isMeal,
+  perDiemTripDays,
   planManualExpense,
   type CategoryContext,
   type ManualExpenseDraft,
@@ -32,6 +38,10 @@ import {
  * Milersättning, Traktamente och Representation. Under fälten visas alltid
  * "Så bokförs det" – konteringen räknas av samma rena modul som servern
  * bokför med, så det man ser är det som sparas.
+ *
+ * Traktamente är en reseräkning enligt Skatteverket: vem, resmål, avresa och
+ * hemkomst med klockslag, anledning, fri kost, land och 50 km-villkoret.
+ * Inget kvitto – schablonen är underlaget.
  */
 
 export type ManualExpensePreset = "kop" | "utlagg" | "milersattning" | "traktamente" | "representation";
@@ -40,6 +50,8 @@ export interface ManualExpenseJobOption {
   id: string;
   title: string;
   customerName: string;
+  /** Uppdragets adress – förifyller resmålet på en reseräkning. */
+  address?: string;
 }
 
 const PRESETS: { key: ManualExpensePreset; label: string; hint: string; icon: LucideIcon }[] = [
@@ -142,6 +154,7 @@ export function ManualExpenseForm({
   initialPreset = "kop",
   initialJobId,
   cancelHref = "/ekonomi?flik=utgifter",
+  travellerName = "Du",
 }: {
   categories: CategoryContext[];
   jobs: ManualExpenseJobOption[];
@@ -153,13 +166,18 @@ export function ManualExpenseForm({
   initialPreset?: ManualExpensePreset;
   initialJobId?: string;
   cancelHref?: string;
+  /** Vem reseräkningen gäller: den inloggade personen. */
+  travellerName?: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
 
+  /** Avresedagen är i går: en traktamenteresa har alltid en övernattning bakom sig. */
+  const tripStart = !firstOpenDate || previousDay(today) >= firstOpenDate ? previousDay(today) : today;
+
   const [preset, setPreset] = useState<ManualExpensePreset>(initialPreset);
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(initialPreset === "traktamente" ? tripStart : today);
   const [paidBy, setPaidBy] = useState<ExpensePaidBy>(initialPreset === "utlagg" ? "privat" : "foretagskonto");
   const [supplier, setSupplier] = useState("");
   const [amount, setAmount] = useState("");
@@ -173,9 +191,16 @@ export function ManualExpenseForm({
   const [vehicle, setVehicle] = useState<VehicleKind>("egen");
   const [route, setRoute] = useState("");
   const [destination, setDestination] = useState("");
-  const [fullDays, setFullDays] = useState("1");
-  const [halfDays, setHalfDays] = useState("0");
-  const [nights, setNights] = useState("1");
+  const [destinationEdited, setDestinationEdited] = useState(false);
+  const [departureTime, setDepartureTime] = useState("08:00");
+  const [returnDate, setReturnDate] = useState(today);
+  const [returnTime, setReturnTime] = useState("17:00");
+  const [freeMeals, setFreeMeals] = useState<FreeMeals>("inga");
+  const [abroad, setAbroad] = useState(false);
+  const [countryCode, setCountryCode] = useState("SE");
+  const [countryName, setCountryName] = useState("Sverige");
+  const [paidLodging, setPaidLodging] = useState(false);
+  const [reason, setReason] = useState("");
   const [perDiemConfirmed, setPerDiemConfirmed] = useState(false);
   const [reprKind, setReprKind] = useState<RepresentationKind>("kundmaltid");
   const [persons, setPersons] = useState("2");
@@ -212,7 +237,36 @@ export function ManualExpenseForm({
     setShowPlanError(false);
     if (next === "utlagg") setPaidBy("privat");
     if (next === "kop") setPaidBy("foretagskonto");
+    if (next === "traktamente" && date === today) {
+      setDate(tripStart);
+      setReturnDate(today);
+    }
     setVatMode("auto");
+  }
+
+  const selectedJob = jobs.find((j) => j.id === jobId);
+
+  /** Resmål: uppdragets adress tills användaren skriver eller väljer själv. */
+  const tripDestination = destinationEdited ? destination : selectedJob?.address?.trim() || destination;
+
+  /** Anledning: uppdragets titel om inget skrivits. */
+  const tripReason = reason.trim() || selectedJob?.title?.trim() || "";
+
+  function pickDestination(parts: AddressParts) {
+    setDestination(parts.address);
+    setDestinationEdited(true);
+    const code = parts.countryCode?.toUpperCase();
+    if (!code) return;
+    setCountryCode(code);
+    setAbroad(code !== "SE");
+    setCountryName(code === "SE" ? "Sverige" : (parts.country?.trim() || code));
+  }
+
+  function chooseCountry(value: string) {
+    const foreign = value === "utland";
+    setAbroad(foreign);
+    setCountryCode(foreign ? (countryCode === "SE" ? "" : countryCode) : "SE");
+    setCountryName(foreign ? (countryName === "Sverige" ? "" : countryName) : "Sverige");
   }
 
   const draft = useMemo<ManualExpenseDraft>(
@@ -227,10 +281,24 @@ export function ManualExpenseForm({
       description,
       jobId: jobId || undefined,
       mileage: { km: parseDecimal(km) ?? 0, vehicle, route },
-      perDiem: { fullDays: parseCount(fullDays), halfDays: parseCount(halfDays), nights: parseCount(nights), destination },
+      perDiem: {
+        // Hel dag, halv dag och natt räknas ur tiderna – inga räknare att fylla i.
+        fullDays: 0,
+        halfDays: 0,
+        nights: 0,
+        destination: tripDestination,
+        departure: `${date}T${departureTime}`,
+        arrival: `${returnDate}T${returnTime}`,
+        freeMeals,
+        // Okänt land ("ZZ") får inte falla tillbaka på den svenska schablonen.
+        countryCode: abroad ? countryCode || "ZZ" : "SE",
+        countryName: abroad ? countryName : "Sverige",
+        paidLodging,
+        reason: tripReason,
+      },
       representation: { kind: reprKind, persons: parseCount(persons), alcohol, participants, purpose },
     }),
-    [kind, date, paidBy, supplier, grossAmount, vatValue, category, description, jobId, km, vehicle, route, fullDays, halfDays, nights, destination, reprKind, persons, alcohol, participants, purpose]
+    [kind, date, paidBy, supplier, grossAmount, vatValue, category, description, jobId, km, vehicle, route, tripDestination, departureTime, returnDate, returnTime, freeMeals, abroad, countryCode, countryName, paidLodging, tripReason, reprKind, persons, alcohol, participants, purpose]
   );
 
   const planned = useMemo(() => planManualExpense(draft, { category: selectedCategory }), [draft, selectedCategory]);
@@ -241,6 +309,16 @@ export function ManualExpenseForm({
   const year = yearOf(date);
   const mileageRate = mileageRatePerMil(date, vehicle);
   const perDiemRates = perDiemRatesFor(year);
+  const tripDays = kind === "traktamente" ? perDiemTripDays(draft.perDiem!) : null;
+  const tripDayText = tripDays
+    ? [
+        tripDays.fullDays ? `${tripDays.fullDays} ${tripDays.fullDays === 1 ? "heldag" : "heldagar"}` : "",
+        tripDays.halfDays ? `${tripDays.halfDays} ${tripDays.halfDays === 1 ? "halvdag" : "halvdagar"}` : "",
+        tripDays.nights ? `${tripDays.nights} ${tripDays.nights === 1 ? "natt" : "nätter"}` : "",
+      ]
+        .filter(Boolean)
+        .join(", ")
+    : "";
   const fmt = (n: number) => new Intl.NumberFormat("sv-SE", { maximumFractionDigits: 2 }).format(n);
 
   function submit() {
@@ -297,6 +375,7 @@ export function ManualExpenseForm({
           return (
             <button
               key={p.key}
+              id={`expense-kind-${p.key}`}
               type="button"
               role="radio"
               aria-checked={active}
@@ -318,15 +397,18 @@ export function ManualExpenseForm({
 
       <Card className="space-y-4 p-5">
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block">
-            <span className={labelCls}>{kind === "milersattning" ? "Resdatum" : kind === "traktamente" ? "Avresedatum" : "Datum"}</span>
-            <DateField value={date} onChange={setDate} className={fieldCls} min={firstOpenDate} />
-            {futureDate ? (
-              <span className="mt-1 block text-[12px] text-warn">Datumet kan inte ligga i framtiden.</span>
-            ) : firstOpenDate ? (
-              <span className={hintCls}>Perioder före {firstOpenDate} är låsta.</span>
-            ) : null}
-          </label>
+          {/* Traktamente har avresan med klockslag i stället – samma datum, ett fält. */}
+          {kind === "traktamente" ? null : (
+            <label className="block">
+              <span className={labelCls}>{kind === "milersattning" ? "Resdatum" : "Datum"}</span>
+              <DateField value={date} onChange={setDate} className={fieldCls} min={firstOpenDate} />
+              {futureDate ? (
+                <span className="mt-1 block text-[12px] text-warn">Datumet kan inte ligga i framtiden.</span>
+              ) : firstOpenDate ? (
+                <span className={hintCls}>Perioder före {firstOpenDate} är låsta.</span>
+              ) : null}
+            </label>
+          )}
 
           {jobs.length > 0 ? (
             <label className="block">
@@ -445,35 +527,182 @@ export function ManualExpenseForm({
           </>
         ) : null}
 
-        {/* Traktamente */}
+        {/* Traktamente – reseräkning */}
         {kind === "traktamente" ? (
           <>
-            <label className="block">
-              <span className={labelCls}>Vart gick resan?</span>
-              <input
-                value={destination}
-                onChange={(e) => setDestination(e.target.value)}
-                placeholder="T.ex. Göteborg – montage hos kund"
-                className={fieldCls}
-                autoFocus
-              />
-            </label>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Stepper label="Hela dagar" value={fullDays} onChange={setFullDays} hint={`${kr(perDiemRates.heldag)} per dag`} />
-              <Stepper label="Halva dagar" value={halfDays} onChange={setHalfDays} hint={`${kr(perDiemRates.halvdag)} per dag`} />
-              <Stepper label="Nätter utan betald logi" value={nights} onChange={setNights} hint={`${kr(perDiemRates.natt)} per natt`} />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <span className={labelCls}>Vem</span>
+                <p data-traktamente-vem className="rounded-xl border border-line bg-ink/4 px-3.5 py-2.5 text-[14px] text-ink">
+                  {travellerName}
+                </p>
+                <span className={hintCls}>Reseräkningen gäller dig som är inloggad.</span>
+              </div>
+              <label className="block">
+                <span className={labelCls}>Land</span>
+                <select
+                  id="traktamente-land"
+                  value={abroad ? "utland" : "SE"}
+                  onChange={(e) => chooseCountry(e.target.value)}
+                  className={fieldCls}
+                >
+                  <option value="SE">Sverige</option>
+                  <option value="utland">Annat land</option>
+                </select>
+                {abroad ? (
+                  <>
+                    <input
+                      id="traktamente-landnamn"
+                      value={countryName}
+                      onChange={(e) => setCountryName(e.target.value)}
+                      placeholder="T.ex. Norge"
+                      className={cx(fieldCls, "mt-2")}
+                      aria-label="Vilket land"
+                    />
+                    <span className={hintCls}>Utlandsresor kräver Skatteverkets normalbelopp för landet.</span>
+                  </>
+                ) : (
+                  <span className={hintCls}>
+                    Schablon {year}: {kr(perDiemRates.heldag)} hel dag, {kr(perDiemRates.halvdag)} halv dag,{" "}
+                    {kr(perDiemRates.natt)} natt.
+                  </span>
+                )}
+              </label>
             </div>
+
+            <div>
+              <AddressAutocomplete
+                id="traktamente-resmal"
+                name="resmal"
+                label="Resmål eller arbetsort"
+                value={tripDestination}
+                onChange={(next) => {
+                  setDestination(next);
+                  setDestinationEdited(true);
+                }}
+                onSelect={pickDestination}
+                composeSelected="trip"
+                primaryTypes={TRIP_PRIMARY_TYPES}
+                regionCodes={TRIP_REGION_CODES}
+                demoSuggestions={demoTripSuggestions}
+                placeholder="T.ex. Göteborg eller Vasagatan 33"
+                inputClassName={fieldCls}
+                labelClassName={labelCls}
+              />
+              <span className={hintCls}>Ort eller gatuadress, i vilket land som helst. Förifylls från uppdragets adress.</span>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <span className={labelCls}>Avresa</span>
+                <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-2">
+                  <DateField value={date} onChange={setDate} className={fieldCls} min={firstOpenDate} />
+                  <input
+                    id="traktamente-avresetid"
+                    type="time"
+                    value={departureTime}
+                    onChange={(e) => setDepartureTime(e.target.value)}
+                    className={cx(fieldCls, "tabular")}
+                    aria-label="Avresetid"
+                  />
+                </div>
+                {futureDate ? (
+                  <span className="mt-1 block text-[12px] text-warn">Datumet kan inte ligga i framtiden.</span>
+                ) : firstOpenDate ? (
+                  <span className={hintCls}>Perioder före {firstOpenDate} är låsta.</span>
+                ) : (
+                  <span className={hintCls}>Före kl 12 är avresedagen en hel dag.</span>
+                )}
+              </div>
+              <div>
+                <span className={labelCls}>Hemkomst</span>
+                <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-2">
+                  <DateField value={returnDate} onChange={setReturnDate} className={fieldCls} min={date} />
+                  <input
+                    id="traktamente-hemkomsttid"
+                    type="time"
+                    value={returnTime}
+                    onChange={(e) => setReturnTime(e.target.value)}
+                    className={cx(fieldCls, "tabular")}
+                    aria-label="Hemkomsttid"
+                  />
+                </div>
+                <span className={hintCls}>Efter kl 19 är hemkomstdagen en hel dag.</span>
+              </div>
+            </div>
+
+            <label className="block">
+              <span className={labelCls}>Anledning</span>
+              <input
+                id="traktamente-anledning"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder={selectedJob?.title ?? "T.ex. montage hos kund"}
+                className={fieldCls}
+              />
+              {selectedJob && !reason.trim() ? (
+                <span className={hintCls}>Uppdragets titel används: {selectedJob.title}</span>
+              ) : null}
+            </label>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className={labelCls}>Fri kost</span>
+                <select
+                  id="traktamente-frikost"
+                  value={freeMeals}
+                  onChange={(e) => setFreeMeals(e.target.value as FreeMeals)}
+                  className={fieldCls}
+                >
+                  {(Object.keys(FREE_MEALS_LABELS) as FreeMeals[]).map((level) => (
+                    <option key={level} value={level}>
+                      {FREE_MEALS_LABELS[level]}
+                    </option>
+                  ))}
+                </select>
+                <span className={hintCls}>Måltider som någon annan bjöd på minskar schablonen.</span>
+              </label>
+              <div>
+                <span className={labelCls}>Logi</span>
+                <label className="flex items-start gap-2.5 rounded-xl border border-line px-3.5 py-2.5 text-[13px] text-soft">
+                  <input
+                    id="traktamente-fri-logi"
+                    type="checkbox"
+                    checked={paidLodging}
+                    onChange={(e) => setPaidLodging(e.target.checked)}
+                    className="mt-0.5 size-4 accent-[var(--color-accent)]"
+                  />
+                  <span>
+                    Bolaget betalade hotellet
+                    <span className="block text-[12px] text-muted">Då betalas inget nattraktamente ut.</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <p data-traktamente-dagar className="rounded-xl bg-ink/4 px-3.5 py-3 text-[13px] text-soft">
+              {tripDayText ? (
+                <>
+                  Resan räknas som {tripDayText}.
+                  <span className="block text-[12px] text-muted">
+                    Räknat ur avresa och hemkomst: hel dag vid avresa före kl 12 och hemkomst efter kl 19, natt för varje
+                    dygnsbyte.
+                  </span>
+                </>
+              ) : (
+                "Fyll i avresa och hemkomst - hemkomsten måste ligga ett senare dygn, traktamente kräver övernattning."
+              )}
+            </p>
+
             <label className="flex items-start gap-2.5 rounded-xl bg-ink/4 px-3.5 py-3 text-[13px] text-soft">
               <input
+                id="traktamente-50km"
                 type="checkbox"
                 checked={perDiemConfirmed}
                 onChange={(e) => setPerDiemConfirmed(e.target.checked)}
                 className="mt-0.5 size-4 accent-[var(--color-accent)]"
               />
-              <span>
-                Resan innebar övernattning och resmålet låg mer än 50 km från både bostaden och arbetsplatsen.
-                <span className="block text-[12px] text-muted">Halv dag: avresa efter kl 12 eller hemkomst före kl 19.</span>
-              </span>
+              <span>Resmålet låg mer än 50 km från både bostaden och den vanliga arbetsplatsen.</span>
             </label>
           </>
         ) : null}
@@ -652,15 +881,37 @@ export function ManualExpenseForm({
               })}
             </div>
           </div>
-        ) : (
+        ) : kind === "milersattning" ? (
           <p className="rounded-xl bg-ink/4 px-3.5 py-3 text-[13px] text-soft">
             Bokförs som skuld till dig (2893). För över pengarna från företagskontot när det passar – överföringen känns
             igen i banken och bockar av skulden.
           </p>
-        )}
+        ) : null}
       </Card>
 
-      {/* Så bokförs det */}
+      {/* Traktamente: beloppet och en rad om konteringen – inte hela uppsatsen. */}
+      {kind === "traktamente" ? (
+        <Card className="p-5">
+          {planned.ok ? (
+            <>
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="text-[15px] font-semibold text-ink">Skattefritt traktamente</h2>
+                <span data-traktamente-belopp className="text-[17px] font-semibold tabular text-ink">
+                  {kr(planned.plan.amount)}
+                </span>
+              </div>
+              <p className="mt-2 text-[13px] text-soft">
+                Hur bokförs det? Skattefritt traktamente (7321) mot skuld till dig (2893), ingen moms.
+              </p>
+            </>
+          ) : (
+            <p role={showPlanError ? "alert" : undefined} className={cx("text-[13px]", showPlanError ? "text-warn" : "text-muted")}>
+              {planned.error}
+            </p>
+          )}
+        </Card>
+      ) : (
+      /* Så bokförs det */
       <Card className="p-5">
         <div className="mb-3 flex items-baseline justify-between gap-3">
           <h2 className="text-[15px] font-semibold text-ink">Så bokförs det</h2>
@@ -693,13 +944,15 @@ export function ManualExpenseForm({
           <p className={cx("text-[13px]", showPlanError ? "text-warn" : "text-muted")}>{planned.error}</p>
         )}
       </Card>
+      )}
 
-      {/* Kvitto */}
+      {/* Kvitto – traktamente har inget kvitto, schablonen och reseräkningen är underlaget. */}
+      {kind === "traktamente" ? null : (
       <Card className="p-5">
         <span className={labelCls}>
           Kvitto{" "}
           <span className="font-normal text-muted">
-            {kind === "milersattning" || kind === "traktamente" ? "(valfritt – t.ex. körjournal eller reseplan)" : "(rekommenderas)"}
+            {kind === "milersattning" ? "(valfritt – t.ex. körjournal)" : "(rekommenderas)"}
           </span>
         </span>
         <FileDropzone
@@ -726,6 +979,7 @@ export function ManualExpenseForm({
           }}
         />
       </Card>
+      )}
 
       {error ? (
         <p role="alert" className="rounded-xl bg-danger-soft px-4 py-3 text-[13px] text-danger">
@@ -734,7 +988,13 @@ export function ManualExpenseForm({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={submit} disabled={!canSubmit} className={buttonClasses("primary", "md")}>
+        <button
+          id="expense-submit"
+          type="button"
+          onClick={submit}
+          disabled={!canSubmit}
+          className={buttonClasses("primary", "md")}
+        >
           {pending ? "Bokför …" : planned.ok ? `Bokför ${kr(planned.plan.amount)}` : "Bokför utgiften"}
         </button>
         <a href={cancelHref} className={buttonClasses("ghost", "md")}>
