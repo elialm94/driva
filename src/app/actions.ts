@@ -141,6 +141,7 @@ import {
 import {
   appendJobNote,
   createJob,
+  ensureJobPurchaseRef,
   startJobFromQuote,
   deleteOrArchiveJob,
   reopenJob,
@@ -763,6 +764,11 @@ export async function registerJobTimeAction(jobId: string, input: JobTimeInput) 
     registerJobTime(jobId, input);
     refresh();
   });
+}
+
+/** Inköpsreferens: skrivväg. Sidorenderingen får inte kalla ensureJobPurchaseRef. */
+export async function ensureJobPurchaseRefAction(jobId: string): Promise<string> {
+  return withBusiness(() => ensureJobPurchaseRef(jobId));
 }
 
 export async function addJobPhotoAction(

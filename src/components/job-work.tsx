@@ -11,6 +11,7 @@ import { invoiceHref } from "@/lib/nav";
 import {
   addJobMaterialAction,
   deleteJobWorkEntryAction,
+  ensureJobPurchaseRefAction,
   registerJobTimeAction,
   updateJobWorkEntryAction,
 } from "@/app/actions";
@@ -96,7 +97,27 @@ export function JobWorkSection({
   const [edit, setEdit] = useState<JobWorkViewEntry | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [resolvedRef, setResolvedRef] = useState(purchaseRef);
   const fromHere = { href: `/uppdrag/${jobId}`, label: jobTitle };
+
+  useEffect(() => {
+    setResolvedRef(purchaseRef);
+  }, [purchaseRef]);
+
+  useEffect(() => {
+    if (resolvedRef) return;
+    let cancelled = false;
+    void ensureJobPurchaseRefAction(jobId)
+      .then((next) => {
+        if (!cancelled && next) setResolvedRef(next);
+      })
+      .catch(() => {
+        /* Referensen är extra – uppdragssidan ska gå att använda utan den. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, resolvedRef]);
 
   function remove(id: string) {
     startTransition(async () => {
@@ -134,9 +155,9 @@ export function JobWorkSection({
 
       <WorkList entries={entries} from={fromHere} onEdit={setEdit} onDelete={setConfirmId} />
 
-      {purchaseRef ? (
+      {resolvedRef ? (
         <PurchaseRefRow
-          purchaseRef={purchaseRef}
+          purchaseRef={resolvedRef}
           inboxAddress={inboxAddress}
           onPhoto={() => setSheet("kvitto")}
         />

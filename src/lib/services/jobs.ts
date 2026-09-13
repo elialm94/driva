@@ -207,8 +207,9 @@ export function createJob(input: {
 }
 
 /**
- * Stabil inköpsreferens (FV-n). Tilldelas vid första visning, inte vid
- * skapande, så att befintliga beställningsnummer inte hoppar i äldre tester.
+ * Stabil inköpsreferens (FV-n). Tilldelas i en skrivkontext (server action),
+ * inte vid skapande, så att befintliga beställningsnummer inte hoppar i
+ * äldre tester. Får inte anropas från sidorendering – save() kastar där.
  */
 export function ensureJobPurchaseRef(jobId: string): string {
   const job = db().jobs.find((j) => j.id === jobId);

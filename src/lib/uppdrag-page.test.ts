@@ -34,6 +34,12 @@ describe("uppdragssidan är en ekonomilogg", () => {
     assert.equal((work.match(/data-job-add-entry/g) ?? []).length, 1);
   });
 
+  it("sidorenderingen muterar inte inköpsreferensen", () => {
+    assert.equal(page.includes("ensureJobPurchaseRef"), false);
+    assert.match(page, /purchaseRef=\{job\.purchaseRef\}/);
+    assert.match(work, /ensureJobPurchaseRefAction/);
+  });
+
   it("sidan har en enda huvudåtgärd, och den ligger i sidhuvudet", () => {
     assert.equal((page.match(/<JobActions/g) ?? []).length, 1);
     // Förfrågningskortet hade en egen primärknapp "Skapa offert" - samma
