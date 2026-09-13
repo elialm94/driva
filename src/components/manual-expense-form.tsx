@@ -614,7 +614,7 @@ export function ManualExpenseForm({
                 </div>
               ) : (
                 <span className={hintCls}>
-                  {selectedCategory?.reverseChargeRate ? "Omvänd byggmoms – Driva räknar momsen." : "Kategorin är momsfri."}
+                  {selectedCategory?.reverseChargeRate ? "Omvänd byggmoms – Ferva räknar momsen." : "Kategorin är momsfri."}
                 </span>
               )}
             </div>

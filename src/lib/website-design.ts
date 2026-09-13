@@ -3,7 +3,7 @@ import type { Website, WebsiteAccentId, WebsiteDesign, WebsiteTheme, WebsiteThem
 /**
  * Centralt utseendesystem för kundens hemsida (Hemsida → Utseende).
  *
- * Driva frågar inte "Hur vill du designa din hemsida?" utan "Vilken känsla
+ * Ferva frågar inte "Hur vill du designa din hemsida?" utan "Vilken känsla
  * passar ditt företag?". Därför finns exakt FYRA teman och en kuraterad lista
  * accentfärger – ingen fri färgväljare, inga typsnittsval, ingen CSS.
  *
@@ -128,7 +128,7 @@ const SANS_STACK =
  * ytbehandling – inte bara radie och färg.
  */
 export const WEBSITE_THEMES: Record<WebsiteThemeId, SiteThemeTokens> = {
-  /** Varm, pålitlig, hantverk – ≈ Drivas ursprungliga sajtutseende. */
+  /** Varm, pålitlig, hantverk – ≈ Fervas ursprungliga sajtutseende. */
   klassisk: {
     id: "klassisk",
     namn: "Klassisk",
@@ -318,7 +318,7 @@ export const WEBSITE_ACCENT_IDS = Object.keys(WEBSITE_ACCENTS) as WebsiteAccentI
 
 /* ------------------------------ Standard & arv ------------------------------ */
 
-/** Klassisk + tegel ≈ det ursprungliga Driva-utseendet (varmt hantverk). */
+/** Klassisk + tegel ≈ det ursprungliga Ferva-utseendet (varmt hantverk). */
 export const DEFAULT_WEBSITE_DESIGN: WebsiteDesign = { themeId: "klassisk", accent: "tegel" };
 
 /**

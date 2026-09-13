@@ -7,7 +7,7 @@ import { approveInboxExtractionAction } from "@/app/actions";
 import type { ExtractionFieldKey, ExtractionReviewField } from "@/lib/services/inbox";
 
 /**
- * Kontrollera-vyn: Drivas tolkning fält för fält med mänskliga tillstånd
+ * Kontrollera-vyn: Fervas tolkning fält för fält med mänskliga tillstånd
  * ("Säker"/"Kontrollera" – aldrig decimaler), redigerbar mot dokumentet.
  * [Godkänn uppgifter] sparar, sätter konfidens 1 och kör om pipelinen.
  */
@@ -124,9 +124,9 @@ export function ExtractionReviewForm({
 
   return (
     <div className="rounded-2xl border border-line bg-card p-5 shadow-card">
-      <p className="text-[15px] font-semibold text-ink">Det här har Driva läst</p>
+      <p className="text-[15px] font-semibold text-ink">Det här har Ferva läst</p>
       <p className="mt-1 text-[13px] text-muted">
-        Jämför mot dokumentet till vänster, rätta det som behövs och godkänn. Driva bokför aldrig på en
+        Jämför mot dokumentet till vänster, rätta det som behövs och godkänn. Ferva bokför aldrig på en
         osäker siffra.
       </p>
 

@@ -31,7 +31,7 @@ export function calculatedEligibleTaxReduction(lines: DocLine[], type: RotRut["t
 }
 
 /**
- * Avgör applied vs calculated. Driva vet inte kundens saldo hos Skatteverket –
+ * Avgör applied vs calculated. Ferva vet inte kundens saldo hos Skatteverket –
  * calculated är bara max utifrån dokumentets arbetskostnad och ROT/RUT-regler.
  */
 export function resolveTaxReductionAmounts(input: {

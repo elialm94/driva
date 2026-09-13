@@ -22,7 +22,6 @@ import { ensurePendingSchema, resetPendingSchemaGuard } from "./apply-pending-sc
 import { isUndefinedColumn, isUniqueViolation } from "./sql-errors";
 import { cachedStateIfFresh, clearSnapshotCache, invalidateSnapshot, putSnapshot } from "./snapshot-cache";
 import { markCacheHit, withPerfSpan } from "../perf/telemetry";
-import { STANDARD_TERMS } from "../standard-quote-terms";
 import { calendarFiscalYear, todayDate } from "../accounting/dates";
 import { allocateInboundMailSlugAsync } from "../inbox/inbound-slug";
 
@@ -237,7 +236,7 @@ export interface MembershipInfo {
 /**
  * Medlemskap för en VERIFIERAD användare (id från Supabase Auth-sessionen).
  * Återkallade rader filtreras bort – gamla sessioner får ingen åtkomst.
- * Företag som inaktiverats av Driva Admin (businesses.disabled_at) räknas
+ * Företag som inaktiverats av Ferva Admin (businesses.disabled_at) räknas
  * inte heller – medlemmarna stängs ute tills företaget återaktiveras.
  */
 export async function membershipsForUser(userId: string): Promise<MembershipInfo[]> {
@@ -505,7 +504,8 @@ async function insertSettingsWithAllocatedSlug(
           input.bankAccount ?? null,
           initialsFor(input.name),
           slug,
-          STANDARD_TERMS,
+          // default_quote_terms lämnas tom: offerterna följer systemtexten och verifieringarna (spec §8).
+          null,
           input.companyForm ?? "ab",
         ],
       );
@@ -573,7 +573,7 @@ export async function invitationRowByTokenHash(
   return mapInvitationRow(rows[0]);
 }
 
-/** Uppslag per id – används av Driva Admin ("skicka om inbjudan"). */
+/** Uppslag per id – används av Ferva Admin ("skicka om inbjudan"). */
 export async function invitationRowById(
   id: string
 ): Promise<import("../types").CollaborationInvitation | null> {

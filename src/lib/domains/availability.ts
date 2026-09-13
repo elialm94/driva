@@ -18,7 +18,7 @@ export async function searchDomain(raw: string, actor: "anvandare" | "assistent"
   const parsed = parseHostnameInput(raw);
   const existing = findDomainByHostname(parsed.hostname);
   if (existing) {
-    logDomainAudit("domain_searched", `${parsed.hostname} är redan kopplad i Driva.`, {
+    logDomainAudit("domain_searched", `${parsed.hostname} är redan kopplad i Ferva.`, {
       actor,
       hostname: parsed.hostname,
       domainId: existing.id,

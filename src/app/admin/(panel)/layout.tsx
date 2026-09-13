@@ -14,14 +14,14 @@ import { platformRoleLabel, SUPER_ADMIN } from "@/lib/platform/types";
 import { isSupabaseMode } from "@/lib/storage/config";
 
 export const metadata: Metadata = {
-  title: { default: "Driva Admin", template: "%s · Driva Admin" },
+  title: { default: "Ferva Admin", template: "%s · Ferva Admin" },
   robots: { index: false, follow: false },
 };
 
 export const dynamic = "force-dynamic";
 
 /**
- * Grinden till Driva Admin. Layouten avgör bara VAD SOM RENDERAS – varje
+ * Grinden till Ferva Admin. Layouten avgör bara VAD SOM RENDERAS – varje
  * server action och varje sida gör om sina egna behörighetskontroller
  * (requirePlatformAdmin/requireSuperAdmin). Kraven är kumulativa:
  * verifierad auth-session → aktiv platform_admins-rad → ev. MFA-krav.
@@ -35,7 +35,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     if (isSupabaseMode()) redirect("/login?next=/admin");
     // JSON-läge utan vald identitet: visa dev-vägen i stället för en död yta.
     return (
-      <DeniedScreen title="Driva Admin (lokalt utvecklingsläge)">
+      <DeniedScreen title="Ferva Admin (lokalt utvecklingsläge)">
         <p>
           Ingen lokal identitet vald. Byt till den seedade dev-superadminen för att testa adminytan –
           detta är en ren utvecklingsväg och finns inte i produktion.
@@ -57,28 +57,20 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     return (
       <DeniedScreen title="403 – Ingen behörighet">
         <p>
-          Ditt konto ({user.email || user.id}) har inte behörighet till Driva Admin. Ytan är endast
-          för Drivas plattformsteam och åtkomsten styrs av tabellen <code>platform_admins</code>,
+          Ditt konto ({user.email || user.id}) har inte behörighet till Ferva Admin. Ytan är endast
+          för Fervas plattformsteam och åtkomsten styrs av tabellen <code>platform_admins</code>,
           aldrig av kontots företagsroller.
         </p>
         <Link href="/" className="mt-4 inline-flex text-[13px] text-amber-300 hover:underline">
-          ← Till Driva
+          ← Till Ferva
         </Link>
       </DeniedScreen>
     );
   }
 
-  if (!ctx.mfaSatisfied) {
-    return (
-      <DeniedScreen title="Tvåfaktorsautentisering krävs">
-        <p>
-          Den här miljön kräver MFA för Driva Admin (<code>PLATFORM_ADMIN_REQUIRE_MFA=1</code>).
-          Logga in igen och verifiera din andra faktor – sessionen behöver AAL2 innan adminytan
-          öppnas.
-        </p>
-      </DeniedScreen>
-    );
-  }
+  // AAL1-session: inget admindata renderas. /admin/mfa avgör själv om det är
+  // registrering (ingen verifierad faktor) eller utmaning (faktor finns).
+  if (!ctx.mfaSatisfied) redirect("/admin/mfa");
 
   const [ticketCounts, support] = await Promise.all([
     countSupportTicketsByStatus(),

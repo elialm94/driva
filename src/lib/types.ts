@@ -1,5 +1,5 @@
 /**
- * Domänmodell för Driva – AI-native business-in-a-box för svenska småföretag.
+ * Domänmodell för Ferva – AI-native business-in-a-box för svenska småföretag.
  * Alla belopp är i SEK (hela kronor om inget annat anges), datum är ISO-strängar.
  */
 
@@ -37,7 +37,7 @@ export interface CompanySettings {
    */
   websiteNotificationEmail?: string;
   phone: string;
-  /** Företagets webbplats (URL). Inte densamma som Driva-hemsidan. */
+  /** Företagets webbplats (URL). Inte densamma som Ferva-hemsidan. */
   websiteUrl?: string;
   address: string;
   postalCode: string;
@@ -63,7 +63,7 @@ export interface CompanySettings {
   /** Preliminärskatt (F-skatt) som dras varje månad. */
   fSkattPerMonth: number;
   /**
-   * false = användaren bokför F-skatt själv. Saknas / true = Driva bokför
+   * false = användaren bokför F-skatt själv. Saknas / true = Ferva bokför
    * debiteringen på förfallodagen.
    */
   autoBookFSkatt?: boolean;
@@ -124,6 +124,38 @@ export interface CompanySettings {
    * till företagets e-post. Se `lib/notices/owner-notices.ts`.
    */
   notices?: OwnerNoticeSettings;
+  /**
+   * Verifierbara påståenden om företaget (F-skatt, ansvarsförsäkring).
+   * Genererad text (offertvillkor, dokumentsidfot, hemsida) får bara
+   * påstå något när motsvarande aktuell verifiering finns här. Saknas eller
+   * utgången = påståendet utelämnas tyst. Se `lib/company-claims.ts`.
+   */
+  claims?: CompanyClaims;
+}
+
+/** Företagets aktiva bekräftelse av att det är godkänt för F-skatt. */
+export interface FSkattVerification {
+  /** Dag användaren bekräftade (YYYY-MM-DD). */
+  confirmedAt: string;
+  /** Valfri källa, t.ex. "Skatteverkets registerutdrag 2026-03-01". */
+  source?: string;
+}
+
+/** Företagets ansvarsförsäkring – giltig bara till och med `validUntil`. */
+export interface InsuranceVerification {
+  /** Försäkringsbolag. */
+  insurer: string;
+  /** Sista giltighetsdag (YYYY-MM-DD). Efter den dagen försvinner påståendet. */
+  validUntil: string;
+  /** Dag användaren bekräftade (YYYY-MM-DD). */
+  confirmedAt: string;
+  /** Valfri källa/referens, t.ex. försäkringsnummer eller länk till försäkringsbrevet. */
+  source?: string;
+}
+
+export interface CompanyClaims {
+  fSkatt?: FSkattVerification;
+  liabilityInsurance?: InsuranceVerification;
 }
 
 /**
@@ -179,7 +211,7 @@ export interface Customer {
   defaultWorkLocationId?: ID;
   notes: string;
   /**
-   * ROT/RUT redan använt hos andra utförare i år. Driva kan inte läsa
+   * ROT/RUT redan använt hos andra utförare i år. Ferva kan inte läsa
    * Skatteverkets saldo – det här fyller företagaren i så att offerten
    * inte lovar mer avdrag än kunden har kvar.
    */
@@ -326,7 +358,7 @@ export type HusWorkCategory = HusRotWorkCategory | HusRutWorkCategory;
 /**
  * Uppgifter som bara behövs för Skatteverkets HUS-fil (XML-import i e-tjänsten
  * "Rot och rut – företag"). Filen laddas ner och importeras av användaren själv –
- * Driva skickar aldrig något till Skatteverket.
+ * Ferva skickar aldrig något till Skatteverket.
  */
 export interface TaxReductionHusDetails {
   /** Arbetsområde enligt schemat. ROT utan val = Bygg (snickardefault). RUT måste väljas. */
@@ -936,6 +968,12 @@ export interface InvoiceSellerSnapshot {
   bic?: string;
   logoInitials: string;
   logoDataUrl?: string;
+  /**
+   * F-skatt var aktivt bekräftad av företaget när dokumentet utfärdades
+   * (bekräftelsedagen). Saknas = påståendet "Godkänd för F-skatt" visas inte,
+   * även på äldre dokument som frystes innan verifieringen fanns.
+   */
+  fSkattConfirmedAt?: string;
 }
 
 /** Köparen vid utfärdandet. */
@@ -1954,6 +1992,8 @@ export type AuditAction =
   | "inlamning_inlamnad"
   | "inlamning_kvitterad"
   | "inlamning_avvisad"
+  | "inlamning_nedladdad"
+  | "inlamning_rapporterad"
   | "bokforing_angrad"
   // Affärshändelser (autopiloten): kritiska pengaflöden auditloggas alltid,
   // i samma transaktion som själva händelsen.
@@ -1962,6 +2002,7 @@ export type AuditAction =
   | "faktura_krediterad"
   | "betalning_matchad"
   | "utgift_bokford"
+  | "utgift_privat"
   | "banktransaktion_bokford"
   | "rot_underlag_skapat"
   | "rot_fil_nedladdad"
@@ -2025,7 +2066,7 @@ export interface MultiYearRow {
   nettoomsattning: number;
   resultatEfterFinansiella: number;
   soliditetProcent: number;
-  /** Saknas för år Driva inte har bokföring för. */
+  /** Saknas för år Ferva inte har bokföring för. */
   ofullstandig?: boolean;
 }
 
@@ -2091,7 +2132,7 @@ export interface AnnualReportContent {
   /**
    * Medelantalet anställda som tal. Står också i noten, men i en mening – och
    * iXBRL-filen ska bära det som ett taggat tal med egen enhet, inte som text.
-   * Saknas i rapporter upprättade innan Driva sparade det.
+   * Saknas i rapporter upprättade innan Ferva sparade det.
    */
   medelantalAnstallda?: number;
   underskrifter?: AnnualReportSignatory[];
@@ -2131,7 +2172,7 @@ export type FilingAuthority = "skatteverket" | "bolagsverket";
  *   → inlamnad (myndigheten har tagit emot den och gett ett id)
  *   → kvitterad (kvittensen är hämtad) | avvisad (myndigheten sa nej)
  *
- * Statusen säger vad som HÄNT, aldrig vad Driva hoppas har hänt: "inlamnad"
+ * Statusen säger vad som HÄNT, aldrig vad Ferva hoppas har hänt: "inlamnad"
  * kräver ett id från myndigheten och "kvitterad" en kvittens.
  */
 export type FilingSubmissionStatus = "utkast" | "genererad" | "signerad" | "inlamnad" | "kvitterad" | "avvisad";
@@ -2171,6 +2212,35 @@ export interface FilingReceipt {
 }
 
 /**
+ * Kvittensfilen användaren laddar upp efter en manuell inlämning (PDF eller
+ * bild från myndighetens e-tjänst). Lagras som kvitton: privat bucket när
+ * fillagring finns, annars inline. Aldrig båda satta.
+ */
+export interface FilingReceiptFile {
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  /** Sökväg i privata bucketen `receipts`: <business_id>/<inlämnings-id>/<filnamn>. */
+  storagePath?: string;
+  contentBase64?: string;
+}
+
+/**
+ * Användarens egen rapport om att filen lämnats in i myndighetens e-tjänst
+ * ("Jag har lämnat in"). Ferva har inte skickat något och inte kontrollerat
+ * kvittensen – det är därför den som rapporterar, och när, som sparas.
+ */
+export interface FilingManualReceipt {
+  /** Myndighetens referens- eller kvittensnummer, som användaren skrev in. */
+  reference?: string;
+  note?: string;
+  file?: FilingReceiptFile;
+  reportedAt: string;
+  reportedByName: string;
+  reportedByUserId?: string;
+}
+
+/**
  * En inlämning av en deklaration till en myndighet. En rad per försök: en
  * avvisad inlämning står kvar och en ny rad skapas för nästa försök, så
  * historiken visar vad som lämnades in och när.
@@ -2179,24 +2249,32 @@ export interface FilingSubmission {
   id: ID;
   kind: FilingKind;
   /**
-   * Vad inlämningen gäller i Drivas data: momsrapportens id, AGI-månaden
+   * Vad inlämningen gäller i Fervas data: momsrapportens id, AGI-månaden
    * (YYYY-MM), räkenskapsårets id för INK2, årsredovisningens id.
    */
   subjectId: string;
   /** Perioden i klartext, t.ex. "april–juni 2026". */
   label: string;
   authority: FilingAuthority;
-  /** Leverantören raden skapades mot – mock i demo, live mot riktigt avtal. */
-  provider: "mock" | "live";
+  /**
+   * Hur filen nådde myndigheten: mock i demo, live mot riktigt avtal,
+   * manuell när användaren själv lämnade in filen i e-tjänsten och
+   * rapporterade det i Ferva.
+   */
+  provider: "mock" | "live" | "manuell";
   status: FilingSubmissionStatus;
   /** Filerna som genererades. INK2 har två: BLANKETTER.SRU och INFO.SRU. */
   files: FilingFileRef[];
   generatedAt?: string;
+  /** När filen senast hämtades för manuell inlämning. */
+  downloadedAt?: string;
   signature?: FilingSignature;
   submittedAt?: string;
   /** Myndighetens id för inlämningen. Finns så snart den togs emot. */
   providerSubmissionId?: string;
   receipt?: FilingReceipt;
+  /** Bara när provider är manuell: användarens rapport och kvittens. */
+  manualReceipt?: FilingManualReceipt;
   rejection?: { reason: string; at: string };
   /** Senaste användarvända felet. Nollställs vid nästa lyckade steg. */
   lastError?: string;
@@ -2296,7 +2374,7 @@ export interface WebsiteSectionItem {
   rating?: number;
   /** Omdömen: t.ex. stad. */
   location?: string;
-  /** Ursprung. Saknas eller "manual" = inskrivet i Driva. */
+  /** Ursprung. Saknas eller "manual" = inskrivet i Ferva. */
   source?: "manual" | "google";
 }
 
@@ -2328,7 +2406,7 @@ export interface WebsiteSection {
 export const DEFAULT_PRIMARY_CTA_LABEL = "Begär offert";
 export const PRIMARY_CTA_LABEL_MAX = 40;
 
-/** STANDARD = Driva underhåller texten. CUSTOM = företaget redigerar hela policyn. */
+/** STANDARD = Ferva underhåller texten. CUSTOM = företaget redigerar hela policyn. */
 export type PrivacyPolicyMode = "standard" | "custom";
 
 /** Publicerat eller utkastat policyläge. Default för alla företag är STANDARD. */
@@ -2389,7 +2467,7 @@ export interface Website {
    */
   privacyPolicySupplement?: string;
   /**
-   * Publicerat läge. Saknas = standard (Driva underhåller policyn).
+   * Publicerat läge. Saknas = standard (Ferva underhåller policyn).
    * Befintliga sajter utan fältet är STANDARD – inget databortfall.
    */
   privacyPolicyMode?: PrivacyPolicyMode;
@@ -2799,7 +2877,7 @@ export interface ExtractedField<T = string> {
  * Per-fält-extraktion för ett inkommande dokument. Arbetsvärdena (det
  * pipelinen använder) bor i InboxItem.parsed* – här bor proveniensen:
  * konfidens och källa per fält, inklusive OSÄKRA kandidater som inte
- * flyttats till parsed* (t.ex. ett belopp Driva inte vågar lita på).
+ * flyttats till parsed* (t.ex. ett belopp Ferva inte vågar lita på).
  */
 export interface InboxExtraction {
   supplier?: ExtractedField;
@@ -3636,6 +3714,8 @@ export interface MerchantCategoryRule {
   /** Antal gånger användaren bekräftat/valt kategorin för leverantören. */
   count: number;
   lastUsedAt: string;
+  /** Räknas upp varje gång valet för leverantören byts – loggade beslut pekar på versionen. */
+  version?: number;
 }
 
 /** Lärd regel för vad en banktransaktion från en motpart är (nyckel ur banking/bank-kinds.ts). */
@@ -3647,4 +3727,6 @@ export interface BankCounterpartRule {
   lastUsedAt: string;
   /** Motpartsnamnet som det såg ut senast – för inställningar och förklaringar. */
   counterpart: string;
+  /** Räknas upp varje gång typen för motparten byts – loggade beslut pekar på versionen. */
+  version?: number;
 }

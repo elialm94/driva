@@ -1,4 +1,4 @@
-# AI i Driva – deterministiskt först, LLM sedan
+# AI i Ferva – deterministiskt först, LLM sedan
 
 Kommandofältet på Hem och `/assistent` är ingen chatbot. Vanliga uppgifter körs
 helt utan LLM; fri text som reglerna inte klarar går – om en nyckel finns – till

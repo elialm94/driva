@@ -21,7 +21,7 @@ export function annualReportDueDate(fy: Pick<FiscalYear, "endDate">): string {
 
 /**
  * Inkomstdeklarationens sista dag för en juridisk person, enligt Skatteverkets
- * tabell över deklarationstidpunkter. Driva räknar med digital inlämning, som är
+ * tabell över deklarationstidpunkter. Ferva räknar med digital inlämning, som är
  * den enda vägen produkten stödjer – SRU-filerna går till Filöverföring.
  *
  * Kalenderår är V1:s enda räkenskapsår, men tabellen står här hel: en halv

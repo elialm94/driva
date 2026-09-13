@@ -81,7 +81,7 @@ export default async function PublicInvoicePage(props: PageProps<"/faktura/[toke
         </div>
 
         <p className="mt-6 text-center text-[12px] text-muted">
-          Skickad med Driva · Frågor? Kontakta {view.seller.name} på {view.seller.email}
+          Skickad med Ferva · Frågor? Kontakta {view.seller.name} på {view.seller.email}
         </p>
       </main>
     </div>

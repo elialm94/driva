@@ -22,8 +22,11 @@ import { postVerification } from "./accounting/engine";
 import { todayDate } from "./accounting/fiscal";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const page = (p: string) => readFileSync(join(here, "../app/(app)/bokforing", p), "utf8");
 const component = (p: string) => readFileSync(join(here, "../components", p), "utf8");
+// Sidorna under /bokforing är tunna adaptrar sedan den gemensamma
+// redovisningsarbetsytan (ägare + konsult delar vyerna): källan som renderar
+// tabellerna ligger i components/accounting-workspace/*-view.tsx.
+const view = (p: string) => component(join("accounting-workspace", p));
 
 const MINUS = "\u2212";
 
@@ -69,17 +72,17 @@ describe("Resultatrapporten: kostnader får ett minustecken, inte två", () => {
   });
 
   it("sidan hårdkodar inte ett minustecken framför kr()", () => {
-    const src = page("resultat/page.tsx");
+    const src = view("resultat-view.tsx");
     assert.ok(
       !src.includes(`${MINUS}{kr(`),
-      "resultat/page.tsx ska låta kr() sätta tecknet, inte sätta ett eget minustecken framför"
+      "resultat-view.tsx ska låta kr() sätta tecknet, inte sätta ett eget minustecken framför"
     );
     assert.match(src, /\{kr\(-rr\.kostnaderSumma\)\}/);
   });
 
   it("lönespecifikationen sätter inte heller ett eget minustecken", () => {
-    const src = page("lon/[runId]/page.tsx");
-    assert.ok(!src.includes(`${MINUS}{kr(`), "lon/[runId]/page.tsx ska låta kr() sätta tecknet");
+    const src = view("lonespecifikation-view.tsx");
+    assert.ok(!src.includes(`${MINUS}{kr(`), "lonespecifikation-view.tsx ska låta kr() sätta tecknet");
     assert.match(src, /\{kr\(-run\.tax\)\}/);
   });
 });
@@ -103,7 +106,7 @@ describe("Huvudboken: datumkolumnen följer appens datumformat", () => {
   });
 
   it("sidan formaterar datumkolumnen med datumKort", () => {
-    const src = page("huvudbok/page.tsx");
+    const src = view("huvudbok-view.tsx");
     assert.match(src, /import \{[^}]*datumKort[^}]*\} from "@\/lib\/format"/);
     assert.match(src, /\{datumKort\(r\.date\)\}/);
     assert.ok(
@@ -117,7 +120,7 @@ describe("Huvudboken: datumkolumnen följer appens datumformat", () => {
     // bokföringsnavigeringen gjordes om (PR #137). Samma assertion, den läser
     // bara kolumnen där den bor nu.
     assert.match(component("skattekonto-panel.tsx"), /\{datumKort\(r\.date\)\}/);
-    assert.match(page("lon/page.tsx"), /\{datumKort\(r\.payDate\)\}/);
+    assert.match(view("lon-view.tsx"), /\{datumKort\(r\.payDate\)\}/);
   });
 });
 

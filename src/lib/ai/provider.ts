@@ -185,7 +185,7 @@ export async function chatWithTools(input: {
         Authorization: `Bearer ${cfg.apiKey}`,
         "Content-Type": "application/json",
         // OpenRouter-attribution (valfritt, ofarligt för andra leverantörer).
-        "X-Title": "Driva",
+        "X-Title": "Ferva",
       },
       body: JSON.stringify({
         model,

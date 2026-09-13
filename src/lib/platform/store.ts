@@ -1,5 +1,5 @@
 /**
- * Lagringsfasad för plattformsdatat (Driva Admin).
+ * Lagringsfasad för plattformsdatat (Ferva Admin).
  *
  * Två lägen, samma kontrakt (jfr src/lib/store.ts för tenantdata):
  *
@@ -22,11 +22,15 @@ import { platformRegistry, commitPlatformRegistry } from "./registry";
 import type {
   AdminAuditEntry,
   EmailEvent,
+  OpsRecord,
+  OpsRecordKind,
   PlatformAdmin,
   PlatformAdminInvitation,
   SupportSession,
+  SuggestionEvent,
   SupportTicket,
   SupportTicketStatus,
+  TermsAcceptanceRecord,
 } from "./types";
 
 export class LastSuperAdminError extends Error {
@@ -460,6 +464,8 @@ export async function supportTicketById(id: string): Promise<SupportTicket | nul
 export interface TicketListFilter {
   statuses?: SupportTicketStatus[];
   businessId?: string;
+  /** Ärenden skapade av en viss användare (registrerades export). */
+  userId?: string;
   q?: string;
   limit?: number;
   offset?: number;
@@ -472,6 +478,7 @@ export async function listSupportTickets(filter: TicketListFilter = {}): Promise
     let items = [...platformRegistry().tickets];
     if (filter.statuses?.length) items = items.filter((t) => filter.statuses!.includes(t.status));
     if (filter.businessId) items = items.filter((t) => t.businessId === filter.businessId);
+    if (filter.userId) items = items.filter((t) => t.userId === filter.userId);
     if (filter.q) {
       const q = filter.q.toLowerCase();
       items = items.filter(
@@ -492,6 +499,10 @@ export async function listSupportTickets(filter: TicketListFilter = {}): Promise
   if (filter.businessId) {
     params.push(filter.businessId);
     where.push(`business_id = $${params.length}::uuid`);
+  }
+  if (filter.userId) {
+    params.push(filter.userId);
+    where.push(`user_id = $${params.length}::uuid`);
   }
   if (filter.q) {
     params.push(`%${filter.q}%`);
@@ -714,6 +725,137 @@ export async function listAdminAudit(filter: {
   return rows.map(auditFromRow);
 }
 
+/* ---------------------------- platform_ops_records --------------------------- */
+
+function opsRecordFromRow(r: SqlRow): OpsRecord {
+  const summary = r.summary;
+  return {
+    id: str(r.id),
+    kind: r.kind as OpsRecordKind,
+    createdAt: iso(r.created_at),
+    recordedByUserId: strOrUndef(r.recorded_by_user_id),
+    recordedByEmail: strOrUndef(r.recorded_by_email),
+    status: r.status as OpsRecord["status"],
+    environment: strOrUndef(r.environment),
+    summary:
+      typeof summary === "string"
+        ? (JSON.parse(summary) as Record<string, unknown>)
+        : ((summary as Record<string, unknown>) ?? {}),
+  };
+}
+
+export async function insertOpsRecord(rec: OpsRecord): Promise<void> {
+  if (!isSupabaseMode()) {
+    const reg = platformRegistry();
+    reg.opsRecords.push({ ...rec });
+    if (reg.opsRecords.length > 2000) reg.opsRecords.splice(0, reg.opsRecords.length - 2000);
+    commitPlatformRegistry();
+    return;
+  }
+  const client = await sqlClient();
+  await client.query(
+    `insert into public.platform_ops_records (id, kind, created_at, recorded_by_user_id, recorded_by_email, status, environment, summary)
+     values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+    [
+      rec.id,
+      rec.kind,
+      rec.createdAt,
+      rec.recordedByUserId ?? null,
+      rec.recordedByEmail ?? null,
+      rec.status,
+      rec.environment ?? null,
+      JSON.stringify(rec.summary ?? {}),
+    ]
+  );
+}
+
+export async function listOpsRecords(filter: { kind?: OpsRecordKind; limit?: number } = {}): Promise<OpsRecord[]> {
+  const limit = Math.min(Math.max(filter.limit ?? 50, 1), 500);
+  if (!isSupabaseMode()) {
+    let items = [...platformRegistry().opsRecords];
+    if (filter.kind) items = items.filter((r) => r.kind === filter.kind);
+    return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
+  }
+  const params: (string | number)[] = [];
+  let where = "";
+  if (filter.kind) {
+    params.push(filter.kind);
+    where = `where kind = $${params.length}`;
+  }
+  params.push(limit);
+  const client = await sqlClient();
+  const rows = await client.query(
+    `select * from public.platform_ops_records ${where} order by created_at desc limit $${params.length}`,
+    params
+  );
+  return rows.map(opsRecordFromRow);
+}
+
+export async function latestOpsRecord(kind: OpsRecordKind): Promise<OpsRecord | null> {
+  const rows = await listOpsRecords({ kind, limit: 1 });
+  return rows[0] ?? null;
+}
+
+/* ----------------------------- terms_acceptances ---------------------------- */
+
+function termsAcceptanceFromRow(r: SqlRow): TermsAcceptanceRecord {
+  return {
+    id: str(r.id),
+    userId: str(r.user_id),
+    businessId: strOrUndef(r.business_id),
+    document: "villkor",
+    version: str(r.version),
+    acceptedAt: iso(r.accepted_at),
+    source: r.source as TermsAcceptanceRecord["source"],
+    email: strOrUndef(r.email),
+  };
+}
+
+export async function insertTermsAcceptance(rec: TermsAcceptanceRecord): Promise<void> {
+  if (!isSupabaseMode()) {
+    const reg = platformRegistry();
+    reg.termsAcceptances.push({ ...rec });
+    commitPlatformRegistry();
+    return;
+  }
+  const client = await sqlClient();
+  await client.query(
+    `insert into public.terms_acceptances (id, user_id, business_id, document, version, accepted_at, source, email)
+     values ($1,$2::uuid,$3::uuid,$4,$5,$6,$7,$8)`,
+    [rec.id, rec.userId, rec.businessId ?? null, rec.document, rec.version, rec.acceptedAt, rec.source, rec.email ?? null]
+  );
+}
+
+/** Senaste godkännandet för användaren (högsta version vinner vid lika tid). */
+export async function latestTermsAcceptance(userId: string): Promise<TermsAcceptanceRecord | null> {
+  if (!isSupabaseMode()) {
+    const items = platformRegistry().termsAcceptances.filter((t) => t.userId === userId);
+    items.sort((a, b) => b.acceptedAt.localeCompare(a.acceptedAt) || b.version.localeCompare(a.version));
+    return items[0] ?? null;
+  }
+  const client = await sqlClient();
+  const rows = await client.query(
+    `select * from public.terms_acceptances where user_id = $1::uuid and document = 'villkor'
+      order by accepted_at desc, version desc limit 1`,
+    [userId]
+  );
+  return rows[0] ? termsAcceptanceFromRow(rows[0]) : null;
+}
+
+export async function listTermsAcceptances(userId: string): Promise<TermsAcceptanceRecord[]> {
+  if (!isSupabaseMode()) {
+    return platformRegistry()
+      .termsAcceptances.filter((t) => t.userId === userId)
+      .sort((a, b) => b.acceptedAt.localeCompare(a.acceptedAt));
+  }
+  const client = await sqlClient();
+  const rows = await client.query(
+    `select * from public.terms_acceptances where user_id = $1::uuid order by accepted_at desc limit 100`,
+    [userId]
+  );
+  return rows.map(termsAcceptanceFromRow);
+}
+
 /* -------------------------------- email_events ------------------------------ */
 
 function emailEventFromRow(r: SqlRow): EmailEvent {
@@ -809,6 +951,97 @@ export async function countEmailEventsSince(sinceIso: string): Promise<{ sent: n
     [sinceIso]
   );
   return { sent: Number(rows[0]?.sent ?? 0), failed: Number(rows[0]?.failed ?? 0) };
+}
+
+/* ------------------------------ suggestion_events ------------------------------ */
+
+function suggestionEventFromRow(r: SqlRow): SuggestionEvent {
+  return {
+    id: str(r.id),
+    businessId: strOrUndef(r.business_id),
+    createdAt: iso(r.created_at),
+    direction: r.direction === "in" ? "in" : "ut",
+    source: str(r.source),
+    tier: (r.tier as SuggestionEvent["tier"]) ?? "osakert",
+    decision: r.decision as SuggestionEvent["decision"],
+    humanRequired: Array.isArray(r.human_required) ? (r.human_required as string[]) : [],
+    merchantType: strOrUndef(r.merchant_type),
+    kbVersion: str(r.kb_version),
+    ruleVersion: r.rule_version == null ? undefined : Number(r.rule_version),
+    provider: strOrUndef(r.provider) ?? null,
+    model: strOrUndef(r.model) ?? null,
+    promptVersion: strOrUndef(r.prompt_version) ?? null,
+    inputHash: str(r.input_hash),
+    suggested: strOrUndef(r.suggested),
+    finalChoice: str(r.final_choice),
+    amountBucket: (r.amount_bucket as SuggestionEvent["amountBucket"]) ?? "500_5000",
+  };
+}
+
+export async function insertSuggestionEvent(e: SuggestionEvent): Promise<void> {
+  if (!isSupabaseMode()) {
+    const reg = platformRegistry();
+    reg.suggestionEvents.push({ ...e });
+    if (reg.suggestionEvents.length > 5000) reg.suggestionEvents.splice(0, reg.suggestionEvents.length - 5000);
+    commitPlatformRegistry();
+    return;
+  }
+  const client = await sqlClient();
+  await client.query(
+    `insert into public.suggestion_events
+       (id, business_id, created_at, direction, source, tier, decision, human_required, merchant_type, kb_version,
+        rule_version, provider, model, prompt_version, input_hash, suggested, final_choice, amount_bucket)
+     values ($1,$2,$3,$4,$5,$6,$7,(select coalesce(array_agg(x), '{}') from jsonb_array_elements_text($8::jsonb) x),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+    [
+      e.id,
+      e.businessId ?? null,
+      e.createdAt,
+      e.direction,
+      e.source,
+      e.tier,
+      e.decision,
+      JSON.stringify(e.humanRequired),
+      e.merchantType ?? null,
+      e.kbVersion,
+      e.ruleVersion ?? null,
+      e.provider ?? null,
+      e.model ?? null,
+      e.promptVersion ?? null,
+      e.inputHash,
+      e.suggested ?? null,
+      e.finalChoice,
+      e.amountBucket,
+    ]
+  );
+}
+
+/** Händelserna de senaste `days` dagarna – fönstret räknas här, inte i vyn. */
+export async function listRecentSuggestionEvents(days: number, limit?: number): Promise<SuggestionEvent[]> {
+  const sinceIso = new Date(Date.now() - days * 86_400_000).toISOString();
+  return listSuggestionEvents({ sinceIso, limit });
+}
+
+export async function listSuggestionEvents(filter: { sinceIso?: string; limit?: number } = {}): Promise<SuggestionEvent[]> {
+  const limit = Math.min(Math.max(filter.limit ?? 5000, 1), 20000);
+  if (!isSupabaseMode()) {
+    return platformRegistry()
+      .suggestionEvents.filter((e) => !filter.sinceIso || e.createdAt >= filter.sinceIso)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
+  }
+  const client = await sqlClient();
+  const params: (string | number)[] = [];
+  let where = "";
+  if (filter.sinceIso) {
+    params.push(filter.sinceIso);
+    where = `where created_at >= $${params.length}`;
+  }
+  params.push(limit);
+  const rows = await client.query(
+    `select * from public.suggestion_events ${where} order by created_at desc limit $${params.length}`,
+    params
+  );
+  return rows.map(suggestionEventFromRow);
 }
 
 /* --------------------------- inaktiverade företag --------------------------- */

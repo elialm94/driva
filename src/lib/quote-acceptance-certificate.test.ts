@@ -128,6 +128,6 @@ describe("intyg om godkännande", () => {
     assert.ok(html.includes("<footer"));
     assert.ok(indexOf(html, "Avsändare") < indexOf(html, "SHA-256"));
     assert.ok(indexOf(html, "Dokumentet är oförändrat") < indexOf(html, cert.storedHash));
-    assert.doesNotMatch(html, /Skriv ut|Driva|Ställ en fråga|BankID/);
+    assert.doesNotMatch(html, /Skriv ut|Ferva|Ställ en fråga|BankID/);
   });
 });

@@ -287,7 +287,7 @@ export function multiYearOverview(fy: FiscalYear, years = 4): MultiYearRow[] {
 
 /**
  * Årsredovisningen skrivs under av samtliga styrelseledamöter och av VD
- * (ÅRL 2:7). Driva känner bara företagsledaren ur löneregistret, så förslaget
+ * (ÅRL 2:7). Ferva känner bara företagsledaren ur löneregistret, så förslaget
  * är en utgångspunkt användaren fyller på – styrelsen är inte en uppgift
  * bokföringen kan gissa.
  */
@@ -594,7 +594,7 @@ export function advanceAnnualReportStatus(reportId: string, to: AnnualReport["st
   logAudit(
     by,
     "arsredovisning_status",
-    `Årsredovisningen markerades som ${to === "inlamnad_markerad" ? "inlämnad (egen markering – Driva skickar inget till Bolagsverket)" : to}.`,
+    `Årsredovisningen markerades som ${to === "inlamnad_markerad" ? "inlämnad (egen markering – Ferva skickar inget till Bolagsverket)" : to}.`,
     { targetType: "arsredovisning", targetId: report.id }
   );
   save();

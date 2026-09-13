@@ -127,7 +127,7 @@ export function groupBusinessBlockers(blockers: readonly IssueBlocker[]): Settin
 }
 
 /**
- * Föreslaget momsreg.nr från org.nr när Driva kan härleda det.
+ * Föreslaget momsreg.nr från org.nr när Ferva kan härleda det.
  * Tomt om org.nr saknas/ogiltigt. Användaren ska inte behöva slå upp det själv.
  */
 export function suggestedVatForCompletion(orgNumber: string, vatNumber: string): string | null {

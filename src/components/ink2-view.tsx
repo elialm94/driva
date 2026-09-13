@@ -225,11 +225,11 @@ export function Ink2View({ fy, businessId, readOnly }: Ink2ViewProps) {
 
       <p className="text-[12px] leading-relaxed text-muted">
         Beräkningen är preliminär tills deklarationen är lämnad.
-        {filingSubmissionAvailable() ? "" : " Driva lämnar inte in något till Skatteverket för det här företaget."}
+        {filingSubmissionAvailable() ? "" : " Ferva lämnar inte in något till Skatteverket för det här företaget."}
         {rate !== undefined
           ? ` Schablonräntan på periodiseringsfonder för beskattningsår ${fy.endDate.slice(0, 4)} är ${procent(rate)}.`
           : ""}{" "}
-        Blanketten har fler rutor än de här – koncernbidrag, andelsförsäljningar och ackord kräver bedömningar som Driva
+        Blanketten har fler rutor än de här – koncernbidrag, andelsförsäljningar och ackord kräver bedömningar som Ferva
         inte gör, och de saknas hellre än att fyllas i på en gissning.
       </p>
     </>

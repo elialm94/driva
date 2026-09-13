@@ -1,4 +1,4 @@
-/* Visuell verifiering av Driva: klickar igenom flöden och tar skärmdumpar. */
+/* Visuell verifiering av Ferva: klickar igenom flöden och tar skärmdumpar. */
 import puppeteer from "puppeteer-core";
 import fs from "fs";
 

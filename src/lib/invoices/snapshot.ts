@@ -11,6 +11,7 @@ import { docTotals, vatBreakdown } from "../calc";
 import { ocrForInvoice } from "../ids";
 import { normalizePersonnummer } from "../personnummer";
 import { buyerVatNumber } from "./reverse-charge";
+import { fSkattVerified } from "../company-claims";
 
 export function sellerSnapshot(settings: CompanySettings): InvoiceSellerSnapshot {
   return {
@@ -32,6 +33,8 @@ export function sellerSnapshot(settings: CompanySettings): InvoiceSellerSnapshot
     bic: settings.bic,
     logoInitials: settings.logoInitials,
     logoDataUrl: settings.logoDataUrl,
+    // Påståendet fryses bara när företaget verifierat det – annars utelämnas det.
+    ...(fSkattVerified(settings) ? { fSkattConfirmedAt: settings.claims!.fSkatt!.confirmedAt } : {}),
   };
 }
 
@@ -79,6 +82,8 @@ export function sellerAsCompany(seller: InvoiceSellerSnapshot, fallback?: Compan
     bic: seller.bic,
     logoInitials: seller.logoInitials,
     logoDataUrl: seller.logoDataUrl,
+    // Försäkringen fryses inte på dokumentet; F-skatt-läget vid utfärdandet gör det.
+    ...(seller.fSkattConfirmedAt ? { claims: { fSkatt: { confirmedAt: seller.fSkattConfirmedAt } } } : {}),
     websiteNotificationEmail: fallback?.websiteNotificationEmail,
     fSkattPerMonth: fallback?.fSkattPerMonth ?? 0,
     payrollReservePerMonth: fallback?.payrollReservePerMonth ?? 0,

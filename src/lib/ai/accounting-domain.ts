@@ -51,7 +51,7 @@ export function bokforingStatusResult(): DomainResult {
   const text =
     todo.length === 0
       ? `Bokföringen är uppdaterad – inget väntar på dig. Banken är avstämd${recon.reconciledThrough ? ` till ${datumLang(recon.reconciledThrough)}` : ""}, och nästa moms (${moms.period.label}, ${kr(Math.abs(moms.attBetala))} ${moms.attBetala >= 0 ? "att betala" : "tillbaka"}) deklareras senast ${datumLang(moms.dueDate)}.${lock ? ` Bokföringen är låst till och med ${datumLang(lock)}.` : ""}`
-      : `Det här behöver du göra: ${todo.join("; ")}. Resten sköter Driva automatiskt.`;
+      : `Det här behöver du göra: ${todo.join("; ")}. Resten sköter Ferva automatiskt.`;
 
   return {
     ok: true,
@@ -278,7 +278,7 @@ export function requestCorrectVerification(query: string, category?: string): Do
       card: {
         kind: "confirm",
         actionId: action.id,
-        summary: "Driva skapar en rättelse. Originalverifikationen ändras inte.",
+        summary: "Ferva skapar en rättelse. Originalverifikationen ändras inte.",
         rows: [
           { label: verificationLabel(ver), value: ver.description },
           { label: "Åtgärd", value: "Koppla om betalningen" },
@@ -339,7 +339,7 @@ export function requestCorrectVerification(query: string, category?: string): Do
     card: {
       kind: "confirm",
       actionId: action.id,
-      summary: "Driva kommer skapa en rättelse. Originalverifikationen ändras inte.",
+      summary: "Ferva kommer skapa en rättelse. Originalverifikationen ändras inte.",
       rows: [
         { label: "Nuvarande", value: preview.current.map((e) => `${e.account} ${e.debit ? `D ${kr(e.debit)}` : `K ${kr(e.credit)}`}`).join(" · ") },
         { label: "Ny", value: (preview.next ?? []).map((e) => `${e.account} ${e.debit ? `D ${kr(e.debit)}` : `K ${kr(e.credit)}`}`).join(" · ") },
@@ -464,11 +464,11 @@ export function requestMarkVatDeclared(periodKey?: string): DomainResult {
   addPending(action);
   return {
     ok: true,
-    text: `Momsen för ${period.period.label} är ${kr(Math.abs(report.attBetala))} ${report.attBetala >= 0 ? "att betala" : "att få tillbaka"}. Har du lämnat deklarationen hos Skatteverket? Bekräfta så markerar jag den som deklarerad och låser perioden. Driva skickar ingenting själv.`,
+    text: `Momsen för ${period.period.label} är ${kr(Math.abs(report.attBetala))} ${report.attBetala >= 0 ? "att betala" : "att få tillbaka"}. Har du lämnat deklarationen hos Skatteverket? Bekräfta så markerar jag den som deklarerad och låser perioden. Ferva skickar ingenting själv.`,
     card: {
       kind: "confirm",
       actionId: action.id,
-      summary: "Momsen förs om till redovisningskontot och perioden låses. Ingen inlämning görs av Driva.",
+      summary: "Momsen förs om till redovisningskontot och perioden låses. Ingen inlämning görs av Ferva.",
       rows: report.boxes.map((b) => ({ label: `Ruta ${b.code} · ${b.label}`, value: kr(b.amount) })),
       confirmLabel: "Markera som deklarerad",
       state: "vantar",

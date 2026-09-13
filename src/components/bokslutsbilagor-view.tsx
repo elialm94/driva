@@ -173,7 +173,7 @@ export function BokslutsbilagorView({ hrefFor = (href) => href, businessId, read
       <SectionTitle>Periodiseringar</SectionTitle>
       <Card className="mb-6 px-6 py-5">
         <p className="text-[13px] leading-relaxed text-soft">
-          En kostnad hör till den period den avser, inte till månaden fakturan kom. Driva föreslår periodisering för köp
+          En kostnad hör till den period den avser, inte till månaden fakturan kom. Ferva föreslår periodisering för köp
           som ser ut att sträcka sig över årsskiftet – resten anger du här.
         </p>
         {planned.length > 0 || resolved.length > 0 ? (

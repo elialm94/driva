@@ -2,7 +2,7 @@
  * Supabase Auth → Send Email-hook.
  *
  * När hooken är på i projektet slutar GoTrue skicka "Supabase Auth"-mejlen.
- * Vi skickar i stället Driva-mallar via samma Resend-väg som offerter.
+ * Vi skickar i stället Ferva-mallar via samma Resend-väg som offerter.
  *
  * Hemlighet: SEND_EMAIL_HOOK_SECRET (dashboard: v1,whsec_… – v1,-prefixet
  * strippas). Signaturen är Standard Webhooks, samma algoritm som Resend.

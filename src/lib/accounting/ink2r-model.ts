@@ -3,7 +3,7 @@
  *
  * Tabellen är BAS-gruppens SRU-koppling för Inkomstdeklaration 2, uttryckt som
  * kontointervall. Den är ingen tolkning: vilket konto som hör till vilken ruta
- * är bestämt av kopplingstabellen, och Driva följer den.
+ * är bestämt av kopplingstabellen, och Ferva följer den.
  *
  * Två regler ur Skatteverkets tekniska beskrivning (SKV 269) styr hur beloppen
  * skrivs, och de förklarar varför tabellen ser ut som den gör:

@@ -4,7 +4,7 @@
  * Flödet: bokförd faktura med VERIFIERADE betalningsuppgifter → [Skapa
  * bankfil] → validera → generera pain.001.001.03 → spara PaymentFile +
  * instruktionerna får status PAYMENT_FILE_CREATED → användaren laddar ned
- * filen och godkänner betalningen i sin internetbank. Driva påstår ALDRIG
+ * filen och godkänner betalningen i sin internetbank. Ferva påstår ALDRIG
  * att banken tagit emot något.
  *
  * Dubbelbetalningsskydd: en faktura kan bara ingå i EN aktiv fil (vakt här +

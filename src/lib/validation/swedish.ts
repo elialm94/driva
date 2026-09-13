@@ -2,7 +2,7 @@
  * Central normalisering och validering av svenska fält.
  *
  * UI visar fel. Servern är sanningen. Användaren skriver uppgiften –
- * Driva sköter formatet (bindestreck, mellanslag, landskod).
+ * Ferva sköter formatet (bindestreck, mellanslag, landskod).
  *
  * Befintliga formatfunktioner i invoices/formats.ts och personnummer.ts
  * återanvänds här så regex inte dupliceras.

@@ -214,7 +214,7 @@ export function ArsredovisningView({ fy, report, base, businessId, readOnly }: A
  * Filen till Bolagsverkets e-tjänst: årsredovisningen som iXBRL. Det som saknas
  * för att den ska tas emot står här och inte först i e-tjänsten – en handling
  * utan underskrifter eller fastställelseintyg avvisas, och det är en uppgift
- * Driva redan känner.
+ * Ferva redan känner.
  */
 function IxbrlCard({
   report,

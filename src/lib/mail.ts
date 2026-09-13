@@ -18,7 +18,7 @@ export const MAIL_NOT_CONFIGURED = "E-posttjänsten är inte konfigurerad i den 
 
 /** Resends dokumenterade testavsändare – bara fallback när ingen egen From är satt. */
 export const RESEND_TEST_FROM_EMAIL = "beth.t@example.com";
-export const RESEND_TEST_FROM_NAME = "Driva";
+export const RESEND_TEST_FROM_NAME = "Ferva";
 
 export const UNVERIFIED_DOMAIN_ERROR =
   "Avsändardomänen är inte verifierad i Resend. Verifiera domänen i Resend-dashboarden, eller använd beth.t@example.com för tester.";
@@ -185,7 +185,7 @@ function logMock(message: MailMessage): void {
 }
 
 /**
- * Operativ mejllogg (email_events) för Driva Admin: svarar på "varför fick
+ * Operativ mejllogg (email_events) för Ferva Admin: svarar på "varför fick
  * kunden aldrig offerten?". Loggar mottagare/typ/status – ALDRIG mejlkroppen.
  * Får aldrig påverka själva utskicket: fel sväljs medvetet.
  */
@@ -302,7 +302,7 @@ function resendErrorMessage(error: unknown): string {
 /**
  * Demoutskick: simuleras (standard) eller omdirigeras till DEMO_EMAIL_SINK.
  * Returnerar alltid ok med mode "demo" – UI:t visar den ärliga demonoten
- * ("mejlet simulerades") och dokumentflödet fortsätter som i riktiga Driva.
+ * ("mejlet simulerades") och dokumentflödet fortsätter som i riktiga Ferva.
  */
 async function sendDemoMail(message: MailMessage, meta?: MailSendMeta): Promise<MailResult> {
   const sink = demoEmailSink();

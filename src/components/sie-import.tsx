@@ -13,7 +13,7 @@ import { Badge, buttonClasses, cx } from "./ui";
 /**
  * SIE-import i två steg: läs filen, se vad den skulle göra, importera sedan.
  *
- * Mellansteget är hela poängen. Ingående balanser är det enda stället i Driva
+ * Mellansteget är hela poängen. Ingående balanser är det enda stället i Ferva
  * där ett saldo sätts utan verifikation, så den som gör det ska se kontoplanen,
  * beloppen och varningarna först. Filen ligger kvar i webbläsaren mellan stegen
  * – servern håller inget halvfärdigt importläge.

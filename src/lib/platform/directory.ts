@@ -1,5 +1,5 @@
 /**
- * Katalog över företag och användare för Driva Admin – tvär-tenant-läsningar
+ * Katalog över företag och användare för Ferva Admin – tvär-tenant-läsningar
  * med paginering och serversök. Anropas ENDAST efter requirePlatformAdmin()
  * (auktoriseringen sker i src/lib/platform/auth.ts + adminytans actions).
  *

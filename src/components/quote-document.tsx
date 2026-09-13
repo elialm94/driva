@@ -9,6 +9,7 @@ import { CompanyLogo } from "./company-logo";
 import { resolveQuoteCompany, resolveQuoteCustomer } from "@/lib/invoices/snapshot";
 import { quoteDescriptionDoc } from "@/lib/quote-description";
 import { RichTextView } from "./rich-text";
+import { fSkattVerified } from "@/lib/company-claims";
 
 export function DocCompanyHeader({ company, docType, docNumber }: { company: CompanySettings; docType: string; docNumber: string }) {
   return (
@@ -49,14 +50,16 @@ export function DocFooter({ company }: { company: CompanySettings }) {
       {sate ? ` · Säte ${sate}` : ""}
       <br />
       {pay ? `${pay} · ` : ""}
-      {company.email} · {company.phone} · Godkänd för F-skatt
+      {company.email} · {company.phone}
+      {fSkattVerified(company) ? " · Godkänd för F-skatt" : ""}
     </div>
   );
 }
 
 /**
  * Offertens företagsuppgifter – läsbar A4-nederdel i stället för en enradig
- * mikrofooter: adress, kontakt, org-/momsnummer, F-skatt och betalningsvägar.
+ * mikrofooter: adress, kontakt, org-/momsnummer, betalningsvägar och F-skatt
+ * (bara när företaget verifierat det – se lib/company-claims.ts).
  * Fakturan har egen kompakt sidfot i invoice-document.tsx.
  */
 function QuoteCompanyFooter({ company }: { company: CompanySettings }) {
@@ -84,7 +87,7 @@ function QuoteCompanyFooter({ company }: { company: CompanySettings }) {
         <div>
           <p>Org.nr {company.orgNumber}</p>
           {company.vatNumber ? <p>Momsreg.nr {company.vatNumber}</p> : null}
-          <p>Godkänd för F-skatt</p>
+          {fSkattVerified(company) ? <p>Godkänd för F-skatt</p> : null}
         </div>
         {pay.length > 0 ? (
           <div>

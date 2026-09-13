@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   experimental: {
@@ -40,4 +41,25 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+/**
+ * Sentry kopplas bara på när en DSN finns – utan konfiguration är bygget
+ * identiskt med tidigare. Source maps laddas upp enbart när SENTRY_ORG,
+ * SENTRY_PROJECT och SENTRY_AUTH_TOKEN alla är satta (CI/Vercel).
+ */
+const sentryEnabled = Boolean(process.env.SENTRY_DSN?.trim() || process.env.NEXT_PUBLIC_SENTRY_DSN?.trim());
+const sourceMaps = Boolean(
+  process.env.SENTRY_ORG?.trim() && process.env.SENTRY_PROJECT?.trim() && process.env.SENTRY_AUTH_TOKEN?.trim()
+);
+
+export default sentryEnabled
+  ? withSentryConfig(nextConfig, {
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      authToken: process.env.SENTRY_AUTH_TOKEN,
+      silent: !process.env.CI,
+      telemetry: false,
+      disableLogger: true,
+      widenClientFileUpload: sourceMaps,
+      sourcemaps: { disable: !sourceMaps, deleteSourcemapsAfterUpload: true },
+    })
+  : nextConfig;

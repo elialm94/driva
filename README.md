@@ -1,6 +1,6 @@
-# Driva
+# Ferva
 
-**AI-native business-in-a-box för svenska småföretag.** Du gör jobbet – Driva sköter administrationen: offerter som kunden godkänner med ett klick, jobb, fakturor, betalningsmatchning, kvitton och automatisk bokföring.
+**AI-native business-in-a-box för svenska småföretag.** Du gör jobbet – Ferva sköter administrationen: offerter som kunden godkänner med ett klick, jobb, fakturor, betalningsmatchning, kvitton och automatisk bokföring.
 
 ## Kom igång
 
@@ -93,7 +93,7 @@ Hemsida → Domän: sök, köp, koppla. Standard är **mock** (ingen riktig .se 
 
 ## Supabase setup
 
-Driva kör mot **Supabase/Postgres i produktion** – riktig inloggning, ett företag per kund (multi-tenant) och Row-Level Security på varje tabell. Utan Supabase-miljövariabler kör appen i **lokalt JSON-läge** (demoläget ovan). I produktion är JSON-läget avstängt: saknas miljön stannar appen med ett tydligt fel i stället för att tyst falla tillbaka.
+Ferva kör mot **Supabase/Postgres i produktion** – riktig inloggning, ett företag per kund (multi-tenant) och Row-Level Security på varje tabell. Utan Supabase-miljövariabler kör appen i **lokalt JSON-läge** (demoläget ovan). I produktion är JSON-läget avstängt: saknas miljön stannar appen med ett tydligt fel i stället för att tyst falla tillbaka.
 
 ### 1. Skapa projektet
 
@@ -165,7 +165,7 @@ Skriptet skapar auth-användaren (service role), företaget med ägarmedlemskap 
 
 Så fungerar den:
 
-* **En httpOnly-cookie, en JSON-fil per besökare.** GET `/demo` sätter `driva_demo` (kryptografiskt slumpat session-id + utgångstid) och klonar det kanoniska seedet till sessionens egen fil: `.data/demo-sessions/<id>.json` (`/tmp` på serverless). Det är **samma JSON-lager som den lokala utvecklingen** – inte en andra Driva – bara request-skopat till sessionens fil.
+* **En httpOnly-cookie, en JSON-fil per besökare.** GET `/demo` sätter `driva_demo` (kryptografiskt slumpat session-id + utgångstid) och klonar det kanoniska seedet till sessionens egen fil: `.data/demo-sessions/<id>.json` (`/tmp` på serverless). Det är **samma JSON-lager som den lokala utvecklingen** – inte en andra Ferva – bara request-skopat till sessionens fil.
 * **Request-skopad specialväg i Supabase-läget.** En demorequest kör `db()`/`save()` mot sessionens fil via samma tenantkontext som Supabase-vägen använder; riktiga inloggade användare fortsätter mot Supabase som vanligt, och en riktig inloggning vinner alltid över en kvarglömd demokaka. Demon skapar, läser eller raderar **aldrig** Supabase-rader.
 * **Reload inom livslängden → samma fil.** Annan webbläsare/incognito → egen färsk klon. **Inställningar → Återställ demo** skriver över filen med färskt seed. **Avsluta demo** och **Skapa ditt eget konto** i menyn slänger filen och rensar kakorna; ett diskret **Demo**-märke visas vid företagsnamnet.
 * **Städning utan cron:** demosessionen lever `DEMO_SESSION_HOURS` (standard 24 h). Utgångna filer tas bort med enkel katalogstädning som körs opportunistiskt när nya sessioner klonas – ingen SQL, inga riktiga tabeller.
@@ -219,7 +219,7 @@ npm run test:adapter   # adapterkontroller: riktiga domäntjänster → diff →
 
 ## Fakturering V1 – omfattning och begränsningar
 
-Driva utfärdar **vanliga svenska småföretagsfakturor**: svensk säljare → svensk kund, valuta **SEK**, momssatser **0 / 6 / 12 / 25 %**. UI, assistent och bokföring går genom samma tjänster (`issueInvoice` / `sendInvoice` i `src/lib/services/invoices.ts`) och samma momsräkning (`docTotals` / `vatBreakdown` i `src/lib/calc.ts`).
+Ferva utfärdar **vanliga svenska småföretagsfakturor**: svensk säljare → svensk kund, valuta **SEK**, momssatser **0 / 6 / 12 / 25 %**. UI, assistent och bokföring går genom samma tjänster (`issueInvoice` / `sendInvoice` i `src/lib/services/invoices.ts`) och samma momsräkning (`docTotals` / `vatBreakdown` i `src/lib/calc.ts`).
 
 **Stöds inte i V1** (inget val i UI, ingen påhittad logik):
 
@@ -237,7 +237,7 @@ Driva utfärdar **vanliga svenska småföretagsfakturor**: svensk säljare → s
 
 Offerter, fakturor, betalningspåminnelser och samarbetsinbjudningar skickas via Resend när **både** `RESEND_API_KEY` och avsändare (`RESEND_FROM_EMAIL` / `MAIL_FROM`) är satta. Testdefault `beth.t@example.com` används aldrig som tyst live-From (Resend avvisar då kundens adress). Utan nyckel eller From: offerten markeras som skickad och kundlänken delas – vi låtsas inte att ett mejl gick iväg. Misslyckad Resend lämnar status utkast.
 
-**Auth-mejl** (bekräfta e-post, återställ lösenord) går samma väg när Supabase Send Email-hooken pekar på `POST /api/auth/send-email`. Mallarna är Drivas (samma krom som offert/faktura), avsändare `RESEND_FROM_NAME` / `RESEND_FROM_EMAIL`. Länken landar på `/auth/bekrafta?token_hash&type` så den fungerar i valfri webbläsare. Auth-utskick låtsas aldrig: saknas nyckel+From svarar hooken 503 och registreringen får ett ärligt fel. Dashboard-steget finns under "Manuella steg" ovan.
+**Auth-mejl** (bekräfta e-post, återställ lösenord) går samma väg när Supabase Send Email-hooken pekar på `POST /api/auth/send-email`. Mallarna är Fervas (samma krom som offert/faktura), avsändare `RESEND_FROM_NAME` / `RESEND_FROM_EMAIL`. Länken landar på `/auth/bekrafta?token_hash&type` så den fungerar i valfri webbläsare. Auth-utskick låtsas aldrig: saknas nyckel+From svarar hooken 503 och registreringen får ett ärligt fel. Dashboard-steget finns under "Manuella steg" ovan.
 
 ### Inkommande mejl (`@in.ferva.se`)
 
@@ -278,7 +278,7 @@ Motiv: momsberäkning och fakturor i hela kronor är standard för svenska småf
 
 ### ADR-2: ROT/RUT-tak är vakter, inte sanning
 
-`docTotals` begränsar avdraget till **ROT 50 000 kr / RUT 75 000 kr per person och år** (lagens tak, `src/lib/calc.ts`). Driva känner **aldrig** kundens faktiskt kvarvarande utrymme hos Skatteverket – kunden kan ha använt avdrag hos andra utförare. Därför är varje avdrag **preliminärt** tills Skatteverket betalat ut: full utbetalning → `godkant`; lägre → `delvis_godkant` + restfaktura till kunden (omflytt 1513 → 1510, aldrig ny intäkt); ingen → `nekat` + restfaktura. Fordran på Skatteverket bor på **1513** och bockas av först när pengarna kommer.
+`docTotals` begränsar avdraget till **ROT 50 000 kr / RUT 75 000 kr per person och år** (lagens tak, `src/lib/calc.ts`). Ferva känner **aldrig** kundens faktiskt kvarvarande utrymme hos Skatteverket – kunden kan ha använt avdrag hos andra utförare. Därför är varje avdrag **preliminärt** tills Skatteverket betalat ut: full utbetalning → `godkant`; lägre → `delvis_godkant` + restfaktura till kunden (omflytt 1513 → 1510, aldrig ny intäkt); ingen → `nekat` + restfaktura. Fordran på Skatteverket bor på **1513** och bockas av först när pengarna kommer.
 
 ### ADR-3: En löpande verifikationsserie ("A") över räkenskapsår
 

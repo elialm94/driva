@@ -25,6 +25,8 @@ import {
   resolveWebsiteFormRecipient,
   websiteFormRecipientOverride,
 } from "../website-form-recipient";
+import { isSystemQuoteTerms } from "../standard-quote-terms";
+import { parseCompanyClaimsInput, type CompanyClaimsInput } from "../company-claims";
 
 export function getBusinessProfile(): CompanySettings {
   return db().settings;
@@ -223,14 +225,34 @@ function applyHourlyRate(s: CompanySettings, raw: unknown): void {
   else s.defaultHourlyRate = parsed.value;
 }
 
+/**
+ * Egen text sparas som den är och skrivs aldrig över. Systemets standardtext
+ * (nuvarande, med verifierade påståenden, eller den gamla) lagras däremot
+ * aldrig som "egen" – då följer offerterna alltid dagens verifieringsläge.
+ */
 function applyDefaultQuoteTerms(s: CompanySettings, raw: unknown): void {
   const text = raw == null ? "" : String(raw);
   const trimmed = text.trim();
-  if (!trimmed) {
+  if (!trimmed || isSystemQuoteTerms(trimmed, s)) {
     delete s.defaultQuoteTerms;
     return;
   }
   s.defaultQuoteTerms = trimmed;
+}
+
+/**
+ * Inställningar → Företag → Verifierade uppgifter. Sparas direkt, utanför det
+ * stora formuläret. Avkryssat = påståendet försvinner ur all genererad text.
+ */
+export function updateCompanyClaims(input: CompanyClaimsInput): CompanySettings["claims"] {
+  const parsed = parseCompanyClaimsInput(input);
+  if (!parsed.ok) throw new Error(parsed.errors.join(" "));
+  const s = db().settings;
+  if (parsed.claims) s.claims = parsed.claims;
+  else delete s.claims;
+  logActivity("Verifierade företagsuppgifter (F-skatt/ansvarsförsäkring) uppdaterades.");
+  save();
+  return s.claims;
 }
 
 export function suggestedVatNumber(orgNumber: string): string {

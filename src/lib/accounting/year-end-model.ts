@@ -86,5 +86,5 @@ export const PERIODISERINGSFOND_MAX_AR = 6;
 
 /* ------------------------- Nedskrivning av fordran ------------------------- */
 
-/** Dagar en förfallen fordran ska ha legat innan Driva föreslår nedskrivning. */
+/** Dagar en förfallen fordran ska ha legat innan Ferva föreslår nedskrivning. */
 export const DOUBTFUL_AFTER_DAYS = 90;

@@ -140,7 +140,7 @@ export function accountantCommandBarPrefetch(
     recentInvoices: [],
     placeholder:
       scope === "all_clients"
-        ? "Fråga om dina klienter eller be Driva hantera bokföring…"
+        ? "Fråga om dina klienter eller be Ferva hantera bokföring…"
         : `Fråga om ${accountantClientPossessive(clientName)} bokföring…`,
   };
 }

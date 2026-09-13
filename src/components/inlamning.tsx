@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, FileCheck2, PenLine, RefreshCw, Send } from "lucide-react";
+import { CheckCircle2, ClipboardList, FileCheck2, PenLine, RefreshCw, Send } from "lucide-react";
 import {
   fetchFilingReceiptAction,
   generateFilingAction,
@@ -12,6 +12,9 @@ import {
 import type { FilingKind, FilingSubmission } from "@/lib/types";
 import { Badge, DemoTag, buttonClasses, cx } from "./ui";
 import { datumLang } from "@/lib/format";
+import { filingCaseHref } from "@/lib/filing/case-href";
+import { useWorkspaceHref } from "./accounting-workspace/use-workspace-href";
+import { AppLink } from "./app-link";
 
 /**
  * Inlämningen av en deklaration: statusen och nästa steg.
@@ -70,6 +73,7 @@ export function InlamningPanel({
   className,
 }: InlamningPanelProps) {
   const router = useRouter();
+  const hrefFor = useWorkspaceHref();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -90,12 +94,20 @@ export function InlamningPanel({
   }
 
   if (!available) {
+    const manual = submission?.provider === "manuell" ? submission : null;
     return (
       <div className={cx("rounded-xl border border-line/60 bg-canvas/60 px-4 py-3", className)}>
-        <p className="text-[13px] leading-relaxed text-soft">
-          Driva lämnar inte in deklarationen maskinellt för det här företaget – det kräver ett avtal om inlämning.
-          Filen ovan är komplett: ladda ner den och lämna in den i myndighetens e-tjänst.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[13px] leading-relaxed text-soft">
+            {manual?.manualReceipt
+              ? `Inlämnad för hand ${datumLang(manual.manualReceipt.reportedAt)} av ${manual.manualReceipt.reportedByName}${manual.manualReceipt.reference ? `, referens ${manual.manualReceipt.reference}` : ""}.`
+              : "Ferva skickar inte filen till myndigheten. Hämta den, lämna in den i e-tjänsten och rapportera sedan inlämningen med kvittens."}
+          </p>
+          <AppLink href={hrefFor(filingCaseHref(kind, subjectId))} className={buttonClasses("secondary", "sm")}>
+            <ClipboardList className="size-3.5 shrink-0" />
+            {manual?.manualReceipt ? "Visa inlämningen" : "Steg för steg"}
+          </AppLink>
+        </div>
       </div>
     );
   }

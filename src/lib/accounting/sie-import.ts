@@ -13,11 +13,11 @@ import type { SieImportPreview } from "./sie";
  * är kontoplanen med byråns egna kontonamn och de ingående balanserna. Utan det
  * går det inte att fortsätta bokföra – varje rapport skulle utgå från noll.
  *
- * Importen tar därför MEDVETET inte in verifikationerna. Verifikationer i Driva
+ * Importen tar därför MEDVETET inte in verifikationerna. Verifikationer i Ferva
  * är oföränderliga och numrerade av motorn, och att skriva in en främmande
- * historik i dem skulle vara att påstå att Driva bokförde dem. Historiken
+ * historik i dem skulle vara att påstå att Ferva bokförde dem. Historiken
  * ligger kvar i det gamla programmet, som lagen ändå kräver i sju år, och
- * kommer in i Driva som ingående balans – vilket är precis vad en byrå gör i en
+ * kommer in i Ferva som ingående balans – vilket är precis vad en byrå gör i en
  * manuell övertagning.
  *
  * Filen läses i två steg: preview() visar vad importen skulle göra utan att
@@ -92,7 +92,7 @@ function parseLine(line: string): SieEntry | undefined {
       continue;
     }
     if (trimmed[i] === "{") {
-      // Objektlista (kostnadsställe/projekt). Driva har inga dimensioner.
+      // Objektlista (kostnadsställe/projekt). Ferva har inga dimensioner.
       while (i < trimmed.length && trimmed[i] !== "}") i++;
       i++;
       fields.push("");
@@ -114,7 +114,7 @@ function sieDateToIso(raw: string): string | undefined {
 }
 
 /**
- * SIE-belopp är kronor med punkt som decimaltecken. Driva bokför i hela kronor,
+ * SIE-belopp är kronor med punkt som decimaltecken. Ferva bokför i hela kronor,
  * så ören avrundas – och att de fanns sägs i förhandsvisningens varningar, för
  * en avrundning som ingen nämner är en avrundning ingen upptäcker.
  */
@@ -129,7 +129,7 @@ function parseAmount(raw: string): number | undefined {
  *
  * `#RAR 0` är filens innevarande år och `#RAR -1` året före; balansposterna
  * bär samma årsindex, så #UB för år 0 är den utgående balansen vi vill ha som
- * ingående balans i Driva när övertagandet sker vid ett årsskifte, medan #IB
+ * ingående balans i Ferva när övertagandet sker vid ett årsskifte, medan #IB
  * för år 0 är den vi vill ha när övertagandet sker mitt i året.
  */
 export function previewSieImport(bytes: Uint8Array): SieImportPreview {
@@ -191,7 +191,7 @@ export function previewSieImport(bytes: Uint8Array): SieImportPreview {
   }
 
   if (sietyp && !["1", "2", "3", "4", "4E"].includes(sietyp.toUpperCase())) {
-    warnings.push(`Filen anger SIE-typ ${sietyp}, som Driva inte känner. Importen läser den som SIE 4.`);
+    warnings.push(`Filen anger SIE-typ ${sietyp}, som Ferva inte känner. Importen läser den som SIE 4.`);
   }
   if (years.size === 0) {
     throw new SieImportError(
@@ -208,7 +208,7 @@ export function previewSieImport(bytes: Uint8Array): SieImportPreview {
     );
   }
   if (sawOre) {
-    warnings.push("Filen har belopp med ören. Driva bokför i hela kronor, så beloppen avrundas vid importen.");
+    warnings.push("Filen har belopp med ören. Ferva bokför i hela kronor, så beloppen avrundas vid importen.");
   }
   if (verificationCount > 0) {
     warnings.push(
@@ -252,7 +252,7 @@ export function previewSieImport(bytes: Uint8Array): SieImportPreview {
 }
 
 /**
- * Balanserade balanser är ett krav i Driva – saldobalansen ska alltid summera
+ * Balanserade balanser är ett krav i Ferva – saldobalansen ska alltid summera
  * till noll. Går filen inte ihop läggs skillnaden på balanserat resultat, som
  * är den post en revisor ändå skulle fråga om, i stället för att importen
  * vägrar och byrån får leta manuellt.
@@ -337,7 +337,7 @@ export function importSieOpeningBalances(
   const fileYear = preview.fiscalYears[0];
   if (fileYear && nextDay(fileYear.endDate) !== fy.startDate) {
     warnings.push(
-      `Filens räkenskapsår slutar ${fileYear.endDate} men balanserna lades som ingående balans den ${fy.startDate}. Är övertagandet mitt i ett år saknas händelserna däremellan i Driva – de ligger kvar i det gamla programmet.`
+      `Filens räkenskapsår slutar ${fileYear.endDate} men balanserna lades som ingående balans den ${fy.startDate}. Är övertagandet mitt i ett år saknas händelserna däremellan i Ferva – de ligger kvar i det gamla programmet.`
     );
   }
 

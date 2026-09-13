@@ -152,7 +152,7 @@ export function vatOnTaxAccountVerification(reportId: string): Verification | un
 }
 
 /**
- * Referensnumret (OCR) för inbetalningar till skattekontot. Driva räknar
+ * Referensnumret (OCR) för inbetalningar till skattekontot. Ferva räknar
  * fram det ur organisationsnumret (OCR-10) och ber användaren kontrollera
  * det en gång mot Skatteverkets OCR-beräkning. Tomt tar bort numret.
  */
@@ -187,7 +187,7 @@ export function setTaxAccountOcr(value: string, actor: "anvandare" | "assistent"
 
 /**
  * Preliminärskatten per månad enligt Skatteverkets beslut om debiterad
- * preliminärskatt. 0 = inte satt (Driva föreslår då inga F-skattdragningar).
+ * preliminärskatt. 0 = inte satt (Ferva föreslår då inga F-skattdragningar).
  * Heltal kronor precis som allt annat i bokföringen.
  */
 export function setFSkattPerMonth(amount: number, actor: "anvandare" | "assistent"): number {

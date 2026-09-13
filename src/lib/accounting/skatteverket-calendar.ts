@@ -276,7 +276,7 @@ export function authorityCalendarIcs(opts: {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Driva//Skatteverket//SV",
+    "PRODID:-//Ferva//Skatteverket//SV",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     `X-WR-CALNAME:${icsEscape(`Skatteverket · ${name}`)}`,

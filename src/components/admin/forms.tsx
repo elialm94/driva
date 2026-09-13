@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Klientformulär för Driva Admin. Komponenterna postar till server actions i
+ * Klientformulär för Ferva Admin. Komponenterna postar till server actions i
  * src/app/admin/actions.ts – ALL behörighet prövas där (servern), aldrig här.
  * Farliga åtgärder (radera/inaktivera) går via DangerPanel som alltid visar
  * vad som påverkas, vad som bevaras och om det går att ångra (spec §19).
@@ -24,16 +24,20 @@ export function PendingButton({
   children,
   variant = "secondary",
   className,
+  disabled,
+  ...rest
 }: {
   children: ReactNode;
   variant?: "primary" | "secondary" | "danger";
   className?: string;
-}) {
+  disabled?: boolean;
+} & Record<`data-${string}`, string | boolean | undefined>) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={pending || disabled}
+      {...rest}
       className={cx(
         "inline-flex h-8 items-center justify-center rounded-lg px-3 text-[12.5px] font-medium transition-colors disabled:opacity-50",
         variant === "primary" && "bg-amber-400 text-neutral-950 hover:bg-amber-300",

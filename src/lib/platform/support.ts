@@ -2,7 +2,7 @@
  * Supportläge ("Öppna som kund") – INTE osäker imitation.
  *
  * Flödet: admin anger ett skäl → en tidsbegränsad SupportSession skapas →
- * kundens Driva öppnas med sessionens företag som tenantkontext och en
+ * kundens Ferva öppnas med sessionens företag som tenantkontext och en
  * ständigt synlig banner. Admin arbetar hela tiden som SIG SJÄLV:
  *
  *   * inga kundlösenord, inga hashar, ingen inloggning som kunden,

@@ -5,12 +5,13 @@ import assert from "node:assert/strict";
 import { simpleBookkeepingKeys } from "./bookkeeping-mode-keys";
 
 describe("simpleBookkeepingKeys", () => {
-  it("visar att göra, underlag, bank och skatt i enkelt läge", () => {
+  it("visar att göra, underlag, bank, skatt och deklarationer i enkelt läge", () => {
     assert.deepEqual(simpleBookkeepingKeys({ hasPayroll: false, showYearEnd: false }), [
       "oversikt",
       "underlag",
       "bank",
       "skatt",
+      "deklarationer",
     ]);
   });
 
@@ -20,6 +21,7 @@ describe("simpleBookkeepingKeys", () => {
       "underlag",
       "bank",
       "skatt",
+      "deklarationer",
       "lon",
       "bokslut",
     ]);

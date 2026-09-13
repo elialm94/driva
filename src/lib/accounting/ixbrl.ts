@@ -10,7 +10,7 @@ import { escapeXml, FilingDataError, orgNumber10 } from "./filing-format";
  * att maskinläsa: varje siffra och varje text som betyder något bär en
  * inline-XBRL-tagg med taxonomins begrepp. Den laddas upp i Bolagsverkets
  * e-tjänst "Lämna in årsredovisningen digitalt", som validerar och sedan låter
- * en företrädare skriva under med BankID. Driva lämnar inte in någonting.
+ * en företrädare skriva under med BankID. Ferva lämnar inte in någonting.
  *
  * Reglerna kommer från Bolagsverkets "Tillämpningsanvisning för
  * årsredovisningar i iXBRL-format" (TA) och taxonomier.se:
@@ -35,7 +35,7 @@ import { escapeXml, FilingDataError, orgNumber10 } from "./filing-format";
 
 /**
  * Rapporttaxonomin: årsredovisning för aktiebolag med resultaträkning och
- * balansräkning (uppställningsform "risbs"). Driva upprättar aldrig en
+ * balansräkning (uppställningsform "risbs"). Ferva upprättar aldrig en
  * förkortad uppställning, så det är den enda ingången som behövs.
  */
 const AR_SCHEMA = "http://xbrl.taxonomier.se/se/fr/gaap/k2-all/ab/risbs/2024-09-12/se-k2-ab-risbs-2024-09-12.xsd";
@@ -94,7 +94,7 @@ function qname(concept: string): string {
 
 /**
  * Resultaträkningens rader → taxonomibegrepp. Nyckeln är radens etikett i
- * årsredovisningen: uppställningen byggs av Driva och etiketterna är därför
+ * årsredovisningen: uppställningen byggs av Ferva och etiketterna är därför
  * kända, men en rad som byter namn tappar sin tagg och hamnar i `warnings`
  * i stället för att tystna.
  */
@@ -441,7 +441,7 @@ export function ixbrlForAnnualReport(reportId: string): IxbrlFile {
       tag("title", {}, esc(title)),
       selfClosing("meta", { "http-equiv": "Content-Type", content: "application/xhtml+xml; charset=UTF-8" }),
       // TA 3.8.2: dokumentet ska berätta vilket program som skapade det.
-      selfClosing("meta", { name: "generator", content: "Driva" }),
+      selfClosing("meta", { name: "generator", content: "Ferva" }),
       tag("style", { type: "text/css" }, CSS),
     ].join("\n")) +
     "\n" +
@@ -501,7 +501,7 @@ function forvaltningsberattelse(
 
   // Flerårsöversikten går längre bak än jämförelseåret, så varje år får en egen
   // kontext. Åren identifieras av sin etikett och datumen hämtas ur
-  // räkenskapsårsregistret – ett år Driva inte har bokföring för kan inte taggas.
+  // räkenskapsårsregistret – ett år Ferva inte har bokföring för kan inte taggas.
   const years = new Map(fiscalYears().map((f) => [f.label, f]));
   const overviewRows = fb.flerarsoversikt.map((row) => {
     const fy = years.get(row.label);
@@ -670,12 +670,12 @@ function noter(w: FactWriter, c: AnnualReportContent, period0: string): string {
 }
 
 /**
- * Medelantalet anställda ska vara ett taggat tal, men Drivas notext skriver det
+ * Medelantalet anställda ska vara ett taggat tal, men Fervas notext skriver det
  * i en mening. Talet taggas där det står, så presentationen och datat är samma
  * uppgift (TA 4.1.1).
  *
- * Rapporter upprättade innan Driva sparade talet separat bär det bara i
- * meningen. Då läses det därifrån: meningen är skriven av Driva och siffran i
+ * Rapporter upprättade innan Ferva sparade talet separat bär det bara i
+ * meningen. Då läses det därifrån: meningen är skriven av Ferva och siffran i
  * den är rapportens egen, och alternativet vore en årsredovisning som inte går
  * att lämna in digitalt förrän året öppnas och stängs om.
  */
@@ -702,7 +702,7 @@ function medelantalBody(w: FactWriter, c: AnnualReportContent, body: string, per
 
 /**
  * Underskrifterna. Varje företrädare är en rad i en tuple, och datumet för
- * undertecknandet måste finnas för var och en (TA 2.8.1). Drivas
+ * undertecknandet måste finnas för var och en (TA 2.8.1). Fervas
  * underskriftsregister har ett namn i ett stycke, så det delas på sista
  * mellanslaget – taxonomin vill ha tilltalsnamn och efternamn var för sig.
  */

@@ -5,7 +5,7 @@ import { peekPlatformInvitation } from "@/lib/platform/admins";
 import { getPlatformSessionUser } from "@/lib/platform/auth";
 import { datumTidKort } from "@/components/admin/ui";
 
-export const metadata = { title: "Admin-inbjudan · Driva" };
+export const metadata = { title: "Admin-inbjudan · Ferva" };
 export const dynamic = "force-dynamic";
 
 /**
@@ -27,7 +27,7 @@ export default async function AdminInvitePage(props: PageProps<"/admin/inbjudan/
           <span className="flex size-8 items-center justify-center rounded-lg bg-amber-400 text-[13px] font-bold text-neutral-950">
             DA
           </span>
-          <h1 className="text-[16px] font-semibold">Inbjudan till Driva Admin</h1>
+          <h1 className="text-[16px] font-semibold">Inbjudan till Ferva Admin</h1>
         </div>
 
         {!invitation ? (
@@ -42,7 +42,7 @@ export default async function AdminInvitePage(props: PageProps<"/admin/inbjudan/
           <p className="mt-3 text-[13.5px] leading-relaxed text-neutral-400">
             Inbjudan är redan använd.{" "}
             <Link href="/admin" className="text-amber-300 hover:underline">
-              Öppna Driva Admin →
+              Öppna Ferva Admin →
             </Link>
           </p>
         ) : invitation.status === "expired" ? (
@@ -54,13 +54,13 @@ export default async function AdminInvitePage(props: PageProps<"/admin/inbjudan/
             <p>
               {invitation.invitedByName || "En superadmin"} har bjudit in{" "}
               <span className="font-medium text-neutral-200">{invitation.email}</span> som
-              administratör (rollen Admin) i Drivas interna adminverktyg. Giltig till{" "}
+              administratör (rollen Admin) i Fervas interna adminverktyg. Giltig till{" "}
               {datumTidKort(invitation.expiresAt)}.
             </p>
             {!user ? (
               <>
                 <p>
-                  Logga in – eller skapa ett Driva-konto – med exakt den e-postadressen, och kom
+                  Logga in – eller skapa ett Ferva-konto – med exakt den e-postadressen, och kom
                   sedan tillbaka till den här länken.
                 </p>
                 <Link
@@ -80,7 +80,7 @@ export default async function AdminInvitePage(props: PageProps<"/admin/inbjudan/
             ) : (
               <StateForm action={acceptAdminInviteAction}>
                 <input type="hidden" name="token" value={decodeURIComponent(token)} />
-                <PendingButton variant="primary">Acceptera och öppna Driva Admin</PendingButton>
+                <PendingButton variant="primary">Acceptera och öppna Ferva Admin</PendingButton>
               </StateForm>
             )}
           </div>

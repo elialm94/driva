@@ -50,7 +50,7 @@ export default async function NewExpensePage(props: PageProps<"/ekonomi/utgifter
       <PageHeader
         back={<SmartBack fallbackHref={cancelHref} fallbackLabel={cancelLabel} />}
         title="Ny utgift"
-        subtitle="Köp utan kvitto i banken, privata utlägg, milersättning, traktamente och representation. Driva räknar schablonerna och konterar."
+        subtitle="Köp utan kvitto i banken, privata utlägg, milersättning, traktamente och representation. Ferva räknar schablonerna och konterar."
       />
       <ManualExpenseForm
         categories={categories}

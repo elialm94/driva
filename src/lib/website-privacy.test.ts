@@ -124,9 +124,9 @@ describe("integritetspolicy från företagsuppgifter", () => {
     assert.doesNotMatch(text, /rättslig grund är samtycke/i);
   });
 
-  it("beskriver Driva som plattform, inte som företaget kunden kontaktar", () => {
+  it("beskriver Ferva som plattform, inte som företaget kunden kontaktar", () => {
     const text = policyText();
-    assert.match(text, /Du skickar uppgifterna till Södermalms Snickeri AB, inte till Driva/);
+    assert.match(text, /Du skickar uppgifterna till Södermalms Snickeri AB, inte till Ferva/);
     assert.match(text, /personuppgiftsbiträde/);
   });
 

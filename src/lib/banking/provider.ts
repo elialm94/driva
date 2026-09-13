@@ -10,7 +10,7 @@
  *   * UnconfiguredBankProvider (providers/unconfigured.ts) – riktigt företag
  *     utan miljö: ärligt "Bankkoppling är inte konfigurerad", aldrig låtsas.
  *
- * Inga betalningar (PIS/VRP) – Driva kan inte föra över pengar.
+ * Inga betalningar (PIS/VRP) – Ferva kan inte föra över pengar.
  */
 import { createHash, randomBytes } from "node:crypto";
 

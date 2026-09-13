@@ -37,11 +37,11 @@ import {
  * kronor utan tusenavgränsare. Teckenkonventionen är blankettens: en kostnad
  * skrivs som ett positivt belopp i en kostnadsruta.
  *
- * Driva skickar ingenting. Filerna laddas ner, granskas och lämnas in av den
+ * Ferva skickar ingenting. Filerna laddas ner, granskas och lämnas in av den
  * som skriver under deklarationen.
  */
 
-const PROGRAMNAMN = "Driva";
+const PROGRAMNAMN = "Ferva";
 const BLANKETTER_FILNAMN = "BLANKETTER.SRU";
 const INFO_FILNAMN = "INFO.SRU";
 

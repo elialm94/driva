@@ -77,7 +77,7 @@ export function BookFSkattButton({ month, amount }: { month: string; amount: num
 
 /**
  * Preliminärskatten per månad – beloppet från Skatteverkets beslut om debiterad
- * preliminärskatt. Utan det kan Driva inte föreslå F-skattdragningarna, så
+ * preliminärskatt. Utan det kan Ferva inte föreslå F-skattdragningarna, så
  * kortet är framhävt tills beloppet är satt och blir en stillsam rad därefter.
  */
 export function FSkattSettingCard({
@@ -127,7 +127,7 @@ export function FSkattSettingCard({
           </div>
           <p className="mt-1 max-w-prose text-[13px] text-soft">
             {unset
-              ? "Skatteverket drar preliminärskatten från skattekontot den 12:e varje månad. Fyll i beloppet från beslutet om debiterad preliminärskatt så föreslår Driva dragningarna och skattekontots saldo stämmer."
+              ? "Skatteverket drar preliminärskatten från skattekontot den 12:e varje månad. Fyll i beloppet från beslutet om debiterad preliminärskatt så föreslår Ferva dragningarna och skattekontots saldo stämmer."
               : "Beloppet från Skatteverkets beslut om debiterad preliminärskatt. Ändra när du får ett nytt beslut – redan bokförda månader påverkas inte."}
           </p>
         </div>

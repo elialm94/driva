@@ -55,14 +55,14 @@ function signedHeaders(payload: string, secret = HOOK_SECRET) {
 }
 
 describe("authEmail", () => {
-  it("signup är Driva, inte Supabase, med svensk CTA", () => {
+  it("signup är Ferva, inte Supabase, med svensk CTA", () => {
     const mail = authEmail({
       kind: "signup",
       confirmUrl: "http://localhost:3123/auth/bekrafta?token_hash=x&type=signup",
     });
-    assert.equal(mail.subject, "Bekräfta din e-postadress i Driva");
+    assert.equal(mail.subject, "Bekräfta din e-postadress i Ferva");
     assert.match(mail.text, /Bekräfta e-postadressen/);
-    assert.match(mail.html, /Driva/);
+    assert.match(mail.html, /Ferva/);
     assert.match(mail.html, /Bekräfta e-postadressen/);
     assert.doesNotMatch(mail.html, /Supabase/i);
     assert.doesNotMatch(mail.text, /Supabase/i);
@@ -74,7 +74,7 @@ describe("authEmail", () => {
       kind: "recovery",
       confirmUrl: "http://localhost:3123/auth/bekrafta?token_hash=x&type=recovery&next=%2Fuppdatera-losenord",
     });
-    assert.equal(mail.subject, "Återställ lösenordet i Driva");
+    assert.equal(mail.subject, "Återställ lösenordet i Ferva");
     assert.match(mail.text, /Välj nytt lösenord/);
     assert.match(mail.html, /uppdatera-losenord/);
   });
@@ -181,7 +181,7 @@ describe("handleSendEmailHook", () => {
     process.env.SEND_EMAIL_HOOK_SECRET = HOOK_SECRET_DASHBOARD;
     process.env.RESEND_API_KEY = "re_test";
     process.env.RESEND_FROM_EMAIL = "hej@driva.se";
-    process.env.RESEND_FROM_NAME = "Driva";
+    process.env.RESEND_FROM_NAME = "Ferva";
     setMailTransportForTests(async (msg) => {
       sent.push(msg);
       return { messageId: "msg_auth" };
@@ -193,7 +193,7 @@ describe("handleSendEmailHook", () => {
     env.restore();
   });
 
-  it("skickar Driva-bekräftelse via Resend-transporten", async () => {
+  it("skickar Ferva-bekräftelse via Resend-transporten", async () => {
     const raw = JSON.stringify(SIGNUP_PAYLOAD);
     const headers = signedHeaders(raw);
     const result = await handleSendEmailHook({
@@ -203,10 +203,10 @@ describe("handleSendEmailHook", () => {
     assert.equal(result.status, 200);
     assert.equal(sent.length, 1);
     assert.equal(sent[0].to, "erik@foretaget.se");
-    assert.equal(sent[0].subject, "Bekräfta din e-postadress i Driva");
+    assert.equal(sent[0].subject, "Bekräfta din e-postadress i Ferva");
     assert.match(sent[0].html, /Bekräfta e-postadressen/);
     assert.doesNotMatch(sent[0].html, /Supabase/i);
-    assert.equal(sent[0].from, "Driva <hej@driva.se>");
+    assert.equal(sent[0].from, "Ferva <hej@driva.se>");
     assert.equal(sent[0].replyTo, undefined);
   });
 
@@ -261,7 +261,7 @@ describe("sendAuthMail", () => {
     const result = await sendAuthMail(jobs[0]);
     assert.equal(result.ok, true);
     if (result.ok) assert.equal(result.mode, "test");
-    assert.equal(sent[0].subject, "Bekräfta din e-postadress i Driva");
+    assert.equal(sent[0].subject, "Bekräfta din e-postadress i Ferva");
   });
 
   it("mock är fel för auth", async () => {

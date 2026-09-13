@@ -1,5 +1,5 @@
 /**
- * npm run platform:bootstrap – utse den FÖRSTA super-admin för Driva Admin.
+ * npm run platform:bootstrap – utse den FÖRSTA super-admin för Ferva Admin.
  *
  * Körs manuellt av en driftansvarig, aldrig automatiskt. Kopplar en BEFINTLIG
  * Supabase-auth-användare (exakt user id) till plattformsrollen super_admin.

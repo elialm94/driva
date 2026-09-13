@@ -11,10 +11,13 @@ import path from "path";
 import type {
   AdminAuditEntry,
   EmailEvent,
+  OpsRecord,
+  SuggestionEvent,
   PlatformAdmin,
   PlatformAdminInvitation,
   SupportSession,
   SupportTicket,
+  TermsAcceptanceRecord,
 } from "./types";
 
 export interface PlatformRegistry {
@@ -24,6 +27,10 @@ export interface PlatformRegistry {
   sessions: SupportSession[];
   auditLog: AdminAuditEntry[];
   emailEvents: EmailEvent[];
+  suggestionEvents: SuggestionEvent[];
+  opsRecords: OpsRecord[];
+  /** Godkända villkorsversioner (JSON-läget; Supabase har terms_acceptances). */
+  termsAcceptances: TermsAcceptanceRecord[];
   /** Företag som inaktiverats av admin (JSON-läget saknar businesses-tabell). */
   disabledBusinesses: { businessId: string; disabledAt: string; disabledBy: string }[];
 }
@@ -44,6 +51,9 @@ function empty(): PlatformRegistry {
     sessions: [],
     auditLog: [],
     emailEvents: [],
+    suggestionEvents: [],
+    opsRecords: [],
+    termsAcceptances: [],
     disabledBusinesses: [],
   };
 }

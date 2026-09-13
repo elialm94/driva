@@ -82,10 +82,12 @@ import { addJobPhoto, deleteJobPhoto } from "@/lib/services/job-photos";
 import { parseBeslutJson } from "@/lib/tax-reduction-beslut";
 import {
   applyBusinessProfilePatch,
+  updateCompanyClaims,
   updateCompanySettings,
   updateWebsiteFormRecipient,
   type CompanySettingsInput,
 } from "@/lib/services/settings";
+import type { CompanyClaimsInput } from "@/lib/company-claims";
 import { normalizeCompanySettingsInput } from "@/lib/settings-action-input";
 import { BILLING_COMPLETION_PATCH_KEYS } from "@/lib/billing-readiness";
 import {
@@ -169,6 +171,8 @@ import {
   expenseAwaitingReceipt,
   uploadReceiptForExpense,
 } from "@/lib/services/expenses";
+import { normalizeMerchant, PRIVATE_ANSWER } from "@/lib/banking/merchants";
+import { recordSuggestionDecision } from "@/lib/services/suggestion-log";
 import { createManualExpense, type ManualReceiptFile } from "@/lib/services/manual-expense";
 import type { ManualExpenseDraft } from "@/lib/expenses/manual-expense";
 import { uid } from "@/lib/ids";
@@ -1534,10 +1538,33 @@ export async function uploadReceiptAction(
   }
 }
 
-export async function answerExpenseQuestionAction(expenseId: string, answer: string) {
-  await withBusiness(() => {
-    answerExpenseQuestion(expenseId, answer);
+/**
+ * Svar på en bokföringsfråga. `remember: false` = "Använd samma val nästa
+ * gång?" besvarades nej – köpet bokförs men ingen leverantörsregel sparas.
+ * Beslutet loggas aggregerat för kvalitetsvyn (aldrig motpart eller belopp).
+ */
+export async function answerExpenseQuestionAction(expenseId: string, answer: string, opts: { remember?: boolean } = {}) {
+  await withBusiness(async () => {
+    const expense = db().expenses.find((e) => e.id === expenseId);
+    const question = expense?.question;
+    answerExpenseQuestion(expenseId, answer, "anvandare", opts);
     refresh();
+    if (expense && question) {
+      const knowledge = normalizeMerchant(expense.supplier).knowledge;
+      const suggested = knowledge?.followUp ? undefined : question.options[0];
+      await recordSuggestionDecision({
+        input: { amount: -Math.abs(expense.amount), counterpart: expense.supplier, date: expense.date },
+        direction: "ut",
+        source: knowledge ? "kunskapsbas" : expense.receiptId ? "kvitto" : "ingen",
+        tier: "osakert",
+        decision: answer === PRIVATE_ANSWER ? "private" : !suggested || suggested === answer ? "accepted" : "changed",
+        humanRequired: knowledge?.risk.includes("privat") ? ["privat_risk"] : [],
+        merchantType: knowledge?.type,
+        suggested,
+        finalChoice: answer,
+        llm: null,
+      });
+    }
   }, { capability: "categorize" });
 }
 
@@ -2220,6 +2247,38 @@ export async function updateOwnerNoticeSettingsAction(
       updateOwnerNoticeSettings({ email: typeof input.email === "string" ? input.email : "", off });
       refresh();
       return { ok: true, recipient: getOwnerNoticeSettings().recipient } as const;
+    });
+  } catch (e) {
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte spara.") };
+  }
+}
+
+/**
+ * Inställningar → Företag → Verifierade uppgifter (F-skatt, ansvarsförsäkring).
+ * Sparas direkt. Inmatningen är otillförlitlig klientdata: bara kända fält
+ * plockas ut och valideras i domänlagret (parseCompanyClaimsInput).
+ */
+export async function updateCompanyClaimsAction(input: CompanyClaimsInput): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const f = input?.fSkatt ?? { confirmed: false };
+    const i = input?.liabilityInsurance ?? { confirmed: false };
+    const safe: CompanyClaimsInput = {
+      fSkatt: {
+        confirmed: f.confirmed === true,
+        confirmedAt: typeof f.confirmedAt === "string" ? f.confirmedAt : undefined,
+        source: typeof f.source === "string" ? f.source : undefined,
+      },
+      liabilityInsurance: {
+        confirmed: i.confirmed === true,
+        insurer: typeof i.insurer === "string" ? i.insurer : undefined,
+        validUntil: typeof i.validUntil === "string" ? i.validUntil : undefined,
+        source: typeof i.source === "string" ? i.source : undefined,
+      },
+    };
+    return await withBusiness(() => {
+      updateCompanyClaims(safe);
+      refresh();
+      return { ok: true } as const;
     });
   } catch (e) {
     return { ok: false, error: userFacingStorageError(e, "Kunde inte spara.") };

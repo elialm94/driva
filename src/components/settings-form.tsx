@@ -13,7 +13,7 @@ import { saveBillingCompletionAction, saveLogoAction, updateCompanySettingsActio
 import type { CompanySettings, VatRate } from "@/lib/types";
 import type { InvoiceDefaults } from "@/lib/services/settings";
 import { buildCompanySettingsActionInput } from "@/lib/settings-action-input";
-import { STANDARD_TERMS } from "@/lib/standard-quote-terms";
+import { resolveQuoteTerms } from "@/lib/standard-quote-terms";
 import { SETTINGS_HREF, settingsTabsFor, type SettingsFlik } from "@/lib/settings-routes";
 import { formatOrgnr, formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "@/lib/invoices/formats";
 import {
@@ -43,8 +43,11 @@ import type { ResolvedOptionalFeatures } from "@/lib/optional-features";
 import { SettingsBillingBanner } from "./settings-billing-readiness";
 import { AddressFields } from "./address-input";
 import { FSkattSettingCard } from "./skattekonto-widgets";
+import { AbonnemangCard, type AbonnemangCardProps } from "./abonnemang-card";
+import { KontoDataCard, type KontoDataCardProps } from "./konto-data-card";
 import { FiscalYearSettings, type FiscalYearSettingsYear } from "./fiscal-year-settings";
 import { OwnerNoticeSettings, type OwnerNoticeSettingsProps } from "./owner-notice-settings";
+import { CompanyClaimsCard } from "./company-claims-card";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -112,7 +115,7 @@ function fromInitial(initial: CompanySettings, defaults: InvoiceDefaults): FormS
     quoteValidityDays: defaults.quoteValidityDays,
     defaultVatRate: defaults.defaultVatRate,
     defaultHourlyRate: defaults.defaultHourlyRate != null ? String(defaults.defaultHourlyRate) : "",
-    defaultQuoteTerms: defaults.defaultQuoteTerms?.trim() || STANDARD_TERMS,
+    defaultQuoteTerms: resolveQuoteTerms({ claims: initial.claims, defaultQuoteTerms: defaults.defaultQuoteTerms }),
   };
 }
 
@@ -135,6 +138,8 @@ export function SettingsForm({
   today,
   notices,
   articles,
+  subscription,
+  kontoData,
 }: {
   initial: CompanySettings;
   defaults: InvoiceDefaults;
@@ -159,6 +164,10 @@ export function SettingsForm({
   /** Notiser – eget kort som sparar direkt, utanför formuläret. */
   notices?: OwnerNoticeSettingsProps;
   articles?: CatalogArticle[];
+  /** Konto – abonnemanget (Stripe). Bara på fliken Konto. */
+  subscription?: AbonnemangCardProps;
+  /** Konto – dina uppgifter, godkända villkor och kontoavslut. Bara på fliken Konto. */
+  kontoData?: KontoDataCardProps;
 }) {
   const TABS = settingsTabsFor(features);
   const router = useRouter();
@@ -543,6 +552,8 @@ export function SettingsForm({
             </div>
           </Card>
 
+          <CompanyClaimsCard claims={initial.claims} today={today} />
+
           <FiscalYearSettings years={fiscalYears} today={today} />
         </div>
       ) : null}
@@ -637,7 +648,7 @@ export function SettingsForm({
             <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Bank &amp; betalkonto – utbetalningar</p>
             <p className={hintCls}>
               Kontot som dina leverantörsbetalningar dras från. Uppgifterna hamnar i bankfilen (pain.001) som du laddar
-              upp i internetbanken – Driva betalar aldrig något själv.
+              upp i internetbanken – Ferva betalar aldrig något själv.
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -749,7 +760,10 @@ export function SettingsForm({
                   {...fieldMarkProps("defaultQuoteTerms", inputCls)}
                 />
                 <FieldError id="installningar-defaultQuoteTerms-fel">{errorFor("defaultQuoteTerms")}</FieldError>
-                <p className={hintCls}>Förifylls på nya offerter. Kan ändras på varje offert.</p>
+                <p className={hintCls}>
+                  Förifylls på nya offerter. Kan ändras på varje offert. Lämnar du Fervas standardtext orörd följer den
+                  dina verifierade uppgifter (F-skatt, försäkring) under Företag – skriver du egen text gäller den som den är.
+                </p>
               </div>
             </div>
 
@@ -834,11 +848,13 @@ export function SettingsForm({
 
       {flik === "konto" ? (
         <div className="space-y-5">
+          {subscription ? <AbonnemangCard {...subscription} /> : null}
+          {kontoData ? <KontoDataCard {...kontoData} /> : null}
           {account.demo ? (
             <Card className="space-y-3 p-6">
               <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted">Demoläge</p>
               <p className="text-[15px] leading-relaxed text-soft">
-                Driva körs just nu utan inloggning. Du arbetar som företagare för{" "}
+                Ferva körs just nu utan inloggning. Du arbetar som företagare för{" "}
                 <span className="font-medium text-ink">{initial.name}</span>. Det finns inget separat användarkonto
                 eller lösenord att ändra.
               </p>

@@ -1,5 +1,5 @@
 /**
- * Presentationskomponenter för Driva Admin (server-säkra – ingen state).
+ * Presentationskomponenter för Ferva Admin (server-säkra – ingen state).
  * Mörkt, informationstätt operatörs-UI, medvetet skilt från kundappens stil.
  */
 import Link from "next/link";

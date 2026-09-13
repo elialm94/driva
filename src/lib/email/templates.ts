@@ -91,7 +91,7 @@ export function quoteAcceptedEmail(input: QuoteAcceptedEmailInput): { subject: s
     "Hej,",
     "",
     lead,
-    "Uppdraget finns nu i Driva och kan startas. Godkännandet är sparat tillsammans med offertens innehåll och tidpunkt.",
+    "Uppdraget finns nu i Ferva och kan startas. Godkännandet är sparat tillsammans med offertens innehåll och tidpunkt.",
     "",
     "Öppna offerten:",
     input.url,
@@ -102,7 +102,7 @@ export function quoteAcceptedEmail(input: QuoteAcceptedEmailInput): { subject: s
     bodyHtml: `
       <p style="margin:0 0 12px;font-size:16px;">Hej,</p>
       <p style="margin:0 0 12px;font-size:15px;line-height:1.55;"><strong>${escapeHtml(input.acceptedByName)}</strong> godkände offert <strong>#${input.quoteNumber}</strong> (${escapeHtml(input.title)}) på <strong>${escapeHtml(kr(input.amount))}</strong> ${escapeHtml(input.acceptedAtLabel)}.</p>
-      <p style="margin:0;font-size:15px;color:#6b665c;">Uppdraget finns nu i Driva och kan startas. Godkännandet är sparat tillsammans med offertens innehåll och tidpunkt.</p>
+      <p style="margin:0;font-size:15px;color:#6b665c;">Uppdraget finns nu i Ferva och kan startas. Godkännandet är sparat tillsammans med offertens innehåll och tidpunkt.</p>
       ${emailCta(input.url, "Öppna offerten")}
     `,
   });
@@ -340,9 +340,9 @@ export function collaborationInviteEmail(input: CollaborationInviteEmailInput): 
   text: string;
   html: string;
 } {
-  const subject = `${input.invitedByName} bjuder in dig till ${input.companyName} i Driva`;
+  const subject = `${input.invitedByName} bjuder in dig till ${input.companyName} i Ferva`;
   const text = [
-    `${input.invitedByName} bjuder in dig som ${input.roleLabel.toLowerCase()} för ${input.companyName} i Driva.`,
+    `${input.invitedByName} bjuder in dig som ${input.roleLabel.toLowerCase()} för ${input.companyName} i Ferva.`,
     "",
     "Öppna länken för att acceptera:",
     input.url,
@@ -350,10 +350,10 @@ export function collaborationInviteEmail(input: CollaborationInviteEmailInput): 
     `Länken kan bara användas en gång och slutar gälla om ${input.expiresDays} dagar.`,
   ].join("\n");
   const html = emailLayout({
-    title: "Driva",
+    title: "Ferva",
     footer: `Länken kan bara användas en gång och slutar gälla om ${input.expiresDays} dagar.`,
     bodyHtml: `
-      <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">${escapeHtml(input.invitedByName)} bjuder in dig som ${escapeHtml(input.roleLabel.toLowerCase())} för <strong>${escapeHtml(input.companyName)}</strong> i Driva.</p>
+      <p style="margin:0 0 12px;font-size:15px;line-height:1.55;">${escapeHtml(input.invitedByName)} bjuder in dig som ${escapeHtml(input.roleLabel.toLowerCase())} för <strong>${escapeHtml(input.companyName)}</strong> i Ferva.</p>
       ${emailCta(input.url, "Acceptera inbjudan")}
     `,
   });

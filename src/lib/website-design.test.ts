@@ -154,7 +154,7 @@ describe("äldre sajter och standardutseende", () => {
     }
   });
 
-  it("standardutseendet är Klassisk (≈ ursprungliga Driva-utseendet)", () => {
+  it("standardutseendet är Klassisk (≈ ursprungliga Ferva-utseendet)", () => {
     assert.equal(DEFAULT_WEBSITE_DESIGN.themeId, "klassisk");
   });
 

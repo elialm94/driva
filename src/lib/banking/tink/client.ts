@@ -2,7 +2,7 @@
  * Tink Open Banking (AIS) – tunn HTTP-klient. Endast kontoinformation:
  * inga betalningar (PIS), inga överföringar, ingen VRP.
  *
- * Flödet (permanent user per Driva-företag, external_user_id = företagets id):
+ * Flödet (permanent user per Ferva-företag, external_user_id = företagets id):
  *   1. clientAccessToken(scope)              POST /api/v1/oauth/token (client_credentials)
  *   2. createUser                            POST /api/v1/user/create          (user:create)
  *   3. delegateAuthorizationCode             POST /api/v1/oauth/authorization-grant/delegate (authorization:grant)
@@ -143,7 +143,7 @@ export async function delegateAuthorizationCode(
       response_type: "code",
       actor_client_id: TINK_LINK_ACTOR_CLIENT_ID,
       external_user_id: input.externalUserId,
-      id_hint: input.idHint.slice(0, 64) || "Driva",
+      id_hint: input.idHint.slice(0, 64) || "Ferva",
       scope: TINK_DELEGATE_SCOPES,
     }),
   });

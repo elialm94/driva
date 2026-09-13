@@ -2,7 +2,7 @@
  * UnconfiguredFilingProvider – riktigt företag utan avtal om maskinell
  * inlämning. Varje väg ut kastar FilingNotConfiguredError.
  *
- * Att svara ärligt är hela poängen: filerna som Driva bygger är kompletta och
+ * Att svara ärligt är hela poängen: filerna som Ferva bygger är kompletta och
  * går att lämna in i Skatteverkets och Bolagsverkets e-tjänster på egen hand.
  * Det som saknas är avtalet för att skicka dem maskinellt, och då ska
  * användaren få veta just det – inte en kvittens som inte betyder något.

@@ -397,7 +397,7 @@ describe("notiser: testmejl", () => {
     assert.equal(prepared.ok, true);
     if (!prepared.ok) return;
     assert.equal(prepared.to, "info@test.se");
-    assert.equal(prepared.notice.message.subject, "Så här ser notiser från Driva ut");
+    assert.equal(prepared.notice.message.subject, "Så här ser notiser från Ferva ut");
     assert.match(prepared.notice.message.text, /Inställningar → Notiser/);
   });
 

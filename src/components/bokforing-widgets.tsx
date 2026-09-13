@@ -83,7 +83,7 @@ export function MarkVatDeclaredButton({ reportId, attBetala }: { reportId: strin
         </button>
       )}
       <p className="mt-1.5 text-[12px] text-muted">
-        Driva skickar inget till Skatteverket – du deklarerar där som vanligt
+        Ferva skickar inget till Skatteverket – du deklarerar där som vanligt
         {attBetala >= 0 ? ` och betalar ${attBetala.toLocaleString("sv-SE")} kr` : ""}.
       </p>
       <ErrorNote error={error} />
@@ -399,11 +399,11 @@ export function GenerateAnnualReportButton({
 
 const NEXT_STATUS: Record<string, { to: "granskad" | "signerad" | "inlamnad_markerad"; label: string; hint: string }> = {
   genererad: { to: "granskad", label: "Markera som granskad", hint: "Läs igenom siffror och texter först." },
-  granskad: { to: "signerad", label: "Markera som signerad", hint: "Skriv ut och signera – Driva har ingen BankID-signering för årsredovisningar." },
+  granskad: { to: "signerad", label: "Markera som signerad", hint: "Skriv ut och signera – Ferva har ingen BankID-signering för årsredovisningar." },
   signerad: {
     to: "inlamnad_markerad",
     label: "Markera som inlämnad",
-    hint: "Lämna in hos Bolagsverket själv – Driva skickar ingenting.",
+    hint: "Lämna in hos Bolagsverket själv – Ferva skickar ingenting.",
   },
 };
 

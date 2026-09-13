@@ -1,5 +1,5 @@
 /**
- * CENTRALA MÄTVÄRDESDEFINITIONER för Driva Admin – det enda stället där ett
+ * CENTRALA MÄTVÄRDESDEFINITIONER för Ferva Admin – det enda stället där ett
  * plattformsmätvärde definieras. Komponenter räknar ALDRIG själva.
  *
  * Endast mätvärden som kan härledas KORREKT ur riktig data – inga påhittade

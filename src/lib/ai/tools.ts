@@ -615,7 +615,7 @@ const specs: ToolSpec[] = [
       function: {
         name: "review_document_extraction",
         description:
-          "Visa vad Driva läst ur ett inkommande dokument (review document extraction): fält för fält med läge Säker/Kontrollera. Godkännandet görs av användaren i Kontrollera-vyn – verktyget ändrar inget.",
+          "Visa vad Ferva läst ur ett inkommande dokument (review document extraction): fält för fält med läge Säker/Kontrollera. Godkännandet görs av användaren i Kontrollera-vyn – verktyget ändrar inget.",
         parameters: obj({ itemId: { type: "string", description: "Inboxpostens id" } }, ["itemId"]),
       },
     },
@@ -1870,7 +1870,7 @@ const specs: ToolSpec[] = [
       function: {
         name: "ratta_bokforing",
         description:
-          "Be om bekräftelse att rätta en bokförd verifikation (correct booking). query = A12, leverantör eller id. category = utgiftskategori (material, forsakring, …) när kostnadskontot är fel. Aldrig debet/kredit-rader – Driva skapar rättelsen. Kundfaktura → kreditflöde. Betalning → omatcha.",
+          "Be om bekräftelse att rätta en bokförd verifikation (correct booking). query = A12, leverantör eller id. category = utgiftskategori (material, forsakring, …) när kostnadskontot är fel. Aldrig debet/kredit-rader – Ferva skapar rättelsen. Kundfaktura → kreditflöde. Betalning → omatcha.",
         parameters: obj({
           query: { type: "string", description: "Verifikationsnummer (A12), leverantör eller id." },
           category: { type: "string", description: "Ny utgiftskategori, t.ex. material eller forsakring." },

@@ -21,6 +21,7 @@ import {
 } from "@/lib/invoices/document-view";
 import { TaxReductionInvoiceDisclaimer } from "./tax-reduction-terms";
 import { RichTextView } from "./rich-text";
+import { fSkattVerified } from "@/lib/company-claims";
 
 /** Sektionsrubrik i dokumentet – liten, spärrad versal (dokument, inte dashboard). */
 function DocSectionLabel({ children }: { children: React.ReactNode }) {
@@ -256,7 +257,7 @@ function SellerIdentityTokenView({ token }: { token: SellerIdentityToken }) {
  * Data från issuedSnapshot via resolveInvoiceView, aldrig live-uppslag på utfärdad faktura.
  */
 function InvoiceCompanyFooter({ company }: { company: CompanySettings }) {
-  const { lines } = sellerIdentityFooter(company);
+  const { lines } = sellerIdentityFooter({ ...company, approvedForFskatt: fSkattVerified(company) });
   if (lines.length === 0) return null;
   return (
     <footer className="break-inside-avoid mt-6 border-t border-line pt-3.5" data-invoice-seller-footer="">

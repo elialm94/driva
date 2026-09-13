@@ -874,7 +874,7 @@ export async function confirmPendingAction(actionId: string): Promise<void> {
     }
     case "skapa_bankfil": {
       // Bekräftad bankfil: samma tjänst och samma vakter som [Skapa bankfil]
-      // i UI:t. Filen skapas och länkas för nedladdning – Driva påstår aldrig
+      // i UI:t. Filen skapas och länkas för nedladdning – Ferva påstår aldrig
       // att den är skickad till banken eller betald.
       try {
         const { createPaymentFile } = await import("./payment-files");

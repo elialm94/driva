@@ -63,10 +63,12 @@ export function recordBankCounterpartRule(counterpart: string, kind: BankKindKey
   const rules = data.meta.bankCounterpartRules ?? {};
   const existing = rules[key];
   const now = new Date().toISOString();
+  // Versionen räknas upp när valet byts, så att ett loggat beslut alltid kan
+  // spåras till den regel som gällde när förslaget visades.
   const rule: BankCounterpartRule =
     existing && existing.kind === kind
-      ? { ...existing, count: existing.count + 1, lastUsedAt: now, counterpart: counterpart.trim() }
-      : { kind, count: 1, lastUsedAt: now, counterpart: counterpart.trim() };
+      ? { ...existing, count: existing.count + 1, lastUsedAt: now, counterpart: counterpart.trim(), version: existing.version ?? 1 }
+      : { kind, count: 1, lastUsedAt: now, counterpart: counterpart.trim(), version: existing ? (existing.version ?? 1) + 1 : 1 };
   rules[key] = rule;
   data.meta.bankCounterpartRules = rules;
   return rule;
@@ -487,7 +489,7 @@ export function bookBankTransactionAs(txId: string, input: BookBankTransactionIn
     const learned = result.rule
       ? ruleIsAutomatic(result.rule)
         ? " – nästa gång sker det automatiskt"
-        : " – Driva föreslår samma sak nästa gång"
+        : " – Ferva föreslår samma sak nästa gång"
       : "";
     logActivity(`${flow} ${kr(amount)} ${prep} ${counterpart} bokfördes som ${def.label.toLowerCase()}${learned}.`, {
       createdBy: by,
@@ -499,6 +501,50 @@ export function bookBankTransactionAs(txId: string, input: BookBankTransactionIn
 
 function lowerFirst(text: string): string {
   return text ? text.charAt(0).toLowerCase() + text.slice(1) : text;
+}
+
+export interface MarkExpensePrivateResult {
+  /** Verifikationen om företagets pengar gick till köpet (skuld till bolaget). */
+  verificationId?: string;
+  summary: string;
+}
+
+/**
+ * "Privat / gäller inte företaget" på ett köp som väntar på kvitto eller svar.
+ * Betalades det från företagskontot bokförs banktransaktionen som privat köp
+ * (2893 – ägaren är skyldig bolaget pengarna) och platshållarköpet tas bort.
+ * Var det ett utlägg utan koppling till banken finns inget att bokföra –
+ * köpet tas bort och valet loggas. Ett redan bokfört köp rättas i stället via
+ * verifikationen (undoExpenseBooking), aldrig här.
+ */
+export function markExpensePrivate(expenseId: string): MarkExpensePrivateResult {
+  const data = db();
+  const expense = data.expenses.find((e) => e.id === expenseId);
+  if (!expense) throw new Error("Köpet finns inte.");
+  if (expense.status === "bokford") {
+    throw new Error("Köpet är redan bokfört – ångra bokföringen under Verifikationer först.");
+  }
+  const tx = expense.bankTransactionId
+    ? data.bankTransactions.find((t) => t.id === expense.bankTransactionId)
+    : undefined;
+
+  if (tx && tx.status !== "bokford" && tx.amount < 0) {
+    // Kvittot får inte stoppa ett privat-beslut: köpet är inte bolagets.
+    data.expenses = data.expenses.filter((e) => e.id !== expense.id);
+    const booked = bookBankTransactionAs(tx.id, { kind: "privat_kop", remember: false, by: "anvandare" });
+    return { verificationId: booked.verificationId, summary: booked.summary };
+  }
+
+  data.expenses = data.expenses.filter((e) => e.id !== expense.id);
+  logAudit("anvandare", "utgift_privat", `${expense.supplier} (${kr(expense.amount)}) markerades som privat och togs bort ur bokföringen.`, {
+    targetType: "utgift",
+    targetId: expense.id,
+  });
+  logActivity(`Köpet hos ${expense.supplier} (${kr(expense.amount)}) markerades som privat – inget bokförs.`, {
+    createdBy: "anvandare",
+  });
+  save();
+  return { summary: `${expense.supplier} markerades som privat – inget bokfördes.` };
 }
 
 function connectedBankName(): string | undefined {

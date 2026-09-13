@@ -977,7 +977,7 @@ async function main() {
   await asSuperuser();
 
   // ------------------------------------------------------------------
-  // 9. Driva Admin: plattformstabeller, vakter och RLS
+  // 9. Ferva Admin: plattformstabeller, vakter och RLS
   // ------------------------------------------------------------------
   console.log("\nDriva Admin – plattformsbehörighet:");
 

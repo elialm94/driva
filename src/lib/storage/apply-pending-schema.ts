@@ -89,6 +89,82 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
        add column if not exists subscription_status text`
   );
 
+  // Stripe Billing (migration 51). Triggern som fryser fälten uppdateras bara
+  // av migrationen – tills den körts skyddas fälten av att Data API:t inte
+  // känner till kolumnerna i sin cache och av att serverkoden är enda skrivaren.
+  await ensureColumn(
+    "businesses",
+    "stripe_customer_id",
+    `alter table public.businesses
+       add column if not exists stripe_customer_id text,
+       add column if not exists stripe_subscription_id text,
+       add column if not exists stripe_price_id text,
+       add column if not exists stripe_status text,
+       add column if not exists current_period_end timestamptz,
+       add column if not exists cancel_at_period_end boolean not null default false,
+       add column if not exists billing_updated_at timestamptz,
+       add column if not exists billing_event_created bigint`
+  );
+  const webhookEvents = await client.query(`select to_regclass('public.stripe_webhook_events') is not null as present`);
+  if (!webhookEvents[0]?.present) {
+    await run(
+      client,
+      `create table if not exists public.stripe_webhook_events (
+        id text primary key,
+        received_at timestamptz not null default now(),
+        event_created timestamptz,
+        type text not null,
+        livemode boolean not null default false,
+        api_version text,
+        business_id uuid,
+        status text not null default 'mottagen' check (status in ('mottagen', 'bearbetad', 'ignorerad', 'fel')),
+        error text,
+        processed_at timestamptz
+      )`
+    );
+    await run(client, `create index if not exists stripe_webhook_events_received_idx on public.stripe_webhook_events (received_at desc)`);
+    await run(client, `alter table public.stripe_webhook_events enable row level security`);
+    applied.push("stripe_webhook_events");
+  }
+  const opsRecords = await client.query(`select to_regclass('public.platform_ops_records') is not null as present`);
+  if (!opsRecords[0]?.present) {
+    await run(
+      client,
+      `create table if not exists public.platform_ops_records (
+        id text primary key,
+        kind text not null check (kind in ('restore_drill', 'email_test_outbound', 'email_inbound', 'cron_run')),
+        created_at timestamptz not null default now(),
+        recorded_by_user_id text,
+        recorded_by_email text,
+        status text not null check (status in ('ok', 'fel', 'partiell')),
+        environment text,
+        summary jsonb not null default '{}'::jsonb
+      )`
+    );
+    await run(client, `create index if not exists platform_ops_records_kind_idx on public.platform_ops_records (kind, created_at desc)`);
+    await run(client, `alter table public.platform_ops_records enable row level security`);
+    applied.push("platform_ops_records");
+  }
+  const termsAcceptances = await client.query(`select to_regclass('public.terms_acceptances') is not null as present`);
+  if (!termsAcceptances[0]?.present) {
+    await run(
+      client,
+      `create table if not exists public.terms_acceptances (
+        id text primary key,
+        user_id uuid not null,
+        business_id uuid,
+        document text not null check (document in ('villkor')),
+        version text not null,
+        accepted_at timestamptz not null default now(),
+        source text not null check (source in ('signup', 'app', 'checkout', 'admin')),
+        email text
+      )`
+    );
+    await run(client, `create index if not exists terms_acceptances_user_idx on public.terms_acceptances (user_id, accepted_at desc)`);
+    await run(client, `alter table public.terms_acceptances enable row level security`);
+    applied.push("terms_acceptances");
+  }
+
   await ensureColumn(
     "business_settings",
     "default_hourly_rate",
@@ -318,6 +394,12 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     "notices",
     `alter table public.business_settings add column if not exists notices jsonb`
   );
+  // Verifierade företagsuppgifter (migration 54) – settings-upserten skriver alltid kolumnen.
+  await ensureColumn(
+    "business_settings",
+    "claims",
+    `alter table public.business_settings add column if not exists claims jsonb`
+  );
   // OCR-nummer till skattekontot (migration 45) – settings-upserten skriver alltid kolumnen.
   await ensureColumn(
     "business_settings",
@@ -325,6 +407,32 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     `alter table public.business_settings
        add column if not exists tax_account_ocr text
          check (tax_account_ocr is null or tax_account_ocr ~ '^[0-9]{10,25}$')`
+  );
+  // Manuell inlämning (migration 50) – filing_submissions-upserten skriver alltid kolumnerna.
+  await ensureColumn(
+    "filing_submissions",
+    "downloaded_at",
+    `alter table public.filing_submissions add column if not exists downloaded_at timestamptz`
+  );
+  await ensureColumn(
+    "filing_submissions",
+    "manual_receipt",
+    `alter table public.filing_submissions add column if not exists manual_receipt jsonb;
+     alter table public.filing_submissions drop constraint if exists filing_submissions_provider_check;
+     alter table public.filing_submissions add constraint filing_submissions_provider_check
+       check (provider in ('mock', 'live', 'manuell'));
+     alter table public.filing_submissions drop constraint if exists filing_submissions_signed_has_signature;
+     alter table public.filing_submissions add constraint filing_submissions_signed_has_signature check (
+       status not in ('signerad', 'inlamnad', 'kvitterad') or signature is not null or provider = 'manuell'
+     );
+     alter table public.filing_submissions drop constraint if exists filing_submissions_submitted_has_id;
+     alter table public.filing_submissions add constraint filing_submissions_submitted_has_id check (
+       status not in ('inlamnad', 'kvitterad') or provider_submission_id is not null or provider = 'manuell'
+     );
+     alter table public.filing_submissions drop constraint if exists filing_submissions_manual_has_report;
+     alter table public.filing_submissions add constraint filing_submissions_manual_has_report check (
+       provider <> 'manuell' or status not in ('inlamnad', 'kvitterad') or manual_receipt is not null
+     )`
   );
   // Utgifter för hand (migration 44) – expenses-upserten skriver alltid kolumnerna.
   // En ensureColumn per kolumn: en delvis migrerad tabell ska ändå bli hel.

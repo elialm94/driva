@@ -14,13 +14,22 @@
  * signerades. Har underlaget ändrats efter signeringen släpps signaturen och
  * inlämningen faller tillbaka till genererad – en signatur som gäller en annan
  * fil än den som skickas är ingen signatur.
+ *
+ * Utan leverantör finns den manuella vägen (längst ner): filen hämtas
+ * (downloadedAt), lämnas in av användaren i myndighetens e-tjänst och
+ * rapporteras med referensnummer eller kvittensfil. Raden blir då kvitterad
+ * med provider "manuell" – statusen säger fortfarande bara vad som hänt, och
+ * vem som sa det.
  */
 import { createHash } from "node:crypto";
-import type { FilingFileRef, FilingKind, FilingSubmission, FilingSubmissionStatus } from "../types";
+import type { FilingFileRef, FilingKind, FilingManualReceipt, FilingSubmission, FilingSubmissionStatus } from "../types";
 import { db, save } from "../store";
 import { uid } from "../ids";
 import { logAudit } from "../accounting/audit";
 import { orgNumber10 } from "../accounting/filing-format";
+import { generateVatReport, markVatReportDeclared, vatReportForPeriod } from "../accounting/vat";
+import { employerDeclarationFor, generateEmployerDeclaration, markEmployerDeclarationDeclared } from "../accounting/payroll";
+import { advanceAnnualReportStatus } from "../accounting/annual-report";
 import { FILING_ERROR_TEXT, FilingError, userFacingFilingError } from "./errors";
 import { buildFilingPayload, FILING_KIND_LABEL, type FilingPayload } from "./payload";
 import type { FilingProvider } from "./provider";
@@ -351,4 +360,169 @@ function requireSubmission(id: string): FilingSubmission {
   const submission = filingSubmissionById(id);
   if (!submission) throw new FilingError(FILING_ERROR_TEXT.noSubmission);
   return submission;
+}
+
+/* --------------------------- Manuell inlämning ----------------------------- */
+
+/**
+ * Filen hämtades för att lämnas in för hand. Finns ingen inlämning i arbete
+ * skapas den (genererad), så att kontrollsumman för det som hämtades är låst
+ * innan användaren lämnar in det. Nedladdning är inte inlämning: statusen
+ * förblir genererad.
+ */
+export function markFilingDownloaded(input: GenerateFilingInput): FilingSubmission {
+  let submission = openFilingSubmission(input.kind, input.subjectId);
+  if (!submission || submission.status === "utkast") submission = generateFilingSubmission(input);
+  submission.downloadedAt = new Date().toISOString();
+  touch(submission);
+  logAudit(
+    input.by,
+    "inlamning_nedladdad",
+    `${FILING_KIND_LABEL[submission.kind]} för ${submission.label} hämtades för manuell inlämning (${submission.files.map((f) => f.filename).join(" + ")}).`,
+    { targetType: "inlamning", targetId: submission.id }
+  );
+  return submission;
+}
+
+export interface ManualFilingReportInput {
+  kind: FilingKind;
+  subjectId: string;
+  /** Myndighetens referens- eller kvittensnummer. */
+  reference?: string;
+  note?: string;
+  file?: FilingManualReceipt["file"];
+  reportedByName: string;
+  reportedByUserId?: string;
+  by: "anvandare";
+  /**
+   * Spegla inlämningen i den deklarationsstatus resten av bokföringen redan
+   * använder (momsrapport deklarerad, AGI lämnad, årsredovisning markerad som
+   * inlämnad). Standard på; testerna kan stänga av det.
+   */
+  syncDomainStatus?: boolean;
+}
+
+/**
+ * "Jag har lämnat in": användaren har själv lämnat in filen i myndighetens
+ * e-tjänst och rapporterar det. Kräver referensnummer eller kvittensfil – ett
+ * påstående utan något att visa upp är ingen inlämning.
+ *
+ * Filerna byggs om och jämförs mot det som hämtades: har underlaget ändrats
+ * sedan dess är det inte den filen som lämnades in, och raden faller
+ * tillbaka till genererad så att användaren hämtar den nya.
+ *
+ * Raden blir kvitterad med provider manuell. Kvittensen är användarens egen
+ * uppgift – texten säger det, och Ferva påstår inte att den kontrollerats.
+ * En rättelse senare blir en ny rad, aldrig en ändring av den här.
+ */
+export function reportManualFilingSubmission(input: ManualFilingReportInput): FilingSubmission {
+  const reference = input.reference?.trim() || undefined;
+  const note = input.note?.trim() || undefined;
+  if (!reference && !input.file) {
+    throw new FilingError("Ange myndighetens referens- eller kvittensnummer, eller ladda upp kvittensen.");
+  }
+  if (reference && reference.length > 80) {
+    throw new FilingError("Referensnumret är för långt (max 80 tecken).");
+  }
+
+  let submission = openFilingSubmission(input.kind, input.subjectId);
+  if (!submission || submission.status === "utkast") {
+    submission = generateFilingSubmission({ kind: input.kind, subjectId: input.subjectId, by: input.by });
+  }
+  if (submission.status !== "genererad" && submission.status !== "signerad") {
+    throw new FilingError(
+      `Inlämningen är ${FILING_STATUS_LABEL[submission.status].toLowerCase()} och kan inte rapporteras som manuellt inlämnad.`
+    );
+  }
+
+  const payload = buildFilingPayload(submission.kind, submission.subjectId);
+  const files = fileRefs(payload);
+  if (!sameFiles(submission.files, files)) {
+    submission.files = files;
+    submission.status = "genererad";
+    submission.signature = undefined;
+    submission.downloadedAt = undefined;
+    submission.generatedAt = new Date().toISOString();
+    touch(submission);
+    throw new FilingError(
+      "Underlaget har ändrats sedan filen hämtades, så filen är byggd om. Hämta den nya filen, lämna in den och rapportera sedan."
+    );
+  }
+
+  if (input.syncDomainStatus !== false) syncDomainStatusAfterManualFiling(submission, input.by);
+
+  const now = new Date().toISOString();
+  submission.provider = "manuell";
+  submission.status = "kvitterad";
+  submission.submittedAt = now;
+  submission.manualReceipt = {
+    reference,
+    note,
+    file: input.file,
+    reportedAt: now,
+    reportedByName: input.reportedByName,
+    reportedByUserId: input.reportedByUserId,
+  };
+  submission.receipt = {
+    receiptId: reference ?? `Kvittens bifogad: ${input.file!.filename}`,
+    receivedAt: now,
+    message: `Rapporterad av ${input.reportedByName}. Ferva har inte skickat filen och inte kontrollerat kvittensen hos ${authorityName(submission.authority)}.`,
+  };
+  submission.lastError = undefined;
+  touch(submission);
+  logAudit(
+    input.by,
+    "inlamning_rapporterad",
+    `${FILING_KIND_LABEL[submission.kind]} för ${submission.label} rapporterades som inlämnad för hand hos ${authorityName(submission.authority)} av ${input.reportedByName}` +
+      `${reference ? ` (referens ${reference})` : ""}${input.file ? ` med kvittensfil ${input.file.filename}` : ""}. ` +
+      `Kontrollsumma ${submission.files.map((f) => `${f.filename} ${f.sha256.slice(0, 16)}…`).join(", ")}.`,
+    { targetType: "inlamning", targetId: submission.id }
+  );
+  return submission;
+}
+
+function authorityName(authority: FilingSubmission["authority"]): string {
+  return authority === "skatteverket" ? "Skatteverket" : "Bolagsverket";
+}
+
+/**
+ * Samma handling ska synas på ett ställe. När momsdeklarationen rapporteras
+ * som inlämnad markeras momsrapporten som deklarerad (och momsen förs om till
+ * 2650) precis som knappen på momssidan gör; AGI markeras som lämnad; en
+ * signerad årsredovisning markeras som inlämnad. Vakterna i de funktionerna
+ * (perioden slut, ordningen, checklistan) gäller även här – de visas som
+ * blockerare på deklarationsytan innan man kommer så långt.
+ */
+function syncDomainStatusAfterManualFiling(submission: FilingSubmission, by: "anvandare"): void {
+  try {
+    switch (submission.kind) {
+      case "moms": {
+        const report = vatReportForPeriod(submission.subjectId) ?? generateVatReport(submission.subjectId, by);
+        if (report.status !== "deklarerad") markVatReportDeclared(report.id, by);
+        return;
+      }
+      case "agi": {
+        const declaration = employerDeclarationFor(submission.subjectId) ?? generateEmployerDeclaration(submission.subjectId, by);
+        if (declaration.status !== "deklarerad") markEmployerDeclarationDeclared(declaration.id, by);
+        return;
+      }
+      case "arsredovisning": {
+        const report = db().annualReports.find((r) => r.id === submission.subjectId);
+        if (!report) throw new FilingError("Årsredovisningen finns inte.");
+        if (report.status === "inlamnad_markerad") return;
+        if (report.status !== "signerad") {
+          throw new FilingError(
+            "Årsredovisningen måste vara granskad och markerad som underskriven på bokslutssidan innan den rapporteras som inlämnad."
+          );
+        }
+        advanceAnnualReportStatus(report.id, "inlamnad_markerad", by);
+        return;
+      }
+      case "ink2":
+        return;
+    }
+  } catch (e) {
+    if (e instanceof FilingError) throw e;
+    throw new FilingError(e instanceof Error ? e.message : "Deklarationen kunde inte markeras som lämnad.");
+  }
 }

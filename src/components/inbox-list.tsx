@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { AppLink } from "./app-link";
 import { useRouter } from "next/navigation";
+import { useWorkspaceHref } from "./accounting-workspace/use-workspace-href";
 import { Inbox, Search } from "lucide-react";
 import { Avatar, Badge, Card, EmptyState, buttonClasses, cx } from "./ui";
 import { Pagination } from "./customer-list";
@@ -39,6 +40,7 @@ export function InboxList({
   query: InboxListQuery;
 }) {
   const router = useRouter();
+  const wsHref = useWorkspaceHref();
   const [pending, startTransition] = useTransition();
   const [q, setQ] = useState(query.q);
 
@@ -49,13 +51,13 @@ export function InboxList({
   useEffect(() => {
     const handle = setTimeout(() => {
       if (q === query.q) return;
-      startTransition(() => router.replace(inboxListHref({ ...query, q, page: 1 }), { scroll: false }));
+      startTransition(() => router.replace(wsHref(inboxListHref({ ...query, q, page: 1 })), { scroll: false }));
     }, 200);
     return () => clearTimeout(handle);
-  }, [q, query, router]);
+  }, [q, query, router, wsHref]);
 
   function go(patch: Partial<InboxListQuery>) {
-    startTransition(() => router.replace(inboxListHref({ ...query, ...patch }), { scroll: false }));
+    startTransition(() => router.replace(wsHref(inboxListHref({ ...query, ...patch })), { scroll: false }));
   }
 
   return (

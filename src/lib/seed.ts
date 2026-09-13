@@ -36,7 +36,7 @@ import { jobChangeContentHash, quoteVersionHash } from "./hash";
 import { acceptanceStatement } from "./quote-acceptance";
 import { ocrForInvoice } from "./ids";
 import { snapshotTaxReductionTerms } from "./tax-reduction-terms";
-import { STANDARD_TERMS } from "./standard-quote-terms";
+import { systemQuoteTerms } from "./standard-quote-terms";
 
 /* Datum relativt "nu" så att demon alltid känns levande. */
 function d(daysAgo: number, hour = 10, minute = 0): string {
@@ -302,7 +302,11 @@ export function buildSeed(): DB {
     });
   }
 
-  const standardTerms = STANDARD_TERMS;
+  // Demons offerter innehåller samma villkor som systemet skulle ge demoföretaget
+  // med dess verifierade uppgifter (se claims i settings nedan).
+  const standardTerms = systemQuoteTerms({
+    claims: { fSkatt: { confirmedAt: "2026-01-01" }, liabilityInsurance: { insurer: "Demoförsäkring AB", validUntil: "2999-12-31", confirmedAt: "2026-01-01" } },
+  });
 
   addQuote({
     id: "quote-nord1",
@@ -2109,7 +2113,7 @@ export function buildSeed(): DB {
       id: "msg-welcome",
       role: "assistant" as const,
       at: d(0, 7, 0),
-      text: "God morgon! Jag är din assistent och kan utföra saker i hela Driva. Prova till exempel: ”Skapa en offert till Karin för bokhyllan, 28 000 kr” eller ”Vilka kunder har inte betalat?”",
+      text: "God morgon! Jag är din assistent och kan utföra saker i hela Ferva. Prova till exempel: ”Skapa en offert till Karin för bokhyllan, 28 000 kr” eller ”Vilka kunder har inte betalat?”",
     },
   ];
 
@@ -2136,7 +2140,18 @@ export function buildSeed(): DB {
       lateInterestRate: 10,
       quoteValidityDays: 30,
       defaultVatRate: 25,
-      defaultQuoteTerms: STANDARD_TERMS,
+      // Demoföretaget har verifierat F-skatt och försäkring – därför får
+      // demons offerter, sidfötter och hemsida nämna dem. Riktiga företag
+      // måste bekräfta själva i Inställningar → Företag.
+      claims: {
+        fSkatt: { confirmedAt: d(45).slice(0, 10), source: "Skatteverkets registerutdrag" },
+        liabilityInsurance: {
+          insurer: "Demoförsäkring AB",
+          validUntil: d(-320).slice(0, 10),
+          confirmedAt: d(45).slice(0, 10),
+          source: "Försäkringsbrev 2026-DEMO",
+        },
+      },
       inboundMailSlug: "demo",
       // Betalkontot för utgående leverantörsbetalningar (pain.001-debitorn).
       payerBankName: "SEB",

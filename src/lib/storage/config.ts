@@ -84,7 +84,7 @@ export function missingEnvMessage(): string {
     .join(", ");
   return (
     `Supabase-miljön saknas (${missing}). ` +
-    `I produktion kör Driva aldrig mot demo-lagret – sätt miljövariablerna enligt README-avsnittet "Supabase setup". ` +
+    `I produktion kör Ferva aldrig mot demo-lagret – sätt miljövariablerna enligt README-avsnittet "Supabase setup". ` +
     `(Supabase environment missing – production never falls back to the local JSON store.)`
   );
 }

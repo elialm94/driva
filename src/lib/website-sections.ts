@@ -2,7 +2,7 @@
  * Katalog och regler för hemsidans sektioner.
  *
  * Byggaren är INTE Wix: en liten, genomtänkt uppsättning typer. Användaren
- * väljer innehåll; Driva sköter form. Unika typer (Start, Tjänster, …) kan
+ * väljer innehåll; Ferva sköter form. Unika typer (Start, Tjänster, …) kan
  * bara finnas en gång. Text och CTA kan läggas till flera gånger.
  */
 

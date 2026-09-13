@@ -84,7 +84,7 @@ export interface BalanceAccountReconciliation {
   ok: boolean;
   /**
    * Sant när kontot inte KAN stämmas av automatiskt – ett banklån har ingen
-   * motsvarighet i Driva. Sådana konton stoppar inte bokslutet, för det vore
+   * motsvarighet i Ferva. Sådana konton stoppar inte bokslutet, för det vore
    * att kräva något användaren inte kan leverera, men de listas så att de
    * stäms av mot underlaget för hand i stället för att glömmas.
    */
@@ -411,7 +411,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
 
   /*
    * Kontot har saldo men inget delsystem – ett banklån, en skuld till en
-   * aktieägare. Driva kan inte avgöra om saldot är rätt, och att stoppa
+   * aktieägare. Ferva kan inte avgöra om saldot är rätt, och att stoppa
    * bokslutet på det vore att kräva ett svar användaren inte kan ge här.
    * Kontot listas därför som avstämt för hand, inte som en avvikelse.
    */
@@ -419,7 +419,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
     ...base,
     difference: 0,
     source: "ingen",
-    detail: `${accountName(account)} har saldo ${kr(ledger)} utan delsystem i Driva. Stäm av mot underlaget – lånebeskedet, avtalet eller motpartens uppgift – och lägg vid en specifikation.`,
+    detail: `${accountName(account)} har saldo ${kr(ledger)} utan delsystem i Ferva. Stäm av mot underlaget – lånebeskedet, avtalet eller motpartens uppgift – och lägg vid en specifikation.`,
     ok: true,
     manual: ledger !== 0,
   };

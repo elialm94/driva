@@ -16,14 +16,14 @@ import {
  *
  * Filen laddas upp i Skatteverkets e-tjänst "Lämna arbetsgivardeklaration".
  * Där granskas den, kompletteras om något fattas, och signeras med
- * e-legitimation innan den skickas in. Driva lämnar inte in något.
+ * e-legitimation innan den skickas in. Ferva lämnar inte in något.
  *
  * Strukturen följer Skatteverkets schema (da/instans 1.1, teknisk beskrivning
  * 1.1.18): en huvuduppgift (HU) med arbetsgivarens summor och en individuppgift
  * (IU) per betalningsmottagare, var och en i ett eget Blankett-element. Varje
  * beloppselement bär attributet `faltkod` med fältkoden från blanketten.
  *
- * Fältkoderna Driva fyller i:
+ * Fältkoderna Ferva fyller i:
  *   HU  201 arbetsgivarens id, 006 redovisningsperiod,
  *       487 summa arbetsgivaravgifter, 497 summa avdragen skatt.
  *   IU  201 arbetsgivarens id, 215 betalningsmottagarens personnummer,
@@ -31,7 +31,7 @@ import {
  *       011 kontant ersättning som är underlag för arbetsgivaravgifter,
  *       001 avdragen preliminärskatt.
  *
- * Förmåner, växa-stöd och frånvarouppgifter finns inte i Driva och saknas
+ * Förmåner, växa-stöd och frånvarouppgifter finns inte i Ferva och saknas
  * därför i filen. En lön utan förmåner är fullständig med de här fälten.
  */
 
@@ -40,7 +40,7 @@ const KOMPONENT_NS = "http://xmls.skatteverket.se/se/skatteverket/da/komponent/s
 const SCHEMA_LOCATION =
   "http://xmls.skatteverket.se/se/skatteverket/da/instans/schema/1.1 " +
   "http://xmls.skatteverket.se/se/skatteverket/da/arbetsgivardeklaration/arbetsgivardeklaration_1.1.xsd";
-const PROGRAMNAMN = "Driva";
+const PROGRAMNAMN = "Ferva";
 
 export interface AgiFile {
   filename: string;

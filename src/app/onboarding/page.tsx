@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth/session";
 import { isOwnerRole } from "@/lib/collaboration/permissions";
 import { isSupabaseMode } from "@/lib/storage/config";
+import { ensureTermsAccepted } from "@/lib/legal/acceptance";
 import { db } from "@/lib/store";
 import { resumeStepFor } from "@/lib/setup/onboarding-state";
 import { OnboardingForm } from "./onboarding-form";
@@ -30,6 +31,7 @@ export default async function OnboardingPage() {
   if (!isSupabaseMode()) redirect("/"); // JSON-läget har ett färdigt demoföretag
   const user = await getSessionUser();
   if (!user) redirect("/login");
+  await ensureTermsAccepted("/onboarding");
   const memberships = await listMemberships(user.id);
   const owned = memberships.filter((m) => isOwnerRole(m.role));
   // Enbart konsultmedlemskap: ingen egen onboarding – Hem avgör (→ /redovisning).

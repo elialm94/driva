@@ -44,7 +44,7 @@ export function salaryAccountFor(role: EmployeeRole): number {
  * räknas inte fram här. Tabellerna är publicerade uppslagstabeller med ett
  * tiotal kolumner och hundratals inkomstintervall som ändras varje år;
  * arbetsgivarens skyldighet är att dra enligt tabellen, och ett eget påhittat
- * tal vore fel skatt även om det låg nära. Driva sparar beloppet, varnar när
+ * tal vore fel skatt även om det låg nära. Ferva sparar beloppet, varnar när
  * lönen ändras så att uppslaget inte längre gäller, och redovisar exakt det
  * avdrag som gjorts i arbetsgivardeklarationen.
  *
@@ -151,14 +151,14 @@ export function employerContribution(gross: number, rate: ContributionRate): num
 
 /**
  * Ålder som lönemodellen kräver. Nedsatt avgift för ungdomar under 18 finns i
- * lagen men är inte implementerad – Driva stöder en anställd, ägaren, och en
+ * lagen men är inte implementerad – Ferva stöder en anställd, ägaren, och en
  * styrelseledamot i ett aktiebolag är alltid myndig. Att räkna full avgift på en
  * sextonåring vore fel belopp, så fallet avvisas i stället för att gissas.
  */
 export function contributionAgeError(birthDate: string, incomeYear: number): string | null {
   const age = ageAtStartOfYear(birthDate, incomeYear);
   if (age < MIN_EMPLOYEE_AGE) {
-    return `Den anställde är ${age} år vid ingången av ${incomeYear}. Nedsatt arbetsgivaravgift för ungdomar under ${MIN_EMPLOYEE_AGE} år är inte implementerad i Driva.`;
+    return `Den anställde är ${age} år vid ingången av ${incomeYear}. Nedsatt arbetsgivaravgift för ungdomar under ${MIN_EMPLOYEE_AGE} år är inte implementerad i Ferva.`;
   }
   return null;
 }

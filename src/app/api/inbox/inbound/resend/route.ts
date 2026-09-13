@@ -9,6 +9,7 @@ import {
 import { isSupabaseMode } from "@/lib/storage/config";
 import { sendOwnerNotices } from "@/lib/services/owner-notices";
 import { withPublicBusiness } from "@/lib/auth/session";
+import { recordInboundMail } from "@/lib/platform/ops";
 
 /**
  * Resend Receiving-webhook. Rå body krävs för Svix-signaturen – inte req.json().
@@ -45,5 +46,8 @@ export async function POST(req: NextRequest) {
       },
     }
   );
+  // Driftpost för systemvyn (endast HTTP-status – aldrig innehåll). 401 = felaktig
+  // signatur räknas som fel; övriga 2xx/4xx är normala webhook-svar.
+  after(() => recordInboundMail(result.status < 400 ? "ok" : "fel", { httpStatus: result.status }));
   return NextResponse.json(result.body, { status: result.status });
 }

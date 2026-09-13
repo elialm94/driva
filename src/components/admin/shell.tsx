@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Skal för Driva Admin – medvetet mörkt och tydligt SKILT från kundappen så
+ * Skal för Ferva Admin – medvetet mörkt och tydligt SKILT från kundappen så
  * att en operatör aldrig tvekar om vilken yta hen arbetar i. Navigationen är
- * exakt: Översikt, Support, Företag, Användare, System (+ Admins för
+ * exakt: Översikt, Support, Företag, Användare, Förslag, System, Säkerhet (+ Admins för
  * super_admin). Menyvalen här är bara UI – behörigheten prövas alltid på
  * servern (layout + varje server action).
  */
@@ -13,10 +13,12 @@ import { Suspense, type ReactNode } from "react";
 import {
   Building2,
   Gauge,
+  KeyRound,
   LifeBuoy,
   Search,
   ServerCog,
   ShieldCheck,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { cx } from "@/components/ui";
@@ -26,7 +28,9 @@ const NAV: { href: string; label: string; icon: typeof Gauge; exact?: boolean }[
   { href: "/admin/support", label: "Support", icon: LifeBuoy },
   { href: "/admin/businesses", label: "Företag", icon: Building2 },
   { href: "/admin/users", label: "Användare", icon: Users },
+  { href: "/admin/forslag", label: "Förslag", icon: Sparkles },
   { href: "/admin/system", label: "System", icon: ServerCog },
+  { href: "/admin/mfa", label: "Säkerhet", icon: KeyRound },
 ];
 
 function isActive(pathname: string, href: string, exact?: boolean): boolean {
@@ -88,7 +92,7 @@ export function AdminShell({
           <span className="flex size-8 items-center justify-center rounded-lg bg-amber-400 text-[13px] font-bold text-neutral-950">
             DA
           </span>
-          <span className="text-[15px] font-semibold tracking-tight">Driva Admin</span>
+          <span className="text-[15px] font-semibold tracking-tight">Ferva Admin</span>
         </Link>
         <nav className="flex flex-1 flex-col gap-0.5 px-3">
           {items.map(({ href, label, icon: Icon }) => {
@@ -120,7 +124,7 @@ export function AdminShell({
           <p className="truncate font-medium text-neutral-200">{adminName}</p>
           <p className="text-neutral-500">{roleLabel}</p>
           <Link href="/" className="mt-2 text-neutral-400 underline-offset-2 hover:text-neutral-100 hover:underline">
-            Till Driva (kundappen) →
+            Till Ferva (kundappen) →
           </Link>
         </div>
       </aside>

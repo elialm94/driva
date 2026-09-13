@@ -58,6 +58,7 @@ import {
 } from "@/lib/collaboration/registry";
 import { activeSupportContext, type ActiveSupportContext } from "@/lib/platform/auth";
 import { ownerNeedsOnboarding } from "@/lib/setup/onboarding-state";
+import { assertWritable } from "@/lib/billing/access";
 import { writeAdminAudit } from "@/lib/platform/audit";
 import { platformRegistry } from "@/lib/platform/registry";
 
@@ -180,6 +181,21 @@ export async function sessionPhoneHint(): Promise<string> {
 }
 
 /**
+ * Villkorsversionen som godkändes vid registreringen (user_metadata). Grinden
+ * i appen läser den som bevis tills en rad i terms_acceptances skrivits.
+ */
+export async function sessionTermsHint(): Promise<{ version: string; acceptedAt: string } | null> {
+  if (!isSupabaseMode()) return null;
+  const claims = (await sessionClaims()) as {
+    user_metadata?: { terms_version?: unknown; terms_accepted_at?: unknown };
+  } | null;
+  const version = claims?.user_metadata?.terms_version;
+  const acceptedAt = claims?.user_metadata?.terms_accepted_at;
+  if (typeof version !== "string" || !version) return null;
+  return { version, acceptedAt: typeof acceptedAt === "string" ? acceptedAt : new Date(0).toISOString() };
+}
+
+/**
  * Medlemskap per request: layout, sida och åtgärdsvakter frågar alla efter
  * samma lista – React cache() deduperar till EN databasfråga per request.
  * Muterade medlemskap (invite/revoke) följs alltid av redirect, så en
@@ -193,7 +209,7 @@ export const listMemberships = cache(async (userId: string): Promise<MembershipI
   const base = isSupabaseMode()
     ? await membershipsForUser(userId)
     : activeMembershipsForUser(userId)
-        // Företag som inaktiverats av Driva Admin nekas (Supabase-läget
+        // Företag som inaktiverats av Ferva Admin nekas (Supabase-läget
         // filtrerar samma sak i SQL:en; supportsessionen nedan går förbi).
         .filter((m) => !platformRegistry().disabledBusinesses.some((d) => d.businessId === m.businessId))
         .map((m) => ({
@@ -203,7 +219,7 @@ export const listMemberships = cache(async (userId: string): Promise<MembershipI
           invitedByUserId: m.invitedByUserId,
         }));
 
-  // SUPPORTLÄGE (Driva Admin): en aktiv, tidsbegränsad supportsession ger
+  // SUPPORTLÄGE (Ferva Admin): en aktiv, tidsbegränsad supportsession ger
   // adminen ett syntetiskt ägar-medlemskap i EXAKT sessionens företag.
   const support = await activeSupportContext().catch(() => null);
   if (support && support.admin.userId === userId) {
@@ -367,11 +383,11 @@ function actorFrom(user: SessionUser, businessId: string, role: BusinessRole): C
   };
 }
 
-/** Supportläge: aktören märks tydligt som Driva-support i aktivitetsflödet. */
+/** Supportläge: aktören märks tydligt som Ferva-support i aktivitetsflödet. */
 function labelSupportActor(actor: CollaborationActor, support: ActiveSupportContext | null): CollaborationActor {
   if (!support || support.session.businessId !== actor.businessId) return actor;
   const base = support.admin.name || support.admin.email || actor.name;
-  return { ...actor, name: `${base} (Driva-support)` };
+  return { ...actor, name: `${base} (Ferva-support)` };
 }
 
 /** Alla skrivningar under supportläge auditeras med adminen som aktör. */
@@ -503,10 +519,31 @@ async function withDemoSession<T>(
   return runInDemoSession(sessionId, { access: opts.access, actor: actorFrom(user, businessId, role) }, fn);
 }
 
-/** Skrivande flöde i tenantkontext. */
+/**
+ * Villkorsgrinden på skrivvägen: sidorna redirectar till /godkann-villkor,
+ * men en gammal flik eller ett skript ska inte kunna skriva förbi den.
+ * Lazy import – legal/acceptance importerar sessionslagret.
+ */
+async function assertTermsAccepted(): Promise<void> {
+  const { termsGateStatus } = await import("@/lib/legal/acceptance");
+  const gate = await termsGateStatus();
+  if (gate.required) {
+    throw new Error("Villkoren har uppdaterats. Godkänn den nya versionen (ladda om sidan) innan du fortsätter.");
+  }
+}
+
+/**
+ * Skrivande flöde i tenantkontext.
+ *
+ * Abonnemangsgrinden: ett riktigt företag vars provperiod tagit slut utan
+ * abonnemang (eller vars abonnemang upphört) är skrivskyddat – allt går att
+ * läsa och exportera, men inga nya ekonomiska ändringar. Flöden som måste
+ * fungera även då (starta Checkout, kundportal, godkänna villkor) skickar
+ * `allowReadOnly: true`. Demosessioner och JSON-läget har inget abonnemang.
+ */
 export async function withBusiness<T>(
   fn: () => T | Promise<T>,
-  opts: { retry?: boolean; businessId?: string; capability?: CollaborationCapability } = {}
+  opts: { retry?: boolean; businessId?: string; capability?: CollaborationCapability; allowReadOnly?: boolean } = {}
 ): Promise<T> {
   const demoId = await demoRequestSessionId();
   if (demoId) {
@@ -535,6 +572,10 @@ export async function withBusiness<T>(
   const user = await requireUser();
   const businessId = await resolveActiveBusiness(user.id, opts.businessId);
   const role = await authorizeWrite(user, businessId, opts.capability);
+  if (!opts.allowReadOnly) {
+    await assertWritable(businessId);
+    await assertTermsAccepted();
+  }
   try {
     return await runAsActor(labelSupportActor(actorFrom(user, businessId, role), support), () =>
       runWithTenant({ businessId, userId: user.id, access: "write", retry: opts.retry }, fn)

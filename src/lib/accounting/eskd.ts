@@ -15,7 +15,7 @@ import {
  * Momsdeklaration som eSKD-fil (eSKDUpload 6.0).
  *
  * Filen laddas upp i Skatteverkets e-tjänst "Lämna momsdeklaration", där
- * uppgifterna granskas och signeras innan de skickas in. Driva skickar
+ * uppgifterna granskas och signeras innan de skickas in. Ferva skickar
  * ingenting själv – filen är ett underlag, inte en inlämning.
  *
  * Formatets regler (Skatteverket, "Skapa och skicka in momsdeklaration via
@@ -31,7 +31,7 @@ const ESKD_DTD =
   '"https://www1.skatteverket.se/demoeskd/eSKDUpload_6p0.dtd">';
 
 /**
- * Ruta → XML-tagg. Hela blankettens rutor finns med, inte bara de Driva
+ * Ruta → XML-tagg. Hela blankettens rutor finns med, inte bara de Ferva
  * bokför i dag: när en ny momskod tillkommer i VAT_CODES ska filen följa med
  * utan att den här tabellen behöver ändras.
  *

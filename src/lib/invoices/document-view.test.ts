@@ -246,7 +246,7 @@ describe("Radtyp och referenser på dokumentet", () => {
 
 describe("Säljarens sidfot", () => {
   it("bygger 2–3 rader och utelämnar tomma fält", () => {
-    const full = sellerIdentityFooter(testCompany());
+    const full = sellerIdentityFooter({ ...testCompany(), approvedForFskatt: true });
     assert.deepEqual(
       full.lines.map((line) => line.map((t) => t.text)),
       [
@@ -278,12 +278,17 @@ describe("Säljarens sidfot", () => {
     );
   });
 
+  it("påstår aldrig F-skatt utan uttrycklig verifiering (spec §8)", () => {
+    const unverified = sellerIdentityFooter(testCompany());
+    assert.equal(unverified.lines.flat().some((t) => t.text.includes("F-skatt")), false);
+  });
+
   it("renderar kompakt sidfot utan kolumngrid och med nowrap på org/moms/F-skatt", () => {
     reset({ customers: [testCustomer()] });
     const inv = createInvoice({ customerId: "cust-1", type: "faktura", lines: [labor()], rot: null });
     const html = renderToStaticMarkup(
       createElement(InvoiceDocument, {
-        company: testCompany({ vatNumber: "" }),
+        company: testCompany({ vatNumber: "", claims: { fSkatt: { confirmedAt: "2026-01-15" } } }),
         customer: db().customers[0],
         invoice: inv,
       })

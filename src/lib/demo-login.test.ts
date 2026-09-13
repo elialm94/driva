@@ -318,7 +318,7 @@ describe("tenantgrindarna för demoläget", () => {
 describe("central e-postgrind för demoföretaget", () => {
   const message: MailMessage = {
     to: "extern@kund.se",
-    from: "Driva <no-reply@driva.test>",
+    from: "Ferva <no-reply@driva.test>",
     subject: "Offert #1",
     text: "Hej",
     html: "<p>Hej</p>",

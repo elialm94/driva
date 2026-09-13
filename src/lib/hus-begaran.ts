@@ -8,11 +8,11 @@ import { digitsOnly } from "./invoices/formats";
  * XML-schema version 6 (namespace …/ht/begaran/6.0 + …/ht/komponent/begaran/6.0).
  *
  * Filen importeras av användaren själv i e-tjänsten "Rot och rut – företag".
- * Driva skickar ingenting till Skatteverket – modulen bygger bara filen.
+ * Ferva skickar ingenting till Skatteverket – modulen bygger bara filen.
  *
  * Schemat ligger vendorat under docs/skatteverket/hus/ (Begaran.xsd +
  * BegaranCOMPONENT.xsd). Reglerna nedan speglar schemat plus de kontroller
- * e-tjänsten gör vid inskick, så att en fil som lämnar Driva också går att
+ * e-tjänsten gör vid inskick, så att en fil som lämnar Ferva också går att
  * skicka in. Ren modul: inget lager, inga sidoeffekter.
  *
  * Skatteverkets definitioner (bolagets begäran, hela kronor):
@@ -225,7 +225,7 @@ function el(name: string, value: string | number, indent: string): string {
 
 /**
  * Bygger filen. Kastar HusBegaranError om innehållet inte skulle klara schemat
- * eller e-tjänstens kontroller – en ogiltig fil lämnar aldrig Driva.
+ * eller e-tjänstens kontroller – en ogiltig fil lämnar aldrig Ferva.
  * Layouten följer Skatteverkets exempelfiler (default-namespace på roten,
  * komponent-namespace på barnen).
  */

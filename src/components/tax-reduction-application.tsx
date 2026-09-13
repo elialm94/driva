@@ -95,7 +95,7 @@ export function TaxReductionApplicationCard({
         <>
           <p className="text-[15px] font-semibold text-ink">En uppgift saknas för {kind}</p>
           <p className="mt-1.5 text-[14px] leading-relaxed text-soft">
-            Lägg till {missing?.label.toLowerCase() ?? "uppgiften"} så att Driva kan skapa underlag till Skatteverket
+            Lägg till {missing?.label.toLowerCase() ?? "uppgiften"} så att Ferva kan skapa underlag till Skatteverket
             senare.
           </p>
           {addOpen ? (
@@ -281,7 +281,7 @@ function HusExportSection({
     <div id="hus-fil" className="mt-4 border-t border-line pt-4">
       <p className="text-[14px] font-semibold text-ink">Fil till Skatteverket</p>
       <p className="mt-1 text-[13px] leading-relaxed text-soft">
-        Ladda ner en XML-fil och importera den själv i Skatteverkets e-tjänst <em>Rot och rut – företag</em>. Driva
+        Ladda ner en XML-fil och importera den själv i Skatteverkets e-tjänst <em>Rot och rut – företag</em>. Ferva
         skickar ingenting till Skatteverket.
       </p>
 

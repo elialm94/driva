@@ -1,5 +1,5 @@
 /**
- * Kundens använda ROT/RUT i år. Driva ser bara egna fakturor plus det
+ * Kundens använda ROT/RUT i år. Ferva ser bara egna fakturor plus det
  * företagaren fyllt i från andra utförare. Resultatet är ett tak att
  * lova mot – inte Skatteverkets saldo.
  */
@@ -18,7 +18,7 @@ export function taxYearOf(date: string): number {
   return Number.isFinite(y) ? y : new Date().getFullYear();
 }
 
-/** Manuellt ifyllt + betalda Driva-fakturor i samma år, minus ev. innevarande dokument. */
+/** Manuellt ifyllt + betalda Ferva-fakturor i samma år, minus ev. innevarande dokument. */
 export function usedTaxReductionThisYear(input: {
   customer: Customer;
   invoices: Invoice[];
