@@ -7,23 +7,23 @@ import { Modal } from "./modal";
 import { DateField } from "./date-field";
 import { AppLink } from "./app-link";
 import { kr, datumKort } from "@/lib/format";
+import { jobWorkInputFromDocLine, jobWorkInvoiceChipLabel } from "@/lib/job-ui-types";
 import { invoiceHref } from "@/lib/nav";
+import { lineFieldId } from "@/lib/form-requirements";
+import { syncDocLineClassification } from "@/lib/economic-line-type";
 import {
-  addJobMaterialAction,
+  addJobWorkEntryAction,
   deleteJobWorkEntryAction,
-  registerJobTimeAction,
   updateJobWorkEntryAction,
 } from "@/app/actions";
-import type { JobWorkEntry, VatRate } from "@/lib/types";
+import type { DocLine, JobWorkEntry, VatRate } from "@/lib/types";
 import type { JobWholesalerContext } from "@/lib/wholesalers/views";
-import { LineDescriptionInput, LineDescriptionVocabProvider } from "./line-description-input";
+import { LineDescriptionVocabProvider } from "./line-description-input";
+import { LinesEditor, newLine } from "./lines-editor";
 import { WholesalerMaterialSheet } from "./wholesaler-material-sheet";
 import { AddMaterialSheet, JobReceiptUpload } from "./add-material-sheet";
 import { InvoiceReadinessBlock } from "./invoice-readiness";
 import type { InvoiceReadiness } from "@/lib/services/invoice-readiness";
-
-const inputCls =
-  "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
 
 export type JobWorkPrefill = {
   description: string;
@@ -41,6 +41,8 @@ export type JobWorkViewEntry = Pick<
   locked: boolean;
   invoiceId?: string;
   invoiceNumber?: number | null;
+  invoiceAmount?: number;
+  invoiceTitle?: string;
   /** Registrerad på en godkänd ändring: "Ändring 1" – faktureras via ändringen. */
   changeLabel?: string;
 };
@@ -51,17 +53,20 @@ function todayISO(): string {
 }
 
 function invoiceBadge(entry: JobWorkViewEntry, from: { href: string; label: string }) {
-  if (entry.invoiceStatus === "invoiced" && entry.invoiceId) {
-    const label = entry.invoiceNumber != null ? `Fakturerad · #${entry.invoiceNumber}` : "Fakturerad";
-    return (
-      <AppLink href={invoiceHref(entry.invoiceId, from)} className="inline-flex">
-        <Badge tone="ok">{label}</Badge>
-      </AppLink>
-    );
+  const label = jobWorkInvoiceChipLabel({
+    status: entry.invoiceStatus,
+    invoiceNumber: entry.invoiceNumber,
+    invoiceAmount: entry.invoiceAmount,
+    invoiceTitle: entry.invoiceTitle,
+  });
+  if (entry.invoiceStatus === "uninvoiced" || !entry.invoiceId) {
+    return <Badge>{label}</Badge>;
   }
-  if (entry.invoiceStatus === "invoiced") return <Badge tone="ok">Fakturerad</Badge>;
-  if (entry.invoiceStatus === "draft") return <Badge tone="info">På fakturautkast</Badge>;
-  return <Badge>Ej fakturerad</Badge>;
+  return (
+    <AppLink href={invoiceHref(entry.invoiceId, from)} className="inline-flex">
+      <Badge tone={entry.invoiceStatus === "invoiced" ? "ok" : "info"}>{label}</Badge>
+    </AppLink>
+  );
 }
 
 export function JobWorkSection({
@@ -70,6 +75,7 @@ export function JobWorkSection({
   entries,
   laborPrefill,
   defaultHourlyRate,
+  defaultVatRate = 25,
   wholesalers,
   invoiceReadiness,
 }: {
@@ -79,6 +85,7 @@ export function JobWorkSection({
   entries: JobWorkViewEntry[];
   laborPrefill: JobWorkPrefill | null;
   defaultHourlyRate?: number;
+  defaultVatRate?: VatRate;
   /**
    * Grossistbeställningar (valfri funktion). Saknas/avstängd eller utan
    * konfigurerad grossist → dagens manuella materialformulär, oförändrat.
@@ -140,6 +147,7 @@ export function JobWorkSection({
         jobId={jobId}
         prefill={laborPrefill}
         defaultHourlyRate={defaultHourlyRate}
+        defaultVatRate={defaultVatRate}
       />
       <AddMaterialSheet
         open={sheet === "val"}
@@ -177,6 +185,8 @@ export function JobWorkSection({
         <EditSheet
           entry={edit}
           onClose={() => setEdit(null)}
+          defaultHourlyRate={defaultHourlyRate}
+          defaultVatRate={defaultVatRate}
         />
       ) : null}
 
@@ -269,15 +279,44 @@ function WorkList({
   );
 }
 
-function ratePrefill(prefill: JobWorkPrefill | null, defaultHourlyRate?: number): string {
-  if (prefill) return String(prefill.unitPrice);
-  if (defaultHourlyRate != null && defaultHourlyRate >= 1) return String(defaultHourlyRate);
-  return "";
+function jobAddLine(kind: "tid" | "material", vat: VatRate, hourly?: number, prefill?: JobWorkPrefill | null): DocLine {
+  if (kind === "tid") {
+    const next = newLine("arbete", vat, "job-add-line", hourly);
+    next.qty = 0;
+    if (prefill) {
+      next.description = prefill.description;
+      next.unitPrice = prefill.unitPrice;
+      next.vatRate = prefill.vatRate;
+      next.unit = prefill.unit || "tim";
+    }
+    return next;
+  }
+  return newLine("material", vat, "job-add-line");
+}
+
+function viewEntryToDocLine(entry: JobWorkViewEntry): DocLine {
+  return syncDocLineClassification({
+    id: entry.id,
+    kind:
+      entry.type === "labor"
+        ? "arbete"
+        : entry.type === "material"
+          ? "material"
+          : entry.type === "travel"
+            ? "resor"
+            : "ovrigt",
+    description: entry.description,
+    qty: entry.qty,
+    unit: entry.unit,
+    unitPrice: entry.unitPrice,
+    vatRate: entry.vatRate,
+  });
 }
 
 /**
  * En enda läggtill-yta för uppdraget: tid och material i samma ark, valet
- * ligger överst. Två knappar i rubriken blev en.
+ * ligger överst. Tid och material-manuellt använder samma Prisrader-fält
+ * som offert och faktura.
  */
 function AddEntrySheet({
   open,
@@ -287,6 +326,7 @@ function AddEntrySheet({
   jobId,
   prefill,
   defaultHourlyRate,
+  defaultVatRate = 25,
 }: {
   open: boolean;
   onClose: () => void;
@@ -295,58 +335,35 @@ function AddEntrySheet({
   jobId: string;
   prefill: JobWorkPrefill | null;
   defaultHourlyRate?: number;
+  defaultVatRate?: VatRate;
 }) {
   const [isPending, startTransition] = useTransition();
   const [date, setDate] = useState(todayISO);
-  const [description, setDescription] = useState(prefill?.description ?? "");
-  const [hours, setHours] = useState("");
-  const [rate, setRate] = useState(ratePrefill(prefill, defaultHourlyRate));
-  const [qty, setQty] = useState("1");
-  const [unit, setUnit] = useState("st");
-  const [price, setPrice] = useState("");
-  const hoursRef = useRef<HTMLInputElement>(null);
+  const [line, setLine] = useState<DocLine>(() => jobAddLine(kind, defaultVatRate, defaultHourlyRate, prefill));
 
   useEffect(() => {
     if (!open) return;
     setDate(todayISO());
-    setDescription(kind === "tid" ? (prefill?.description ?? "") : "");
-    setHours("");
-    setRate(ratePrefill(prefill, defaultHourlyRate));
-    setQty("1");
-    setUnit("st");
-    setPrice("");
+    setLine(jobAddLine(kind, defaultVatRate, defaultHourlyRate, prefill));
     if (kind !== "tid") return;
-    const t = window.setTimeout(() => hoursRef.current?.focus(), 50);
+    const t = window.setTimeout(() => {
+      const el = document.getElementById(lineFieldId("job-add-line", "antal"));
+      if (el instanceof HTMLInputElement) el.focus();
+    }, 50);
     return () => window.clearTimeout(t);
-  }, [open, kind, prefill, defaultHourlyRate]);
+  }, [open, kind, prefill, defaultHourlyRate, defaultVatRate]);
 
-  function submitTime() {
-    const amount = Number(hours.replace(",", "."));
-    const unitPrice = Math.round(Number(rate.replace(",", ".")));
-    if (!(amount > 0)) return;
-    startTransition(async () => {
-      await registerJobTimeAction(jobId, {
-        date,
-        description: description.trim() || undefined,
-        hours: amount,
-        unitPrice: rate.trim() === "" || !Number.isFinite(unitPrice) ? undefined : unitPrice,
-        quotedLineItemId: prefill?.quotedLineItemId,
-      });
-      onClose();
-    });
-  }
+  const draft = jobWorkInputFromDocLine(line);
+  const canSubmit = draft.qty > 0 && (draft.type === "labor" || Boolean(draft.description));
 
-  function submitMaterial() {
-    const amount = Number(qty.replace(",", "."));
-    const unitPrice = Math.round(Number(price.replace(",", ".")));
-    if (!(amount > 0) || !description.trim() || !Number.isFinite(unitPrice)) return;
+  function submit() {
+    if (!canSubmit) return;
     startTransition(async () => {
-      await addJobMaterialAction(jobId, {
+      await addJobWorkEntryAction(jobId, {
+        ...draft,
+        description: draft.description || undefined,
         date,
-        description: description.trim(),
-        qty: amount,
-        unit,
-        unitPrice,
+        quotedLineItemId: kind === "tid" && draft.type === "labor" ? prefill?.quotedLineItemId : undefined,
       });
       onClose();
     });
@@ -358,7 +375,7 @@ function AddEntrySheet({
       open={open}
       onClose={onClose}
       title="Lägg till på uppdraget"
-      size="sm"
+      size="md"
       footer={
         <div className="flex justify-end gap-2">
           <button type="button" className={buttonClasses("ghost")} onClick={onClose}>
@@ -367,8 +384,8 @@ function AddEntrySheet({
           <button
             type="button"
             className={buttonClasses("primary")}
-            disabled={isPending || (time ? !hours : !description.trim())}
-            onClick={time ? submitTime : submitMaterial}
+            disabled={isPending || !canSubmit}
+            onClick={submit}
           >
             {isPending ? "Sparar …" : "Lägg till"}
           </button>
@@ -385,63 +402,14 @@ function AddEntrySheet({
           </KindTab>
         </div>
 
-        {time ? (
-          <>
-            <label className="block">
-              <span className="mb-1 block text-[13px] text-muted">Vad gjorde du?</span>
-              <LineDescriptionInput
-                className={inputCls}
-                value={description}
-                onChange={setDescription}
-                kind="arbete"
-                aria-label="Vad gjorde du?"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-[13px] text-muted">Tid (timmar)</span>
-              <input
-                ref={hoursRef}
-                className={inputCls}
-                inputMode="decimal"
-                value={hours}
-                onChange={(e) => setHours(e.target.value)}
-                placeholder="t.ex. 3"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-[13px] text-muted">Timpris (exkl. moms)</span>
-              <input className={inputCls} inputMode="numeric" value={rate} onChange={(e) => setRate(e.target.value)} />
-            </label>
-          </>
-        ) : (
-          <>
-            <label className="block">
-              <span className="mb-1 block text-[13px] text-muted">Beskrivning</span>
-              <LineDescriptionInput
-                className={inputCls}
-                value={description}
-                onChange={setDescription}
-                kind="material"
-                aria-label="Beskrivning"
-                autoFocus
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="mb-1 block text-[13px] text-muted">Antal</span>
-                <input className={inputCls} inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[13px] text-muted">Enhet</span>
-                <input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} />
-              </label>
-            </div>
-            <label className="block">
-              <span className="mb-1 block text-[13px] text-muted">Pris (exkl. moms)</span>
-              <input className={inputCls} inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value)} />
-            </label>
-          </>
-        )}
+        <LinesEditor
+          variant="single"
+          fromRegister={false}
+          lines={[line]}
+          onChange={(lines) => setLine(lines[0] ?? line)}
+          defaultVatRate={defaultVatRate}
+          defaultHourlyRate={defaultHourlyRate}
+        />
 
         <label className="block">
           <span className="mb-1 block text-[13px] text-muted">Datum</span>
@@ -478,28 +446,36 @@ function KindTab({
   );
 }
 
-function EditSheet({ entry, onClose }: { entry: JobWorkViewEntry; onClose: () => void }) {
+function EditSheet({
+  entry,
+  onClose,
+  defaultHourlyRate,
+  defaultVatRate = 25,
+}: {
+  entry: JobWorkViewEntry;
+  onClose: () => void;
+  defaultHourlyRate?: number;
+  defaultVatRate?: VatRate;
+}) {
   const [isPending, startTransition] = useTransition();
-  const [description, setDescription] = useState(entry.description);
+  const [line, setLine] = useState<DocLine>(() => viewEntryToDocLine(entry));
   const [date, setDate] = useState(entry.date);
-  const [qty, setQty] = useState(String(entry.qty));
-  const [unit, setUnit] = useState(entry.unit);
-  const [price, setPrice] = useState(String(entry.unitPrice));
   const saved = useRef(false);
 
   function persist() {
     if (entry.locked || saved.current) return;
-    const amount = Number(qty.replace(",", "."));
-    const unitPrice = Math.round(Number(price.replace(",", ".")));
-    if (!(amount > 0) || !description.trim() || !Number.isFinite(unitPrice)) return;
+    const draft = jobWorkInputFromDocLine(line);
+    if (!(draft.qty > 0) || !draft.description) return;
     saved.current = true;
     startTransition(async () => {
       await updateJobWorkEntryAction(entry.id, {
-        description: description.trim(),
+        description: draft.description,
         date,
-        qty: amount,
-        unit,
-        unitPrice,
+        qty: draft.qty,
+        unit: draft.unit,
+        unitPrice: draft.unitPrice,
+        vatRate: draft.vatRate,
+        type: draft.type,
       });
       onClose();
     });
@@ -512,7 +488,7 @@ function EditSheet({ entry, onClose }: { entry: JobWorkViewEntry; onClose: () =>
         persist();
       }}
       title={entry.type === "labor" ? "Ändra tid" : "Ändra material"}
-      size="sm"
+      size="md"
       footer={
         <div className="flex justify-end gap-2">
           <button type="button" className={buttonClasses("primary")} disabled={isPending} onClick={persist}>
@@ -522,36 +498,18 @@ function EditSheet({ entry, onClose }: { entry: JobWorkViewEntry; onClose: () =>
       }
     >
       <div className="space-y-3 px-6 py-5">
-        <label className="block">
-          <span className="mb-1 block text-[13px] text-muted">Beskrivning</span>
-          <LineDescriptionInput
-            className={inputCls}
-            value={description}
-            onChange={setDescription}
-            kind={entry.type === "labor" ? "arbete" : entry.type === "travel" ? "resor" : entry.type === "material" ? "material" : "ovrigt"}
-            aria-label="Beskrivning"
-          />
-        </label>
+        <LinesEditor
+          variant="single"
+          fromRegister={false}
+          lines={[line]}
+          onChange={(lines) => setLine(lines[0] ?? line)}
+          defaultVatRate={defaultVatRate}
+          defaultHourlyRate={defaultHourlyRate}
+        />
         <label className="block">
           <span className="mb-1 block text-[13px] text-muted">Datum</span>
           <DateField value={date} onChange={setDate} />
         </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="mb-1 block text-[13px] text-muted">{entry.type === "labor" ? "Tid" : "Antal"}</span>
-            <input className={inputCls} inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[13px] text-muted">{entry.type === "labor" ? "Timpris" : "Pris"}</span>
-            <input className={inputCls} inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value)} />
-          </label>
-        </div>
-        {entry.type !== "labor" ? (
-          <label className="block">
-            <span className="mb-1 block text-[13px] text-muted">Enhet</span>
-            <input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} />
-          </label>
-        ) : null}
       </div>
     </Modal>
   );

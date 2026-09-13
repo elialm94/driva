@@ -42,8 +42,6 @@ function renderedRowActionsRem(): number {
       onUp: () => {},
       onDown: () => {},
       onDuplicate: () => {},
-      // Desktop visar även spara-i-registret, så knappgruppen är som bredast.
-      onSaveArticle: () => {},
       onDelete: () => {},
     })
   );

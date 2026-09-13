@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Trash2 } from "lucide-react";
 import { buttonClasses } from "./ui";
 import { Modal } from "./modal";
+import { useToast } from "./toast";
 import { addJobPhotoAction, deleteJobPhotoAction } from "@/app/actions";
 import type { JobPhoto } from "@/lib/types";
 
@@ -17,28 +18,46 @@ export function JobPhotosModal({
   onClose,
   jobId,
   photos,
+  onPhotosChange,
 }: {
   open: boolean;
   onClose: () => void;
   jobId: string;
   photos: JobPhoto[];
+  onPhotosChange?: (photos: JobPhoto[]) => void;
 }) {
   const router = useRouter();
+  const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [items, setItems] = useState(photos);
   const [isPending, start] = useTransition();
+
+  useEffect(() => {
+    setItems(photos);
+  }, [photos]);
 
   function onFiles(files: FileList | null) {
     if (!files?.length) return;
     const file = files[0]!;
     const reader = new FileReader();
+    reader.onerror = () => {
+      toast({ title: "Kunde inte läsa bilden.", tone: "danger" });
+    };
     reader.onload = () => {
       const dataUrl = String(reader.result ?? "");
       start(async () => {
-        setError(null);
         const result = await addJobPhotoAction(jobId, dataUrl);
-        if (!result.ok) setError(result.error);
-        else router.refresh();
+        if (!result.ok) {
+          toast({ title: result.error, tone: "danger" });
+          return;
+        }
+        setItems((list) => {
+          const next = [...list, result.photo];
+          onPhotosChange?.(next);
+          return next;
+        });
+        toast({ title: "Foto tillagt", tone: "ok" });
+        router.refresh();
       });
     };
     reader.readAsDataURL(file);
@@ -73,14 +92,14 @@ export function JobPhotosModal({
             e.target.value = "";
           }}
         />
-        {photos.length === 0 ? (
+        {items.length === 0 ? (
           <p className="text-[14px] text-muted">Inga foton ännu. Ta ett när jobbet är gjort - bevis om kunden ifrågasätter.</p>
         ) : (
           <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {photos.map((p) => (
+            {items.map((p) => (
               <li key={p.id} className="relative overflow-hidden rounded-xl border border-line">
                 {/* eslint-disable-next-line @next/next/no-img-element -- data-URL från kameran */}
-                <img src={p.dataUrl} alt={p.caption || "Foto från uppdraget"} className="aspect-[4/3] w-full object-cover" />
+                <img src={p.dataUrl} alt="Foto från uppdraget" className="aspect-[4/3] w-full object-cover" />
                 <button
                   type="button"
                   className="absolute right-1.5 top-1.5 rounded-lg bg-card/90 p-1.5 text-muted hover:text-danger"
@@ -89,6 +108,11 @@ export function JobPhotosModal({
                   onClick={() =>
                     start(async () => {
                       await deleteJobPhotoAction(jobId, p.id);
+                      setItems((list) => {
+                        const next = list.filter((x) => x.id !== p.id);
+                        onPhotosChange?.(next);
+                        return next;
+                      });
                       router.refresh();
                     })
                   }
@@ -99,7 +123,6 @@ export function JobPhotosModal({
             ))}
           </ul>
         )}
-        {error ? <p className="mt-2 text-[13px] text-danger">{error}</p> : null}
       </div>
     </Modal>
   );

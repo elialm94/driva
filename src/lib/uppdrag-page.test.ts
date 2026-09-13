@@ -4,7 +4,14 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { jobHeaderPrimary } from "./job-ui-types";
+import {
+  jobEconomyDocCanDiscard,
+  jobHeaderPrimary,
+  jobQuoteCardHeading,
+  jobRemovalDisabledReason,
+  jobWorkInvoiceChipLabel,
+  jobWorkInputFromDocLine,
+} from "./job-ui-types";
 
 const page = readFileSync(new URL("../app/(app)/uppdrag/[id]/page.tsx", import.meta.url), "utf8");
 const controls = readFileSync(new URL("../components/job-controls.tsx", import.meta.url), "utf8");
@@ -32,6 +39,20 @@ describe("uppdragssidan är en ekonomilogg", () => {
 
   it("en enda läggtill-kontroll täcker både tid och material", () => {
     assert.equal((work.match(/data-job-add-entry/g) ?? []).length, 1);
+  });
+
+  it("uppdragets läggtill använder samma prisradsfält, utan register-plus", () => {
+    assert.match(work, /variant="single"/);
+    assert.match(work, /fromRegister=\{false\}/);
+    assert.match(work, /jobWorkInputFromDocLine/);
+    assert.match(work, /AddMaterialSheet/);
+    assert.equal(work.includes("Spara i registret"), false);
+    assert.equal(work.includes("Från register"), false);
+    const editor = readFileSync(new URL("../components/lines-editor.tsx", import.meta.url), "utf8");
+    assert.equal(editor.includes("Spara i registret"), false);
+    assert.equal(editor.includes("onSaveArticle"), false);
+    assert.match(editor, /Från register/);
+    assert.doesNotMatch(editor, /Fota kvitto|Sök och beställ/);
   });
 
   it("sidan har ingen inköpsreferenskort och tilldelar ingen ref vid visning", () => {
@@ -68,6 +89,86 @@ describe("uppdragssidan är en ekonomilogg", () => {
   it("utkastraden använder bindestreck, inte tankstreck", () => {
     const admin = readFileSync(new URL("./services/job-admin.ts", import.meta.url), "utf8");
     assert.match(admin, /Offerten är ett utkast - skicka den när den är klar\./);
+  });
+
+  it("huvudet visar inte betalstatus och Ta bort är sist", () => {
+    assert.equal(controls.includes("waitingLabel"), false);
+    assert.equal(controls.includes("Väntar på betalning"), false);
+    assert.match(controls, /label="Ta bort"/);
+    const avsluta = controls.indexOf('label="Avsluta uppdrag"');
+    const taBort = controls.indexOf('label="Ta bort"');
+    assert.ok(avsluta > 0 && taBort > avsluta, "Ta bort kommer efter Avsluta");
+  });
+
+  it("arbetsraden säger inte bara På fakturautkast", () => {
+    assert.equal(work.includes("På fakturautkast"), false);
+    assert.match(work, /jobWorkInvoiceChipLabel/);
+  });
+
+  it("Ekonomi-listen har inte Registrerat eller Betalt", () => {
+    assert.equal(page.includes("{kr(money.registered)}"), false);
+    assert.equal(page.includes("{kr(money.paid)}"), false);
+    assert.equal(/Registrerat\s+</.test(page), false);
+    assert.match(page, /data-job-avtalat/);
+    assert.match(page, /<JobEconomyDocs/);
+  });
+
+  it("Foton-modalen bekräftar tillägg med toast", () => {
+    const photos = readFileSync(new URL("../components/job-photos.tsx", import.meta.url), "utf8");
+    assert.match(photos, /Foto tillagt/);
+    assert.match(photos, /useToast/);
+    assert.match(controls, /Foton \(\$\{photoList\.length\}\)/);
+  });
+});
+
+describe("uppdragshuvud: Avtalat, papperskorg, Ta bort", () => {
+  it("Avtalat-raden på utkast är Offert utkast, inte Avtalat-belopp", () => {
+    assert.match(jobQuoteCardHeading({ number: 4, status: "utkast" }, 725), /Offert utkast 725\s*kr/);
+    assert.match(jobQuoteCardHeading({ number: 110, status: "godkand" }, 85000), /Offert #110/);
+  });
+
+  it("papperskorg bara på utkast, inte på utfärdat eller kredit", () => {
+    assert.equal(jobEconomyDocCanDiscard({ kind: "quote", status: "utkast" }), true);
+    assert.equal(jobEconomyDocCanDiscard({ kind: "quote", status: "godkand" }), false);
+    assert.equal(jobEconomyDocCanDiscard({ kind: "quote", status: "skickad" }), false);
+    assert.equal(jobEconomyDocCanDiscard({ kind: "invoice", status: "utkast", type: "faktura" }), true);
+    assert.equal(jobEconomyDocCanDiscard({ kind: "invoice", status: "skickad", type: "faktura" }), false);
+    assert.equal(jobEconomyDocCanDiscard({ kind: "invoice", status: "utkast", type: "kredit" }), false);
+  });
+
+  it("prisrad med rabatt blir uppdragspost med rabatten i à-priset", () => {
+    const draft = jobWorkInputFromDocLine({
+      id: "l1",
+      kind: "material",
+      type: "MATERIAL",
+      description: "Luckor",
+      qty: 2,
+      unit: "st",
+      unitPrice: 100,
+      vatRate: 25,
+      discountPercent: 10,
+    });
+    assert.equal(draft.type, "material");
+    assert.equal(draft.unitPrice, 90);
+    assert.equal(draft.qty, 2);
+    assert.equal(draft.vatRate, 25);
+  });
+
+  it("arbetsradens chip namnger utkastet", () => {
+    assert.match(jobWorkInvoiceChipLabel({ status: "draft", invoiceAmount: 219 }), /På utkast · 219\s*kr/);
+    assert.match(jobWorkInvoiceChipLabel({ status: "draft", invoiceAmount: 0 }), /På utkast · 0\s*kr/);
+    assert.equal(jobWorkInvoiceChipLabel({ status: "draft", invoiceTitle: "Luckor i ek" }), "På utkast · Luckor i ek");
+    assert.equal(jobWorkInvoiceChipLabel({ status: "invoiced", invoiceNumber: 1045 }), "På faktura #1045");
+    assert.equal(jobWorkInvoiceChipLabel({ status: "uninvoiced" }), "Ej fakturerad");
+  });
+
+  it("Ta bort spärras med en rad om utfärdad faktura eller godkänd offert", () => {
+    assert.equal(jobRemovalDisabledReason([]), null);
+    assert.equal(
+      jobRemovalDisabledReason(["Godkänd offert", "Utfärdad faktura"]),
+      "Uppdraget har en utfärdad faktura.",
+    );
+    assert.equal(jobRemovalDisabledReason(["Godkänd offert"]), "Uppdraget har en godkänd offert.");
   });
 });
 

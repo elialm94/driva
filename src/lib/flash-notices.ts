@@ -1,3 +1,5 @@
+import { sanitizeReturnTo } from "./nav";
+
 /**
  * Engångsnotiser som följer med i URL:en efter en redirect ("?kastat=offert",
  * "?bank=kopplad") och visas som toast när sidan laddats. Parametrarna tas
@@ -28,6 +30,13 @@ const DISCARDED: Record<string, FlashNotice> = {
   offert: { title: "Offertutkastet är kastat" },
   faktura: { title: "Fakturautkastet är kastat" },
 };
+
+/** Efter kasta utkast: stanna på returnTo (t.ex. uppdraget) eller Ekonomi-registret. */
+export function hrefAfterDiscardDraft(kind: "offert" | "faktura", returnTo?: string | null): string {
+  const fallback = kind === "offert" ? "/ekonomi?flik=offerter" : "/ekonomi?flik=fakturor";
+  const dest = sanitizeReturnTo(returnTo) ?? fallback;
+  return dest.includes("?") ? `${dest}&kastat=${kind}` : `${dest}?kastat=${kind}`;
+}
 
 const BANK: Record<string, FlashNotice> = {
   kopplad: {

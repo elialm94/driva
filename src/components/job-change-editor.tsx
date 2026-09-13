@@ -195,6 +195,7 @@ export function JobChangeEditor({
           showErrors={showErrors}
           rotActive={rotActive}
           reverseCharge={reverseCharge}
+          fromRegister={false}
         />
       </div>
 

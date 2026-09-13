@@ -135,6 +135,8 @@ async function check(page: Page, label: string, jobId: string, viewportHeight: n
   expect(/Elin Nyberg/.test(text), "kunden visas");
   expect(/Offerten är ett utkast - skicka den när den är klar\./.test(text), "utkastraden med bindestreck");
   expect(/Avtalat/i.test(text) && /Fakturerat/i.test(text) && /Kvar/i.test(text), "Ekonomi: Avtalat, Fakturerat, Kvar");
+  expect(!/Väntar på betalning/.test(text), "huvudet säger inte Väntar på betalning");
+  expect(!/Registrerat/.test(text), "Ekonomi-listen visar inte Registrerat");
   expect(/Arbete och material/i.test(text), "sektionen Arbete och material");
   expect(/Demontering och montering av dörrar/.test(text), "tidsraden syns i listan");
 
@@ -199,7 +201,8 @@ async function check(page: Page, label: string, jobId: string, viewportHeight: n
     els.filter((e) => (e as HTMLElement).offsetParent !== null).map((e) => (e.textContent ?? "").trim()),
   );
   expect(menuItems.includes("Avsluta uppdrag"), `…-menyn har Avsluta uppdrag (${JSON.stringify(menuItems)})`);
-  expect(menuItems.includes("Foton"), "…-menyn har Foton");
+  expect(menuItems.some((t) => t === "Foton" || t.startsWith("Foton (")), "…-menyn har Foton");
+  expect(menuItems.at(-1)?.startsWith("Ta bort") === true, `Ta bort sist (${JSON.stringify(menuItems)})`);
   await page.keyboard.press("Escape");
 }
 

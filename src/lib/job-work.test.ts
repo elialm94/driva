@@ -17,6 +17,7 @@ import {
 import {
   actualEntries,
   addJobMaterial,
+  addJobWorkEntry,
   deleteJobWorkEntry,
   inferJobPricingKind,
   jobInvoiceChoice,
@@ -41,6 +42,7 @@ import { confirmPendingAction } from "./services/assistant";
 import { jobMoney } from "./services/job-economy";
 import { listJobsForTable } from "./services/job-list";
 import type { DocLine } from "./types";
+import { jobWorkInputFromDocLine } from "./job-ui-types";
 
 function reset() {
   replaceDb(
@@ -149,6 +151,41 @@ describe("Uppdrag: avtalat vs registrerat vs fakturerat", () => {
     assert.equal(inv.lines.some((l) => l.qty === 10 && l.kind === "arbete"), true);
     assert.equal(uninvoicedActuals(job.id).length, 1);
     assert.equal(inv.lines.reduce((s, l) => s + l.qty, 0) !== 15, true);
+  });
+
+  it("DocLine med rabatt och moms blir en uppdragspost via addJobWorkEntry", () => {
+    const job = createJob({ customerId: "cust-1", title: "Kök" });
+    const draft = jobWorkInputFromDocLine({
+      id: "l1",
+      kind: "material",
+      type: "MATERIAL",
+      description: "Luckor i ek",
+      qty: 1,
+      unit: "st",
+      unitPrice: 219,
+      vatRate: 12,
+      discountPercent: 0,
+    });
+    const entry = addJobWorkEntry(job.id, { ...draft, date: "2026-09-13" });
+    assert.equal(entry.type, "material");
+    assert.equal(entry.description, "Luckor i ek");
+    assert.equal(entry.unitPrice, 219);
+    assert.equal(entry.vatRate, 12);
+    const cheap = addJobWorkEntry(job.id, {
+      ...jobWorkInputFromDocLine({
+        id: "l2",
+        kind: "material",
+        type: "MATERIAL",
+        description: "List",
+        qty: 2,
+        unit: "st",
+        unitPrice: 100,
+        vatRate: 25,
+        discountPercent: 10,
+      }),
+    });
+    assert.equal(cheap.unitPrice, 90);
+    assert.equal(cheap.qty, 2);
   });
 
   it("löpande utan offert → faktura från actuals", () => {
