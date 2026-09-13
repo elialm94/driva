@@ -91,8 +91,10 @@ export function CustomerAutosaveFields({
   const propertiesRef = useRef(properties);
   const savedSnap = useRef(snap(customer));
   const savedProperties = useRef(propertySnap(properties));
-  valuesRef.current = values;
-  propertiesRef.current = properties;
+  useEffect(() => {
+    valuesRef.current = values;
+    propertiesRef.current = properties;
+  }, [values, properties]);
 
   const saveState = mergeAutosaveStates(state, pinState);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check, Landmark, Plus } from "lucide-react";
@@ -176,13 +176,17 @@ export function SettingsForm({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
-  const [extraPay, setExtraPay] = useState(() =>
-    Boolean(initial.plusgiro || initial.bankAccount || initial.iban || initial.bic)
+  // Fältet som ska fokuseras (från URL:en) ligger ibland under "fler
+  // betalsätt" – då måste sektionen vara öppen från första renderingen.
+  const [extraPay, setExtraPay] = useState(
+    () =>
+      Boolean(initial.plusgiro || initial.bankAccount || initial.iban || initial.bic) ||
+      (focusFieldKey ? extraPayFieldsNeeded(focusFieldKey) : false)
   );
   const [isPending, startTransition] = useTransition();
   const [logoSaving, startLogoSave] = useTransition();
-  const baseline = useRef(JSON.stringify(fromInitial(initial, defaults)));
-  const dirty = JSON.stringify(form) !== baseline.current;
+  const [baseline, setBaseline] = useState(() => JSON.stringify(fromInitial(initial, defaults)));
+  const dirty = JSON.stringify(form) !== baseline;
   const { dialog } = useUnsavedLeave(dirty && !isPending);
 
   function patch<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -211,9 +215,11 @@ export function SettingsForm({
         return;
       }
       setLogoError(null);
-      const base = JSON.parse(baseline.current) as FormState;
-      base.logoDataUrl = next;
-      baseline.current = JSON.stringify(base);
+      setBaseline((prev) => {
+        const base = JSON.parse(prev) as FormState;
+        base.logoDataUrl = next;
+        return JSON.stringify(base);
+      });
       router.refresh();
     });
   }
@@ -274,7 +280,7 @@ export function SettingsForm({
         setError(result.error);
         return;
       }
-      baseline.current = JSON.stringify(form);
+      setBaseline(JSON.stringify(form));
       setSaved(true);
       router.refresh();
     });
@@ -295,10 +301,21 @@ export function SettingsForm({
 
   useEffect(() => {
     if (!focusFieldKey) return;
-    if (extraPayFieldsNeeded(focusFieldKey)) setExtraPay(true);
     const id = settingsFieldId(focusFieldKey);
-    const frame = window.requestAnimationFrame(() => focusField(id));
-    return () => window.cancelAnimationFrame(frame);
+    let inner: number | null = null;
+    const frame = window.requestAnimationFrame(() => {
+      if (extraPayFieldsNeeded(focusFieldKey)) {
+        // Sektionen måste renderas öppen innan fältet kan få fokus.
+        setExtraPay(true);
+        inner = window.requestAnimationFrame(() => focusField(id));
+        return;
+      }
+      focusField(id);
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (inner != null) window.cancelAnimationFrame(inner);
+    };
   }, [focusFieldKey, flik]);
 
   const subtitle = useMemo(() => {
@@ -334,20 +351,16 @@ export function SettingsForm({
           }
           const result = await saveBillingCompletionAction(payload);
           if (result.ok === false) return result;
-          setForm((prev) => {
-            const updated = { ...prev };
+          const applyPatch = (target: FormState) => {
+            const updated = { ...target };
             for (const key of BILLING_COMPLETION_PATCH_KEYS) {
               const value = payload[key];
               if (typeof value === "string") updated[key] = value;
             }
-            const base = JSON.parse(baseline.current) as FormState;
-            for (const key of BILLING_COMPLETION_PATCH_KEYS) {
-              const value = payload[key];
-              if (typeof value === "string") base[key] = value;
-            }
-            baseline.current = JSON.stringify(base);
             return updated;
-          });
+          };
+          setForm((prev) => applyPatch(prev));
+          setBaseline((prevBase) => JSON.stringify(applyPatch(JSON.parse(prevBase) as FormState)));
           setSaved(true);
           setError(null);
           router.refresh();

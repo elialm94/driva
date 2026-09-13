@@ -471,6 +471,7 @@ export function AddressAutocomplete({
           autoComplete="off"
           role="combobox"
           aria-expanded={open}
+          aria-controls={`${inputId}-listbox`}
           aria-autocomplete="list"
           aria-busy={searching || undefined}
           aria-invalid={ariaInvalid}
@@ -483,7 +484,7 @@ export function AddressAutocomplete({
       </div>
 
       <SuggestionMenu open={open} anchorRef={inputWrapRef} menuRef={menuRef}>
-        <ul role="listbox" className="max-h-[inherit] overflow-auto">
+        <ul id={`${inputId}-listbox`} role="listbox" className="max-h-[inherit] overflow-auto">
           {suggestions.map((s, i) => (
             <li key={s.id} role="option" aria-selected={i === highlight}>
               <button
