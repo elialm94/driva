@@ -4,7 +4,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { TaxReductionFields, type TaxReductionFormValue } from "../components/tax-reduction-fields";
+import {
+  TaxReductionAmountPanel,
+  TaxReductionFields,
+  type TaxReductionFormValue,
+} from "../components/tax-reduction-fields";
 import { currentMonthPeriod } from "./tax-reduction-gaps";
 import { todayDate } from "./accounting/dates";
 
@@ -75,5 +79,43 @@ describe("ROT-editorn börjar sammanfattad", () => {
     assert.match(html, /id="rot-personnummer"/);
     assert.match(html, /1 uppgift saknas för ROT-ansökan/);
     assert.match(html, />Personnummer<\/button>/);
+  });
+});
+
+function renderAmount(over: { applied?: number; manuallyAdjusted?: boolean } = {}): string {
+  return renderToStaticMarkup(
+    createElement(TaxReductionAmountPanel, {
+      type: "rot",
+      documentKind: "faktura",
+      laborInclVat: 100_000,
+      calculated: 30_000,
+      applied: over.applied ?? 30_000,
+      toPay: 70_000,
+      manuallyAdjusted: over.manuallyAdjusted ?? false,
+      onApply: () => {},
+      onUseMax: () => {},
+    })
+  );
+}
+
+describe("Preliminärt avdrag har en Ändra", () => {
+  it("beloppet är inte en extra länk, Ändra öppnar fältet, Använd max finns kvar", () => {
+    const html = renderAmount();
+    assert.match(html, /Preliminärt ROT-avdrag/);
+    assert.equal((html.match(/Ändra/g) ?? []).length, 1);
+    const buttons = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? [];
+    assert.equal(buttons.length, 1, "bara Ändra, inte beloppstexten");
+    assert.match(buttons[0]!, />Ändra</);
+    assert.doesNotMatch(buttons[0]!, /30[\s\u00a0]?000/);
+    assert.match(html, /−30[\s\u00a0]000\s*kr/);
+    assert.doesNotMatch(html, /ROT-avdrag att använda/);
+
+    const lowered = renderAmount({ applied: 2_000, manuallyAdjusted: true });
+    assert.match(lowered, /Använd max/);
+    assert.equal((lowered.match(/Ändra/g) ?? []).length, 1);
+    const loweredButtons = lowered.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? [];
+    assert.equal(loweredButtons.length, 2, "Ändra plus Använd max");
+    assert.match(loweredButtons[0]!, />Ändra</);
+    assert.match(loweredButtons[1]!, />Använd max</);
   });
 });

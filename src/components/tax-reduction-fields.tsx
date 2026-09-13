@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Pencil } from "lucide-react";
 import type { DwellingType, HousingDetails, TaxReductionDetails } from "@/lib/types";
 import {
   formatPersonnummer,
@@ -194,19 +195,17 @@ export function TaxReductionAmountPanel({
       ) : (
         <p className="flex justify-between text-accent-deep">
           <span>
-            <button type="button" onClick={startEdit} className="text-left underline-offset-2 hover:underline">
-              {taxReductionDeductionLabel(type)} {kr(applied)}
+            {taxReductionDeductionLabel(type)}
+            <button
+              type="button"
+              onClick={startEdit}
+              className="ml-1.5 inline-flex items-center gap-1 text-[13px] font-medium text-soft underline-offset-2 hover:text-ink hover:underline"
+            >
+              <Pencil className="size-3.5" />
+              Ändra
             </button>
-            <ChangeButton onClick={startEdit} />
           </span>
-          <button
-            type="button"
-            onClick={startEdit}
-            className="tabular underline-offset-2 hover:underline"
-            aria-label={`${taxReductionDeductionLabel(type)} ${kr(applied)}`}
-          >
-            −{kr(applied)}
-          </button>
+          <span className="tabular">−{kr(applied)}</span>
         </p>
       )}
       {error ? <p className="text-[13px] font-medium text-danger">{error}</p> : null}
