@@ -2,7 +2,7 @@ import type { CompanySettings, Customer, DocLine, HousingDetails, Invoice, TaxRe
 import { docTotals } from "../calc";
 import { kr, datumLang } from "../format";
 import { formatWorkPeriodRange } from "../tax-reduction-gaps";
-import { normalizePersonnummer } from "../personnummer";
+import { maskPersonnummer, normalizePersonnummer } from "../personnummer";
 import { taxReductionDeductionLabel } from "../tax-reduction-terms";
 import { lineKindLabel } from "../economic-line-type";
 import { getWorkLocation, workLocationToHousing } from "../services/work-locations";
@@ -33,9 +33,16 @@ export interface InvoiceTaxReductionDocView {
   heading: string;
   /** Personen som skattereduktionen avser. */
   personName: string;
-  /** Normaliserat personnummer. Saknas → raden visas inte. */
-  personalIdentityNumber?: string;
-  /** Fastighet/BRF-rader – endast fält med värde. */
+  /**
+   * Maskerat personnummer (`1985••••-1234`). Vyn bär medvetet aldrig hela
+   * numret: dokumentet mejlas, sparas som PDF och renderas på en publik
+   * tokensida, och namnet plus de fyra sista räcker för att koppla avdraget
+   * till rätt person. Hela numret går oförändrat till Skatteverket ur
+   * kundkortet/snapshoten (services/tax-reduction.ts, services/hus-export.ts).
+   * Saknas numret → raden visas inte.
+   */
+  personalIdentityNumberMasked?: string;
+  /** Fastighet/BRF-rader – endast fält med värde. Aldrig för RUT. */
   propertyRows: DocInfoRow[];
   /** "Utförandedatum: 9 augusti 2026" eller "Arbetsperiod: 12–19 augusti 2026". */
   periodRow?: DocInfoRow;
@@ -50,7 +57,7 @@ function housingRows(housing?: HousingDetails | null): DocInfoRow[] {
   if (!housing?.dwellingType) return [];
   if (housing.dwellingType === "smahus") {
     const designation = housing.propertyDesignation?.trim();
-    return designation ? [{ label: "Fastighet", value: designation }] : [];
+    return designation ? [{ label: "Fastighetsbeteckning", value: designation }] : [];
   }
   const rows: DocInfoRow[] = [];
   if (housing.brfOrgNumber?.trim()) rows.push({ label: "Bostadsrättsförening", value: housing.brfOrgNumber.trim() });
@@ -107,8 +114,11 @@ export function invoiceTaxReductionView(
     type: rot.type,
     heading: rot.type === "rot" ? "ROT-avdrag" : "RUT-avdrag",
     personName: snap ? snap.buyer.name : live.buyer.name,
-    personalIdentityNumber: pn?.trim() ? normalizePersonnummer(pn) : undefined,
-    propertyRows: housingRows(housing),
+    personalIdentityNumberMasked: pn?.trim() ? maskPersonnummer(normalizePersonnummer(pn)) : undefined,
+    // Bostaden är en ROT-uppgift. RUT skickar aldrig någon bostad till
+    // Skatteverket, och en RUT-kund med en registrerad småhusbostad ska
+    // därför inte få en fastighetsbeteckning på sin faktura.
+    propertyRows: rot.type === "rot" ? housingRows(housing) : [],
     periodRow: periodRow(details, snap ? snap.serviceDate : invoice.serviceDate),
     laborInclVat: totals.laborInclVat,
     deduction: totals.deduction,

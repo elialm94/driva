@@ -500,6 +500,9 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
   const reverseChargeApplied = await ensureReverseChargeSchema(client);
   applied.push(...reverseChargeApplied);
 
+  const deliveryChannelApplied = await ensureInvoiceDeliveryChannelSchema(client);
+  applied.push(...deliveryChannelApplied);
+
   const vatPeriodicityApplied = await ensureVatPeriodicitySchema(client);
   applied.push(...vatPeriodicityApplied);
 
@@ -756,13 +759,41 @@ export async function ensureReverseChargeSchema(client: SqlClient): Promise<stri
     );
     // app.issue_invoice skriver fakturaraden själv; utan detta tappar en
     // utfärdad faktura sin markering.
-    await run(client, ISSUE_INVOICE_WITH_REVERSE_CHARGE);
+    await run(client, ISSUE_INVOICE_CURRENT);
     applied.push("invoices.reverse_charge");
   }
   return applied;
 }
 
-const ISSUE_INVOICE_WITH_REVERSE_CHARGE = `create or replace function app.issue_invoice(
+/**
+ * Leveranskanal på fakturan (migration 55): vald kanal utanför e-post och
+ * tidpunkten då kunden fick fakturan den vägen. Speglar migrationen exakt.
+ * Utan kolumnerna ser åtgärdsmotorn varje pappersfaktura som ett leveransfel.
+ */
+export async function ensureInvoiceDeliveryChannelSchema(client: SqlClient): Promise<string[]> {
+  if (await columnExists(client, "invoices", "delivered_by")) return [];
+  await run(client, `alter table public.invoices add column if not exists delivered_by text`);
+  await run(client, `alter table public.invoices add column if not exists delivered_at timestamptz`);
+  await run(client, `alter table public.invoices drop constraint if exists invoices_delivered_by_check`);
+  await run(
+    client,
+    `alter table public.invoices
+       add constraint invoices_delivered_by_check
+       check (delivered_by is null or delivered_by in ('utskrift', 'manuell'))`
+  );
+  // app.issue_invoice skriver fakturaraden själv; utan detta tappar en
+  // pappersfaktura sin kanal vid utfärdandet.
+  await run(client, ISSUE_INVOICE_CURRENT);
+  return ["invoices.delivered_by", "invoices.delivered_at"];
+}
+
+/**
+ * Nuvarande definition av app.issue_invoice – spegling av den senaste
+ * migrationen som rör den (55, leveranskanal). `create or replace` gör den
+ * idempotent, så varje ensure-funktion som behöver en nyare RPC kör samma
+ * text. Håll den i takt med supabase/migrations när fler kolumner tillkommer.
+ */
+const ISSUE_INVOICE_CURRENT = `create or replace function app.issue_invoice(
   p_business_id uuid,
   p_invoice jsonb,
   p_lines jsonb,
@@ -838,6 +869,8 @@ begin
       due_date = p_invoice ->> 'due_date',
       sent_at = (p_invoice ->> 'sent_at')::timestamptz,
       last_sent_at = (p_invoice ->> 'last_sent_at')::timestamptz,
+      delivered_by = p_invoice ->> 'delivered_by',
+      delivered_at = (p_invoice ->> 'delivered_at')::timestamptz,
       rot = nullif(p_invoice -> 'rot', 'null'::jsonb),
       rich_text = nullif(p_invoice -> 'rich_text', 'null'::jsonb),
       tax_reduction_terms = nullif(p_invoice -> 'tax_reduction_terms', 'null'::jsonb),
@@ -858,7 +891,7 @@ begin
       id, business_id, number, customer_id, job_id, quote_id, type, status,
       rot, rich_text, tax_reduction_terms, tax_reduction_details, tax_reduction_application,
       issue_date, due_date, payment_terms_days, service_date, late_interest_rate,
-      issued_at, sent_at, last_sent_at, paid_at, reminders, token, ocr,
+      issued_at, sent_at, last_sent_at, delivered_by, delivered_at, paid_at, reminders, token, ocr,
       credits_invoice_id, denied_reduction_of, created_by, amount_to_pay, reverse_charge, created_at
     ) values (
       v_id,
@@ -882,6 +915,8 @@ begin
       (p_invoice ->> 'issued_at')::timestamptz,
       (p_invoice ->> 'sent_at')::timestamptz,
       (p_invoice ->> 'last_sent_at')::timestamptz,
+      p_invoice ->> 'delivered_by',
+      (p_invoice ->> 'delivered_at')::timestamptz,
       (p_invoice ->> 'paid_at')::timestamptz,
       coalesce(nullif(p_invoice -> 'reminders', 'null'::jsonb), '[]'::jsonb),
       p_invoice ->> 'token',
