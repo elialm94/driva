@@ -13,7 +13,6 @@ import { formatPersonnummer, personnummerInputChange } from "@/lib/personnummer"
 import { validateSwedishPersonalIdentityNumber } from "@/lib/validation";
 import { derivedPropertyLabel, propertyTypeLabel, WORK_LOCATION_IN_USE_MESSAGE } from "@/lib/work-location-label";
 import { FieldError, invalidFieldCls } from "./form-validation";
-import { RotUsedField } from "./rot-used-field";
 import { cx } from "./ui";
 import { WorkLocationForm } from "./work-location-form";
 
@@ -33,9 +32,6 @@ export function CustomerRotSection({
   usedWorkLocationIds,
   maskedPersonnummer,
   hasPersonnummer,
-  year,
-  fervaRot,
-  fervaRut,
 }: {
   customerId: string;
   workLocations: WorkLocationView[];
@@ -43,9 +39,6 @@ export function CustomerRotSection({
   usedWorkLocationIds?: string[];
   maskedPersonnummer?: string;
   hasPersonnummer?: boolean;
-  year: number;
-  fervaRot: number;
-  fervaRut: number;
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
@@ -72,7 +65,6 @@ export function CustomerRotSection({
 
   return (
     <div className="space-y-4">
-      <RotUsedField year={year} rot={fervaRot} rut={fervaRut} />
       <PersonnummerAutosaveField
         customerId={customerId}
         masked={maskedPersonnummer ?? ""}
