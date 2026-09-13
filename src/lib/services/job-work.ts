@@ -352,7 +352,7 @@ export function addJobWorkEntry(
   }
   if (input.type === "material") {
     return addJobMaterial(jobId, {
-      description: input.description,
+      description: input.description ?? "",
       date: input.date,
       qty: input.qty,
       unit: input.unit,
