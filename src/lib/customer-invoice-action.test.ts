@@ -23,3 +23,24 @@ describe("kundsidans Skapa faktura", () => {
     assert.match(actions, /Från uppdrag/);
   });
 });
+
+describe("kundsidans sidhuvudknappar", () => {
+  it("återanvänder nav-ikonerna utan plus-prefix", () => {
+    // Samma glypher som nav / objektytorna: Uppdrag=Hammer, Offerter=FileText, Fakturor=ReceiptText.
+    assert.match(actions, /Hammer/);
+    assert.match(actions, /FileText/);
+    assert.match(actions, /ReceiptText/);
+    assert.match(actions, /icon=\{Hammer\}/);
+    assert.equal(actions.includes("Plus"), false);
+    assert.doesNotMatch(actions, /\+\s*(Ny|Skapa)/);
+  });
+
+  it("håller hierarkin faktura fylld, offert outline, uppdrag ghost", () => {
+    assert.match(actions, /variant="ghost"/);
+    assert.match(actions, /buttonClasses\("ghost"/);
+    assert.match(actions, /variant="secondary"/);
+    assert.match(actions, /buttonClasses\("primary"/);
+    assert.doesNotMatch(actions, /buttonClasses\("accent"/);
+    assert.match(actions, /size-\[18px\]/);
+  });
+});

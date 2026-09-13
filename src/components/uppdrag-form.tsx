@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useAppNavigate } from "./app-link";
-import { Plus } from "lucide-react";
+import { Plus, type LucideIcon } from "lucide-react";
 import { Modal } from "./modal";
 import { buttonClasses, cx } from "./ui";
 import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
@@ -27,6 +27,8 @@ export function NewUppdragButton({
   variant = "primary",
   appearance = "button",
   label = "Skapa uppdrag",
+  icon: Icon = Plus,
+  iconClassName,
 }: {
   customers: CustomerOption[];
   defaultCustomerId?: string;
@@ -35,9 +37,11 @@ export function NewUppdragButton({
   workLocations?: JobWorkLocationOption[];
   defaultWorkLocationId?: string;
   size?: "sm" | "md";
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "ghost";
   appearance?: ActionAppearance;
   label?: string;
+  icon?: LucideIcon;
+  iconClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [customerOptions, setCustomerOptions] = useState(customers);
@@ -100,7 +104,7 @@ export function NewUppdragButton({
           setOpen(true);
         }}
       >
-        <Plus className={cx("shrink-0", inMenu || size !== "sm" ? "size-4" : "size-3.5")} />
+        <Icon className={iconClassName ?? cx("shrink-0", inMenu || size !== "sm" ? "size-4" : "size-3.5")} />
         {label}
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title="Nytt uppdrag" size="md">
