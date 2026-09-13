@@ -568,34 +568,34 @@ export async function sendQuoteAction(
   messageOrInput?: string | SendQuoteActionInput
 ): Promise<{ ok: true; mailed: boolean; demo?: boolean } | { ok: false; errors: string[] }> {
   const result = await withBusiness(
-    async () => {
+    async (): Promise<{ ok: true; mailed: boolean; demo?: boolean } | { ok: false; errors: string[] }> => {
       try {
         const input = normalizeSendQuoteInput(messageOrInput);
         const quote = getQuote(quoteId);
         if (!quote) {
-          return { ok: false, errors: ["Offerten finns inte."] } as const;
+          return { ok: false, errors: ["Offerten finns inte."] };
         }
         if (input.email?.trim()) {
           const saved = resolveCustomerEmail(quote.customerId, input.email, { overwrite: true });
-          if (!saved.ok) return { ok: false, errors: [saved.error] } as const;
+          if (!saved.ok) return { ok: false, errors: [saved.error] };
         }
         if (input.phone?.trim()) {
           const saved = resolveCustomerPhone(quote.customerId, input.phone, { overwrite: true });
-          if (!saved.ok) return { ok: false, errors: [saved.error] } as const;
+          if (!saved.ok) return { ok: false, errors: [saved.error] };
         }
         const { outcome } = await sendQuoteWithEmail(quoteId, input.message, { channels: input.channels });
         if (!outcome.ok) {
-          return { ok: false, errors: [outcome.error ?? "Kunde inte skicka offerten."] } as const;
+          return { ok: false, errors: [outcome.error ?? "Kunde inte skicka offerten."] };
         }
-        return { ok: true, mailed: outcome.mode === "live", demo: outcome.mode === "demo" } as const;
+        return { ok: true, mailed: outcome.mode === "live", demo: outcome.mode === "demo" };
       } catch (e) {
         if (e instanceof QuoteNotReadyError) {
-          return { ok: false, errors: e.blockers.map((b) => b.message) } as const;
+          return { ok: false, errors: e.blockers.map((b) => b.message) };
         }
         return {
           ok: false,
           errors: ["Offerten kunde inte skickas just nu. Kontrollera uppgifterna och försök igen."],
-        } as const;
+        };
       }
     },
     { retry: false }
