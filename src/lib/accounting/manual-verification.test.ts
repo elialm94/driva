@@ -98,7 +98,7 @@ describe("manuellt verifikat", () => {
     assert.equal(db().verifications.length, before, "inget ska ha bokförts");
   });
 
-  it("respekterar periodlåset – manuella verifikat är inga systemposter", () => {
+  it("respekterar periodlåset - manuella verifikat är inga systemposter", () => {
     lockPeriod("2026-03-31", "anvandare");
     assert.throws(
       () => postManualVerification({ date: "2026-03-10", description: "Sen bokning", lines: [HYRA, BANK] }),

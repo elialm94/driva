@@ -124,7 +124,7 @@ describe("arbetsgivaravgift efter ålder", () => {
     assert.match(contributionRateFor("1958-06-12", YEAR).reason, /fyllt 67/);
   });
 
-  it("2023–2025 gällde 66 år – samma person byter inte sats bakåt i tiden", () => {
+  it("2023–2025 gällde 66 år - samma person byter inte sats bakåt i tiden", () => {
     assert.equal(contributionRateFor("1959-06-12", 2025).percent, FULL_CONTRIBUTION_PERCENT);
     assert.equal(contributionRateFor("1958-06-12", 2025).percent, PENSIONER_CONTRIBUTION_PERCENT);
     assert.equal(contributionRateFor("1959-06-12", 2027).percent, PENSIONER_CONTRIBUTION_PERCENT);
@@ -144,7 +144,7 @@ describe("preliminärskatt", () => {
     assert.equal(preliminaryTax(40_000, { kind: "procent", percent: 30 }), 12_000);
   });
 
-  it("tabell använder det uppslagna beloppet – Ferva hittar inte på skatt", () => {
+  it("tabell använder det uppslagna beloppet - Ferva hittar inte på skatt", () => {
     const basis = { kind: "tabell" as const, table: 33, monthlyDeduction: 9_412, salaryAtLookup: 40_000 };
     assert.equal(preliminaryTax(40_000, basis), 9_412);
   });
@@ -242,7 +242,7 @@ describe("lönekörning", () => {
     assert.equal(run.salaryAccount, LON_TJANSTEMAN);
   });
 
-  it("samma månad två gånger ger samma körning – lönen dubbleras inte", () => {
+  it("samma månad två gånger ger samma körning - lönen dubbleras inte", () => {
     hire();
     const first = runPayroll({ month: `${YEAR}-02` }, "anvandare");
     const second = runPayroll({ month: `${YEAR}-02` }, "anvandare");

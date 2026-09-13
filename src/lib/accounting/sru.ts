@@ -129,7 +129,7 @@ export function granskningsperiod(fy: FiscalYear): { period: string; warning?: s
   const warning =
     months === 12
       ? undefined
-      : `Räkenskapsåret är ${months} månader långt. Blankettblocket är satt till ${incomeYear}${suffix} utifrån slutmånaden – kontrollera perioden mot Skatteverkets inlämningsperiod innan filen lämnas in, förkortade och förlängda år kan tillhöra en annan.`;
+      : `Räkenskapsåret är ${months} månader långt. Blankettblocket är satt till ${incomeYear}${suffix} utifrån slutmånaden - kontrollera perioden mot Skatteverkets inlämningsperiod innan filen lämnas in, förkortade och förlängda år kan tillhöra en annan.`;
   return { period: `${incomeYear}${suffix}`, ...(warning ? { warning } : {}) };
 }
 

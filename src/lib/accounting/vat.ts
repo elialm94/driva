@@ -89,7 +89,7 @@ export function setVatPeriodicity(next: VatPeriodicity, actor: "anvandare" | "as
   const declared = data.vatReports.filter((r) => r.status === "deklarerad" && r.periodEnd >= fy.startDate);
   if (declared.length) {
     throw new Error(
-      `Momsen för ${declared.map((r) => r.label).join(", ")} är redan deklarerad – byt period från nästa räkenskapsår i stället.`
+      `Momsen för ${declared.map((r) => r.label).join(", ")} är redan deklarerad - byt period från nästa räkenskapsår i stället.`
     );
   }
 
@@ -257,7 +257,7 @@ export function vatChecklist(period: Period): VatChecklistItem[] {
       label: "Momsen är avstämd mot bokföringen",
       ok: ledger.ok,
       detail: ledger.ok
-        ? `Utgående ${pos.utgaende} kr, ingående ${pos.ingaende} kr – hämtat direkt ur huvudboken.`
+        ? `Utgående ${pos.utgaende} kr, ingående ${pos.ingaende} kr - hämtat direkt ur huvudboken.`
         : ledger.detail,
     },
   ];
@@ -436,7 +436,7 @@ export function markVatReportDeclared(reportId: string, actor: "anvandare" | "as
   const today = todayDate();
   if (report.periodEnd >= today) {
     throw new Error(
-      `Momsperioden ${report.label} pågår fortfarande (till ${report.periodEnd}) – den kan markeras som deklarerad först när den är slut.`
+      `Momsperioden ${report.label} pågår fortfarande (till ${report.periodEnd}) - den kan markeras som deklarerad först när den är slut.`
     );
   }
   const earlier = undeclaredEarlierPeriods(report);

@@ -69,7 +69,7 @@ export function agiFile(declaration: EmployerDeclaration): AgiFile {
 
   if (!declaration.rows.length) {
     throw new FilingDataError(
-      `Arbetsgivardeklarationen för ${declaration.label} har inga individuppgifter – ingen lön är bokförd på månaden.`
+      `Arbetsgivardeklarationen för ${declaration.label} har inga individuppgifter - ingen lön är bokförd på månaden.`
     );
   }
 

@@ -123,7 +123,7 @@ function has(rows: ReportRow[], label: string): boolean {
   return rows.some((r) => r.label === label);
 }
 
-describe("årsredovisning – resultaträkningens nivåer", () => {
+describe("årsredovisning - resultaträkningens nivåer", () => {
   beforeEach(reset);
 
   it("rörelseresultat, resultat efter finansiella poster och resultat före skatt är olika tal", () => {
@@ -156,7 +156,7 @@ describe("årsredovisning – resultaträkningens nivåer", () => {
     assert.equal(sum(rows, "Bokslutsdispositioner"), -50_000);
   });
 
-  it("utan finansiella poster står nivåerna kvar men är lika – de är inte hopblandade", () => {
+  it("utan finansiella poster står nivåerna kvar men är lika - de är inte hopblandade", () => {
     revenue(2025, 200_000);
     cost(2025, 50_000);
     closeFiscalYear("fy-2025", "anvandare");
@@ -182,7 +182,7 @@ describe("årsredovisning – resultaträkningens nivåer", () => {
   });
 });
 
-describe("årsredovisning – balansräkning och jämförelsetal", () => {
+describe("årsredovisning - balansräkning och jämförelsetal", () => {
   beforeEach(reset);
 
   it("balansräkningen balanserar och obeskattade reserver står för sig", () => {
@@ -274,7 +274,7 @@ describe("årsredovisning – balansräkning och jämförelsetal", () => {
   });
 });
 
-describe("årsredovisning – noter", () => {
+describe("årsredovisning - noter", () => {
   beforeEach(reset);
 
   it("medelantalet anställda räknas ur lönekörningarna", () => {
@@ -364,7 +364,7 @@ describe("årsredovisning – noter", () => {
   });
 });
 
-describe("årsredovisning – redigering, underskrifter och fastställelseintyg", () => {
+describe("årsredovisning - redigering, underskrifter och fastställelseintyg", () => {
   beforeEach(reset);
 
   function report() {
@@ -460,7 +460,7 @@ describe("årsredovisning – redigering, underskrifter och fastställelseintyg"
   });
 });
 
-describe("årsredovisning – när den inte får upprättas", () => {
+describe("årsredovisning - när den inte får upprättas", () => {
   beforeEach(reset);
 
   it("ett öppet räkenskapsår har inga fastställda siffror", () => {
@@ -474,7 +474,7 @@ describe("årsredovisning – när den inte får upprättas", () => {
     assert.throws(() => generateAnnualReport("fy-2025", "anvandare"), /Enskild firma/);
   });
 
-  it("samma år ger samma årsredovisning – den skapas inte om", () => {
+  it("samma år ger samma årsredovisning - den skapas inte om", () => {
     revenue(2025, 100_000);
     closeFiscalYear("fy-2025", "anvandare");
     const first = generateAnnualReport("fy-2025", "anvandare");

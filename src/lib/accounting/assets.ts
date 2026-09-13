@@ -76,7 +76,7 @@ export function registerAssetFromExpense(expenseId: string, opts: { name?: strin
 
   const net = expense.amount - expense.vatAmount;
   const clamped = clampToOpenDate(expense.date);
-  const name = opts.name?.trim() || `${expense.supplier} – ${expense.description ?? "inventarie"}`;
+  const name = opts.name?.trim() || `${expense.supplier} - ${expense.description ?? "inventarie"}`;
 
   // Privata utlägg blir skuld till ägaren (2893) i stället för uttag från kontot.
   const paidPrivately = expense.paidBy === "privat";

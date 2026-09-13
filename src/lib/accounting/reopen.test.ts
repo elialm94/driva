@@ -91,7 +91,7 @@ function cost(date: string, amount: number) {
   });
 }
 
-describe("återöppning – året blir faktiskt öppet", () => {
+describe("återöppning - året blir faktiskt öppet", () => {
   beforeEach(reset);
 
   it("året blir öppet, låset flyttas bakom årets början och en rättelse går att bokföra", () => {
@@ -142,7 +142,7 @@ describe("återöppning – året blir faktiskt öppet", () => {
     assert.throws(() => reopenFiscalYear("fy-2025", "Vill bara öppna igen.", "anvandare"), /redan öppet/);
   });
 
-  it("åren öppnas i omvänd ordning – 2024 kan inte öppnas medan 2025 är stängt", () => {
+  it("åren öppnas i omvänd ordning - 2024 kan inte öppnas medan 2025 är stängt", () => {
     revenue("2024-06-15", 200_000);
     closeFiscalYear("fy-2024", "anvandare");
     revenue("2025-06-15", 300_000);
@@ -161,7 +161,7 @@ describe("återöppning – året blir faktiskt öppet", () => {
   });
 });
 
-describe("återöppning – bokslutet återförs så att omtaget räknas om", () => {
+describe("återöppning - bokslutet återförs så att omtaget räknas om", () => {
   beforeEach(reset);
 
   it("skatt, årets resultat och nollningen av resultaträkningen återförs", () => {
@@ -198,7 +198,7 @@ describe("återöppning – bokslutet återförs så att omtaget räknas om", ()
 
     for (const id of closingIds) {
       const original = db().verifications.find((v) => v.id === id);
-      assert.ok(original, "bokslutsverifikationen ska finnas kvar – bokföring raderas aldrig");
+      assert.ok(original, "bokslutsverifikationen ska finnas kvar - bokföring raderas aldrig");
       assert.ok(original.correctedByVerificationId, "originalet ska peka på sin återföring");
       const reversal = db().verifications.find((v) => v.id === original.correctedByVerificationId);
       assert.equal(reversal?.correctsVerificationId, id);
@@ -208,7 +208,7 @@ describe("återöppning – bokslutet återförs så att omtaget räknas om", ()
     assert.deepEqual(result.reversals.map((v) => v.id).sort(), [...result.fiscalYear.reopenings![0].reversalVerificationIds].sort());
   });
 
-  it("omtaget ger det nya, rätta resultatet – inte noll och inte det gamla", () => {
+  it("omtaget ger det nya, rätta resultatet - inte noll och inte det gamla", () => {
     revenue("2025-06-15", 500_000);
     const first = closeFiscalYear("fy-2025", "anvandare");
     assert.equal(first.aretsResultat, 397_000); // 500 000 − 20,6 % skatt
@@ -305,7 +305,7 @@ describe("återöppning – bokslutet återförs så att omtaget räknas om", ()
   });
 });
 
-describe("återöppning – årsredovisningen", () => {
+describe("återöppning - årsredovisningen", () => {
   beforeEach(reset);
 
   it("en upprättad årsredovisning markeras som ersatt men finns kvar", () => {
@@ -371,7 +371,7 @@ describe("återöppning – årsredovisningen", () => {
     assert.equal(
       resolveAnnualReport("fy-2025", "rapport-som-inte-finns"),
       undefined,
-      "en okänd rapport ska ge ingenting – inte tysta fram en annan årsredovisning"
+      "en okänd rapport ska ge ingenting - inte tysta fram en annan årsredovisning"
     );
     assert.equal(
       resolveAnnualReport("fy-2025", otherYear.id),
@@ -405,7 +405,7 @@ describe("återöppning – årsredovisningen", () => {
     );
   });
 
-  it("även en signerad och inlämnad årsredovisning kan ersättas – felet är inte permanent", () => {
+  it("även en signerad och inlämnad årsredovisning kan ersättas - felet är inte permanent", () => {
     revenue("2025-06-15", 500_000);
     closeFiscalYear("fy-2025", "anvandare");
     const report = generateAnnualReport("fy-2025", "anvandare");
@@ -430,7 +430,7 @@ describe("återöppning – årsredovisningen", () => {
   });
 });
 
-describe("återöppning – spåret", () => {
+describe("återöppning - spåret", () => {
   beforeEach(reset);
 
   it("varje återöppning sparas på året med skäl och verifikationer", () => {

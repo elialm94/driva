@@ -78,7 +78,7 @@ function statuses(flow: ReturnType<typeof vatPeriodFlow>) {
   return flow.steps.map((s) => `${s.key}:${s.status}`);
 }
 
-describe("steg 1 – kontrollera", () => {
+describe("steg 1 - kontrollera", () => {
   beforeEach(reset);
 
   it("en obokförd banktransaktion håller perioden i steg 1 med länkbar blockerare", () => {
@@ -100,7 +100,7 @@ describe("steg 1 – kontrollera", () => {
     assert.equal(flow.done, false);
   });
 
-  it("perioderna tas i ordning – en odeklarerad tidigare period syns som blockerare", () => {
+  it("perioderna tas i ordning - en odeklarerad tidigare period syns som blockerare", () => {
     bookSales(`${YEAR}-02-10`, 10_000, 2_500);
     bookSales(`${YEAR}-05-10`, 4_000, 1_000);
 
@@ -139,7 +139,7 @@ describe("steg 1 – kontrollera", () => {
   });
 });
 
-describe("steg 2 – deklarera", () => {
+describe("steg 2 - deklarera", () => {
   beforeEach(reset);
 
   it("en ren period står i steg 2 med rutorna som ska fyllas i", () => {
@@ -192,7 +192,7 @@ describe("steg 2 – deklarera", () => {
   });
 });
 
-describe("steg 3 – betala", () => {
+describe("steg 3 - betala", () => {
   beforeEach(reset);
 
   it("bokförd moms på skattekontot avslutar flödet", () => {
@@ -276,7 +276,7 @@ describe("fokus på sidan", () => {
 
     declareVatPeriod(`${YEAR}-K1`, "anvandare");
     const afterK1 = vatPeriods(YEAR).map((p) => vatPeriodFlow(p, TODAY));
-    assert.equal(vatFlowFocus(afterK1), `${YEAR}-K1`, "K1 är deklarerad men inte betald – den står kvar först");
+    assert.equal(vatFlowFocus(afterK1), `${YEAR}-K1`, "K1 är deklarerad men inte betald - den står kvar först");
 
     const thisYear = vatPeriods(THIS_YEAR)
       .filter((p) => p.state === "pagaende")

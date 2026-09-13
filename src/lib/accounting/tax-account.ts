@@ -111,12 +111,12 @@ export function bookVatOnTaxAccount(reportId: string, actor: "anvandare" | "assi
   const report = db().vatReports.find((r) => r.id === reportId);
   if (!report) throw new Error("Momsrapporten finns inte.");
   if (report.status !== "deklarerad") {
-    throw new Error(`Momsen för ${report.label} är inte deklarerad ännu – deklarera först, bokför på skattekontot sedan.`);
+    throw new Error(`Momsen för ${report.label} är inte deklarerad ännu - deklarera först, bokför på skattekontot sedan.`);
   }
   const sourceId = `moms-${report.id}`;
   const existing = alreadyBooked(sourceId);
   if (existing) return existing;
-  if (report.attBetala === 0) throw new Error(`Momsen för ${report.label} är noll – ingenting att föra till skattekontot.`);
+  if (report.attBetala === 0) throw new Error(`Momsen för ${report.label} är noll - ingenting att föra till skattekontot.`);
 
   const amount = Math.abs(report.attBetala);
   const debt = report.attBetala > 0;
@@ -170,10 +170,10 @@ export function setTaxAccountOcr(value: string, actor: "anvandare" | "assistent"
     return undefined;
   }
   if (!/^\d{10,25}$/.test(digits)) {
-    throw new Error("OCR-numret består bara av siffror – kopiera det från Skatteverkets e-tjänst OCR-beräkning.");
+    throw new Error("OCR-numret består bara av siffror - kopiera det från Skatteverkets e-tjänst OCR-beräkning.");
   }
   if (!isValidBankgirotOcr(digits)) {
-    throw new Error("Kontrollsiffran stämmer inte – kontrollera numret mot Skatteverkets OCR-beräkning innan du sparar.");
+    throw new Error("Kontrollsiffran stämmer inte - kontrollera numret mot Skatteverkets OCR-beräkning innan du sparar.");
   }
   if (s.taxAccountOcr === digits) return digits;
   s.taxAccountOcr = digits;
@@ -224,7 +224,7 @@ export function bookFSkatt(
   const amount = amountOverride ?? db().settings.fSkattPerMonth;
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error(
-      "Preliminärskatten per månad är inte satt – fyll i beloppet från Skatteverkets beslut här på Skattekontot först."
+      "Preliminärskatten per månad är inte satt - fyll i beloppet från Skatteverkets beslut här på Skattekontot först."
     );
   }
   const sourceId = `fskatt-${month}`;
@@ -351,7 +351,7 @@ export function bookEmployerTaxesOnTaxAccount(
   const avgift = monthlyLiability(ARBETSGIVARAVGIFT, month, sourceId);
   const skatt = monthlyLiability(PERSONALSKATT, month, sourceId);
   if (avgift === 0 && skatt === 0) {
-    throw new Error(`Ingen lön är bokförd för ${month} – arbetsgivaravgifter och personalskatt saknas.`);
+    throw new Error(`Ingen lön är bokförd för ${month} - arbetsgivaravgifter och personalskatt saknas.`);
   }
 
   const entries = [
@@ -475,7 +475,7 @@ export function bookTaxAccountDeposit(txId: string, actor: "anvandare" | "assist
     ],
     source: { type: "skattekonto", id: sourceId },
     createdBy: actor,
-    explanation: `${amount} kr fördes från företagskontot till skattekontot. Pengarna är kvar i bolaget – de står bara hos Skatteverket.`,
+    explanation: `${amount} kr fördes från företagskontot till skattekontot. Pengarna är kvar i bolaget - de står bara hos Skatteverket.`,
   });
   tx.status = "bokford";
   tx.verificationId = ver.id;

@@ -75,7 +75,7 @@ export function planAccrual(input: PlanAccrualInput): Accrual {
       ? amountAfterYearEnd(input.totalAmount, input.fromDate, input.toDate, fy.endDate)
       : input.totalAmount;
   if (amount <= 0) {
-    throw new Error("Ingen del av beloppet hör till nästa räkenskapsår – ingen periodisering behövs.");
+    throw new Error("Ingen del av beloppet hör till nästa räkenskapsår - ingen periodisering behövs.");
   }
   const accrual: Accrual = {
     id: uid(),
@@ -114,7 +114,7 @@ export function planAccrualForSource(
   const categoryKey = isExpense ? (source.expense.category ?? "ovrigt") : source.invoice.category;
   const account = categoryByKey(categoryKey).account;
   const name = isExpense
-    ? `${source.expense.supplier} – ${source.expense.description ?? "köp"}`
+    ? `${source.expense.supplier} - ${source.expense.description ?? "köp"}`
     : `${source.invoice.supplier} ${source.invoice.invoiceNumber}`;
   return planAccrual({
     kind: "forutbetald_kostnad",
@@ -155,7 +155,7 @@ export function bookAccrual(accrualId: string, by: "anvandare" | "assistent" | "
           ],
       source: { type: "periodisering", id: accrual.id },
       createdBy: by,
-      explanation: `${accrual.description} avser perioden ${accrual.fromDate} till ${accrual.toDate}. ${accrual.amount} kr hör till nästa räkenskapsår och flyttas därför över bokslutet – automatisk återföring bokförs i det nya året.`,
+      explanation: `${accrual.description} avser perioden ${accrual.fromDate} till ${accrual.toDate}. ${accrual.amount} kr hör till nästa räkenskapsår och flyttas därför över bokslutet - automatisk återföring bokförs i det nya året.`,
     },
     { bypassPeriodLock: true }
   );
@@ -189,7 +189,7 @@ export function reverseAccrualsInto(nextYearFirstDate: string, fiscalYearId: str
           ],
       source: { type: "periodisering", id: accrual.id },
       createdBy: by,
-      explanation: `Automatisk återföring av periodiseringen från bokslutet – kostnaden/intäkten hamnar nu i rätt år.`,
+      explanation: `Automatisk återföring av periodiseringen från bokslutet - kostnaden/intäkten hamnar nu i rätt år.`,
     });
     accrual.reverseVerificationId = ver.id;
     accrual.status = "aterford";
@@ -223,13 +223,13 @@ export function accrualSuggestions(fiscalYearId: string): { description: string;
   for (const e of data.expenses) {
     if (e.status !== "bokford" || existing.has(e.id)) continue;
     if (yearlyPattern.test(e.description ?? "")) {
-      out.push({ description: `${e.supplier} – ${e.description}`, sourceType: "utgift", sourceId: e.id, amount: e.amount - e.vatAmount });
+      out.push({ description: `${e.supplier} - ${e.description}`, sourceType: "utgift", sourceId: e.id, amount: e.amount - e.vatAmount });
     }
   }
   for (const s of data.supplierInvoices) {
     if (existing.has(s.id)) continue;
     if (yearlyPattern.test(s.description)) {
-      out.push({ description: `${s.supplier} ${s.invoiceNumber} – ${s.description}`, sourceType: "leverantorsfaktura", sourceId: s.id, amount: s.amount - s.vatAmount });
+      out.push({ description: `${s.supplier} ${s.invoiceNumber} - ${s.description}`, sourceType: "leverantorsfaktura", sourceId: s.id, amount: s.amount - s.vatAmount });
     }
   }
   return out;

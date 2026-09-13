@@ -227,7 +227,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       difference: -bank.unexplained,
       source: "bank",
       detail: bank.unhandled.length
-        ? `${bank.unhandled.length} banktransaktion${bank.unhandled.length === 1 ? "" : "er"} är inte bokförd${bank.unhandled.length === 1 ? "" : "a"} – de förklarar ${kr(bank.unhandledSum)} av skillnaden.`
+        ? `${bank.unhandled.length} banktransaktion${bank.unhandled.length === 1 ? "" : "er"} är inte bokförd${bank.unhandled.length === 1 ? "" : "a"} - de förklarar ${kr(bank.unhandledSum)} av skillnaden.`
         : `Bankens saldo ${fy.endDate} var ${kr(bank.bankBalance)}.`,
       ok: bank.unexplained === 0 && bank.unhandled.length === 0,
       href: "/bokforing/bank",
@@ -259,7 +259,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       subsystem,
       source: "momsrapport",
       detail: undeclared.length
-        ? `Momsen för ${undeclared.map((p) => p.label).join(", ")} är inte deklarerad – saldot ska vara den perioden.`
+        ? `Momsen för ${undeclared.map((p) => p.label).join(", ")} är inte deklarerad - saldot ska vara den perioden.`
         : "Alla perioder är deklarerade, så kontot ska vara nollat mot 2650.",
       href: "/bokforing/moms",
       hrefLabel: "Öppna momsöversikten",
@@ -298,7 +298,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       subsystem,
       source: "arbetsgivardeklaration",
       detail: pending.length
-        ? `${pending.map((d) => d.label).join(", ")} är inte deklarerad${pending.length === 1 ? "" : "e"} – skulden ska vara de månaderna.`
+        ? `${pending.map((d) => d.label).join(", ")} är inte deklarerad${pending.length === 1 ? "" : "e"} - skulden ska vara de månaderna.`
         : "Alla månader är deklarerade och förda till skattekontot, så kontot ska vara nollat.",
       href: "/bokforing/lon",
       hrefLabel: "Öppna lönen",
@@ -382,7 +382,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
         ...base,
         difference: ledger,
         source: "bokslutsbilaga",
-        detail: `${accountName(account)} har saldo men ingen bokslutsbilaga – specifikationen saknas.`,
+        detail: `${accountName(account)} har saldo men ingen bokslutsbilaga - specifikationen saknas.`,
         ok: ledger === 0,
         href: "/bokforing/bokslut",
         hrefLabel: "Öppna bokslutet",
@@ -393,7 +393,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
       ...base,
       subsystem,
       source: "bokslutsbilaga",
-      detail: `Bilagan specificerar ${kr(Math.abs(subsystem))}${schedule.status === "utkast" ? " (utkast – inte bokförd ännu)" : ""}.`,
+      detail: `Bilagan specificerar ${kr(Math.abs(subsystem))}${schedule.status === "utkast" ? " (utkast - inte bokförd ännu)" : ""}.`,
       href: "/bokforing/bokslut",
       hrefLabel: "Öppna bokslutet",
     });
@@ -419,7 +419,7 @@ function reconcileAccount(account: number, fy: FiscalYear): BalanceAccountReconc
     ...base,
     difference: 0,
     source: "ingen",
-    detail: `${accountName(account)} har saldo ${kr(ledger)} utan delsystem i Ferva. Stäm av mot underlaget – lånebeskedet, avtalet eller motpartens uppgift – och lägg vid en specifikation.`,
+    detail: `${accountName(account)} har saldo ${kr(ledger)} utan delsystem i Ferva. Stäm av mot underlaget (lånebeskedet, avtalet eller motpartens uppgift) och lägg vid en specifikation.`,
     ok: true,
     manual: ledger !== 0,
   };

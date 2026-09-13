@@ -64,7 +64,7 @@ function balanced(entries: { debit: number; credit: number }[]): boolean {
 describe("Verifikationsmotorn", () => {
   beforeEach(() => reset());
 
-  it("vägrar obalanserade verifikationer – inget sparas", () => {
+  it("vägrar obalanserade verifikationer - inget sparas", () => {
     const before = db().verifications.length;
     assert.throws(
       () =>
@@ -83,7 +83,7 @@ describe("Verifikationsmotorn", () => {
     assert.equal(db().verifications.length, before);
   });
 
-  it("vägrar okända konton – bokföringen hittar inte på konton", () => {
+  it("vägrar okända konton - bokföringen hittar inte på konton", () => {
     assert.throws(
       () =>
         postVerification({
