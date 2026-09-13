@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ForgotPasswordForm } from "./forgot-password-form";
+import { FervaMark } from "@/components/ferva-mark";
 
 export const metadata: Metadata = { title: "Glömt lösenord" };
 export const dynamic = "force-dynamic";
@@ -10,7 +11,10 @@ export default function GlomtLosenordPage() {
     <main className="flex min-h-dvh items-center justify-center bg-stone-100 px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <div className="text-2xl font-semibold tracking-tight text-stone-900">Ferva</div>
+          <div className="flex items-center justify-center gap-2">
+            <FervaMark size={28} />
+            <span className="text-2xl font-semibold tracking-tight text-stone-900">Ferva</span>
+          </div>
           <p className="mt-1 text-sm text-stone-500">
             Ange din e-postadress så skickar vi en länk för att välja ett nytt lösenord.
           </p>

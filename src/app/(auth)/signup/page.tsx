@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { safeAuthNext } from "@/lib/auth/signup-flow";
 import { SignupForm } from "./signup-form";
+import { FervaMark } from "@/components/ferva-mark";
 
 export const metadata: Metadata = { title: "Skapa konto" };
 export const dynamic = "force-dynamic";
@@ -16,7 +17,10 @@ export default async function SignupPage({
     <main className="flex min-h-dvh items-center justify-center bg-stone-100 px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <div className="text-2xl font-semibold tracking-tight text-stone-900">Ferva</div>
+          <div className="flex items-center justify-center gap-2">
+            <FervaMark size={28} />
+            <span className="text-2xl font-semibold tracking-tight text-stone-900">Ferva</span>
+          </div>
           <p className="mt-1 text-sm text-stone-500">
             {next.startsWith("/inbjudan")
               ? "Skapa konto för att acceptera inbjudan."

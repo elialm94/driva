@@ -8,7 +8,7 @@ import { datumLang } from "../format";
 import { DELIVERY_MODE_LABELS } from "../wholesalers/labels";
 import { formatOre } from "../wholesalers/money";
 import { buildSimplePdfPages, type PdfRule, type PdfTextLine, type SimplePdfSpec } from "../pdf/simple-pdf";
-import { escapeHtml } from "./templates";
+import { escapeHtml, fervaMarkImg } from "./templates";
 
 export type PurchaseOrderMailInput = Omit<PurchaseOrderSentSnapshot, "sentAt" | "textBody" | "transport" | "subject" | "to" | "cc" | "replyTo" | "channel"> & {
   reference: string;
@@ -89,10 +89,12 @@ export function purchaseOrderHtml(input: PurchaseOrderMailInput): string {
     ["Vår referens", input.reference],
     ["Leverans", deliveryLines(input).join(" · ")],
   ];
+  const mark = fervaMarkImg();
   return `<!DOCTYPE html>
 <html lang="sv">
 <body style="margin:0;padding:0;background:#f6f5f2;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;color:#1a1916;">
   <div style="max-width:680px;margin:24px auto;padding:28px 24px;background:#fff;border-radius:16px;border:1px solid #e8e4dc;">
+    ${mark ? `<div style="margin:0 0 14px;">${mark}</div>` : ""}
     <p style="margin:0 0 6px;font-size:13px;letter-spacing:0.04em;text-transform:uppercase;color:#6b665c;">Beställning</p>
     <h1 style="margin:0 0 16px;font-size:22px;">${escapeHtml(input.reference)}</h1>
     <table style="border-collapse:collapse;margin:0 0 20px;">

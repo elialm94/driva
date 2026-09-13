@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FervaMark } from "@/components/ferva-mark";
 
 /**
  * Global 404 för adresser som inte matchar någon rutt (och notFound() utanför
@@ -9,6 +10,7 @@ export default function NotFound() {
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center bg-stone-100 px-4 py-10">
       <div className="w-full max-w-sm rounded-2xl border border-stone-200 bg-white p-6 text-center shadow-sm">
+        <FervaMark size={28} label="Ferva" className="mx-auto mb-3" />
         <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-stone-400">404</p>
         <h1 className="mt-2 text-lg font-semibold tracking-tight text-stone-900">Sidan finns inte</h1>
         <p className="mt-2 text-sm text-stone-500">

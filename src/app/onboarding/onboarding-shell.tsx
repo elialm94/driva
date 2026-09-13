@@ -1,3 +1,5 @@
+import { FervaMark } from "@/components/ferva-mark";
+
 /** Gemensam ram för onboardingens två steg: diskret "1 av 2", rubrik, ingress, kort. */
 export function OnboardingShell({
   step,
@@ -16,7 +18,10 @@ export function OnboardingShell({
     <main className="min-h-dvh bg-canvas px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-6 sm:px-6 sm:py-12">
       <div className="mx-auto w-full max-w-lg">
         <div className="mb-6 flex items-center justify-between">
-          <span className="text-[15px] font-semibold tracking-tight text-ink">Ferva</span>
+          <span className="flex items-center gap-2">
+            <FervaMark size={24} />
+            <span className="text-[15px] font-semibold tracking-tight text-ink">Ferva</span>
+          </span>
           <span className="text-[13px] text-muted" aria-label={`Steg ${step} av 2`}>
             {step} av 2
           </span>

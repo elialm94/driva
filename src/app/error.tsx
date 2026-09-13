@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { logoutAction } from "@/app/auth-actions";
+import { FervaMark } from "@/components/ferva-mark";
 
 /**
  * Segmentgräns. En serverkrasch på Hem/layout ska inte lämna användaren
@@ -21,6 +22,7 @@ export default function Error({
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center bg-stone-100 px-4 py-10">
       <div className="w-full max-w-sm rounded-2xl border border-stone-200 bg-white p-6 text-center shadow-sm">
+        <FervaMark size={28} label="Ferva" className="mx-auto mb-3" />
         <h1 className="text-lg font-semibold tracking-tight text-stone-900">Sidan kunde inte laddas</h1>
         <p className="mt-2 text-sm text-stone-500">
           Något gick fel när sidan hämtades. Ladda om, eller logga ut och prova igen.

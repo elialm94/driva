@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { cx } from "./ui";
+import { FervaMark } from "./ferva-mark";
 import { CreateAccountRow } from "./demo-controls";
 import { DemoMenu } from "./demo-menu";
 import { LogoutRow } from "./logout-button";
@@ -146,9 +147,7 @@ export function Sidebar({
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-card/70 backdrop-blur-xl lg:flex">
       <Link href="/" className="flex items-center gap-2.5 px-6 pt-7 pb-8">
-        <span className="flex size-8 items-center justify-center rounded-[10px] bg-accent text-[15px] font-bold text-white">
-          D
-        </span>
+        <FervaMark size={32} />
         <span className="text-[19px] font-semibold tracking-tight">Ferva</span>
       </Link>
 

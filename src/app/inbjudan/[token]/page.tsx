@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { buttonClasses } from "@/components/ui";
+import { FervaMark } from "@/components/ferva-mark";
 import { acceptInviteAction, continueAsInviteeAction } from "@/app/collaboration-actions";
 import { getSessionUser } from "@/lib/auth/session";
 import { lookupInvitation } from "@/lib/collaboration/service";
@@ -56,7 +57,10 @@ export default async function InviteAcceptPage({
   return (
     <main className="flex min-h-dvh items-center justify-center bg-stone-100 px-4 py-10">
       <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
-        <p className="text-sm text-stone-500">Ferva</p>
+        <p className="flex items-center gap-2 text-sm text-stone-500">
+          <FervaMark size={22} />
+          Ferva
+        </p>
         <h1 className="mt-1 text-xl font-semibold tracking-tight">
           {invitation.invitedByName} bjuder in dig som {role.toLowerCase()}
         </h1>
