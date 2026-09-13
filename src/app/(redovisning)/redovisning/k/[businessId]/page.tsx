@@ -77,7 +77,7 @@ export default async function ClientWorkspacePage({
           <p className="rounded-xl border border-line bg-card px-4 py-6 text-[14px] text-soft">
             {filter === "vantar"
               ? "Inget väntar på kunden just nu."
-              : "✓ Allt klart — Inget behöver din hjälp just nu."}
+              : "✓ Allt klart. Inget behöver din hjälp just nu."}
           </p>
         }
       />

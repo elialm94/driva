@@ -70,7 +70,7 @@ export default async function RedovisningHomePage({
   const empty =
     counts.items === 0 ? (
       <p className="rounded-xl border border-line bg-card px-4 py-6 text-[14px] text-soft">
-        ✓ Allt klart — Inget behöver din hjälp just nu.
+        ✓ Allt klart. Inget behöver din hjälp just nu.
       </p>
     ) : (
       <p className="text-[13px] text-soft">Inget i det här filtret.</p>

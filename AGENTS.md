@@ -89,9 +89,11 @@ Each rule names the file that owns or enforces it.
   and never reach Sentry (`src/lib/observability/scrub.ts`). In the UI they are masked; revealing one
   is a dedicated server action.
 - **Swedish UI and Swedish code comments.** English only in this file.
-- **No em dash in prose.** Use a hyphen, or restructure the sentence. The standalone table
-  placeholder `"—"` (an em dash that is the whole string, meaning "no value") is correct typography
-  and must keep working.
+- **No em dash in prose.** Use a hyphen, or restructure the sentence. Enforced by
+  `src/lib/em-dash-scan.test.ts`, which fails on an em dash (U+2014) with whitespace on either side
+  inside a string literal or JSX text under `src/`. The standalone table placeholder `"—"` (an em dash
+  that is the whole string, meaning "no value") is correct typography, is exempt, and must keep
+  working. Comments are outside the guard; do not rewrite existing ones on your own initiative.
 - **No `as any`, no `@ts-ignore`, no `console.log`.**
 - **Tests are additive.** Never edit an existing test to make it green. If an existing test genuinely
   encodes behaviour you are asked to change, say so and ask first.
