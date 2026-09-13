@@ -36,6 +36,7 @@ function runBuild(env: Record<string, string>): Run {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       env: {
+        NODE_ENV: process.env.NODE_ENV,
         PATH: `${stubs}:${process.env.PATH ?? ""}`,
         HOME: process.env.HOME ?? "",
         ...env,
@@ -75,7 +76,8 @@ test("produktion med db-url migrerar och bygger vidare", () => {
 });
 
 test("preview och lokalt hoppar över migrationerna utan att falla", () => {
-  for (const env of [{ VERCEL_ENV: "preview" }, { VERCEL_ENV: "development" }, {}]) {
+  const envs: Record<string, string>[] = [{ VERCEL_ENV: "preview" }, { VERCEL_ENV: "development" }, {}];
+  for (const env of envs) {
     const run = runBuild(env);
     assert.equal(run.status, 0, run.output);
     assert.match(run.output, /skipping \(production only\)/);
