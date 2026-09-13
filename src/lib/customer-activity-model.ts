@@ -1,4 +1,9 @@
-export const ACTIVITY_FILTER_MIN = 8;
+/**
+ * Visa Alla / Offerter / Fakturor / Uppdrag / Betalningar så fort det
+ * finns minst en rad. Tröskeln 8 gömde flikarna efter kedjegruppering
+ * (seed-kunder har typiskt 1-5 rader).
+ */
+export const ACTIVITY_FILTER_MIN = 0;
 
 export type CustomerActivityKind = "offert" | "faktura" | "uppdrag" | "betalning";
 
