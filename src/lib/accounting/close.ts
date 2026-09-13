@@ -76,7 +76,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
       blocking: true,
       detail: yearEnded
         ? `Året avslutades ${fy.endDate}.`
-        : `Året pågår till ${fy.endDate}. Du kan förbereda bokslutet redan nu – avskrivningar, periodiseringar och kontroller – men stängningen görs efter årets slut.`,
+        : `Året pågår till ${fy.endDate}. Du kan förbereda bokslutet redan nu (avskrivningar, periodiseringar och kontroller), men stängningen görs efter årets slut.`,
     },
     {
       key: "bank",
@@ -102,7 +102,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
       ok: draftInvoices.length === 0,
       blocking: false,
       detail: draftInvoices.length
-        ? `${draftInvoices.length} fakturautkast är inte utfärdade – utfärda eller kasta dem.`
+        ? `${draftInvoices.length} fakturautkast är inte utfärdade - utfärda eller kasta dem.`
         : "Utfärdade fakturor bokförs automatiskt.",
       href: "/ekonomi?flik=fakturor",
       hrefLabel: "Visa fakturorna",
@@ -113,7 +113,7 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
       ok: overdue.length === 0,
       blocking: false,
       detail: overdue.length
-        ? `${overdue.length} ${overdue.length === 1 ? "förfallen faktura" : "förfallna fakturor"} – bedöm om de kommer betalas.`
+        ? `${overdue.length} ${overdue.length === 1 ? "förfallen faktura" : "förfallna fakturor"} - bedöm om de kommer betalas.`
         : "Inga förfallna kundfordringar.",
       href: "/ekonomi?flik=fakturor",
       hrefLabel: "Visa fakturorna",
@@ -497,7 +497,7 @@ export function reopenFiscalYear(fiscalYearId: string, reason: string, by: "anva
       confidence: "hog",
       createdBy: by,
       correctsVerificationId: original.id,
-      explanation: `Räkenskapsåret ${fy.label} öppnades igen, så bokslutsposten återförs och räknas om vid nästa stängning. Originalet står kvar – bokföring skrivs aldrig om. Skäl: ${trimmedReason}`,
+      explanation: `Räkenskapsåret ${fy.label} öppnades igen, så bokslutsposten återförs och räknas om vid nästa stängning. Originalet står kvar - bokföring skrivs aldrig om. Skäl: ${trimmedReason}`,
     });
     original.correctedByVerificationId = reversal.id;
     reversals.push(reversal);

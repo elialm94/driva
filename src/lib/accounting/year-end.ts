@@ -126,7 +126,7 @@ export function vacationLiabilityDraft(fiscalYearId: string, savedDays: number):
   const employee = currentEmployee();
   const errors: string[] = [];
   if (!Number.isFinite(savedDays) || savedDays < 0) errors.push("Antalet sparade semesterdagar kan inte vara negativt.");
-  if (!employee) errors.push("Ingen anställd är upplagd – utan lön finns ingen semesterlöneskuld.");
+  if (!employee) errors.push("Ingen anställd är upplagd - utan lön finns ingen semesterlöneskuld.");
 
   const days = Math.max(0, Math.round(savedDays));
   const monthlySalary = employee?.monthlySalary ?? 0;
@@ -200,7 +200,7 @@ export function doubtfulReceivablesDraft(fiscalYearId: string, invoiceIds: strin
     chosen.push(id);
     closingAmount += net;
     lines.push({
-      label: `Faktura #${invoice.number} – ${customerName(invoice)}`,
+      label: `Faktura #${invoice.number} - ${customerName(invoice)}`,
       amount: net,
       note: `${invoiceOutstanding(invoice)} kr obetalt, varav ${net} kr exklusive moms. Förfallen ${invoice.dueDate ? bokforingsdatum(invoice.dueDate) : bokforingsdatum(invoice.issueDate)}.`,
     });
@@ -289,7 +289,7 @@ export function fundDraft(
     errors.push("Periodiseringsfond fungerar annorlunda för enskild firma och stöds inte i Ferva.");
   }
   if (allocation > max) {
-    errors.push(`Avsättningen får vara högst ${max} kr – 25 % av det skattemässiga resultatet före avsättning.`);
+    errors.push(`Avsättningen får vara högst ${max} kr - 25 % av det skattemässiga resultatet före avsättning.`);
   }
 
   const lots = fundLots(fiscalYearId);
@@ -303,7 +303,7 @@ export function fundDraft(
       continue;
     }
     if (amount > lot.amount) {
-      errors.push(`Fonden från ${reversal.year} är ${lot.amount} kr – mer än så går inte att återföra.`);
+      errors.push(`Fonden från ${reversal.year} är ${lot.amount} kr - mer än så går inte att återföra.`);
       continue;
     }
     reversals.push({ year: reversal.year, amount });
@@ -314,7 +314,7 @@ export function fundDraft(
     const planned = reversals.find((r) => r.year === lot.year)?.amount ?? 0;
     if (planned < lot.amount) {
       errors.push(
-        `Fonden från ${lot.year} ska vara återförd senast räkenskapsåret ${lot.lastYear} – återför hela ${lot.amount} kr.`
+        `Fonden från ${lot.year} ska vara återförd senast räkenskapsåret ${lot.lastYear} - återför hela ${lot.amount} kr.`
       );
     }
   }
@@ -339,7 +339,7 @@ export function fundDraft(
     lines.push({
       label: `Fond avsatt ${fy.label}`,
       amount: allocation,
-      note: `Högst ${max} kr fick sättas av – 25 % av det skattemässiga resultatet före avsättning. Ska vara återförd senast ${taxYearOf(fy) + PERIODISERINGSFOND_MAX_AR}.`,
+      note: `Högst ${max} kr fick sättas av - 25 % av det skattemässiga resultatet före avsättning. Ska vara återförd senast ${taxYearOf(fy) + PERIODISERINGSFOND_MAX_AR}.`,
     });
   }
 
@@ -351,7 +351,7 @@ export function fundDraft(
     bookedAmount: booked,
     change: closingAmount - booked,
     explanation:
-      `${allocation} kr sätts av och ${reversalSum} kr återförs. Fonden skjuter skatten framåt – ` +
+      `${allocation} kr sätts av och ${reversalSum} kr återförs. Fonden skjuter skatten framåt - ` +
       `skatten är inte borta, den betalas det år fonden återförs.`,
     errors,
   };
@@ -421,7 +421,7 @@ export function saveYearEndSchedule(
       };
   if (!existing) data.yearEndSchedules.push(schedule);
 
-  const revised = existing?.verificationIds.length ? "Reviderad bilaga – skillnaden bokförs. " : "";
+  const revised = existing?.verificationIds.length ? "Reviderad bilaga - skillnaden bokförs. " : "";
   logAudit(
     by,
     "bokslutsbilaga_andrad",
@@ -494,7 +494,7 @@ export function bookYearEndSchedule(id: string, by: "anvandare" | "assistent"): 
             liabilityAccount: NEDSKRIVNING_KUNDFORDRINGAR,
             costAccount: BEFARADE_KUNDFORLUSTER,
             description: `Nedskrivning av kundfordringar ${fy.label}`,
-            explanation: `${draft.explanation} Fordran står kvar i bokföringen – nedskrivningen är en bedömning, inte en avskrivning.`,
+            explanation: `${draft.explanation} Fordran står kvar i bokföringen - nedskrivningen är en bedömning, inte en avskrivning.`,
             by,
           })
         );

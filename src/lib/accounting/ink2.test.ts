@@ -115,7 +115,7 @@ function allocateFund(fiscalYearId: string, amount: number) {
   return bookYearEndSchedule(schedule.id, "anvandare");
 }
 
-describe("INK2 – ej avdragsgilla kostnader och skattefria intäkter", () => {
+describe("INK2 - ej avdragsgilla kostnader och skattefria intäkter", () => {
   beforeEach(reset);
 
   it("representation läggs tillbaka och hamnar i ruta 4.3c", () => {
@@ -139,7 +139,7 @@ describe("INK2 – ej avdragsgilla kostnader och skattefria intäkter", () => {
     assert.equal(calc.skattemassigtResultat, 300_000);
   });
 
-  it("skattefri ränteintäkt dras BORT – riktningen är lätt att kasta om", () => {
+  it("skattefri ränteintäkt dras BORT - riktningen är lätt att kasta om", () => {
     revenue("2025-06-15", 300_000);
     income("2025-12-20", 900, SKATTEFRI_RANTA);
 
@@ -161,10 +161,10 @@ describe("INK2 – ej avdragsgilla kostnader och skattefria intäkter", () => {
   });
 });
 
-describe("INK2 – schablonintäkt på periodiseringsfond", () => {
+describe("INK2 - schablonintäkt på periodiseringsfond", () => {
   beforeEach(reset);
 
-  it("årets egen avsättning räntebeläggs inte – bara fonder vid årets ingång", () => {
+  it("årets egen avsättning räntebeläggs inte - bara fonder vid årets ingång", () => {
     revenue("2025-06-15", 500_000);
     allocateFund("fy-2025", 100_000);
 
@@ -215,7 +215,7 @@ describe("INK2 – schablonintäkt på periodiseringsfond", () => {
   });
 });
 
-describe("INK2 – underskott från tidigare år", () => {
+describe("INK2 - underskott från tidigare år", () => {
   beforeEach(reset);
 
   it("förra årets förlust dras av mot årets vinst och syns i ruta 4.14a", () => {
@@ -291,7 +291,7 @@ describe("INK2 – underskott från tidigare år", () => {
   });
 });
 
-describe("INK2 – skattemässiga avskrivningar", () => {
+describe("INK2 - skattemässiga avskrivningar", () => {
   beforeEach(reset);
 
   function buyAsset(date: string, amount: number, usefulLifeYears: number) {
@@ -309,7 +309,7 @@ describe("INK2 – skattemässiga avskrivningar", () => {
     return registerAssetFromExpense(expense.id, { usefulLifeYears, by: "anvandare" });
   }
 
-  it("planen under taket är inget fel – men det outnyttjade avdraget ska synas", () => {
+  it("planen under taket är inget fel - men det outnyttjade avdraget ska synas", () => {
     revenue("2025-06-15", 500_000);
     const asset = buyAsset("2025-01-15", 100_000, 10);
     createDepreciationEntry(asset.id, "fy-2025", "anvandare");
@@ -382,7 +382,7 @@ describe("INK2 – skattemässiga avskrivningar", () => {
   });
 });
 
-describe("INK2 – blanketten stämmer med beräkningen", () => {
+describe("INK2 - blanketten stämmer med beräkningen", () => {
   beforeEach(reset);
 
   it("raderna börjar i årets resultat efter skatt och summerar till samma resultat", () => {
@@ -412,7 +412,7 @@ describe("INK2 – blanketten stämmer med beräkningen", () => {
     assert.equal(result.amount, calc.skattemassigtResultat);
   });
 
-  it("varje justering bär en ruta – en post utan ruta går inte att deklarera", () => {
+  it("varje justering bär en ruta - en post utan ruta går inte att deklarera", () => {
     revenue("2024-06-15", 400_000);
     allocateFund("fy-2024", 50_000);
     closeFiscalYear("fy-2024", "anvandare");

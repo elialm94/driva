@@ -264,7 +264,7 @@ export function employeeInputErrors(input: EmployeeInput, today: string): string
   if (!input.name.trim()) errors.push("Namn saknas.");
   const birthDate = birthDateFromPersonnummer(input.personnummer, today);
   if (!birthDate) {
-    errors.push("Personnummret går inte att tolka – skriv det som YYYYMMDD-NNNN.");
+    errors.push("Personnummret går inte att tolka - skriv det som YYYYMMDD-NNNN.");
   }
   if (!Number.isFinite(input.monthlySalary) || input.monthlySalary <= 0) {
     errors.push("Månadslönen måste vara större än noll.");
@@ -283,7 +283,7 @@ export function employeeInputErrors(input: EmployeeInput, today: string): string
     const d = input.taxBasis.monthlyDeduction;
     if (!Number.isFinite(d) || d < 0) errors.push("Skatteavdraget enligt tabellen måste vara noll eller mer.");
     else if (Number.isFinite(input.monthlySalary) && d > input.monthlySalary) {
-      errors.push("Skatteavdraget kan inte vara större än månadslönen – kontrollera raden i tabellen.");
+      errors.push("Skatteavdraget kan inte vara större än månadslönen - kontrollera raden i tabellen.");
     }
   }
   if (input.email && !input.email.includes("@")) errors.push("E-postadressen ser inte ut som en adress.");

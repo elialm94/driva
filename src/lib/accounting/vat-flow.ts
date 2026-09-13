@@ -161,7 +161,7 @@ export function vatPeriodFlow(summary: VatPeriodSummary, today: string = todayDa
       step(
         "kontrollera",
         "pagaende",
-        `Perioden pågår till ${datumLang(summary.period.end)}. Bokför löpande – underlaget kontrolleras när den är slut.`
+        `Perioden pågår till ${datumLang(summary.period.end)}. Bokför löpande - underlaget kontrolleras när den är slut.`
       ),
       step("deklarera", "vantar", `Deklareras ${dueText}.`),
       step("betala", "vantar", "Betalas samma dag som deklarationen."),
@@ -178,7 +178,7 @@ export function vatPeriodFlow(summary: VatPeriodSummary, today: string = todayDa
       step(
         "deklarera",
         ready ? "nu" : "vantar",
-        ready ? `Lämna in ${dueText} – fyll i rutorna eller ladda upp filen.` : `Deklareras ${dueText}.`
+        ready ? `Lämna in ${dueText} - fyll i rutorna eller ladda upp filen.` : `Deklareras ${dueText}.`
       ),
       step("betala", "vantar", paymentSummary(payment, false)),
     ];
@@ -218,7 +218,7 @@ function orderingCheck(earlier: EarlierPeriodRef[]): VatChecklistItem {
     label: "Tidigare perioder är deklarerade",
     ok: earlier.length === 0,
     detail: earlier.length
-      ? `Deklarera ${earlier.map((p) => p.label).join(", ")} först – perioderna tas i ordning.`
+      ? `Deklarera ${earlier.map((p) => p.label).join(", ")} först - perioderna tas i ordning.`
       : undefined,
   };
 }
@@ -228,7 +228,7 @@ function paymentSummary(p: VatPaymentInfo, paid: boolean): string {
   if (p.direction === "tillbaka") {
     return paid
       ? `${kr(p.amount)} tillgodofördes skattekontot.`
-      : `${kr(p.amount)} att få tillbaka – Skatteverket betalar ut efter deklarationen.`;
+      : `${kr(p.amount)} att få tillbaka - Skatteverket betalar ut efter deklarationen.`;
   }
   if (paid) {
     return p.transferSeen

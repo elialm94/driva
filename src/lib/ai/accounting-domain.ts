@@ -50,7 +50,7 @@ export function bokforingStatusResult(): DomainResult {
 
   const text =
     todo.length === 0
-      ? `Bokföringen är uppdaterad – inget väntar på dig. Banken är avstämd${recon.reconciledThrough ? ` till ${datumLang(recon.reconciledThrough)}` : ""}, och nästa moms (${moms.period.label}, ${kr(Math.abs(moms.attBetala))} ${moms.attBetala >= 0 ? "att betala" : "tillbaka"}) deklareras senast ${datumLang(moms.dueDate)}.${lock ? ` Bokföringen är låst till och med ${datumLang(lock)}.` : ""}`
+      ? `Bokföringen är uppdaterad - inget väntar på dig. Banken är avstämd${recon.reconciledThrough ? ` till ${datumLang(recon.reconciledThrough)}` : ""}, och nästa moms (${moms.period.label}, ${kr(Math.abs(moms.attBetala))} ${moms.attBetala >= 0 ? "att betala" : "tillbaka"}) deklareras senast ${datumLang(moms.dueDate)}.${lock ? ` Bokföringen är låst till och med ${datumLang(lock)}.` : ""}`
       : `Det här behöver du göra: ${todo.join("; ")}. Resten sköter Ferva automatiskt.`;
 
   return {
@@ -96,7 +96,7 @@ export function momsRapportResult(periodKey?: string): DomainResult {
         : period.state === "att_deklarera"
           ? blockers.length
             ? `Innan deklaration: ${blockers.map((b) => b.detail ?? b.label).join(" ")}`
-            : `Redo att deklareras – senast ${datumLang(period.dueDate)}. Siffrorna kommer direkt ur huvudboken.`
+            : `Redo att deklareras - senast ${datumLang(period.dueDate)}. Siffrorna kommer direkt ur huvudboken.`
           : `Perioden pågår till ${period.period.end}.`
     }`,
     card: {
@@ -138,7 +138,7 @@ export function balansRapportResult(): DomainResult {
   const br = balansrapport();
   return {
     ok: true,
-    text: `Balansen per ${datumLang(br.atDate)}: företaget äger ${kr(br.sumTillgangar)}, är skyldigt ${kr(br.sumSkulder)} och har ${kr(br.sumEgetKapital)} i eget kapital.${br.differens === 0 ? "" : " ⚠ Balansen stämmer inte – något behöver granskas."}`,
+    text: `Balansen per ${datumLang(br.atDate)}: företaget äger ${kr(br.sumTillgangar)}, är skyldigt ${kr(br.sumSkulder)} och har ${kr(br.sumEgetKapital)} i eget kapital.${br.differens === 0 ? "" : " ⚠ Balansen stämmer inte - något behöver granskas."}`,
     card: {
       kind: "list",
       title: "Balansrapport",
@@ -167,7 +167,7 @@ export function bokslutStatusResult(): DomainResult {
     ok: true,
     text:
       blockers.length === 0
-        ? `Bokslutet för ${fy.label} är redo att slutföras – alla kontroller är gröna.${tax ? ` Beräknad bolagsskatt: ${kr(tax.beraknadSkatt)} (preliminär).` : ""} Säg till så startar jag stängningen, eller gör det själv under Bokföring → Bokslut.`
+        ? `Bokslutet för ${fy.label} är redo att slutföras - alla kontroller är gröna.${tax ? ` Beräknad bolagsskatt: ${kr(tax.beraknadSkatt)} (preliminär).` : ""} Säg till så startar jag stängningen, eller gör det själv under Bokföring → Bokslut.`
         : `Bokslutet för ${fy.label} är inte klart ännu: ${blockers.map((b) => b.detail ?? b.label).join(" ")}${dep.length || acc.length ? ` Jag kan bokföra ${dep.length ? `${dep.length} avskrivning${dep.length > 1 ? "ar" : ""}` : ""}${dep.length && acc.length ? " och " : ""}${acc.length ? `${acc.length} periodisering${acc.length > 1 ? "ar" : ""}` : ""} åt dig.` : ""}`,
     card: {
       kind: "list",
@@ -235,7 +235,7 @@ export function requestCorrectVerification(query: string, category?: string): Do
   if (flow.kind === "kreditfaktura") {
     return {
       ok: true,
-      text: `${verificationLabel(ver)} är en kundfaktura. Om belopp, moms eller kund är fel krediterar du fakturan – konteringen ska inte ändras för hand.`,
+      text: `${verificationLabel(ver)} är en kundfaktura. Om belopp, moms eller kund är fel krediterar du fakturan - konteringen ska inte ändras för hand.`,
       card: {
         kind: "list",
         title: "Fakturan är fel",
@@ -274,7 +274,7 @@ export function requestCorrectVerification(query: string, category?: string): Do
     addPending(action);
     return {
       ok: true,
-      text: `Matchningen bakom ${verificationLabel(ver)} ser fel ut. Jag återför bokningen och öppnar matchningen igen – originalet ändras inte.`,
+      text: `Matchningen bakom ${verificationLabel(ver)} ser fel ut. Jag återför bokningen och öppnar matchningen igen - originalet ändras inte.`,
       card: {
         kind: "confirm",
         actionId: action.id,
@@ -335,7 +335,7 @@ export function requestCorrectVerification(query: string, category?: string): Do
   addPending(action);
   return {
     ok: true,
-    text: `Jag rättar ${verificationLabel(ver)} till ${cat.account} (${cat.label}). Originalet står kvar – en rättelseverifikation skapas. Bekräfta innan något bokförs.`,
+    text: `Jag rättar ${verificationLabel(ver)} till ${cat.account} (${cat.label}). Originalet står kvar - en rättelseverifikation skapas. Bekräfta innan något bokförs.`,
     card: {
       kind: "confirm",
       actionId: action.id,
@@ -394,7 +394,7 @@ export function requestCloseFiscalYear(): DomainResult {
   addPending(action);
   return {
     ok: true,
-    text: `Allt är klart för att stänga ${fy.label}. Året låses permanent – bekräfta så slutför jag bokslutet.`,
+    text: `Allt är klart för att stänga ${fy.label}. Året låses permanent - bekräfta så slutför jag bokslutet.`,
     card: {
       kind: "confirm",
       actionId: action.id,
@@ -421,7 +421,7 @@ export function requestUndoExpense(query: string): DomainResult {
   if (candidates.length > 1) {
     return {
       ok: true,
-      text: `Flera bokförda köp matchar ”${query}” – vilket menar du?`,
+      text: `Flera bokförda köp matchar ”${query}” - vilket menar du?`,
       card: {
         kind: "list",
         title: "Välj köp",
@@ -435,7 +435,7 @@ export function requestUndoExpense(query: string): DomainResult {
   addPending(action);
   return {
     ok: true,
-    text: `Jag ångrar bokningen av köpet hos ${expense.supplier} (${kr(expense.amount)}). Originalet står kvar – en rättelseverifikation återför det, och du får frågan om rätt kategori igen.`,
+    text: `Jag ångrar bokningen av köpet hos ${expense.supplier} (${kr(expense.amount)}). Originalet står kvar - en rättelseverifikation återför det, och du får frågan om rätt kategori igen.`,
     card: {
       kind: "confirm",
       actionId: action.id,
@@ -454,7 +454,7 @@ export function requestMarkVatDeclared(periodKey?: string): DomainResult {
   const period = periodKey ? periods.find((p) => p.period.key === periodKey) : periods.find((p) => p.state === "att_deklarera");
   if (!period) return fail("Jag hittar ingen momsperiod som väntar på deklaration.");
   if (period.state === "deklarerad") return fail(`Momsen för ${period.period.label} är redan markerad som deklarerad.`);
-  if (period.state !== "att_deklarera") return fail(`Momsperioden ${period.period.label} pågår fortfarande – den deklareras efter ${period.period.end}.`);
+  if (period.state !== "att_deklarera") return fail(`Momsperioden ${period.period.label} pågår fortfarande - den deklareras efter ${period.period.end}.`);
   const blockers = vatChecklist(period.period).filter((c) => !c.ok);
   if (blockers.length) {
     return fail(`Momsen för ${period.period.label} kan inte markeras som deklarerad ännu: ${blockers.map((b) => b.detail ?? b.label).join(" ")}`);

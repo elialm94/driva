@@ -212,7 +212,7 @@ export function previewSieImport(bytes: Uint8Array): SieImportPreview {
   }
   if (verificationCount > 0) {
     warnings.push(
-      `Filen innehåller ${verificationCount} verifikation${verificationCount === 1 ? "" : "er"}. De importeras inte – historiken ligger kvar i det gamla programmet och kommer in här som ingående balans.`
+      `Filen innehåller ${verificationCount} verifikation${verificationCount === 1 ? "" : "er"}. De importeras inte - historiken ligger kvar i det gamla programmet och kommer in här som ingående balans.`
     );
   }
 
@@ -236,7 +236,7 @@ export function previewSieImport(bytes: Uint8Array): SieImportPreview {
   const sum = Object.values(openingBalances).reduce((s, v) => s + v, 0);
   if (sum !== 0) {
     warnings.push(
-      `Balansposterna summerar till ${sum} kr i stället för noll. Skillnaden bokförs mot ${BALANCE_ADJUST_ACCOUNT} vid importen så att bokföringen går ihop – kontrollera den mot klientens balansrapport.`
+      `Balansposterna summerar till ${sum} kr i stället för noll. Skillnaden bokförs mot ${BALANCE_ADJUST_ACCOUNT} vid importen så att bokföringen går ihop - kontrollera den mot klientens balansrapport.`
     );
   }
 
@@ -337,7 +337,7 @@ export function importSieOpeningBalances(
   const fileYear = preview.fiscalYears[0];
   if (fileYear && nextDay(fileYear.endDate) !== fy.startDate) {
     warnings.push(
-      `Filens räkenskapsår slutar ${fileYear.endDate} men balanserna lades som ingående balans den ${fy.startDate}. Är övertagandet mitt i ett år saknas händelserna däremellan i Ferva – de ligger kvar i det gamla programmet.`
+      `Filens räkenskapsår slutar ${fileYear.endDate} men balanserna lades som ingående balans den ${fy.startDate}. Är övertagandet mitt i ett år saknas händelserna däremellan i Ferva - de ligger kvar i det gamla programmet.`
     );
   }
 

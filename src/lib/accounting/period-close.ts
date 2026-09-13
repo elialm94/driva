@@ -178,7 +178,7 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
       ok: draftInvoices.length === 0,
       blocking: false,
       detail: draftInvoices.length
-        ? `${draftInvoices.length} fakturautkast är daterade i ${period.label} men inte utfärdade – utfärda eller kasta dem.`
+        ? `${draftInvoices.length} fakturautkast är daterade i ${period.label} men inte utfärdade - utfärda eller kasta dem.`
         : "Utfärdade fakturor bokförs automatiskt.",
       href: "/ekonomi?flik=fakturor",
       hrefLabel: "Visa fakturorna",

@@ -25,7 +25,7 @@ describe("schablonintäkt på periodiseringsfond", () => {
     assert.equal(schablonranta(2026), 2.55);
   });
 
-  it("golvet på 0,5 % gäller när statslåneräntan är lägre – uppskjuten skatt är aldrig gratis", () => {
+  it("golvet på 0,5 % gäller när statslåneräntan är lägre - uppskjuten skatt är aldrig gratis", () => {
     // 30 november 2020 var räntan -0,10 %. Utan golv hade schablonintäkten
     // blivit negativ, alltså ett avdrag för att ha skjutit upp skatt.
     assert.equal(STATSLANERANTA_30_NOV[2020] < 0, true);

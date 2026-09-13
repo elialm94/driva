@@ -55,7 +55,7 @@ export function employeeById(id: string): Employee | undefined {
 /** Födelsedatumet ur personnummret – enda källan för åldersregeln. */
 export function birthDateOf(employee: Employee): string {
   const d = birthDateFromPersonnummer(employee.personnummer);
-  if (!d) throw new Error(`Personnummret för ${employee.name} går inte att tolka – rätta det under Lön.`);
+  if (!d) throw new Error(`Personnummret för ${employee.name} går inte att tolka - rätta det under Lön.`);
   return d;
 }
 
@@ -171,7 +171,7 @@ export function runPayroll(
   const data = db();
   if (!isMonthKey(args.month)) throw new Error("Lönemånaden anges som YYYY-MM.");
   const employee = args.employeeId ? employeeById(args.employeeId) : currentEmployee();
-  if (!employee) throw new Error("Ingen anställd är upplagd – lägg upp lönen under Bokföring › Lön först.");
+  if (!employee) throw new Error("Ingen anställd är upplagd - lägg upp lönen under Bokföring › Lön först.");
 
   const existing = payrollRuns().find((r) => r.month === args.month && r.employeeId === employee.id);
   if (existing) return existing;
@@ -180,16 +180,16 @@ export function runPayroll(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(payDate)) throw new Error("Utbetalningsdagen anges som YYYY-MM-DD.");
   if (args.month < employee.startDate.slice(0, 7)) {
     throw new Error(
-      `Anställningen började ${employee.startDate} – lön för ${monthLabel(args.month)} kan inte bokföras.`
+      `Anställningen började ${employee.startDate} - lön för ${monthLabel(args.month)} kan inte bokföras.`
     );
   }
   if (employee.endDate && args.month > employee.endDate.slice(0, 7)) {
-    throw new Error(`Anställningen slutade ${employee.endDate} – lön för ${monthLabel(args.month)} kan inte bokföras.`);
+    throw new Error(`Anställningen slutade ${employee.endDate} - lön för ${monthLabel(args.month)} kan inte bokföras.`);
   }
   const declaration = employerDeclarationFor(args.month);
   if (declaration?.status === "deklarerad") {
     throw new Error(
-      `Arbetsgivardeklarationen för ${monthLabel(args.month)} är redan lämnad – lönen för månaden kan inte ändras.`
+      `Arbetsgivardeklarationen för ${monthLabel(args.month)} är redan lämnad - lönen för månaden kan inte ändras.`
     );
   }
 
@@ -204,7 +204,7 @@ export function runPayroll(
     birthDate,
     incomeYear,
   });
-  if (calc.gross <= 0) throw new Error("Månadslönen är noll – ingenting att bokföra.");
+  if (calc.gross <= 0) throw new Error("Månadslönen är noll - ingenting att bokföra.");
 
   const salaryAccount = salaryAccountFor(employee.role);
   const ver = postVerification({
@@ -267,17 +267,17 @@ export function reversePayrollRun(runId: string, reason: string, actor: "anvanda
   const data = db();
   const run = payrollRunById(runId);
   if (!run) throw new Error("Lönekörningen finns inte.");
-  if (!reason.trim()) throw new Error("Skriv varför lönen återförs – rättelsen ska gå att förstå i efterhand.");
+  if (!reason.trim()) throw new Error("Skriv varför lönen återförs - rättelsen ska gå att förstå i efterhand.");
   const declaration = employerDeclarationFor(run.month);
   if (declaration?.status === "deklarerad") {
     throw new Error(
-      `Arbetsgivardeklarationen för ${monthLabel(run.month)} är lämnad. Lönen kan inte återföras – rätta i stället genom en ny deklaration hos Skatteverket.`
+      `Arbetsgivardeklarationen för ${monthLabel(run.month)} är lämnad. Lönen kan inte återföras - rätta i stället genom en ny deklaration hos Skatteverket.`
     );
   }
 
   const { reversal } = createCorrection({
     verificationId: run.verificationId,
-    reason: `lön ${monthLabel(run.month)} – ${reason.trim()}`,
+    reason: `lön ${monthLabel(run.month)} - ${reason.trim()}`,
     by: actor,
   });
   data.payrollRuns = payrollRuns().filter((r) => r.id !== runId);
@@ -498,7 +498,7 @@ export function markEmployerDeclarationDeclared(
   const end = monthEnd(declaration.month);
   if (end >= today) {
     throw new Error(
-      `${declaration.label} pågår fortfarande (till ${end}) – deklarationen kan lämnas först när månaden är slut.`
+      `${declaration.label} pågår fortfarande (till ${end}) - deklarationen kan lämnas först när månaden är slut.`
     );
   }
   const earlier = undeclaredEarlierMonths(declaration);

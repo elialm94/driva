@@ -159,7 +159,7 @@ describe("Scenariot demo uppfyller invarianterna a till g", () => {
       v.entries.every((e) => e.account === 1630 || (e.account >= 1900 && e.account <= 1999));
 
     const rorelser = data.verifications.filter((v) => v.entries.some((e) => e.account === 1630));
-    assert.ok(rorelser.length > 0, "seeden ska röra 1630 – annars är kontrollen tom igen");
+    assert.ok(rorelser.length > 0, "seeden ska röra 1630 - annars är kontrollen tom igen");
     assert.ok(rorelser.some(viaSkattekontot), "F-skatten ska bokföras med source skattekonto");
     assert.ok(rorelser.some(viaBanken), "bankens överföring till skattekontot ska finnas");
     assert.deepEqual(
@@ -173,7 +173,7 @@ describe("Scenariot demo uppfyller invarianterna a till g", () => {
     const dokumenterade = rorelser
       .filter((v) => viaSkattekontot(v) || viaBanken(v))
       .reduce((s, v) => s + nettoPa1630(v), 0);
-    assert.notEqual(alla, 0, "saldot ska vara skilt från noll – annars stämmer det trivialt");
+    assert.notEqual(alla, 0, "saldot ska vara skilt från noll - annars stämmer det trivialt");
     assert.equal(ib + alla, ib + dokumenterade, "saldot ska förklaras helt av de dokumenterade vägarna");
 
     // …och invarianten själv ska vara grön på just det saldot.

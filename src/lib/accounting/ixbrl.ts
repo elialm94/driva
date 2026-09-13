@@ -383,7 +383,7 @@ export function ixbrlForAnnualReport(reportId: string): IxbrlFile {
     tag("div", { class: "identitet" }, [
       tag("p", {}, w.text("ForetagetsNamn", period0, c.companyName)),
       tag("p", {}, `Org.nr ${w.text("Organisationsnummer", period0, c.orgNumber)}`),
-      tag("h1", {}, esc(`Årsredovisning för räkenskapsåret ${c.periodStart} – ${c.periodEnd}`)),
+      tag("h1", {}, esc(`Årsredovisning för räkenskapsåret ${c.periodStart} - ${c.periodEnd}`)),
       tag("p", {}, esc("Styrelsen avger följande årsredovisning.")),
     ].join("\n"))
   );
@@ -392,7 +392,7 @@ export function ixbrlForAnnualReport(reportId: string): IxbrlFile {
   sections.push(
     amountTable(w, {
       heading: "Resultaträkning",
-      columns: [`${c.periodStart} – ${c.periodEnd}`, jamforelse ? `${jamforelse.start} – ${jamforelse.end}` : ""],
+      columns: [`${c.periodStart} - ${c.periodEnd}`, jamforelse ? `${jamforelse.start} - ${jamforelse.end}` : ""],
       rows: c.resultatrakning,
       concepts: RESULTAT_CONCEPT,
       current: period0,
@@ -429,7 +429,7 @@ export function ixbrlForAnnualReport(reportId: string): IxbrlFile {
   if (intyg) sections.push(intyg);
 
   const schemaRefs = intyg ? [AR_SCHEMA, INTYG_SCHEMA] : [AR_SCHEMA];
-  const title = `Årsredovisning ${c.companyName} ${c.orgNumber} räkenskapsåret ${c.periodStart} – ${c.periodEnd}`;
+  const title = `Årsredovisning ${c.companyName} ${c.orgNumber} räkenskapsåret ${c.periodStart} - ${c.periodEnd}`;
 
   const xhtml =
     '<?xml version="1.0" encoding="UTF-8"?>\n' +
@@ -473,7 +473,7 @@ export function ixbrlBlockers(report: AnnualReport): string[] {
     out.push("Årsredovisningen saknar underskrifter. Ange styrelsen innan filen lämnas in.");
   }
   if (signatories.some((s) => !s.signedAt)) {
-    out.push("Varje företrädare måste ha ett datum för undertecknandet – signera årsredovisningen först.");
+    out.push("Varje företrädare måste ha ett datum för undertecknandet - signera årsredovisningen först.");
   }
   if (!c.fastallelseintyg?.stammaDate) {
     out.push(

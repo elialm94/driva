@@ -71,7 +71,7 @@ describe("periodstängningens ordning", () => {
     assert.equal(mars.state, "kommande");
   });
 
-  it("mars kan inte stängas medan februari står öppen – låset är ett enda datum", () => {
+  it("mars kan inte stängas medan februari står öppen - låset är ett enda datum", () => {
     bookSale("2026-01-15");
     bookSale("2026-03-10");
     assert.throws(() => closePeriod("2026-03"), (e: unknown) => {
@@ -198,7 +198,7 @@ describe("stängningen låser och lämnar spår", () => {
 describe("periodstängningen i åtgärdskön", () => {
   beforeEach(reset);
 
-  it("en tom månad ger ingen rad – det finns inget att intyga", () => {
+  it("en tom månad ger ingen rad - det finns inget att intyga", () => {
     const rows = listBookkeepingAttention().filter((a) => a.id.startsWith("period-close-"));
     assert.deepEqual(rows, []);
   });
@@ -210,7 +210,7 @@ describe("periodstängningen i åtgärdskön", () => {
     bookSale(`${closable[0].key}-15`);
 
     const rows = listBookkeepingAttention().filter((a) => a.id.startsWith("period-close-"));
-    assert.equal(rows.length, 1, "bara den äldsta olåsta månaden – låset är ett datum");
+    assert.equal(rows.length, 1, "bara den äldsta olåsta månaden - låset är ett datum");
     assert.equal(rows[0].id, `period-close-${closable[0].key}`);
     assert.equal(rows[0].href, "/bokforing/periodstangning");
     assert.equal(controlsForAction(rows[0]).kind, "periodClose");

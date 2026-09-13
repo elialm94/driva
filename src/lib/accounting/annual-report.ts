@@ -306,12 +306,12 @@ export function generateAnnualReport(fiscalYearId: string, by: "anvandare" | "as
   if (!fy) throw new Error("Räkenskapsåret finns inte.");
   if (data.settings.companyForm === "enskild") {
     throw new Error(
-      "Enskild firma upprättar normalt ingen årsredovisning – bara ett förenklat årsbokslut. Detta stöds inte automatiskt ännu."
+      "Enskild firma upprättar normalt ingen årsredovisning - bara ett förenklat årsbokslut. Detta stöds inte automatiskt ännu."
     );
   }
   if (fy.status !== "stangt") {
     throw new Error(
-      `Räkenskapsåret ${fy.label} är inte stängt ännu. Gör klart bokslutet först – årsredovisningen bygger på de fastställda siffrorna.`
+      `Räkenskapsåret ${fy.label} är inte stängt ännu. Gör klart bokslutet först - årsredovisningen bygger på de fastställda siffrorna.`
     );
   }
 
@@ -381,9 +381,9 @@ export function generateAnnualReport(fiscalYearId: string, by: "anvandare" | "as
     periodEnd: fy.endDate,
     sate: data.settings.sate || data.settings.city,
     forvaltningsberattelse: {
-      verksamhet: `${data.settings.name} bedriver hantverks- och tjänsteverksamhet. Bolaget har sitt säte i ${data.settings.sate || data.settings.city}. (Utkast – granska och justera texten.)`,
+      verksamhet: `${data.settings.name} bedriver hantverks- och tjänsteverksamhet. Bolaget har sitt säte i ${data.settings.sate || data.settings.city}. (Utkast - granska och justera texten.)`,
       vasentligaHandelser:
-        "Inga väsentliga händelser utöver den löpande verksamheten har inträffat under räkenskapsåret. (Utkast – granska och justera texten.)",
+        "Inga väsentliga händelser utöver den löpande verksamheten har inträffat under räkenskapsåret. (Utkast - granska och justera texten.)",
       flerarsoversikt: multiYearOverview(fy),
       egetKapitalForandring: [
         ...(previous
@@ -491,7 +491,7 @@ export function updateAnnualReport(reportId: string, edit: AnnualReportEdit, by:
   if (report.supersededAt) throw new Error(SUPERSEDED_MESSAGE);
   if (report.status === "signerad" || report.status === "inlamnad_markerad") {
     throw new Error(
-      "Årsredovisningen är signerad och kan inte ändras. Skapa en ny årsredovisning om något är fel – den signerade versionen står kvar."
+      "Årsredovisningen är signerad och kan inte ändras. Skapa en ny årsredovisning om något är fel - den signerade versionen står kvar."
     );
   }
 
@@ -515,7 +515,7 @@ export function updateAnnualReport(reportId: string, edit: AnnualReportEdit, by:
       .map((s) => ({ ...s, name: s.name.trim(), role: s.role.trim() }))
       .filter((s) => s.name !== "");
     if (cleaned.length === 0) {
-      throw new Error("Årsredovisningen skrivs under av styrelsen – minst en person måste anges.");
+      throw new Error("Årsredovisningen skrivs under av styrelsen - minst en person måste anges.");
     }
     report.content.underskrifter = cleaned;
   }
@@ -535,7 +535,7 @@ export function updateAnnualReport(reportId: string, edit: AnnualReportEdit, by:
 /* ---------------------------------- Status --------------------------------- */
 
 const SUPERSEDED_MESSAGE =
-  "Årsredovisningen är ersatt: räkenskapsåret öppnades igen efter att den upprättades. Stäng året igen och arbeta vidare i den nya årsredovisningen – den här står kvar som historik.";
+  "Årsredovisningen är ersatt: räkenskapsåret öppnades igen efter att den upprättades. Stäng året igen och arbeta vidare i den nya årsredovisningen - den här står kvar som historik.";
 
 const STATUS_ORDER: AnnualReport["status"][] = ["genererad", "granskad", "signerad", "inlamnad_markerad"];
 
@@ -550,7 +550,7 @@ export function annualReportBlockers(report: AnnualReport, to: AnnualReport["sta
   if (to === "signerad") {
     const signatories = content.underskrifter ?? [];
     if (signatories.length === 0 || signatories.every((s) => !s.name.trim())) {
-      out.push("Ange vilka som skriver under – årsredovisningen skrivs under av samtliga styrelseledamöter och av VD.");
+      out.push("Ange vilka som skriver under - årsredovisningen skrivs under av samtliga styrelseledamöter och av VD.");
     }
   }
   if (to === "inlamnad_markerad") {
@@ -559,7 +559,7 @@ export function annualReportBlockers(report: AnnualReport, to: AnnualReport["sta
       out.push("Ange datumet för årsstämman. Fastställelseintyget bestyrker att stämman fastställde räkningarna.");
     }
     if (!intyg?.certifiedByName?.trim()) {
-      out.push("Ange vem som bestyrker kopian – en styrelseledamot eller den verkställande direktören.");
+      out.push("Ange vem som bestyrker kopian - en styrelseledamot eller den verkställande direktören.");
     }
   }
   return out;
@@ -594,7 +594,7 @@ export function advanceAnnualReportStatus(reportId: string, to: AnnualReport["st
   logAudit(
     by,
     "arsredovisning_status",
-    `Årsredovisningen markerades som ${to === "inlamnad_markerad" ? "inlämnad (egen markering – Ferva skickar inget till Bolagsverket)" : to}.`,
+    `Årsredovisningen markerades som ${to === "inlamnad_markerad" ? "inlämnad (egen markering - Ferva skickar inget till Bolagsverket)" : to}.`,
     { targetType: "arsredovisning", targetId: report.id }
   );
   save();

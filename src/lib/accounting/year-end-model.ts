@@ -39,7 +39,7 @@ export const SCHEDULE_PURPOSE: Record<YearEndScheduleKind, string> = {
   semesterloneskuld:
     "Semester som är intjänad men inte uttagen är en skuld till den anställde. Den hör till året den tjänades in, inte till året den betalas.",
   kundfordringar_nedskrivning:
-    "En fordran som troligen inte blir betald ska inte stå kvar till fullt värde. Nedskrivningen är en bedömning – fordran finns kvar och kan betalas.",
+    "En fordran som troligen inte blir betald ska inte stå kvar till fullt värde. Nedskrivningen är en bedömning - fordran finns kvar och kan betalas.",
   periodiseringsfond:
     "Ett aktiebolag får skjuta upp skatt på en del av vinsten. Skatten försvinner inte: den betalas det år fonden återförs, senast sjätte året efter avsättningen.",
 };

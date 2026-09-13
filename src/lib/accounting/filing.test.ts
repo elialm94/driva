@@ -121,7 +121,9 @@ describe("formatens gemensamma regler", () => {
   });
 
   it("ersätter tecken som inte finns i ISO 8859-1 i stället för att kasta", () => {
-    const text = new TextDecoder("latin1").decode(encodeLatin1("Firma – Škoda"));
+    // Tankstrecket skrivs som escape: det är testdata, inte prosa, och det är
+    // just omskrivningen till bindestreck som prövas här.
+    const text = new TextDecoder("latin1").decode(encodeLatin1("Firma \u2013 Škoda"));
     assert.equal(text, "Firma - Skoda");
   });
 
@@ -282,7 +284,7 @@ describe("arbetsgivardeklaration som XML-fil", () => {
     assert.throws(() => agiForMonth(`${YEAR}-03`), FilingDataError);
   });
 
-  it("kontaktuppgifter måste finnas – filen kräver dem", () => {
+  it("kontaktuppgifter måste finnas - filen kräver dem", () => {
     generateEmployerDeclaration(`${YEAR}-01`, "anvandare");
     db().settings.phone = "";
     assert.throws(() => agiForMonth(`${YEAR}-01`), /telefon/);
@@ -887,7 +889,7 @@ describe("kopplingen mellan kontoplanen och räkenskapsschemat", () => {
     assert.deepEqual(utan, []);
   });
 
-  it("ingen ruta överlappar en annan – ett konto hör till ett fält", () => {
+  it("ingen ruta överlappar en annan - ett konto hör till ett fält", () => {
     for (const rules of [INK2R_BALANCE, INK2R_RESULT]) {
       const seen = new Map<number, string>();
       for (const rule of rules) {

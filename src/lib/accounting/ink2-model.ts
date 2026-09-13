@@ -135,7 +135,7 @@ export const NON_DEDUCTIBLE_ACCOUNTS: AccountTaxRule[] = [
     field: "4.3c",
     label: "Föreningsavgifter, ej avdragsgilla",
     explanation:
-      "Medlemsavgifter till föreningar är inte avdragsgilla. Serviceavgifter för en motprestation är det – de hör på ett annat konto.",
+      "Medlemsavgifter till föreningar är inte avdragsgilla. Serviceavgifter för en motprestation är det - de hör på ett annat konto.",
   },
   {
     account: 6992,

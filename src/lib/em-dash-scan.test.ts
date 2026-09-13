@@ -6,16 +6,22 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 /**
- * Tankstreckskanning: ett tankstreck (U+2014) får inte användas som
- * skiljetecken i löpande text. Husregeln är bindestreck, eller att meningen
- * skrivs om.
+ * Tankstreckskanning: ett tankstreck får inte användas som skiljetecken i
+ * löpande text. Husregeln är bindestreck, eller att meningen skrivs om.
  *
  * Vad som flaggas: ett tankstreck med blanktecken på minst en sida, i en
  * stränglitteral eller i JSX-text.
  *
  * Vad som är tillåtet och måste fortsätta fungera: platshållaren "—" som är
  * HELA strängen. Den betyder "inget värde" i tabellerna och är korrekt
- * typografi.
+ * typografi. Undantaget gäller "–" på exakt samma sätt.
+ *
+ * Två tankstreck, samma villkor: det långa (U+2014) och det korta (U+2013)
+ * läses likadant i prosa och behandlas identiskt av lexern. Det långa vaktas
+ * i hela src. Det korta vaktas i bokföringsytan (BOKFORING), som är städad.
+ * Resten av src bär fortfarande korta tankstreck i prosa och städas separat
+ * innan vakten kan gälla hela trädet - en vakt som är röd från start vaktar
+ * ingenting.
  *
  * Kommentarer ligger utanför den här vakten. De är inte användarsynlig text,
  * och existerande kommentarer med tankstreck skrivs inte om på eget bevåg.
@@ -23,13 +29,67 @@ import assert from "node:assert/strict";
 
 const ROOT = process.cwd();
 const EM_DASH = "\u2014";
+const EN_DASH = "\u2013";
+const DASHES = [EM_DASH, EN_DASH];
+
+/** Bokföringsytan: här gäller vakten båda tankstrecken. */
+const BOKFORING = [
+  "src/lib/accounting/",
+  "src/lib/bas.ts",
+  "src/lib/ai/accounting-domain.ts",
+];
+
+/** Vilka tankstreck vaktas i den här filen? */
+function dashesFor(file: string): string[] {
+  return BOKFORING.some((p) => file === p || file.startsWith(p)) ? DASHES : [EM_DASH];
+}
 
 type Context = "code" | "string" | "comment";
+
+/**
+ * Får ett snedstreck här inleda en reguljär uttryckslitteral, eller är det
+ * division? Avgörs av föregående betydelsebärande tecken: efter ett värde
+ * (`)`, `]`, namn, siffra) är det division, annars ett reguljärt uttryck.
+ */
+const KEYWORD_BEFORE_REGEX = /\b(return|typeof|instanceof|in|of|case|do|else|yield|await|void|delete|new)$/;
+
+function regexCanStart(source: string, at: number): boolean {
+  let j = at - 1;
+  while (j >= 0 && /\s/.test(source[j])) j -= 1;
+  if (j < 0) return true;
+  const prev = source[j];
+  if (/[)\]]/.test(prev)) return false;
+  if (/[\w$]/.test(prev)) return KEYWORD_BEFORE_REGEX.test(source.slice(0, j + 1));
+  return true;
+}
+
+/** Läs förbi en reguljär uttryckslitteral och returnera index efter den. */
+function skipRegex(source: string, at: number): number {
+  let j = at + 1;
+  let inClass = false;
+  while (j < source.length) {
+    const ch = source[j];
+    if (ch === "\\") {
+      j += 2;
+      continue;
+    }
+    if (ch === "\n") return at + 1;
+    if (ch === "[") inClass = true;
+    else if (ch === "]") inClass = false;
+    else if (ch === "/" && !inClass) return j + 1;
+    j += 1;
+  }
+  return at + 1;
+}
 
 /**
  * Enkel lexer: räcker för att skilja stränglitteral och JSX-text från
  * kommentar. "code" täcker både JSX-text och vanlig kod - ett tankstreck i
  * ren kod utanför en sträng vore ändå ett syntaxfel.
+ *
+ * Reguljära uttryck läses förbi som kod. Utan det öppnar ett citattecken
+ * inuti ett mönster, som /'/ i filing-format.ts, en sträng som aldrig tar
+ * slut och drar in kommentarerna efteråt i vaktens område.
  */
 function contexts(source: string): Context[] {
   const out: Context[] = new Array(source.length);
@@ -57,6 +117,11 @@ function contexts(source: string): Context[] {
       const end = source.indexOf("*/", i + 2);
       const stop = end === -1 ? source.length : end + 2;
       while (i < stop) out[i++] = "comment";
+      continue;
+    }
+    if (ch === "/" && regexCanStart(source, i)) {
+      const stop = skipRegex(source, i);
+      while (i < stop) out[i++] = "code";
       continue;
     }
     if (ch === '"' || ch === "'" || ch === "`") {
@@ -88,18 +153,25 @@ export interface DashHit {
 }
 
 /** Tankstreck som skiljetecken i text: blanktecken på minst en sida. */
-export function findProseEmDashes(file: string, source: string): DashHit[] {
+export function findProseDashes(
+  file: string,
+  source: string,
+  dashes: string[] = DASHES
+): DashHit[] {
   const ctx = contexts(source);
   const hits: DashHit[] = [];
-  for (let i = source.indexOf(EM_DASH); i !== -1; i = source.indexOf(EM_DASH, i + 1)) {
-    if (ctx[i] !== "string" && ctx[i] !== "code") continue;
-    if (isStandalonePlaceholder(source, i)) continue;
-    const before = source[i - 1] ?? "";
-    const after = source[i + 1] ?? "";
-    if (!/\s/.test(before) && !/\s/.test(after)) continue;
-    const line = source.slice(0, i).split("\n").length;
-    hits.push({ file, line, text: source.split("\n")[line - 1].trim() });
+  for (const dash of dashes) {
+    for (let i = source.indexOf(dash); i !== -1; i = source.indexOf(dash, i + 1)) {
+      if (ctx[i] !== "string" && ctx[i] !== "code") continue;
+      if (isStandalonePlaceholder(source, i)) continue;
+      const before = source[i - 1] ?? "";
+      const after = source[i + 1] ?? "";
+      if (!/\s/.test(before) && !/\s/.test(after)) continue;
+      const line = source.slice(0, i).split("\n").length;
+      hits.push({ file, line, text: source.split("\n")[line - 1].trim() });
+    }
   }
+  hits.sort((a, b) => (a.file === b.file ? a.line - b.line : a.file < b.file ? -1 : 1));
   return hits;
 }
 
@@ -114,7 +186,7 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
 
 test("inget tankstreck som skiljetecken i strängar eller JSX-text", () => {
   const hits = sourceFiles("src").flatMap((file) =>
-    findProseEmDashes(file, readFileSync(path.join(ROOT, file), "utf8"))
+    findProseDashes(file, readFileSync(path.join(ROOT, file), "utf8"), dashesFor(file))
   );
   assert.deepEqual(
     hits.map((h) => `${h.file}:${h.line}  ${h.text}`),
@@ -124,30 +196,74 @@ test("inget tankstreck som skiljetecken i strängar eller JSX-text", () => {
 });
 
 test("vakten hittar tankstreck i text men lämnar platshållaren i fred", () => {
-  const flagged = [
-    `const t = "Allt klart ${EM_DASH} inget att göra.";`,
-    `<p>Allt klart ${EM_DASH} inget att göra.</p>`,
-    `const t = \`Klart ${EM_DASH} \${namn}\`;`,
-    `const t = "Klart${EM_DASH} inget mer";`,
-  ];
-  for (const source of flagged) {
-    assert.equal(findProseEmDashes("prov.tsx", source).length, 1, source);
+  // Båda tankstrecken prövas mot samma villkor: det långa och det korta.
+  for (const dash of DASHES) {
+    const flagged = [
+      `const t = "Allt klart ${dash} inget att göra.";`,
+      `<p>Allt klart ${dash} inget att göra.</p>`,
+      `const t = \`Klart ${dash} \${namn}\`;`,
+      `const t = "Klart${dash} inget mer";`,
+    ];
+    for (const source of flagged) {
+      assert.equal(findProseDashes("prov.tsx", source).length, 1, source);
+    }
+
+    const allowed = [
+      // Platshållaren: hela strängen är ett tankstreck.
+      `const tom = "${dash}";`,
+      `const tom = '${dash}';`,
+      `<td>{value ?? "${dash}"}</td>`,
+      // Kommentarer är utanför vaktens område.
+      `// Ett kommentarstreck ${dash} lämnas i fred`,
+      `/* Block ${dash} också */`,
+      // Bindestreck och tankstreck utan blanktecken runt är inte skiljetecken.
+      `const t = "Allt klart - inget att göra.";`,
+      `const t = "2026${dash}2027";`,
+    ];
+    for (const source of allowed) {
+      assert.deepEqual(findProseDashes("prov.tsx", source), [], source);
+    }
   }
 
-  const allowed = [
-    // Platshållaren: hela strängen är ett tankstreck.
-    `const tom = "${EM_DASH}";`,
-    `const tom = '${EM_DASH}';`,
-    `<td>{value ?? "${EM_DASH}"}</td>`,
-    // Kommentarer är utanför vaktens område.
-    `// Ett kommentarstreck ${EM_DASH} lämnas i fred`,
-    `/* Block ${EM_DASH} också */`,
-    // Bindestreck och tankstreck utan blanktecken runt är inte skiljetecken.
-    `const t = "Allt klart - inget att göra.";`,
-    `const t = "2026${EM_DASH}2027";`,
-  ];
-  for (const source of allowed) {
-    assert.deepEqual(findProseEmDashes("prov.tsx", source), [], source);
+  // Ett långt och ett kort tankstreck i samma fil ger två träffar.
+  assert.equal(
+    findProseDashes(
+      "prov.tsx",
+      `const a = "Klart ${EM_DASH} inget mer";\nconst b = "Klart ${EN_DASH} inget mer";`
+    ).length,
+    2
+  );
+});
+
+test("ett citattecken i ett reguljärt uttryck öppnar ingen sträng", () => {
+  const source = [
+    `const esc = (s: string) => s.replace(/'/g, "&apos;");`,
+    `/** Tolvsiffrigt utan bindestreck ${EN_DASH} formen SRU vill ha. */`,
+    `const delat = summa / antal / 2;`,
+  ].join("\n");
+  assert.deepEqual(findProseDashes("prov.ts", source), []);
+});
+
+test("bokföringsytan vaktas mot båda tankstrecken, resten mot det långa", () => {
+  const bokforing = "src/lib/accounting/year-end.ts";
+  const ovrigt = "src/components/nav.tsx";
+  const kort = `const t = "Bokslutet är klart ${EN_DASH} inget mer att göra.";`;
+  const langt = `const t = "Bokslutet är klart ${EM_DASH} inget mer att göra.";`;
+
+  assert.equal(findProseDashes(bokforing, kort, dashesFor(bokforing)).length, 1);
+  assert.equal(findProseDashes(bokforing, langt, dashesFor(bokforing)).length, 1);
+  assert.equal(findProseDashes(ovrigt, langt, dashesFor(ovrigt)).length, 1);
+  assert.equal(findProseDashes(ovrigt, kort, dashesFor(ovrigt)).length, 0);
+});
+
+test("varje sökväg i bokföringsytan finns kvar", () => {
+  // En felstavad sökväg skulle tyst stänga av vakten för det korta tankstrecket.
+  const files = sourceFiles("src");
+  for (const prefix of BOKFORING) {
+    assert.ok(
+      files.some((file) => file === prefix || file.startsWith(prefix)),
+      `${prefix} finns inte längre - uppdatera BOKFORING`
+    );
   }
 });
 

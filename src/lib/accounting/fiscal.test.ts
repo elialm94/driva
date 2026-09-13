@@ -29,7 +29,7 @@ function reset(over: Parameters<typeof emptyTestDb>[0] = {}) {
   replaceDb(emptyTestDb(over));
 }
 
-describe("räkenskapsår – default och inställning", () => {
+describe("räkenskapsår - default och inställning", () => {
   beforeEach(() => reset());
 
   it("ett nytt företag får 1 januari–31 december utan setup-wizard", () => {
@@ -99,7 +99,7 @@ describe("räkenskapsår – default och inställning", () => {
   });
 });
 
-describe("räkenskapsår – perioder och kedja", () => {
+describe("räkenskapsår - perioder och kedja", () => {
   it("kalenderår behåller samma månads- och kvartalsnycklar", () => {
     const fy = calendarFiscalYear(2026);
     const months = monthsOf(fy);

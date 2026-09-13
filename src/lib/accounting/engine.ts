@@ -160,7 +160,7 @@ export function postVerification(input: PostVerificationInput, opts?: PostOption
     const lock = lockedThrough();
     throw new PostingError(
       "period_last",
-      `Bokföringen är låst till och med ${lock}. Händelsen kan inte bokföras på ${date} – välj ett datum i öppen period.`
+      `Bokföringen är låst till och med ${lock}. Händelsen kan inte bokföras på ${date} - välj ett datum i öppen period.`
     );
   }
 
@@ -256,7 +256,7 @@ export function createCorrection(input: CorrectionInput): CorrectionResult {
     source: { type: "rattelse", id: original.id },
     confidence: "hog",
     createdBy: input.by,
-    explanation: `Återför ${verificationLabel(original)} (${original.description}). Originalet står kvar – bokföring skrivs aldrig om.`,
+    explanation: `Återför ${verificationLabel(original)} (${original.description}). Originalet står kvar - bokföring skrivs aldrig om.`,
     correctsVerificationId: original.id,
   });
   original.correctedByVerificationId = reversal.id;

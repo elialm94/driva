@@ -169,7 +169,7 @@ describe("byte av momsperiod", () => {
     assert.ok(db().auditTrail.some((e) => e.action === "momsperiodicitet_andrad"));
   });
 
-  it("utkast för året tas bort – de hör till den gamla indelningen", () => {
+  it("utkast för året tas bort - de hör till den gamla indelningen", () => {
     generateVatReport(`${THIS_YEAR}-K1`);
     assert.equal(db().vatReports.length, 1);
     setVatPeriodicity("manad", "anvandare");
