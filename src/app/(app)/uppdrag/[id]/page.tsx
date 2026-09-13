@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MapPin, FileText, ReceiptText, BadgeCheck, Inbox, Mail, Phone } from "lucide-react";
-import { getJob, getInvoice, currentVersion, effectiveQuoteStatus, quoteStatusLabel, requireCustomer, invoiceTotals } from "@/lib/services/data";
+import { getJob, getInvoice, currentVersion, effectiveQuoteStatus, requireCustomer, invoiceTotals } from "@/lib/services/data";
 import { acceptedByLabel } from "@/lib/status-labels";
 import { jobAdminState } from "@/lib/services/job-admin";
 import { isIncomingUnquotedJob, jobSourceLabel, parseJobNotes } from "@/lib/services/jobs";
@@ -12,7 +12,7 @@ import {
   workEntryInvoiceStatus,
 } from "@/lib/services/job-work";
 import { kr, datumTid } from "@/lib/format";
-import { Avatar, Breadcrumbs, Card, SectionTitle, buttonClasses } from "@/components/ui";
+import { Avatar, Breadcrumbs, Card, SectionTitle } from "@/components/ui";
 import { InvoiceStatusBadge, JobStatusBadge, QuoteStatusBadge } from "@/components/status";
 import { JobActions } from "@/components/job-controls";
 import { JobNotes } from "@/components/job-notes";
@@ -107,33 +107,70 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         items={[{ href: "/uppdrag", label: "Uppdrag" }, { label: job.title }]}
       />
 
-      <div className="mb-6">
-        <h1 className="text-[26px] font-semibold tracking-tight">{job.title}</h1>
-        <div className="mt-2 space-y-1.5">
-          <AppLink
-            href={`/kunder/${customer.id}`}
-            originLabel={job.title}
-            className="inline-flex items-center gap-2 text-[16px] font-semibold text-ink hover:underline"
-          >
-            <Avatar name={customer.name} size="sm" /> {customer.name}
-          </AppLink>
-          {job.address ? (
-            <p className="flex items-center gap-1.5 text-[14px] text-soft">
-              <MapPin className="size-3.5 text-muted" /> {job.address}
-            </p>
+      {/* Rubrik och huvudknapp på samma rad: sidan ska rymmas på en skärm. */}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <h1 className="text-[26px] font-semibold tracking-tight">{job.title}</h1>
+          {/* Beskrivningen är en underrubrik, inte en egen sektion. */}
+          {showDescription ? (
+            <p className="mt-1 whitespace-pre-line text-[14px] leading-relaxed text-soft">{description}</p>
           ) : null}
-          <div className="flex flex-wrap items-center gap-2">
-            <JobStatusBadge status={job.status} startDate={job.startDate} completedAt={job.completedAt} />
-            {job.archivedAt ? <span className="text-[13px] font-medium text-muted">Arkiverat</span> : null}
+          <div className="mt-2 space-y-1.5">
+            {/* Kund och status på samma rad - uppdraget ska rymmas på en skärm. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <AppLink
+                href={`/kunder/${customer.id}`}
+                originLabel={job.title}
+                className="inline-flex items-center gap-2 text-[16px] font-semibold text-ink hover:underline"
+              >
+                <Avatar name={customer.name} size="sm" /> {customer.name}
+              </AppLink>
+              <JobStatusBadge status={job.status} startDate={job.startDate} completedAt={job.completedAt} />
+              {job.archivedAt ? <span className="text-[13px] font-medium text-muted">Arkiverat</span> : null}
+            </div>
+            {job.address ? (
+              <p className="flex items-center gap-1.5 text-[14px] text-soft">
+                <MapPin className="size-3.5 text-muted" /> {job.address}
+              </p>
+            ) : null}
           </div>
+          {admin.nextStep ? <p className="mt-2 text-[14px] text-soft">{admin.nextStep}</p> : null}
         </div>
-        {admin.nextStep ? <p className="mt-2 text-[14px] text-soft">{admin.nextStep}</p> : null}
+        <div className="shrink-0">
+          <JobActions
+            jobId={job.id}
+            jobTitle={job.title}
+            customerId={customer.id}
+            customerName={customer.name}
+            remainingAmount={admin.remaining}
+            remainingLabel={admin.remaining > 0 ? kr(admin.remaining) : null}
+            quoteAction={admin.quoteAction}
+            invoiceAction={admin.invoiceAction}
+            hasBillable={admin.hasBillable}
+            waitingLabel={admin.waitingLabel}
+            doneLabel={admin.doneLabel}
+            canMarkDone={admin.canMarkDone}
+            canReopen={admin.canReopen}
+            completeWarning={admin.completeWarning}
+            removal={admin.removal}
+            quoteHref={quote ? quoteHref(quote.id, fromHere) : "/ekonomi?flik=offerter"}
+            newQuoteHref={newQuote}
+            invoiceChoice={invoiceChoice}
+            closeout={closeoutView(job.id)}
+            photos={job.photos ?? []}
+            job={{
+              title: job.title,
+              description: job.description,
+              address: job.address,
+            }}
+          />
+        </div>
       </div>
 
       {message ? (
         <Card
           className={
-            incoming ? "mb-8 border-accent/30 bg-accent-soft/20 px-6 py-5" : "mb-8 px-6 py-5"
+            incoming ? "mb-6 border-accent/30 bg-accent-soft/20 px-6 py-5" : "mb-6 px-6 py-5"
           }
           data-testid="job-incoming-message"
         >
@@ -161,58 +198,15 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
               ) : null}
             </div>
           ) : null}
+          {/* Huvudknappen i sidhuvudet är "Skapa offert" här - kortet upprepar den inte. */}
           {incoming ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Link href={newQuote as never} className={buttonClasses("primary", "sm")}>
-                <FileText className="size-3.5" /> Skapa offert
-              </Link>
-              <p className="self-center text-[12px] text-muted">
-                Meddelandet följer med som beskrivning i offerten.
-              </p>
-            </div>
+            <p className="mt-3 text-[12px] text-muted">Meddelandet följer med som beskrivning i offerten.</p>
           ) : null}
         </Card>
       ) : null}
 
-      {showDescription ? (
-        <div className="mb-8">
-          <SectionTitle>Beskrivning</SectionTitle>
-          <p className="whitespace-pre-line text-[15px] leading-relaxed text-soft">{description}</p>
-        </div>
-      ) : null}
-
-      <div className="mb-8">
-        <JobActions
-          jobId={job.id}
-          jobTitle={job.title}
-          customerId={customer.id}
-          customerName={customer.name}
-          remainingAmount={admin.remaining}
-          remainingLabel={admin.remaining > 0 ? kr(admin.remaining) : null}
-          quoteAction={admin.quoteAction}
-          invoiceAction={admin.invoiceAction}
-          hasBillable={admin.hasBillable}
-          waitingLabel={admin.waitingLabel}
-          doneLabel={admin.doneLabel}
-          canMarkDone={admin.canMarkDone}
-          canReopen={admin.canReopen}
-          completeWarning={admin.completeWarning}
-          removal={admin.removal}
-          quoteHref={quote ? quoteHref(quote.id, fromHere) : "/ekonomi?flik=offerter"}
-          newQuoteHref={newQuoteHref({ kund: customer.id, job: job.id, from: fromHere })}
-          invoiceChoice={invoiceChoice}
-          closeout={closeoutView(job.id)}
-          photos={job.photos ?? []}
-          job={{
-            title: job.title,
-            description: job.description,
-            address: job.address,
-          }}
-        />
-      </div>
-
       {hasEconomy ? (
-        <div className="mb-8">
+        <div className="mb-6">
           <SectionTitle>Ekonomi</SectionTitle>
           {/* Avtalat, Fakturerat och Kvar är sidans tre tal. Registrerat och
               Betalt står kvar som andrahandssiffror. */}
@@ -260,21 +254,20 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
                 className="flex items-start gap-3 px-5 py-3.5 transition-colors hover:bg-canvas/60 first:rounded-t-[calc(1rem-1px)] last:rounded-b-[calc(1rem-1px)]"
               >
                 <FileText className="mt-0.5 size-4 shrink-0 text-muted" />
-                <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-3">
-                  <div className="min-w-0 sm:flex-1">
-                    <p className="text-[14px] font-medium">
-                      Offert #{quote.number} · {kr(money.quoteAmount)}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-medium">
+                    Offert #{quote.number} · {kr(money.quoteAmount)}
+                  </p>
+                  {/* Statusen står i märket - andraraden bara när den säger något mer. */}
+                  {admin.acceptance ? (
+                    <p className="mt-0.5 flex items-center gap-1 text-[13px] text-ok">
+                      <BadgeCheck className="size-3.5 shrink-0" />
+                      {acceptedByLabel(admin.acceptance)}, {datumTid(admin.acceptance.acceptedAt)}
                     </p>
-                    <p className={`mt-0.5 flex items-center gap-1 text-[13px] ${quote.status === "godkand" ? "text-ok" : "text-muted"}`}>
-                      {quote.status === "godkand" ? <BadgeCheck className="size-3.5 shrink-0" /> : null}
-                      {admin.acceptance
-                        ? `${acceptedByLabel(admin.acceptance)}, ${datumTid(admin.acceptance.acceptedAt)}`
-                        : quoteStatusLabel(quote)}
-                    </p>
-                  </div>
-                  <div className="mt-1.5 sm:mt-0 sm:shrink-0">
-                    <QuoteStatusBadge quote={quote} status={effectiveQuoteStatus(quote)} />
-                  </div>
+                  ) : null}
+                </div>
+                <div className="shrink-0">
+                  <QuoteStatusBadge quote={quote} status={effectiveQuoteStatus(quote)} />
                 </div>
               </Link>
             ) : null}
@@ -319,7 +312,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
       <PurchaseOrdersSection jobId={job.id} jobTitle={job.title} rows={purchaseOrderRows} />
 
       {taxCase.phase !== "none" && taxCase.phase !== "preliminar" && taxCase.phase !== "waiting_payment" && taxCase.phase !== "waiting_work" ? (
-        <div className="mb-8">
+        <div className="mb-6">
           <TaxReductionApplicationCard
             cse={taxReductionCaseView(taxCase)}
             editHref={taxCase.invoiceId ? invoiceHref(taxCase.invoiceId, fromHere) : undefined}
@@ -328,7 +321,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         </div>
       ) : null}
 
-      <div className="mb-8">
+      <div className="mb-6">
         <JobNotes jobId={job.id} notes={notes} />
       </div>
     </div>

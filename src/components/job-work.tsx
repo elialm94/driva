@@ -107,7 +107,7 @@ export function JobWorkSection({
 
   return (
     <LineDescriptionVocabProvider>
-    <div className="mb-8 scroll-mt-4" id="arbete">
+    <div className="mb-6 scroll-mt-4" id="arbete">
       <SectionTitle
         right={
           <button

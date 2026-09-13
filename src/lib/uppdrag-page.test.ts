@@ -34,6 +34,18 @@ describe("uppdragssidan är en ekonomilogg", () => {
     assert.equal((work.match(/data-job-add-entry/g) ?? []).length, 1);
   });
 
+  it("sidan har en enda huvudåtgärd, och den ligger i sidhuvudet", () => {
+    assert.equal((page.match(/<JobActions/g) ?? []).length, 1);
+    // Förfrågningskortet hade en egen primärknapp "Skapa offert" - samma
+    // åtgärd som sidhuvudet redan visar för ett uppdrag utan offert.
+    assert.equal(page.includes('buttonClasses("primary"'), false);
+  });
+
+  it("beskrivningen är en underrubrik, inte en egen sektion", () => {
+    assert.equal(page.includes("<SectionTitle>Beskrivning</SectionTitle>"), false);
+    assert.match(page, /showDescription \?/);
+  });
+
   it("Avsluta uppdrag bor bara i …-menyn", () => {
     assert.equal(controls.includes("closeoutBtn"), false);
     assert.match(controls, /label="Avsluta uppdrag"/);
