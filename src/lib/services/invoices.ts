@@ -832,6 +832,61 @@ export function issueInvoice(invoiceId: string, createdBy: Actor = "anvandare"):
   return invoice;
 }
 
+/**
+ * Utfärda en faktura som ska lämnas på papper ("Ladda ner PDF").
+ *
+ * Går genom `issueInvoice` – exakt samma väg som ett mejlat utskick. En
+ * pappersfaktura får därmed validering, löpnummer, OCR, fryst snapshot,
+ * verifikation (faktureringsmetoden) och audit-/aktivitetsloggar. Inget av
+ * det får göras för hand eller hoppas över: utan snapshot renderar PDF:en
+ * live-data, och utan verifikation är fakturan obokförd.
+ *
+ * Det enda som läggs till är kanalen, så att en pappersfaktura inte
+ * förväxlas med ett mejl som inte gick fram. `sentAt` sätts aldrig – papper
+ * är inte e-post.
+ */
+export function issueInvoiceForPrint(invoiceId: string, createdBy: Actor = "anvandare"): Invoice {
+  const invoice = issueInvoice(invoiceId, createdBy);
+  if (invoice.deliveredBy || invoice.sentAt) return invoice;
+  invoice.deliveredBy = "utskrift";
+  logActivity(`Faktura #${invoice.number} laddades ner som PDF för utskrift.`, {
+    customerId: invoice.customerId,
+    entity: { type: "faktura", id: invoice.id },
+    createdBy,
+  });
+  save();
+  return invoice;
+}
+
+/**
+ * "Markera som skickad": kunden har fått fakturan på annat sätt än via
+ * Fervas e-post (post, sms, överlämnad på plats). Utfärdar först om det
+ * behövs – via `issueInvoice`, aldrig genom att bara sätta en status.
+ *
+ * `sentAt` lämnas orört: det betyder provider-succé i hela trädet och styr
+ * påminnelsetexterna. Leveransen bärs i stället av `deliveredAt`.
+ */
+export function markInvoiceSentManually(invoiceId: string, createdBy: Actor = "anvandare"): Invoice {
+  const invoice = issueInvoice(invoiceId, createdBy);
+  const now = new Date().toISOString();
+  invoice.deliveredBy = "manuell";
+  invoice.deliveredAt ??= now;
+  const customer = requireCustomer(invoice.customerId);
+  logAudit(
+    createdBy,
+    "faktura_skickad",
+    `Faktura #${invoice.number} markerades som skickad utan e-post (${kr(invoiceTotals(invoice).toPay)}).`,
+    { targetType: "faktura", targetId: invoice.id }
+  );
+  logActivity(`Faktura #${invoice.number} markerades som skickad på annat sätt än e-post.`, {
+    customerId: customer.id,
+    entity: { type: "faktura", id: invoice.id },
+    createdBy,
+  });
+  save();
+  return invoice;
+}
+
 /** Leveransutfall från e-postlagret. Produktionsvägen anropar bara hit efter provider-succé. */
 export interface InvoiceDeliveryInfo {
   /** "demo": demoföretagets utskick – simulerat eller till DEMO_EMAIL_SINK. */

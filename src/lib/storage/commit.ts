@@ -198,6 +198,8 @@ export function invoiceRpcPayload(inv: Invoice, businessId: string): Record<stri
     issued_at: inv.issuedAt ?? null,
     sent_at: inv.sentAt ?? null,
     last_sent_at: inv.lastSentAt ?? null,
+    delivered_by: inv.deliveredBy ?? null,
+    delivered_at: inv.deliveredAt ?? null,
     paid_at: inv.paidAt ?? null,
     reminders: inv.reminders,
     token: inv.token,

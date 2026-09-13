@@ -26,6 +26,13 @@ function resetWithoutEmail() {
   replaceDb(emptyTestDb({ customers: [testCustomer({ email: "" })] }));
 }
 
+/** Verifikationer bokförda med fakturan som källa. */
+function invoiceVerifications(invoiceId: string) {
+  return db().verifications.filter(
+    (v) => v.source?.type === "kundfaktura" && "id" in v.source && v.source.id === invoiceId
+  );
+}
+
 function draft() {
   return createInvoice({
     customerId: "cust-1",
@@ -63,10 +70,9 @@ describe("E-post hindrar inte att fakturan utfärdas", () => {
     assert.ok(inv.issuedSnapshot, "dokumentet måste renderas ur en fryst kopia");
     assert.equal(inv.issuedSnapshot?.number, 100);
 
-    const verification = db().verifications.find((v) => v.source?.id === inv.id);
-    assert.ok(verification, "en pappersfaktura är bokföringspliktig på samma sätt");
-    assert.equal(verification.source?.type, "kundfaktura");
-    assert.ok(verification.explanation.length > 0);
+    const verifications = invoiceVerifications(inv.id);
+    assert.equal(verifications.length, 1, "en pappersfaktura är bokföringspliktig på samma sätt");
+    assert.ok((verifications[0].explanation ?? "").length > 0, "förklaringen är obligatorisk");
 
     // Papper är inte e-post: sentAt betyder provider-succé i hela trädet.
     assert.equal(inv.sentAt, undefined);
@@ -120,7 +126,7 @@ describe("E-post hindrar inte att fakturan utfärdas", () => {
     assert.equal(marked.number, number);
     assert.equal(marked.issuedAt, issuedAt);
     assert.equal(marked.deliveredBy, "manuell");
-    assert.equal(db().verifications.filter((v) => v.source?.id === inv.id).length, 1);
+    assert.equal(invoiceVerifications(inv.id).length, 1);
   });
 
   it("upprepad nedladdning allokerar inte ett nytt nummer", () => {
@@ -129,7 +135,7 @@ describe("E-post hindrar inte att fakturan utfärdas", () => {
     const again = issueInvoiceForPrint(first.id);
     assert.equal(again.number, first.number);
     assert.equal(again.issuedAt, first.issuedAt);
-    assert.equal(db().verifications.filter((v) => v.source?.id === first.id).length, 1);
+    assert.equal(invoiceVerifications(first.id).length, 1);
   });
 });
 

@@ -604,6 +604,15 @@ async function main() {
   await expectOk(db, "statusflödet (skickat/påminnelser) är fortsatt öppet", () =>
     db.query(`update public.invoices set sent_at = now(), reminders = '["2026-03-05T10:00:00.000Z"]'::jsonb where id = 'inv-a1'`)
   );
+  // Leveranskanalen (migration 49) är ett leveranstillstånd, inte
+  // dokumentinnehåll: den får sättas efter utfärdandet, men bara till en
+  // känd kanal. E-post har sent_at och sätter aldrig fältet.
+  await expectOk(db, "leveranskanalen kan sättas på en utfärdad faktura", () =>
+    db.query(`update public.invoices set delivered_by = 'manuell', delivered_at = now() where id = 'inv-a1'`)
+  );
+  await expectError(db, "okänd leveranskanal avvisas", "invoices_delivered_by_check", () =>
+    db.query(`update public.invoices set delivered_by = 'brevduva' where id = 'inv-a1'`)
+  );
 
   // Samtidighet: nästa nummer är nu 11. Två "samtidiga" utfärdanden med samma
   // förväntade nummer – exakt en vinner (CAS + unikt index).
