@@ -211,9 +211,10 @@ export interface Customer {
   defaultWorkLocationId?: ID;
   notes: string;
   /**
-   * ROT/RUT redan använt hos andra utförare i år. Ferva kan inte läsa
-   * Skatteverkets saldo – det här fyller företagaren i så att offerten
-   * inte lovar mer avdrag än kunden har kvar.
+   * Historiskt: ROT/RUT ifyllt som använt hos andra. Kundkortet samlar inte
+   * längre in det, och usedTaxReductionThisYear räknar det inte – ett tomt
+   * värde är okänt, inte noll använt överallt. Fältet kan fortfarande finnas
+   * i äldre data.
    */
   taxReductionUsed?: {
     year: number;

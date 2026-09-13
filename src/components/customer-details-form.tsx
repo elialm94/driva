@@ -2,22 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  revealCustomerPersonnummerAction,
-  syncCustomerPropertiesAction,
-  updateCustomerDetailsAction,
-  updateCustomerPersonnummerAction,
-} from "@/app/actions";
-import { formatPersonnummer, personnummerInputChange } from "@/lib/personnummer";
+import { updateCustomerDetailsAction } from "@/app/actions";
 import {
   formatSwedishOrganizationNumber,
   validateSwedishOrganizationNumber,
-  validateSwedishPersonalIdentityNumber,
 } from "@/lib/validation";
-import { IDLE_AUTOSAVE, mergeAutosaveStates, type AutosaveState } from "@/lib/autosave";
+import type { AutosaveState } from "@/lib/autosave";
 import { AddressFields } from "./address-input";
 import { FieldError, invalidFieldCls } from "./form-validation";
-import { PropertyDesignationFields, type PropertyDesignationDraft } from "./property-designation-fields";
 import { useAutosaveLoop } from "./use-autosave";
 import { cx } from "./ui";
 
@@ -37,9 +29,6 @@ export type CustomerContactDraft = {
   orgNumber?: string;
   contactPerson?: string;
   notes: string;
-  personalIdentityNumberMasked?: string;
-  hasPersonnummer?: boolean;
-  properties?: PropertyDesignationDraft[];
   reverseChargeConstruction?: boolean;
 };
 
@@ -82,23 +71,13 @@ export function CustomerAutosaveFields({
   const { state, loop } = useAutosaveLoop();
   const [values, setValues] = useState(customer);
   const [fieldError, setFieldError] = useState<string | null>(null);
-  const [propertyError, setPropertyError] = useState<string | null>(null);
-  const [pinState, setPinState] = useState<AutosaveState>(IDLE_AUTOSAVE);
-  const [properties, setProperties] = useState<PropertyDesignationDraft[]>(
-    customer.properties?.length ? customer.properties : [{ designation: "" }]
-  );
   const valuesRef = useRef(values);
-  const propertiesRef = useRef(properties);
   const savedSnap = useRef(snap(customer));
-  const savedProperties = useRef(propertySnap(properties));
   valuesRef.current = values;
-  propertiesRef.current = properties;
-
-  const saveState = mergeAutosaveStates(state, pinState);
 
   useEffect(() => {
-    onSaveStateChange?.(saveState);
-  }, [onSaveStateChange, saveState]);
+    onSaveStateChange?.(state);
+  }, [onSaveStateChange, state]);
 
   useEffect(() => {
     onRetryReady?.(() => {
@@ -111,7 +90,7 @@ export function CustomerAutosaveFields({
   }
 
   function schedulePersist() {
-    loop.notify(combinedSnap(valuesRef.current, propertiesRef.current), persistAll);
+    loop.notify(snap(valuesRef.current), persistAll);
   }
 
   function patch(next: Partial<CustomerContactDraft>) {
@@ -129,9 +108,7 @@ export function CustomerAutosaveFields({
 
   async function persistAll() {
     const next = valuesRef.current;
-    const rows = propertiesRef.current;
     const detailsKey = snap(next);
-    const propsKey = propertySnap(rows);
 
     if (detailsKey !== savedSnap.current) {
       const result = await updateCustomerDetailsAction(customer.id, {
@@ -154,28 +131,8 @@ export function CustomerAutosaveFields({
       setFieldError(null);
     }
 
-    if (propsKey !== savedProperties.current) {
-      const result = await syncCustomerPropertiesAction(customer.id, rows);
-      if (!result.ok) {
-        if (result.field === "propertyDesignation") setPropertyError(result.error);
-        return result;
-      }
-      const nextRows = result.properties.length ? result.properties : [{ designation: "" }];
-      setProperties(nextRows);
-      propertiesRef.current = nextRows;
-      savedProperties.current = propertySnap(nextRows);
-      setPropertyError(null);
-    }
-
     router.refresh();
     return { ok: true } as const;
-  }
-
-  function scheduleProperties(next: PropertyDesignationDraft[]) {
-    setProperties(next);
-    propertiesRef.current = next;
-    setPropertyError(null);
-    schedulePersist();
   }
 
   return (
@@ -192,14 +149,7 @@ export function CustomerAutosaveFields({
           className={inputCls}
         />
       </div>
-      {customer.kind === "privat" ? (
-        <PersonnummerAutosaveField
-          customerId={customer.id}
-          masked={customer.personalIdentityNumberMasked ?? ""}
-          hasValue={Boolean(customer.hasPersonnummer)}
-          onStateChange={setPinState}
-        />
-      ) : (
+      {customer.kind === "foretag" ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className={labelCls}>Kontaktperson</label>
@@ -234,7 +184,7 @@ export function CustomerAutosaveFields({
             }}
           />
         </div>
-      )}
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <label className={labelCls} htmlFor="kund-epost">
@@ -273,14 +223,6 @@ export function CustomerAutosaveFields({
         }}
         onChange={(parts) => patch(parts)}
         onBlur={flush}
-      />
-      <PropertyDesignationFields
-        values={properties}
-        onChange={scheduleProperties}
-        onBlur={flush}
-        error={propertyError ?? undefined}
-        inputClassName={inputCls}
-        labelClassName={labelCls}
       />
       <div>
         <label className={labelCls} htmlFor="kund-anteckningar">
@@ -336,138 +278,6 @@ function ReverseChargeField({ checked, onChange }: { checked: boolean; onChange:
         </span>
       </span>
     </label>
-  );
-}
-
-function propertySnap(rows: PropertyDesignationDraft[]): string {
-  return JSON.stringify(rows.map((row) => ({ id: row.id ?? "", designation: row.designation.trim() })));
-}
-
-function combinedSnap(c: CustomerContactDraft, rows: PropertyDesignationDraft[]): string {
-  return `${snap(c)}\n${propertySnap(rows)}`;
-}
-
-function PersonnummerAutosaveField({
-  customerId,
-  masked,
-  hasValue,
-  onStateChange,
-}: {
-  customerId: string;
-  masked: string;
-  hasValue: boolean;
-  onStateChange?: (state: AutosaveState) => void;
-}) {
-  const router = useRouter();
-  const [editing, setEditing] = useState(!hasValue);
-  const [revealed, setRevealed] = useState<string | null>(null);
-  const [value, setValue] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const fade = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (fade.current) clearTimeout(fade.current);
-    };
-  }, []);
-
-  function report(next: AutosaveState) {
-    onStateChange?.(next);
-  }
-
-  async function reveal() {
-    const result = await revealCustomerPersonnummerAction(customerId);
-    if (result.ok) setRevealed(result.value);
-  }
-
-  async function persist() {
-    if (!editing) return;
-    if (!value.trim()) {
-      if (hasValue) setEditing(false);
-      return;
-    }
-    if (value.trim()) {
-      const pn = validateSwedishPersonalIdentityNumber(value);
-      if (!pn.ok) {
-        setError(pn.message);
-        report({ status: "error", error: pn.message, field: "personnummer" });
-        return;
-      }
-    }
-    setError(null);
-    report({ status: "saving", error: null });
-    const result = await updateCustomerPersonnummerAction(customerId, value);
-    if (!result.ok) {
-      setError(result.error);
-      report({ status: "error", error: result.error, field: "personnummer" });
-      return;
-    }
-    setEditing(false);
-    setRevealed(null);
-    setValue("");
-    report({ status: "saved", error: null });
-    router.refresh();
-    if (fade.current) clearTimeout(fade.current);
-    fade.current = setTimeout(() => report(IDLE_AUTOSAVE), 2500);
-  }
-
-  if (!editing && hasValue) {
-    return (
-      <div id="kund-personnummer">
-        <label className={labelCls}>Personnummer</label>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[14px]">
-          <span className="font-medium tabular text-ink">{revealed ?? masked}</span>
-          <button
-            type="button"
-            className="text-[13px] font-medium text-accent hover:text-accent-deep"
-            onClick={() => (revealed ? setRevealed(null) : void reveal())}
-          >
-            {revealed ? "Dölj" : "Visa"}
-          </button>
-          <button
-            type="button"
-            className="text-[13px] text-muted hover:text-ink"
-            onClick={() => {
-              setEditing(true);
-              setValue("");
-            }}
-          >
-            Ändra
-          </button>
-        </div>
-        <p className="mt-1 text-[12px] text-muted">Behövs för ROT/RUT</p>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <label className={labelCls} htmlFor="kund-personnummer">
-        Personnummer
-      </label>
-      <input
-        id="kund-personnummer"
-        value={value}
-        onChange={(e) => setValue(personnummerInputChange(value, e.target.value))}
-        onBlur={() => {
-          if (value.trim()) setValue(formatPersonnummer(value));
-          void persist();
-        }}
-        inputMode="numeric"
-        autoComplete="off"
-        placeholder="YYYYMMDD-XXXX"
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? "kund-personnummer-fel" : undefined}
-        className={cx(inputCls, error && invalidFieldCls)}
-      />
-      <FieldError id="kund-personnummer-fel">{error}</FieldError>
-      <p className="mt-1 text-[12px] text-muted">Behövs för ROT/RUT</p>
-      {hasValue ? (
-        <button type="button" className="mt-1 text-[13px] text-muted hover:text-ink" onClick={() => setEditing(false)}>
-          Avbryt
-        </button>
-      ) : null}
-    </div>
   );
 }
 
