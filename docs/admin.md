@@ -353,7 +353,7 @@ produktionsprojektet. RESULT-raden klistras in i systemvyns formulär.
 
 ### Runbooks (`docs/runbooks/`)
 
-`incident.md`, `nyckelrotation.md`, `epoststopp.md`, `bankstopp.md`,
+`incident.md`, `mfa.md`, `nyckelrotation.md`, `epoststopp.md`, `bankstopp.md`,
 `stripe-webhook-fel.md`, `filing-fel.md`, `backup-restore.md`,
 `epost-produktion.md` (SPF/DKIM/DMARC, bounce/complaint, Resend-signatur,
 inbound MX, auth email hook).
