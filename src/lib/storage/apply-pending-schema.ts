@@ -428,6 +428,11 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     "scope",
     `alter table public.business_settings add column if not exists scope jsonb`
   );
+  await ensureColumn(
+    "business_settings",
+    "low_material_margin_percent",
+    `alter table public.business_settings add column if not exists low_material_margin_percent integer`
+  );
   // OCR-nummer till skattekontot (migration 45) – settings-upserten skriver alltid kolumnen.
   await ensureColumn(
     "business_settings",
@@ -515,6 +520,9 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
 
   const closeoutApplied = await ensureCloseoutSchema(client);
   applied.push(...closeoutApplied);
+
+  const documentLinesApplied = await ensureDocumentLinesSchema(client);
+  applied.push(...documentLinesApplied);
 
   const reminted = await remintHexInboundMailSlugs(client);
   if (reminted > 0) applied.push(`inbound_mail_slug.remint:${reminted}`);
@@ -2464,3 +2472,125 @@ const RESET_DEMO_BUSINESS_WITH_CLOSEOUT_SQL = RESET_DEMO_BUSINESS_WITH_ONBOARDIN
   `  delete from public.job_changes where business_id = p_business_id;
   delete from public.job_work_entries where business_id = p_business_id;`,
 );
+
+/** Migration 58:s reset – 48 plus dokumentrader. */
+const RESET_DEMO_BUSINESS_WITH_DOCUMENT_LINES_SQL = RESET_DEMO_BUSINESS_WITH_CLOSEOUT_SQL.replace(
+  "  delete from public.job_changes where business_id = p_business_id;",
+  `  delete from public.document_lines where business_id = p_business_id;
+  delete from public.job_changes where business_id = p_business_id;`,
+);
+
+/**
+ * Materialkedjan (migration 58): dokumentrader, inköpsreferens, kundprisregel
+ * och inbox-kandidat. Speglar migrationen – idempotent.
+ */
+export async function ensureDocumentLinesSchema(client: SqlClient): Promise<string[]> {
+  const applied: string[] = [];
+  const present = await client.query(`select to_regclass('public.document_lines') is not null as present`);
+  const purchaseRef = await columnExists(client, "jobs", "purchase_ref");
+  const lineId = await columnExists(client, "job_work_entries", "document_line_id");
+  if (present[0]?.present && purchaseRef && lineId) {
+    await run(client, RESET_DEMO_BUSINESS_WITH_DOCUMENT_LINES_SQL);
+    return applied;
+  }
+
+  await run(client, `alter table public.business_settings add column if not exists low_material_margin_percent integer`);
+  await run(client, `alter table public.customers add column if not exists material_price_rule jsonb`);
+  await run(
+    client,
+    `alter table public.jobs
+       add column if not exists purchase_ref text,
+       add column if not exists material_price_rule jsonb`,
+  );
+  await run(
+    client,
+    `create unique index if not exists jobs_purchase_ref_uq
+       on public.jobs (business_id, purchase_ref) where purchase_ref is not null`,
+  );
+  await run(
+    client,
+    `alter table public.job_work_entries
+       add column if not exists document_line_id text,
+       add column if not exists document_line_allocation_id text`,
+  );
+  await run(
+    client,
+    `create unique index if not exists job_work_entries_document_line_alloc_uq
+       on public.job_work_entries (business_id, document_line_id, document_line_allocation_id)
+       where document_line_id is not null and document_line_allocation_id is not null`,
+  );
+  await run(
+    client,
+    `alter table public.inbox_items
+       add column if not exists suggested_job_id text,
+       add column if not exists job_match_method text`,
+  );
+  await run(client, `alter table public.inbox_items drop constraint if exists inbox_items_job_match_method_check`);
+  await run(
+    client,
+    `alter table public.inbox_items
+       add constraint inbox_items_job_match_method_check
+       check (job_match_method is null or job_match_method in (
+         'plus_tag', 'subject_ref', 'document_ref', 'recent', 'supplier', 'order',
+         'started_from_job', 'manual'
+       ))`,
+  );
+
+  await run(
+    client,
+    `create table if not exists public.document_lines (
+       id text primary key,
+       business_id uuid not null references public.businesses (id) on delete cascade,
+       source text not null check (source in ('receipt', 'supplier_invoice', 'order_confirmation', 'manual')),
+       source_document_id text not null,
+       source_index integer not null,
+       inbox_item_id text,
+       receipt_id text,
+       expense_id text,
+       supplier_invoice_id text,
+       purchase_order_id text,
+       purchase_order_confirmation_id text,
+       raw jsonb not null default '{}'::jsonb,
+       confirmed jsonb,
+       article_number text,
+       e_number text,
+       rsk_number text,
+       gtin text,
+       qty numeric,
+       unit text,
+       unit_cost bigint,
+       customer_price bigint,
+       customer_price_source text,
+       customer_price_rule jsonb,
+       customer_price_explanation text,
+       disposition text not null check (disposition in ('customer', 'company', 'private', 'ignored')),
+       status text not null check (status in ('proposed', 'needs_review', 'confirmed', 'rejected')),
+       allocations jsonb not null default '[]'::jsonb,
+       field_confidence jsonb,
+       math_ok boolean not null default false,
+       created_at timestamptz not null default now(),
+       updated_at timestamptz not null default now(),
+       confirmed_at timestamptz
+     )`,
+  );
+  await run(
+    client,
+    `create unique index if not exists document_lines_source_idx_uq
+       on public.document_lines (business_id, source, source_document_id, source_index)`,
+  );
+  await run(
+    client,
+    `create index if not exists document_lines_inbox_idx
+       on public.document_lines (business_id, inbox_item_id) where inbox_item_id is not null`,
+  );
+  await run(
+    client,
+    `create index if not exists document_lines_expense_idx
+       on public.document_lines (business_id, expense_id) where expense_id is not null`,
+  );
+  await run(client, `grant select, insert, update, delete on public.document_lines to driva_app`);
+  await ensureTenantPolicies(client, "document_lines", ["select", "insert", "update", "delete"]);
+  await run(client, RESET_DEMO_BUSINESS_WITH_DOCUMENT_LINES_SQL);
+  applied.push("document_lines");
+  return applied;
+}

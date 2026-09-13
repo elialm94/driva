@@ -1080,6 +1080,37 @@ async function main() {
     });
   });
 
+  console.log("\nDokumentrader genom adaptern (migration 58):");
+  await check("kvitto-rad → material via work_entry och isolering per tenant", async () => {
+    const { createJob } = await import("../src/lib/services/jobs");
+    const { actualEntries } = await import("../src/lib/services/job-work");
+    const { confirmDocumentLines, setLineCustomerPrice, upsertDocumentLinesFromParsed } = await import(
+      "../src/lib/services/document-lines"
+    );
+    let jobId = "";
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "write" }, () => {
+      const customer = db().customers[0];
+      assert.ok(customer, "företag A har en kund efter tidigare steg");
+      const job = createJob({ customerId: customer.id, title: "Adapter-material" });
+      jobId = job.id;
+      const lines = upsertDocumentLinesFromParsed({
+        source: "receipt",
+        sourceDocumentId: "adapter-kv-58",
+        parsed: { amount: 100, lines: [{ name: "Skruv", qty: 1, unitPrice: 100, lineAmount: 100 }] },
+        startedFromJobId: job.id,
+      });
+      setLineCustomerPrice(lines[0].id, 140);
+      confirmDocumentLines([lines[0].id]);
+    });
+    await runWithTenant({ businessId: bizA, userId: USER_A, access: "read" }, () => {
+      assert.equal(actualEntries(jobId).filter((e) => e.type === "material").length, 1);
+      assert.equal((db().documentLines ?? []).length, 1);
+    });
+    await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {
+      assert.equal((db().documentLines ?? []).length, 0, "B ser inga av A:s dokumentrader");
+    });
+  });
+
   console.log("\nTenantisolering genom adaptern:");
   await check("företag B ser ingenting av företag A", async () => {
     await runWithTenant({ businessId: bizB, userId: USER_B, access: "read" }, () => {

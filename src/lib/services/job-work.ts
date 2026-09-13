@@ -62,6 +62,8 @@ export interface JobMaterialInput {
   quotedLineItemId?: string;
   source?: JobWorkEntrySource;
   expenseId?: string;
+  documentLineId?: string;
+  documentLineAllocationId?: string;
 }
 
 export interface JobWorkEntryPatch {
@@ -276,6 +278,8 @@ export function addJobMaterial(jobId: string, input: JobMaterialInput): JobWorkE
     source: input.source ?? "manual",
     quotedLineItemId,
     expenseId: input.expenseId,
+    documentLineId: input.documentLineId,
+    documentLineAllocationId: input.documentLineAllocationId,
     isExtra: detectExtra(jobId, { type: "material", description, quotedLineItemId }),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -299,6 +303,9 @@ export function addJobMaterialFromExpense(expense: {
   vatAmount: number;
 }): JobWorkEntry | null {
   if (!expense.jobId) return null;
+  // Artikelrader från kvittot äger vidarefaktureringen. Skapa inte en
+  // extra klump-rad när dokumentrader redan finns.
+  if ((db().documentLines ?? []).some((l) => l.expenseId === expense.id)) return null;
   const existing = jobWorkEntries(expense.jobId).find((e) => e.expenseId === expense.id);
   if (existing) return existing;
   const net = Math.max(0, Math.round(expense.amount - expense.vatAmount));

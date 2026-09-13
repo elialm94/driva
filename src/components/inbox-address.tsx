@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { buttonClasses } from "./ui";
+import { inboundPlusAddressingVerified } from "@/lib/inbox/plus-tag";
 
 export function InboxAddressCard({ address }: { address: string }) {
   const [copied, setCopied] = useState(false);
@@ -29,6 +30,9 @@ export function InboxAddressCard({ address }: { address: string }) {
       </div>
       <p className="mt-2 text-[13px] text-soft">
         Ge adressen till leverantörer eller vidarebefordra fakturor och kvitton hit.
+        {inboundPlusAddressingVerified()
+          ? " Du kan lägga till +FV-1042 före @ om din mejlväxel stöder det."
+          : " Ange referensen i ämnesraden, till exempel FV-1042."}
       </p>
     </div>
   );

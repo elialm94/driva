@@ -70,7 +70,7 @@ import {
   setTaxReductionDecision,
 } from "@/lib/services/tax-reduction";
 import { patchHusExportFields } from "@/lib/services/hus-export";
-import type { CatalogArticle, DocLine, DwellingType, LineKind, PaymentDetailsMethod, TaxReductionDetails } from "@/lib/types";
+import type { CatalogArticle, DocLine, DocumentLineDisposition, DocumentLineSource, DwellingType, LineKind, PaymentDetailsMethod, TaxReductionDetails } from "@/lib/types";
 import {
   articleFromLine,
   deleteArticle,
@@ -165,6 +165,17 @@ import {
   type JobTimeInput,
   type JobWorkEntryPatch,
 } from "@/lib/services/job-work";
+import {
+  applyAllLinesToJob,
+  confirmDocumentLines,
+  markDocumentAsCompanyCost,
+  markDocumentAsPrivate,
+  rememberCustomerMarkup,
+  setLineAllocations,
+  setLineCustomerPrice,
+  setLineDisposition,
+} from "@/lib/services/document-lines";
+import { dismissInboxPurchaseMatch, linkInboxDocumentToPurchaseOrder } from "@/lib/services/inbox";
 import { paySupplierInvoice, simulateIncomingPayment } from "@/lib/services/banking";
 import {
   answerExpenseQuestion,
@@ -778,6 +789,115 @@ export async function addJobMaterialAction(jobId: string, input: JobMaterialInpu
   await withBusiness(() => {
     addJobMaterial(jobId, input);
     refresh();
+  });
+}
+
+export async function confirmDocumentLinesAction(lineIds: string[]) {
+  return withBusiness(() => {
+    try {
+      const result = confirmDocumentLines(lineIds);
+      refresh();
+      return { ok: true as const, confirmed: result.confirmed.length, skipped: result.skipped.length };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte bekräfta raderna." };
+    }
+  });
+}
+
+export async function setDocumentLineDispositionAction(lineId: string, disposition: DocumentLineDisposition) {
+  return withBusiness(() => {
+    try {
+      setLineDisposition(lineId, disposition);
+      refresh();
+      return { ok: true as const };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte spara valet." };
+    }
+  });
+}
+
+export async function setDocumentLineAllocationsAction(lineId: string, allocations: Array<{ jobId: string; qty: number }>) {
+  return withBusiness(() => {
+    try {
+      setLineAllocations(lineId, allocations);
+      refresh();
+      return { ok: true as const };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte dela raden." };
+    }
+  });
+}
+
+export async function setDocumentLineCustomerPriceAction(lineId: string, kronor: number | null) {
+  return withBusiness(() => {
+    try {
+      setLineCustomerPrice(lineId, kronor);
+      refresh();
+      return { ok: true as const };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte spara kundpriset." };
+    }
+  });
+}
+
+export async function applyAllDocumentLinesToJobAction(
+  source: DocumentLineSource,
+  sourceDocumentId: string,
+  jobId: string
+) {
+  return withBusiness(() => {
+    try {
+      applyAllLinesToJob(source, sourceDocumentId, jobId);
+      refresh();
+      return { ok: true as const };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte lägga raderna på uppdraget." };
+    }
+  });
+}
+
+export async function markDocumentAsCompanyCostAction(source: DocumentLineSource, sourceDocumentId: string) {
+  await withBusiness(() => {
+    markDocumentAsCompanyCost(source, sourceDocumentId);
+    refresh();
+  });
+}
+
+export async function markDocumentAsPrivateAction(source: DocumentLineSource, sourceDocumentId: string) {
+  await withBusiness(() => {
+    markDocumentAsPrivate(source, sourceDocumentId);
+    refresh();
+  });
+}
+
+export async function linkInboxDocumentToPurchaseOrderAction(itemId: string, orderId: string) {
+  return withBusiness(() => {
+    try {
+      linkInboxDocumentToPurchaseOrder(itemId, orderId);
+      refresh();
+      return { ok: true as const };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte koppla beställningen." };
+    }
+  });
+}
+
+export async function dismissInboxPurchaseMatchAction(itemId: string) {
+  await withBusiness(() => {
+    dismissInboxPurchaseMatch(itemId);
+    refresh();
+  });
+}
+
+export async function rememberCustomerMarkupAction(customerId: string, percent: number) {
+  return withBusiness(() => {
+    try {
+      rememberCustomerMarkup(customerId, percent);
+      refresh();
+      return { ok: true as const };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte spara påslaget." };
+    }
   });
 }
 
@@ -1449,6 +1569,7 @@ export async function uploadInboxDocumentAction(
         // sämre än ett tydligt fel vid uppladdningen.
         const stored = await storeInboxAttachment(`upload-${Date.now()}`, filename, file.contentType, contentBase64);
 
+        const startedFromJobId = typeof form.get("startedFromJobId") === "string" ? String(form.get("startedFromJobId")) : "";
         const result = ingestUploadedDocument({
           filename,
           contentType: file.contentType,
@@ -1456,6 +1577,7 @@ export async function uploadInboxDocumentAction(
           ...(stored.storagePath ? { storagePath: stored.storagePath } : {}),
           ...(stored.contentBase64 ? { contentBase64: stored.contentBase64 } : {}),
           ...(parsed ? { parsed } : {}),
+          ...(startedFromJobId ? { startedFromJobId } : {}),
         });
         if (!result.ok) return { ok: false as const, error: result.error };
         refresh();

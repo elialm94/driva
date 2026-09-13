@@ -39,6 +39,7 @@ import type {
   DataImport,
   DB,
   DocLine,
+  DocumentLine,
   Domain,
   DomainAuditEvent,
   Employee,
@@ -75,6 +76,7 @@ import type {
   VerificationEntry,
   Website,
   WholesalerConnection,
+  WholesalerCustomerPriceRule,
   WholesalerPriceImport,
   WorkLocation,
   YearEndSchedule,
@@ -181,7 +183,7 @@ export const customersSpec: TableSpec<Customer> = {
   columns: [
     "id", "business_id", "kind", "name", "contact_person", "org_number", "email", "phone",
     "address", "postal_code", "city", "personal_identity_number", "default_work_location_id",
-    "notes", "reverse_charge_construction", "tax_reduction_used", "created_at",
+    "notes", "reverse_charge_construction", "tax_reduction_used", "material_price_rule", "created_at",
   ],
   toRow: (c, businessId) => ({
     id: c.id,
@@ -200,6 +202,7 @@ export const customersSpec: TableSpec<Customer> = {
     notes: c.notes,
     reverse_charge_construction: c.reverseChargeConstruction === true,
     tax_reduction_used: jsonParamOrNull(c.taxReductionUsed),
+    material_price_rule: jsonParamOrNull(c.materialPriceRule),
     created_at: c.createdAt,
   }),
   fromRow: (r) => ({
@@ -218,6 +221,7 @@ export const customersSpec: TableSpec<Customer> = {
     notes: str(r.notes),
     ...(r.reverse_charge_construction === true ? { reverseChargeConstruction: true as const } : {}),
     ...opt("taxReductionUsed", jsonOrU<NonNullable<Customer["taxReductionUsed"]>>(r.tax_reduction_used)),
+    ...opt("materialPriceRule", jsonOrU<WholesalerCustomerPriceRule>(r.material_price_rule)),
     createdAt: tsIso(r.created_at),
   }),
 };
@@ -490,6 +494,7 @@ export const jobsSpec: TableSpec<Job> = {
     "completed_at", "housing", "tax_reduction_application", "created_at",
     "source", "original_message", "idempotency_key", "notification",
     "archived_at", "photos", "billing_deferrals", "closeout", "customer_share", "share_token",
+    "purchase_ref", "material_price_rule",
   ],
   toRow: (j, businessId) => ({
     id: j.id,
@@ -520,6 +525,8 @@ export const jobsSpec: TableSpec<Job> = {
     customer_share: jsonParamOrNull(j.customerShare),
     // Denormaliserad ur customer_share för indexerat tokenuppslag (resolve_public_token).
     share_token: j.customerShare?.token ?? null,
+    purchase_ref: j.purchaseRef ?? null,
+    material_price_rule: jsonParamOrNull(j.materialPriceRule),
   }),
   fromRow: (r) => ({
     id: str(r.id),
@@ -550,6 +557,8 @@ export const jobsSpec: TableSpec<Job> = {
     ...opt("billingDeferrals", jsonOrU<NonNullable<Job["billingDeferrals"]>>(r.billing_deferrals)),
     ...opt("closeout", jsonOrU<NonNullable<Job["closeout"]>>(r.closeout)),
     ...opt("customerShare", jsonOrU<NonNullable<Job["customerShare"]>>(r.customer_share)),
+    ...opt("purchaseRef", strOrU(r.purchase_ref)),
+    ...opt("materialPriceRule", jsonOrU<WholesalerCustomerPriceRule>(r.material_price_rule)),
   }),
 };
 
@@ -592,6 +601,89 @@ export const billingAllocationsSpec: TableSpec<BillingAllocation> = {
     ...opt("invoicedAt", tsIsoOrU(r.invoiced_at)),
     ...opt("releasedAt", tsIsoOrU(r.released_at)),
     ...opt("releaseReason", strOrU(r.release_reason) as BillingAllocation["releaseReason"]),
+  }),
+};
+
+/* ------------------------------ document lines ------------------------------ */
+
+export const documentLinesSpec: TableSpec<DocumentLine> = {
+  table: "document_lines",
+  pk: ["id"],
+  columns: [
+    "id", "business_id", "source", "source_document_id", "source_index",
+    "inbox_item_id", "receipt_id", "expense_id", "supplier_invoice_id",
+    "purchase_order_id", "purchase_order_confirmation_id",
+    "raw", "confirmed", "article_number", "e_number", "rsk_number", "gtin",
+    "qty", "unit", "unit_cost", "customer_price", "customer_price_source",
+    "customer_price_rule", "customer_price_explanation", "disposition", "status",
+    "allocations", "field_confidence", "math_ok", "created_at", "updated_at", "confirmed_at",
+  ],
+  toRow: (l, businessId) => ({
+    id: l.id,
+    business_id: businessId,
+    source: l.source,
+    source_document_id: l.sourceDocumentId,
+    source_index: l.sourceIndex,
+    inbox_item_id: l.inboxItemId ?? null,
+    receipt_id: l.receiptId ?? null,
+    expense_id: l.expenseId ?? null,
+    supplier_invoice_id: l.supplierInvoiceId ?? null,
+    purchase_order_id: l.purchaseOrderId ?? null,
+    purchase_order_confirmation_id: l.purchaseOrderConfirmationId ?? null,
+    raw: jsonParam(l.raw),
+    confirmed: jsonParamOrNull(l.confirmed),
+    article_number: l.articleNumber ?? null,
+    e_number: l.eNumber ?? null,
+    rsk_number: l.rskNumber ?? null,
+    gtin: l.gtin ?? null,
+    qty: l.qty ?? null,
+    unit: l.unit ?? null,
+    unit_cost: l.unitCost ?? null,
+    customer_price: l.customerPrice ?? null,
+    customer_price_source: l.customerPriceSource ?? null,
+    customer_price_rule: jsonParamOrNull(l.customerPriceRule),
+    customer_price_explanation: l.customerPriceExplanation ?? null,
+    disposition: l.disposition,
+    status: l.status,
+    allocations: jsonParam(l.allocations),
+    field_confidence: jsonParamOrNull(l.fieldConfidence),
+    math_ok: l.mathOk,
+    created_at: l.createdAt,
+    updated_at: l.updatedAt,
+    confirmed_at: l.confirmedAt ?? null,
+  }),
+  fromRow: (r) => ({
+    id: str(r.id),
+    source: r.source as DocumentLine["source"],
+    sourceDocumentId: str(r.source_document_id),
+    sourceIndex: num(r.source_index),
+    ...opt("inboxItemId", strOrU(r.inbox_item_id)),
+    ...opt("receiptId", strOrU(r.receipt_id)),
+    ...opt("expenseId", strOrU(r.expense_id)),
+    ...opt("supplierInvoiceId", strOrU(r.supplier_invoice_id)),
+    ...opt("purchaseOrderId", strOrU(r.purchase_order_id)),
+    ...opt("purchaseOrderConfirmationId", strOrU(r.purchase_order_confirmation_id)),
+    raw: jsonVal<DocumentLine["raw"]>(r.raw ?? {}),
+    ...opt("confirmed", jsonOrU<DocumentLine["confirmed"]>(r.confirmed)),
+    ...opt("articleNumber", strOrU(r.article_number)),
+    ...opt("eNumber", strOrU(r.e_number)),
+    ...opt("rskNumber", strOrU(r.rsk_number)),
+    ...opt("gtin", strOrU(r.gtin)),
+    ...opt("qty", numOrU(r.qty)),
+    ...opt("unit", strOrU(r.unit)),
+    ...opt("unitCost", numOrU(r.unit_cost)),
+    ...opt("customerPrice", numOrU(r.customer_price)),
+    ...opt("customerPriceSource", strOrU(r.customer_price_source) as DocumentLine["customerPriceSource"]),
+    ...opt("customerPriceRule", jsonOrU<WholesalerCustomerPriceRule>(r.customer_price_rule)),
+    ...opt("customerPriceExplanation", strOrU(r.customer_price_explanation)),
+    disposition: r.disposition as DocumentLine["disposition"],
+    status: r.status as DocumentLine["status"],
+    allocations: jsonVal<DocumentLine["allocations"]>(r.allocations ?? []),
+    ...opt("fieldConfidence", jsonOrU<DocumentLine["fieldConfidence"]>(r.field_confidence)),
+    mathOk: Boolean(r.math_ok),
+    createdAt: tsIso(r.created_at),
+    updatedAt: tsIso(r.updated_at),
+    ...opt("confirmedAt", tsIsoOrU(r.confirmed_at)),
   }),
 };
 
@@ -669,7 +761,8 @@ export const jobWorkEntriesSpec: TableSpec<JobWorkEntry> = {
   columns: [
     "id", "business_id", "job_id", "role", "type", "description", "work_date",
     "qty", "unit", "unit_price", "vat_rate", "source", "quoted_line_item_id",
-    "is_extra", "change_id", "invoice_id", "wholesaler_provenance", "expense_id", "created_at", "updated_at",
+    "is_extra", "change_id", "invoice_id", "wholesaler_provenance", "expense_id",
+    "document_line_id", "document_line_allocation_id", "created_at", "updated_at",
   ],
   toRow: (e, businessId) => ({
     id: e.id,
@@ -690,6 +783,8 @@ export const jobWorkEntriesSpec: TableSpec<JobWorkEntry> = {
     invoice_id: e.invoiceId ?? null,
     wholesaler_provenance: jsonParamOrNull(e.wholesaler),
     expense_id: e.expenseId ?? null,
+    document_line_id: e.documentLineId ?? null,
+    document_line_allocation_id: e.documentLineAllocationId ?? null,
     created_at: e.createdAt,
     updated_at: e.updatedAt,
   }),
@@ -711,6 +806,8 @@ export const jobWorkEntriesSpec: TableSpec<JobWorkEntry> = {
     ...opt("invoiceId", strOrU(r.invoice_id)),
     ...opt("wholesaler", jsonOrU<JobWorkEntry["wholesaler"]>(r.wholesaler_provenance)),
     ...opt("expenseId", strOrU(r.expense_id)),
+    ...opt("documentLineId", strOrU(r.document_line_id)),
+    ...opt("documentLineAllocationId", strOrU(r.document_line_allocation_id)),
     createdAt: tsIso(r.created_at),
     updatedAt: tsIso(r.updated_at),
   }),
@@ -2082,7 +2179,7 @@ export const inboxItemsSpec: TableSpec<InboxItem> = {
     "parsed_invoice_number", "parsed_due_date", "parsed_ocr", "parsed_bankgiro",
     "parsed_details_confidence", "confidence", "extraction", "reviewed_at",
     "expense_id", "supplier_invoice_id", "purchase_order_id", "purchase_order_confirmation_id",
-    "purchase_order_candidates", "created_at", "processed_at",
+    "purchase_order_candidates", "suggested_job_id", "job_match_method", "created_at", "processed_at",
   ],
   toRow: (item, businessId) => ({
     id: item.id,
@@ -2116,6 +2213,8 @@ export const inboxItemsSpec: TableSpec<InboxItem> = {
     purchase_order_id: item.purchaseOrderId ?? null,
     purchase_order_confirmation_id: item.purchaseOrderConfirmationId ?? null,
     purchase_order_candidates: jsonParamOrNull(item.purchaseOrderCandidateIds),
+    suggested_job_id: item.suggestedJobId ?? null,
+    job_match_method: item.jobMatchMethod ?? null,
     created_at: item.createdAt,
     processed_at: item.processedAt ?? null,
   }),
@@ -2149,6 +2248,8 @@ export const inboxItemsSpec: TableSpec<InboxItem> = {
     ...opt("purchaseOrderId", strOrU(r.purchase_order_id)),
     ...opt("purchaseOrderConfirmationId", strOrU(r.purchase_order_confirmation_id)),
     ...opt("purchaseOrderCandidateIds", jsonOrU<string[]>(r.purchase_order_candidates)),
+    ...opt("suggestedJobId", strOrU(r.suggested_job_id)),
+    ...opt("jobMatchMethod", strOrU(r.job_match_method) as InboxItem["jobMatchMethod"]),
     createdAt: tsIso(r.created_at),
     ...opt("processedAt", tsIsoOrU(r.processed_at)),
   }),
@@ -2606,7 +2707,7 @@ export const settingsColumns = [
   "logo_data_url", "f_skatt_per_month", "tax_account_ocr", "payroll_reserve_per_month", "payment_terms_days",
   "late_interest_rate", "quote_validity_days", "default_vat_rate", "default_hourly_rate",
   "default_quote_terms", "inbound_mail_slug", "payer_bank_name", "payer_iban", "payer_bic",
-  "vat_periodicity", "notices", "claims", "scope",
+  "vat_periodicity", "notices", "claims", "scope", "low_material_margin_percent",
 ];
 
 export function settingsToRow(s: CompanySettings, businessId: string): Record<string, unknown> {
@@ -2649,6 +2750,7 @@ export function settingsToRow(s: CompanySettings, businessId: string): Record<st
     notices: jsonParamOrNull(s.notices),
     claims: jsonParamOrNull(s.claims),
     scope: jsonParamOrNull(s.scope),
+    low_material_margin_percent: s.lowMaterialMarginPercent ?? null,
   };
 }
 
@@ -2691,6 +2793,7 @@ export function settingsFromRow(r: SqlRow): CompanySettings {
     ...opt("notices", ownerNoticesOrU(r.notices)),
     ...opt("claims", r.claims == null ? undefined : normalizeCompanyClaims(jsonVal<unknown>(r.claims))),
     ...opt("scope", r.scope == null ? undefined : normalizeBusinessScope(jsonVal<unknown>(r.scope))),
+    ...opt("lowMaterialMarginPercent", numOrU(r.low_material_margin_percent)),
   };
 }
 

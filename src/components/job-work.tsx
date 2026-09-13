@@ -21,6 +21,10 @@ import type { JobWholesalerContext } from "@/lib/wholesalers/views";
 import { LineDescriptionInput, LineDescriptionVocabProvider } from "./line-description-input";
 import { WholesalerMaterialSheet } from "./wholesaler-material-sheet";
 import { DayReportButton } from "./day-report-sheet";
+import { AddMaterialSheet, JobReceiptUpload } from "./add-material-sheet";
+import { InvoiceReadinessBlock } from "./invoice-readiness";
+import type { InvoiceReadiness } from "@/lib/services/invoice-readiness";
+import { Check, Copy } from "lucide-react";
 
 function hoursLabel(n: number): string {
   return `${Number(n.toFixed(2)).toLocaleString("sv-SE")} tim`;
@@ -79,6 +83,9 @@ export function JobWorkSection({
   defaultHourlyRate,
   invoiceChoice,
   wholesalers,
+  purchaseRef,
+  inboxAddress,
+  invoiceReadiness,
 }: {
   jobId: string;
   jobTitle: string;
@@ -94,8 +101,11 @@ export function JobWorkSection({
    * konfigurerad grossist → dagens manuella materialformulär, oförändrat.
    */
   wholesalers?: JobWholesalerContext;
+  purchaseRef?: string;
+  inboxAddress?: string;
+  invoiceReadiness?: InvoiceReadiness;
 }) {
-  const [sheet, setSheet] = useState<"tid" | "material" | "grossist" | null>(null);
+  const [sheet, setSheet] = useState<"val" | "tid" | "material" | "grossist" | "kvitto" | null>(null);
   const wholesalerSearch = Boolean(wholesalers?.enabled && wholesalers.connections.length > 0);
   const [edit, setEdit] = useState<JobWorkViewEntry | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -137,7 +147,7 @@ export function JobWorkSection({
             <button
               type="button"
               className={buttonClasses("secondary", "sm")}
-              onClick={() => setSheet(wholesalerSearch ? "grossist" : "material")}
+              onClick={() => setSheet("val")}
               data-job-add-material
             >
               <Plus className="size-3.5" />
@@ -166,8 +176,8 @@ export function JobWorkSection({
         title="Material"
         empty="Inget material registrerat än."
         emptyAction={{
-          label: wholesalerSearch ? "Hämta från grossisten" : "Lägg till material",
-          onClick: () => setSheet(wholesalerSearch ? "grossist" : "material"),
+          label: "Lägg till material",
+          onClick: () => setSheet("val"),
         }}
         entries={material}
         from={fromHere}
@@ -186,6 +196,10 @@ export function JobWorkSection({
           className="mt-5"
         />
       ) : null}
+
+      {purchaseRef ? <PurchaseRefRow purchaseRef={purchaseRef} inboxAddress={inboxAddress} onPhoto={() => setSheet("kvitto")} /> : null}
+
+      {invoiceReadiness ? <InvoiceReadinessBlock readiness={invoiceReadiness} /> : null}
 
       {uninvoiced.length > 0 ? (
         <div className="mt-4">
@@ -208,6 +222,16 @@ export function JobWorkSection({
         prefill={laborPrefill}
         defaultHourlyRate={defaultHourlyRate}
       />
+      <AddMaterialSheet
+        open={sheet === "val"}
+        onClose={() => setSheet(null)}
+        wholesalersEnabled={wholesalerSearch}
+        onChoose={(choice) => {
+          if (choice === "search") setSheet("grossist");
+          else if (choice === "manual") setSheet("material");
+          else setSheet("kvitto");
+        }}
+      />
       <MaterialSheet open={sheet === "material"} onClose={() => setSheet(null)} jobId={jobId} />
       {wholesalerSearch && wholesalers ? (
         <WholesalerMaterialSheet
@@ -218,6 +242,19 @@ export function JobWorkSection({
           onManual={() => setSheet("material")}
         />
       ) : null}
+      <Modal
+        open={sheet === "kvitto"}
+        onClose={() => setSheet(null)}
+        title="Fota kvitto"
+        size="sm"
+      >
+        <JobReceiptUpload
+          jobId={jobId}
+          onDone={(id) => {
+            window.location.href = `/bokforing/underlag/${id}/kontrollera`;
+          }}
+        />
+      </Modal>
       {edit ? (
         <EditSheet
           entry={edit}
@@ -649,6 +686,50 @@ function EditSheet({ entry, onClose }: { entry: JobWorkViewEntry; onClose: () =>
         ) : null}
       </div>
     </Modal>
+  );
+}
+
+function PurchaseRefRow({
+  purchaseRef,
+  inboxAddress,
+  onPhoto,
+}: {
+  purchaseRef: string;
+  inboxAddress?: string;
+  onPhoto: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="mt-4 rounded-2xl border border-line/80 px-4 py-3" data-job-purchase-ref="">
+      <p className="text-[13px] text-muted">Inköpsreferens</p>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <span className="font-medium text-ink">{purchaseRef}</span>
+        <button
+          type="button"
+          className={buttonClasses("ghost", "sm")}
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(purchaseRef);
+            } catch {
+              window.prompt("Kopiera referensen:", purchaseRef);
+            }
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 2000);
+          }}
+        >
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+          {copied ? "Kopierad" : "Kopiera referens"}
+        </button>
+        <button type="button" className={buttonClasses("ghost", "sm")} onClick={onPhoto}>
+          Fota materialköp
+        </button>
+      </div>
+      {inboxAddress ? (
+        <p className="mt-2 text-[13px] text-soft">
+          Vidarebefordra underlag till {inboxAddress}. Ange referensen i ämnesraden, till exempel {purchaseRef}.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

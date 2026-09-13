@@ -84,6 +84,29 @@ export interface InboundParsedHint {
    */
   fieldConfidence?: Partial<Record<ParsedFieldKey, number>>;
   documentType?: "leverantorsfaktura" | "kvitto" | "ekonomiskt_dokument";
+  /**
+   * Artikelrader som faktiskt gick att läsa. Tom/saknad = ingen raduppdelning.
+   * Aldrig påhittade artikelnummer, antal eller priser.
+   */
+  lines?: InboundParsedLine[];
+}
+
+export type InboundParsedLineRole = "article" | "freight" | "deposit" | "rounding" | "return" | "fee";
+
+export interface InboundParsedLine {
+  articleNumber?: string;
+  name?: string;
+  qty?: number;
+  unit?: string;
+  unitPrice?: number;
+  lineAmount?: number;
+  discount?: number;
+  vatRate?: number;
+  vatAmount?: number;
+  page?: number;
+  unreadable?: boolean;
+  role?: InboundParsedLineRole;
+  fieldConfidence?: Partial<Record<"articleNumber" | "name" | "qty" | "unitPrice" | "lineAmount" | "vat", number>>;
 }
 
 export interface InboundMailPayload {

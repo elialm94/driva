@@ -54,6 +54,7 @@ import {
   invoiceLineToRow,
   invoicesSpec,
   billingAllocationsSpec,
+  documentLinesSpec,
   jobChangesSpec,
   jobsSpec,
   jobWorkEntriesSpec,
@@ -406,6 +407,7 @@ export async function commitTenantState(tx: SqlExecutor, opts: CommitOptions): P
   await applySpec(expensesSpec, diffCollection(baseline.expenses, state.expenses));
   await applySpec(receiptsSpec, diffCollection(baseline.receipts, state.receipts));
   await applySpec(supplierInvoicesSpec, diffCollection(baseline.supplierInvoices, state.supplierInvoices));
+  await applySpec(documentLinesSpec, diffCollection(baseline.documentLines ?? [], state.documentLines ?? []));
   // Bankfiler skrivs före betalningarna: supplier_payments.payment_file_id är FK.
   await applySpec(paymentFilesSpec, diffCollection(baseline.paymentFiles ?? [], state.paymentFiles ?? []));
   await applySpec(supplierPaymentsSpec, diffCollection(baseline.supplierPayments ?? [], state.supplierPayments ?? []));

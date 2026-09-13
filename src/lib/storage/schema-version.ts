@@ -5,7 +5,7 @@
  * konstanten med supabase_migrations.schema_migrations i databasen och
  * visar "migrationer saknas" i stället för att gissa.
  */
-export const EXPECTED_MIGRATION_VERSION = "20260913140000";
+export const EXPECTED_MIGRATION_VERSION = "20260913190000";
 
 /** Plocka versionsprefixet ur ett migrationsfilnamn ("20260912150000_52_x.sql" → "20260912150000"). */
 export function migrationVersionFromFilename(name: string): string | null {

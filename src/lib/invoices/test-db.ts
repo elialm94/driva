@@ -169,6 +169,7 @@ export function emptyTestDb(over: Partial<DB> = {}): DB {
     suppliers: over.suppliers ?? [],
     billingAllocations: over.billingAllocations ?? [],
     jobChanges: over.jobChanges ?? [],
+    documentLines: over.documentLines ?? [],
     meta: over.meta ?? { seededAt: new Date().toISOString() },
   };
 }

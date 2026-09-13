@@ -130,7 +130,7 @@ Serverless (Vercel): använd **Transaction pooler**-URL:en (port 6543) som `SUPA
 
 ### 3. Migrationer
 
-Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy; därefter 49–57 för go-live och fakturautskick: bankförslagens kvalitetslogg, manuell inlämning, Stripe-abonnemang, driftposter, villkorsgodkännanden, företagets verifierade påståenden, fakturans leveranskanal, offline-synkens kvitton och bolagets produktomfattning). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning.
+Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy; därefter 49–57 för go-live och fakturautskick: bankförslagens kvalitetslogg, manuell inlämning, Stripe-abonnemang, driftposter, villkorsgodkännanden, företagets verifierade påståenden, fakturans leveranskanal, offline-synkens kvitton och bolagets produktomfattning; `58_document_lines` för artikelrader, inköpsreferens och kundprisregler). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning. `SUPABASE_MIGRATION_DB_URL` är inte satt i Vercel Production - en ny migration måste appliceras manuellt där.
 
 ```bash
 npx supabase login
@@ -273,7 +273,11 @@ Offerter, fakturor, betalningspåminnelser och samarbetsinbjudningar skickas via
 
 ### Inkommande mejl (`@in.ferva.se`)
 
-Leverantörsfakturor och kvitton landar i Inbox. Den visade adressen är `{slug}@in.ferva.se` (styrbar med `INBOUND_MAIL_DOMAIN`). Tenant löses bara på local-part – även `@in.driva.se` är tyst alias. Kunden väljer eller redigerar inte adressen.
+Leverantörsfakturor och kvitton landar i Inbox. Den visade adressen är `{slug}@in.ferva.se` (styrbar med `INBOUND_MAIL_DOMAIN`). Tenant löses bara på local-part – även `@in.driva.se` är tyst alias. Kunden väljer eller redigerar inte adressen. En `+FV-1042`-tagg i adressen är bara en uppdrags-kandidat efter att tenanten redan är känd; UI:n påstår inte att plus-adressering fungerar i produktion förrän `INBOUND_PLUS_ADDRESSING=verified`. Annars: ange referensen i ämnesraden.
+
+Dokumenttolkningen kan läsa valfria artikelrader. AI:n får inte hitta på belopp, moms, artikelnummer eller kundpris. Radsumman kontrolleras mot kvittots total. En avvikelse kräver granskning; hela underlaget kan ändå bokföras en gång. Bekräftade rader *Till kunden* blir material på uppdraget (`JobWorkEntry`) och faktureras via closeout-allokeringen `work_entry` - ingen extra verifikation.
+
+En prisfil i underlaget (CSV, TXT, XLSX, XML, ZIP) förhandsgranskas med den deterministiska parsern och aktiveras bara när användaren trycker **Använd nya priser**. Filen skickas inte till en LLM. Osäker matchning skapar inte en ny grossistanslutning.
 
 Två webhookar:
 

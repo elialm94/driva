@@ -38,6 +38,11 @@ import {
 import { kunderInboxHref } from "@/lib/nav";
 import { db } from "@/lib/store";
 import { isOwnerSurface, wsCan, wsHref, type AccountingWorkspace } from "@/lib/accounting-workspace/shared";
+import { InboxPriceFileCard } from "@/components/inbox-price-file";
+import { InboxPurchaseMatchCard } from "@/components/inbox-purchase-match";
+import { inboxItemPriceFile } from "@/lib/inbox/price-file";
+import { getPurchaseOrder } from "@/lib/services/purchase-orders";
+import { connectionLabel } from "@/lib/wholesalers/labels";
 
 function StepIcon({ state }: { state: WorkflowStep["state"] }) {
   if (state === "done") return <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-ok" />;
@@ -167,6 +172,58 @@ export function UnderlagDetailView({ ws, id }: { ws: AccountingWorkspace; id: st
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)] lg:items-start">
         <div className="space-y-4">
+          {(() => {
+            const review = inboxItemPriceFile(item);
+            if (!review) return null;
+            const rowCount =
+              review.preview?.known?.file.kind === "price_list" || review.preview?.known?.file.kind === "discount_agreement"
+                ? review.preview.known.file.rowCount
+                : review.preview?.table.rows.length;
+            const runDate =
+              review.preview?.known?.file.kind === "discount_agreement"
+                ? review.preview.known.file.header.runDate
+                : undefined;
+            return (
+              <InboxPriceFileCard
+                itemId={item.id}
+                filename={review.attachment.filename}
+                identified={{
+                  connectionId: review.identified.connection?.id,
+                  uncertain: review.identified.uncertain,
+                  reason: review.identified.reason,
+                }}
+                preview={
+                  review.preview
+                    ? {
+                        rowCount,
+                        priceDate: runDate,
+                        detected: { kind: review.preview.detected.kind },
+                      }
+                    : undefined
+                }
+                previewError={review.previewError}
+                connections={(data.wholesalerConnections ?? []).filter((c) => c.active)}
+                canWrite={canWrite}
+              />
+            );
+          })()}
+
+          {item.purchaseOrderCandidateIds?.length && item.documentType !== "orderbekraftelse" ? (
+            <InboxPurchaseMatchCard
+              itemId={item.id}
+              question={`Fakturan verkar höra ihop med ${
+                getPurchaseOrder(item.purchaseOrderCandidateIds[0])?.reference ?? "en beställning"
+              }`}
+              candidates={item.purchaseOrderCandidateIds.flatMap((id) => {
+                const order = getPurchaseOrder(id);
+                if (!order) return [];
+                const conn = (data.wholesalerConnections ?? []).find((c) => c.id === order.connectionId);
+                return [{ id: order.id, reference: order.reference, label: conn ? connectionLabel(conn) : "Grossist" }];
+              })}
+              canWrite={canWrite}
+            />
+          ) : null}
+
           {amountReview ? (
             <Card className="border-warn/50 bg-warn-soft/30 p-5">
               <p className="text-[15px] font-semibold text-ink">

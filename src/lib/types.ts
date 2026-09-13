@@ -138,6 +138,11 @@ export interface CompanySettings {
    * Se `lib/support/`.
    */
   scope?: BusinessScope;
+  /**
+   * Låg materialmarginal i procent av kundpriset. Under den här gränsen
+   * varnas användaren, men fakturering blockeras inte. Saknas = 15.
+   */
+  lowMaterialMarginPercent?: number;
 }
 
 /** Onboardingens ja/nej-frågor som pekar ut konsult- eller ej stödda fall. */
@@ -248,6 +253,11 @@ export interface Customer {
     rot: number;
     rut: number;
   };
+  /**
+   * Standardregel för kundpris på material till den här kunden.
+   * Sätts bara när användaren aktivt väljer "Samma val nästa gång".
+   */
+  materialPriceRule?: WholesalerCustomerPriceRule;
   createdAt: string;
 }
 
@@ -701,6 +711,14 @@ export interface Job {
   closeout?: JobCloseoutState;
   /** Kundvyn: vad kunden får se via sin länk. Saknas = ingen länk delad. */
   customerShare?: JobCustomerShare;
+  /**
+   * Stabil inköpsreferens unik inom företaget, t.ex. FV-1042.
+   * Delar namnrymd med beställningsreferenser så att en tagg alltid pekar på
+   * högst en sak. Tilldelas vid skapande och ändras aldrig.
+   */
+  purchaseRef?: string;
+  /** Påslagsregel för material på det här uppdraget. Vinner över kundens regel. */
+  materialPriceRule?: WholesalerCustomerPriceRule;
 }
 
 /* ------------------------------ Avsluta uppdrag ------------------------------ */
@@ -786,7 +804,9 @@ export interface JobCustomerShare {
  *   work_entry        – registrerad tid/material/övrigt (sourceId = JobWorkEntry.id).
  *   change_line       – rad på godkänd ändring (sourceId = ändringsradens id).
  *   expense           – utgift/kvitto som vidarefaktureras (sourceId = Expense.id).
- *   receipt_line      – kvittorad (sourceId = `${receiptId}:${index}`), reserverad.
+   *   receipt_line      – dokumentrad från kvitto/faktura (sourceId = DocumentLine.id).
+   *                       Vidarefakturering skapar i regel en work_entry; den här
+   *                       typen finns så att en rad kan spåras utan extra utgift.
  *   manual            – fri rad utan källa; allokeras aldrig.
  */
 export type BillingSourceType =
@@ -833,6 +853,100 @@ export interface BillingAllocation {
   invoicedAt?: string;
   releasedAt?: string;
   releaseReason?: "utkast_kastat" | "rad_borttagen" | "faktura_krediterad";
+}
+
+/* ------------------------ Dokumentrader (materialkedjan) ------------------------ */
+
+/**
+ * Operativa artikelrader från ett ekonomiskt underlag. Kvittot/fakturan
+ * bokförs en gång; de här raderna blir material på uppdrag när användaren
+ * markerar Till kunden. De skapar ingen extra verifikation.
+ */
+export type DocumentLineSource = "receipt" | "supplier_invoice" | "order_confirmation" | "manual";
+export type DocumentLineDisposition = "customer" | "company" | "private" | "ignored";
+export type DocumentLineStatus = "proposed" | "needs_review" | "confirmed" | "rejected";
+export type DocumentLineRole = "article" | "freight" | "deposit" | "rounding" | "return" | "fee";
+
+export interface DocumentLineFieldConfidence {
+  articleNumber?: number;
+  name?: number;
+  qty?: number;
+  unit?: number;
+  unitPrice?: number;
+  lineAmount?: number;
+  vat?: number;
+}
+
+/** Rå läsning eller användarens bekräftade värden. Inga påhittade fält. */
+export interface DocumentLineValues {
+  articleNumber?: string;
+  name?: string;
+  qty?: number;
+  unit?: string;
+  /** Styckpris som stod på dokumentet, hela kronor. */
+  unitPrice?: number;
+  lineAmount?: number;
+  discount?: number;
+  vatRate?: number;
+  vatAmount?: number;
+  page?: number;
+  unreadable?: boolean;
+  role?: DocumentLineRole;
+}
+
+export interface DocumentLineAllocation {
+  id: ID;
+  jobId: ID;
+  qty: number;
+  amountExclVat: number;
+  jobWorkEntryId?: ID;
+}
+
+export type MaterialCustomerPriceSource =
+  | "explicit"
+  | "job"
+  | "customer"
+  | "connection"
+  | "file"
+  | "markup"
+  | "missing";
+
+export interface DocumentLine {
+  id: ID;
+  source: DocumentLineSource;
+  /** Kvittot, leverantörsfakturan, bekräftelsen eller inboxposten raden kom ur. */
+  sourceDocumentId: ID;
+  sourceIndex: number;
+  inboxItemId?: ID;
+  receiptId?: ID;
+  expenseId?: ID;
+  supplierInvoiceId?: ID;
+  purchaseOrderId?: ID;
+  purchaseOrderConfirmationId?: ID;
+  raw: DocumentLineValues;
+  confirmed?: DocumentLineValues;
+  articleNumber?: string;
+  eNumber?: string;
+  rskNumber?: string;
+  gtin?: string;
+  qty?: number;
+  unit?: string;
+  /** Inköpspris exkl. moms per enhet, hela kronor. */
+  unitCost?: number;
+  /** Kundpris exkl. moms per enhet. Saknas = får inte bli 0 kr på fakturan. */
+  customerPrice?: number;
+  customerPriceSource?: MaterialCustomerPriceSource;
+  customerPriceRule?: WholesalerCustomerPriceRule;
+  customerPriceExplanation?: string;
+  disposition: DocumentLineDisposition;
+  status: DocumentLineStatus;
+  allocations: DocumentLineAllocation[];
+  fieldConfidence?: DocumentLineFieldConfidence;
+  /** Deterministisk kontroll: radsumma mot dokumentets total. */
+  mathOk: boolean;
+  createdAt: string;
+  updatedAt: string;
+  confirmedAt?: string;
 }
 
 /* ---------------------------- Ändringar och tillägg ---------------------------- */
@@ -919,8 +1033,10 @@ export interface JobWorkEntryWholesalerProvenance {
   purchaseOrderLineId: ID;
   confirmationId?: ID;
   articleNumber?: string;
-  /** Faktisk inköpskostnad per enhet i ören (från bekräftelsen, annars förväntad). */
+  /** Faktisk inköpskostnad per enhet i ören (bekräftelse eller leverantörsfaktura). */
   unitCostOre?: number;
+  /** Förväntad inköpskostnad från skickad order/prislista. Ändras inte när faktiskt pris kommer. */
+  expectedUnitCostOre?: number;
 }
 
 export interface JobWorkEntry {
@@ -954,6 +1070,10 @@ export interface JobWorkEntry {
   wholesaler?: JobWorkEntryWholesalerProvenance;
   /** Utgift som skapade materialraden (kvitto → material). */
   expenseId?: ID;
+  /** Dokumentrad som skapade materialraden – idempotens mot dubletter. */
+  documentLineId?: ID;
+  /** Allokering på dokumentraden när antalet delats mellan uppdrag. */
+  documentLineAllocationId?: ID;
   createdAt: string;
   updatedAt: string;
 }
@@ -2985,9 +3105,27 @@ export interface InboxItem {
    * användaren väljer bland. Kopplas aldrig automatiskt.
    */
   purchaseOrderCandidateIds?: ID[];
+  /**
+   * Föreslaget uppdrag efter tenant är identifierad. Aldrig satt från
+   * From/ämne/dokumenttext utan att tenanten redan är känd.
+   */
+  suggestedJobId?: ID;
+  /** Hur förslaget togs fram – audit, aldrig tenantnyckel. */
+  jobMatchMethod?: InboxJobMatchMethod;
   createdAt: string;
   processedAt?: string;
 }
+
+/** Hur ett uppdrag föreslogs på ett underlag. Tenant löses aldrig härifrån. */
+export type InboxJobMatchMethod =
+  | "plus_tag"
+  | "subject_ref"
+  | "document_ref"
+  | "recent"
+  | "supplier"
+  | "order"
+  | "started_from_job"
+  | "manual";
 
 /* ------------------------ Grossister & materialbeställningar ------------------------ */
 
@@ -3664,6 +3802,11 @@ export interface DB {
   billingAllocations?: BillingAllocation[];
   /** Ändringar och tillägg på uppdrag. Guardera med ?? []. */
   jobChanges?: JobChange[];
+  /**
+   * Artikelrader från kvitto, leverantörsfaktura eller orderbekräftelse.
+   * Skilda från Expense/SupplierInvoice (bokföringsunderlag). Guardera med ?? [].
+   */
+  documentLines?: DocumentLine[];
   meta: {
     seededAt: string;
     /**

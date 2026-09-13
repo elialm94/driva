@@ -18,6 +18,7 @@ import type { CartView } from "@/lib/wholesalers/views";
 import { wholesalersEnabled } from "@/lib/features";
 import {
   createWholesalerConnection,
+  importPriceFile,
   searchWholesalerProducts,
   setWholesalerConnectionActive,
   toggleFavoriteArticle,
@@ -55,7 +56,9 @@ import {
   syncAfterCustomerPrice,
   type ManualConfirmationLineInput,
 } from "@/lib/services/purchase-order-confirmations";
-import { ingestEconomicDocument } from "@/lib/services/inbox";
+import { ingestEconomicDocument, getInboxMail } from "@/lib/services/inbox";
+import { priceListRequestDraft } from "@/lib/services/price-list-request";
+import { inboxItemPriceFile } from "@/lib/inbox/price-file";
 import { demoConfirmationPayload, isWholesalerDemoContext } from "@/lib/wholesalers/demo";
 
 type Ok<T> = { ok: true } & T;
@@ -493,5 +496,44 @@ export async function rememberedMappingAction(connectionId: string): Promise<Who
     });
   } catch {
     return null;
+  }
+}
+
+export async function priceListRequestDraftAction(connectionId: string) {
+  try {
+    return await withBusiness(() => {
+      assertEnabled();
+      const draft = priceListRequestDraft(String(connectionId));
+      return { ok: true as const, ...draft };
+    }, MANAGE);
+  } catch (e) {
+    return fail(e, "Mejlet kunde inte förberedas.");
+  }
+}
+
+export async function activateInboxPriceFileAction(itemId: string, connectionId: string) {
+  try {
+    const item = await withBusinessRead(() => getInboxMail(String(itemId)));
+    if (!item) return { ok: false as const, error: "Underlaget finns inte." };
+    const review = inboxItemPriceFile(item);
+    if (!review?.bytes) return { ok: false as const, error: "Prisfilen finns inte kvar i underlaget." };
+    if (!connectionId) return { ok: false as const, error: "Välj grossist själv. Ny anslutning skapas inte." };
+    const outcome = await importPriceFile(
+      { connectionId: String(connectionId), filename: review.attachment.filename, bytes: review.bytes },
+      (fn) =>
+        withBusiness(
+          () => {
+            assertEnabled();
+            return fn();
+          },
+          MANAGE_NO_RETRY,
+        ),
+    );
+    if (outcome.ok) refreshAll();
+    return outcome.ok
+      ? { ok: true as const }
+      : { ok: false as const, error: "error" in outcome ? outcome.error : "Importen kunde inte aktiveras." };
+  } catch (e) {
+    return fail(e, "Prisfilen kunde inte aktiveras.");
   }
 }

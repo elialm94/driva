@@ -23,7 +23,11 @@ import {
 import { AHLSELL_PRICE_FILE_HELP_URL } from "@/lib/wholesalers/formats/registry";
 import { agreementExpired } from "@/lib/wholesalers/agreement-pricing";
 import { datumLang, datumTid } from "@/lib/format";
-import { saveWholesalerConnectionAction, setWholesalerConnectionActiveAction } from "@/app/wholesaler-actions";
+import {
+  priceListRequestDraftAction,
+  saveWholesalerConnectionAction,
+  setWholesalerConnectionActiveAction,
+} from "@/app/wholesaler-actions";
 import { Badge, Card, DemoTag, buttonClasses, cx } from "./ui";
 import { Modal } from "./modal";
 
@@ -283,7 +287,7 @@ function ConnectionCard({
                 </p>
                 {priceList.stale ? (
                   <p className="mt-1 flex items-center gap-1.5 text-[13px] font-medium text-warn">
-                    <AlertTriangle className="size-3.5" /> Prisfilen kan behöva uppdateras
+                    <AlertTriangle className="size-3.5" /> Priserna kan vara gamla
                   </p>
                 ) : null}
               </>
@@ -335,10 +339,29 @@ function ConnectionCard({
               </details>
             ) : null}
           </div>
-          <PriceFilePickButton
-            label={priceList ? "Ersätt prisfilen" : "Ladda upp prisfil"}
-            onFile={onImport}
-          />
+          <div className="flex shrink-0 flex-col gap-2">
+            <PriceFilePickButton
+              label={priceList ? "Ersätt prisfilen" : "Ladda upp prisfil"}
+              onFile={onImport}
+            />
+            <button
+              type="button"
+              className={buttonClasses("ghost", "sm")}
+              disabled={pending}
+              onClick={() =>
+                startTransition(async () => {
+                  const draft = await priceListRequestDraftAction(connection.id);
+                  if (!draft.ok) {
+                    setError(draft.error);
+                    return;
+                  }
+                  window.location.href = draft.mailto;
+                })
+              }
+            >
+              Be om ny prislista
+            </button>
+          </div>
         </div>
       </div>
 

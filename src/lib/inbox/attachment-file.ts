@@ -1,5 +1,6 @@
 import type { InboundMailPayload } from "./inbound-mail";
 import { MAX_INLINE_ATTACHMENT_BYTES, isViewableContentType } from "./attachment-content";
+import { looksLikePriceFile } from "./price-file";
 import { isSupabaseMode } from "../storage/config";
 import { tenantContext } from "../storage/context";
 import { supabaseAuthAdminClient } from "../platform/supabase-admin";
@@ -31,6 +32,8 @@ const BUCKET_TYPES = /^(application\/pdf|image\/(png|jpe?g|webp|heic))$/i;
 
 /** Bucketens tak (migration 13). Större filer lagras inte alls. */
 export const MAX_INBOX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+/** Inline-tak för prisfiler (bucketen tar inte CSV/XLSX). */
+const MAX_PRICE_FILE_INLINE_BYTES = 8 * 1024 * 1024;
 
 export function safeAttachmentFilename(name: string): string {
   const base = name.replace(/[/\\?%*:|"<>]/g, "-").replace(/\s+/g, " ").trim().slice(0, 120);
@@ -83,6 +86,14 @@ export async function storeInboxAttachment(
       throw new Error(`Dokumentet kunde inte sparas: ${error.message || "fillagringen svarade inte"}.`);
     }
     return { storagePath: path };
+  }
+
+  // Prisfiler (CSV/TXT/XLSX/XML/ZIP) är inte visningsbara PDF:er men måste
+  // kunna förhandsgranskas deterministiskt. Bucketen tar bara PDF/bild, så
+  // de lagras inline upp till taket. Ingen LLM får dem.
+  if (looksLikePriceFile(filename, contentType)) {
+    if (compact.length > Math.ceil((MAX_PRICE_FILE_INLINE_BYTES * 4) / 3) + 4) return {};
+    return { contentBase64: compact };
   }
 
   // Utan bucket gäller det gamla inline-taket, och bara typer visaren klarar.

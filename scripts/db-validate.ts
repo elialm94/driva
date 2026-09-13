@@ -2140,6 +2140,65 @@ async function main() {
   );
 
   // ------------------------------------------------------------------
+  // Materialkedjan (migration 58): dokumentrader, inköpsreferens, tenantisolering
+  // ------------------------------------------------------------------
+  console.log("\nMaterialkedjan (migration 58) – dokumentrader och inköpsreferens:");
+
+  await asApp(A);
+  await expectOk(db, "tenant A sätter inköpsreferens på uppdraget", () =>
+    db.query(`update public.jobs set purchase_ref = 'FV-1042' where id = 'job-a48'`)
+  );
+  await expectOk(db, "tenant A skapar en dokumentrad från kvitto", () =>
+    db.query(
+      `insert into public.document_lines (id, business_id, source, source_document_id, source_index, raw, disposition, status, allocations)
+       values ('dl-a58', '${A}', 'receipt', 'exp-a58', 0, '{}'::jsonb, 'customer', 'proposed', '[]'::jsonb)`
+    )
+  );
+  await expectError(db, "samma källa och index två gånger stoppas", "document_lines_source_idx_uq", () =>
+    db.query(
+      `insert into public.document_lines (id, business_id, source, source_document_id, source_index, raw, disposition, status, allocations)
+       values ('dl-a58-dup', '${A}', 'receipt', 'exp-a58', 0, '{}'::jsonb, 'customer', 'proposed', '[]'::jsonb)`
+    )
+  );
+  await expectError(db, "okänd dokumentkälla avvisas", "document_lines_source_check", () =>
+    db.query(
+      `insert into public.document_lines (id, business_id, source, source_document_id, source_index, raw, disposition, status, allocations)
+       values ('dl-bad-src', '${A}', 'punchout', 'x', 0, '{}'::jsonb, 'customer', 'proposed', '[]'::jsonb)`
+    )
+  );
+  await expectError(db, "okänd disposition avvisas", "document_lines_disposition_check", () =>
+    db.query(
+      `insert into public.document_lines (id, business_id, source, source_document_id, source_index, raw, disposition, status, allocations)
+       values ('dl-bad-disp', '${A}', 'receipt', 'exp-a58b', 0, '{}'::jsonb, 'punchout', 'proposed', '[]'::jsonb)`
+    )
+  );
+  await expectOk(db, "tenant A skapar ett till uppdrag för unik inköpsreferens", () =>
+    db.query(
+      `insert into public.jobs (id, business_id, customer_id, title, description, status, checklist, notes, created_at)
+       values ('job-a58', '${A}', 'cust-a1', 'Kök A', '', 'pagar', '[]'::jsonb, '', now())`
+    )
+  );
+  await expectError(db, "samma inköpsreferens två gånger i företaget stoppas", "jobs_purchase_ref_uq", () =>
+    db.query(`update public.jobs set purchase_ref = 'FV-1042' where id = 'job-a58'`)
+  );
+
+  await asApp(B);
+  await expectError(db, "tenant B kan inte skriva A:s dokumentrad", "row-level security", () =>
+    db.query(
+      `insert into public.document_lines (id, business_id, source, source_document_id, source_index, raw, disposition, status, allocations)
+       values ('dl-b-on-a', '${A}', 'receipt', 'exp-b', 0, '{}'::jsonb, 'customer', 'proposed', '[]'::jsonb)`
+    )
+  );
+
+  {
+    const r = await rows(db, `select id from public.document_lines`);
+    if (r.length === 0) ok("tenant B ser inte A:s dokumentrader");
+    else fail("tenant B ser inte A:s dokumentrader", JSON.stringify(r));
+  }
+
+  await asSuperuser();
+
+  // ------------------------------------------------------------------
   console.log(`\n${passed} godkända, ${failed} underkända.`);
   if (failed > 0) {
     console.error("\nUnderkända kontroller:");

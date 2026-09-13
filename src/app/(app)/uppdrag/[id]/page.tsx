@@ -38,6 +38,9 @@ import { AppLink } from "@/components/app-link";
 import { SmartBack } from "@/components/back-link";
 import { invoiceHref, newQuoteHref, pageOrigin, quoteHref } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
+import { ensureJobPurchaseRef } from "@/lib/services/jobs";
+import { inboundAddressForBusiness } from "@/lib/services/inbox";
+import { invoiceReadiness } from "@/lib/services/invoice-readiness";
 
 export async function generateMetadata(props: PageProps<"/uppdrag/[id]">) {
   // Metadata renderas före sidkroppen: tenantstate (Supabase/demosession)
@@ -324,6 +327,9 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         defaultHourlyRate={getInvoiceDefaults().defaultHourlyRate}
         invoiceChoice={invoiceChoice}
         wholesalers={wholesalers.enabled ? wholesalers : undefined}
+        purchaseRef={ensureJobPurchaseRef(job.id)}
+        inboxAddress={inboundAddressForBusiness()}
+        invoiceReadiness={invoiceReadiness(job.id)}
       />
 
       <JobChangesSection jobId={job.id} changes={jobChangesForJob(job.id)} />

@@ -33,6 +33,8 @@ import type { PurchaseOrderLine } from "@/lib/types";
 import type { WholesalerSearchResult, WholesalerSearchRow, WholesalerShopContext } from "@/lib/services/wholesalers";
 import type { PurchaseOrderMailPreview } from "@/lib/services/purchase-orders";
 import type { CartView, JobWholesalerContext, WholesalerPickerConnection } from "@/lib/wholesalers/views";
+import { draftCartsBadge } from "@/lib/wholesalers/views";
+import { comparableUnitPriceOre } from "@/lib/wholesalers/compare";
 import type { CatalogCategory } from "@/lib/wholesalers/catalog-search";
 import { normalizeIdentifier } from "@/lib/wholesalers/catalog-search";
 import { formatOre } from "@/lib/wholesalers/money";
@@ -366,7 +368,8 @@ export function WholesalerMaterialSheet({
               onClick={() => setView("cart")}
               data-wholesaler-cart-button
             >
-              <ShoppingCart className="size-4" /> Visa varukorg ({cartCount})
+              <ShoppingCart className="size-4" />{" "}
+              {draftCartsBadge(carts, connections) || `Visa varukorg (${cartCount})`}
               {cart?.totals.customerTotalOre != null ? (
                 <span className="hidden text-white/75 sm:inline">· {formatOre(cart.totals.customerTotalOre)}</span>
               ) : null}
@@ -672,7 +675,7 @@ function ShopView({
           {query ? (
             <button
               type="button"
-              className="absolute right-1.5 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg text-muted hover:bg-ink/5 hover:text-ink"
+              className="absolute right-1.5 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-lg text-muted hover:bg-ink/5 hover:text-ink"
               aria-label="Rensa sökningen"
               onClick={() => {
                 onQueryChange("");
@@ -1131,7 +1134,7 @@ function MarginBadge({ row }: { row: WholesalerSearchRow }) {
 }
 
 const stepBtnCls =
-  "flex size-9 shrink-0 items-center justify-center rounded-lg border border-line-strong text-ink transition-colors hover:bg-ink/5 disabled:opacity-40";
+  "flex size-11 shrink-0 items-center justify-center rounded-lg border border-line-strong text-ink transition-colors hover:bg-ink/5 disabled:opacity-40";
 
 function ProductCard({
   row,
@@ -1181,7 +1184,7 @@ function ProductCard({
           aria-pressed={favorite}
           aria-label={favorite ? `Ta bort ${row.name} från favoriter` : `Spara ${row.name} som favorit`}
           className={cx(
-            "absolute right-1.5 top-1.5 flex size-9 items-center justify-center rounded-full bg-card/90 shadow-sm backdrop-blur transition-colors",
+            "absolute right-1.5 top-1.5 flex size-11 items-center justify-center rounded-full bg-card/90 shadow-sm backdrop-blur transition-colors",
             favorite ? "text-danger" : "text-muted hover:text-ink",
           )}
         >
@@ -1233,6 +1236,11 @@ function ProductCard({
             )}
             <MarginBadge row={row} />
           </p>
+          {row.packSize != null && row.packSize > 1 && row.netPriceOre != null ? (
+            <p className="text-[11px] text-muted" data-comparable-unit-price="">
+              Jämförbart {formatOre(comparableUnitPriceOre({ netPriceOre: row.netPriceOre, packSize: row.packSize }) ?? 0)} / enhet
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -1261,7 +1269,7 @@ function ProductCard({
               <Minus className="size-4" />
             </button>
             <input
-              className={cx(compactInputCls, "h-9 min-w-0 flex-1 px-1 text-center text-[14px]")}
+              className={cx(compactInputCls, "h-11 min-w-0 flex-1 px-1 text-center text-[14px]")}
               inputMode="decimal"
               value={qty}
               onChange={(e) => setQty(e.target.value)}
@@ -1284,7 +1292,7 @@ function ProductCard({
             </button>
             <button
               type="button"
-              className={cx(buttonClasses("primary", "md"), "h-9 shrink-0 px-3")}
+              className={cx(buttonClasses("primary", "md"), "h-11 shrink-0 px-3")}
               disabled={pending || !valid}
               onClick={() => onAdd(row, n)}
               aria-label={`Lägg ${row.name} i varukorgen`}

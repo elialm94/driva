@@ -523,7 +523,16 @@ export function createInvoiceFromJobActuals(
   const approved = quote?.status === "godkand" ? quote : undefined;
   const available = uninvoicedActuals(jobId);
   const selected = entryIds?.length ? available.filter((e) => entryIds.includes(e.id)) : available;
-  if (selected.length === 0) throw new Error("Det finns inget ofakturerat arbete att fakturera");
+  const billable = selected.filter((e) => {
+    if (e.type !== "material" || e.unitPrice > 0 || !e.documentLineId) return true;
+    const line = (db().documentLines ?? []).find((l) => l.id === e.documentLineId);
+    return line != null && line.customerPriceSource !== "missing" && line.customerPrice != null;
+  });
+  if (billable.length < selected.length && billable.length === 0) {
+    throw new Error("Kundpris saknas. Ange pris innan raden tas upp på fakturaunderlaget.");
+  }
+  const toInvoice = billable.length > 0 ? billable : selected;
+  if (toInvoice.length === 0) throw new Error("Det finns inget ofakturerat arbete att fakturera");
   const version = approved ? currentVersion(approved) : undefined;
   const invoice = createInvoice(
     {
@@ -531,7 +540,7 @@ export function createInvoiceFromJobActuals(
       jobId,
       quoteId: approved?.id,
       type: "faktura",
-      lines: selected.map((e) => entryToDocLine(e, approved?.number)),
+      lines: toInvoice.map((e) => entryToDocLine(e, approved?.number)),
       rot: rotFromJob(jobId),
       dueInDays: version?.paymentTermsDays,
       lateInterestRate: version?.lateInterestRate,
@@ -540,7 +549,7 @@ export function createInvoiceFromJobActuals(
     createdBy
   );
   associateEntriesWithInvoice(
-    selected.map((e) => e.id),
+    toInvoice.map((e) => e.id),
     invoice.id
   );
   return invoice;

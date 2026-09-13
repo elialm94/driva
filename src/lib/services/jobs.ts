@@ -13,6 +13,7 @@ import {
   type WorkLocationInput,
 } from "./work-locations";
 import { importQuotedBaseline, isIssuedLinked, jobWorkEntries } from "./job-work";
+import { nextFervaReference } from "../ferva-reference";
 import { invoicesForJob } from "./job-economy";
 import { discardInvoice } from "./invoices";
 import type { JobCompleteWarning, JobRemovalPolicy } from "../job-ui-types";
@@ -203,6 +204,19 @@ export function createJob(input: {
   });
   save();
   return job;
+}
+
+/**
+ * Stabil inköpsreferens (FV-n). Tilldelas vid första visning, inte vid
+ * skapande, så att befintliga beställningsnummer inte hoppar i äldre tester.
+ */
+export function ensureJobPurchaseRef(jobId: string): string {
+  const job = db().jobs.find((j) => j.id === jobId);
+  if (!job) throw new Error("Uppdraget finns inte");
+  if (job.purchaseRef) return job.purchaseRef;
+  job.purchaseRef = nextFervaReference();
+  save();
+  return job.purchaseRef;
 }
 
 export function setJobStatus(jobId: string, status: Job["status"]): Job {

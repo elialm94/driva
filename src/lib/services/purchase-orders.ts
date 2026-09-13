@@ -12,6 +12,7 @@
  */
 import { db, save } from "../store";
 import { uid } from "../ids";
+import { nextFervaReference } from "../ferva-reference";
 import { isEmailFormat } from "../settings-validation";
 import { currentActor } from "../collaboration/actor";
 import type {
@@ -133,16 +134,7 @@ function ordererDefaults(): { name: string; email: string; phone: string } {
 }
 
 function nextReference(): string {
-  const data = db();
-  let n = data.meta.purchaseOrderSequence ?? 1001;
-  const taken = new Set(purchaseOrders().map((o) => o.reference));
-  let ref = `FV-${n}`;
-  while (taken.has(ref)) {
-    n += 1;
-    ref = `FV-${n}`;
-  }
-  data.meta = { ...data.meta, purchaseOrderSequence: n + 1 };
-  return ref;
+  return nextFervaReference();
 }
 
 function defaultDelivery(connection: WholesalerConnection): PurchaseOrderDelivery {

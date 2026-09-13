@@ -40,3 +40,18 @@ export interface JobWholesalerContext {
 export function cartLineCount(cart: CartView | undefined): number {
   return cart?.lines.length ?? 0;
 }
+
+/** När flera varukorgar finns: "Ahlsell 3 · Dahl 2". Tom sträng om färre än två. */
+export function draftCartsBadge(
+  carts: CartView[],
+  connections: Array<{ id: string; label: string }>
+): string {
+  const drafts = carts.filter((c) => c.order.status === "draft" && c.lines.length > 0);
+  if (drafts.length < 2) return "";
+  return drafts
+    .map((c) => {
+      const label = connections.find((x) => x.id === c.order.connectionId)?.label ?? "Grossist";
+      return `${label} ${c.lines.length}`;
+    })
+    .join(" · ");
+}

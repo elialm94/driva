@@ -8,6 +8,15 @@ import { DocumentPane } from "@/components/document-viewer";
 import { ExtractionReviewForm } from "@/components/extraction-review";
 import { kunderInboxHref } from "@/lib/nav";
 import { isOwnerSurface, wsCan, wsHref, type AccountingWorkspace } from "@/lib/accounting-workspace/shared";
+import { DocumentLineReview } from "@/components/document-line-review";
+import { getJob } from "@/lib/services/data";
+import {
+  documentLineMathFor,
+  documentLineSourceFromInboxType,
+  jobsForDocumentReview,
+  lineReviewHeadline,
+  linesForInboxItem,
+} from "@/lib/services/document-lines";
 
 /**
  * Fokuserad granskning: dokumentet till vänster, Fervas tolkning till höger.
@@ -72,12 +81,41 @@ export function UnderlagKontrolleraView({ ws, id }: { ws: AccountingWorkspace; i
           </Card>
         )}
 
-        <ExtractionReviewForm
-          itemId={item.id}
-          documentType={review.documentType === "orderbekraftelse" ? "ekonomiskt_dokument" : review.documentType}
-          fields={review.fields}
-          backHref={wsHref(ws, `/bokforing/underlag/${item.id}`)}
-        />
+        <div>
+          <ExtractionReviewForm
+            itemId={item.id}
+            documentType={review.documentType === "orderbekraftelse" ? "ekonomiskt_dokument" : review.documentType}
+            fields={review.fields}
+            backHref={wsHref(ws, `/bokforing/underlag/${item.id}`)}
+          />
+          {(() => {
+            const lines = linesForInboxItem(item.id);
+            if (lines.length === 0) return null;
+            const source = documentLineSourceFromInboxType(item.documentType);
+            const startedJobId = item.jobMatchMethod === "started_from_job" ? item.suggestedJobId : undefined;
+            const suggested = item.suggestedJobId ? getJob(item.suggestedJobId) : undefined;
+            const copy = lineReviewHeadline(item.id, source, startedJobId ? suggested?.title : undefined);
+            const math = documentLineMathFor(source, item.id, item.parsedAmount ?? 0);
+            return (
+              <DocumentLineReview
+                source={source}
+                sourceDocumentId={item.id}
+                lines={lines}
+                headline={copy.found}
+                question={
+                  copy.question ??
+                  (suggested && !startedJobId
+                    ? `Ferva föreslår '${suggested.title}' - bekräfta innan du kopplar.`
+                    : undefined)
+                }
+                mathMessage={math.message}
+                mathOk={math.ok}
+                jobs={jobsForDocumentReview()}
+                startedJobId={startedJobId}
+              />
+            );
+          })()}
+        </div>
       </div>
     </div>
   );

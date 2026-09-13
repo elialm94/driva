@@ -36,9 +36,22 @@ import { type PagedResult } from "./customers";
 import { attachExtractedPaymentDetails, bookSupplierInvoice, receiveSupplierInvoice } from "./suppliers";
 import { latestPaymentForInvoice, prepareSupplierPayment } from "./supplier-payments";
 import { paymentDetailsInfo, type PaymentDetailsCause } from "./payment-details";
-import { looksLikeOrderConfirmation } from "../wholesalers/confirmation-parse";
+import { extractAllFervaReferences, looksLikeOrderConfirmation } from "../wholesalers/confirmation-parse";
 import { connectionLabel } from "../wholesalers/labels";
 import { processInboxOrderConfirmation } from "./purchase-order-confirmations";
+import { inboundPlusTagFromTo, fervaRefFromPlusTag } from "../inbox/plus-tag";
+import { looksLikePriceFile, storablePriceFileContent } from "../inbox/price-file";
+import { jobByPurchaseRef } from "../ferva-reference";
+import { matchPurchaseDocuments, senderDomainOf } from "../document-match";
+import {
+  applyActualCostFromDocument,
+  suggestJobsForDocument,
+  upsertDocumentLinesFromParsed,
+  linesForInboxItem,
+} from "./document-lines";
+import { logActivity } from "./activity";
+import { getJob } from "./data";
+import type { DocumentLineSource } from "../types";
 
 export type { PagedResult };
 
@@ -477,7 +490,7 @@ function runDocumentPipeline(item: InboxItem): { autoBooked: boolean } {
  */
 export function ingestEconomicDocument(
   payload: InboundMailPayload,
-  opts: { source?: InboxItemSource; kind?: InboxItem["kind"] } = {}
+  opts: { source?: InboxItemSource; kind?: InboxItem["kind"]; startedFromJobId?: string } = {}
 ): IngestResult {
   const data = db();
   const items = data.inboxItems ?? (data.inboxItems = []);
@@ -490,7 +503,10 @@ export function ingestEconomicDocument(
   const attachments: InboxAttachment[] = (payload.attachments ?? []).map((a) => {
     // Bytes är redan lagrade när payloaden gick genom persistInboundAttachments;
     // inline-vägen finns kvar för JSON-läget och för tester som ingestar direkt.
-    const content = a.storagePath ? undefined : storableAttachmentContent(a.contentType, a.contentBase64);
+    const content = a.storagePath
+      ? undefined
+      : storableAttachmentContent(a.contentType, a.contentBase64) ??
+        storablePriceFileContent(a.filename, a.contentType, a.contentBase64);
     return {
       id: uid(),
       filename: a.filename,
@@ -533,7 +549,24 @@ export function ingestEconomicDocument(
   if (parsed) applyParsedFields(item, parsed);
   items.push(item);
 
+  attachInboundJobSuggestion(item, opts.startedFromJobId);
+  attachPurchaseDocumentMatch(item, parsed);
+  if (parsed?.lines?.length) {
+    upsertDocumentLinesFromParsed({
+      source: documentLineSourceFor(item.documentType),
+      sourceDocumentId: item.id,
+      inboxItemId: item.id,
+      parsed,
+      startedFromJobId: opts.startedFromJobId ?? item.suggestedJobId,
+    });
+  }
+
   const { autoBooked } = runDocumentPipeline(item);
+  linkDocumentLinesToCreatedRecords(item);
+  if (opts.startedFromJobId && item.expenseId) {
+    const expense = data.expenses.find((e) => e.id === item.expenseId);
+    if (expense && !expense.jobId) expense.jobId = opts.startedFromJobId;
+  }
   save();
   return { ok: true, item, created: true, autoBooked };
 }
@@ -555,6 +588,7 @@ export function ingestUploadedDocument(input: {
   /** Sökväg i bucketen när filen redan lagrats där (storeInboxAttachment). */
   storagePath?: string;
   sizeBytes?: number;
+  startedFromJobId?: string;
 }): IngestResult {
   const address = inboundAddressForBusiness();
   return ingestEconomicDocument(
@@ -575,7 +609,7 @@ export function ingestUploadedDocument(input: {
       ],
       parsed: input.parsed,
     },
-    { source: "uppladdning", kind: "uppladdning" }
+    { source: "uppladdning", kind: "uppladdning", startedFromJobId: input.startedFromJobId }
   );
 }
 
@@ -595,6 +629,12 @@ export function ingestUploadedDocument(input: {
  */
 export async function interpretInboundPayload(payload: InboundMailPayload): Promise<InboundMailPayload> {
   if (payload.parsed) return payload;
+  const priceAttachment = (payload.attachments ?? []).find((a) =>
+    looksLikePriceFile(a.filename, a.contentType)
+  );
+  if (priceAttachment && !isInterpretableDocument(priceAttachment.contentType)) {
+    return payload;
+  }
   const attachment = (payload.attachments ?? []).find(
     (a) => a.contentBase64 && isInterpretableDocument(a.contentType)
   );
@@ -621,6 +661,9 @@ export async function interpretDocumentFile(input: {
   subject?: string;
   text?: string;
 }): Promise<InboundParsedHint | undefined> {
+  if (looksLikePriceFile(input.filename, input.contentType) && !isInterpretableDocument(input.contentType)) {
+    return undefined;
+  }
   const extracted = await extractReceipt(input);
   if (!extracted) return undefined;
   const bankMatch = bankSupportFor(extracted.hint);
@@ -923,6 +966,120 @@ export function attachInboxItemToExpense(id: string, expenseId: string): InboxIt
   }
   save();
   return item;
+}
+
+function documentLineSourceFor(documentType: InboxDocumentType): DocumentLineSource {
+  if (documentType === "kvitto") return "receipt";
+  if (documentType === "orderbekraftelse") return "order_confirmation";
+  return "supplier_invoice";
+}
+
+function attachInboundJobSuggestion(item: InboxItem, startedFromJobId?: string): void {
+  if (startedFromJobId && getJob(startedFromJobId)) {
+    item.suggestedJobId = startedFromJobId;
+    item.jobMatchMethod = "started_from_job";
+    logActivity(`Underlag föreslog uppdraget du startade från. Mottagen adress: ${item.toAddress}.`, {
+      entity: { type: "jobb", id: startedFromJobId },
+    });
+    return;
+  }
+  const tag = inboundPlusTagFromTo(item.toAddress);
+  const ref = fervaRefFromPlusTag(tag);
+  if (ref) {
+    const job = jobByPurchaseRef(ref);
+    if (job) {
+      item.suggestedJobId = job.id;
+      item.jobMatchMethod = "plus_tag";
+      logActivity(`Underlag föreslog ${job.title} via referens ${ref} i adressen. Mottagen adress: ${item.toAddress}.`, {
+        entity: { type: "jobb", id: job.id },
+      });
+      return;
+    }
+    logActivity(`Inkommande adress hade tagg ${tag} som inte matchade något uppdrag. Mottagen adress: ${item.toAddress}.`);
+  }
+  const suggestions = suggestJobsForDocument({
+    inboxItem: item,
+    supplier: item.parsedSupplier,
+    date: item.parsedDate,
+  });
+  const strong = suggestions.find((s) => s.method === "subject_ref" || s.method === "document_ref" || s.method === "order");
+  if (strong) {
+    item.suggestedJobId = strong.job.id;
+    item.jobMatchMethod = strong.method;
+  }
+}
+
+function attachPurchaseDocumentMatch(item: InboxItem, parsed?: InboundParsedHint): void {
+  if (item.documentType === "orderbekraftelse") return;
+  const data = db();
+  const orders = (data.purchaseOrders ?? []).map((o) => {
+    const conn = (data.wholesalerConnections ?? []).find((c) => c.id === o.connectionId);
+    const lines = (data.purchaseOrderLines ?? []).filter((l) => l.orderId === o.id);
+    const expectedOre = o.sentSnapshot?.expectedCostOre;
+    return {
+      ...o,
+      lines,
+      connectionCustomerNumber: conn?.customerNumber,
+      wholesalerName: conn ? connectionLabel(conn) : undefined,
+      senderDomains: conn?.orderEmail ? [senderDomainOf(conn.orderEmail)].filter((d): d is string => Boolean(d)) : undefined,
+      expectedCostKronor: expectedOre != null ? Math.round(expectedOre / 100) : undefined,
+    };
+  });
+  const refs = extractAllFervaReferences(item.subject, item.textBody);
+  const plusRef = fervaRefFromPlusTag(inboundPlusTagFromTo(item.toAddress));
+  const match = matchPurchaseDocuments({
+    fervaRef: refs[0] ?? plusRef ?? undefined,
+    supplier: parsed?.supplier ?? item.parsedSupplier,
+    date: parsed?.date ?? item.parsedDate,
+    amountKronor: parsed?.amount ?? item.parsedAmount,
+    jobId: item.suggestedJobId,
+    senderDomain: senderDomainOf(item.fromAddress),
+    articles: (parsed?.lines ?? []).map((l) => ({ articleNumber: l.articleNumber, qty: l.qty })),
+    orders,
+  });
+  if (match.kind === "exact" && match.purchaseOrderId) {
+    item.purchaseOrderId = match.purchaseOrderId;
+    if (item.documentType === "leverantorsfaktura" && parsed?.lines?.length) {
+      applyActualCostFromDocument(match.purchaseOrderId, parsed.lines);
+    }
+  } else if (match.kind === "uncertain") {
+    item.purchaseOrderCandidateIds = match.candidates.slice(0, 5).map((c) => c.purchaseOrderId);
+  }
+}
+
+function linkDocumentLinesToCreatedRecords(item: InboxItem): void {
+  for (const line of linesForInboxItem(item.id)) {
+    if (item.expenseId) line.expenseId = item.expenseId;
+    if (item.supplierInvoiceId) line.supplierInvoiceId = item.supplierInvoiceId;
+    if (item.purchaseOrderId) line.purchaseOrderId = item.purchaseOrderId;
+    if (item.purchaseOrderConfirmationId) line.purchaseOrderConfirmationId = item.purchaseOrderConfirmationId;
+  }
+}
+
+export function linkInboxDocumentToPurchaseOrder(itemId: string, orderId: string): void {
+  const item = getInboxMail(itemId);
+  if (!item) throw new Error("Underlaget finns inte");
+  const order = (db().purchaseOrders ?? []).find((o) => o.id === orderId);
+  if (!order) throw new Error("Beställningen finns inte");
+  item.purchaseOrderId = orderId;
+  delete item.purchaseOrderCandidateIds;
+  const parsedLines = linesForInboxItem(item.id).map((l) => ({
+    articleNumber: l.articleNumber ?? l.raw.articleNumber,
+    qty: l.qty ?? l.raw.qty,
+    unitPrice: l.unitCost ?? l.raw.unitPrice,
+    lineAmount: l.raw.lineAmount,
+  }));
+  if (parsedLines.length > 0) applyActualCostFromDocument(orderId, parsedLines);
+  linkDocumentLinesToCreatedRecords(item);
+  logActivity(`Underlag kopplades till beställning ${order.reference}.`);
+  save();
+}
+
+export function dismissInboxPurchaseMatch(itemId: string): void {
+  const item = getInboxMail(itemId);
+  if (!item) return;
+  delete item.purchaseOrderCandidateIds;
+  save();
 }
 
 export { CONFIDENCE_THRESHOLDS };
