@@ -159,6 +159,7 @@ import {
 import type { DocumentLinkKind, DocumentLinkResult } from "@/lib/document-job-link-model";
 import {
   addJobMaterial,
+  addJobWorkEntry,
   deleteJobWorkEntry,
   registerJobTime,
   updateJobWorkEntry,
@@ -798,6 +799,16 @@ export async function deleteJobPhotoAction(jobId: string, photoId: string) {
 export async function addJobMaterialAction(jobId: string, input: JobMaterialInput) {
   await withBusiness(() => {
     addJobMaterial(jobId, input);
+    refresh();
+  });
+}
+
+export async function addJobWorkEntryAction(
+  jobId: string,
+  input: Parameters<typeof addJobWorkEntry>[1],
+) {
+  await withBusiness(() => {
+    addJobWorkEntry(jobId, input);
     refresh();
   });
 }

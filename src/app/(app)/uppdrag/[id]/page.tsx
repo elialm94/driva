@@ -271,6 +271,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         entries={actuals.map(toView)}
         laborPrefill={laborPrefill}
         defaultHourlyRate={getInvoiceDefaults().defaultHourlyRate}
+        defaultVatRate={getInvoiceDefaults().defaultVatRate}
         wholesalers={wholesalers.enabled ? wholesalers : undefined}
         purchaseRef={job.purchaseRef}
         inboxAddress={inboundAddressForBusiness()}

@@ -10,6 +10,7 @@ import {
   jobQuoteCardHeading,
   jobRemovalDisabledReason,
   jobWorkInvoiceChipLabel,
+  jobWorkInputFromDocLine,
 } from "./job-ui-types";
 
 const page = readFileSync(new URL("../app/(app)/uppdrag/[id]/page.tsx", import.meta.url), "utf8");
@@ -38,6 +39,20 @@ describe("uppdragssidan är en ekonomilogg", () => {
 
   it("en enda läggtill-kontroll täcker både tid och material", () => {
     assert.equal((work.match(/data-job-add-entry/g) ?? []).length, 1);
+  });
+
+  it("uppdragets läggtill använder samma prisradsfält, utan register-plus", () => {
+    assert.match(work, /variant="single"/);
+    assert.match(work, /fromRegister=\{false\}/);
+    assert.match(work, /jobWorkInputFromDocLine/);
+    assert.match(work, /AddMaterialSheet/);
+    assert.equal(work.includes("Spara i registret"), false);
+    assert.equal(work.includes("Från register"), false);
+    const editor = readFileSync(new URL("../components/lines-editor.tsx", import.meta.url), "utf8");
+    assert.equal(editor.includes("Spara i registret"), false);
+    assert.equal(editor.includes("onSaveArticle"), false);
+    assert.match(editor, /Från register/);
+    assert.doesNotMatch(editor, /Fota kvitto|Sök och beställ/);
   });
 
   it("sidorenderingen muterar inte inköpsreferensen", () => {
@@ -111,6 +126,24 @@ describe("uppdragshuvud: Avtalat, papperskorg, Ta bort", () => {
     assert.equal(jobEconomyDocCanDiscard({ kind: "invoice", status: "utkast", type: "faktura" }), true);
     assert.equal(jobEconomyDocCanDiscard({ kind: "invoice", status: "skickad", type: "faktura" }), false);
     assert.equal(jobEconomyDocCanDiscard({ kind: "invoice", status: "utkast", type: "kredit" }), false);
+  });
+
+  it("prisrad med rabatt blir uppdragspost med rabatten i à-priset", () => {
+    const draft = jobWorkInputFromDocLine({
+      id: "l1",
+      kind: "material",
+      type: "MATERIAL",
+      description: "Luckor",
+      qty: 2,
+      unit: "st",
+      unitPrice: 100,
+      vatRate: 25,
+      discountPercent: 10,
+    });
+    assert.equal(draft.type, "material");
+    assert.equal(draft.unitPrice, 90);
+    assert.equal(draft.qty, 2);
+    assert.equal(draft.vatRate, 25);
   });
 
   it("arbetsradens chip namnger utkastet", () => {

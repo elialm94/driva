@@ -2,8 +2,10 @@
  * Typer som klient-UI får importera. Inga store/fs-beroenden –
  * servicefilerna re-exporterar samma namn.
  */
+import { lineTotal } from "./calc";
+import { lineTypeOf } from "./economic-line-type";
 import { kr } from "./format";
-import type { Invoice, JobPricingKind, Quote } from "./types";
+import type { DocLine, Invoice, JobPricingKind, JobWorkEntryType, Quote, VatRate } from "./types";
 
 export type JobQuoteAction = "skapa_offert" | "visa_offert" | "fortsatt_offert";
 export type JobInvoiceAction = "skapa_faktura" | "skapa_delfaktura" | "skapa_slutfaktura";
@@ -110,6 +112,28 @@ export function jobWorkInvoiceChipLabel(input: {
   const detail =
     input.invoiceAmount != null ? kr(input.invoiceAmount) : input.invoiceTitle?.trim() || "";
   return detail ? `På utkast · ${detail}` : "På utkast";
+}
+
+/** DocLine från prisradseditorn → uppdragspost. Rabatten landar i à-priset. */
+export function jobWorkInputFromDocLine(line: DocLine): {
+  type: JobWorkEntryType;
+  description: string;
+  qty: number;
+  unit: string;
+  unitPrice: number;
+  vatRate: VatRate;
+} {
+  const type = lineTypeOf(line);
+  const qty = line.qty;
+  const excl = lineTotal(line);
+  return {
+    type: type === "LABOR" ? "labor" : type === "MATERIAL" ? "material" : type === "TRAVEL" ? "travel" : "other",
+    description: line.description.trim(),
+    qty,
+    unit: line.unit,
+    unitPrice: qty > 0 ? Math.round(excl / qty) : 0,
+    vatRate: line.vatRate,
+  };
 }
 
 /** Papperskorgen i Ekonomi-listan: bara offert-/fakturautkast, aldrig kredit. */
