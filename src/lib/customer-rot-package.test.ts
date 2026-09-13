@@ -9,12 +9,13 @@ import { replaceDb } from "./store";
 import { emptyTestDb, labor, rotReadyCustomer, testCustomer, testWorkLocation } from "./invoices/test-db";
 import { createCustomer } from "./services/customers";
 import { createInvoice, issueInvoice, updateInvoice } from "./services/invoices";
+import { currentVersion, requireCustomer } from "./services/data";
 import { createQuote, quoteDefaults, sendQuote } from "./services/quotes";
+import { taxReductionExceedsMaxError } from "./tax-reduction-terms";
 import { addWorkLocation, removeWorkLocation, workLocationsOf } from "./services/work-locations";
 import { CustomerValidationError } from "./customer-validation";
 import { WORK_LOCATION_IN_USE_MESSAGE } from "./work-location-label";
 import { getInvoiceSendBlockers, InvoiceNotReadyError } from "./invoices/validate";
-import { requireCustomer } from "./services/data";
 import { docTotals } from "./calc";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -260,6 +261,51 @@ describe("kundkortet: ett ROT/RUT-paket", () => {
     assert.equal(lowered.rot?.appliedTaxReduction, 1_000);
     assert.equal(after.toPay, after.total - 1_000);
     assert.ok(after.toPay > max.toPay);
+    assert.throws(
+      () =>
+        updateInvoice(invoice.id, {
+          lines: invoice.lines,
+          rot: {
+            type: "rot",
+            appliedTaxReduction: max.calculatedEligibleTaxReduction + 1,
+            taxReductionManuallyAdjusted: true,
+          },
+        }),
+      (err: Error) => err.message === taxReductionExceedsMaxError(max.calculatedEligibleTaxReduction, "faktura")
+    );
+
+    const defaults = quoteDefaults();
+    const quote = createQuote({
+      customerId: "cust-1",
+      title: "Köksrenovering",
+      lines: [labor({ unitPrice: 20_000 })],
+      rot: { type: "rot", appliedTaxReduction: 1_000, taxReductionManuallyAdjusted: true },
+      paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
+      paymentTermsDays: defaults.paymentTermsDays,
+      validUntil: defaults.validUntil,
+      terms: defaults.terms,
+    });
+    const quoteTotals = docTotals(currentVersion(quote).lines, currentVersion(quote).rot);
+    assert.equal(currentVersion(quote).rot?.appliedTaxReduction, 1_000);
+    assert.equal(quoteTotals.toPay, quoteTotals.total - 1_000);
+    assert.throws(
+      () =>
+        createQuote({
+          customerId: "cust-1",
+          title: "För högt avdrag",
+          lines: [labor({ unitPrice: 20_000 })],
+          rot: {
+            type: "rot",
+            appliedTaxReduction: max.calculatedEligibleTaxReduction + 1,
+            taxReductionManuallyAdjusted: true,
+          },
+          paymentPlan: [{ label: "När arbetet är klart", percent: 100 }],
+          paymentTermsDays: defaults.paymentTermsDays,
+          validUntil: defaults.validUntil,
+          terms: defaults.terms,
+        }),
+      (err: Error) => err.message === taxReductionExceedsMaxError(max.calculatedEligibleTaxReduction, "offert")
+    );
   });
 
   it("fakturaeditorn: en bostadsväljare, ingen sidotext, beskrivning före ROT", () => {
@@ -283,6 +329,12 @@ describe("kundkortet: ett ROT/RUT-paket", () => {
     const fields = source("src/components/tax-reduction-fields.tsx");
     assert.doesNotMatch(fields, /Bostadstyp Fastighet/);
     assert.match(fields, /taxReductionDeductionLabel\(type\)\} \{kr\(applied\)\}/);
+    assert.match(fields, /onClick=\{startEdit\}/);
+    assert.match(fields, /−\{kr\(applied\)\}/);
+    assert.match(fields, /onApply\(calculated\)/);
     assert.doesNotMatch(fields, /remainingCap/);
+    assert.doesNotMatch(fields, /step=/);
+    assert.match(fields, /inputMode="numeric"/);
+    assert.match(fields, /\/\^\\d\+\$\//);
   });
 });

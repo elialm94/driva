@@ -143,6 +143,13 @@ export function TaxReductionAmountPanel({
       return;
     }
     if (parsed > calculated) {
+      if (commit) {
+        setError(null);
+        onApply(calculated);
+        setDraft(String(calculated));
+        setEditing(false);
+        return;
+      }
       setError(taxReductionExceedsMaxError(calculated, documentKind));
       return;
     }
@@ -192,7 +199,14 @@ export function TaxReductionAmountPanel({
             </button>
             <ChangeButton onClick={startEdit} />
           </span>
-          <span className="tabular">−{kr(applied)}</span>
+          <button
+            type="button"
+            onClick={startEdit}
+            className="tabular underline-offset-2 hover:underline"
+            aria-label={`${taxReductionDeductionLabel(type)} ${kr(applied)}`}
+          >
+            −{kr(applied)}
+          </button>
         </p>
       )}
       {error ? <p className="text-[13px] font-medium text-danger">{error}</p> : null}
