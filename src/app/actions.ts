@@ -37,7 +37,7 @@ import {
   remindInvoiceByEmail,
   sendQuoteWithEmail,
 } from "@/lib/services/document-mail";
-import { issueInvoice } from "@/lib/services/invoices";
+import { issueInvoice, issueInvoiceForPrint, markInvoiceSentManually } from "@/lib/services/invoices";
 import { getInvoiceSendBlockers, InvoiceNotReadyError } from "@/lib/invoices/validate";
 import { userFacingInvoiceSendError, userFacingIssueError } from "@/lib/invoices/issue-errors";
 import { QuoteNotReadyError } from "@/lib/services/quotes";
@@ -922,6 +922,52 @@ export async function sendInvoiceAction(
     },
     { retry: false }
   );
+}
+
+/**
+ * "Ladda ner PDF": utfärda fakturan och lämna tillbaka länken till A4-vyn.
+ *
+ * Medvetet INTE `getInvoiceSendBlockers` – den listan lägger på e-postkravet,
+ * och en pappersfaktura behöver ingen adress. Valideringen av själva fakturan
+ * sker ändå, inuti `issueInvoiceForPrint` → `issueInvoice`.
+ */
+export async function issueInvoiceForDownloadAction(
+  invoiceId: string
+): Promise<{ ok: true; pdfHref: string } | { ok: false; errors: string[] }> {
+  try {
+    const pdfHref = await withBusiness(
+      () => {
+        const invoice = issueInvoiceForPrint(invoiceId);
+        return `/faktura/${invoice.token}/pdf`;
+      },
+      { capability: "send_invoice" }
+    );
+    refresh();
+    return { ok: true, pdfHref } as const;
+  } catch (e) {
+    refresh();
+    if (e instanceof InvoiceNotReadyError) {
+      return { ok: false, errors: e.blockers.map((b) => b.message) } as const;
+    }
+    return { ok: false, errors: [userFacingIssueError(e)] } as const;
+  }
+}
+
+/** "Markera som skickad": utfärda om det behövs och registrera leveransen – inget mejl. */
+export async function markInvoiceSentManuallyAction(
+  invoiceId: string
+): Promise<{ ok: true } | { ok: false; errors: string[] }> {
+  try {
+    await withBusiness(() => markInvoiceSentManually(invoiceId), { capability: "send_invoice" });
+    refresh();
+    return { ok: true } as const;
+  } catch (e) {
+    refresh();
+    if (e instanceof InvoiceNotReadyError) {
+      return { ok: false, errors: e.blockers.map((b) => b.message) } as const;
+    }
+    return { ok: false, errors: [userFacingIssueError(e)] } as const;
+  }
 }
 
 export async function deliverInvoiceAction(

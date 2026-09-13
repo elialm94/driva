@@ -9,7 +9,7 @@ import {
   issueInvoiceForPrint,
   markInvoiceSentManually,
 } from "./services/invoices";
-import { getInvoice, requireCustomer } from "./services/data";
+import { requireCustomer } from "./services/data";
 import { getBusinessActions } from "./services/actions";
 import { getInvoiceSendBlockers, validateInvoiceForIssue } from "./invoices/validate";
 import { resolveCustomerEmail } from "./resolve-missing-requirements";

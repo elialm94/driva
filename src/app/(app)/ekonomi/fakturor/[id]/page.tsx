@@ -4,7 +4,7 @@ import { db } from "@/lib/store";
 import { getInvoice, invoiceTotals, requireCustomer, isOverdue } from "@/lib/services/data";
 import { creditInvoiceContext } from "@/lib/services/invoices";
 import { invoiceQuoteDeviation } from "@/lib/services/invoice-quote-deviation";
-import { getInvoiceSendBlockers } from "@/lib/invoices/validate";
+import { validateInvoiceForIssue } from "@/lib/invoices/validate";
 import { invoiceHeading } from "@/lib/invoices/display";
 import { kr, datumTid, datumLang, relativ } from "@/lib/format";
 import { ButtonLink, Breadcrumbs, Card, SectionTitle, buttonClasses, cx } from "@/components/ui";
@@ -61,12 +61,15 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   const isDraft = invoice.status === "utkast";
   const fromHere = pageOrigin(`/ekonomi/fakturor/${invoice.id}`, searchParams, invoiceHeading(invoice));
   const linkView = documentLinkView("invoice", invoice.id, fromHere);
-  const sendBlockers = isDraft
-    ? getInvoiceSendBlockers(invoice.id).map((b) =>
+  // Checklistan listar bara det som hindrar en GILTIG faktura. Kundens
+  // e-postadress hör inte dit: den krävs för mejl-utskicket och frågas efter
+  // i utskicksdialogen, inte för att utfärda en faktura som ska på papper.
+  const issueBlockers = isDraft
+    ? validateInvoiceForIssue(invoice.id).map((b) =>
         b.href ? { ...b, href: hrefFromOrigin(b.href, fromHere) } : b
       )
     : [];
-  const canSend = sendBlockers.length === 0;
+  const canSend = issueBlockers.length === 0;
   const editHref = hrefWithNav(`/ekonomi/fakturor/${invoice.id}/redigera`, returnNavFromSearch(searchParams));
   const tillaggHref = deviation?.largeExcess
     ? newQuoteHref({
@@ -79,9 +82,11 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
   const justSent = sentParam === "1" && !isDraft;
   const justSentDemo = sentParam === "demo" && !isDraft;
   const justSentManual = sentParam === "manuell" && !isDraft;
+  // Ett mejl som inte gick fram. En pappersfaktura eller ett eget utskick
+  // har en vald kanal och är inget fel.
   const deliveryFailed =
     (typeof searchParams.leveransfel === "string" && searchParams.leveransfel === "1") ||
-    Boolean(!isDraft && invoice.issuedAt && !invoice.sentAt);
+    Boolean(!isDraft && invoice.issuedAt && !invoice.sentAt && !invoice.deliveredBy);
 
   const doc = <InvoiceDocument company={data.settings} customer={customer} invoice={invoice} />;
 
@@ -205,7 +210,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
           <span className="font-medium text-ok">
             Faktura {invoice.number != null ? `#${invoice.number}` : ""} är utfärdad, bokförd och markerad som skickad.
           </span>{" "}
-          Ingen e-post är konfigurerad – dela kundlänken med {customer.name} via ”Kopiera kundlänk”.
+          Inget mejl gick ut härifrån – dela kundlänken med {customer.name} via ”Kopiera kundlänk” om du vill.
         </Card>
       ) : null}
 
@@ -216,7 +221,7 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
         </Card>
       ) : null}
 
-      {isDraft ? <InvoiceIssueChecklist blockers={sendBlockers} /> : null}
+      {isDraft ? <InvoiceIssueChecklist blockers={issueBlockers} /> : null}
 
       {taxCase ? <TaxReductionApplicationCard cse={taxCase} editHref={isDraft ? editHref : undefined} hus={husExport} /> : null}
 
@@ -268,7 +273,14 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
                 {[
                   { label: "Skapad", at: invoice.createdAt as string | undefined, done: true },
                   { label: "Utfärdad", at: invoice.issuedAt, done: !!invoice.issuedAt },
-                  { label: "Skickad", at: invoice.sentAt, done: !!invoice.sentAt },
+                  // "Skickad" = kunden har fakturan. Mejl ger sentAt; ett eget
+                  // utskick ger deliveredAt. En nedladdad PDF ger ingen av dem
+                  // – då vet vi bara att fakturan är utfärdad.
+                  {
+                    label: "Skickad",
+                    at: invoice.sentAt ?? invoice.deliveredAt,
+                    done: !!(invoice.sentAt || invoice.deliveredAt),
+                  },
                   ...(invoice.lastSentAt && invoice.sentAt && invoice.lastSentAt !== invoice.sentAt
                     ? [{ label: "Skickad igen", at: invoice.lastSentAt as string | undefined, done: true }]
                     : []),
