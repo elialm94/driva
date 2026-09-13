@@ -1,4 +1,5 @@
 import { db, save } from "../store";
+import { kr } from "../format";
 import { uid } from "../ids";
 import type { VatBox, VatReport } from "../types";
 import {
@@ -257,7 +258,7 @@ export function vatChecklist(period: Period): VatChecklistItem[] {
       label: "Momsen är avstämd mot bokföringen",
       ok: ledger.ok,
       detail: ledger.ok
-        ? `Utgående ${pos.utgaende} kr, ingående ${pos.ingaende} kr – hämtat direkt ur huvudboken.`
+        ? `Utgående ${kr(pos.utgaende)}, ingående ${kr(pos.ingaende)} – hämtat direkt ur huvudboken.`
         : ledger.detail,
     },
   ];

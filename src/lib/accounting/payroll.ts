@@ -323,6 +323,23 @@ export function employeesAwaitingPayroll(month: string): Employee[] {
   });
 }
 
+/**
+ * Poster som sidan Lön visar under Att göra: ett kort per anställd och månad,
+ * plus arbetsgivardeklarationer som väntar på att lämnas. Räknaren måste
+ * följa korten, inte månaderna – två anställda i samma månad är två kort.
+ */
+export function payrollAttGora(through: string = todayDate()): {
+  runs: { month: string; employee: Employee }[];
+  filings: EmployerDeclaration[];
+} {
+  return {
+    runs: payrollMonthsAwaitingRun(through).flatMap((month) =>
+      employeesAwaitingPayroll(month).map((employee) => ({ month, employee }))
+    ),
+    filings: employerDeclarationsAwaitingFiling(through),
+  };
+}
+
 function maxMonth(a: string, b: string): string {
   return a >= b ? a : b;
 }

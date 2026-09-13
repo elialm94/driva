@@ -6,7 +6,8 @@ import { db, replaceDb } from "../store";
 import { emptyTestDb } from "../invoices/test-db";
 import { postVerification } from "./engine";
 import { auditTrail } from "./audit";
-import { vatPeriods } from "./vat";
+import { vatChecklist, vatPeriods } from "./vat";
+import { kr } from "../format";
 import { bookVatOnTaxAccount, setTaxAccountOcr, SKATTEKONTO } from "./tax-account";
 import { declareVatPeriod, taxAccountTransfersSince, vatFlowFocus, vatPeriodFlow, SKATTEVERKET_BANKGIRO } from "./vat-flow";
 import { bankgirotModulus10CheckDigit } from "../ids";
@@ -136,6 +137,14 @@ describe("steg 1 – kontrollera", () => {
     assert.equal(flow.done, false);
     assert.deepEqual(statuses(flow), ["kontrollera:pagaende", "deklarera:vantar", "betala:vantar"]);
     assert.equal(flow.checklist.length, 0);
+  });
+
+  it("checklisans momskontroll formaterar belopp med kr()", () => {
+    bookSales(`${YEAR}-02-10`, 10_000, 2_500);
+    const moms = vatChecklist(quarter("K1").period).find((c) => c.key === "moms");
+    assert.ok(moms);
+    assert.ok((moms.detail ?? "").includes(kr(2_500)), moms.detail);
+    assert.doesNotMatch(moms.detail ?? "", /Utgående 2500 kr/);
   });
 });
 

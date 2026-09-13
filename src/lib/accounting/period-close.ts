@@ -1,4 +1,5 @@
 import { db, save } from "../store";
+import { kr } from "../format";
 import { bokforingsdatum, monthsOf, todayDate, vatPeriodsOf, type Period } from "./dates";
 import { fiscalYears, lockPeriod, lockedThrough, vatPeriodicity } from "./fiscal";
 import { bankReconciliationAt } from "./reconciliation";
@@ -149,7 +150,7 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
         unbookedBank.length > 0
           ? `${unbookedBank.length} banktransaktion${unbookedBank.length > 1 ? "er" : ""} i ${period.label} behöver hanteras.`
           : recon.unexplained !== 0
-            ? `${Math.abs(recon.unexplained)} kr skiljer mellan banken och bokföringen den ${period.end} utan förklaring.`
+            ? `${kr(Math.abs(recon.unexplained))} skiljer mellan banken och bokföringen den ${period.end} utan förklaring.`
             : "Kontot stämmer mot bokföringen vid månadens slut.",
       href: "/bokforing/bank",
       hrefLabel: "Öppna banken",
@@ -164,7 +165,7 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
           ? [
               openExpenses.length > 0 ? `${openExpenses.length} köp saknar kvitto eller svar` : null,
               unbookedSupplier.length > 0 ? `${unbookedSupplier.length} leverantörsfaktura är inte bokförd` : null,
-              openInbox.length > 0 ? `${openInbox.length} dokument ligger ogranskat i inboxen` : null,
+              openInbox.length > 0 ? `${openInbox.length} dokument ligger ogranskat i underlagen` : null,
             ]
               .filter(Boolean)
               .join(", ") + "."

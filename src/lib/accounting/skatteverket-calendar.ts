@@ -208,7 +208,7 @@ function yearEndEvents(today: string, until: string): AuthorityEvent[] {
           ? `Inlämnad till Bolagsverket`
           : `Bolagsverket senast ${datumLang(ars)}`,
         dueDate: ars,
-        href: `/bokforing/bokslut/arsredovisning/${fy.id}`,
+        href: report ? `/bokforing/bokslut/arsredovisning/${fy.id}` : "/bokforing/bokslut",
         status: statusOf(ars, today, Boolean(done)),
         uid: `ars-${fy.id}@driva`,
       });
