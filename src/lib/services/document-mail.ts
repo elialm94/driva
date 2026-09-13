@@ -15,7 +15,8 @@ import { invoiceEmailRubrik } from "../email/rubrik";
 import { currentVersion, getInvoice, getQuote, invoiceOutstanding, invoiceTotals, quoteTotals, requireCustomer } from "./data";
 import { deliverInvoice, issueInvoice, sendReminder, type Actor } from "./invoices";
 import { publicToken } from "../ids";
-import { followUpQuote, assertQuoteReadyToSend, sendQuote } from "./quotes";
+import { followUpQuote, assertQuoteReadyToSend, quoteHardSendBlockers, QuoteNotReadyError, sendQuote } from "./quotes";
+import type { QuoteSendChannel } from "../quote-send-contact";
 
 /**
  * E-postleverans av offerter, fakturor och påminnelser.
@@ -68,12 +69,22 @@ function toOutcome(result: MailResult, to: string, fallback: string): DeliveryOu
   return { mode: result.mode, ok: false, error: userFacingSendError(result, fallback) };
 }
 
-/** Skicka offerten: Resend först, därefter status skickad. */
-export async function sendQuoteWithEmail(quoteId: string, message?: string): Promise<{ outcome: DeliveryOutcome }> {
-  return withDocumentLock(`quote:${quoteId}`, () => sendQuoteWithEmailOnce(quoteId, message));
+export type SendQuoteChannels = { channels?: QuoteSendChannel[] };
+
+/** Skicka offerten: Resend först, därefter status skickad. SMS-only hoppar e-postkravet. */
+export async function sendQuoteWithEmail(
+  quoteId: string,
+  message?: string,
+  opts?: SendQuoteChannels
+): Promise<{ outcome: DeliveryOutcome }> {
+  return withDocumentLock(`quote:${quoteId}`, () => sendQuoteWithEmailOnce(quoteId, message, opts));
 }
 
-async function sendQuoteWithEmailOnce(quoteId: string, message?: string): Promise<{ outcome: DeliveryOutcome }> {
+async function sendQuoteWithEmailOnce(
+  quoteId: string,
+  message?: string,
+  opts?: SendQuoteChannels
+): Promise<{ outcome: DeliveryOutcome }> {
   const quote = getQuote(quoteId);
   if (!quote) throw new Error("Offerten finns inte");
   if (quote.status === "skickad" && quote.sentAt) {
@@ -86,8 +97,27 @@ async function sendQuoteWithEmailOnce(quoteId: string, message?: string): Promis
       },
     };
   }
-  assertQuoteReadyToSend(quoteId);
+  const channels = opts?.channels?.length ? opts.channels : (["email"] as QuoteSendChannel[]);
+  const wantsEmail = channels.includes("email");
+  if (wantsEmail) {
+    assertQuoteReadyToSend(quoteId);
+  } else {
+    const hard = quoteHardSendBlockers(quoteId);
+    if (hard.length) throw new QuoteNotReadyError(hard);
+  }
   const customer = requireCustomer(quote.customerId);
+  if (!wantsEmail) {
+    if (!customer.phone?.trim()) {
+      return { outcome: { mode: "live", ok: false, error: "Kunden saknar telefonnummer. Fyll i det innan du skickar med SMS." } };
+    }
+    if (!quote.token) {
+      quote.token = publicToken();
+      save();
+    }
+    recordAttempt("quote", quoteId);
+    sendQuote(quoteId, { mode: "mock", ok: true });
+    return { outcome: { mode: "mock", ok: true } };
+  }
   const to = requireRecipient(customer.email);
   if (typeof to !== "string") return { outcome: { mode: "live", ok: false, error: to.error } };
   if (!quote.token) {

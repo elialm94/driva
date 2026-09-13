@@ -1,5 +1,6 @@
 import { isEmailFormat } from "./settings-validation";
 import { missingEmailForSend } from "./customer-validation";
+import { validateSwedishPhone } from "./validation";
 
 /**
  * Generellt "saknas något → komplettera på plats → återuppta":
@@ -21,11 +22,19 @@ export interface PendingAction {
 export type MissingRequirementCode = "buyer_email";
 
 export const EMAIL_SAVE_FAILED = "Kunde inte spara e-postadressen. Försök igen.";
+export const PHONE_SAVE_FAILED = "Kunde inte spara telefonnumret. Försök igen.";
 
 export function emailInputError(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return "Skriv in kundens e-postadress.";
   if (!isEmailFormat(trimmed)) return "Ange en giltig e-postadress.";
+  return null;
+}
+
+export function phoneInputError(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "Skriv in kundens telefonnummer.";
+  if (!validateSwedishPhone(trimmed).ok) return "Ange ett giltigt telefonnummer.";
   return null;
 }
 

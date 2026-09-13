@@ -21,7 +21,7 @@ import { FollowUpButton } from "@/components/money-widgets";
 import { QuoteDraftSend } from "@/components/quote-draft-send";
 import { DiscardDraftButton } from "@/components/discard-draft-button";
 import { SendChecklist } from "@/components/send-checklist";
-import { isQuoteWithdrawnByOwner, quoteSendBlockers } from "@/lib/services/quotes";
+import { isQuoteContactSoftBlocker, isQuoteWithdrawnByOwner, quoteSendBlockers } from "@/lib/services/quotes";
 import { sendQuoteAction } from "@/app/actions";
 import { isLiveMailConfigured } from "@/lib/mail";
 import { docTotals } from "@/lib/calc";
@@ -61,13 +61,14 @@ export default async function QuotePage(props: PageProps<"/ekonomi/offerter/[id]
   const justSent = sentParam === "1" && !isDraft;
   const justSentDemo = sentParam === "demo" && !isDraft;
   const justSentManual = sentParam === "manuell" && !isDraft;
-  // EN källa (quoteSendBlockers) för checklista, disabled Skicka och servervalidering.
-  // Stamp the quote (not its parent) so Komplettera / Lägg till e-post returns here.
+  // Hard-blockers till checklistan. E-post och telefon är mjuka luckor i QuoteDraftSend.
   const pendingDraft = pendingDraftQuoteVersion(quote);
   const pendingUnsent = Boolean(pendingDraft && !pendingDraft.sellerSnapshot);
   const sendBlockers =
     isDraft || pendingUnsent
-      ? quoteSendBlockers(quote.id).map((b) => (b.href ? { ...b, href: hrefFromOrigin(b.href, fromHere) } : b))
+      ? quoteSendBlockers(quote.id)
+          .filter((b) => !isQuoteContactSoftBlocker(b.code))
+          .map((b) => (b.href ? { ...b, href: hrefFromOrigin(b.href, fromHere) } : b))
       : [];
   const canSend = sendBlockers.length === 0;
 

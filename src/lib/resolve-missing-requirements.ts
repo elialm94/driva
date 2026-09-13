@@ -1,6 +1,16 @@
-import { EMAIL_SAVE_FAILED, emailInputError, type ResolveEmailResult } from "./missing-requirements";
+import {
+  EMAIL_SAVE_FAILED,
+  PHONE_SAVE_FAILED,
+  emailInputError,
+  phoneInputError,
+  type ResolveEmailResult,
+} from "./missing-requirements";
 import { updateCustomer } from "./services/customers";
 import { getCustomer } from "./services/data";
+
+export type ResolvePhoneResult =
+  | { ok: true; phone: string; customerId: string }
+  | { ok: false; error: string };
 
 /**
  * Persist-steget i resolveMissingRequirements. Skriver på den riktiga
@@ -28,5 +38,29 @@ export function resolveCustomerEmail(
     return { ok: true, email: customer.email, customerId: customer.id };
   } catch {
     return { ok: false, error: EMAIL_SAVE_FAILED };
+  }
+}
+
+/**
+ * Samma persist-steg som e-post: skriver telefon på den riktiga kunden
+ * och skickar inte offerten. Befintligt nummer skrivs inte över utan
+ * overwrite - kundkortet äger kontaktvägen.
+ */
+export function resolveCustomerPhone(
+  customerId: string,
+  phone: string,
+  opts: { overwrite?: boolean } = {}
+): ResolvePhoneResult {
+  const error = phoneInputError(phone);
+  if (error) return { ok: false, error };
+  try {
+    const existing = getCustomer(customerId)?.phone?.trim();
+    if (existing && !opts.overwrite) {
+      return { ok: true, phone: existing, customerId };
+    }
+    const customer = updateCustomer(customerId, { phone: phone.trim() });
+    return { ok: true, phone: customer.phone, customerId: customer.id };
+  } catch {
+    return { ok: false, error: PHONE_SAVE_FAILED };
   }
 }

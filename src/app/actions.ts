@@ -41,7 +41,7 @@ import { issueInvoice, issueInvoiceForPrint, markInvoiceSentManually } from "@/l
 import { getInvoiceSendBlockers, InvoiceNotReadyError } from "@/lib/invoices/validate";
 import { userFacingInvoiceSendError, userFacingIssueError } from "@/lib/invoices/issue-errors";
 import { QuoteNotReadyError } from "@/lib/services/quotes";
-import { getQuoteByToken } from "@/lib/services/data";
+import { getQuote, getQuoteByToken } from "@/lib/services/data";
 import {
   getOwnerNoticeSettings,
   prepareOwnerNoticeTest,
@@ -114,7 +114,8 @@ import {
 } from "@/lib/services/supplier-payments";
 import { requestPaymentDetailsFromSupplier } from "@/lib/services/payment-details";
 import { CustomerValidationError } from "@/lib/customer-validation";
-import { resolveCustomerEmail } from "@/lib/resolve-missing-requirements";
+import { resolveCustomerEmail, resolveCustomerPhone } from "@/lib/resolve-missing-requirements";
+import type { QuoteSendChannel } from "@/lib/quote-send-contact";
 import {
   addWorkLocation,
   removeWorkLocation,
@@ -537,14 +538,46 @@ export async function updateQuoteAction(quoteId: string, input: QuoteVersionInpu
   });
 }
 
+export type SendQuoteActionInput = {
+  message?: string;
+  channels?: QuoteSendChannel[];
+  email?: string;
+  phone?: string;
+};
+
+function normalizeSendQuoteInput(messageOrInput?: string | SendQuoteActionInput): SendQuoteActionInput {
+  if (typeof messageOrInput === "string" || messageOrInput === undefined) {
+    return { message: messageOrInput, channels: ["email"] };
+  }
+  return {
+    message: messageOrInput.message,
+    channels: messageOrInput.channels?.length ? messageOrInput.channels : ["email"],
+    email: messageOrInput.email,
+    phone: messageOrInput.phone,
+  };
+}
+
 export async function sendQuoteAction(
   quoteId: string,
-  message?: string
+  messageOrInput?: string | SendQuoteActionInput
 ): Promise<{ ok: true; mailed: boolean; demo?: boolean } | { ok: false; errors: string[] }> {
   return withBusiness(
     async () => {
       try {
-        const { outcome } = await sendQuoteWithEmail(quoteId, message);
+        const input = normalizeSendQuoteInput(messageOrInput);
+        const quote = getQuote(quoteId);
+        if (!quote) {
+          return { ok: false, errors: ["Offerten finns inte."] } as const;
+        }
+        if (input.email?.trim()) {
+          const saved = resolveCustomerEmail(quote.customerId, input.email, { overwrite: true });
+          if (!saved.ok) return { ok: false, errors: [saved.error] } as const;
+        }
+        if (input.phone?.trim()) {
+          const saved = resolveCustomerPhone(quote.customerId, input.phone, { overwrite: true });
+          if (!saved.ok) return { ok: false, errors: [saved.error] } as const;
+        }
+        const { outcome } = await sendQuoteWithEmail(quoteId, input.message, { channels: input.channels });
         if (!outcome.ok) {
           return { ok: false, errors: [outcome.error ?? "Kunde inte skicka offerten."] } as const;
         }
