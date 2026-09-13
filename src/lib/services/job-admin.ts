@@ -115,7 +115,7 @@ export function jobAdminState(job: Job): JobAdminState {
   } else if (quote?.status === "skickad") {
     nextStep = "Väntar på att kunden ska godkänna offerten.";
   } else if (quote?.status === "utkast") {
-    nextStep = "Offerten är ett utkast – skicka den när den är klar.";
+    nextStep = "Offerten är ett utkast - skicka den när den är klar.";
   } else if (quote?.status === "avbojd") {
     nextStep = "Offerten avböjdes. Skapa en ny om ni går vidare.";
   } else if (quote?.status === "utgangen") {

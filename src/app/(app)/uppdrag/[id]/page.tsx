@@ -8,7 +8,6 @@ import { isIncomingUnquotedJob, jobSourceLabel, parseJobNotes } from "@/lib/serv
 import {
   actualEntries,
   jobInvoiceChoice,
-  jobWorkComparison,
   quotedLaborPrefill,
   workEntryInvoiceStatus,
 } from "@/lib/services/job-work";
@@ -21,13 +20,8 @@ import { JobWorkSection, type JobWorkViewEntry } from "@/components/job-work";
 import { PurchaseOrdersSection } from "@/components/purchase-orders-section";
 import { jobPurchaseOrderRows, jobWholesalerContext } from "@/lib/services/job-wholesalers";
 import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
-import { JobPhotosSection } from "@/components/job-photos";
-import { JobChangesSection } from "@/components/job-changes-section";
-import { getJobChange, jobChangesForJob } from "@/lib/services/job-changes";
+import { getJobChange } from "@/lib/services/job-changes";
 import { closeoutView } from "@/lib/services/closeout";
-import { jobTimeline } from "@/lib/services/job-timeline";
-import { JobTimeline } from "@/components/job-timeline";
-import { CustomerShareSection } from "@/components/customer-share-section";
 import { RotDeadlineBanner } from "@/components/rot-deadline-banner";
 import { taxReductionCaseForJob, taxReductionCaseView } from "@/lib/services/tax-reduction";
 import { rotDeadlineStatus } from "@/lib/tax-reduction-deadline";
@@ -90,7 +84,6 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
   const taxCase = taxReductionCaseForJob(job);
   const husExport = taxCase.phase === "underlag" ? husExportPreview({ jobId: job.id }) : null;
   const actuals = actualEntries(job.id);
-  const comparison = jobWorkComparison(job.id);
   const invoiceChoice = jobInvoiceChoice(job.id);
   const laborPrefill = quotedLaborPrefill(job.id);
   const hasEconomy = Boolean(quote) || invoices.length > 0 || money.registeredUninvoiced > 0;
@@ -198,6 +191,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
           remainingLabel={admin.remaining > 0 ? kr(admin.remaining) : null}
           quoteAction={admin.quoteAction}
           invoiceAction={admin.invoiceAction}
+          hasBillable={admin.hasBillable}
           waitingLabel={admin.waitingLabel}
           doneLabel={admin.doneLabel}
           canMarkDone={admin.canMarkDone}
@@ -208,6 +202,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
           newQuoteHref={newQuoteHref({ kund: customer.id, job: job.id, from: fromHere })}
           invoiceChoice={invoiceChoice}
           closeout={closeoutView(job.id)}
+          photos={job.photos ?? []}
           job={{
             title: job.title,
             description: job.description,
@@ -219,45 +214,44 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
       {hasEconomy ? (
         <div className="mb-8">
           <SectionTitle>Ekonomi</SectionTitle>
-          <dl className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px] tabular sm:grid-cols-2">
-            {money.quoteAmount > 0 ? (
-              <div className="flex items-baseline justify-between gap-3">
-                <dt className="text-muted">Avtalat</dt>
-                <dd className="font-medium text-ink">{kr(money.quoteAmount)}</dd>
-              </div>
-            ) : null}
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="text-muted">Registrerat</dt>
-              <dd className="font-medium text-ink">{kr(money.registered)}</dd>
+          {/* Avtalat, Fakturerat och Kvar är sidans tre tal. Registrerat och
+              Betalt står kvar som andrahandssiffror. */}
+          <dl className="mb-3 grid grid-cols-3 gap-x-4 gap-y-1.5 text-[13px] tabular">
+            <div>
+              <dt className="text-muted">Avtalat</dt>
+              <dd className="text-[17px] font-semibold text-ink">{kr(money.quoteAmount)}</dd>
             </div>
-            <div className="flex items-baseline justify-between gap-3">
+            <div>
               <dt className="text-muted">Fakturerat</dt>
-              <dd className="font-medium text-ink">{kr(money.invoicedIssued)}</dd>
+              <dd className="text-[17px] font-semibold text-ink">{kr(money.invoicedIssued)}</dd>
             </div>
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="text-muted">Betalt</dt>
-              <dd className="font-medium text-ink">{kr(money.paid)}</dd>
+            <div>
+              <dt className="text-muted">Kvar</dt>
+              <dd className="text-[17px] font-semibold text-ink">
+                {kr(Math.max(admin.remaining, money.registeredUninvoiced))}
+              </dd>
             </div>
-            {money.cost > 0 ? (
-              <>
-                <div className="flex items-baseline justify-between gap-3">
-                  <dt className="text-muted">Inköp</dt>
-                  <dd className="font-medium text-ink">{kr(money.cost)}</dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-3">
-                  <dt className="text-muted">Täckning</dt>
-                  <dd className={money.profit >= 0 ? "font-medium text-ok" : "font-medium text-danger"}>{kr(money.profit)}</dd>
-                </div>
-              </>
-            ) : null}
-            {quote?.status === "godkand" || money.registeredUninvoiced > 0 ? (
-              <div className="col-span-2 flex items-baseline justify-between gap-3 border-t border-line/60 pt-1.5">
-                <dt className="text-muted">Kvar att fakturera</dt>
-                <dd className="font-medium text-ink">
-                  {kr(Math.max(admin.remaining, money.registeredUninvoiced))}
-                </dd>
-              </div>
-            ) : null}
+            <div className="col-span-3 mt-0.5 flex flex-wrap gap-x-5 gap-y-1 border-t border-line/60 pt-1.5 text-muted">
+              <span>
+                Registrerat <span className="font-medium text-soft">{kr(money.registered)}</span>
+              </span>
+              <span>
+                Betalt <span className="font-medium text-soft">{kr(money.paid)}</span>
+              </span>
+              {money.cost > 0 ? (
+                <>
+                  <span>
+                    Inköp <span className="font-medium text-soft">{kr(money.cost)}</span>
+                  </span>
+                  <span>
+                    Täckning{" "}
+                    <span className={money.profit >= 0 ? "font-medium text-ok" : "font-medium text-danger"}>
+                      {kr(money.profit)}
+                    </span>
+                  </span>
+                </>
+              ) : null}
+            </div>
           </dl>
           <div className="divide-y divide-line/70 rounded-2xl border border-line/80">
             {quote && version ? (
@@ -316,31 +310,13 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
       <JobWorkSection
         jobId={job.id}
         jobTitle={job.title}
-        comparison={comparison}
-        labor={actuals.filter((e) => e.type === "labor").map(toView)}
-        material={actuals.filter((e) => e.type === "material").map(toView)}
-        other={actuals.filter((e) => e.type === "other" || e.type === "travel").map(toView)}
+        entries={actuals.map(toView)}
         laborPrefill={laborPrefill}
         defaultHourlyRate={getInvoiceDefaults().defaultHourlyRate}
-        invoiceChoice={invoiceChoice}
         wholesalers={wholesalers.enabled ? wholesalers : undefined}
       />
 
-      <JobChangesSection jobId={job.id} changes={jobChangesForJob(job.id)} />
-
-      <JobPhotosSection jobId={job.id} photos={job.photos ?? []} />
-
       <PurchaseOrdersSection jobId={job.id} jobTitle={job.title} rows={purchaseOrderRows} />
-
-      <CustomerShareSection
-        jobId={job.id}
-        share={job.customerShare}
-        photos={job.photos ?? []}
-        phone={customer.phone}
-        hasQuote={quote?.status === "godkand"}
-        hasChanges={jobChangesForJob(job.id).some((c) => c.status === "godkand")}
-        hasInvoices={invoices.some((i) => i.status !== "utkast")}
-      />
 
       {taxCase.phase !== "none" && taxCase.phase !== "preliminar" && taxCase.phase !== "waiting_payment" && taxCase.phase !== "waiting_work" ? (
         <div className="mb-8">
@@ -355,8 +331,6 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
       <div className="mb-8">
         <JobNotes jobId={job.id} notes={notes} />
       </div>
-
-      <JobTimeline entries={jobTimeline(job.id)} />
     </div>
   );
 }
