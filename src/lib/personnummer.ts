@@ -20,6 +20,30 @@ export function formatPersonnummer(value: string): string {
   return `${d.slice(0, 6)}-${d.slice(6, 10)}`;
 }
 
+/**
+ * Fältets onChange: formaterar medan man skriver, i stället för först vid blur.
+ *
+ * Backsteg rakt på bindestrecket tar siffran före i stället. Annars sätter
+ * formateringen tillbaka strecket direkt och markören kommer aldrig förbi det.
+ */
+export function personnummerInputChange(previous: string, next: string): string {
+  const raderadeEttSkiljetecken =
+    next.length === previous.length - 1 && digitsOnly(next) === digitsOnly(previous);
+  if (raderadeEttSkiljetecken) {
+    let cut = previous.length - 1;
+    for (let i = 0; i < next.length; i += 1) {
+      if (previous[i] !== next[i]) {
+        cut = i;
+        break;
+      }
+    }
+    const fore = digitsOnly(previous.slice(0, cut));
+    const efter = digitsOnly(previous.slice(cut + 1));
+    return formatPersonnummer(fore.slice(0, -1) + efter);
+  }
+  return formatPersonnummer(next);
+}
+
 export function normalizePersonnummer(value: string): string {
   const d = digitsOnly(value);
   if (d.length === 12) return `${d.slice(0, 8)}-${d.slice(8)}`;

@@ -1,6 +1,21 @@
 import { createHash } from "crypto";
-import type { QuoteVersion } from "./types";
+import type { JobChange, PaymentPlanPart, QuoteVersion } from "./types";
 import { canonicalRichText } from "./richtext";
+
+/**
+ * Kanonisk form av betalplanen. Äldre delar ({label, percent}) serialiseras
+ * exakt som förut så att signerade versioner behåller sitt hash. Nya valfria
+ * fält (kind, amount) läggs bara till när de finns, i jsonb:s nyckelordning
+ * (längd, sedan bytevis) – lagringen bevarar inte insättningsordningen.
+ */
+export function canonicalPaymentPlan(plan: PaymentPlanPart[]): Record<string, unknown>[] {
+  return plan.map((part) => ({
+    ...(part.kind !== undefined ? { kind: part.kind } : {}),
+    label: part.label,
+    ...(part.amount !== undefined ? { amount: part.amount } : {}),
+    percent: part.percent,
+  }));
+}
 
 /**
  * Kanoniskt, verifierbart hash av en offertversions innehåll.
@@ -23,7 +38,7 @@ export function quoteVersionHash(v: QuoteVersion): string {
       vatRate: l.vatRate,
     })),
     rot: v.rot ? { type: v.rot.type } : v.rot,
-    paymentPlan: v.paymentPlan,
+    paymentPlan: canonicalPaymentPlan(v.paymentPlan),
     paymentTermsDays: v.paymentTermsDays,
     // Villkorligt så att versioner signerade innan fältet fanns behåller sitt hash.
     ...(v.lateInterestRate !== undefined ? { lateInterestRate: v.lateInterestRate } : {}),
@@ -53,4 +68,32 @@ export function quoteVersionHash(v: QuoteVersion): string {
     ...(v.richText ? { richText: canonicalRichText(v.richText) } : {}),
   });
   return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+/**
+ * Kanoniskt hash av en ändrings innehåll (Ändringar och tillägg) – det kunden
+ * faktiskt godkänner via /andring/[token]. Snapshots och status ingår inte.
+ */
+export function jobChangeContentHash(
+  c: Pick<JobChange, "jobId" | "number" | "version" | "title" | "description" | "timeImpact" | "lines">
+): string {
+  const canonical = JSON.stringify({
+    jobId: c.jobId,
+    number: c.number,
+    version: c.version,
+    title: c.title,
+    description: c.description,
+    ...(c.timeImpact ? { timeImpact: c.timeImpact } : {}),
+    lines: c.lines.map((l) => ({
+      kind: l.kind,
+      description: l.description,
+      qty: l.qty,
+      unit: l.unit,
+      unitPrice: l.unitPrice,
+      vatRate: l.vatRate,
+      ...(l.discountPercent ? { discountPercent: l.discountPercent } : {}),
+      ...(l.isHeading ? { isHeading: true } : {}),
+    })),
+  });
+  return createHash("sha256").update(canonical).digest("hex");
 }

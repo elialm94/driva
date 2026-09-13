@@ -6,11 +6,12 @@
  * RLS på wholesaler_products gäller hela vägen. Sökningen är paginerad och
  * använder tabellens index (normaliserade identifierare + trigram på söktext).
  */
-import type { WholesalerProduct } from "../types";
+import type { WholesalerAgreementTerm, WholesalerProduct } from "../types";
 import type { SqlExecutor, SqlParam, SqlRow } from "../storage/executor";
 import { sqlClient } from "../storage/adapter-supabase";
 import { bindTransaction } from "../storage/load";
 import { num } from "../storage/mappers";
+import { articleTermKey, materialClassKey } from "./agreement-pricing";
 import {
   CATALOG_MAX_CATEGORIES,
   CATALOG_SEARCH_MAX_PAGE_SIZE,
@@ -21,7 +22,13 @@ import {
   productSearchText,
   type CatalogCategory,
 } from "./catalog-search";
-import type { CatalogSearchInput, CatalogSearchResult, WholesalerCatalogStore } from "./catalog-store";
+import type {
+  AgreementCoverageArticle,
+  AgreementLookupKeys,
+  CatalogSearchInput,
+  CatalogSearchResult,
+  WholesalerCatalogStore,
+} from "./catalog-store";
 
 const INSERT_BATCH = 500;
 
@@ -41,6 +48,7 @@ export const WHOLESALER_PRODUCT_COLUMNS = [
   "discount_group",
   "unit",
   "pack_size",
+  "stocked",
   "list_price_ore",
   "discount_percent",
   "net_price_ore",
@@ -55,7 +63,13 @@ export const WHOLESALER_PRODUCT_COLUMNS = [
   "search_text",
 ] as const;
 
+/** Bara källor som får LAGRAS – avtalspriser räknas vid läsning och skrivs aldrig. */
+function storedNetPriceSource(p: WholesalerProduct): "file" | "discount_group" | null {
+  return p.netPriceSource === "file" || p.netPriceSource === "discount_group" ? p.netPriceSource : null;
+}
+
 export function productToRow(p: WholesalerProduct, businessId: string): SqlParam[] {
+  const storedSource = storedNetPriceSource(p);
   return [
     p.id,
     businessId,
@@ -72,10 +86,11 @@ export function productToRow(p: WholesalerProduct, businessId: string): SqlParam
     p.discountGroup ?? null,
     p.unit,
     p.packSize ?? null,
+    p.stocked ?? null,
     p.listPriceOre ?? null,
-    p.discountPercent ?? null,
-    p.netPriceOre ?? null,
-    p.netPriceSource ?? null,
+    storedSource ? (p.discountPercent ?? null) : null,
+    storedSource ? (p.netPriceOre ?? null) : null,
+    storedSource,
     p.salesPriceOre ?? null,
     normalizeIdentifier(p.articleNumber),
     normalizeIdentifier(p.eNumber) || null,
@@ -113,6 +128,7 @@ export function productFromRow(r: SqlRow): WholesalerProduct {
     ...opt("discountGroup", strOrU(r.discount_group)),
     unit: String(r.unit ?? "st"),
     ...opt("packSize", numOrU(r.pack_size)),
+    ...opt("stocked", r.stocked == null ? undefined : Boolean(r.stocked)),
     ...opt("listPriceOre", numOrU(r.list_price_ore)),
     ...opt("discountPercent", numOrU(r.discount_percent)),
     ...opt("netPriceOre", numOrU(r.net_price_ore)),
@@ -151,6 +167,85 @@ export async function insertProductBatch(tx: SqlExecutor, businessId: string, ba
 
 function likeEscape(s: string): string {
   return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/** Postgres-arrayliteral för text[] – citerar varje element. */
+function textArray(values: string[]): string {
+  return `{${values.map((v) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`).join(",")}}`;
+}
+
+const AGREEMENT_TERM_COLUMNS = [
+  "id",
+  "business_id",
+  "connection_id",
+  "agreement_id",
+  "kind",
+  "material_class",
+  "material_class_text",
+  "article_number",
+  "article_key",
+  "discount_tenths",
+  "net_price_ore",
+  "chain_discount_tenths",
+  "end_date",
+] as const;
+
+function termToRow(t: WholesalerAgreementTerm, businessId: string): SqlParam[] {
+  return [
+    t.id,
+    businessId,
+    t.connectionId,
+    t.agreementId,
+    t.kind,
+    t.kind === "class" ? materialClassKey(t.materialClass) : null,
+    t.materialClassText ?? null,
+    t.kind === "article" ? (t.articleNumber ?? null) : null,
+    t.kind === "article" ? articleTermKey(t.articleNumber) || null : null,
+    t.discountTenths ?? null,
+    t.netPriceOre ?? null,
+    t.chainDiscountTenths ?? null,
+    t.endDate ?? null,
+  ];
+}
+
+function dateOnlyOrU(v: unknown): string | undefined {
+  if (v == null) return undefined;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v).slice(0, 10);
+}
+
+function termFromRow(r: SqlRow): WholesalerAgreementTerm {
+  return {
+    id: String(r.id),
+    connectionId: String(r.connection_id),
+    agreementId: String(r.agreement_id),
+    kind: r.kind as WholesalerAgreementTerm["kind"],
+    ...opt("materialClass", strOrU(r.material_class)),
+    ...opt("materialClassText", strOrU(r.material_class_text)),
+    ...opt("articleNumber", strOrU(r.article_number)),
+    ...opt("discountTenths", numOrU(r.discount_tenths)),
+    ...opt("netPriceOre", numOrU(r.net_price_ore)),
+    ...opt("chainDiscountTenths", numOrU(r.chain_discount_tenths)),
+    ...opt("endDate", dateOnlyOrU(r.end_date)),
+  };
+}
+
+async function insertTermBatch(tx: SqlExecutor, businessId: string, batch: WholesalerAgreementTerm[]): Promise<void> {
+  if (batch.length === 0) return;
+  const cols = AGREEMENT_TERM_COLUMNS.length;
+  const params: SqlParam[] = [];
+  const tuples: string[] = [];
+  batch.forEach((t, i) => {
+    const row = termToRow(t, businessId);
+    params.push(...row);
+    tuples.push(`(${row.map((_, j) => `$${i * cols + j + 1}`).join(", ")})`);
+  });
+  await tx.query(
+    `insert into public.wholesaler_agreement_terms (${AGREEMENT_TERM_COLUMNS.join(", ")})
+     values ${tuples.join(",\n")}
+     on conflict (id) do nothing`,
+    params,
+  );
 }
 
 export class SqlCatalogStore implements WholesalerCatalogStore {
@@ -300,10 +395,79 @@ export class SqlCatalogStore implements WholesalerCatalogStore {
     return rows.map(productFromRow);
   }
 
-  async deleteBusiness(businessId: string): Promise<void> {
-    await inTenantTx(businessId, (tx) =>
-      tx.query(`delete from public.wholesaler_products where business_id = $1`, [businessId]),
+  async listArticleClasses(businessId: string, importId: string): Promise<AgreementCoverageArticle[]> {
+    const rows = await inTenantTx(businessId, (tx) =>
+      tx.query(
+        `select article_number, discount_group from public.wholesaler_products
+          where business_id = $1 and import_id = $2`,
+        [businessId, importId],
+      ),
     );
+    return rows.map((r) => ({
+      articleNumber: String(r.article_number),
+      ...opt("materialClass", strOrU(r.discount_group)),
+    }));
+  }
+
+  async insertAgreementTerms(businessId: string, terms: WholesalerAgreementTerm[]): Promise<void> {
+    if (terms.length === 0) return;
+    await inTenantTx(businessId, async (tx) => {
+      for (let i = 0; i < terms.length; i += INSERT_BATCH) {
+        await insertTermBatch(tx, businessId, terms.slice(i, i + INSERT_BATCH));
+      }
+    });
+  }
+
+  async deleteAgreement(businessId: string, agreementId: string): Promise<void> {
+    await inTenantTx(businessId, (tx) =>
+      tx.query(`delete from public.wholesaler_agreement_terms where business_id = $1 and agreement_id = $2`, [
+        businessId,
+        agreementId,
+      ]),
+    );
+  }
+
+  async countAgreementTerms(businessId: string, agreementId: string): Promise<number> {
+    const rows = await inTenantTx(businessId, (tx) =>
+      tx.query(
+        `select count(*)::int as n from public.wholesaler_agreement_terms where business_id = $1 and agreement_id = $2`,
+        [businessId, agreementId],
+      ),
+    );
+    return num(rows[0]?.n);
+  }
+
+  async agreementTermsFor(businessId: string, agreementId: string, keys: AgreementLookupKeys): Promise<WholesalerAgreementTerm[]> {
+    const articleKeys = keys.articleKeys.filter(Boolean);
+    const classKeys = keys.classKeys.filter(Boolean);
+    if (articleKeys.length === 0 && classKeys.length === 0) return [];
+    const rows = await inTenantTx(businessId, (tx) =>
+      tx.query(
+        `select * from public.wholesaler_agreement_terms
+          where business_id = $1 and agreement_id = $2
+            and ((kind = 'article' and article_key = any($3::text[]))
+              or (kind = 'class' and material_class = any($4::text[])))`,
+        [businessId, agreementId, textArray(articleKeys), textArray(classKeys)],
+      ),
+    );
+    return rows.map(termFromRow);
+  }
+
+  async allAgreementTerms(businessId: string, agreementId: string): Promise<WholesalerAgreementTerm[]> {
+    const rows = await inTenantTx(businessId, (tx) =>
+      tx.query(`select * from public.wholesaler_agreement_terms where business_id = $1 and agreement_id = $2`, [
+        businessId,
+        agreementId,
+      ]),
+    );
+    return rows.map(termFromRow);
+  }
+
+  async deleteBusiness(businessId: string): Promise<void> {
+    await inTenantTx(businessId, async (tx) => {
+      await tx.query(`delete from public.wholesaler_agreement_terms where business_id = $1`, [businessId]);
+      await tx.query(`delete from public.wholesaler_products where business_id = $1`, [businessId]);
+    });
   }
 }
 

@@ -15,6 +15,7 @@
     "test:db": "tsx scripts/db-validate.ts",
     "test:adapter": "tsx scripts/adapter-validate.ts",
     "db:seed": "tsx scripts/db-seed.ts",
+    "scenario": "tsx scripts/scenario.ts",
     "platform:bootstrap": "tsx scripts/platform-bootstrap.ts",
     "restore:drill": "tsx scripts/restore-drill.ts",
     "migrate:local-to-supabase": "tsx scripts/migrate-local-to-supabase.ts"
@@ -44,6 +45,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
+    "fast-check": "^4.10.0",
     "puppeteer-core": "^25.9.0",
     "supabase": "^2.116.0",
     "tailwindcss": "^4",

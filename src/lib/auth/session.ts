@@ -619,6 +619,10 @@ function demoStateHasToken(state: DB, kind: PublicTokenKind, token: string): boo
       return state.website?.id === token;
     case "website_slug":
       return state.website?.slug === token;
+    case "job_change":
+      return (state.jobChanges ?? []).some((c) => c.token === token);
+    case "job_share":
+      return state.jobs.some((j) => j.customerShare?.token === token);
     default:
       // hostname/inbound: externa kanaler (egna domäner, inkommande mejl)
       // pekar aldrig på en demosession.

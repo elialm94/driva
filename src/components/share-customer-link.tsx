@@ -4,7 +4,7 @@ import { MessageSquare, Share2 } from "lucide-react";
 import { CopyLinkButton } from "./copy-button";
 import { actionMenuItemClassName, useActionMenu, type ActionAppearance } from "./action-menu";
 import { buttonClasses } from "./ui";
-import { canUseWebShare, customerShareText, smsShareHref } from "@/lib/customer-link-share";
+import { canUseWebShare, customerShareText, smsShareHref, type CustomerShareKind } from "@/lib/customer-link-share";
 import { useToast } from "./toast";
 
 export function ShareCustomerLink({
@@ -15,7 +15,7 @@ export function ShareCustomerLink({
   appearance = "button",
 }: {
   path: string;
-  kind: "offert" | "faktura";
+  kind: CustomerShareKind;
   number?: string | number;
   phone?: string;
   appearance?: ActionAppearance;

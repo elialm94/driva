@@ -133,22 +133,26 @@ describe("seedade uppdrag", () => {
     assert.equal(admin.secondary, "visa_offert");
   });
 
-  it("Betalt släpper Aktiva så listan inte blir tom", () => {
+  it("pengafilter behåller aktuell statusmängd", () => {
     assert.deepEqual(
       reconcileJobListFilters({ lifecycle: "aktiva", economy: "alla", patch: { economy: "betalt" } }),
-      { lifecycle: "alla", economy: "betalt" },
-    );
-    assert.deepEqual(
-      reconcileJobListFilters({ lifecycle: "alla", economy: "betalt", patch: { lifecycle: "aktiva" } }),
-      { lifecycle: "aktiva", economy: "alla" },
-    );
-    assert.deepEqual(
-      reconcileJobListFilters({ lifecycle: "klart", economy: "alla", patch: { economy: "betalt" } }),
-      { lifecycle: "klart", economy: "betalt" },
+      { lifecycle: "aktiva", economy: "betalt" },
     );
     assert.deepEqual(
       reconcileJobListFilters({ lifecycle: "aktiva", economy: "alla", patch: { economy: "kvar" } }),
       { lifecycle: "aktiva", economy: "kvar" },
+    );
+    assert.deepEqual(
+      reconcileJobListFilters({ lifecycle: "klart", economy: "kvar", patch: { economy: "vantar" } }),
+      { lifecycle: "klart", economy: "vantar" },
+    );
+    assert.deepEqual(
+      reconcileJobListFilters({ lifecycle: "arkiverade", economy: "alla", patch: { economy: "betalt" } }),
+      { lifecycle: "arkiverade", economy: "betalt" },
+    );
+    assert.deepEqual(
+      reconcileJobListFilters({ lifecycle: "aktiva", economy: "betalt", patch: { lifecycle: "klart" } }),
+      { lifecycle: "klart", economy: "betalt" },
     );
   });
 

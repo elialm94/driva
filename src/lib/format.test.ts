@@ -1,6 +1,32 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { datumTid, dagarTill, halsning, veckodag } from "./format";
+import { datumTid, dagarTill, halsning, kr, veckodag } from "./format";
+
+describe("kr: noll är noll, aldrig minus noll", () => {
+  /*
+   * Math.round(-0.4) är -0, och Intl formaterar -0 med minustecken. Ett belopp
+   * som är noll ska läsas som "0 kr" – "−0 kr" ser ut som ett fel i bokföringen.
+   */
+  it("kr(-0) visar inte ett minustecken", () => {
+    assert.equal(kr(-0), kr(0));
+    assert.equal(kr(-0), "0\u00a0kr");
+  });
+
+  it("ett negativt belopp som rundas till noll visar inte minus", () => {
+    assert.equal(kr(-0.4), "0\u00a0kr");
+    assert.equal(kr(-0.2), "0\u00a0kr");
+  });
+
+  it("riktiga negativa belopp behåller sitt minustecken", () => {
+    assert.equal(kr(-1), "\u22121\u00a0kr");
+    assert.equal(kr(-25000), "\u221225\u00a0000\u00a0kr");
+  });
+
+  it("noll och positiva belopp är oförändrade", () => {
+    assert.equal(kr(0), "0\u00a0kr");
+    assert.equal(kr(4000), "4\u00a0000\u00a0kr");
+  });
+});
 
 describe("halsning: svensk klocka, inte serverns UTC", () => {
   it("06:22 sommartid (04:22 UTC) är God morgon, inte God natt", () => {

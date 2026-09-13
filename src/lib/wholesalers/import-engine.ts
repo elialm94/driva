@@ -13,9 +13,16 @@
  * Utpris från filen sparas separat och används bara om användaren valt det.
  *
  * Hela prislistor skickas aldrig till en LLM – allt här är regelbaserat.
+ *
+ * Före kolumnmappningen körs en FORMATDETEKTERING (formats/registry.ts):
+ *   * känt grossistformat (t.ex. Ahlsell avtalsfil/prisfil, fast kolumnbredd)
+ *     → filen tolkas med sin parser, ingen mappningsdialog
+ *   * okänt avgränsat format (CSV/TSV) → dagens kolumnmappning
+ *   * okänt fastbreddsformat → ärligt fel, ingen mappningsdialog
  */
 import type {
   WholesalerColumnMapping,
+  WholesalerFileFormatId,
   WholesalerPriceFileKind,
   WholesalerPriceImportError,
   WholesalerProduct,
@@ -31,21 +38,81 @@ import { columnIndexFor, detectColumnMapping, mappingProblems, type DetectedMapp
 import { netFromDiscountOre, parseDecimal, parseOre, parsePercent } from "./money";
 import { sanitizeImageUrl } from "./product-image";
 import { ZipError } from "./zip";
+import { decodeFixedWidthText } from "./formats/fixed-width";
+import { detectWholesalerFormat } from "./formats/registry";
+import {
+  MIN_ROWS_FOR_KNOWN_FORMAT,
+  WholesalerFileParseError,
+  type ParsedPriceList,
+  type ParsedWholesalerFile,
+  type WholesalerFileParser,
+} from "./formats/types";
 
 export const MAX_IMPORT_ERRORS = 50;
 export const PREVIEW_ROWS = 8;
 const MAX_ARTICLE_NUMBER_CHARS = 64;
 const MAX_NAME_CHARS = 200;
 
+export interface KnownFormatFile {
+  parser: WholesalerFileParser;
+  file: ParsedWholesalerFile;
+  encoding: "utf-8" | "iso-8859-1";
+}
+
 export interface ParsedPriceFile {
   detected: DetectedPriceFile;
+  /** Tabellen för kolumnmappning. Tom när filen är ett känt grossistformat. */
   table: RawTable;
+  /** Satt när filen känts igen som ett grossistformat – då gäller inte tabellen/mappningen. */
+  known?: KnownFormatFile;
+}
+
+const EMPTY_TABLE: RawTable = { headers: [], rows: [], hasHeaderRow: false, firstDataRowNumber: 1 };
+
+/**
+ * Formatdetektering för textfiler. Innehållet avgör – aldrig filnamnet.
+ * Returnerar undefined när filen ska gå vidare till kolumnmappningen.
+ */
+function detectKnownFormat(detected: DetectedPriceFile): KnownFormatFile | undefined {
+  if (detected.kind === "xlsx" || detected.kind === "xml") return undefined;
+  if (detected.kind === "zip" && (detected.bytes || /\.xml$/i.test(detected.innerFilename))) return undefined;
+  const bytes = detected.textBytes;
+  if (!bytes) return undefined;
+  // Strikt UTF-8 annars ISO-8859-1 (grossisternas fastbreddsfiler) – aldrig
+  // trimning före kolumnslicingen.
+  const { text, encoding } = decodeFixedWidthText(bytes);
+  const detection = detectWholesalerFormat(text);
+  if (detection.outcome === "delimited") return undefined;
+  if (detection.outcome === "too_short") {
+    throw new PriceFileError(
+      `Filen ser ut som ${detection.parser.label} men har bara ${detection.rows} datarader – minst ${MIN_ROWS_FOR_KNOWN_FORMAT} krävs för att formatet ska kännas igen säkert. Ladda upp hela filen från grossisten.`,
+    );
+  }
+  if (detection.outcome === "fixed_width") {
+    throw new PriceFileError(
+      `Filen har fast kolumnbredd (rader på ${detection.lineLength} tecken) men formatet är inte känt. ` +
+        "Kolumnmappning fungerar bara för filer med avgränsare (semikolon, tabb eller komma). " +
+        "Skicka gärna filen till oss så lägger vi till formatet.",
+    );
+  }
+  try {
+    return { parser: detection.parser, file: detection.parser.parse(text), encoding };
+  } catch (e) {
+    if (e instanceof WholesalerFileParseError) {
+      throw new PriceFileError(`Filen ser ut som ${detection.parser.label} men kunde inte tolkas. ${e.message}`);
+    }
+    throw e;
+  }
 }
 
 /** Alla läsfel blir ett PriceFileError med begriplig svensk text. */
 export function parsePriceFile(bytes: Buffer, filename: string): ParsedPriceFile {
   try {
     const detected = detectPriceFile(bytes, filename);
+    const known = detectKnownFormat(detected);
+    if (known) {
+      return { detected: { ...detected, encoding: known.encoding }, table: EMPTY_TABLE, known };
+    }
     let table: RawTable;
     if (detected.kind === "xlsx" || (detected.kind === "zip" && detected.bytes)) {
       table = xlsxToTable(detected.bytes!);
@@ -73,6 +140,40 @@ export function parsePriceFile(bytes: Buffer, filename: string): ParsedPriceFile
   }
 }
 
+/** Sammanfattning av en fil i känt grossistformat – visas i stället för kolumnmappningen. */
+export interface KnownFormatSummary {
+  parserId: WholesalerFileFormatId;
+  wholesaler: WholesalerFileParser["wholesaler"];
+  formatLabel: string;
+  kind: ParsedWholesalerFile["kind"];
+  encoding: KnownFormatFile["encoding"];
+  /** Datarader (exkl. huvudrad). */
+  rowCount: number;
+  /** Bara rabattavtal: huvudraden. */
+  header?: {
+    agreementType: "1" | "3";
+    customerNumber: string;
+    facilityNumber: string;
+    name: string;
+    chainDiscount: "J" | "N";
+    runDate?: string;
+  };
+  /** Antal per radtyp, i visningsordning. */
+  counts: Array<{ label: string; count: number }>;
+  /** Giltigt till och med (senaste slutdatum i filen). Visas – blockerar aldrig. */
+  endDate?: string;
+  /** Varningar ur parsern (t.ex. avvikande kundnummer på rader). */
+  warnings: string[];
+  /** Kundnumret i filen skiljer sig från anslutningens. */
+  customerNumberMismatch?: { file: string; connection: string };
+  /** Rabattavtal laddas upp utan aktiv prislista – priserna kan inte räknas förrän prisfilen finns. */
+  priceListMissing: boolean;
+  /** Rader med KEDJERABATTKOD = J. Flaggas; ingen beräkning bygger på dem. */
+  chainDiscountRows: number;
+  /** Rabattavtalets täckning mot prislistan (fylls i servicen, som har katalogstoren). */
+  coverage?: { articleCount: number; withoutTermsCount: number };
+}
+
 export interface ImportPreview {
   kind: WholesalerPriceFileKind;
   innerFilename: string;
@@ -85,12 +186,82 @@ export interface ImportPreview {
   problems: string[];
   /** Filen är ett rabattbrev (rabattgrupper utan artikelregister). */
   discountLetter: boolean;
+  /** Filen känns igen som ett grossistformat – mappningen ovan är då tom och irrelevant. */
+  known?: KnownFormatSummary;
+}
+
+export interface PreviewContext {
+  /** Anslutningens kundnummer hos grossisten – jämförs med filens. */
+  customerNumber?: string;
+  /** Finns en aktiv prislista för anslutningen? */
+  hasActivePriceList: boolean;
+}
+
+export function summarizeKnownFormat(known: KnownFormatFile, context?: PreviewContext): KnownFormatSummary {
+  const { parser, file } = known;
+  const base = {
+    parserId: parser.id,
+    wholesaler: parser.wholesaler,
+    formatLabel: parser.label,
+    kind: file.kind,
+    encoding: known.encoding,
+    rowCount: file.rowCount,
+  };
+  if (file.kind === "discount_agreement") {
+    const spec = file.articleTerms.filter((t) => t.specDiscountTenths != null).length;
+    const net = file.articleTerms.filter((t) => t.netPriceOre != null).length;
+    const connectionNumber = context?.customerNumber?.trim();
+    const mismatch =
+      connectionNumber && connectionNumber.replace(/\D/g, "") !== file.header.customerNumber
+        ? { file: file.header.customerNumber, connection: connectionNumber }
+        : undefined;
+    return {
+      ...base,
+      header: { ...file.header },
+      counts: [
+        { label: "Rabatt per materialklass", count: file.classDiscounts.length },
+        { label: "Artikelvillkor", count: file.articleTerms.length },
+        { label: "– varav specrabatt", count: spec },
+        { label: "– varav nettopris", count: net },
+      ],
+      endDate: file.endDate,
+      warnings: [...file.warnings],
+      ...(mismatch ? { customerNumberMismatch: mismatch } : {}),
+      priceListMissing: context ? !context.hasActivePriceList : false,
+      chainDiscountRows: file.chainDiscountRows,
+    };
+  }
+  return {
+    ...base,
+    counts: [
+      { label: "Artiklar", count: file.articles.length },
+      { label: "– varav pris på begäran (0 kr)", count: file.priceOnRequestCount },
+      { label: "– varav lagerförda", count: file.articles.filter((a) => a.stocked).length },
+    ],
+    warnings: [],
+    priceListMissing: false,
+    chainDiscountRows: 0,
+  };
 }
 
 export function previewImport(
   parsed: ParsedPriceFile,
-  opts: { remembered?: WholesalerColumnMapping; override?: WholesalerColumnMapping } = {},
+  opts: { remembered?: WholesalerColumnMapping; override?: WholesalerColumnMapping; context?: PreviewContext } = {},
 ): ImportPreview {
+  if (parsed.known) {
+    return {
+      kind: parsed.detected.kind,
+      innerFilename: parsed.detected.innerFilename,
+      headers: [],
+      sampleRows: [],
+      rowCount: parsed.known.file.rowCount,
+      mapping: {},
+      confidence: {},
+      problems: [],
+      discountLetter: false,
+      known: summarizeKnownFormat(parsed.known, opts.context),
+    };
+  }
   const detected = detectColumnMapping(parsed.table, opts.remembered);
   const mapping = opts.override ? sanitizeMapping(parsed.table, opts.override) : detected.mapping;
   const problems = mappingProblems(mapping);
@@ -346,5 +517,66 @@ export function buildProducts(
     hasDiscounts,
     discountGroupCount: Object.keys(discountGroups).length,
     discountGroups,
+  };
+}
+
+/**
+ * Artiklar ur en prislista i känt grossistformat (t.ex. Ahlsell prisfil).
+ * Materialklassen blir artikelns rabattgrupp – nyckeln mot rabattavtalet.
+ * Inget nettopris räknas här: det slås ihop med avtalet vid läsning.
+ */
+export function buildPriceListProducts(
+  list: ParsedPriceList,
+  ctx: { connectionId: string; importId: string },
+): BuildProductsResult {
+  const products: WholesalerProduct[] = [];
+  const errors: WholesalerPriceImportError[] = [];
+  const seen = new Set<string>();
+  let skipped = 0;
+
+  for (const a of list.articles) {
+    const articleNumber = neutralizeFormula(a.articleNumber).slice(0, MAX_ARTICLE_NUMBER_CHARS);
+    if (!articleNumber) {
+      skipped += 1;
+      pushError(errors, a.row, "artikelnummer saknas – raden hoppas över.");
+      continue;
+    }
+    const key = articleNumber.toLowerCase();
+    if (seen.has(key)) {
+      skipped += 1;
+      pushError(errors, a.row, `artikelnummer ${articleNumber} förekommer flera gånger – första raden används.`);
+      continue;
+    }
+    const name = neutralizeFormula(a.name).slice(0, MAX_NAME_CHARS);
+    if (!name) {
+      skipped += 1;
+      pushError(errors, a.row, `benämning saknas för artikel ${articleNumber} – raden hoppas över.`);
+      continue;
+    }
+    seen.add(key);
+    const product: WholesalerProduct = {
+      id: uid(),
+      connectionId: ctx.connectionId,
+      importId: ctx.importId,
+      articleNumber,
+      name,
+      unit: (a.unit || "st").toLowerCase().slice(0, 16),
+    };
+    if (a.materialClass) product.discountGroup = normalizeDiscountGroupKey(a.materialClass);
+    if (a.orderMultiple != null && a.orderMultiple > 0) product.packSize = a.orderMultiple;
+    if (a.stocked != null) product.stocked = a.stocked;
+    if (!a.priceOnRequest && a.listPriceOre != null) product.listPriceOre = a.listPriceOre;
+    products.push(product);
+  }
+
+  return {
+    products,
+    errors,
+    rowCount: list.rowCount,
+    skippedCount: skipped,
+    hasArticleRegister: products.length > 0,
+    hasDiscounts: false,
+    discountGroupCount: 0,
+    discountGroups: {},
   };
 }

@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { AppLink } from "./app-link";
 import { useRouter } from "next/navigation";
-import { FileText, Hammer, Search } from "lucide-react";
+import { ChevronDown, FileText, Hammer, Search } from "lucide-react";
 import { ButtonLink, Card, EmptyState, buttonClasses, cx } from "./ui";
 import { Pagination } from "./customer-list";
 import { NewUppdragButton } from "./uppdrag-form";
 import type { CustomerOption } from "./customer-picker";
 import { JobStatusBadge } from "./status";
+import { JOB_STATUS } from "@/lib/status-labels";
 import {
   reconcileJobListFilters,
   type JobEconomyFilter,
@@ -39,11 +40,16 @@ export function uppdragListHref(query: Partial<UppdragListQuery>): string {
   return qs ? `/uppdrag?${qs}` : "/uppdrag";
 }
 
-const LIFECYCLE_CHIPS: [JobLifecycleFilter, string][] = [
-  ["aktiva", "Aktiva"],
-  ["klart", "Klart"],
-  ["alla", "Alla"],
-  ["arkiverade", "Arkiverade"],
+const CHIP =
+  "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors max-lg:py-2";
+const CHIP_ON = "border-ink bg-ink text-white";
+const CHIP_OFF = "border-line-strong text-soft hover:border-muted";
+const CHIP_MONEY_OFF = "border-line text-muted hover:border-muted hover:text-soft";
+
+// Samma ord som Status-kolumnen (JOB_STATUS / JobStatusBadge).
+const CLOSED_LIFECYCLES: [JobLifecycleFilter, string][] = [
+  ["klart", JOB_STATUS.klart.label],
+  ["arkiverade", JOB_STATUS.arkiverat.label],
 ];
 
 // Samma ordförråd som ekonomiraden: kvar att fakturera / väntar på betalning / betalt.
@@ -105,33 +111,24 @@ export function UppdragList({
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
-        {LIFECYCLE_CHIPS.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => go({ lifecycle: key, page: 1 })}
-            className={cx(
-              "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors max-lg:py-2",
-              query.lifecycle === key
-                ? "border-ink bg-ink text-white"
-                : "border-line-strong text-soft hover:border-muted"
-            )}
-          >
-            {label}
-          </button>
-        ))}
+        <button
+          type="button"
+          onClick={() => go({ lifecycle: "aktiva", page: 1 })}
+          className={cx(CHIP, query.lifecycle === "aktiva" ? CHIP_ON : CHIP_OFF)}
+        >
+          {JOB_STATUS.pagar.label}
+        </button>
+        <ClosedLifecycleOverflow
+          lifecycle={query.lifecycle}
+          onSelect={(lifecycle) => go({ lifecycle, page: 1 })}
+        />
         <span className="mx-1 hidden h-4 w-px bg-line sm:block" />
         {ECONOMY_CHIPS.map(([key, label]) => (
           <button
             key={key}
             type="button"
             onClick={() => go({ economy: query.economy === key ? "alla" : key, page: 1 })}
-            className={cx(
-              "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors max-lg:py-2",
-              query.economy === key
-                ? "border-ink bg-ink text-white"
-                : "border-line text-muted hover:border-muted hover:text-soft"
-            )}
+            className={cx(CHIP, query.economy === key ? CHIP_ON : CHIP_MONEY_OFF)}
           >
             {label}
           </button>
@@ -265,6 +262,77 @@ function IncomingChip() {
     <span className="inline-flex shrink-0 items-center rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">
       Ny förfrågan
     </span>
+  );
+}
+
+function ClosedLifecycleOverflow({
+  lifecycle,
+  onSelect,
+}: {
+  lifecycle: JobLifecycleFilter;
+  onSelect: (lifecycle: JobLifecycleFilter) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selected = CLOSED_LIFECYCLES.find(([key]) => key === lifecycle);
+  const active = Boolean(selected);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointer(e: PointerEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((v) => !v)}
+        className={cx(CHIP, "inline-flex items-center gap-1", active ? CHIP_ON : CHIP_OFF)}
+      >
+        {selected?.[1] ?? "Visa avslutade / arkiverade"}
+        <ChevronDown className={cx("size-3.5 transition-transform", open && "rotate-180")} />
+      </button>
+      {open ? (
+        <div
+          id={id}
+          role="menu"
+          className="absolute left-0 top-full z-30 mt-1.5 min-w-[13rem] overflow-hidden rounded-xl border border-line bg-card p-1 shadow-pop"
+        >
+          {CLOSED_LIFECYCLES.map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onSelect(key);
+                setOpen(false);
+              }}
+              className={cx(
+                "flex w-full items-center rounded-lg px-2.5 py-2 text-left text-[13px] font-medium transition-colors hover:bg-canvas",
+                lifecycle === key ? "text-ink" : "text-soft"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

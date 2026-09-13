@@ -5,9 +5,8 @@
  * relativt "nu" med samma logik som seeden så att PDF och tolkade fält alltid
  * pekar på samma dagar oavsett när demon körs.
  *
- * VIKTIGT för demo-berättelsen: Byggmax-fakturans PDF visar det RÄTTA
- * totalbeloppet (2 340 kr) medan Fervas tolkning i demon läst fel (875 kr,
- * låg konfidens) – det är själva poängen med "Kontrollera belopp".
+ * Byggmax-fakturans PDF och seedade tolkade fält håller samma belopp
+ * (2 340 kr inkl. moms, 468 kr moms) – demon ska inte visa fel siffror.
  */
 import { buildSimplePdf, type PdfTextLine, type PdfRule, type SimplePdfSpec } from "./simple-pdf";
 
@@ -174,11 +173,7 @@ function beijerInvoice(): SimplePdfSpec {
   });
 }
 
-/**
- * Fall C – leverantörsfaktura som behöver kontroll: Byggmax.
- * PDF:ens riktiga totalbelopp är 2 340,00 kr – demons tolkning läste 875 kr
- * med låg konfidens, och användaren rättar mot den här filen.
- */
+/** Fall C – leverantörsfaktura: Byggmax, 2 340 kr inkl. moms. */
 function byggmaxInvoice(): SimplePdfSpec {
   return invoiceSpec({
     brand: "BYGGMAX",

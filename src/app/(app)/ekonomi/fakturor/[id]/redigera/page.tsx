@@ -79,6 +79,7 @@ export default async function EditInvoicePage(props: { params: Promise<{ id: str
             workAddress: prefill.workAddress,
             workPeriodStart: prefill.workPeriodStart,
             workPeriodEnd: prefill.workPeriodEnd,
+            workPeriodSource: prefill.workPeriodSource,
             housing: prefill.housing,
           },
         }}

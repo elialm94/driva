@@ -6,8 +6,14 @@ import { buttonClasses, Card, cx } from "./ui";
 import { docTotals } from "@/lib/calc";
 import { canonicalizeUnitPrice } from "@/lib/line-defaults";
 import { kr } from "@/lib/format";
-import type { DocLine, PaymentPlanPart, RotRut, VatRate } from "@/lib/types";
-import { createQuoteAction, updateQuoteAction, createInvoiceAction, updateInvoiceAction } from "@/app/actions";
+import type { DocLine, HousingDetails, PaymentPlanPart, RotRut, VatRate } from "@/lib/types";
+import {
+  createQuoteAction,
+  updateQuoteAction,
+  createInvoiceAction,
+  updateInvoiceAction,
+  updateCustomerPersonnummerAction,
+} from "@/app/actions";
 import { useRouter } from "next/navigation";
 import { DateField } from "./date-field";
 import { addCustomerOption, CustomerPicker, type CustomerOption } from "./customer-picker";
@@ -21,7 +27,9 @@ import {
 } from "@/lib/tax-reduction-terms";
 import { TaxReductionEditorHint, TaxReductionCalcHint } from "./tax-reduction-terms";
 import { EditorWorkspace } from "./editor-workspace";
-import { LinesEditor, newLine } from "./lines-editor";
+import { LinesEditor, startLines } from "./lines-editor";
+import { PaymentPlanEditor } from "./payment-plan-editor";
+import { DEFAULT_PAYMENT_PLAN, paymentPlanIssue } from "@/lib/payment-plan";
 import { withoutVat } from "@/lib/invoices/reverse-charge";
 import {
   TaxReductionFields,
@@ -221,24 +229,6 @@ function DocStickyActions({
   );
 }
 
-const PLAN_PRESETS: { label: string; plan: PaymentPlanPart[] }[] = [
-  { label: "Allt när arbetet är klart", plan: [{ label: "Betalning när arbetet är klart", percent: 100 }] },
-  {
-    label: "30 % vid start",
-    plan: [
-      { label: "Vid arbetets start", percent: 30 },
-      { label: "När arbetet är klart och godkänt", percent: 70 },
-    ],
-  },
-  {
-    label: "50 / 50",
-    plan: [
-      { label: "Vid arbetets start", percent: 50 },
-      { label: "När arbetet är klart och godkänt", percent: 50 },
-    ],
-  },
-];
-
 export interface QuoteFormInitial {
   title: string;
   lines: DocLine[];
@@ -276,7 +266,12 @@ export function QuoteForm({
   quoteId?: string;
   rotByCustomer?: Record<
     string,
-    { personalIdentityNumber?: string; addressLine?: string; properties?: InvoicePropertyOption[] }
+    {
+      personalIdentityNumber?: string;
+      addressLine?: string;
+      properties?: InvoicePropertyOption[];
+      housing?: HousingDetails;
+    }
   >;
   initial?: QuoteFormInitial;
   defaults: {
@@ -302,7 +297,9 @@ export function QuoteForm({
   const vat = defaults.defaultVatRate ?? 25;
   const hourly = defaults.defaultHourlyRate;
   const [lines, setLines] = useState<DocLine[]>(
-    initial?.lines?.length ? initial.lines : [newLine("arbete", vat, "start-arbete"), newLine("material", vat, "start-material")]
+    initial?.lines?.length
+      ? initial.lines
+      : startLines(["arbete", "material"], { defaultVatRate: vat, defaultHourlyRate: hourly })
   );
   const [rot, setRot] = useState<RotRut | null>(() =>
     initial?.rot ? rotForEditor(initial.rot.type, initial.lines?.length ? initial.lines : [], initial.rot, "offert") : null
@@ -315,7 +312,9 @@ export function QuoteForm({
     return autoSelectWorkLocationId(properties, initial?.workLocationId);
   });
   const [clampNotice, setClampNotice] = useState<string | null>(null);
-  const [plan, setPlan] = useState<PaymentPlanPart[]>(initial?.paymentPlan ?? PLAN_PRESETS[0].plan);
+  const [plan, setPlan] = useState<PaymentPlanPart[]>(
+    initial?.paymentPlan && initial.paymentPlan.length > 0 ? initial.paymentPlan : DEFAULT_PAYMENT_PLAN.map((p) => ({ ...p }))
+  );
   const [termsDays, setTermsDays] = useState(initial?.paymentTermsDays ?? defaults.paymentTermsDays);
   const [lateInterest, setLateInterest] = useState(initial?.lateInterestRate ?? defaults.lateInterestRate);
   const [validUntil, setValidUntil] = useState((initial?.validUntil ?? defaults.validUntil).slice(0, 10));
@@ -351,6 +350,7 @@ export function QuoteForm({
   const { confirmLeave, dialog } = useUnsavedLeave(dirty && !saving);
 
   const planTotal = plan.reduce((s, p) => s + p.percent, 0);
+  const planIssue = paymentPlanIssue(plan, docTotals(finiteLines(lines), rot).total);
   const missing = useMemo(
     () =>
       quoteMissingRequirements({
@@ -358,10 +358,11 @@ export function QuoteForm({
         title,
         lines,
         planPercentTotal: planTotal,
+        paymentPlanIssue: planIssue,
         validUntil,
         paymentTermsDays: termsDays,
       }),
-    [customerId, title, lines, planTotal, validUntil, termsDays]
+    [customerId, title, lines, planTotal, planIssue, validUntil, termsDays]
   );
   const [attempted, setAttempted] = useState(false);
   const showErrors = attempted && missing.length > 0;
@@ -616,9 +617,11 @@ export function QuoteForm({
                 )}
                 <TaxReductionDocumentProperty
                   customerId={customerId}
+                  type={rot.type}
+                  dwellingType={rotByCustomer?.[customerId]?.housing?.dwellingType}
                   properties={propertiesByCustomer[customerId] ?? []}
                   value={workLocationId}
-                  onChange={setWorkLocationId}
+                  onChange={(id) => setWorkLocationId(id)}
                   onPropertiesChange={(next) =>
                     setPropertiesByCustomer((prev) => ({ ...prev, [customerId]: next }))
                   }
@@ -629,52 +632,7 @@ export function QuoteForm({
             ) : null}
           </div>
 
-          <div id="offert-betalplan">
-            <label className={labelCls}>Betalningsplan</label>
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {PLAN_PRESETS.map((p) => (
-                <button
-                  key={p.label}
-                  type="button"
-                  onClick={() => setPlan(p.plan)}
-                  className={cx(
-                    "rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors max-lg:py-2",
-                    JSON.stringify(plan) === JSON.stringify(p.plan)
-                      ? "border-ink bg-ink text-white"
-                      : "border-line-strong text-soft hover:border-muted"
-                  )}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <div className="space-y-2">
-              {plan.map((p, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input
-                    value={p.label}
-                    onChange={(e) => setPlan(plan.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
-                    aria-label="Delbetalningens namn"
-                    className={cx(inputCls, "min-w-0 flex-1")}
-                  />
-                  <div className="flex shrink-0 items-center gap-1">
-                    <input
-                      type="number"
-                      value={p.percent}
-                      min={0}
-                      max={100}
-                      inputMode="numeric"
-                      aria-label="Andel i procent"
-                      onChange={(e) => setPlan(plan.map((x, j) => (j === i ? { ...x, percent: Number(e.target.value) } : x)))}
-                      className={cx(inputCls, "w-20 text-right")}
-                    />
-                    <span className="text-[13px] text-muted">%</span>
-                  </div>
-                </div>
-              ))}
-              {planTotal !== 100 ? <p className="text-[13px] font-medium text-danger">Delarna måste summera till 100 % (nu {planTotal} %).</p> : null}
-            </div>
-          </div>
+          <PaymentPlanEditor plan={plan} onChange={setPlan} totalInclVat={liveTotals.total} showErrors={showErrors} />
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
@@ -763,6 +721,22 @@ export interface InvoiceFormInitial {
   richText?: RichTextDoc;
 }
 
+/** Patch vinner fält för fält. Bostadstypen styr vilka fält som gäller. */
+function mergeFormHousing(base?: HousingDetails, patch?: HousingDetails): HousingDetails {
+  const dwellingType = patch?.dwellingType ?? base?.dwellingType;
+  if (dwellingType === "smahus") {
+    return { dwellingType, propertyDesignation: patch?.propertyDesignation || base?.propertyDesignation };
+  }
+  if (dwellingType === "bostadsratt") {
+    return {
+      dwellingType,
+      brfOrgNumber: patch?.brfOrgNumber || base?.brfOrgNumber,
+      apartmentNumber: patch?.apartmentNumber || base?.apartmentNumber,
+    };
+  }
+  return {};
+}
+
 const emptyTaxFields = (): TaxReductionFormValue => ({
   personalIdentityNumber: "",
   workAddress: "",
@@ -802,7 +776,12 @@ export function InvoiceForm({
   lockCustomer?: boolean;
   rotByCustomer?: Record<
     string,
-    { personalIdentityNumber?: string; addressLine?: string; properties?: InvoicePropertyOption[] }
+    {
+      personalIdentityNumber?: string;
+      addressLine?: string;
+      properties?: InvoicePropertyOption[];
+      housing?: HousingDetails;
+    }
   >;
   initial?: InvoiceFormInitial;
   cancelHref: string;
@@ -816,7 +795,7 @@ export function InvoiceForm({
   // en kund/ett uppdrag (då är kontexten synlig och kunden låst).
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? "");
   const [lines, setLines] = useState<DocLine[]>(
-    initial?.lines?.length ? initial.lines : [newLine("arbete", defaultVatRate, "start-arbete")]
+    initial?.lines?.length ? initial.lines : startLines(["arbete"], { defaultVatRate, defaultHourlyRate })
   );
   const [rot, setRot] = useState<RotRut | null>(() =>
     initial?.rot ? rotForEditor(initial.rot.type, initial.lines?.length ? initial.lines : [], initial.rot, "faktura") : null
@@ -872,13 +851,32 @@ export function InvoiceForm({
         workAddress: prev.workAddress || row?.addressLine || "",
       };
       if (applyHousing && properties.length === 1) {
-        next.housing = { dwellingType: "smahus", propertyDesignation: properties[0].designation };
+        // Kundens enda bostad, kompletterad med bostadstyp och beteckning från
+        // kundens tidigare ROT-fakturor.
+        next.housing = mergeFormHousing(row?.housing, {
+          dwellingType: "smahus",
+          propertyDesignation: properties[0].designation,
+        });
         setWorkLocationId(properties[0].id);
-      } else if (applyHousing && properties.length !== 1) {
+      } else if (applyHousing) {
+        next.housing = mergeFormHousing(prev.housing, row?.housing);
         setWorkLocationId((current) => (properties.some((property) => property.id === current) ? current : ""));
       }
       return next;
     });
+  }
+
+  /** Fastighetsbeteckningen har en ägare: taxFields.housing. Båda fälten skriver hit. */
+  function setPropertyDesignation(propertyDesignation: string) {
+    setTaxFields((prev) => ({
+      ...prev,
+      housing: { dwellingType: "smahus", propertyDesignation },
+    }));
+  }
+
+  function commitPersonnummer(personalIdentityNumber: string) {
+    if (!customerId) return;
+    void updateCustomerPersonnummerAction(customerId, personalIdentityNumber);
   }
 
   function syncServiceFromPeriod(fields: TaxReductionFormValue) {
@@ -1118,17 +1116,15 @@ export function InvoiceForm({
               <div id="faktura-rot-rut">
               <TaxReductionDocumentProperty
                 customerId={customerId}
+                type={rot.type}
+                dwellingType={taxFields.housing.dwellingType}
                 properties={propertiesByCustomer[customerId] ?? []}
                 value={workLocationId}
-                onChange={(id) => {
+                designation={taxFields.housing.propertyDesignation ?? ""}
+                onDesignationChange={setPropertyDesignation}
+                onChange={(id, designation) => {
                   setWorkLocationId(id);
-                  const selected = (propertiesByCustomer[customerId] ?? []).find((property) => property.id === id);
-                  if (selected?.designation) {
-                    setTaxFieldsAndDates({
-                      ...taxFields,
-                      housing: { dwellingType: "smahus", propertyDesignation: selected.designation },
-                    });
-                  }
+                  if (designation?.trim()) setPropertyDesignation(designation);
                 }}
                 onPropertiesChange={(next) =>
                   setPropertiesByCustomer((prev) => ({ ...prev, [customerId]: next }))
@@ -1141,7 +1137,8 @@ export function InvoiceForm({
                 type={rot.type}
                 value={taxFields}
                 onChange={setTaxFieldsAndDates}
-                properties={propertiesByCustomer[customerId]}
+                onPersonnummerCommit={commitPersonnummer}
+                propertyFieldId="faktura-fastighet-ny"
                 amountSlot={
                   rotLiveTotals ? (
                     <>

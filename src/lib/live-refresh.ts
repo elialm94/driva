@@ -24,7 +24,7 @@ export const LIVE_REFRESH_CHANNEL = "driva-live-refresh";
 
 export type LiveRefreshReason = "visible" | "focus" | "popstate" | "pageshow" | "broadcast";
 
-export type LiveRefreshSource = "quote-accepted" | "quote-declined";
+export type LiveRefreshSource = "quote-accepted" | "quote-declined" | "job-change-approved" | "job-change-declined";
 
 export interface LiveRefreshMessage {
   kind: "data-changed";

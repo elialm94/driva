@@ -250,6 +250,8 @@ export type LineSourceKind =
   | "JOB_MATERIAL"
   | "JOB_OTHER"
   | "PAYMENT_PLAN"
+  /** Rad på en godkänd ändring/tillägg (JobChange). sourceId = ändringsradens id. */
+  | "CHANGE_LINE"
   | "MANUAL";
 
 /** Företagets egna artikelregister – timpris, material, schabloner. */
@@ -401,6 +403,14 @@ export interface TaxReductionDetails {
   workAddress?: string;
   workPeriodStart?: string;
   workPeriodEnd?: string;
+  /**
+   * Varifrån perioden kom. "invoice" (eller saknat värde på äldre fakturor) =
+   * manuellt angivet och det enda som får skrivas till uppdraget. "job" =
+   * uppdragets datum. "derived" = aktuell månad, sista utposten och ingen
+   * uppgift om när arbetet gjordes. Allt utom "invoice" räknas om vid nästa
+   * sparning, så perioden följer uppdraget när det får riktiga datum.
+   */
+  workPeriodSource?: "invoice" | "job" | "derived";
   housing?: HousingDetails;
 }
 
@@ -417,9 +427,25 @@ export interface TaxReductionTermsSnapshot {
   text: string;
 }
 
+/**
+ * En del i offertens betalplan (förskott, delbetalning, slutbetalning).
+ *
+ *   * percent – andel av offertsumman inkl. moms. Sista delen faktureras
+ *     alltid som RESTEN (avrundning, tidigare fakturor, krediter) – aldrig
+ *     som procent rakt av.
+ *   * amount  – fast belopp i hela kronor inkl. moms (t.ex. "förskott 20 000
+ *     kr"). När det finns styr det över percent. Nya fält är valfria så att
+ *     äldre versioner behåller sitt contentHash (se lib/hash).
+ *   * kind    – förskott / delbetalning / slutbetalning. Saknas = härleds av
+ *     positionen (första = förskott när det finns fler än en, sista = slut).
+ */
+export type PaymentPlanPartKind = "forskott" | "delbetalning" | "slutbetalning";
+
 export interface PaymentPlanPart {
   label: string;
   percent: number;
+  amount?: number;
+  kind?: PaymentPlanPartKind;
 }
 
 /* ---------------------------------- Offerter --------------------------------- */
@@ -638,6 +664,203 @@ export interface Job {
   archivedAt?: string;
   /** Foton från arbetsplatsen – bevis mot kunden, inte bokföringsunderlag. */
   photos?: JobPhoto[];
+  /**
+   * Avslutsflödet: beslut om vad som inte ska faktureras (nu eller alls) och
+   * händelser som bara finns i flödet (avslutat, öppnat igen). Saknas =
+   * inget beslut fattat. Ligger på uppdraget – små listor per uppdrag.
+   */
+  billingDeferrals?: BillingDeferral[];
+  closeout?: JobCloseoutState;
+  /** Kundvyn: vad kunden får se via sin länk. Saknas = ingen länk delad. */
+  customerShare?: JobCustomerShare;
+}
+
+/* ------------------------------ Avsluta uppdrag ------------------------------ */
+
+/**
+ * Beslut i avslutsflödet om en källrad som INTE faktureras nu.
+ *   inte_fakturerbart – räknas aldrig som kvar att fakturera (garanti, eget fel …).
+ *   hantera_senare    – ligger kvar som ofakturerat men hindrar inte avslut.
+ * Ett beslut per källa; nytt beslut ersätter det gamla. Sätts resolvedAt när
+ * källan ändå faktureras eller beslutet tas bort.
+ */
+export type BillingDeferralKind = "inte_fakturerbart" | "hantera_senare";
+
+export interface BillingDeferral {
+  id: ID;
+  sourceType: BillingSourceType;
+  sourceId: ID;
+  kind: BillingDeferralKind;
+  note?: string;
+  createdAt: string;
+  createdBy?: "anvandare" | "assistent";
+  resolvedAt?: string;
+}
+
+export type JobCloseoutEventKind =
+  | "avslutat"
+  | "oppnat_igen"
+  | "beslut_inte_fakturerbart"
+  | "beslut_hantera_senare"
+  | "beslut_borttaget"
+  | "fakturautkast_skapat"
+  | "kundvy_delad"
+  | "kundvy_stangd"
+  | "slutunderlag_skapat"
+  | "dagsrapport";
+
+export interface JobCloseoutEvent {
+  id: ID;
+  at: string;
+  kind: JobCloseoutEventKind;
+  /** Kort, kundvänlig text utan systemjargong – visas i tidslinjen. */
+  text: string;
+  /** Kopplad faktura/ändring/källa när det finns en. */
+  entity?: { type: "faktura" | "andring" | "kalla"; id: ID };
+  createdBy?: "anvandare" | "assistent";
+}
+
+export interface JobCloseoutState {
+  /** Sätts när uppdraget avslutas via flödet. Tas bort när det öppnas igen. */
+  completedAt?: string;
+  /** Vad användaren valde som faktureringssätt i det senaste avslutet. */
+  billingMode?: CloseoutBillingMode;
+  events: JobCloseoutEvent[];
+}
+
+/** Faktureringssätt i avslutsflödet. Härlett förslag, användaren kan byta. */
+export type CloseoutBillingMode = "slutfaktura" | "delfaktura" | "lopande" | "ingen";
+
+/** Vad kunden får se på sin uppdragslänk. Allt är av som standard. */
+export interface JobCustomerShare {
+  token: string;
+  sharedAt: string;
+  /** Länken pausad: sidan svarar "inte tillgänglig". Inställningarna finns kvar. */
+  disabledAt?: string;
+  quote: boolean;
+  changes: boolean;
+  /** Foto-id:n som delas explicit. Tom = inga foton. */
+  photoIds: ID[];
+  invoices: boolean;
+  paymentStatus: boolean;
+  closeoutSummary: boolean;
+}
+
+/* --------------------------- Faktureringsallokering --------------------------- */
+
+/**
+ * Källa som kan faktureras. Generell – samma modell används av avslutsflödet,
+ * betalplanen och (senare) vidarefakturering av material/kvitton.
+ *
+ *   quote_line        – rad på godkänd offertversion (sourceId = DocLine.id).
+ *   payment_plan_part – del i betalplanen (sourceId = `${quoteId}:plan:${index}`).
+ *   quote_remainder   – resterande enligt offert som klumpsumma (sourceId = quoteId).
+ *   work_entry        – registrerad tid/material/övrigt (sourceId = JobWorkEntry.id).
+ *   change_line       – rad på godkänd ändring (sourceId = ändringsradens id).
+ *   expense           – utgift/kvitto som vidarefaktureras (sourceId = Expense.id).
+ *   receipt_line      – kvittorad (sourceId = `${receiptId}:${index}`), reserverad.
+ *   manual            – fri rad utan källa; allokeras aldrig.
+ */
+export type BillingSourceType =
+  | "quote_line"
+  | "payment_plan_part"
+  | "quote_remainder"
+  | "work_entry"
+  | "change_line"
+  | "expense"
+  | "receipt_line"
+  | "manual";
+
+export interface BillingSourceRef {
+  sourceType: BillingSourceType;
+  sourceId: ID;
+}
+
+/**
+ *   draft     – ligger på ett fakturautkast (reserverar källan).
+ *   invoiced  – fakturan är utfärdad.
+ *   released  – frisläppt (utkast kastat, rad borttagen eller faktura helt
+ *               krediterad). Historik – räknas inte som fakturerad.
+ */
+export type BillingAllocationStatus = "draft" | "invoiced" | "released";
+
+/**
+ * Spårbar länk källrad → fakturarad. EN levande (draft/invoiced) allokering
+ * per källa (unikt index i databasen, samma kontroll i tjänsten) – det är
+ * detta som hindrar dubbelfakturering.
+ */
+export interface BillingAllocation {
+  id: ID;
+  jobId?: ID;
+  sourceType: BillingSourceType;
+  sourceId: ID;
+  invoiceId: ID;
+  invoiceLineId: ID;
+  /** Antal av källan som allokerats (hela källan om det saknas). */
+  qty?: number;
+  /** Radens belopp exkl. moms, hela kronor, vid allokeringen. */
+  amountExclVat: number;
+  status: BillingAllocationStatus;
+  createdAt: string;
+  invoicedAt?: string;
+  releasedAt?: string;
+  releaseReason?: "utkast_kastat" | "rad_borttagen" | "faktura_krediterad";
+}
+
+/* ---------------------------- Ändringar och tillägg ---------------------------- */
+
+/**
+ *   utkast            – skapad, inte skickad.
+ *   vantar_pa_kunden  – skickad/delad, kunden har inte svarat.
+ *   godkand           – kunden godkände exakt den här versionen (approval).
+ *   avbojd            – kunden avböjde.
+ *   ersatt            – ersatt av en ny version (replacedByChangeId).
+ * "Delvis fakturerad"/"Fakturerad" härleds ur allokeringarna – lagras aldrig.
+ */
+export type JobChangeStatus = "utkast" | "vantar_pa_kunden" | "godkand" | "avbojd" | "ersatt";
+
+/** Kundens godkännande av EXAKT en ändringsversion – samma bevismodell som offerten. */
+export interface JobChangeApproval {
+  approvedAt: string;
+  approvedByName: string;
+  customerNameAtApproval: string;
+  /** SHA-256 av det låsta innehållet (samma som JobChange.contentHash). */
+  contentHash: string;
+  statement: string;
+  ip?: string;
+  userAgent?: string;
+}
+
+export interface JobChange {
+  id: ID;
+  jobId: ID;
+  customerId: ID;
+  /** Löpnummer per uppdrag (Ändring 1, 2 …). Versioner delar nummer. */
+  number: number;
+  version: number;
+  status: JobChangeStatus;
+  title: string;
+  /** Vad som ändras och varför – ren text som kunden ser. */
+  description: string;
+  /** Påverkan på tid, om någon ("cirka två extra dagar"). */
+  timeImpact?: string;
+  lines: DocLine[];
+  /** Publik token för kundlänken. */
+  token: string;
+  createdAt: string;
+  sentAt?: string;
+  viewedAt?: string;
+  decidedAt?: string;
+  declineReason?: string;
+  /** Låsning vid utskick: innehållet får inte ändras efter att kunden sett det. */
+  lockedAt?: string;
+  contentHash?: string;
+  sellerSnapshot?: InvoiceSellerSnapshot;
+  buyerSnapshot?: InvoiceBuyerSnapshot;
+  approval?: JobChangeApproval;
+  replacesChangeId?: ID;
+  replacedByChangeId?: ID;
+  createdBy?: "anvandare" | "assistent";
 }
 
 export interface JobPhoto {
@@ -691,6 +914,12 @@ export interface JobWorkEntry {
   quotedLineItemId?: ID;
   /** true när posten inte ingår i ursprunglig offert. */
   isExtra: boolean;
+  /**
+   * Registrerad på en ändring (JobChange). Priset mot kunden är ändringens
+   * godkända rader; posten faktureras därför aldrig separat utan följer
+   * ändringen när den faktureras.
+   */
+  changeId?: ID;
   /** Kopplad faktura (utkast eller utfärdad). Saknas = ej fakturerad. */
   invoiceId?: ID;
   /** Endast source = wholesaler: vilken orderrad/bekräftelse raden kommer från. */
@@ -1764,7 +1993,13 @@ export type AuditAction =
   | "samarbete_aterstalld"
   | "samarbete_skrivning"
   | "kundunderlag_begart"
-  | "kundunderlag_lost";
+  | "kundunderlag_lost"
+  // Avslut och ändringar: kundgodkännanden och avslutsbeslut auditloggas.
+  | "andring_godkand"
+  | "andring_avbojd"
+  | "uppdrag_avslutat"
+  | "uppdrag_oppnat_igen"
+  | "uppdrag_kundvy_stangd";
 
 export type BusinessRole = "owner" | "admin" | "member" | "accounting_consultant" | "auditor";
 export type CollaborationRole = "accounting_consultant" | "auditor";
@@ -2033,7 +2268,7 @@ export interface ActivityEvent {
   customerId?: ID;
   createdBy?: "anvandare" | "assistent";
   entity?: {
-    type: "offert" | "faktura" | "jobb" | "utgift" | "verifikation" | "hemsida" | "doman";
+    type: "offert" | "faktura" | "jobb" | "utgift" | "verifikation" | "hemsida" | "doman" | "andring";
     id: ID;
   };
 }
@@ -2766,12 +3001,93 @@ export interface WholesalerConnection {
    */
   discountGroups?: Record<string, number>;
   /**
+   * Rabattavtal i grossistens eget format (t.ex. Ahlsell avtalsfil). Huvudet
+   * bor här; villkoren (rabatt per materialklass, artikelvillkor) bor i
+   * katalogstoren nycklade på `discountAgreement.id`. Slås ihop med
+   * prislistan först när ett pris visas – aldrig vid importen.
+   */
+  discountAgreement?: WholesalerDiscountAgreement;
+  /**
    * Favoritartiklar i materialbutiken, nycklade på grossistens artikelnummer
    * (artikel-id byts vid varje prisimport – artikelnumret består).
    */
   favoriteArticleNumbers?: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** Känt grossistformat (parser-id i lib/wholesalers/formats/registry.ts). */
+export type WholesalerFileFormatId = "ahlsell-avtalsfil" | "ahlsell-prisfil";
+
+/**
+ * Rabattavtal/rabattbrev från grossisten – huvudet. Rabatter lagras som
+ * heltal i tiondels procent, priser i ören (ADR-1-tillägget i README).
+ */
+export interface WholesalerDiscountAgreement {
+  /** Villkoren i katalogstoren pekar hit; byts vid varje ny avtalsfil. */
+  id: ID;
+  format: WholesalerFileFormatId;
+  filename: string;
+  /** Importposten (historik) som skapade avtalet. */
+  importId?: ID;
+  /** 1 = kundavtal/standardavtal, 3 = anläggningsavtal. */
+  agreementType: "1" | "3";
+  customerNumber: string;
+  /** "000" för kundavtal. */
+  facilityNumber: string;
+  /** Avtalsbeteckning, t.ex. "R87 VS WC-MALL NIVÅ 2". */
+  name: string;
+  /** KEDJERABATTKOD – parsas och lagras; ingen beräkning byggs på J. */
+  chainDiscountCode: "J" | "N";
+  /** Körningsdatum (YYYY-MM-DD). */
+  runDate?: string;
+  /** Giltigt till och med (YYYY-MM-DD). */
+  endDate?: string;
+  classDiscountCount: number;
+  articleTermCount: number;
+  specDiscountCount: number;
+  netPriceCount: number;
+  /** Rader med KEDJERABATTKOD = J – flaggas i UI:t. */
+  chainDiscountRows: number;
+  importedAt: string;
+  /**
+   * Hur många artiklar i den aktiva prislistan som saknar matchande rabatt.
+   * Räknas om vid varje import av endera filen – det är siffran som avslöjar
+   * om fel avtalsfil laddats upp.
+   */
+  coverage?: WholesalerAgreementCoverage;
+}
+
+export interface WholesalerAgreementCoverage {
+  importId: ID;
+  articleCount: number;
+  withoutTermsCount: number;
+  computedAt: string;
+}
+
+/**
+ * Villkor ur ett rabattavtal. Bor i katalogstoren (tusentals rader per
+ * avtal) – se lib/wholesalers/catalog-store.ts. Exakt ett av
+ * materialClass/articleNumber är satt.
+ */
+export interface WholesalerAgreementTerm {
+  id: ID;
+  connectionId: ID;
+  agreementId: ID;
+  kind: "class" | "article";
+  /** Materialklass (högertrimmad) – kind = class. Kan vara huvudgrupp (5 tecken) eller undergrupp (6). */
+  materialClass?: string;
+  materialClassText?: string;
+  /** Grossistens artikelnummer – kind = article. */
+  articleNumber?: string;
+  /** Rabatt i tiondels procent: klassrabatt (class) eller specrabatt (article). */
+  discountTenths?: number;
+  /** Nettopris i ören – kind = article. */
+  netPriceOre?: number;
+  /** Kedjerabatt i tiondels procent – bara lagrad, aldrig räknad. */
+  chainDiscountTenths?: number;
+  /** Giltigt till och med (YYYY-MM-DD). */
+  endDate?: string;
 }
 
 export type WholesalerPriceFileKind = "csv" | "txt" | "xlsx" | "xml" | "zip";
@@ -2792,6 +3108,8 @@ export interface WholesalerPriceImport {
   connectionId: ID;
   filename: string;
   fileKind: WholesalerPriceFileKind;
+  /** Känt grossistformat som filen tolkades med. Saknas = generisk kolumnmappning. */
+  format?: WholesalerFileFormatId;
   status: WholesalerPriceImportStatus;
   mapping: WholesalerColumnMapping;
   /** Datarader i filen (exkl. rubrik). */
@@ -2832,16 +3150,50 @@ export interface WholesalerProduct {
   brand?: string;
   /** Länk (https) till grossistens produktbild – bara om filen innehåller en. */
   imageUrl?: string;
+  /** Rabattgrupp/materialklass – nyckeln mot rabattbrev och rabattavtal. */
   discountGroup?: string;
   unit: string;
   packSize?: number;
+  /** Lagerförd hos grossisten, om prisfilen anger det. */
+  stocked?: boolean;
   listPriceOre?: number;
   discountPercent?: number;
-  /** Kundens inköpspris exkl. moms i ören – uttryckligt eller från listpris × rabatt. */
+  /**
+   * Kundens inköpspris exkl. moms i ören. Lagrat när filen ger det
+   * uttryckligt (`file`) eller via det äldre rabattbrevet (`discount_group`).
+   * `agreement_*` sätts vid LÄSNING ur rabattavtalet (agreement-pricing.ts)
+   * och lagras aldrig.
+   */
   netPriceOre?: number;
-  netPriceSource?: "file" | "discount_group";
+  netPriceSource?: WholesalerNetPriceSource;
   /** Rekommenderat/avtalat utpris exkl. moms i ören, om filen anger det. */
   salesPriceOre?: number;
+  /** Förklaring av inköpspriset (regel, listpris, materialklass, avtal, datum). Beräknas vid läsning. */
+  priceExplanation?: WholesalerPriceExplanation;
+}
+
+export type WholesalerNetPriceSource =
+  | "file"
+  | "discount_group"
+  | "agreement_net_price"
+  | "agreement_spec_discount"
+  | "agreement_class_discount";
+
+/** Varje framräknat pris ska kunna förklaras: vilket listpris, vilken regel, vilken klass, vilket avtal, vilket datum. */
+export interface WholesalerPriceExplanation {
+  rule: WholesalerNetPriceSource | "list_price" | "none";
+  listPriceOre?: number;
+  /** Rabatt i tiondels procent som användes. */
+  discountTenths?: number;
+  /** Artikelns materialklass i prislistan. */
+  materialClass?: string;
+  /** Klassen i avtalet som matchade (samma som materialClass vid exakt träff, kortare vid prefix). */
+  matchedClass?: string;
+  matchedClassText?: string;
+  agreementName?: string;
+  agreementEndDate?: string;
+  /** Begriplig svensk text för UI:t. */
+  text: string;
 }
 
 /**
@@ -3250,6 +3602,10 @@ export interface DB {
   dataImports?: DataImport[];
   /** Leverantörsregister. Guardera med ?? []. */
   suppliers?: Supplier[];
+  /** Faktureringsallokeringar (källrad → fakturarad). Guardera med ?? []. */
+  billingAllocations?: BillingAllocation[];
+  /** Ändringar och tillägg på uppdrag. Guardera med ?? []. */
+  jobChanges?: JobChange[];
   meta: {
     seededAt: string;
     /**

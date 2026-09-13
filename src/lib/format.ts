@@ -10,6 +10,8 @@ const krFmt = new Intl.NumberFormat("sv-SE", {
 
 export function kr(n: number): string {
   const rounded = Math.round(n);
+  // Math.round(-0.4) är -0, och Intl formaterar -0 med minustecken. Noll är
+  // noll: "−0 kr" läses som ett fel i bokföringen. NaN lämnas synligt.
   return krFmt.format(rounded === 0 ? 0 : rounded);
 }
 

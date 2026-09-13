@@ -22,9 +22,14 @@ export interface DetectedPriceFile {
   text?: string;
   /** Binärt innehåll för xlsx. */
   bytes?: Buffer;
+  /**
+   * Råbytes för textfiler (csv/txt/xml, även inne i ZIP) så att kända
+   * fastbreddsformat kan dekodas om strikt som ISO-8859-1.
+   */
+  textBytes?: Buffer;
   /** Namnet på filen som faktiskt lästes (inne i ett ZIP: den inre filen). */
   innerFilename: string;
-  encoding: "utf-8" | "utf-16le" | "utf-16be" | "windows-1252";
+  encoding: "utf-8" | "utf-16le" | "utf-16be" | "windows-1252" | "iso-8859-1";
 }
 
 const SUPPORTED_EXT = /\.(csv|txt|xlsx|xml|zip)$/i;
@@ -121,10 +126,16 @@ export function detectPriceFile(bytes: Buffer, filename: string): DetectedPriceF
   const { text, encoding } = decodeText(bytes);
   if (text.includes("\u0000")) throw new PriceFileError("Filen ser ut att vara binär och kan inte läsas som text.");
   if (ext === "xml" || looksLikeXml(text)) {
-    return { kind: "xml", text, innerFilename: filename, encoding };
+    return { kind: "xml", text, textBytes: bytes, innerFilename: filename, encoding };
   }
   if (ext === "csv" || ext === "txt" || ext === "tsv" || ext === "") {
-    return { kind: ext === "txt" || ext === "tsv" ? "txt" : "csv", text, innerFilename: filename, encoding };
+    return {
+      kind: ext === "txt" || ext === "tsv" ? "txt" : "csv",
+      text,
+      textBytes: bytes,
+      innerFilename: filename,
+      encoding,
+    };
   }
   throw new PriceFileError("Filformatet stöds inte. Ladda upp CSV, TXT, XLSX, XML eller ett ZIP med någon av dem.");
 }

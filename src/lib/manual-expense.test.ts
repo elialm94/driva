@@ -40,9 +40,17 @@ import { listExpensesForTable } from "./services/economy-list";
 import { bankKindSuggestion, bookBankTransactionAs } from "./services/bank-booking";
 import { registerBankTransactions } from "./services/banking";
 import { getBusinessActions } from "./services/actions";
+import { nextDay, todayDate } from "./accounting/dates";
 
-const YEAR = new Date().getFullYear();
-const TODAY = new Date().toISOString().slice(0, 10);
+/*
+ * Dygnet räknas i svensk tid, precis som bokföringen: createManualExpense
+ * jämför med todayDate(), som formaterar i Europe/Stockholm. Räknas "i dag"
+ * eller "i morgon" i stället ur toISOString() (UTC) blir de samma svenska dag
+ * mellan midnatt och 02:00 svensk sommartid, och testet slutar pröva det det
+ * säger att det prövar.
+ */
+const TODAY = todayDate();
+const YEAR = Number(TODAY.slice(0, 4));
 const D = (month: number, day: number) => `${YEAR}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 /** Ett datum i år som säkert inte ligger i framtiden. */
 const DATE = TODAY < D(2, 1) ? D(1, 1) : D(1, 15);
@@ -602,7 +610,7 @@ describe("Registrera en utgift för hand", () => {
 
   it("nekar framtida datum och ogiltiga utkast innan något sparas", () => {
     const before = db().expenses.length;
-    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    const tomorrow = nextDay(todayDate());
     assert.throws(
       () => createManualExpense({ kind: "kop", date: tomorrow, paidBy: "foretagskonto", supplier: "X", amount: 100, category: "material" }),
       /inte ligga i framtiden/

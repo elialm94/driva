@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { BookOpenText, ChevronLeft, ChevronRight } from "lucide-react";
-import { kr } from "@/lib/format";
+import { kr, datumKort } from "@/lib/format";
 import { Card, EmptyState, PageHeader, cx } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
@@ -156,7 +156,7 @@ export function HuvudbokView({
                     ) : null}
                     {rows.map((r, i) => (
                       <tr key={i} className="border-t border-line/50">
-                        <td className="py-1.5 pr-3 whitespace-nowrap">{r.date}</td>
+                        <td className="py-1.5 pr-3 whitespace-nowrap">{datumKort(r.date)}</td>
                         <td className="py-1.5 pr-3 font-mono text-[12px] text-muted">{r.verificationLabel}</td>
                         <td className="max-w-[260px] truncate py-1.5 pr-3">{r.description}</td>
                         <td className="py-1.5 text-right tabular">{r.debit ? kr(r.debit) : ""}</td>

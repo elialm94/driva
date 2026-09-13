@@ -188,17 +188,6 @@ async function main() {
   await waitText(page, /Kundnummer 778899/);
   ok("ny grossist (Dahl) sparas och visas med kundnummer och ordermejl");
   expect(/Ingen prislista ännu/.test(await bodyText(page)), "utan prislista visas 'Ingen prislista ännu'");
-  // Öppna uppladdningen för Dahl-kortet (det utan prislista).
-  const openedUpload = await page.evaluate(() => {
-    const cards = Array.from(document.querySelectorAll("[data-wholesaler-connection]"));
-    const card = cards.find((c) => /778899/.test(c.textContent ?? ""));
-    const btn = card ? Array.from(card.querySelectorAll("button")).find((b) => /Ladda upp prisfil/.test(b.textContent ?? "")) : undefined;
-    if (!btn) return false;
-    btn.click();
-    return true;
-  });
-  expect(openedUpload, "Ladda upp prisfil finns på kortet");
-  await page.waitForSelector("[data-price-file-input]", { timeout: 20000 });
   const csvPath = `${OUT}/prislista-test.csv`;
   fs.writeFileSync(
     csvPath,
@@ -210,11 +199,35 @@ async function main() {
     ].join("\r\n"),
     "utf8",
   );
-  const fileInput = await page.$("[data-price-file-input]");
-  await fileInput!.uploadFile(csvPath);
+  // Ett klick på kortet öppnar OS-filväljaren – ingen tom släpp-modal först.
+  await page.waitForFunction(() => {
+    const cards = Array.from(document.querySelectorAll("[data-wholesaler-connection]"));
+    const card = cards.find((c) => /778899/.test(c.textContent ?? ""));
+    return Boolean(
+      card &&
+        Array.from(card.querySelectorAll("button")).some((b) => /Ladda upp prisfil/.test(b.textContent ?? "")) &&
+        card.querySelector("[data-price-file-input]"),
+    );
+  }, { timeout: 20000 });
+  expect(!(await page.$("[role='dialog']")) || !/Släpp prisfilen här/.test((await page.$eval("[role='dialog']", (el) => el.textContent ?? "").catch(() => ""))), "ingen tom släpp-modal innan fil valts");
+  const [chooser] = await Promise.all([
+    page.waitForFileChooser({ timeout: 10000 }),
+    page.evaluate(() => {
+      const cards = Array.from(document.querySelectorAll("[data-wholesaler-connection]"));
+      const card = cards.find((c) => /778899/.test(c.textContent ?? ""));
+      const btn = card ? Array.from(card.querySelectorAll("button")).find((b) => /Ladda upp prisfil/.test(b.textContent ?? "")) : undefined;
+      if (!btn) throw new Error("Ladda upp prisfil saknas");
+      (btn as HTMLButtonElement).click();
+    }),
+  ]);
+  const dialogAfterClick = await page.evaluate(() => document.querySelector("[role='dialog']")?.textContent ?? "");
+  expect(!/Släpp prisfilen här/.test(dialogAfterClick), "klick öppnar filväljaren utan tom släpp-modal");
+  await chooser.accept([csvPath]);
   await waitText(page, /Artikelnummer|Benämning/, 30000);
   const preview = await bodyText(page);
   expect(/3 rader|rader/.test(preview) && /Importera prislistan/.test(preview), "förhandsgranskningen visar kolumner, rader och Importera prislistan");
+  expect(/påverkas inte förrän du bekräftar/.test(preview) && /Stäng/.test(preview), "förhandsgranskningen har bekräftelsetext och Stäng");
+  expect(!/Släpp prisfilen här/.test(preview), "förhandsgranskningen är inte den tomma släppzonen");
   expect(!/parser|mappning|XML|EDI/i.test(preview.replace(/XML eller ZIP/, "")), "förhandsgranskningen använder enkel svenska (inga tekniska ord)");
   await shot(page, "prisfil-forhandsgranskning");
   await clickButton(page, /^Importera prislistan$/, "[role='dialog']");

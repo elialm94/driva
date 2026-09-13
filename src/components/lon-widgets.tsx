@@ -23,7 +23,7 @@ import {
   TAX_TABLE_MIN,
 } from "@/lib/accounting/payroll-model";
 import { taxTableDeduction } from "@/lib/accounting/skattetabell";
-import { birthDateFromPersonnummer } from "@/lib/personnummer";
+import { birthDateFromPersonnummer, personnummerInputChange } from "@/lib/personnummer";
 import type { Employee, EmployeeRole, TaxBasis } from "@/lib/types";
 
 /** Klientwidgets för lönen. Beräkningarna kommer från payroll-model. */
@@ -133,7 +133,7 @@ export function EmployeeForm({ employee, today }: { employee?: Employee; today: 
             id="lon-pnr"
             className={fieldCls}
             value={personnummer}
-            onChange={(e) => setPersonnummer(e.target.value)}
+            onChange={(e) => setPersonnummer(personnummerInputChange(personnummer, e.target.value))}
             placeholder="ÅÅÅÅMMDD-NNNN"
             inputMode="numeric"
           />

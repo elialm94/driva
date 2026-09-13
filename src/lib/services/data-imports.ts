@@ -339,6 +339,25 @@ export async function analyzeImportFile(bytes: Buffer, filename: string, opts: A
     };
   }
 
+  if (parsed.known) {
+    // Grossistens egna filformat hör till grossistanslutningen – där kopplas
+    // rabatterna till rätt kundnummer och prislista.
+    const label = parsed.known.parser.label;
+    return {
+      ...base,
+      kind: "unsupported",
+      title: filename,
+      subtitle: label,
+      source: "deterministic",
+      canChooseKind: false,
+      message:
+        parsed.known.file.kind === "discount_agreement"
+          ? `Filen är en ${label} – ett rabattavtal, inte ett register. Ladda upp den under Inställningar → Grossister på grossistens kort (Ladda upp prisfil) så kopplas rabatterna till rätt kundnummer och prislista.`
+          : `Filen är en ${label}. Ladda upp den under Inställningar → Grossister på grossistens kort (Ladda upp prisfil) så blir artiklarna sökbara i materialbutiken med era avtalspriser.`,
+      warnings: [],
+    };
+  }
+
   const table = parsed.table;
   const classification = classifyRegisterTable(table);
   let kind: DataImportKind | "unknown" = opts.kindOverride ?? (classification.kind === "unknown" ? "unknown" : classification.kind);

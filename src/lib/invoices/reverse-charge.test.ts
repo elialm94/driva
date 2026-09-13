@@ -10,6 +10,7 @@ import { getInvoice } from "../services/data";
 import { docTotals } from "../calc";
 import { entriesCredit, entriesInvoiceSent, deductibleVat, entriesExpense } from "../bas";
 import { computeVatPosition } from "../accounting/vat";
+import { bokforingsdatum } from "../accounting/dates";
 import { collectIssueErrors } from "./validate";
 import { invoiceReverseChargeView } from "./document-view";
 import { buyerVatNumber, REVERSE_CHARGE_CONSTRUCTION_NOTE, reverseChargeAppliesTo } from "./reverse-charge";
@@ -167,7 +168,11 @@ describe("omvänd byggmoms – utfärdad faktura", () => {
   it("lägger omsättningen i ruta 41, inte i ruta 42", () => {
     issueInvoice(byggDraft().id);
     const ver = db().verifications[0]!;
-    const day = ver.date.slice(0, 10);
+    // Samma dygnsgräns som computeVatPosition använder: verifikationens
+    // bokföringsdag i svensk tid, inte UTC-dagen ur tidsstämpeln. De skiljer
+    // sig mellan midnatt och 02:00 svensk sommartid, och då hamnar
+    // verifikationen utanför sin egen endagsperiod.
+    const day = bokforingsdatum(ver.date);
     const pos = computeVatPosition({ key: "test", label: "Test", start: day, end: day });
     assert.equal(pos.boxes.find((b) => b.code === "41")?.amount, 40_000);
     assert.equal(pos.boxes.find((b) => b.code === "42"), undefined);

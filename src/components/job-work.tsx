@@ -20,6 +20,7 @@ import type { JobWorkEntry, VatRate } from "@/lib/types";
 import type { JobWholesalerContext } from "@/lib/wholesalers/views";
 import { LineDescriptionInput, LineDescriptionVocabProvider } from "./line-description-input";
 import { WholesalerMaterialSheet } from "./wholesaler-material-sheet";
+import { DayReportButton } from "./day-report-sheet";
 
 function hoursLabel(n: number): string {
   return `${Number(n.toFixed(2)).toLocaleString("sv-SE")} tim`;
@@ -44,6 +45,8 @@ export type JobWorkViewEntry = Pick<
   locked: boolean;
   invoiceId?: string;
   invoiceNumber?: number | null;
+  /** Registrerad på en godkänd ändring: "Ändring 1" – faktureras via ändringen. */
+  changeLabel?: string;
 };
 
 function todayISO(): string {
@@ -109,10 +112,10 @@ export function JobWorkSection({
 
   return (
     <LineDescriptionVocabProvider>
-    <div className="mb-8">
+    <div className="mb-8 scroll-mt-4" id="arbete">
       <SectionTitle
         right={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               type="button"
               className={buttonClasses("secondary", "sm")}
@@ -141,6 +144,7 @@ export function JobWorkSection({
               <span className="sm:hidden">Material</span>
               <span className="hidden sm:inline">Lägg till material</span>
             </button>
+            <DayReportButton jobId={jobId} />
           </div>
         }
       >
@@ -343,7 +347,9 @@ function WorkList({
               >
                 <p className="text-[14px] font-medium">
                   {entry.description}
-                  {entry.isExtra ? (
+                  {entry.changeLabel ? (
+                    <span className="ml-2 text-[12px] font-medium text-info">{entry.changeLabel}</span>
+                  ) : entry.isExtra ? (
                     <span className="ml-2 text-[12px] font-medium text-warn">Tillägg</span>
                   ) : null}
                 </p>

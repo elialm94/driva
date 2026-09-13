@@ -21,10 +21,11 @@ import {
   currentVersion,
   getJob,
   getQuote,
-  invoiceTotals,
+  invoicedTotalContribution,
   jobQuote,
   quoteTotals,
 } from "./data";
+import { paymentPlanPartAmount, paymentPlanPartPercent } from "../payment-plan";
 import { invoicesForJob, invoicesForJobOrQuote, jobMoney } from "./job-economy";
 import { invoiceHref, jobHref, newInvoiceHref, newQuoteHref, quoteHref } from "../nav";
 import { invoiceNumberLabel } from "../invoices/display";
@@ -122,13 +123,22 @@ export function nextPaymentPlanPartForQuote(quoteId: string): {
   let index = 0;
   while (index < plan.length && used.has(index)) index++;
   if (index >= plan.length) return null;
-  const invoiced = live.reduce((s, i) => s + invoiceTotals(i).total, 0);
+  // Delkrediter räknas av (negativt bidrag), fullkrediterade par tar ut varandra.
+  const invoiced = invoicesForQuote(quoteId).reduce((s, i) => s + invoicedTotalContribution(i), 0);
   const remaining = Math.max(0, totals.total - invoiced);
   if (remaining <= 0) return null;
   const part = plan[index];
   const isLast = index === plan.length - 1;
-  const fromPlan = Math.round((totals.total * part.percent) / 100);
-  return { index, percent: part.percent, label: part.label, amount: isLast ? remaining : fromPlan, isLast };
+  // Fast belopp (förskott i kronor) styr över procent. Delen kan aldrig
+  // överstiga det som är kvar att fakturera enligt offerten.
+  const fromPlan = Math.min(paymentPlanPartAmount(part, totals.total), remaining);
+  return {
+    index,
+    percent: paymentPlanPartPercent(part, totals.total),
+    label: part.label,
+    amount: isLast ? remaining : fromPlan,
+    isLast,
+  };
 }
 
 export function lineWithQuoteProvenance(line: DocLine, quote: Quote, originalLineId?: string): DocLine {

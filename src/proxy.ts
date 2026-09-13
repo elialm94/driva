@@ -43,6 +43,8 @@ const PUBLIC_PREFIXES = [
   "/underbitraden", // publik underbiträdeslista (härledd ur leverantörsregistret)
   "/offert",
   "/faktura",
+  "/andring", // kundgodkännande av ändring/tillägg på uppdrag
+  "/uppdrag-kund", // kundvyn för ett uppdrag (bara det som delats)
   "/sajt",
   "/integritetspolicy",
   "/inbjudan",

@@ -2,12 +2,18 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { DwellingType, HousingDetails, TaxReductionDetails } from "@/lib/types";
-import { formatPersonnummer, isPersonnummerFormat, maskPersonnummer } from "@/lib/personnummer";
+import {
+  formatPersonnummer,
+  isPersonnummerFormat,
+  maskPersonnummer,
+  personnummerInputChange,
+} from "@/lib/personnummer";
 import { formatOrgnr } from "@/lib/invoices/formats";
 import {
   formatWorkPeriodRange,
   taxReductionMissingFields,
   type TaxReductionMissingCode,
+  type WorkPeriodSource,
 } from "@/lib/tax-reduction-gaps";
 import { DateField } from "./date-field";
 import { cx } from "./ui";
@@ -33,6 +39,8 @@ export interface TaxReductionFormValue {
   workAddress: string;
   workPeriodStart: string;
   workPeriodEnd: string;
+  /** Härledd period visas men sparas inte som manuell. Ändra gör den manuell. */
+  workPeriodSource?: WorkPeriodSource;
   housing: HousingDetails;
 }
 
@@ -51,6 +59,7 @@ export function taxReductionDetailsFromForm(value: TaxReductionFormValue): TaxRe
     workAddress: value.workAddress.trim() || undefined,
     workPeriodStart: value.workPeriodStart || undefined,
     workPeriodEnd: value.workPeriodEnd || undefined,
+    workPeriodSource: value.workPeriodSource,
     housing,
   };
 }
@@ -222,25 +231,30 @@ export function TaxReductionFields({
   type,
   value,
   onChange,
+  onPersonnummerCommit,
+  propertyFieldId,
   amountSlot,
 }: {
   type: "rot" | "rut";
   value: TaxReductionFormValue;
   onChange: (next: TaxReductionFormValue) => void;
+  /** Spara personnummret på kunden redan vid blur, inte bara när fakturan sparas. */
+  onPersonnummerCommit?: (personalIdentityNumber: string) => void;
+  /** Fältet som äger fastighetsbeteckningen, i bostadsblocket. Dit pekar luckan. */
+  propertyFieldId?: string;
   amountSlot?: ReactNode;
-  /** Bostad väljs via TaxReductionDocumentProperty och sparas som workLocationId. */
-  properties?: InvoicePropertyOption[];
 }) {
   const pnKnown = isPersonnummerFormat(value.personalIdentityNumber);
   const periodKnown = Boolean(value.workPeriodStart || value.workPeriodEnd);
   const dwelling = value.housing.dwellingType;
+  const designation = value.housing.propertyDesignation?.trim() ?? "";
 
   const [pnEditing, setPnEditing] = useState(!pnKnown);
-  const [periodEditing, setPeriodEditing] = useState(!periodKnown);
+  // Arbetsperioden härleds alltid fram (uppdragets datum, annars aktuell
+  // månad), så den börjar sammanfattad. Två tomma datumfält ska aldrig möta
+  // användaren - de öppnas bara med Ändra.
+  const [periodEditing, setPeriodEditing] = useState(false);
   const [dwellingEditing, setDwellingEditing] = useState(type === "rot" && !dwelling);
-  const [propertyEditing, setPropertyEditing] = useState(
-    type === "rot" && dwelling === "smahus" && !value.housing.propertyDesignation?.trim()
-  );
   const [brfEditing, setBrfEditing] = useState(
     type === "rot" && dwelling === "bostadsratt" && !value.housing.brfOrgNumber?.trim()
   );
@@ -256,9 +270,8 @@ export function TaxReductionFields({
   });
   const fieldIds: Partial<Record<TaxReductionMissingCode, string>> = {
     personnummer: `${type}-personnummer`,
-    workPeriod: `${type}-arbetsperiod`,
     dwellingType: `${type}-bostadstyp`,
-    propertyDesignation: `${type}-fastighetsbeteckning`,
+    propertyDesignation: propertyFieldId,
     brfOrgNumber: `${type}-brf-orgnr`,
     apartmentNumber: `${type}-lagenhetsnummer`,
   };
@@ -280,16 +293,13 @@ export function TaxReductionFields({
             },
     });
     setDwellingEditing(false);
-    setPropertyEditing(dwellingType === "smahus");
     setBrfEditing(dwellingType === "bostadsratt");
     setAptEditing(dwellingType === "bostadsratt");
   }
 
   const showPnInput = pnEditing || !pnKnown;
-  const showPeriodInput = periodEditing || !periodKnown;
+  const showPeriodInput = periodEditing;
   const showDwellingPicker = type === "rot" && (dwellingEditing || !dwelling);
-  const showProperty =
-    type === "rot" && dwelling === "smahus" && (propertyEditing || !value.housing.propertyDesignation?.trim());
   const showBrf =
     type === "rot" && dwelling === "bostadsratt" && (brfEditing || !value.housing.brfOrgNumber?.trim());
   const showApt =
@@ -303,11 +313,15 @@ export function TaxReductionFields({
           <label className={labelCls}>Personnummer</label>
           <input
             value={value.personalIdentityNumber}
-            onChange={(e) => patch({ personalIdentityNumber: e.target.value })}
+            onChange={(e) =>
+              patch({ personalIdentityNumber: personnummerInputChange(value.personalIdentityNumber, e.target.value) })
+            }
             onBlur={() => {
               if (isPersonnummerFormat(value.personalIdentityNumber)) {
-                patch({ personalIdentityNumber: formatPersonnummer(value.personalIdentityNumber) });
+                const formatted = formatPersonnummer(value.personalIdentityNumber);
+                patch({ personalIdentityNumber: formatted });
                 setPnEditing(false);
+                onPersonnummerCommit?.(formatted);
               }
             }}
             inputMode="numeric"
@@ -330,7 +344,7 @@ export function TaxReductionFields({
             <DateField
               value={value.workPeriodStart}
               onChange={(workPeriodStart) => {
-                patch({ workPeriodStart });
+                patch({ workPeriodStart, workPeriodSource: "invoice" });
                 if (workPeriodStart && value.workPeriodEnd) setPeriodEditing(false);
               }}
               className={inputCls}
@@ -341,7 +355,7 @@ export function TaxReductionFields({
             <DateField
               value={value.workPeriodEnd}
               onChange={(workPeriodEnd) => {
-                patch({ workPeriodEnd });
+                patch({ workPeriodEnd, workPeriodSource: "invoice" });
                 if (value.workPeriodStart && workPeriodEnd) setPeriodEditing(false);
               }}
               className={inputCls}
@@ -350,7 +364,7 @@ export function TaxReductionFields({
         </div>
       ) : (
         <KnownRow>
-          Arbetsperiod: {formatWorkPeriodRange(value.workPeriodStart, value.workPeriodEnd)}
+          Arbetsperiod: {periodKnown ? formatWorkPeriodRange(value.workPeriodStart, value.workPeriodEnd) : "inte angiven"}
           <ChangeButton onClick={() => setPeriodEditing(true)} />
         </KnownRow>
       )}
@@ -385,26 +399,10 @@ export function TaxReductionFields({
         ) : dwelling ? (
           <KnownRow>
             Bostadstyp {dwelling === "smahus" ? "Fastighet/småhus" : "Bostadsrätt"}
+            {dwelling === "smahus" && designation ? ` - ${designation}` : null}
             <ChangeButton onClick={() => setDwellingEditing(true)} />
           </KnownRow>
         ) : null
-      ) : null}
-
-      {showProperty ? (
-        <div id={`${type}-fastighetsbeteckning`}>
-          <label className={labelCls}>Fastighetsbeteckning</label>
-          <input
-            value={value.housing.propertyDesignation ?? ""}
-            onChange={(e) =>
-              patch({ housing: { dwellingType: "smahus", propertyDesignation: e.target.value } })
-            }
-            onBlur={() => {
-              if (value.housing.propertyDesignation?.trim()) setPropertyEditing(false);
-            }}
-            placeholder="T.ex. Södermalm 12:34"
-            className={inputCls}
-          />
-        </div>
       ) : null}
 
       {showBrf ? (

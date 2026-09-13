@@ -30,7 +30,7 @@ export function JobPhotosSection({ jobId, photos }: { jobId: string; photos: Job
   }
 
   return (
-    <div className="mb-8">
+    <div className="mb-8 scroll-mt-4" id="foton">
       <SectionTitle
         right={
           <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => inputRef.current?.click()}>
