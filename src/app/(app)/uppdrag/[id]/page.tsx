@@ -32,7 +32,6 @@ import { AppLink } from "@/components/app-link";
 import { SmartBack } from "@/components/back-link";
 import { invoiceHref, newQuoteHref, pageOrigin, quoteHref } from "@/lib/nav";
 import { ensurePageBusiness } from "@/lib/auth/session";
-import { inboundAddressForBusiness } from "@/lib/services/inbox";
 import { invoiceReadiness } from "@/lib/services/invoice-readiness";
 
 export async function generateMetadata(props: PageProps<"/uppdrag/[id]">) {
@@ -302,7 +301,6 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         return deadline && job.taxReductionApplication ? <RotDeadlineBanner status={deadline} /> : null;
       })()}
 
-      {/* purchaseRef läses bara här. Tilldelning: ensureJobPurchaseRefAction (skrivkontext). */}
       <JobWorkSection
         jobId={job.id}
         jobTitle={job.title}
@@ -310,8 +308,6 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
         laborPrefill={laborPrefill}
         defaultHourlyRate={getInvoiceDefaults().defaultHourlyRate}
         wholesalers={wholesalers.enabled ? wholesalers : undefined}
-        purchaseRef={job.purchaseRef}
-        inboxAddress={inboundAddressForBusiness()}
         invoiceReadiness={invoiceReadiness(job.id)}
       />
 

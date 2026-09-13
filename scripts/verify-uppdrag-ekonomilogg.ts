@@ -118,6 +118,11 @@ const FORBIDDEN: [RegExp, string][] = [
   [/Förhandsgranska slutunderlag/i, "ingen förhandsgranskning av slutunderlaget"],
   [/Tidslinje/i, "ingen tidslinje"],
   [/\bFoton\b/i, "ingen Foton-sektion"],
+  [/Inköpsreferens/i, "ingen Inköpsreferens"],
+  [/Kopiera referens/i, "ingen Kopiera referens"],
+  [/Fota materialköp/i, "ingen Fota materialköp"],
+  [/Vidarebefordra underlag/i, "ingen Vidarebefordra-mening"],
+  [/\bFV-\d+/i, "ingen FV-referens på sidan"],
 ];
 
 async function check(page: Page, label: string, jobId: string, viewportHeight: number) {
