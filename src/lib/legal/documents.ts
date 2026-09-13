@@ -35,10 +35,10 @@ export const LEGAL_DOCUMENTS: Record<LegalDocumentId, LegalDocumentMeta> = {
     id: "villkor",
     title: "Allmänna villkor",
     path: "/villkor",
-    version: "2.0",
+    version: "2.1",
     effectiveFrom: "2026-10-01",
     changeSummary:
-      "Nya villkor med tydliga stödgränser, provperiod och abonnemang via Stripe, skrivskydd efter avslutad provperiod, dataexport och lagstadgad bevarandetid för bokföringsmaterial.",
+      "Nya villkor med tydliga stödgränser, provperiod och abonnemang via Stripe, skrivskydd efter avslutad provperiod, dataexport och lagstadgad bevarandetid för bokföringsmaterial. 2.1: stödgränserna hänvisar till supportmatrisen (/omfattning) och beskriver konsultfall som kräver redovisningskonsultens godkännande.",
   },
   integritet: {
     id: "integritet",
@@ -112,14 +112,14 @@ export function termsSections(status: LegalEntityStatus): LegalSection[] {
       title: "1. Avtalspart och tjänsten",
       body: [
         `Dessa villkor gäller mellan dig som kund (företaget) och ${part}, nedan "Ferva" eller "vi". Ferva är en webbtjänst för små aktiebolag som samlar offerter, kunder, uppdrag, fakturor, kvitton, bankhändelser och bokföringsunderlag på ett ställe, med stöd för att ta fram deklarationsunderlag.`,
-        "Tjänsten tillhandahålls som den är och utvecklas löpande. Vilka fall tjänsten stödjer beskrivs i supportmatrisen i tjänsten (Hjälp → Vad Ferva stödjer). Sådant som ligger utanför matrisen ska inte bokföras eller deklareras via Ferva utan stöd av redovisningskonsult.",
+        "Tjänsten tillhandahålls som den är och utvecklas löpande. Vilka fall tjänsten stödjer beskrivs i supportmatrisen i tjänsten (sidan Vad Ferva stödjer, /omfattning). Sådant som ligger utanför matrisen ska inte bokföras eller deklareras via Ferva utan stöd av redovisningskonsult.",
       ],
     },
     {
       title: "2. Stödgränser",
       body: [
         "Ferva är i den här versionen avsett för svenska aktiebolag som redovisar enligt K2, med verksamhet i Sverige och redovisning i SEK. Tjänsten stödjer svensk kundfakturering med 0, 6, 12 och 25 procent moms, ROT/RUT-avdrag, enkel fast månadslön inom motorns verifierade fall samt de bokföringsfall som listas i supportmatrisen.",
-        "Ferva är inte anpassat för handelsbolag, enskild firma, koncernredovisning, K3, lager- eller tillverkningsföretag, utländsk moms/OSS, komplexa löneupplägg, förmåner utanför de verifierade fallen eller finansiella instrument. Försöker du registrera något sådant visar tjänsten det och stoppar eller varnar. Du ansvarar för att ditt företag ligger inom stödgränserna.",
+        "Ferva är inte anpassat för handelsbolag, koncernredovisning, K3, lager- eller tillverkningsföretag, utländsk moms/OSS, annan valuta än SEK, komplexa löneupplägg, förmåner utanför de verifierade fallen eller finansiella instrument. Enskild firma och omvänd byggmoms på egna kundfakturor är konsultfall som får användas först när din redovisningskonsult godkänt dem i tjänsten. Försöker du registrera något som inte stöds visar tjänsten det och stoppar. Du ansvarar för att ditt företag ligger inom stödgränserna.",
       ],
     },
     {

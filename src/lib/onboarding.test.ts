@@ -24,6 +24,7 @@ function filled(over: Partial<OnboardingValues> = {}): OnboardingValues {
   return {
     name: "Söders Snickeri AB",
     companyForm: "ab",
+    scopeFlags: [],
     orgNumber: "5591234567",
     vatNumber: "",
     paymentTiming: "now",
@@ -42,7 +43,13 @@ function filled(over: Partial<OnboardingValues> = {}): OnboardingValues {
 
 function formDataFrom(values: OnboardingValues): FormData {
   const data = new FormData();
-  for (const [key, value] of Object.entries(values)) data.set(key, value);
+  for (const [key, value] of Object.entries(values)) {
+    if (Array.isArray(value)) {
+      for (const v of value) data.append(key === "scopeFlags" ? "scope" : key, v);
+    } else {
+      data.set(key, value);
+    }
+  }
   return data;
 }
 

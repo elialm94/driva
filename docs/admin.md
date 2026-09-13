@@ -353,7 +353,7 @@ produktionsprojektet. RESULT-raden klistras in i systemvyns formulär.
 
 ### Runbooks (`docs/runbooks/`)
 
-`incident.md`, `nyckelrotation.md`, `epoststopp.md`, `bankstopp.md`,
+`incident.md`, `mfa.md`, `nyckelrotation.md`, `epoststopp.md`, `bankstopp.md`,
 `stripe-webhook-fel.md`, `filing-fel.md`, `backup-restore.md`,
 `epost-produktion.md` (SPF/DKIM/DMARC, bounce/complaint, Resend-signatur,
 inbound MX, auth email hook).
@@ -397,6 +397,77 @@ att den gamla adressen loggas.
 Raderingstexten är harmoniserad med bokföringslagen: räkenskapsinformation
 bevaras sju år efter räkenskapsårets utgång och utlovas aldrig raderad i förtid.
 
+## PWA, offline-fältläge och mobilskal (spec §9)
+
+**PWA.** `src/app/manifest.ts` ger `/manifest.webmanifest` (installerbar på
+Android/Chrome och iOS "Lägg till på hemskärmen"); ikonerna i `public/icons/`
+är platshållare genererade av `scripts/generate-pwa-icons.ts`. Service workern
+serveras av `/sw.js` (`src/app/sw.js/route.ts`) med release-strängen inbakad
+som version – varje deploy är en ny worker som raderar föregående versions
+cache vid aktivering. Källan (`src/lib/pwa/service-worker-source.ts`) är en
+**allowlist**: bara `/_next/static/*`, ikoner/manifest och offline-reservsidan
+`/offline` får cachas. HTML för inloggade sidor, RSC-payloads, `/api/*`, auth,
+admin, redovisning, dokument (offert/faktura/PDF) och kundlänkar med token
+passerar alltid orört. Policyn testas i VM utan webbläsare
+(`src/lib/offline/offline.test.ts`). Registrering sker bara i produktion eller
+med `NEXT_PUBLIC_PWA_DEV=1`. `experimental.useOffline` håller navigeringar och
+server actions väntande vid nätbortfall.
+
+**Offline-fältläge V1 (`/falt`).** Det enda i appen som fungerar utan nät.
+Klienten är aldrig sanningskälla: den sparar en *minimerad* uppdragslista
+(id, titel, kundnamn, status, adress) för de uppdrag användaren uttryckligen
+valt, och en kö av avsikter (arbetstid, anteckning, foto, kvitto, materialrad,
+kund-/uppdragsutkast). Kön ligger i IndexedDB (`ferva-offline`) med payload
+och blobbar krypterade med en icke-exporterbar AES-GCM-nyckel (WebCrypto);
+saknas WebCrypto visas det i fältläget. Synk går via `POST /api/offline/sync`
+i seq-ordning med backoff (2 s → 5 min, max 8 automatiska försök) och samma
+`withBusiness`-kontroll som formulären: session, tenant, capability per
+ärendetyp (`change_jobs`, `manage_customers`, `write_accounting`),
+abonnemangets skrivskydd och villkorsgrinden. Servern kvitterar varje ärende i
+`offline_mutations` (migration 56, unik per företag + klientnyckel, immutabel)
+– en omsändning får första utfallet tillbaka utan att något görs om.
+Konflikter (uppdraget klart/borttaget) och avvisningar parkeras i köns
+konfliktvy med *Försök igen*/*Ta bort*. Utloggning, tenantbyte och 401/403
+från synken raderar hela det lokala lagret inklusive nyckeln. Demosessioner
+har inget fältläge.
+
+**Mobilskal.** `mobile/` är ett Capacitor-skal som laddar den driftsatta
+PWA:n via `FERVA_APP_URL`; egna beroenden, exkluderat från tsc/eslint. Körbart
+lokalt, **inte butiksklart** – återstående punkter står i `mobile/README.md`.
+
+## Supportmatris, eligibility och konsultfall (spec §10)
+
+**Matrisen.** `src/lib/support/matrix.ts` är versionerad
+(`SUPPORT_MATRIX_VERSION`) och listar varje fall med nivå *supported* /
+*consultant* / *unsupported*, var regeln upprätthålls i koden, primärkälla,
+giltighetsdatum, ägare och testfiler. Testet `src/lib/support/support.test.ts`
+vägrar poster utan källa/ägare/test och låser spec §10:s nivåer. Byter en post
+nivå: bumpa versionen – sparade svar och godkännanden bär versionen de gavs
+mot. Publikt läsbar på `/omfattning` (villkoren hänvisar dit).
+
+**Eligibility.** Onboardingens steg 1 har en fråga med fem kryssrutor
+(`scope`). Klienten visar beskedet direkt; `createCompanyAction` kör
+`assertEligibleToCreate` igen och vägrar skapa bolaget vid *unsupported*.
+Svaren sparas i `business_settings.scope` (jsonb, migration 57 + pending-
+schema) tillsammans med konsultens godkännanden. Bolag skapade före kolumnen
+har `null`: de bedöms bara på företagsformen tills ägaren svarar under
+Inställningar → Företag.
+
+**Konsultfall.** Enskild firma och omvänd byggmoms på egna kundfakturor är
+tillåtna först när en redovisningskonsult med tillgång till bolaget godkänt
+dem på `/redovisning/k/<businessId>/omfattning`. Behörigheten är capability
+`approve_scope` (bara `accounting_consultant`; ägare, admin, medlem och
+revisor kan inte). Godkännande/återkallande auditloggas
+(`omfattning_godkand`/`omfattning_aterkallad`) och skrivs i samma transaktion
+som inställningarna. Servervakterna: `collectScopeBlockers` i
+`src/lib/invoices/validate.ts` (blocker `scope_reverse_charge`),
+`assertCompanyFormSupported` i onboarding och `updateBusinessProfile`,
+`assertScopeAllowed(entryId)` för nya funktioner.
+
+**Support.** Frågan "varför kan kunden inte skicka fakturan?" med omvänd
+byggmoms: kontrollera att bolaget har en konsult (Samarbeta) och att
+konsulten godkänt fallet. Ferva-admin ändrar inte godkännanden åt bolaget.
+
 ## Lokal utveckling (JSON-läget)
 
 Utan Supabase-miljö finns en tydligt separerad dev-väg: öppna
@@ -430,3 +501,6 @@ auditens immutabilitet. `scripts/db-validate.ts` verifierar dessutom
 Postgres-lagret: triggers, RLS för `authenticated`/`anon`/`driva_app` med och
 utan plattformskontext. Kör `npm run test`, `npm run test:db`,
 `npm run test:adapter`, `npm run typecheck`, `npm run build`.
+`src/lib/offline/offline.test.ts` täcker offline-kön (ordning, beroenden,
+backoff, tenantbindning, dataminimering), serverns idempotens/konflikt/
+capability-kontroll och service workerns cachepolicy.

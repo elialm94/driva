@@ -73,6 +73,19 @@ Lagret mellan "arbetet är gjort" och "rätt faktura" (migration `48_closeout`, 
 - **Kundvy** (`/uppdrag-kund/[token]`) visar bara det ägaren uttryckligen delat: godkänd offert, godkända ändringar, valda foton, fakturor, betalningsstatus och slutunderlag. Aldrig inköpspriser, marginal, interna anteckningar, bokföring eller AI-förslag. **Slutunderlag** finns som utskriftsvy för ägaren (`/uppdrag/[id]/slutunderlag`) och skickas aldrig automatiskt.
 - **Rapportera dagens jobb**: fritext tolkas lokalt (ingen extern leverantör) till förslag för tid, resa, material, ändring och anteckning som användaren granskar och väljer bland innan något sparas. Gränssnittet är byggt så att röst kan läggas till senare i samma fält.
 
+### Vad Ferva stödjer (supportmatris)
+
+- **En versionerad matris** (`src/lib/support/matrix.ts`) är den enda sanningen om produktomfattningen: stött (aktiebolag, K2, svensk verksamhet i SEK, fakturering med 0/6/12/25 % moms, ROT/RUT, fast månadslön, bokföring/moms/AGI/INK2, K2-bokslut, manuell inlämning), **konsultfall** (enskild firma, omvänd byggmoms på egna kundfakturor) och **stöds inte ännu** (annan företagsform, koncern, K3, annan valuta, EU/export/import, VMB, lager, komplex lön, e-faktura, API-inlämning). Varje post har primärkälla, giltighetsdatum, ägare och testmatris; inga regler läggs till utan dem.
+- **Onboardingen** ställer en fråga (fem kryssrutor) och visar direkt om Ferva passar, passar med konsult eller inte stöder bolaget. **Servern gör samma bedömning igen** och vägrar skapa ett bolag med ej stödda svar; svaren sparas i `business_settings.scope` (migration 57).
+- **Konsultfall spärras** tills bolagets redovisningskonsult godkänt dem i sin vy (`/redovisning/k/<id>/omfattning`, capability `approve_scope` – ägaren kan inte godkänna åt sig själv). En faktura med omvänd byggmoms kan inte utfärdas före godkännandet; godkännanden och återkallanden auditloggas.
+- Publik hjälpsida: **`/omfattning`** (Hjälp → Vad Ferva stödjer). Ägaren ser sitt bolags status och kan ändra svaren under Inställningar → Företag.
+
+### Fältläge, PWA och mobilskal
+
+- **PWA**: installerbar från webbläsaren (`/manifest.webmanifest`, ikoner i `public/icons/`). Service workern (`/sw.js`, versionerad per deploy) cachar bara byggartefakter, ikoner och offline-reservsidan – aldrig företagsdata, dokument eller API-svar.
+- **Fältläge (`/falt`)** är det enda som fungerar utan nät: välj vilka uppdrag som ska följa med (bara titel, kund och adress sparas), starta/stoppa tid, skriv anteckning, ta foto, fota kvitto, lägg materialrad eller skapa kund-/uppdragsutkast. Allt köas krypterat i enheten och synkas i ordning via `/api/offline/sync` med idempotensnyckel, backoff och konfliktvy. Servern validerar precis som formulären; klienten är aldrig sanningskälla. Utloggning eller byte av företag rensar enheten.
+- **Mobilskal**: `mobile/` är ett Capacitor-skal runt den driftsatta webbappen – körbart lokalt, inte butiksklart (se `mobile/README.md`).
+
 ## Arkitektur
 
 | Del | Var | Anteckning |
@@ -117,7 +130,7 @@ Serverless (Vercel): använd **Transaction pooler**-URL:en (port 6543) som `SUPA
 
 ### 3. Migrationer
 
-Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning.
+Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy; därefter 49–57 för go-live och fakturautskick: bankförslagens kvalitetslogg, manuell inlämning, Stripe-abonnemang, driftposter, villkorsgodkännanden, företagets verifierade påståenden, fakturans leveranskanal, offline-synkens kvitton och bolagets produktomfattning). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning.
 
 ```bash
 npx supabase login
@@ -165,6 +178,8 @@ Skriptet skapar auth-användaren (service role), företaget med ägarmedlemskap 
 2. Deploya. Utan komplett miljö vägrar appen starta mot data (inget tyst demoläge).
 3. Verifiera: `/login` ska visas, en ny användare ska hamna i onboarding och få ett eget företag.
 4. **Diagnostik:** öppna `/api/health` på den driftsatta sajten. Endpointen kräver ingen inloggning och läcker inga hemligheter – den visar vilka miljövariabler som saknas, om databasen svarar och om migrationerna körts. `status: "ok"` = allt på plats; `misconfigured` = sätt env; `degraded` med hint om schema = kör `supabase db push`.
+
+Hela go-live-sekvensen – vad som går att verifiera automatiskt och vilka externa steg (Stripe live, superadmin-bootstrap, TOTP, PITR/restore drill, Resend-DNS, inlämningsleverantör, expertgranskning, App Store/Google Play) som återstår – står i [`GO_LIVE_CHECKLIST.md`](GO_LIVE_CHECKLIST.md).
 
 ### 7. Manuella steg i dashboarden
 
@@ -224,6 +239,8 @@ npm test
 ```
 
 Avslutslagret har egna tester för beräkningar och behörigheter: `billing-allocation.test.ts` (en levande allokering per källa, kredit släpper), `payment-plan.test.ts`, `job-changes.test.ts` (låsning, godkännande, versioner), `closeout.test.ts` (underlag, beslut, del-/slutfaktura, återöppning), `job-timeline.test.ts`, `customer-share.test.ts` (kundvyn läcker aldrig intern ekonomi), `invoice-quote-deviation.test.ts`, `day-report.test.ts`.
+
+Kvalitetsgrinden i CI (`.github/workflows/ci.yml`) kör typecheck, lint, `npm test`, `npm run test:db`, `npm run test:adapter` och `npm run build` på varje PR och push till `main`. Workflowen installerar `libxml2-utils`, och med `CI=true` är ett saknat `xmllint` ett testfel: HUS-filerna valideras mot Skatteverkets pinnade XSD (`docs/skatteverket/hus/SCHEMAS.sha256`) och AGI-, eSKD- och iXBRL-filerna kontrolleras som välformad XML utan att något schema hämtas från nätet. `src/lib/brand-scan.test.ts` faller på synligt gammalt varumärke i kod, manifest, PDF, mejl och filnamn.
 
 Databas- och persistenslager (Postgres i WASM – ingen Docker eller Supabase-miljö krävs):
 

@@ -35,7 +35,7 @@ export default async function UppdragPage(props: {
         title="Uppdrag"
         subtitle="Vad som är beställt, vad som är fakturerat och vad som är kvar."
         stackActions
-        actions={<KunderHeaderActions customers={customers} />}
+        actions={<KunderHeaderActions customers={customers} fieldMode />}
       />
 
       <UppdragList

@@ -16,7 +16,7 @@ export default function JuridikLayout({ children }: { children: React.ReactNode 
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 px-5 py-8 text-sm text-muted sm:px-8">
           <span className="font-semibold tracking-tight text-soft">Ferva</span>
-          <nav className="flex items-center gap-6">
+          <nav className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2">
             <a href="/integritet" className="transition-colors hover:text-ink">
               Integritetspolicy
             </a>
@@ -28,6 +28,9 @@ export default function JuridikLayout({ children }: { children: React.ReactNode 
             </a>
             <a href="/underbitraden" className="transition-colors hover:text-ink">
               Underbiträden
+            </a>
+            <a href="/omfattning" className="transition-colors hover:text-ink">
+              Vad Ferva stödjer
             </a>
           </nav>
         </div>

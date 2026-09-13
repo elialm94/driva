@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
     // Ingen staleTimes: dynamic-default är 0 sedan Next 15. Prestandapassets
     // 30 s klientcache återanvände avhuggna RSC-prefetch-payloads vid klick
     // och gav "This page couldn't load" (React #412 Connection closed).
+    //
+    // useOffline (spec §9): navigeringar och server actions som tappar nätet
+    // hålls väntande och görs om när anslutningen är tillbaka, i stället för
+    // att kasta. useOffline-hooken driver statuspillen.
+    useOffline: true,
   },
   async headers() {
     return [
@@ -21,6 +26,15 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
           { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+        ],
+      },
+      {
+        // Service workern får aldrig cachas av webbläsaren eller CDN – varje
+        // deploy är en ny version som ska plockas upp vid nästa kontroll.
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Service-Worker-Allowed", value: "/" },
         ],
       },
     ];

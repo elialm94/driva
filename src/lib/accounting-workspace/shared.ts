@@ -85,6 +85,7 @@ export const ALL_CAPABILITIES: readonly CollaborationCapability[] = [
   "manage_wholesalers",
   "order_materials",
   "import_data",
+  "approve_scope",
 ];
 
 export function capabilitiesForRole(role: BusinessRole): CollaborationCapability[] {
