@@ -12,6 +12,7 @@ import { isStripeConfigured, stripeModeHint } from "@/lib/billing/config";
 import { isSentryConfigured, appRelease } from "@/lib/observability/config";
 import { platformMfaRequired } from "@/lib/platform/auth";
 import { legalEntityStatus } from "@/lib/legal/entity";
+import { isProductionRuntime } from "@/lib/deployment";
 
 /**
  * Driftdiagnostik för produktion (Vercel). Kräver INGEN inloggning så att den
@@ -46,10 +47,6 @@ interface OpsChecks {
   /** Avtalspart konfigurerad? Saknad ⇒ röd i produktion, Checkout blockerad. */
   legal: { complete: boolean; missing: string[] };
   warnings: string[];
-}
-
-function isProductionRuntime(): boolean {
-  return process.env.VERCEL_ENV === "production";
 }
 
 async function probeOps(dbUrl: string): Promise<OpsChecks> {
