@@ -70,7 +70,11 @@ export function DocumentLineReview({
           type="button"
           className={buttonClasses("ghost", "sm")}
           disabled={pending}
-          onClick={() => start(async () => markDocumentAsCompanyCostAction(source, sourceDocumentId))}
+          onClick={() =>
+            start(async () => {
+              await markDocumentAsCompanyCostAction(source, sourceDocumentId);
+            })
+          }
         >
           Hela kvittot är företagskostnad
         </button>
@@ -78,7 +82,11 @@ export function DocumentLineReview({
           type="button"
           className={buttonClasses("ghost", "sm")}
           disabled={pending}
-          onClick={() => start(async () => markDocumentAsPrivateAction(source, sourceDocumentId))}
+          onClick={() =>
+            start(async () => {
+              await markDocumentAsPrivateAction(source, sourceDocumentId);
+            })
+          }
         >
           Hela kvittot är privat
         </button>
@@ -213,7 +221,11 @@ function LineRow({
               key={d}
               type="button"
               className={buttonClasses("ghost", "sm")}
-              onClick={() => start(async () => setDocumentLineDispositionAction(line.id, d))}
+              onClick={() =>
+                start(async () => {
+                  await setDocumentLineDispositionAction(line.id, d);
+                })
+              }
             >
               {d === "company" ? "Företagskostnad - inte till kund" : d === "private" ? "Privat" : "Ignorera"}
             </button>

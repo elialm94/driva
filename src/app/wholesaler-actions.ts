@@ -66,6 +66,7 @@ type Fail = { ok: false; error: string };
 export type WholesalerActionResult<T = object> = Ok<T> | Fail;
 
 const MANAGE = { capability: "manage_wholesalers" } as const;
+const MANAGE_NO_RETRY = { capability: "manage_wholesalers", retry: false } as const;
 const ORDER = { capability: "order_materials" } as const;
 const ORDER_NO_RETRY = { capability: "order_materials", retry: false } as const;
 

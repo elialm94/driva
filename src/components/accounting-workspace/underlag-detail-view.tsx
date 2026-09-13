@@ -208,7 +208,7 @@ export function UnderlagDetailView({ ws, id }: { ws: AccountingWorkspace; id: st
             );
           })()}
 
-          {item.purchaseOrderCandidateIds?.length && item.documentType !== "orderbekraftelse" ? (
+          {item.purchaseOrderCandidateIds?.length ? (
             <InboxPurchaseMatchCard
               itemId={item.id}
               question={`Fakturan verkar höra ihop med ${

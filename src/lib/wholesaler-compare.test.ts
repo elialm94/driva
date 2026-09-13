@@ -36,8 +36,16 @@ describe("prisjämförelse", () => {
   it("varukorgsmärke när flera korgar finns", () => {
     const badge = draftCartsBadge(
       [
-        { order: { connectionId: "a", status: "draft" } as never, lines: [{}, {}, {}] as never, totals: { lineCount: 3 } },
-        { order: { connectionId: "b", status: "draft" } as never, lines: [{}, {}] as never, totals: { lineCount: 2 } },
+        {
+          order: { connectionId: "a", status: "draft" } as never,
+          lines: [{}, {}, {}] as never,
+          totals: { lineCount: 3, missingCostCount: 0, missingCustomerPriceCount: 0 },
+        },
+        {
+          order: { connectionId: "b", status: "draft" } as never,
+          lines: [{}, {}] as never,
+          totals: { lineCount: 2, missingCostCount: 0, missingCustomerPriceCount: 0 },
+        },
       ],
       [
         { id: "a", label: "Ahlsell" },

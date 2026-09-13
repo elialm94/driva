@@ -43,11 +43,11 @@ describe("dokumentradsmatematik", () => {
   it("6. rabatt, pant, frakt och avrundning", () => {
     const math = validateDocumentLineMath({
       lines: [
-        { name: "Virke", qty: 1, lineAmount: 1000 },
+        { qty: 1, lineAmount: 1000 },
         { role: "freight", lineAmount: 99 },
         { role: "deposit", lineAmount: 40 },
         { role: "rounding", lineAmount: -1 },
-        { name: "Rabatt", discount: 50, qty: 1, unitPrice: 50, lineAmount: 0 },
+        { discount: 50, qty: 1, unitPrice: 50, lineAmount: 0 },
       ],
       documentTotal: 1138,
     });
@@ -60,8 +60,8 @@ describe("dokumentradsmatematik", () => {
   it("7. retur/negativ rad", () => {
     const math = validateDocumentLineMath({
       lines: [
-        { name: "Skruv", lineAmount: 200 },
-        { name: "Retur", role: "return", lineAmount: -50 },
+        { lineAmount: 200 },
+        { role: "return", lineAmount: -50 },
       ],
       documentTotal: 150,
     });

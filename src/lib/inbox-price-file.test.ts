@@ -29,6 +29,7 @@ function inboxItem(partial: Partial<InboxItem> & Pick<InboxItem, "id">): InboxIt
     subject: "Ny prislista",
     textBody: "",
     attachments: [],
+    createdAt: "2026-09-13T10:00:00.000Z",
     ...partial,
   };
 }
