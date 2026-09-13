@@ -8,6 +8,7 @@ dashboard.
 | Runbook | När |
 | --- | --- |
 | [incident.md](incident.md) | Appen svarar inte, 500-fel, misstänkt intrång, utelåst admin |
+| [mfa.md](mfa.md) | Slå på TOTP i Supabase, registrera/byta enhet, förlorad enhet, återställa en admins MFA |
 | [nyckelrotation.md](nyckelrotation.md) | Planerad rotation eller misstänkt läcka av en nyckel |
 | [epoststopp.md](epoststopp.md) | Kunder får inte offerter/fakturor/bekräftelser; inkommande kvitton kommer inte fram |
 | [bankstopp.md](bankstopp.md) | Bankkopplingen (Tink) hämtar inte transaktioner eller går inte att koppla |

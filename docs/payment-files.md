@@ -26,7 +26,7 @@ till bank" ≠ "Betald").
 | OCR | `RmtInf/Strd/CdtrRefInf` med `Tp/CdOrPrtry/Cd` = `SCOR` och `Ref` = OCR-numret (enbart siffror). Leverantörens OCR kopieras som den är – det här är inte kundfakturans OCR-10. |
 | Utan OCR | `RmtInf/Ustrd` = "Faktura {fakturanummer}" (max 140 tecken) |
 | `PmtId` | `InstrId` och `EndToEndId` härleds ur instruktionens id (≤ 35 tecken) – spårbara hela vägen till avstämningen |
-| Filnamn | `driva-betalningar-{ÅÅÅÅ-MM-DD}.xml`, `-2`/`-3` vid flera filer samma dag |
+| Filnamn | `ferva-betalningar-{ÅÅÅÅ-MM-DD}.xml`, `-2`/`-3` vid flera filer samma dag |
 
 ## Arkitektur
 

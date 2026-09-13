@@ -37,6 +37,7 @@ import { acceptanceStatement } from "./quote-acceptance";
 import { ocrForInvoice } from "./ids";
 import { snapshotTaxReductionTerms } from "./tax-reduction-terms";
 import { systemQuoteTerms } from "./standard-quote-terms";
+import { SUPPORT_MATRIX_VERSION } from "./support/matrix";
 
 /* Datum relativt "nu" så att demon alltid känns levande. */
 function d(daysAgo: number, hour = 10, minute = 0): string {
@@ -1731,7 +1732,7 @@ export function buildSeed(): DB {
   // Telias bankfil genereras med samma pain.001-byggare som produktflödet –
   // demofilen är alltså en riktig, validerad ISO 20022-fil.
   const teliaFile = getPaymentExportProvider("ISO20022_PAIN001").build({
-    messageId: "DRIVA-SEED-TELIA-AUG",
+    messageId: "FERVA-SEED-TELIA-AUG",
     createdAt: d(1, 11, 5),
     payer: {
       name: "Södermalms Snickeri AB",
@@ -1759,8 +1760,8 @@ export function buildSeed(): DB {
   const paymentFiles: PaymentFile[] = [
     {
       id: "pf-telia-aug",
-      filename: `driva-betalningar-${d(1).slice(0, 10)}.xml`,
-      messageId: "DRIVA-SEED-TELIA-AUG",
+      filename: `ferva-betalningar-${d(1).slice(0, 10)}.xml`,
+      messageId: "FERVA-SEED-TELIA-AUG",
       format: "ISO20022_PAIN001",
       paymentIds: ["spay-telia-aug"],
       supplierInvoiceIds: ["sup-telia-aug"],
@@ -1980,7 +1981,7 @@ export function buildSeed(): DB {
     { id: "act-5", at: d(2, 10, 12), text: "Offert #113 skickades till Anna Andersson (26 000 kr att betala efter ROT).", customerId: "cust-anna", entity: { type: "offert", id: "quote-garderob" } },
     { id: "act-6", at: d(3, 12, 46), text: "Kvitto från Bauhaus (875 kr) matchades mot kortköpet och bokfördes som material.", entity: { type: "utgift", id: "exp-bauhaus" } },
     { id: "act-16", at: d(2, 9, 12), text: "Leverantörsfaktura från Beijer Bygg (18 500 kr) bokfördes automatiskt. Redo att betala – förfaller " + d(-10).slice(0, 10) + ".", entity: { type: "verifikation", id: "ver-sup-beijer" } },
-    { id: "act-17", at: d(1, 11, 5), text: "Bankfil driva-betalningar-" + d(1).slice(0, 10) + ".xml skapades för Telia (1 295 kr). Ladda upp den i internetbanken och godkänn betalningen där." },
+    { id: "act-17", at: d(1, 11, 5), text: "Bankfil ferva-betalningar-" + d(1).slice(0, 10) + ".xml skapades för Telia (1 295 kr). Ladda upp den i internetbanken och godkänn betalningen där." },
     { id: "act-18", at: d(0, 10, 15), text: "Faktura från Byggmax inkommen – granska och godkänn uppgifterna." },
     { id: "act-7", at: d(4, 12, 30), text: "Betalningen på 4 250 kr till Grand Hôtel behöver klassificeras.", entity: { type: "utgift", id: "exp-hotel" } },
     { id: "act-8", at: d(6, 11, 30), text: "Faktura #1047 skickades till Johan Lindberg (25 500 kr).", customerId: "cust-johan", entity: { type: "faktura", id: "inv-1047" } },
@@ -2152,6 +2153,9 @@ export function buildSeed(): DB {
           source: "Försäkringsbrev 2026-DEMO",
         },
       },
+      // Demobolaget svarade "inget av detta" på omfattningsfrågorna: ett
+      // svenskt AB i kronor med fast månadslön – helt inom det Ferva stödjer.
+      scope: { matrixVersion: SUPPORT_MATRIX_VERSION, assessedAt: d(45), flags: [], approvals: [] },
       inboundMailSlug: "demo",
       // Betalkontot för utgående leverantörsbetalningar (pain.001-debitorn).
       payerBankName: "SEB",

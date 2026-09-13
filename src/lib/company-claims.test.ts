@@ -33,6 +33,7 @@ import { sellerAsCompany, sellerSnapshot } from "./invoices/snapshot";
 import { DocFooter } from "../components/quote-document";
 import { createInvoice, issueInvoice } from "./services/invoices";
 import { collectTotalsBlockers } from "./invoices/validate";
+import { docTotals } from "./calc";
 import { generateWebsite } from "./services/website";
 import type { CompanyClaims } from "./types";
 
@@ -215,6 +216,24 @@ describe("Nollkronorsfaktura", () => {
     assert.equal(collectTotalsBlockers(ok).some((b) => b.code === "zero_total"), false);
     const credit = createInvoice({ customerId: "cust-1", type: "kredit", lines: [labor({ unitPrice: 0 })], rot: null });
     assert.equal(collectTotalsBlockers(credit).some((b) => b.code === "zero_total"), false);
+  });
+
+  it("spärren mäter totalen före skattereduktion – en ROT-faktura där kunden betalar lite eller inget släpps igenom", () => {
+    // Spärren gäller dokumentets belopp (total inkl. moms), inte "att betala".
+    // Ett stort ROT-avdrag får aldrig få fakturan att se ut som en nollfaktura.
+    const rot = createInvoice({ customerId: "cust-1", type: "faktura", lines: [labor({ unitPrice: 1000, qty: 10 })], rot: { type: "rot" } });
+    const codes = collectTotalsBlockers(rot).map((b) => b.code);
+    assert.equal(codes.includes("zero_total"), false, codes.join(","));
+    assert.ok(docTotals(rot.lines, rot.rot).deduction > 0, "ROT-avdraget räknas");
+
+    // Kreditfaktura som nollar en ROT-faktura: negativa rader, 0 eller negativ total – aldrig spärrad.
+    const creditRot = createInvoice({
+      customerId: "cust-1",
+      type: "kredit",
+      lines: [labor({ unitPrice: -1000, qty: 10 })],
+      rot: { type: "rot" },
+    });
+    assert.equal(collectTotalsBlockers(creditRot).some((b) => b.code === "zero_total"), false);
   });
 });
 

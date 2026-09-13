@@ -227,8 +227,8 @@ describe("Fall B – leverantörsfaktura: tolka → bokför → redo → pain.00
     assert.ok(xml.includes("<Cd>SCOR</Cd>") && xml.includes("<Ref>220110</Ref>"), "OCR som SCOR-referens");
     assert.ok(xml.includes(db().settings.payerIban!.replace(/\s/g, "").toUpperCase()), "Företagets betalkonto som debitor");
 
-    // Filnamn: driva-betalningar-ÅÅÅÅ-MM-DD.xml.
-    assert.match(created.file.filename, /^driva-betalningar-\d{4}-\d{2}-\d{2}(-\d+)?\.xml$/);
+    // Filnamn: ferva-betalningar-ÅÅÅÅ-MM-DD.xml.
+    assert.match(created.file.filename, /^ferva-betalningar-\d{4}-\d{2}-\d{2}(-\d+)?\.xml$/);
 
     // Status: PAYMENT_FILE_CREATED – och fil ≠ betald (krav 19/37).
     assert.equal(latestPaymentForInvoice(invoiceId)?.status, "PAYMENT_FILE_CREATED");

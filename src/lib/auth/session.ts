@@ -29,7 +29,7 @@ import {
   persistDemoSessionState,
 } from "@/lib/storage/demo-session-store";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { BusinessRole, DB } from "@/lib/types";
+import type { BusinessRole, BusinessScope, DB } from "@/lib/types";
 import {
   isAccountingRole,
   isOwnerRole,
@@ -762,6 +762,8 @@ export async function createBusinessForCurrentUser(input: {
   plusgiro?: string;
   bankAccount?: string;
   companyForm?: "ab" | "enskild";
+  /** Svaren mot supportmatrisen (spec §10). */
+  scope?: BusinessScope;
   /** Onboardingens steg 1 skickar 'company_done' – steg 2 återstår. */
   onboardingStatus?: "company_done" | "complete";
 }): Promise<string> {

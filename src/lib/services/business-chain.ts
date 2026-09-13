@@ -305,23 +305,8 @@ export function customerChainCtas(
       kind: next && !next.isLast ? "skapa_delfaktura" : "skapa_faktura",
       label,
       jobId: billableJob.id,
-      href: jobHref(billableJob.id, origin),
       primary: true,
     };
-  }
-
-  if (billableJob) {
-    secondary.push({
-      kind: "fristaende_faktura",
-      label: "Fristående faktura",
-      href: newInvoiceHref({ kund: customerId, fristaende: true, from: origin }),
-    });
-  } else if (!approvedQuote) {
-    secondary.push({
-      kind: "fristaende_faktura",
-      label: "Ny faktura",
-      href: newInvoiceHref({ kund: customerId, from: origin }),
-    });
   }
 
   if (!approvedQuote) {
@@ -332,6 +317,22 @@ export function customerChainCtas(
     });
   }
 
+  const invoiceQuotes = quotes
+    .filter((q) => q.status === "godkand")
+    .sort((a, b) => (b.decidedAt ?? b.createdAt).localeCompare(a.decidedAt ?? a.createdAt))
+    .map((q) => ({
+      id: q.id,
+      label: `Offert #${q.number}`,
+    }));
+  const invoiceJobs = jobs
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((j) => ({
+      id: j.id,
+      label: j.title,
+      href: newInvoiceHref({ kund: customerId, job: j.id, from: origin }),
+    }));
+
   return {
     approvedQuoteId: approvedQuote?.id,
     approvedQuoteNumber: approvedQuote?.number,
@@ -340,6 +341,10 @@ export function customerChainCtas(
     preferLinkedInvoice: Boolean(billableJob),
     primary,
     secondary,
+    invoiceQuotes,
+    invoiceJobs,
+    showInvoicePicker: quotes.length > 0 || jobs.length > 0,
+    standaloneInvoiceHref: newInvoiceHref({ kund: customerId, fristaende: true, from: origin }),
   };
 }
 

@@ -11,6 +11,9 @@ export const metadata: Metadata = {
   title: { default: "Ferva", template: "%s · Ferva" },
   description:
     "Du gör jobbet. Ferva sköter administrationen – offerter som kunden godkänner digitalt, fakturor, betalningar och bokföring.",
+  applicationName: "Ferva",
+  appleWebApp: { capable: true, title: "Ferva", statusBarStyle: "default" },
+  icons: { apple: "/icons/apple-touch-icon.png" },
 };
 
 export const viewport: Viewport = {

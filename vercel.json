@@ -2,6 +2,7 @@
   "git": {
     "deploymentEnabled": true
   },
+  "buildCommand": "bash scripts/vercel-build.sh",
   "crons": [
     {
       "path": "/api/cron/reminders",

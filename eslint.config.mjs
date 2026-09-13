@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Capacitor-skalet har egna beroenden och lintas inte med webbappen.
+    "mobile/**",
   ]),
   {
     rules: {
