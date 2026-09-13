@@ -73,15 +73,21 @@ async function waitText(page: Page, re: RegExp, timeout = 20000) {
 const FEATURE = "[data-feature='wholesalers']";
 
 /** Sätt funktionen av/på via Inställningar → Funktioner (stabila data-feature-selektorer). */
-/** Öppna materialytan – klicket kan landa före hydreringen, så försök igen. */
+/**
+ * Öppna materialytan – klicket kan landa före hydreringen, så försök igen.
+ * Uppdragssidan har en enda läggtill-knapp; materialet väljs inne i arket.
+ */
 async function openMaterial(page: Page) {
-  await page.waitForSelector("[data-job-add-material]", { timeout: 20000 });
+  await page.waitForSelector("[data-job-add-entry]", { timeout: 20000 });
   for (let attempt = 0; attempt < 6; attempt++) {
-    await page.$eval("[data-job-add-material]", (el) => (el as HTMLElement).click());
+    await page.$eval("[data-job-add-entry]", (el) => (el as HTMLElement).click());
     const opened = await page.waitForSelector("[role='dialog']", { timeout: 2500 }).catch(() => null);
-    if (opened) return;
+    if (opened) break;
   }
-  fail("materialytan öppnades inte");
+  const material = await page.waitForSelector("[data-job-add-material]", { timeout: 5000 }).catch(() => null);
+  if (!material) fail("materialytan öppnades inte");
+  await page.$eval("[data-job-add-material]", (el) => (el as HTMLElement).click());
+  await page.waitForSelector("[role='dialog']", { timeout: 5000 }).catch(() => fail("materialytan öppnades inte"));
 }
 
 async function replaceQuery(page: Page, value: string) {
@@ -158,7 +164,7 @@ async function main() {
   expect(tabsOff === 0, "ingen flik Grossister när funktionen är avstängd");
 
   await page.goto(`${BASE}/uppdrag/${JOB}`, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector("[data-job-add-material]");
+  await page.waitForSelector("[data-job-add-entry]");
   expect(!(await page.$("[data-purchase-orders-section]")), "ingen sektion Materialbeställningar för ett uppdrag utan beställningar");
   await openMaterial(page);
   await waitText(page, /Beskrivning/);
@@ -371,7 +377,7 @@ async function main() {
   await setFeature(page, false);
   ok("funktionen är avstängd igen");
   await page.goto(`${BASE}/uppdrag/${JOB}`, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector("[data-job-add-material]");
+  await page.waitForSelector("[data-job-add-entry]");
   expect(Boolean(await page.$("[data-purchase-orders-section]")), "historiska beställningar visas fortfarande på uppdraget");
   await openMaterial(page);
   await waitText(page, /Beskrivning/);

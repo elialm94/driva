@@ -2,11 +2,10 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { Badge, buttonClasses, SectionTitle } from "./ui";
+import { Badge, buttonClasses, cx, SectionTitle } from "./ui";
 import { Modal } from "./modal";
 import { DateField } from "./date-field";
 import { AppLink } from "./app-link";
-import { JobInvoiceTrigger } from "./job-controls";
 import { kr, datumKort } from "@/lib/format";
 import { invoiceHref } from "@/lib/nav";
 import {
@@ -15,16 +14,10 @@ import {
   registerJobTimeAction,
   updateJobWorkEntryAction,
 } from "@/app/actions";
-import type { JobInvoiceChoice, JobWorkComparison } from "@/lib/job-ui-types";
 import type { JobWorkEntry, VatRate } from "@/lib/types";
 import type { JobWholesalerContext } from "@/lib/wholesalers/views";
 import { LineDescriptionInput, LineDescriptionVocabProvider } from "./line-description-input";
 import { WholesalerMaterialSheet } from "./wholesaler-material-sheet";
-import { DayReportButton } from "./day-report-sheet";
-
-function hoursLabel(n: number): string {
-  return `${Number(n.toFixed(2)).toLocaleString("sv-SE")} tim`;
-}
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3.5 py-2.5 text-[15px] text-ink placeholder:text-muted focus:border-accent";
@@ -71,37 +64,30 @@ function invoiceBadge(entry: JobWorkViewEntry, from: { href: string; label: stri
 export function JobWorkSection({
   jobId,
   jobTitle,
-  comparison,
-  labor,
-  material,
-  other,
+  entries,
   laborPrefill,
   defaultHourlyRate,
-  invoiceChoice,
   wholesalers,
 }: {
   jobId: string;
   jobTitle: string;
-  comparison: JobWorkComparison;
-  labor: JobWorkViewEntry[];
-  material: JobWorkViewEntry[];
-  other: JobWorkViewEntry[];
+  /** Tid, material och övrigt i en enda lista - uppdraget är en logg, inte tre register. */
+  entries: JobWorkViewEntry[];
   laborPrefill: JobWorkPrefill | null;
   defaultHourlyRate?: number;
-  invoiceChoice: JobInvoiceChoice;
   /**
    * Grossistbeställningar (valfri funktion). Saknas/avstängd eller utan
    * konfigurerad grossist → dagens manuella materialformulär, oförändrat.
    */
   wholesalers?: JobWholesalerContext;
 }) {
-  const [sheet, setSheet] = useState<"tid" | "material" | "grossist" | null>(null);
+  const [sheet, setSheet] = useState<"post" | "grossist" | null>(null);
+  const [kind, setKind] = useState<"tid" | "material">("tid");
   const wholesalerSearch = Boolean(wholesalers?.enabled && wholesalers.connections.length > 0);
   const [edit, setEdit] = useState<JobWorkViewEntry | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const fromHere = { href: `/uppdrag/${jobId}`, label: jobTitle };
-  const uninvoiced = [...labor, ...material, ...other].filter((e) => e.invoiceStatus === "uninvoiced");
 
   function remove(id: string) {
     startTransition(async () => {
@@ -110,112 +96,58 @@ export function JobWorkSection({
     });
   }
 
+  /** Material med grossistsök på: sökarket ersätter det manuella formuläret. */
+  function chooseMaterial() {
+    if (wholesalerSearch) {
+      setSheet("grossist");
+      return;
+    }
+    setKind("material");
+  }
+
   return (
     <LineDescriptionVocabProvider>
-    <div className="mb-8 scroll-mt-4" id="arbete">
+    <div className="mb-6 scroll-mt-4" id="arbete">
       <SectionTitle
         right={
-          <div className="flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              className={buttonClasses("secondary", "sm")}
-              disabled={isPending}
-              onClick={() =>
-                startTransition(async () => {
-                  await registerJobTimeAction(jobId, { hours: 1 });
-                })
-              }
-            >
-              +1 tim
-            </button>
-            <JobTimerButton jobId={jobId} />
-            <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setSheet("tid")}>
-              <Plus className="size-3.5" />
-              <span className="sm:hidden">Tid</span>
-              <span className="hidden sm:inline">Registrera tid</span>
-            </button>
-            <button
-              type="button"
-              className={buttonClasses("secondary", "sm")}
-              onClick={() => setSheet(wholesalerSearch ? "grossist" : "material")}
-              data-job-add-material
-            >
-              <Plus className="size-3.5" />
-              <span className="sm:hidden">Material</span>
-              <span className="hidden sm:inline">Lägg till material</span>
-            </button>
-            <DayReportButton jobId={jobId} />
-          </div>
+          <button
+            type="button"
+            className={buttonClasses("secondary", "sm")}
+            onClick={() => {
+              setKind("tid");
+              setSheet("post");
+            }}
+            data-job-add-entry
+          >
+            <Plus className="size-3.5" />
+            Lägg till
+          </button>
         }
       >
-        Arbete & material
+        Arbete och material
       </SectionTitle>
 
-      {comparison.hasQuote ? <ComparisonBlock comparison={comparison} /> : null}
+      <WorkList entries={entries} from={fromHere} onEdit={setEdit} onDelete={setConfirmId} />
 
-      <WorkList
-        title="Arbete"
-        empty="Ingen tid registrerad än."
-        emptyAction={{ label: "Registrera första timmarna", onClick: () => setSheet("tid") }}
-        entries={labor}
-        from={fromHere}
-        onEdit={setEdit}
-        onDelete={setConfirmId}
-      />
-      <WorkList
-        title="Material"
-        empty="Inget material registrerat än."
-        emptyAction={{
-          label: wholesalerSearch ? "Hämta från grossisten" : "Lägg till material",
-          onClick: () => setSheet(wholesalerSearch ? "grossist" : "material"),
-        }}
-        entries={material}
-        from={fromHere}
-        onEdit={setEdit}
-        onDelete={setConfirmId}
-        className="mt-5"
-      />
-      {other.length > 0 ? (
-        <WorkList
-          title="Övrigt"
-          empty=""
-          entries={other}
-          from={fromHere}
-          onEdit={setEdit}
-          onDelete={setConfirmId}
-          className="mt-5"
-        />
-      ) : null}
-
-      {uninvoiced.length > 0 ? (
-        <div className="mt-4">
-          <JobInvoiceTrigger
-            jobId={jobId}
-            jobTitle={jobTitle}
-            invoiceChoice={invoiceChoice}
-            preselect="actuals"
-            label="Skapa faktura"
-            variant="secondary"
-            size="sm"
-          />
-        </div>
-      ) : null}
-
-      <TimeSheet
-        open={sheet === "tid"}
+      <AddEntrySheet
+        open={sheet === "post"}
         onClose={() => setSheet(null)}
+        kind={kind}
+        onKind={(next) => (next === "material" ? chooseMaterial() : setKind("tid"))}
         jobId={jobId}
         prefill={laborPrefill}
         defaultHourlyRate={defaultHourlyRate}
       />
-      <MaterialSheet open={sheet === "material"} onClose={() => setSheet(null)} jobId={jobId} />
       {wholesalerSearch && wholesalers ? (
         <WholesalerMaterialSheet
           open={sheet === "grossist"}
           onClose={() => setSheet(null)}
           jobId={jobId}
           context={wholesalers}
-          onManual={() => setSheet("material")}
+          onManual={() => {
+            setKind("material");
+            setSheet("post");
+          }}
         />
       ) : null}
       {edit ? (
@@ -255,86 +187,21 @@ export function JobWorkSection({
   );
 }
 
-function ComparisonBlock({ comparison }: { comparison: JobWorkComparison }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mb-4 rounded-2xl border border-line/80 px-4 py-3">
-      <button type="button" className="flex w-full items-baseline justify-between gap-3 text-left" onClick={() => setOpen((v) => !v)}>
-        <p className="text-[14px] tabular text-ink">
-          <span className="text-muted">Avtalat</span> {kr(comparison.quotedExcl)}
-          {comparison.quoteNumber ? (
-            <span className="text-muted"> (från offert #{comparison.quoteNumber})</span>
-          ) : null}{" "}
-          <span className="text-muted">· Registrerat</span> {kr(comparison.registeredExcl)}{" "}
-          <span className="text-muted">· Skillnad</span>{" "}
-          {comparison.deltaExcl === 0
-            ? "0 kr"
-            : `${comparison.deltaExcl > 0 ? "+" : ""}${kr(comparison.deltaExcl)}`}
-        </p>
-        <span className="text-[13px] text-muted">{open ? "Dölj" : "Visa"}</span>
-      </button>
-      {comparison.overageLabel ? (
-        <p className="mt-1 text-[13px] font-medium text-warn">{comparison.overageLabel}</p>
-      ) : null}
-      {open ? (
-        <div className="mt-3 space-y-1 border-t border-line/70 pt-3 text-[13px] tabular text-soft">
-          <p>
-            Tid: {hoursLabel(comparison.laborHoursQuoted)} avtalat · {hoursLabel(comparison.laborHoursRegistered)}{" "}
-            registrerat
-          </p>
-          <p>
-            Material: {kr(comparison.materialQuotedExcl)} avtalat · {kr(comparison.materialRegisteredExcl)} registrerat
-          </p>
-          {comparison.extrasCount > 0 ? (
-            <p>
-              {comparison.extrasCount} tillägg (ej i ursprunglig offert)
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function WorkList({
-  title,
-  empty,
-  emptyAction,
   entries,
   from,
   onEdit,
   onDelete,
-  className,
 }: {
-  title: string;
-  empty: string;
-  /** Första handlingen direkt i tomraden – samma ark som knappen i rubriken öppnar. */
-  emptyAction?: { label: string; onClick: () => void };
   entries: JobWorkViewEntry[];
   from: { href: string; label: string };
   onEdit: (e: JobWorkViewEntry) => void;
   onDelete: (id: string) => void;
-  className?: string;
 }) {
   return (
-    <div className={className}>
-      <h3 className="mb-2 text-[13px] font-medium text-muted">{title}</h3>
+    <div>
       {entries.length === 0 ? (
-        <p className="text-[14px] text-muted">
-          {empty}
-          {emptyAction ? (
-            <>
-              {" "}
-              <button
-                type="button"
-                className="font-medium text-accent-deep underline-offset-2 hover:underline"
-                onClick={emptyAction.onClick}
-              >
-                {emptyAction.label}
-              </button>
-            </>
-          ) : null}
-        </p>
+        <p className="text-[14px] text-muted">Inget registrerat än.</p>
       ) : (
         <ul className="divide-y divide-line/70 rounded-2xl border border-line/80">
           {entries.map((entry) => (
@@ -385,15 +252,23 @@ function ratePrefill(prefill: JobWorkPrefill | null, defaultHourlyRate?: number)
   return "";
 }
 
-function TimeSheet({
+/**
+ * En enda läggtill-yta för uppdraget: tid och material i samma ark, valet
+ * ligger överst. Två knappar i rubriken blev en.
+ */
+function AddEntrySheet({
   open,
   onClose,
+  kind,
+  onKind,
   jobId,
   prefill,
   defaultHourlyRate,
 }: {
   open: boolean;
   onClose: () => void;
+  kind: "tid" | "material";
+  onKind: (kind: "tid" | "material") => void;
   jobId: string;
   prefill: JobWorkPrefill | null;
   defaultHourlyRate?: number;
@@ -403,27 +278,34 @@ function TimeSheet({
   const [description, setDescription] = useState(prefill?.description ?? "");
   const [hours, setHours] = useState("");
   const [rate, setRate] = useState(ratePrefill(prefill, defaultHourlyRate));
+  const [qty, setQty] = useState("1");
+  const [unit, setUnit] = useState("st");
+  const [price, setPrice] = useState("");
   const hoursRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
     setDate(todayISO());
-    setDescription(prefill?.description ?? "");
+    setDescription(kind === "tid" ? (prefill?.description ?? "") : "");
     setHours("");
     setRate(ratePrefill(prefill, defaultHourlyRate));
+    setQty("1");
+    setUnit("st");
+    setPrice("");
+    if (kind !== "tid") return;
     const t = window.setTimeout(() => hoursRef.current?.focus(), 50);
     return () => window.clearTimeout(t);
-  }, [open, prefill, defaultHourlyRate]);
+  }, [open, kind, prefill, defaultHourlyRate]);
 
-  function submit() {
-    const qty = Number(hours.replace(",", "."));
+  function submitTime() {
+    const amount = Number(hours.replace(",", "."));
     const unitPrice = Math.round(Number(rate.replace(",", ".")));
-    if (!(qty > 0)) return;
+    if (!(amount > 0)) return;
     startTransition(async () => {
       await registerJobTimeAction(jobId, {
         date,
         description: description.trim() || undefined,
-        hours: qty,
+        hours: amount,
         unitPrice: rate.trim() === "" || !Number.isFinite(unitPrice) ? undefined : unitPrice,
         quotedLineItemId: prefill?.quotedLineItemId,
       });
@@ -431,76 +313,7 @@ function TimeSheet({
     });
   }
 
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Registrera tid"
-      size="sm"
-      footer={
-        <div className="flex justify-end gap-2">
-          <button type="button" className={buttonClasses("ghost")} onClick={onClose}>
-            Avbryt
-          </button>
-          <button type="button" className={buttonClasses("primary")} disabled={isPending || !hours} onClick={submit}>
-            {isPending ? "Sparar …" : "Registrera"}
-          </button>
-        </div>
-      }
-    >
-      <div className="space-y-3 px-6 py-5">
-        <label className="block">
-          <span className="mb-1 block text-[13px] text-muted">Datum</span>
-          <DateField value={date} onChange={setDate} />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-[13px] text-muted">Vad gjorde du?</span>
-          <LineDescriptionInput
-            className={inputCls}
-            value={description}
-            onChange={setDescription}
-            kind="arbete"
-            aria-label="Vad gjorde du?"
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-[13px] text-muted">Tid (timmar)</span>
-          <input
-            ref={hoursRef}
-            className={inputCls}
-            inputMode="decimal"
-            value={hours}
-            onChange={(e) => setHours(e.target.value)}
-            placeholder="t.ex. 3"
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-[13px] text-muted">Timpris (exkl. moms)</span>
-          <input className={inputCls} inputMode="numeric" value={rate} onChange={(e) => setRate(e.target.value)} />
-        </label>
-      </div>
-    </Modal>
-  );
-}
-
-function MaterialSheet({ open, onClose, jobId }: { open: boolean; onClose: () => void; jobId: string }) {
-  const [isPending, startTransition] = useTransition();
-  const [date, setDate] = useState(todayISO);
-  const [description, setDescription] = useState("");
-  const [qty, setQty] = useState("1");
-  const [unit, setUnit] = useState("st");
-  const [price, setPrice] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    setDate(todayISO());
-    setDescription("");
-    setQty("1");
-    setUnit("st");
-    setPrice("");
-  }, [open]);
-
-  function submit() {
+  function submitMaterial() {
     const amount = Number(qty.replace(",", "."));
     const unitPrice = Math.round(Number(price.replace(",", ".")));
     if (!(amount > 0) || !description.trim() || !Number.isFinite(unitPrice)) return;
@@ -516,11 +329,12 @@ function MaterialSheet({ open, onClose, jobId }: { open: boolean; onClose: () =>
     });
   }
 
+  const time = kind === "tid";
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Lägg till material"
+      title="Lägg till på uppdraget"
       size="sm"
       footer={
         <div className="flex justify-end gap-2">
@@ -530,8 +344,8 @@ function MaterialSheet({ open, onClose, jobId }: { open: boolean; onClose: () =>
           <button
             type="button"
             className={buttonClasses("primary")}
-            disabled={isPending || !description.trim()}
-            onClick={submit}
+            disabled={isPending || (time ? !hours : !description.trim())}
+            onClick={time ? submitTime : submitMaterial}
           >
             {isPending ? "Sparar …" : "Lägg till"}
           </button>
@@ -539,37 +353,105 @@ function MaterialSheet({ open, onClose, jobId }: { open: boolean; onClose: () =>
       }
     >
       <div className="space-y-3 px-6 py-5">
-        <label className="block">
-          <span className="mb-1 block text-[13px] text-muted">Beskrivning</span>
-          <LineDescriptionInput
-            className={inputCls}
-            value={description}
-            onChange={setDescription}
-            kind="material"
-            aria-label="Beskrivning"
-            autoFocus
-          />
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="mb-1 block text-[13px] text-muted">Antal</span>
-            <input className={inputCls} inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[13px] text-muted">Enhet</span>
-            <input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} />
-          </label>
+        <div className="flex gap-1 rounded-xl bg-canvas p-1" role="group" aria-label="Typ av post">
+          <KindTab active={time} onClick={() => onKind("tid")}>
+            Tid
+          </KindTab>
+          <KindTab active={!time} onClick={() => onKind("material")} data-job-add-material>
+            Material
+          </KindTab>
         </div>
-        <label className="block">
-          <span className="mb-1 block text-[13px] text-muted">Pris (exkl. moms)</span>
-          <input className={inputCls} inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value)} />
-        </label>
+
+        {time ? (
+          <>
+            <label className="block">
+              <span className="mb-1 block text-[13px] text-muted">Vad gjorde du?</span>
+              <LineDescriptionInput
+                className={inputCls}
+                value={description}
+                onChange={setDescription}
+                kind="arbete"
+                aria-label="Vad gjorde du?"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[13px] text-muted">Tid (timmar)</span>
+              <input
+                ref={hoursRef}
+                className={inputCls}
+                inputMode="decimal"
+                value={hours}
+                onChange={(e) => setHours(e.target.value)}
+                placeholder="t.ex. 3"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[13px] text-muted">Timpris (exkl. moms)</span>
+              <input className={inputCls} inputMode="numeric" value={rate} onChange={(e) => setRate(e.target.value)} />
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="block">
+              <span className="mb-1 block text-[13px] text-muted">Beskrivning</span>
+              <LineDescriptionInput
+                className={inputCls}
+                value={description}
+                onChange={setDescription}
+                kind="material"
+                aria-label="Beskrivning"
+                autoFocus
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1 block text-[13px] text-muted">Antal</span>
+                <input className={inputCls} inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[13px] text-muted">Enhet</span>
+                <input className={inputCls} value={unit} onChange={(e) => setUnit(e.target.value)} />
+              </label>
+            </div>
+            <label className="block">
+              <span className="mb-1 block text-[13px] text-muted">Pris (exkl. moms)</span>
+              <input className={inputCls} inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value)} />
+            </label>
+          </>
+        )}
+
         <label className="block">
           <span className="mb-1 block text-[13px] text-muted">Datum</span>
           <DateField value={date} onChange={setDate} />
         </label>
       </div>
     </Modal>
+  );
+}
+
+function KindTab({
+  active,
+  onClick,
+  children,
+  ...rest
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+} & React.ComponentProps<"button">) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cx(
+        "min-h-11 flex-1 rounded-lg px-3 py-2 text-[14px] font-medium transition-colors",
+        active ? "bg-card text-ink shadow-sm" : "text-muted hover:text-ink",
+      )}
+      {...rest}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -649,52 +531,5 @@ function EditSheet({ entry, onClose }: { entry: JobWorkViewEntry; onClose: () =>
         ) : null}
       </div>
     </Modal>
-  );
-}
-
-function JobTimerButton({ jobId }: { jobId: string }) {
-  const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const [isPending, startTransition] = useTransition();
-
-  useEffect(() => {
-    if (startedAt == null) return;
-    const id = window.setInterval(() => {
-      setElapsedMs(Date.now() - startedAt);
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [startedAt]);
-
-  function start() {
-    const at = Date.now();
-    setStartedAt(at);
-    setElapsedMs(0);
-  }
-
-  function stop() {
-    if (startedAt == null) return;
-    const hours = Math.max(0.25, Math.round(((Date.now() - startedAt) / 3_600_000) * 100) / 100);
-    setStartedAt(null);
-    setElapsedMs(0);
-    startTransition(async () => {
-      await registerJobTimeAction(jobId, { hours });
-    });
-  }
-
-  const elapsed = Math.max(0, elapsedMs);
-  const mm = String(Math.floor(elapsed / 60000)).padStart(2, "0");
-  const ss = String(Math.floor((elapsed % 60000) / 1000)).padStart(2, "0");
-
-  if (startedAt == null) {
-    return (
-      <button type="button" className={buttonClasses("secondary", "sm")} onClick={start} disabled={isPending}>
-        Starta timer
-      </button>
-    );
-  }
-  return (
-    <button type="button" className={buttonClasses("primary", "sm")} onClick={stop} disabled={isPending}>
-      Stoppa {mm}:{ss}
-    </button>
   );
 }

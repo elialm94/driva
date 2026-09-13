@@ -305,7 +305,7 @@ export function DayReportSheet({ open, onClose, jobId }: { open: boolean; onClos
           <div className="space-y-2" data-testid="day-report-saved">
             <p className="text-[15px] font-medium text-ink">Sparat.</p>
             <ul className="list-disc space-y-1 pl-5 text-[14px] text-ink">
-              {saved.entries > 0 ? <li>{saved.entries === 1 ? "1 post" : `${saved.entries} poster`} under Arbete & material.</li> : null}
+              {saved.entries > 0 ? <li>{saved.entries === 1 ? "1 post" : `${saved.entries} poster`} under Arbete och material.</li> : null}
               {saved.changes > 0 ? (
                 <li>
                   {saved.changes === 1 ? "1 ändringsutkast" : `${saved.changes} ändringsutkast`} under Ändringar och tillägg.
