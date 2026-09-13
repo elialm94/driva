@@ -6,6 +6,7 @@ import { BOKFORING_MODE_COOKIE, parseBookkeepingMode } from "@/lib/accounting/bo
 import { fiscalYears, todayDate } from "@/lib/accounting/fiscal";
 import { ensurePageBusiness, withBusiness } from "@/lib/auth/session";
 import { ensureAutoFSkattBookings } from "@/lib/accounting/tax-account";
+import { ensureBankPurchaseExpenses } from "@/lib/services/payment-matching";
 
 /**
  * Delat bokföringsskal. Flikraden lever här så den inte monteras om när bara
@@ -21,9 +22,16 @@ export default async function BokforingLayout({ children }: { children: ReactNod
   // till samma inläsning som skalet och sidan redan väntar på.
   await ensurePageBusiness();
   try {
-    await withBusiness(() => ensureAutoFSkattBookings());
+    await withBusiness(() => {
+      ensureAutoFSkattBookings();
+      // Bankrader som parkerades utan köp (importerade innan kortköpsgrenen
+      // fanns, eller med ett förslag som sedan försvunnit) blir köp som
+      // väntar på kvitto. Idempotent – ingen cron, ingen migration.
+      ensureBankPurchaseExpenses();
+    });
   } catch {
-    // Läsande medlemskap eller saknad skrivbehörighet – F-skatten väntar.
+    // Läsande medlemskap eller saknad skrivbehörighet – F-skatten och
+    // kortköpen väntar tills någon med skrivbehörighet öppnar Bokföring.
   }
   // Vyinställningen läses ur cookien som toggeln själv skriver. Företag som
   // slog på avancerat innan cookien fanns behåller sitt läge via meta-fältet.

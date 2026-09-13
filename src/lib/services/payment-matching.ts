@@ -1,5 +1,5 @@
 import { db, save } from "../store";
-import type { BankTransaction } from "../types";
+import type { BankTransaction, Expense } from "../types";
 import {
   getInvoice,
   invoiceOutstanding,
@@ -15,7 +15,7 @@ import {
 import { kr } from "../format";
 import { logActivity } from "./activity";
 import { isValidBankgirotOcr } from "../ids";
-import { createExpenseFromBankPurchase, merchantRuleKey } from "./expenses";
+import { createExpenseFromBankPurchase, looksLikeCardPurchase, merchantRuleKey } from "./expenses";
 import { bookSupplierPaymentFromBank, supplierPayments } from "./supplier-payments";
 import { normalizeRecipientAccount } from "../inbox/workflow";
 import {
@@ -550,6 +550,46 @@ export function processIncomingTransaction(txId: string): ProcessTransactionResu
   logActivity(`En inbetalning på ${kr(tx.amount)} från ${tx.counterpart} kunde inte matchas mot någon faktura.`);
   save();
   return { outcome: "unmatched", suggestion };
+}
+
+/**
+ * Reparera bankrader som fastnade utan köp.
+ *
+ * `processIncomingTransaction` kör EN gång, vid importen, och importen hoppar
+ * över kända `externalId` – ingenting kör matchningen igen för en rad som
+ * redan finns. En rad som parkerades innan kortköpsgrenen fanns, eller medan
+ * motorn hade ett förslag som sedan försvunnit (verifikationen kopplades till
+ * något annat, skulden till ägaren betalades), blir därför liggande som
+ * "Välj typ" för alltid trots att bankvyn nu räknar fram "inget förslag".
+ *
+ * Den här passagen kör om exakt samma gren som importen tar för en omatchad
+ * utbetalning: obokad rad, negativt belopp, inget förslag just nu och ser ut
+ * som ett kortköp. Rader som redan bär ett underlag – ett köp, en
+ * leverantörsfaktura eller en registrerad betalning – rörs aldrig, och en rad
+ * med ett levande förslag (lokalhyra, redan bokförd, leverantörsbetalning)
+ * behåller det. Idempotent: en andra körning skapar ingenting.
+ */
+export function ensureBankPurchaseExpenses(): Expense[] {
+  const data = db();
+  const created: Expense[] = [];
+  for (const tx of data.bankTransactions) {
+    if (tx.status === "bokford") continue;
+    if (!(tx.amount < 0)) continue;
+    if (data.expenses.some((e) => e.bankTransactionId === tx.id)) continue;
+    if (data.payments.some((p) => p.bankTransactionId === tx.id)) continue;
+    if (data.supplierInvoices.some((s) => s.bankTransactionId === tx.id)) continue;
+    if ((data.supplierPayments ?? []).some((p) => p.bankTransactionId === tx.id)) continue;
+    if (!looksLikeCardPurchase(tx)) continue;
+    // Samma vakt som importen: har motorn ett förslag är raden inte ett
+    // okänt kortköp, och människan ska få bekräfta förslaget i stället.
+    if (paymentSuggestionForTransaction(tx).kind !== "none") continue;
+    const expense = createExpenseFromBankPurchase(tx);
+    if (!expense) continue;
+    tx.status = "behover_atgard";
+    created.push(expense);
+  }
+  if (created.length > 0) save();
+  return created;
 }
 
 /**
