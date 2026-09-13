@@ -47,9 +47,49 @@ function dashesFor(file: string): string[] {
 type Context = "code" | "string" | "comment";
 
 /**
+ * Får ett snedstreck här inleda en reguljär uttryckslitteral, eller är det
+ * division? Avgörs av föregående betydelsebärande tecken: efter ett värde
+ * (`)`, `]`, namn, siffra) är det division, annars ett reguljärt uttryck.
+ */
+const KEYWORD_BEFORE_REGEX = /\b(return|typeof|instanceof|in|of|case|do|else|yield|await|void|delete|new)$/;
+
+function regexCanStart(source: string, at: number): boolean {
+  let j = at - 1;
+  while (j >= 0 && /\s/.test(source[j])) j -= 1;
+  if (j < 0) return true;
+  const prev = source[j];
+  if (/[)\]]/.test(prev)) return false;
+  if (/[\w$]/.test(prev)) return KEYWORD_BEFORE_REGEX.test(source.slice(0, j + 1));
+  return true;
+}
+
+/** Läs förbi en reguljär uttryckslitteral och returnera index efter den. */
+function skipRegex(source: string, at: number): number {
+  let j = at + 1;
+  let inClass = false;
+  while (j < source.length) {
+    const ch = source[j];
+    if (ch === "\\") {
+      j += 2;
+      continue;
+    }
+    if (ch === "\n") return at + 1;
+    if (ch === "[") inClass = true;
+    else if (ch === "]") inClass = false;
+    else if (ch === "/" && !inClass) return j + 1;
+    j += 1;
+  }
+  return at + 1;
+}
+
+/**
  * Enkel lexer: räcker för att skilja stränglitteral och JSX-text från
  * kommentar. "code" täcker både JSX-text och vanlig kod - ett tankstreck i
  * ren kod utanför en sträng vore ändå ett syntaxfel.
+ *
+ * Reguljära uttryck läses förbi som kod. Utan det öppnar ett citattecken
+ * inuti ett mönster, som /'/ i filing-format.ts, en sträng som aldrig tar
+ * slut och drar in kommentarerna efteråt i vaktens område.
  */
 function contexts(source: string): Context[] {
   const out: Context[] = new Array(source.length);
@@ -77,6 +117,11 @@ function contexts(source: string): Context[] {
       const end = source.indexOf("*/", i + 2);
       const stop = end === -1 ? source.length : end + 2;
       while (i < stop) out[i++] = "comment";
+      continue;
+    }
+    if (ch === "/" && regexCanStart(source, i)) {
+      const stop = skipRegex(source, i);
+      while (i < stop) out[i++] = "code";
       continue;
     }
     if (ch === '"' || ch === "'" || ch === "`") {
@@ -188,6 +233,15 @@ test("vakten hittar tankstreck i text men lämnar platshållaren i fred", () => 
     ).length,
     2
   );
+});
+
+test("ett citattecken i ett reguljärt uttryck öppnar ingen sträng", () => {
+  const source = [
+    `const esc = (s: string) => s.replace(/'/g, "&apos;");`,
+    `/** Tolvsiffrigt utan bindestreck ${EN_DASH} formen SRU vill ha. */`,
+    `const delat = summa / antal / 2;`,
+  ].join("\n");
+  assert.deepEqual(findProseDashes("prov.ts", source), []);
 });
 
 test("bokföringsytan vaktas mot båda tankstrecken, resten mot det långa", () => {
