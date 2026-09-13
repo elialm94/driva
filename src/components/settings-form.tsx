@@ -13,7 +13,7 @@ import { saveBillingCompletionAction, saveLogoAction, updateCompanySettingsActio
 import type { CompanySettings, VatRate } from "@/lib/types";
 import type { InvoiceDefaults } from "@/lib/services/settings";
 import { buildCompanySettingsActionInput } from "@/lib/settings-action-input";
-import { STANDARD_TERMS } from "@/lib/standard-quote-terms";
+import { resolveQuoteTerms } from "@/lib/standard-quote-terms";
 import { SETTINGS_HREF, settingsTabsFor, type SettingsFlik } from "@/lib/settings-routes";
 import { formatOrgnr, formatVatNumber, isOrgnrFormat, isVatNumberFormat } from "@/lib/invoices/formats";
 import {
@@ -47,6 +47,7 @@ import { AbonnemangCard, type AbonnemangCardProps } from "./abonnemang-card";
 import { KontoDataCard, type KontoDataCardProps } from "./konto-data-card";
 import { FiscalYearSettings, type FiscalYearSettingsYear } from "./fiscal-year-settings";
 import { OwnerNoticeSettings, type OwnerNoticeSettingsProps } from "./owner-notice-settings";
+import { CompanyClaimsCard } from "./company-claims-card";
 
 const inputCls =
   "w-full rounded-xl border border-line-strong bg-card px-3 py-2 text-[14px] text-ink placeholder:text-muted focus:border-accent";
@@ -114,7 +115,7 @@ function fromInitial(initial: CompanySettings, defaults: InvoiceDefaults): FormS
     quoteValidityDays: defaults.quoteValidityDays,
     defaultVatRate: defaults.defaultVatRate,
     defaultHourlyRate: defaults.defaultHourlyRate != null ? String(defaults.defaultHourlyRate) : "",
-    defaultQuoteTerms: defaults.defaultQuoteTerms?.trim() || STANDARD_TERMS,
+    defaultQuoteTerms: resolveQuoteTerms({ claims: initial.claims, defaultQuoteTerms: defaults.defaultQuoteTerms }),
   };
 }
 
@@ -551,6 +552,8 @@ export function SettingsForm({
             </div>
           </Card>
 
+          <CompanyClaimsCard claims={initial.claims} today={today} />
+
           <FiscalYearSettings years={fiscalYears} today={today} />
         </div>
       ) : null}
@@ -757,7 +760,10 @@ export function SettingsForm({
                   {...fieldMarkProps("defaultQuoteTerms", inputCls)}
                 />
                 <FieldError id="installningar-defaultQuoteTerms-fel">{errorFor("defaultQuoteTerms")}</FieldError>
-                <p className={hintCls}>Förifylls på nya offerter. Kan ändras på varje offert.</p>
+                <p className={hintCls}>
+                  Förifylls på nya offerter. Kan ändras på varje offert. Lämnar du Fervas standardtext orörd följer den
+                  dina verifierade uppgifter (F-skatt, försäkring) under Företag – skriver du egen text gäller den som den är.
+                </p>
               </div>
             </div>
 

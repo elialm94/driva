@@ -295,7 +295,9 @@ export function QuoteForm({
 }) {
   const router = useRouter();
   const [customerOptions, setCustomerOptions] = useState(customers);
-  const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
+  // Ingen förvald kund: kunden väljs explicit, utom när offerten skapas från
+  // en kund/ett uppdrag (då är kontexten synlig och kunden låst).
+  const [customerId, setCustomerId] = useState(defaultCustomerId ?? "");
   const [title, setTitle] = useState(initial?.title ?? "");
   const vat = defaults.defaultVatRate ?? 25;
   const hourly = defaults.defaultHourlyRate;
@@ -309,7 +311,7 @@ export function QuoteForm({
     Object.fromEntries(Object.entries(rotByCustomer ?? {}).map(([id, row]) => [id, row.properties ?? []]))
   );
   const [workLocationId, setWorkLocationId] = useState(() => {
-    const properties = rotByCustomer?.[defaultCustomerId ?? customers[0]?.id ?? ""]?.properties ?? [];
+    const properties = rotByCustomer?.[defaultCustomerId ?? ""]?.properties ?? [];
     return autoSelectWorkLocationId(properties, initial?.workLocationId);
   });
   const [clampNotice, setClampNotice] = useState<string | null>(null);
@@ -810,7 +812,9 @@ export function InvoiceForm({
   aiEnabled?: boolean;
 }) {
   const [customerOptions, setCustomerOptions] = useState(customers);
-  const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
+  // Ingen förvald kund: kunden väljs explicit, utom när fakturan skapas från
+  // en kund/ett uppdrag (då är kontexten synlig och kunden låst).
+  const [customerId, setCustomerId] = useState(defaultCustomerId ?? "");
   const [lines, setLines] = useState<DocLine[]>(
     initial?.lines?.length ? initial.lines : [newLine("arbete", defaultVatRate, "start-arbete")]
   );
@@ -821,7 +825,7 @@ export function InvoiceForm({
     Object.fromEntries(Object.entries(rotByCustomer ?? {}).map(([id, row]) => [id, row.properties ?? []]))
   );
   const [workLocationId, setWorkLocationId] = useState(() => {
-    const properties = rotByCustomer?.[defaultCustomerId ?? customers[0]?.id ?? ""]?.properties ?? [];
+    const properties = rotByCustomer?.[defaultCustomerId ?? ""]?.properties ?? [];
     return autoSelectWorkLocationId(properties, initial?.workLocationId);
   });
   const [clampNotice, setClampNotice] = useState<string | null>(null);

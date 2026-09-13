@@ -15,7 +15,7 @@ import { resolvedHourlyRate } from "../line-defaults";
 import { kr, isoDaysFromNow, dagarTill, datumKort } from "../format";
 import { logActivity } from "./activity";
 import { nextTaxReductionTerms } from "../tax-reduction-terms";
-import { STANDARD_TERMS } from "../standard-quote-terms";
+import { resolveQuoteTerms, STANDARD_TERMS } from "../standard-quote-terms";
 import { rotWithAmounts } from "../tax-reduction-amount";
 import { syncDocLineClassification } from "../economic-line-type";
 import { buyerSnapshot, sellerSnapshot } from "../invoices/snapshot";
@@ -618,6 +618,6 @@ export function quoteDefaults() {
     ...(resolvedHourlyRate(settings.defaultHourlyRate) != null
       ? { defaultHourlyRate: resolvedHourlyRate(settings.defaultHourlyRate) }
       : {}),
-    terms: settings.defaultQuoteTerms?.trim() || STANDARD_TERMS,
+    terms: resolveQuoteTerms(settings),
   };
 }

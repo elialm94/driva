@@ -124,6 +124,38 @@ export interface CompanySettings {
    * till företagets e-post. Se `lib/notices/owner-notices.ts`.
    */
   notices?: OwnerNoticeSettings;
+  /**
+   * Verifierbara påståenden om företaget (F-skatt, ansvarsförsäkring).
+   * Genererad text (offertvillkor, dokumentsidfot, hemsida) får bara
+   * påstå något när motsvarande aktuell verifiering finns här. Saknas eller
+   * utgången = påståendet utelämnas tyst. Se `lib/company-claims.ts`.
+   */
+  claims?: CompanyClaims;
+}
+
+/** Företagets aktiva bekräftelse av att det är godkänt för F-skatt. */
+export interface FSkattVerification {
+  /** Dag användaren bekräftade (YYYY-MM-DD). */
+  confirmedAt: string;
+  /** Valfri källa, t.ex. "Skatteverkets registerutdrag 2026-03-01". */
+  source?: string;
+}
+
+/** Företagets ansvarsförsäkring – giltig bara till och med `validUntil`. */
+export interface InsuranceVerification {
+  /** Försäkringsbolag. */
+  insurer: string;
+  /** Sista giltighetsdag (YYYY-MM-DD). Efter den dagen försvinner påståendet. */
+  validUntil: string;
+  /** Dag användaren bekräftade (YYYY-MM-DD). */
+  confirmedAt: string;
+  /** Valfri källa/referens, t.ex. försäkringsnummer eller länk till försäkringsbrevet. */
+  source?: string;
+}
+
+export interface CompanyClaims {
+  fSkatt?: FSkattVerification;
+  liabilityInsurance?: InsuranceVerification;
 }
 
 /**
@@ -701,6 +733,12 @@ export interface InvoiceSellerSnapshot {
   bic?: string;
   logoInitials: string;
   logoDataUrl?: string;
+  /**
+   * F-skatt var aktivt bekräftad av företaget när dokumentet utfärdades
+   * (bekräftelsedagen). Saknas = påståendet "Godkänd för F-skatt" visas inte,
+   * även på äldre dokument som frystes innan verifieringen fanns.
+   */
+  fSkattConfirmedAt?: string;
 }
 
 /** Köparen vid utfärdandet. */

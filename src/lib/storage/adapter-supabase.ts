@@ -22,7 +22,6 @@ import { ensurePendingSchema, resetPendingSchemaGuard } from "./apply-pending-sc
 import { isUndefinedColumn, isUniqueViolation } from "./sql-errors";
 import { cachedStateIfFresh, clearSnapshotCache, invalidateSnapshot, putSnapshot } from "./snapshot-cache";
 import { markCacheHit, withPerfSpan } from "../perf/telemetry";
-import { STANDARD_TERMS } from "../standard-quote-terms";
 import { calendarFiscalYear, todayDate } from "../accounting/dates";
 import { allocateInboundMailSlugAsync } from "../inbox/inbound-slug";
 
@@ -494,7 +493,8 @@ async function insertSettingsWithAllocatedSlug(
           input.bankAccount ?? null,
           initialsFor(input.name),
           slug,
-          STANDARD_TERMS,
+          // default_quote_terms lämnas tom: offerterna följer systemtexten och verifieringarna (spec §8).
+          null,
           input.companyForm ?? "ab",
         ],
       );

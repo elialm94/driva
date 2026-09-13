@@ -195,8 +195,9 @@ export type SellerIdentityInput = Pick<
   "name" | "address" | "postalCode" | "city" | "email" | "phone" | "orgNumber" | "vatNumber"
 > & {
   /**
-   * Ferva har inget inställningsfält för F-skatt. Saknas/true = visa
-   * "Godkänd för F-skatt". Explicit false döljer radbiten (tester / framtida flagga).
+   * Visa "Godkänd för F-skatt" BARA när det är sant enligt företagets egen
+   * verifiering (lib/company-claims.ts) – saknas/false döljer radbiten.
+   * Utfärdade fakturor läser läget ur säljarsnapshoten vid utfärdandet.
    */
   approvedForFskatt?: boolean;
 };
@@ -236,7 +237,7 @@ export function sellerIdentityFooter(company: SellerIdentityInput): SellerIdenti
   const line3: SellerIdentityToken[] = [];
   if (org) line3.push({ text: `Org.nr ${org}`, nowrap: true });
   if (vat) line3.push({ text: `Momsreg.nr ${vat}`, nowrap: true });
-  if (company.approvedForFskatt !== false) {
+  if (company.approvedForFskatt === true) {
     line3.push({ text: "Godkänd för F-skatt", nowrap: true });
   }
 

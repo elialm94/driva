@@ -1310,9 +1310,10 @@ export function requestUpdateBusinessProfile(patch: Record<string, string | numb
   const current = getBusinessProfile();
   const defaults = getInvoiceDefaults();
   // Bara skalära fält jämförs i förhandsvisningen (notiser är ett objekt och ändras inte här).
-  const { notices: _notices, autoBookFSkatt: _autoBookFSkatt, ...scalarSettings } = current;
+  const { notices: _notices, autoBookFSkatt: _autoBookFSkatt, claims: _claims, ...scalarSettings } = current;
   void _notices;
   void _autoBookFSkatt;
+  void _claims;
   const currentMap: Record<string, string | number | undefined> = {
     ...scalarSettings,
     ...defaults,

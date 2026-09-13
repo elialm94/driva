@@ -82,10 +82,12 @@ import { addJobPhoto, deleteJobPhoto } from "@/lib/services/job-photos";
 import { parseBeslutJson } from "@/lib/tax-reduction-beslut";
 import {
   applyBusinessProfilePatch,
+  updateCompanyClaims,
   updateCompanySettings,
   updateWebsiteFormRecipient,
   type CompanySettingsInput,
 } from "@/lib/services/settings";
+import type { CompanyClaimsInput } from "@/lib/company-claims";
 import { normalizeCompanySettingsInput } from "@/lib/settings-action-input";
 import { BILLING_COMPLETION_PATCH_KEYS } from "@/lib/billing-readiness";
 import {
@@ -2199,6 +2201,38 @@ export async function updateOwnerNoticeSettingsAction(
       updateOwnerNoticeSettings({ email: typeof input.email === "string" ? input.email : "", off });
       refresh();
       return { ok: true, recipient: getOwnerNoticeSettings().recipient } as const;
+    });
+  } catch (e) {
+    return { ok: false, error: userFacingStorageError(e, "Kunde inte spara.") };
+  }
+}
+
+/**
+ * Inställningar → Företag → Verifierade uppgifter (F-skatt, ansvarsförsäkring).
+ * Sparas direkt. Inmatningen är otillförlitlig klientdata: bara kända fält
+ * plockas ut och valideras i domänlagret (parseCompanyClaimsInput).
+ */
+export async function updateCompanyClaimsAction(input: CompanyClaimsInput): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const f = input?.fSkatt ?? { confirmed: false };
+    const i = input?.liabilityInsurance ?? { confirmed: false };
+    const safe: CompanyClaimsInput = {
+      fSkatt: {
+        confirmed: f.confirmed === true,
+        confirmedAt: typeof f.confirmedAt === "string" ? f.confirmedAt : undefined,
+        source: typeof f.source === "string" ? f.source : undefined,
+      },
+      liabilityInsurance: {
+        confirmed: i.confirmed === true,
+        insurer: typeof i.insurer === "string" ? i.insurer : undefined,
+        validUntil: typeof i.validUntil === "string" ? i.validUntil : undefined,
+        source: typeof i.source === "string" ? i.source : undefined,
+      },
+    };
+    return await withBusiness(() => {
+      updateCompanyClaims(safe);
+      refresh();
+      return { ok: true } as const;
     });
   } catch (e) {
     return { ok: false, error: userFacingStorageError(e, "Kunde inte spara.") };

@@ -394,6 +394,12 @@ export async function applyPendingPageLoadSchema(client: SqlClient): Promise<str
     "notices",
     `alter table public.business_settings add column if not exists notices jsonb`
   );
+  // Verifierade företagsuppgifter (migration 54) – settings-upserten skriver alltid kolumnen.
+  await ensureColumn(
+    "business_settings",
+    "claims",
+    `alter table public.business_settings add column if not exists claims jsonb`
+  );
   // OCR-nummer till skattekontot (migration 45) – settings-upserten skriver alltid kolumnen.
   await ensureColumn(
     "business_settings",
