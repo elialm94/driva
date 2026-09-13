@@ -238,6 +238,19 @@ export interface TaxReductionCase {
   prefill: TaxReductionPrefill | null;
 }
 
+/**
+ * Fallet som ansökningskortet får se. Kortet är en klientkomponent, så allt i
+ * objektet serialiseras ut i sidans HTML – och `prefill` bär hela
+ * personnummret. Kortet läser aldrig `prefill`; bara servern gör det
+ * (fakturaeditorn och HUS-exporten till Skatteverket).
+ */
+export type TaxReductionCaseView = Omit<TaxReductionCase, "prefill">;
+
+export function taxReductionCaseView(cse: TaxReductionCase): TaxReductionCaseView {
+  const { prefill: _prefill, ...view } = cse;
+  return view;
+}
+
 export function rotInvoicesForJob(jobId: string): Invoice[] {
   return invoicesForJob(jobId).filter((i) => i.rot && i.type !== "kredit" && i.status !== "krediterad");
 }

@@ -29,7 +29,7 @@ import { jobTimeline } from "@/lib/services/job-timeline";
 import { JobTimeline } from "@/components/job-timeline";
 import { CustomerShareSection } from "@/components/customer-share-section";
 import { RotDeadlineBanner } from "@/components/rot-deadline-banner";
-import { taxReductionCaseForJob } from "@/lib/services/tax-reduction";
+import { taxReductionCaseForJob, taxReductionCaseView } from "@/lib/services/tax-reduction";
 import { rotDeadlineStatus } from "@/lib/tax-reduction-deadline";
 import { todayDate } from "@/lib/accounting/dates";
 import { husExportPreview } from "@/lib/services/hus-export";
@@ -345,7 +345,7 @@ export default async function UppdragPage(props: PageProps<"/uppdrag/[id]">) {
       {taxCase.phase !== "none" && taxCase.phase !== "preliminar" && taxCase.phase !== "waiting_payment" && taxCase.phase !== "waiting_work" ? (
         <div className="mb-8">
           <TaxReductionApplicationCard
-            cse={taxCase}
+            cse={taxReductionCaseView(taxCase)}
             editHref={taxCase.invoiceId ? invoiceHref(taxCase.invoiceId, fromHere) : undefined}
             hus={husExport}
           />

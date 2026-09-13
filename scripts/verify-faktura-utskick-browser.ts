@@ -191,6 +191,9 @@ async function verify(fixtures: Fixtures, viewports: readonly Viewport[]) {
   const text = (page: Page) =>
     page.evaluate(() => document.body.innerText.replace(/\u00a0/g, " ").replace(/\s+/g, " "));
 
+  /** Hela dokumentet, inklusive RSC-payloaden – inte bara det synliga. */
+  const html = (page: Page) => page.evaluate(() => document.documentElement.outerHTML);
+
   async function goto(page: Page, url: string) {
     await page.goto(BASE + url, { waitUntil: "networkidle0" });
     await sleep(350);
@@ -230,6 +233,10 @@ async function verify(fixtures: Fixtures, viewports: readonly Viewport[]) {
       let t = await text(page);
       check(`[${label}] ROT skärm: maskerat personnummer`, t.includes(ROT_PERSONNUMMER_MASKED));
       check(`[${label}] ROT skärm: hela personnummret finns inte`, !t.includes(ROT_PERSONNUMMER));
+      // Inte bara det synliga: RSC-payloaden ligger i samma HTML och skulle
+      // bära hela numret om ett serverobjekt råkar följa med till en
+      // klientkomponent.
+      check(`[${label}] ROT skärm: hela personnummret finns inte i sidans HTML`, !(await html(page)).includes(ROT_PERSONNUMMER));
       check(`[${label}] ROT skärm: fastighetsbeteckning`, t.includes("Fastighetsbeteckning") && t.includes(ROT_DESIGNATION));
       check(`[${label}] ROT skärm: nollraden renderas inte`, !t.includes("Framkörning"));
       await shot("01-rot-faktura-skarm");
@@ -247,6 +254,7 @@ async function verify(fixtures: Fixtures, viewports: readonly Viewport[]) {
       check(`[${label}] RUT skärm: RUT-avdrag visas`, t.includes("RUT-avdrag"));
       check(`[${label}] RUT skärm: maskerat personnummer`, t.includes(RUT_PERSONNUMMER_MASKED));
       check(`[${label}] RUT skärm: ingen fastighetsbeteckning`, !t.includes("Fastighetsbeteckning") && !t.includes(RUT_DESIGNATION));
+      check(`[${label}] RUT skärm: hela personnummret finns inte i sidans HTML`, !(await html(page)).includes(RUT_PERSONNUMMER));
       await shot("03-rut-faktura-ingen-beteckning");
 
       await goto(page, `/faktura/${fixtures.rutToken}/pdf`);

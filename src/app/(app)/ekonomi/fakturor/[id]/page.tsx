@@ -28,7 +28,7 @@ import { sendInvoiceAction } from "@/app/actions";
 import { isLiveMailConfigured } from "@/lib/mail";
 import { DeniedReductionCard } from "@/components/denied-reduction-card";
 import { TaxReductionApplicationCard } from "@/components/tax-reduction-application";
-import { taxReductionCaseForInvoice } from "@/lib/services/tax-reduction";
+import { taxReductionCaseForInvoice, taxReductionCaseView } from "@/lib/services/tax-reduction";
 import { husExportPreview } from "@/lib/services/hus-export";
 import { SmartBack } from "@/components/back-link";
 import { AppLink } from "@/components/app-link";
@@ -223,7 +223,13 @@ export default async function InvoicePage(props: PageProps<"/ekonomi/fakturor/[i
 
       {isDraft ? <InvoiceIssueChecklist blockers={issueBlockers} /> : null}
 
-      {taxCase ? <TaxReductionApplicationCard cse={taxCase} editHref={isDraft ? editHref : undefined} hus={husExport} /> : null}
+      {taxCase ? (
+        <TaxReductionApplicationCard
+          cse={taxReductionCaseView(taxCase)}
+          editHref={isDraft ? editHref : undefined}
+          hus={husExport}
+        />
+      ) : null}
 
       {showDeniedFollowUp ? <DeniedReductionCard invoiceId={invoice.id} deduction={totals.deduction} /> : null}
 

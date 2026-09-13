@@ -10,7 +10,7 @@ import {
   patchTaxReductionFieldsAction,
   setTaxReductionDecisionAction,
 } from "@/app/actions";
-import type { TaxReductionCase } from "@/lib/services/tax-reduction";
+import type { TaxReductionCaseView } from "@/lib/services/tax-reduction";
 import type { HusExportPreview } from "@/lib/services/hus-export";
 import { formatOrgnr } from "@/lib/invoices/formats";
 import { formatPersonnummer } from "@/lib/personnummer";
@@ -25,7 +25,7 @@ export function TaxReductionApplicationCard({
   editHref,
   hus,
 }: {
-  cse: TaxReductionCase;
+  cse: TaxReductionCaseView;
   editHref?: string;
   /** HUS-filen till Skatteverket – bara relevant när underlaget finns. */
   hus?: HusExportPreview | null;
