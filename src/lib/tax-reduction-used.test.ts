@@ -4,7 +4,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   clampDeductionToRemaining,
-  fervaCapSummaryText,
   remainingTaxReduction,
   usedTaxReductionThisYear,
 } from "./tax-reduction-used";
@@ -67,11 +66,9 @@ describe("använt ROT i år", () => {
     assert.equal(empty.rut, 0);
     assert.equal(filled.rot, 0);
     assert.equal(filled.rut, 0);
-    const text = fervaCapSummaryText(empty);
-    assert.match(text, /Ferva i 2026/);
-    assert.match(text, /inte Skatteverkets saldo/);
-    assert.doesNotMatch(text, /kvar att lova/i);
-    assert.doesNotMatch(text, /hos andra/);
+    // Samma Ferva-siffra oavsett ifyllt hos-andra: tomt är okänt, inte 0 använt.
+    assert.equal(empty.rot, filled.rot);
+    assert.equal(remainingTaxReduction(empty, "rot"), remainingTaxReduction(filled, "rot"));
   });
 
   it("kvarvarande tar hänsyn till eget tak och det gemensamma", () => {

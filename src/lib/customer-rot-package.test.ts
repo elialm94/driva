@@ -53,6 +53,11 @@ describe("kundkortet: ett ROT/RUT-paket", () => {
     assert.match(rot, /Ta bort/);
     assert.doesNotMatch(rot, /hos andra/);
     assert.doesNotMatch(rot, /kvar att lova/i);
+    assert.doesNotMatch(rot, /RotUsedField/);
+    assert.doesNotMatch(rot, /Ferva i /);
+    assert.doesNotMatch(rot, /inte Skatteverkets saldo/);
+    assert.doesNotMatch(rot, /fervaRot/);
+    assert.doesNotMatch(rot, /fervaRut/);
 
     const form = source("src/components/work-location-form.tsx");
     assert.match(form, /Fastighetsbeteckning/);
@@ -65,12 +70,13 @@ describe("kundkortet: ett ROT/RUT-paket", () => {
     assert.doesNotMatch(page, /designations/);
     assert.doesNotMatch(page, /Pers\.nr/);
     assert.doesNotMatch(page, /remainingTaxReduction/);
-
-    const figures = source("src/components/rot-used-field.tsx");
-    assert.match(figures, /Ferva i \{year\}/);
-    assert.doesNotMatch(figures, /<input/);
-    assert.doesNotMatch(figures, /kvar att lova/i);
-    assert.doesNotMatch(figures, /Det kunden redan fått/);
+    assert.doesNotMatch(page, /usedTaxReductionThisYear/);
+    assert.doesNotMatch(page, /RotUsedField/);
+    assert.doesNotMatch(page, /fervaRot/);
+    assert.doesNotMatch(page, /Ferva i /);
+    // Årskortet togs bort: kundsidan ska inte visa ROT 0 av 50 000 / RUT 0 av 75 000.
+    assert.doesNotMatch(page, /av 50 000/);
+    assert.doesNotMatch(page, /av 75 000/);
   });
 
   it("två fastigheter delar ett personnummer - fältet ligger utanför bostadsformuläret", () => {

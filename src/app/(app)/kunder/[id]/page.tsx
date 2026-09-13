@@ -6,9 +6,7 @@ import { customerChainCtas } from "@/lib/services/business-chain";
 import { SectionTitle } from "@/components/ui";
 import { CustomerDetailsPanel } from "@/components/customer-details-panel";
 import { CustomerRotSection } from "@/components/customer-rot-section";
-import { usedTaxReductionThisYear } from "@/lib/tax-reduction-used";
 import { db } from "@/lib/store";
-import { todayDate } from "@/lib/accounting/dates";
 import { CustomerActivity } from "@/components/customer-activity";
 import { CustomerChainActions } from "@/components/customer-chain-actions";
 import { SmartBack } from "@/components/back-link";
@@ -27,8 +25,6 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
   const fromHere = pageOrigin(`/kunder/${customer.id}`, searchParams, customer.name);
   const activity = customerActivityFeed(customer.id);
   const money = customerMoneyLine(customer.id);
-  const year = Number(todayDate().slice(0, 4));
-  const used = usedTaxReductionThisYear({ customer, invoices: db().invoices, year });
 
   return (
     <div className="animate-fade-up">
@@ -80,9 +76,6 @@ export default async function CustomerPage(props: PageProps<"/kunder/[id]">) {
               customer.personalIdentityNumber ? maskPersonnummer(customer.personalIdentityNumber) : undefined
             }
             hasPersonnummer={Boolean(customer.personalIdentityNumber)}
-            year={year}
-            fervaRot={used.rot}
-            fervaRut={used.rut}
           />
         </div>
       ) : null}
