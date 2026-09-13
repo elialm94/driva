@@ -140,6 +140,21 @@ npx supabase db push          # applicerar alla migrationer
 
 Nya schemaändringar: `npx supabase migration new <namn>` → skriv SQL → `db push`.
 
+#### Produktion: migrationerna körs av bygget
+
+I produktion är `db push` inte ett manuellt steg. `vercel.json` pekar `buildCommand` på `scripts/vercel-build.sh`, som applicerar migrationerna **före** `next build`. Misslyckas en migration avbryts bygget, deployen når aldrig trafik och den gamla koden fortsätter svara. Ordningen är hela poängen: en deploy kan inte gå live med kod vars tabeller saknas.
+
+Skriptet kräver `SUPABASE_MIGRATION_DB_URL` i Vercel, bara i Production-scope:
+
+* den **direkta** anslutningen (`db.<ref>.supabase.co:5432`), inte poolaren, eftersom migrationer behöver en sessionsanslutning
+* lösenordet **procent-kodat** (`@` blir `%40` osv), annars klarar inte CLI:n att tolka URL:en
+
+Saknas variabeln varnar skriptet i bygglogggen och bygger vidare, så en roterad hemlighet inte blockerar alla deployer. Då ligger schemat efter igen, och `/api/health` visar det.
+
+Preview-deployer migrerar inte (`VERCEL_ENV` måste vara `production`), så en gren kan inte skriva om produktionsschemat.
+
+Tvillingen i `apply-pending-schema.ts` är kvar som skyddsnät, men den räcker inte som enda mekanism: den körs från `/api/health` och före tenant-skrivningar, alltså **inte** på en ren läsväg. Det var exakt det som fällde ferva.se när `terms_acceptances` (migration 53) saknades - kontrollen av villkorsgodkännande ligger i rot-layouten, före varje skrivning, så varje sida dog innan tvillingen hann köra.
+
 ### 4. Seed (dev/test-data)
 
 ```bash
