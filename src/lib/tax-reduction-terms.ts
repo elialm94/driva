@@ -179,7 +179,7 @@ export function taxReductionCalcHintText(type: RotRut["type"], laborInclVat: num
     cap < ROT_RUT_GEMENSAMT_TAK
       ? ` (ROT och RUT tillsammans högst ${kr(ROT_RUT_GEMENSAMT_TAK)})`
       : ` (ROT och RUT tillsammans, varav ROT högst ${kr(taxReductionCap("rot"))})`;
-  return `Avdraget är ${percent} % av arbetskostnaden inkl. moms (${kr(laborInclVat)}). Bara rader markerade som arbete räknas – material, resor och övrigt ingår inte. Högst ${kr(cap)} per person och år${shared}. Satsen avgörs av den dag kunden betalar. Beloppet räknas av systemet och är inte en rabatt.`;
+  return `Avdraget är ${percent} % av arbetskostnaden inkl. moms (${kr(laborInclVat)}). Bara rader markerade som arbete räknas – material, resor och övrigt ingår inte. Högst ${kr(cap)} per person och år${shared}. Vilken procentsats som gäller avgörs av den dag kunden betalar fakturan, inte av fakturadatumet. Beloppet räknas av systemet och är inte en rabatt.`;
 }
 
 export function getDeniedReductionNotice(deniedAmount: number): string {

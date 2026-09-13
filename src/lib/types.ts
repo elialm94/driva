@@ -371,6 +371,14 @@ export interface TaxReductionDetails {
   workAddress?: string;
   workPeriodStart?: string;
   workPeriodEnd?: string;
+  /**
+   * Varifrån perioden kom. "invoice" (eller saknat värde på äldre fakturor) =
+   * manuellt angivet och det enda som får skrivas till uppdraget. "job" =
+   * uppdragets datum. "derived" = aktuell månad, sista utposten och ingen
+   * uppgift om när arbetet gjordes. Allt utom "invoice" räknas om vid nästa
+   * sparning, så perioden följer uppdraget när det får riktiga datum.
+   */
+  workPeriodSource?: "invoice" | "job" | "derived";
   housing?: HousingDetails;
 }
 

@@ -102,29 +102,39 @@ async function main() {
 
   /* ---------------- 3. Ny faktura: per-rad-fel + ROT-luckor med fokus ---------------- */
   await page.goto(`${BASE}/ekonomi/fakturor/ny`, { waitUntil: "networkidle0" });
-  await page.type('[id^="rad-"][id$="-beskrivning"]', "Montör");
+  // Beskrivning + 0 kr är en riktig kostnadsfri rad (lineIsBlank), så luckan på
+  // en startrad är beskrivningen. Sätt ett pris så att raden räknas.
+  await page.click('[id^="rad-"][id$="-pris"]', { clickCount: 3 });
+  await page.type('[id^="rad-"][id$="-pris"]', "800");
   await clickText("button", "Spara utkast");
   await page.waitForSelector("#faktura-saknas");
   text = await bodyText();
-  await ok("3a faktura: per-rad-post 'Pris på raden ”Montör”'", text.includes("Pris på raden ”Montör”"));
-  await page.click('[id^="rad-"][id$="-pris"]', { clickCount: 3 });
-  await page.type('[id^="rad-"][id$="-pris"]', "800");
+  await ok("3a faktura: per-rad-post 'Beskrivning på första raden'", text.includes("Beskrivning på första raden"));
+  await page.type('[id^="rad-"][id$="-beskrivning"]', "Montör");
   await sleep(150);
   text = await bodyText();
-  await ok("3b faktura: pris ifyllt → radposten borta i realtid", !text.includes("Pris på raden ”Montör”"));
+  await ok("3b faktura: beskrivning ifylld → radposten borta i realtid", !text.includes("Beskrivning på första raden"));
 
   await clickText("button", "ROT");
   await sleep(300);
   text = await bodyText();
+  // Arbetsperioden finns inte i husarbetsbegäran och härleds (uppdragets datum,
+  // annars aktuell månad). Den är sammanfattad, inte en lucka. Kvar för Anna,
+  // vars sparade bostad saknar beteckning, är fastighetsbeteckningen.
   await ok(
-    "3c ROT: bara faktiska luckor listas (personnummer prefyllt ⇒ arbetsperiod, bostadstyp)",
-    /uppgifter saknas för ROT-ansökan/.test(text) && text.includes("Arbetsperiod") && text.includes("Bostadstyp")
+    "3c ROT: arbetsperiod och bostadstyp sammanfattade, bara fastighetsbeteckningen saknas",
+    text.includes("Arbetsperiod:") &&
+      text.includes("Bostadstyp Fastighet/småhus") &&
+      /1 uppgift saknas för ROT-ansökan/.test(text) &&
+      !/uppgifter saknas för ROT-ansökan/.test(text),
+    text.slice(text.indexOf("Skattereduktion"), text.indexOf("Skattereduktion") + 320)
   );
-  await clickText("button", "Arbetsperiod");
+  await clickText("button", "Fastighetsbeteckning");
   await sleep(400);
   await ok(
-    "3d ROT: luck-klick fokuserar arbetsperiodfältet",
-    await page.evaluate(() => !!document.activeElement?.closest("#rot-arbetsperiod"))
+    "3d ROT: luck-klick fokuserar fastighetsfältet, det enda som äger beteckningen",
+    await page.evaluate(() => document.activeElement?.id === "faktura-fastighet-ny"),
+    await activeId()
   );
   await page.screenshot({ path: `${SHOTS}/faktura-rot.png` as `${string}.png`, fullPage: false });
 

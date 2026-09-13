@@ -65,7 +65,10 @@ function hasHousingContent(housing?: HousingDetails | null): boolean {
 function periodRow(details: TaxReductionDetails | null | undefined, serviceDate?: string): DocInfoRow | undefined {
   const start = details?.workPeriodStart?.slice(0, 10) || "";
   const end = details?.workPeriodEnd?.slice(0, 10) || "";
-  if (start && end && start !== end) {
+  // Aktuell månad är sista utposten för perioden. Har fakturan ett
+  // utförandedatum är det en riktig uppgift och visas i stället.
+  const monthFallback = details?.workPeriodSource === "derived" && Boolean(serviceDate?.slice(0, 10));
+  if (start && end && start !== end && !monthFallback) {
     return { label: "Arbetsperiod", value: formatWorkPeriodRange(start, end) };
   }
   const single = serviceDate?.slice(0, 10) || end || start;

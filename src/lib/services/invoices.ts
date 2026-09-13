@@ -44,6 +44,8 @@ import {
   persistTaxReductionOwnership,
   resolveTaxReductionPrefill,
 } from "./tax-reduction";
+import { deriveWorkPeriod, isManualWorkPeriod } from "../tax-reduction-gaps";
+import { todayDate } from "../accounting/dates";
 import { resolvePersistedWorkLocationId } from "../tax-reduction-send";
 import { getWorkLocation, workLocationsOf, workLocationToHousing } from "./work-locations";
 import {
@@ -202,11 +204,30 @@ function applyTaxReductionContext(
   // fastighet i snapshoten. Explicit ifyllda fält vinner över basen.
   const selectedLocation = getWorkLocation(customer, invoice.workLocationId);
   const baseHousing = selectedLocation ? workLocationToHousing(selectedLocation) : prefill.housing;
+  // Arbetsperioden: bara ett värde som skiljer sig från det härledda räknas som
+  // manuellt angivet. Ett värde som är lika lämnas härlett, så att det följer
+  // uppdraget om det senare får datum - och aldrig skrivs tillbaka till det.
+  const job = invoice.jobId ? getJob(invoice.jobId) : undefined;
+  const today = todayDate();
+  const storedPeriod = isManualWorkPeriod(invoice.taxReductionDetails) ? invoice.taxReductionDetails : undefined;
+  const submitted = isManualWorkPeriod(input.taxReductionDetails) ? input.taxReductionDetails : undefined;
+  const period = deriveWorkPeriod({
+    details: {
+      workPeriodStart: submitted?.workPeriodStart ?? storedPeriod?.workPeriodStart,
+      workPeriodEnd: submitted?.workPeriodEnd ?? storedPeriod?.workPeriodEnd,
+    },
+    job,
+    today,
+  });
+  const fallback = deriveWorkPeriod({ job, today });
+  const manualPeriod =
+    period.source === "invoice" && (period.start !== fallback.start || period.end !== fallback.end);
   const details = detailsFromPrefill({
     ...prefill,
     workAddress: input.taxReductionDetails?.workAddress ?? prefill.workAddress,
-    workPeriodStart: input.taxReductionDetails?.workPeriodStart ?? prefill.workPeriodStart,
-    workPeriodEnd: input.taxReductionDetails?.workPeriodEnd ?? prefill.workPeriodEnd,
+    workPeriodStart: period.start,
+    workPeriodEnd: period.end,
+    workPeriodSource: manualPeriod ? "invoice" : fallback.source,
     housing: input.taxReductionDetails?.housing
       ? mergeHousing(baseHousing, input.taxReductionDetails.housing)
       : baseHousing,
@@ -218,7 +239,9 @@ function applyTaxReductionContext(
     personalIdentityNumber: input.personalIdentityNumber,
     details,
   });
-  if (!invoice.serviceDate && invoice.rot) {
+  // Aktuell månad är ingen uppgift om när arbetet gjordes och får inte bli
+  // utförandedatum. Uppdragets egna datum får det.
+  if (!invoice.serviceDate && invoice.rot && details.workPeriodSource !== "derived") {
     invoice.serviceDate = details.workPeriodEnd || details.workPeriodStart || undefined;
   }
 }

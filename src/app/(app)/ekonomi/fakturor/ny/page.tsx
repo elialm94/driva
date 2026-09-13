@@ -98,6 +98,7 @@ export default async function NewInvoicePage(props: PageProps<"/ekonomi/fakturor
                   workAddress: prefill.workAddress,
                   workPeriodStart: prefill.workPeriodStart,
                   workPeriodEnd: prefill.workPeriodEnd,
+                  workPeriodSource: prefill.workPeriodSource,
                   housing: prefill.housing,
                 },
               }

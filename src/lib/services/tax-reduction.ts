@@ -27,16 +27,28 @@ import { postVerification } from "../accounting/engine";
 import { entriesTaxReductionPayout } from "../bas";
 import { docTotals, taxReductionRate, taxReductionRateOn } from "../calc";
 import {
+  deriveWorkPeriod,
+  isManualWorkPeriod,
   taxReductionMissingFields,
   type TaxReductionMissingField,
+  type WorkPeriodSource,
 } from "../tax-reduction-gaps";
+import { todayDate } from "../accounting/dates";
 
 export type {
   TaxReductionGapScope,
   TaxReductionMissingCode,
   TaxReductionMissingField,
 } from "../tax-reduction-gaps";
-export { taxReductionMissingFields, taxReductionMissingHint, formatWorkPeriodRange, suggestedServiceDate } from "../tax-reduction-gaps";
+export {
+  currentMonthPeriod,
+  deriveWorkPeriod,
+  isManualWorkPeriod,
+  taxReductionMissingFields,
+  taxReductionMissingHint,
+  formatWorkPeriodRange,
+  suggestedServiceDate,
+} from "../tax-reduction-gaps";
 
 export interface TaxReductionPrefill {
   personalIdentityNumber: string;
@@ -44,11 +56,9 @@ export interface TaxReductionPrefill {
   workAddress: string;
   workPeriodStart: string;
   workPeriodEnd: string;
+  /** Varifrån perioden kom. Allt utom "invoice" är härlett och sparas aldrig på uppdraget. */
+  workPeriodSource: WorkPeriodSource;
   housing: HousingDetails;
-}
-
-function isoDate(value?: string): string {
-  return value ? value.slice(0, 10) : "";
 }
 
 export function formatWorkAddress(input: {
@@ -85,6 +95,24 @@ export function mergeHousing(base?: HousingDetails | null, patch?: HousingDetail
   });
 }
 
+/**
+ * Bostaden från kundens senaste ROT/RUT-faktura. Svagaste prefill-källan: den
+ * används när kunden ännu inte har någon sparad bostad, så att andra fakturan
+ * till samma kund slipper fråga om fastighetsbeteckningen igen.
+ */
+export function housingFromEarlierTaxReductionInvoices(customerId: string): HousingDetails {
+  const candidates = db().invoices.filter(
+    (i) =>
+      i.customerId === customerId &&
+      i.rot &&
+      i.type !== "kredit" &&
+      Boolean(i.taxReductionDetails?.housing?.dwellingType)
+  );
+  if (candidates.length === 0) return {};
+  const latest = candidates.reduce((a, b) => ((a.issuedAt ?? a.createdAt) >= (b.issuedAt ?? b.createdAt) ? a : b));
+  return sanitizeHousing(latest.taxReductionDetails?.housing);
+}
+
 export function resolveTaxReductionPrefill(input: {
   customerId: string;
   jobId?: string;
@@ -100,15 +128,22 @@ export function resolveTaxReductionPrefill(input: {
     job?.address?.trim() ||
     formatLocationAddress(location) ||
     formatWorkAddress(customer);
-  const workPeriodStart = isoDate(details?.workPeriodStart) || isoDate(job?.startDate);
-  const workPeriodEnd = isoDate(details?.workPeriodEnd) || isoDate(job?.endDate) || isoDate(job?.completedAt);
-  const housing = mergeHousing(mergeHousing(workLocationToHousing(location), job?.housing), details?.housing);
+  const period = deriveWorkPeriod({ details, job, today: todayDate() });
+  // Svagast först: tidigare faktura, kundens bostad, uppdraget, fakturans egna fält.
+  const housing = mergeHousing(
+    mergeHousing(
+      mergeHousing(housingFromEarlierTaxReductionInvoices(input.customerId), workLocationToHousing(location)),
+      job?.housing
+    ),
+    details?.housing
+  );
   return {
     personalIdentityNumber: pn,
     personalIdentityNumberMasked: pn ? maskPersonnummer(pn) : "",
     workAddress,
-    workPeriodStart,
-    workPeriodEnd,
+    workPeriodStart: period.start,
+    workPeriodEnd: period.end,
+    workPeriodSource: period.source,
     housing,
   };
 }
@@ -117,9 +152,12 @@ export type CustomerInvoiceRotPrefill = {
   personalIdentityNumber?: string;
   addressLine: string;
   properties: { id: string; designation: string; label: string }[];
+  /** Bostadstyp och beteckning att prefilla med när kunden byts i editorn. */
+  housing: HousingDetails;
 };
 
 export function customerInvoiceRotPrefill(customer: Customer): CustomerInvoiceRotPrefill {
+  const defaultLocation = defaultWorkLocation(customer);
   return {
     personalIdentityNumber: customer.personalIdentityNumber,
     addressLine: formatWorkAddress(customer),
@@ -128,6 +166,10 @@ export function customerInvoiceRotPrefill(customer: Customer): CustomerInvoiceRo
       designation: location.propertyDesignation ?? "",
       label: location.label,
     })),
+    housing: mergeHousing(
+      housingFromEarlierTaxReductionInvoices(customer.id),
+      workLocationToHousing(defaultLocation)
+    ),
   };
 }
 
@@ -136,6 +178,7 @@ export function detailsFromPrefill(prefill: TaxReductionPrefill): TaxReductionDe
     workAddress: prefill.workAddress || undefined,
     workPeriodStart: prefill.workPeriodStart || undefined,
     workPeriodEnd: prefill.workPeriodEnd || undefined,
+    workPeriodSource: prefill.workPeriodSource,
     housing: sanitizeHousing(prefill.housing),
   };
 }
@@ -156,8 +199,13 @@ export function persistTaxReductionOwnership(input: {
     const job = getJob(input.jobId);
     if (job) {
       if (input.details.workAddress?.trim()) job.address = input.details.workAddress.trim();
-      if (input.details.workPeriodStart) job.startDate = input.details.workPeriodStart;
-      if (input.details.workPeriodEnd) job.endDate = input.details.workPeriodEnd;
+      // Bara en manuellt angiven period får röra uppdragets datum. En härledd
+      // period (uppdragets egna datum eller aktuell månad) skrivs aldrig hit -
+      // ett uppdrag utan datum ska inte få påhittade sådana.
+      if (isManualWorkPeriod(input.details)) {
+        if (input.details.workPeriodStart) job.startDate = input.details.workPeriodStart;
+        if (input.details.workPeriodEnd) job.endDate = input.details.workPeriodEnd;
+      }
       if (input.details.housing && Object.keys(sanitizeHousing(input.details.housing)).length) {
         job.housing = mergeHousing(job.housing, input.details.housing);
         syncWorkLocationHousing(customer, job.workLocationId, job.housing);
@@ -740,10 +788,16 @@ export function patchTaxReductionFields(input: {
     brfOrgNumber: input.brfOrgNumber ?? input.details?.housing?.brfOrgNumber,
     apartmentNumber: input.apartmentNumber ?? input.details?.housing?.apartmentNumber,
   });
+  // En period som skickas in här är manuellt angiven. Utan period behåller
+  // uppgifterna den härledda källan, så att inget härlett hamnar på uppdraget.
+  const manualPeriod = Boolean(
+    input.workPeriodStart ?? input.workPeriodEnd ?? input.details?.workPeriodStart ?? input.details?.workPeriodEnd
+  );
   const details: TaxReductionDetails = {
     workAddress: input.workAddress ?? input.details?.workAddress ?? current.workAddress,
     workPeriodStart: input.workPeriodStart ?? input.details?.workPeriodStart ?? current.workPeriodStart,
     workPeriodEnd: input.workPeriodEnd ?? input.details?.workPeriodEnd ?? current.workPeriodEnd,
+    workPeriodSource: manualPeriod ? "invoice" : current.workPeriodSource,
     housing,
   };
   persistTaxReductionOwnership({

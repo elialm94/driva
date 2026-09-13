@@ -6,8 +6,14 @@ import { buttonClasses, Card, cx } from "./ui";
 import { docTotals } from "@/lib/calc";
 import { canonicalizeUnitPrice } from "@/lib/line-defaults";
 import { kr } from "@/lib/format";
-import type { DocLine, PaymentPlanPart, RotRut, VatRate } from "@/lib/types";
-import { createQuoteAction, updateQuoteAction, createInvoiceAction, updateInvoiceAction } from "@/app/actions";
+import type { DocLine, HousingDetails, PaymentPlanPart, RotRut, VatRate } from "@/lib/types";
+import {
+  createQuoteAction,
+  updateQuoteAction,
+  createInvoiceAction,
+  updateInvoiceAction,
+  updateCustomerPersonnummerAction,
+} from "@/app/actions";
 import { useRouter } from "next/navigation";
 import { DateField } from "./date-field";
 import { addCustomerOption, CustomerPicker, type CustomerOption } from "./customer-picker";
@@ -260,7 +266,12 @@ export function QuoteForm({
   quoteId?: string;
   rotByCustomer?: Record<
     string,
-    { personalIdentityNumber?: string; addressLine?: string; properties?: InvoicePropertyOption[] }
+    {
+      personalIdentityNumber?: string;
+      addressLine?: string;
+      properties?: InvoicePropertyOption[];
+      housing?: HousingDetails;
+    }
   >;
   initial?: QuoteFormInitial;
   defaults: {
@@ -604,9 +615,11 @@ export function QuoteForm({
                 )}
                 <TaxReductionDocumentProperty
                   customerId={customerId}
+                  type={rot.type}
+                  dwellingType={rotByCustomer?.[customerId]?.housing?.dwellingType}
                   properties={propertiesByCustomer[customerId] ?? []}
                   value={workLocationId}
-                  onChange={setWorkLocationId}
+                  onChange={(id) => setWorkLocationId(id)}
                   onPropertiesChange={(next) =>
                     setPropertiesByCustomer((prev) => ({ ...prev, [customerId]: next }))
                   }
@@ -706,6 +719,22 @@ export interface InvoiceFormInitial {
   richText?: RichTextDoc;
 }
 
+/** Patch vinner fält för fält. Bostadstypen styr vilka fält som gäller. */
+function mergeFormHousing(base?: HousingDetails, patch?: HousingDetails): HousingDetails {
+  const dwellingType = patch?.dwellingType ?? base?.dwellingType;
+  if (dwellingType === "smahus") {
+    return { dwellingType, propertyDesignation: patch?.propertyDesignation || base?.propertyDesignation };
+  }
+  if (dwellingType === "bostadsratt") {
+    return {
+      dwellingType,
+      brfOrgNumber: patch?.brfOrgNumber || base?.brfOrgNumber,
+      apartmentNumber: patch?.apartmentNumber || base?.apartmentNumber,
+    };
+  }
+  return {};
+}
+
 const emptyTaxFields = (): TaxReductionFormValue => ({
   personalIdentityNumber: "",
   workAddress: "",
@@ -745,7 +774,12 @@ export function InvoiceForm({
   lockCustomer?: boolean;
   rotByCustomer?: Record<
     string,
-    { personalIdentityNumber?: string; addressLine?: string; properties?: InvoicePropertyOption[] }
+    {
+      personalIdentityNumber?: string;
+      addressLine?: string;
+      properties?: InvoicePropertyOption[];
+      housing?: HousingDetails;
+    }
   >;
   initial?: InvoiceFormInitial;
   cancelHref: string;
@@ -813,13 +847,32 @@ export function InvoiceForm({
         workAddress: prev.workAddress || row?.addressLine || "",
       };
       if (applyHousing && properties.length === 1) {
-        next.housing = { dwellingType: "smahus", propertyDesignation: properties[0].designation };
+        // Kundens enda bostad, kompletterad med bostadstyp och beteckning från
+        // kundens tidigare ROT-fakturor.
+        next.housing = mergeFormHousing(row?.housing, {
+          dwellingType: "smahus",
+          propertyDesignation: properties[0].designation,
+        });
         setWorkLocationId(properties[0].id);
-      } else if (applyHousing && properties.length !== 1) {
+      } else if (applyHousing) {
+        next.housing = mergeFormHousing(prev.housing, row?.housing);
         setWorkLocationId((current) => (properties.some((property) => property.id === current) ? current : ""));
       }
       return next;
     });
+  }
+
+  /** Fastighetsbeteckningen har en ägare: taxFields.housing. Båda fälten skriver hit. */
+  function setPropertyDesignation(propertyDesignation: string) {
+    setTaxFields((prev) => ({
+      ...prev,
+      housing: { dwellingType: "smahus", propertyDesignation },
+    }));
+  }
+
+  function commitPersonnummer(personalIdentityNumber: string) {
+    if (!customerId) return;
+    void updateCustomerPersonnummerAction(customerId, personalIdentityNumber);
   }
 
   function syncServiceFromPeriod(fields: TaxReductionFormValue) {
@@ -1059,17 +1112,15 @@ export function InvoiceForm({
               <div id="faktura-rot-rut">
               <TaxReductionDocumentProperty
                 customerId={customerId}
+                type={rot.type}
+                dwellingType={taxFields.housing.dwellingType}
                 properties={propertiesByCustomer[customerId] ?? []}
                 value={workLocationId}
-                onChange={(id) => {
+                designation={taxFields.housing.propertyDesignation ?? ""}
+                onDesignationChange={setPropertyDesignation}
+                onChange={(id, designation) => {
                   setWorkLocationId(id);
-                  const selected = (propertiesByCustomer[customerId] ?? []).find((property) => property.id === id);
-                  if (selected?.designation) {
-                    setTaxFieldsAndDates({
-                      ...taxFields,
-                      housing: { dwellingType: "smahus", propertyDesignation: selected.designation },
-                    });
-                  }
+                  if (designation?.trim()) setPropertyDesignation(designation);
                 }}
                 onPropertiesChange={(next) =>
                   setPropertiesByCustomer((prev) => ({ ...prev, [customerId]: next }))
@@ -1082,7 +1133,8 @@ export function InvoiceForm({
                 type={rot.type}
                 value={taxFields}
                 onChange={setTaxFieldsAndDates}
-                properties={propertiesByCustomer[customerId]}
+                onPersonnummerCommit={commitPersonnummer}
+                propertyFieldId="faktura-fastighet-ny"
                 amountSlot={
                   rotLiveTotals ? (
                     <>
