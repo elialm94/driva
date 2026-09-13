@@ -19,10 +19,20 @@ import {
 } from "./invoices/formats";
 import { isEmailFormat } from "./settings-validation";
 import { allocateInboundMailSlug } from "./inbox/inbound-slug";
+import type { ScopeFlag } from "./types";
+import {
+  assessEligibility,
+  companyFormEntryId,
+  newBusinessScope,
+  parseScopeFlags,
+  type CompanyFormAnswer,
+} from "./support/eligibility";
+import { supportEntry } from "./support/matrix";
 
 export const ONBOARDING_FIELD_IDS = {
   name: "ob-name",
   companyForm: "ob-company-form",
+  scope: "ob-scope",
   orgNumber: "ob-orgnr",
   vatNumber: "ob-vat",
   paymentTiming: "ob-payment-timing",
@@ -49,6 +59,8 @@ export type OnboardingValues = {
   name: string;
   /** "ab" | "enskild" | "annan". Tomt = inte valt. */
   companyForm: string;
+  /** Ikryssade omfattningsfrågor (lib/support/eligibility SCOPE_QUESTIONS). Rå text från formuläret. */
+  scopeFlags: string[];
   orgNumber: string;
   vatNumber: string;
   /** "now" | "later". Tomt behandlas som "now" (äldre formulär). */
@@ -74,6 +86,8 @@ export type OnboardingValidation = {
 export type OnboardingPersistInput = {
   name: string;
   companyForm: "ab" | "enskild";
+  /** Svaren mot supportmatrisen – sparas på bolaget så konsulten ser dem. */
+  scopeFlags: ScopeFlag[];
   orgNumber: string;
   vatNumber: string;
   address: string;
@@ -89,6 +103,7 @@ export type OnboardingPersistInput = {
 const FIELD_ORDER: OnboardingField[] = [
   "name",
   "companyForm",
+  "scope",
   "orgNumber",
   "vatNumber",
   "address",
@@ -107,13 +122,24 @@ function isPaymentMethod(value: string): value is OnboardingPaymentMethod {
   return value === "bankgiro" || value === "plusgiro" || value === "bankkonto";
 }
 
+/** Företagsformer som får skapas: matrisen avgör (aktiebolag stöds, enskild firma är konsultfall). */
 export function isSupportedCompanyForm(value: string): value is "ab" | "enskild" {
-  return value === "ab" || value === "enskild";
+  if (value !== "ab" && value !== "enskild") return false;
+  return supportEntry(companyFormEntryId(value)).level !== "unsupported";
 }
 
 /** Ärligt besked när företagsformen inte stöds – vi gissar inte redovisningsregler. */
 export const UNSUPPORTED_COMPANY_FORM_ERROR =
   "Ferva stödjer just nu aktiebolag och enskild firma. Andra företagsformer kan inte skapas ännu.";
+
+/**
+ * Serverns besked när omfattningsfrågorna pekar ut ett ej stött fall.
+ * Samma matris som klienten visar direkt – men klienten kan kringgås.
+ */
+export function unsupportedScopeError(blocking: readonly { label: string }[]): string {
+  if (blocking.length === 0) return "";
+  return `Ferva stöder inte företaget ännu: ${blocking.map((b) => b.label.toLocaleLowerCase("sv")).join("; ")}. Ändra svaren om något blev fel.`;
+}
 
 export function looksLikePhone(value: string): boolean {
   if (/[a-zA-ZåäöÅÄÖ]/.test(value)) return false;
@@ -125,6 +151,7 @@ export function readOnboardingFormData(formData: FormData): OnboardingValues {
   return {
     name: String(formData.get("name") ?? ""),
     companyForm: String(formData.get("companyForm") ?? ""),
+    scopeFlags: formData.getAll("scope").map(String),
     orgNumber: String(formData.get("orgNumber") ?? ""),
     vatNumber: String(formData.get("vatNumber") ?? ""),
     paymentTiming: String(formData.get("paymentTiming") ?? ""),
@@ -156,6 +183,17 @@ export function validateOnboardingFields(input: OnboardingValues): OnboardingVal
     fieldErrors.companyForm = UNSUPPORTED_COMPANY_FORM_ERROR;
   }
   const companyForm: "ab" | "enskild" = isSupportedCompanyForm(companyFormRaw) ? companyFormRaw : "ab";
+
+  // Omfattningsfrågorna mot supportmatrisen. Företagsformen bedöms ovan med
+  // sitt eget fältfel; här stoppar bara de ikryssade ej stödda fallen.
+  const scopeFlags = parseScopeFlags(input.scopeFlags ?? []);
+  const eligibility = assessEligibility({
+    companyForm: (isSupportedCompanyForm(companyFormRaw) ? companyFormRaw : "") as CompanyFormAnswer | "",
+    flags: scopeFlags,
+  });
+  if (eligibility.verdict === "unsupported") {
+    fieldErrors.scope = unsupportedScopeError(eligibility.blocking);
+  }
 
   const orgTrimmed = input.orgNumber.trim();
   if (!orgTrimmed) {
@@ -249,6 +287,7 @@ export function validateOnboardingFields(input: OnboardingValues): OnboardingVal
     values: {
       name,
       companyForm,
+      scopeFlags,
       orgNumber,
       vatNumber,
       address,
@@ -329,6 +368,7 @@ export function companySettingsFromOnboarding(input: OnboardingPersistInput): Co
     defaultVatRate: 25,
     // Inga standardvillkor lagras: nya offerter följer systemtexten och företagets verifieringar.
     inboundMailSlug: allocateInboundMailSlug(profile.name, () => false),
+    scope: newBusinessScope(input.scopeFlags),
   };
 }
 

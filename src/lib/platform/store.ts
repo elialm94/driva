@@ -31,6 +31,7 @@ import type {
   SupportTicket,
   SupportTicketStatus,
   TermsAcceptanceRecord,
+  OfflineMutationReceipt,
 } from "./types";
 
 export class LastSuperAdminError extends Error {
@@ -951,6 +952,84 @@ export async function countEmailEventsSince(sinceIso: string): Promise<{ sent: n
     [sinceIso]
   );
   return { sent: Number(rows[0]?.sent ?? 0), failed: Number(rows[0]?.failed ?? 0) };
+}
+
+/* ------------------------------ offline_mutations ------------------------------ */
+
+function offlineReceiptFromRow(r: SqlRow): OfflineMutationReceipt {
+  return {
+    id: String(r.id),
+    businessId: String(r.business_id),
+    userId: String(r.user_id),
+    idempotencyKey: String(r.idempotency_key),
+    kind: String(r.kind),
+    clientCreatedAt: iso(r.client_created_at),
+    appliedAt: iso(r.applied_at),
+    outcome: r.outcome as OfflineMutationReceipt["outcome"],
+    ...(r.result_ref ? { resultRef: String(r.result_ref) } : {}),
+    ...(r.message ? { message: String(r.message) } : {}),
+  };
+}
+
+/** Tidigare kvitto för samma företag + idempotensnyckel, eller null. */
+export async function findOfflineReceipt(businessId: string, idempotencyKey: string): Promise<OfflineMutationReceipt | null> {
+  if (!isSupabaseMode()) {
+    return (
+      platformRegistry().offlineMutations.find((m) => m.businessId === businessId && m.idempotencyKey === idempotencyKey) ?? null
+    );
+  }
+  const client = await sqlClient();
+  const rows = await client.query(
+    `select * from public.offline_mutations where business_id = $1::uuid and idempotency_key = $2 limit 1`,
+    [businessId, idempotencyKey]
+  );
+  return rows[0] ? offlineReceiptFromRow(rows[0]) : null;
+}
+
+/**
+ * Skriver kvittot. Vid kapplöpning (två enheter synkar samma nyckel samtidigt)
+ * vinner den första raden – den andra får tillbaka det befintliga kvittot.
+ */
+export async function insertOfflineReceipt(rec: OfflineMutationReceipt): Promise<OfflineMutationReceipt> {
+  if (!isSupabaseMode()) {
+    const reg = platformRegistry();
+    const existing = reg.offlineMutations.find((m) => m.businessId === rec.businessId && m.idempotencyKey === rec.idempotencyKey);
+    if (existing) return existing;
+    reg.offlineMutations.push({ ...rec });
+    if (reg.offlineMutations.length > 20_000) reg.offlineMutations.splice(0, reg.offlineMutations.length - 20_000);
+    commitPlatformRegistry();
+    return rec;
+  }
+  const client = await sqlClient();
+  const rows = await client.query(
+    `insert into public.offline_mutations
+       (id, business_id, user_id, idempotency_key, kind, client_created_at, applied_at, outcome, result_ref, message)
+     values ($1,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,$10)
+     on conflict (business_id, idempotency_key) do nothing
+     returning *`,
+    [
+      rec.id,
+      rec.businessId,
+      rec.userId,
+      rec.idempotencyKey,
+      rec.kind,
+      rec.clientCreatedAt,
+      rec.appliedAt,
+      rec.outcome,
+      rec.resultRef ?? null,
+      rec.message ?? null,
+    ]
+  );
+  if (rows[0]) return offlineReceiptFromRow(rows[0]);
+  return (await findOfflineReceipt(rec.businessId, rec.idempotencyKey)) ?? rec;
+}
+
+/** Antal synkade offline-mutationer per företag – för systemvyn (ingen payload). */
+export async function countOfflineReceipts(businessId: string): Promise<number> {
+  if (!isSupabaseMode()) return platformRegistry().offlineMutations.filter((m) => m.businessId === businessId).length;
+  const client = await sqlClient();
+  const rows = await client.query(`select count(*)::int as n from public.offline_mutations where business_id = $1::uuid`, [businessId]);
+  return Number(rows[0]?.n ?? 0);
 }
 
 /* ------------------------------ suggestion_events ------------------------------ */

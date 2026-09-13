@@ -14,7 +14,7 @@ import { bokforingsdatum } from "../accounting/dates";
 import { collectIssueErrors } from "./validate";
 import { invoiceReverseChargeView } from "./document-view";
 import { buyerVatNumber, REVERSE_CHARGE_CONSTRUCTION_NOTE, reverseChargeAppliesTo } from "./reverse-charge";
-import { emptyTestDb, labor, reverseChargeCustomer, testCompany, testCustomer } from "./test-db";
+import { consultantApprovedScope, emptyTestDb, labor, reverseChargeCustomer, testCompany, testCustomer } from "./test-db";
 
 /**
  * Omvänd byggmoms. Reglerna är enkla att beskriva och lätta att bokföra fel:
@@ -25,10 +25,15 @@ import { emptyTestDb, labor, reverseChargeCustomer, testCompany, testCustomer } 
 
 const BYGG_CUSTOMER_ID = "cust-bygg";
 
-function reset() {
+/**
+ * Omvänd byggmoms är ett konsultfall i supportmatrisen (spec §10). Testerna
+ * nedan kör med konsultens godkännande på plats; spärren utan godkännande
+ * testas separat i "hinder vid utfärdande".
+ */
+function reset(settings = testCompany({ scope: consultantApprovedScope("reverse_charge_construction_outgoing") })) {
   replaceDb(
     emptyTestDb({
-      settings: testCompany(),
+      settings,
       customers: [testCustomer(), reverseChargeCustomer()],
     })
   );
@@ -39,7 +44,7 @@ function byggDraft(lines = [labor({ unitPrice: 40_000 })]) {
 }
 
 describe("omvänd byggmoms – markering på kunden", () => {
-  beforeEach(reset);
+  beforeEach(() => reset());
 
   it("gäller bara företagskunder med markeringen satt", () => {
     assert.equal(reverseChargeAppliesTo(reverseChargeCustomer()), true);
@@ -62,7 +67,7 @@ describe("omvänd byggmoms – markering på kunden", () => {
 });
 
 describe("omvänd byggmoms – fakturautkast", () => {
-  beforeEach(reset);
+  beforeEach(() => reset());
 
   it("nollar momsen på raderna och markerar fakturan", () => {
     const invoice = byggDraft();
@@ -100,7 +105,7 @@ describe("omvänd byggmoms – fakturautkast", () => {
 });
 
 describe("omvänd byggmoms – hinder vid utfärdande", () => {
-  beforeEach(reset);
+  beforeEach(() => reset());
 
   function blockers(invoiceId: string) {
     const invoice = getInvoice(invoiceId)!;
@@ -129,10 +134,20 @@ describe("omvänd byggmoms – hinder vid utfärdande", () => {
     invoice.rot = { type: "rot" };
     assert.ok(blockers(invoice.id).includes("reverse_charge_rot"));
   });
+
+  it("spärras tills bolagets redovisningskonsult godkänt konsultfallet", () => {
+    reset(testCompany());
+    const codes = blockers(byggDraft().id);
+    assert.ok(codes.includes("scope_reverse_charge"));
+    assert.throws(() => issueInvoice(byggDraft().id), /konsultfall/);
+    // En vanlig faktura till en vanlig kund berörs inte av spärren.
+    const plain = createInvoice({ customerId: "cust-1", type: "faktura", lines: [labor()], rot: null });
+    assert.equal(blockers(plain.id).includes("scope_reverse_charge"), false);
+  });
 });
 
 describe("omvänd byggmoms – utfärdad faktura", () => {
-  beforeEach(reset);
+  beforeEach(() => reset());
 
   it("fryser markeringen och köparens momsnummer i snapshoten", () => {
     const issued = issueInvoice(byggDraft().id);

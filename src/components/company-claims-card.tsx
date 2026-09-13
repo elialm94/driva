@@ -80,11 +80,15 @@ export function CompanyClaimsCard({ claims, today }: CompanyClaimsCardProps) {
         </p>
       </div>
 
-      <form
+      {/* Ingen <form>: kortet ligger inne i inställningsformuläret (nästlade formulär
+          är ogiltig HTML och ger hydreringsfel). Enter i ett fält sparar bekräftelserna. */}
+      <div
         className="space-y-5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") {
+            e.preventDefault();
+            if (!pending && !blocked) submit();
+          }
         }}
       >
         <fieldset className="space-y-3 rounded-xl border border-line p-4" data-claim="fskatt">
@@ -225,7 +229,7 @@ export function CompanyClaimsCard({ claims, today }: CompanyClaimsCardProps) {
         </fieldset>
 
         <div className="flex flex-wrap items-center gap-3">
-          <button type="submit" className={buttonClasses("primary", "sm")} disabled={pending || blocked} data-claims-save>
+          <button type="button" onClick={submit} className={buttonClasses("primary", "sm")} disabled={pending || blocked} data-claims-save>
             {pending ? "Sparar …" : "Spara bekräftelser"}
           </button>
           {error ? (
@@ -243,7 +247,7 @@ export function CompanyClaimsCard({ claims, today }: CompanyClaimsCardProps) {
             </p>
           ) : null}
         </div>
-      </form>
+      </div>
     </Card>
   );
 }

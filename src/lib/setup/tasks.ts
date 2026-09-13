@@ -17,6 +17,7 @@ import { bankConnectionView } from "../banking/connection-state";
 import { hasCollaborationUsage, resolveOwnerBusinessId, wholesalersEnabled } from "../features";
 import { OPTIONAL_FEATURE_HREF } from "../optional-features";
 import { SETTINGS_HREF } from "../settings-routes";
+import { fSkattVerified, insuranceVerified } from "../company-claims";
 import { IMPORT_HREF } from "./routes";
 
 export type SetupTaskStatus = "todo" | "in_progress" | "done" | "later" | "not_needed";
@@ -64,6 +65,8 @@ export function setupTasks(): SetupTask[] {
   const employeeCount = (data.employees ?? []).filter((e) => e.status === "anstalld").length;
   const hasEmployee = employeeCount > 0;
   const fSkatt = data.settings.fSkattPerMonth;
+  const fSkattClaimed = fSkattVerified(data.settings);
+  const insuranceClaimed = insuranceVerified(data.settings);
 
   const withOverride = (id: SetupTaskId, derived: SetupTaskStatus): SetupTaskStatus => {
     if (derived === "done") return "done";
@@ -177,6 +180,21 @@ export function setupTasks(): SetupTask[] {
       doneDetail: fSkatt > 0 ? `${fSkatt.toLocaleString("sv-SE")} kr/mån` : undefined,
       canDismiss: true,
     },
+    {
+      // Spec §8: "Godkänd för F-skatt" och försäkringstext skrivs bara när
+      // företaget själv bekräftat det. Ett företag som funnits före den regeln
+      // ser här varför raden saknas i sidfoten – och var den slås på igen.
+      id: "company_claims",
+      title: "Bekräfta F-skatt och försäkring",
+      description:
+        "Raden ”Godkänd för F-skatt” och texten om ansvarsförsäkring skrivs på offerter, fakturor och hemsidan bara när du bekräftat uppgifterna här.",
+      status: withOverride("company_claims", fSkattClaimed ? "done" : "todo"),
+      relevance: hasInvoicing ? "recommended" : "optional",
+      href: SETTINGS_HREF.foretag,
+      cta: fSkattClaimed ? "Visa" : "Bekräfta",
+      doneDetail: fSkattClaimed ? (insuranceClaimed ? "F-skatt och ansvarsförsäkring" : "F-skatt") : undefined,
+      canDismiss: true,
+    },
   ];
 
   const visible = tasks.filter((t) => t.relevance !== "hidden");
@@ -195,6 +213,7 @@ function priority(task: SetupTask, ctx: { bookkeeping: OnboardingState["bookkeep
     articles_prices: 55,
     payroll: 65,
     f_skatt: 70,
+    company_claims: ctx.hasInvoicing ? 30 : 75,
   };
   let score = base[task.id];
   if (ctx.bookkeeping === "existing" && task.id === "move_bookkeeping") score = 1;

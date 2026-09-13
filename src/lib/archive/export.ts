@@ -390,11 +390,11 @@ function annualReportNote(status: string, fy: FiscalYear): string {
   ].join("\n");
 }
 
-/** driva-arkiv-2026-20260905.zip – året först, för det är så filer sorteras. */
+/** ferva-arkiv-2026-20260905.zip – året först, för det är så filer sorteras. */
 export function archiveFilename(fy: Pick<FiscalYear, "label">, now = new Date()): string {
   const stamp = now.toISOString().slice(0, 10).replace(/-/g, "");
   const label = fy.label.replace(/[^\w-]/g, "-");
-  return `driva-arkiv-${label}-${stamp}.zip`;
+  return `ferva-arkiv-${label}-${stamp}.zip`;
 }
 
 /** Kort mänsklig sammanfattning för gränssnittet. */

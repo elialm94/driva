@@ -150,9 +150,9 @@ function executionDate(scheduledDate: string): string {
   return wanted < today ? today : wanted;
 }
 
-/** driva-betalningar-2026-08-30.xml, med -2/-3 vid flera filer samma dag. */
+/** ferva-betalningar-2026-08-30.xml, med -2/-3 vid flera filer samma dag. */
 function nextFilename(date: string): string {
-  const base = `driva-betalningar-${date}`;
+  const base = `ferva-betalningar-${date}`;
   const taken = new Set(paymentFiles().map((f) => f.filename));
   if (!taken.has(`${base}.xml`)) return `${base}.xml`;
   for (let n = 2; ; n++) {
@@ -164,7 +164,7 @@ function nextFilename(date: string): string {
 function nextMessageId(now: Date): string {
   const stamp = now.toISOString().replace(/[-:]/g, "").slice(0, 15).replace("T", "-");
   const suffix = uid().replace(/-/g, "").slice(0, 6).toUpperCase();
-  return `DRIVA-${stamp}-${suffix}`;
+  return `FERVA-${stamp}-${suffix}`;
 }
 
 /** EndToEndId/InstrId ur instruktionens id (uuid utan bindestreck ≤ 35 tecken). */

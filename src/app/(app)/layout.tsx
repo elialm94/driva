@@ -13,7 +13,9 @@ import { getNavAttentionCounts } from "@/lib/services/nav-counts";
 import { ensurePageBusiness, getSessionUser, isDemoSession, listMemberships } from "@/lib/auth/session";
 import { isAccountingRole } from "@/lib/collaboration/permissions";
 import { isSupabaseMode } from "@/lib/storage/config";
-import { LOCAL_JSON_BUSINESS_ID } from "@/lib/collaboration/actor";
+import { LOCAL_JSON_BUSINESS_ID, LOCAL_JSON_USER_ID } from "@/lib/collaboration/actor";
+import { PwaRegister } from "@/components/pwa/pwa-register";
+import { ConnectivityStatus } from "@/components/pwa/connectivity-status";
 import { hydrateInvitationsFromTenant } from "@/lib/collaboration/service";
 import { resolveOptionalFeatures } from "@/lib/features";
 import { tenantContext } from "@/lib/storage/context";
@@ -47,6 +49,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const demoBadge = !isSupabaseMode() || demoSession;
   // Abonnemangsbannern: bara skrivskydd och betalningsfel – aldrig provperiodens vardag.
   const billing = await currentBillingAccess(businessId, { demo: demoBadge });
+  // Offline-lagret binds till (företag, användare); demosessioner får ingen
+  // bindning alls – där finns inget att ta med sig ut i fält.
+  const offlineSession = demoSession ? null : { businessId, userId: user?.id ?? LOCAL_JSON_USER_ID };
   return (
     // data-driva-demo: klientgrindar (t.ex. adressförslagens Places-laddare)
     // läser attributet och håller sig till lokala exempeldata i demon.
@@ -80,6 +85,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           <FlashToast />
         </Suspense>
         <LiveRefresh />
+        <PwaRegister session={offlineSession} />
+        <div className="no-print">
+          <ConnectivityStatus />
+        </div>
         {/* Bottenmarginalen rymmer bottennavet + safe area så sista raden aldrig döljs. */}
         {/* Utskriften får inte bära skärmens marginal för menyerna – den är borta. */}
         <main className="pb-[calc(var(--bottom-nav-h)+env(safe-area-inset-bottom)+2.5rem)] lg:pb-16 lg:pl-60 print:p-0">

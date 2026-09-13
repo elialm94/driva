@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { parseLoginAuthSearch } from "@/lib/auth/signup-flow";
 import { LoginForm } from "./login-form";
+import { PwaRegister } from "@/components/pwa/pwa-register";
 
 export const metadata: Metadata = { title: "Logga in – Ferva" };
 export const dynamic = "force-dynamic";
@@ -38,6 +39,8 @@ export default async function LoginPage({
   const demoAvailable = true;
   return (
     <main className="flex min-h-dvh items-center justify-center bg-stone-100 px-4 py-10">
+      {/* Utloggad: allt lokalt offlineinnehåll på enheten rensas (spec §9). */}
+      <PwaRegister session={null} />
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
           <div className="text-2xl font-semibold tracking-tight text-stone-900">Ferva</div>
