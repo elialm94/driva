@@ -18,7 +18,7 @@
  * Klientsäker och ren: inga importer från server- eller lagringslagret.
  */
 
-export const SUPPORT_MATRIX_VERSION = "2026-09-13.1";
+export const SUPPORT_MATRIX_VERSION = "2026-09-13.2";
 
 export type SupportLevel = "supported" | "consultant" | "unsupported";
 
@@ -46,6 +46,7 @@ export type SupportEntryId =
   | "framework_k2"
   | "framework_k3"
   | "market_sweden_sek"
+  | "representation_deduction"
   | "foreign_currency"
   | "eu_sales_export"
   | "margin_scheme"
@@ -181,6 +182,21 @@ export const SUPPORT_MATRIX: readonly SupportEntry[] = [
     effectiveFrom: "2026-09-13",
     owner: OWNER_RULES,
     tests: ["src/lib/financial-invariants.test.ts"],
+  },
+  {
+    id: "representation_deduction",
+    area: "redovisning",
+    label: "Representation: måltider, fika och personalfest",
+    level: "supported",
+    summary:
+      "Måltider vid representation är inte avdragsgilla, men momsen får lyftas efter schablon: 36 kr per person, 46 kr när alkohol ingår, eller momsen på ett underlag om högst 300 kr per person. Enklare förtäring är avdragsgill upp till 60 kr per person. Ferva frågar alltid hur många som deltog och om alkohol ingick innan notan bokförs.",
+    enforcement:
+      "En enda motor räknar uppdelningen: representationSplit i src/lib/expenses/manual-expense.ts. Kategorin ligger utanför EXPENSE_CATEGORIES, entriesExpense vägrar kontera den och autopiloten håller den som REQUIRES_USER oavsett konfidens, så varken banken, kvittoläsningen eller assistenten kan bokföra representation utan bekräftade uppgifter.",
+    source:
+      "Inkomstskattelagen (1999:1229) 16 kap. 2 § (representation, avdragsförbud för måltider och skälig omfattning för enklare förtäring); Mervärdesskattelagen (2023:200) och Skatteverkets ställningstagande om avdrag för ingående skatt vid representationsmåltider (underlag högst 300 kr per person, schablon 36 kr respektive 46 kr per person när alkohol ingår).",
+    effectiveFrom: "2017-01-01",
+    owner: OWNER_RULES,
+    tests: ["src/lib/representation-posting.test.ts", "src/lib/manual-expense.test.ts"],
   },
   {
     id: "foreign_currency",

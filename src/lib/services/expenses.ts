@@ -1,16 +1,29 @@
 import { db, save } from "../store";
 import { uid } from "../ids";
 import type { InboundParsedHint } from "../inbox/inbound-mail";
-import type { BankTransaction, Expense, InboxAttachment, MerchantCategoryRule, Receipt, Verification } from "../types";
+import type {
+  BankTransaction,
+  Expense,
+  InboxAttachment,
+  MerchantCategoryRule,
+  Receipt,
+  RepresentationKind,
+  Verification,
+} from "../types";
 import {
   categoryByKey,
   deductibleVat,
   entriesExpense,
   entriesFromPostingLines,
   guessCategory,
+  isRepresentationCategory,
   EXPENSE_CATEGORIES,
+  REPRESENTATION_ANSWER,
+  REPRESENTATION_CATEGORY_KEY,
 } from "../bas";
+import { expenseCategoryOutcome } from "../autopilot";
 import {
+  REPRESENTATION_ACCOUNTS,
   REPRESENTATION_LABELS,
   planManualExpense,
   settlementAccountFor,
@@ -171,7 +184,10 @@ function schablonPlan(expense: Expense) {
   const d = expense.details ?? {};
   const draft: ManualExpenseDraft = {
     kind: expense.kind,
-    date: expense.date,
+    // Utgiftsdatumet är en dag, men äldre rader (och seeddata) bär en full
+    // tidsstämpel. Planen kräver YYYY-MM-DD, så dagen plockas ut här i
+    // stället för att vägra bokföra raden.
+    date: expense.date.slice(0, 10),
     paidBy: expense.paidBy ?? "privat",
     supplier: expense.supplier,
     amount: expense.amount,
@@ -286,6 +302,87 @@ export function expenseCategoryLabel(expense: Pick<Expense, "kind" | "category" 
   }
 }
 
+/* -------------------------------- Representation ------------------------------- */
+
+/** Slagen i den ordning frågan visar dem (samma fyra som Ny utgift). */
+export const REPRESENTATION_KINDS: readonly RepresentationKind[] = [
+  "kundmaltid",
+  "kundfika",
+  "personalmaltid",
+  "personalfika",
+];
+
+export interface RepresentationAnswer {
+  kind: RepresentationKind;
+  persons: number;
+  alcohol: boolean;
+  participants?: string;
+  purpose?: string;
+}
+
+/**
+ * Representation gissas aldrig. Antal personer och om alkohol ingick går inte
+ * att härleda ur en banktransaktion, och de avgör både vilket konto kostnaden
+ * hamnar på och hur mycket moms som får lyftas. Kategorin är därför
+ * REQUIRES_USER oavsett konfidens (autopilot.ts): frågan ställs, och tills den
+ * är besvarad bokförs ingenting.
+ */
+export function askRepresentationQuestion(expense: Expense): void {
+  expense.status = "behover_svar";
+  expense.question = {
+    text: `${REPRESENTATION_ANSWER} hos ${expense.supplier} (${kr(expense.amount)}): vilken sorts representation var det? Ferva frågar sedan hur många som deltog och om alkohol ingick - det avgör avdraget och momsen.`,
+    options: REPRESENTATION_KINDS.map((k) => REPRESENTATION_LABELS[k].label),
+    form: "representation",
+  };
+}
+
+/**
+ * Svaret på representationsfrågan. Uppgifterna sparas på utgiften och
+ * konteringen räknas fram av samma motor som Ny utgift använder
+ * (planManualExpense → representationSplit), så en nota som kommer in via
+ * banken bokförs rad för rad som en nota som registreras för hand - och
+ * verifikationen bär samma klarspråksförklaring.
+ */
+export function answerRepresentationQuestion(
+  expenseId: string,
+  answer: RepresentationAnswer,
+  by: "anvandare" | "assistent" = "anvandare"
+): Verification {
+  const expense = db().expenses.find((e) => e.id === expenseId);
+  if (!expense) throw new Error("Utgiften finns inte.");
+  if (expense.status === "bokford") throw new Error(`Köpet hos ${expense.supplier} är redan bokfört.`);
+  if (!(answer.kind in REPRESENTATION_ACCOUNTS)) throw new Error("Välj vilken sorts representation det var.");
+  if (!Number.isFinite(answer.persons) || answer.persons < 1) throw new Error("Ange hur många personer som deltog.");
+
+  const participants = answer.participants?.trim();
+  const purpose = answer.purpose?.trim();
+  expense.kind = "representation";
+  // Ett kortköp är betalt från företagskontot; ett privat utlägg behåller sin
+  // skuld till ägaren (2893).
+  expense.paidBy = expense.paidBy ?? "foretagskonto";
+  expense.details = {
+    ...expense.details,
+    representation: {
+      kind: answer.kind,
+      persons: Math.floor(answer.persons),
+      alcohol: Boolean(answer.alcohol),
+      ...(participants ? { participants } : {}),
+      ...(purpose ? { purpose } : {}),
+    },
+  };
+  // Planen kastar utgiftens egna fel på svenska om något saknas.
+  const plan = schablonPlan(expense);
+  if (!plan) throw new Error("Utgiften kunde inte bokföras som representation.");
+  expense.description = plan.description;
+
+  const ver = bookExpense(expense, REPRESENTATION_CATEGORY_KEY, "hog", by);
+  logActivity(`${plan.title} bokfördes med dina uppgifter om deltagare och alkohol.`, {
+    entity: { type: "utgift", id: expense.id },
+  });
+  save();
+  return ver;
+}
+
 /** Ställ inventariefrågan i stället för att bokföra direkt – användaren avgör. */
 export function askAssetQuestion(expense: Expense): void {
   expense.status = "behover_svar";
@@ -384,7 +481,14 @@ export function uploadReceiptForExpense(
       `Kvittot från ${expense.supplier} (${kr(expense.amount)}) ser ut som en inventarie – Ferva frågar hur det ska bokföras.`,
       { entity: { type: "utgift", id: expenseId } }
     );
-  } else if (guess && guess.confidence === "hog") {
+  } else if (guess && isRepresentationCategory(guess.key) && guess.confidence === "hog") {
+    // Kategorin är säker (företagets egen regel) men uppgifterna som styr
+    // avdraget saknas fortfarande - representation bokförs aldrig automatiskt.
+    askRepresentationQuestion(expense);
+    logActivity(`Kvitto från ${expense.supplier} (${kr(expense.amount)}) ser ut som representation - Ferva frågar vilka som deltog.`, {
+      entity: { type: "utgift", id: expenseId },
+    });
+  } else if (guess && expenseCategoryOutcome(guess.key, guess.confidence) === "AUTO_EXECUTE") {
     // Hög säkerhet (egen regel eller känd leverantör) → bokför automatiskt.
     if (!expense.description) expense.description = receipt.extracted.description;
     bookExpense(expense, guess.key, "hog", "auto", guess.reason);
@@ -472,6 +576,17 @@ export function answerExpenseQuestion(
     return;
   }
 
+  // Representationsfrågan går inte att svara på med ett val: utan antal
+  // personer och alkohol finns ingen kontering. Ett ensamt val (även slaget,
+  // "Måltid med kund") ställer alltså om frågan i stället för att bokföra
+  // något - annars hade svaret fallit ned i kategorimatchningen nedan och
+  // hamnat på "Övrigt".
+  if (expense.question?.form === "representation") {
+    askRepresentationQuestion(expense);
+    save();
+    return;
+  }
+
   // Inventariefrågan: användaren avgör om köpet är en tillgång eller kostnad.
   if (answer === "Registrera som inventarie") {
     const asset = registerAssetFromExpense(expenseId, { by: by === "assistent" ? "assistent" : "anvandare" });
@@ -484,12 +599,26 @@ export function answerExpenseQuestion(
   }
   if (answer === "Bokför som vanlig kostnad") {
     const key = guessCategory(expense.supplier)?.key ?? expense.category ?? "verktyg";
+    if (isRepresentationCategory(key)) {
+      askRepresentationQuestion(expense);
+      save();
+      return;
+    }
     if (!expense.description) expense.description = categoryByKey(key).label;
     bookExpense(expense, key, "hog", by === "assistent" ? "assistent" : "anvandare");
     logActivity(
       `Köpet hos ${expense.supplier} (${kr(expense.amount)}) bokfördes som ${categoryByKey(key).label.toLowerCase()} efter ditt val.`,
       { entity: { type: "utgift", id: expenseId } }
     );
+    save();
+    return;
+  }
+
+  // "Kundrepresentation" är inte ett färdigt svar utan början på ett: notan kan
+  // inte konteras förrän slag, antal personer och alkohol är bekräftade. Svaret
+  // byter alltså frågan i stället för att bokföra något.
+  if (isRepresentationCategory(answer)) {
+    askRepresentationQuestion(expense);
     save();
     return;
   }
@@ -701,7 +830,11 @@ export function createExpenseFromKnownReceipt(input: {
 
   const guess = categorizeMerchant(supplier);
   let autoBooked = false;
-  if (guess && guess.confidence === "hog" && !assetSuggestionForExpense({ ...expense, category: guess.key })) {
+  if (
+    guess &&
+    expenseCategoryOutcome(guess.key, guess.confidence) === "AUTO_EXECUTE" &&
+    !assetSuggestionForExpense({ ...expense, category: guess.key })
+  ) {
     if (!expense.description) expense.description = receipt.extracted.description;
     receipt.extracted.category = guess.key;
     receipt.extracted.confidence = "hog";

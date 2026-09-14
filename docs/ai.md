@@ -67,6 +67,18 @@ Rå bokföringsmutation, manuell fakturanumrering, radering av bokförda poster,
 SQL och auth-/adminoperationer finns inte som verktyg alls – modellen kan inte
 anropa det som inte exponeras.
 
+**Representation kan modellen inte bokföra, inte ens med bekräftelse.**
+Riskklasserna är oförändrade: `book_expense` är `CONFIRM_REQUIRED` och
+`answer_expense_question` är fortfarande `FORBIDDEN_FOR_AI`. Men avdraget och
+momsen vid representation beror på antal personer och om alkohol ingick, och
+det står varken i banktransaktionen eller på kvittoraden. Att gissa vore att
+bestämma både konto (6071/7631 mot 6072/7632) och hur mycket moms som lyfts,
+så `requestBookExpense` (`src/lib/ai/domain.ts`) vägrar kategorin - inget
+bekräftelsekort skapas - och hänvisar till formuläret under
+Ekonomi → Utgifter, där uppgifterna fylls i för hand. Samma regel i
+autopiloten: kategorin är `REQUIRES_USER` oavsett konfidens
+(`NEVER_AUTO_EXPENSE_CATEGORIES`). Test: `src/lib/representation-posting.test.ts`.
+
 ## Påminnelser (persisterade, ur naturligt språk)
 
 "Påminn mig att ringa Göran på onsdag" och "Skapa en påminnelse att ringa

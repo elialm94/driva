@@ -53,6 +53,13 @@ export const REPRESENTATION_ACCOUNTS: Record<RepresentationKind, { deductible: n
   personalfika: { deductible: 7631, nonDeductible: 7632 },
 };
 
+/**
+ * Svaret i bokföringsfrågan som betyder representation - och etiketten på
+ * utgiftskategorin i bas.ts. En sanning, och den bor här i den rena modulen
+ * så att både servern och klienten kan känna igen svaret.
+ */
+export const REPRESENTATION_ANSWER = "Kundrepresentation";
+
 export const REPRESENTATION_LABELS: Record<RepresentationKind, { label: string; hint: string }> = {
   kundmaltid: { label: "Måltid med kund", hint: "Lunch, middag eller kvällsmat med kund eller leverantör" },
   kundfika: { label: "Fika med kund", hint: "Kaffe, bulle, smörgås – enklare förtäring som inte ersätter en måltid" },

@@ -1472,7 +1472,12 @@ export interface Expense {
   receiptId?: ID;
   bankTransactionId?: ID;
   status: ExpenseStatus;
-  question?: { text: string; options: string[] };
+  /**
+   * Bokföringsfrågan. `form` betyder att ett val inte räcker: representation
+   * behöver också antal personer och om alkohol ingick innan den kan konteras,
+   * så svaret lämnas i ett eget formulär (services/expenses.ts).
+   */
+  question?: { text: string; options: string[]; form?: "representation" };
   verificationId?: ID;
   createdAt: string;
   paidBy?: ExpensePaidBy;

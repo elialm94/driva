@@ -50,6 +50,12 @@ import {
 } from "@/app/actions";
 import { declareVatPeriodAction, markExpensePrivateAction } from "@/app/bokforing-actions";
 import { PRIVATE_ANSWER } from "@/lib/banking/merchants";
+import {
+  RepresentationAnswerDialog,
+  isRepresentationOption,
+  representationKindFromOption,
+} from "./representation-answer";
+import type { RepresentationKind } from "@/lib/types";
 import type { DecisionCard } from "@/lib/services/decision-cards";
 import { closeAllReadyMonthsAction } from "@/app/periodstangning-actions";
 import { RECEIPT_MAX_BYTES, receiptUploadForm } from "@/lib/receipts/read-file";
@@ -528,6 +534,8 @@ export function AttentionRow({
   const [howOpen, setHowOpen] = useState(false);
   // "Använd samma val nästa gång?" – regeln sparas bara när rutan är ikryssad.
   const [rememberAnswer, setRememberAnswer] = useState(true);
+  // Representation svaras i ett eget steg: antal personer och alkohol saknas.
+  const [representation, setRepresentation] = useState<{ kind?: RepresentationKind } | null>(null);
   const [undoing, setUndoing] = useState(false);
   // Skapad bankfil: raden är löst men nedladdningen ska vara ett klick bort.
   const [createdFile, setCreatedFile] = useState<{ fileId: string; filename: string } | null>(null);
@@ -934,17 +942,35 @@ export function AttentionRow({
                       data-choice-index={oi + 1}
                       className={cx(buttonClasses("secondary", "sm"), compact ? "h-8 text-[12px]" : "max-lg:min-h-11")}
                       disabled={isPending}
-                      onClick={() =>
+                      onClick={() => {
+                        // Representation bokförs aldrig på ett klick - först
+                        // frågan om deltagare och alkohol.
+                        if (isRepresentationOption(opt)) {
+                          setRepresentation({ kind: representationKindFromOption(opt) });
+                          return;
+                        }
                         run(
                           () => answerExpenseQuestionAction(cta.expenseId, opt, { remember: rememberAnswer }),
                           rememberAnswer && opt !== PRIVATE_ANSWER ? "Bokfört – Ferva föreslår samma sak nästa gång" : "Bokfört"
-                        )
-                      }
+                        );
+                      }}
                     >
                       {opt}
                     </button>
                   ))
               : null}
+            {cta?.type === "answerQuestion" && representation ? (
+              <RepresentationAnswerDialog
+                expenseId={cta.expenseId}
+                open
+                initialKind={representation.kind}
+                onClose={() => setRepresentation(null)}
+                onBooked={() => {
+                  finish("Bokfört");
+                  router.refresh();
+                }}
+              />
+            ) : null}
             {cta?.type === "answerQuestion" && decision && !compact ? (
               <label className="flex w-full items-center gap-2 text-[12.5px] text-muted">
                 <input

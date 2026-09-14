@@ -182,8 +182,10 @@ import { dismissInboxPurchaseMatch, linkInboxDocumentToPurchaseOrder } from "@/l
 import { paySupplierInvoice, simulateIncomingPayment } from "@/lib/services/banking";
 import {
   answerExpenseQuestion,
+  answerRepresentationQuestion,
   expenseAwaitingReceipt,
   uploadReceiptForExpense,
+  type RepresentationAnswer,
 } from "@/lib/services/expenses";
 import { normalizeMerchant, PRIVATE_ANSWER } from "@/lib/banking/merchants";
 import { recordSuggestionDecision } from "@/lib/services/suggestion-log";
@@ -1744,6 +1746,28 @@ export async function answerExpenseQuestionAction(expenseId: string, answer: str
       });
     }
   }, { capability: "categorize" });
+}
+
+/**
+ * Svaret på representationsfrågan: slag, antal personer och om alkohol ingick.
+ * Uppgifterna går inte att härleda ur banken, så de kommer alltid härifrån -
+ * bokföringen räknas sedan av samma motor som Ny utgift använder. Beslutet
+ * loggades redan när användaren svarade "Kundrepresentation" på den första
+ * frågan, så det loggas inte en gång till här.
+ */
+export async function answerRepresentationQuestionAction(expenseId: string, answer: RepresentationAnswer) {
+  try {
+    return await withBusiness(
+      async () => {
+        answerRepresentationQuestion(expenseId, answer, "anvandare");
+        refresh();
+        return { ok: true as const };
+      },
+      { capability: "categorize" }
+    );
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : "Kunde inte bokföra representationen." };
+  }
 }
 
 export type ManualExpenseActionResult =

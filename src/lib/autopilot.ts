@@ -42,6 +42,33 @@ export function decideFromConfidence(confidence: number): Exclude<AutopilotOutco
   return "REQUIRES_USER";
 }
 
+/**
+ * Utgiftskategorier som ALDRIG bokförs automatiskt, oavsett konfidens.
+ *
+ * Representation hör hit av samma skäl som överbetalningar och delvisa
+ * ROT/RUT-utbetalningar: utfallet beror på uppgifter som bara människan har.
+ * Antal personer och om alkohol ingick står varken i banktransaktionen eller
+ * på kvittoraden, och de avgör både avdraget (6071/7631 mot 6072/7632) och
+ * hur mycket moms som får lyftas. En inlärd leverantörsregel gör kategorin
+ * säker men inte uppgifterna - därför är representation REQUIRES_USER tills
+ * frågan är besvarad.
+ */
+export const NEVER_AUTO_EXPENSE_CATEGORIES: readonly string[] = ["representation"];
+
+/**
+ * Utfallet för en kategoriserad utgift. Kategorins regel går före konfidensen:
+ * en kategori i listan ovan blir alltid REQUIRES_USER.
+ */
+export function expenseCategoryOutcome(
+  categoryKey: string,
+  confidence: Verification["confidence"]
+): Exclude<AutopilotOutcome, "BLOCKED"> {
+  if (NEVER_AUTO_EXPENSE_CATEGORIES.includes(categoryKey)) return "REQUIRES_USER";
+  if (confidence === "hog") return "AUTO_EXECUTE";
+  if (confidence === "medel") return "SUGGEST";
+  return "REQUIRES_USER";
+}
+
 /** Verifikationens tregradiga konfidens ur den numeriska. */
 export function verificationConfidence(confidence: number): Verification["confidence"] {
   if (confidence >= CONFIDENCE_THRESHOLDS.AUTO) return "hog";

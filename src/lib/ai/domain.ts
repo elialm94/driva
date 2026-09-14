@@ -36,6 +36,7 @@ import {
   taxReductionMissingFields,
   detailsFromPrefill,
 } from "../services/tax-reduction";
+import { isRepresentationCategory } from "../bas";
 import { maskPersonnummer } from "../personnummer";
 import { businessStats, financeOverview, momsForCurrentPeriod } from "../services/finance";
 import {
@@ -1003,6 +1004,14 @@ export function requestPublishWebsite(): DomainResult {
 export function requestBookExpense(input: { expenseId: string; category: string; jobId?: string }): DomainResult {
   const expense = db().expenses.find((e) => e.id === input.expenseId);
   if (!expense) return fail("Köpet finns inte.");
+  // Representation kan inte bekräftas som en kategori: avdraget och momsen
+  // beror på antal personer och om alkohol ingick, och det får modellen aldrig
+  // gissa. Frågan ställs i appen, där uppgifterna fylls i för hand.
+  if (isRepresentationCategory(input.category)) {
+    return fail(
+      "Representation kan inte bokföras här. Antal personer och om alkohol ingick avgör avdraget och momsen, och de uppgifterna måste fyllas i under Ekonomi → Utgifter. Inget sparades."
+    );
+  }
   const action: PendingAssistantAction = {
     id: uid(),
     type: "bokfor_utgift",
