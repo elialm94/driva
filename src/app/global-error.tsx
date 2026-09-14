@@ -2,6 +2,7 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
+import { FervaMark } from "@/components/ferva-mark";
 
 /**
  * Ersätter Next.js inbyggda engelska "This page couldn't load".
@@ -45,6 +46,11 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
             boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
           }}
         >
+          {/* Rotlayouten är ersatt här, så appens CSS är inte laddad. FervaMark
+              sätter storleken som attribut och klarar sig utan stilmall. */}
+          <div style={{ marginBottom: 12 }}>
+            <FervaMark size={28} label="Ferva" />
+          </div>
           <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.02em" }}>
             Sidan kunde inte laddas
           </h1>

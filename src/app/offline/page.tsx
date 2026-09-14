@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { buttonClasses } from "@/components/ui-classes";
+import { FervaMark } from "@/components/ferva-mark";
 
 export const metadata: Metadata = { title: "Ingen anslutning" };
 
@@ -15,9 +16,8 @@ export const dynamic = "force-static";
 export default function OfflinePage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-6 py-12">
-      <div className="flex size-12 items-center justify-center rounded-2xl bg-ink text-canvas text-xl font-semibold" aria-hidden>
-        F
-      </div>
+      {/* Inline SVG, så märket finns även när sidan visas helt utan nät. */}
+      <FervaMark size={48} />
       <div className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight text-ink">Ingen anslutning</h1>
         <p className="text-soft">

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { parseLoginAuthSearch } from "@/lib/auth/signup-flow";
 import { LoginForm } from "./login-form";
 import { PwaRegister } from "@/components/pwa/pwa-register";
+import { FervaMark } from "@/components/ferva-mark";
 
 export const metadata: Metadata = { title: "Logga in – Ferva" };
 export const dynamic = "force-dynamic";
@@ -43,7 +44,10 @@ export default async function LoginPage({
       <PwaRegister session={null} />
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <div className="text-2xl font-semibold tracking-tight text-stone-900">Ferva</div>
+          <div className="flex items-center justify-center gap-2">
+            <FervaMark size={28} />
+            <span className="text-2xl font-semibold tracking-tight text-stone-900">Ferva</span>
+          </div>
           <p className="mt-1 text-sm text-stone-500">
             {next.startsWith("/inbjudan")
               ? "Logga in eller skapa konto för att acceptera inbjudan."

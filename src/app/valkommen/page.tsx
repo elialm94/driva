@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { HomePreview } from "@/components/home-preview";
+import { FervaMark } from "@/components/ferva-mark";
 
 /**
  * Fervas publika landningssida.
@@ -66,7 +67,8 @@ export default function LandingPage() {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-5 py-5 sm:px-8">
-        <Link href="/" className="text-xl font-semibold tracking-tight">
+        <Link href="/" className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+          <FervaMark size={30} />
           Ferva
         </Link>
         <nav className="flex items-center gap-2 sm:gap-3">
@@ -163,7 +165,10 @@ export default function LandingPage() {
 
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 px-5 py-8 text-sm text-muted sm:flex-row sm:px-8">
-          <span className="font-semibold tracking-tight text-soft">Ferva</span>
+          <span className="flex items-center gap-2 font-semibold tracking-tight text-soft">
+            <FervaMark size={22} />
+            Ferva
+          </span>
           <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
             <a href="/integritet" className="transition-colors hover:text-ink">
               Integritetspolicy

@@ -7,6 +7,7 @@ import { termsGateContent, termsGateStatus } from "@/lib/legal/acceptance";
 import { formatSwedishDate } from "@/lib/legal/documents";
 import { isSupabaseMode } from "@/lib/storage/config";
 import { AcceptTermsForm } from "./accept-form";
+import { FervaMark } from "@/components/ferva-mark";
 
 export const metadata: Metadata = { title: "Godkänn villkoren – Ferva" };
 export const dynamic = "force-dynamic";
@@ -35,7 +36,10 @@ export default async function GodkannVillkorPage(props: { searchParams: Promise<
     <main className="min-h-dvh bg-canvas px-4 py-10 text-ink sm:px-6 sm:py-16">
       <div className="mx-auto w-full max-w-lg">
         <div className="mb-6 flex items-center justify-between">
-          <span className="text-[15px] font-semibold tracking-tight">Ferva</span>
+          <span className="flex items-center gap-2">
+            <FervaMark size={24} />
+            <span className="text-[15px] font-semibold tracking-tight">Ferva</span>
+          </span>
           <span className="text-[13px] text-muted">{user.email}</span>
         </div>
         <h1 className="text-[26px] font-semibold tracking-tight">

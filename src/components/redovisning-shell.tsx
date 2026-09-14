@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ListTodo, Settings } from "lucide-react";
 import { ClientSwitcher } from "./client-switcher";
+import { FervaMark } from "./ferva-mark";
 import { CreateAccountRow } from "./demo-controls";
 import { DemoMenu } from "./demo-menu";
 import { LogoutRow } from "./logout-button";
@@ -36,9 +37,7 @@ export function RedovisningSidebar({
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-line bg-card/70 backdrop-blur-xl lg:flex">
       <Link href="/redovisning" className="flex items-center gap-2.5 px-6 pt-7 pb-6">
-        <span className="flex size-8 items-center justify-center rounded-[10px] bg-ink text-[13px] font-bold text-white">
-          R
-        </span>
+        <FervaMark size={32} label="Ferva" />
         <span className="text-[17px] font-semibold tracking-tight">Redovisning</span>
       </Link>
 

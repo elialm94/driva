@@ -1,16 +1,39 @@
 import { datumLang, kr } from "../format";
 import { documentFromCompanySubject, reminderFromCompanySubject } from "./rubrik";
 import { paymentBlockHtml, paymentBlockText } from "../invoices/payment-copy";
+import { configuredAppOrigin } from "../app-origin";
 
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 }
 
+/** Märkets storlek i mejlkromen. Sätts som attribut, se fervaMarkImg. */
+const MARK_PX = 36;
+
+/**
+ * Fervas märke i mejl.
+ *
+ * PNG, inte SVG: Gmail och Outlook blockerar SVG. Absolut URL, eftersom ett
+ * mejl inte har någon bas att lösa relativa sökvägar mot. Bredd och höjd sätts
+ * som attribut och inte bara i CSS - Outlook ignorerar CSS-måtten och
+ * kollapsar då bilden.
+ *
+ * Utan konfigurerat ursprung blir det ingen bild alls. Ett mejl med en trasig
+ * bildikon är sämre än ett mejl utan bild, och en påhittad URL är värst.
+ */
+export function fervaMarkImg(): string {
+  const origin = configuredAppOrigin();
+  if (!origin) return "";
+  return `<img src="${escapeHtml(`${origin}/icons/icon-192.png`)}" width="${MARK_PX}" height="${MARK_PX}" alt="Ferva" style="display:block;border:0;outline:none;text-decoration:none;width:${MARK_PX}px;height:${MARK_PX}px;border-radius:9px;">`;
+}
+
 export function emailLayout(opts: { title: string; bodyHtml: string; footer: string }): string {
+  const mark = fervaMarkImg();
   return `<!DOCTYPE html>
 <html lang="sv">
 <body style="margin:0;padding:0;background:#f6f5f2;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;color:#1a1916;">
   <div style="max-width:560px;margin:24px auto;padding:28px 24px;background:#fff;border-radius:16px;border:1px solid #e8e4dc;">
+    ${mark ? `<div style="margin:0 0 14px;">${mark}</div>` : ""}
     <p style="margin:0 0 20px;font-size:13px;letter-spacing:0.04em;text-transform:uppercase;color:#6b665c;">${escapeHtml(opts.title)}</p>
     ${opts.bodyHtml}
     <p style="margin:28px 0 0;font-size:13px;line-height:1.5;color:#6b665c;">${escapeHtml(opts.footer)}</p>
