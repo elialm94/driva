@@ -659,13 +659,19 @@ function membershipNeedsTouch(lastActiveAt: string | undefined): boolean {
   return Date.now() - last > TOUCH_ACTIVE_MIN_INTERVAL_MS;
 }
 
-type PageTenantBind = {
-  state: DB;
+type PageTenantAuth = {
   businessId: string;
   actor?: CollaborationActor | null;
 };
 
-const loadPageBusiness = cache(async (businessId?: string): Promise<PageTenantBind> => {
+/**
+ * Auth/aktör per request. Medvetet UTAN tenantstate: React cache() överlever
+ * mutation → revalidatePath i samma request, och en träff med snapshot från
+ * FÖRE skrivningen gör att db() saknar den nya kunden/offerten – sidan
+ * kastar (digest 2257671986 / 1604772405 / 799493896 / 335868433).
+ * loadStateSnapshot är redan medvetet inte React-cachad av samma skäl.
+ */
+const loadPageBusinessAuth = cache(async (businessId?: string): Promise<PageTenantAuth> => {
   const { user, businessId: sessionId, role, memberships } = businessId
     ? await (async () => {
         const user = await requireUser();
@@ -676,7 +682,6 @@ const loadPageBusiness = cache(async (businessId?: string): Promise<PageTenantBi
       })()
     : await requireBusiness();
   const id = businessId ?? sessionId;
-  const state = await loadStateSnapshot(id);
   const actor = labelSupportActor(actorFrom(user, id, role), await activeSupportContext().catch(() => null));
   if (isAccountingRole(role)) {
     // Debouncad aktivitetsstämpel: "aktiv idag"-indikatorn behöver inte en
@@ -690,19 +695,13 @@ const loadPageBusiness = cache(async (businessId?: string): Promise<PageTenantBi
       }
     }
   }
-  return { state, businessId: id, actor };
+  return { businessId: id, actor };
 });
 
-/**
- * Demosessionens sidladdning: sessionens filtillstånd. Bindningen till
- * request-cellen sker i ensurePageBusiness – inte här – så en cached träff
- * efter revalidatePath fortfarande skriver den cell db() läser.
- */
-const loadDemoPage = cache(async (sessionId: string): Promise<PageTenantBind> => {
+const loadDemoPageAuth = cache(async (sessionId: string): Promise<PageTenantAuth> => {
   const user = await requireUser();
   const businessId = demoBusinessIdFor(sessionId);
   return {
-    state: await ensureDemoSessionState(sessionId),
     businessId,
     actor: actorFrom(user, businessId, await demoSessionRole()),
   };
@@ -711,18 +710,21 @@ const loadDemoPage = cache(async (sessionId: string): Promise<PageTenantBind> =>
 export async function ensurePageBusiness(): Promise<void> {
   const demoId = await demoRequestSessionId();
   if (demoId) {
-    bindRequestTenant(await loadDemoPage(demoId));
+    const auth = await loadDemoPageAuth(demoId);
+    bindRequestTenant({ ...auth, state: await ensureDemoSessionState(demoId) });
     return;
   }
   if (!isSupabaseMode()) return;
-  bindRequestTenant(await loadPageBusiness());
+  const auth = await loadPageBusinessAuth();
+  bindRequestTenant({ ...auth, state: await loadStateSnapshot(auth.businessId) });
 }
 
 export async function ensureAccountantPage(businessId: string): Promise<void> {
   const access = await requireAccountingAccess(businessId);
   const demoId = await demoRequestSessionId();
   if (demoId) {
-    bindRequestTenant(await loadDemoPage(demoId));
+    const auth = await loadDemoPageAuth(demoId);
+    bindRequestTenant({ ...auth, state: await ensureDemoSessionState(demoId) });
     return;
   }
   if (!isSupabaseMode()) {
@@ -730,32 +732,32 @@ export async function ensureAccountantPage(businessId: string): Promise<void> {
     touchLastActive(access.user.id, access.businessId);
     return;
   }
-  bindRequestTenant(await loadPageBusiness(access.businessId));
+  const auth = await loadPageBusinessAuth(access.businessId);
+  bindRequestTenant({ ...auth, state: await loadStateSnapshot(auth.businessId) });
 }
 
-const loadPublicPage = cache(async (kind: PublicTokenKind, token: string): Promise<PageTenantBind | null> => {
-  const resolved = await resolvePublicToken(kind, token);
-  if (!resolved) return null;
-  return { state: await loadStateSnapshot(resolved.businessId), businessId: resolved.businessId };
+const resolveCachedPublicToken = cache(async (kind: PublicTokenKind, token: string) => {
+  return resolvePublicToken(kind, token);
 });
 
-const loadDemoPublicPage = cache(async (sessionId: string): Promise<PageTenantBind> => {
-  return {
-    state: await ensureDemoSessionState(sessionId),
-    businessId: demoBusinessIdFor(sessionId),
-  };
+const loadDemoPublicPageAuth = cache(async (sessionId: string): Promise<PageTenantAuth> => {
+  return { businessId: demoBusinessIdFor(sessionId) };
 });
 
 export async function ensurePublicPage(kind: PublicTokenKind, token: string): Promise<boolean> {
   const demoId = await demoRequestSessionId();
   if (demoId && demoStateHasToken(await ensureDemoSessionState(demoId), kind, token)) {
-    bindRequestTenant(await loadDemoPublicPage(demoId));
+    const auth = await loadDemoPublicPageAuth(demoId);
+    bindRequestTenant({ ...auth, state: await ensureDemoSessionState(demoId) });
     return true;
   }
   if (!isSupabaseMode()) return true;
-  const loaded = await loadPublicPage(kind, token);
-  if (!loaded) return false;
-  bindRequestTenant(loaded);
+  const resolved = await resolveCachedPublicToken(kind, token);
+  if (!resolved) return false;
+  bindRequestTenant({
+    businessId: resolved.businessId,
+    state: await loadStateSnapshot(resolved.businessId),
+  });
   return true;
 }
 

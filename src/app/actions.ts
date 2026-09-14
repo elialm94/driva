@@ -1041,11 +1041,9 @@ export async function createPartInvoiceAction(quoteId: string, partIndex: number
 }
 
 export async function createInvoiceAction(input: InvoiceInput, nav?: ReturnNav): Promise<never> {
-  return withBusiness((): never => {
-    const inv = createInvoice(input);
-    refresh();
-    redirect(hrefWithNav(`/ekonomi/fakturor/${inv.id}`, nav));
-  });
+  const invoiceId = await withBusiness(() => createInvoice(input).id);
+  refresh();
+  redirect(hrefWithNav(`/ekonomi/fakturor/${invoiceId}`, nav));
 }
 
 export async function updateInvoiceAction(
@@ -1053,11 +1051,9 @@ export async function updateInvoiceAction(
   input: InvoiceUpdateInput,
   nav?: ReturnNav
 ): Promise<never> {
-  return withBusiness((): never => {
-    const inv = updateInvoice(invoiceId, input);
-    refresh();
-    redirect(hrefWithNav(`/ekonomi/fakturor/${inv.id}`, nav));
-  });
+  const id = await withBusiness(() => updateInvoice(invoiceId, input).id);
+  refresh();
+  redirect(hrefWithNav(`/ekonomi/fakturor/${id}`, nav));
 }
 
 export async function sendInvoiceAction(
