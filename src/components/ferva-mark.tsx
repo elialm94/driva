@@ -8,7 +8,8 @@ import { cx } from "./ui";
  * Förväxla inte med CompanyLogo (src/components/company-logo.tsx) - den visar
  * kundens egen logga. FervaMark är alltid Ferva som avsändare. Använd inte
  * märket på publika kunddokument (/offert, /faktura, /andring, /uppdrag-kund)
- * eller deras PDF:er – och inte i rotens error.tsx, som följer med i RSC.
+ * eller deras PDF:er – och inte i rotens error.tsx / not-found.tsx, som
+ * följer med i RSC.
  *
  * Geometrin nedan är samma som i public/brand/ferva-market.svg respektive
  * ferva-market-mono.svg. SVG-filerna är källan; ferva-mark.test.ts faller om

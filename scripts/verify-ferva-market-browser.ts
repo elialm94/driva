@@ -140,13 +140,31 @@ async function main() {
     await page.setViewport(vp);
     const res = await page.goto(`${BASE}/finns-inte-alls`, { waitUntil: "networkidle0" });
     await ok(`404 ${label}: status 404`, res?.status() === 404, `status=${res?.status()}`);
-    await ok(`404 ${label}: märket finns`, (await markCount()) === 1);
+    await ok(
+      `404 ${label}: ingen FervaMark (läcker annars in i RSC på /offert)`,
+      (await markCount()) === 0,
+      `${await markCount()}`
+    );
     await ok(
       `404 ${label}: svensk text`,
       await page.evaluate(() => document.body.innerText.includes("Sidan finns inte"))
     );
     await shot(label === "desktop" ? "07-404-desktop" : "08-404-375");
   }
+
+  // 5b. Publikt kunddokument: avsändaren är företaget, inte Ferva.
+  await page.setViewport(DESKTOP);
+  await page.goto(`${BASE}/offert/demo-anna-kok`, { waitUntil: "networkidle0" });
+  await ok("offert publik: ingen FervaMark", (await markCount()) === 0, `${await markCount()}`);
+  await ok(
+    "offert publik: ingen produktfot",
+    await page.evaluate(() => !document.body.innerText.includes("Skickad med Ferva"))
+  );
+  await ok(
+    "offert publik: företagskontakt",
+    await page.evaluate(() => document.body.innerText.includes("Frågor? Kontakta") && document.body.innerText.includes("Södermalms"))
+  );
+  await shot("07b-offert-publik");
 
   // 6. Offlinesidan – märket ska vara inline SVG, inte en bokstav.
   await page.setViewport(MOBILE);

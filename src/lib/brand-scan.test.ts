@@ -225,10 +225,16 @@ describe("varumärke: Ferva överallt där en användare ser det", () => {
     assert.match(authError, /<FervaMark\b/, "auth-felgränsen ska fortfarande bära FervaMark");
 
     const rootError = readFileSync(path.join(ROOT, "src/app/error.tsx"), "utf8");
+    const rootNotFound = readFileSync(path.join(ROOT, "src/app/not-found.tsx"), "utf8");
     assert.doesNotMatch(
       rootError,
       /<FervaMark\b|from\s+["']@\/components\/ferva-mark["']/,
       "rotens error.tsx följer med i RSC på publika tokenytor – ingen FervaMark där"
+    );
+    assert.doesNotMatch(
+      rootNotFound,
+      /<FervaMark\b|from\s+["']@\/components\/ferva-mark["']/,
+      "rotens not-found.tsx inlinas i RSC på /offert/[token] – ingen FervaMark där"
     );
   });
 
