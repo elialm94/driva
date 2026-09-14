@@ -2,14 +2,13 @@
 
 import { useEffect } from "react";
 import { logoutAction } from "@/app/auth-actions";
+import { FervaMark } from "@/components/ferva-mark";
 
 /**
- * Rotens felgräns. Ingen FervaMark här: komponenten följer med i RSC-svaret
- * för varje sida under rotlayouten, inklusive publika kunddokument där
- * avsändaren är kundens företag. Auth har egen error.tsx med märket;
- * (app) har sin kortyta inne i skalet.
+ * Felgräns för inloggning och konto. Ferva är avsändare här – till skillnad
+ * från publika kunddokument, som inte får bära märket.
  */
-export default function Error({
+export default function AuthError({
   error,
   retry,
 }: {
@@ -23,6 +22,7 @@ export default function Error({
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center bg-stone-100 px-4 py-10">
       <div className="w-full max-w-sm rounded-2xl border border-stone-200 bg-white p-6 text-center shadow-sm">
+        <FervaMark size={28} label="Ferva" className="mx-auto mb-3" />
         <h1 className="text-lg font-semibold tracking-tight text-stone-900">Sidan kunde inte laddas</h1>
         <p className="mt-2 text-sm text-stone-500">
           Något gick fel när sidan hämtades. Ladda om, eller logga ut och prova igen.

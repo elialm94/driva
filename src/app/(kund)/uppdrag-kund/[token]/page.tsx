@@ -5,6 +5,7 @@ import { db } from "@/lib/store";
 import { customerShareView, getJobByShareToken } from "@/lib/services/customer-share";
 import { datumLang, datumNumeriskt, datumTid, kr } from "@/lib/format";
 import { CompanyLogo } from "@/components/company-logo";
+import { PublicDocumentFooter } from "@/components/public-document-chrome";
 import { ensurePublicPage } from "@/lib/auth/session";
 import { buttonClasses } from "@/components/ui";
 
@@ -217,9 +218,7 @@ export default async function CustomerJobPage(props: PageProps<"/uppdrag-kund/[t
           ) : null}
         </div>
 
-        <p className="mt-8 text-center text-[12px] text-muted">
-          Delad med Ferva · Frågor? Kontakta {seller.name} på {seller.email}
-        </p>
+        <PublicDocumentFooter sellerName={seller.name} sellerEmail={seller.email} className="mt-8" />
         <div className="h-10" />
       </main>
     </div>
