@@ -13,10 +13,10 @@ Kryssa bara det som är verifierat i **produktion**. Kommandon körs från repo-
 | --- | --- | --- | --- |
 | A1 | Sex grindar gröna på `main` | `npm run typecheck && npm run lint && npm test && npm run test:db && npm run test:adapter && npm run build` (samma som `.github/workflows/ci.yml`) | 0 fel i alla sex; CI grön på senaste commit |
 | A2 | Migrationssekvensen appliceras från noll | `npm run test:db` skriver *Applicerade N migrationer* och listar filerna i versionsordning; `src/lib/storage/schema-version.test.ts` låser `EXPECTED_MIGRATION_VERSION` mot katalogen | Ingen dubblerad version, sista fil = konstanten |
-| A3 | Produktionsdatabasen har alla migrationer | Bygget kör `supabase db push --include-all` före `next build` (`scripts/vercel-build.sh`, kräver `SUPABASE_MIGRATION_DB_URL` i Vercel Production-scope – se B9); därefter `GET /api/health` | Byggloggen visar *Migrations up to date*, inte *WARNING: SUPABASE_MIGRATION_DB_URL is not set*; `warnings[]` utan `migrations_behind`; `/admin/system` → *Migrationer*: DB-version = kodens `EXPECTED_MIGRATION_VERSION` |
+| A3 | Produktionsdatabasen har alla migrationer | Bygget kör `supabase db push --include-all` före `next build` (`scripts/vercel-build.sh`); **saknas `SUPABASE_MIGRATION_DB_URL` i Vercel Production-scope avbryts bygget med felkod** – ingen varning, ingen escape-hatch, förra deployen fortsätter svara (se B9); därefter `GET /api/health` | Byggloggen visar *Migrations up to date* (inte *[migrate] FEL: SUPABASE_MIGRATION_DB_URL är inte satt*, som betyder att variabeln måste sättas innan någon deploy går igenom); `warnings[]` utan `migrations_behind`; `/admin/system` → *Migrationer*: DB-version = kodens `EXPECTED_MIGRATION_VERSION` |
 | A4 | XML-filer valideras i CI | Workflowen installerar `libxml2-utils`; `CI=true npm test` faller om xmllint saknas (`src/lib/__fixtures__/xmllint.ts`) | HUS mot pinnad XSD (`docs/skatteverket/hus/SCHEMAS.sha256`), AGI/eSKD/iXBRL välformade |
 | A5 | Varumärke | `npm test` → `src/lib/brand-scan.test.ts` (källkod, manifest, PDF, mejl, filnamn) | 0 synliga "Driva" |
-| A6 | Juridisk avtalspart | `GET /api/health` i produktion | Inte `legal_entity_incomplete`; `/villkor`, `/integritet`, `/bitradesavtal` visar bolagets namn, inte "[avtalspart ej konfigurerad]" |
+| A6 | Juridisk avtalspart | `GET /api/health` i produktion; `/villkor` och `/signup` utloggat | Inte `legal_entity_incomplete`; `/villkor`, `/integritet`, `/bitradesavtal` visar **FERVA AB** (värdet kommer från `LEGAL_ENTITY_NAME` i Vercel, aldrig från koden), inte "[avtalspart ej konfigurerad]"; `/signup` visar registreringsformuläret i stället för *Registreringen är tillfälligt stängd* (spärren i `src/lib/auth/signup-gate.ts` vägrar nya provperioder i produktion så länge `LEGAL_ENTITY_*` är ofullständiga) |
 | A7 | Sentry | `GET /api/health` | Inte `sentry_unconfigured`; `/admin/system` → *Felövervakning (Sentry)* visar DSN konfigurerad; ett provocerat fel (t.ex. felaktig URL under `/api/`) syns i Sentry med `correlationId` |
 | A8 | MFA-krav | `GET /api/health` | Inte `admin_mfa_not_required`; `/admin/system` → *MFA-krav för admins: Påslaget (AAL2 krävs)* |
 | A9 | Cron | Vercel Cron `/api/cron/reminders` 07:00 (`vercel.json`), `CRON_SECRET` satt | Efter första dygnet: inte `cron_never_ran`/`cron_stale`/`cron_failed` |
@@ -119,6 +119,11 @@ Sätt i Vercel (Production) och kontrollera att `GET /api/health` är `status: "
 `DRIVA_APP_URL`, `NEXT_PUBLIC_SITE_URL`, `CRON_SECRET`, `SENTRY_DSN`, `LEGAL_ENTITY_*`, `LEGAL_CONTACT_EMAIL`,
 AI (`AI_PROVIDER`, `OPENROUTER_API_KEY`) om assistenten ska vara på, Tink (`TINK_*`, `TINK_ENV=production`) om
 bankkoppling ska vara live. Fullständig lista med kommentarer: `.env.example`.
+
+**Node-version:** Vercel → Settings → Build & Development Settings → *Node.js Version* måste vara **22.x**, samma
+major som `package.json` → `engines.node` (`>=22.0.0 <23.0.0`), `.nvmrc` (`22`) och CI (`node-version: 22`). Väljer
+Vercel en annan default kan ett bygge vara grönt i CI och trasigt i produktion. Vakten i repot är
+`src/lib/node-version.test.ts`; den kan inte se Vercels inställning, så den kryssas av i dashboarden.
 
 ## C. Efter första deploy
 

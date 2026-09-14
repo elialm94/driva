@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Stubb för migration-guard.test.ts: `npm run build` ska inte bygga appen här.
+echo "[stub npm] $*"

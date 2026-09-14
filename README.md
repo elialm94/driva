@@ -130,7 +130,7 @@ Serverless (Vercel): använd **Transaction pooler**-URL:en (port 6543) som `SUPA
 
 ### 3. Migrationer
 
-Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy; därefter 49–57 för go-live och fakturautskick: bankförslagens kvalitetslogg, manuell inlämning, Stripe-abonnemang, driftposter, villkorsgodkännanden, företagets verifierade påståenden, fakturans leveranskanal, offline-synkens kvitton och bolagets produktomfattning; `58_document_lines` för artikelrader, inköpsreferens och kundprisregler). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning. `SUPABASE_MIGRATION_DB_URL` är inte satt i Vercel Production - en ny migration måste appliceras manuellt där.
+Schemat ligger som versionerade SQL-filer i `supabase/migrations/` (från 01 extensions/roller, tenancy, kärndomän, bokföring, webb/assistent/audit, atomära funktioner, RLS-policys, storage-buckets till och med `48_closeout`: faktureringsallokering, ändringar, avslut och kundvy; därefter 49–57 för go-live och fakturautskick: bankförslagens kvalitetslogg, manuell inlämning, Stripe-abonnemang, driftposter, villkorsgodkännanden, företagets verifierade påståenden, fakturans leveranskanal, offline-synkens kvitton och bolagets produktomfattning; `58_document_lines` för artikelrader, inköpsreferens och kundprisregler). Alla nya kolumner och tabeller är additiva (`if not exists`) och har en tvilling i `src/lib/storage/apply-pending-schema.ts` så att en databas som inte fått `db push` kompletteras vid sidladdning. `SUPABASE_MIGRATION_DB_URL` är inte satt i Vercel Production - och sedan migrationsvakten skärptes **stannar produktionsbygget** tills den sätts (se "Produktion: migrationerna körs av bygget").
 
 ```bash
 npx supabase login
@@ -149,7 +149,7 @@ Skriptet kräver `SUPABASE_MIGRATION_DB_URL` i Vercel, bara i Production-scope:
 * den **direkta** anslutningen (`db.<ref>.supabase.co:5432`), inte poolaren, eftersom migrationer behöver en sessionsanslutning
 * lösenordet **procent-kodat** (`@` blir `%40` osv), annars klarar inte CLI:n att tolka URL:en
 
-Saknas variabeln varnar skriptet i bygglogggen och bygger vidare, så en roterad hemlighet inte blockerar alla deployer. Då ligger schemat efter igen, och `/api/health` visar det.
+Saknas variabeln **avbryts bygget** med ett tydligt fel i bygglogggen (`[migrate] FEL: SUPABASE_MIGRATION_DB_URL är inte satt`) och koden når aldrig trafik. Tidigare varnade skriptet och byggde vidare, vilket lämnade samma felläge öppet som fällde ferva.se: en roterad hemlighet eller ett ändrat Vercel-scope och nästa deploy går live med tabeller som inte finns. Ett stoppat bygge betyder att den förra deployen fortsätter svara, vilket är det säkra utfallet. Det finns ingen miljövariabel som stänger av vakten - sätt hemligheten och deploya om.
 
 Preview-deployer migrerar inte (`VERCEL_ENV` måste vara `production`), så en gren kan inte skriva om produktionsschemat.
 

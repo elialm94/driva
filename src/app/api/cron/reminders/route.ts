@@ -5,22 +5,23 @@ import { isSupabaseMode } from "@/lib/storage/config";
 import { listActiveBusinessIds } from "@/lib/storage/list-businesses";
 import { runWithTenant } from "@/lib/storage/adapter-supabase";
 import { recordCronRun } from "@/lib/platform/ops";
+import { isAuthorizedCronRequest } from "@/lib/platform/cron-auth";
 import { reportSafeError } from "@/lib/observability/report";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Daglig körning: offertuppföljning efter 7 dagar och fakturapåminnelse
- * efter förfallodagen. Skyddas av CRON_SECRET (Vercel Cron skickar den).
+ * efter förfallodagen. Skyddas av CRON_SECRET, som ENBART tas emot i
+ * `Authorization: Bearer` (så hemligheten inte hamnar i loggar och proxyer)
+ * och jämförs i konstant tid - se src/lib/platform/cron-auth.ts.
  *
  * JSON-läge: det aktiva företaget. Supabase: alla skarpa, aktiva tenants.
  * retry:false så ett mejl inte skickas två gånger vid CAS-omkörning.
  */
 export async function GET(req: NextRequest) {
   const started = Date.now();
-  const secret = process.env.CRON_SECRET;
-  const sent = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? req.nextUrl.searchParams.get("secret");
-  if (!secret || sent !== secret) {
+  if (!isAuthorizedCronRequest(req.headers.get("authorization"))) {
     return NextResponse.json({ ok: false, error: "Obehörig." }, { status: 401 });
   }
 

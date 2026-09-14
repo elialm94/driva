@@ -19,6 +19,7 @@ import {
   validateLoginFields,
   validateSignupFields,
 } from "@/lib/auth/signup-flow";
+import { SIGNUP_CLOSED_MESSAGE, signupClosedForLegalEntity } from "@/lib/auth/signup-gate";
 import { TERMS_VERSION } from "@/lib/legal/documents";
 import { endDemoSession } from "@/lib/auth/demo-request";
 import { isSupabaseMode } from "@/lib/storage/config";
@@ -93,6 +94,9 @@ export async function loginAction(_prev: AuthFormState, formData: FormData): Pro
 }
 
 export async function signupAction(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
+  // Först av allt: skapa ingen auth-användare i en produktionsmiljö som inte
+  // kan ta betalt efter provperioden. /signup visar samma besked.
+  if (signupClosedForLegalEntity()) return { error: SIGNUP_CLOSED_MESSAGE };
   if (!isSupabaseMode()) return authUnavailable();
   const email = String(formData.get("email") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
