@@ -4,6 +4,7 @@ import { fiscalYears, lockPeriod, lockedThrough, vatPeriodicity } from "./fiscal
 import { bankReconciliationAt } from "./reconciliation";
 import { employees, employerDeclarations, payrollRuns } from "./payroll";
 import { logAudit } from "./audit";
+import { datumLang } from "../format";
 
 /**
  * Periodstängning: månadsavstämningen som ett flöde, inte bara en filtertyp.
@@ -135,10 +136,10 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
       blocking: true,
       detail:
         state === "kommande"
-          ? `Månaden börjar ${period.start}.`
+          ? `Månaden börjar ${datumLang(period.start)}.`
           : state === "pagaende"
-            ? `Månaden pågår till ${period.end}. Stängningen görs efter att den är slut.`
-            : `Månaden avslutades ${period.end}.`,
+            ? `Månaden pågår till ${datumLang(period.end)}. Stängningen görs efter att den är slut.`
+            : `Månaden avslutades ${datumLang(period.end)}.`,
     },
     {
       key: "bank",
@@ -149,7 +150,7 @@ export function periodCloseStatus(period: Period, today: string = todayDate()): 
         unbookedBank.length > 0
           ? `${unbookedBank.length} banktransaktion${unbookedBank.length > 1 ? "er" : ""} i ${period.label} behöver hanteras.`
           : recon.unexplained !== 0
-            ? `${Math.abs(recon.unexplained)} kr skiljer mellan banken och bokföringen den ${period.end} utan förklaring.`
+            ? `${Math.abs(recon.unexplained)} kr skiljer mellan banken och bokföringen den ${datumLang(period.end)} utan förklaring.`
             : "Kontot stämmer mot bokföringen vid månadens slut.",
       href: "/bokforing/bank",
       hrefLabel: "Öppna banken",

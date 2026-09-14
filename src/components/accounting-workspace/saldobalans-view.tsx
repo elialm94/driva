@@ -1,5 +1,5 @@
 import { Table2 } from "lucide-react";
-import { kr } from "@/lib/format";
+import { kr, datumLang } from "@/lib/format";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
@@ -19,7 +19,7 @@ export function SaldobalansView({ ws, searchParams: params }: { ws: AccountingWo
       <PageHeader
         back={isOwnerSurface(ws) ? <SmartBack /> : undefined}
         title="Saldobalans"
-        subtitle={`Alla konton med ingående balans, periodens debet/kredit och utgående balans (${sb.range.from} till ${sb.range.to}).`}
+        subtitle={`Alla konton med ingående balans, periodens debet/kredit och utgående balans (${datumLang(sb.range.from)} till ${datumLang(sb.range.to)}).`}
         actions={
           <div className="flex items-center gap-2">
             <a

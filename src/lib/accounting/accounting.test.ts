@@ -13,6 +13,7 @@ import { accountBalance, balansrapport, ledgerIntegrity, saldobalans, huvudbok }
 import { computeVatPosition, generateVatReport, markVatReportDeclared, vatPeriods } from "./vat";
 import { lockPeriod, isDateLocked, clampToOpenDate, fiscalYears, ensureFiscalYearFor } from "./fiscal";
 import { todayDate } from "./dates";
+import { datumLang } from "../format";
 import { registerAssetFromExpense, createDepreciationEntry, depreciationForYear, INVENTARIE_GRANS, bookValue, prisbasbeloppFor, inventarieGransFor, assetSuggestionForExpense } from "./assets";
 import { planAccrual, bookAccrual, reverseAccrualsInto, amountAfterYearEnd } from "./accruals";
 import { bokslutChecklist, closeFiscalYear, runBokslutAutomation } from "./close";
@@ -593,6 +594,20 @@ describe("Bokslut", () => {
     postInYear(THIS_YEAR, 10_000, 0);
     const current = fiscalYears().find((f) => f.label === String(THIS_YEAR))!;
     assert.equal(bokslutChecklist(current.id).find((c) => c.key === "aret_slut")!.ok, false);
+  });
+
+  it("årskontrollen formaterar slutdatumet med datumLang, inte ISO", () => {
+    postInYear(LAST_YEAR, 100_000, 20_000);
+    const fy = fiscalYears().find((f) => f.label === String(LAST_YEAR))!;
+    const ended = bokslutChecklist(fy.id).find((c) => c.key === "aret_slut")!;
+    assert.match(ended.detail ?? "", new RegExp(datumLang(fy.endDate)));
+    assert.doesNotMatch(ended.detail ?? "", new RegExp(fy.endDate));
+
+    postInYear(THIS_YEAR, 10_000, 0);
+    const current = fiscalYears().find((f) => f.label === String(THIS_YEAR))!;
+    const ongoing = bokslutChecklist(current.id).find((c) => c.key === "aret_slut")!;
+    assert.match(ongoing.detail ?? "", new RegExp(datumLang(current.endDate)));
+    assert.doesNotMatch(ongoing.detail ?? "", new RegExp(current.endDate));
   });
 
   it("stängning bokför skatt + resultat, låser året och för UB → IB", () => {

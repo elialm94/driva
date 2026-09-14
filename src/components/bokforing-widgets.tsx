@@ -17,6 +17,7 @@ import {
   undoExpenseBookingAction,
 } from "@/app/bokforing-actions";
 import { VAT_PERIODICITY, type VatPeriodicity } from "@/lib/accounting/dates";
+import { kr } from "@/lib/format";
 
 /** Klientwidgets för bokföringen. All logik ligger i domänlagret – här finns bara knappar. */
 
@@ -84,7 +85,7 @@ export function MarkVatDeclaredButton({ reportId, attBetala }: { reportId: strin
       )}
       <p className="mt-1.5 text-[12px] text-muted">
         Ferva skickar inget till Skatteverket – du deklarerar där som vanligt
-        {attBetala >= 0 ? ` och betalar ${attBetala.toLocaleString("sv-SE")} kr` : ""}.
+        {attBetala >= 0 ? ` och betalar ${kr(attBetala)}` : ""}.
       </p>
       <ErrorNote error={error} />
     </div>

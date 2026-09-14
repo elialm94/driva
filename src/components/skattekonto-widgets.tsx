@@ -4,6 +4,7 @@ import { useId, useState, useTransition } from "react";
 import { ArrowRightLeft, Check, CircleAlert, Landmark, Pencil, Scale } from "lucide-react";
 import { buttonClasses, Card, cx } from "./ui";
 import { kr, datumKort } from "@/lib/format";
+import { monthLabel } from "@/lib/accounting/payroll-model";
 import {
   bookFSkattAction,
   bookTaxAccountDepositAction,
@@ -65,7 +66,7 @@ export function BookFSkattButton({ month, amount }: { month: string; amount: num
         }
       >
         <Landmark className="size-3.5" />
-        {isPending ? "Bokför …" : `Bokför F-skatt ${month}`}
+        {isPending ? "Bokför …" : `Bokför F-skatt ${monthLabel(month)}`}
       </button>
       <p className="mt-1.5 text-[12px] text-muted">
         {kr(amount)} enligt Skatteverkets beslut. Dras från skattekontot och kvittas mot den slutliga skatten i bokslutet.

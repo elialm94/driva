@@ -1,4 +1,4 @@
-import { kr } from "@/lib/format";
+import { kr, datumLang } from "@/lib/format";
 import { Card, PageHeader } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
@@ -17,7 +17,7 @@ export function ResultatView({ ws, searchParams: params }: { ws: AccountingWorks
       <PageHeader
         back={isOwnerSurface(ws) ? <SmartBack /> : undefined}
         title="Resultatrapport"
-        subtitle={`Hur det går för företaget ${rr.range.from} till ${rr.range.to} – direkt ur bokföringen.`}
+        subtitle={`Hur det går för företaget ${datumLang(rr.range.from)} till ${datumLang(rr.range.to)} - direkt ur bokföringen.`}
         actions={
           <div className="flex items-center gap-2">
             <a href={`/api/bokforing/export?typ=resultat&ar=${encodeURIComponent(fy.label)}`} className="text-[13px] font-medium text-accent hover:underline">
