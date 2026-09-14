@@ -80,6 +80,26 @@ export function settlementAccountFor(paidBy: ExpensePaidBy | undefined): number 
   return paidBy === "privat" ? SKULD_TILL_AGARE : FORETAGSKONTO;
 }
 
+/**
+ * Formulärets förval. Utlägg lagras som `kop` + `paid_by = privat` – det
+ * finns inget eget slag – men valet styr vem som betalade och vilka fält
+ * som syns.
+ */
+export type ManualExpensePreset = "kop" | "utlagg" | "milersattning" | "traktamente" | "representation";
+
+/**
+ * Utlägg, milersättning och traktamente är alltid skuld till ägaren (2893).
+ * Köp och representation får välja företagskonto eller privat.
+ */
+export function paidByForPreset(preset: ManualExpensePreset, chosen: ExpensePaidBy = "foretagskonto"): ExpensePaidBy {
+  return preset === "kop" || preset === "representation" ? chosen : "privat";
+}
+
+/** Vem-betalade-valet syns bara när användaren faktiskt får välja. */
+export function showsPaidByChoice(preset: ManualExpensePreset): boolean {
+  return preset === "kop" || preset === "representation";
+}
+
 /* ----------------------------- Representation ----------------------------- */
 
 export interface RepresentationSplit {

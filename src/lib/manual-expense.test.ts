@@ -17,6 +17,9 @@ process.env.DRIVA_TEST = "1";
 
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { db, replaceDb } from "./store";
 import { emptyTestDb } from "./invoices/test-db";
 import { uid } from "./ids";
@@ -26,8 +29,11 @@ import {
   planIsBalanced,
   representationSplit,
   settlementAccountFor,
+  paidByForPreset,
+  showsPaidByChoice,
   MANUAL_EXPENSE_ACCOUNTS,
   type ManualExpenseDraft,
+  type ManualExpensePreset,
 } from "./expenses/manual-expense";
 import { mileageAllowance, mileageRatesFor, perDiemAllowance, perDiemRatesFor } from "./accounting/allowances";
 import { prisbasbeloppFor } from "./accounting/prisbasbelopp";
@@ -189,6 +195,26 @@ describe("Planen för ett köp eller privat utlägg", () => {
     assert.equal(settlementAccountFor("privat"), 2893);
     assert.equal(settlementAccountFor("foretagskonto"), 1930);
     assert.equal(settlementAccountFor(undefined), 1930);
+  });
+
+  it("Utlägg tvingar privat (2893) även om valet är företagskonto", () => {
+    const presets: ManualExpensePreset[] = ["utlagg", "milersattning", "traktamente"];
+    for (const preset of presets) {
+      assert.equal(paidByForPreset(preset, "foretagskonto"), "privat");
+      assert.equal(paidByForPreset(preset, "privat"), "privat");
+      assert.equal(showsPaidByChoice(preset), false);
+    }
+    assert.equal(paidByForPreset("kop", "foretagskonto"), "foretagskonto");
+    assert.equal(paidByForPreset("kop", "privat"), "privat");
+    assert.equal(paidByForPreset("representation", "foretagskonto"), "foretagskonto");
+    assert.equal(paidByForPreset("representation", "privat"), "privat");
+    assert.equal(showsPaidByChoice("kop"), true);
+    assert.equal(showsPaidByChoice("representation"), true);
+
+    const p = plan({ ...base, paidBy: paidByForPreset("utlagg", "foretagskonto") });
+    assert.deepEqual(net(p.lines), { 4010: 1_000, 2641: 250, 2893: -1_250 });
+    assert.equal(p.settlementAccount, 2893);
+    assert.match(p.title, /^Utlägg/);
   });
 
   it("momsfri kategori: hela beloppet blir kostnad, ingen moms lyfts", () => {
@@ -468,6 +494,22 @@ describe("Registrera en utgift för hand", () => {
     assert.equal(v.description, "Beijer Bygg – material");
     assert.equal(v.source?.type, "utgift");
     assert.equal(ownerLiability().balance, 0);
+  });
+
+  it("Utlägg-förvalet bokförs som kop mot 2893 även om formuläret skulle skicka företagskonto", () => {
+    const r = createManualExpense({
+      kind: "kop",
+      date: DATE,
+      paidBy: paidByForPreset("utlagg", "foretagskonto"),
+      supplier: "Bauhaus",
+      amount: 500,
+      vatAmount: 100,
+      category: "verktyg",
+    });
+    assert.equal(r.expense.kind, "kop");
+    assert.equal(r.expense.paidBy, "privat");
+    assert.deepEqual(verificationNet(r.verificationId), { 5410: 400, 2641: 100, 2893: -500 });
+    assert.equal(ownerLiability().balance, 500);
   });
 
   it("ett privat utlägg blir skuld till ägaren och syns i sammanställningen", () => {
@@ -788,5 +830,20 @@ describe("Återbetalning till ägaren i bankinkorgen", () => {
   it("utan skuld till ägaren finns inget att föreslå", () => {
     const tx = bankTx({ amount: -1_300, counterpart: "Anders Andersson", description: "Överföring till eget konto" });
     assert.notEqual(bankKindSuggestion(tx)?.kind, "aterbetalning_agare");
+  });
+});
+
+describe("Formuläret tvingar privat på Utlägg", () => {
+  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/manual-expense-form.tsx"), "utf8");
+
+  it("döljer Vem betalade och tvingar paidBy i utkastet", () => {
+    assert.match(source, /showsPaidByChoice\(preset\)/);
+    assert.match(source, /paidBy: paidByForPreset\(preset, paidBy\)/);
+    assert.match(source, /useState<ExpensePaidBy>\(paidByForPreset\(initialPreset\)\)/);
+    assert.match(source, /setPaidBy\(paidByForPreset\(next/);
+    // Milersättning behåller 2893-bannern; Utlägg lägger inte till en till.
+    assert.match(source, /kind === "milersattning" \? \(\s*<p className="rounded-xl bg-ink\/4/);
+    assert.match(source, /Hur bokförs det\? Skattefritt traktamente \(7321\) mot skuld till dig \(2893\), ingen moms\./);
+    assert.doesNotMatch(source, /showPaidBy = kind === "kop"/);
   });
 });
