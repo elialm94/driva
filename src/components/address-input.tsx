@@ -31,7 +31,9 @@ import {
   formatTripDestination,
   googleMapsApiKey,
   partsFromPlaceComponents,
+  presentAddressSuggestion,
   shouldSearchAddress,
+  streetAddressParts,
   type AddressParts,
 } from "@/lib/address-autocomplete";
 
@@ -67,7 +69,7 @@ interface PlaceComponents {
 
 interface PlacePrediction {
   placeId: string;
-  text: { text: string };
+  text?: { text?: string };
   mainText: { text: string } | null;
   secondaryText: { text: string } | null;
   toPlace(): PlaceComponents;
@@ -309,11 +311,7 @@ export function AddressAutocomplete({
 
     if (preferLocalExamples()) {
       const result = demoSuggestions(query).map((a) => ({
-        id: a.address || a.city,
-        main: a.address || a.city,
-        secondary: [`${a.postalCode} ${a.city}`.trim(), a.countryCode === "SE" ? "" : (a.country ?? "")]
-          .filter(Boolean)
-          .join(", "),
+        ...presentAddressSuggestion(a),
         resolve: async () => a,
       }));
       setLiveMode(false);
@@ -362,7 +360,7 @@ export function AddressAutocomplete({
         .slice(0, 5)
         .map((p) => ({
           id: p.placeId,
-          main: p.mainText?.text ?? p.text.text,
+          main: p.mainText?.text ?? p.text?.text ?? "",
           secondary: p.secondaryText?.text ?? "",
           resolve: async () => {
             const place = p.toPlace();
@@ -370,7 +368,7 @@ export function AddressAutocomplete({
             // Sessionen förbrukas när detaljer hämtas – börja om vid nästa sökning.
             sessionRef.current = null;
             const parts = partsFromPlaceComponents(place.addressComponents ?? []);
-            return { ...parts, address: parts.address || (p.mainText?.text ?? p.text.text) };
+            return { ...parts, address: parts.address || (p.mainText?.text ?? p.text?.text ?? "") };
           },
         }));
       setLiveMode(true);
@@ -587,8 +585,10 @@ export function AddressFields({
   const labelCls = labelClassName ?? defaultLabelCls;
 
   function emit(next: AddressParts) {
-    if (!value) setInternal(next);
-    onChange?.(next);
+    // Street-kontraktet: aldrig country/countryCode ut i kund-/jobbformulär.
+    const street = streetAddressParts(next);
+    if (!value) setInternal(street);
+    onChange?.(street);
   }
 
   const postalErrorId = ids?.postalCode ? `${ids.postalCode}-fel` : undefined;
