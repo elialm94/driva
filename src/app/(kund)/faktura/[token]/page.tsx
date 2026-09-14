@@ -7,6 +7,7 @@ import { InvoiceDocument } from "@/components/invoice-document";
 import { resolveInvoiceView } from "@/lib/invoices/snapshot";
 import { invoiceHeading } from "@/lib/invoices/display";
 import { CompanyLogo } from "@/components/company-logo";
+import { PublicDocumentFooter } from "@/components/public-document-chrome";
 import { buttonClasses } from "@/components/ui";
 import { ensurePublicPage } from "@/lib/auth/session";
 
@@ -80,9 +81,7 @@ export default async function PublicInvoicePage(props: PageProps<"/faktura/[toke
           <InvoiceDocument company={data.settings} customer={customer} invoice={invoice} />
         </div>
 
-        <p className="mt-6 text-center text-[12px] text-muted">
-          Skickad med Ferva · Frågor? Kontakta {view.seller.name} på {view.seller.email}
-        </p>
+        <PublicDocumentFooter sellerName={view.seller.name} sellerEmail={view.seller.email} />
       </main>
     </div>
   );

@@ -11,6 +11,7 @@ import { QuoteDocument } from "@/components/quote-document";
 import { CompanyLogo } from "@/components/company-logo";
 import { acceptedByLabel } from "@/lib/status-labels";
 import { QuoteAcceptForm } from "@/components/quote-accept";
+import { PublicDocumentFooter } from "@/components/public-document-chrome";
 import { DemoTag } from "@/components/ui";
 import { resolveQuoteCompany, resolveQuoteCustomer } from "@/lib/invoices/snapshot";
 import { ensurePublicPage, withPublicBusiness } from "@/lib/auth/session";
@@ -160,8 +161,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
           />
         ) : null}
 
-        <p className="mt-6 text-center text-[12px] text-muted">
-          Skickad med Ferva · Frågor? Kontakta {seller.name} på {seller.email}
+        <PublicDocumentFooter sellerName={seller.name} sellerEmail={seller.email}>
           <br />
           <a href={`/offert/${quote.token}/pdf`} target="_blank" rel="noreferrer" className="mt-1 inline-block font-medium text-soft underline-offset-2 hover:text-ink hover:underline">
             Skriv ut eller spara som PDF
@@ -179,7 +179,7 @@ export default async function PublicQuotePage(props: PageProps<"/offert/[token]"
               </a>
             </>
           ) : null}
-        </p>
+        </PublicDocumentFooter>
         {/* Luft så att sidfoten inte hamnar under mobilbaren. */}
         <div className={canAccept ? "h-36 md:h-10" : "h-10"} />
       </main>

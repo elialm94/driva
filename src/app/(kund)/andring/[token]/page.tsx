@@ -12,6 +12,7 @@ import {
 } from "@/lib/services/job-changes";
 import { kr, datumTid } from "@/lib/format";
 import { CompanyLogo } from "@/components/company-logo";
+import { PublicDocumentFooter } from "@/components/public-document-chrome";
 import { JobChangeDocument } from "@/components/job-change-document";
 import { JobChangeApproveForm } from "@/components/job-change-approve";
 import { resolveQuoteCompany, resolveQuoteCustomer } from "@/lib/invoices/snapshot";
@@ -131,9 +132,7 @@ export default async function PublicJobChangePage(props: PageProps<"/andring/[to
           />
         ) : null}
 
-        <p className="mt-6 text-center text-[12px] text-muted">
-          Skickad med Ferva · Frågor? Kontakta {seller.name} på {seller.email}
-        </p>
+        <PublicDocumentFooter sellerName={seller.name} sellerEmail={seller.email} />
         <div className="h-10" />
       </main>
     </div>

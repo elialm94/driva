@@ -105,6 +105,7 @@ describe("varumärke: Ferva överallt där en användare ser det", () => {
     const pdf = invoicePdfBytes(invoice, settings, customer?.name ?? "Kund").toString("latin1");
     assert.match(pdf, /Faktura/);
     assert.doesNotMatch(pdf, /driva/i);
+    assert.doesNotMatch(pdf, /Ferva/, "kundens PDF-bilaga är företagets dokument, inte produktens");
 
     const quote = quotePdfBytes({
       companyName: settings.name,
@@ -115,9 +116,11 @@ describe("varumärke: Ferva överallt där en användare ser det", () => {
       validUntil: "2026-12-31",
     }).toString("latin1");
     assert.doesNotMatch(quote, /driva/i);
+    assert.doesNotMatch(quote, /Ferva/, "offertbilagan får inte bära produktnamnet");
 
     const footer = sellerIdentityFooter(settings);
     assert.doesNotMatch(JSON.stringify(footer), /driva/i);
+    assert.doesNotMatch(JSON.stringify(footer), /Ferva/);
   });
 
   it("systemmejlen (auth, ägarnotiser) nämner bara Ferva", () => {
@@ -171,6 +174,62 @@ describe("varumärke: Ferva överallt där en användare ser det", () => {
     for (const f of db().paymentFiles ?? []) {
       assert.match(f.filename, /^ferva-betalningar-/, f.filename);
     }
+  });
+
+  /**
+   * FEATURE_MAP efter #183/#184: publika tokenytor är företagets dokument.
+   * FervaMark i rotens error.tsx läckte in i RSC-svaret på /offert/[token]
+   * trots att sidan själv inte renderade märket. Sidfoten "Skickad med Ferva"
+   * var synlig produktkrom. Båda är förbjudna här.
+   */
+  it("publika kunddokument och deras PDF-sidor är obeskrivna som Ferva-produkt", () => {
+    const roots = [
+      path.join(ROOT, "src/app/(kund)"),
+      path.join(ROOT, "src/components/public-document-chrome.tsx"),
+      path.join(ROOT, "src/components/public-document-error.tsx"),
+      path.join(ROOT, "src/components/public-document-not-found.tsx"),
+      path.join(ROOT, "src/components/quote-document.tsx"),
+      path.join(ROOT, "src/components/invoice-document.tsx"),
+      path.join(ROOT, "src/components/job-change-document.tsx"),
+      path.join(ROOT, "src/components/closeout-summary-document.tsx"),
+      path.join(ROOT, "src/components/acceptance-certificate.tsx"),
+      path.join(ROOT, "src/lib/invoices/document-pdf.ts"),
+    ];
+    const files: string[] = [];
+    for (const root of roots) {
+      const st = statSync(root);
+      if (st.isDirectory()) files.push(...walk(root));
+      else files.push(root);
+    }
+
+    const importMark = /from\s+["']@\/components\/ferva-mark["']|<FervaMark\b|FERVA_MARK_/;
+    const productFooter = /Skickad med Ferva|Delad med Ferva/;
+    const offenders: string[] = [];
+    for (const file of files) {
+      const text = readFileSync(file, "utf8");
+      const rel = path.relative(ROOT, file);
+      if (importMark.test(text)) offenders.push(`${rel}: FervaMark/FERVA_MARK på publik kundyta`);
+      if (productFooter.test(text)) offenders.push(`${rel}: produktfot "Skickad/Delad med Ferva"`);
+    }
+    assert.deepEqual(offenders, [], `Publika kunddokument ska vara obebrandade:\n${offenders.join("\n")}`);
+
+    const chrome = readFileSync(path.join(ROOT, "src/components/public-document-chrome.tsx"), "utf8");
+    assert.match(chrome, /Frågor\? Kontakta/, "företagets avsändare ska stå kvar i sidfoten");
+    assert.doesNotMatch(chrome, /Skickad med|Delad med/);
+
+    const nav = readFileSync(path.join(ROOT, "src/components/nav.tsx"), "utf8");
+    const login = readFileSync(path.join(ROOT, "src/app/(auth)/login/page.tsx"), "utf8");
+    const authError = readFileSync(path.join(ROOT, "src/app/(auth)/error.tsx"), "utf8");
+    assert.match(nav, /<FervaMark\b/, "appskalet ska fortfarande bära FervaMark");
+    assert.match(login, /<FervaMark\b/, "inloggningen ska fortfarande bära FervaMark");
+    assert.match(authError, /<FervaMark\b/, "auth-felgränsen ska fortfarande bära FervaMark");
+
+    const rootError = readFileSync(path.join(ROOT, "src/app/error.tsx"), "utf8");
+    assert.doesNotMatch(
+      rootError,
+      /<FervaMark\b|from\s+["']@\/components\/ferva-mark["']/,
+      "rotens error.tsx följer med i RSC på publika tokenytor – ingen FervaMark där"
+    );
   });
 
   /**
