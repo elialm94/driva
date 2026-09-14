@@ -125,7 +125,7 @@ export function PeriodstangningView({
                 <p className="text-[12.5px] leading-relaxed text-muted">
                   {next.blockers.length > 0
                     ? `${next.blockers.length} punkt${next.blockers.length === 1 ? "" : "er"} behöver bli klar${next.blockers.length === 1 ? "" : "a"} innan månaden kan stängas.`
-                    : `Bokföringen låses till och med ${next.period.end}. Låset går bara framåt – det backas enbart genom att räkenskapsåret öppnas igen, och det lämnar ett spår.`}
+                    : `Bokföringen låses till och med ${datumKort(next.period.end)}. Låset går bara framåt – det backas enbart genom att räkenskapsåret öppnas igen, och det lämnar ett spår.`}
                 </p>
               </div>
             )}

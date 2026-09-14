@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { BookOpenText, ChevronLeft, ChevronRight } from "lucide-react";
-import { kr, datumKort } from "@/lib/format";
+import { kr, datumKort, datumLang } from "@/lib/format";
 import { Card, EmptyState, PageHeader, cx } from "@/components/ui";
 import { SmartBack } from "@/components/back-link";
 import { PrintButton } from "@/components/bokforing-widgets";
@@ -29,7 +29,7 @@ export function HuvudbokView({
       <PageHeader
         back={isOwnerSurface(ws) ? <SmartBack /> : undefined}
         title="Huvudbok"
-        subtitle={`Alla händelser konto för konto ${fy.startDate} till ${fy.endDate}, med ingående saldo, rader och utgående saldo.`}
+        subtitle={`Alla händelser konto för konto ${datumLang(fy.startDate)} till ${datumLang(fy.endDate)}, med ingående saldo, rader och utgående saldo.`}
         actions={
           <div className="flex items-center gap-2">
             <a href={`/api/bokforing/export?typ=huvudbok&ar=${encodeURIComponent(fy.label)}`} className="text-[13px] font-medium text-accent hover:underline">

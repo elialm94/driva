@@ -8,6 +8,7 @@ import {
   TaxAccountReconcileForm,
 } from "@/components/skattekonto-widgets";
 import { kr, datumKort, datumLang } from "@/lib/format";
+import { monthLabel } from "@/lib/accounting/payroll-model";
 import { db } from "@/lib/store";
 import {
   taxAccountDepositCandidates,
@@ -88,7 +89,7 @@ export function SkattekontoPanel() {
             ))}
             {pendingFSkatt.map((month) => (
               <Card key={month} className="px-6 py-5">
-                <p className="text-[15px] font-semibold">F-skatt {month}</p>
+                <p className="text-[15px] font-semibold">F-skatt {monthLabel(month)}</p>
                 <p className="mt-1 text-[13px] text-soft">
                   Automatisk bokföring är avstängd. Debiteringen från Skatteverket behöver bokföras för hand.
                 </p>

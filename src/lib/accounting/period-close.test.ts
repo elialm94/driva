@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { db, replaceDb } from "../store";
 import { emptyTestDb } from "../invoices/test-db";
 import { calendarFiscalYear } from "./dates";
+import { datumLang } from "../format";
 import { postVerification } from "./engine";
 import { lockedThrough } from "./fiscal";
 import { auditTrail } from "./audit";
@@ -158,6 +159,24 @@ describe("periodstängningens kontroller", () => {
   it("utan anställd finns ingen lönekontroll", () => {
     const status = periodCloseStatus(monthsAwaitingClose(AFTER_YEAR)[0], AFTER_YEAR);
     assert.equal(status.checks.some((c) => c.key === "lon"), false);
+  });
+
+  it("månadens start- och slutdatum i kontrolltexten följer datumLang", () => {
+    const period = { key: "2026-01", start: "2026-01-01", end: "2026-01-31", label: "januari 2026" };
+    const pagaende = periodCloseStatus(period, "2026-01-20").checks.find((c) => c.key === "manaden_slut")!;
+    assert.match(pagaende.detail ?? "", new RegExp(datumLang("2026-01-31")));
+    assert.doesNotMatch(pagaende.detail ?? "", /2026-01-31/);
+
+    const avslutad = periodCloseStatus(period, AFTER_YEAR).checks.find((c) => c.key === "manaden_slut")!;
+    assert.match(avslutad.detail ?? "", new RegExp(datumLang("2026-01-31")));
+    assert.doesNotMatch(avslutad.detail ?? "", /2026-01-31/);
+
+    const kommande = periodCloseStatus(
+      { key: "2026-03", start: "2026-03-01", end: "2026-03-31", label: "mars 2026" },
+      "2026-01-20"
+    ).checks.find((c) => c.key === "manaden_slut")!;
+    assert.match(kommande.detail ?? "", new RegExp(datumLang("2026-03-01")));
+    assert.doesNotMatch(kommande.detail ?? "", /2026-03-01/);
   });
 });
 

@@ -20,6 +20,7 @@ import { vatPeriodsFor } from "./vat";
 import { isOverdue } from "../services/data";
 import { balanceReconciliation } from "./balance-reconciliation";
 import { SCHEDULE_LABEL, bookYearEndSchedule, schedulesAwaitingBooking, yearEndSchedules } from "./year-end";
+import { datumLang } from "../format";
 
 /**
  * Bokslut. Deterministiskt: alla kontroller körs på servern, bara riktiga
@@ -75,8 +76,8 @@ export function bokslutChecklist(fiscalYearId: string): BokslutCheckItem[] {
       ok: yearEnded,
       blocking: true,
       detail: yearEnded
-        ? `Året avslutades ${fy.endDate}.`
-        : `Året pågår till ${fy.endDate}. Du kan förbereda bokslutet redan nu – avskrivningar, periodiseringar och kontroller – men stängningen görs efter årets slut.`,
+        ? `Året avslutades ${datumLang(fy.endDate)}.`
+        : `Året pågår till ${datumLang(fy.endDate)}. Du kan förbereda bokslutet redan nu - avskrivningar, periodiseringar och kontroller - men stängningen görs efter årets slut.`,
     },
     {
       key: "bank",

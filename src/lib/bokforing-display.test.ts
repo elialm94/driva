@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { db, replaceDb } from "./store";
 import { buildSeed } from "./seed";
-import { kr, datumKort } from "./format";
+import { kr, datumKort, datumLang } from "./format";
 import { resultatrapport, huvudbok } from "./accounting/ledger";
 import { postVerification } from "./accounting/engine";
 import { todayDate } from "./accounting/fiscal";
@@ -146,5 +146,70 @@ describe("Demoscenariot visar inga trasiga belopp under /bokforing", () => {
       assert.ok(!kr(n).includes("NaN"), `kr() gav NaN för ${n}`);
     }
     assert.ok(db().verifications.length > 0);
+  });
+});
+
+describe("Moms: deklarationsknappen formaterar beloppet med kr()", () => {
+  /*
+   * Markera-som-deklarerad skrev beloppet med toLocaleString + " kr". Det
+   * hoppar över kr():s nollhantering (minus noll, hårda mellanslag) och ger
+   * ett annat beloppsspråk än resten av /bokforing/moms.
+   */
+  it("hjälptexten går genom kr() i stället för toLocaleString", () => {
+    const src = component("bokforing-widgets.tsx");
+    assert.match(src, /kr\(attBetala\)/);
+    assert.ok(
+      !src.includes("attBetala.toLocaleString"),
+      "MarkVatDeclaredButton ska inte formatera belopp med toLocaleString"
+    );
+  });
+});
+
+describe("Periodstängning: låsmeningen använder samma datumformat som låskortet", () => {
+  /*
+   * Låskortet skriver "Bokföringen är låst till och med 31 mars" (datumKort).
+   * Nästa period att stänga skrev samma mening med rått ISO: "låses till och
+   * med 2026-03-31". Två format för samma slags datum på samma sida.
+   */
+  it("nästa stängning formaterar slutdatumet med datumKort", () => {
+    const src = component("periodstangning-view.tsx");
+    assert.match(src, /Bokföringen låses till och med \$\{datumKort\(next\.period\.end\)\}/);
+    assert.ok(
+      !src.includes("Bokföringen låses till och med ${next.period.end}"),
+      "slutdatumet ska inte skrivas ut som ISO"
+    );
+  });
+});
+
+describe("Skattekontot: F-skattmånaden följer appens månadsformat", () => {
+  /*
+   * Kortet och knappen skrev "F-skatt 2026-03". Lönesidan och AGI använder
+   * monthLabel ("mars 2026"). YYYY-MM är ett andra datumformat på samma sida
+   * som redan visar datumKort på bankraderna.
+   */
+  it("kortet och knappen går genom monthLabel", () => {
+    assert.match(component("skattekonto-panel.tsx"), /F-skatt \{monthLabel\(month\)\}/);
+    assert.match(component("skattekonto-widgets.tsx"), /Bokför F-skatt \$\{monthLabel\(month\)\}/);
+  });
+});
+
+describe("Rapporterna: periodraden använder datumLang, inte ISO", () => {
+  /*
+   * Balansrapporten skriver "per 31 december 2026" (datumLang). Resultat,
+   * huvudbok och saldobalans skrev samma slags period som "2026-01-01 till
+   * 2026-12-31" i underrubriken – ISO på en sida som annars talar svenska.
+   */
+  it("resultat, huvudbok och saldobalans formaterar intervallet med datumLang", () => {
+    assert.equal(datumLang("2026-01-01"), "1 januari 2026");
+    assert.equal(datumLang("2026-12-31"), "31 december 2026");
+    assert.match(view("resultat-view.tsx"), /datumLang\(rr\.range\.from\)/);
+    assert.match(view("resultat-view.tsx"), /datumLang\(rr\.range\.to\)/);
+    assert.match(view("huvudbok-view.tsx"), /datumLang\(fy\.startDate\)/);
+    assert.match(view("huvudbok-view.tsx"), /datumLang\(fy\.endDate\)/);
+    assert.match(view("saldobalans-view.tsx"), /datumLang\(sb\.range\.from\)/);
+    assert.match(view("saldobalans-view.tsx"), /datumLang\(sb\.range\.to\)/);
+    assert.ok(!view("resultat-view.tsx").includes("${rr.range.from} till ${rr.range.to}"));
+    assert.ok(!view("huvudbok-view.tsx").includes("${fy.startDate} till ${fy.endDate}"));
+    assert.ok(!view("saldobalans-view.tsx").includes("${sb.range.from} till ${sb.range.to}"));
   });
 });
