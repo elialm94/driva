@@ -7,7 +7,7 @@ import { emptyTestDb, labor } from "./invoices/test-db";
 import { createInvoice, creditInvoice, issueInvoice, markInvoicePaid } from "./services/invoices";
 import { answerExpenseQuestion } from "./services/expenses";
 import { receiveSupplierInvoice } from "./services/suppliers";
-import { PostingError, verificationLabel } from "./accounting/engine";
+import { PostingError, postVerification, verificationLabel } from "./accounting/engine";
 import { accountBalance } from "./accounting/ledger";
 import { lockPeriod } from "./accounting/fiscal";
 import { bokforingsdatum } from "./accounting/dates";
@@ -15,10 +15,14 @@ import { executeTool, toolRequiresConfirmation, toolRisk } from "./ai/tools";
 import { confirmPendingAction } from "./services/assistant";
 import {
   inspectCorrectionFlow,
+  listBadge,
   postVerificationCorrection,
   previewCorrection,
   isPaymentLive,
+  toVerificationView,
+  SOURCE_LABEL,
 } from "./services/verification-correction";
+
 import { verificationOverflowItems } from "./services/verification-overflow";
 import type { BankAccount, Expense } from "./types";
 
@@ -307,5 +311,87 @@ describe("Rätta bokföring – AI", () => {
     const originalAfter = db().verifications.find((v) => v.id === original.id)!;
     assert.ok(originalAfter.correctedByVerificationId);
     assert.equal(JSON.stringify(originalAfter.entries), JSON.stringify(original.entries));
+  });
+});
+
+describe("Verifikationslistans badge är på svenska", () => {
+  beforeEach(() => reset());
+
+  it("en automatisk bokning visar Automatisk, inte Auto", () => {
+    postVerification({
+      date: `${THIS_YEAR}-01-15`,
+      description: "Försäljning",
+      entries: [
+        { account: 1930, debit: 12_500 },
+        { account: 3001, credit: 10_000 },
+        { account: 2611, credit: 2_500 },
+      ],
+      source: { type: "kundfaktura", id: "inv-auto-badge" },
+      createdBy: "auto",
+      confidence: "hog",
+      explanation: "Fakturan bokfördes när den skickades.",
+    });
+    const v = db().verifications[0];
+    assert.ok(v);
+    const badge = listBadge(v);
+    assert.equal(badge.text, "Automatisk · Hög säkerhet");
+    assert.ok(!/\bAuto\b/.test(badge.text), `engelska i badgen: ${badge.text}`);
+  });
+});
+
+describe("Verifikationens underlagsetikett är på svenska", () => {
+  beforeEach(() => reset());
+
+  function post(source: { type: "lon"; id: string } | { type: "sie_import"; id: string }) {
+    return postVerification({
+      date: `${THIS_YEAR}-01-15`,
+      description: "Testbokning",
+      entries: [
+        { account: 1930, debit: 1_000 },
+        { account: 3001, credit: 1_000 },
+      ],
+      source,
+      createdBy: "anvandare",
+      confidence: "hog",
+      explanation: "Testbokning för underlagsetiketten.",
+    });
+  }
+
+  it("lön visas som lön, inte lon", () => {
+    const v = post({ type: "lon", id: "emp-1-2026-01" });
+    const view = toVerificationView(v, new Map([[v.id, v]]));
+    assert.equal(view.sourceLabel, "lön");
+    assert.ok(!/\blon\b/.test(view.sourceLabel));
+  });
+
+  it("SIE-import visas som SIE-import, inte sie_import", () => {
+    const v = post({ type: "sie_import", id: "imp-1" });
+    const view = toVerificationView(v, new Map([[v.id, v]]));
+    assert.equal(view.sourceLabel, "SIE-import");
+    assert.ok(!view.sourceLabel.includes("_"), `snake_case i underlaget: ${view.sourceLabel}`);
+  });
+
+  it("alla källtyper har en svensk etikett", () => {
+    for (const type of [
+      "kundfaktura",
+      "betalning",
+      "utgift",
+      "leverantorsfaktura",
+      "banktransaktion",
+      "rattelse",
+      "avskrivning",
+      "periodisering",
+      "moms",
+      "skattekonto",
+      "lon",
+      "bokslut",
+      "ingaende_balans",
+      "sie_import",
+      "manuell",
+    ]) {
+      const label = SOURCE_LABEL[type];
+      assert.ok(label, `saknar etikett för ${type}`);
+      assert.ok(!label.includes("_"), `${type} läcker tekniskt namn: ${label}`);
+    }
   });
 });
