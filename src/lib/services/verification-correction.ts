@@ -43,8 +43,10 @@ export const SOURCE_LABEL: Record<string, string> = {
   periodisering: "periodisering",
   moms: "momsredovisning",
   skattekonto: "skattekonto",
+  lon: "lön",
   bokslut: "bokslut",
   ingaende_balans: "ingående balans",
+  sie_import: "SIE-import",
   manuell: "manuell",
 };
 
@@ -720,13 +722,13 @@ export function creatorPhrase(v: Verification): string {
 
 export function listBadge(v: Verification): { text: string; tone: "accent" | "warn" | "neutral" } {
   if (v.correctedByVerificationId) {
-    return { text: v.createdBy === "auto" ? "Auto · Rättad" : "Rättad", tone: "warn" };
+    return { text: v.createdBy === "auto" ? "Automatisk · Rättad" : "Rättad", tone: "warn" };
   }
   if (v.source.type === "rattelse" || v.correctsVerificationId) {
     return { text: "Rättelse", tone: "warn" };
   }
   if (v.createdBy === "auto") {
-    return { text: `Auto · ${CONFIDENCE_LABEL[v.confidence]} säkerhet`, tone: "accent" };
+    return { text: `Automatisk · ${CONFIDENCE_LABEL[v.confidence]} säkerhet`, tone: "accent" };
   }
   if (v.createdBy === "assistent") return { text: "Assistent", tone: "neutral" };
   return { text: "Manuell", tone: "neutral" };

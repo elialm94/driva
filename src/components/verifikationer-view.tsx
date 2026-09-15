@@ -191,7 +191,7 @@ export function VerifikationerView({
         {(
           [
             ["alla", "Alla"],
-            ["auto", "Auto"],
+            ["auto", "Automatiska"],
             ["manuella", "Manuella"],
             ["rattade", "Rättade"],
           ] as const

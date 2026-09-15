@@ -48,6 +48,8 @@ export function LonView({ ws }: { ws: AccountingWorkspace }) {
   const awaitingFiling = employerDeclarationsAwaitingFiling(today);
   const declarations = [...employerDeclarations()].sort((a, b) => b.month.localeCompare(a.month));
   const missingDraft = awaitingRun.filter((m) => !employerDeclarationFor(m));
+  const todoCount =
+    awaitingRun.reduce((n, m) => n + employeesAwaitingPayroll(m).length, 0) + awaitingFiling.length;
 
   return (
     <div>
@@ -124,7 +126,7 @@ export function LonView({ ws }: { ws: AccountingWorkspace }) {
 
           {awaitingRun.length + awaitingFiling.length + missingDraft.length > 0 ? (
             <div className="mb-8">
-              <SectionTitle>Att göra ({awaitingRun.length + awaitingFiling.length})</SectionTitle>
+              <SectionTitle>Att göra ({todoCount})</SectionTitle>
               <div className="space-y-4">
                 {awaitingRun.map((m) =>
                   employeesAwaitingPayroll(m).map((person) => (

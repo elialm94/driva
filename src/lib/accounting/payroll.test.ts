@@ -13,6 +13,7 @@ import {
   currentEmployee,
   employerDeclarationFor,
   employerDeclarationsAwaitingFiling,
+  employeesAwaitingPayroll,
   endEmployment,
   generateEmployerDeclaration,
   markEmployerDeclarationDeclared,
@@ -414,5 +415,18 @@ describe("arbetsgivardeklaration", () => {
     const totals = payrollTotals(`${YEAR}-01-01`, `${YEAR}-12-31`);
     assert.equal(totals.gross, 80_000);
     assert.equal(totals.months, 2);
+  });
+
+  it("två anställda utan lön i samma månad ger två Att göra-kort", () => {
+    hire();
+    hire({ name: "Bo Ek", personnummer: "19900101-1111" });
+    const months = payrollMonthsAwaitingRun(`${YEAR}-01-26`);
+    assert.deepEqual(months, [`${YEAR}-01`]);
+    const cards = months.flatMap((m) => employeesAwaitingPayroll(m));
+    assert.equal(cards.length, 2, "sidan visar ett kort per anställd, inte per månad");
+    const todoCount =
+      months.reduce((n, m) => n + employeesAwaitingPayroll(m).length, 0) +
+      employerDeclarationsAwaitingFiling(`${YEAR}-01-26`).length;
+    assert.equal(todoCount, 2);
   });
 });

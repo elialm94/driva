@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { buttonClasses } from "./ui";
+import { kr } from "@/lib/format";
 import type { DocumentLine, DocumentLineDisposition, Job } from "@/lib/types";
 import {
   applyAllDocumentLinesToJobAction,
@@ -145,7 +146,7 @@ function LineRow({
           </p>
           <p className="text-[13px] text-muted">
             {qty} {line.unit ?? "st"}
-            {line.raw.lineAmount != null ? ` · ${line.raw.lineAmount.toLocaleString("sv-SE")} kr` : ""}
+            {line.raw.lineAmount != null ? ` · ${kr(line.raw.lineAmount)}` : ""}
           </p>
         </div>
         <label className="flex min-h-11 items-center gap-2 text-[14px]">

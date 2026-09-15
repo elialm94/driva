@@ -148,3 +148,57 @@ describe("Demoscenariot visar inga trasiga belopp under /bokforing", () => {
     assert.ok(db().verifications.length > 0);
   });
 });
+
+describe("Verifikationer: automatiska bokningar visas på svenska", () => {
+  /*
+   * Filtret hette "Auto" och badgen "Auto · hög säkerhet" / "Auto · Rättad".
+   * Sidan säger redan "Bokförd automatiskt av Ferva" och de andra filtren är
+   * "Manuella" / "Rättade", så "Auto" läcker engelska mitt i svenska UI:t.
+   */
+  it("filtret heter Automatiska, inte Auto", () => {
+    const src = component("verifikationer-view.tsx");
+    assert.match(src, /\["auto", "Automatiska"\]/);
+    assert.ok(!src.includes('["auto", "Auto"]'), "filtret ska inte visa engelska Auto");
+  });
+
+  it("listbadgen säger Automatisk, inte Auto", () => {
+    const src = readFileSync(join(here, "services/verification-correction.ts"), "utf8");
+    assert.ok(src.includes("Automatisk ·"), "badgen ska säga Automatisk");
+    assert.ok(!src.includes('"Auto ·'), "badgen ska inte visa engelska Auto");
+  });
+});
+
+describe("Lön: Att göra räknar korten, inte månaderna", () => {
+  /*
+   * Rubriken var "Att göra ({awaitingRun.length + awaitingFiling.length})" –
+   * månader plus deklarationer. Listan renderar ett kort per anställd som
+   * saknar lönekörning, så två anställda i samma månad blev "Att göra (1)"
+   * med två kort.
+   */
+  it("sidan räknar anställda som väntar, inte bara månader", () => {
+    const src = view("lon-view.tsx");
+    assert.match(src, /Att göra \(\{todoCount\}\)/);
+    assert.match(src, /employeesAwaitingPayroll\(m\)\.length/);
+    assert.ok(
+      !src.includes("Att göra ({awaitingRun.length + awaitingFiling.length})"),
+      "räknaren ska inte summera månader"
+    );
+  });
+});
+
+describe("Underlag kontrollera: artikelrader formaterar belopp med kr()", () => {
+  /*
+   * Radgranskningen skrev `toLocaleString("sv-SE") + " kr"` i stället för
+   * kr(). Samma belopp på resten av /bokforing går genom kr() så att noll,
+   * minus och NaN får samma form.
+   */
+  it("document-line-review går genom kr(), inte toLocaleString", () => {
+    const src = component("document-line-review.tsx");
+    assert.match(src, /kr\(line\.raw\.lineAmount\)/);
+    assert.ok(
+      !src.includes('toLocaleString("sv-SE")} kr'),
+      "artikelradens belopp ska inte formateras med toLocaleString"
+    );
+  });
+});
+
